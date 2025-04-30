@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2" # Recommended for modern Rust
+members = [
+    "khora_engine_core", # The future engine 'core'
+    "sandbox"      # An example/test application to use the engine
+]
+
+
+[profile.dev]
+opt-level = 1 # Enable minimal optimization even in dev
+
+[profile.release]
+lto = true      # Link-Time Optimization for release
+codegen-units = 1 # Maximize optimizations (compiles slower)
