@@ -1,6 +1,6 @@
 use std::ops::{Add, Sub, Mul, Div, Neg};
 
-
+// --- Vector3D ---
 
 // Deriving Debug, Clone, and PartialEq for convenience in debugging, cloning, and comparisons.
 // The Copy trait is derived because Vec3 is a lightweight struct with no heap allocation, 
@@ -220,6 +220,160 @@ impl Neg for Vec3 {
     }
 }
 
+// --- End of Vec3 Implementation ---
+
+// --- Vector4D ---
+
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+#[repr(C)]
+pub struct Vec4 {
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub w: f32,
+}
+
+impl Vec4 {
+    pub const ZERO: Self = Self { x: 0.0, y: 0.0, z: 0.0, w: 0.0 };
+    pub const ONE: Self = Self { x: 1.0, y: 1.0, z: 1.0, w: 1.0 };
+    
+    pub const X: Self = Self { x: 1.0, y: 0.0, z: 0.0, w: 0.0 };
+    pub const Y: Self = Self { x: 0.0, y: 1.0, z: 0.0, w: 0.0 };
+    pub const Z: Self = Self { x: 0.0, y: 0.0, z: 1.0, w: 0.0 };
+    pub const W: Self = Self { x: 0.0, y: 0.0, z: 0.0, w: 1.0 };
+
+    /// --- Constructors ---
+    /// Creates a new Vec4 instance with the given x, y, z, and w components.
+    /// # Arguments
+    /// * `x` - The x component of the vector.
+    /// * `y` - The y component of the vector.
+    /// * `z` - The z component of the vector.
+    /// * `w` - The w component of the vector.
+    /// # Returns
+    /// * A new Vec4 instance with the specified components.
+    #[inline]
+    pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
+        Self { x, y, z, w }
+    }
+
+    /// Returns a Vec4 from a Vec3 by adding a w component.
+    /// # Arguments
+    /// * `v` - The Vec3 to convert.
+    /// * `w` - The w component to add.
+    /// # Returns
+    /// * A new Vec4 instance with the specified components.
+    #[inline]
+    pub fn from_vec3(v: Vec3, w: f32) -> Self {
+        Self::new(v.x, v.y, v.z, w)
+    }
+
+    /// Returns the Vec3 part of the Vec4.
+    /// # Returns
+    /// * A new Vec3 instance with the x, y, and z components of the Vec4.
+    #[inline]
+    pub fn truncate(self) -> Vec3 {
+        Vec3::new(self.x, self.y, self.z)
+    }
+}
+
+// --- Operator Overloads ---
+
+/// Implement Add for Vec4
+impl Add for Vec4 {
+    type Output = Self;
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+            z: self.z + rhs.z,
+            w: self.w + rhs.w,
+        }
+    }
+}
+
+/// Implement Sub for Vec4
+impl Sub for Vec4 {
+    type Output = Self;
+    #[inline]
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+            z: self.z - rhs.z,
+            w: self.w - rhs.w,
+        }
+    }
+}
+
+/// Scalar multiplication (Vec4 * f32)
+impl Mul<f32> for Vec4 {
+    type Output = Self;
+    #[inline]
+    fn mul(self, rhs: f32) -> Self::Output {
+        Self {
+            x: self.x * rhs,
+            y: self.y * rhs,
+            z: self.z * rhs,
+            w: self.w * rhs,
+        }
+    }
+}
+
+/// Allow scalar multiplication (f32 * Vec4)
+impl Mul<Vec4> for f32 {
+    type Output = Vec4;
+    #[inline]
+    fn mul(self, rhs: Vec4) -> Self::Output {
+        rhs * self // Reuse the Vec4 * f32 implementation
+    }
+}
+
+/// Component-wise multiplication (often useful for colors or scaling)
+impl Mul<Vec4> for Vec4 {
+    type Output = Self;
+    #[inline]
+    fn mul(self, rhs: Vec4) -> Self::Output {
+        Self {
+            x: self.x * rhs.x,
+            y: self.y * rhs.y,
+            z: self.z * rhs.z,
+            w: self.w * rhs.w,
+        }
+    }
+}
+
+/// Component-wise division (often useful for colors or scaling)
+impl Div<f32> for Vec4 {
+    type Output = Self;
+    #[inline]
+    fn div(self, rhs: f32) -> Self::Output {
+        // Consider how to handle division by zero if necessary,
+        // here we rely on standard f32 division behavior (NaN/Infinity)
+        let inv_rhs = 1.0 / rhs;
+        Self {
+            x: self.x * inv_rhs,
+            y: self.y * inv_rhs,
+            z: self.z * inv_rhs,
+            w: self.w * inv_rhs,
+        }
+    }
+}
+
+/// Implement Neg for Vec4
+impl Neg for Vec4 {
+    type Output = Self;
+    #[inline]
+    fn neg(self) -> Self::Output {
+        Self {
+            x: -self.x,
+            y: -self.y,
+            z: -self.z,
+            w: -self.w,
+        }
+    }
+}
+
 
 /// --- Tests ---
 
@@ -235,6 +389,12 @@ mod tests {
     fn vec3_approx_eq(a: Vec3, b: Vec3) -> bool {
         approx_eq(a.x, b.x) && approx_eq(a.y, b.y) && approx_eq(a.z, b.z)
     }
+
+    fn vec4_approx_eq(a: Vec4, b: Vec4) -> bool {
+        approx_eq(a.x, b.x) && approx_eq(a.y, b.y) && approx_eq(a.z, b.z) && approx_eq(a.w, b.w)
+    }
+
+    // Test Vec3
 
     #[test]
     fn test_new() {
@@ -328,7 +488,7 @@ mod tests {
         let v1 = Vec3::new(1.0, 2.0, 3.0);
         let v2 = Vec3::new(4.0, 5.0, 6.0);
         // Distance = sqrt((4-1)^2 + (5-2)^2 + (6-3)^2) = sqrt(9 + 9 + 9) = sqrt(27) = 3*sqrt(3)
-        assert!(approx_eq(v1.distance(v2), (3.0 * (3.0_f32).sqrt())));
+        assert!(approx_eq(v1.distance(v2), 3.0 * (3.0_f32).sqrt()));
     }
 
     #[test]
@@ -370,4 +530,32 @@ mod tests {
         assert!(vec3_approx_eq(start.lerp(end, 1.0), end));
         assert!(vec3_approx_eq(start.lerp(end, 0.5), Vec3::new(5.0, 5.0, 5.0)));
     }
+
+    // Test Vec4
+
+    #[test]
+    fn test_vec4_new() {
+        let v = Vec4::new(1.0, 2.0, 3.0, 4.0);
+        assert_eq!(v.x, 1.0);
+        assert_eq!(v.y, 2.0);
+        assert_eq!(v.z, 3.0);
+        assert_eq!(v.w, 4.0);
+    }
+
+    #[test]
+    fn test_vec4_from_vec3() {
+        let v3 = Vec3::new(1.0, 2.0, 3.0);
+        let v4 = Vec4::from_vec3(v3, 4.0);
+         assert_eq!(v4, Vec4::new(1.0, 2.0, 3.0, 4.0));
+    }
+
+     #[test]
+    fn test_vec4_truncate() {
+        let v4 = Vec4::new(1.0, 2.0, 3.0, 4.0);
+        let v3 = v4.truncate();
+         assert_eq!(v3, Vec3::new(1.0, 2.0, 3.0));
+    }
+
+
+
 }

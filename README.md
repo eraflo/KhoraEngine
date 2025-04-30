@@ -21,29 +21,42 @@ The long-term vision includes robust support for Extended Reality (XR) applicati
 
 ## Current Status: Phase 1 - Solid Foundations & Context Awareness
 
-**This project is currently at the very beginning of its journey.**
+**This project is progressing through the initial steps of Milestone 1: Core Foundation & Context Hooks.**
 
-We are executing the **first step** of **Milestone 1: Core Foundation & Context Hooks**:
+**Completed Steps:**
 
-*   **`[Feature] Setup Project Structure & Cargo Workspace`**: Establishing the initial Rust project structure using a Cargo workspace to foster modularity from the outset. The initial crates are:
-    *   `khora_engine_core`: The library crate that will contain the engine's core logic.
-    *   `sandbox`: A binary crate to test and demonstrate the engine's features.
+*   ✅ **`[Feature] Setup Project Structure & Cargo Workspace`**: Established the initial Rust project structure using a Cargo workspace (`khora_engine_core`, `sandbox`).
+*   ✅ **`[Feature] Implement Core Math Library (Vec3, Mat4, Quat)`**: Implemented foundational 3D math types (`Vec3`, `Vec4`, `Mat4`, `Quat`) within `khora_engine_core`, designed with Data-Oriented principles in mind.
 
-**Next immediate steps will involve:** Implementing core math primitives, basic logging/event systems, windowing integration, and foundational performance/memory monitoring hooks – all crucial groundwork for the SAA.
+**Current Focus / Next Steps:**
+
+Work is now beginning on the next foundational elements from Milestone 1:
+
+*   ➡️ **`[Feature] Implement Basic Logging & Event System`**: Setting up systems for debug/info messages and handling internal engine events. This is crucial for debugging and future inter-subsystem communication (SAA).
+*   **(Upcoming)** `[Feature] Implement Foundational Performance Monitoring Hooks (CPU Timers)`
+*   **(Upcoming)** `[Feature] Implement Basic Memory Allocation Tracking`
+*   **(Upcoming)** `[Feature] Choose and Integrate Windowing Library (e.g., winit)`
+*   **(Upcoming)** `[Feature] Implement Basic Input System`
+*   **(Upcoming)** `[Feature] Create Main Loop Structure`
+*   **(Upcoming)** `[Task] Display Empty Window & Basic Stats (FPS, Mem)`
 
 **Note:** This is a highly ambitious, long-term research and development project. The roadmap outlined ([link to roadmap if available, otherwise omit]) is extensive. Expect significant evolution, changes, and potential refactoring as development progresses towards the SAA goal.
 
 ## Getting Started
 
-Currently, the project only contains the basic structure.
+Currently, the project contains the basic structure and core math utilities.
 
 ```bash
 # Clone the repository (replace with your actual URL)
 git clone https://github.com/eraflo/KhoraEngine.git
 cd KhoraEngine
 
-# Build the project (this will build both engine_core and sandbox)
-cargo build
+# Check code and run tests (includes math library tests)
+cargo check --workspace
+cargo test --workspace
 
-# Run the sandbox (it won't do much yet)
+# Build the project
+cargo build --workspace
+
+# Run the sandbox (it still doesn't do much visually)
 cargo run --bin sandbox
