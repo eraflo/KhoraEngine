@@ -1,4 +1,4 @@
-pub const EPSILON: f32 = 1e-6;
+pub const EPSILON: f32 = 1e-5;
 
 pub use std::f32::{INFINITY, NEG_INFINITY, NAN};
 pub use std::f32::consts::{PI, TAU, FRAC_PI_2, FRAC_PI_3, FRAC_PI_4, FRAC_PI_6, FRAC_PI_8, E, LN_2, LN_10, LOG2_E, LOG10_E, SQRT_2};
@@ -11,6 +11,7 @@ pub const RAD_TO_DEG: f32 = 180.0 / PI;
 pub mod vector;
 pub mod matrix;
 pub mod quaternion;
+pub mod color;
 
 
 
