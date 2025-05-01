@@ -28,8 +28,19 @@ impl Vec2 {
     /// # Returns
     /// * A new Vec2 instance with the specified components.
     #[inline]
-    pub fn new(x: f32, y: f32) -> Self {
+    pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
+    }
+
+    /// Returns a new vector with the absolute value of each component.
+    /// # Returns
+    /// * A new Vec2 instance with the absolute values of the components.
+    #[inline]
+    pub const fn abs(self) -> Self {
+        Self {
+            x: if self.x < 0.0 { -self.x } else { self.x },
+            y: if self.y < 0.0 { -self.y } else { self.y },
+        }
     }
 
     /// Calculates the squared magnitude (length) of the vector.
@@ -199,8 +210,20 @@ impl Vec3 {
     /// # Returns
     /// * A new Vec3 instance with the specified components.
     #[inline]
-    pub fn new(x: f32, y: f32, z: f32) -> Self {
+    pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
+    }
+
+    /// Returns a new vector with the absolute value of each component.
+    /// # Returns
+    /// * A new Vec3 instance with the absolute values of the components.
+    #[inline]
+    pub const fn abs(self) -> Self {
+        Self {
+            x: if self.x < 0.0 { -self.x } else { self.x }, // const-compatible abs
+            y: if self.y < 0.0 { -self.y } else { self.y },
+            z: if self.z < 0.0 { -self.z } else { self.z },
+        }
     }
 
     /// Returns the length squared of the vector.
@@ -474,8 +497,21 @@ impl Vec4 {
     /// # Returns
     /// * A new Vec4 instance with the specified components.
     #[inline]
-    pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
+    pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
         Self { x, y, z, w }
+    }
+
+    /// Returns a new vector with the absolute value of each component.
+    /// # Returns
+    /// * A new Vec4 instance with the absolute values of the components.
+    #[inline]
+    pub const fn abs(self) -> Self {
+        Self {
+            x: if self.x < 0.0 { -self.x } else { self.x },
+            y: if self.y < 0.0 { -self.y } else { self.y },
+            z: if self.z < 0.0 { -self.z } else { self.z },
+            w: if self.w < 0.0 { -self.w } else { self.w },
+        }
     }
 
     /// Returns a Vec4 from a Vec3 by adding a w component.
@@ -660,7 +696,7 @@ impl IndexMut<usize> for Vec4 {
 #[cfg(test)]
 mod tests {
     use super::*; // Import Vec3 from the parent module
-    use crate::math::{approx_eq, approx_eq_eps};
+    use crate::math::approx_eq;
 
     fn vec2_approx_eq(a: Vec2, b: Vec2) -> bool {
         approx_eq(a.x, b.x) && approx_eq(a.y, b.y)
@@ -669,7 +705,7 @@ mod tests {
     fn vec3_approx_eq(a: Vec3, b: Vec3) -> bool {
         approx_eq(a.x, b.x) && approx_eq(a.y, b.y) && approx_eq(a.z, b.z)
     }
-
+    
     // Test Vec2
 
     #[test]
@@ -677,6 +713,12 @@ mod tests {
         let v = Vec2::new(1.0, 2.0);
         assert_eq!(v.x, 1.0);
         assert_eq!(v.y, 2.0);
+    }
+
+    #[test]
+    fn test_vec2_abs() {
+        let v = Vec2::new(-1.0, 2.0);
+        assert_eq!(v.abs(), Vec2::new(1.0, 2.0));
     }
 
     #[test]
@@ -726,33 +768,33 @@ mod tests {
         assert_eq!(v_zero.normalize(), Vec2::ZERO);
     }
 
-     #[test]
-     fn test_vec2_lerp() {
-         let start = Vec2::new(0.0, 10.0);
-         let end = Vec2::new(10.0, 0.0);
-         assert!(vec2_approx_eq(Vec2::lerp(start, end, 0.0), start));
-         assert!(vec2_approx_eq(Vec2::lerp(start, end, 1.0), end));
-         assert!(vec2_approx_eq(Vec2::lerp(start, end, 0.5), Vec2::new(5.0, 5.0)));
-         // Test clamping
-         assert!(vec2_approx_eq(Vec2::lerp(start, end, -0.5), start));
-         assert!(vec2_approx_eq(Vec2::lerp(start, end, 1.5), end));
-     }
+    #[test]
+    fn test_vec2_lerp() {
+        let start = Vec2::new(0.0, 10.0);
+        let end = Vec2::new(10.0, 0.0);
+        assert!(vec2_approx_eq(Vec2::lerp(start, end, 0.0), start));
+        assert!(vec2_approx_eq(Vec2::lerp(start, end, 1.0), end));
+        assert!(vec2_approx_eq(Vec2::lerp(start, end, 0.5), Vec2::new(5.0, 5.0)));
+        // Test clamping
+        assert!(vec2_approx_eq(Vec2::lerp(start, end, -0.5), start));
+        assert!(vec2_approx_eq(Vec2::lerp(start, end, 1.5), end));
+    }
 
-     #[test]
-     fn test_vec2_index() {
-         let mut v = Vec2::new(5.0, 6.0);
-         assert_eq!(v[0], 5.0);
-         assert_eq!(v[1], 6.0);
-         v[0] = 10.0;
-         assert_eq!(v.x, 10.0);
-     }
+    #[test]
+    fn test_vec2_index() {
+        let mut v = Vec2::new(5.0, 6.0);
+        assert_eq!(v[0], 5.0);
+        assert_eq!(v[1], 6.0);
+        v[0] = 10.0;
+        assert_eq!(v.x, 10.0);
+    }
 
-     #[test]
-     #[should_panic]
-     fn test_vec2_index_out_of_bounds() {
-         let v = Vec2::new(1.0, 2.0);
-         let _ = v[2]; // Should panic
-     }
+    #[test]
+    #[should_panic]
+    fn test_vec2_index_out_of_bounds() {
+        let v = Vec2::new(1.0, 2.0);
+        let _ = v[2]; // Should panic
+    }
 
     // Test Vec3
 
@@ -762,6 +804,13 @@ mod tests {
         assert_eq!(v.x, 1.0);
         assert_eq!(v.y, 2.0);
         assert_eq!(v.z, 3.0);
+    }
+
+    #[test]
+    fn test_vec3_abs() {
+        let v = Vec3::new(-1.0, 2.0, -3.0);
+        assert_eq!(v.abs(), Vec3::new(1.0, 2.0, 3.0));
+        assert_eq!(Vec3::ZERO.abs(), Vec3::ZERO);
     }
 
     #[test]
@@ -894,6 +943,12 @@ mod tests {
         assert_eq!(v.y, 2.0);
         assert_eq!(v.z, 3.0);
         assert_eq!(v.w, 4.0);
+    }
+
+    #[test]
+    fn test_vec4_abs() {
+        let v = Vec4::new(-1.0, 2.0, -3.0, -0.5);
+        assert_eq!(v.abs(), Vec4::new(1.0, 2.0, 3.0, 0.5));
     }
 
     #[test]

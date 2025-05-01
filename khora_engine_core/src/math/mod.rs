@@ -12,12 +12,15 @@ pub mod vector;
 pub mod matrix;
 pub mod quaternion;
 pub mod color;
+pub mod geometry;
 
 
 
 pub use vector::{Vec2, Vec3, Vec4};
 pub use matrix::{Mat3, Mat4};
 pub use quaternion::Quaternion;
+pub use color::LinearRgba;
+pub use geometry::Aabb;
 
 // --- Utility Functions ---
 
