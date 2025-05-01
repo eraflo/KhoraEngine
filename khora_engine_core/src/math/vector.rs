@@ -1,3 +1,4 @@
+use super::EPSILON;
 use std::ops::{Add, Div, Index, IndexMut, Mul, Neg, Sub};
 
 // --- Vector2D ---
@@ -53,7 +54,7 @@ impl Vec2 {
     #[inline]
     pub fn normalize(&self) -> Self {
         let len_sq = self.length_squared();
-        if len_sq > crate::math::EPSILON * crate::math::EPSILON { // Utiliser l'EPSILON public
+        if len_sq > EPSILON * EPSILON {
             *self * (1.0 / len_sq.sqrt())
         } else {
             Self::ZERO
@@ -226,7 +227,7 @@ impl Vec3 {
     #[inline]
     pub fn normalize(&self) -> Self {
         let len_sq = self.length_squared();
-        if len_sq > crate::math::EPSILON * crate::math::EPSILON { // Use squared length to avoid sqrt
+        if len_sq > EPSILON * EPSILON { // Use squared length to avoid sqrt
             // Multiply by inverse sqrt for potentially better performance
             *self * (1.0 / len_sq.sqrt())
         } else {
@@ -296,6 +297,21 @@ impl Vec3 {
             x: start.x + (end.x - start.x) * t,
             y: start.y + (end.y - start.y) * t,
             z: start.z + (end.z - start.z) * t,
+        }
+    }
+
+    /// Returns the element at the specified index.
+    /// # Arguments
+    /// * `index` - The index of the element to retrieve (0-2).
+    /// # Returns
+    /// * The element at the specified index.
+    #[inline]
+    pub fn get(&self, index: usize) -> f32 {
+        match index {
+            0 => self.x,
+            1 => self.y,
+            2 => self.z,
+            _ => panic!("Index out of bounds for Vec3"),
         }
     }
     
@@ -644,11 +660,7 @@ impl IndexMut<usize> for Vec4 {
 #[cfg(test)]
 mod tests {
     use super::*; // Import Vec3 from the parent module
-
-    // Helper for approximate float equality comparison
-    fn approx_eq(a: f32, b: f32) -> bool {
-        (a - b).abs() < crate::math::EPSILON
-    }
+    use crate::math::{approx_eq, approx_eq_eps};
 
     fn vec2_approx_eq(a: Vec2, b: Vec2) -> bool {
         approx_eq(a.x, b.x) && approx_eq(a.y, b.y)

@@ -1,5 +1,334 @@
-use super::{vector::{Vec3, Vec4}, Quaternion};
-use std::ops::Mul;
+use super::{vector::{Vec2, Vec3, Vec4}, Quaternion, EPSILON, PI};
+use std::ops::{Index, IndexMut, Mul};
+
+// --- Mat3 ---
+
+/// Represents a 3x3 matrix for 2D transformations.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[repr(C)]
+pub struct Mat3 {
+    pub cols: [Vec3; 3],
+}
+
+impl Mat3 {
+
+    /// Create the Identity matrix.
+    pub const IDENTITY: Self = Self {
+        cols: [
+            Vec3::X,
+            Vec3::Y,
+            Vec3::Z
+        ],
+    };
+
+    /// Create a constant 0 matrix.
+    /// This is a 3x3 matrix with all elements set to 0
+    pub const ZERO: Self = Self { cols: [Vec3::ZERO; 3] };
+
+    /// Create a new matrix from 3 columns.
+    /// # Arguments
+    /// * `c0` - The first column of the matrix.
+    /// * `c1` - The second column of the matrix.
+    /// * `c2` - The third column of the matrix.
+    /// # Returns
+    /// * A new matrix with the given columns.
+    #[inline]
+    pub fn from_cols(c0: Vec3, c1: Vec3, c2: Vec3) -> Self {
+        Self { cols: [c0, c1, c2] }
+    }
+
+    /// Returns the row of the matrix at the given index.
+    /// # Arguments
+    /// * `index` - The index of the row to return.
+    /// # Returns
+    /// * A new vector representing the row of the matrix.
+    #[inline]
+    fn from_row(&self, index: usize) -> Vec3 {
+        Vec3 {
+            x: self.cols[0].get(index),
+            y: self.cols[1].get(index),
+            z: self.cols[2].get(index),
+        }
+    }
+
+    /// Create a 2D scaling matrix. (scales X and Y axes, Z axis is ignored)
+    /// # Arguments
+    /// * `scale` - The scaling vector.
+    /// # Returns
+    /// * A new scaling matrix.
+    #[inline]
+    pub fn from_scale_vec2(scale: Vec2) -> Self {
+        Self::from_scale(Vec3::new(scale.x, scale.y, 1.0))
+    }
+
+    /// Create a 3D scaling matrix.
+    /// # Arguments
+    /// * `scale` - The scaling vector.
+    /// # Returns
+    /// * A new scaling matrix.
+    #[inline]
+    pub fn from_scale(scale: Vec3) -> Self {
+        Self {
+            cols: [
+                Vec3::new(scale.x, 0.0, 0.0),
+                Vec3::new(0.0, scale.y, 0.0),
+                Vec3::new(0.0, 0.0, scale.z),
+            ],
+        }
+    }
+
+    /// Create a rotation matrix around the X axis.
+    /// # Arguments
+    /// * `angle_radians` - The angle in radians.
+    /// # Returns
+    /// * A new rotation matrix.
+    #[inline]
+    pub fn from_rotation_x(angle_radians: f32) -> Self {
+        let (s, c) = angle_radians.sin_cos();
+        Self {
+            cols: [
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, c, s),
+                Vec3::new(0.0, -s, c),
+            ],
+        }
+    }
+
+    /// Create a rotation matrix around the Y axis.
+    /// # Arguments
+    /// * `angle_radians` - The angle in radians.
+    /// # Returns
+    /// * A new rotation matrix.
+    #[inline]
+    pub fn from_rotation_y(angle_radians: f32) -> Self {
+        let (s, c) = angle_radians.sin_cos();
+        Self {
+            cols: [
+                Vec3::new(c, 0.0, -s), // RH system
+                Vec3::new(0.0, 1.0, 0.0),
+                Vec3::new(s, 0.0, c),  // RH system
+            ],
+        }
+    }
+
+    /// Create a rotation matrix around the Z axis.
+    /// # Arguments
+    /// * `angle_radians` - The angle in radians.
+    /// # Returns
+    /// * A new rotation matrix.
+    #[inline]
+    pub fn from_rotation_z(angle_radians: f32) -> Self {
+        let (s, c) = angle_radians.sin_cos();
+        Self {
+            cols: [
+                Vec3::new(c, s, 0.0),
+                Vec3::new(-s, c, 0.0),
+                Vec3::new(0.0, 0.0, 1.0),
+            ],
+        }
+    }
+
+    /// Create a rotation matrix from an axis and angle.
+    /// # Arguments
+    /// * `axis` - The axis of rotation.
+    /// * `angle_radians` - The angle in radians.
+    /// # Returns
+    /// * A new rotation matrix.
+    #[inline]
+    pub fn from_axis_angle(axis: Vec3, angle_radians: f32) -> Self {
+        let (s, c) = angle_radians.sin_cos();
+        let t = 1.0 - c;
+        let x = axis.x;
+        let y = axis.y;
+        let z = axis.z;
+        Self {
+            cols: [
+                Vec3::new(t * x * x + c, t * x * y + s * z, t * x * z - s * y),
+                Vec3::new(t * y * x - s * z, t * y * y + c, t * y * z + s * x),
+                Vec3::new(t * z * x + s * y, t * z * y - s * x, t * z * z + c),
+            ],
+        }
+    }
+
+    /// Create a rotation matrix from a quaternion.
+    /// # Arguments
+    /// * `q` - The quaternion representing the rotation.
+    /// # Returns
+    /// * A new rotation matrix.
+    #[inline]
+    pub fn from_quat(q: Quaternion) -> Self {
+        let q = q.normalize(); // Normalize the quaternion to ensure a valid rotation matrix
+
+        let x = q.x; 
+        let y = q.y; 
+        let z = q.z; 
+        let w = q.w;
+
+        let x2 = x + x; 
+        let y2 = y + y; 
+        let z2 = z + z;
+
+        let xx = x * x2; 
+        let xy = x * y2; 
+        let xz = x * z2;
+
+        let yy = y * y2; 
+        let yz = y * z2; 
+        let zz = z * z2;
+
+        let wx = w * x2; 
+        let wy = w * y2; 
+        let wz = w * z2;
+
+        Self::from_cols(
+            Vec3::new(1.0 - (yy + zz), xy + wz, xz - wy),
+            Vec3::new(xy - wz, 1.0 - (xx + zz), yz + wx),
+            Vec3::new(xz + wy, yz - wx, 1.0 - (xx + yy)),
+        )
+    }
+
+    /// Creates a Mat3 from a Mat4 from the 3x3 upper-left corner.
+    #[inline]
+    pub fn from_mat4(m4: &Mat4) -> Self {
+        Self::from_cols(
+            m4.cols[0].truncate(),
+            m4.cols[1].truncate(),
+            m4.cols[2].truncate(),
+        )
+    }
+
+    /// Returns the determinant of the matrix.
+    /// The determinant is a scalar value that can be used to determine if the matrix is invertible.
+    /// # Returns
+    /// * The determinant of the matrix.
+    #[inline]
+    pub fn determinant(&self) -> f32 {
+        let c0 = self.cols[0];
+        let c1 = self.cols[1];
+        let c2 = self.cols[2];
+        c0.x * (c1.y * c2.z - c2.y * c1.z) -
+        c1.x * (c0.y * c2.z - c2.y * c0.z) +
+        c2.x * (c0.y * c1.z - c1.y * c0.z)
+    }
+    
+    /// Returns the transpose of the matrix.
+    /// The transpose of a matrix is obtained by swapping its rows and columns.
+    /// # Returns
+    /// * A new matrix that is the transpose of the original matrix.
+    #[inline]
+    pub fn transpose(&self) -> Self {
+        Self::from_cols(
+            Vec3::new(self.cols[0].x, self.cols[1].x, self.cols[2].x),
+            Vec3::new(self.cols[0].y, self.cols[1].y, self.cols[2].y),
+            Vec3::new(self.cols[0].z, self.cols[1].z, self.cols[2].z),
+        )
+    }
+
+    /// Returns the inverse of the matrix.
+    /// The inverse of a matrix is a matrix that, when multiplied with the original matrix, yields the identity matrix.
+    /// # Returns
+    /// * An `Option<Self>` that is `Some` if the matrix is invertible, or `None` if it is not.
+    pub fn inverse(&self) -> Option<Self> {
+        let c0 = self.cols[0];
+        let c1 = self.cols[1];
+        let c2 = self.cols[2];
+
+        // Calculate cofactors
+        let m00 = c1.y * c2.z - c2.y * c1.z;
+        let m10 = c2.y * c0.z - c0.y * c2.z;
+        let m20 = c0.y * c1.z - c1.y * c0.z;
+
+        let m01 = c2.x * c1.z - c1.x * c2.z;
+        let m11 = c0.x * c2.z - c2.x * c0.z;
+        let m21 = c1.x * c0.z - c0.x * c1.z;
+
+        let m02 = c1.x * c2.y - c2.x * c1.y;
+        let m12 = c2.x * c0.y - c0.x * c2.y;
+        let m22 = c0.x * c1.y - c1.x * c0.y;
+
+        let det = c0.x * m00 + c1.x * m10 + c2.x * m20;
+
+        if det.abs() < EPSILON {
+            return None;
+        }
+
+        let inv_det = 1.0 / det;
+
+        // Inverse = (1/det) * Adjugate(==Transpose(Cofactor))
+        Some(Self::from_cols(
+            Vec3::new(m00, m10, m20) * inv_det, // Column 0 = Row 0 of cofactors / det
+            Vec3::new(m01, m11, m21) * inv_det, // Column 1 = Row 1 of cofactors / det
+            Vec3::new(m02, m12, m22) * inv_det, // Column 2 = Row 2 of cofactors / det
+        ))
+    }
+
+    /// Converts the matrix to a 4x4 matrix.
+    /// # Returns
+    /// * A new 4x4 matrix with the same values as the 3x3 matrix.
+    #[inline]
+    pub fn to_mat4(&self) -> Mat4 {
+        Mat4::from_cols(
+            Vec4::from_vec3(self.cols[0], 0.0),
+            Vec4::from_vec3(self.cols[1], 0.0),
+            Vec4::from_vec3(self.cols[2], 0.0),
+            Vec4::W, // (0, 0, 0, 1)
+        )
+    }
+
+}
+
+
+// --- Operator Overloads ---
+
+impl Default for Mat3 {
+    #[inline]
+    fn default() -> Self {
+        Self::IDENTITY
+    }
+}
+
+/// Mat3 * Mat3 multiplication
+impl Mul<Mat3> for Mat3 {
+    type Output = Self;
+    #[inline]
+    fn mul(self, rhs: Mat3) -> Self::Output {
+        Self::from_cols(
+            self * rhs.cols[0],
+            self * rhs.cols[1],
+            self * rhs.cols[2],
+        )
+    }
+}
+
+/// Mat3 * Vec3 multiplication
+impl Mul<Vec3> for Mat3 {
+    type Output = Vec3;
+    #[inline]
+    fn mul(self, v: Vec3) -> Self::Output {
+        // result = col0*v.x + col1*v.y + col2*v.z
+        self.cols[0] * v.x + self.cols[1] * v.y + self.cols[2] * v.z
+    }
+}
+
+impl Index<usize> for Mat3 {
+    type Output = Vec3;
+    #[inline]
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.cols[index] // Accès direct à la colonne
+    }
+}
+
+impl IndexMut<usize> for Mat3 {
+    #[inline]
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.cols[index] // Accès mutable direct à la colonne
+    }
+}
+
+
+// --- End of Mat3 Implementation ---
+
+// --- Mat4 ---
 
 /// Represents a 4x4 matrix for 3D transformations.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -455,13 +784,15 @@ impl Mat4 {
 
 }
 
+
+// --- Operators Overloading ---
+
 impl Default for Mat4 {
     fn default() -> Self {
         Self::IDENTITY
     }
 }
 
-// --- Operators Overloading ---
 
 /// Matrix * Matrix multiplication.
 impl Mul<Mat4> for Mat4 {
@@ -496,6 +827,7 @@ impl Mul<Vec4> for Mat4 {
     }
 }
 
+// --- End of Mat4 Implementation ---
 
 
 // --- Tests ---
@@ -504,12 +836,16 @@ impl Mul<Vec4> for Mat4 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::PI;
-    use crate::math::EPSILON;
+    use crate::math::{approx_eq, approx_eq_eps, quaternion::Quaternion, vector::{Vec3}, matrix::Mat4};
 
-    // Helper for approximate float equality comparison
-    fn approx_eq(a: f32, b: f32) -> bool {
-        (a - b).abs() < EPSILON
+    fn vec3_approx_eq(a: Vec3, b: Vec3) -> bool {
+        approx_eq(a.x, b.x) && approx_eq(a.y, b.y) && approx_eq(a.z, b.z)
+    }
+
+    fn mat3_approx_eq(a: Mat3, b: Mat3) -> bool {
+        vec3_approx_eq(a.cols[0], b.cols[0]) &&
+        vec3_approx_eq(a.cols[1], b.cols[1]) &&
+        vec3_approx_eq(a.cols[2], b.cols[2])
     }
 
     fn vec4_approx_eq(a: Vec4, b: Vec4) -> bool {
@@ -523,6 +859,175 @@ mod tests {
         vec4_approx_eq(a.cols[2], b.cols[2]) &&
         vec4_approx_eq(a.cols[3], b.cols[3])
     }
+
+    // --- Tests for Mat3 ---
+
+    #[test]
+    fn test_mat3_identity_default() {
+        assert_eq!(Mat3::default(), Mat3::IDENTITY);
+
+        let m = Mat3::from_scale(Vec3::new(1.0, 2.0, 3.0));
+        assert!(mat3_approx_eq(m * Mat3::IDENTITY, m));
+        assert!(mat3_approx_eq(Mat3::IDENTITY * m, m));
+    }
+
+     #[test]
+    fn test_mat3_from_scale() {
+        let s = Vec3::new(2.0, -3.0, 0.5);
+        let m = Mat3::from_scale(s);
+        let v = Vec3::new(1.0, 1.0, 1.0);
+        assert!(vec3_approx_eq(m * v, s)); // Scaling (1,1,1) should yield the scale vector
+    }
+
+     #[test]
+    fn test_mat3_rotations() {
+        let angle = PI / 6.0; // 30 degrees
+        let mx = Mat3::from_rotation_x(angle);
+        let my = Mat3::from_rotation_y(angle);
+        let mz = Mat3::from_rotation_z(angle);
+
+        let p = Vec3::Y; // Point on Y axis
+        let expected_px = Vec3::new(0.0, angle.cos(), angle.sin());
+        assert!(vec3_approx_eq(mx * p, expected_px));
+
+        let p = Vec3::X; // Point on X axis
+        let expected_py = Vec3::new(angle.cos(), 0.0, -angle.sin()); // RH
+        assert!(vec3_approx_eq(my * p, expected_py));
+
+        let p = Vec3::X; // Point on X axis
+        let expected_pz = Vec3::new(angle.cos(), angle.sin(), 0.0);
+        assert!(vec3_approx_eq(mz * p, expected_pz));
+    }
+
+    #[test]
+    fn test_mat3_from_axis_angle() {
+        let axis = Vec3::new(1.0, 1.0, 1.0).normalize();
+        let angle = 1.2 * PI;
+        let m = Mat3::from_axis_angle(axis, angle);
+
+        // Rotation around (1,1,1) axis should permute basis vectors
+        let v = Vec3::X;
+        let v_rotated = m * v;
+
+        // Check if length is preserved
+        assert!(approx_eq(v_rotated.length(), v.length()));
+
+        // Specific check is hard without known values, but ensure it's not identity or zero
+        assert!(v_rotated.distance_squared(v) > EPSILON);
+    }
+
+    #[test]
+    fn test_mat3_from_quat() {
+        let axis = Vec3::new(1.0, -2.0, 3.0).normalize();
+        let angle = PI / 7.0;
+        let q = Quaternion::from_axis_angle(axis, angle);
+        let m_from_q = Mat3::from_quat(q);
+
+        let v = Vec3::new(0.5, 1.0, -0.2);
+        let v_rotated_q = q * v;
+        let v_rotated_m = m_from_q * v;
+
+        assert!(vec3_approx_eq(v_rotated_q, v_rotated_m));
+    }
+
+     #[test]
+    fn test_mat3_determinant() {
+        assert!(approx_eq(Mat3::IDENTITY.determinant(), 1.0));
+        assert!(approx_eq(Mat3::ZERO.determinant(), 0.0));
+
+        let m_scale = Mat3::from_scale(Vec3::new(2.0, 3.0, 4.0));
+        assert!(approx_eq(m_scale.determinant(), 24.0));
+
+        let m_rot = Mat3::from_rotation_y(PI / 5.0);
+        assert!(approx_eq(m_rot.determinant(), 1.0)); // Rotations preserve volume
+    }
+
+     #[test]
+    fn test_mat3_transpose() {
+        let m = Mat3::from_cols(
+            Vec3::new(1.0, 2.0, 3.0),
+            Vec3::new(4.0, 5.0, 6.0),
+            Vec3::new(7.0, 8.0, 9.0)
+        );
+        let mt = m.transpose();
+        let expected_mt = Mat3::from_cols(
+            Vec3::new(1.0, 4.0, 7.0),
+            Vec3::new(2.0, 5.0, 8.0),
+            Vec3::new(3.0, 6.0, 9.0)
+        );
+        
+        assert!(mat3_approx_eq(mt, expected_mt));
+        assert!(mat3_approx_eq(m.transpose().transpose(), m)); // Double transpose
+    }
+
+    #[test]
+    fn test_mat3_inverse() {
+        let m = Mat3::from_rotation_z(PI / 3.0) * Mat3::from_scale(Vec3::new(1.0, 2.0, 0.5));
+        let inv_m = m.inverse().expect("Matrix should be invertible");
+        let identity = m * inv_m;
+        assert!(mat3_approx_eq(identity, Mat3::IDENTITY), "M * inv(M) should be Identity");
+
+        let singular = Mat3::from_scale(Vec3::new(1.0, 0.0, 1.0));
+        assert!(singular.inverse().is_none(), "Singular matrix inverse should be None");
+    }
+
+    #[test]
+    fn test_mat3_mul_vec3() {
+        let m = Mat3::from_rotation_z(PI / 2.0); // Rotate 90 deg around Z
+        let v = Vec3::X; // (1, 0, 0)
+        let expected_v = Vec3::Y; // (0, 1, 0)
+        assert!(vec3_approx_eq(m * v, expected_v));
+    }
+
+    #[test]
+    fn test_mat3_mul_mat3() {
+        let rot90z = Mat3::from_rotation_z(PI / 2.0);
+        let rot180z = rot90z * rot90z;
+        let expected_rot180z = Mat3::from_rotation_z(PI);
+        assert!(mat3_approx_eq(rot180z, expected_rot180z));
+    }
+
+     #[test]
+    fn test_mat3_conversions() {
+        let m4 = Mat4::from_translation(Vec3::new(10., 20., 30.)) * Mat4::from_rotation_x(PI/4.0);
+        let m3 = Mat3::from_mat4(&m4);
+        let m4_again = m3.to_mat4();
+
+        // Check if rotation part was extracted correctly
+        let v = Vec3::Y;
+        let v_rot_m3 = m3 * v;
+        let v_rot_m4 = Mat4::from_rotation_x(PI/4.0) * Vec4::from_vec3(v, 0.0); // Rotate as vector
+        assert!(vec3_approx_eq(v_rot_m3, v_rot_m4.truncate()));
+
+        // Check if embedding back into Mat4 worked (translation should be zero)
+        let origin = Vec4::new(0.0, 0.0, 0.0, 1.0);
+        let transformed_origin = m4_again * origin;
+        assert!(approx_eq(transformed_origin.x, 0.0));
+        assert!(approx_eq(transformed_origin.y, 0.0));
+        assert!(approx_eq(transformed_origin.z, 0.0));
+        assert!(approx_eq(transformed_origin.w, 1.0));
+    }
+
+    #[test]
+    fn test_mat3_index() {
+        let mut m = Mat3::from_cols(Vec3::X, Vec3::Y, Vec3::Z);
+        assert_eq!(m[0], Vec3::X);
+        assert_eq!(m[1], Vec3::Y);
+        assert_eq!(m[2], Vec3::Z);
+        m[0] = Vec3::ONE;
+        assert_eq!(m.cols[0], Vec3::ONE);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_mat3_index_out_of_bounds() {
+        let m = Mat3::IDENTITY;
+        let _ = m[3]; // Should panic
+    }
+
+    // --- End of Mat3 Tests ---
+
+    // --- Tests for Mat4 ---
 
     #[test]
     fn test_identity() {
@@ -747,4 +1252,6 @@ mod tests {
         // This should panic or return None (depending on implementation)
         assert!(Mat4::look_at_rh(eye, target, up).is_none());
     }
+
+    // --- End of Tests For Mat4 ---
 }

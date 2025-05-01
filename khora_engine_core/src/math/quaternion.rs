@@ -1,5 +1,5 @@
 use std::ops::{Add, Mul, MulAssign, Neg, Sub};
-use super::{vector::Vec3, Mat4};
+use super::{vector::Vec3, Mat4, EPSILON};
 
 /// Represents a Quaternion for 3D rotations.
 /// Stored as (x, y, z, w) where (x, y, z) is the vector part and w is the scalar part.
@@ -130,7 +130,7 @@ impl Quaternion {
     /// * A new `Quaternion` instance that is normalized.
     pub fn normalize(&self) -> Self {
         let mag_sqrt = self.magnitude_squared();
-        if mag_sqrt > crate::math::EPSILON {
+        if mag_sqrt > EPSILON {
             let inv_mag = 1.0 / mag_sqrt.sqrt();
             Self {
                 x: self.x * inv_mag,
@@ -162,7 +162,7 @@ impl Quaternion {
     #[inline]
     pub fn inverse(&self) -> Self {
         let mag_squared = self.magnitude_squared();
-        if mag_squared > crate::math::EPSILON {
+        if mag_squared > EPSILON {
             self.conjugate() * (1.0 / mag_squared)
         } else {
             Self::IDENTITY
@@ -216,7 +216,7 @@ impl Quaternion {
 
         // If the quaternions are very close, use linear interpolation.
         // This avoids division by zero and ensures numerical stability.
-        if cos_theta > 1.0 - crate::math::EPSILON {
+        if cos_theta > 1.0 - EPSILON {
             // Linear Interpolation: (1-t)*start + t*end_adjusted
             // Normalize the result to avoid drift due to floating point errors.
             let result = (start * (1.0 - t)) + (end_adjusted * t);
@@ -332,8 +332,6 @@ mod tests {
     use crate::math::vector::Vec4;
     use super::*; // Import Quaternion, EPSILON etc. from parent module
     use approx::assert_relative_eq; // For float comparisons
-
-    const EPSILON: f32 = crate::math::EPSILON; // Define a small epsilon for floating point comparisons
 
     fn quat_approx_eq(q1: Quaternion, q2: Quaternion) -> bool {
         let dot = q1.dot(q2).abs();

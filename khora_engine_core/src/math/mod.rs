@@ -14,8 +14,8 @@ pub mod quaternion;
 
 
 
-pub use vector::Vec3;
-pub use matrix::Mat4;
+pub use vector::{Vec2, Vec3, Vec4};
+pub use matrix::{Mat3, Mat4};
 pub use quaternion::Quaternion;
 
 // --- Utility Functions ---
