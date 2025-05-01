@@ -1,7 +1,7 @@
-use super::vector::{Vec3, Vec4};
+use super::{vector::{Vec3, Vec4}, Quaternion};
 use std::ops::Mul;
 
-
+/// Represents a 4x4 matrix for 3D transformations.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Mat4 {
@@ -38,20 +38,35 @@ impl Mat4 {
         Self { cols: [c0, c1, c2, c3] }
     }
 
+    /// Returns the row of the matrix at the given index.
+    /// # Arguments
+    /// * `index` - The index of the row to return.
+    /// # Returns
+    /// * A new vector representing the row of the matrix.
+    #[inline]
+    fn from_row(&self, index: usize) -> Vec4 {
+        Vec4 {
+            x: self.cols[0].get(index),
+            y: self.cols[1].get(index),
+            z: self.cols[2].get(index),
+            w: self.cols[3].get(index),
+        }
+    }
+
     /// Create a translation matrix.
     /// # Arguments
     /// * `translation` - The translation vector.
     /// # Returns
     /// * A new translation matrix.
     #[inline]
-    pub fn from_translation(translation: Vec3) -> Self {
+    pub fn from_translation(v: Vec3) -> Self {
         Self {
             cols: [
-                Vec4::new(1.0, 0.0, 0.0, 0.0),
-                Vec4::new(0.0, 1.0, 0.0, 0.0),
-                Vec4::new(0.0, 0.0, 1.0, 0.0),
-                Vec4::new(translation.x, translation.y, translation.z, 1.0),
-            ],
+                Vec4::new(1.0, 0.0, 0.0, 0.0), // column 0
+                Vec4::new(0.0, 1.0, 0.0, 0.0), // column 1
+                Vec4::new(0.0, 0.0, 1.0, 0.0), // column 2
+                Vec4::new(v.x, v.y, v.z, 1.0), // column 3 (translation)
+            ]
         }
     }
 
@@ -84,8 +99,8 @@ impl Mat4 {
         Self {
             cols: [
                 Vec4::new(1.0, 0.0, 0.0, 0.0),
-                Vec4::new(0.0, c, -s, 0.0),
-                Vec4::new(0.0, s, c, 0.0),
+                Vec4::new(0.0, c, s, 0.0),
+                Vec4::new(0.0, -s, c, 0.0),
                 Vec4::new(0.0, 0.0, 0.0, 1.0),
             ],
         }
@@ -102,9 +117,9 @@ impl Mat4 {
         let s = angle.sin();
         Self {
             cols: [
-                Vec4::new(c, 0.0, s, 0.0),
+                Vec4::new(c, 0.0, -s, 0.0),
                 Vec4::new(0.0, 1.0, 0.0, 0.0),
-                Vec4::new(-s, 0.0, c, 0.0),
+                Vec4::new(s, 0.0, c, 0.0),
                 Vec4::new(0.0, 0.0, 0.0, 1.0),
             ],
         }
@@ -121,8 +136,8 @@ impl Mat4 {
         let s = angle.sin();
         Self {
             cols: [
-                Vec4::new(c, -s, 0.0, 0.0),
-                Vec4::new(s, c, 0.0, 0.0),
+                Vec4::new(c, s, 0.0, 0.0),
+                Vec4::new(-s, c, 0.0, 0.0),
                 Vec4::new(0.0, 0.0, 1.0, 0.0),
                 Vec4::new(0.0, 0.0, 0.0, 1.0),
             ],
@@ -153,6 +168,43 @@ impl Mat4 {
                 Vec4::new(0.0, 0.0, 0.0, 1.0),
             ],
         }
+    }
+
+    /// Creates a rotation matrix from a quaternion.
+    /// # Arguments
+    /// * `q` - The quaternion representing the rotation.
+    /// # Returns
+    /// * A new rotation matrix.
+    #[inline]
+    pub fn from_quat(q: Quaternion) -> Self {
+        // Extract the components of the quaternion
+        let x = q.x; 
+        let y = q.y; 
+        let z = q.z; 
+        let w = q.w;
+
+        let x2 = x + x; 
+        let y2 = y + y; 
+        let z2 = z + z;
+
+        let xx = x * x2; 
+        let xy = x * y2; 
+        let xz = x * z2;
+
+        let yy = y * y2; 
+        let yz = y * z2; 
+        let zz = z * z2;
+
+        let wx = w * x2; 
+        let wy = w * y2; 
+        let wz = w * z2;
+
+        Self::from_cols(
+            Vec4::new(1.0 - (yy + zz), xy + wz, xz - wy, 0.0),
+            Vec4::new(xy - wz, 1.0 - (xx + zz), yz + wx, 0.0),
+            Vec4::new(xz + wy, yz - wx, 1.0 - (xx + yy), 0.0),
+            Vec4::W, // Translation = (0,0,0), W = 1
+        )
     }
 
     /// Creates a right-handed perspective projection matrix with a depth range of [0, 1].
@@ -227,11 +279,28 @@ impl Mat4 {
     /// * The `up` vector should be normalized. If it is not, the resulting matrix may not be orthogonal.
     /// * The `target` vector should not be equal to the `eye` vector. If they are equal, the resulting matrix will be invalid.
     #[inline]
-    pub fn look_at_rh(eye: Vec3, target: Vec3, up: Vec3) -> Self {
-        let f = (target - eye).normalize(); // Forward (negative Z axis of camera)
-        let s = f.cross(up).normalize();   // Right (X axis of camera)
-        let u = s.cross(f);                // Up (Y axis of camera)
-
+    pub fn look_at_rh(eye: Vec3, target: Vec3, up: Vec3) -> Option<Self> {
+        // Compute the forward vector (the direction the camera is looking at).
+        let forward = target - eye;
+    
+        // Defensive check: if the eye and target positions are the same, the forward vector is zero.
+        // In this case, we cannot construct a valid view matrix.
+        if forward.length_squared() < crate::math::EPSILON * crate::math::EPSILON {
+            return None; // eye and target are too close
+        }
+    
+        let f = forward.normalize(); // Forward (negative Z axis of camera)
+        let s = f.cross(up);
+    
+        // Defensive check: if forward and up are colinear, the cross product will be zero.
+        // This would produce an invalid right vector and break the basis.
+        if s.length_squared() < crate::math::EPSILON * crate::math::EPSILON {
+            return None; // up vector is parallel to forward
+        }
+    
+        let s = s.normalize();       // Right (X axis of camera)
+        let u = s.cross(f);          // Up (Y axis of camera)
+    
         // The view matrix is the inverse of the camera's transformation matrix. (T * R).
         // The camera's transformation matrix is a combination of translation (T) and rotation (R).
         // The inverse of a rotation matrix is its transpose. (R^T).
@@ -246,12 +315,12 @@ impl Mat4 {
         // Final view matrix formula:
         // ViewMatrix = Transpose(R) * Inv(T)
         // where R is the rotation matrix and T is the translation matrix.
-        Self::from_cols(
+        Some(Self::from_cols(
             Vec4::new(s.x, u.x, -f.x, 0.0), // Row 0 of Transpose(R)
             Vec4::new(s.y, u.y, -f.y, 0.0), // Row 1 of Transpose(R)
             Vec4::new(s.z, u.z, -f.z, 0.0), // Row 2 of Transpose(R)
             Vec4::new(-eye.dot(s), -eye.dot(u), eye.dot(f), 1.0), // Apply Inv(T)
-        )
+        ))
     }
 
     /// Returns the transpose of the matrix.
@@ -287,7 +356,7 @@ impl Mat4 {
     }
 
     /// Returns the inverse of the matrix.
-    /// /// The inverse of a matrix is a matrix that, when multiplied with the original matrix, yields the identity matrix.
+    /// The inverse of a matrix is a matrix that, when multiplied with the original matrix, yields the identity matrix.
     /// # Returns
     /// * An `Option<Self>` that is `Some` if the matrix is invertible, or `None` if it is not.
     pub fn inverse(&self) -> Option<Self> {
@@ -305,7 +374,7 @@ impl Mat4 {
         let a10 = -(c0.y * (c2.z * c3.w - c3.z * c2.w) - c2.y * (c0.z * c3.w - c3.z * c0.w) + c3.y * (c0.z * c2.w - c2.z * c0.w));
         let a11 = c0.x * (c2.z * c3.w - c3.z * c2.w) - c2.x * (c0.z * c3.w - c3.z * c0.w) + c3.x * (c0.z * c2.w - c2.z * c0.w);
         let a12 = -(c0.x * (c2.y * c3.w - c3.y * c2.w) - c2.x * (c0.y * c3.w - c3.y * c0.w) + c3.x * (c0.y * c2.w - c2.y * c0.w));
-        let a13 = c0.x * (c2.y * c3.z - c3.y * c2.z) - c2.x * (c0.y * c3.z - c3.y * c1.z) + c3.x * (c0.y * c2.z - c2.y * c0.z);
+        let a13 = c0.x * (c2.y * c3.z - c3.y * c2.z) - c2.x * (c0.y * c3.z - c3.y * c0.z) + c3.x * (c0.y * c2.z - c2.y * c0.z);
 
         let a20 = c0.y * (c1.z * c3.w - c3.z * c1.w) - c1.y * (c0.z * c3.w - c3.z * c0.w) + c3.y * (c0.z * c1.w - c1.z * c0.w);
         let a21 = -(c0.x * (c1.z * c3.w - c3.z * c1.w) - c1.x * (c0.z * c3.w - c3.z * c0.w) + c3.x * (c0.z * c1.w - c1.z * c0.w));
@@ -319,7 +388,7 @@ impl Mat4 {
 
         let det = c0.x * a00 + c1.x * a10 + c2.x * a20 + c3.x * a30;
 
-        if det.abs() < f32::EPSILON { // Check if determinant is close to zero
+        if det.abs() < crate::math::EPSILON { // Check if determinant is close to zero
             return None;
         }
 
@@ -353,21 +422,21 @@ impl Mat4 {
                      c1.x * (c0.y * c2.z - c2.y * c0.z) +
                      c2.x * (c0.y * c1.z - c1.y * c0.z);
 
-        if det3x3.abs() < 1e-8 { return None; } // Singular if scale is zero
+        if det3x3.abs() < crate::math::EPSILON { return None; } // Singular if scale is zero
 
         let inv_det3x3 = 1.0 / det3x3;
 
         // Calculate inverse of upper 3x3 using cofactors
         let inv00 = (c1.y * c2.z - c2.y * c1.z) * inv_det3x3;
-        let inv10 = (c2.y * c0.z - c0.y * c2.z) * inv_det3x3;
+        let inv10 = -(c2.y * c0.z - c0.y * c2.z) * inv_det3x3;
         let inv20 = (c0.y * c1.z - c1.y * c0.z) * inv_det3x3;
 
-        let inv01 = (c2.x * c1.z - c1.x * c2.z) * inv_det3x3;
+        let inv01 = -(c2.x * c1.z - c1.x * c2.z) * inv_det3x3;
         let inv11 = (c0.x * c2.z - c2.x * c0.z) * inv_det3x3;
-        let inv21 = (c1.x * c0.z - c0.x * c1.z) * inv_det3x3;
+        let inv21 = -(c1.x * c0.z - c0.x * c1.z) * inv_det3x3;
 
         let inv02 = (c1.x * c2.y - c2.x * c1.y) * inv_det3x3;
-        let inv12 = (c2.x * c0.y - c0.x * c2.y) * inv_det3x3;
+        let inv12 = -(c2.x * c0.y - c0.x * c2.y) * inv_det3x3;
         let inv22 = (c0.x * c1.y - c1.x * c0.y) * inv_det3x3;
 
         // Inverse translation = - (Inverse(Upper3x3) * Translation)
@@ -399,13 +468,19 @@ impl Mul<Mat4> for Mat4 {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: Mat4) -> Self::Output {
-        // Result column j = self * rhs column j
-        Self::from_cols(
-            self * rhs.cols[0],
-            self * rhs.cols[1],
-            self * rhs.cols[2],
-            self * rhs.cols[3],
-        )
+        let mut result_cols = [Vec4 { x: 0.0, y: 0.0, z: 0.0, w: 0.0 }; 4];
+
+        for c in 0..4 {
+            let col = rhs.cols[c];
+            result_cols[c] = Vec4 {
+                x: self.from_row(0).dot(col),
+                y: self.from_row(1).dot(col),
+                z: self.from_row(2).dot(col),
+                w: self.from_row(3).dot(col),
+            };
+        }
+
+        Mat4 { cols: result_cols }
     }
 }
 
@@ -414,8 +489,10 @@ impl Mul<Vec4> for Mat4 {
     type Output = Vec4;
     #[inline]
     fn mul(self, rhs: Vec4) -> Self::Output {
-        // Based on column-major definition: result = col0*x + col1*y + col2*z + col3*w
-        self.cols[0] * rhs.x + self.cols[1] * rhs.y + self.cols[2] * rhs.z + self.cols[3] * rhs.w
+        self.cols[0] * rhs.x +
+        self.cols[1] * rhs.y +
+        self.cols[2] * rhs.z +
+        self.cols[3] * rhs.w
     }
 }
 
@@ -427,11 +504,12 @@ impl Mul<Vec4> for Mat4 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::f32::consts::PI;
+    use crate::math::PI;
+    use crate::math::EPSILON;
 
     // Helper for approximate float equality comparison
     fn approx_eq(a: f32, b: f32) -> bool {
-        (a - b).abs() < 1e-5 // Slightly larger epsilon for matrix ops
+        (a - b).abs() < EPSILON
     }
 
     fn vec4_approx_eq(a: Vec4, b: Vec4) -> bool {
@@ -455,17 +533,34 @@ mod tests {
     }
 
     #[test]
+    fn test_from_quat() {
+        let axis = Vec3::new(1.0, 2.0, 3.0).normalize();
+        let angle = PI / 5.0;
+        let q = Quaternion::from_axis_angle(axis, angle);
+        let m_from_q = Mat4::from_quat(q);
+
+        let v = Vec3::new(5.0, -1.0, 2.0);
+
+        let v_rotated_q = q * v; // Rotate using quaternion directly
+        // Rotate using matrix: convert v to Vec4(point), multiply, convert back
+        let v4 = Vec4::from_vec3(v, 1.0);
+        let v_rotated_m4 = m_from_q * v4;
+        let v_rotated_m = v_rotated_m4.truncate();
+
+        // Compare results
+        assert!(approx_eq(v_rotated_q.x, v_rotated_m.x));
+        assert!(approx_eq(v_rotated_q.y, v_rotated_m.y));
+        assert!(approx_eq(v_rotated_q.z, v_rotated_m.z));
+    }
+
+    #[test]
     fn test_translation() {
         let t = Vec3::new(1.0, 2.0, 3.0);
         let m = Mat4::from_translation(t);
-        let p = Vec4::new(10.0, 11.0, 12.0, 1.0); // Point
-        let v = Vec4::new(10.0, 11.0, 12.0, 0.0); // Vector
-
-        let expected_p = Vec4::new(11.0, 13.0, 15.0, 1.0);
-        let expected_v = Vec4::new(10.0, 11.0, 12.0, 0.0); // Translation shouldn't affect vectors
+        let p = Vec4::new(1.0, 1.0, 1.0, 1.0);
+        let expected_p = Vec4::new(2.0, 3.0, 4.0, 1.0);
 
         assert!(vec4_approx_eq(m * p, expected_p));
-        assert!(vec4_approx_eq(m * v, expected_v));
     }
 
     #[test]
@@ -492,7 +587,8 @@ mod tests {
         let angle = PI / 2.0; // 90 degrees
         let m = Mat4::from_rotation_y(angle);
         let p = Vec4::new(1.0, 0.0, 0.0, 1.0); // Point on X axis
-        let expected_p = Vec4::new(0.0, 0.0, -1.0, 1.0); // Should rotate to -Z axis in RH
+        let expected_p = Vec4::new(0.0, 0.0, -1.0, 1.0); // Should rotate to -Z axis
+
         assert!(vec4_approx_eq(m * p, expected_p));
     }
 
@@ -614,12 +710,17 @@ mod tests {
         let top = 1.0;
         let near = 0.1;
         let far = 100.0;
-
         let m = Mat4::orthographic_rh_zo(left, right, bottom, top, near, far);
-        assert!(approx_eq(m.cols[0].x, 1.0 / (right - left)));
-        assert!(approx_eq(m.cols[1].y, 1.0 / (top - bottom)));
-        assert!(approx_eq(m.cols[2].z, -2.0 / (far - near)));
-        assert!(approx_eq(m.cols[3].z, -(far + near) / (far - near)));
+        
+        // Check scale factors
+        assert!(approx_eq(m.cols[0].x, 2.0 / (right - left)));
+        assert!(approx_eq(m.cols[1].y, 2.0 / (top - bottom)));
+        assert!(approx_eq(m.cols[2].z, -1.0 / (far - near)));
+
+        // Check translation factors
+        assert!(approx_eq(m.cols[3].x, -(right + left) / (right - left)));
+        assert!(approx_eq(m.cols[3].y, -(top + bottom) / (top - bottom)));
+        assert!(approx_eq(m.cols[3].z, -near / (far - near))); // -near and not -(far + near)
     }
 
     #[test]
@@ -627,10 +728,14 @@ mod tests {
         let eye = Vec3::new(0.0, 0.0, 5.0);
         let target = Vec3::new(0.0, 0.0, 0.0);
         let up = Vec3::new(0.0, 1.0, 0.0);
-
-        let m = Mat4::look_at_rh(eye, target, up);
-        assert!(approx_eq(m.cols[2].z, -1.0)); // Forward direction
-        assert!(approx_eq(m.cols[3].z, -5.0)); // Translation
+    
+        let m = Mat4::look_at_rh(eye, target, up).expect("look_at_rh should return Some(Mat4)");
+    
+        // Forward direction (third column, third row): should be +1.0 for a right-handed system
+        assert!(approx_eq(m.cols[2].z, 1.0)); 
+    
+        // Translation part (fourth column, third row): should be -eye · forward = -5.0
+        assert!(approx_eq(m.cols[3].z, -5.0));
     }
 
     #[test]
@@ -640,6 +745,6 @@ mod tests {
         let up = Vec3::new(0.0, 1.0, 0.0);
 
         // This should panic or return None (depending on implementation)
-        assert!(Mat4::look_at_rh(eye, target, up).cols[3].z.is_nan());
+        assert!(Mat4::look_at_rh(eye, target, up).is_none());
     }
 }

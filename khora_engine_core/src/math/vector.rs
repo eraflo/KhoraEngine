@@ -1,4 +1,172 @@
-use std::ops::{Add, Sub, Mul, Div, Neg};
+use std::ops::{Add, Div, Index, IndexMut, Mul, Neg, Sub};
+
+// --- Vector2D ---
+
+// Deriving Debug, Default, Copy, Clone, and PartialEq for convenience in debugging, cloning, and comparisons.
+// The Copy trait is derived because Vec2 is a lightweight struct with no heap allocation,
+// making it safe and efficient to duplicate.
+/// A simple 2D vector for mathematical operations.
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+#[repr(C)]
+pub struct Vec2 {
+    pub x: f32,
+    pub y: f32,
+}
+
+
+impl Vec2 {
+    pub const ZERO: Self = Self { x: 0.0, y: 0.0 };
+    pub const ONE: Self = Self { x: 1.0, y: 1.0 };
+    pub const X: Self = Self { x: 1.0, y: 0.0 };
+    pub const Y: Self = Self { x: 0.0, y: 1.0 };
+
+    /// Creates a new Vec2 instance.
+    /// # Arguments
+    /// * `x` - The x component of the vector.
+    /// * `y` - The y component of the vector.
+    /// # Returns
+    /// * A new Vec2 instance with the specified components.
+    #[inline]
+    pub fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+
+    /// Calculates the squared magnitude (length) of the vector.
+    /// # Returns
+    /// * The squared length of the vector.
+    #[inline]
+    pub fn length_squared(&self) -> f32 {
+        self.dot(*self)
+    }
+
+    /// Calculates the magnitude (length) of the vector.
+    /// # Returns
+    /// * The length of the vector.
+    #[inline]
+    pub fn length(&self) -> f32 {
+        self.length_squared().sqrt()
+    }
+
+    /// Normalizes the vector to unit length. Returns ZERO if length is near zero.
+    /// # Returns
+    /// * A new Vec2 instance that is the normalized version of the original vector.
+    #[inline]
+    pub fn normalize(&self) -> Self {
+        let len_sq = self.length_squared();
+        if len_sq > crate::math::EPSILON * crate::math::EPSILON { // Utiliser l'EPSILON public
+            *self * (1.0 / len_sq.sqrt())
+        } else {
+            Self::ZERO
+        }
+    }
+
+    /// Calculates the dot product between this vector and another.
+    /// # Arguments
+    /// * `rhs` - The other vector to compute the dot product with.
+    /// # Returns
+    /// * The dot product of the two vectors.
+    #[inline]
+    pub fn dot(&self, rhs: Self) -> f32 {
+        self.x * rhs.x + self.y * rhs.y
+    }
+
+     /// Linear interpolation between two vectors.
+     /// # Arguments
+     /// * `start` - The starting vector.
+     /// * `end` - The ending vector.
+     /// * `t` - The interpolation factor (0.0 to 1.0).
+     /// # Returns
+     /// * A new Vec2 instance that is the result of the interpolation.
+    #[inline]
+    pub fn lerp(start: Self, end: Self, t: f32) -> Self {
+        start + (end - start) * t.clamp(0.0, 1.0) // Clamp t for safety
+    }
+}
+
+// --- Operator Overloads ---
+
+impl Add for Vec2 {
+    type Output = Self;
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        Self { x: self.x + rhs.x, y: self.y + rhs.y }
+    }
+}
+
+impl Sub for Vec2 {
+    type Output = Self;
+    #[inline]
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self { x: self.x - rhs.x, y: self.y - rhs.y }
+    }
+}
+
+impl Mul<f32> for Vec2 {
+    type Output = Self;
+    #[inline]
+    fn mul(self, rhs: f32) -> Self::Output {
+        Self { x: self.x * rhs, y: self.y * rhs }
+    }
+}
+
+impl Mul<Vec2> for f32 {
+    type Output = Vec2;
+    #[inline]
+    fn mul(self, rhs: Vec2) -> Self::Output {
+        rhs * self
+    }
+}
+
+// Component-wise multiplication
+impl Mul<Vec2> for Vec2 {
+    type Output = Self;
+    #[inline]
+    fn mul(self, rhs: Vec2) -> Self::Output {
+        Self { x: self.x * rhs.x, y: self.y * rhs.y }
+    }
+}
+
+impl Div<f32> for Vec2 {
+    type Output = Self;
+    #[inline]
+    fn div(self, rhs: f32) -> Self::Output {
+        let inv_rhs = 1.0 / rhs;
+        Self { x: self.x * inv_rhs, y: self.y * inv_rhs }
+    }
+}
+
+impl Neg for Vec2 {
+    type Output = Self;
+    #[inline]
+    fn neg(self) -> Self::Output {
+        Self { x: -self.x, y: -self.y }
+    }
+}
+
+impl Index<usize> for Vec2 {
+    type Output = f32;
+    #[inline]
+    fn index(&self, index: usize) -> &Self::Output {
+        match index {
+            0 => &self.x,
+            1 => &self.y,
+            _ => panic!("Index out of bounds for Vec2"),
+        }
+    }
+}
+
+impl IndexMut<usize> for Vec2 {
+    #[inline]
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        match index {
+            0 => &mut self.x,
+            1 => &mut self.y,
+            _ => panic!("Index out of bounds for Vec2"),
+        }
+    }
+}
+
+// --- End of Vec2 Implementation ---
 
 // --- Vector3D ---
 
@@ -22,17 +190,6 @@ impl Vec3 {
     pub const Y: Self = Self { x: 0.0, y: 1.0, z: 0.0 };
     pub const Z: Self = Self { x: 0.0, y: 0.0, z: 1.0 };
 
-    pub const NEG_X: Self = Self { x: -1.0, y: 0.0, z: 0.0 };
-    pub const NEG_Y: Self = Self { x: 0.0, y: -1.0, z: 0.0 };
-    pub const NEG_Z: Self = Self { x: 0.0, y: 0.0, z: -1.0 };
-
-    pub const UP: Self = Self { x: 0.0, y: 1.0, z: 0.0 };
-    pub const DOWN: Self = Self { x: 0.0, y: -1.0, z: 0.0 };
-    pub const LEFT: Self = Self { x: -1.0, y: 0.0, z: 0.0 };
-    pub const RIGHT: Self = Self { x: 1.0, y: 0.0, z: 0.0 };
-    pub const FORWARD: Self = Self { x: 0.0, y: 0.0, z: 1.0 };
-    pub const BACK: Self = Self { x: 0.0, y: 0.0, z: -1.0 };
-
     /// Creates a new Vec3 instance with the given x, y, and z components.
     /// # Arguments
     /// * `x` - The x component of the vector.
@@ -49,15 +206,15 @@ impl Vec3 {
     /// # Returns
     /// * The squared length of the vector.
     #[inline]
-    pub fn length_squared(self) -> f32 {
-        self.x * self.x + self.y * self.y + self.z * self.z
+    pub fn length_squared(&self) -> f32 {
+        self.dot(*self)
     }
 
     /// Returns the length of the vector.
     /// # Returns
     /// * The length of the vector.
     #[inline]
-    pub fn length(self) -> f32 {
+    pub fn length(&self) -> f32 {
         self.length_squared().sqrt()
     }
 
@@ -67,11 +224,11 @@ impl Vec3 {
     /// # Panics
     /// * Panics if the vector is a zero vector (length is 0).
     #[inline]
-    pub fn normalize(self) -> Self {
+    pub fn normalize(&self) -> Self {
         let len_sq = self.length_squared();
-        if len_sq > f32::EPSILON * f32::EPSILON { // Use squared length to avoid sqrt
+        if len_sq > crate::math::EPSILON * crate::math::EPSILON { // Use squared length to avoid sqrt
             // Multiply by inverse sqrt for potentially better performance
-            self * (1.0 / len_sq.sqrt())
+            *self * (1.0 / len_sq.sqrt())
         } else {
             Self::ZERO
         }
@@ -83,7 +240,7 @@ impl Vec3 {
     /// # Returns
     /// * The dot product of the two vectors.
     #[inline]
-    pub fn dot(self, other: Self) -> f32 {
+    pub fn dot(&self, other: Self) -> f32 {
         self.x * other.x + self.y * other.y + self.z * other.z
     }
 
@@ -93,12 +250,25 @@ impl Vec3 {
     /// # Returns
     /// * A new Vec3 instance that is the cross product of the two vectors.
     #[inline]
-    pub fn cross(self, other: Self) -> Self {
+    pub fn cross(&self, other: Self) -> Self {
         Self {
             x: self.y * other.z - self.z * other.y,
             y: self.z * other.x - self.x * other.z,
             z: self.x * other.y - self.y * other.x,
         }
+    }
+
+    /// Returns the distance squared between this vector and another vector.
+    /// # Arguments
+    /// * `other` - The other vector to compute the distance to.
+    /// # Returns
+    /// * The distance squared between the two vectors.
+    #[inline]
+    pub fn distance_squared(&self, other: Self) -> f32 {
+        let dx = self.x - other.x;
+        let dy = self.y - other.y;
+        let dz = self.z - other.z;
+        dx * dx + dy * dy + dz * dz
     }
 
     /// Returns the distance between this vector and another vector.
@@ -107,28 +277,39 @@ impl Vec3 {
     /// # Returns
     /// * The distance between the two vectors.
     #[inline]
-    pub fn distance(self, other: Self) -> f32 {
-        let dx = self.x - other.x;
-        let dy = self.y - other.y;
-        let dz = self.z - other.z;
-        (dx * dx + dy * dy + dz * dz).sqrt()
+    pub fn distance(&self, other: Self) -> f32 {
+        self.distance_squared(other).sqrt()
     }
+
+
 
     /// Returns linear interpolation between this vector and another vector.
     /// # Arguments
-    /// * `other` - The other vector to interpolate with.
+    /// * `start` - The starting vector.
+    /// * `end` - The ending vector.
     /// * `t` - The interpolation factor (0.0 to 1.0).
     /// # Returns
     /// * A new Vec3 instance that is the result of the interpolation.
     #[inline]
-    pub fn lerp(self, other: Self, t: f32) -> Self {
-        self + (other - self) * t
+    pub fn lerp(start: Self, end: Self, t: f32) -> Self {
+        Self {
+            x: start.x + (end.x - start.x) * t,
+            y: start.y + (end.y - start.y) * t,
+            z: start.z + (end.z - start.z) * t,
+        }
     }
     
 }
 
 
 // --- Operator Overloads ---
+
+impl Default for Vec3 {
+    #[inline]
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
 
 /// Implement Add for Vec3
 impl Add for Vec3 {
@@ -220,6 +401,31 @@ impl Neg for Vec3 {
     }
 }
 
+impl Index<usize> for Vec3 {
+    type Output = f32;
+    #[inline]
+    fn index(&self, index: usize) -> &Self::Output {
+        match index {
+            0 => &self.x,
+            1 => &self.y,
+            2 => &self.z,
+            _ => panic!("Index out of bounds for Vec3"),
+        }
+    }
+}
+
+impl IndexMut<usize> for Vec3 {
+    #[inline]
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output { // Prend &mut self
+        match index {
+            0 => &mut self.x,
+            1 => &mut self.y,
+            2 => &mut self.z,
+            _ => panic!("Index out of bounds for Vec3"),
+        }
+    }
+}
+
 // --- End of Vec3 Implementation ---
 
 // --- Vector4D ---
@@ -271,8 +477,35 @@ impl Vec4 {
     /// # Returns
     /// * A new Vec3 instance with the x, y, and z components of the Vec4.
     #[inline]
-    pub fn truncate(self) -> Vec3 {
+    pub fn truncate(&self) -> Vec3 {
         Vec3::new(self.x, self.y, self.z)
+    }
+
+    /// Returns dot product of this vector and another vector.
+    /// # Arguments
+    /// * `other` - The other vector to compute the dot product with.
+    /// # Returns
+    /// * The dot product of the two vectors.
+    #[inline]
+    pub fn dot(&self, other: Self) -> f32 {
+        self.x * other.x + self.y * other.y + self.z * other.z + self.w * other.w
+    }
+
+
+    /// Returns the element at the specified index.
+    /// # Arguments
+    /// * `index` - The index of the element to retrieve (0-3).
+    /// # Returns
+    /// * The element at the specified index.
+    #[inline]
+    pub fn get(&self, index: usize) -> f32 {
+        match index {
+            0 => self.x,
+            1 => self.y,
+            2 => self.z,
+            3 => self.w,
+            _ => panic!("Index out of bounds for Vec4"),
+        }
     }
 }
 
@@ -374,6 +607,37 @@ impl Neg for Vec4 {
     }
 }
 
+/// Implement Index for Vec4
+impl Index<usize> for Vec4 {
+    type Output = f32;
+    #[inline]
+    fn index(&self, index: usize) -> &Self::Output {
+        match index {
+            0 => &self.x,
+            1 => &self.y,
+            2 => &self.z,
+            3 => &self.w,
+            _ => panic!("Index out of bounds for Vec4"),
+        }
+    }
+}
+
+/// Implement IndexMut for Vec4
+impl IndexMut<usize> for Vec4 {
+    #[inline]
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        match index {
+            0 => &mut self.x,
+            1 => &mut self.y,
+            2 => &mut self.z,
+            3 => &mut self.w,
+            _ => panic!("Index out of bounds for Vec4"),
+        }
+    }
+}
+
+// --- End of Vec4 Implementation ---
+
 
 /// --- Tests ---
 
@@ -383,16 +647,100 @@ mod tests {
 
     // Helper for approximate float equality comparison
     fn approx_eq(a: f32, b: f32) -> bool {
-        (a - b).abs() < 1e-6 // Use a small epsilon
+        (a - b).abs() < crate::math::EPSILON
+    }
+
+    fn vec2_approx_eq(a: Vec2, b: Vec2) -> bool {
+        approx_eq(a.x, b.x) && approx_eq(a.y, b.y)
     }
 
     fn vec3_approx_eq(a: Vec3, b: Vec3) -> bool {
         approx_eq(a.x, b.x) && approx_eq(a.y, b.y) && approx_eq(a.z, b.z)
     }
 
-    fn vec4_approx_eq(a: Vec4, b: Vec4) -> bool {
-        approx_eq(a.x, b.x) && approx_eq(a.y, b.y) && approx_eq(a.z, b.z) && approx_eq(a.w, b.w)
+    // Test Vec2
+
+    #[test]
+    fn test_vec2_new() {
+        let v = Vec2::new(1.0, 2.0);
+        assert_eq!(v.x, 1.0);
+        assert_eq!(v.y, 2.0);
     }
+
+    #[test]
+    fn test_vec2_constants() {
+        assert_eq!(Vec2::ZERO, Vec2::new(0.0, 0.0));
+        assert_eq!(Vec2::ONE, Vec2::new(1.0, 1.0));
+        assert_eq!(Vec2::X, Vec2::new(1.0, 0.0));
+        assert_eq!(Vec2::Y, Vec2::new(0.0, 1.0));
+    }
+
+    #[test]
+    fn test_vec2_ops() {
+        let v1 = Vec2::new(1.0, 2.0);
+        let v2 = Vec2::new(3.0, 4.0);
+        assert_eq!(v1 + v2, Vec2::new(4.0, 6.0));
+        assert_eq!(v2 - v1, Vec2::new(2.0, 2.0));
+        assert_eq!(v1 * 2.0, Vec2::new(2.0, 4.0));
+        assert_eq!(3.0 * v1, Vec2::new(3.0, 6.0));
+        assert_eq!(v1 * v2, Vec2::new(3.0, 8.0)); // Component-wise
+        assert_eq!(-v1, Vec2::new(-1.0, -2.0));
+        assert!(vec2_approx_eq(Vec2::new(4.0, 6.0) / 2.0, Vec2::new(2.0, 3.0)));
+    }
+
+     #[test]
+    fn test_vec2_dot() {
+        let v1 = Vec2::new(1.0, 2.0);
+        let v2 = Vec2::new(3.0, 4.0);
+        assert!(approx_eq(v1.dot(v2), 1.0 * 3.0 + 2.0 * 4.0)); // 3 + 8 = 11
+    }
+
+    #[test]
+    fn test_vec2_length() {
+        let v = Vec2::new(3.0, 4.0);
+        assert!(approx_eq(v.length_squared(), 25.0));
+        assert!(approx_eq(v.length(), 5.0));
+        assert!(approx_eq(Vec2::ZERO.length(), 0.0));
+    }
+
+    #[test]
+    fn test_vec2_normalize() {
+        let v1 = Vec2::new(3.0, 0.0);
+        let norm_v1 = v1.normalize();
+        assert!(vec2_approx_eq(norm_v1, Vec2::X));
+        assert!(approx_eq(norm_v1.length(), 1.0));
+
+        let v_zero = Vec2::ZERO;
+        assert_eq!(v_zero.normalize(), Vec2::ZERO);
+    }
+
+     #[test]
+     fn test_vec2_lerp() {
+         let start = Vec2::new(0.0, 10.0);
+         let end = Vec2::new(10.0, 0.0);
+         assert!(vec2_approx_eq(Vec2::lerp(start, end, 0.0), start));
+         assert!(vec2_approx_eq(Vec2::lerp(start, end, 1.0), end));
+         assert!(vec2_approx_eq(Vec2::lerp(start, end, 0.5), Vec2::new(5.0, 5.0)));
+         // Test clamping
+         assert!(vec2_approx_eq(Vec2::lerp(start, end, -0.5), start));
+         assert!(vec2_approx_eq(Vec2::lerp(start, end, 1.5), end));
+     }
+
+     #[test]
+     fn test_vec2_index() {
+         let mut v = Vec2::new(5.0, 6.0);
+         assert_eq!(v[0], 5.0);
+         assert_eq!(v[1], 6.0);
+         v[0] = 10.0;
+         assert_eq!(v.x, 10.0);
+     }
+
+     #[test]
+     #[should_panic]
+     fn test_vec2_index_out_of_bounds() {
+         let v = Vec2::new(1.0, 2.0);
+         let _ = v[2]; // Should panic
+     }
 
     // Test Vec3
 
@@ -411,12 +759,6 @@ mod tests {
         assert_eq!(Vec3::X, Vec3::new(1.0, 0.0, 0.0));
         assert_eq!(Vec3::Y, Vec3::new(0.0, 1.0, 0.0));
         assert_eq!(Vec3::Z, Vec3::new(0.0, 0.0, 1.0));
-        assert_eq!(Vec3::UP, Vec3::new(0.0, 1.0, 0.0));
-        assert_eq!(Vec3::DOWN, Vec3::new(0.0, -1.0, 0.0));
-        assert_eq!(Vec3::LEFT, Vec3::new(-1.0, 0.0, 0.0));
-        assert_eq!(Vec3::RIGHT, Vec3::new(1.0, 0.0, 0.0));
-        assert_eq!(Vec3::FORWARD, Vec3::new(0.0, 0.0, 1.0));
-        assert_eq!(Vec3::BACK, Vec3::new(0.0, 0.0, -1.0));
     }
 
     #[test]
@@ -507,18 +849,18 @@ mod tests {
 
      #[test]
      fn test_normalize() {
-         let v1 = Vec3::new(3.0, 0.0, 0.0);
-         let norm_v1 = v1.normalize();
-         assert!(vec3_approx_eq(norm_v1, Vec3::X));
-         assert!(approx_eq(norm_v1.length(), 1.0));
+        let v1 = Vec3::new(3.0, 0.0, 0.0);
+        let norm_v1 = v1.normalize();
+        assert!(vec3_approx_eq(norm_v1, Vec3::X));
+        assert!(approx_eq(norm_v1.length(), 1.0));
 
-         let v2 = Vec3::new(1.0, 1.0, 1.0);
-         let norm_v2 = v2.normalize();
-         assert!(approx_eq(norm_v2.length(), 1.0)); // Check length is 1
+        let v2 = Vec3::new(1.0, 1.0, 1.0);
+        let norm_v2 = v2.normalize();
+        assert!(approx_eq(norm_v2.length(), 1.0)); // Check length is 1
 
-         // Test normalizing zero vector
-         let v_zero = Vec3::ZERO;
-         assert_eq!(v_zero.normalize(), Vec3::ZERO);
+        // Test normalizing zero vector
+        let v_zero = Vec3::ZERO;
+        assert_eq!(v_zero.normalize(), Vec3::ZERO);
      }
 
      #[test]
@@ -526,9 +868,9 @@ mod tests {
         let start = Vec3::new(0.0, 0.0, 0.0);
         let end = Vec3::new(10.0, 10.0, 10.0);
 
-        assert!(vec3_approx_eq(start.lerp(end, 0.0), start));
-        assert!(vec3_approx_eq(start.lerp(end, 1.0), end));
-        assert!(vec3_approx_eq(start.lerp(end, 0.5), Vec3::new(5.0, 5.0, 5.0)));
+        assert!(vec3_approx_eq(Vec3::lerp(start, end, 0.0), start));
+        assert!(vec3_approx_eq(Vec3::lerp(start, end, 1.0), end));
+        assert!(vec3_approx_eq(Vec3::lerp(start, end, 0.5), Vec3::new(5.0, 5.0, 5.0)));
     }
 
     // Test Vec4
@@ -553,7 +895,7 @@ mod tests {
     fn test_vec4_truncate() {
         let v4 = Vec4::new(1.0, 2.0, 3.0, 4.0);
         let v3 = v4.truncate();
-         assert_eq!(v3, Vec3::new(1.0, 2.0, 3.0));
+        assert_eq!(v3, Vec3::new(1.0, 2.0, 3.0));
     }
 
 

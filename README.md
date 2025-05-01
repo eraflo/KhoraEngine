@@ -30,9 +30,10 @@ The long-term vision includes robust support for Extended Reality (XR) applicati
 
 **Current Focus / Next Steps:**
 
-Work is now beginning on the next foundational elements from Milestone 1:
+Work is now beginning on defining the fundamental communication pathways and interfaces within the engine, keeping the long-term SAA goals in mind:
 
-*   ➡️ **`[Feature] Implement Basic Logging & Event System`**: Setting up systems for debug/info messages and handling internal engine events. This is crucial for debugging and future inter-subsystem communication (SAA).
+*   ➡️ **`[Feature] Design Core Engine Interfaces & Message Passing (Thinking about ISAs & DCC)`**: Defining initial interfaces between major future subsystems and considering a communication system (e.g., message bus) compatible with the idea of Agents (ISAs) communicating with a core (DCC).
+*   **(Upcoming)** `[Feature] Implement Basic Logging & Event System`
 *   **(Upcoming)** `[Feature] Implement Foundational Performance Monitoring Hooks (CPU Timers)`
 *   **(Upcoming)** `[Feature] Implement Basic Memory Allocation Tracking`
 *   **(Upcoming)** `[Feature] Choose and Integrate Windowing Library (e.g., winit)`
