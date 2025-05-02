@@ -20,12 +20,12 @@ impl Quaternion {
     pub const IDENTITY: Quaternion = Quaternion { x: 0.0, y: 0.0, z: 0.0, w: 1.0 };
 
     /// Creates a new quaternion from the given components.
-    /// # Arguments
+    /// ## Arguments
     /// * `x` - The x component of the quaternion.
     /// * `y` - The y component of the quaternion.
     /// * `z` - The z component of the quaternion.
     /// * `w` - The w component of the quaternion.
-    /// # Returns
+    /// ## Returns
     /// * A new `Quaternion` instance.
     #[inline]
     pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
@@ -33,10 +33,10 @@ impl Quaternion {
     }
 
     /// Creates a quaternion representing a rotation around a given axis by a given angle.
-    /// # Arguments
+    /// ## Arguments
     /// * `axis` - The axis of rotation (should be a unit vector).
     /// * `angle_radians` - The angle of rotation in radians.
-    /// # Returns
+    /// ## Returns
     /// * A new `Quaternion` instance representing the rotation.
     #[inline]
     pub fn from_axis_angle(axis: Vec3, angle_radians: f32) -> Self {
@@ -54,9 +54,9 @@ impl Quaternion {
     }
 
     /// Creates a quaternion from a rotation matrix.
-    /// # Arguments
+    /// ## Arguments
     /// * `m` - The rotation matrix (upper 3x3 part).
-    /// # Returns
+    /// ## Returns
     /// * A new `Quaternion` instance representing the rotation.
     #[inline]
     pub fn from_rotation_matrix(m: &Mat4) -> Self {
@@ -110,7 +110,7 @@ impl Quaternion {
     }
 
     /// Returns the squared magnitude of the quaternion.
-    /// # Returns
+    /// ## Returns
     /// * The squared magnitude of the quaternion.
     #[inline]
     pub fn magnitude_squared(&self) -> f32 {
@@ -118,7 +118,7 @@ impl Quaternion {
     }
 
     /// Returns the magnitude of the quaternion.
-    /// # Returns
+    /// ## Returns
     /// * The magnitude of the quaternion.
     #[inline]
     pub fn magnitude(&self) -> f32 {
@@ -126,7 +126,7 @@ impl Quaternion {
     }
 
     /// Normalizes the quaternion to unit length.
-    /// # Returns
+    /// ## Returns
     /// * A new `Quaternion` instance that is normalized.
     pub fn normalize(&self) -> Self {
         let mag_sqrt = self.magnitude_squared();
@@ -144,7 +144,7 @@ impl Quaternion {
     }
     
     /// Returns the conjugate of the quaternion.
-    /// # Returns
+    /// ## Returns
     /// * A new `Quaternion` instance that is the conjugate of the original.
     #[inline]
     pub fn conjugate(&self) -> Self {
@@ -157,7 +157,7 @@ impl Quaternion {
     }
 
     /// Returns the inverse of the quaternion.
-    /// # Returns
+    /// ## Returns
     /// * A new `Quaternion` instance that is the inverse of the original.
     #[inline]
     pub fn inverse(&self) -> Self {
@@ -171,9 +171,9 @@ impl Quaternion {
 
 
     /// Returns the dot product of two quaternions.
-    /// # Arguments
+    /// ## Arguments
     /// * `other` - The other quaternion to compute the dot product with.
-    /// # Returns
+    /// ## Returns
     /// * The dot product of the two quaternions.
     #[inline]
     pub fn dot(&self, other: Self) -> f32 {
@@ -181,9 +181,9 @@ impl Quaternion {
     }
 
     /// Rotates a vector by the quaternion.
-    /// # Arguments
+    /// ## Arguments
     /// * `v` - The vector to rotate.
-    /// # Returns
+    /// ## Returns
     /// * A new `Vec3` instance that is the rotated vector.
     pub fn rotate_vec3(&self, v: Vec3) -> Vec3 {
         // Optimized formula: v' = 2(u * v)u + (w² - u²)v + 2w(u x v)
@@ -194,11 +194,11 @@ impl Quaternion {
     }
 
     /// Do a spherical linear interpolation between two quaternions (slerp).
-    /// # Arguments
+    /// ## Arguments
     /// * `self` - The starting quaternion.
     /// * `other` - The ending quaternion.
     /// * `t` - The interpolation factor (0.0 to 1.0).
-    /// # Returns
+    /// ## Returns
     /// * A new `Quaternion` instance that is the result of the interpolation.
     pub fn slerp(start: Self, end: Self, t: f32) -> Self {
         let t = t.clamp(0.0, 1.0);

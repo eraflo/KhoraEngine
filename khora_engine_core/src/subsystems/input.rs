@@ -20,9 +20,9 @@ pub enum InputEvent {
 pub trait InputProvider {
 
     /// Polls for and returns any new input events that occurred since the last call.
-    /// # Arguments
+    /// ## Arguments
     /// * `&mut self` - A mutable reference to the InputProvider instance.
-    /// # Returns
+    /// ## Returns
     /// A vector of InputEvent instances representing the events that occurred.
     fn poll_events(&mut self) -> Vec<InputEvent>;
     

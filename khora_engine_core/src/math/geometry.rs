@@ -18,10 +18,10 @@ impl Aabb {
 
     /// Creates a new AABB from minimum and maximum corner points.
     /// Ensures that min coordinates are less than or equal to max coordinates.
-    /// # Arguments
+    /// ## Arguments
     /// * `min_pt` - The minimum corner point of the AABB.
     /// * `max_pt` - The maximum corner point of the AABB.
-    /// # Returns
+    /// ## Returns
     /// * A new AABB with min and max points.
     #[inline]
     pub fn from_min_max(min_pt: Vec3, max_pt: Vec3) -> Self {
@@ -34,10 +34,10 @@ impl Aabb {
 
     /// Creates a new AABB centered at a point with given half-extents.
     /// Half-extents should be non-negative.
-    /// # Arguments
+    /// ## Arguments
     /// * `center` - The center point of the AABB.
     /// * `half_extents` - The half-extents of the AABB (should be non-negative).
-    /// # Returns
+    /// ## Returns
     /// * A new AABB with min and max points calculated from the center and half-extents.
     #[inline]
     pub fn from_center_half_extents(center: Vec3, half_extents: Vec3) -> Self {
@@ -50,9 +50,9 @@ impl Aabb {
     }
 
     /// Creates a degenerate AABB containing a single point.
-    /// # Arguments
+    /// ## Arguments
     /// * `point` - The point to create the AABB from.
-    /// # Returns
+    /// ## Returns
     /// * A new AABB with min and max points equal to the point.
     #[inline]
     pub fn from_point(point: Vec3) -> Self {
@@ -60,9 +60,9 @@ impl Aabb {
     }
 
     /// Creates an AABB that tightly encloses a set of points.
-    /// # Arguments
+    /// ## Arguments
     /// * `points` - A slice of points to encompass.
-    /// # Returns
+    /// ## Returns
     /// * An `Option<Self>` containing the AABB if points are provided, or `None` if the slice is empty.
     pub fn from_points(points: &[Vec3]) -> Option<Self> {
         if points.is_empty() {
@@ -86,7 +86,7 @@ impl Aabb {
     }
 
     /// Calculates the center point of the AABB.
-    /// # Returns
+    /// ## Returns
     /// * The center point of the AABB.
     #[inline]
     pub fn center(&self) -> Vec3 {
@@ -94,7 +94,7 @@ impl Aabb {
     }
 
     /// Calculates the half-extents (half the size) of the AABB.
-    /// # Returns
+    /// ## Returns
     /// * The half-extents of the AABB.
     #[inline]
     pub fn half_extents(&self) -> Vec3 {
@@ -102,7 +102,7 @@ impl Aabb {
     }
 
     /// Calculates the size (width, height, depth) of the AABB.
-    /// # Returns
+    /// ## Returns
     /// * The size of the AABB.
     #[inline]
     pub fn size(&self) -> Vec3 {
@@ -111,7 +111,7 @@ impl Aabb {
 
     /// Checks if the AABB is valid (min <= max on all axes).
     /// Degenerate boxes (min == max) are considered valid.
-    /// # Returns
+    /// ## Returns
     /// * `true` if the AABB is valid, `false` otherwise.
     #[inline]
     pub fn is_valid(&self) -> bool {
@@ -119,9 +119,9 @@ impl Aabb {
     }
 
     /// Checks if a point is contained within or on the boundary of the AABB.
-    /// # Arguments
+    /// ## Arguments
     /// * `point` - The point to check.
-    /// # Returns
+    /// ## Returns
     /// * `true` if the point is inside or on the boundary of the AABB, `false` otherwise.
     #[inline]
     pub fn contains_point(&self, point: Vec3) -> bool {
@@ -132,9 +132,9 @@ impl Aabb {
 
     /// Checks if this AABB intersects with another AABB.
     /// Uses the Separating Axis Theorem (SAT) for AABBs. (https://research.ncl.ac.uk/game/mastersdegree/gametechnologies/previousinformation/physics4collisiondetection/2017%20Tutorial%204%20-%20Collision%20Detection.pdf)
-    /// # Arguments
+    /// ## Arguments
     /// * `other` - The other AABB to check for intersection.
-    /// # Returns
+    /// ## Returns
     /// * `true` if the AABBs intersect, `false` otherwise.
     #[inline]
     pub fn intersects_aabb(&self, other: &Aabb) -> bool {
@@ -145,9 +145,9 @@ impl Aabb {
     }
 
     /// Creates a new AABB that encompasses both this AABB and another one.
-    /// # Arguments
+    /// ## Arguments
     /// * `other` - The other AABB to merge with.
-    /// # Returns
+    /// ## Returns
     /// * A new AABB that is the union of this AABB and the other one.
     #[inline]
     pub fn merge(&self, other: &Aabb) -> Self {
@@ -166,9 +166,9 @@ impl Aabb {
     }
 
     /// Creates a new AABB that encompasses both this AABB and an additional point.
-    /// # Arguments
+    /// ## Arguments
     /// * `point` - The point to merge with.
-    /// # Returns
+    /// ## Returns
     /// * A new AABB that is the union of this AABB and the point.
     #[inline]
     pub fn merged_with_point(&self, point: Vec3) -> Self {
@@ -189,9 +189,9 @@ impl Aabb {
     /// Calculates the AABB that encompasses this AABB after being transformed by a matrix.
     /// Uses a faster algorithm than transforming all 8 corners for affine transforms.
     /// Handles potential perspective correctly if w != 1.
-    /// # Arguments
+    /// ## Arguments
     /// * `matrix` - The transformation matrix to apply.
-    /// # Returns
+    /// ## Returns
     /// * A new AABB that is the result of transforming this AABB by the matrix.
     pub fn transform(&self, matrix: &Mat4) -> Self {
         // Transform the center point

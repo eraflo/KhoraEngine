@@ -25,12 +25,12 @@ impl LinearRgba {
     pub const TRANSPARENT: Self = Self { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
 
     /// Creates a new LinearRgba color.
-    /// # Arguments
+    /// ## Arguments
     /// * `r` - Red component (0.0 to 1.0).
     /// * `g` - Green component (0.0 to 1.0).
     /// * `b` - Blue component (0.0 to 1.0).
     /// * `a` - Alpha component (0.0 to 1.0).
-    /// # Returns
+    /// ## Returns
     /// * A new LinearRgba color.
     #[inline]
     pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
@@ -38,11 +38,11 @@ impl LinearRgba {
     }
 
     /// Creates a new opaque LinearRgba color (alpha = 1.0).
-    /// # Arguments
+    /// ## Arguments
     /// * `r` - Red component (0.0 to 1.0).
     /// * `g` - Green component (0.0 to 1.0).
     /// * `b` - Blue component (0.0 to 1.0).
-    /// # Returns
+    /// ## Returns
     /// * A new LinearRgba color with alpha set to 1.0.
     #[inline]
     pub fn rgb(r: f32, g: f32, b: f32) -> Self {
@@ -50,9 +50,9 @@ impl LinearRgba {
     }
 
     /// Creates a LinearRgba color from a Vec4.
-    /// # Arguments
+    /// ## Arguments
     /// * `v` - A Vec4 representing the color (x, y, z, w).
-    /// # Returns
+    /// ## Returns
     /// * A new LinearRgba color.
     #[inline]
     pub fn from_vec4(v: Vec4) -> Self {
@@ -60,7 +60,7 @@ impl LinearRgba {
     }
 
     /// Converts this LinearRgba color to a Vec4.
-    /// # Returns
+    /// ## Returns
     /// * A Vec4 representing the color (x, y, z, w).
     #[inline]
     pub fn to_vec4(&self) -> Vec4 {
@@ -68,9 +68,9 @@ impl LinearRgba {
     }
 
     /// Creates a LinearRgba color from a hex string.
-    /// # Arguments
+    /// ## Arguments
     /// * `hex` - A hex string representing the color (e.g., "#FF5733").
-    /// # Returns
+    /// ## Returns
     /// * A new LinearRgba color.
     #[inline]
     pub fn from_hex(hex: &str) -> Self {
@@ -87,7 +87,7 @@ impl LinearRgba {
     }
 
     /// Converts this LinearRgba color to a hex string.
-    /// # Returns
+    /// ## Returns
     /// * A hex string representing the color (e.g., "#FF5733").
     #[inline]
     pub fn to_hex(&self) -> String {
@@ -95,11 +95,11 @@ impl LinearRgba {
     }
 
     /// Creates a LinearRgba color from sRGB values.
-    /// # Arguments
+    /// ## Arguments
     /// * `r` - Red component (0.0 to 1.0).
     /// * `g` - Green component (0.0 to 1.0).
     /// * `b` - Blue component (0.0 to 1.0).
-    /// # Returns
+    /// ## Returns
     /// * A new LinearRgba color.
     #[inline]
     pub fn from_srgb(r: f32, g: f32, b: f32) -> Self {
@@ -112,7 +112,7 @@ impl LinearRgba {
     }
 
     /// Converts this LinearRgba color to sRGB.
-    /// # Returns
+    /// ## Returns
     /// * A new LinearRgba color in sRGB space.
     #[inline]
     pub fn to_srgb(&self) -> Self {
@@ -125,11 +125,11 @@ impl LinearRgba {
     }
 
     /// Linear interpolation between two colors.
-    /// # Arguments
+    /// ## Arguments
     /// * `start` - The starting color.
     /// * `end` - The ending color.
     /// * `t` - The interpolation factor (0.0 to 1.0).
-    /// # Returns
+    /// ## Returns
     /// * A new LinearRgba color that is the result of the interpolation.
     #[inline]
     pub fn lerp(start: Self, end: Self, t: f32) -> Self {
@@ -143,7 +143,7 @@ impl LinearRgba {
     }
 
     /// Clamps the color components to the range [0.0, 1.0].
-    /// # Returns
+    /// ## Returns
     /// * A new LinearRgba color with clamped components.
     #[inline]
     fn clamp(&self) -> Self {
@@ -162,6 +162,8 @@ impl LinearRgba {
 
 impl Default for LinearRgba {
     /// Default color is opaque white.
+    /// ## Returns
+    /// * A new LinearRgba color.
     #[inline]
     fn default() -> Self {
         Self::WHITE
@@ -171,6 +173,11 @@ impl Default for LinearRgba {
 
 impl Add for LinearRgba {
     type Output = Self;
+    /// Adds two LinearRgba colors component-wise.
+    /// ## Arguments
+    /// * `rhs` - The other LinearRgba color.
+    /// ## Returns
+    /// * A new LinearRgba color.
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         Self {
@@ -184,6 +191,11 @@ impl Add for LinearRgba {
 
 impl Sub for LinearRgba {
     type Output = Self;
+    /// Subtracts two LinearRgba colors component-wise.
+    /// ## Arguments
+    /// * `rhs` - The other LinearRgba color.
+    /// ## Returns
+    /// * A new LinearRgba color.
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
@@ -198,6 +210,11 @@ impl Sub for LinearRgba {
 // Scalar multiplication (scales all components including alpha)
 impl Mul<f32> for LinearRgba {
     type Output = Self;
+    /// Multiplies a LinearRgba color by a scalar.
+    /// ## Arguments
+    /// * `scalar` - The scalar value.
+    /// ## Returns
+    /// * A new LinearRgba color.
     #[inline]
     fn mul(self, scalar: f32) -> Self::Output {
         Self {
@@ -211,6 +228,11 @@ impl Mul<f32> for LinearRgba {
 
 impl Mul<LinearRgba> for f32 {
     type Output = LinearRgba;
+    /// Multiplies a scalar by a LinearRgba color.
+    /// ## Arguments
+    /// * `color` - The LinearRgba color.
+    /// ## Returns
+    /// * A new LinearRgba color.
     #[inline]
     fn mul(self, color: LinearRgba) -> Self::Output {
         color * self // Reuse LinearRgba * f32
@@ -220,6 +242,11 @@ impl Mul<LinearRgba> for f32 {
 // Component-wise multiplication (modulation)
 impl Mul<LinearRgba> for LinearRgba {
     type Output = Self;
+    /// Multiplies two LinearRgba colors component-wise.
+    /// ## Arguments
+    /// * `rhs` - The other LinearRgba color.
+    /// ## Returns
+    /// * A new LinearRgba color.
     #[inline]
     fn mul(self, rhs: Self) -> Self::Output {
         Self {
@@ -233,6 +260,11 @@ impl Mul<LinearRgba> for LinearRgba {
 
 impl Div<f32> for LinearRgba {
     type Output = Self;
+    /// Divides a LinearRgba color by a scalar.
+    /// ## Arguments
+    /// * `scalar` - The scalar value.
+    /// ## Returns
+    /// * A new LinearRgba color.
     #[inline]
     fn div(self, scalar: f32) -> Self::Output {
         let inv_scalar = 1.0 / scalar;
