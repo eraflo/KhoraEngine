@@ -6,7 +6,7 @@
 
 KhoraEngine is an experimental game engine being developed in Rust. Its ultimate and ambitious goal is to implement a novel **Symbiotic Adaptive Architecture (SAA)**.
 
-This architecture aims to create a deeply context-aware engine where subsystems act __as cooperating agents (Intelligent Subsystem Agents - ISAs)__ under the guidance of __a central coordinator (Dynamic Context Core - DCC)__. The engine will dynamically adapt its behavior, resource allocation, and even potentially its data structures based on real-time performance metrics, resource availability, application goals, and hardware capabilities.
+This architecture aims to create a deeply context-aware engine where subsystems act as cooperating agents (Intelligent Subsystem Agents - ISAs) under the guidance of a central coordinator (Dynamic Context Core - DCC). The engine will dynamically adapt its behavior, resource allocation, and even potentially its data structures based on real-time performance metrics, resource availability, application goals, and hardware capabilities.
 
 ## Vision: Symbiotic Adaptive Architecture (SAA)
 
@@ -28,13 +28,13 @@ The long-term vision includes robust support for Extended Reality (XR) applicati
 *   ✅ **`[Feature] Setup Project Structure & Cargo Workspace`**: Established the initial Rust project structure using a Cargo workspace (`khora_engine_core`, `sandbox`) with basic CI/CD and Readme setup.
 *   ✅ **`[Feature] Implement Core Math Library (Vec3, Mat4, Quat)`**: Implemented foundational 3D math types (`Vec2`, `Vec3`, `Vec4`, `Quaternion`, `Mat3`, `Mat4`, `LinearRgba`, `AABB`) within `khora_engine_core`, designed with Data-Oriented principles in mind.
 *   ✅ **`[Feature] Design Core Engine Interfaces & Message Passing (Thinking about ISAs & DCC)`**: Defined the core architecture (ECS + Message Bus combination) and created initial subsystem interface traits (`Renderer`, `InputProvider`) and event types (`EngineEvent`, `InputEvent`) within a structured module layout (`core`, `subsystems`, `event`). Documented in `docs/architecture_design.md`.
+*   ✅ **`[Feature] Implement Basic Logging & Event System`**: Integrated standard logging (`log` facade + `env_logger` implementation) and set up a thread-safe MPMC event bus using `flume`, encapsulated within a tested `EventBus` structure.
 
 **Current Focus / Next Steps:**
 
-Work is now beginning on implementing the foundational infrastructure systems based on the defined architecture:
+Work is now beginning on integrating the first layer of performance awareness, crucial for SAA:
 
-*   ➡️ **`[Feature] Implement Basic Logging & Event System`**: Setting up a system for logging debug/info messages and implementing the basic plumbing for the chosen event/message bus pattern using the defined `EngineEvent` type.
-*   **(Upcoming)** `[Feature] Implement Foundational Performance Monitoring Hooks (CPU Timers)`
+*   ➡️ **`[Feature] Implement Foundational Performance Monitoring Hooks (CPU Timers)`**: Setting up basic tools using `std::time::Instant` to measure the execution time of CPU-bound code sections within the engine loop.
 *   **(Upcoming)** `[Feature] Implement Basic Memory Allocation Tracking`
 *   **(Upcoming)** `[Feature] Choose and Integrate Windowing Library (e.g., winit)`
 *   **(Upcoming)** `[Feature] Implement Basic Input System (connecting window events to `InputProvider`/`EngineEvent`)`
@@ -45,19 +45,21 @@ Work is now beginning on implementing the foundational infrastructure systems ba
 
 ## Getting Started
 
-Currently, the project contains the basic structure, core math utilities, and defined interfaces.
+Currently, the project contains the basic structure, core math utilities, defined interfaces, logging, and event bus plumbing.
 
 ```bash
 # Clone the repository (replace with your actual URL)
 git clone https://github.com/eraflo/KhoraEngine.git
 cd KhoraEngine
 
-# Check code and run tests (includes math library tests)
+# Check code and run tests (includes math and event bus tests)
 cargo check --workspace
 cargo test --workspace
 
 # Build the project
 cargo build --workspace
 
-# Run the sandbox (it still doesn't do much visually)
+# Run the sandbox (outputs logs to console, still no window)
+# Example: Run with debug logs enabled for the engine core
+# RUST_LOG=khora_engine_core=debug cargo run --bin sandbox
 cargo run --bin sandbox
