@@ -1,6 +1,4 @@
 use super::vector::Vec4;
-use super::EPSILON;
-use super::clamp;
 use std::ops::{Add, Sub, Mul, Div};
 
 /// Represents a color in Linear RGBA color space using f32 components.

@@ -836,7 +836,7 @@ impl Mul<Vec4> for Mat4 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::{approx_eq, approx_eq_eps, quaternion::Quaternion, vector::{Vec3}, matrix::Mat4};
+    use crate::math::{approx_eq, quaternion::Quaternion, vector::{Vec3}, matrix::Mat4};
 
     fn vec3_approx_eq(a: Vec3, b: Vec3) -> bool {
         approx_eq(a.x, b.x) && approx_eq(a.y, b.y) && approx_eq(a.z, b.z)

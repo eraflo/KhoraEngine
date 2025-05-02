@@ -1,11 +1,11 @@
-
+use crate::event::{EventBus, EngineEvent};
 
 
 /// Represents the main engine structure, responsible for orchestrating subsystems.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Engine {
     is_running: bool,
-    // Other fields will be added later (e.g., ECS world, subsystems instances, event bus).
+    event_bus: EventBus
 }
 
 
@@ -15,15 +15,21 @@ impl Engine {
     /// # Returns
     /// A new instance of the Engine struct.
     pub fn new() -> Self {
-        Self { is_running: false }
+        Self {
+            is_running: false,
+            event_bus: EventBus::default()
+        }
     }
 
     /// Sets up the engine subsystems before running the main loop.
     /// # Arguments
     /// * `&mut self` - A mutable reference to the Engine instance.
     pub fn setup(&mut self) {
-        println!("Setting up engine systems...");
+        env_logger::init();
+        log::info!("Setting up engine systems...");
+
         // TODO: Initialize subsystems (ECS, graphics, audio, etc.)
+
     }
 
     /// Starts and executes the main engine loop.
@@ -31,15 +37,30 @@ impl Engine {
     /// * `&mut self` - A mutable reference to the Engine instance.
     pub fn run(&mut self) {
         self.is_running = true;
-        println!("Engine starting main loop...");
+        log::info!("Starting engine loop...");
 
-        // TODO: Implement the main loop logic.
-        // It will typically involve:
-        // 1. Polling events (input, window)
-        // 2. Updating game state (ECS systems: physics, AI, animation...)
-        // 3. Rendering
+        while self.is_running {
+            let receiver = self.event_bus.receiver();
+            while let Ok(event) = receiver.try_recv() {
+                log::debug!("Received event: {:?}", event);
+                match event {
+                    EngineEvent::WindowResized { width, height } => {
+                        log::info!("Window resized event: {}x{}", width, height);
+                    }
+                    EngineEvent::Input(input_event) => {
+                        log::debug!("Input event received: {:?}", input_event);
+                    }
+                    EngineEvent::ShutdownRequested => {
+                        log::info!("Shutdown requested event received.");
+                        self.is_running = false;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
 
-        println!("Engine loop finished (placeholder).");
+        log::info!("Engine loop finished.");
         self.is_running = false;
     }
 
@@ -47,14 +68,14 @@ impl Engine {
     /// # Arguments
     /// * `&mut self` - A mutable reference to the Engine instance.
     pub fn shutdown(&mut self) {
-        println!("Shutting down engine systems...");
+        log::info!("Shutting down engine...");
         // TODO: Clean up subsystems (ECS, graphics, audio, etc.)
     }
-}
 
-
-impl Default for Engine {
-    fn default() -> Self {
-        Self::new()
+    /// Returns a clone of the event sender channel via the EventBus.
+    /// # Returns
+    /// A clone of the event sender channel.
+    pub fn event_sender(&self) -> flume::Sender<EngineEvent> {
+        self.event_bus.sender()
     }
 }

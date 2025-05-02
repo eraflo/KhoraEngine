@@ -1,5 +1,11 @@
-use khora_engine_core;
+use khora_engine_core::{self, Engine};
 
 fn main() {
-    println!("Hello, world!");
+    let mut khora_engine = Engine::new();
+
+    khora_engine.setup();
+
+    khora_engine.run();
+
+    khora_engine.shutdown();
 }
