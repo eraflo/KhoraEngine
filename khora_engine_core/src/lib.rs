@@ -2,6 +2,7 @@ pub mod math;
 pub mod core;
 pub mod subsystems;
 pub mod event;
+pub mod memory;
 
 
 pub use core::engine::Engine;

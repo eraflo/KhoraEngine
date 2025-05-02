@@ -30,22 +30,22 @@ The long-term vision includes robust support for Extended Reality (XR) applicati
 *   ✅ **`[Feature] Design Core Engine Interfaces & Message Passing (Thinking about ISAs & DCC)`**: Defined the core architecture (ECS + Message Bus combination) and created initial subsystem interface traits (`Renderer`, `InputProvider`) and event types (`EngineEvent`, `InputEvent`) within a structured module layout (`core`, `subsystems`, `event`). Documented in `docs/architecture_design.md`.
 *   ✅ **`[Feature] Implement Basic Logging & Event System`**: Integrated standard logging (`log` facade + `env_logger` implementation) and set up a thread-safe MPMC event bus using `flume`, encapsulated within a tested `EventBus` structure.
 *   ✅ **`[Feature] Implement Foundational Performance Monitoring Hooks (CPU Timers)`**: Added a basic `Stopwatch` utility using `std::time::Instant` to measure CPU execution time. Integrated timing for event processing and total iteration time within the main engine structure, reporting results via logs.
+*   ✅ **`[Feature] Implement Basic Memory Allocation Tracking`**: Implemented basic heap allocation tracking using a custom global allocator (`SaaTrackingAllocator`) wrapping `System`. This tracks the total number of currently allocated bytes via the default allocator, providing crucial memory context for SAA. Includes overflow/underflow checks for robustness. The current usage is logged periodically by the engine.
 
 **Current Focus / Next Steps:**
 
-The next step focuses on adding another crucial piece of context awareness for SAA: memory usage.
+The next steps focus on getting a window on screen and handling user input, moving towards the first visual output.
 
-*   ➡️ **`[Feature] Implement Basic Memory Allocation Tracking`**: Implementing a mechanism (likely via a custom global allocator) to track the amount of memory allocated by the engine.
-*   **(Upcoming)** `[Feature] Choose and Integrate Windowing Library (e.g., winit)`
-*   **(Upcoming)** `[Feature] Implement Basic Input System (connecting window events to `InputProvider`/`EngineEvent`)`
-*   **(Upcoming)** `[Feature] Create Main Loop Structure (within `Engine::run`)`
-*   **(Upcoming)** `[Task] Display Empty Window & Basic Stats (FPS, Mem)`
+*   ➡️ **`(Upcoming)`** `[Feature] Choose and Integrate Windowing Library (e.g., winit)`: Selecting and adding a library to create and manage the application window.
+*   **(Upcoming)** `[Feature] Implement Basic Input System (connecting window events to `InputProvider`/`EngineEvent`)`: Capturing OS input events and feeding them into the engine's event system.
+*   **(Upcoming)** `[Feature] Create Main Loop Structure (within `Engine::run`)`: Implementing the core engine loop to handle events, updates (placeholders), and rendering (placeholders).
+*   **(Upcoming)** `[Task] Display Empty Window & Basic Stats (FPS, Mem)`: Achieving the first visual output – an empty window displaying FPS and memory usage.
 
 **Note:** This is a highly ambitious, long-term research and development project. The roadmap outlined ([link to roadmap if available, otherwise omit]) is extensive. Expect significant evolution, changes, and potential refactoring as development progresses towards the SAA goal.
 
 ## Getting Started
 
-Currently, the project contains the basic structure, core math utilities, defined interfaces, logging, event bus plumbing, and basic CPU timing hooks.
+Currently, the project contains the basic structure, core math utilities, defined interfaces, logging, event bus plumbing, CPU timing hooks, and basic heap memory tracking. Running the sandbox will output logs to the console, including timing and memory usage information.
 
 ```bash
 # Clone the repository (replace with your actual URL)
@@ -53,13 +53,14 @@ git clone https://github.com/eraflo/KhoraEngine.git
 cd KhoraEngine
 
 # Check code and run tests (includes math, event bus, and timer tests)
+# Note: Allocator logic currently relies on manual/integration testing via sandbox execution.
 cargo check --workspace
 cargo test --workspace
 
 # Build the project
 cargo build --workspace
 
-# Run the sandbox (outputs logs to console, including timing info)
+# Run the sandbox (outputs logs to console, including timing & memory info)
 # Example: Run with trace logs enabled for the engine core
 # RUST_LOG=khora_engine_core=trace cargo run --bin sandbox
 cargo run --bin sandbox
