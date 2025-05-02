@@ -26,7 +26,7 @@ pub struct EventBus {
 
 impl EventBus {
     /// Creates a new EventBus with an unbounded channel.
-    /// # Returns
+    /// ## Returns
     /// A new instance of the EventBus struct.
     pub fn new() -> Self {
         let (sender, receiver) = flume::unbounded();
@@ -35,9 +35,9 @@ impl EventBus {
     }
 
     /// Attempts to send an event, logging an error if the receiver is disconnected.
-    /// # Arguments
+    /// ## Arguments
     /// * `event` - The event to be sent over the channel.
-    /// # Returns
+    /// ## Returns
     /// None if the event was sent successfully, or an error if the receiver is disconnected.
     pub fn publish(&self, event: EngineEvent) {
         
@@ -48,7 +48,7 @@ impl EventBus {
 
     /// Returns a clone of the sender end of the channel.
     /// Use this to allow other parts of the system to send events.
-    /// # Returns
+    /// ## Returns
     /// A clone of the sender end of the channel.
     pub fn sender(&self) -> flume::Sender<EngineEvent> {
         self.sender.clone()
@@ -56,7 +56,7 @@ impl EventBus {
 
     /// Returns a reference to the receiver end of the channel.
     /// Use this to allow other parts of the system to receive events.
-    /// # Returns
+    /// ## Returns
     /// A reference to the receiver end of the channel.
     pub(crate) fn receiver(&self) -> &flume::Receiver<EngineEvent> {
         &self.receiver

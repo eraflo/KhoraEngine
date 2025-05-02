@@ -22,10 +22,10 @@ impl Vec2 {
     pub const Y: Self = Self { x: 0.0, y: 1.0 };
 
     /// Creates a new Vec2 instance.
-    /// # Arguments
+    /// ## Arguments
     /// * `x` - The x component of the vector.
     /// * `y` - The y component of the vector.
-    /// # Returns
+    /// ## Returns
     /// * A new Vec2 instance with the specified components.
     #[inline]
     pub const fn new(x: f32, y: f32) -> Self {
@@ -33,7 +33,7 @@ impl Vec2 {
     }
 
     /// Returns a new vector with the absolute value of each component.
-    /// # Returns
+    /// ## Returns
     /// * A new Vec2 instance with the absolute values of the components.
     #[inline]
     pub const fn abs(self) -> Self {
@@ -44,7 +44,7 @@ impl Vec2 {
     }
 
     /// Calculates the squared magnitude (length) of the vector.
-    /// # Returns
+    /// ## Returns
     /// * The squared length of the vector.
     #[inline]
     pub fn length_squared(&self) -> f32 {
@@ -52,7 +52,7 @@ impl Vec2 {
     }
 
     /// Calculates the magnitude (length) of the vector.
-    /// # Returns
+    /// ## Returns
     /// * The length of the vector.
     #[inline]
     pub fn length(&self) -> f32 {
@@ -60,7 +60,7 @@ impl Vec2 {
     }
 
     /// Normalizes the vector to unit length. Returns ZERO if length is near zero.
-    /// # Returns
+    /// ## Returns
     /// * A new Vec2 instance that is the normalized version of the original vector.
     #[inline]
     pub fn normalize(&self) -> Self {
@@ -73,9 +73,9 @@ impl Vec2 {
     }
 
     /// Calculates the dot product between this vector and another.
-    /// # Arguments
+    /// ## Arguments
     /// * `rhs` - The other vector to compute the dot product with.
-    /// # Returns
+    /// ## Returns
     /// * The dot product of the two vectors.
     #[inline]
     pub fn dot(&self, rhs: Self) -> f32 {
@@ -83,11 +83,11 @@ impl Vec2 {
     }
 
      /// Linear interpolation between two vectors.
-     /// # Arguments
+     /// ## Arguments
      /// * `start` - The starting vector.
      /// * `end` - The ending vector.
      /// * `t` - The interpolation factor (0.0 to 1.0).
-     /// # Returns
+     /// ## Returns
      /// * A new Vec2 instance that is the result of the interpolation.
     #[inline]
     pub fn lerp(start: Self, end: Self, t: f32) -> Self {
@@ -203,11 +203,11 @@ impl Vec3 {
     pub const Z: Self = Self { x: 0.0, y: 0.0, z: 1.0 };
 
     /// Creates a new Vec3 instance with the given x, y, and z components.
-    /// # Arguments
+    /// ## Arguments
     /// * `x` - The x component of the vector.
     /// * `y` - The y component of the vector.
     /// * `z` - The z component of the vector.
-    /// # Returns
+    /// ## Returns
     /// * A new Vec3 instance with the specified components.
     #[inline]
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
@@ -215,7 +215,7 @@ impl Vec3 {
     }
 
     /// Returns a new vector with the absolute value of each component.
-    /// # Returns
+    /// ## Returns
     /// * A new Vec3 instance with the absolute values of the components.
     #[inline]
     pub const fn abs(self) -> Self {
@@ -227,7 +227,7 @@ impl Vec3 {
     }
 
     /// Returns the length squared of the vector.
-    /// # Returns
+    /// ## Returns
     /// * The squared length of the vector.
     #[inline]
     pub fn length_squared(&self) -> f32 {
@@ -235,7 +235,7 @@ impl Vec3 {
     }
 
     /// Returns the length of the vector.
-    /// # Returns
+    /// ## Returns
     /// * The length of the vector.
     #[inline]
     pub fn length(&self) -> f32 {
@@ -243,9 +243,9 @@ impl Vec3 {
     }
 
     /// Normalizes the vector, making it a unit vector.
-    /// # Returns
+    /// ## Returns
     /// * A new Vec3 instance that is the normalized version of the original vector.
-    /// # Panics
+    /// ## Panics
     /// * Panics if the vector is a zero vector (length is 0).
     #[inline]
     pub fn normalize(&self) -> Self {
@@ -259,9 +259,9 @@ impl Vec3 {
     }
 
     /// Returns the dot product of this vector and another vector.
-    /// # Arguments
+    /// ## Arguments
     /// * `other` - The other vector to compute the dot product with.
-    /// # Returns
+    /// ## Returns
     /// * The dot product of the two vectors.
     #[inline]
     pub fn dot(&self, other: Self) -> f32 {
@@ -269,9 +269,9 @@ impl Vec3 {
     }
 
     /// Returns the cross product of this vector and another vector.
-    /// # Arguments
+    /// ## Arguments
     /// * `other` - The other vector to compute the cross product with.
-    /// # Returns
+    /// ## Returns
     /// * A new Vec3 instance that is the cross product of the two vectors.
     #[inline]
     pub fn cross(&self, other: Self) -> Self {
@@ -283,9 +283,9 @@ impl Vec3 {
     }
 
     /// Returns the distance squared between this vector and another vector.
-    /// # Arguments
+    /// ## Arguments
     /// * `other` - The other vector to compute the distance to.
-    /// # Returns
+    /// ## Returns
     /// * The distance squared between the two vectors.
     #[inline]
     pub fn distance_squared(&self, other: Self) -> f32 {
@@ -296,9 +296,9 @@ impl Vec3 {
     }
 
     /// Returns the distance between this vector and another vector.
-    /// # Arguments
+    /// ## Arguments
     /// * `other` - The other vector to compute the distance to.
-    /// # Returns
+    /// ## Returns
     /// * The distance between the two vectors.
     #[inline]
     pub fn distance(&self, other: Self) -> f32 {
@@ -308,11 +308,11 @@ impl Vec3 {
 
 
     /// Returns linear interpolation between this vector and another vector.
-    /// # Arguments
+    /// ## Arguments
     /// * `start` - The starting vector.
     /// * `end` - The ending vector.
     /// * `t` - The interpolation factor (0.0 to 1.0).
-    /// # Returns
+    /// ## Returns
     /// * A new Vec3 instance that is the result of the interpolation.
     #[inline]
     pub fn lerp(start: Self, end: Self, t: f32) -> Self {
@@ -324,9 +324,9 @@ impl Vec3 {
     }
 
     /// Returns the element at the specified index.
-    /// # Arguments
+    /// ## Arguments
     /// * `index` - The index of the element to retrieve (0-2).
-    /// # Returns
+    /// ## Returns
     /// * The element at the specified index.
     #[inline]
     pub fn get(&self, index: usize) -> f32 {
@@ -489,12 +489,12 @@ impl Vec4 {
 
     /// --- Constructors ---
     /// Creates a new Vec4 instance with the given x, y, z, and w components.
-    /// # Arguments
+    /// ## Arguments
     /// * `x` - The x component of the vector.
     /// * `y` - The y component of the vector.
     /// * `z` - The z component of the vector.
     /// * `w` - The w component of the vector.
-    /// # Returns
+    /// ## Returns
     /// * A new Vec4 instance with the specified components.
     #[inline]
     pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
@@ -502,7 +502,7 @@ impl Vec4 {
     }
 
     /// Returns a new vector with the absolute value of each component.
-    /// # Returns
+    /// ## Returns
     /// * A new Vec4 instance with the absolute values of the components.
     #[inline]
     pub const fn abs(self) -> Self {
@@ -515,10 +515,10 @@ impl Vec4 {
     }
 
     /// Returns a Vec4 from a Vec3 by adding a w component.
-    /// # Arguments
+    /// ## Arguments
     /// * `v` - The Vec3 to convert.
     /// * `w` - The w component to add.
-    /// # Returns
+    /// ## Returns
     /// * A new Vec4 instance with the specified components.
     #[inline]
     pub fn from_vec3(v: Vec3, w: f32) -> Self {
@@ -526,7 +526,7 @@ impl Vec4 {
     }
 
     /// Returns the Vec3 part of the Vec4.
-    /// # Returns
+    /// ## Returns
     /// * A new Vec3 instance with the x, y, and z components of the Vec4.
     #[inline]
     pub fn truncate(&self) -> Vec3 {
@@ -534,9 +534,9 @@ impl Vec4 {
     }
 
     /// Returns dot product of this vector and another vector.
-    /// # Arguments
+    /// ## Arguments
     /// * `other` - The other vector to compute the dot product with.
-    /// # Returns
+    /// ## Returns
     /// * The dot product of the two vectors.
     #[inline]
     pub fn dot(&self, other: Self) -> f32 {
@@ -545,9 +545,9 @@ impl Vec4 {
 
 
     /// Returns the element at the specified index.
-    /// # Arguments
+    /// ## Arguments
     /// * `index` - The index of the element to retrieve (0-3).
-    /// # Returns
+    /// ## Returns
     /// * The element at the specified index.
     #[inline]
     pub fn get(&self, index: usize) -> f32 {

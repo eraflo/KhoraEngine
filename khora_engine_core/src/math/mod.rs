@@ -25,9 +25,9 @@ pub use geometry::Aabb;
 // --- Utility Functions ---
 
 /// Converts degrees to radians.
-/// # Arguments
+/// ## Arguments
 /// * `degrees` - The angle in degrees to convert.
-/// # Returns
+/// ## Returns
 /// * The angle in radians.
 #[inline]
 pub fn degrees_to_radians(degrees: f32) -> f32 {
@@ -35,9 +35,9 @@ pub fn degrees_to_radians(degrees: f32) -> f32 {
 }
 
 /// Converts radians to degrees.
-/// # Arguments
+/// ## Arguments
 /// * `radians` - The angle in radians to convert.
-/// # Returns
+/// ## Returns
 /// * The angle in degrees.
 #[inline]
 pub fn radians_to_degrees(radians: f32) -> f32 {
@@ -45,11 +45,11 @@ pub fn radians_to_degrees(radians: f32) -> f32 {
 }
 
 /// Clamps a value between a minimum and maximum.
-/// # Arguments
+/// ## Arguments
 /// * `value` - The value to clamp.
 /// * `min_val` - The minimum value.
 /// * `max_val` - The maximum value.
-/// # Returns
+/// ## Returns
 /// * The clamped value.
 #[inline]
 pub fn clamp<T: PartialOrd>(value: T, min_val: T, max_val: T) -> T {
@@ -63,9 +63,9 @@ pub fn clamp<T: PartialOrd>(value: T, min_val: T, max_val: T) -> T {
 }
 
 /// Clamps a value between 0.0 and 1.0.
-/// # Arguments
+/// ## Arguments
 /// * `value` - The value to clamp.
-/// # Returns
+/// ## Returns
 /// * The clamped value.
 #[inline]
 pub fn saturate(value: f32) -> f32 {
@@ -73,11 +73,11 @@ pub fn saturate(value: f32) -> f32 {
 }
 
 /// Performs approximate equality comparison between two floats.
-/// # Arguments
+/// ## Arguments
 /// * `a` - The first float.
 /// * `b` - The second float.
 /// * `epsilon` - The tolerance for the comparison.
-/// # Returns
+/// ## Returns
 /// * `true` if the floats are approximately equal, `false` otherwise.
 #[inline]
 pub fn approx_eq_eps(a: f32, b: f32, epsilon: f32) -> bool {
@@ -85,10 +85,10 @@ pub fn approx_eq_eps(a: f32, b: f32, epsilon: f32) -> bool {
 }
 
 /// Performs approximate equality comparison using the module's default EPSILON.
-/// # Arguments
+/// ## Arguments
 /// * `a` - The first float.
 /// * `b` - The second float.
-/// # Returns
+/// ## Returns
 /// * `true` if the floats are approximately equal, `false` otherwise.
 #[inline]
 pub fn approx_eq(a: f32, b: f32) -> bool {

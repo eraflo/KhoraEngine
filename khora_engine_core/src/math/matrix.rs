@@ -26,11 +26,11 @@ impl Mat3 {
     pub const ZERO: Self = Self { cols: [Vec3::ZERO; 3] };
 
     /// Create a new matrix from 3 columns.
-    /// # Arguments
+    /// ## Arguments
     /// * `c0` - The first column of the matrix.
     /// * `c1` - The second column of the matrix.
     /// * `c2` - The third column of the matrix.
-    /// # Returns
+    /// ## Returns
     /// * A new matrix with the given columns.
     #[inline]
     pub fn from_cols(c0: Vec3, c1: Vec3, c2: Vec3) -> Self {
@@ -38,9 +38,9 @@ impl Mat3 {
     }
 
     /// Returns the row of the matrix at the given index.
-    /// # Arguments
+    /// ## Arguments
     /// * `index` - The index of the row to return.
-    /// # Returns
+    /// ## Returns
     /// * A new vector representing the row of the matrix.
     #[inline]
     fn from_row(&self, index: usize) -> Vec3 {
@@ -52,9 +52,9 @@ impl Mat3 {
     }
 
     /// Create a 2D scaling matrix. (scales X and Y axes, Z axis is ignored)
-    /// # Arguments
+    /// ## Arguments
     /// * `scale` - The scaling vector.
-    /// # Returns
+    /// ## Returns
     /// * A new scaling matrix.
     #[inline]
     pub fn from_scale_vec2(scale: Vec2) -> Self {
@@ -62,9 +62,9 @@ impl Mat3 {
     }
 
     /// Create a 3D scaling matrix.
-    /// # Arguments
+    /// ## Arguments
     /// * `scale` - The scaling vector.
-    /// # Returns
+    /// ## Returns
     /// * A new scaling matrix.
     #[inline]
     pub fn from_scale(scale: Vec3) -> Self {
@@ -78,9 +78,9 @@ impl Mat3 {
     }
 
     /// Create a rotation matrix around the X axis.
-    /// # Arguments
+    /// ## Arguments
     /// * `angle_radians` - The angle in radians.
-    /// # Returns
+    /// ## Returns
     /// * A new rotation matrix.
     #[inline]
     pub fn from_rotation_x(angle_radians: f32) -> Self {
@@ -95,9 +95,9 @@ impl Mat3 {
     }
 
     /// Create a rotation matrix around the Y axis.
-    /// # Arguments
+    /// ## Arguments
     /// * `angle_radians` - The angle in radians.
-    /// # Returns
+    /// ## Returns
     /// * A new rotation matrix.
     #[inline]
     pub fn from_rotation_y(angle_radians: f32) -> Self {
@@ -112,9 +112,9 @@ impl Mat3 {
     }
 
     /// Create a rotation matrix around the Z axis.
-    /// # Arguments
+    /// ## Arguments
     /// * `angle_radians` - The angle in radians.
-    /// # Returns
+    /// ## Returns
     /// * A new rotation matrix.
     #[inline]
     pub fn from_rotation_z(angle_radians: f32) -> Self {
@@ -129,10 +129,10 @@ impl Mat3 {
     }
 
     /// Create a rotation matrix from an axis and angle.
-    /// # Arguments
+    /// ## Arguments
     /// * `axis` - The axis of rotation.
     /// * `angle_radians` - The angle in radians.
-    /// # Returns
+    /// ## Returns
     /// * A new rotation matrix.
     #[inline]
     pub fn from_axis_angle(axis: Vec3, angle_radians: f32) -> Self {
@@ -151,9 +151,9 @@ impl Mat3 {
     }
 
     /// Create a rotation matrix from a quaternion.
-    /// # Arguments
+    /// ## Arguments
     /// * `q` - The quaternion representing the rotation.
-    /// # Returns
+    /// ## Returns
     /// * A new rotation matrix.
     #[inline]
     pub fn from_quat(q: Quaternion) -> Self {
@@ -199,7 +199,7 @@ impl Mat3 {
 
     /// Returns the determinant of the matrix.
     /// The determinant is a scalar value that can be used to determine if the matrix is invertible.
-    /// # Returns
+    /// ## Returns
     /// * The determinant of the matrix.
     #[inline]
     pub fn determinant(&self) -> f32 {
@@ -213,7 +213,7 @@ impl Mat3 {
     
     /// Returns the transpose of the matrix.
     /// The transpose of a matrix is obtained by swapping its rows and columns.
-    /// # Returns
+    /// ## Returns
     /// * A new matrix that is the transpose of the original matrix.
     #[inline]
     pub fn transpose(&self) -> Self {
@@ -226,7 +226,7 @@ impl Mat3 {
 
     /// Returns the inverse of the matrix.
     /// The inverse of a matrix is a matrix that, when multiplied with the original matrix, yields the identity matrix.
-    /// # Returns
+    /// ## Returns
     /// * An `Option<Self>` that is `Some` if the matrix is invertible, or `None` if it is not.
     pub fn inverse(&self) -> Option<Self> {
         let c0 = self.cols[0];
@@ -263,7 +263,7 @@ impl Mat3 {
     }
 
     /// Converts the matrix to a 4x4 matrix.
-    /// # Returns
+    /// ## Returns
     /// * A new 4x4 matrix with the same values as the 3x3 matrix.
     #[inline]
     pub fn to_mat4(&self) -> Mat4 {
@@ -355,12 +355,12 @@ impl Mat4 {
     pub const ZERO: Self = Self { cols: [Vec4::ZERO; 4] };
 
     /// Create a new matrix from 4 columns.
-    /// # Arguments
+    /// ## Arguments
     /// * `c0` - The first column of the matrix.
     /// * `c1` - The second column of the matrix.
     /// * `c2` - The third column of the matrix.
     /// * `c3` - The fourth column of the matrix.
-    /// # Returns
+    /// ## Returns
     /// * A new matrix with the given columns.
     #[inline]
     pub fn from_cols(c0: Vec4, c1: Vec4, c2: Vec4, c3: Vec4) -> Self {
@@ -368,9 +368,9 @@ impl Mat4 {
     }
 
     /// Returns the row of the matrix at the given index.
-    /// # Arguments
+    /// ## Arguments
     /// * `index` - The index of the row to return.
-    /// # Returns
+    /// ## Returns
     /// * A new vector representing the row of the matrix.
     #[inline]
     fn from_row(&self, index: usize) -> Vec4 {
@@ -383,9 +383,9 @@ impl Mat4 {
     }
 
     /// Create a translation matrix.
-    /// # Arguments
+    /// ## Arguments
     /// * `translation` - The translation vector.
-    /// # Returns
+    /// ## Returns
     /// * A new translation matrix.
     #[inline]
     pub fn from_translation(v: Vec3) -> Self {
@@ -400,9 +400,9 @@ impl Mat4 {
     }
 
     /// Create a scaling matrix.
-    /// # Arguments
+    /// ## Arguments
     /// * `scale` - The scaling vector.
-    /// # Returns
+    /// ## Returns
     /// * A new scaling matrix.
     #[inline]
     pub fn from_scale(scale: Vec3) -> Self {
@@ -417,9 +417,9 @@ impl Mat4 {
     }
 
     /// Create a rotation matrix around the X axis.
-    /// # Arguments
+    /// ## Arguments
     /// * `angle` - The angle in radians.
-    /// # Returns
+    /// ## Returns
     /// * A new rotation matrix.
     #[inline]
     pub fn from_rotation_x(angle: f32) -> Self {
@@ -436,9 +436,9 @@ impl Mat4 {
     }
 
     /// Create a rotation matrix around the Y axis.
-    /// # Arguments
+    /// ## Arguments
     /// * `angle` - The angle in radians.
-    /// # Returns
+    /// ## Returns
     /// * A new rotation matrix.
     #[inline]
     pub fn from_rotation_y(angle: f32) -> Self {
@@ -455,9 +455,9 @@ impl Mat4 {
     }
 
     /// Create a rotation matrix around the Z axis.
-    /// # Arguments
+    /// ## Arguments
     /// * `angle` - The angle in radians.
-    /// # Returns
+    /// ## Returns
     /// * A new rotation matrix.
     #[inline]
     pub fn from_rotation_z(angle: f32) -> Self {
@@ -474,10 +474,10 @@ impl Mat4 {
     }
 
     /// Returns the rotation matrix from the given axis and angle.
-    /// # Arguments
+    /// ## Arguments
     /// * `axis` - The axis of rotation.
     /// * `angle` - The angle in radians.
-    /// # Returns
+    /// ## Returns
     /// * A new rotation matrix.
     #[inline]
     pub fn from_axis_angle(axis: Vec3, angle: f32) -> Self {
@@ -500,9 +500,9 @@ impl Mat4 {
     }
 
     /// Creates a rotation matrix from a quaternion.
-    /// # Arguments
+    /// ## Arguments
     /// * `q` - The quaternion representing the rotation.
-    /// # Returns
+    /// ## Returns
     /// * A new rotation matrix.
     #[inline]
     pub fn from_quat(q: Quaternion) -> Self {
@@ -537,12 +537,12 @@ impl Mat4 {
     }
 
     /// Creates a right-handed perspective projection matrix with a depth range of [0, 1].
-    /// # Arguments
+    /// ## Arguments
     /// * `fov_y_radians`: Vertical field of view in radians.
     /// * `aspect_ratio`: Width divided by height of the viewport.
     /// * `z_near`: Distance to the near clipping plane (must be positive).
     /// * `z_far`: Distance to the far clipping plane (must be positive and > z_near).
-    /// # Returns
+    /// ## Returns
     /// * A new perspective projection matrix.
     #[inline]
     pub fn perspective_rh_zo(fov_y_radians: f32, aspect_ratio: f32, z_near: f32, z_far: f32) -> Self {
@@ -564,14 +564,14 @@ impl Mat4 {
     }
 
     /// Creates a right-handed orthographic projection matrix with a depth range of [0, 1].
-    /// # Arguments
+    /// ## Arguments
     /// * `left`: Left clipping plane.
     /// * `right`: Right clipping plane.
     /// * `bottom`: Bottom clipping plane.
     /// * `top`: Top clipping plane.
     /// * `z_near`: Distance to the near clipping plane (must be positive).
     /// * `z_far`: Distance to the far clipping plane (must be positive and > z_near).
-    /// # Returns
+    /// ## Returns
     /// * A new orthographic projection matrix.
     #[inline]
     pub fn orthographic_rh_zo(left: f32, right: f32, bottom: f32, top: f32, z_near: f32, z_far: f32) -> Self {
@@ -598,13 +598,13 @@ impl Mat4 {
     }
 
     /// Creates a right-handed view matrix for a camera looking at a target point.
-    /// # Arguments
+    /// ## Arguments
     /// * `eye`: The position of the camera in world space.
     /// * `target`: The point in world space that the camera is looking at.
     /// * `up`: The up direction of the camera in world space.
-    /// # Returns
+    /// ## Returns
     /// * A new view matrix.
-    /// # Note
+    /// ## Note
     /// * The `up` vector should be normalized. If it is not, the resulting matrix may not be orthogonal.
     /// * The `target` vector should not be equal to the `eye` vector. If they are equal, the resulting matrix will be invalid.
     #[inline]
@@ -654,7 +654,7 @@ impl Mat4 {
 
     /// Returns the transpose of the matrix.
     /// The transpose of a matrix is obtained by swapping its rows and columns.
-    /// # Returns
+    /// ## Returns
     /// * A new matrix that is the transpose of the original matrix.
     #[inline]
     pub fn transpose(&self) -> Self {
@@ -668,7 +668,7 @@ impl Mat4 {
 
     /// Returns the determinant of the matrix.
     /// The determinant is a scalar value that can be used to determine if the matrix is invertible.
-    /// # Returns
+    /// ## Returns
     /// * The determinant of the matrix.
     pub fn determinant(&self) -> f32 {
         let c0 = self.cols[0];
@@ -686,7 +686,7 @@ impl Mat4 {
 
     /// Returns the inverse of the matrix.
     /// The inverse of a matrix is a matrix that, when multiplied with the original matrix, yields the identity matrix.
-    /// # Returns
+    /// ## Returns
     /// * An `Option<Self>` that is `Some` if the matrix is invertible, or `None` if it is not.
     pub fn inverse(&self) -> Option<Self> {
         let c0 = self.cols[0];
@@ -734,9 +734,9 @@ impl Mat4 {
 
     /// Calculates the inverse of an affine transformation matrix (composed of Translate, Rotate, Scale).
     /// Faster and more numerically stable than general inverse for this common case.
-    /// # Arguments
+    /// ## Arguments
     /// * `self` - The affine transformation matrix.
-    /// # Returns
+    /// ## Returns
     /// * `None` if the scaling part is zero (singular) else `Some(Self)` with the inverse matrix.
     #[inline]
     pub fn affine_inverse(&self) -> Option<Self> {
@@ -836,7 +836,7 @@ impl Mul<Vec4> for Mat4 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::{approx_eq, quaternion::Quaternion, vector::{Vec3}, matrix::Mat4};
+    use crate::math::{approx_eq, quaternion::Quaternion, vector::Vec3, matrix::Mat4};
 
     fn vec3_approx_eq(a: Vec3, b: Vec3) -> bool {
         approx_eq(a.x, b.x) && approx_eq(a.y, b.y) && approx_eq(a.z, b.z)
@@ -1192,7 +1192,6 @@ mod tests {
         assert!(singular_m.affine_inverse().is_none(), "Singular affine matrix inverse should be None");
     }
 
-    // Add tests for perspective_rh_zo, orthographic_rh_zo, look_at_rh
     #[test]
     fn test_perspective_rh_zo() {
         let fov = PI / 4.0; // 45 degrees
