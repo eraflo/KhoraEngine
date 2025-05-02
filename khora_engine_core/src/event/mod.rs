@@ -40,6 +40,7 @@ impl EventBus {
     /// ## Returns
     /// None if the event was sent successfully, or an error if the receiver is disconnected.
     pub fn publish(&self, event: EngineEvent) {
+        log::trace!("Publishing EngineEvent: {:?}", event);
         
         if let Err(e) = self.sender.send(event) {
             log::error!("Failed to send event: {}. Receiver likely disconnected.", e);
