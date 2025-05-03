@@ -3,12 +3,11 @@
   <img src="assets/logos/khora_full_logo.png" alt="KhoraEngine Logo" width="250">
 </p>
 
-<div style="text-align: center;">
-  <h1>KhoraEngine</h1>
-  <p>
+
+<h1 align="center">KhoraEngine</h1>
+<p align="center">
     KhoraEngine is an experimental game engine being developed in Rust. Its ultimate and ambitious goal is to implement a novel <strong>Symbiotic Adaptive Architecture (SAA)</strong>.
-  </p>
-</div>
+</p>
 
 </br>
 
