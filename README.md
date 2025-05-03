@@ -42,7 +42,7 @@ The foundational layer of the engine is established. Key achievements include:
 *   Integration of windowing (`winit` via `ApplicationHandler`) and basic input event translation.
 *   Establishment of the main application loop structure.
 
-*(Git Tag: `m1-complete` marks this stage)*
+*(Git Tag: `v0.1.0` marks this stage)*
 
 ---
 
