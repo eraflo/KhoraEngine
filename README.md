@@ -1,9 +1,5 @@
 # KhoraEngine
 
-<!-- Badges placeholder: Add build status, license, CI status, etc. later -->
-<!-- [![Build Status](...)](...) -->
-<!-- [![License](...)](...) -->
-
 KhoraEngine is an experimental game engine being developed in Rust. Its ultimate and ambitious goal is to implement a novel **Symbiotic Adaptive Architecture (SAA)**.
 
 This architecture aims to create a deeply context-aware engine where subsystems act as cooperating agents (Intelligent Subsystem Agents - ISAs) under the guidance of a central coordinator (Dynamic Context Core - DCC). The engine will dynamically adapt its behavior, resource allocation, and even potentially its data structures based on real-time performance metrics, resource availability, application goals, and hardware capabilities.
@@ -21,46 +17,52 @@ The long-term vision includes robust support for Extended Reality (XR) applicati
 
 ## Current Status: Phase 1 - Solid Foundations & Context Awareness
 
-**This project is progressing through Milestone 1: Core Foundation & Context Hooks.**
+**This project is nearing completion of Milestone 1: Core Foundation & Context Hooks.**
 
 **Completed Steps:**
 
 *   ✅ **`[Feature] Setup Project Structure & Cargo Workspace`**: Established the initial Rust project structure using a Cargo workspace (`khora_engine_core`, `sandbox`) with basic CI/CD and Readme setup.
-*   ✅ **`[Feature] Implement Core Math Library (Vec3, Mat4, Quat)`**: Implemented foundational 3D math types (`Vec2`, `Vec3`, `Vec4`, `Quaternion`, `Mat3`, `Mat4`, `LinearRgba`, `AABB`) within `khora_engine_core`, designed with Data-Oriented principles in mind.
-*   ✅ **`[Feature] Design Core Engine Interfaces & Message Passing (Thinking about ISAs & DCC)`**: Defined the core architecture (ECS + Message Bus combination) and created initial subsystem interface traits (`Renderer`, `InputProvider`) and event types (`EngineEvent`, `InputEvent`) within a structured module layout (`core`, `subsystems`, `event`). Documented in `docs/architecture_design.md`.
-*   ✅ **`[Feature] Implement Basic Logging & Event System`**: Integrated standard logging (`log` facade + `env_logger` implementation) and set up a thread-safe MPMC event bus using `flume`, encapsulated within a tested `EventBus` structure.
-*   ✅ **`[Feature] Implement Foundational Performance Monitoring Hooks (CPU Timers)`**: Added a basic `Stopwatch` utility using `std::time::Instant` to measure CPU execution time. Integrated timing for event processing and total iteration time within the main engine structure, reporting results via logs.
-*   ✅ **`[Feature] Implement Basic Memory Allocation Tracking`**: Implemented basic heap allocation tracking using a custom global allocator (`SaaTrackingAllocator`) wrapping `System`. This tracks the total number of currently allocated bytes via the default allocator, providing crucial memory context for SAA. Includes overflow/underflow checks for robustness. The current usage is logged periodically by the engine.
+*   ✅ **`[Feature] Implement Core Math Library (Vec3, Mat4, Quat)`**: Implemented foundational 3D math types (`Vec2`, `Vec3`, `Vec4`, `Quaternion`, `Mat3`, `Mat4`, `LinearRgba`, `AABB`) within `khora_engine_core`.
+*   ✅ **`[Feature] Design Core Engine Interfaces & Message Passing (Thinking about ISAs & DCC)`**: Defined core architecture (EventBus) and initial interface traits (`Renderer`, `InputProvider` - Note: `InputProvider` trait currently unused for winit). Created `EngineEvent`, `InputEvent` types.
+*   ✅ **`[Feature] Implement Basic Logging & Event System`**: Integrated `log` facade + `env_logger` and a thread-safe MPMC `EventBus` using `flume`. Added unit tests for EventBus.
+*   ✅ **`[Feature] Implement Foundational Performance Monitoring Hooks (CPU Timers)`**: Added a basic `Stopwatch` utility for CPU timing. Integrated into the main loop for basic stats logging.
+*   ✅ **`[Feature] Implement Basic Memory Allocation Tracking`**: Implemented heap allocation tracking using a custom global allocator (`SaaTrackingAllocator`) with robustness checks. Memory usage logged periodically.
+*   ✅ **`[Feature] Choose and Integrate Windowing Library (e.g., winit)`**: Integrated `winit` (v0.30) using the `ApplicationHandler` and `run_app` model. Created a `KhoraWindow` wrapper for abstraction. Added optional `raw-window-handle` support via feature flag.
+*   ✅ **`[Feature] Create Main Loop Structure`**: Implemented the main engine loop structure driven by the `winit` event loop (`run_app`, `ApplicationHandler`).
+*   ✅ **`[Feature] Implement Basic Input System (Feed events into core)`**: Implemented translation logic from `winit` window events (keyboard, mouse) into internal `EngineEvent::Input` types, published via the `EventBus`. Added unit tests for translation logic.
 
 **Current Focus / Next Steps:**
 
-The next steps focus on getting a window on screen and handling user input, moving towards the first visual output.
+The final task for Milestone 1 is to provide visual feedback directly in the window.
 
-*   ➡️ **`(Upcoming)`** `[Feature] Choose and Integrate Windowing Library (e.g., winit)`: Selecting and adding a library to create and manage the application window.
-*   **(Upcoming)** `[Feature] Implement Basic Input System (connecting window events to `InputProvider`/`EngineEvent`)`: Capturing OS input events and feeding them into the engine's event system.
-*   **(Upcoming)** `[Feature] Create Main Loop Structure (within `Engine::run`)`: Implementing the core engine loop to handle events, updates (placeholders), and rendering (placeholders).
-*   **(Upcoming)** `[Task] Display Empty Window & Basic Stats (FPS, Mem)`: Achieving the first visual output – an empty window displaying FPS and memory usage.
+*   ➡️ **`(Upcoming)`** `[Task] Display Empty Window & Basic Stats (FPS, Mem)`: Displaying the FPS and Memory usage statistics *within* the application window itself, instead of just logging to the console. This will likely involve either updating the window title or integrating a minimal text rendering solution (prelude to Milestone 2).
 
-**Note:** This is a highly ambitious, long-term research and development project. The roadmap outlined ([link to roadmap if available, otherwise omit]) is extensive. Expect significant evolution, changes, and potential refactoring as development progresses towards the SAA goal.
+**Note:** This is a highly ambitious, long-term research and development project. The SAA goal requires significant R&D.
 
 ## Getting Started
 
-Currently, the project contains the basic structure, core math utilities, defined interfaces, logging, event bus plumbing, CPU timing hooks, and basic heap memory tracking. Running the sandbox will output logs to the console, including timing and memory usage information.
+The project currently sets up core components, creates a window, handles basic OS events (resize, focus, close), translates keyboard/mouse input into internal events, and logs performance/memory statistics. Unit tests cover the EventBus, input translation logic, and basic engine event handling.
 
 ```bash
-# Clone the repository (replace with your actual URL)
+# Clone the repository
 git clone https://github.com/eraflo/KhoraEngine.git
 cd KhoraEngine
 
-# Check code and run tests (includes math, event bus, and timer tests)
-# Note: Allocator logic currently relies on manual/integration testing via sandbox execution.
+# Check code
 cargo check --workspace
+
+# Run unit tests
+# Note: Window creation and main loop logic are tested via sandbox execution.
 cargo test --workspace
 
 # Build the project
+# To build with raw-window-handle support (if needed later for renderer):
+# cargo build --workspace --features "khora_engine_core/rwh"
 cargo build --workspace
 
-# Run the sandbox (outputs logs to console, including timing & memory info)
-# Example: Run with trace logs enabled for the engine core
+# Run the sandbox (outputs logs to console)
+# Enable trace logs for detailed event flow:
 # RUST_LOG=khora_engine_core=trace cargo run --bin sandbox
+# To run with raw-window-handle feature enabled:
+# cargo run --bin sandbox --features "khora_engine_core/rwh"
 cargo run --bin sandbox

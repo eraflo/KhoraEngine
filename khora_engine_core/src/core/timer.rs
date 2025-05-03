@@ -44,6 +44,16 @@ impl Stopwatch {
         self.elapsed().map(|d| d.as_micros() as u64)
     }
 
+    /// Returns the elapsed time since the stopwatch was started in seconds as f64.
+    /// ## Arguments
+    /// * `&self` - A reference to the Stopwatch instance.
+    /// ## Returns
+    /// An Option containing the elapsed time in seconds as f64, or None if the stopwatch has not been started.
+    #[inline]
+    pub fn elapsed_secs_f64(&self) -> Option<f64> {
+        self.elapsed().map(|d| d.as_secs_f64())
+    }
+
 }
 
 impl Default for Stopwatch {
@@ -71,6 +81,7 @@ mod tests {
         assert!(watch.elapsed().is_some(), "Elapsed should return Some after creation");
         assert!(watch.elapsed_ms().is_some(), "Elapsed_ms should return Some after creation");
         assert!(watch.elapsed_us().is_some(), "Elapsed_us should return Some after creation");
+        assert!(watch.elapsed_secs_f64().is_some(), "Elapsed_secs_f64 should return Some after creation");
     }
 
     /// A test to check if the Stopwatch struct correctly reports elapsed time after a short delay.
@@ -94,6 +105,10 @@ mod tests {
         let small_duration_us = SMALL_DURATION_MS * 1000;
         assert!(elapsed_us < small_duration_us,
                 "Initial elapsed us ({}) should be very small", elapsed_us);
+
+        let elapsed_secs_f64 = watch.elapsed_secs_f64().expect("Should have elapsed seconds as f64");
+        assert!(elapsed_secs_f64 < SMALL_DURATION_MS as f64 / 1000.0,
+                "Initial elapsed seconds ({}) should be very small", elapsed_secs_f64);
     }
 
     /// A test to check if the Stopwatch struct correctly reports elapsed time after a sleep duration.
@@ -133,6 +148,15 @@ mod tests {
                 "Elapsed us ({}) should be >= sleep duration us ({})", elapsed_us, min_expected_us);
         assert!(elapsed_us < max_expected_us,
                 "Elapsed us ({}) should be < sleep duration us + margin ({})", elapsed_us, max_expected_us);
+        
+        // Check elapsed seconds as f64
+        let elapsed_secs_f64 = watch.elapsed_secs_f64().expect("Should have elapsed seconds as f64 after sleep");
+        let min_expected_secs_f64 = SLEEP_DURATION_MS as f64 / 1000.0;
+        let max_expected_secs_f64 = (SLEEP_DURATION_MS + SLEEP_MARGIN_MS) as f64 / 1000.0;
+        assert!(elapsed_secs_f64 >= min_expected_secs_f64,
+                "Elapsed seconds ({}) should be >= sleep duration seconds ({})", elapsed_secs_f64, min_expected_secs_f64);
+        assert!(elapsed_secs_f64 < max_expected_secs_f64,
+                "Elapsed seconds ({}) should be < sleep duration seconds + margin ({})", elapsed_secs_f64, max_expected_secs_f64);
     }
 
     /// A test to check if the Stopwatch struct implements the Default trait.

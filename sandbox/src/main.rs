@@ -13,6 +13,4 @@ fn main() {
     khora_engine.setup();
 
     khora_engine.run();
-
-    khora_engine.shutdown();
 }

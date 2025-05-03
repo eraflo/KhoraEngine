@@ -34,7 +34,7 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
     /// ## Returns
     /// A pointer to the allocated memory, or null if allocation fails.
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ptr = self.inner.alloc(layout);
+        let ptr = unsafe { self.inner.alloc(layout) };
         if !ptr.is_null() {
 
             // Allocation successful, increase the counter.
@@ -68,7 +68,7 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
         }
 
 
-        self.inner.dealloc(ptr, layout);
+        unsafe { self.inner.dealloc(ptr, layout) };
     }
 
     /// Allocates zero-initialized memory of the specified layout and tracks the total allocated bytes.
@@ -79,7 +79,7 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
 
         // Use the inner allocator to allocate zeroed memory.
-        let ptr = self.inner.alloc_zeroed(layout);
+        let ptr = unsafe { self.inner.alloc_zeroed(layout) };
 
         if !ptr.is_null() {
             // Allocation successful, increase the counter.
@@ -104,7 +104,7 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
     /// A pointer to the reallocated memory, or null if allocation fails.
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         let old_size = layout.size();
-        let new_ptr = self.inner.realloc(ptr, layout, new_size);
+        let new_ptr = unsafe { self.inner.realloc(ptr, layout, new_size) };
 
         if !new_ptr.is_null() {
             
