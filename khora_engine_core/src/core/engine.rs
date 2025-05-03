@@ -5,7 +5,7 @@ use winit::{
     event_loop::{ActiveEventLoop, EventLoop},
     window::WindowId
 };
-use crate::window::KhoraWindow;
+use crate::{subsystems::renderer::GraphicsContext, window::KhoraWindow};
 use crate::subsystems::input as KhoraInputSubsystem;
 use crate::memory::get_currently_allocated_bytes;
 use crate::{core::timer::Stopwatch, event::{EngineEvent, EventBus}};
@@ -17,6 +17,7 @@ pub struct Engine {
     is_running: bool,
     event_bus: EventBus,
     window: Option<KhoraWindow>,
+    graphics_context: Option<GraphicsContext>,
 
     // Timers and counters
     frame_count: u64,
@@ -36,6 +37,7 @@ impl Engine {
             is_running: false,
             event_bus: EventBus::default(),
             window: None,
+            graphics_context: None,
 
             // Initialize stats counters
             frame_count: 0,
@@ -93,12 +95,15 @@ impl Engine {
     /// * `&mut self` - A mutable reference to the Engine instance.
     pub fn shutdown(&mut self) {
         // Securely shutdown the engine and its subsystems
-        if self.is_running {
-            log::warn!("Shutdown called while engine was still marked as running.");
-            self.is_running = false;
+        if !self.is_running && self.window.is_none() && self.graphics_context.is_none() {
+            log::debug!("Shutdown called, but engine appears already stopped/cleaned up.");
+            return;
         }
 
         log::info!("Shutting down engine...");
+
+        self.graphics_context = None;
+        log::info!("Graphics context dropped.");
 
         self.window = None;
         log::info!("Window wrapper dropped.");
@@ -138,10 +143,28 @@ impl ApplicationHandler<()> for EngineAppHandler {
         // This is useful for handling cases where the application was suspended and resumed,
         // but the window was not destroyed (e.g., on mobile platforms).
         if self.engine.window.is_none() {
-            log::info!("Application resumed: Creating window...");
+            log::info!("Application resumed: Creating window and graphics context...");
+            // --- 1. Create Window ---
             match KhoraWindow::new(event_loop) {
                 Ok(win_wrapper) => {
-                    self.engine.window = Some(win_wrapper);
+
+                    // --- 2. Initialize Graphics Context (using the created window) ---
+                    match GraphicsContext::new(&win_wrapper) {
+                        Ok(context) => {
+                            log::info!("Graphics Context initialized successfully.");
+
+                            // SAA Context: Log crucial capability status early.
+                            log::info!("GPU Timestamp Query Support: {}", context.supports_gpu_timestamps);
+
+                            // Store both window and graphics context *only after* successful init.
+                            self.engine.graphics_context = Some(context);
+                            self.engine.window = Some(win_wrapper); 
+                        }
+                        Err(e) => {
+                            log::error!("FATAL: Failed to initialize graphics context: {}", e);
+                            event_loop.exit();
+                        }
+                    }
                 }
                 Err(e) => {
                     log::error!("FATAL: Failed to create window: {}", e);
@@ -149,7 +172,12 @@ impl ApplicationHandler<()> for EngineAppHandler {
                 }
             }
         } else {
-            log::info!("Application resumed.");
+            log::info!("Application resumed (window and context likely already exist).");
+            // Defensive check for inconsistent state (should not happen if init logic is sound).
+            if self.engine.graphics_context.is_none() {
+                log::error!("Inconsistent state: Window exists but graphics context is missing on resume!");
+                event_loop.exit();
+            }
         }
     }
 
@@ -194,8 +222,6 @@ impl ApplicationHandler<()> for EngineAppHandler {
                             width: physical_size.width,
                             height: physical_size.height,
                         });
-
-                        // TODO: Potentially tell renderer directly to resize swapchain etc.
                     }
 
                     // Case where the window is redrawn (e.g., after resizing or when requested)
@@ -207,7 +233,9 @@ impl ApplicationHandler<()> for EngineAppHandler {
                         engine.frames_since_last_log += 1;
 
                         // --- Render Phase ---
+                        let render_time = Stopwatch::new();
                         engine.render();
+                        let render_duration = render_time.elapsed_us().unwrap_or(0);
 
                         // --- Stats Logging ---
                         let time_since_last_log = engine.last_stats_time.elapsed_secs_f64().unwrap_or(0.0);
@@ -220,11 +248,10 @@ impl ApplicationHandler<()> for EngineAppHandler {
                             
                             // Calculate memory usage in bytes
                             let memory_usage_bytes = get_currently_allocated_bytes();
-                            let render_us: u64 = 0;
                             
                             log::info!(
                                 "Stats | Frame: {}, FPS: {}, Mem: {} KiB | Render: {} us",
-                                engine.frame_count, fps, memory_usage_bytes / 1024, render_us
+                                engine.frame_count, fps, memory_usage_bytes / 1024, render_duration
                             );
                             engine.last_stats_time = Stopwatch::new();
                             engine.frames_since_last_log = 0;
@@ -250,22 +277,7 @@ impl ApplicationHandler<()> for EngineAppHandler {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let engine = &mut self.engine;
 
-        // --- Process Internal Events ---
-        let mut events_to_process = Vec::new();
-        let receiver = engine.event_bus.receiver();
-
-        // Collect events from the receiver into a vector to avoid mutable borrow issues
-        while let Ok(event) = receiver.try_recv() {
-            events_to_process.push(event);
-        }
-
-        log::trace!("Collected {} internal events to process.", events_to_process.len()); // Ne s'affiche pas
-
-        // Now process collected events with mutable access
-        for event in events_to_process {
-            log::trace!("Processing internal event: {:?}", event); // Ne s'affiche pas
-            engine.handle_internal_event(event);
-        }
+        engine.process_internal_events();
 
         // Check if shutdown was requested internally
         if !engine.is_running {
@@ -277,7 +289,7 @@ impl ApplicationHandler<()> for EngineAppHandler {
         // --- Update Phase ---
         engine.update();
 
-        // Request a redraw for the window to trigger the redraw_requested method
+        // Request a redraw 
         if let Some(khora_window) = &engine.window {
             khora_window.request_redraw();
         }
@@ -325,7 +337,14 @@ impl Engine {
         match event {
             EngineEvent::WindowResized { width, height } => {
                 log::info!("Internal Handling: Window resized: {}x{}", width, height);
-                // TODO: Notify Renderer, update Camera aspect ratio, etc.
+                
+                // --- Graphics Handling ---
+                // Resize the graphics context surface (swapchain) if it exists.
+                if let Some(context) = &mut self.graphics_context {
+                    context.resize(winit::dpi::PhysicalSize::new(width, height));
+                }
+
+                // TODO: Notify update Camera aspect ratio, ui, etc.
             }
             EngineEvent::Input(input_event) => {
                 log::trace!("Internal Handling: Input event: {:?}", input_event);
@@ -351,11 +370,40 @@ impl Engine {
     /// ## Arguments
     /// * `&mut self` - A mutable reference to the Engine instance.
     fn render(&mut self) {
-        if let Some(khora_window) = &self.window {
-            log::trace!("Render tick for window: {:?}", khora_window.id());
-            // TODO: Implement rendering using khora_window
-        } else {
-            log::warn!("Render called but window is not initialized!");
+
+        if let Some(context) = &mut self.graphics_context {
+            match context.render() {
+                Ok(_) => {
+                    log::trace!("Frame rendered successfully by GraphicsContext.");
+                }
+                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                    // These errors mean the surface is no longer valid (e.g., after resize,
+                    // fullscreen switch, or driver update) and needs reconfiguration.
+                    log::warn!("WGPU Surface Lost or Outdated. Attempting reconfiguration using current window size.");
+                    if let Some(win) = &self.window {
+                        context.resize(win.inner_size());
+                        log::info!("Surface reconfiguration attempt completed based on window size.");
+                    } else {
+                        log::error!("Cannot reconfigure surface: Graphics context exists but Window is missing!");
+                    }
+                },
+                Err(wgpu::SurfaceError::OutOfMemory) => {
+                    // This is a critical error indicating the GPU ran out of memory for the surface.
+                    // Recovery is unlikely. Request shutdown.
+                    log::error!("WGPU Surface Error: OutOfMemory! Requesting engine shutdown.");
+                    self.event_bus.publish(EngineEvent::ShutdownRequested);
+                }
+                Err(wgpu::SurfaceError::Timeout) => {
+                    // Acquiring the next frame texture timed out. Might be a temporary issue.
+                    log::warn!("WGPU Surface Error: Timeout acquiring next frame texture.");
+                }
+                Err(wgpu::SurfaceError::Other) => {
+                    // Handle any other surface errors that are not explicitly covered.
+                    log::error!("WGPU Surface Error: Other error occurred. Check logs for details.");
+                }
+            }
+        } else if self.window.is_some() {
+            log::warn!("Render called but graphics context is not initialized (likely init failure)!");
         }
     }
 }
@@ -365,6 +413,16 @@ impl Engine {
 mod tests {
     use super::*;
     use crate::subsystems::input::{InputEvent, MouseButton};
+
+    /// Test the Engine's creation and initial state
+    #[test]
+    fn engine_creation_initial_state() {
+        let engine = Engine::new();
+        assert!(!engine.is_running, "Engine should not be running initially");
+        assert!(engine.graphics_context.is_none(), "Graphics context should be None initially");
+        assert!(engine.window.is_none(), "Window should be None initially");
+        assert_eq!(engine.frame_count, 0, "Frame count should be 0 initially");
+    }
 
     /// Test the Engine's setup method
     #[test]

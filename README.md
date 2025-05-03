@@ -47,13 +47,22 @@ The foundational layer of the engine is established. Key achievements include:
 
 **Current Focus: Phase 1, Milestone 2 - Rendering Primitives & ISA Scaffolding**
 
-The project is now entering Milestone 2. The primary goal is to set up the basics of 3D rendering using a modern graphics API, structure the rendering system as a potential Agent (ISA), and integrate GPU performance measurement.
+Development is underway on Milestone 2, focusing on establishing basic rendering capabilities.
+
+**Completed M2 Tasks:**
+
+*   ✅ **`[Feature] Choose & Integrate Graphics API Wrapper (wgpu/ash/etc.)`**:
+    *   `wgpu` (v0.20) was chosen and integrated as the graphics API wrapper.
+    *   A `GraphicsContext` struct has been implemented within `khora_engine_core::subsystems::renderer` to manage core `wgpu` objects (Instance, Surface, Adapter, Device, Queue).
+    *   The graphics context is successfully initialized after window creation and stored within the `Engine`.
+    *   The `wgpu::Surface` is configured and correctly handles window resizing.
+    *   A basic render function is implemented within `GraphicsContext` that successfully acquires a frame, performs a clear operation, and handles presentation.
+    *   **Workaround:** Due to severe, system-specific swapchain blocking/timeout issues encountered with the Vulkan and DX12 backends on the development machine (NVIDIA Optimus setup), the **OpenGL backend (`wgpu::Backends::GL`) is currently forced** during instance creation for compatibility and stable operation. Robust backend selection with fallback is planned for later (see new issue below).
+    *   SAA Prep: Requested the `TIMESTAMP_QUERY` feature during device creation to prepare for future GPU performance monitoring.
+
 
 **Next Steps / Milestone 2 Tasks:**
 
-*   ➡️ **`[Feature] Choose & Integrate Graphics API Wrapper (wgpu/ash/etc.)`**
-    *   Description: Select and integrate a Rust library providing safe or unsafe bindings for a modern graphics API (Vulkan, DX12, Metal via wgpu or directly).
-    *   Labels: `rendering`, `core`, `platform`
 *   ➡️ **`[Feature] Design Rendering Interface as potential ISA (Clear inputs, outputs, potential strategies)`**
     *   Description: Design the internal API of the rendering system, clearly defining its inputs (scene data), outputs (rendered image), and anticipating the possibility of implementing different rendering strategies later.
     *   Labels: `rendering`, `architecture`, `saa-prep`
@@ -72,6 +81,9 @@ The project is now entering Milestone 2. The primary goal is to set up the basic
 *   ➡️ **`[Feature] Implement GPU Performance Monitoring Hooks (Timestamps)`**
     *   Description: Use graphics API timestamp queries to measure the time spent by the GPU on different parts of the rendering process. Essential for SAA.
     *   Labels: `rendering`, `performance`, `infra`, `saa-prep`
+*   ➡️ **`[Feature] Implement Robust Graphics Backend Selection (Vulkan/DX12/GL Fallback)`**
+    *   Description: Enhance the graphics initialization process (`GraphicsContext::new` or similar) to attempt initializing backends in a preferred order (e.g., Vulkan, DX12 on Windows, Metal on macOS) and gracefully fall back to the next option (e.g., OpenGL/GLES via ANGLE) if the preferred backend fails to initialize or is known to be problematic on the detected hardware/driver combination (based on future heuristics or stored knowledge). This improves engine robustness across diverse hardware and drivers, aligning with the SAA principle of adapting to the execution context. Report the chosen backend via logs.
+    *   Labels: `rendering`, `core`, `platform`, `robustness`, `saa-prep`
 *   ➡️ **`[Task] Render a Single Triangle/Quad with Performance Timings`**
     *   Description: Display a simple geometric shape using the established rendering pipeline and show the associated CPU/GPU timings.
     *   Labels: `rendering`, `performance`
