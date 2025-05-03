@@ -150,7 +150,7 @@ mod tests {
     #[test]
     fn test_translate_mouse_button_pressed() {
         let winit_event = WindowEvent::MouseInput {
-            device_id: unsafe { winit::event::DeviceId::dummy() },
+            device_id: winit::event::DeviceId::dummy(),
             state: ElementState::Pressed,
             button: WinitMouseButton::Left,
         };
@@ -162,7 +162,7 @@ mod tests {
     #[test]
     fn test_translate_mouse_button_released() {
         let winit_event = WindowEvent::MouseInput {
-            device_id: unsafe { winit::event::DeviceId::dummy() },
+            device_id: winit::event::DeviceId::dummy(),
             state: ElementState::Released,
             button: WinitMouseButton::Right,
         };
@@ -174,7 +174,7 @@ mod tests {
     #[test]
     fn test_translate_cursor_moved() {
         let winit_event = WindowEvent::CursorMoved {
-            device_id: unsafe { winit::event::DeviceId::dummy() },
+            device_id: winit::event::DeviceId::dummy(),
             position: PhysicalPosition::new(100.5, 200.75),
         };
         let expected = Some(InputEvent::MouseMoved { x: 100.5, y: 200.75 });
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn test_translate_mouse_wheel_line() {
         let winit_event = WindowEvent::MouseWheel {
-            device_id: unsafe { winit::event::DeviceId::dummy() },
+            device_id: winit::event::DeviceId::dummy(),
             delta: MouseScrollDelta::LineDelta(-1.0, 2.0),
             phase: winit::event::TouchPhase::Moved,
         };
@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn test_translate_mouse_wheel_pixel() {
         let winit_event = WindowEvent::MouseWheel {
-            device_id: unsafe { winit::event::DeviceId::dummy() },
+            device_id: winit::event::DeviceId::dummy(),
             delta: MouseScrollDelta::PixelDelta(PhysicalPosition::new(5.5, -10.0)),
             phase: winit::event::TouchPhase::Moved,
         };

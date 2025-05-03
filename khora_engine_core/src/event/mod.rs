@@ -1,4 +1,3 @@
-use flume::{Receiver, SendError, Sender, TryRecvError};
 use log;
 use crate::subsystems::input::InputEvent;
 
@@ -76,6 +75,7 @@ impl Default for EventBus {
 mod tests {
     use super::*;
     use crate::subsystems::input::InputEvent;
+    use flume::{TryRecvError, SendError};
     use std::{thread, time::Duration};
 
     fn dummy_input_event() -> EngineEvent {
