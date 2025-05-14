@@ -59,13 +59,16 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
     *   A basic render function is implemented within `GraphicsContext` that successfully acquires a frame, performs a clear operation, and handles presentation.
     *   **Workaround:** Due to severe, system-specific swapchain blocking/timeout issues encountered with the Vulkan and DX12 backends on the development machine (NVIDIA Optimus setup), the **OpenGL backend (`wgpu::Backends::GL`) is currently forced** during instance creation for compatibility and stable operation. Robust backend selection with fallback is planned for later (see new issue below).
     *   SAA Prep: Requested the `TIMESTAMP_QUERY` feature during device creation to prepare for future GPU performance monitoring.
+*   ✅ **`[Feature] Design Rendering Interface as potential ISA (Clear inputs, outputs, potential strategies)`**:
+    *   A `RenderSystem` trait has been defined in `khora_engine_core::subsystems::renderer::traits`, establishing a clear contract for rendering operations.
+    *   Input structures (`ViewInfo`, `RenderObject`, `RenderSettings`) and output structures (`RenderStats`, `RenderSystemError`) are defined.
+    *   `RenderStrategy` enum introduced in `RenderSettings` for future flexibility.
+    *   A `WgpuRenderer` struct implementing `RenderSystem` has been created, encapsulating `GraphicsContext` and WGPU-specific logic.
+    *   The `Engine` now interacts with the rendering subsystem via `Box<dyn RenderSystem>`, ensuring modularity.
 
 
 **Next Steps / Milestone 2 Tasks:**
 
-*   ➡️ **`[Feature] Design Rendering Interface as potential ISA (Clear inputs, outputs, potential strategies)`**
-    *   Description: Design the internal API of the rendering system, clearly defining its inputs (scene data), outputs (rendered image), and anticipating the possibility of implementing different rendering strategies later.
-    *   Labels: `rendering`, `architecture`, `saa-prep`
 *   ➡️ **`[Feature] Implement Graphics Device Abstraction`**
     *   Description: Create an abstraction layer over the chosen graphics API to simplify logical and physical device management.
     *   Labels: `rendering`, `core`
