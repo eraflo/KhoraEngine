@@ -282,4 +282,45 @@ impl GraphicsContext {
 
         Ok(())
     }
+
+    /// Returns the current surface texture for rendering.
+    /// This is useful for obtaining the texture to render into.
+    /// 
+    /// ## Returns
+    /// * `Result<wgpu::SurfaceTexture, wgpu::SurfaceError>` -
+    ///   - `Ok(wgpu::SurfaceTexture)`: The current surface texture for rendering.
+    ///  - `Err(wgpu::SurfaceError)`: An error occurred while acquiring the texture,
+    pub fn get_current_texture(&self) -> Result<wgpu::SurfaceTexture, wgpu::SurfaceError> {
+        self.surface.get_current_texture()
+    }
+
+    pub fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    pub fn queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+
+    pub fn surface_configuration(&self) -> &wgpu::SurfaceConfiguration {
+        &self.surface_config
+    }
+
+    /// Returns the clear color used for rendering.
+    /// This is the color used to clear the screen before rendering.
+    ///
+    /// ## Returns
+    /// * `wgpu::Color` - The clear color used for rendering.
+    pub fn get_clear_color(&self) -> wgpu::Color {
+        wgpu::Color { r: 0.01, g: 0.02, b: 0.03, a: 1.0 }
+    }
+
+    /// Returns the size of the surface configuration.
+    /// This is the size of the swapchain surface used for rendering.
+    /// 
+    /// ## Returns
+    /// * `(u32, u32)` - A tuple containing the width and height of the surface configuration.
+    pub fn get_size(&self) -> (u32, u32) {
+        (self.surface_config.width, self.surface_config.height)
+    }
 }
