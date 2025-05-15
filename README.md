@@ -124,3 +124,13 @@ cargo build --workspace
 # Run the sandbox (outputs logs to console)
 # RUST_LOG=khora_engine_core=trace cargo run --bin sandbox
 cargo run --bin sandbox
+```
+
+## Community & Contributing
+
+KhoraEngine is an open-source project and we welcome community involvement! We strive to be a welcoming and inclusive community.
+
+*   Please read and adhere to our [**Code of Conduct**](CODE_OF_CONDUCT.md).
+*   If you're interested in contributing, please see our [**Contributing Guidelines**](CONTRIBUTING.md).
+*   For bug reports or feature suggestions, please use the [**Issues** tab](https://github.com/eraflo/KhoraEngine/issues) and try to use the provided templates.
+*   For general questions, ideas, or discussions about KhoraEngine and its SAA/AGDF concepts, please join us on our [**GitHub Discussions page**](https://github.com/eraflo/KhoraEngine/discussions)! *(Adaptez si Discussions n'est pas activé ou si vous préférez un autre canal)*
