@@ -134,3 +134,8 @@ KhoraEngine is an open-source project and we welcome community involvement! We s
 *   If you're interested in contributing, please see our [**Contributing Guidelines**](CONTRIBUTING.md).
 *   For bug reports or feature suggestions, please use the [**Issues** tab](https://github.com/eraflo/KhoraEngine/issues) and try to use the provided templates.
 *   For general questions, ideas, or discussions about KhoraEngine and its SAA/AGDF concepts, please join us on our [**GitHub Discussions page**](https://github.com/eraflo/KhoraEngine/discussions)!
+
+
+## License
+
+KhoraEngine is licensed under the [Apache License 2.0](LICENSE).
