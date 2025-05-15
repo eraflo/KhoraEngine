@@ -1,5 +1,5 @@
 use super::vector::Vec4;
-use std::ops::{Add, Sub, Mul, Div};
+use std::ops::{Add, Div, Mul, Sub};
 
 /// Represents a color in Linear RGBA color space using f32 components.
 /// Allows for HDR values (components > 1.0).
@@ -14,15 +14,60 @@ pub struct LinearRgba {
 
 impl LinearRgba {
     // --- Common Color Constants ---
-    pub const RED: Self = Self { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
-    pub const GREEN: Self = Self { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
-    pub const BLUE: Self = Self { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
-    pub const YELLOW: Self = Self { r: 1.0, g: 1.0, b: 0.0, a: 1.0 };
-    pub const CYAN: Self = Self { r: 0.0, g: 1.0, b: 1.0, a: 1.0 };
-    pub const MAGENTA: Self = Self { r: 1.0, g: 0.0, b: 1.0, a: 1.0 };
-    pub const WHITE: Self = Self { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
-    pub const BLACK: Self = Self { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
-    pub const TRANSPARENT: Self = Self { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
+    pub const RED: Self = Self {
+        r: 1.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const GREEN: Self = Self {
+        r: 0.0,
+        g: 1.0,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const BLUE: Self = Self {
+        r: 0.0,
+        g: 0.0,
+        b: 1.0,
+        a: 1.0,
+    };
+    pub const YELLOW: Self = Self {
+        r: 1.0,
+        g: 1.0,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const CYAN: Self = Self {
+        r: 0.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    };
+    pub const MAGENTA: Self = Self {
+        r: 1.0,
+        g: 0.0,
+        b: 1.0,
+        a: 1.0,
+    };
+    pub const WHITE: Self = Self {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    };
+    pub const BLACK: Self = Self {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const TRANSPARENT: Self = Self {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.0,
+    };
 
     /// Creates a new LinearRgba color.
     /// ## Arguments
@@ -56,7 +101,12 @@ impl LinearRgba {
     /// * A new LinearRgba color.
     #[inline]
     pub fn from_vec4(v: Vec4) -> Self {
-        Self { r: v.x, g: v.y, b: v.z, a: v.w }
+        Self {
+            r: v.x,
+            g: v.y,
+            b: v.z,
+            a: v.w,
+        }
     }
 
     /// Converts this LinearRgba color to a Vec4.
@@ -91,7 +141,13 @@ impl LinearRgba {
     /// * A hex string representing the color (e.g., "#FF5733").
     #[inline]
     pub fn to_hex(&self) -> String {
-        format!("#{:02X}{:02X}{:02X}{:02X}", (self.r * 255.0) as u8, (self.g * 255.0) as u8, (self.b * 255.0) as u8, (self.a * 255.0) as u8)
+        format!(
+            "#{:02X}{:02X}{:02X}{:02X}",
+            (self.r * 255.0) as u8,
+            (self.g * 255.0) as u8,
+            (self.b * 255.0) as u8,
+            (self.a * 255.0) as u8
+        )
     }
 
     /// Creates a LinearRgba color from sRGB values.
@@ -157,9 +213,7 @@ impl LinearRgba {
     }
 }
 
-
 // --- Operator Overloads ---
-
 
 impl Default for LinearRgba {
     /// Default color is opaque white.
@@ -170,7 +224,6 @@ impl Default for LinearRgba {
         Self::WHITE
     }
 }
-
 
 impl Add for LinearRgba {
     type Output = Self;
@@ -278,12 +331,11 @@ impl Div<f32> for LinearRgba {
     }
 }
 
-
 // --- Tests ---
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::{vector::Vec4, approx_eq};
+    use crate::math::{approx_eq, vector::Vec4};
 
     fn color_approx_eq(a: LinearRgba, b: LinearRgba) -> bool {
         approx_eq(a.r, b.r) && approx_eq(a.g, b.g) && approx_eq(a.b, b.b) && approx_eq(a.a, b.a)
@@ -349,7 +401,10 @@ mod tests {
         // Check scalar multiplication (including alpha)
         let expected_mul_scalar = LinearRgba::new(0.1 * 2.0, 0.2 * 2.0, 0.3 * 2.0, 0.8 * 2.0); // c1 * 2.0
         assert!(color_approx_eq(c1 * 2.0, expected_mul_scalar));
-        assert!(color_approx_eq(0.5 * c2, LinearRgba::new(0.2, 0.25, 0.3, 0.25))); // 0.5 * c2
+        assert!(color_approx_eq(
+            0.5 * c2,
+            LinearRgba::new(0.2, 0.25, 0.3, 0.25)
+        )); // 0.5 * c2
 
         // Check component-wise multiplication (modulation)
         let expected_mul_comp = LinearRgba::new(0.1 * 0.4, 0.2 * 0.5, 0.3 * 0.6, 0.8 * 0.5); // c1 * c2

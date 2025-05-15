@@ -1,15 +1,18 @@
-use super::{vector::{Vec3, Vec4}, matrix::Mat4, EPSILON};
+use super::{
+    EPSILON,
+    matrix::Mat4,
+    vector::{Vec3, Vec4},
+};
 
 /// Represents an Axis-Aligned Bounding Box defined by minimum and maximum corner points.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(C)] 
+#[repr(C)]
 pub struct Aabb {
     pub min: Vec3,
     pub max: Vec3,
 }
 
 impl Aabb {
-
     /// An invalid AABB where min is greater than max (useful as a starting point for merging).
     pub const INVALID: Self = Self {
         min: Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY),
@@ -27,8 +30,16 @@ impl Aabb {
     pub fn from_min_max(min_pt: Vec3, max_pt: Vec3) -> Self {
         // Ensure min <= max on all axes
         Self {
-            min: Vec3::new(min_pt.x.min(max_pt.x), min_pt.y.min(max_pt.y), min_pt.z.min(max_pt.z)),
-            max: Vec3::new(min_pt.x.max(max_pt.x), min_pt.y.max(max_pt.y), min_pt.z.max(max_pt.z)),
+            min: Vec3::new(
+                min_pt.x.min(max_pt.x),
+                min_pt.y.min(max_pt.y),
+                min_pt.z.min(max_pt.z),
+            ),
+            max: Vec3::new(
+                min_pt.x.max(max_pt.x),
+                min_pt.y.max(max_pt.y),
+                min_pt.z.max(max_pt.z),
+            ),
         }
     }
 
@@ -56,7 +67,10 @@ impl Aabb {
     /// * A new AABB with min and max points equal to the point.
     #[inline]
     pub fn from_point(point: Vec3) -> Self {
-        Self { min: point, max: point }
+        Self {
+            min: point,
+            max: point,
+        }
     }
 
     /// Creates an AABB that tightly encloses a set of points.
@@ -82,7 +96,10 @@ impl Aabb {
             max_pt.z = max_pt.z.max(point.z);
         }
 
-        Some(Self { min: min_pt, max: max_pt })
+        Some(Self {
+            min: min_pt,
+            max: max_pt,
+        })
     }
 
     /// Calculates the center point of the AABB.
@@ -125,9 +142,12 @@ impl Aabb {
     /// * `true` if the point is inside or on the boundary of the AABB, `false` otherwise.
     #[inline]
     pub fn contains_point(&self, point: Vec3) -> bool {
-        point.x >= self.min.x && point.x <= self.max.x &&
-        point.y >= self.min.y && point.y <= self.max.y &&
-        point.z >= self.min.z && point.z <= self.max.z
+        point.x >= self.min.x
+            && point.x <= self.max.x
+            && point.y >= self.min.y
+            && point.y <= self.max.y
+            && point.z >= self.min.z
+            && point.z <= self.max.z
     }
 
     /// Checks if this AABB intersects with another AABB.
@@ -139,9 +159,9 @@ impl Aabb {
     #[inline]
     pub fn intersects_aabb(&self, other: &Aabb) -> bool {
         // Check for overlap on each axis
-        (self.min.x <= other.max.x && self.max.x >= other.min.x) &&
-        (self.min.y <= other.max.y && self.max.y >= other.min.y) &&
-        (self.min.z <= other.max.z && self.max.z >= other.min.z)
+        (self.min.x <= other.max.x && self.max.x >= other.min.x)
+            && (self.min.y <= other.max.y && self.max.y >= other.min.y)
+            && (self.min.z <= other.max.z && self.max.z >= other.min.z)
     }
 
     /// Creates a new AABB that encompasses both this AABB and another one.
@@ -200,7 +220,9 @@ impl Aabb {
         let transformed_center_v4 = *matrix * Vec4::from_vec3(center, 1.0);
 
         // Perform perspective division if necessary (w is not close to 1 or 0)
-        let transformed_center = if (transformed_center_v4.w - 1.0).abs() > EPSILON && transformed_center_v4.w.abs() > EPSILON {
+        let transformed_center = if (transformed_center_v4.w - 1.0).abs() > EPSILON
+            && transformed_center_v4.w.abs() > EPSILON
+        {
             transformed_center_v4.truncate() / transformed_center_v4.w
         } else {
             transformed_center_v4.truncate()
@@ -209,13 +231,16 @@ impl Aabb {
         // Calculate the new half-extents based on the absolute values of the matrix's
         // basis vectors (rotation/scale part) scaled by the original half-extents.
         // Extent along new X = sum of projections of old extents onto new X basis
-        let x_axis = matrix.cols[0].truncate().abs(); 
+        let x_axis = matrix.cols[0].truncate().abs();
         let y_axis = matrix.cols[1].truncate().abs();
         let z_axis = matrix.cols[2].truncate().abs();
 
-        let new_half_extent_x = x_axis.x * half_extents.x + y_axis.x * half_extents.y + z_axis.x * half_extents.z;
-        let new_half_extent_y = x_axis.y * half_extents.x + y_axis.y * half_extents.y + z_axis.y * half_extents.z;
-        let new_half_extent_z = x_axis.z * half_extents.x + y_axis.z * half_extents.y + z_axis.z * half_extents.z;
+        let new_half_extent_x =
+            x_axis.x * half_extents.x + y_axis.x * half_extents.y + z_axis.x * half_extents.z;
+        let new_half_extent_y =
+            x_axis.y * half_extents.x + y_axis.y * half_extents.y + z_axis.y * half_extents.z;
+        let new_half_extent_z =
+            x_axis.z * half_extents.x + y_axis.z * half_extents.y + z_axis.z * half_extents.z;
 
         let new_half_extents = Vec3::new(new_half_extent_x, new_half_extent_y, new_half_extent_z);
 
@@ -232,12 +257,11 @@ impl Default for Aabb {
     }
 }
 
-
 // --- Tests ---
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::{vector::Vec3, matrix::Mat4, approx_eq}; // Use helpers from parent
+    use crate::math::{approx_eq, matrix::Mat4, vector::Vec3}; // Use helpers from parent
     use std::f32::consts::PI;
 
     fn vec3_approx_eq(a: Vec3, b: Vec3) -> bool {
@@ -297,13 +321,16 @@ mod tests {
         assert_eq!(aabb.max, Vec3::new(4.0, 8.0, 3.0));
     }
 
-     #[test]
+    #[test]
     fn test_aabb_utils() {
         let aabb = Aabb::from_min_max(Vec3::new(-1.0, 0.0, 1.0), Vec3::new(3.0, 2.0, 5.0));
-        
+
         assert!(vec3_approx_eq(aabb.center(), Vec3::new(1.0, 1.0, 3.0)));
         assert!(vec3_approx_eq(aabb.size(), Vec3::new(4.0, 2.0, 4.0)));
-        assert!(vec3_approx_eq(aabb.half_extents(), Vec3::new(2.0, 1.0, 2.0)));
+        assert!(vec3_approx_eq(
+            aabb.half_extents(),
+            Vec3::new(2.0, 1.0, 2.0)
+        ));
         assert!(aabb.is_valid());
         assert!(!Aabb::INVALID.is_valid());
         assert!(Aabb::from_point(Vec3::ZERO).is_valid());
@@ -337,7 +364,7 @@ mod tests {
     #[test]
     fn test_aabb_intersects_aabb() {
         let aabb1 = Aabb::from_min_max(Vec3::new(0.0, 0.0, 0.0), Vec3::new(2.0, 2.0, 2.0));
-        
+
         // Identical
         let aabb2 = Aabb::from_min_max(Vec3::new(0.0, 0.0, 0.0), Vec3::new(2.0, 2.0, 2.0));
         assert!(aabb1.intersects_aabb(&aabb2));
@@ -362,12 +389,12 @@ mod tests {
         assert!(!aabb1.intersects_aabb(&aabb6));
         assert!(!aabb6.intersects_aabb(&aabb1));
 
-         // Non-overlapping Y
+        // Non-overlapping Y
         let aabb7 = Aabb::from_min_max(Vec3::new(0.0, 2.1, 0.0), Vec3::new(2.0, 3.0, 2.0));
         assert!(!aabb1.intersects_aabb(&aabb7));
         assert!(!aabb7.intersects_aabb(&aabb1));
 
-         // Non-overlapping Z
+        // Non-overlapping Z
         let aabb8 = Aabb::from_min_max(Vec3::new(0.0, 0.0, 2.1), Vec3::new(2.0, 2.0, 3.0));
         assert!(!aabb1.intersects_aabb(&aabb8));
         assert!(!aabb8.intersects_aabb(&aabb1));
@@ -393,7 +420,10 @@ mod tests {
         assert!(aabb_approx_eq(merged_with_invalid, aabb1));
 
         let merged_with_invalid_pt = Aabb::INVALID.merged_with_point(point);
-        assert!(aabb_approx_eq(merged_with_invalid_pt, Aabb::from_point(point)));
+        assert!(aabb_approx_eq(
+            merged_with_invalid_pt,
+            Aabb::from_point(point)
+        ));
     }
 
     #[test]
@@ -401,8 +431,9 @@ mod tests {
         let aabb = Aabb::from_min_max(Vec3::new(-1.0, -1.0, -1.0), Vec3::new(1.0, 1.0, 1.0)); // Unit cube centered at origin
         let matrix = Mat4::from_translation(Vec3::new(10.0, 0.0, 0.0)); // Translate +10 on X
         let transformed_aabb = aabb.transform(&matrix);
-        let expected_aabb = Aabb::from_min_max(Vec3::new(9.0, -1.0, -1.0), Vec3::new(11.0, 1.0, 1.0));
-        
+        let expected_aabb =
+            Aabb::from_min_max(Vec3::new(9.0, -1.0, -1.0), Vec3::new(11.0, 1.0, 1.0));
+
         assert!(aabb_approx_eq(transformed_aabb, expected_aabb));
 
         // Test with rotation (resulting AABB will be larger)
@@ -423,8 +454,9 @@ mod tests {
         // Test with scaling
         let matrix_scale = Mat4::from_scale(Vec3::new(2.0, 1.0, 0.5));
         let transformed_scale_aabb = aabb.transform(&matrix_scale);
-        let expected_scale_aabb = Aabb::from_min_max(Vec3::new(-2.0, -1.0, -0.5), Vec3::new(2.0, 1.0, 0.5));
-        
+        let expected_scale_aabb =
+            Aabb::from_min_max(Vec3::new(-2.0, -1.0, -0.5), Vec3::new(2.0, 1.0, 0.5));
+
         assert!(aabb_approx_eq(transformed_scale_aabb, expected_scale_aabb));
     }
 }

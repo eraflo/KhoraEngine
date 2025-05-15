@@ -1,5 +1,5 @@
+use super::{EPSILON, Mat4, vector::Vec3};
 use std::ops::{Add, Mul, MulAssign, Neg, Sub};
-use super::{vector::Vec3, Mat4, EPSILON};
 
 /// Represents a Quaternion for 3D rotations.
 /// Stored as (x, y, z, w) where (x, y, z) is the vector part and w is the scalar part.
@@ -13,11 +13,14 @@ pub struct Quaternion {
     pub w: f32,
 }
 
-
 impl Quaternion {
-
     /// The identity quaternion (representing no rotation).
-    pub const IDENTITY: Quaternion = Quaternion { x: 0.0, y: 0.0, z: 0.0, w: 1.0 };
+    pub const IDENTITY: Quaternion = Quaternion {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+        w: 1.0,
+    };
 
     /// Creates a new quaternion from the given components.
     /// ## Arguments
@@ -61,16 +64,16 @@ impl Quaternion {
     #[inline]
     pub fn from_rotation_matrix(m: &Mat4) -> Self {
         // Extracts the upper 3x3 rotation part implicitly
-        let m00 = m.cols[0].x; 
-        let m10 = m.cols[0].y; 
+        let m00 = m.cols[0].x;
+        let m10 = m.cols[0].y;
         let m20 = m.cols[0].z;
 
-        let m01 = m.cols[1].x; 
-        let m11 = m.cols[1].y; 
+        let m01 = m.cols[1].x;
+        let m11 = m.cols[1].y;
         let m21 = m.cols[1].z;
 
-        let m02 = m.cols[2].x; 
-        let m12 = m.cols[2].y; 
+        let m02 = m.cols[2].x;
+        let m12 = m.cols[2].y;
         let m22 = m.cols[2].z;
 
         // Algorithm from http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/index.htm
@@ -84,19 +87,22 @@ impl Quaternion {
             q.y = (m02 - m20) / s;
             q.z = (m10 - m01) / s;
         } else {
-            if m00 > m11 && m00 > m22 { // Column 0 max trace
+            if m00 > m11 && m00 > m22 {
+                // Column 0 max trace
                 let s = 2.0 * (1.0 + m00 - m11 - m22).sqrt();
                 q.w = (m21 - m12) / s;
                 q.x = 0.25 * s;
                 q.y = (m01 + m10) / s;
                 q.z = (m02 + m20) / s;
-            } else if m11 > m22 {        // Column 1 max trace
+            } else if m11 > m22 {
+                // Column 1 max trace
                 let s = 2.0 * (1.0 + m11 - m00 - m22).sqrt();
                 q.w = (m02 - m20) / s;
                 q.x = (m01 + m10) / s;
                 q.y = 0.25 * s;
                 q.z = (m12 + m21) / s;
-            } else {                     // Column 2 max trace
+            } else {
+                // Column 2 max trace
                 let s = 2.0 * (1.0 + m22 - m00 - m11).sqrt();
                 q.w = (m10 - m01) / s;
                 q.x = (m02 + m20) / s;
@@ -142,7 +148,7 @@ impl Quaternion {
             Self::IDENTITY
         }
     }
-    
+
     /// Returns the conjugate of the quaternion.
     /// ## Returns
     /// * A new `Quaternion` instance that is the conjugate of the original.
@@ -168,7 +174,6 @@ impl Quaternion {
             Self::IDENTITY
         }
     }
-
 
     /// Returns the dot product of two quaternions.
     /// ## Arguments
@@ -211,7 +216,7 @@ impl Quaternion {
         // This is equivalent to using the conjugate of the quaternion.
         if cos_theta < 0.0 {
             cos_theta = -cos_theta;
-            end_adjusted = -end; 
+            end_adjusted = -end;
         }
 
         // If the quaternions are very close, use linear interpolation.
@@ -232,7 +237,6 @@ impl Quaternion {
             (start * scale_start) + (end_adjusted * scale_end)
         }
     }
-
 }
 
 // --- Operators Overloading ---
@@ -329,15 +333,14 @@ impl Neg for Quaternion {
 
 #[cfg(test)]
 mod tests {
-    use crate::math::vector::Vec4;
     use super::*; // Import Quaternion, EPSILON etc. from parent module
+    use crate::math::vector::Vec4;
     use approx::assert_relative_eq; // For float comparisons
 
     fn quat_approx_eq(q1: Quaternion, q2: Quaternion) -> bool {
         let dot = q1.dot(q2).abs();
         approx::relative_eq!(dot, 1.0, epsilon = EPSILON * 10.0) // Use abs dot product
     }
-
 
     #[test]
     fn test_identity_and_default() {
@@ -419,7 +422,7 @@ mod tests {
     fn test_matrix_to_quat_and_back() {
         let axis = Vec3::new(-1.0, 2.5, 0.7).normalize();
         let angle = 1.85; // Some arbitrary angle
-        
+
         let q_orig = Quaternion::from_axis_angle(axis, angle);
         let m_from_q = Mat4::from_quat(q_orig);
 
@@ -439,7 +442,6 @@ mod tests {
         assert_relative_eq!(v_rot_orig.x, v_rot_new.x, epsilon = EPSILON);
         assert_relative_eq!(v_rot_orig.y, v_rot_new.y, epsilon = EPSILON);
         assert_relative_eq!(v_rot_orig.z, v_rot_new.z, epsilon = EPSILON);
-
     }
 
     #[test]
@@ -603,7 +605,8 @@ mod tests {
         let q_start = Quaternion::IDENTITY;
         let q_end = Quaternion::from_axis_angle(Vec3::Z, std::f32::consts::FRAC_PI_2);
         let q_half = Quaternion::slerp(q_start, q_end, 0.5);
-        let q_expected_half = Quaternion::from_axis_angle(Vec3::Z, std::f32::consts::FRAC_PI_2 * 0.5);
+        let q_expected_half =
+            Quaternion::from_axis_angle(Vec3::Z, std::f32::consts::FRAC_PI_2 * 0.5);
 
         assert_relative_eq!(q_half.x, q_expected_half.x, epsilon = EPSILON);
         assert_relative_eq!(q_half.y, q_expected_half.y, epsilon = EPSILON);
@@ -653,8 +656,8 @@ mod tests {
         assert_relative_eq!(v_rotated.z, v_expected_rotated.z, epsilon = EPSILON * 10.0);
     }
 
-     #[test]
-     fn test_slerp_clamps_t() {
+    #[test]
+    fn test_slerp_clamps_t() {
         let q_start = Quaternion::IDENTITY;
         let q_end = Quaternion::from_axis_angle(Vec3::Z, std::f32::consts::FRAC_PI_2);
 
@@ -670,5 +673,5 @@ mod tests {
         assert_relative_eq!(q_t_large.y, q_end.y, epsilon = EPSILON);
         assert_relative_eq!(q_t_large.z, q_end.z, epsilon = EPSILON);
         assert_relative_eq!(q_t_large.w, q_end.w, epsilon = EPSILON);
-     }
+    }
 }

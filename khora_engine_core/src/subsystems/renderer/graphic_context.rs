@@ -1,22 +1,12 @@
 use crate::window::KhoraWindow;
+use anyhow::Result;
+use std::sync::Arc;
 use wgpu::{
-    wgt::SurfaceConfiguration, 
-    AdapterInfo, 
-    Backend, 
-    CommandEncoder, 
-    DeviceType, 
-    Features, 
-    InstanceDescriptor, 
-    RenderPass, 
-    Surface, 
-    SurfaceCapabilities, 
-    SurfaceTexture, 
-    TextureFormat, 
-    TextureView
+    AdapterInfo, Backend, CommandEncoder, DeviceType, Features, InstanceDescriptor, RenderPass,
+    Surface, SurfaceCapabilities, SurfaceTexture, TextureFormat, TextureView,
+    wgt::SurfaceConfiguration,
 };
 use winit::dpi::PhysicalSize;
-use std::sync::Arc;
-use anyhow::Result;
 
 /// Holds the core WGPU state objects required for rendering.
 /// This structure manages the connection to the graphics API (WGPU).
@@ -36,11 +26,10 @@ pub struct GraphicsContext {
     pub adapter_backend: wgpu::Backend,
     pub adapter_device_type: wgpu::DeviceType,
     pub active_device_features: wgpu::Features,
-    pub device_limits: wgpu::Limits
+    pub device_limits: wgpu::Limits,
 }
 
 impl GraphicsContext {
-    
     /// Initializes the graphics context for rendering.
     /// This function sets up the WGPU instance, surface, adapter, device, and queue.
     /// It also configures the surface swapchain based on the window size and capabilities.
@@ -63,14 +52,18 @@ impl GraphicsContext {
     async fn initialize_async(window: &KhoraWindow) -> Result<Self> {
         let window_arc: Arc<winit::window::Window> = window.winit_window_arc().clone();
         let window_size: PhysicalSize<u32> = window_arc.inner_size();
-        log::debug!("Window size for initial graphics setup: {}x{}", window_size.width, window_size.height);
+        log::debug!(
+            "Window size for initial graphics setup: {}x{}",
+            window_size.width,
+            window_size.height
+        );
 
         // --- 1. Create WGPU Instance ---
         // The instance is the entry point to the WGPU API.
         let instance_descriptor: InstanceDescriptor = wgpu::InstanceDescriptor {
-                    backends: wgpu::Backends::GL, // Use the primary backend (Vulkan, Metal, DX12, etc.)
-                    ..Default::default()
-                };
+            backends: wgpu::Backends::GL, // Use the primary backend (Vulkan, Metal, DX12, etc.)
+            ..Default::default()
+        };
         let instance: wgpu::Instance = wgpu::Instance::new(&instance_descriptor);
         log::debug!("WGPU instance created.");
 
@@ -104,19 +97,18 @@ impl GraphicsContext {
 
         let required_features_for_engine: Features = wgpu::Features::TIMESTAMP_QUERY;
         let adapter_supported_features: Features = adapter.features();
-        let features_to_enable: Features = adapter_supported_features & required_features_for_engine;
+        let features_to_enable: Features =
+            adapter_supported_features & required_features_for_engine;
 
         // Request default limits, then store the actual limits from the device
         let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    label: Some("Khora Engine Logical Device"),
-                    required_features: features_to_enable,
-                    required_limits: wgpu::Limits::default(),
-                    memory_hints: wgpu::MemoryHints::default(),
-                    trace: wgpu::Trace::Off,
-                }
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("Khora Engine Logical Device"),
+                required_features: features_to_enable,
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                trace: wgpu::Trace::Off,
+            })
             .await?;
         log::info!("Logical device and command queue created.");
 
@@ -125,17 +117,22 @@ impl GraphicsContext {
         log::info!("Active device features: {:?}", active_device_features);
         log::info!("Device limits: {:?}", device_limits);
 
-
         // --- 5. Configure Surface ---
         // Get the surface capabilities (formats, present modes, etc.) for the selected adapter.
         let surface_caps: SurfaceCapabilities = surface.get_capabilities(&adapter);
-        let surface_format: TextureFormat = surface_caps.formats.iter().copied().find(|f| f.is_srgb()).unwrap_or(surface_caps.formats[0]);
+        let surface_format: TextureFormat = surface_caps
+            .formats
+            .iter()
+            .copied()
+            .find(|f| f.is_srgb())
+            .unwrap_or(surface_caps.formats[0]);
         let surface_config: SurfaceConfiguration<Vec<TextureFormat>> = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: window_size.width.max(1),
             height: window_size.height.max(1),
-            present_mode: surface_caps.present_modes
+            present_mode: surface_caps
+                .present_modes
                 .iter()
                 .copied()
                 .find(|m| *m == wgpu::PresentMode::Mailbox)
@@ -147,14 +144,17 @@ impl GraphicsContext {
         surface.configure(&device, &surface_config);
 
         Ok(GraphicsContext {
-            instance, 
-            surface, 
-            adapter, 
-            device, 
-            queue, 
+            instance,
+            surface,
+            adapter,
+            device,
+            queue,
             surface_config,
-            adapter_name, adapter_backend, adapter_device_type,
-            active_device_features, device_limits,
+            adapter_name,
+            adapter_backend,
+            adapter_device_type,
+            active_device_features,
+            device_limits,
         })
     }
 
@@ -174,7 +174,7 @@ impl GraphicsContext {
                 new_size.width,
                 new_size.height
             );
-            
+
             self.surface_config.width = new_size.width;
             self.surface_config.height = new_size.height;
 
@@ -213,44 +213,45 @@ impl GraphicsContext {
 
         // --- 3. Create Command Encoder ---
         // Command encoders record GPU commands into a command buffer.
-        let mut encoder: CommandEncoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Khora Render Command Encoder")
-            });
+        let mut encoder: CommandEncoder =
+            self.device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Khora Render Command Encoder"),
+                });
         log::trace!("Created command encoder");
 
         // --- 4. Begin Render Pass ---
         // A render pass defines the attachments (color, depth, stencil targets)
         // and executes drawing commands within its scope.
         {
-            let _render_pass: RenderPass<'_> = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Clear Screen Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view, // Render directly to the swapchain texture's view
-                    resolve_target: None, // Used for multisampling; None for now
-                    ops: wgpu::Operations {
-                        // Action at the start of the pass for this attachment:
-                        load: wgpu::LoadOp::Clear(wgpu::Color { // Clear the texture
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        // Action at the end of the pass for this attachment:
-                        store: wgpu::StoreOp::Store, // Keep the results rendered in the pass
-                    },
-                })],
-                depth_stencil_attachment: None, // No depth/stencil buffer yet
-                occlusion_query_set: None, // No occlusion queries yet
-                // TODO: SAA Requirement: Add timestamp writes here in the dedicated task later
-                // Needs `Features::TIMESTAMP_QUERY` enabled on the device.
-                timestamp_writes: None,
-            });
+            let _render_pass: RenderPass<'_> =
+                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Clear Screen Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,          // Render directly to the swapchain texture's view
+                        resolve_target: None, // Used for multisampling; None for now
+                        ops: wgpu::Operations {
+                            // Action at the start of the pass for this attachment:
+                            load: wgpu::LoadOp::Clear(wgpu::Color {
+                                // Clear the texture
+                                r: 0.1,
+                                g: 0.2,
+                                b: 0.3,
+                                a: 1.0,
+                            }),
+                            // Action at the end of the pass for this attachment:
+                            store: wgpu::StoreOp::Store, // Keep the results rendered in the pass
+                        },
+                    })],
+                    depth_stencil_attachment: None, // No depth/stencil buffer yet
+                    occlusion_query_set: None,      // No occlusion queries yet
+                    // TODO: SAA Requirement: Add timestamp writes here in the dedicated task later
+                    // Needs `Features::TIMESTAMP_QUERY` enabled on the device.
+                    timestamp_writes: None,
+                });
             log::trace!("Begun render pass (clearing screen)");
 
             // TODO: Implement actual drawing commands (e.g., set_pipeline, draw)
-
         } // `_render_pass` is dropped, ending the render pass and releasing `encoder`.
         log::trace!("Render pass finished and recorded.");
 
@@ -272,7 +273,7 @@ impl GraphicsContext {
 
     /// Returns the current surface texture for rendering.
     /// This is useful for obtaining the texture to render into.
-    /// 
+    ///
     /// ## Returns
     /// * `Result<wgpu::SurfaceTexture, wgpu::SurfaceError>` -
     ///   - `Ok(wgpu::SurfaceTexture)`: The current surface texture for rendering.
@@ -299,12 +300,17 @@ impl GraphicsContext {
     /// ## Returns
     /// * `wgpu::Color` - The clear color used for rendering.
     pub fn get_clear_color(&self) -> wgpu::Color {
-        wgpu::Color { r: 0.01, g: 0.02, b: 0.03, a: 1.0 }
+        wgpu::Color {
+            r: 0.01,
+            g: 0.02,
+            b: 0.03,
+            a: 1.0,
+        }
     }
 
     /// Returns the size of the surface configuration.
     /// This is the size of the swapchain surface used for rendering.
-    /// 
+    ///
     /// ## Returns
     /// * `(u32, u32)` - A tuple containing the width and height of the surface configuration.
     pub fn get_size(&self) -> (u32, u32) {

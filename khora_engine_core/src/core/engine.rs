@@ -1,19 +1,23 @@
+use crate::memory::get_currently_allocated_bytes;
+use crate::subsystems::input as KhoraInputSubsystem;
+use crate::{
+    core::timer::Stopwatch,
+    event::{EngineEvent, EventBus},
+};
+use crate::{
+    subsystems::renderer::{
+        RenderObject, RenderSettings, RenderSystem, RenderSystemError, ViewInfo, WgpuRenderer,
+    },
+    window::KhoraWindow,
+};
 use flume::Receiver;
 use winit::{
-    application::ApplicationHandler, dpi::PhysicalSize, event::WindowEvent, event_loop::{ActiveEventLoop, EventLoop}, window::WindowId
+    application::ApplicationHandler,
+    dpi::PhysicalSize,
+    event::WindowEvent,
+    event_loop::{ActiveEventLoop, EventLoop},
+    window::WindowId,
 };
-use crate::{subsystems::renderer::{
-    RenderObject, 
-    RenderSettings,  
-    RenderSystem, 
-    RenderSystemError,
-    ViewInfo, 
-    WgpuRenderer
-}, window::KhoraWindow};
-use crate::subsystems::input as KhoraInputSubsystem;
-use crate::memory::get_currently_allocated_bytes;
-use crate::{core::timer::Stopwatch, event::{EngineEvent, EventBus}};
-
 
 /// Represents the main engine structure, responsible for orchestrating subsystems.
 #[derive(Debug, Default)]
@@ -29,8 +33,6 @@ pub struct Engine {
     frames_since_last_log: u32,
     log_interval_secs: f64,
 }
-
-
 
 impl Engine {
     /// Creates a new instance of the Engine.
@@ -90,7 +92,6 @@ impl Engine {
     /// ## Arguments
     /// * `&mut self` - A mutable reference to the Engine instance.
     pub fn shutdown(&mut self) {
-
         if !self.is_running && self.window.is_none() && self.render_system.is_none() {
             log::debug!("Shutdown called, but engine appears already stopped/cleaned up.");
             return;
@@ -109,9 +110,11 @@ impl Engine {
 
         // TODO: Shutdown other subsystems
 
-        log::info!("Engine shutdown complete. Final memory usage: {} KiB", get_currently_allocated_bytes() / 1024);
+        log::info!(
+            "Engine shutdown complete. Final memory usage: {} KiB",
+            get_currently_allocated_bytes() / 1024
+        );
     }
-
 
     /// Returns the event bus sender for publishing events.
     /// ## Arguments
@@ -121,7 +124,6 @@ impl Engine {
     }
 }
 
-
 //// Represents the application handler for the engine, implementing the ApplicationHandler trait.
 #[derive(Debug)]
 struct EngineAppHandler {
@@ -129,24 +131,25 @@ struct EngineAppHandler {
 }
 
 impl ApplicationHandler<()> for EngineAppHandler {
-
     /// Called when the application is first launched.
     /// This is where the main window is created and initialized.
     /// ## Arguments
     /// * `&mut self` - A mutable reference to the EngineAppHandler instance.
     /// * `event_loop` - A reference to the ActiveEventLoop instance.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-
         if self.engine.window.is_none() {
-            log::info!("EngineAppHandler::resumed: Creating window and initializing RenderSystem...");
+            log::info!(
+                "EngineAppHandler::resumed: Creating window and initializing RenderSystem..."
+            );
 
             match KhoraWindow::new(event_loop) {
                 Ok(win_wrapper) => {
-                    
                     self.engine.window = Some(win_wrapper);
 
                     // Initialize the RenderSystem now that a window is available.
-                    if let (Some(rs), Some(window_ref)) = (self.engine.render_system.as_mut(), &self.engine.window) {
+                    if let (Some(rs), Some(window_ref)) =
+                        (self.engine.render_system.as_mut(), &self.engine.window)
+                    {
                         log::info!("Initializing RenderSystem with the window...");
 
                         if let Err(e) = rs.init(window_ref) {
@@ -160,11 +163,15 @@ impl ApplicationHandler<()> for EngineAppHandler {
                         if let Some(adapter_info) = rs.get_adapter_info() {
                             log::info!(
                                 "Engine: Using Adapter: '{}', Backend: {:?}, Type: {:?}",
-                                adapter_info.name, adapter_info.backend_type, adapter_info.device_type
+                                adapter_info.name,
+                                adapter_info.backend_type,
+                                adapter_info.device_type
                             );
                         }
                     } else {
-                        log::error!("FATAL: RenderSystem or Window is None during resume. Cannot initialize rendering.");
+                        log::error!(
+                            "FATAL: RenderSystem or Window is None during resume. Cannot initialize rendering."
+                        );
                         event_loop.exit();
                     }
                 }
@@ -174,10 +181,14 @@ impl ApplicationHandler<()> for EngineAppHandler {
                 }
             }
         } else {
-            log::info!("EngineAppHandler::resumed: Window and RenderSystem likely already exist/initialized.");
-            
+            log::info!(
+                "EngineAppHandler::resumed: Window and RenderSystem likely already exist/initialized."
+            );
+
             if self.engine.render_system.is_none() {
-                log::error!("Inconsistent state: Window exists but RenderSystem is None on resume!");
+                log::error!(
+                    "Inconsistent state: Window exists but RenderSystem is None on resume!"
+                );
                 event_loop.exit();
             }
         }
@@ -201,7 +212,6 @@ impl ApplicationHandler<()> for EngineAppHandler {
         // Process event only if window exists and ID matches
         if let Some(khora_window) = &engine.window {
             if khora_window.id() == window_id {
-
                 // --- Translate Input Events ---
                 if let Some(input_event) = KhoraInputSubsystem::translate_winit_input(&event) {
                     engine.event_bus.publish(EngineEvent::Input(input_event));
@@ -210,7 +220,6 @@ impl ApplicationHandler<()> for EngineAppHandler {
 
                 // --- Handle Non-Input Window Events ---
                 match event {
-
                     // Case where the window is closed by the user
                     WindowEvent::CloseRequested => {
                         log::info!("Window Close Requested event received.");
@@ -240,10 +249,10 @@ impl ApplicationHandler<()> for EngineAppHandler {
                         let render_duration_us = render_time.elapsed_us().unwrap_or(0);
 
                         // --- Stats Logging ---
-                        let time_since_last_log = engine.last_stats_time.elapsed_secs_f64().unwrap_or(0.0);
+                        let time_since_last_log =
+                            engine.last_stats_time.elapsed_secs_f64().unwrap_or(0.0);
 
                         if time_since_last_log >= engine.log_interval_secs {
-                            
                             let fps = if time_since_last_log > 0.0 {
                                 (engine.frames_since_last_log as f64 / time_since_last_log) as u32
                             } else {
@@ -252,15 +261,18 @@ impl ApplicationHandler<()> for EngineAppHandler {
 
                             // Calculate memory usage in bytes
                             let memory_usage_kib = get_currently_allocated_bytes() / 1024;
-                            
-                            let (gpu_time_ms, draw_calls, triangles) =
-                                engine.render_system.as_ref().map_or(
-                                    (0.0f32, 0u32, 0u32),
-                                    |rs| {
-                                        let stats = rs.get_last_frame_stats();
-                                        (stats.gpu_time_ms, stats.draw_calls, stats.triangles_rendered)
-                                    },
-                                );
+
+                            let (gpu_time_ms, draw_calls, triangles) = engine
+                                .render_system
+                                .as_ref()
+                                .map_or((0.0f32, 0u32, 0u32), |rs| {
+                                    let stats = rs.get_last_frame_stats();
+                                    (
+                                        stats.gpu_time_ms,
+                                        stats.draw_calls,
+                                        stats.triangles_rendered,
+                                    )
+                                });
 
                             log::info!(
                                 "Stats | Frame: {}, FPS: {}, Mem: {} KiB | CPU Render: {} us | GPU: {:.2} ms | {} draws, {} tris",
@@ -308,7 +320,7 @@ impl ApplicationHandler<()> for EngineAppHandler {
         // --- Update Phase ---
         engine.update();
 
-        // Request a redraw 
+        // Request a redraw
         if let Some(khora_window) = &engine.window {
             khora_window.request_redraw();
         }
@@ -326,18 +338,15 @@ impl ApplicationHandler<()> for EngineAppHandler {
     }
 }
 
-
 impl Engine {
-
     /// Processes internal EngineEvents received from the EventBus
     /// This function collects events from the event bus and processes them in a batch.
     /// ## Arguments
     /// * `&mut self` - A mutable reference to the Engine instance.
     fn process_internal_events(&mut self) {
-        
         let mut events_to_process: Vec<EngineEvent> = Vec::new();
         let receiver: &Receiver<EngineEvent> = self.event_bus.receiver();
-         
+
         while let Ok(event) = receiver.try_recv() {
             events_to_process.push(event);
         }
@@ -349,10 +358,8 @@ impl Engine {
         }
     }
 
-
     /// Performs the rendering of a single frame.
     fn perform_render_frame(&mut self) {
-
         if let Some(rs) = self.render_system.as_mut() {
             let view_info = ViewInfo::default();
             let render_objects: [RenderObject; 0] = [];
@@ -360,26 +367,39 @@ impl Engine {
 
             match rs.render(&render_objects, &view_info, &render_settings) {
                 Ok(_render_stats) => {
-                    log::trace!("Engine: Frame rendered by RenderSystem. Stats: {:?}", _render_stats);
+                    log::trace!(
+                        "Engine: Frame rendered by RenderSystem. Stats: {:?}",
+                        _render_stats
+                    );
                 }
                 Err(RenderSystemError::SurfaceAcquisitionFailed(msg)) => {
-                    log::warn!("RenderSystem reported surface acquisition failure: {}. Attempting resize.", msg);
+                    log::warn!(
+                        "RenderSystem reported surface acquisition failure: {}. Attempting resize.",
+                        msg
+                    );
 
                     if msg.contains("Lost") || msg.contains("Outdated") {
-                        log::warn!("RenderSystem surface acquisition lost/outdated. Attempting to resize.");
+                        log::warn!(
+                            "RenderSystem surface acquisition lost/outdated. Attempting to resize."
+                        );
 
                         if let Some(win) = &self.window {
                             rs.resize(win.inner_size());
                         }
-
                     } else if msg.contains("OutOfMemory") {
-                        log::error!("RenderSystem ran out of memory for surface! Requesting shutdown: {}", msg);
-                        
+                        log::error!(
+                            "RenderSystem ran out of memory for surface! Requesting shutdown: {}",
+                            msg
+                        );
+
                         self.event_bus.publish(EngineEvent::ShutdownRequested);
                     }
                 }
                 Err(e) => {
-                    log::error!("Engine: Error during RenderSystem::render_to_window: {:?}", e);
+                    log::error!(
+                        "Engine: Error during RenderSystem::render_to_window: {:?}",
+                        e
+                    );
                     self.event_bus.publish(EngineEvent::ShutdownRequested);
                 }
             }
@@ -387,7 +407,6 @@ impl Engine {
             log::warn!("Engine::perform_render_frame called but RenderSystem is not available!");
         }
     }
-
 
     /// Handles a single internal EngineEvent.
     /// This function is responsible for processing specific types of events that are internal to the engine.
@@ -398,7 +417,7 @@ impl Engine {
         match event {
             EngineEvent::WindowResized { width, height } => {
                 log::info!("Internal Handling: Window resized: {}x{}", width, height);
-                
+
                 // Resize the render system
                 if let Some(rs) = self.render_system.as_mut() {
                     rs.resize(PhysicalSize::new(width, height));
@@ -424,21 +443,22 @@ impl Engine {
     fn update(&mut self) {
         // TODO: Implement actual update logic
     }
-
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::subsystems::input::{InputEvent};
+    use crate::subsystems::input::InputEvent;
 
     /// Test the Engine's creation and initial state
     #[test]
     fn engine_creation_initial_state() {
         let engine = Engine::new();
         assert!(!engine.is_running, "Engine should not be running initially");
-        assert!(engine.render_system.is_some(), "RenderSystem should be Some (boxed WgpuRenderer) initially.");
+        assert!(
+            engine.render_system.is_some(),
+            "RenderSystem should be Some (boxed WgpuRenderer) initially."
+        );
         assert!(engine.window.is_none(), "Window should be None initially");
         assert_eq!(engine.frame_count, 0, "Frame count should be 0 initially");
     }
@@ -452,7 +472,10 @@ mod tests {
         let event = EngineEvent::ShutdownRequested;
         engine.handle_internal_event(event);
 
-        assert!(!engine.is_running, "Engine should not be running after ShutdownRequested");
+        assert!(
+            !engine.is_running,
+            "Engine should not be running after ShutdownRequested"
+        );
     }
 
     /// Test the Engine's resizing method
@@ -460,7 +483,10 @@ mod tests {
     fn handle_internal_event_resize_does_not_panic() {
         let mut engine = Engine::new();
         engine.is_running = true;
-        let event = EngineEvent::WindowResized { width: 800, height: 600 };
+        let event = EngineEvent::WindowResized {
+            width: 800,
+            height: 600,
+        };
 
         engine.handle_internal_event(event);
     }
@@ -470,7 +496,9 @@ mod tests {
     fn handle_internal_event_input_does_not_panic() {
         let mut engine = Engine::new();
         engine.is_running = true;
-        let event = EngineEvent::Input(InputEvent::KeyPressed{ key_code: "KeyA".to_string() });
+        let event = EngineEvent::Input(InputEvent::KeyPressed {
+            key_code: "KeyA".to_string(),
+        });
 
         engine.handle_internal_event(event);
     }

@@ -1,4 +1,7 @@
-use super::{vector::{Vec2, Vec3, Vec4}, Quaternion, EPSILON};
+use super::{
+    EPSILON, Quaternion,
+    vector::{Vec2, Vec3, Vec4},
+};
 use std::ops::{Index, IndexMut, Mul};
 
 // --- Mat3 ---
@@ -11,19 +14,16 @@ pub struct Mat3 {
 }
 
 impl Mat3 {
-
     /// Create the Identity matrix.
     pub const IDENTITY: Self = Self {
-        cols: [
-            Vec3::X,
-            Vec3::Y,
-            Vec3::Z
-        ],
+        cols: [Vec3::X, Vec3::Y, Vec3::Z],
     };
 
     /// Create a constant 0 matrix.
     /// This is a 3x3 matrix with all elements set to 0
-    pub const ZERO: Self = Self { cols: [Vec3::ZERO; 3] };
+    pub const ZERO: Self = Self {
+        cols: [Vec3::ZERO; 3],
+    };
 
     /// Create a new matrix from 3 columns.
     /// ## Arguments
@@ -107,7 +107,7 @@ impl Mat3 {
             cols: [
                 Vec3::new(c, 0.0, -s), // RH system
                 Vec3::new(0.0, 1.0, 0.0),
-                Vec3::new(s, 0.0, c),  // RH system
+                Vec3::new(s, 0.0, c), // RH system
             ],
         }
     }
@@ -160,25 +160,25 @@ impl Mat3 {
     pub fn from_quat(q: Quaternion) -> Self {
         let q = q.normalize(); // Normalize the quaternion to ensure a valid rotation matrix
 
-        let x = q.x; 
-        let y = q.y; 
-        let z = q.z; 
+        let x = q.x;
+        let y = q.y;
+        let z = q.z;
         let w = q.w;
 
-        let x2 = x + x; 
-        let y2 = y + y; 
+        let x2 = x + x;
+        let y2 = y + y;
         let z2 = z + z;
 
-        let xx = x * x2; 
-        let xy = x * y2; 
+        let xx = x * x2;
+        let xy = x * y2;
         let xz = x * z2;
 
-        let yy = y * y2; 
-        let yz = y * z2; 
+        let yy = y * y2;
+        let yz = y * z2;
         let zz = z * z2;
 
-        let wx = w * x2; 
-        let wy = w * y2; 
+        let wx = w * x2;
+        let wy = w * y2;
         let wz = w * z2;
 
         Self::from_cols(
@@ -207,11 +207,10 @@ impl Mat3 {
         let c0 = self.cols[0];
         let c1 = self.cols[1];
         let c2 = self.cols[2];
-        c0.x * (c1.y * c2.z - c2.y * c1.z) -
-        c1.x * (c0.y * c2.z - c2.y * c0.z) +
-        c2.x * (c0.y * c1.z - c1.y * c0.z)
+        c0.x * (c1.y * c2.z - c2.y * c1.z) - c1.x * (c0.y * c2.z - c2.y * c0.z)
+            + c2.x * (c0.y * c1.z - c1.y * c0.z)
     }
-    
+
     /// Returns the transpose of the matrix.
     /// The transpose of a matrix is obtained by swapping its rows and columns.
     /// ## Returns
@@ -275,9 +274,7 @@ impl Mat3 {
             Vec4::W, // (0, 0, 0, 1)
         )
     }
-
 }
-
 
 // --- Operator Overloads ---
 
@@ -293,11 +290,7 @@ impl Mul<Mat3> for Mat3 {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: Mat3) -> Self::Output {
-        Self::from_cols(
-            self * rhs.cols[0],
-            self * rhs.cols[1],
-            self * rhs.cols[2],
-        )
+        Self::from_cols(self * rhs.cols[0], self * rhs.cols[1], self * rhs.cols[2])
     }
 }
 
@@ -326,7 +319,6 @@ impl IndexMut<usize> for Mat3 {
     }
 }
 
-
 // --- End of Mat3 Implementation ---
 
 // --- Mat4 ---
@@ -339,21 +331,17 @@ pub struct Mat4 {
 }
 
 impl Mat4 {
-    
     /// Create the Identity matrix.
     pub const IDENTITY: Self = Self {
-        cols: [
-            Vec4::X,
-            Vec4::Y,
-            Vec4::Z,
-            Vec4::W
-        ],
+        cols: [Vec4::X, Vec4::Y, Vec4::Z, Vec4::W],
     };
 
     /// Create a constant 0 matrix.
     /// This is a 4x4 matrix with all elements set to 0, except the last element which is set to 1.
     /// This is useful for representing a zero transformation in 3D space.
-    pub const ZERO: Self = Self { cols: [Vec4::ZERO; 4] };
+    pub const ZERO: Self = Self {
+        cols: [Vec4::ZERO; 4],
+    };
 
     /// Create a new matrix from 4 columns.
     /// ## Arguments
@@ -365,7 +353,9 @@ impl Mat4 {
     /// * A new matrix with the given columns.
     #[inline]
     pub fn from_cols(c0: Vec4, c1: Vec4, c2: Vec4, c3: Vec4) -> Self {
-        Self { cols: [c0, c1, c2, c3] }
+        Self {
+            cols: [c0, c1, c2, c3],
+        }
     }
 
     /// Returns the row of the matrix at the given index.
@@ -396,7 +386,7 @@ impl Mat4 {
                 Vec4::new(0.0, 1.0, 0.0, 0.0), // column 1
                 Vec4::new(0.0, 0.0, 1.0, 0.0), // column 2
                 Vec4::new(v.x, v.y, v.z, 1.0), // column 3 (translation)
-            ]
+            ],
         }
     }
 
@@ -508,25 +498,25 @@ impl Mat4 {
     #[inline]
     pub fn from_quat(q: Quaternion) -> Self {
         // Extract the components of the quaternion
-        let x = q.x; 
-        let y = q.y; 
-        let z = q.z; 
+        let x = q.x;
+        let y = q.y;
+        let z = q.z;
         let w = q.w;
 
-        let x2 = x + x; 
-        let y2 = y + y; 
+        let x2 = x + x;
+        let y2 = y + y;
         let z2 = z + z;
 
-        let xx = x * x2; 
-        let xy = x * y2; 
+        let xx = x * x2;
+        let xy = x * y2;
         let xz = x * z2;
 
-        let yy = y * y2; 
-        let yz = y * z2; 
+        let yy = y * y2;
+        let yz = y * z2;
         let zz = z * z2;
 
-        let wx = w * x2; 
-        let wy = w * y2; 
+        let wx = w * x2;
+        let wy = w * y2;
         let wz = w * z2;
 
         Self::from_cols(
@@ -546,14 +536,22 @@ impl Mat4 {
     /// ## Returns
     /// * A new perspective projection matrix.
     #[inline]
-    pub fn perspective_rh_zo(fov_y_radians: f32, aspect_ratio: f32, z_near: f32, z_far: f32) -> Self {
-        assert!(z_near > 0.0 && z_far > z_near, "z_near must be > 0, z_far must be > z_near");
+    pub fn perspective_rh_zo(
+        fov_y_radians: f32,
+        aspect_ratio: f32,
+        z_near: f32,
+        z_far: f32,
+    ) -> Self {
+        assert!(
+            z_near > 0.0 && z_far > z_near,
+            "z_near must be > 0, z_far must be > z_near"
+        );
 
         let tan_half_fovy = (fov_y_radians / 2.0).tan();
         let f = 1.0 / tan_half_fovy;
         let aa = f / aspect_ratio;
         let bb = f;
-        let cc = z_far / (z_near - z_far);       // zero-to-one depth mapping
+        let cc = z_far / (z_near - z_far); // zero-to-one depth mapping
         let dd = (z_near * z_far) / (z_near - z_far); // zero-to-one depth mapping
 
         Self::from_cols(
@@ -575,7 +573,14 @@ impl Mat4 {
     /// ## Returns
     /// * A new orthographic projection matrix.
     #[inline]
-    pub fn orthographic_rh_zo(left: f32, right: f32, bottom: f32, top: f32, z_near: f32, z_far: f32) -> Self {
+    pub fn orthographic_rh_zo(
+        left: f32,
+        right: f32,
+        bottom: f32,
+        top: f32,
+        z_near: f32,
+        z_far: f32,
+    ) -> Self {
         let rml = right - left; // rml : right minus left
         let rpl = right + left; // rpl : right plus left
         let tmb = top - bottom; // tmb : top minus bottom
@@ -612,25 +617,25 @@ impl Mat4 {
     pub fn look_at_rh(eye: Vec3, target: Vec3, up: Vec3) -> Option<Self> {
         // Compute the forward vector (the direction the camera is looking at).
         let forward = target - eye;
-    
+
         // Defensive check: if the eye and target positions are the same, the forward vector is zero.
         // In this case, we cannot construct a valid view matrix.
         if forward.length_squared() < crate::math::EPSILON * crate::math::EPSILON {
             return None; // eye and target are too close
         }
-    
+
         let f = forward.normalize(); // Forward (negative Z axis of camera)
         let s = f.cross(up);
-    
+
         // Defensive check: if forward and up are colinear, the cross product will be zero.
         // This would produce an invalid right vector and break the basis.
         if s.length_squared() < crate::math::EPSILON * crate::math::EPSILON {
             return None; // up vector is parallel to forward
         }
-    
-        let s = s.normalize();       // Right (X axis of camera)
-        let u = s.cross(f);          // Up (Y axis of camera)
-    
+
+        let s = s.normalize(); // Right (X axis of camera)
+        let u = s.cross(f); // Up (Y axis of camera)
+
         // The view matrix is the inverse of the camera's transformation matrix. (T * R).
         // The camera's transformation matrix is a combination of translation (T) and rotation (R).
         // The inverse of a rotation matrix is its transpose. (R^T).
@@ -660,10 +665,30 @@ impl Mat4 {
     #[inline]
     pub fn transpose(&self) -> Self {
         Self::from_cols(
-            Vec4::new(self.cols[0].x, self.cols[1].x, self.cols[2].x, self.cols[3].x),
-            Vec4::new(self.cols[0].y, self.cols[1].y, self.cols[2].y, self.cols[3].y),
-            Vec4::new(self.cols[0].z, self.cols[1].z, self.cols[2].z, self.cols[3].z),
-            Vec4::new(self.cols[0].w, self.cols[1].w, self.cols[2].w, self.cols[3].w),
+            Vec4::new(
+                self.cols[0].x,
+                self.cols[1].x,
+                self.cols[2].x,
+                self.cols[3].x,
+            ),
+            Vec4::new(
+                self.cols[0].y,
+                self.cols[1].y,
+                self.cols[2].y,
+                self.cols[3].y,
+            ),
+            Vec4::new(
+                self.cols[0].z,
+                self.cols[1].z,
+                self.cols[2].z,
+                self.cols[3].z,
+            ),
+            Vec4::new(
+                self.cols[0].w,
+                self.cols[1].w,
+                self.cols[2].w,
+                self.cols[3].w,
+            ),
         )
     }
 
@@ -677,10 +702,14 @@ impl Mat4 {
         let c2 = self.cols[2];
         let c3 = self.cols[3];
 
-        let m00 = c1.y * (c2.z * c3.w - c3.z * c2.w) - c2.y * (c1.z * c3.w - c3.z * c1.w) + c3.y * (c1.z * c2.w - c2.z * c1.w);
-        let m01 = c0.y * (c2.z * c3.w - c3.z * c2.w) - c2.y * (c0.z * c3.w - c3.z * c0.w) + c3.y * (c0.z * c2.w - c2.z * c0.w);
-        let m02 = c0.y * (c1.z * c3.w - c3.z * c1.w) - c1.y * (c0.z * c3.w - c3.z * c0.w) + c3.y * (c0.z * c1.w - c1.z * c0.w);
-        let m03 = c0.y * (c1.z * c2.w - c2.z * c1.w) - c1.y * (c0.z * c2.w - c2.z * c0.w) + c2.y * (c0.z * c1.w - c1.z * c0.w);
+        let m00 = c1.y * (c2.z * c3.w - c3.z * c2.w) - c2.y * (c1.z * c3.w - c3.z * c1.w)
+            + c3.y * (c1.z * c2.w - c2.z * c1.w);
+        let m01 = c0.y * (c2.z * c3.w - c3.z * c2.w) - c2.y * (c0.z * c3.w - c3.z * c0.w)
+            + c3.y * (c0.z * c2.w - c2.z * c0.w);
+        let m02 = c0.y * (c1.z * c3.w - c3.z * c1.w) - c1.y * (c0.z * c3.w - c3.z * c0.w)
+            + c3.y * (c0.z * c1.w - c1.z * c0.w);
+        let m03 = c0.y * (c1.z * c2.w - c2.z * c1.w) - c1.y * (c0.z * c2.w - c2.z * c0.w)
+            + c2.y * (c0.z * c1.w - c1.z * c0.w);
 
         c0.x * m00 - c1.x * m01 + c2.x * m02 - c3.x * m03
     }
@@ -696,29 +725,46 @@ impl Mat4 {
         let c3 = self.cols[3];
 
         // Compute cofactors (elements of the adjugate matrix's transpose)
-        let a00 = c1.y * (c2.z * c3.w - c3.z * c2.w) - c2.y * (c1.z * c3.w - c3.z * c1.w) + c3.y * (c1.z * c2.w - c2.z * c1.w);
-        let a01 = -(c1.x * (c2.z * c3.w - c3.z * c2.w) - c2.x * (c1.z * c3.w - c3.z * c1.w) + c3.x * (c1.z * c2.w - c2.z * c1.w));
-        let a02 = c1.x * (c2.y * c3.w - c3.y * c2.w) - c2.x * (c1.y * c3.w - c3.y * c1.w) + c3.x * (c1.y * c2.w - c2.y * c1.w);
-        let a03 = -(c1.x * (c2.y * c3.z - c3.y * c2.z) - c2.x * (c1.y * c3.z - c3.y * c1.z) + c3.x * (c1.y * c2.z - c2.y * c1.z));
+        let a00 = c1.y * (c2.z * c3.w - c3.z * c2.w) - c2.y * (c1.z * c3.w - c3.z * c1.w)
+            + c3.y * (c1.z * c2.w - c2.z * c1.w);
+        let a01 = -(c1.x * (c2.z * c3.w - c3.z * c2.w) - c2.x * (c1.z * c3.w - c3.z * c1.w)
+            + c3.x * (c1.z * c2.w - c2.z * c1.w));
+        let a02 = c1.x * (c2.y * c3.w - c3.y * c2.w) - c2.x * (c1.y * c3.w - c3.y * c1.w)
+            + c3.x * (c1.y * c2.w - c2.y * c1.w);
+        let a03 = -(c1.x * (c2.y * c3.z - c3.y * c2.z) - c2.x * (c1.y * c3.z - c3.y * c1.z)
+            + c3.x * (c1.y * c2.z - c2.y * c1.z));
 
-        let a10 = -(c0.y * (c2.z * c3.w - c3.z * c2.w) - c2.y * (c0.z * c3.w - c3.z * c0.w) + c3.y * (c0.z * c2.w - c2.z * c0.w));
-        let a11 = c0.x * (c2.z * c3.w - c3.z * c2.w) - c2.x * (c0.z * c3.w - c3.z * c0.w) + c3.x * (c0.z * c2.w - c2.z * c0.w);
-        let a12 = -(c0.x * (c2.y * c3.w - c3.y * c2.w) - c2.x * (c0.y * c3.w - c3.y * c0.w) + c3.x * (c0.y * c2.w - c2.y * c0.w));
-        let a13 = c0.x * (c2.y * c3.z - c3.y * c2.z) - c2.x * (c0.y * c3.z - c3.y * c0.z) + c3.x * (c0.y * c2.z - c2.y * c0.z);
+        let a10 = -(c0.y * (c2.z * c3.w - c3.z * c2.w) - c2.y * (c0.z * c3.w - c3.z * c0.w)
+            + c3.y * (c0.z * c2.w - c2.z * c0.w));
+        let a11 = c0.x * (c2.z * c3.w - c3.z * c2.w) - c2.x * (c0.z * c3.w - c3.z * c0.w)
+            + c3.x * (c0.z * c2.w - c2.z * c0.w);
+        let a12 = -(c0.x * (c2.y * c3.w - c3.y * c2.w) - c2.x * (c0.y * c3.w - c3.y * c0.w)
+            + c3.x * (c0.y * c2.w - c2.y * c0.w));
+        let a13 = c0.x * (c2.y * c3.z - c3.y * c2.z) - c2.x * (c0.y * c3.z - c3.y * c0.z)
+            + c3.x * (c0.y * c2.z - c2.y * c0.z);
 
-        let a20 = c0.y * (c1.z * c3.w - c3.z * c1.w) - c1.y * (c0.z * c3.w - c3.z * c0.w) + c3.y * (c0.z * c1.w - c1.z * c0.w);
-        let a21 = -(c0.x * (c1.z * c3.w - c3.z * c1.w) - c1.x * (c0.z * c3.w - c3.z * c0.w) + c3.x * (c0.z * c1.w - c1.z * c0.w));
-        let a22 = c0.x * (c1.y * c3.w - c3.y * c1.w) - c1.x * (c0.y * c3.w - c3.y * c0.w) + c3.x * (c0.y * c1.w - c1.y * c0.w);
-        let a23 = -(c0.x * (c1.y * c3.z - c3.y * c1.z) - c1.x * (c0.y * c3.z - c3.y * c0.z) + c3.x * (c0.y * c1.z - c1.y * c0.z));
+        let a20 = c0.y * (c1.z * c3.w - c3.z * c1.w) - c1.y * (c0.z * c3.w - c3.z * c0.w)
+            + c3.y * (c0.z * c1.w - c1.z * c0.w);
+        let a21 = -(c0.x * (c1.z * c3.w - c3.z * c1.w) - c1.x * (c0.z * c3.w - c3.z * c0.w)
+            + c3.x * (c0.z * c1.w - c1.z * c0.w));
+        let a22 = c0.x * (c1.y * c3.w - c3.y * c1.w) - c1.x * (c0.y * c3.w - c3.y * c0.w)
+            + c3.x * (c0.y * c1.w - c1.y * c0.w);
+        let a23 = -(c0.x * (c1.y * c3.z - c3.y * c1.z) - c1.x * (c0.y * c3.z - c3.y * c0.z)
+            + c3.x * (c0.y * c1.z - c1.y * c0.z));
 
-        let a30 = -(c0.y * (c1.z * c2.w - c2.z * c1.w) - c1.y * (c0.z * c2.w - c2.z * c0.w) + c2.y * (c0.z * c1.w - c1.z * c0.w));
-        let a31 = c0.x * (c1.z * c2.w - c2.z * c1.w) - c1.x * (c0.z * c2.w - c2.z * c0.w) + c2.x * (c0.z * c1.w - c1.z * c0.w);
-        let a32 = -(c0.x * (c1.y * c2.w - c2.y * c1.w) - c1.x * (c0.y * c2.w - c2.y * c0.w) + c2.x * (c0.y * c1.w - c1.y * c0.w));
-        let a33 = c0.x * (c1.y * c2.z - c2.y * c1.z) - c1.x * (c0.y * c2.z - c2.y * c0.z) + c2.x * (c0.y * c1.z - c1.y * c0.z);
+        let a30 = -(c0.y * (c1.z * c2.w - c2.z * c1.w) - c1.y * (c0.z * c2.w - c2.z * c0.w)
+            + c2.y * (c0.z * c1.w - c1.z * c0.w));
+        let a31 = c0.x * (c1.z * c2.w - c2.z * c1.w) - c1.x * (c0.z * c2.w - c2.z * c0.w)
+            + c2.x * (c0.z * c1.w - c1.z * c0.w);
+        let a32 = -(c0.x * (c1.y * c2.w - c2.y * c1.w) - c1.x * (c0.y * c2.w - c2.y * c0.w)
+            + c2.x * (c0.y * c1.w - c1.y * c0.w));
+        let a33 = c0.x * (c1.y * c2.z - c2.y * c1.z) - c1.x * (c0.y * c2.z - c2.y * c0.z)
+            + c2.x * (c0.y * c1.z - c1.y * c0.z);
 
         let det = c0.x * a00 + c1.x * a10 + c2.x * a20 + c3.x * a30;
 
-        if det.abs() < crate::math::EPSILON { // Check if determinant is close to zero
+        if det.abs() < crate::math::EPSILON {
+            // Check if determinant is close to zero
             return None;
         }
 
@@ -731,7 +777,6 @@ impl Mat4 {
             Vec4::new(a03 * inv_det, a13 * inv_det, a23 * inv_det, a33 * inv_det),
         ))
     }
-
 
     /// Calculates the inverse of an affine transformation matrix (composed of Translate, Rotate, Scale).
     /// Faster and more numerically stable than general inverse for this common case.
@@ -748,11 +793,12 @@ impl Mat4 {
         let translation = self.cols[3].truncate(); // Vec3
 
         // Calculate determinant of upper 3x3
-        let det3x3 = c0.x * (c1.y * c2.z - c2.y * c1.z) -
-                     c1.x * (c0.y * c2.z - c2.y * c0.z) +
-                     c2.x * (c0.y * c1.z - c1.y * c0.z);
+        let det3x3 = c0.x * (c1.y * c2.z - c2.y * c1.z) - c1.x * (c0.y * c2.z - c2.y * c0.z)
+            + c2.x * (c0.y * c1.z - c1.y * c0.z);
 
-        if det3x3.abs() < crate::math::EPSILON { return None; } // Singular if scale is zero
+        if det3x3.abs() < crate::math::EPSILON {
+            return None;
+        } // Singular if scale is zero
 
         let inv_det3x3 = 1.0 / det3x3;
 
@@ -781,10 +827,7 @@ impl Mat4 {
             Vec4::new(inv_tx, inv_ty, inv_tz, 1.0),
         ))
     }
-
-
 }
-
 
 // --- Operators Overloading ---
 
@@ -794,13 +837,17 @@ impl Default for Mat4 {
     }
 }
 
-
 /// Matrix * Matrix multiplication.
 impl Mul<Mat4> for Mat4 {
     type Output = Self;
     #[inline]
     fn mul(self, rhs: Mat4) -> Self::Output {
-        let mut result_cols = [Vec4 { x: 0.0, y: 0.0, z: 0.0, w: 0.0 }; 4];
+        let mut result_cols = [Vec4 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            w: 0.0,
+        }; 4];
 
         for c in 0..4 {
             let col = rhs.cols[c];
@@ -821,44 +868,38 @@ impl Mul<Vec4> for Mat4 {
     type Output = Vec4;
     #[inline]
     fn mul(self, rhs: Vec4) -> Self::Output {
-        self.cols[0] * rhs.x +
-        self.cols[1] * rhs.y +
-        self.cols[2] * rhs.z +
-        self.cols[3] * rhs.w
+        self.cols[0] * rhs.x + self.cols[1] * rhs.y + self.cols[2] * rhs.z + self.cols[3] * rhs.w
     }
 }
 
 // --- End of Mat4 Implementation ---
 
-
 // --- Tests ---
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::{approx_eq, quaternion::Quaternion, vector::Vec3, matrix::Mat4, PI};
+    use crate::math::{PI, approx_eq, matrix::Mat4, quaternion::Quaternion, vector::Vec3};
 
     fn vec3_approx_eq(a: Vec3, b: Vec3) -> bool {
         approx_eq(a.x, b.x) && approx_eq(a.y, b.y) && approx_eq(a.z, b.z)
     }
 
     fn mat3_approx_eq(a: Mat3, b: Mat3) -> bool {
-        vec3_approx_eq(a.cols[0], b.cols[0]) &&
-        vec3_approx_eq(a.cols[1], b.cols[1]) &&
-        vec3_approx_eq(a.cols[2], b.cols[2])
+        vec3_approx_eq(a.cols[0], b.cols[0])
+            && vec3_approx_eq(a.cols[1], b.cols[1])
+            && vec3_approx_eq(a.cols[2], b.cols[2])
     }
 
     fn vec4_approx_eq(a: Vec4, b: Vec4) -> bool {
         approx_eq(a.x, b.x) && approx_eq(a.y, b.y) && approx_eq(a.z, b.z) && approx_eq(a.w, b.w)
     }
 
-
     fn mat4_approx_eq(a: Mat4, b: Mat4) -> bool {
-        vec4_approx_eq(a.cols[0], b.cols[0]) &&
-        vec4_approx_eq(a.cols[1], b.cols[1]) &&
-        vec4_approx_eq(a.cols[2], b.cols[2]) &&
-        vec4_approx_eq(a.cols[3], b.cols[3])
+        vec4_approx_eq(a.cols[0], b.cols[0])
+            && vec4_approx_eq(a.cols[1], b.cols[1])
+            && vec4_approx_eq(a.cols[2], b.cols[2])
+            && vec4_approx_eq(a.cols[3], b.cols[3])
     }
 
     // --- Tests for Mat3 ---
@@ -872,7 +913,7 @@ mod tests {
         assert!(mat3_approx_eq(Mat3::IDENTITY * m, m));
     }
 
-     #[test]
+    #[test]
     fn test_mat3_from_scale() {
         let s = Vec3::new(2.0, -3.0, 0.5);
         let m = Mat3::from_scale(s);
@@ -880,7 +921,7 @@ mod tests {
         assert!(vec3_approx_eq(m * v, s)); // Scaling (1,1,1) should yield the scale vector
     }
 
-     #[test]
+    #[test]
     fn test_mat3_rotations() {
         let angle = PI / 6.0; // 30 degrees
         let mx = Mat3::from_rotation_x(angle);
@@ -931,7 +972,7 @@ mod tests {
         assert!(vec3_approx_eq(v_rotated_q, v_rotated_m));
     }
 
-     #[test]
+    #[test]
     fn test_mat3_determinant() {
         assert!(approx_eq(Mat3::IDENTITY.determinant(), 1.0));
         assert!(approx_eq(Mat3::ZERO.determinant(), 0.0));
@@ -943,20 +984,20 @@ mod tests {
         assert!(approx_eq(m_rot.determinant(), 1.0)); // Rotations preserve volume
     }
 
-     #[test]
+    #[test]
     fn test_mat3_transpose() {
         let m = Mat3::from_cols(
             Vec3::new(1.0, 2.0, 3.0),
             Vec3::new(4.0, 5.0, 6.0),
-            Vec3::new(7.0, 8.0, 9.0)
+            Vec3::new(7.0, 8.0, 9.0),
         );
         let mt = m.transpose();
         let expected_mt = Mat3::from_cols(
             Vec3::new(1.0, 4.0, 7.0),
             Vec3::new(2.0, 5.0, 8.0),
-            Vec3::new(3.0, 6.0, 9.0)
+            Vec3::new(3.0, 6.0, 9.0),
         );
-        
+
         assert!(mat3_approx_eq(mt, expected_mt));
         assert!(mat3_approx_eq(m.transpose().transpose(), m)); // Double transpose
     }
@@ -966,10 +1007,16 @@ mod tests {
         let m = Mat3::from_rotation_z(PI / 3.0) * Mat3::from_scale(Vec3::new(1.0, 2.0, 0.5));
         let inv_m = m.inverse().expect("Matrix should be invertible");
         let identity = m * inv_m;
-        assert!(mat3_approx_eq(identity, Mat3::IDENTITY), "M * inv(M) should be Identity");
+        assert!(
+            mat3_approx_eq(identity, Mat3::IDENTITY),
+            "M * inv(M) should be Identity"
+        );
 
         let singular = Mat3::from_scale(Vec3::new(1.0, 0.0, 1.0));
-        assert!(singular.inverse().is_none(), "Singular matrix inverse should be None");
+        assert!(
+            singular.inverse().is_none(),
+            "Singular matrix inverse should be None"
+        );
     }
 
     #[test]
@@ -988,16 +1035,16 @@ mod tests {
         assert!(mat3_approx_eq(rot180z, expected_rot180z));
     }
 
-     #[test]
+    #[test]
     fn test_mat3_conversions() {
-        let m4 = Mat4::from_translation(Vec3::new(10., 20., 30.)) * Mat4::from_rotation_x(PI/4.0);
+        let m4 = Mat4::from_translation(Vec3::new(10., 20., 30.)) * Mat4::from_rotation_x(PI / 4.0);
         let m3 = Mat3::from_mat4(&m4);
         let m4_again = m3.to_mat4();
 
         // Check if rotation part was extracted correctly
         let v = Vec3::Y;
         let v_rot_m3 = m3 * v;
-        let v_rot_m4 = Mat4::from_rotation_x(PI/4.0) * Vec4::from_vec3(v, 0.0); // Rotate as vector
+        let v_rot_m4 = Mat4::from_rotation_x(PI / 4.0) * Vec4::from_vec3(v, 0.0); // Rotate as vector
         assert!(vec3_approx_eq(v_rot_m3, v_rot_m4.truncate()));
 
         // Check if embedding back into Mat4 worked (translation should be zero)
@@ -1078,7 +1125,6 @@ mod tests {
         assert!(vec4_approx_eq(m * p, expected_p));
     }
 
-
     #[test]
     fn test_rotation_x() {
         let angle = PI / 2.0; // 90 degrees
@@ -1088,7 +1134,7 @@ mod tests {
         assert!(vec4_approx_eq(m * p, expected_p));
     }
 
-     #[test]
+    #[test]
     fn test_rotation_y() {
         let angle = PI / 2.0; // 90 degrees
         let m = Mat4::from_rotation_y(angle);
@@ -1098,7 +1144,7 @@ mod tests {
         assert!(vec4_approx_eq(m * p, expected_p));
     }
 
-     #[test]
+    #[test]
     fn test_rotation_z() {
         let angle = PI / 2.0; // 90 degrees
         let m = Mat4::from_rotation_z(angle);
@@ -1131,7 +1177,6 @@ mod tests {
         assert!(mat4_approx_eq(m.transpose().transpose(), m));
     }
 
-
     #[test]
     fn test_mul_mat4() {
         let t = Mat4::from_translation(Vec3::new(1.0, 0.0, 0.0));
@@ -1163,11 +1208,17 @@ mod tests {
         let identity = m * inv_m;
 
         // Check if M * M^-1 is close to identity
-        assert!(mat4_approx_eq(identity, Mat4::IDENTITY), "M * inv(M) should be Identity");
+        assert!(
+            mat4_approx_eq(identity, Mat4::IDENTITY),
+            "M * inv(M) should be Identity"
+        );
 
         // Check singular matrix (e.g., scale with zero)
         let singular = Mat4::from_scale(Vec3::new(1.0, 0.0, 1.0));
-        assert!(singular.inverse().is_none(), "Singular matrix inverse should be None");
+        assert!(
+            singular.inverse().is_none(),
+            "Singular matrix inverse should be None"
+        );
     }
 
     #[test]
@@ -1178,19 +1229,30 @@ mod tests {
         let m = t * r * s; // Combined affine transform
 
         let inv_m = m.inverse().expect("Matrix should be invertible");
-        let affine_inv_m = m.affine_inverse().expect("Matrix should be affine invertible");
+        let affine_inv_m = m
+            .affine_inverse()
+            .expect("Matrix should be affine invertible");
 
         // Check if affine inverse matches general inverse for this case
-        assert!(mat4_approx_eq(inv_m, affine_inv_m), "Affine inverse should match general inverse");
+        assert!(
+            mat4_approx_eq(inv_m, affine_inv_m),
+            "Affine inverse should match general inverse"
+        );
 
         // Check M * inv(M) == Identity using affine inverse
         let identity = m * affine_inv_m;
-        assert!(mat4_approx_eq(identity, Mat4::IDENTITY), "M * affine_inv(M) should be Identity");
+        assert!(
+            mat4_approx_eq(identity, Mat4::IDENTITY),
+            "M * affine_inv(M) should be Identity"
+        );
 
         // Test singular affine matrix
         let singular_s = Mat4::from_scale(Vec3::new(1.0, 0.0, 1.0));
         let singular_m = t * singular_s;
-        assert!(singular_m.affine_inverse().is_none(), "Singular affine matrix inverse should be None");
+        assert!(
+            singular_m.affine_inverse().is_none(),
+            "Singular affine matrix inverse should be None"
+        );
     }
 
     #[test]
@@ -1216,7 +1278,7 @@ mod tests {
         let near = 0.1;
         let far = 100.0;
         let m = Mat4::orthographic_rh_zo(left, right, bottom, top, near, far);
-        
+
         // Check scale factors
         assert!(approx_eq(m.cols[0].x, 2.0 / (right - left)));
         assert!(approx_eq(m.cols[1].y, 2.0 / (top - bottom)));
@@ -1233,12 +1295,12 @@ mod tests {
         let eye = Vec3::new(0.0, 0.0, 5.0);
         let target = Vec3::new(0.0, 0.0, 0.0);
         let up = Vec3::new(0.0, 1.0, 0.0);
-    
+
         let m = Mat4::look_at_rh(eye, target, up).expect("look_at_rh should return Some(Mat4)");
-    
+
         // Forward direction (third column, third row): should be +1.0 for a right-handed system
-        assert!(approx_eq(m.cols[2].z, 1.0)); 
-    
+        assert!(approx_eq(m.cols[2].z, 1.0));
+
         // Translation part (fourth column, third row): should be -eye · forward = -5.0
         assert!(approx_eq(m.cols[3].z, -5.0));
     }

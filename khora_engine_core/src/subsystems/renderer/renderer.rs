@@ -1,7 +1,9 @@
 use winit::dpi::PhysicalSize;
 
-use crate::{math::{LinearRgba, Mat4, Vec3}, window::KhoraWindow};
-
+use crate::{
+    math::{LinearRgba, Mat4, Vec3},
+    window::KhoraWindow,
+};
 
 /// Structure representing the view information for rendering.
 /// Contains the view matrix, projection matrix, and camera position.
@@ -10,7 +12,7 @@ use crate::{math::{LinearRgba, Mat4, Vec3}, window::KhoraWindow};
 pub struct ViewInfo {
     pub view_matrix: Mat4,
     pub projection_matrix: Mat4,
-    pub camera_position: Vec3
+    pub camera_position: Vec3,
 }
 
 impl Default for ViewInfo {
@@ -23,7 +25,6 @@ impl Default for ViewInfo {
     }
 }
 
-
 /// Structure representing the rendering strategy.
 /// This structure defines how the rendering will be performed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,14 +34,13 @@ pub enum RenderStrategy {
     Custom(u32),
 }
 
-
 /// Structure representing the rendering settings.
 /// Contains the rendering strategy, quality level, and other global rendering parameters.
 #[derive(Debug, Clone)]
 pub struct RenderSettings {
     pub strategy: RenderStrategy,
     pub quality_level: u32, // 1 = Low, 2 = Medium, 3 = High
-    pub show_wireframe: bool
+    pub show_wireframe: bool,
 }
 
 impl Default for RenderSettings {
@@ -53,15 +53,13 @@ impl Default for RenderSettings {
     }
 }
 
-
 /// Structure representing a renderable object.
 #[derive(Debug, Clone)]
 pub struct RenderObject {
     pub transform: Mat4,
     pub mesh_id: usize,
-    pub color: LinearRgba
+    pub color: LinearRgba,
 }
-
 
 /// Structure representing the render statistics.
 #[derive(Debug, Default, Clone)]
@@ -75,28 +73,32 @@ pub struct RenderStats {
     pub vram_usage_estimate_mb: f32,
 }
 
-
 #[derive(Debug)]
 pub enum RenderSystemError {
     InitializationFailed(String),
     SurfaceAcquisitionFailed(String),
     RenderFailed(String),
-    ResourceCreationFailed(String)
+    ResourceCreationFailed(String),
 }
 
 impl std::fmt::Display for RenderSystemError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RenderSystemError::InitializationFailed(s) => write!(f, "RenderSystem Initialization Failed: {}", s),
-            RenderSystemError::SurfaceAcquisitionFailed(s) => write!(f, "RenderSystem Surface Acquisition Failed: {}", s),
+            RenderSystemError::InitializationFailed(s) => {
+                write!(f, "RenderSystem Initialization Failed: {}", s)
+            }
+            RenderSystemError::SurfaceAcquisitionFailed(s) => {
+                write!(f, "RenderSystem Surface Acquisition Failed: {}", s)
+            }
             RenderSystemError::RenderFailed(s) => write!(f, "RenderSystem Render Failed: {}", s),
-            RenderSystemError::ResourceCreationFailed(s) => write!(f, "RenderSystem Resource Creation Failed: {}", s),
+            RenderSystemError::ResourceCreationFailed(s) => {
+                write!(f, "RenderSystem Resource Creation Failed: {}", s)
+            }
         }
     }
 }
 
 impl std::error::Error for RenderSystemError {}
-
 
 /// Enum representing the type of renderer backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,7 +111,6 @@ pub enum RendererBackendType {
     Unknown,
 }
 
-
 /// Structure representing the device type.
 /// This structure is used to identify the type of device used for rendering.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,21 +122,18 @@ pub enum RendererDeviceType {
     Unknown,
 }
 
-
 /// Structure representing the renderer adapter information.
 /// This structure contains the name of the adapter, the backend type, and the device type.
 #[derive(Debug, Clone)]
 pub struct RendererAdapterInfo {
     pub name: String,
     pub backend_type: RendererBackendType,
-    pub device_type: RendererDeviceType
+    pub device_type: RendererDeviceType,
 }
-
 
 /// Trait representing a render system.
 /// This trait defines the methods that a render system must implement.
 pub trait RenderSystem: std::fmt::Debug + Send + Sync {
-
     /// Initialize the rendering system.
     /// This method is called once at the beginning of the application.
     fn init(&mut self, window: &KhoraWindow) -> Result<(), RenderSystemError>;
@@ -164,8 +162,6 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     /// Clean up and release the resources of the rendering system.
     fn shutdown(&mut self);
 
-
     /// Get the adapter information of the rendering system.
     fn get_adapter_info(&self) -> Option<RendererAdapterInfo>;
-
 }

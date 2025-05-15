@@ -1,26 +1,27 @@
 pub const EPSILON: f32 = 1e-5;
 
-pub use std::f32::{INFINITY, NEG_INFINITY, NAN};
-pub use std::f32::consts::{PI, TAU, FRAC_PI_2, FRAC_PI_3, FRAC_PI_4, FRAC_PI_6, FRAC_PI_8, E, LN_2, LN_10, LOG2_E, LOG10_E, SQRT_2};
+pub use std::f32::consts::{
+    E, FRAC_PI_2, FRAC_PI_3, FRAC_PI_4, FRAC_PI_6, FRAC_PI_8, LN_2, LN_10, LOG2_E, LOG10_E, PI,
+    SQRT_2, TAU,
+};
+pub use std::f32::{INFINITY, NAN, NEG_INFINITY};
 
 /// Factor to convert degrees to radians (PI / 180.0).
 pub const DEG_TO_RAD: f32 = PI / 180.0;
 /// Factor to convert radians to degrees (180.0 / PI).
 pub const RAD_TO_DEG: f32 = 180.0 / PI;
 
-pub mod vector;
-pub mod matrix;
-pub mod quaternion;
 pub mod color;
 pub mod geometry;
+pub mod matrix;
+pub mod quaternion;
+pub mod vector;
 
-
-
-pub use vector::{Vec2, Vec3, Vec4};
-pub use matrix::{Mat3, Mat4};
-pub use quaternion::Quaternion;
 pub use color::LinearRgba;
 pub use geometry::Aabb;
+pub use matrix::{Mat3, Mat4};
+pub use quaternion::Quaternion;
+pub use vector::{Vec2, Vec3, Vec4};
 
 // --- Utility Functions ---
 

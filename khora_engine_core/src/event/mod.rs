@@ -1,7 +1,5 @@
-use log;
 use crate::subsystems::input::InputEvent;
-
-
+use log;
 
 /// Represents engine-wide events that can be sent over the message bus.
 #[derive(Debug, Clone, PartialEq)]
@@ -40,7 +38,7 @@ impl EventBus {
     /// None if the event was sent successfully, or an error if the receiver is disconnected.
     pub fn publish(&self, event: EngineEvent) {
         log::trace!("Publishing EngineEvent: {:?}", event);
-        
+
         if let Err(e) = self.sender.send(event) {
             log::error!("Failed to send event: {}. Receiver likely disconnected.", e);
         }
@@ -69,17 +67,17 @@ impl Default for EventBus {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::subsystems::input::InputEvent;
-    use flume::{TryRecvError, SendError};
+    use flume::{SendError, TryRecvError};
     use std::{thread, time::Duration};
 
     fn dummy_input_event() -> EngineEvent {
-        EngineEvent::Input(InputEvent::KeyPressed { key_code: "Test".to_string() })
+        EngineEvent::Input(InputEvent::KeyPressed {
+            key_code: "Test".to_string(),
+        })
     }
 
     #[test]
@@ -96,7 +94,9 @@ mod tests {
         let receiver = bus.receiver();
         let event_to_send = dummy_input_event();
 
-        sender.send(event_to_send.clone()).expect("Send should succeed");
+        sender
+            .send(event_to_send.clone())
+            .expect("Send should succeed");
 
         // Use recv_timeout to wait a short duration, preventing infinite hang if test fails
         match receiver.recv_timeout(Duration::from_millis(100)) {
@@ -127,7 +127,10 @@ mod tests {
         let sender = bus.sender();
         let receiver = bus.receiver();
 
-        let event1 = EngineEvent::WindowResized { width: 1, height: 1 };
+        let event1 = EngineEvent::WindowResized {
+            width: 1,
+            height: 1,
+        };
         let event2 = dummy_input_event();
         let event3 = EngineEvent::ShutdownRequested;
 
@@ -143,7 +146,6 @@ mod tests {
                 Err(e) => panic!("Failed to receive event within timeout: {:?}", e),
             }
         }
-
 
         assert_eq!(received_events.len(), 3);
         assert_eq!(received_events[0], event1);
@@ -164,18 +166,25 @@ mod tests {
         let sender2 = bus.sender();
         let receiver = bus.receiver();
 
-        let event1 = EngineEvent::WindowResized { width: 1, height: 1 };
+        let event1 = EngineEvent::WindowResized {
+            width: 1,
+            height: 1,
+        };
         let event2 = dummy_input_event();
 
         sender1.send(event1.clone()).expect("Send 1 should succeed");
         sender2.send(event2.clone()).expect("Send 2 should succeed");
 
         // Receive the two events (order might not be guaranteed, but likely FIFO here)
-        let rec1 = receiver.recv_timeout(Duration::from_millis(50)).expect("Receive 1 failed");
-        let rec2 = receiver.recv_timeout(Duration::from_millis(50)).expect("Receive 2 failed");
+        let rec1 = receiver
+            .recv_timeout(Duration::from_millis(50))
+            .expect("Receive 1 failed");
+        let rec2 = receiver
+            .recv_timeout(Duration::from_millis(50))
+            .expect("Receive 2 failed");
 
         // Check if both events were received, regardless of order
-        assert!( (rec1 == event1 && rec2 == event2) || (rec1 == event2 && rec2 == event1) );
+        assert!((rec1 == event1 && rec2 == event2) || (rec1 == event2 && rec2 == event1));
     }
 
     /// Test to ensure that sending from a separate thread works correctly.
@@ -191,7 +200,9 @@ mod tests {
 
         let handle = thread::spawn(move || {
             thread::sleep(Duration::from_millis(20));
-            sender_clone.send(event_clone).expect("Send from thread failed");
+            sender_clone
+                .send(event_clone)
+                .expect("Send from thread failed");
             log::trace!("Event sent from spawned thread.");
         });
 

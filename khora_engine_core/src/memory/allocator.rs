@@ -27,7 +27,6 @@ impl<A> SaaTrackingAllocator<A> {
 }
 
 unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
-
     /// Allocates memory of the specified layout and tracks the total allocated bytes.
     /// ## Arguments
     /// * `layout` - The layout of the memory to allocate.
@@ -36,16 +35,19 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = unsafe { self.inner.alloc(layout) };
         if !ptr.is_null() {
-
             // Allocation successful, increase the counter.
             // Use fetch_update to ensure atomicity and avoid potential overflows.
-            let result = ALLOCATED_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                current.checked_add(layout.size())
-            });
+            let result =
+                ALLOCATED_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                    current.checked_add(layout.size())
+                });
 
             // Overflow
             if result.is_err() {
-                log::error!("Memory tracking counter overflowed during alloc! Size: {}", layout.size());
+                log::error!(
+                    "Memory tracking counter overflowed during alloc! Size: {}",
+                    layout.size()
+                );
             }
         }
         ptr
@@ -58,15 +60,18 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         // Decrease the counter before deallocating.
         // Use fetch_update to ensure atomicity and avoid potential underflows.
-        let result = ALLOCATED_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-            current.checked_sub(layout.size())
-        });
+        let result =
+            ALLOCATED_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.checked_sub(layout.size())
+            });
 
         // Overflow
         if result.is_err() {
-            log::error!("Memory tracking counter overflowed during dealloc! Size: {}", layout.size());
+            log::error!(
+                "Memory tracking counter overflowed during dealloc! Size: {}",
+                layout.size()
+            );
         }
-
 
         unsafe { self.inner.dealloc(ptr, layout) };
     }
@@ -77,19 +82,22 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
     /// ## Returns
     /// A pointer to the allocated memory, or null if allocation fails.
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-
         // Use the inner allocator to allocate zeroed memory.
         let ptr = unsafe { self.inner.alloc_zeroed(layout) };
 
         if !ptr.is_null() {
             // Allocation successful, increase the counter.
-            let result = ALLOCATED_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                current.checked_add(layout.size())
-            });
+            let result =
+                ALLOCATED_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                    current.checked_add(layout.size())
+                });
 
             // Overflow
             if result.is_err() {
-                log::error!("Memory tracking counter overflowed during alloc_zeroed! Size: {}", layout.size());
+                log::error!(
+                    "Memory tracking counter overflowed during alloc_zeroed! Size: {}",
+                    layout.size()
+                );
             }
         }
         ptr
@@ -107,7 +115,6 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
         let new_ptr = unsafe { self.inner.realloc(ptr, layout, new_size) };
 
         if !new_ptr.is_null() {
-            
             // Adjust counter using checked operations within fetch_update
             let size_diff = new_size as isize - old_size as isize;
 
@@ -129,12 +136,18 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
             // Check for overflow or underflow
             if fetch_result.is_err() {
                 if size_diff > 0 {
-                    log::error!("Memory tracking counter overflowed during realloc (increase)! Diff: {}", size_diff);
+                    log::error!(
+                        "Memory tracking counter overflowed during realloc (increase)! Diff: {}",
+                        size_diff
+                    );
                 } else {
                     // Underflow on realloc decrease is serious, likely bug
-                    log::error!("Memory tracking counter underflowed during realloc (decrease)! Diff: {}", size_diff);
+                    log::error!(
+                        "Memory tracking counter underflowed during realloc (decrease)! Diff: {}",
+                        size_diff
+                    );
                 }
-           }
+            }
         }
         new_ptr
     }

@@ -4,22 +4,22 @@ use winit::dpi::PhysicalSize;
 
 use crate::{core::timer::Stopwatch, window::KhoraWindow};
 
-use super::{graphic_context::GraphicsContext, renderer::{RenderObject, RenderSettings, RenderStats, RenderSystem, RenderSystemError, RendererAdapterInfo, RendererBackendType, RendererDeviceType, ViewInfo}};
-
-
-
-
+use super::{
+    graphic_context::GraphicsContext,
+    renderer::{
+        RenderObject, RenderSettings, RenderStats, RenderSystem, RenderSystemError,
+        RendererAdapterInfo, RendererBackendType, RendererDeviceType, ViewInfo,
+    },
+};
 
 #[derive(Debug)]
 pub struct WgpuRenderer {
     graphics_context: Option<Arc<GraphicsContext>>,
     last_frame_stats: RenderStats,
-    frame_count: u64
+    frame_count: u64,
 }
 
-
 impl WgpuRenderer {
-    
     /// Create a new WgpuRenderer instance.
     /// This function initializes the renderer with default values.
     pub fn new() -> Self {
@@ -37,7 +37,6 @@ impl WgpuRenderer {
 unsafe impl Send for WgpuRenderer {}
 unsafe impl Sync for WgpuRenderer {}
 
-
 impl RenderSystem for WgpuRenderer {
     fn init(&mut self, window: &KhoraWindow) -> Result<(), RenderSystemError> {
         if self.graphics_context.is_some() {
@@ -52,14 +51,23 @@ impl RenderSystem for WgpuRenderer {
                 log::info!("WgpuRenderer: Internal GraphicsContext initialized successfully.");
                 log::info!(
                     "WgpuRenderer: Initialized with adapter: {}, backend: {:?}, features: {:?}, limits: {:?}",
-                    context.adapter_name, context.adapter_backend, context.active_device_features, context.device_limits
+                    context.adapter_name,
+                    context.adapter_backend,
+                    context.active_device_features,
+                    context.device_limits
                 );
                 self.graphics_context = Some(Arc::new(context));
                 Ok(())
             }
             Err(e) => {
-                log::error!("WgpuRenderer: Failed to initialize internal GraphicsContext: {}", e);
-                Err(RenderSystemError::InitializationFailed(format!("GraphicsContext creation error: {}", e)))
+                log::error!(
+                    "WgpuRenderer: Failed to initialize internal GraphicsContext: {}",
+                    e
+                );
+                Err(RenderSystemError::InitializationFailed(format!(
+                    "GraphicsContext creation error: {}",
+                    e
+                )))
             }
         }
     }
@@ -78,16 +86,22 @@ impl RenderSystem for WgpuRenderer {
             if let Some(gc_mut) = Arc::get_mut(self.graphics_context.as_mut().unwrap()) {
                 gc_mut.resize(new_size);
             } else {
-                
-                log::warn!("WgpuRenderer::resize: Could not get mutable access to GraphicsContext via Arc. Resize might not have taken full effect if Arc is shared and GraphicsContext resize needs &mut.");
-                
+                log::warn!(
+                    "WgpuRenderer::resize: Could not get mutable access to GraphicsContext via Arc. Resize might not have taken full effect if Arc is shared and GraphicsContext resize needs &mut."
+                );
+
                 // If Arc::get_mut fails, it means the GraphicsContext is shared.
                 // We can still call resize on the Arc, but it will not be a mutable reference.
-                let gc_arc_for_mutation_attempt = self.graphics_context.as_mut().expect("Graphics context should exist for resize");
+                let gc_arc_for_mutation_attempt = self
+                    .graphics_context
+                    .as_mut()
+                    .expect("Graphics context should exist for resize");
                 if let Some(gc_mut_ref) = Arc::get_mut(gc_arc_for_mutation_attempt) {
                     gc_mut_ref.resize(new_size);
                 } else {
-                    log::warn!("WgpuRenderer::resize: Arc::get_mut failed. GraphicsContext might be shared unexpectedly. Resize might not be fully effective."); 
+                    log::warn!(
+                        "WgpuRenderer::resize: Arc::get_mut failed. GraphicsContext might be shared unexpectedly. Resize might not be fully effective."
+                    );
                 }
             }
         } else {
@@ -100,9 +114,9 @@ impl RenderSystem for WgpuRenderer {
             log::trace!("WgpuRenderer::prepare_frame skipped, not initialized.");
             return;
         }
-        
+
         let stopwatch = Stopwatch::new();
-        
+
         self.last_frame_stats.cpu_preparation_time_ms = stopwatch.elapsed_ms().unwrap_or(0) as f32;
     }
 
@@ -127,11 +141,21 @@ impl RenderSystem for WgpuRenderer {
             log::warn!("WgpuRenderer: Failed to get current texture: {:?}", e);
             match e {
                 wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated => {
-                    RenderSystemError::SurfaceAcquisitionFailed(format!("Surface Lost/Outdated: {:?}", e))
+                    RenderSystemError::SurfaceAcquisitionFailed(format!(
+                        "Surface Lost/Outdated: {:?}",
+                        e
+                    ))
                 }
-                wgpu::SurfaceError::OutOfMemory => RenderSystemError::SurfaceAcquisitionFailed("OutOfMemory".to_string()),
-                wgpu::SurfaceError::Timeout => RenderSystemError::SurfaceAcquisitionFailed("Timeout".to_string()),
-                _ => RenderSystemError::SurfaceAcquisitionFailed(format!("Other surface error: {:?}", e)),
+                wgpu::SurfaceError::OutOfMemory => {
+                    RenderSystemError::SurfaceAcquisitionFailed("OutOfMemory".to_string())
+                }
+                wgpu::SurfaceError::Timeout => {
+                    RenderSystemError::SurfaceAcquisitionFailed("Timeout".to_string())
+                }
+                _ => RenderSystemError::SurfaceAcquisitionFailed(format!(
+                    "Other surface error: {:?}",
+                    e
+                )),
             }
         })?;
 
@@ -142,18 +166,19 @@ impl RenderSystem for WgpuRenderer {
 
         log::trace!(
             "WgpuRenderer::render_to_window frame {}, {} objects. Strategy: {:?}, Quality: {}",
-            self.frame_count, renderables.len(), settings.strategy, settings.quality_level
+            self.frame_count,
+            renderables.len(),
+            settings.strategy,
+            settings.quality_level
         );
 
         let device = gc.device();
         let queue = gc.queue();
 
         // 3. Create a command encoder
-        let mut encoder = device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor {
-                label: Some("WgpuRenderer Command Encoder"),
-            },
-        );
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("WgpuRenderer Command Encoder"),
+        });
 
         // 4. Begin the render pass
         {
@@ -176,10 +201,11 @@ impl RenderSystem for WgpuRenderer {
 
         // 5. Submit the command buffer
         queue.submit(std::iter::once(encoder.finish()));
-        drop(output_surface_texture); 
+        drop(output_surface_texture);
 
-        self.last_frame_stats.cpu_render_submission_time_ms = stopwatch.elapsed_ms().unwrap_or(0) as f32;
-        
+        self.last_frame_stats.cpu_render_submission_time_ms =
+            stopwatch.elapsed_ms().unwrap_or(0) as f32;
+
         Ok(self.last_frame_stats.clone())
     }
 
@@ -190,11 +216,17 @@ impl RenderSystem for WgpuRenderer {
     fn supports_feature(&self, feature_name: &str) -> bool {
         if let Some(gc) = &self.graphics_context {
             match feature_name {
-                "gpu_timestamps" => gc.active_device_features.contains(wgpu::Features::TIMESTAMP_QUERY),
-                "texture_compression_bc" => gc.active_device_features.contains(wgpu::Features::TEXTURE_COMPRESSION_BC),
+                "gpu_timestamps" => gc
+                    .active_device_features
+                    .contains(wgpu::Features::TIMESTAMP_QUERY),
+                "texture_compression_bc" => gc
+                    .active_device_features
+                    .contains(wgpu::Features::TEXTURE_COMPRESSION_BC),
                 _ => false,
             }
-        } else { false }
+        } else {
+            false
+        }
     }
 
     fn shutdown(&mut self) {

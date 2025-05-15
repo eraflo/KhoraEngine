@@ -11,7 +11,9 @@ impl Stopwatch {
     /// A new instance of the Stopwatch struct.
     #[inline]
     pub fn new() -> Self {
-        Self { start_time: Some(Instant::now()) }
+        Self {
+            start_time: Some(Instant::now()),
+        }
     }
 
     /// Returns the elapsed time since the stopwatch was started.
@@ -53,7 +55,6 @@ impl Stopwatch {
     pub fn elapsed_secs_f64(&self) -> Option<f64> {
         self.elapsed().map(|d| d.as_secs_f64())
     }
-
 }
 
 impl Default for Stopwatch {
@@ -67,10 +68,9 @@ mod tests {
     use super::*;
     use std::thread;
 
-    const SMALL_DURATION_MS: u64 = 15; 
+    const SMALL_DURATION_MS: u64 = 15;
     const SLEEP_DURATION_MS: u64 = 100;
     const SLEEP_MARGIN_MS: u64 = 50;
-
 
     /// A test to check if the Stopwatch struct is created correctly and starts the timer.
     /// It verifies that the elapsed time is not None after creation and that it is very small.
@@ -78,10 +78,22 @@ mod tests {
     fn stopwatch_creation_starts_timer() {
         let watch = Stopwatch::new();
         // Since ::new() guarantees start_time is Some, elapsed() should also be Some.
-        assert!(watch.elapsed().is_some(), "Elapsed should return Some after creation");
-        assert!(watch.elapsed_ms().is_some(), "Elapsed_ms should return Some after creation");
-        assert!(watch.elapsed_us().is_some(), "Elapsed_us should return Some after creation");
-        assert!(watch.elapsed_secs_f64().is_some(), "Elapsed_secs_f64 should return Some after creation");
+        assert!(
+            watch.elapsed().is_some(),
+            "Elapsed should return Some after creation"
+        );
+        assert!(
+            watch.elapsed_ms().is_some(),
+            "Elapsed_ms should return Some after creation"
+        );
+        assert!(
+            watch.elapsed_us().is_some(),
+            "Elapsed_us should return Some after creation"
+        );
+        assert!(
+            watch.elapsed_secs_f64().is_some(),
+            "Elapsed_secs_f64 should return Some after creation"
+        );
     }
 
     /// A test to check if the Stopwatch struct correctly reports elapsed time after a short delay.
@@ -92,23 +104,37 @@ mod tests {
 
         // Check elapsed Duration
         let elapsed_duration = watch.elapsed().expect("Should have elapsed duration");
-        assert!(elapsed_duration < Duration::from_millis(SMALL_DURATION_MS),
-                "Initial elapsed duration ({:?}) should be very small", elapsed_duration);
+        assert!(
+            elapsed_duration < Duration::from_millis(SMALL_DURATION_MS),
+            "Initial elapsed duration ({:?}) should be very small",
+            elapsed_duration
+        );
 
         // Check elapsed milliseconds
         let elapsed_ms = watch.elapsed_ms().expect("Should have elapsed ms");
-        assert!(elapsed_ms < SMALL_DURATION_MS,
-                "Initial elapsed ms ({}) should be very small", elapsed_ms);
+        assert!(
+            elapsed_ms < SMALL_DURATION_MS,
+            "Initial elapsed ms ({}) should be very small",
+            elapsed_ms
+        );
 
         // Check elapsed microseconds
         let elapsed_us = watch.elapsed_us().expect("Should have elapsed us");
         let small_duration_us = SMALL_DURATION_MS * 1000;
-        assert!(elapsed_us < small_duration_us,
-                "Initial elapsed us ({}) should be very small", elapsed_us);
+        assert!(
+            elapsed_us < small_duration_us,
+            "Initial elapsed us ({}) should be very small",
+            elapsed_us
+        );
 
-        let elapsed_secs_f64 = watch.elapsed_secs_f64().expect("Should have elapsed seconds as f64");
-        assert!(elapsed_secs_f64 < SMALL_DURATION_MS as f64 / 1000.0,
-                "Initial elapsed seconds ({}) should be very small", elapsed_secs_f64);
+        let elapsed_secs_f64 = watch
+            .elapsed_secs_f64()
+            .expect("Should have elapsed seconds as f64");
+        assert!(
+            elapsed_secs_f64 < SMALL_DURATION_MS as f64 / 1000.0,
+            "Initial elapsed seconds ({}) should be very small",
+            elapsed_secs_f64
+        );
     }
 
     /// A test to check if the Stopwatch struct correctly reports elapsed time after a sleep duration.
@@ -124,39 +150,78 @@ mod tests {
         thread::sleep(sleep_duration);
 
         // Check elapsed Duration
-        let elapsed_duration = watch.elapsed().expect("Should have elapsed duration after sleep");
-        assert!(elapsed_duration >= min_expected_duration,
-                "Elapsed duration ({:?}) should be >= sleep duration ({:?})", elapsed_duration, min_expected_duration);
-        assert!(elapsed_duration < max_expected_duration,
-                "Elapsed duration ({:?}) should be < sleep duration + margin ({:?})", elapsed_duration, max_expected_duration);
+        let elapsed_duration = watch
+            .elapsed()
+            .expect("Should have elapsed duration after sleep");
+        assert!(
+            elapsed_duration >= min_expected_duration,
+            "Elapsed duration ({:?}) should be >= sleep duration ({:?})",
+            elapsed_duration,
+            min_expected_duration
+        );
+        assert!(
+            elapsed_duration < max_expected_duration,
+            "Elapsed duration ({:?}) should be < sleep duration + margin ({:?})",
+            elapsed_duration,
+            max_expected_duration
+        );
 
         // Check elapsed milliseconds
-        let elapsed_ms = watch.elapsed_ms().expect("Should have elapsed ms after sleep");
+        let elapsed_ms = watch
+            .elapsed_ms()
+            .expect("Should have elapsed ms after sleep");
         let min_expected_ms = SLEEP_DURATION_MS;
         let max_expected_ms = SLEEP_DURATION_MS + SLEEP_MARGIN_MS;
-        assert!(elapsed_ms >= min_expected_ms,
-                "Elapsed ms ({}) should be >= sleep duration ms ({})", elapsed_ms, min_expected_ms);
-        assert!(elapsed_ms < max_expected_ms,
-                "Elapsed ms ({}) should be < sleep duration ms + margin ({})", elapsed_ms, max_expected_ms);
-
+        assert!(
+            elapsed_ms >= min_expected_ms,
+            "Elapsed ms ({}) should be >= sleep duration ms ({})",
+            elapsed_ms,
+            min_expected_ms
+        );
+        assert!(
+            elapsed_ms < max_expected_ms,
+            "Elapsed ms ({}) should be < sleep duration ms + margin ({})",
+            elapsed_ms,
+            max_expected_ms
+        );
 
         // Check elapsed microseconds
-        let elapsed_us = watch.elapsed_us().expect("Should have elapsed us after sleep");
+        let elapsed_us = watch
+            .elapsed_us()
+            .expect("Should have elapsed us after sleep");
         let min_expected_us = SLEEP_DURATION_MS * 1000;
         let max_expected_us = (SLEEP_DURATION_MS + SLEEP_MARGIN_MS) * 1000;
-        assert!(elapsed_us >= min_expected_us,
-                "Elapsed us ({}) should be >= sleep duration us ({})", elapsed_us, min_expected_us);
-        assert!(elapsed_us < max_expected_us,
-                "Elapsed us ({}) should be < sleep duration us + margin ({})", elapsed_us, max_expected_us);
-        
+        assert!(
+            elapsed_us >= min_expected_us,
+            "Elapsed us ({}) should be >= sleep duration us ({})",
+            elapsed_us,
+            min_expected_us
+        );
+        assert!(
+            elapsed_us < max_expected_us,
+            "Elapsed us ({}) should be < sleep duration us + margin ({})",
+            elapsed_us,
+            max_expected_us
+        );
+
         // Check elapsed seconds as f64
-        let elapsed_secs_f64 = watch.elapsed_secs_f64().expect("Should have elapsed seconds as f64 after sleep");
+        let elapsed_secs_f64 = watch
+            .elapsed_secs_f64()
+            .expect("Should have elapsed seconds as f64 after sleep");
         let min_expected_secs_f64 = SLEEP_DURATION_MS as f64 / 1000.0;
         let max_expected_secs_f64 = (SLEEP_DURATION_MS + SLEEP_MARGIN_MS) as f64 / 1000.0;
-        assert!(elapsed_secs_f64 >= min_expected_secs_f64,
-                "Elapsed seconds ({}) should be >= sleep duration seconds ({})", elapsed_secs_f64, min_expected_secs_f64);
-        assert!(elapsed_secs_f64 < max_expected_secs_f64,
-                "Elapsed seconds ({}) should be < sleep duration seconds + margin ({})", elapsed_secs_f64, max_expected_secs_f64);
+        assert!(
+            elapsed_secs_f64 >= min_expected_secs_f64,
+            "Elapsed seconds ({}) should be >= sleep duration seconds ({})",
+            elapsed_secs_f64,
+            min_expected_secs_f64
+        );
+        assert!(
+            elapsed_secs_f64 < max_expected_secs_f64,
+            "Elapsed seconds ({}) should be < sleep duration seconds + margin ({})",
+            elapsed_secs_f64,
+            max_expected_secs_f64
+        );
     }
 
     /// A test to check if the Stopwatch struct implements the Default trait.
@@ -181,8 +246,15 @@ mod tests {
         let elapsed2 = watch2.elapsed_us().unwrap();
 
         // They should be very close, allow a small difference for the clone operation itself
-        let difference = if elapsed1 > elapsed2 { elapsed1 - elapsed2 } else { elapsed2 - elapsed1 };
-        assert!(difference < 1000, "Elapsed time of clones should be very close (diff: {}us)", difference); // Allow 1ms diff
+        let difference = if elapsed1 > elapsed2 {
+            elapsed1 - elapsed2
+        } else {
+            elapsed2 - elapsed1
+        };
+        assert!(
+            difference < 1000,
+            "Elapsed time of clones should be very close (diff: {}us)",
+            difference
+        ); // Allow 1ms diff
     }
 }
-
