@@ -4,11 +4,9 @@ use winit::{
 };
 use crate::{subsystems::renderer::{
     RenderObject, 
-    RenderSettings, 
-    RenderStats, 
+    RenderSettings,  
     RenderSystem, 
-    RenderSystemError, 
-    RendererAdapterInfo, 
+    RenderSystemError,
     ViewInfo, 
     WgpuRenderer
 }, window::KhoraWindow};
@@ -194,7 +192,7 @@ impl ApplicationHandler<()> for EngineAppHandler {
     /// * `event` - The window event that occurred.
     fn window_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        _event_loop: &ActiveEventLoop,
         window_id: WindowId,
         event: WindowEvent,
     ) {
@@ -321,7 +319,7 @@ impl ApplicationHandler<()> for EngineAppHandler {
     /// ## Arguments
     /// * `&mut self` - A mutable reference to the EngineAppHandler instance.
     /// * `event_loop` - A reference to the ActiveEventLoop instance.
-    fn exiting(&mut self, event_loop: &ActiveEventLoop) {
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         log::info!("Application exiting event received.");
 
         self.engine.shutdown();
@@ -433,7 +431,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::subsystems::input::{InputEvent, MouseButton};
+    use crate::subsystems::input::{InputEvent};
 
     /// Test the Engine's creation and initial state
     #[test]

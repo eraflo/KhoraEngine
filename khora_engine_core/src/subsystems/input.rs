@@ -63,11 +63,10 @@ pub(crate) fn translate_winit_input(event: &WindowEvent) -> Option<InputEvent> {
         }
 
         WindowEvent::MouseWheel { delta, .. } => {
-            let (mut dx, mut dy) = (0.0, 0.0);
-            match delta {
-                MouseScrollDelta::LineDelta(x, y) => { dx = *x; dy = *y; }
-                MouseScrollDelta::PixelDelta(pos) => { dx = pos.x as f32; dy = pos.y as f32; }
-            }
+            let (dx, dy): (f32, f32) = match delta {
+                MouseScrollDelta::LineDelta(x, y) => (*x, *y),
+                MouseScrollDelta::PixelDelta(pos) => (pos.x as f32, pos.y as f32),
+            };
 
             // Only return the event if there is a non-zero scroll delta
             // This is to avoid unnecessary events when the scroll delta is zero.

@@ -70,7 +70,7 @@ impl RenderSystem for WgpuRenderer {
             return;
         }
 
-        if let Some(gc_arc) = &self.graphics_context {
+        if let Some(_gc_arc) = &self.graphics_context {
             // To call `resize` which takes `&mut self` on GraphicsContext,
             // we need a mutable reference. If Arc::get_mut returns Some, it means
             // this is the only strong reference to the GraphicsContext, allowing mutation.
@@ -95,7 +95,7 @@ impl RenderSystem for WgpuRenderer {
         }
     }
 
-    fn prepare_frame(&mut self, view_info: &ViewInfo) {
+    fn prepare_frame(&mut self, _view_info: &ViewInfo) {
         if self.graphics_context.is_none() {
             log::trace!("WgpuRenderer::prepare_frame skipped, not initialized.");
             return;
@@ -109,7 +109,7 @@ impl RenderSystem for WgpuRenderer {
     fn render(
         &mut self,
         renderables: &[RenderObject],
-        view_info: &ViewInfo,
+        _view_info: &ViewInfo,
         settings: &RenderSettings,
     ) -> Result<RenderStats, RenderSystemError> {
         self.frame_count += 1;
@@ -218,7 +218,6 @@ impl RenderSystem for WgpuRenderer {
                 wgpu::DeviceType::DiscreteGpu => RendererDeviceType::DiscreteGpu,
                 wgpu::DeviceType::VirtualGpu => RendererDeviceType::VirtualGpu,
                 wgpu::DeviceType::Cpu => RendererDeviceType::Cpu,
-                _ => RendererDeviceType::Unknown, // Catch-all
             };
             RendererAdapterInfo {
                 name: gc.adapter_name.clone(),

@@ -145,6 +145,7 @@ impl LinearRgba {
     /// Clamps the color components to the range [0.0, 1.0].
     /// ## Returns
     /// * A new LinearRgba color with clamped components.
+    #[allow(dead_code)]
     #[inline]
     fn clamp(&self) -> Self {
         Self {

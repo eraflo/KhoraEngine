@@ -1,6 +1,18 @@
 use crate::window::KhoraWindow;
 use wgpu::{
-    wgt::SurfaceConfiguration, AdapterInfo, Backend, CommandEncoder, DeviceType, Features, InstanceDescriptor, RenderPass, Surface, SurfaceCapabilities, SurfaceTarget, SurfaceTexture, TextureFormat, TextureView
+    wgt::SurfaceConfiguration, 
+    AdapterInfo, 
+    Backend, 
+    CommandEncoder, 
+    DeviceType, 
+    Features, 
+    InstanceDescriptor, 
+    RenderPass, 
+    Surface, 
+    SurfaceCapabilities, 
+    SurfaceTexture, 
+    TextureFormat, 
+    TextureView
 };
 use winit::dpi::PhysicalSize;
 use std::sync::Arc;

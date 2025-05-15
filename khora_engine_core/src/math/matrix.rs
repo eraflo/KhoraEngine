@@ -1,4 +1,4 @@
-use super::{vector::{Vec2, Vec3, Vec4}, Quaternion, EPSILON, PI};
+use super::{vector::{Vec2, Vec3, Vec4}, Quaternion, EPSILON};
 use std::ops::{Index, IndexMut, Mul};
 
 // --- Mat3 ---
@@ -42,6 +42,7 @@ impl Mat3 {
     /// * `index` - The index of the row to return.
     /// ## Returns
     /// * A new vector representing the row of the matrix.
+    #[allow(dead_code)]
     #[inline]
     fn from_row(&self, index: usize) -> Vec3 {
         Vec3 {
@@ -836,7 +837,7 @@ impl Mul<Vec4> for Mat4 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::{approx_eq, quaternion::Quaternion, vector::Vec3, matrix::Mat4};
+    use crate::math::{approx_eq, quaternion::Quaternion, vector::Vec3, matrix::Mat4, PI};
 
     fn vec3_approx_eq(a: Vec3, b: Vec3) -> bool {
         approx_eq(a.x, b.x) && approx_eq(a.y, b.y) && approx_eq(a.z, b.z)

@@ -4,7 +4,7 @@ use winit::{
     dpi::PhysicalSize,
     error::OsError,
     event_loop::ActiveEventLoop,
-    window::{Window, WindowAttributes},
+    window::{Window},
     window::WindowId,
 };
 
