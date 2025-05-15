@@ -109,9 +109,6 @@ The project currently sets up core components, creates a window, handles basic O
 git clone https://github.com/eraflo/KhoraEngine.git
 cd KhoraEngine
 
-# (Optional) Checkout the state after Milestone 1 completion
-# git checkout m1-complete
-
 # Check code
 cargo check --workspace
 
@@ -124,6 +121,10 @@ cargo build --workspace
 # Run the sandbox (outputs logs to console)
 # RUST_LOG=khora_engine_core=trace cargo run --bin sandbox
 cargo run --bin sandbox
+
+# (Optional but recommended) Check formatting and linting before committing
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
 ## Community & Contributing
