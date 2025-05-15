@@ -65,13 +65,14 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
     *   `RenderStrategy` enum introduced in `RenderSettings` for future flexibility.
     *   A `WgpuRenderer` struct implementing `RenderSystem` has been created, encapsulating `GraphicsContext` and WGPU-specific logic.
     *   The `Engine` now interacts with the rendering subsystem via `Box<dyn RenderSystem>`, ensuring modularity.
+*   ✅ **`[Feature] Implement Graphics Device Abstraction`**:
+    *   Largely achieved through the `RenderSystem` trait abstracting the engine from WGPU specifics.
+    *   `GraphicsContext` now stores detailed adapter info (`adapter_name`, `adapter_backend`, `adapter_device_type`), active device features (`active_device_features`), and device limits (`device_limits`).
+    *   Error handling for device/surface creation and runtime surface issues has been reviewed and solidified.
 
 
 **Next Steps / Milestone 2 Tasks:**
 
-*   ➡️ **`[Feature] Implement Graphics Device Abstraction`**
-    *   Description: Create an abstraction layer over the chosen graphics API to simplify logical and physical device management.
-    *   Labels: `rendering`, `core`
 *   ➡️ **`[Feature] Implement Swapchain Management`**
     *   Description: Manage the swapchain for presenting rendered images to the window.
     *   Labels: `rendering`, `platform`
