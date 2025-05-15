@@ -98,6 +98,40 @@ impl std::fmt::Display for RenderSystemError {
 impl std::error::Error for RenderSystemError {}
 
 
+/// Enum representing the type of renderer backend.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RendererBackendType {
+    Vulkan,
+    Metal,
+    Dx12,
+    OpenGl,
+    WebGpu,
+    Unknown,
+}
+
+
+/// Structure representing the device type.
+/// This structure is used to identify the type of device used for rendering.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RendererDeviceType {
+    IntegratedGpu,
+    DiscreteGpu,
+    VirtualGpu,
+    Cpu,
+    Unknown,
+}
+
+
+/// Structure representing the renderer adapter information.
+/// This structure contains the name of the adapter, the backend type, and the device type.
+#[derive(Debug, Clone)]
+pub struct RendererAdapterInfo {
+    pub name: String,
+    pub backend_type: RendererBackendType,
+    pub device_type: RendererDeviceType
+}
+
+
 /// Trait representing a render system.
 /// This trait defines the methods that a render system must implement.
 pub trait RenderSystem: std::fmt::Debug + Send + Sync {
@@ -129,4 +163,9 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
 
     /// Clean up and release the resources of the rendering system.
     fn shutdown(&mut self);
+
+
+    /// Get the adapter information of the rendering system.
+    fn get_adapter_info(&self) -> Option<RendererAdapterInfo>;
+
 }

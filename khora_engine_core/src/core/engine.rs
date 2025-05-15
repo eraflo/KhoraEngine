@@ -1,8 +1,11 @@
 
+use flume::Receiver;
 use winit::{
     application::ApplicationHandler, dpi::PhysicalSize, event::WindowEvent, event_loop::{ActiveEventLoop, EventLoop}, window::WindowId
 };
-use crate::{subsystems::renderer::{graphic_context::GraphicsContext, renderer::{RenderObject, RenderSettings, RenderSystem, RenderSystemError, ViewInfo}, wgpu_renderer::WgpuRenderer}, window::KhoraWindow};
+use crate::{subsystems::renderer::{
+    RenderObject, RenderSettings, RenderStats, RenderSystem, RenderSystemError, RendererAdapterInfo, ViewInfo, WgpuRenderer
+}, window::KhoraWindow};
 use crate::subsystems::input as KhoraInputSubsystem;
 use crate::memory::get_currently_allocated_bytes;
 use crate::{core::timer::Stopwatch, event::{EngineEvent, EventBus}};
@@ -131,52 +134,44 @@ impl ApplicationHandler<()> for EngineAppHandler {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
 
         if self.engine.window.is_none() {
-            log::info!("Application resumed: Creating window and graphics context...");
+            log::info!("EngineAppHandler::resumed: Creating window and initializing RenderSystem...");
 
             match KhoraWindow::new(event_loop) {
-
                 Ok(win_wrapper) => {
                     
-                    match GraphicsContext::new(&win_wrapper) {
-                        Ok(context) => {
-                            log::info!("Graphics Context initialized successfully.");
+                    self.engine.window = Some(win_wrapper);
 
-                            log::info!("GPU Timestamp Query Support: {}", context.supports_gpu_timestamps);
+                    // Initialize the RenderSystem now that a window is available.
+                    if let (Some(rs), Some(window_ref)) = (self.engine.render_system.as_mut(), &self.engine.window) {
+                        log::info!("Initializing RenderSystem with the window...");
 
-                            self.engine.window = Some(win_wrapper); 
-
-                            // Initialize the render system with the graphics context
-                            if let (Some(rs), Some(window_ref)) = (self.engine.render_system.as_mut(), &self.engine.window) {
-                                log::info!("Initializing RenderSystem with the window...");
-
-                                if let Err(e) = rs.init(window_ref) {
-                                    log::error!("FATAL: Failed to initialize RenderSystem: {:?}", e);
-                                    event_loop.exit(); 
-                                    return;
-                                }
-
-                                log::info!("RenderSystem initialized successfully.");
-                                log::info!("RenderSystem reports 'gpu_timestamps' support: {}", rs.supports_feature("gpu_timestamps"));
-                            } else {
-                                log::error!("FATAL: RenderSystem or Window is None during resume. Cannot initialize rendering.");
-                                event_loop.exit();
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("FATAL: Failed to initialize graphics context: {}", e);
+                        if let Err(e) = rs.init(window_ref) {
+                            log::error!("FATAL: Failed to initialize RenderSystem: {:?}", e);
                             event_loop.exit();
+                            return;
                         }
+
+                        log::info!("RenderSystem initialized successfully.");
+
+                        if let Some(adapter_info) = rs.get_adapter_info() {
+                            log::info!(
+                                "Engine: Using Adapter: '{}', Backend: {:?}, Type: {:?}",
+                                adapter_info.name, adapter_info.backend_type, adapter_info.device_type
+                            );
+                        }
+                    } else {
+                        log::error!("FATAL: RenderSystem or Window is None during resume. Cannot initialize rendering.");
+                        event_loop.exit();
                     }
                 }
                 Err(e) => {
-                    log::error!("FATAL: Failed to create window: {}", e);
+                    log::error!("FATAL: Failed to create KhoraWindow: {}", e);
                     event_loop.exit();
                 }
             }
         } else {
-            log::info!("Application resumed (window and context likely already exist).");
-
-            // Defensive check for inconsistent state (should not happen if init logic is sound).
+            log::info!("EngineAppHandler::resumed: Window and RenderSystem likely already exist/initialized.");
+            
             if self.engine.render_system.is_none() {
                 log::error!("Inconsistent state: Window exists but RenderSystem is None on resume!");
                 event_loop.exit();
@@ -220,7 +215,6 @@ impl ApplicationHandler<()> for EngineAppHandler {
 
                     // Case where the window is resized by the user
                     WindowEvent::Resized(physical_size) => {
-                        log::info!("Window Resized event: {}x{}", physical_size.width, physical_size.height);
                         engine.event_bus.publish(EngineEvent::WindowResized {
                             width: physical_size.width,
                             height: physical_size.height,
@@ -337,8 +331,8 @@ impl Engine {
     /// * `&mut self` - A mutable reference to the Engine instance.
     fn process_internal_events(&mut self) {
         
-        let mut events_to_process = Vec::new();
-        let receiver = self.event_bus.receiver();
+        let mut events_to_process: Vec<EngineEvent> = Vec::new();
+        let receiver: &Receiver<EngineEvent> = self.event_bus.receiver();
          
         while let Ok(event) = receiver.try_recv() {
             events_to_process.push(event);
@@ -358,7 +352,7 @@ impl Engine {
         if let Some(rs) = self.render_system.as_mut() {
             let view_info = ViewInfo::default();
             let render_objects: [RenderObject; 0] = [];
-            let render_settings = RenderSettings::default();
+            let render_settings: RenderSettings = RenderSettings::default();
 
             match rs.render(&render_objects, &view_info, &render_settings) {
                 Ok(_render_stats) => {
