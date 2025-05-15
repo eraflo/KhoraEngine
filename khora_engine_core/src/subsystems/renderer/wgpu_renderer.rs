@@ -4,7 +4,7 @@ use winit::dpi::PhysicalSize;
 
 use crate::{core::timer::Stopwatch, window::KhoraWindow};
 
-use super::{graphic_context::GraphicsContext, renderer::{RenderObject, RenderSettings, RenderStats, RenderSystem, RenderSystemError, ViewInfo}};
+use super::{graphic_context::GraphicsContext, renderer::{RenderObject, RenderSettings, RenderStats, RenderSystem, RenderSystemError, RendererAdapterInfo, RendererBackendType, RendererDeviceType, ViewInfo}};
 
 
 
@@ -50,7 +50,10 @@ impl RenderSystem for WgpuRenderer {
         match GraphicsContext::new(window) {
             Ok(context) => {
                 log::info!("WgpuRenderer: Internal GraphicsContext initialized successfully.");
-                log::info!("WgpuRenderer: GPU Timestamp Query Support: {}", context.supports_gpu_timestamps);
+                log::info!(
+                    "WgpuRenderer: Initialized with adapter: {}, backend: {:?}, features: {:?}, limits: {:?}",
+                    context.adapter_name, context.adapter_backend, context.active_device_features, context.device_limits
+                );
                 self.graphics_context = Some(Arc::new(context));
                 Ok(())
             }
@@ -187,16 +190,41 @@ impl RenderSystem for WgpuRenderer {
     fn supports_feature(&self, feature_name: &str) -> bool {
         if let Some(gc) = &self.graphics_context {
             match feature_name {
-                "gpu_timestamps" => gc.supports_gpu_timestamps,
+                "gpu_timestamps" => gc.active_device_features.contains(wgpu::Features::TIMESTAMP_QUERY),
+                "texture_compression_bc" => gc.active_device_features.contains(wgpu::Features::TEXTURE_COMPRESSION_BC),
                 _ => false,
             }
-        } else {
-            false
-        }
+        } else { false }
     }
 
     fn shutdown(&mut self) {
         log::info!("WgpuRenderer shutting down internal GraphicsContext...");
         self.graphics_context = None;
+    }
+
+    fn get_adapter_info(&self) -> Option<RendererAdapterInfo> {
+        self.graphics_context.as_ref().map(|gc| {
+            let backend_type = match gc.adapter_backend {
+                wgpu::Backend::Vulkan => RendererBackendType::Vulkan,
+                wgpu::Backend::Metal => RendererBackendType::Metal,
+                wgpu::Backend::Dx12 => RendererBackendType::Dx12,
+                wgpu::Backend::Gl => RendererBackendType::OpenGl,
+                wgpu::Backend::BrowserWebGpu => RendererBackendType::WebGpu,
+                _ => RendererBackendType::Unknown, // Catch-all for future/other backends
+            };
+            let device_type = match gc.adapter_device_type {
+                wgpu::DeviceType::Other => RendererDeviceType::Unknown,
+                wgpu::DeviceType::IntegratedGpu => RendererDeviceType::IntegratedGpu,
+                wgpu::DeviceType::DiscreteGpu => RendererDeviceType::DiscreteGpu,
+                wgpu::DeviceType::VirtualGpu => RendererDeviceType::VirtualGpu,
+                wgpu::DeviceType::Cpu => RendererDeviceType::Cpu,
+                _ => RendererDeviceType::Unknown, // Catch-all
+            };
+            RendererAdapterInfo {
+                name: gc.adapter_name.clone(),
+                backend_type,
+                device_type,
+            }
+        })
     }
 }

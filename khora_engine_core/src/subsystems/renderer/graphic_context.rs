@@ -1,6 +1,7 @@
-
 use crate::window::KhoraWindow;
-use wgpu::SurfaceTarget;
+use wgpu::{
+    wgt::SurfaceConfiguration, AdapterInfo, Backend, CommandEncoder, DeviceType, Features, InstanceDescriptor, RenderPass, Surface, SurfaceCapabilities, SurfaceTarget, SurfaceTexture, TextureFormat, TextureView
+};
 use winit::dpi::PhysicalSize;
 use std::sync::Arc;
 use anyhow::Result;
@@ -19,9 +20,11 @@ pub struct GraphicsContext {
     // Configuration for the surface's swapchain behavior
     pub surface_config: wgpu::SurfaceConfiguration,
 
-    // SAA Requirement: Track if GPU timing is supported for performance monitoring.
-    // This allows the engine (or future DCC) to know if precise GPU metrics are available.
-    pub supports_gpu_timestamps: bool,
+    pub adapter_name: String,
+    pub adapter_backend: wgpu::Backend,
+    pub adapter_device_type: wgpu::DeviceType,
+    pub active_device_features: wgpu::Features,
+    pub device_limits: wgpu::Limits
 }
 
 impl GraphicsContext {
@@ -47,26 +50,26 @@ impl GraphicsContext {
     /// * `Result<Self>` - A result containing the initialized `GraphicsContext` or an error.
     async fn initialize_async(window: &KhoraWindow) -> Result<Self> {
         let window_arc: Arc<winit::window::Window> = window.winit_window_arc().clone();
-        let window_size = window_arc.inner_size();
+        let window_size: PhysicalSize<u32> = window_arc.inner_size();
         log::debug!("Window size for initial graphics setup: {}x{}", window_size.width, window_size.height);
 
         // --- 1. Create WGPU Instance ---
         // The instance is the entry point to the WGPU API.
-        let instance_descriptor = wgpu::InstanceDescriptor {
+        let instance_descriptor: InstanceDescriptor = wgpu::InstanceDescriptor {
                     backends: wgpu::Backends::GL, // Use the primary backend (Vulkan, Metal, DX12, etc.)
                     ..Default::default()
                 };
-        let instance = wgpu::Instance::new(&instance_descriptor);
+        let instance: wgpu::Instance = wgpu::Instance::new(&instance_descriptor);
         log::debug!("WGPU instance created.");
 
         // --- 2. Create Surface ---
         // The surface represents the target window or canvas WGPU will draw to.
-        let surface = instance.create_surface(window_arc.clone())?;
+        let surface: Surface<'static> = instance.create_surface(window_arc.clone())?;
         log::debug!("WGPU surface created for the window.");
 
         // --- 3. Select Adapter (Physical GPU) ---
         // Request an adapter (GPU) that is compatible with the surface and prefers high performance.
-        let adapter = instance
+        let adapter: wgpu::Adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface), // Must be able to render to our surface
@@ -74,35 +77,25 @@ impl GraphicsContext {
             })
             .await?;
 
-        let adapter_info = adapter.get_info();
+        let adapter_info: AdapterInfo = adapter.get_info();
         log::info!(
             "Selected GPU: \"{}\", Backend: {:?}",
             adapter_info.name,
             adapter_info.backend
         );
 
-        // --- 4. Request Device and Queue (Logical GPU Connection) ---
+        // --- 4. Create Logical Device and Command Queue ---
 
-        // -- SAA Focus: Check for and request necessary features --
-        // Define features critical for SAA or desired functionality.
-        let required_features = wgpu::Features::TIMESTAMP_QUERY; // For GPU performance timings
-        let adapter_features = adapter.features(); // Features the physical adapter supports
-        log::debug!("Adapter supported features: {:?}", adapter_features);
+        let adapter_name: String = adapter_info.name.clone();
+        let adapter_backend: Backend = adapter_info.backend;
+        let adapter_device_type: DeviceType = adapter_info.device_type;
 
-        // Check specifically for timestamp support.
-        let supports_gpu_timestamps = adapter_features.contains(required_features);
-        if supports_gpu_timestamps {
-            log::info!("Adapter supports TIMESTAMP_QUERY feature for GPU profiling.");
-        } else {
-            // NOTE (future): The engine needs to be aware that TIMESTAMP_QUERY is not supported on this adapter.
-            log::warn!("Adapter does NOT support TIMESTAMP_QUERY. GPU performance monitoring will be unavailable.");
-        }
-        // Calculate the intersection: Only enable features that are BOTH required AND supported.
-        let features_to_enable = adapter_features & required_features;
+        let required_features_for_engine: Features = wgpu::Features::TIMESTAMP_QUERY;
+        let adapter_supported_features: Features = adapter.features();
+        let features_to_enable: Features = adapter_supported_features & required_features_for_engine;
 
-
-        // Request the logical device (our interface to the GPU) and command queue.
-        let (device, queue) = adapter
+        // Request default limits, then store the actual limits from the device
+        let (device, queue): (wgpu::Device, wgpu::Queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("Khora Engine Logical Device"),
@@ -115,59 +108,41 @@ impl GraphicsContext {
             .await?;
         log::info!("Logical device and command queue created.");
 
-        // Sanity check if the feature was actually enabled on the device
-        if supports_gpu_timestamps && !features_to_enable.contains(wgpu::Features::TIMESTAMP_QUERY) {
-            log::error!("Timestamp query feature supported by adapter but FAILED to enable on logical device!");
-        }
+        let active_device_features = device.features();
+        let device_limits = device.limits();
+        log::info!("Active device features: {:?}", active_device_features);
+        log::info!("Device limits: {:?}", device_limits);
 
-        // --- 5. Configure Surface Swapchain ---
-        // Get the surface's capabilities (supported formats, present modes, etc.)
-        let surface_caps = surface.get_capabilities(&adapter);
 
-        // Select a texture format for the surface, preferring sRGB for better color representation.
-        let surface_format = surface_caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| f.is_srgb()) 
-            .unwrap_or(surface_caps.formats[0]);
-
-        // Define the configuration for the surface swapchain.
-        let surface_config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT, // Textures will be used as render targets
-            format: surface_format, // The sRGB or fallback format chosen above
-            width: window_size.width.max(1),   // Ensure width is at least 1 (required by WGPU)
-            height: window_size.height.max(1), // Ensure height is at least 1
-            present_mode: surface_caps
-                .present_modes // Use modes supported by the surface/adapter combo
+        // --- 5. Configure Surface ---
+        // Get the surface capabilities (formats, present modes, etc.) for the selected adapter.
+        let surface_caps: SurfaceCapabilities = surface.get_capabilities(&adapter);
+        let surface_format: TextureFormat = surface_caps.formats.iter().copied().find(|f| f.is_srgb()).unwrap_or(surface_caps.formats[0]);
+        let surface_config: SurfaceConfiguration<Vec<TextureFormat>> = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format: surface_format,
+            width: window_size.width.max(1),
+            height: window_size.height.max(1),
+            present_mode: surface_caps.present_modes
                 .iter()
                 .copied()
-                .find(|mode| *mode == wgpu::PresentMode::Mailbox) // Prefer Mailbox (low latency vsync)
-                .unwrap_or(wgpu::PresentMode::Fifo), // Default to Fifo (standard vsync)
-            alpha_mode: surface_caps.alpha_modes[0], // Usually Opaque, or Premultiplied if needed
-            view_formats: vec![], // Additional formats textures can be viewed as (for advanced techniques)
-            desired_maximum_frame_latency: 2, // Default value for frame buffering
+                .find(|m| *m == wgpu::PresentMode::Mailbox)
+                .unwrap_or(wgpu::PresentMode::Fifo),
+            alpha_mode: surface_caps.alpha_modes[0],
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
         };
-        // Apply this configuration to the surface.
         surface.configure(&device, &surface_config);
 
-        log::info!(
-            "Surface configured: Format={:?}, Size={}x{}, PresentMode={:?}",
-            surface_format,
-            surface_config.width,
-            surface_config.height,
-            surface_config.present_mode
-        );
-
-        // Initialization successful, return the created context.
         Ok(GraphicsContext {
-            instance,
-            surface,
-            adapter,
-            device,
-            queue,
+            instance, 
+            surface, 
+            adapter, 
+            device, 
+            queue, 
             surface_config,
-            supports_gpu_timestamps: features_to_enable.contains(wgpu::Features::TIMESTAMP_QUERY),
+            adapter_name, adapter_backend, adapter_device_type,
+            active_device_features, device_limits,
         })
     }
 
@@ -213,20 +188,20 @@ impl GraphicsContext {
 
         // --- 1. Acquire Frame ---
         // Get the next texture from the surface's swapchain to render into.
-        let output_frame: wgpu::SurfaceTexture = self.surface.get_current_texture()?;
+        let output_frame: SurfaceTexture = self.surface.get_current_texture()?;
         log::trace!("Acquired surface texture frame from swapchain");
 
         // --- 2. Create Texture View ---
         // Create a view of the output texture. This view is what gets attached
         // to the render pass as the target. Default view covers the whole texture.
-        let view = output_frame
+        let view: TextureView = output_frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         log::trace!("Created texture view for rendering");
 
         // --- 3. Create Command Encoder ---
         // Command encoders record GPU commands into a command buffer.
-        let mut encoder = self
+        let mut encoder: CommandEncoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Khora Render Command Encoder")
@@ -237,7 +212,7 @@ impl GraphicsContext {
         // A render pass defines the attachments (color, depth, stencil targets)
         // and executes drawing commands within its scope.
         {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let _render_pass: RenderPass<'_> = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Clear Screen Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view, // Render directly to the swapchain texture's view
