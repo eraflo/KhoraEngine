@@ -86,29 +86,27 @@ impl Quaternion {
             q.x = (m21 - m12) / s;
             q.y = (m02 - m20) / s;
             q.z = (m10 - m01) / s;
+        } else if m00 > m11 && m00 > m22 {
+            // Column 0 max trace
+            let s = 2.0 * (1.0 + m00 - m11 - m22).sqrt();
+            q.w = (m21 - m12) / s;
+            q.x = 0.25 * s;
+            q.y = (m01 + m10) / s;
+            q.z = (m02 + m20) / s;
+        } else if m11 > m22 {
+            // Column 1 max trace
+            let s = 2.0 * (1.0 + m11 - m00 - m22).sqrt();
+            q.w = (m02 - m20) / s;
+            q.x = (m01 + m10) / s;
+            q.y = 0.25 * s;
+            q.z = (m12 + m21) / s;
         } else {
-            if m00 > m11 && m00 > m22 {
-                // Column 0 max trace
-                let s = 2.0 * (1.0 + m00 - m11 - m22).sqrt();
-                q.w = (m21 - m12) / s;
-                q.x = 0.25 * s;
-                q.y = (m01 + m10) / s;
-                q.z = (m02 + m20) / s;
-            } else if m11 > m22 {
-                // Column 1 max trace
-                let s = 2.0 * (1.0 + m11 - m00 - m22).sqrt();
-                q.w = (m02 - m20) / s;
-                q.x = (m01 + m10) / s;
-                q.y = 0.25 * s;
-                q.z = (m12 + m21) / s;
-            } else {
-                // Column 2 max trace
-                let s = 2.0 * (1.0 + m22 - m00 - m11).sqrt();
-                q.w = (m10 - m01) / s;
-                q.x = (m02 + m20) / s;
-                q.y = (m12 + m21) / s;
-                q.z = 0.25 * s;
-            }
+            // Column 2 max trace
+            let s = 2.0 * (1.0 + m22 - m00 - m11).sqrt();
+            q.w = (m10 - m01) / s;
+            q.x = (m02 + m20) / s;
+            q.y = (m12 + m21) / s;
+            q.z = 0.25 * s;
         }
         // It should already be normalized due to the way it's calculated,
         // but normalizing defensively can help with precision errors.

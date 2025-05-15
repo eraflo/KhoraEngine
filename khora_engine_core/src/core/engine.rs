@@ -124,7 +124,7 @@ impl Engine {
     }
 }
 
-//// Represents the application handler for the engine, implementing the ApplicationHandler trait.
+/// Represents the application handler for the engine, implementing the ApplicationHandler trait.
 #[derive(Debug)]
 struct EngineAppHandler {
     engine: Engine,

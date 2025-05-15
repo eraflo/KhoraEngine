@@ -6,7 +6,7 @@ use crate::{core::timer::Stopwatch, window::KhoraWindow};
 
 use super::{
     graphic_context::GraphicsContext,
-    renderer::{
+    api::{
         RenderObject, RenderSettings, RenderStats, RenderSystem, RenderSystemError,
         RendererAdapterInfo, RendererBackendType, RendererDeviceType, ViewInfo,
     },
@@ -17,6 +17,12 @@ pub struct WgpuRenderer {
     graphics_context: Option<Arc<GraphicsContext>>,
     last_frame_stats: RenderStats,
     frame_count: u64,
+}
+
+impl Default for WgpuRenderer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WgpuRenderer {

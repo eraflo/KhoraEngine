@@ -119,18 +119,22 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
             let size_diff = new_size as isize - old_size as isize;
 
             // Use fetch_update to ensure atomicity and avoid potential overflows/underflows.
-            let fetch_result = if size_diff > 0 {
-                // Increase the counter
-                ALLOCATED_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                    current.checked_add(size_diff as usize)
-                })
-            } else if size_diff < 0 {
-                // Decrease the counter
-                ALLOCATED_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                    current.checked_sub((-size_diff) as usize)
-                })
-            } else {
-                Ok(ALLOCATED_BYTES.load(Ordering::Relaxed)) // No change, just get current value to satisfy type
+            let fetch_result = match size_diff.cmp(&0) {
+                std::cmp::Ordering::Greater => {
+                    // Increase the counter
+                    ALLOCATED_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                        current.checked_add(size_diff as usize)
+                    })
+                }
+                std::cmp::Ordering::Less => {
+                    // Decrease the counter
+                    ALLOCATED_BYTES.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                        current.checked_sub((-size_diff) as usize)
+                    })
+                }
+                std::cmp::Ordering::Equal => {
+                    Ok(ALLOCATED_BYTES.load(Ordering::Relaxed)) // No change
+                }
             };
 
             // Check for overflow or underflow

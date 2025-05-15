@@ -4,7 +4,6 @@ pub use std::f32::consts::{
     E, FRAC_PI_2, FRAC_PI_3, FRAC_PI_4, FRAC_PI_6, FRAC_PI_8, LN_2, LN_10, LOG2_E, LOG10_E, PI,
     SQRT_2, TAU,
 };
-pub use std::f32::{INFINITY, NAN, NEG_INFINITY};
 
 /// Factor to convert degrees to radians (PI / 180.0).
 pub const DEG_TO_RAD: f32 = PI / 180.0;

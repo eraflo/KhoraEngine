@@ -755,7 +755,6 @@ impl IndexMut<usize> for Vec4 {
 // --- End of Vec4 Implementation ---
 
 /// --- Tests ---
-
 #[cfg(test)]
 mod tests {
     use super::*; // Import Vec3 from the parent module

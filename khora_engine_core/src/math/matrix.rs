@@ -44,7 +44,7 @@ impl Mat3 {
     /// * A new vector representing the row of the matrix.
     #[allow(dead_code)]
     #[inline]
-    fn from_row(&self, index: usize) -> Vec3 {
+    fn get_row(&self, index: usize) -> Vec3 {
         Vec3 {
             x: self.cols[0].get(index),
             y: self.cols[1].get(index),
@@ -364,7 +364,7 @@ impl Mat4 {
     /// ## Returns
     /// * A new vector representing the row of the matrix.
     #[inline]
-    fn from_row(&self, index: usize) -> Vec4 {
+    fn get_row(&self, index: usize) -> Vec4 {
         Vec4 {
             x: self.cols[0].get(index),
             y: self.cols[1].get(index),
@@ -849,13 +849,13 @@ impl Mul<Mat4> for Mat4 {
             w: 0.0,
         }; 4];
 
-        for c in 0..4 {
-            let col = rhs.cols[c];
-            result_cols[c] = Vec4 {
-                x: self.from_row(0).dot(col),
-                y: self.from_row(1).dot(col),
-                z: self.from_row(2).dot(col),
-                w: self.from_row(3).dot(col),
+        for (c_idx, target_col_ref_mut) in result_cols.iter_mut().enumerate().take(4) {
+            let col_from_rhs = rhs.cols[c_idx];
+            *target_col_ref_mut = Vec4 {
+                x: self.get_row(0).dot(col_from_rhs),
+                y: self.get_row(1).dot(col_from_rhs),
+                z: self.get_row(2).dot(col_from_rhs),
+                w: self.get_row(3).dot(col_from_rhs),
             };
         }
 

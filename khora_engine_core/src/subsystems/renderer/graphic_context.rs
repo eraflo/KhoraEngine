@@ -34,8 +34,7 @@ impl GraphicsContext {
     /// This function sets up the WGPU instance, surface, adapter, device, and queue.
     /// It also configures the surface swapchain based on the window size and capabilities.
     /// ## Arguments
-    /// * `window` - A reference to the `KhoraWindow` object that represents the window
-    ///  where rendering will occur.
+    /// * `window` - A reference to the `KhoraWindow` object that represents the window where rendering will occur.
     /// ## Returns
     /// * `Result<Self>` - A result containing the initialized `GraphicsContext` or an error.
     pub fn new(window: &KhoraWindow) -> Result<Self> {
@@ -45,8 +44,7 @@ impl GraphicsContext {
 
     /// Asynchronous part of the initialization logic.
     /// ## Arguments
-    /// * `window` - A reference to the `KhoraWindow` object that represents the window
-    /// where rendering will occur.
+    /// * `window` - A reference to the `KhoraWindow` object that represents the window where rendering will occur.
     /// ## Returns
     /// * `Result<Self>` - A result containing the initialized `GraphicsContext` or an error.
     async fn initialize_async(window: &KhoraWindow) -> Result<Self> {
@@ -164,8 +162,7 @@ impl GraphicsContext {
     /// and to prevent surface errors (`Lost`, `Outdated`).
     ///
     /// ## Arguments
-    /// * `new_size` - The new physical size of the window (width and height in pixels)
-    ///                provided by the `winit` resize event.
+    /// * `new_size` - The new physical size of the window (width and height in pixels) provided by the `winit` resize event.
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         // Validate the new size, as configuring with zero dimensions is invalid.
         if new_size.width > 0 && new_size.height > 0 {

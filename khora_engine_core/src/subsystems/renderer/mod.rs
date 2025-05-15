@@ -1,9 +1,9 @@
 pub mod graphic_context;
 
-pub mod renderer;
+pub mod api;
 pub mod wgpu_renderer;
 
-pub use self::renderer::{
+pub use self::api::{
     RenderObject, RenderSettings, RenderStats, RenderStrategy, RenderSystem, RenderSystemError,
     RendererAdapterInfo, RendererBackendType, RendererDeviceType, ViewInfo,
 };
