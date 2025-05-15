@@ -5,11 +5,11 @@ use winit::dpi::PhysicalSize;
 use crate::{core::timer::Stopwatch, window::KhoraWindow};
 
 use super::{
-    graphic_context::GraphicsContext,
     api::{
         RenderObject, RenderSettings, RenderStats, RenderSystem, RenderSystemError,
         RendererAdapterInfo, RendererBackendType, RendererDeviceType, ViewInfo,
     },
+    graphic_context::GraphicsContext,
 };
 
 #[derive(Debug)]
