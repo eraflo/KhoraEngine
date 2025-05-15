@@ -1,10 +1,16 @@
-
 use flume::Receiver;
 use winit::{
     application::ApplicationHandler, dpi::PhysicalSize, event::WindowEvent, event_loop::{ActiveEventLoop, EventLoop}, window::WindowId
 };
 use crate::{subsystems::renderer::{
-    RenderObject, RenderSettings, RenderStats, RenderSystem, RenderSystemError, RendererAdapterInfo, ViewInfo, WgpuRenderer
+    RenderObject, 
+    RenderSettings, 
+    RenderStats, 
+    RenderSystem, 
+    RenderSystemError, 
+    RendererAdapterInfo, 
+    ViewInfo, 
+    WgpuRenderer
 }, window::KhoraWindow};
 use crate::subsystems::input as KhoraInputSubsystem;
 use crate::memory::get_currently_allocated_bytes;
@@ -360,12 +366,17 @@ impl Engine {
                 }
                 Err(RenderSystemError::SurfaceAcquisitionFailed(msg)) => {
                     log::warn!("RenderSystem reported surface acquisition failure: {}. Attempting resize.", msg);
+
                     if msg.contains("Lost") || msg.contains("Outdated") {
+                        log::warn!("RenderSystem surface acquisition lost/outdated. Attempting to resize.");
+
                         if let Some(win) = &self.window {
                             rs.resize(win.inner_size());
                         }
+
                     } else if msg.contains("OutOfMemory") {
                         log::error!("RenderSystem ran out of memory for surface! Requesting shutdown: {}", msg);
+                        
                         self.event_bus.publish(EngineEvent::ShutdownRequested);
                     }
                 }
@@ -390,8 +401,7 @@ impl Engine {
             EngineEvent::WindowResized { width, height } => {
                 log::info!("Internal Handling: Window resized: {}x{}", width, height);
                 
-                // --- Graphics Handling ---
-                // Resize the graphics context surface (swapchain) if it exists.
+                // Resize the render system
                 if let Some(rs) = self.render_system.as_mut() {
                     rs.resize(PhysicalSize::new(width, height));
                 }
