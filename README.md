@@ -133,4 +133,4 @@ KhoraEngine is an open-source project and we welcome community involvement! We s
 *   Please read and adhere to our [**Code of Conduct**](CODE_OF_CONDUCT.md).
 *   If you're interested in contributing, please see our [**Contributing Guidelines**](CONTRIBUTING.md).
 *   For bug reports or feature suggestions, please use the [**Issues** tab](https://github.com/eraflo/KhoraEngine/issues) and try to use the provided templates.
-*   For general questions, ideas, or discussions about KhoraEngine and its SAA/AGDF concepts, please join us on our [**GitHub Discussions page**](https://github.com/eraflo/KhoraEngine/discussions)! *(Adaptez si Discussions n'est pas activé ou si vous préférez un autre canal)*
+*   For general questions, ideas, or discussions about KhoraEngine and its SAA/AGDF concepts, please join us on our [**GitHub Discussions page**](https://github.com/eraflo/KhoraEngine/discussions)!
