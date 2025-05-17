@@ -12,18 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::core::timer::Stopwatch;
+use crate::event::{EngineEvent, EventBus};
 use crate::memory::get_currently_allocated_bytes;
 use crate::subsystems::input as KhoraInputSubsystem;
-use crate::{
-    core::timer::Stopwatch,
-    event::{EngineEvent, EventBus},
+use crate::subsystems::renderer::{
+    RenderError, RenderObject, RenderSettings, RenderSystem, ViewInfo, WgpuRenderSystem,
 };
-use crate::{
-    subsystems::renderer::{
-        RenderObject, RenderSettings, RenderSystem, RenderSystemError, ViewInfo, WgpuRenderer,
-    },
-    window::KhoraWindow,
-};
+use crate::window::KhoraWindow;
+
 use flume::Receiver;
 use winit::{
     application::ApplicationHandler,
@@ -56,7 +53,7 @@ impl Engine {
             is_running: false,
             event_bus: EventBus::default(),
             window: None,
-            render_system: Some(Box::new(WgpuRenderer::new())),
+            render_system: Some(Box::new(WgpuRenderSystem::new())),
 
             // Initialize stats counters
             frame_count: 0,
@@ -385,7 +382,7 @@ impl Engine {
                         _render_stats
                     );
                 }
-                Err(RenderSystemError::SurfaceAcquisitionFailed(msg)) => {
+                Err(RenderError::SurfaceAcquisitionFailed(msg)) => {
                     log::warn!(
                         "RenderSystem reported surface acquisition failure: {}. Attempting resize.",
                         msg

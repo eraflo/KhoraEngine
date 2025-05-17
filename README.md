@@ -58,43 +58,42 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
 **Completed M2 Tasks:**
 
 *   ✅ **`[Feature] Choose & Integrate Graphics API Wrapper (wgpu/ash/etc.)`**:
-    *   `wgpu` (v0.20) was chosen and integrated as the graphics API wrapper.
-    *   A `GraphicsContext` struct has been implemented within `khora_engine_core::subsystems::renderer` to manage core `wgpu` objects (Instance, Surface, Adapter, Device, Queue).
-    *   The graphics context is successfully initialized after window creation and stored within the `Engine`'s `RenderSystem` (implemented by `WgpuRenderer`).
-    *   SAA Prep: Requested the `TIMESTAMP_QUERY` feature during device creation.
-    *   *(Workaround for dev machine: OpenGL backend (`wgpu::Backends::GL`) forced for stability. Robust backend selection is a future task.)*
+    *   `wgpu` (v0.20) integrated. `WgpuGraphicsContext` manages core `wgpu` objects.
+    *   SAA Prep: `TIMESTAMP_QUERY` feature requested.
+    *   *(Note: Stable operation on Vulkan, DX12, and OpenGL backends has been achieved through robust swapchain management, though automatic backend selection is a future task.)*
 *   ✅ **`[Feature] Design Rendering Interface as potential ISA (Clear inputs, outputs, potential strategies)`**:
-    *   A `RenderSystem` trait has been defined, establishing a clear contract for rendering operations with defined inputs (e.g., `ViewInfo`, `RenderObject`, `RenderSettings`) and outputs (`RenderStats`).
-    *   A `WgpuRenderer` struct implementing `RenderSystem` encapsulates `GraphicsContext` (potentially via `Arc<Mutex<...>>` for future flexibility) and WGPU-specific logic.
-    *   The `Engine` interacts with the rendering subsystem via `Box<dyn RenderSystem>`.
+    *   Abstract `RenderSystem` trait defined.
+    *   `WgpuRenderSystem` implements this trait, using an `Arc<Mutex<WgpuGraphicsContext>>` and an `Arc<WgpuDevice>`.
 *   ✅ **`[Feature] Implement Graphics Device Abstraction`**:
-    *   Achieved through the `RenderSystem` trait abstracting engine specifics from WGPU.
-    *   `GraphicsContext` stores detailed adapter info, active device features, and limits.
-    *   Error handling for device/surface creation reviewed.
+    *   Abstract `GraphicsDevice` trait defined for resource management (shaders, pipelines, etc.).
+    *   `WgpuDevice` implements this trait, providing a WGPU-specific backend.
+    *   This decouples the main engine from direct WGPU calls for resource creation.
 *   ✅ **`[Feature] Implement Swapchain Management`**:
-    *   The `wgpu::Surface` (swapchain) is now robustly managed within `WgpuRenderer` and `GraphicsContext`.
-    *   Initial `SurfaceConfiguration` is set up using appropriate formats and present modes.
-    *   Window resize events correctly trigger `Surface::configure` with new, valid dimensions (width/height > 0).
-    *   `SurfaceError::Lost` and `SurfaceError::Outdated` (e.g., during resize or window minimization) are handled within `WgpuRenderer::render()` by attempting to reconfigure the surface with the last known valid dimensions, preventing render loops on zero-sized surfaces and ensuring rendering recovery.
-    *   The interface for resizing within `RenderSystem` uses `(u32, u32)` for dimensions, decoupling it from `winit` specifics at that level.
-    *   Fix issue of OpenGl backend. Can now use Vulkan or DX12
+    *   Robust management of `wgpu::Surface` within `WgpuRenderSystem` and `WgpuGraphicsContext`.
+    *   Handles `SurfaceError::Lost/Outdated` by reconfiguring with last known valid dimensions.
+    *   Interface uses `(u32, u32)` for dimensions, improving API decoupling.
+*   ✅ **`[Feature] Implement Basic Shader System`**:
+    *   Defined backend-agnostic API for shader modules (`ShaderModuleDescriptor`, `ShaderModuleId`, `ShaderSourceData`, `ShaderStage`) in `renderer::api`.
+    *   The `GraphicsDevice` trait now includes `create_shader_module` and `destroy_shader_module`.
+    *   `WgpuDevice` implements these methods, capable of creating `wgpu::ShaderModule`s from WGSL source (via abstract descriptors) and managing them with `ShaderModuleId`s.
+    *   This lays the groundwork for using shaders in render pipelines.
 
 **Next Steps / Milestone 2 Tasks:**
 
-*   ➡️ **`[Feature] Implement Basic Shader System`**
-    *   Description: Set up a system for loading, compiling (if necessary), and managing shaders (vertex, fragment).
-    *   Labels: `rendering`
+*   ➡️ **`[Feature] Implement Basic Render Pipeline System`** (*New*)
+    *   Description: Define abstractions for Render Pipelines (`RenderPipelineDescriptor`, `RenderPipelineId`, `VertexBufferLayoutDescriptor`, `ColorTargetStateDescriptor`, etc.) in the `renderer::api` module. Add `create_render_pipeline` and `destroy_render_pipeline` methods to the `GraphicsDevice` trait. Implement these methods in `WgpuDevice`, enabling the creation of a `wgpu::RenderPipeline` using previously created `ShaderModuleId`s and other pipeline state descriptions.
+    *   Labels: `rendering`, `architecture`
 *   ➡️ **`[Feature] Implement Basic Buffer/Texture Management (Track VRAM usage)`**
-    *   Description: Create systems to manage the creation, uploading, and binding of buffers (vertex, index, uniform) and textures, while tracking VRAM usage.
+    *   Description: Create systems to manage the creation, uploading, and binding of buffers (vertex, index, uniform) and textures, while tracking VRAM usage, all through the `GraphicsDevice` abstraction.
     *   Labels: `rendering`, `performance`, `asset`, `saa-prep`
 *   ➡️ **`[Feature] Implement GPU Performance Monitoring Hooks (Timestamps)`**
-    *   Description: Use graphics API timestamp queries to measure the time spent by the GPU on different parts of therendering process. Essential for SAA.
+    *   Description: Use graphics API timestamp queries (via `GraphicsDevice` if abstracted, or WGPU specifics) to measure GPU time. Essential for SAA.
     *   Labels: `rendering`, `performance`, `infra`, `saa-prep`
 *   ➡️ **`[Feature] Implement Robust Graphics Backend Selection (Vulkan/DX12/GL Fallback)`**
-    *   Description: Enhance the graphics initialization process (`GraphicsContext::new` or similar) to attempt initializing backends in a preferred order (e.g., Vulkan, DX12 on Windows, Metal on macOS) and gracefully fall back to the next option (e.g., OpenGL/GLES via ANGLE) if the preferred backend fails to initialize or is known to be problematic on the detected hardware/driver combination (based on future heuristics or stored knowledge). This improves engine robustness across diverse hardware and drivers, aligning with the SAA principle of adapting to the execution context. Report the chosen backend via logs.
+    *   Description: Enhance `WgpuGraphicsContext::new` to intelligently select and fall back between graphics backends.
     *   Labels: `rendering`, `core`, `platform`, `robustness`, `saa-prep`
 *   ➡️ **`[Task] Render a Single Triangle/Quad with Performance Timings`**
-    *   Description: Display a simple geometric shape using the established rendering pipeline and show the associated CPU/GPU timings.
+    *   Description: Display a simple geometric shape using the established shader system, pipeline system, and buffer management, showing CPU/GPU timings.
     *   Labels: `rendering`, `performance`
 
 **Note:** This is a highly ambitious, long-term research and development project. The SAA goal requires significant R&D.

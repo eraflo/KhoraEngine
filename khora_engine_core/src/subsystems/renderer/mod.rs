@@ -12,13 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod graphic_context;
-
+// Public API of the rendering subsystem
 pub mod api;
-pub mod wgpu_renderer;
+pub mod error;
+pub mod traits;
 
-pub use self::api::{
-    RenderObject, RenderSettings, RenderStats, RenderStrategy, RenderSystem, RenderSystemError,
-    RendererAdapterInfo, RendererBackendType, RendererDeviceType, ViewInfo,
+// Specific WGPU implementation
+pub mod wgpu_impl;
+
+// --- Re-exports for convenient use by the rest of the engine ---
+
+// Core traits
+pub use traits::graphics_device::GraphicsDevice;
+pub use traits::render_system::RenderSystem;
+
+// Concrete WGPU implementation of RenderSystem
+pub use wgpu_impl::WgpuRenderSystem;
+
+// Common API data types (errors, info structs, render data)
+pub use api::common_types::{
+    RenderObject, RenderSettings, RenderStats, RendererAdapterInfo, RendererBackendType,
+    RendererDeviceType, ShaderStage, ViewInfo,
 };
-pub use self::wgpu_renderer::WgpuRenderer;
+pub use error::{RenderError, ResourceError, ShaderError};
