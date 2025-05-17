@@ -73,7 +73,7 @@ impl GraphicsContext {
         // --- 1. Create WGPU Instance ---
         // The instance is the entry point to the WGPU API.
         let instance_descriptor: InstanceDescriptor = wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::GL, // Use the primary backend (Vulkan, Metal, DX12, etc.)
+            backends: wgpu::Backends::VULKAN, // Use the primary backend (Vulkan, Metal, DX12, etc.)
             ..Default::default()
         };
         let instance: wgpu::Instance = wgpu::Instance::new(&instance_descriptor);
@@ -176,26 +176,23 @@ impl GraphicsContext {
     /// and to prevent surface errors (`Lost`, `Outdated`).
     ///
     /// ## Arguments
-    /// * `new_size` - The new physical size of the window (width and height in pixels) provided by the `winit` resize event.
-    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
-        // Validate the new size, as configuring with zero dimensions is invalid.
-        if new_size.width > 0 && new_size.height > 0 {
+    /// * `new_width` - The new width of the window.
+    /// * `new_height` - The new height of the window.
+    pub fn resize(&mut self, new_width: u32, new_height: u32) {
+        if new_width > 0 && new_height > 0 {
             log::info!(
-                "Resizing graphics surface configuration to {}x{}",
-                new_size.width,
-                new_size.height
+                "GraphicsContext: Resizing surface configuration to {}x{}",
+                new_width,
+                new_height
             );
-
-            self.surface_config.width = new_size.width;
-            self.surface_config.height = new_size.height;
-
-            // Apply the updated configuration to the WGPU surface object.
+            self.surface_config.width = new_width;
+            self.surface_config.height = new_height;
             self.surface.configure(&self.device, &self.surface_config);
         } else {
             log::warn!(
-                "Ignoring resize request to zero dimensions: {}x{}",
-                new_size.width,
-                new_size.height
+                "GraphicsContext: Ignoring resize request to zero dimensions: {}x{}",
+                new_width,
+                new_height
             );
         }
     }

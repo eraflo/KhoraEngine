@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use winit::dpi::PhysicalSize;
-
 use crate::{
     math::{LinearRgba, Mat4, Vec3},
     window::KhoraWindow,
@@ -93,6 +91,8 @@ pub enum RenderSystemError {
     SurfaceAcquisitionFailed(String),
     RenderFailed(String),
     ResourceCreationFailed(String),
+    UnsupportedFeature(String),
+    Internal(String),
 }
 
 impl std::fmt::Display for RenderSystemError {
@@ -108,6 +108,10 @@ impl std::fmt::Display for RenderSystemError {
             RenderSystemError::ResourceCreationFailed(s) => {
                 write!(f, "RenderSystem Resource Creation Failed: {}", s)
             }
+            RenderSystemError::UnsupportedFeature(s) => {
+                write!(f, "RenderSystem Unsupported Feature: {}", s)
+            }
+            RenderSystemError::Internal(s) => write!(f, "RenderSystem Internal Error: {}", s),
         }
     }
 }
@@ -153,7 +157,7 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     fn init(&mut self, window: &KhoraWindow) -> Result<(), RenderSystemError>;
 
     /// Resize the window of the render system.
-    fn resize(&mut self, new_size: PhysicalSize<u32>);
+    fn resize(&mut self, new_width: u32, new_height: u32);
 
     /// Prepare the frame for rendering.
     /// This method is called before the actual rendering process.

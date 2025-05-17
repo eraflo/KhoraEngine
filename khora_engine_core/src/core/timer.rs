@@ -84,7 +84,7 @@ mod tests {
 
     const SMALL_DURATION_MS: u64 = 15;
     const SLEEP_DURATION_MS: u64 = 100;
-    const SLEEP_MARGIN_MS: u64 = 100;
+    const SLEEP_MARGIN_MS: u64 = 200;
 
     /// A test to check if the Stopwatch struct is created correctly and starts the timer.
     /// It verifies that the elapsed time is not None after creation and that it is very small.

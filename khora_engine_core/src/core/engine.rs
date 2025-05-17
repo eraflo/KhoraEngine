@@ -27,7 +27,6 @@ use crate::{
 use flume::Receiver;
 use winit::{
     application::ApplicationHandler,
-    dpi::PhysicalSize,
     event::WindowEvent,
     event_loop::{ActiveEventLoop, EventLoop},
     window::WindowId,
@@ -398,7 +397,7 @@ impl Engine {
                         );
 
                         if let Some(win) = &self.window {
-                            rs.resize(win.inner_size());
+                            rs.resize(win.inner_size().0, win.inner_size().1);
                         }
                     } else if msg.contains("OutOfMemory") {
                         log::error!(
@@ -432,9 +431,17 @@ impl Engine {
             EngineEvent::WindowResized { width, height } => {
                 log::info!("Internal Handling: Window resized: {}x{}", width, height);
 
-                // Resize the render system
-                if let Some(rs) = self.render_system.as_mut() {
-                    rs.resize(PhysicalSize::new(width, height));
+                if width > 0 && height > 0 {
+                    // Resize the render system
+                    if let Some(rs) = self.render_system.as_mut() {
+                        rs.resize(width, height);
+                    }
+                } else {
+                    log::warn!(
+                        "Internal Handling: Window resized to zero size ({}x{}), not resizing render surface yet.",
+                        width,
+                        height
+                    );
                 }
 
                 // TODO: Notify update Camera aspect ratio, ui, etc.

@@ -65,8 +65,9 @@ impl KhoraWindow {
     /// Returns the physical size of the window's client area.
     /// ## Returns
     /// The `PhysicalSize<u32>` representing the inner size of the window.
-    pub fn inner_size(&self) -> PhysicalSize<u32> {
-        self.inner.inner_size()
+    pub fn inner_size(&self) -> (u32, u32) {
+        let size: PhysicalSize<u32> = self.inner.inner_size();
+        (size.width, size.height)
     }
 
     /// Returns the display scale factor associated with this window.
