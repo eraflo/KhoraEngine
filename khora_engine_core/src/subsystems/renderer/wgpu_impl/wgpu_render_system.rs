@@ -14,38 +14,41 @@
 
 use std::sync::{Arc, Mutex};
 
+use crate::subsystems::renderer::{
+    RenderError, RenderObject, RenderSettings, RenderStats, ViewInfo,
+};
 use crate::{core::timer::Stopwatch, window::KhoraWindow};
 
-use super::{
-    api::{
-        RenderObject, RenderSettings, RenderStats, RenderSystem, RenderSystemError,
-        RendererAdapterInfo, RendererBackendType, RendererDeviceType, ViewInfo,
-    },
-    graphic_context::GraphicsContext,
-};
+use super::wgpu_device::WgpuDevice;
+use super::wgpu_graphic_context::WgpuGraphicsContext;
+use crate::subsystems::renderer::api::common_types::RendererAdapterInfo;
+use crate::subsystems::renderer::traits::graphics_device::GraphicsDevice;
+use crate::subsystems::renderer::traits::render_system::RenderSystem;
 
 #[derive(Debug)]
-pub struct WgpuRenderer {
-    graphics_context: Option<Arc<Mutex<GraphicsContext>>>,
+pub struct WgpuRenderSystem {
+    graphics_context_shared: Option<Arc<Mutex<WgpuGraphicsContext>>>,
+    wgpu_device: Option<Arc<WgpuDevice>>,
     current_width: u32,
     current_height: u32,
     frame_count: u64,
     last_frame_stats: RenderStats,
 }
 
-impl Default for WgpuRenderer {
+impl Default for WgpuRenderSystem {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl WgpuRenderer {
-    /// Create a new WgpuRenderer instance.
+impl WgpuRenderSystem {
+    /// Create a new WgpuRenderSystem instance.
     /// This function initializes the renderer with default values.
     pub fn new() -> Self {
-        log::info!("WgpuRenderer created (uninitialized).");
+        log::info!("WgpuRenderSystem created (uninitialized).");
         Self {
-            graphics_context: None,
+            graphics_context_shared: None,
+            wgpu_device: None,
             current_width: 0,
             current_height: 0,
             frame_count: 0,
@@ -54,42 +57,53 @@ impl WgpuRenderer {
     }
 }
 
-// To make the WgpuRenderer thread-safe, we need to implement the Send and Sync traits.
-// This allows the WgpuRenderer to be safely shared between threads. (To be able to use Box<dyn RenderSystem>)
-unsafe impl Send for WgpuRenderer {}
-unsafe impl Sync for WgpuRenderer {}
+// To make the WgpuRenderSystem thread-safe, we need to implement the Send and Sync traits.
+// This allows the WgpuRenderSystem to be safely shared between threads. (To be able to use Box<dyn RenderSystem>)
+unsafe impl Send for WgpuRenderSystem {}
+unsafe impl Sync for WgpuRenderSystem {}
 
-impl RenderSystem for WgpuRenderer {
-    fn init(&mut self, window: &KhoraWindow) -> Result<(), RenderSystemError> {
-        if self.graphics_context.is_some() {
-            log::warn!("WgpuRenderer::init called but it's already initialized.");
+impl RenderSystem for WgpuRenderSystem {
+    fn init(&mut self, window: &KhoraWindow) -> Result<(), RenderError> {
+        if self.graphics_context_shared.is_some() {
+            log::warn!("WgpuRenderSystem::init called but it's already initialized.");
             return Ok(());
         }
-        log::info!("WgpuRenderer: Initializing internal GraphicsContext...");
+        log::info!("WgpuRenderSystem: Initializing internal GraphicsContext...");
 
         // Create a new GraphicsContext instance.
-        match GraphicsContext::new(window) {
+        match WgpuGraphicsContext::new(window) {
             Ok(context) => {
-                log::info!("WgpuRenderer: Internal GraphicsContext initialized successfully.");
-                log::info!(
-                    "WgpuRenderer: Initialized with adapter: {}, backend: {:?}, features: {:?}, limits: {:?}",
-                    context.adapter_name,
-                    context.adapter_backend,
-                    context.active_device_features,
-                    context.device_limits
-                );
+                log::info!("WgpuRenderSystem: Internal GraphicsContext initialized successfully.");
+
                 let initial_size = window.inner_size();
-                self.current_width = initial_size.0;
-                self.current_height = initial_size.1;
-                self.graphics_context = Some(Arc::new(Mutex::new(context)));
+                self.current_width = initial_size.0.max(1);
+                self.current_height = initial_size.1.max(1);
+                self.graphics_context_shared = Some(Arc::new(Mutex::new(context)));
+
+                log::info!(
+                    "WgpuRenderSystem: GraphicsContext created with size: {}x{}",
+                    self.current_width,
+                    self.current_height
+                );
+
+                // Initialize the graphics device
+                let graphics_device =
+                    WgpuDevice::new(self.graphics_context_shared.clone().unwrap());
+                self.wgpu_device = Some(Arc::new(graphics_device));
+
+                log::info!(
+                    "WgpuRenderSystem: GraphicsDevice initialized with adapter: {}",
+                    self.wgpu_device.as_ref().unwrap().get_adapter_info().name
+                );
+
                 Ok(())
             }
             Err(e) => {
                 log::error!(
-                    "WgpuRenderer: Failed to initialize internal GraphicsContext: {}",
+                    "WgpuRenderSystem: Failed to initialize internal GraphicsContext: {}",
                     e
                 );
-                Err(RenderSystemError::InitializationFailed(format!(
+                Err(RenderError::InitializationFailed(format!(
                     "GraphicsContext creation error: {}",
                     e
                 )))
@@ -100,7 +114,7 @@ impl RenderSystem for WgpuRenderer {
     fn resize(&mut self, new_width: u32, new_height: u32) {
         if new_width > 0 && new_height > 0 {
             log::debug!(
-                "WgpuRenderer: resize_surface called with W:{}, H:{}",
+                "WgpuRenderSystem: resize_surface called with W:{}, H:{}",
                 new_width,
                 new_height
             );
@@ -108,24 +122,24 @@ impl RenderSystem for WgpuRenderer {
             self.current_height = new_height;
 
             // Check if the graphics context is initialized before resizing (need to go through the mutex)
-            if let Some(gc_arc_mutex) = &self.graphics_context {
+            if let Some(gc_arc_mutex) = &self.graphics_context_shared {
                 match gc_arc_mutex.lock() {
                     Ok(mut gc_guard) => {
                         gc_guard.resize(new_width, new_height);
                     }
                     Err(e) => {
                         log::error!(
-                            "WgpuRenderer::resize_surface: Failed to lock GraphicsContext: {}",
+                            "WgpuRenderSystem::resize_surface: Failed to lock GraphicsContext: {}",
                             e
                         );
                     }
                 }
             } else {
-                log::warn!("WgpuRenderer::resize_surface called but GraphicsContext is None.");
+                log::warn!("WgpuRenderSystem::resize_surface called but GraphicsContext is None.");
             }
         } else {
             log::warn!(
-                "WgpuRenderer::resize_surface called with zero size ({}, {}). Ignoring.",
+                "WgpuRenderSystem::resize_surface called with zero size ({}, {}). Ignoring.",
                 new_width,
                 new_height
             );
@@ -133,8 +147,8 @@ impl RenderSystem for WgpuRenderer {
     }
 
     fn prepare_frame(&mut self, _view_info: &ViewInfo) {
-        if self.graphics_context.is_none() {
-            log::trace!("WgpuRenderer::prepare_frame skipped, not initialized.");
+        if self.graphics_context_shared.is_none() {
+            log::trace!("WgpuRenderSystem::prepare_frame skipped, not initialized.");
             return;
         }
 
@@ -148,13 +162,13 @@ impl RenderSystem for WgpuRenderer {
         renderables: &[RenderObject],
         _view_info: &ViewInfo,
         settings: &RenderSettings,
-    ) -> Result<RenderStats, RenderSystemError> {
+    ) -> Result<RenderStats, RenderError> {
         let total_cpu_prep_timer = Stopwatch::new();
 
         // Get the graphics context
-        let gc = self.graphics_context.as_ref().ok_or_else(|| {
-            RenderSystemError::InitializationFailed(
-                "GraphicsContext Arc<Mutex> is None in WgpuRenderer::render".to_string(),
+        let gc = self.graphics_context_shared.as_ref().ok_or_else(|| {
+            RenderError::InitializationFailed(
+                "GraphicsContext Arc<Mutex> is None in WgpuRenderSystem::render".to_string(),
             )
         })?;
 
@@ -162,7 +176,7 @@ impl RenderSystem for WgpuRenderer {
         let output_surface_texture = loop {
             // Lock the GraphicsContext mutex to access the surface
             let mut gc_guard = gc.lock().map_err(|e| {
-                RenderSystemError::Internal(format!(
+                RenderError::Internal(format!(
                     "Render: Failed to lock GraphicsContext Mutex for get_current_texture: {}",
                     e
                 ))
@@ -174,7 +188,7 @@ impl RenderSystem for WgpuRenderer {
                 Err(e @ wgpu::SurfaceError::Lost) | Err(e @ wgpu::SurfaceError::Outdated) => {
                     if self.current_width > 0 && self.current_height > 0 {
                         log::warn!(
-                            "WgpuRenderer: Swapchain surface lost or outdated ({:?}). Reconfiguring with current dimensions: W={}, H={}",
+                            "WgpuRenderSystem: Swapchain surface lost or outdated ({:?}). Reconfiguring with current dimensions: W={}, H={}",
                             e,
                             self.current_width,
                             self.current_height
@@ -182,34 +196,37 @@ impl RenderSystem for WgpuRenderer {
                         gc_guard.resize(self.current_width, self.current_height);
                     } else {
                         log::error!(
-                            "WgpuRenderer: Swapchain lost/outdated ({:?}), but current stored size is zero ({},{}). Cannot reconfigure. Waiting for valid resize event.",
+                            "WgpuRenderSystem: Swapchain lost/outdated ({:?}), but current stored size is zero ({},{}). Cannot reconfigure. Waiting for valid resize event.",
                             e,
                             self.current_width,
                             self.current_height
                         );
-                        return Err(RenderSystemError::SurfaceAcquisitionFailed(format!(
+                        return Err(RenderError::SurfaceAcquisitionFailed(format!(
                             "Surface Lost/Outdated ({:?}) and current size is zero",
                             e
                         )));
                     }
                 }
                 Err(e @ wgpu::SurfaceError::OutOfMemory) => {
-                    log::error!("WgpuRenderer: Swapchain OutOfMemory! ({:?})", e);
-                    return Err(RenderSystemError::SurfaceAcquisitionFailed(format!(
+                    log::error!("WgpuRenderSystem: Swapchain OutOfMemory! ({:?})", e);
+                    return Err(RenderError::SurfaceAcquisitionFailed(format!(
                         "OutOfMemory: {:?}",
                         e
                     )));
                 }
                 Err(e @ wgpu::SurfaceError::Timeout) => {
-                    log::warn!("WgpuRenderer: Swapchain Timeout acquiring frame. ({:?})", e);
-                    return Err(RenderSystemError::SurfaceAcquisitionFailed(format!(
+                    log::warn!(
+                        "WgpuRenderSystem: Swapchain Timeout acquiring frame. ({:?})",
+                        e
+                    );
+                    return Err(RenderError::SurfaceAcquisitionFailed(format!(
                         "Timeout: {:?}",
                         e
                     )));
                 }
                 Err(e) => {
-                    log::error!("WgpuRenderer: Unexpected SurfaceError: {:?}", e);
-                    return Err(RenderSystemError::SurfaceAcquisitionFailed(format!(
+                    log::error!("WgpuRenderSystem: Unexpected SurfaceError: {:?}", e);
+                    return Err(RenderError::SurfaceAcquisitionFailed(format!(
                         "Unexpected SurfaceError: {:?}",
                         e
                     )));
@@ -226,7 +243,7 @@ impl RenderSystem for WgpuRenderer {
             .create_view(&wgpu::TextureViewDescriptor::default());
 
         log::trace!(
-            "WgpuRenderer::render_to_window frame {}, {} objects. Strategy: {:?}, Quality: {}",
+            "WgpuRenderSystem::render_to_window frame {}, {} objects. Strategy: {:?}, Quality: {}",
             self.frame_count,
             renderables.len(),
             settings.strategy,
@@ -242,7 +259,7 @@ impl RenderSystem for WgpuRenderer {
 
         {
             let gc_guard = gc.lock().map_err(|e| {
-                RenderSystemError::Internal(format!(
+                RenderError::Internal(format!(
                     "Render: Failed to lock GraphicsContext Mutex for render pass: {}",
                     e
                 ))
@@ -253,13 +270,13 @@ impl RenderSystem for WgpuRenderer {
                 gc_guard
                     .device()
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("WgpuRenderer Render Command Encoder"),
+                        label: Some("WgpuRenderSystem Render Command Encoder"),
                     });
 
             // --- 4. Begin Render Pass
             {
                 let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("WgpuRenderer Clear Screen Pass"),
+                    label: Some("WgpuRenderSystem Clear Screen Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &target_texture_view,
                         resolve_target: None,
@@ -311,48 +328,26 @@ impl RenderSystem for WgpuRenderer {
     }
 
     fn supports_feature(&self, feature_name: &str) -> bool {
-        if let Some(gc_arc_mutex) = &self.graphics_context {
-            match gc_arc_mutex.lock() {
-                Ok(gc_guard) => match feature_name {
-                    "gpu_timestamps" => gc_guard
-                        .active_device_features
-                        .contains(wgpu::Features::TIMESTAMP_QUERY),
-                    "texture_compression_bc" => gc_guard
-                        .active_device_features
-                        .contains(wgpu::Features::TEXTURE_COMPRESSION_BC),
-                    _ => {
-                        log::warn!(
-                            "Unsupported feature_name query in supports_feature: {}",
-                            feature_name
-                        );
-                        false
-                    }
-                },
-                Err(e) => {
-                    log::error!(
-                        "Failed to lock GraphicsContext to check feature '{}': {}. Assuming feature not supported.",
-                        feature_name,
-                        e
-                    );
-                    false
-                }
-            }
-        } else {
-            log::warn!(
-                "Attempted to check feature '{}' but graphics context is not initialized.",
-                feature_name
-            );
-            false
-        }
+        self.graphics_device().supports_feature(feature_name)
     }
 
     fn shutdown(&mut self) {
-        log::info!("WgpuRenderer shutting down internal GraphicsContext...");
-        if let Some(gc_arc_mutex) = self.graphics_context.take() {
+        log::info!("WgpuRenderSystem shutting down internal WGPUGraphicsContext...");
+        // Drop wgpu_device first, which holds a clone of the context Arc
+        if let Some(device_arc) = self.wgpu_device.take() {
+            log::debug!(
+                "WgpuDevice Arc count before drop: {}",
+                Arc::strong_count(&device_arc)
+            );
+        }
+
+        if let Some(gc_arc_mutex) = self.graphics_context_shared.take() {
             match Arc::try_unwrap(gc_arc_mutex) {
                 Ok(mutex_gc) => match mutex_gc.into_inner() {
                     Ok(_gc_instance) => {
-                        log::info!("GraphicsContext successfully unwrapped and will be dropped.");
+                        log::info!(
+                            "WGPUGraphicsContext successfully unwrapped and will be dropped."
+                        );
                     }
                     Err(poisoned_err) => {
                         log::error!(
@@ -363,45 +358,24 @@ impl RenderSystem for WgpuRenderer {
                 },
                 Err(_still_shared_arc) => {
                     log::warn!(
-                        "GraphicsContext Arc is still shared elsewhere during shutdown. Resources will be dropped when last Arc reference is gone."
+                        "WGPUGraphicsContext Arc is still shared elsewhere during shutdown. Resources will be dropped when last Arc reference is gone."
                     );
                 }
             }
         }
-        self.graphics_context = None;
-        log::info!("WgpuRenderer shutdown complete.");
+        self.graphics_context_shared = None;
+        self.wgpu_device = None;
+        log::info!("WgpuRenderSystem shutdown complete.");
     }
 
     fn get_adapter_info(&self) -> Option<RendererAdapterInfo> {
-        self.graphics_context
+        Some(self.graphics_device().get_adapter_info())
+    }
+
+    fn graphics_device(&self) -> &dyn GraphicsDevice {
+        self.wgpu_device
             .as_ref()
-            .and_then(|gc_arc_mutex| match gc_arc_mutex.lock() {
-                Ok(gc_guard) => {
-                    let backend_type = match gc_guard.adapter_backend {
-                        wgpu::Backend::Vulkan => RendererBackendType::Vulkan,
-                        wgpu::Backend::Metal => RendererBackendType::Metal,
-                        wgpu::Backend::Dx12 => RendererBackendType::Dx12,
-                        wgpu::Backend::Gl => RendererBackendType::OpenGl,
-                        wgpu::Backend::BrowserWebGpu => RendererBackendType::WebGpu,
-                        _ => RendererBackendType::Unknown,
-                    };
-                    let device_type = match gc_guard.adapter_device_type {
-                        wgpu::DeviceType::IntegratedGpu => RendererDeviceType::IntegratedGpu,
-                        wgpu::DeviceType::DiscreteGpu => RendererDeviceType::DiscreteGpu,
-                        wgpu::DeviceType::VirtualGpu => RendererDeviceType::VirtualGpu,
-                        wgpu::DeviceType::Cpu => RendererDeviceType::Cpu,
-                        _ => RendererDeviceType::Unknown,
-                    };
-                    Some(RendererAdapterInfo {
-                        name: gc_guard.adapter_name.clone(),
-                        backend_type,
-                        device_type,
-                    })
-                }
-                Err(e) => {
-                    log::error!("get_adapter_info: Failed to lock GraphicsContext: {}", e);
-                    None
-                }
-            })
+            .expect("WgpuRenderSystem: No WgpuDevice available.")
+            .as_ref()
     }
 }

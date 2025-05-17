@@ -25,8 +25,7 @@ use winit::dpi::PhysicalSize;
 /// Holds the core WGPU state objects required for rendering.
 /// This structure manages the connection to the graphics API (WGPU).
 #[derive(Debug)]
-pub struct GraphicsContext {
-    // Core WGPU objects representing the API state
+pub struct WgpuGraphicsContext {
     pub instance: wgpu::Instance,
     pub surface: wgpu::Surface<'static>,
     pub adapter: wgpu::Adapter,
@@ -43,7 +42,7 @@ pub struct GraphicsContext {
     pub device_limits: wgpu::Limits,
 }
 
-impl GraphicsContext {
+impl WgpuGraphicsContext {
     /// Initializes the graphics context for rendering.
     /// This function sets up the WGPU instance, surface, adapter, device, and queue.
     /// It also configures the surface swapchain based on the window size and capabilities.
@@ -52,7 +51,7 @@ impl GraphicsContext {
     /// ## Returns
     /// * `Result<Self>` - A result containing the initialized `GraphicsContext` or an error.
     pub fn new(window: &KhoraWindow) -> Result<Self> {
-        log::info!("Initializing Graphics Context...");
+        log::info!("Initializing WGPU Graphics Context...");
         pollster::block_on(Self::initialize_async(window))
     }
 
@@ -155,7 +154,7 @@ impl GraphicsContext {
         };
         surface.configure(&device, &surface_config);
 
-        Ok(GraphicsContext {
+        Ok(WgpuGraphicsContext {
             instance,
             surface,
             adapter,
@@ -181,7 +180,7 @@ impl GraphicsContext {
     pub fn resize(&mut self, new_width: u32, new_height: u32) {
         if new_width > 0 && new_height > 0 {
             log::info!(
-                "GraphicsContext: Resizing surface configuration to {}x{}",
+                "WGPUGraphicsContext: Resizing surface configuration to {}x{}",
                 new_width,
                 new_height
             );
@@ -190,7 +189,7 @@ impl GraphicsContext {
             self.surface.configure(&self.device, &self.surface_config);
         } else {
             log::warn!(
-                "GraphicsContext: Ignoring resize request to zero dimensions: {}x{}",
+                "WGPUGraphicsContext: Ignoring resize request to zero dimensions: {}x{}",
                 new_width,
                 new_height
             );
@@ -204,7 +203,7 @@ impl GraphicsContext {
     ///   - `Err(wgpu::SurfaceError)`: Indicates an error occurred while interacting with the surface,
     ///     such as `Lost`, `Outdated` (requiring reconfiguration), `OutOfMemory` (critical), or `Timeout`.
     pub fn render(&self) -> Result<(), wgpu::SurfaceError> {
-        log::trace!("GraphicsContext::render called");
+        log::trace!("WGPUGraphicsContext::render called");
 
         // --- 1. Acquire Frame ---
         // Get the next texture from the surface's swapchain to render into.
