@@ -60,28 +60,27 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
 *   ✅ **`[Feature] Choose & Integrate Graphics API Wrapper (wgpu/ash/etc.)`**:
     *   `wgpu` (v0.20) was chosen and integrated as the graphics API wrapper.
     *   A `GraphicsContext` struct has been implemented within `khora_engine_core::subsystems::renderer` to manage core `wgpu` objects (Instance, Surface, Adapter, Device, Queue).
-    *   The graphics context is successfully initialized after window creation and stored within the `Engine`.
-    *   The `wgpu::Surface` is configured and correctly handles window resizing.
-    *   A basic render function is implemented within `GraphicsContext` that successfully acquires a frame, performs a clear operation, and handles presentation.
-    *   **Workaround:** Due to severe, system-specific swapchain blocking/timeout issues encountered with the Vulkan and DX12 backends on the development machine (NVIDIA Optimus setup), the **OpenGL backend (`wgpu::Backends::GL`) is currently forced** during instance creation for compatibility and stable operation. Robust backend selection with fallback is planned for later (see new issue below).
-    *   SAA Prep: Requested the `TIMESTAMP_QUERY` feature during device creation to prepare for future GPU performance monitoring.
+    *   The graphics context is successfully initialized after window creation and stored within the `Engine`'s `RenderSystem` (implemented by `WgpuRenderer`).
+    *   SAA Prep: Requested the `TIMESTAMP_QUERY` feature during device creation.
+    *   *(Workaround for dev machine: OpenGL backend (`wgpu::Backends::GL`) forced for stability. Robust backend selection is a future task.)*
 *   ✅ **`[Feature] Design Rendering Interface as potential ISA (Clear inputs, outputs, potential strategies)`**:
-    *   A `RenderSystem` trait has been defined in `khora_engine_core::subsystems::renderer::traits`, establishing a clear contract for rendering operations.
-    *   Input structures (`ViewInfo`, `RenderObject`, `RenderSettings`) and output structures (`RenderStats`, `RenderSystemError`) are defined.
-    *   `RenderStrategy` enum introduced in `RenderSettings` for future flexibility.
-    *   A `WgpuRenderer` struct implementing `RenderSystem` has been created, encapsulating `GraphicsContext` and WGPU-specific logic.
-    *   The `Engine` now interacts with the rendering subsystem via `Box<dyn RenderSystem>`, ensuring modularity.
+    *   A `RenderSystem` trait has been defined, establishing a clear contract for rendering operations with defined inputs (e.g., `ViewInfo`, `RenderObject`, `RenderSettings`) and outputs (`RenderStats`).
+    *   A `WgpuRenderer` struct implementing `RenderSystem` encapsulates `GraphicsContext` (potentially via `Arc<Mutex<...>>` for future flexibility) and WGPU-specific logic.
+    *   The `Engine` interacts with the rendering subsystem via `Box<dyn RenderSystem>`.
 *   ✅ **`[Feature] Implement Graphics Device Abstraction`**:
-    *   Largely achieved through the `RenderSystem` trait abstracting the engine from WGPU specifics.
-    *   `GraphicsContext` now stores detailed adapter info (`adapter_name`, `adapter_backend`, `adapter_device_type`), active device features (`active_device_features`), and device limits (`device_limits`).
-    *   Error handling for device/surface creation and runtime surface issues has been reviewed and solidified.
-
+    *   Achieved through the `RenderSystem` trait abstracting engine specifics from WGPU.
+    *   `GraphicsContext` stores detailed adapter info, active device features, and limits.
+    *   Error handling for device/surface creation reviewed.
+*   ✅ **`[Feature] Implement Swapchain Management`**:
+    *   The `wgpu::Surface` (swapchain) is now robustly managed within `WgpuRenderer` and `GraphicsContext`.
+    *   Initial `SurfaceConfiguration` is set up using appropriate formats and present modes.
+    *   Window resize events correctly trigger `Surface::configure` with new, valid dimensions (width/height > 0).
+    *   `SurfaceError::Lost` and `SurfaceError::Outdated` (e.g., during resize or window minimization) are handled within `WgpuRenderer::render()` by attempting to reconfigure the surface with the last known valid dimensions, preventing render loops on zero-sized surfaces and ensuring rendering recovery.
+    *   The interface for resizing within `RenderSystem` uses `(u32, u32)` for dimensions, decoupling it from `winit` specifics at that level.
+    *   Fix issue of OpenGl backend. Can now use Vulkan or DX12
 
 **Next Steps / Milestone 2 Tasks:**
 
-*   ➡️ **`[Feature] Implement Swapchain Management`**
-    *   Description: Manage the swapchain for presenting rendered images to the window.
-    *   Labels: `rendering`, `platform`
 *   ➡️ **`[Feature] Implement Basic Shader System`**
     *   Description: Set up a system for loading, compiling (if necessary), and managing shaders (vertex, fragment).
     *   Labels: `rendering`
@@ -89,7 +88,7 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
     *   Description: Create systems to manage the creation, uploading, and binding of buffers (vertex, index, uniform) and textures, while tracking VRAM usage.
     *   Labels: `rendering`, `performance`, `asset`, `saa-prep`
 *   ➡️ **`[Feature] Implement GPU Performance Monitoring Hooks (Timestamps)`**
-    *   Description: Use graphics API timestamp queries to measure the time spent by the GPU on different parts of the rendering process. Essential for SAA.
+    *   Description: Use graphics API timestamp queries to measure the time spent by the GPU on different parts of therendering process. Essential for SAA.
     *   Labels: `rendering`, `performance`, `infra`, `saa-prep`
 *   ➡️ **`[Feature] Implement Robust Graphics Backend Selection (Vulkan/DX12/GL Fallback)`**
     *   Description: Enhance the graphics initialization process (`GraphicsContext::new` or similar) to attempt initializing backends in a preferred order (e.g., Vulkan, DX12 on Windows, Metal on macOS) and gracefully fall back to the next option (e.g., OpenGL/GLES via ANGLE) if the preferred backend fails to initialize or is known to be problematic on the detected hardware/driver combination (based on future heuristics or stored knowledge). This improves engine robustness across diverse hardware and drivers, aligning with the SAA principle of adapting to the execution context. Report the chosen backend via logs.
