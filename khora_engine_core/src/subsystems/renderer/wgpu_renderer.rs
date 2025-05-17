@@ -14,8 +14,6 @@
 
 use std::sync::Arc;
 
-use winit::dpi::PhysicalSize;
-
 use crate::{core::timer::Stopwatch, window::KhoraWindow};
 
 use super::{
@@ -29,8 +27,10 @@ use super::{
 #[derive(Debug)]
 pub struct WgpuRenderer {
     graphics_context: Option<Arc<GraphicsContext>>,
-    last_frame_stats: RenderStats,
+    current_width: u32,
+    current_height: u32,
     frame_count: u64,
+    last_frame_stats: RenderStats,
 }
 
 impl Default for WgpuRenderer {
@@ -46,8 +46,10 @@ impl WgpuRenderer {
         log::info!("WgpuRenderer created (uninitialized).");
         Self {
             graphics_context: None,
-            last_frame_stats: RenderStats::default(),
+            current_width: 0,
+            current_height: 0,
             frame_count: 0,
+            last_frame_stats: RenderStats::default(),
         }
     }
 }
@@ -76,6 +78,9 @@ impl RenderSystem for WgpuRenderer {
                     context.active_device_features,
                     context.device_limits
                 );
+                let initial_size = window.inner_size();
+                self.current_width = initial_size.0;
+                self.current_height = initial_size.1;
                 self.graphics_context = Some(Arc::new(context));
                 Ok(())
             }
@@ -92,11 +97,19 @@ impl RenderSystem for WgpuRenderer {
         }
     }
 
-    fn resize(&mut self, new_size: PhysicalSize<u32>) {
-        if new_size.width == 0 || new_size.height == 0 {
+    fn resize(&mut self, new_width: u32, new_height: u32) {
+        if new_width == 0 || new_height == 0 {
             log::warn!("WgpuRenderer::resize called with zero size. Ignoring.");
             return;
         }
+
+        if self.graphics_context.is_none() {
+            log::warn!("WgpuRenderer::resize called before initialization.");
+            return;
+        }
+
+        self.current_width = new_width;
+        self.current_height = new_height;
 
         if let Some(_gc_arc) = &self.graphics_context {
             // To call `resize` which takes `&mut self` on GraphicsContext,
@@ -104,7 +117,7 @@ impl RenderSystem for WgpuRenderer {
             // this is the only strong reference to the GraphicsContext, allowing mutation.
             // This is generally true if WgpuRenderer is the sole owner of this Arc.
             if let Some(gc_mut) = Arc::get_mut(self.graphics_context.as_mut().unwrap()) {
-                gc_mut.resize(new_size);
+                gc_mut.resize(new_width, new_height);
             } else {
                 log::warn!(
                     "WgpuRenderer::resize: Could not get mutable access to GraphicsContext via Arc. Resize might not have taken full effect if Arc is shared and GraphicsContext resize needs &mut."
@@ -117,7 +130,7 @@ impl RenderSystem for WgpuRenderer {
                     .as_mut()
                     .expect("Graphics context should exist for resize");
                 if let Some(gc_mut_ref) = Arc::get_mut(gc_arc_for_mutation_attempt) {
-                    gc_mut_ref.resize(new_size);
+                    gc_mut_ref.resize(new_width, new_height);
                 } else {
                     log::warn!(
                         "WgpuRenderer::resize: Arc::get_mut failed. GraphicsContext might be shared unexpectedly. Resize might not be fully effective."
@@ -146,9 +159,7 @@ impl RenderSystem for WgpuRenderer {
         _view_info: &ViewInfo,
         settings: &RenderSettings,
     ) -> Result<RenderStats, RenderSystemError> {
-        self.frame_count += 1;
-        self.last_frame_stats.frame_number = self.frame_count;
-        let stopwatch = Stopwatch::new();
+        let total_cpu_prep_timer = Stopwatch::new();
 
         // Get the graphics context
         let gc = self.graphics_context.as_ref().ok_or_else(|| {
@@ -179,6 +190,8 @@ impl RenderSystem for WgpuRenderer {
             }
         })?;
 
+        let cpu_render_logic_timer = Stopwatch::new();
+
         // 2. Create the view
         let target_texture_view = output_surface_texture
             .texture
@@ -201,6 +214,9 @@ impl RenderSystem for WgpuRenderer {
         });
 
         // 4. Begin the render pass
+        let mut _actual_draw_calls = 0;
+        let mut _actual_triangles = 0;
+
         {
             let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("WgpuRenderer Main Render Pass"),
@@ -219,12 +235,32 @@ impl RenderSystem for WgpuRenderer {
             // TODO: Draw the renderables here
         }
 
-        // 5. Submit the command buffer
-        queue.submit(std::iter::once(encoder.finish()));
-        drop(output_surface_texture);
+        let cpu_render_logic_duration_ms =
+            cpu_render_logic_timer.elapsed_secs_f64().unwrap_or(0.0) * 1000.0;
 
-        self.last_frame_stats.cpu_render_submission_time_ms =
-            stopwatch.elapsed_ms().unwrap_or(0) as f32;
+        // --- 5. Submit Commands ---
+        let cpu_submission_timer = Stopwatch::new();
+        queue.submit(std::iter::once(encoder.finish()));
+        let cpu_submission_duration_ms =
+            cpu_submission_timer.elapsed_secs_f64().unwrap_or(0.0) * 1000.0;
+
+        // --- 6. Present Frame ---
+        output_surface_texture.present();
+
+        let total_cpu_prep_duration_ms =
+            total_cpu_prep_timer.elapsed_secs_f64().unwrap_or(0.0) * 1000.0;
+
+        self.frame_count += 1;
+        self.last_frame_stats = RenderStats {
+            frame_number: self.frame_count,
+            cpu_preparation_time_ms: total_cpu_prep_duration_ms as f32
+                - cpu_render_logic_duration_ms as f32,
+            cpu_render_submission_time_ms: cpu_submission_duration_ms as f32,
+            gpu_time_ms: 0.0, // TODO: Implement GPU time measurement
+            draw_calls: _actual_draw_calls,
+            triangles_rendered: _actual_triangles,
+            vram_usage_estimate_mb: 0.0, // TODO: Implement VRAM usage estimation
+        };
 
         Ok(self.last_frame_stats.clone())
     }
