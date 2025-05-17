@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::{core::timer::Stopwatch, window::KhoraWindow};
 
@@ -26,7 +26,7 @@ use super::{
 
 #[derive(Debug)]
 pub struct WgpuRenderer {
-    graphics_context: Option<Arc<GraphicsContext>>,
+    graphics_context: Option<Arc<Mutex<GraphicsContext>>>,
     current_width: u32,
     current_height: u32,
     frame_count: u64,
@@ -81,7 +81,7 @@ impl RenderSystem for WgpuRenderer {
                 let initial_size = window.inner_size();
                 self.current_width = initial_size.0;
                 self.current_height = initial_size.1;
-                self.graphics_context = Some(Arc::new(context));
+                self.graphics_context = Some(Arc::new(Mutex::new(context)));
                 Ok(())
             }
             Err(e) => {
@@ -98,47 +98,37 @@ impl RenderSystem for WgpuRenderer {
     }
 
     fn resize(&mut self, new_width: u32, new_height: u32) {
-        if new_width == 0 || new_height == 0 {
-            log::warn!("WgpuRenderer::resize called with zero size. Ignoring.");
-            return;
-        }
+        if new_width > 0 && new_height > 0 {
+            log::debug!(
+                "WgpuRenderer: resize_surface called with W:{}, H:{}",
+                new_width,
+                new_height
+            );
+            self.current_width = new_width;
+            self.current_height = new_height;
 
-        if self.graphics_context.is_none() {
-            log::warn!("WgpuRenderer::resize called before initialization.");
-            return;
-        }
-
-        self.current_width = new_width;
-        self.current_height = new_height;
-
-        if let Some(_gc_arc) = &self.graphics_context {
-            // To call `resize` which takes `&mut self` on GraphicsContext,
-            // we need a mutable reference. If Arc::get_mut returns Some, it means
-            // this is the only strong reference to the GraphicsContext, allowing mutation.
-            // This is generally true if WgpuRenderer is the sole owner of this Arc.
-            if let Some(gc_mut) = Arc::get_mut(self.graphics_context.as_mut().unwrap()) {
-                gc_mut.resize(new_width, new_height);
-            } else {
-                log::warn!(
-                    "WgpuRenderer::resize: Could not get mutable access to GraphicsContext via Arc. Resize might not have taken full effect if Arc is shared and GraphicsContext resize needs &mut."
-                );
-
-                // If Arc::get_mut fails, it means the GraphicsContext is shared.
-                // We can still call resize on the Arc, but it will not be a mutable reference.
-                let gc_arc_for_mutation_attempt = self
-                    .graphics_context
-                    .as_mut()
-                    .expect("Graphics context should exist for resize");
-                if let Some(gc_mut_ref) = Arc::get_mut(gc_arc_for_mutation_attempt) {
-                    gc_mut_ref.resize(new_width, new_height);
-                } else {
-                    log::warn!(
-                        "WgpuRenderer::resize: Arc::get_mut failed. GraphicsContext might be shared unexpectedly. Resize might not be fully effective."
-                    );
+            // Check if the graphics context is initialized before resizing (need to go through the mutex)
+            if let Some(gc_arc_mutex) = &self.graphics_context {
+                match gc_arc_mutex.lock() {
+                    Ok(mut gc_guard) => {
+                        gc_guard.resize(new_width, new_height);
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "WgpuRenderer::resize_surface: Failed to lock GraphicsContext: {}",
+                            e
+                        );
+                    }
                 }
+            } else {
+                log::warn!("WgpuRenderer::resize_surface called but GraphicsContext is None.");
             }
         } else {
-            log::warn!("WgpuRenderer::resize called before initialization.");
+            log::warn!(
+                "WgpuRenderer::resize_surface called with zero size ({}, {}). Ignoring.",
+                new_width,
+                new_height
+            );
         }
     }
 
@@ -163,32 +153,70 @@ impl RenderSystem for WgpuRenderer {
 
         // Get the graphics context
         let gc = self.graphics_context.as_ref().ok_or_else(|| {
-            log::error!("WgpuRenderer::render_to_window called before initialization or after a fatal error.");
-            RenderSystemError::RenderFailed("GraphicsContext not available".to_string())
+            RenderSystemError::InitializationFailed(
+                "GraphicsContext Arc<Mutex> is None in WgpuRenderer::render".to_string(),
+            )
         })?;
 
-        // 1. Get Surface Texture
-        let output_surface_texture = gc.get_current_texture().map_err(|e| {
-            log::warn!("WgpuRenderer: Failed to get current texture: {:?}", e);
-            match e {
-                wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated => {
-                    RenderSystemError::SurfaceAcquisitionFailed(format!(
-                        "Surface Lost/Outdated: {:?}",
-                        e
-                    ))
-                }
-                wgpu::SurfaceError::OutOfMemory => {
-                    RenderSystemError::SurfaceAcquisitionFailed("OutOfMemory".to_string())
-                }
-                wgpu::SurfaceError::Timeout => {
-                    RenderSystemError::SurfaceAcquisitionFailed("Timeout".to_string())
-                }
-                _ => RenderSystemError::SurfaceAcquisitionFailed(format!(
-                    "Other surface error: {:?}",
+        // --- 1. Acquire Frame ---
+        let output_surface_texture = loop {
+            // Lock the GraphicsContext mutex to access the surface
+            let mut gc_guard = gc.lock().map_err(|e| {
+                RenderSystemError::Internal(format!(
+                    "Render: Failed to lock GraphicsContext Mutex for get_current_texture: {}",
                     e
-                )),
+                ))
+            })?;
+
+            match gc_guard.get_current_texture() {
+                // gc_guard deferences itself in GraphicsContext
+                Ok(texture) => break texture,
+                Err(e @ wgpu::SurfaceError::Lost) | Err(e @ wgpu::SurfaceError::Outdated) => {
+                    if self.current_width > 0 && self.current_height > 0 {
+                        log::warn!(
+                            "WgpuRenderer: Swapchain surface lost or outdated ({:?}). Reconfiguring with current dimensions: W={}, H={}",
+                            e,
+                            self.current_width,
+                            self.current_height
+                        );
+                        gc_guard.resize(self.current_width, self.current_height);
+                    } else {
+                        log::error!(
+                            "WgpuRenderer: Swapchain lost/outdated ({:?}), but current stored size is zero ({},{}). Cannot reconfigure. Waiting for valid resize event.",
+                            e,
+                            self.current_width,
+                            self.current_height
+                        );
+                        return Err(RenderSystemError::SurfaceAcquisitionFailed(format!(
+                            "Surface Lost/Outdated ({:?}) and current size is zero",
+                            e
+                        )));
+                    }
+                }
+                Err(e @ wgpu::SurfaceError::OutOfMemory) => {
+                    log::error!("WgpuRenderer: Swapchain OutOfMemory! ({:?})", e);
+                    return Err(RenderSystemError::SurfaceAcquisitionFailed(format!(
+                        "OutOfMemory: {:?}",
+                        e
+                    )));
+                }
+                Err(e @ wgpu::SurfaceError::Timeout) => {
+                    log::warn!("WgpuRenderer: Swapchain Timeout acquiring frame. ({:?})", e);
+                    return Err(RenderSystemError::SurfaceAcquisitionFailed(format!(
+                        "Timeout: {:?}",
+                        e
+                    )));
+                }
+                Err(e) => {
+                    log::error!("WgpuRenderer: Unexpected SurfaceError: {:?}", e);
+                    return Err(RenderSystemError::SurfaceAcquisitionFailed(format!(
+                        "Unexpected SurfaceError: {:?}",
+                        e
+                    )));
+                }
             }
-        })?;
+            // Free the lock before the next iteration
+        };
 
         let cpu_render_logic_timer = Stopwatch::new();
 
@@ -205,44 +233,57 @@ impl RenderSystem for WgpuRenderer {
             settings.quality_level
         );
 
-        let device = gc.device();
-        let queue = gc.queue();
+        // New scope to minimize the lock duration
+        let cpu_submission_timer;
+        let cpu_submission_duration_ms;
 
-        // 3. Create a command encoder
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("WgpuRenderer Command Encoder"),
-        });
-
-        // 4. Begin the render pass
         let mut _actual_draw_calls = 0;
         let mut _actual_triangles = 0;
 
         {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("WgpuRenderer Main Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &target_texture_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(gc.get_clear_color()),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None, // TODO: add depth buffer
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            // TODO: Draw the renderables here
+            let gc_guard = gc.lock().map_err(|e| {
+                RenderSystemError::Internal(format!(
+                    "Render: Failed to lock GraphicsContext Mutex for render pass: {}",
+                    e
+                ))
+            })?;
+
+            // --- 3. Create Command Encoder
+            let mut encoder =
+                gc_guard
+                    .device()
+                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                        label: Some("WgpuRenderer Render Command Encoder"),
+                    });
+
+            // --- 4. Begin Render Pass
+            {
+                let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("WgpuRenderer Clear Screen Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &target_texture_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(gc_guard.get_clear_color()),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None, // TODO: Add depth buffer
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+                // TODO: Draw the renderables here
+            }
+
+            // --- 5. Submit Commands ---
+            cpu_submission_timer = Stopwatch::new();
+            gc_guard.queue().submit(std::iter::once(encoder.finish()));
+            cpu_submission_duration_ms =
+                cpu_submission_timer.elapsed_secs_f64().unwrap_or(0.0) * 1000.0;
         }
 
         let cpu_render_logic_duration_ms =
             cpu_render_logic_timer.elapsed_secs_f64().unwrap_or(0.0) * 1000.0;
-
-        // --- 5. Submit Commands ---
-        let cpu_submission_timer = Stopwatch::new();
-        queue.submit(std::iter::once(encoder.finish()));
-        let cpu_submission_duration_ms =
-            cpu_submission_timer.elapsed_secs_f64().unwrap_or(0.0) * 1000.0;
 
         // --- 6. Present Frame ---
         output_surface_texture.present();
@@ -270,48 +311,97 @@ impl RenderSystem for WgpuRenderer {
     }
 
     fn supports_feature(&self, feature_name: &str) -> bool {
-        if let Some(gc) = &self.graphics_context {
-            match feature_name {
-                "gpu_timestamps" => gc
-                    .active_device_features
-                    .contains(wgpu::Features::TIMESTAMP_QUERY),
-                "texture_compression_bc" => gc
-                    .active_device_features
-                    .contains(wgpu::Features::TEXTURE_COMPRESSION_BC),
-                _ => false,
+        if let Some(gc_arc_mutex) = &self.graphics_context {
+            match gc_arc_mutex.lock() {
+                Ok(gc_guard) => match feature_name {
+                    "gpu_timestamps" => gc_guard
+                        .active_device_features
+                        .contains(wgpu::Features::TIMESTAMP_QUERY),
+                    "texture_compression_bc" => gc_guard
+                        .active_device_features
+                        .contains(wgpu::Features::TEXTURE_COMPRESSION_BC),
+                    _ => {
+                        log::warn!(
+                            "Unsupported feature_name query in supports_feature: {}",
+                            feature_name
+                        );
+                        false
+                    }
+                },
+                Err(e) => {
+                    log::error!(
+                        "Failed to lock GraphicsContext to check feature '{}': {}. Assuming feature not supported.",
+                        feature_name,
+                        e
+                    );
+                    false
+                }
             }
         } else {
+            log::warn!(
+                "Attempted to check feature '{}' but graphics context is not initialized.",
+                feature_name
+            );
             false
         }
     }
 
     fn shutdown(&mut self) {
         log::info!("WgpuRenderer shutting down internal GraphicsContext...");
+        if let Some(gc_arc_mutex) = self.graphics_context.take() {
+            match Arc::try_unwrap(gc_arc_mutex) {
+                Ok(mutex_gc) => match mutex_gc.into_inner() {
+                    Ok(_gc_instance) => {
+                        log::info!("GraphicsContext successfully unwrapped and will be dropped.");
+                    }
+                    Err(poisoned_err) => {
+                        log::error!(
+                            "Mutex was poisoned during shutdown: {}. Resources might not be fully cleaned.",
+                            poisoned_err
+                        );
+                    }
+                },
+                Err(_still_shared_arc) => {
+                    log::warn!(
+                        "GraphicsContext Arc is still shared elsewhere during shutdown. Resources will be dropped when last Arc reference is gone."
+                    );
+                }
+            }
+        }
         self.graphics_context = None;
+        log::info!("WgpuRenderer shutdown complete.");
     }
 
     fn get_adapter_info(&self) -> Option<RendererAdapterInfo> {
-        self.graphics_context.as_ref().map(|gc| {
-            let backend_type = match gc.adapter_backend {
-                wgpu::Backend::Vulkan => RendererBackendType::Vulkan,
-                wgpu::Backend::Metal => RendererBackendType::Metal,
-                wgpu::Backend::Dx12 => RendererBackendType::Dx12,
-                wgpu::Backend::Gl => RendererBackendType::OpenGl,
-                wgpu::Backend::BrowserWebGpu => RendererBackendType::WebGpu,
-                _ => RendererBackendType::Unknown, // Catch-all for future/other backends
-            };
-            let device_type = match gc.adapter_device_type {
-                wgpu::DeviceType::Other => RendererDeviceType::Unknown,
-                wgpu::DeviceType::IntegratedGpu => RendererDeviceType::IntegratedGpu,
-                wgpu::DeviceType::DiscreteGpu => RendererDeviceType::DiscreteGpu,
-                wgpu::DeviceType::VirtualGpu => RendererDeviceType::VirtualGpu,
-                wgpu::DeviceType::Cpu => RendererDeviceType::Cpu,
-            };
-            RendererAdapterInfo {
-                name: gc.adapter_name.clone(),
-                backend_type,
-                device_type,
-            }
-        })
+        self.graphics_context
+            .as_ref()
+            .and_then(|gc_arc_mutex| match gc_arc_mutex.lock() {
+                Ok(gc_guard) => {
+                    let backend_type = match gc_guard.adapter_backend {
+                        wgpu::Backend::Vulkan => RendererBackendType::Vulkan,
+                        wgpu::Backend::Metal => RendererBackendType::Metal,
+                        wgpu::Backend::Dx12 => RendererBackendType::Dx12,
+                        wgpu::Backend::Gl => RendererBackendType::OpenGl,
+                        wgpu::Backend::BrowserWebGpu => RendererBackendType::WebGpu,
+                        _ => RendererBackendType::Unknown,
+                    };
+                    let device_type = match gc_guard.adapter_device_type {
+                        wgpu::DeviceType::IntegratedGpu => RendererDeviceType::IntegratedGpu,
+                        wgpu::DeviceType::DiscreteGpu => RendererDeviceType::DiscreteGpu,
+                        wgpu::DeviceType::VirtualGpu => RendererDeviceType::VirtualGpu,
+                        wgpu::DeviceType::Cpu => RendererDeviceType::Cpu,
+                        _ => RendererDeviceType::Unknown,
+                    };
+                    Some(RendererAdapterInfo {
+                        name: gc_guard.adapter_name.clone(),
+                        backend_type,
+                        device_type,
+                    })
+                }
+                Err(e) => {
+                    log::error!("get_adapter_info: Failed to lock GraphicsContext: {}", e);
+                    None
+                }
+            })
     }
 }
