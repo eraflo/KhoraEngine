@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::khora_bitflags;
 use crate::subsystems::renderer::api::common_types::{IndexFormat, TextureFormat};
 use crate::subsystems::renderer::api::shader_types::ShaderModuleId;
 use std::borrow::Cow;
@@ -246,14 +247,16 @@ pub struct BlendStateDescriptor {
     pub alpha: BlendComponentDescriptor,
 }
 
-/// Bitmask to enable or disable color writes for each color channel.
-/// This is used to control which color channels are written to the render target.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ColorWrites {
-    pub r: bool,
-    pub g: bool,
-    pub b: bool,
-    pub a: bool,
+khora_bitflags! {
+    /// Bitmask to enable or disable color writes for each color channel.
+    /// This is used to control which color channels are written to the render target.
+    pub struct ColorWrites: u8 {
+        const R = 0b0001;
+        const G = 0b0010;
+        const B = 0b0100;
+        const A = 0b1000;
+        const ALL = Self::R.bits() | Self::G.bits() | Self::B.bits() | Self::A.bits();
+    }
 }
 
 /// Describes a color target state. A pipeline can have multiple color targets.
@@ -306,12 +309,10 @@ mod tests {
 
     #[test]
     fn test_color_writes_all() {
-        let writes = ColorWrites {
-            r: true,
-            g: true,
-            b: true,
-            a: true,
-        };
-        assert!(writes.r && writes.g && writes.b && writes.a);
+        let all_color_writes = ColorWrites::ALL;
+        assert_eq!(
+            all_color_writes,
+            ColorWrites::R | ColorWrites::G | ColorWrites::B | ColorWrites::A
+        );
     }
 }
