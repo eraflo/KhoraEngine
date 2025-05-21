@@ -26,6 +26,8 @@ use crate::subsystems::renderer::api::shader_types::{
 use crate::subsystems::renderer::error::{PipelineError, ResourceError, ShaderError};
 use crate::subsystems::renderer::traits::graphics_device::GraphicsDevice;
 
+use super::conversions::{self, *};
+
 use std::collections::HashMap;
 use std::sync::{
     Arc, Mutex,
@@ -87,134 +89,6 @@ impl WgpuDevice {
 
     // --- Convert Helpers ---
 
-    /// Converts a VertexFormat from the API to the wgpu format.
-    fn convert_vertex_format(api_format: api_pipe::VertexFormat) -> wgpu::VertexFormat {
-        match api_format {
-            api_pipe::VertexFormat::Uint8x2 => wgpu::VertexFormat::Uint8x2,
-            api_pipe::VertexFormat::Uint8x4 => wgpu::VertexFormat::Uint8x4,
-            api_pipe::VertexFormat::Sint8x2 => wgpu::VertexFormat::Sint8x2,
-            api_pipe::VertexFormat::Sint8x4 => wgpu::VertexFormat::Sint8x4,
-            api_pipe::VertexFormat::Unorm8x2 => wgpu::VertexFormat::Unorm8x2,
-            api_pipe::VertexFormat::Unorm8x4 => wgpu::VertexFormat::Unorm8x4,
-            api_pipe::VertexFormat::Snorm8x2 => wgpu::VertexFormat::Snorm8x2,
-            api_pipe::VertexFormat::Snorm8x4 => wgpu::VertexFormat::Snorm8x4,
-            api_pipe::VertexFormat::Uint16x2 => wgpu::VertexFormat::Uint16x2,
-            api_pipe::VertexFormat::Uint16x4 => wgpu::VertexFormat::Uint16x4,
-            api_pipe::VertexFormat::Sint16x2 => wgpu::VertexFormat::Sint16x2,
-            api_pipe::VertexFormat::Sint16x4 => wgpu::VertexFormat::Sint16x4,
-            api_pipe::VertexFormat::Unorm16x2 => wgpu::VertexFormat::Unorm16x2,
-            api_pipe::VertexFormat::Unorm16x4 => wgpu::VertexFormat::Unorm16x4,
-            api_pipe::VertexFormat::Snorm16x2 => wgpu::VertexFormat::Snorm16x2,
-            api_pipe::VertexFormat::Snorm16x4 => wgpu::VertexFormat::Snorm16x4,
-            api_pipe::VertexFormat::Float16x2 => wgpu::VertexFormat::Float16x2,
-            api_pipe::VertexFormat::Float16x4 => wgpu::VertexFormat::Float16x4,
-            api_pipe::VertexFormat::Float32 => wgpu::VertexFormat::Float32,
-            api_pipe::VertexFormat::Float32x2 => wgpu::VertexFormat::Float32x2,
-            api_pipe::VertexFormat::Float32x3 => wgpu::VertexFormat::Float32x3,
-            api_pipe::VertexFormat::Float32x4 => wgpu::VertexFormat::Float32x4,
-            api_pipe::VertexFormat::Uint32 => wgpu::VertexFormat::Uint32,
-            api_pipe::VertexFormat::Uint32x2 => wgpu::VertexFormat::Uint32x2,
-            api_pipe::VertexFormat::Uint32x3 => wgpu::VertexFormat::Uint32x3,
-            api_pipe::VertexFormat::Uint32x4 => wgpu::VertexFormat::Uint32x4,
-            api_pipe::VertexFormat::Sint32 => wgpu::VertexFormat::Sint32,
-            api_pipe::VertexFormat::Sint32x2 => wgpu::VertexFormat::Sint32x2,
-            api_pipe::VertexFormat::Sint32x3 => wgpu::VertexFormat::Sint32x3,
-            api_pipe::VertexFormat::Sint32x4 => wgpu::VertexFormat::Sint32x4,
-        }
-    }
-
-    /// Converts a TextureFormat from the API to the wgpu format.
-    fn convert_texture_format(api_format: TextureFormat) -> Option<wgpu::TextureFormat> {
-        match api_format {
-            TextureFormat::R8Unorm => Some(wgpu::TextureFormat::R8Unorm),
-            TextureFormat::Rg8Unorm => Some(wgpu::TextureFormat::Rg8Unorm),
-            TextureFormat::Rgba8Unorm => Some(wgpu::TextureFormat::Rgba8Unorm),
-            TextureFormat::Rgba8UnormSrgb => Some(wgpu::TextureFormat::Rgba8UnormSrgb),
-            TextureFormat::Bgra8UnormSrgb => Some(wgpu::TextureFormat::Bgra8UnormSrgb),
-            TextureFormat::R16Float => Some(wgpu::TextureFormat::R16Float),
-            TextureFormat::Rg16Float => Some(wgpu::TextureFormat::Rg16Float),
-            TextureFormat::Rgba16Float => Some(wgpu::TextureFormat::Rgba16Float),
-            TextureFormat::R32Float => Some(wgpu::TextureFormat::R32Float),
-            TextureFormat::Rg32Float => Some(wgpu::TextureFormat::Rg32Float),
-            TextureFormat::Rgba32Float => Some(wgpu::TextureFormat::Rgba32Float),
-            TextureFormat::Depth16Unorm => Some(wgpu::TextureFormat::Depth16Unorm),
-            TextureFormat::Depth24Plus => Some(wgpu::TextureFormat::Depth24Plus),
-            TextureFormat::Depth24PlusStencil8 => Some(wgpu::TextureFormat::Depth24PlusStencil8),
-            TextureFormat::Depth32Float => Some(wgpu::TextureFormat::Depth32Float),
-            TextureFormat::Depth32FloatStencil8 => Some(wgpu::TextureFormat::Depth32FloatStencil8),
-        }
-    }
-
-    /// Converts an IndexFormat from the API to the wgpu format.
-    fn convert_index_format(api_format: IndexFormat) -> wgpu::IndexFormat {
-        match api_format {
-            IndexFormat::Uint16 => wgpu::IndexFormat::Uint16,
-            IndexFormat::Uint32 => wgpu::IndexFormat::Uint32,
-        }
-    }
-
-    /// Converts a CompareFunction from the API to the wgpu format.
-    fn convert_compare_function(api_func: api_pipe::CompareFunction) -> wgpu::CompareFunction {
-        match api_func {
-            api_pipe::CompareFunction::Never => wgpu::CompareFunction::Never,
-            api_pipe::CompareFunction::Less => wgpu::CompareFunction::Less,
-            api_pipe::CompareFunction::Equal => wgpu::CompareFunction::Equal,
-            api_pipe::CompareFunction::LessEqual => wgpu::CompareFunction::LessEqual,
-            api_pipe::CompareFunction::Greater => wgpu::CompareFunction::Greater,
-            api_pipe::CompareFunction::NotEqual => wgpu::CompareFunction::NotEqual,
-            api_pipe::CompareFunction::GreaterEqual => wgpu::CompareFunction::GreaterEqual,
-            api_pipe::CompareFunction::Always => wgpu::CompareFunction::Always,
-        }
-    }
-
-    /// Converts a StencilOperation from the API to the wgpu format.
-    fn convert_stencil_operation(api_op: api_pipe::StencilOperation) -> wgpu::StencilOperation {
-        match api_op {
-            api_pipe::StencilOperation::Keep => wgpu::StencilOperation::Keep,
-            api_pipe::StencilOperation::Zero => wgpu::StencilOperation::Zero,
-            api_pipe::StencilOperation::Replace => wgpu::StencilOperation::Replace,
-            api_pipe::StencilOperation::Invert => wgpu::StencilOperation::Invert,
-            api_pipe::StencilOperation::IncrementClamp => wgpu::StencilOperation::IncrementClamp,
-            api_pipe::StencilOperation::DecrementClamp => wgpu::StencilOperation::DecrementClamp,
-            api_pipe::StencilOperation::IncrementWrap => wgpu::StencilOperation::IncrementWrap,
-            api_pipe::StencilOperation::DecrementWrap => wgpu::StencilOperation::DecrementWrap,
-        }
-    }
-
-    /// Converts a BlendFactor from the API to the wgpu format.
-    fn convert_blend_factor(api_factor: api_pipe::BlendFactor) -> wgpu::BlendFactor {
-        match api_factor {
-            api_pipe::BlendFactor::One => wgpu::BlendFactor::One,
-            api_pipe::BlendFactor::Zero => wgpu::BlendFactor::Zero,
-            api_pipe::BlendFactor::SrcAlpha => wgpu::BlendFactor::SrcAlpha,
-            api_pipe::BlendFactor::OneMinusSrcAlpha => wgpu::BlendFactor::OneMinusSrcAlpha,
-        }
-    }
-
-    /// Converts a BlendOperation from the API to the wgpu format.
-    fn convert_blend_operation(api_op: api_pipe::BlendOperation) -> wgpu::BlendOperation {
-        match api_op {
-            api_pipe::BlendOperation::Add => wgpu::BlendOperation::Add,
-            api_pipe::BlendOperation::Subtract => wgpu::BlendOperation::Subtract,
-            api_pipe::BlendOperation::ReverseSubtract => wgpu::BlendOperation::ReverseSubtract,
-            api_pipe::BlendOperation::Min => wgpu::BlendOperation::Min,
-            api_pipe::BlendOperation::Max => wgpu::BlendOperation::Max,
-        }
-    }
-
-    /// Converts a SampleCount from the API to the wgpu format.
-    fn convert_sample_count(api_count: SampleCount) -> u32 {
-        match api_count {
-            SampleCount::X1 => 1,
-            SampleCount::X2 => 2,
-            SampleCount::X4 => 4,
-            SampleCount::X8 => 8,
-            SampleCount::X16 => 16,
-            SampleCount::X32 => 32,
-            SampleCount::X64 => 64,
-        }
-    }
-
     /// Converts a ColorWrites from the API to the wgpu format.
     fn convert_color_writes(api_writes: api_pipe::ColorWrites) -> wgpu::ColorWrites {
         let mut wgpu_writes = wgpu::ColorWrites::empty();
@@ -231,16 +105,6 @@ impl WgpuDevice {
             wgpu_writes |= wgpu::ColorWrites::ALPHA;
         }
         wgpu_writes
-    }
-
-    /// Converts an Option<CullMode> from the API to Option<wgpu::Face>.
-    fn convert_cull_mode_option(api_cull_mode: Option<api_pipe::CullMode>) -> Option<wgpu::Face> {
-        match api_cull_mode {
-            Some(api_pipe::CullMode::Front) => Some(wgpu::Face::Front),
-            Some(api_pipe::CullMode::Back) => Some(wgpu::Face::Back),
-            Some(api_pipe::CullMode::None) => None,
-            None => None,
-        }
     }
 }
 
@@ -350,7 +214,7 @@ impl GraphicsDevice for WgpuDevice {
                     .as_ref()
                     .iter()
                     .map(|attr_desc| wgpu::VertexAttribute {
-                        format: Self::convert_vertex_format(attr_desc.format),
+                        format: attr_desc.format.into(),
                         offset: attr_desc.offset,
                         shader_location: attr_desc.shader_location,
                     })
@@ -377,117 +241,66 @@ impl GraphicsDevice for WgpuDevice {
 
         // 3. Converts primitive state
         let primitive_state = wgpu::PrimitiveState {
-            topology: match descriptor.primitive_state.topology {
-                api_pipe::PrimitiveTopology::PointList => wgpu::PrimitiveTopology::PointList,
-                api_pipe::PrimitiveTopology::LineList => wgpu::PrimitiveTopology::LineList,
-                api_pipe::PrimitiveTopology::LineStrip => wgpu::PrimitiveTopology::LineStrip,
-                api_pipe::PrimitiveTopology::TriangleList => wgpu::PrimitiveTopology::TriangleList,
-                api_pipe::PrimitiveTopology::TriangleStrip => {
-                    wgpu::PrimitiveTopology::TriangleStrip
-                }
-            },
-            strip_index_format: descriptor
-                .primitive_state
-                .strip_index_format
-                .map(Self::convert_index_format),
-            front_face: match descriptor.primitive_state.front_face {
-                api_pipe::FrontFace::Ccw => wgpu::FrontFace::Ccw,
-                api_pipe::FrontFace::Cw => wgpu::FrontFace::Cw,
-            },
-            cull_mode: Self::convert_cull_mode_option(descriptor.primitive_state.cull_mode),
+            topology: descriptor.primitive_state.topology.into(),
+            strip_index_format: descriptor.primitive_state.strip_index_format.map(|f| f.into()),
+            front_face: descriptor.primitive_state.front_face.into(),
+            cull_mode: descriptor.primitive_state.cull_mode.map(|m| m.into()),
+            polygon_mode: descriptor.primitive_state.polygon_mode.into(),
             unclipped_depth: descriptor.primitive_state.unclipped_depth,
-            polygon_mode: match descriptor.primitive_state.polygon_mode {
-                api_pipe::PolygonMode::Fill => wgpu::PolygonMode::Fill,
-                api_pipe::PolygonMode::Line => wgpu::PolygonMode::Line,
-                api_pipe::PolygonMode::Point => wgpu::PolygonMode::Point,
-            },
             conservative: descriptor.primitive_state.conservative,
         };
 
         // 4. Convert depth stencil state
-        let depth_stencil_state: Option<wgpu::DepthStencilState> =
-            if let Some(ds_desc) = descriptor.depth_stencil_state.as_ref() {
-                let wgpu_format =
-                    Self::convert_texture_format(ds_desc.format).ok_or_else(|| {
-                        ResourceError::Pipeline(PipelineError::IncompatibleDepthStencilFormat(
-                            format!("{:?}", ds_desc.format),
-                        ))
-                    })?;
-
-                Some(wgpu::DepthStencilState {
-                    format: wgpu_format,
-                    depth_write_enabled: ds_desc.depth_write_enabled,
-                    depth_compare: Self::convert_compare_function(ds_desc.depth_compare),
-                    stencil: wgpu::StencilState {
-                        front: wgpu::StencilFaceState {
-                            compare: Self::convert_compare_function(ds_desc.stencil_front.compare),
-                            fail_op: Self::convert_stencil_operation(ds_desc.stencil_front.fail_op),
-                            depth_fail_op: Self::convert_stencil_operation(
-                                ds_desc.stencil_front.depth_fail_op,
-                            ),
-                            pass_op: Self::convert_stencil_operation(
-                                ds_desc.stencil_front.depth_pass_op,
-                            ),
-                        },
-                        back: wgpu::StencilFaceState {
-                            compare: Self::convert_compare_function(ds_desc.stencil_back.compare),
-                            fail_op: Self::convert_stencil_operation(ds_desc.stencil_back.fail_op),
-                            depth_fail_op: Self::convert_stencil_operation(
-                                ds_desc.stencil_back.depth_fail_op,
-                            ),
-                            pass_op: Self::convert_stencil_operation(
-                                ds_desc.stencil_back.depth_pass_op,
-                            ),
-                        },
-                        read_mask: ds_desc.stencil_read_mask,
-                        write_mask: ds_desc.stencil_write_mask,
-                    },
-                    bias: wgpu::DepthBiasState {
-                        constant: ds_desc.bias.constant,
-                        slope_scale: ds_desc.bias.slope_scale,
-                        clamp: ds_desc.bias.clamp,
-                    },
-                })
-            } else {
-                None
-            };
+        let depth_stencil_state = descriptor.depth_stencil_state.as_ref().map(|ds| wgpu::DepthStencilState {
+            format: ds.format.into(),
+            depth_write_enabled: ds.depth_write_enabled,
+            depth_compare: ds.depth_compare.into(),
+            stencil: wgpu::StencilState {
+                front: wgpu::StencilFaceState {
+                    compare: ds.stencil_front.compare.into(),
+                    fail_op: ds.stencil_front.fail_op.into(),
+                    depth_fail_op: ds.stencil_front.depth_fail_op.into(),
+                    pass_op: ds.stencil_front.depth_pass_op.into(),
+                },
+                back: wgpu::StencilFaceState {
+                    compare: ds.stencil_back.compare.into(),
+                    fail_op: ds.stencil_back.fail_op.into(),
+                    depth_fail_op: ds.stencil_back.depth_fail_op.into(),
+                    pass_op: ds.stencil_back.depth_pass_op.into(),
+                },
+                read_mask: ds.stencil_read_mask,
+                write_mask: ds.stencil_write_mask,
+            },
+            bias: wgpu::DepthBiasState {
+                constant: ds.bias.constant,
+                slope_scale: ds.bias.slope_scale,
+                clamp: ds.bias.clamp,
+            },
+        });
 
         // 5. Convert color target states
-        let wgpu_color_targets_cow: Vec<Option<wgpu::ColorTargetState>> = descriptor
-            .color_target_states
-            .as_ref()
-            .iter()
-            .map(|ct_desc: &ColorTargetStateDescriptor| {
-                let wgpu_format =
-                    Self::convert_texture_format(ct_desc.format).ok_or_else(|| {
-                        ResourceError::Pipeline(PipelineError::IncompatibleColorTarget(format!(
-                            "{:?}",
-                            ct_desc.format
-                        )))
-                    })?;
-
-                Ok(Some(wgpu::ColorTargetState {
-                    format: wgpu_format,
-                    blend: ct_desc.blend.map(|b_desc| wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: Self::convert_blend_factor(b_desc.color.src_factor),
-                            dst_factor: Self::convert_blend_factor(b_desc.color.dst_factor),
-                            operation: Self::convert_blend_operation(b_desc.color.operation),
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: Self::convert_blend_factor(b_desc.alpha.src_factor),
-                            dst_factor: Self::convert_blend_factor(b_desc.alpha.dst_factor),
-                            operation: Self::convert_blend_operation(b_desc.alpha.operation),
-                        },
-                    }),
-                    write_mask: Self::convert_color_writes(ct_desc.write_mask),
-                }))
+        let color_target_states: Vec<Option<wgpu::ColorTargetState>> = descriptor.color_target_states.iter().map(|cts| {
+            Some(wgpu::ColorTargetState {
+                format: cts.format.into(),
+                blend: cts.blend.map(|b| wgpu::BlendState {
+                    color: wgpu::BlendComponent {
+                        src_factor: b.color.src_factor.into(),
+                        dst_factor: b.color.dst_factor.into(),
+                        operation: b.color.operation.into(),
+                    },
+                    alpha: wgpu::BlendComponent {
+                        src_factor: b.alpha.src_factor.into(),
+                        dst_factor: b.alpha.dst_factor.into(),
+                        operation: b.alpha.operation.into(),
+                    },
+                }),
+                write_mask: wgpu::ColorWrites::from_bits_truncate(cts.write_mask.bits() as u32), // Bitflags conversion
             })
-            .collect::<Result<Vec<_>, ResourceError>>()?;
+        }).collect();
 
         // 6. Convert multisample state
         let multisample_state = wgpu::MultisampleState {
-            count: Self::convert_sample_count(descriptor.multisample_state.count),
+            count: descriptor.multisample_state.count.into(),
             mask: descriptor.multisample_state.mask as u64,
             alpha_to_coverage_enabled: descriptor.multisample_state.alpha_to_coverage_enabled,
         };
@@ -527,7 +340,7 @@ impl GraphicsDevice for WgpuDevice {
                     Some(wgpu::FragmentState {
                         module: fs_module,
                         entry_point: Some(entry_point_cow.as_ref()),
-                        targets: &wgpu_color_targets_cow,
+                        targets: &color_target_states,
                         compilation_options: Default::default(),
                     })
                 } else {
@@ -628,144 +441,5 @@ impl GraphicsDevice for WgpuDevice {
                 false
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::subsystems::renderer::api::pipeline_types::VertexFormat;
-
-    #[test]
-    fn test_convert_vertex_format_all_cases() {
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint8x2),
-            wgpu::VertexFormat::Uint8x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint8x4),
-            wgpu::VertexFormat::Uint8x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint8x2),
-            wgpu::VertexFormat::Sint8x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint8x4),
-            wgpu::VertexFormat::Sint8x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Unorm8x2),
-            wgpu::VertexFormat::Unorm8x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Unorm8x4),
-            wgpu::VertexFormat::Unorm8x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Snorm8x2),
-            wgpu::VertexFormat::Snorm8x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Snorm8x4),
-            wgpu::VertexFormat::Snorm8x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint16x2),
-            wgpu::VertexFormat::Uint16x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint16x4),
-            wgpu::VertexFormat::Uint16x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint16x2),
-            wgpu::VertexFormat::Sint16x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint16x4),
-            wgpu::VertexFormat::Sint16x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Unorm16x2),
-            wgpu::VertexFormat::Unorm16x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Unorm16x4),
-            wgpu::VertexFormat::Unorm16x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Snorm16x2),
-            wgpu::VertexFormat::Snorm16x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Snorm16x4),
-            wgpu::VertexFormat::Snorm16x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Float16x2),
-            wgpu::VertexFormat::Float16x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Float16x4),
-            wgpu::VertexFormat::Float16x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Float32),
-            wgpu::VertexFormat::Float32
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Float32x2),
-            wgpu::VertexFormat::Float32x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Float32x3),
-            wgpu::VertexFormat::Float32x3
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Float32x4),
-            wgpu::VertexFormat::Float32x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint32),
-            wgpu::VertexFormat::Uint32
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint32x2),
-            wgpu::VertexFormat::Uint32x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint32x3),
-            wgpu::VertexFormat::Uint32x3
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint32x4),
-            wgpu::VertexFormat::Uint32x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint32),
-            wgpu::VertexFormat::Sint32
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint32x2),
-            wgpu::VertexFormat::Sint32x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint32x3),
-            wgpu::VertexFormat::Sint32x3
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint32x4),
-            wgpu::VertexFormat::Sint32x4
-        );
-    }
-
-    #[test]
-    fn test_convert_cull_mode() {
-        assert_eq!(
-            WgpuDevice::convert_cull_mode_option(Some(api_pipe::CullMode::Back)),
-            Some(wgpu::Face::Back)
-        );
-        assert_eq!(WgpuDevice::convert_cull_mode_option(None), None);
     }
 }
