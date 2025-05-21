@@ -13,6 +13,9 @@
 // limitations under the License.
 
 use crate::subsystems::renderer::api::common_types::RendererAdapterInfo;
+use crate::subsystems::renderer::api::pipeline_types::{
+    RenderPipelineDescriptor, RenderPipelineId,
+};
 use crate::subsystems::renderer::api::shader_types::{ShaderModuleDescriptor, ShaderModuleId};
 use crate::subsystems::renderer::error::ResourceError;
 use std::fmt::Debug;
@@ -30,14 +33,37 @@ pub trait GraphicsDevice: Send + Sync + Debug {
         descriptor: &ShaderModuleDescriptor,
     ) -> Result<ShaderModuleId, ResourceError>;
 
-    /// Retrieves the shader module associated with the given ID.
+    /// Destroys the shader module associated with the given ID.
+    /// This function is used to release the resources associated with the shader module.
     /// ## Arguments
-    /// * `id` - The ID of the shader module to retrieve.
+    /// * `id` - The ID of the shader module to be destroyed.
     /// ## Returns
-    /// A `Result` containing a reference to the `wgpu::ShaderModule` or an error if the module is not found.
+    /// A `Result` indicating success or failure of the operation.
     /// ## Errors
-    /// * `ResourceError` - If the shader module is not found.
+    /// * `ResourceError` - If the shader module destruction fails.
     fn destroy_shader_module(&self, id: ShaderModuleId) -> Result<(), ResourceError>;
+
+    /// Creates a render pipeline from the provided descriptor.
+    /// ## Arguments
+    /// * `descriptor` - A reference to a `RenderPipelineDescriptor` containing the pipeline configuration.
+    /// ## Returns
+    /// A `Result` containing the ID of the created render pipeline or an error if the creation fails.
+    /// ## Errors
+    /// * `ResourceError` - If the render pipeline creation fails.
+    fn create_render_pipeline(
+        &self,
+        descriptor: &RenderPipelineDescriptor,
+    ) -> Result<RenderPipelineId, ResourceError>;
+
+    /// Destroys the render pipeline associated with the given ID.
+    /// This function is used to release the resources associated with the render pipeline.
+    /// ## Arguments
+    /// * `id` - The ID of the render pipeline to be destroyed.
+    /// ## Returns
+    /// A `Result` indicating success or failure of the operation.
+    /// ## Errors
+    /// * `ResourceError` - If the render pipeline destruction fails.
+    fn destroy_render_pipeline(&self, id: RenderPipelineId) -> Result<(), ResourceError>;
 
     /// Get the adapter information of the rendering system.
     fn get_adapter_info(&self) -> RendererAdapterInfo;
