@@ -15,5 +15,6 @@
 pub mod wgpu_device;
 pub mod wgpu_graphic_context;
 pub mod wgpu_render_system;
+pub mod conversions;
 
 pub use wgpu_render_system::WgpuRenderSystem;
