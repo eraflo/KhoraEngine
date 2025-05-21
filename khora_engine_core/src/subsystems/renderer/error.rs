@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use super::api::shader_types::ShaderModuleId;
+use super::api::pipeline_types::RenderPipelineId;
 use std::fmt;
 
 /// Errors specific to shader module creation or management.
@@ -64,10 +65,81 @@ impl fmt::Display for ShaderError {
 
 impl std::error::Error for ShaderError {}
 
+/// Errors related to graphics pipeline creation or management.
+#[derive(Debug)]
+pub enum PipelineError {
+    LayoutCreationFailed(String),
+    CompilationFailed {
+        label: Option<String>,
+        details: String,
+    },
+    InvalidShaderModuleForPipeline {
+        id: ShaderModuleId,
+        pipeline_label: Option<String>
+    },
+    InvalidRenderPipeline { id: RenderPipelineId },
+    MissingEntryPointForFragmentShader {
+        pipeline_label: Option<String>, 
+        shader_id: ShaderModuleId
+    },
+    IncompatibleColorTarget(String),
+    IncompatibleDepthStencilFormat(String),
+    FeatureNotSupported(String),
+}
+
+impl fmt::Display for PipelineError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PipelineError::LayoutCreationFailed(msg) => {
+                write!(f, "Pipeline layout creation failed: {}", msg)
+            }
+            PipelineError::CompilationFailed { label, details } => {
+                write!(
+                    f,
+                    "Pipeline compilation failed for '{}': {}",
+                    label.as_deref().unwrap_or("Unknown"),
+                    details
+                )
+            }
+            PipelineError::InvalidShaderModuleForPipeline { id, pipeline_label } => {
+                write!(
+                    f,
+                    "Invalid shader module {:?} for pipeline '{}'",
+                    id,
+                    pipeline_label.as_deref().unwrap_or("Unknown")
+                )
+            }
+            PipelineError::InvalidRenderPipeline { id } => {
+                write!(f, "Invalid render pipeline ID: {:?}", id)
+            }
+            PipelineError::MissingEntryPointForFragmentShader { pipeline_label, shader_id } => {
+                write!(
+                    f,
+                    "Missing entry point for fragment shader in pipeline '{}', shader ID: {:?}",
+                    pipeline_label.as_deref().unwrap_or("Unknown"),
+                    shader_id
+                )
+            }
+            PipelineError::IncompatibleColorTarget(msg) => {
+                write!(f, "Incompatible color target format: {}", msg)
+            }
+            PipelineError::IncompatibleDepthStencilFormat(msg) => {
+                write!(f, "Incompatible depth/stencil format: {}", msg)
+            }
+            PipelineError::FeatureNotSupported(msg) => {
+                write!(f, "Feature not supported: {}", msg)
+            }
+        }
+    }
+}
+
+impl std::error::Error for PipelineError {}
+
 /// Errors related to graphics resource management.
 #[derive(Debug)]
 pub enum ResourceError {
     Shader(ShaderError),
+    Pipeline(PipelineError),
     NotFound,
     InvalidHandle,
     BackendError(String),
@@ -77,6 +149,7 @@ impl fmt::Display for ResourceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ResourceError::Shader(err) => write!(f, "Shader resource error: {}", err),
+            ResourceError::Pipeline(err) => write!(f, "Pipeline resource error: {}", err),
             ResourceError::NotFound => write!(f, "Resource not found with ID."),
             ResourceError::InvalidHandle => write!(f, "Invalid resource handle or ID."),
             ResourceError::BackendError(msg) => {
@@ -98,6 +171,12 @@ impl std::error::Error for ResourceError {
 impl From<ShaderError> for ResourceError {
     fn from(err: ShaderError) -> Self {
         ResourceError::Shader(err)
+    }
+}
+
+impl From<PipelineError> for ResourceError {
+    fn from(err: PipelineError) -> Self {
+        ResourceError::Pipeline(err)
     }
 }
 

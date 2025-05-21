@@ -13,6 +13,10 @@
 // limitations under the License.
 
 use std::borrow::Cow;
+use crate::subsystems::renderer::api::common_types::{IndexFormat, TextureFormat};
+use crate::subsystems::renderer::api::shader_types::ShaderModuleId;
+
+use super::common_types::SampleCount;
 
 /// Represents the format of vertex attributes in a vertex buffer.
 /// This is used to define how vertex data is laid out in memory and how it should be interpreted.
@@ -97,6 +101,12 @@ pub enum CompareFunction {
     Always
 }
 
+impl Default for CompareFunction {
+    fn default() -> Self {
+        CompareFunction::Always
+    }
+}
+
 /// Describes action to take on the buffer value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StencilOperation {
@@ -108,6 +118,12 @@ pub enum StencilOperation {
     DecrementClamp,
     IncrementWrap,
     DecrementWrap
+}
+
+impl Default for StencilOperation {
+    fn default() -> Self {
+        StencilOperation::Keep
+    }
 }
 
 /// Defines multiplier to apply on source color (current fragment) and destination color (already on rendered image) when blending.
@@ -134,7 +150,7 @@ pub enum BlendOperation {
 /// This includes the shader location (the index of the attribute in the shader),
 /// the format (the type of data stored in the attribute), and the offset (the byte offset from the start of the vertex).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct VertexAttributeDescriptor<'a> {
+pub struct VertexAttributeDescriptor {
     pub shader_location: u32, // The index of the attribute in the shader
     pub format: VertexFormat, // The format of the attribute data
     pub offset: u64, // The byte offset from the start of the vertex
@@ -232,7 +248,7 @@ pub struct ColorTargetStateDescriptor {
 /// Configure MSAA (multisample anti-aliasing) for the render pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MultisampleStateDescriptor {
-    pub count: u32, // Number of samples per pixel
+    pub count: SampleCount, // Number of samples per pixel
     pub mask: u32, // Bitmask to select which samples are affected
     pub alpha_to_coverage_enabled: bool // Use alpha to determine coverage for MSAA
 }

@@ -14,17 +14,13 @@
 
 use crate::math::{LinearRgba, Mat4, Vec3};
 
-// --- Shader Types ---
-
-/// Defines the stage in the graphics pipeline a shader module is intended for.
+/// Specify the size of indices in the index buffer.
+/// Used to optimize drawing by reusing vertices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ShaderStage {
-    Vertex,
-    Fragment,
-    Compute,
+pub enum IndexFormat {
+    Uint16,
+    Uint32
 }
-
-// --- Renderer Types ---
 
 /// Generic representation of the graphics backend type (e.g., Vulkan, Metal, OpenGL).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -49,36 +45,6 @@ pub enum RendererDeviceType {
     Unknown,
 }
 
-/// Provides standardized, backend-agnostic information about the graphics adapter.
-#[derive(Debug, Clone, Default)]
-pub struct RendererAdapterInfo {
-    pub name: String,
-    pub backend_type: RendererBackendType,
-    pub device_type: RendererDeviceType,
-}
-
-// --- Render Types ---
-
-/// Structure representing the view information for rendering.
-/// Contains the view matrix, projection matrix, and camera position.
-/// This structure is used to pass view-related information to the rendering system.
-#[derive(Debug, Clone)]
-pub struct ViewInfo {
-    pub view_matrix: Mat4,
-    pub projection_matrix: Mat4,
-    pub camera_position: Vec3,
-}
-
-impl Default for ViewInfo {
-    fn default() -> Self {
-        Self {
-            view_matrix: Mat4::IDENTITY,
-            projection_matrix: Mat4::IDENTITY,
-            camera_position: Vec3::ZERO,
-        }
-    }
-}
-
 /// Structure representing the rendering strategy.
 /// This structure defines how the rendering will be performed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,16 +54,46 @@ pub enum RenderStrategy {
     Custom(u32),
 }
 
-/// Structure representing the render statistics.
-#[derive(Debug, Default, Clone)]
-pub struct RenderStats {
-    pub frame_number: u64,
-    pub cpu_preparation_time_ms: f32,
-    pub cpu_render_submission_time_ms: f32,
-    pub gpu_time_ms: f32,
-    pub draw_calls: u32,
-    pub triangles_rendered: u32,
-    pub vram_usage_estimate_mb: f32,
+/// Number of samples per pixel for MSAA (Multisample Anti-Aliasing).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum SampleCount {
+    #[default]
+    X1,
+    X2,
+    X4,
+    X8,
+    X16,
+    X32,
+    X64
+}
+
+/// Defines the stage in the graphics pipeline a shader module is intended for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ShaderStage {
+    Vertex,
+    Fragment,
+    Compute,
+}
+
+/// Defines pixels format for textures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TextureFormat {
+    R8Unorm, Rg8Unorm, Rgba8Unorm, Rgba8UnormSrgb,
+    Bgra8UnormSrgb,
+    R16Float, Rg16Float, Rgba16Float,
+    R32Float, Rg32Float, Rgba32Float,
+    Depth16Unorm, Depth24Plus, Depth24PlusStencil8,
+    Depth32Float, Depth32FloatStencil8,
+}
+
+// --- Structs ---
+
+/// Provides standardized, backend-agnostic information about the graphics adapter.
+#[derive(Debug, Clone, Default)]
+pub struct RendererAdapterInfo {
+    pub name: String,
+    pub backend_type: RendererBackendType,
+    pub device_type: RendererDeviceType,
 }
 
 /// Structure representing a renderable object.
@@ -123,6 +119,38 @@ impl Default for RenderSettings {
             strategy: RenderStrategy::Forward,
             quality_level: 1,
             show_wireframe: false,
+        }
+    }
+}
+
+/// Structure representing the render statistics.
+#[derive(Debug, Default, Clone)]
+pub struct RenderStats {
+    pub frame_number: u64,
+    pub cpu_preparation_time_ms: f32,
+    pub cpu_render_submission_time_ms: f32,
+    pub gpu_time_ms: f32,
+    pub draw_calls: u32,
+    pub triangles_rendered: u32,
+    pub vram_usage_estimate_mb: f32,
+}
+
+/// Structure representing the view information for rendering.
+/// Contains the view matrix, projection matrix, and camera position.
+/// This structure is used to pass view-related information to the rendering system.
+#[derive(Debug, Clone)]
+pub struct ViewInfo {
+    pub view_matrix: Mat4,
+    pub projection_matrix: Mat4,
+    pub camera_position: Vec3,
+}
+
+impl Default for ViewInfo {
+    fn default() -> Self {
+        Self {
+            view_matrix: Mat4::IDENTITY,
+            projection_matrix: Mat4::IDENTITY,
+            camera_position: Vec3::ZERO,
         }
     }
 }
