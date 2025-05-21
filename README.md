@@ -60,41 +60,37 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
 *   ✅ **`[Feature] Choose & Integrate Graphics API Wrapper (wgpu/ash/etc.)`**:
     *   `wgpu` (v0.20) integrated. `WgpuGraphicsContext` manages core `wgpu` objects.
     *   SAA Prep: `TIMESTAMP_QUERY` feature requested.
-    *   *(Note: Stable operation on Vulkan, DX12, and OpenGL backends has been achieved through robust swapchain management, though automatic backend selection is a future task.)*
 *   ✅ **`[Feature] Design Rendering Interface as potential ISA (Clear inputs, outputs, potential strategies)`**:
     *   Abstract `RenderSystem` trait defined.
     *   `WgpuRenderSystem` implements this trait, using an `Arc<Mutex<WgpuGraphicsContext>>` and an `Arc<WgpuDevice>`.
 *   ✅ **`[Feature] Implement Graphics Device Abstraction`**:
-    *   Abstract `GraphicsDevice` trait defined for resource management (shaders, pipelines, etc.).
-    *   `WgpuDevice` implements this trait, providing a WGPU-specific backend.
-    *   This decouples the main engine from direct WGPU calls for resource creation.
+    *   Abstract `GraphicsDevice` trait defined for resource management.
+    *   `WgpuDevice` implements this trait.
 *   ✅ **`[Feature] Implement Swapchain Management`**:
     *   Robust management of `wgpu::Surface` within `WgpuRenderSystem` and `WgpuGraphicsContext`.
-    *   Handles `SurfaceError::Lost/Outdated` by reconfiguring with last known valid dimensions.
-    *   Interface uses `(u32, u32)` for dimensions, improving API decoupling.
 *   ✅ **`[Feature] Implement Basic Shader System`**:
-    *   Defined backend-agnostic API for shader modules (`ShaderModuleDescriptor`, `ShaderModuleId`, `ShaderSourceData`, `ShaderStage`) in `renderer::api`.
-    *   The `GraphicsDevice` trait now includes `create_shader_module` and `destroy_shader_module`.
-    *   `WgpuDevice` implements these methods, capable of creating `wgpu::ShaderModule`s from WGSL source (via abstract descriptors) and managing them with `ShaderModuleId`s.
-    *   This lays the groundwork for using shaders in render pipelines.
+    *   Defined backend-agnostic API for shader modules (`ShaderModuleDescriptor`, `ShaderModuleId`, etc.) in `renderer::api`.
+    *   `GraphicsDevice` trait includes `create_shader_module` and `destroy_shader_module`.
+    *   `WgpuDevice` implements these methods.
+*   ✅ **`[Feature] Implement Basic Render Pipeline System`**:
+    *   Defined backend-agnostic API for render pipelines (`RenderPipelineDescriptor`, `RenderPipelineId`, `VertexAttributeDescriptor`, `ColorTargetStateDescriptor`, etc.) in `renderer::api::pipeline_types`.
+    *   `GraphicsDevice` trait includes `create_render_pipeline` and `destroy_render_pipeline`.
+    *   `WgpuDevice` implements these methods, translating abstract descriptors to `wgpu` pipeline objects.
 
 **Next Steps / Milestone 2 Tasks:**
 
-*   ➡️ **`[Feature] Implement Basic Render Pipeline System`** (*New*)
-    *   Description: Define abstractions for Render Pipelines (`RenderPipelineDescriptor`, `RenderPipelineId`, `VertexBufferLayoutDescriptor`, `ColorTargetStateDescriptor`, etc.) in the `renderer::api` module. Add `create_render_pipeline` and `destroy_render_pipeline` methods to the `GraphicsDevice` trait. Implement these methods in `WgpuDevice`, enabling the creation of a `wgpu::RenderPipeline` using previously created `ShaderModuleId`s and other pipeline state descriptions.
-    *   Labels: `rendering`, `architecture`
 *   ➡️ **`[Feature] Implement Basic Buffer/Texture Management (Track VRAM usage)`**
     *   Description: Create systems to manage the creation, uploading, and binding of buffers (vertex, index, uniform) and textures, while tracking VRAM usage, all through the `GraphicsDevice` abstraction.
     *   Labels: `rendering`, `performance`, `asset`, `saa-prep`
+*   ➡️ **`[Task] Render a Single Triangle/Quad with Performance Timings`**
+    *   Description: Display a simple geometric shape using the established shader system, pipeline system, and buffer management, showing CPU/GPU timings.
+    *   Labels: `rendering`, `performance`
 *   ➡️ **`[Feature] Implement GPU Performance Monitoring Hooks (Timestamps)`**
     *   Description: Use graphics API timestamp queries (via `GraphicsDevice` if abstracted, or WGPU specifics) to measure GPU time. Essential for SAA.
     *   Labels: `rendering`, `performance`, `infra`, `saa-prep`
 *   ➡️ **`[Feature] Implement Robust Graphics Backend Selection (Vulkan/DX12/GL Fallback)`**
     *   Description: Enhance `WgpuGraphicsContext::new` to intelligently select and fall back between graphics backends.
     *   Labels: `rendering`, `core`, `platform`, `robustness`, `saa-prep`
-*   ➡️ **`[Task] Render a Single Triangle/Quad with Performance Timings`**
-    *   Description: Display a simple geometric shape using the established shader system, pipeline system, and buffer management, showing CPU/GPU timings.
-    *   Labels: `rendering`, `performance`
 
 **Note:** This is a highly ambitious, long-term research and development project. The SAA goal requires significant R&D.
 

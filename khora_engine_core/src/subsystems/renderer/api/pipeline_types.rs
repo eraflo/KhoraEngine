@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::borrow::Cow;
 use crate::subsystems::renderer::api::common_types::{IndexFormat, TextureFormat};
 use crate::subsystems::renderer::api::shader_types::ShaderModuleId;
+use std::borrow::Cow;
 
 use super::common_types::SampleCount;
 
@@ -25,18 +25,36 @@ use super::common_types::SampleCount;
 /// Essential for gpu to understand how to interpret the data in the vertex buffer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VertexFormat {
-    Uint8x2, Uint8x4,
-    Sint8x2, Sint8x4,
-    Unorm8x2, Unorm8x4,
-    Snorm8x2, Snorm8x4,
-    Uint16x2, Uint16x4,
-    Sint16x2, Sint16x4,
-    Unorm16x2, Unorm16x4,
-    Snorm16x2, Snorm16x4,
-    Float16x2, Float16x4,
-    Float32, Float32x2, Float32x3, Float32x4,
-    Uint32, Uint32x2, Uint32x3, Uint32x4,
-    Sint32, Sint32x2, Sint32x3, Sint32x4
+    Uint8x2,
+    Uint8x4,
+    Sint8x2,
+    Sint8x4,
+    Unorm8x2,
+    Unorm8x4,
+    Snorm8x2,
+    Snorm8x4,
+    Uint16x2,
+    Uint16x4,
+    Sint16x2,
+    Sint16x4,
+    Unorm16x2,
+    Unorm16x4,
+    Snorm16x2,
+    Snorm16x4,
+    Float16x2,
+    Float16x4,
+    Float32,
+    Float32x2,
+    Float32x3,
+    Float32x4,
+    Uint32,
+    Uint32x2,
+    Uint32x3,
+    Uint32x4,
+    Sint32,
+    Sint32x2,
+    Sint32x3,
+    Sint32x4,
 }
 
 /// Represents the step mode for vertex attributes.
@@ -44,8 +62,8 @@ pub enum VertexFormat {
 /// The step mode can be either per-vertex or per-instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VertexStepMode {
-    Vertex, // Read for each vertex
-    Instance // Read 1 time for each instance of an object drawn
+    Vertex,   // Read for each vertex
+    Instance, // Read 1 time for each instance of an object drawn
 }
 
 /// Defines how vertices are connected to form primitives.
@@ -64,14 +82,14 @@ pub enum PrimitiveTopology {
 pub enum CullMode {
     None,
     Front,
-    Back
+    Back,
 }
 
 /// Determines which side of a triangle is considered the front face based on the order of its vertices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FrontFace {
     Ccw,
-    Cw
+    Cw,
 }
 
 /// Use for rendering polygons.
@@ -80,16 +98,15 @@ pub enum FrontFace {
 /// - `Fill`: The polygon is filled with color.
 /// - `Line`: The polygon is rendered as a wireframe.
 /// - `Point`: The polygon is rendered as points.
-/// This is used to control the appearance of polygons in the rendered scene.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PolygonMode {
     Fill,
     Line,
-    Point
+    Point,
 }
 
 /// Defines compare conditions for depth and stencil tests.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum CompareFunction {
     Never,
     Less,
@@ -98,18 +115,14 @@ pub enum CompareFunction {
     Greater,
     NotEqual,
     GreaterEqual,
-    Always
-}
-
-impl Default for CompareFunction {
-    fn default() -> Self {
-        CompareFunction::Always
-    }
+    #[default]
+    Always,
 }
 
 /// Describes action to take on the buffer value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum StencilOperation {
+    #[default]
     Keep,
     Zero,
     Replace,
@@ -117,13 +130,7 @@ pub enum StencilOperation {
     IncrementClamp,
     DecrementClamp,
     IncrementWrap,
-    DecrementWrap
-}
-
-impl Default for StencilOperation {
-    fn default() -> Self {
-        StencilOperation::Keep
-    }
+    DecrementWrap,
 }
 
 /// Defines multiplier to apply on source color (current fragment) and destination color (already on rendered image) when blending.
@@ -132,7 +139,7 @@ pub enum BlendFactor {
     Zero,
     One,
     SrcAlpha,
-    OneMinusSrcAlpha
+    OneMinusSrcAlpha,
 }
 
 /// Defines operation to apply to combine source and destination colors, pondering on the blend factor.
@@ -142,9 +149,8 @@ pub enum BlendOperation {
     Subtract,
     ReverseSubtract,
     Min,
-    Max
+    Max,
 }
-
 
 /// Describes a vertex attribute.
 /// This includes the shader location (the index of the attribute in the shader),
@@ -153,9 +159,8 @@ pub enum BlendOperation {
 pub struct VertexAttributeDescriptor {
     pub shader_location: u32, // The index of the attribute in the shader
     pub format: VertexFormat, // The format of the attribute data
-    pub offset: u64, // The byte offset from the start of the vertex
+    pub offset: u64,          // The byte offset from the start of the vertex
 }
-
 
 /// Describes a vertex buffer layout.
 /// This is used to define how vertex data is organized in memory.
@@ -165,7 +170,7 @@ pub struct VertexAttributeDescriptor {
 pub struct VertexBufferLayoutDescriptor<'a> {
     pub array_stride: u64,
     pub step_mode: VertexStepMode,
-    pub attributes: Cow<'a, [VertexAttributeDescriptor]>
+    pub attributes: Cow<'a, [VertexAttributeDescriptor]>,
 }
 
 /// Regroupes all parameters needed to combine vertices in primitives and draw them.
@@ -177,7 +182,21 @@ pub struct PrimitiveStateDescriptor {
     pub cull_mode: Option<CullMode>,
     pub polygon_mode: PolygonMode,
     pub unclipped_depth: bool, // Use for shadow techniques or volumetric rendering
-    pub conservative: bool // Use for gpu collision detection or voxel-tracing
+    pub conservative: bool,    // Use for gpu collision detection or voxel-tracing
+}
+
+impl Default for PrimitiveStateDescriptor {
+    fn default() -> Self {
+        PrimitiveStateDescriptor {
+            topology: PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: FrontFace::Ccw,
+            cull_mode: None,
+            polygon_mode: PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        }
+    }
 }
 
 /// Defines the behavior of the stencil buffer.
@@ -187,16 +206,16 @@ pub struct StencilFaceState {
     pub compare: CompareFunction,
     pub fail_op: StencilOperation, // Operation to perform if the stencil test fails
     pub depth_fail_op: StencilOperation, // Operation to perform if the stencil test passes but the depth test fails
-    pub depth_pass_op: StencilOperation // Operation to perform if both the stencil and depth tests pass
+    pub depth_pass_op: StencilOperation, // Operation to perform if both the stencil and depth tests pass
 }
 
 /// Use to add offset (bias) to depth value calculated for a primitive.
 /// This is used to prevent z-fighting (depth fighting) between two overlapping primitives.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct DepthBiasState {
-    pub constant: i32, // Constant bias to add to the depth value
+    pub constant: i32,    // Constant bias to add to the depth value
     pub slope_scale: f32, // Slope scale bias to add to the depth value based on the slope of the primitive
-    pub clamp: f32, // Maximum value to which the depth value can be clamped (no clamp = 0.0)
+    pub clamp: f32,       // Maximum value to which the depth value can be clamped (no clamp = 0.0)
 }
 
 /// Regroups all parameters needed to configure the depth and stencil tests.
@@ -207,24 +226,24 @@ pub struct DepthStencilStateDescriptor {
     pub depth_compare: CompareFunction,
     pub stencil_front: StencilFaceState,
     pub stencil_back: StencilFaceState,
-    pub stencil_read_mask: u32, // Bits of stencil to read
+    pub stencil_read_mask: u32,  // Bits of stencil to read
     pub stencil_write_mask: u32, // Bits of stencil to write
-    pub bias: DepthBiasState
+    pub bias: DepthBiasState,
 }
 
-/// Describes a complete blending equation for a color component. 
+/// Describes a complete blending equation for a color component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlendComponentDescriptor {
     pub src_factor: BlendFactor,
     pub dst_factor: BlendFactor,
-    pub operation: BlendOperation
+    pub operation: BlendOperation,
 }
 
 /// Combines the blending equations for color and alpha components (which can be different).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlendStateDescriptor {
     pub color: BlendComponentDescriptor,
-    pub alpha: BlendComponentDescriptor
+    pub alpha: BlendComponentDescriptor,
 }
 
 /// Bitmask to enable or disable color writes for each color channel.
@@ -234,7 +253,7 @@ pub struct ColorWrites {
     pub r: bool,
     pub g: bool,
     pub b: bool,
-    pub a: bool
+    pub a: bool,
 }
 
 /// Describes a color target state. A pipeline can have multiple color targets.
@@ -242,15 +261,15 @@ pub struct ColorWrites {
 pub struct ColorTargetStateDescriptor {
     pub format: TextureFormat,
     pub blend: Option<BlendStateDescriptor>,
-    pub write_mask: ColorWrites
+    pub write_mask: ColorWrites,
 }
 
 /// Configure MSAA (multisample anti-aliasing) for the render pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct MultisampleStateDescriptor {
-    pub count: SampleCount, // Number of samples per pixel
-    pub mask: u32, // Bitmask to select which samples are affected
-    pub alpha_to_coverage_enabled: bool // Use alpha to determine coverage for MSAA
+    pub count: SampleCount,              // Number of samples per pixel
+    pub mask: u32,                       // Bitmask to select which samples are affected
+    pub alpha_to_coverage_enabled: bool, // Use alpha to determine coverage for MSAA
 }
 
 /// Use to ask gpu to create a render pipeline.
@@ -259,7 +278,7 @@ pub struct MultisampleStateDescriptor {
 pub struct RenderPipelineDescriptor<'a> {
     pub label: Option<Cow<'a, str>>,
     pub vertex_shader_module: ShaderModuleId, // The shader module used for vertex processing
-    pub vertex_entry_point: Cow<'a, str>, // The entry point function in the vertex shader
+    pub vertex_entry_point: Cow<'a, str>,     // The entry point function in the vertex shader
     pub fragment_shader_module: Option<ShaderModuleId>, // The shader module used for fragment processing (optional)
     pub fragment_entry_point: Option<Cow<'a, str>>, // The entry point function in the fragment shader (optional)
     pub vertex_buffers_layout: Cow<'a, [VertexBufferLayoutDescriptor<'a>]>, // Description of vertex buffer
@@ -273,3 +292,26 @@ pub struct RenderPipelineDescriptor<'a> {
 /// This ID is used to identify a specific render pipeline within the graphics device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RenderPipelineId(pub usize);
+
+#[cfg(test)]
+mod tests {
+    use super::{ColorWrites, PrimitiveStateDescriptor, PrimitiveTopology};
+
+    #[test]
+    fn test_default_primitive_state() {
+        let default_state = PrimitiveStateDescriptor::default();
+        assert_eq!(default_state.topology, PrimitiveTopology::TriangleList);
+        assert_eq!(default_state.cull_mode, None);
+    }
+
+    #[test]
+    fn test_color_writes_all() {
+        let writes = ColorWrites {
+            r: true,
+            g: true,
+            b: true,
+            a: true,
+        };
+        assert!(writes.r && writes.g && writes.b && writes.a);
+    }
+}

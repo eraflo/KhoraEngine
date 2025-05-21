@@ -13,8 +13,10 @@
 // limitations under the License.
 
 use crate::subsystems::renderer::api::common_types::RendererAdapterInfo;
+use crate::subsystems::renderer::api::pipeline_types::{
+    RenderPipelineDescriptor, RenderPipelineId,
+};
 use crate::subsystems::renderer::api::shader_types::{ShaderModuleDescriptor, ShaderModuleId};
-use crate::subsystems::renderer::api::pipeline_types::{RenderPipelineDescriptor, RenderPipelineId};
 use crate::subsystems::renderer::error::ResourceError;
 use std::fmt::Debug;
 
@@ -49,8 +51,8 @@ pub trait GraphicsDevice: Send + Sync + Debug {
     /// ## Errors
     /// * `ResourceError` - If the render pipeline creation fails.
     fn create_render_pipeline(
-        &self, 
-        descriptor: &RenderPipelineDescriptor
+        &self,
+        descriptor: &RenderPipelineDescriptor,
     ) -> Result<RenderPipelineId, ResourceError>;
 
     /// Destroys the render pipeline associated with the given ID.

@@ -13,5 +13,5 @@
 // limitations under the License.
 
 pub mod common_types;
-pub mod shader_types;
 pub mod pipeline_types;
+pub mod shader_types;

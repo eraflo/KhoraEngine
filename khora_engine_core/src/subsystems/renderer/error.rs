@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::api::shader_types::ShaderModuleId;
 use super::api::pipeline_types::RenderPipelineId;
+use super::api::shader_types::ShaderModuleId;
 use std::fmt;
 
 /// Errors specific to shader module creation or management.
@@ -75,12 +75,14 @@ pub enum PipelineError {
     },
     InvalidShaderModuleForPipeline {
         id: ShaderModuleId,
-        pipeline_label: Option<String>
+        pipeline_label: Option<String>,
     },
-    InvalidRenderPipeline { id: RenderPipelineId },
+    InvalidRenderPipeline {
+        id: RenderPipelineId,
+    },
     MissingEntryPointForFragmentShader {
-        pipeline_label: Option<String>, 
-        shader_id: ShaderModuleId
+        pipeline_label: Option<String>,
+        shader_id: ShaderModuleId,
     },
     IncompatibleColorTarget(String),
     IncompatibleDepthStencilFormat(String),
@@ -112,7 +114,10 @@ impl fmt::Display for PipelineError {
             PipelineError::InvalidRenderPipeline { id } => {
                 write!(f, "Invalid render pipeline ID: {:?}", id)
             }
-            PipelineError::MissingEntryPointForFragmentShader { pipeline_label, shader_id } => {
+            PipelineError::MissingEntryPointForFragmentShader {
+                pipeline_label,
+                shader_id,
+            } => {
                 write!(
                     f,
                     "Missing entry point for fragment shader in pipeline '{}', shader ID: {:?}",

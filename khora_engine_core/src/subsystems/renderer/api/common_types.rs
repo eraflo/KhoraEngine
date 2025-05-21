@@ -19,7 +19,7 @@ use crate::math::{LinearRgba, Mat4, Vec3};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IndexFormat {
     Uint16,
-    Uint32
+    Uint32,
 }
 
 /// Generic representation of the graphics backend type (e.g., Vulkan, Metal, OpenGL).
@@ -64,7 +64,7 @@ pub enum SampleCount {
     X8,
     X16,
     X32,
-    X64
+    X64,
 }
 
 /// Defines the stage in the graphics pipeline a shader module is intended for.
@@ -78,12 +78,22 @@ pub enum ShaderStage {
 /// Defines pixels format for textures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TextureFormat {
-    R8Unorm, Rg8Unorm, Rgba8Unorm, Rgba8UnormSrgb,
+    R8Unorm,
+    Rg8Unorm,
+    Rgba8Unorm,
+    Rgba8UnormSrgb,
     Bgra8UnormSrgb,
-    R16Float, Rg16Float, Rgba16Float,
-    R32Float, Rg32Float, Rgba32Float,
-    Depth16Unorm, Depth24Plus, Depth24PlusStencil8,
-    Depth32Float, Depth32FloatStencil8,
+    R16Float,
+    Rg16Float,
+    Rgba16Float,
+    R32Float,
+    Rg32Float,
+    Rgba32Float,
+    Depth16Unorm,
+    Depth24Plus,
+    Depth24PlusStencil8,
+    Depth32Float,
+    Depth32FloatStencil8,
 }
 
 // --- Structs ---
