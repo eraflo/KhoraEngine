@@ -217,20 +217,20 @@ impl WgpuDevice {
 
     /// Converts a ColorWrites from the API to the wgpu format.
     fn convert_color_writes(api_writes: api_pipe::ColorWrites) -> wgpu::ColorWrites {
-        let mut writes = wgpu::ColorWrites::empty();
-        if api_writes.r {
-            writes |= wgpu::ColorWrites::RED;
+        let mut wgpu_writes = wgpu::ColorWrites::empty();
+        if api_writes.contains(api_pipe::ColorWrites::R) {
+            wgpu_writes |= wgpu::ColorWrites::RED;
         }
-        if api_writes.g {
-            writes |= wgpu::ColorWrites::GREEN;
+        if api_writes.contains(api_pipe::ColorWrites::G) {
+            wgpu_writes |= wgpu::ColorWrites::GREEN;
         }
-        if api_writes.b {
-            writes |= wgpu::ColorWrites::BLUE;
+        if api_writes.contains(api_pipe::ColorWrites::B) {
+            wgpu_writes |= wgpu::ColorWrites::BLUE;
         }
-        if api_writes.a {
-            writes |= wgpu::ColorWrites::ALPHA;
+        if api_writes.contains(api_pipe::ColorWrites::A) {
+            wgpu_writes |= wgpu::ColorWrites::ALPHA;
         }
-        writes
+        wgpu_writes
     }
 
     /// Converts an Option<CullMode> from the API to Option<wgpu::Face>.
