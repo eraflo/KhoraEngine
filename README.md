@@ -76,6 +76,10 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
     *   Defined backend-agnostic API for render pipelines (`RenderPipelineDescriptor`, `RenderPipelineId`, `VertexAttributeDescriptor`, `ColorTargetStateDescriptor`, etc.) in `renderer::api::pipeline_types`.
     *   `GraphicsDevice` trait includes `create_render_pipeline` and `destroy_render_pipeline`.
     *   `WgpuDevice` implements these methods, translating abstract descriptors to `wgpu` pipeline objects.
+*   ✅ **`[Feature] Develop Custom Bitflags Macro for Internal Engine Use`**:
+    *   Implemented a custom, declarative macro (`khora_bitflags!`) providing type-safe bitflag functionality.
+    *   SAA Prep: This foundational utility reduces external dependencies, ensures consistent bitwise operations, and provides efficient, human-readable debug output for flags used throughout the engine, especially for resource usage and contextual data.
+    *   Labels: `core`, `infra`, `architecture`, `optimization`
 
 **Next Steps / Milestone 2 Tasks:**
 
