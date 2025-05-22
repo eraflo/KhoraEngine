@@ -96,6 +96,29 @@ pub enum TextureFormat {
     Depth32FloatStencil8,
 }
 
+impl TextureFormat {
+    pub fn bytes_per_pixel(&self) -> u32 {
+        match self {
+            TextureFormat::R8Unorm => 1,
+            TextureFormat::Rg8Unorm => 2,
+            TextureFormat::Rgba8Unorm => 4,
+            TextureFormat::Rgba8UnormSrgb => 4,
+            TextureFormat::Bgra8UnormSrgb => 4,
+            TextureFormat::R16Float => 2,
+            TextureFormat::Rg16Float => 4,
+            TextureFormat::Rgba16Float => 8,
+            TextureFormat::R32Float => 4,
+            TextureFormat::Rg32Float => 8,
+            TextureFormat::Rgba32Float => 16,
+            TextureFormat::Depth16Unorm => 2,
+            TextureFormat::Depth24Plus => 4, // Often treated as 4 bytes for alignment
+            TextureFormat::Depth24PlusStencil8 => 4, // Common packed size for both depth and stencil
+            TextureFormat::Depth32Float => 4,
+            TextureFormat::Depth32FloatStencil8 => 5, // 4 bytes for depth + 1 byte for stencil (may vary by backend)
+        }
+    }
+}
+
 // --- Structs ---
 
 /// Provides standardized, backend-agnostic information about the graphics adapter.

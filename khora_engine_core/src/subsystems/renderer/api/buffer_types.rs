@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::borrow::Cow;
 use crate::khora_bitflags;
+use std::borrow::Cow;
 
 khora_bitflags! {
     /// Defines the intended usage of a GPU buffer.
@@ -27,7 +27,7 @@ khora_bitflags! {
         const COPY_SRC = 1 << 2;
         /// The buffer can be copied to.
         const COPY_DST = 1 << 3;
-        
+
         const VERTEX = 1 << 4;
         const INDEX = 1 << 5;
         const UNIFORM = 1 << 6;
@@ -51,7 +51,7 @@ pub struct BufferDescriptor<'a> {
     pub label: Option<Cow<'a, str>>,
     pub size: u64,
     pub usage: BufferUsage,
-    pub mapped_at_creation: bool
+    pub mapped_at_creation: bool,
 }
 
 /// Opaque handle representing a GPU buffer managed by the GraphicsDevice.

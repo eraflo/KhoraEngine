@@ -25,18 +25,18 @@ pub const DEG_TO_RAD: f32 = PI / 180.0;
 pub const RAD_TO_DEG: f32 = 180.0 / PI;
 
 pub mod color;
+pub mod dimension;
 pub mod geometry;
 pub mod matrix;
 pub mod quaternion;
 pub mod vector;
-pub mod dimension;
 
 pub use color::LinearRgba;
+pub use dimension::{Extent1D, Extent2D, Extent3D, Origin2D, Origin3D};
 pub use geometry::Aabb;
 pub use matrix::{Mat3, Mat4};
 pub use quaternion::Quaternion;
 pub use vector::{Vec2, Vec3, Vec4};
-pub use dimension::{Extent1D, Extent2D, Extent3D, Origin2D, Origin3D};
 
 // --- Utility Functions ---
 

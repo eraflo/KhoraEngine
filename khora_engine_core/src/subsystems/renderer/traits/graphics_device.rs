@@ -12,21 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::math::dimension::{self as math_dim};
+use crate::subsystems::renderer::api::buffer_types::{BufferDescriptor, BufferId};
 use crate::subsystems::renderer::api::common_types::RendererAdapterInfo;
 use crate::subsystems::renderer::api::pipeline_types::{
     RenderPipelineDescriptor, RenderPipelineId,
 };
 use crate::subsystems::renderer::api::shader_types::{ShaderModuleDescriptor, ShaderModuleId};
-use crate::subsystems::renderer::error::ResourceError;
-use crate::subsystems::renderer::api::buffer_types::{BufferDescriptor, BufferId};
 use crate::subsystems::renderer::api::texture_types::{
-    SamplerDescriptor, 
-    SamplerId, 
-    TextureDescriptor, 
-    TextureId, 
-    TextureViewDescriptor, 
-    TextureViewId
+    SamplerDescriptor, SamplerId, TextureDescriptor, TextureId, TextureViewDescriptor,
+    TextureViewId,
 };
+use crate::subsystems::renderer::error::ResourceError;
 use std::fmt::Debug;
 use std::future::Future;
 
@@ -106,9 +103,13 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// * `data` - A slice of bytes containing the data to be written.
     /// ## Returns
     /// A `Box` containing a `Future` that resolves to a `Result` indicating success or failure of the operation.
-    fn write_buffer_async<'a>(&'a self, id: BufferId, offset: u64, data: &'a [u8]) ->
-        Box<dyn Future<Output = Result<(), ResourceError>> + Send + 'a>;
-    
+    fn write_buffer_async<'a>(
+        &'a self,
+        id: BufferId,
+        offset: u64,
+        data: &'a [u8],
+    ) -> Box<dyn Future<Output = Result<(), ResourceError>> + Send + 'a>;
+
     /// Creates a new GPU texture.
     /// ## Arguments
     /// * `descriptor` - A reference to a `TextureDescriptor` containing the texture configuration.
@@ -132,7 +133,14 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// * `size` - The size of the texture.
     /// ## Returns
     /// A `Result` indicating success or failure of the operation.
-    fn write_texture(&self, texture_id: TextureId, data: &[u8], bytes_per_row: Option<u32>, offset: wgpu::Origin3d, size: ()) -> Result<(), ResourceError>;
+    fn write_texture(
+        &self,
+        texture_id: TextureId,
+        data: &[u8],
+        bytes_per_row: Option<u32>,
+        offset: math_dim::Origin3D,
+        size: math_dim::Extent3D,
+    ) -> Result<(), ResourceError>;
 
     /// Creates a new texture view for a given texture.
     /// ## Arguments
@@ -140,7 +148,11 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// * `descriptor` - A reference to a `TextureViewDescriptor` containing the view configuration.
     /// ## Returns
     /// A `Result` containing the ID of the created texture view or an error if the creation fails.
-    fn create_texture_view(&self, texture_id: TextureId, descriptor: &TextureViewDescriptor) -> Result<TextureViewId, ResourceError>;
+    fn create_texture_view(
+        &self,
+        texture_id: TextureId,
+        descriptor: &TextureViewDescriptor,
+    ) -> Result<TextureViewId, ResourceError>;
 
     /// Destroys a texture view.
     /// ## Arguments

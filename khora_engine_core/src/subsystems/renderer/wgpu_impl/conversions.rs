@@ -14,13 +14,13 @@
 
 use crate::math::{Extent2D, Extent3D, Origin3D};
 use crate::subsystems::renderer::api::common_types::{
-    SampleCount, ShaderStage, TextureFormat, IndexFormat
+    IndexFormat, SampleCount, ShaderStage, TextureFormat,
 };
+use crate::subsystems::renderer::api::pipeline_types::{self as api_pipe};
 use crate::subsystems::renderer::api::texture_types::{
     AddressMode, FilterMode, ImageAspect, SamplerBorderColor, TextureDimension,
     TextureViewDimension,
 };
-use crate::subsystems::renderer::api::pipeline_types::{self as api_pipe};
 
 // --- Dimensions and Origins ---
 
@@ -254,7 +254,7 @@ impl From<api_pipe::CullMode> for Option<wgpu::Face> {
         match mode {
             api_pipe::CullMode::Front => Some(wgpu::Face::Front),
             api_pipe::CullMode::Back => Some(wgpu::Face::Back),
-            api_pipe::CullMode::None => None
+            api_pipe::CullMode::None => None,
         }
     }
 }
@@ -339,7 +339,7 @@ impl From<api_pipe::BlendOperation> for wgpu::BlendOperation {
 mod tests {
     use super::*;
     use crate::subsystems::renderer::api::common_types::{
-        SampleCount, ShaderStage, TextureFormat, IndexFormat
+        IndexFormat, SampleCount, ShaderStage, TextureFormat,
     };
     use crate::subsystems::renderer::api::texture_types::{
         AddressMode, FilterMode, ImageAspect, SamplerBorderColor, TextureDimension,
@@ -348,7 +348,10 @@ mod tests {
 
     #[test]
     fn test_extent2d_to_physical_size() {
-        let extent = Extent2D { width: 128, height: 256 };
+        let extent = Extent2D {
+            width: 128,
+            height: 256,
+        };
         let size: winit::dpi::PhysicalSize<u32> = extent.into();
         assert_eq!(size.width, 128);
         assert_eq!(size.height, 256);
@@ -356,7 +359,11 @@ mod tests {
 
     #[test]
     fn test_extent3d_to_wgpu_extent3d() {
-        let extent = Extent3D { width: 1, height: 2, depth_or_array_layers: 3 };
+        let extent = Extent3D {
+            width: 1,
+            height: 2,
+            depth_or_array_layers: 3,
+        };
         let w: wgpu::Extent3d = extent.into();
         assert_eq!(w.width, 1);
         assert_eq!(w.height, 2);
@@ -381,27 +388,60 @@ mod tests {
 
     #[test]
     fn test_texture_view_dimension_conversion() {
-        assert_eq!(wgpu::TextureViewDimension::D1, TextureViewDimension::D1.into());
-        assert_eq!(wgpu::TextureViewDimension::D2, TextureViewDimension::D2.into());
-        assert_eq!(wgpu::TextureViewDimension::D2Array, TextureViewDimension::D2Array.into());
-        assert_eq!(wgpu::TextureViewDimension::Cube, TextureViewDimension::Cube.into());
-        assert_eq!(wgpu::TextureViewDimension::CubeArray, TextureViewDimension::CubeArray.into());
-        assert_eq!(wgpu::TextureViewDimension::D3, TextureViewDimension::D3.into());
+        assert_eq!(
+            wgpu::TextureViewDimension::D1,
+            TextureViewDimension::D1.into()
+        );
+        assert_eq!(
+            wgpu::TextureViewDimension::D2,
+            TextureViewDimension::D2.into()
+        );
+        assert_eq!(
+            wgpu::TextureViewDimension::D2Array,
+            TextureViewDimension::D2Array.into()
+        );
+        assert_eq!(
+            wgpu::TextureViewDimension::Cube,
+            TextureViewDimension::Cube.into()
+        );
+        assert_eq!(
+            wgpu::TextureViewDimension::CubeArray,
+            TextureViewDimension::CubeArray.into()
+        );
+        assert_eq!(
+            wgpu::TextureViewDimension::D3,
+            TextureViewDimension::D3.into()
+        );
     }
 
     #[test]
     fn test_image_aspect_conversion() {
         assert_eq!(wgpu::TextureAspect::All, ImageAspect::All.into());
-        assert_eq!(wgpu::TextureAspect::StencilOnly, ImageAspect::StencilOnly.into());
-        assert_eq!(wgpu::TextureAspect::DepthOnly, ImageAspect::DepthOnly.into());
+        assert_eq!(
+            wgpu::TextureAspect::StencilOnly,
+            ImageAspect::StencilOnly.into()
+        );
+        assert_eq!(
+            wgpu::TextureAspect::DepthOnly,
+            ImageAspect::DepthOnly.into()
+        );
     }
 
     #[test]
     fn test_address_mode_conversion() {
         assert_eq!(wgpu::AddressMode::Repeat, AddressMode::Repeat.into());
-        assert_eq!(wgpu::AddressMode::ClampToEdge, AddressMode::ClampToEdge.into());
-        assert_eq!(wgpu::AddressMode::MirrorRepeat, AddressMode::MirrorRepeat.into());
-        assert_eq!(wgpu::AddressMode::ClampToBorder, AddressMode::ClampToBorder.into());
+        assert_eq!(
+            wgpu::AddressMode::ClampToEdge,
+            AddressMode::ClampToEdge.into()
+        );
+        assert_eq!(
+            wgpu::AddressMode::MirrorRepeat,
+            AddressMode::MirrorRepeat.into()
+        );
+        assert_eq!(
+            wgpu::AddressMode::ClampToBorder,
+            AddressMode::ClampToBorder.into()
+        );
     }
 
     #[test]
@@ -412,28 +452,67 @@ mod tests {
 
     #[test]
     fn test_sampler_border_color_conversion() {
-        assert_eq!(wgpu::SamplerBorderColor::TransparentBlack, SamplerBorderColor::TransparentBlack.into());
-        assert_eq!(wgpu::SamplerBorderColor::OpaqueBlack, SamplerBorderColor::OpaqueBlack.into());
-        assert_eq!(wgpu::SamplerBorderColor::OpaqueWhite, SamplerBorderColor::OpaqueWhite.into());
+        assert_eq!(
+            wgpu::SamplerBorderColor::TransparentBlack,
+            SamplerBorderColor::TransparentBlack.into()
+        );
+        assert_eq!(
+            wgpu::SamplerBorderColor::OpaqueBlack,
+            SamplerBorderColor::OpaqueBlack.into()
+        );
+        assert_eq!(
+            wgpu::SamplerBorderColor::OpaqueWhite,
+            SamplerBorderColor::OpaqueWhite.into()
+        );
     }
 
     #[test]
     fn test_compare_function_conversion() {
-        assert_eq!(wgpu::CompareFunction::Never, api_pipe::CompareFunction::Never.into());
-        assert_eq!(wgpu::CompareFunction::Less, api_pipe::CompareFunction::Less.into());
-        assert_eq!(wgpu::CompareFunction::Equal, api_pipe::CompareFunction::Equal.into());
-        assert_eq!(wgpu::CompareFunction::LessEqual, api_pipe::CompareFunction::LessEqual.into());
-        assert_eq!(wgpu::CompareFunction::Greater, api_pipe::CompareFunction::Greater.into());
-        assert_eq!(wgpu::CompareFunction::NotEqual, api_pipe::CompareFunction::NotEqual.into());
-        assert_eq!(wgpu::CompareFunction::GreaterEqual, api_pipe::CompareFunction::GreaterEqual.into());
-        assert_eq!(wgpu::CompareFunction::Always, api_pipe::CompareFunction::Always.into());
+        assert_eq!(
+            wgpu::CompareFunction::Never,
+            api_pipe::CompareFunction::Never.into()
+        );
+        assert_eq!(
+            wgpu::CompareFunction::Less,
+            api_pipe::CompareFunction::Less.into()
+        );
+        assert_eq!(
+            wgpu::CompareFunction::Equal,
+            api_pipe::CompareFunction::Equal.into()
+        );
+        assert_eq!(
+            wgpu::CompareFunction::LessEqual,
+            api_pipe::CompareFunction::LessEqual.into()
+        );
+        assert_eq!(
+            wgpu::CompareFunction::Greater,
+            api_pipe::CompareFunction::Greater.into()
+        );
+        assert_eq!(
+            wgpu::CompareFunction::NotEqual,
+            api_pipe::CompareFunction::NotEqual.into()
+        );
+        assert_eq!(
+            wgpu::CompareFunction::GreaterEqual,
+            api_pipe::CompareFunction::GreaterEqual.into()
+        );
+        assert_eq!(
+            wgpu::CompareFunction::Always,
+            api_pipe::CompareFunction::Always.into()
+        );
     }
 
     #[test]
     fn test_texture_format_conversion() {
         assert_eq!(wgpu::TextureFormat::R8Unorm, TextureFormat::R8Unorm.into());
-        assert_eq!(wgpu::TextureFormat::Rgba8UnormSrgb, TextureFormat::Rgba8UnormSrgb.into());
-        assert_eq!(wgpu::TextureFormat::Depth32Float, TextureFormat::Depth32Float.into());
+        assert_eq!(
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            TextureFormat::Rgba8UnormSrgb.into()
+        );
+        assert_eq!(
+            wgpu::TextureFormat::Depth32Float,
+            TextureFormat::Depth32Float.into()
+        );
     }
 
     #[test]
@@ -456,21 +535,42 @@ mod tests {
 
     #[test]
     fn test_vertex_format_conversion() {
-        assert_eq!(wgpu::VertexFormat::Uint8x2, api_pipe::VertexFormat::Uint8x2.into());
-        assert_eq!(wgpu::VertexFormat::Float32x4, api_pipe::VertexFormat::Float32x4.into());
-        assert_eq!(wgpu::VertexFormat::Sint32x4, api_pipe::VertexFormat::Sint32x4.into());
+        assert_eq!(
+            wgpu::VertexFormat::Uint8x2,
+            api_pipe::VertexFormat::Uint8x2.into()
+        );
+        assert_eq!(
+            wgpu::VertexFormat::Float32x4,
+            api_pipe::VertexFormat::Float32x4.into()
+        );
+        assert_eq!(
+            wgpu::VertexFormat::Sint32x4,
+            api_pipe::VertexFormat::Sint32x4.into()
+        );
     }
 
     #[test]
     fn test_vertex_step_mode_conversion() {
-        assert_eq!(wgpu::VertexStepMode::Vertex, api_pipe::VertexStepMode::Vertex.into());
-        assert_eq!(wgpu::VertexStepMode::Instance, api_pipe::VertexStepMode::Instance.into());
+        assert_eq!(
+            wgpu::VertexStepMode::Vertex,
+            api_pipe::VertexStepMode::Vertex.into()
+        );
+        assert_eq!(
+            wgpu::VertexStepMode::Instance,
+            api_pipe::VertexStepMode::Instance.into()
+        );
     }
 
     #[test]
     fn test_primitive_topology_conversion() {
-        assert_eq!(wgpu::PrimitiveTopology::PointList, api_pipe::PrimitiveTopology::PointList.into());
-        assert_eq!(wgpu::PrimitiveTopology::TriangleStrip, api_pipe::PrimitiveTopology::TriangleStrip.into());
+        assert_eq!(
+            wgpu::PrimitiveTopology::PointList,
+            api_pipe::PrimitiveTopology::PointList.into()
+        );
+        assert_eq!(
+            wgpu::PrimitiveTopology::TriangleStrip,
+            api_pipe::PrimitiveTopology::TriangleStrip.into()
+        );
     }
 
     #[test]
@@ -483,7 +583,10 @@ mod tests {
     fn test_cull_mode_conversion() {
         assert_eq!(Some(wgpu::Face::Front), api_pipe::CullMode::Front.into());
         assert_eq!(Some(wgpu::Face::Back), api_pipe::CullMode::Back.into());
-        assert_eq!(None, Into::<Option<wgpu::Face>>::into(api_pipe::CullMode::None));
+        assert_eq!(
+            None,
+            Into::<Option<wgpu::Face>>::into(api_pipe::CullMode::None)
+        );
 
         assert_eq!(wgpu::Face::Front, api_pipe::CullMode::Front.into());
         assert_eq!(wgpu::Face::Back, api_pipe::CullMode::Back.into());
@@ -498,7 +601,10 @@ mod tests {
     fn test_polygon_mode_conversion() {
         assert_eq!(wgpu::PolygonMode::Fill, api_pipe::PolygonMode::Fill.into());
         assert_eq!(wgpu::PolygonMode::Line, api_pipe::PolygonMode::Line.into());
-        assert_eq!(wgpu::PolygonMode::Point, api_pipe::PolygonMode::Point.into());
+        assert_eq!(
+            wgpu::PolygonMode::Point,
+            api_pipe::PolygonMode::Point.into()
+        );
     }
 
     #[test]
@@ -509,30 +615,75 @@ mod tests {
 
     #[test]
     fn test_stencil_operation_conversion() {
-        assert_eq!(wgpu::StencilOperation::Keep, api_pipe::StencilOperation::Keep.into());
-        assert_eq!(wgpu::StencilOperation::Zero, api_pipe::StencilOperation::Zero.into());
-        assert_eq!(wgpu::StencilOperation::Replace, api_pipe::StencilOperation::Replace.into());
-        assert_eq!(wgpu::StencilOperation::IncrementClamp, api_pipe::StencilOperation::IncrementClamp.into());
-        assert_eq!(wgpu::StencilOperation::DecrementClamp, api_pipe::StencilOperation::DecrementClamp.into());
-        assert_eq!(wgpu::StencilOperation::Invert, api_pipe::StencilOperation::Invert.into());
-        assert_eq!(wgpu::StencilOperation::IncrementWrap, api_pipe::StencilOperation::IncrementWrap.into());
-        assert_eq!(wgpu::StencilOperation::DecrementWrap, api_pipe::StencilOperation::DecrementWrap.into());
+        assert_eq!(
+            wgpu::StencilOperation::Keep,
+            api_pipe::StencilOperation::Keep.into()
+        );
+        assert_eq!(
+            wgpu::StencilOperation::Zero,
+            api_pipe::StencilOperation::Zero.into()
+        );
+        assert_eq!(
+            wgpu::StencilOperation::Replace,
+            api_pipe::StencilOperation::Replace.into()
+        );
+        assert_eq!(
+            wgpu::StencilOperation::IncrementClamp,
+            api_pipe::StencilOperation::IncrementClamp.into()
+        );
+        assert_eq!(
+            wgpu::StencilOperation::DecrementClamp,
+            api_pipe::StencilOperation::DecrementClamp.into()
+        );
+        assert_eq!(
+            wgpu::StencilOperation::Invert,
+            api_pipe::StencilOperation::Invert.into()
+        );
+        assert_eq!(
+            wgpu::StencilOperation::IncrementWrap,
+            api_pipe::StencilOperation::IncrementWrap.into()
+        );
+        assert_eq!(
+            wgpu::StencilOperation::DecrementWrap,
+            api_pipe::StencilOperation::DecrementWrap.into()
+        );
     }
 
     #[test]
     fn test_blend_factor_conversion() {
         assert_eq!(wgpu::BlendFactor::One, api_pipe::BlendFactor::One.into());
         assert_eq!(wgpu::BlendFactor::Zero, api_pipe::BlendFactor::Zero.into());
-        assert_eq!(wgpu::BlendFactor::SrcAlpha, api_pipe::BlendFactor::SrcAlpha.into());
-        assert_eq!(wgpu::BlendFactor::OneMinusSrcAlpha, api_pipe::BlendFactor::OneMinusSrcAlpha.into());
+        assert_eq!(
+            wgpu::BlendFactor::SrcAlpha,
+            api_pipe::BlendFactor::SrcAlpha.into()
+        );
+        assert_eq!(
+            wgpu::BlendFactor::OneMinusSrcAlpha,
+            api_pipe::BlendFactor::OneMinusSrcAlpha.into()
+        );
     }
 
     #[test]
     fn test_blend_operation_conversion() {
-        assert_eq!(wgpu::BlendOperation::Add, api_pipe::BlendOperation::Add.into());
-        assert_eq!(wgpu::BlendOperation::Subtract, api_pipe::BlendOperation::Subtract.into());
-        assert_eq!(wgpu::BlendOperation::ReverseSubtract, api_pipe::BlendOperation::ReverseSubtract.into());
-        assert_eq!(wgpu::BlendOperation::Min, api_pipe::BlendOperation::Min.into());
-        assert_eq!(wgpu::BlendOperation::Max, api_pipe::BlendOperation::Max.into());
+        assert_eq!(
+            wgpu::BlendOperation::Add,
+            api_pipe::BlendOperation::Add.into()
+        );
+        assert_eq!(
+            wgpu::BlendOperation::Subtract,
+            api_pipe::BlendOperation::Subtract.into()
+        );
+        assert_eq!(
+            wgpu::BlendOperation::ReverseSubtract,
+            api_pipe::BlendOperation::ReverseSubtract.into()
+        );
+        assert_eq!(
+            wgpu::BlendOperation::Min,
+            api_pipe::BlendOperation::Min.into()
+        );
+        assert_eq!(
+            wgpu::BlendOperation::Max,
+            api_pipe::BlendOperation::Max.into()
+        );
     }
 }

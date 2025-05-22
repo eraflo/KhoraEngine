@@ -13,27 +13,55 @@
 // limitations under the License.
 
 use super::wgpu_graphic_context::WgpuGraphicsContext;
-use crate::subsystems::renderer::api::common_types::{
-    IndexFormat, RendererAdapterInfo, RendererBackendType, RendererDeviceType, SampleCount,
-    TextureFormat,
-};
+use crate::math::dimension::{self as math_dim};
+use crate::subsystems::renderer::api::buffer_types::{self as api_buf};
+use crate::subsystems::renderer::api::common_types::RendererAdapterInfo;
 use crate::subsystems::renderer::api::pipeline_types::{
-    self as api_pipe, ColorTargetStateDescriptor, RenderPipelineDescriptor, RenderPipelineId,
+    RenderPipelineDescriptor, RenderPipelineId,
 };
 use crate::subsystems::renderer::api::shader_types::{
     ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData,
 };
+use crate::subsystems::renderer::api::texture_types::{self as api_tex};
 use crate::subsystems::renderer::error::{PipelineError, ResourceError, ShaderError};
 use crate::subsystems::renderer::traits::graphics_device::GraphicsDevice;
-
-use super::conversions::{self, *};
+use crate::subsystems::renderer::{RendererBackendType, RendererDeviceType};
 
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
+use std::task::{Poll, Waker};
 use wgpu;
+
+struct MapAsyncFutureState {
+    result: Mutex<Option<Result<(), ResourceError>>>,
+    // The Waker to wake up the Future when the result is ready
+    waker: Mutex<Option<Waker>>,
+}
+
+// Custom Future implementation to wrap the MapAsyncFutureState
+struct MapAsyncOperationFuture {
+    state: Arc<MapAsyncFutureState>,
+}
+
+impl Future for MapAsyncOperationFuture {
+    type Output = Result<(), ResourceError>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        let mut result_guard = self.state.result.lock().unwrap();
+        if let Some(res) = result_guard.take() {
+            Poll::Ready(res)
+        } else {
+            // Store the waker so the callback can wake this Future later
+            let mut waker_guard = self.state.waker.lock().unwrap();
+            *waker_guard = Some(cx.waker().clone());
+            Poll::Pending
+        }
+    }
+}
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -48,12 +76,48 @@ pub struct WgpuRenderPipelineEntry {
 }
 
 #[derive(Debug)]
+pub(crate) struct WgpuBufferEntry {
+    pub(crate) wgpu_buffer: Arc<wgpu::Buffer>,
+    pub(crate) size: u64, // To track VRAM accurately on destruction
+}
+
+#[derive(Debug)]
+pub(crate) struct WgpuTextureEntry {
+    pub(crate) wgpu_texture: Arc<wgpu::Texture>,
+    pub(crate) size: u64, // To track VRAM accurately on destruction
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) struct WgpuTextureViewEntry {
+    pub(crate) wgpu_view: Arc<wgpu::TextureView>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) struct WgpuSamplerEntry {
+    pub(crate) wgpu_sampler: Arc<wgpu::Sampler>,
+}
+
+#[derive(Debug)]
 pub struct WgpuDevice {
     context: Arc<Mutex<WgpuGraphicsContext>>,
     shader_modules: Mutex<HashMap<ShaderModuleId, WgpuShaderModuleEntry>>,
     pipelines: Mutex<HashMap<RenderPipelineId, WgpuRenderPipelineEntry>>,
+    buffers: Mutex<HashMap<api_buf::BufferId, WgpuBufferEntry>>,
+    textures: Mutex<HashMap<api_tex::TextureId, WgpuTextureEntry>>,
+    texture_views: Mutex<HashMap<api_tex::TextureViewId, WgpuTextureViewEntry>>,
+    samplers: Mutex<HashMap<api_tex::SamplerId, WgpuSamplerEntry>>,
+
     next_shader_id: AtomicUsize,
     next_pipeline_id: AtomicUsize,
+    next_buffer_id: AtomicUsize,
+    next_texture_id: AtomicUsize,
+    next_texture_view_id: AtomicUsize,
+    next_sampler_id: AtomicUsize,
+
+    // VRAM Tracking
+    vram_allocated_bytes: AtomicUsize,
 }
 
 impl WgpuDevice {
@@ -62,10 +126,21 @@ impl WgpuDevice {
             context,
             shader_modules: Mutex::new(HashMap::new()),
             pipelines: Mutex::new(HashMap::new()),
+            buffers: Mutex::new(HashMap::new()),
+            textures: Mutex::new(HashMap::new()),
+            texture_views: Mutex::new(HashMap::new()),
+            samplers: Mutex::new(HashMap::new()),
             next_shader_id: AtomicUsize::new(0),
             next_pipeline_id: AtomicUsize::new(0),
+            next_buffer_id: AtomicUsize::new(0),
+            next_texture_id: AtomicUsize::new(0),
+            next_texture_view_id: AtomicUsize::new(0),
+            next_sampler_id: AtomicUsize::new(0),
+            vram_allocated_bytes: AtomicUsize::new(0),
         }
     }
+
+    // --- ID Generation Helpers ---
 
     fn generate_shader_id(&self) -> ShaderModuleId {
         ShaderModuleId(self.next_shader_id.fetch_add(1, Ordering::Relaxed))
@@ -73,6 +148,22 @@ impl WgpuDevice {
 
     fn generate_pipeline_id(&self) -> RenderPipelineId {
         RenderPipelineId(self.next_pipeline_id.fetch_add(1, Ordering::Relaxed))
+    }
+
+    fn generate_buffer_id(&self) -> api_buf::BufferId {
+        api_buf::BufferId(self.next_buffer_id.fetch_add(1, Ordering::Relaxed))
+    }
+
+    fn generate_texture_id(&self) -> api_tex::TextureId {
+        api_tex::TextureId(self.next_texture_id.fetch_add(1, Ordering::Relaxed))
+    }
+
+    fn generate_texture_view_id(&self) -> api_tex::TextureViewId {
+        api_tex::TextureViewId(self.next_texture_view_id.fetch_add(1, Ordering::Relaxed))
+    }
+
+    fn generate_sampler_id(&self) -> api_tex::SamplerId {
+        api_tex::SamplerId(self.next_sampler_id.fetch_add(1, Ordering::Relaxed))
     }
 
     /// Helper function to execute an operation with the wgpu::Device locked.
@@ -87,28 +178,20 @@ impl WgpuDevice {
         operation(&context_guard.device)
     }
 
-    // --- Convert Helpers ---
-
-    /// Converts a ColorWrites from the API to the wgpu format.
-    fn convert_color_writes(api_writes: api_pipe::ColorWrites) -> wgpu::ColorWrites {
-        let mut wgpu_writes = wgpu::ColorWrites::empty();
-        if api_writes.contains(api_pipe::ColorWrites::R) {
-            wgpu_writes |= wgpu::ColorWrites::RED;
-        }
-        if api_writes.contains(api_pipe::ColorWrites::G) {
-            wgpu_writes |= wgpu::ColorWrites::GREEN;
-        }
-        if api_writes.contains(api_pipe::ColorWrites::B) {
-            wgpu_writes |= wgpu::ColorWrites::BLUE;
-        }
-        if api_writes.contains(api_pipe::ColorWrites::A) {
-            wgpu_writes |= wgpu::ColorWrites::ALPHA;
-        }
-        wgpu_writes
+    /// Helper to calculate texture size in bytes
+    fn calculate_texture_size_in_bytes(descriptor: &api_tex::TextureDescriptor) -> u64 {
+        // This is a simplified calculation. Real engines consider block compression, padding, etc.
+        let bytes_per_pixel = descriptor.format.bytes_per_pixel();
+        let num_pixels = descriptor.size.width as u64
+            * descriptor.size.height as u64
+            * descriptor.size.depth_or_array_layers as u64;
+        num_pixels * bytes_per_pixel as u64
     }
 }
 
 impl GraphicsDevice for WgpuDevice {
+    // --- Shader Module Operations ---
+
     fn create_shader_module(
         &self,
         descriptor: &ShaderModuleDescriptor,
@@ -166,6 +249,8 @@ impl GraphicsDevice for WgpuDevice {
             Err(ShaderError::NotFound { id }.into())
         }
     }
+
+    // -- Render Pipeline Operations ---
 
     fn create_render_pipeline(
         &self,
@@ -230,10 +315,7 @@ impl GraphicsDevice for WgpuDevice {
             .map(
                 |(vb_layout_desc, attributes_for_this_layout)| wgpu::VertexBufferLayout {
                     array_stride: vb_layout_desc.array_stride,
-                    step_mode: match vb_layout_desc.step_mode {
-                        api_pipe::VertexStepMode::Vertex => wgpu::VertexStepMode::Vertex,
-                        api_pipe::VertexStepMode::Instance => wgpu::VertexStepMode::Instance,
-                    },
+                    step_mode: vb_layout_desc.step_mode.into(),
                     attributes: attributes_for_this_layout,
                 },
             )
@@ -242,7 +324,10 @@ impl GraphicsDevice for WgpuDevice {
         // 3. Converts primitive state
         let primitive_state = wgpu::PrimitiveState {
             topology: descriptor.primitive_state.topology.into(),
-            strip_index_format: descriptor.primitive_state.strip_index_format.map(|f| f.into()),
+            strip_index_format: descriptor
+                .primitive_state
+                .strip_index_format
+                .map(|f| f.into()),
             front_face: descriptor.primitive_state.front_face.into(),
             cull_mode: descriptor.primitive_state.cull_mode.map(|m| m.into()),
             polygon_mode: descriptor.primitive_state.polygon_mode.into(),
@@ -251,52 +336,60 @@ impl GraphicsDevice for WgpuDevice {
         };
 
         // 4. Convert depth stencil state
-        let depth_stencil_state = descriptor.depth_stencil_state.as_ref().map(|ds| wgpu::DepthStencilState {
-            format: ds.format.into(),
-            depth_write_enabled: ds.depth_write_enabled,
-            depth_compare: ds.depth_compare.into(),
-            stencil: wgpu::StencilState {
-                front: wgpu::StencilFaceState {
-                    compare: ds.stencil_front.compare.into(),
-                    fail_op: ds.stencil_front.fail_op.into(),
-                    depth_fail_op: ds.stencil_front.depth_fail_op.into(),
-                    pass_op: ds.stencil_front.depth_pass_op.into(),
-                },
-                back: wgpu::StencilFaceState {
-                    compare: ds.stencil_back.compare.into(),
-                    fail_op: ds.stencil_back.fail_op.into(),
-                    depth_fail_op: ds.stencil_back.depth_fail_op.into(),
-                    pass_op: ds.stencil_back.depth_pass_op.into(),
-                },
-                read_mask: ds.stencil_read_mask,
-                write_mask: ds.stencil_write_mask,
-            },
-            bias: wgpu::DepthBiasState {
-                constant: ds.bias.constant,
-                slope_scale: ds.bias.slope_scale,
-                clamp: ds.bias.clamp,
-            },
-        });
+        let depth_stencil_state =
+            descriptor
+                .depth_stencil_state
+                .as_ref()
+                .map(|ds| wgpu::DepthStencilState {
+                    format: ds.format.into(),
+                    depth_write_enabled: ds.depth_write_enabled,
+                    depth_compare: ds.depth_compare.into(),
+                    stencil: wgpu::StencilState {
+                        front: wgpu::StencilFaceState {
+                            compare: ds.stencil_front.compare.into(),
+                            fail_op: ds.stencil_front.fail_op.into(),
+                            depth_fail_op: ds.stencil_front.depth_fail_op.into(),
+                            pass_op: ds.stencil_front.depth_pass_op.into(),
+                        },
+                        back: wgpu::StencilFaceState {
+                            compare: ds.stencil_back.compare.into(),
+                            fail_op: ds.stencil_back.fail_op.into(),
+                            depth_fail_op: ds.stencil_back.depth_fail_op.into(),
+                            pass_op: ds.stencil_back.depth_pass_op.into(),
+                        },
+                        read_mask: ds.stencil_read_mask,
+                        write_mask: ds.stencil_write_mask,
+                    },
+                    bias: wgpu::DepthBiasState {
+                        constant: ds.bias.constant,
+                        slope_scale: ds.bias.slope_scale,
+                        clamp: ds.bias.clamp,
+                    },
+                });
 
         // 5. Convert color target states
-        let color_target_states: Vec<Option<wgpu::ColorTargetState>> = descriptor.color_target_states.iter().map(|cts| {
-            Some(wgpu::ColorTargetState {
-                format: cts.format.into(),
-                blend: cts.blend.map(|b| wgpu::BlendState {
-                    color: wgpu::BlendComponent {
-                        src_factor: b.color.src_factor.into(),
-                        dst_factor: b.color.dst_factor.into(),
-                        operation: b.color.operation.into(),
-                    },
-                    alpha: wgpu::BlendComponent {
-                        src_factor: b.alpha.src_factor.into(),
-                        dst_factor: b.alpha.dst_factor.into(),
-                        operation: b.alpha.operation.into(),
-                    },
-                }),
-                write_mask: wgpu::ColorWrites::from_bits_truncate(cts.write_mask.bits() as u32), // Bitflags conversion
+        let color_target_states: Vec<Option<wgpu::ColorTargetState>> = descriptor
+            .color_target_states
+            .iter()
+            .map(|cts| {
+                Some(wgpu::ColorTargetState {
+                    format: cts.format.into(),
+                    blend: cts.blend.map(|b| wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: b.color.src_factor.into(),
+                            dst_factor: b.color.dst_factor.into(),
+                            operation: b.color.operation.into(),
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: b.alpha.src_factor.into(),
+                            dst_factor: b.alpha.dst_factor.into(),
+                            operation: b.alpha.operation.into(),
+                        },
+                    }),
+                    write_mask: wgpu::ColorWrites::from_bits_truncate(cts.write_mask.bits() as u32), // Bitflags conversion
+                })
             })
-        }).collect();
+            .collect();
 
         // 6. Convert multisample state
         let multisample_state = wgpu::MultisampleState {
@@ -371,7 +464,11 @@ impl GraphicsDevice for WgpuDevice {
 
         log::info!(
             "WgpuDevice: Successfully created render pipeline '{:?}' with ID: {:?}",
-            descriptor.label.as_deref().unwrap_or_default(),
+            descriptor
+                .label
+                .as_ref()
+                .map(|s| s.as_ref())
+                .unwrap_or_default(),
             id
         );
         Ok(id)
@@ -387,6 +484,370 @@ impl GraphicsDevice for WgpuDevice {
             Ok(())
         } else {
             Err(PipelineError::InvalidRenderPipeline { id }.into())
+        }
+    }
+
+    // --- Buffer Operations ---
+
+    fn create_buffer(
+        &self,
+        descriptor: &api_buf::BufferDescriptor,
+    ) -> Result<api_buf::BufferId, ResourceError> {
+        let context = self.context.lock().unwrap();
+        let device = &context.device;
+
+        // Create the buffer using the wgpu device
+        let wgpu_buffer_descriptor = wgpu::BufferDescriptor {
+            label: descriptor.label.as_deref(),
+            size: descriptor.size,
+            usage: wgpu::BufferUsages::from_bits_truncate(descriptor.usage.bits()),
+            mapped_at_creation: descriptor.mapped_at_creation,
+        };
+
+        let wgpu_buffer = device.create_buffer(&wgpu_buffer_descriptor);
+        let id = self.generate_buffer_id();
+
+        // Insert the buffer into the buffers map and track VRAM usage
+        self.vram_allocated_bytes
+            .fetch_add(descriptor.size as usize, Ordering::Relaxed);
+        self.buffers.lock().unwrap().insert(
+            id,
+            WgpuBufferEntry {
+                wgpu_buffer: Arc::new(wgpu_buffer),
+                size: descriptor.size,
+            },
+        );
+
+        log::info!(
+            "WgpuDevice: Created buffer '{:?}' with ID: {:?}, size: {} bytes",
+            descriptor
+                .label
+                .as_ref()
+                .map(|s| s.as_ref())
+                .unwrap_or_default(),
+            id,
+            descriptor.size
+        );
+        Ok(id)
+    }
+
+    fn destroy_buffer(&self, id: api_buf::BufferId) -> Result<(), ResourceError> {
+        let mut buffers = self.buffers.lock().unwrap();
+
+        // Remove the buffer from the map and track VRAM usage
+        if let Some(entry) = buffers.remove(&id) {
+            self.vram_allocated_bytes
+                .fetch_sub(entry.size as usize, Ordering::Relaxed);
+            log::debug!("WgpuDevice: Destroyed buffer with ID: {:?}", id);
+            Ok(())
+        } else {
+            Err(ResourceError::NotFound)
+        }
+    }
+
+    fn write_buffer(
+        &self,
+        id: api_buf::BufferId,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<(), ResourceError> {
+        let buffers = self.buffers.lock().unwrap();
+        let entry = buffers.get(&id).ok_or(ResourceError::NotFound)?;
+        let context = self.context.lock().unwrap();
+        context.queue.write_buffer(&entry.wgpu_buffer, offset, data);
+        log::debug!(
+            "WgpuDevice: Wrote {} bytes to buffer ID: {:?} at offset {}",
+            data.len(),
+            id,
+            offset
+        );
+        Ok(())
+    }
+
+    fn write_buffer_async<'a>(
+        &'a self,
+        id: api_buf::BufferId,
+        offset: u64,
+        data: &'a [u8],
+    ) -> Box<dyn Future<Output = Result<(), ResourceError>> + Send + 'static> {
+        let buffers_guard = self.buffers.lock().unwrap();
+        let entry_wgpu_buffer = match buffers_guard.get(&id) {
+            Some(e) => Arc::clone(&e.wgpu_buffer),
+            None => return Box::new(async { Err(ResourceError::NotFound) }),
+        };
+        drop(buffers_guard); // Drop the lock to avoid deadlocks
+
+        // Data needs to be owned by the future to be 'static.
+        // This involves a copy, which is a common trade-off for true async operations.
+        let owned_data = data.to_vec(); // One copy, owned by the future
+
+        // Create a shared state for the Future and the WGPU callback
+        let shared_state = Arc::new(MapAsyncFutureState {
+            result: Mutex::new(None),
+            waker: Mutex::new(None),
+        });
+
+        // Clones and moves for the `map_async` callback's `move` closure
+        let future_state_for_callback = Arc::clone(&shared_state);
+        let buffer_id_for_callback = id;
+        let entry_wgpu_buffer_for_callback = Arc::clone(&entry_wgpu_buffer);
+        let owned_data_for_callback = owned_data;
+
+        // Schedule the WGPU map_async operation
+        let buffer_slice =
+            entry_wgpu_buffer.slice(offset..(offset + owned_data_for_callback.len() as u64));
+
+        buffer_slice.map_async(wgpu::MapMode::Write, move |result| {
+            // This closure runs on WGPU's internal callback thread/executor
+            let final_result = if let Err(e) = result {
+                log::error!(
+                    "Failed to map buffer asynchronously for ID {:?}: {:?}",
+                    buffer_id_for_callback,
+                    e
+                );
+                Err(ResourceError::BackendError(format!(
+                    "WGPU map_async failed: {:?}",
+                    e
+                )))
+            } else {
+                // Mapping was successful. Now perform the actual data copy.
+                // Re-slice the buffer from the entry_wgpu_buffer_for_callback as the original buffer_slice
+                // would have been dropped or moved.
+                let buffer_slice_for_copy = entry_wgpu_buffer_for_callback
+                    .slice(offset..(offset + owned_data_for_callback.len() as u64));
+                let mut mapped_range = buffer_slice_for_copy.get_mapped_range_mut();
+                mapped_range.copy_from_slice(&owned_data_for_callback); // This is the actual data write
+                drop(mapped_range); // Explicitly unmap the buffer by dropping the guard
+                entry_wgpu_buffer_for_callback.unmap(); // Ensure WGPU knows it's unmapped
+                log::debug!(
+                    "WgpuDevice: Async map_async copy complete for buffer ID: {:?}",
+                    buffer_id_for_callback
+                );
+                Ok(())
+            };
+
+            // Signal the Future that the operation is complete
+            *future_state_for_callback.result.lock().unwrap() = Some(final_result);
+
+            // Wake the Future if a waker was stored
+            if let Some(waker) = future_state_for_callback.waker.lock().unwrap().take() {
+                waker.wake();
+            }
+        });
+
+        // Return a Future that will wait for the callback to complete
+        Box::new(MapAsyncOperationFuture {
+            state: shared_state,
+        })
+    }
+
+    fn create_texture(
+        &self,
+        descriptor: &api_tex::TextureDescriptor,
+    ) -> Result<api_tex::TextureId, ResourceError> {
+        let context = self.context.lock().unwrap();
+        let device = &context.device;
+
+        let wgpu_texture_descriptor = wgpu::TextureDescriptor {
+            label: descriptor.label.as_deref(),
+            size: descriptor.size.into(),
+            mip_level_count: descriptor.mip_level_count,
+            sample_count: descriptor.sample_count.into(),
+            dimension: descriptor.dimension.into(),
+            format: descriptor.format.into(),
+            usage: wgpu::TextureUsages::from_bits_truncate(descriptor.usage.bits()),
+            view_formats: &descriptor
+                .view_formats
+                .iter()
+                .map(|&f| f.into())
+                .collect::<Vec<_>>(),
+        };
+
+        // Create the texture using the wgpu device with the specified descriptor
+        let wgpu_texture = device.create_texture(&wgpu_texture_descriptor);
+        let id = self.generate_texture_id();
+        let size_in_bytes = Self::calculate_texture_size_in_bytes(descriptor);
+
+        // Insert the texture into the textures map and track VRAM usage
+        self.vram_allocated_bytes
+            .fetch_add(size_in_bytes as usize, Ordering::Relaxed);
+        self.textures.lock().unwrap().insert(
+            id,
+            WgpuTextureEntry {
+                wgpu_texture: Arc::new(wgpu_texture),
+                size: size_in_bytes,
+            },
+        );
+
+        log::info!(
+            "WgpuDevice: Created texture '{:?}' with ID: {:?}, size: {} bytes (VRAM)",
+            descriptor
+                .label
+                .as_ref()
+                .map(|s| s.as_ref())
+                .unwrap_or_default(),
+            id,
+            size_in_bytes
+        );
+        Ok(id)
+    }
+
+    fn destroy_texture(&self, id: api_tex::TextureId) -> Result<(), ResourceError> {
+        let mut textures = self.textures.lock().unwrap();
+
+        // Remove the texture from the map and track VRAM usage
+        if let Some(entry) = textures.remove(&id) {
+            self.vram_allocated_bytes
+                .fetch_sub(entry.size as usize, Ordering::Relaxed);
+            log::debug!("WgpuDevice: Destroyed texture with ID: {:?}", id);
+            Ok(())
+        } else {
+            Err(ResourceError::NotFound)
+        }
+    }
+
+    fn write_texture(
+        &self,
+        texture_id: api_tex::TextureId,
+        data: &[u8],
+        bytes_per_row: Option<u32>,
+        offset: math_dim::Origin3D,
+        size: math_dim::Extent3D,
+    ) -> Result<(), ResourceError> {
+        let textures = self.textures.lock().unwrap();
+        let entry = textures.get(&texture_id).ok_or(ResourceError::NotFound)?;
+        let context = self.context.lock().unwrap();
+
+        context.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &entry.wgpu_texture,
+                mip_level: 0, // Assuming base mip for now
+                origin: offset.into(),
+                aspect: wgpu::TextureAspect::All, // Assuming all aspects for now
+            },
+            data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row,
+                rows_per_image: None, // Assuming 2D or 3D without specific rows per image info
+            },
+            size.into(),
+        );
+        log::debug!(
+            "WgpuDevice: Wrote {} bytes to texture ID: {:?} at offset {:?}",
+            data.len(),
+            texture_id,
+            offset
+        );
+        Ok(())
+    }
+
+    fn create_texture_view(
+        &self,
+        texture_id: api_tex::TextureId,
+        descriptor: &api_tex::TextureViewDescriptor,
+    ) -> Result<api_tex::TextureViewId, ResourceError> {
+        let textures = self.textures.lock().unwrap();
+        let texture_entry = textures.get(&texture_id).ok_or(ResourceError::NotFound)?;
+
+        let wgpu_view_descriptor = wgpu::TextureViewDescriptor {
+            label: descriptor.label.as_deref(),
+            format: descriptor.format.map(|f| f.into()),
+            dimension: descriptor.dimension.map(|d| d.into()),
+            aspect: descriptor.aspect.into(),
+            base_mip_level: descriptor.base_mip_level,
+            mip_level_count: descriptor.mip_level_count,
+            base_array_layer: descriptor.base_array_layer,
+            array_layer_count: descriptor.array_layer_count,
+            usage: None, // Not used in this context
+        };
+
+        // Create the texture view using the wgpu texture
+        let wgpu_view = Arc::new(
+            texture_entry
+                .wgpu_texture
+                .create_view(&wgpu_view_descriptor),
+        );
+        let id = self.generate_texture_view_id();
+        self.texture_views
+            .lock()
+            .unwrap()
+            .insert(id, WgpuTextureViewEntry { wgpu_view });
+        log::info!(
+            "WgpuDevice: Created texture view '{:?}' for texture ID: {:?} with ID: {:?}",
+            descriptor
+                .label
+                .as_ref()
+                .map(|s| s.as_ref())
+                .unwrap_or_default(),
+            texture_id,
+            id
+        );
+        Ok(id)
+    }
+
+    fn destroy_texture_view(&self, id: api_tex::TextureViewId) -> Result<(), ResourceError> {
+        let mut texture_views = self.texture_views.lock().unwrap();
+
+        // Remove the texture view from the map
+        if texture_views.remove(&id).is_some() {
+            log::debug!("WgpuDevice: Destroyed texture view with ID: {:?}", id);
+            Ok(())
+        } else {
+            Err(ResourceError::NotFound)
+        }
+    }
+
+    fn create_sampler(
+        &self,
+        descriptor: &api_tex::SamplerDescriptor,
+    ) -> Result<api_tex::SamplerId, ResourceError> {
+        let context = self.context.lock().unwrap();
+        let device = &context.device;
+
+        let wgpu_sampler_descriptor = wgpu::SamplerDescriptor {
+            label: descriptor.label.as_deref(),
+            address_mode_u: descriptor.address_mode_u.into(),
+            address_mode_v: descriptor.address_mode_v.into(),
+            address_mode_w: descriptor.address_mode_w.into(),
+            mag_filter: descriptor.mag_filter.into(),
+            min_filter: descriptor.min_filter.into(),
+            mipmap_filter: descriptor.mipmap_filter.into(),
+            lod_min_clamp: descriptor.lod_min_clamp,
+            lod_max_clamp: descriptor.lod_max_clamp,
+            compare: descriptor.compare.map(|f| f.into()),
+            anisotropy_clamp: descriptor.anisotropy_clamp,
+            border_color: descriptor.border_color.map(|c| c.into()),
+        };
+
+        // Create the sampler using the wgpu device
+        let wgpu_sampler = Arc::new(device.create_sampler(&wgpu_sampler_descriptor));
+        let id = self.generate_sampler_id();
+        self.samplers
+            .lock()
+            .unwrap()
+            .insert(id, WgpuSamplerEntry { wgpu_sampler });
+        log::info!(
+            "WgpuDevice: Created sampler '{:?}' with ID: {:?}",
+            descriptor
+                .label
+                .as_ref()
+                .map(|s| s.as_ref())
+                .unwrap_or_default(),
+            id
+        );
+        Ok(id)
+    }
+
+    fn destroy_sampler(&self, id: api_tex::SamplerId) -> Result<(), ResourceError> {
+        let mut samplers = self.samplers.lock().unwrap();
+
+        // Remove the sampler from the map
+        if samplers.remove(&id).is_some() {
+            log::debug!("WgpuDevice: Destroyed sampler with ID: {:?}", id);
+            Ok(())
+        } else {
+            Err(ResourceError::NotFound)
         }
     }
 

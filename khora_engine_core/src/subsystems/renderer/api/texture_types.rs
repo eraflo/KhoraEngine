@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::borrow::Cow;
-use crate::khora_bitflags;
-use crate::math::{Extent3D};
 use super::common_types::{SampleCount, TextureFormat};
-use super::pipeline_types::{CompareFunction};
-
+use super::pipeline_types::CompareFunction;
+use crate::khora_bitflags;
+use crate::math::Extent3D;
+use std::borrow::Cow;
 
 /// The dimension of a texture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -69,7 +68,6 @@ pub enum SamplerBorderColor {
     OpaqueBlack,
     OpaqueWhite,
 }
-
 
 khora_bitflags! {
     /// Defines the intended usage of a GPU texture.
