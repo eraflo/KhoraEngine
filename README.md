@@ -78,23 +78,21 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
     *   `WgpuDevice` implements these methods, translating abstract descriptors to `wgpu` pipeline objects.
 *   ✅ **`[Feature] Develop Custom Bitflags Macro for Internal Engine Use`**:
     *   Implemented a custom, declarative macro (`khora_bitflags!`) providing type-safe bitflag functionality.
-    *   SAA Prep: This foundational utility reduces external dependencies, ensures consistent bitwise operations, and provides efficient, human-readable debug output for flags used throughout the engine, especially for resource usage and contextual data.
-    *   Labels: `core`, `infra`, `architecture`, `optimization`
+    *   SAA Prep: This foundational utility reduces external dependencies, ensures consistent bitwise operations, and provides efficient, human-readable debug output for flags used throughout the engine, especially for resource usage and contextual data.*
+*   ✅ **`[Feature] Implement Basic Buffer/Texture Management (Track VRAM usage)`**
+    *   Comprehensive API for creating, destroying, and writing to Buffers (BufferId, BufferDescriptor), Textures (TextureId, TextureDescriptor), TextureViews (TextureViewId, TextureViewDescriptor), and Samplers (SamplerId, SamplerDescriptor) through the GraphicsDevice trait.
 
 **Next Steps / Milestone 2 Tasks:**
 
-*   ➡️ **`[Feature] Implement Basic Buffer/Texture Management (Track VRAM usage)`**
-    *   Description: Create systems to manage the creation, uploading, and binding of buffers (vertex, index, uniform) and textures, while tracking VRAM usage, all through the `GraphicsDevice` abstraction.
-    *   Labels: `rendering`, `performance`, `asset`, `saa-prep`
-*   ➡️ **`[Task] Render a Single Triangle/Quad with Performance Timings`**
-    *   Description: Display a simple geometric shape using the established shader system, pipeline system, and buffer management, showing CPU/GPU timings.
-    *   Labels: `rendering`, `performance`
 *   ➡️ **`[Feature] Implement GPU Performance Monitoring Hooks (Timestamps)`**
     *   Description: Use graphics API timestamp queries (via `GraphicsDevice` if abstracted, or WGPU specifics) to measure GPU time. Essential for SAA.
     *   Labels: `rendering`, `performance`, `infra`, `saa-prep`
 *   ➡️ **`[Feature] Implement Robust Graphics Backend Selection (Vulkan/DX12/GL Fallback)`**
     *   Description: Enhance `WgpuGraphicsContext::new` to intelligently select and fall back between graphics backends.
     *   Labels: `rendering`, `core`, `platform`, `robustness`, `saa-prep`
+*   ➡️ **`[Task] Render a Single Triangle/Quad with Performance Timings`**
+    *   Description: Display a simple geometric shape using the established shader system, pipeline system, and buffer management, showing CPU/GPU timings.
+    *   Labels: `rendering`, `performance`
 
 **Note:** This is a highly ambitious, long-term research and development project. The SAA goal requires significant R&D.
 

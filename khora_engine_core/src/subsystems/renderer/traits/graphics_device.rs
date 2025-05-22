@@ -108,7 +108,7 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
         id: BufferId,
         offset: u64,
         data: &'a [u8],
-    ) -> Box<dyn Future<Output = Result<(), ResourceError>> + Send + 'a>;
+    ) -> Box<dyn Future<Output = Result<(), ResourceError>> + Send + 'static>;
 
     /// Creates a new GPU texture.
     /// ## Arguments

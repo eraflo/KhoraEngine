@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use super::wgpu_graphic_context::WgpuGraphicsContext;
+use crate::core::monitoring::{self as core_monitoring};
 use crate::math::dimension::{self as math_dim};
 use crate::subsystems::renderer::api::buffer_types::{self as api_buf};
 use crate::subsystems::renderer::api::common_types::RendererAdapterInfo;
@@ -27,8 +28,10 @@ use crate::subsystems::renderer::error::{PipelineError, ResourceError, ShaderErr
 use crate::subsystems::renderer::traits::graphics_device::GraphicsDevice;
 use crate::subsystems::renderer::{RendererBackendType, RendererDeviceType};
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::sync::atomic::AtomicU64;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
@@ -118,6 +121,7 @@ pub struct WgpuDevice {
 
     // VRAM Tracking
     vram_allocated_bytes: AtomicUsize,
+    vram_peak_bytes: AtomicU64,
 }
 
 impl WgpuDevice {
@@ -137,6 +141,7 @@ impl WgpuDevice {
             next_texture_view_id: AtomicUsize::new(0),
             next_sampler_id: AtomicUsize::new(0),
             vram_allocated_bytes: AtomicUsize::new(0),
+            vram_peak_bytes: AtomicU64::new(0),
         }
     }
 
@@ -507,9 +512,13 @@ impl GraphicsDevice for WgpuDevice {
         let wgpu_buffer = device.create_buffer(&wgpu_buffer_descriptor);
         let id = self.generate_buffer_id();
 
-        // Insert the buffer into the buffers map and track VRAM usage
+        // Track VRAM usage
         self.vram_allocated_bytes
             .fetch_add(descriptor.size as usize, Ordering::Relaxed);
+        let current_vram = self.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
+        self.vram_peak_bytes.fetch_max(current_vram, Ordering::Relaxed);
+
+        // Insert the buffer into the map
         self.buffers.lock().unwrap().insert(
             id,
             WgpuBufferEntry {
@@ -668,9 +677,13 @@ impl GraphicsDevice for WgpuDevice {
         let id = self.generate_texture_id();
         let size_in_bytes = Self::calculate_texture_size_in_bytes(descriptor);
 
-        // Insert the texture into the textures map and track VRAM usage
+        // Track VRAM usage
         self.vram_allocated_bytes
             .fetch_add(size_in_bytes as usize, Ordering::Relaxed);
+        let current_vram = self.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
+        self.vram_peak_bytes.fetch_max(current_vram, Ordering::Relaxed);
+
+        // Insert the texture into the map
         self.textures.lock().unwrap().insert(
             id,
             WgpuTextureEntry {
@@ -901,6 +914,25 @@ impl GraphicsDevice for WgpuDevice {
                 );
                 false
             }
+        }
+    }
+}
+
+
+impl core_monitoring::ResourceMonitor for WgpuDevice {
+    fn monitor_id(&self) -> Cow<'static, str> {
+        Cow::Borrowed("WgpuDevice_VRAM_Monitor") // Simple to begin (TODO: use dynamic adapter name)
+    }
+
+    fn resource_type(&self) -> core_monitoring::MonitoredResourceType {
+        core_monitoring::MonitoredResourceType::Vram
+    }
+
+    fn get_usage_report(&self) -> core_monitoring::ResourceUsageReport {
+        core_monitoring::ResourceUsageReport {
+            current_bytes: self.vram_allocated_bytes.load(Ordering::Relaxed) as u64,
+            peak_bytes: Some(self.vram_peak_bytes.load(Ordering::Relaxed)),
+            total_capacity_bytes: None, //  Difficult to determine in WGPU
         }
     }
 }
