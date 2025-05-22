@@ -516,7 +516,8 @@ impl GraphicsDevice for WgpuDevice {
         self.vram_allocated_bytes
             .fetch_add(descriptor.size as usize, Ordering::Relaxed);
         let current_vram = self.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
-        self.vram_peak_bytes.fetch_max(current_vram, Ordering::Relaxed);
+        self.vram_peak_bytes
+            .fetch_max(current_vram, Ordering::Relaxed);
 
         // Insert the buffer into the map
         self.buffers.lock().unwrap().insert(
@@ -681,7 +682,8 @@ impl GraphicsDevice for WgpuDevice {
         self.vram_allocated_bytes
             .fetch_add(size_in_bytes as usize, Ordering::Relaxed);
         let current_vram = self.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
-        self.vram_peak_bytes.fetch_max(current_vram, Ordering::Relaxed);
+        self.vram_peak_bytes
+            .fetch_max(current_vram, Ordering::Relaxed);
 
         // Insert the texture into the map
         self.textures.lock().unwrap().insert(
@@ -917,7 +919,6 @@ impl GraphicsDevice for WgpuDevice {
         }
     }
 }
-
 
 impl core_monitoring::ResourceMonitor for WgpuDevice {
     fn monitor_id(&self) -> Cow<'static, str> {

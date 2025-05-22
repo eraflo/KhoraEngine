@@ -12,17 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt::Debug;
 use std::borrow::Cow;
-
-///! This module defines the `Monitoring` trait and related types for monitoring resources in a system.
-///! The `Monitoring` trait provides methods to get the current usage and limit of a monitored resource.
+use std::fmt::Debug;
 
 /// Corresponds to the type of resource being monitored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MonitoredResourceType {
     Vram,
-    SystemRam
+    SystemRam,
 }
 
 /// Represents the current usage and limit of a monitored resource.

@@ -13,6 +13,6 @@
 // limitations under the License.
 
 pub mod engine;
+pub mod monitoring;
 pub mod timer;
 pub mod utils;
-pub mod monitoring;
