@@ -87,6 +87,15 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
 *   ➡️ **`[Feature] Implement GPU Performance Monitoring Hooks (Timestamps)`**
     *   Description: Use graphics API timestamp queries (via `GraphicsDevice` if abstracted, or WGPU specifics) to measure GPU time. Essential for SAA.
     *   Labels: `rendering`, `performance`, `infra`, `saa-prep`
+*   ➡️ **`[Feature] Implement Core Metrics System Backend v1 (In-Memory)`**
+    *   Description: Implement an initial in-memory backend for the Core Metrics System API. Focus on thread-safe storage (e.g., using `RwLock<HashMap<MetricId, MetricValue>>` or more specialized concurrent structures) and efficient retrieval of counters and gauges. Histograms/summaries can be deferred or simplified initially.
+    *   Labels: `core`, `infra`, `performance`, `saa-prep`
+*   ➡️ **`[Task] Integrate VRAM Tracking into Core Metrics System`**
+    *   Description: Refactor WgpuDevice's VRAM tracking to report its usage (allocated bytes) to the new Core Metrics System instead of managing it internally. The GraphicsDevice (or a ResourceMonitor trait) might then query the Metrics System or WgpuDevice could still expose it directly while also reporting centrally.
+    *   Labels: `rendering`, `performance`, `refactoring`, `saa-prep`
+*   ➡️ **`[Task] Integrate System RAM Tracking into Core Metrics System`**
+    *   Description: Connect the SaaTrackingAllocator (or its successor) to report global heap allocations to the Core Metrics System.
+    *   Labels: `core`, `performance`, `refactoring`, `saa-prep`
 *   ➡️ **`[Feature] Implement Robust Graphics Backend Selection (Vulkan/DX12/GL Fallback)`**
     *   Description: Enhance `WgpuGraphicsContext::new` to intelligently select and fall back between graphics backends.
     *   Labels: `rendering`, `core`, `platform`, `robustness`, `saa-prep`
