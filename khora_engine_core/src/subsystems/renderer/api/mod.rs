@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod buffer_types;
 pub mod common_types;
 pub mod pipeline_types;
 pub mod shader_types;
+pub mod texture_types;

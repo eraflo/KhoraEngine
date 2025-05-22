@@ -13,25 +13,58 @@
 // limitations under the License.
 
 use super::wgpu_graphic_context::WgpuGraphicsContext;
-use crate::subsystems::renderer::api::common_types::{
-    IndexFormat, RendererAdapterInfo, RendererBackendType, RendererDeviceType, SampleCount,
-    TextureFormat,
-};
+use crate::core::monitoring::{self as core_monitoring};
+use crate::math::dimension::{self as math_dim};
+use crate::subsystems::renderer::api::buffer_types::{self as api_buf};
+use crate::subsystems::renderer::api::common_types::RendererAdapterInfo;
 use crate::subsystems::renderer::api::pipeline_types::{
-    self as api_pipe, ColorTargetStateDescriptor, RenderPipelineDescriptor, RenderPipelineId,
+    RenderPipelineDescriptor, RenderPipelineId,
 };
 use crate::subsystems::renderer::api::shader_types::{
     ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData,
 };
+use crate::subsystems::renderer::api::texture_types::{self as api_tex};
 use crate::subsystems::renderer::error::{PipelineError, ResourceError, ShaderError};
 use crate::subsystems::renderer::traits::graphics_device::GraphicsDevice;
+use crate::subsystems::renderer::{RendererBackendType, RendererDeviceType};
 
+use std::borrow::Cow;
 use std::collections::HashMap;
+use std::pin::Pin;
+use std::sync::atomic::AtomicU64;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
+use std::task::{Poll, Waker};
 use wgpu;
+
+struct MapAsyncFutureState {
+    result: Mutex<Option<Result<(), ResourceError>>>,
+    // The Waker to wake up the Future when the result is ready
+    waker: Mutex<Option<Waker>>,
+}
+
+// Custom Future implementation to wrap the MapAsyncFutureState
+struct MapAsyncOperationFuture {
+    state: Arc<MapAsyncFutureState>,
+}
+
+impl Future for MapAsyncOperationFuture {
+    type Output = Result<(), ResourceError>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> Poll<Self::Output> {
+        let mut result_guard = self.state.result.lock().unwrap();
+        if let Some(res) = result_guard.take() {
+            Poll::Ready(res)
+        } else {
+            // Store the waker so the callback can wake this Future later
+            let mut waker_guard = self.state.waker.lock().unwrap();
+            *waker_guard = Some(cx.waker().clone());
+            Poll::Pending
+        }
+    }
+}
 
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -46,12 +79,49 @@ pub struct WgpuRenderPipelineEntry {
 }
 
 #[derive(Debug)]
+pub(crate) struct WgpuBufferEntry {
+    pub(crate) wgpu_buffer: Arc<wgpu::Buffer>,
+    pub(crate) size: u64, // To track VRAM accurately on destruction
+}
+
+#[derive(Debug)]
+pub(crate) struct WgpuTextureEntry {
+    pub(crate) wgpu_texture: Arc<wgpu::Texture>,
+    pub(crate) size: u64, // To track VRAM accurately on destruction
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) struct WgpuTextureViewEntry {
+    pub(crate) wgpu_view: Arc<wgpu::TextureView>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) struct WgpuSamplerEntry {
+    pub(crate) wgpu_sampler: Arc<wgpu::Sampler>,
+}
+
+#[derive(Debug)]
 pub struct WgpuDevice {
     context: Arc<Mutex<WgpuGraphicsContext>>,
     shader_modules: Mutex<HashMap<ShaderModuleId, WgpuShaderModuleEntry>>,
     pipelines: Mutex<HashMap<RenderPipelineId, WgpuRenderPipelineEntry>>,
+    buffers: Mutex<HashMap<api_buf::BufferId, WgpuBufferEntry>>,
+    textures: Mutex<HashMap<api_tex::TextureId, WgpuTextureEntry>>,
+    texture_views: Mutex<HashMap<api_tex::TextureViewId, WgpuTextureViewEntry>>,
+    samplers: Mutex<HashMap<api_tex::SamplerId, WgpuSamplerEntry>>,
+
     next_shader_id: AtomicUsize,
     next_pipeline_id: AtomicUsize,
+    next_buffer_id: AtomicUsize,
+    next_texture_id: AtomicUsize,
+    next_texture_view_id: AtomicUsize,
+    next_sampler_id: AtomicUsize,
+
+    // VRAM Tracking
+    vram_allocated_bytes: AtomicUsize,
+    vram_peak_bytes: AtomicU64,
 }
 
 impl WgpuDevice {
@@ -60,10 +130,22 @@ impl WgpuDevice {
             context,
             shader_modules: Mutex::new(HashMap::new()),
             pipelines: Mutex::new(HashMap::new()),
+            buffers: Mutex::new(HashMap::new()),
+            textures: Mutex::new(HashMap::new()),
+            texture_views: Mutex::new(HashMap::new()),
+            samplers: Mutex::new(HashMap::new()),
             next_shader_id: AtomicUsize::new(0),
             next_pipeline_id: AtomicUsize::new(0),
+            next_buffer_id: AtomicUsize::new(0),
+            next_texture_id: AtomicUsize::new(0),
+            next_texture_view_id: AtomicUsize::new(0),
+            next_sampler_id: AtomicUsize::new(0),
+            vram_allocated_bytes: AtomicUsize::new(0),
+            vram_peak_bytes: AtomicU64::new(0),
         }
     }
+
+    // --- ID Generation Helpers ---
 
     fn generate_shader_id(&self) -> ShaderModuleId {
         ShaderModuleId(self.next_shader_id.fetch_add(1, Ordering::Relaxed))
@@ -71,6 +153,22 @@ impl WgpuDevice {
 
     fn generate_pipeline_id(&self) -> RenderPipelineId {
         RenderPipelineId(self.next_pipeline_id.fetch_add(1, Ordering::Relaxed))
+    }
+
+    fn generate_buffer_id(&self) -> api_buf::BufferId {
+        api_buf::BufferId(self.next_buffer_id.fetch_add(1, Ordering::Relaxed))
+    }
+
+    fn generate_texture_id(&self) -> api_tex::TextureId {
+        api_tex::TextureId(self.next_texture_id.fetch_add(1, Ordering::Relaxed))
+    }
+
+    fn generate_texture_view_id(&self) -> api_tex::TextureViewId {
+        api_tex::TextureViewId(self.next_texture_view_id.fetch_add(1, Ordering::Relaxed))
+    }
+
+    fn generate_sampler_id(&self) -> api_tex::SamplerId {
+        api_tex::SamplerId(self.next_sampler_id.fetch_add(1, Ordering::Relaxed))
     }
 
     /// Helper function to execute an operation with the wgpu::Device locked.
@@ -85,166 +183,20 @@ impl WgpuDevice {
         operation(&context_guard.device)
     }
 
-    // --- Convert Helpers ---
-
-    /// Converts a VertexFormat from the API to the wgpu format.
-    fn convert_vertex_format(api_format: api_pipe::VertexFormat) -> wgpu::VertexFormat {
-        match api_format {
-            api_pipe::VertexFormat::Uint8x2 => wgpu::VertexFormat::Uint8x2,
-            api_pipe::VertexFormat::Uint8x4 => wgpu::VertexFormat::Uint8x4,
-            api_pipe::VertexFormat::Sint8x2 => wgpu::VertexFormat::Sint8x2,
-            api_pipe::VertexFormat::Sint8x4 => wgpu::VertexFormat::Sint8x4,
-            api_pipe::VertexFormat::Unorm8x2 => wgpu::VertexFormat::Unorm8x2,
-            api_pipe::VertexFormat::Unorm8x4 => wgpu::VertexFormat::Unorm8x4,
-            api_pipe::VertexFormat::Snorm8x2 => wgpu::VertexFormat::Snorm8x2,
-            api_pipe::VertexFormat::Snorm8x4 => wgpu::VertexFormat::Snorm8x4,
-            api_pipe::VertexFormat::Uint16x2 => wgpu::VertexFormat::Uint16x2,
-            api_pipe::VertexFormat::Uint16x4 => wgpu::VertexFormat::Uint16x4,
-            api_pipe::VertexFormat::Sint16x2 => wgpu::VertexFormat::Sint16x2,
-            api_pipe::VertexFormat::Sint16x4 => wgpu::VertexFormat::Sint16x4,
-            api_pipe::VertexFormat::Unorm16x2 => wgpu::VertexFormat::Unorm16x2,
-            api_pipe::VertexFormat::Unorm16x4 => wgpu::VertexFormat::Unorm16x4,
-            api_pipe::VertexFormat::Snorm16x2 => wgpu::VertexFormat::Snorm16x2,
-            api_pipe::VertexFormat::Snorm16x4 => wgpu::VertexFormat::Snorm16x4,
-            api_pipe::VertexFormat::Float16x2 => wgpu::VertexFormat::Float16x2,
-            api_pipe::VertexFormat::Float16x4 => wgpu::VertexFormat::Float16x4,
-            api_pipe::VertexFormat::Float32 => wgpu::VertexFormat::Float32,
-            api_pipe::VertexFormat::Float32x2 => wgpu::VertexFormat::Float32x2,
-            api_pipe::VertexFormat::Float32x3 => wgpu::VertexFormat::Float32x3,
-            api_pipe::VertexFormat::Float32x4 => wgpu::VertexFormat::Float32x4,
-            api_pipe::VertexFormat::Uint32 => wgpu::VertexFormat::Uint32,
-            api_pipe::VertexFormat::Uint32x2 => wgpu::VertexFormat::Uint32x2,
-            api_pipe::VertexFormat::Uint32x3 => wgpu::VertexFormat::Uint32x3,
-            api_pipe::VertexFormat::Uint32x4 => wgpu::VertexFormat::Uint32x4,
-            api_pipe::VertexFormat::Sint32 => wgpu::VertexFormat::Sint32,
-            api_pipe::VertexFormat::Sint32x2 => wgpu::VertexFormat::Sint32x2,
-            api_pipe::VertexFormat::Sint32x3 => wgpu::VertexFormat::Sint32x3,
-            api_pipe::VertexFormat::Sint32x4 => wgpu::VertexFormat::Sint32x4,
-        }
-    }
-
-    /// Converts a TextureFormat from the API to the wgpu format.
-    fn convert_texture_format(api_format: TextureFormat) -> Option<wgpu::TextureFormat> {
-        match api_format {
-            TextureFormat::R8Unorm => Some(wgpu::TextureFormat::R8Unorm),
-            TextureFormat::Rg8Unorm => Some(wgpu::TextureFormat::Rg8Unorm),
-            TextureFormat::Rgba8Unorm => Some(wgpu::TextureFormat::Rgba8Unorm),
-            TextureFormat::Rgba8UnormSrgb => Some(wgpu::TextureFormat::Rgba8UnormSrgb),
-            TextureFormat::Bgra8UnormSrgb => Some(wgpu::TextureFormat::Bgra8UnormSrgb),
-            TextureFormat::R16Float => Some(wgpu::TextureFormat::R16Float),
-            TextureFormat::Rg16Float => Some(wgpu::TextureFormat::Rg16Float),
-            TextureFormat::Rgba16Float => Some(wgpu::TextureFormat::Rgba16Float),
-            TextureFormat::R32Float => Some(wgpu::TextureFormat::R32Float),
-            TextureFormat::Rg32Float => Some(wgpu::TextureFormat::Rg32Float),
-            TextureFormat::Rgba32Float => Some(wgpu::TextureFormat::Rgba32Float),
-            TextureFormat::Depth16Unorm => Some(wgpu::TextureFormat::Depth16Unorm),
-            TextureFormat::Depth24Plus => Some(wgpu::TextureFormat::Depth24Plus),
-            TextureFormat::Depth24PlusStencil8 => Some(wgpu::TextureFormat::Depth24PlusStencil8),
-            TextureFormat::Depth32Float => Some(wgpu::TextureFormat::Depth32Float),
-            TextureFormat::Depth32FloatStencil8 => Some(wgpu::TextureFormat::Depth32FloatStencil8),
-        }
-    }
-
-    /// Converts an IndexFormat from the API to the wgpu format.
-    fn convert_index_format(api_format: IndexFormat) -> wgpu::IndexFormat {
-        match api_format {
-            IndexFormat::Uint16 => wgpu::IndexFormat::Uint16,
-            IndexFormat::Uint32 => wgpu::IndexFormat::Uint32,
-        }
-    }
-
-    /// Converts a CompareFunction from the API to the wgpu format.
-    fn convert_compare_function(api_func: api_pipe::CompareFunction) -> wgpu::CompareFunction {
-        match api_func {
-            api_pipe::CompareFunction::Never => wgpu::CompareFunction::Never,
-            api_pipe::CompareFunction::Less => wgpu::CompareFunction::Less,
-            api_pipe::CompareFunction::Equal => wgpu::CompareFunction::Equal,
-            api_pipe::CompareFunction::LessEqual => wgpu::CompareFunction::LessEqual,
-            api_pipe::CompareFunction::Greater => wgpu::CompareFunction::Greater,
-            api_pipe::CompareFunction::NotEqual => wgpu::CompareFunction::NotEqual,
-            api_pipe::CompareFunction::GreaterEqual => wgpu::CompareFunction::GreaterEqual,
-            api_pipe::CompareFunction::Always => wgpu::CompareFunction::Always,
-        }
-    }
-
-    /// Converts a StencilOperation from the API to the wgpu format.
-    fn convert_stencil_operation(api_op: api_pipe::StencilOperation) -> wgpu::StencilOperation {
-        match api_op {
-            api_pipe::StencilOperation::Keep => wgpu::StencilOperation::Keep,
-            api_pipe::StencilOperation::Zero => wgpu::StencilOperation::Zero,
-            api_pipe::StencilOperation::Replace => wgpu::StencilOperation::Replace,
-            api_pipe::StencilOperation::Invert => wgpu::StencilOperation::Invert,
-            api_pipe::StencilOperation::IncrementClamp => wgpu::StencilOperation::IncrementClamp,
-            api_pipe::StencilOperation::DecrementClamp => wgpu::StencilOperation::DecrementClamp,
-            api_pipe::StencilOperation::IncrementWrap => wgpu::StencilOperation::IncrementWrap,
-            api_pipe::StencilOperation::DecrementWrap => wgpu::StencilOperation::DecrementWrap,
-        }
-    }
-
-    /// Converts a BlendFactor from the API to the wgpu format.
-    fn convert_blend_factor(api_factor: api_pipe::BlendFactor) -> wgpu::BlendFactor {
-        match api_factor {
-            api_pipe::BlendFactor::One => wgpu::BlendFactor::One,
-            api_pipe::BlendFactor::Zero => wgpu::BlendFactor::Zero,
-            api_pipe::BlendFactor::SrcAlpha => wgpu::BlendFactor::SrcAlpha,
-            api_pipe::BlendFactor::OneMinusSrcAlpha => wgpu::BlendFactor::OneMinusSrcAlpha,
-        }
-    }
-
-    /// Converts a BlendOperation from the API to the wgpu format.
-    fn convert_blend_operation(api_op: api_pipe::BlendOperation) -> wgpu::BlendOperation {
-        match api_op {
-            api_pipe::BlendOperation::Add => wgpu::BlendOperation::Add,
-            api_pipe::BlendOperation::Subtract => wgpu::BlendOperation::Subtract,
-            api_pipe::BlendOperation::ReverseSubtract => wgpu::BlendOperation::ReverseSubtract,
-            api_pipe::BlendOperation::Min => wgpu::BlendOperation::Min,
-            api_pipe::BlendOperation::Max => wgpu::BlendOperation::Max,
-        }
-    }
-
-    /// Converts a SampleCount from the API to the wgpu format.
-    fn convert_sample_count(api_count: SampleCount) -> u32 {
-        match api_count {
-            SampleCount::X1 => 1,
-            SampleCount::X2 => 2,
-            SampleCount::X4 => 4,
-            SampleCount::X8 => 8,
-            SampleCount::X16 => 16,
-            SampleCount::X32 => 32,
-            SampleCount::X64 => 64,
-        }
-    }
-
-    /// Converts a ColorWrites from the API to the wgpu format.
-    fn convert_color_writes(api_writes: api_pipe::ColorWrites) -> wgpu::ColorWrites {
-        let mut wgpu_writes = wgpu::ColorWrites::empty();
-        if api_writes.contains(api_pipe::ColorWrites::R) {
-            wgpu_writes |= wgpu::ColorWrites::RED;
-        }
-        if api_writes.contains(api_pipe::ColorWrites::G) {
-            wgpu_writes |= wgpu::ColorWrites::GREEN;
-        }
-        if api_writes.contains(api_pipe::ColorWrites::B) {
-            wgpu_writes |= wgpu::ColorWrites::BLUE;
-        }
-        if api_writes.contains(api_pipe::ColorWrites::A) {
-            wgpu_writes |= wgpu::ColorWrites::ALPHA;
-        }
-        wgpu_writes
-    }
-
-    /// Converts an Option<CullMode> from the API to Option<wgpu::Face>.
-    fn convert_cull_mode_option(api_cull_mode: Option<api_pipe::CullMode>) -> Option<wgpu::Face> {
-        match api_cull_mode {
-            Some(api_pipe::CullMode::Front) => Some(wgpu::Face::Front),
-            Some(api_pipe::CullMode::Back) => Some(wgpu::Face::Back),
-            Some(api_pipe::CullMode::None) => None,
-            None => None,
-        }
+    /// Helper to calculate texture size in bytes
+    fn calculate_texture_size_in_bytes(descriptor: &api_tex::TextureDescriptor) -> u64 {
+        // This is a simplified calculation. Real engines consider block compression, padding, etc.
+        let bytes_per_pixel = descriptor.format.bytes_per_pixel();
+        let num_pixels = descriptor.size.width as u64
+            * descriptor.size.height as u64
+            * descriptor.size.depth_or_array_layers as u64;
+        num_pixels * bytes_per_pixel as u64
     }
 }
 
 impl GraphicsDevice for WgpuDevice {
+    // --- Shader Module Operations ---
+
     fn create_shader_module(
         &self,
         descriptor: &ShaderModuleDescriptor,
@@ -303,6 +255,8 @@ impl GraphicsDevice for WgpuDevice {
         }
     }
 
+    // -- Render Pipeline Operations ---
+
     fn create_render_pipeline(
         &self,
         descriptor: &RenderPipelineDescriptor,
@@ -350,7 +304,7 @@ impl GraphicsDevice for WgpuDevice {
                     .as_ref()
                     .iter()
                     .map(|attr_desc| wgpu::VertexAttribute {
-                        format: Self::convert_vertex_format(attr_desc.format),
+                        format: attr_desc.format.into(),
                         offset: attr_desc.offset,
                         shader_location: attr_desc.shader_location,
                     })
@@ -366,10 +320,7 @@ impl GraphicsDevice for WgpuDevice {
             .map(
                 |(vb_layout_desc, attributes_for_this_layout)| wgpu::VertexBufferLayout {
                     array_stride: vb_layout_desc.array_stride,
-                    step_mode: match vb_layout_desc.step_mode {
-                        api_pipe::VertexStepMode::Vertex => wgpu::VertexStepMode::Vertex,
-                        api_pipe::VertexStepMode::Instance => wgpu::VertexStepMode::Instance,
-                    },
+                    step_mode: vb_layout_desc.step_mode.into(),
                     attributes: attributes_for_this_layout,
                 },
             )
@@ -377,117 +328,77 @@ impl GraphicsDevice for WgpuDevice {
 
         // 3. Converts primitive state
         let primitive_state = wgpu::PrimitiveState {
-            topology: match descriptor.primitive_state.topology {
-                api_pipe::PrimitiveTopology::PointList => wgpu::PrimitiveTopology::PointList,
-                api_pipe::PrimitiveTopology::LineList => wgpu::PrimitiveTopology::LineList,
-                api_pipe::PrimitiveTopology::LineStrip => wgpu::PrimitiveTopology::LineStrip,
-                api_pipe::PrimitiveTopology::TriangleList => wgpu::PrimitiveTopology::TriangleList,
-                api_pipe::PrimitiveTopology::TriangleStrip => {
-                    wgpu::PrimitiveTopology::TriangleStrip
-                }
-            },
+            topology: descriptor.primitive_state.topology.into(),
             strip_index_format: descriptor
                 .primitive_state
                 .strip_index_format
-                .map(Self::convert_index_format),
-            front_face: match descriptor.primitive_state.front_face {
-                api_pipe::FrontFace::Ccw => wgpu::FrontFace::Ccw,
-                api_pipe::FrontFace::Cw => wgpu::FrontFace::Cw,
-            },
-            cull_mode: Self::convert_cull_mode_option(descriptor.primitive_state.cull_mode),
+                .map(|f| f.into()),
+            front_face: descriptor.primitive_state.front_face.into(),
+            cull_mode: descriptor.primitive_state.cull_mode.map(|m| m.into()),
+            polygon_mode: descriptor.primitive_state.polygon_mode.into(),
             unclipped_depth: descriptor.primitive_state.unclipped_depth,
-            polygon_mode: match descriptor.primitive_state.polygon_mode {
-                api_pipe::PolygonMode::Fill => wgpu::PolygonMode::Fill,
-                api_pipe::PolygonMode::Line => wgpu::PolygonMode::Line,
-                api_pipe::PolygonMode::Point => wgpu::PolygonMode::Point,
-            },
             conservative: descriptor.primitive_state.conservative,
         };
 
         // 4. Convert depth stencil state
-        let depth_stencil_state: Option<wgpu::DepthStencilState> =
-            if let Some(ds_desc) = descriptor.depth_stencil_state.as_ref() {
-                let wgpu_format =
-                    Self::convert_texture_format(ds_desc.format).ok_or_else(|| {
-                        ResourceError::Pipeline(PipelineError::IncompatibleDepthStencilFormat(
-                            format!("{:?}", ds_desc.format),
-                        ))
-                    })?;
-
-                Some(wgpu::DepthStencilState {
-                    format: wgpu_format,
-                    depth_write_enabled: ds_desc.depth_write_enabled,
-                    depth_compare: Self::convert_compare_function(ds_desc.depth_compare),
+        let depth_stencil_state =
+            descriptor
+                .depth_stencil_state
+                .as_ref()
+                .map(|ds| wgpu::DepthStencilState {
+                    format: ds.format.into(),
+                    depth_write_enabled: ds.depth_write_enabled,
+                    depth_compare: ds.depth_compare.into(),
                     stencil: wgpu::StencilState {
                         front: wgpu::StencilFaceState {
-                            compare: Self::convert_compare_function(ds_desc.stencil_front.compare),
-                            fail_op: Self::convert_stencil_operation(ds_desc.stencil_front.fail_op),
-                            depth_fail_op: Self::convert_stencil_operation(
-                                ds_desc.stencil_front.depth_fail_op,
-                            ),
-                            pass_op: Self::convert_stencil_operation(
-                                ds_desc.stencil_front.depth_pass_op,
-                            ),
+                            compare: ds.stencil_front.compare.into(),
+                            fail_op: ds.stencil_front.fail_op.into(),
+                            depth_fail_op: ds.stencil_front.depth_fail_op.into(),
+                            pass_op: ds.stencil_front.depth_pass_op.into(),
                         },
                         back: wgpu::StencilFaceState {
-                            compare: Self::convert_compare_function(ds_desc.stencil_back.compare),
-                            fail_op: Self::convert_stencil_operation(ds_desc.stencil_back.fail_op),
-                            depth_fail_op: Self::convert_stencil_operation(
-                                ds_desc.stencil_back.depth_fail_op,
-                            ),
-                            pass_op: Self::convert_stencil_operation(
-                                ds_desc.stencil_back.depth_pass_op,
-                            ),
+                            compare: ds.stencil_back.compare.into(),
+                            fail_op: ds.stencil_back.fail_op.into(),
+                            depth_fail_op: ds.stencil_back.depth_fail_op.into(),
+                            pass_op: ds.stencil_back.depth_pass_op.into(),
                         },
-                        read_mask: ds_desc.stencil_read_mask,
-                        write_mask: ds_desc.stencil_write_mask,
+                        read_mask: ds.stencil_read_mask,
+                        write_mask: ds.stencil_write_mask,
                     },
                     bias: wgpu::DepthBiasState {
-                        constant: ds_desc.bias.constant,
-                        slope_scale: ds_desc.bias.slope_scale,
-                        clamp: ds_desc.bias.clamp,
+                        constant: ds.bias.constant,
+                        slope_scale: ds.bias.slope_scale,
+                        clamp: ds.bias.clamp,
                     },
-                })
-            } else {
-                None
-            };
+                });
 
         // 5. Convert color target states
-        let wgpu_color_targets_cow: Vec<Option<wgpu::ColorTargetState>> = descriptor
+        let color_target_states: Vec<Option<wgpu::ColorTargetState>> = descriptor
             .color_target_states
-            .as_ref()
             .iter()
-            .map(|ct_desc: &ColorTargetStateDescriptor| {
-                let wgpu_format =
-                    Self::convert_texture_format(ct_desc.format).ok_or_else(|| {
-                        ResourceError::Pipeline(PipelineError::IncompatibleColorTarget(format!(
-                            "{:?}",
-                            ct_desc.format
-                        )))
-                    })?;
-
-                Ok(Some(wgpu::ColorTargetState {
-                    format: wgpu_format,
-                    blend: ct_desc.blend.map(|b_desc| wgpu::BlendState {
+            .map(|cts| {
+                Some(wgpu::ColorTargetState {
+                    format: cts.format.into(),
+                    blend: cts.blend.map(|b| wgpu::BlendState {
                         color: wgpu::BlendComponent {
-                            src_factor: Self::convert_blend_factor(b_desc.color.src_factor),
-                            dst_factor: Self::convert_blend_factor(b_desc.color.dst_factor),
-                            operation: Self::convert_blend_operation(b_desc.color.operation),
+                            src_factor: b.color.src_factor.into(),
+                            dst_factor: b.color.dst_factor.into(),
+                            operation: b.color.operation.into(),
                         },
                         alpha: wgpu::BlendComponent {
-                            src_factor: Self::convert_blend_factor(b_desc.alpha.src_factor),
-                            dst_factor: Self::convert_blend_factor(b_desc.alpha.dst_factor),
-                            operation: Self::convert_blend_operation(b_desc.alpha.operation),
+                            src_factor: b.alpha.src_factor.into(),
+                            dst_factor: b.alpha.dst_factor.into(),
+                            operation: b.alpha.operation.into(),
                         },
                     }),
-                    write_mask: Self::convert_color_writes(ct_desc.write_mask),
-                }))
+                    write_mask: wgpu::ColorWrites::from_bits_truncate(cts.write_mask.bits() as u32), // Bitflags conversion
+                })
             })
-            .collect::<Result<Vec<_>, ResourceError>>()?;
+            .collect();
 
         // 6. Convert multisample state
         let multisample_state = wgpu::MultisampleState {
-            count: Self::convert_sample_count(descriptor.multisample_state.count),
+            count: descriptor.multisample_state.count.into(),
             mask: descriptor.multisample_state.mask as u64,
             alpha_to_coverage_enabled: descriptor.multisample_state.alpha_to_coverage_enabled,
         };
@@ -527,7 +438,7 @@ impl GraphicsDevice for WgpuDevice {
                     Some(wgpu::FragmentState {
                         module: fs_module,
                         entry_point: Some(entry_point_cow.as_ref()),
-                        targets: &wgpu_color_targets_cow,
+                        targets: &color_target_states,
                         compilation_options: Default::default(),
                     })
                 } else {
@@ -558,7 +469,11 @@ impl GraphicsDevice for WgpuDevice {
 
         log::info!(
             "WgpuDevice: Successfully created render pipeline '{:?}' with ID: {:?}",
-            descriptor.label.as_deref().unwrap_or_default(),
+            descriptor
+                .label
+                .as_ref()
+                .map(|s| s.as_ref())
+                .unwrap_or_default(),
             id
         );
         Ok(id)
@@ -574,6 +489,380 @@ impl GraphicsDevice for WgpuDevice {
             Ok(())
         } else {
             Err(PipelineError::InvalidRenderPipeline { id }.into())
+        }
+    }
+
+    // --- Buffer Operations ---
+
+    fn create_buffer(
+        &self,
+        descriptor: &api_buf::BufferDescriptor,
+    ) -> Result<api_buf::BufferId, ResourceError> {
+        let context = self.context.lock().unwrap();
+        let device = &context.device;
+
+        // Create the buffer using the wgpu device
+        let wgpu_buffer_descriptor = wgpu::BufferDescriptor {
+            label: descriptor.label.as_deref(),
+            size: descriptor.size,
+            usage: wgpu::BufferUsages::from_bits_truncate(descriptor.usage.bits()),
+            mapped_at_creation: descriptor.mapped_at_creation,
+        };
+
+        let wgpu_buffer = device.create_buffer(&wgpu_buffer_descriptor);
+        let id = self.generate_buffer_id();
+
+        // Track VRAM usage
+        self.vram_allocated_bytes
+            .fetch_add(descriptor.size as usize, Ordering::Relaxed);
+        let current_vram = self.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
+        self.vram_peak_bytes
+            .fetch_max(current_vram, Ordering::Relaxed);
+
+        // Insert the buffer into the map
+        self.buffers.lock().unwrap().insert(
+            id,
+            WgpuBufferEntry {
+                wgpu_buffer: Arc::new(wgpu_buffer),
+                size: descriptor.size,
+            },
+        );
+
+        log::info!(
+            "WgpuDevice: Created buffer '{:?}' with ID: {:?}, size: {} bytes",
+            descriptor
+                .label
+                .as_ref()
+                .map(|s| s.as_ref())
+                .unwrap_or_default(),
+            id,
+            descriptor.size
+        );
+        Ok(id)
+    }
+
+    fn destroy_buffer(&self, id: api_buf::BufferId) -> Result<(), ResourceError> {
+        let mut buffers = self.buffers.lock().unwrap();
+
+        // Remove the buffer from the map and track VRAM usage
+        if let Some(entry) = buffers.remove(&id) {
+            self.vram_allocated_bytes
+                .fetch_sub(entry.size as usize, Ordering::Relaxed);
+            log::debug!("WgpuDevice: Destroyed buffer with ID: {:?}", id);
+            Ok(())
+        } else {
+            Err(ResourceError::NotFound)
+        }
+    }
+
+    fn write_buffer(
+        &self,
+        id: api_buf::BufferId,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<(), ResourceError> {
+        let buffers = self.buffers.lock().unwrap();
+        let entry = buffers.get(&id).ok_or(ResourceError::NotFound)?;
+        let context = self.context.lock().unwrap();
+        context.queue.write_buffer(&entry.wgpu_buffer, offset, data);
+        log::debug!(
+            "WgpuDevice: Wrote {} bytes to buffer ID: {:?} at offset {}",
+            data.len(),
+            id,
+            offset
+        );
+        Ok(())
+    }
+
+    fn write_buffer_async<'a>(
+        &'a self,
+        id: api_buf::BufferId,
+        offset: u64,
+        data: &'a [u8],
+    ) -> Box<dyn Future<Output = Result<(), ResourceError>> + Send + 'static> {
+        let buffers_guard = self.buffers.lock().unwrap();
+        let entry_wgpu_buffer = match buffers_guard.get(&id) {
+            Some(e) => Arc::clone(&e.wgpu_buffer),
+            None => return Box::new(async { Err(ResourceError::NotFound) }),
+        };
+        drop(buffers_guard); // Drop the lock to avoid deadlocks
+
+        // Data needs to be owned by the future to be 'static.
+        // This involves a copy, which is a common trade-off for true async operations.
+        let owned_data = data.to_vec(); // One copy, owned by the future
+
+        // Create a shared state for the Future and the WGPU callback
+        let shared_state = Arc::new(MapAsyncFutureState {
+            result: Mutex::new(None),
+            waker: Mutex::new(None),
+        });
+
+        // Clones and moves for the `map_async` callback's `move` closure
+        let future_state_for_callback = Arc::clone(&shared_state);
+        let buffer_id_for_callback = id;
+        let entry_wgpu_buffer_for_callback = Arc::clone(&entry_wgpu_buffer);
+        let owned_data_for_callback = owned_data;
+
+        // Schedule the WGPU map_async operation
+        let buffer_slice =
+            entry_wgpu_buffer.slice(offset..(offset + owned_data_for_callback.len() as u64));
+
+        buffer_slice.map_async(wgpu::MapMode::Write, move |result| {
+            // This closure runs on WGPU's internal callback thread/executor
+            let final_result = if let Err(e) = result {
+                log::error!(
+                    "Failed to map buffer asynchronously for ID {:?}: {:?}",
+                    buffer_id_for_callback,
+                    e
+                );
+                Err(ResourceError::BackendError(format!(
+                    "WGPU map_async failed: {:?}",
+                    e
+                )))
+            } else {
+                // Mapping was successful. Now perform the actual data copy.
+                // Re-slice the buffer from the entry_wgpu_buffer_for_callback as the original buffer_slice
+                // would have been dropped or moved.
+                let buffer_slice_for_copy = entry_wgpu_buffer_for_callback
+                    .slice(offset..(offset + owned_data_for_callback.len() as u64));
+                let mut mapped_range = buffer_slice_for_copy.get_mapped_range_mut();
+                mapped_range.copy_from_slice(&owned_data_for_callback); // This is the actual data write
+                drop(mapped_range); // Explicitly unmap the buffer by dropping the guard
+                entry_wgpu_buffer_for_callback.unmap(); // Ensure WGPU knows it's unmapped
+                log::debug!(
+                    "WgpuDevice: Async map_async copy complete for buffer ID: {:?}",
+                    buffer_id_for_callback
+                );
+                Ok(())
+            };
+
+            // Signal the Future that the operation is complete
+            *future_state_for_callback.result.lock().unwrap() = Some(final_result);
+
+            // Wake the Future if a waker was stored
+            if let Some(waker) = future_state_for_callback.waker.lock().unwrap().take() {
+                waker.wake();
+            }
+        });
+
+        // Return a Future that will wait for the callback to complete
+        Box::new(MapAsyncOperationFuture {
+            state: shared_state,
+        })
+    }
+
+    fn create_texture(
+        &self,
+        descriptor: &api_tex::TextureDescriptor,
+    ) -> Result<api_tex::TextureId, ResourceError> {
+        let context = self.context.lock().unwrap();
+        let device = &context.device;
+
+        let wgpu_texture_descriptor = wgpu::TextureDescriptor {
+            label: descriptor.label.as_deref(),
+            size: descriptor.size.into(),
+            mip_level_count: descriptor.mip_level_count,
+            sample_count: descriptor.sample_count.into(),
+            dimension: descriptor.dimension.into(),
+            format: descriptor.format.into(),
+            usage: wgpu::TextureUsages::from_bits_truncate(descriptor.usage.bits()),
+            view_formats: &descriptor
+                .view_formats
+                .iter()
+                .map(|&f| f.into())
+                .collect::<Vec<_>>(),
+        };
+
+        // Create the texture using the wgpu device with the specified descriptor
+        let wgpu_texture = device.create_texture(&wgpu_texture_descriptor);
+        let id = self.generate_texture_id();
+        let size_in_bytes = Self::calculate_texture_size_in_bytes(descriptor);
+
+        // Track VRAM usage
+        self.vram_allocated_bytes
+            .fetch_add(size_in_bytes as usize, Ordering::Relaxed);
+        let current_vram = self.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
+        self.vram_peak_bytes
+            .fetch_max(current_vram, Ordering::Relaxed);
+
+        // Insert the texture into the map
+        self.textures.lock().unwrap().insert(
+            id,
+            WgpuTextureEntry {
+                wgpu_texture: Arc::new(wgpu_texture),
+                size: size_in_bytes,
+            },
+        );
+
+        log::info!(
+            "WgpuDevice: Created texture '{:?}' with ID: {:?}, size: {} bytes (VRAM)",
+            descriptor
+                .label
+                .as_ref()
+                .map(|s| s.as_ref())
+                .unwrap_or_default(),
+            id,
+            size_in_bytes
+        );
+        Ok(id)
+    }
+
+    fn destroy_texture(&self, id: api_tex::TextureId) -> Result<(), ResourceError> {
+        let mut textures = self.textures.lock().unwrap();
+
+        // Remove the texture from the map and track VRAM usage
+        if let Some(entry) = textures.remove(&id) {
+            self.vram_allocated_bytes
+                .fetch_sub(entry.size as usize, Ordering::Relaxed);
+            log::debug!("WgpuDevice: Destroyed texture with ID: {:?}", id);
+            Ok(())
+        } else {
+            Err(ResourceError::NotFound)
+        }
+    }
+
+    fn write_texture(
+        &self,
+        texture_id: api_tex::TextureId,
+        data: &[u8],
+        bytes_per_row: Option<u32>,
+        offset: math_dim::Origin3D,
+        size: math_dim::Extent3D,
+    ) -> Result<(), ResourceError> {
+        let textures = self.textures.lock().unwrap();
+        let entry = textures.get(&texture_id).ok_or(ResourceError::NotFound)?;
+        let context = self.context.lock().unwrap();
+
+        context.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &entry.wgpu_texture,
+                mip_level: 0, // Assuming base mip for now
+                origin: offset.into(),
+                aspect: wgpu::TextureAspect::All, // Assuming all aspects for now
+            },
+            data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row,
+                rows_per_image: None, // Assuming 2D or 3D without specific rows per image info
+            },
+            size.into(),
+        );
+        log::debug!(
+            "WgpuDevice: Wrote {} bytes to texture ID: {:?} at offset {:?}",
+            data.len(),
+            texture_id,
+            offset
+        );
+        Ok(())
+    }
+
+    fn create_texture_view(
+        &self,
+        texture_id: api_tex::TextureId,
+        descriptor: &api_tex::TextureViewDescriptor,
+    ) -> Result<api_tex::TextureViewId, ResourceError> {
+        let textures = self.textures.lock().unwrap();
+        let texture_entry = textures.get(&texture_id).ok_or(ResourceError::NotFound)?;
+
+        let wgpu_view_descriptor = wgpu::TextureViewDescriptor {
+            label: descriptor.label.as_deref(),
+            format: descriptor.format.map(|f| f.into()),
+            dimension: descriptor.dimension.map(|d| d.into()),
+            aspect: descriptor.aspect.into(),
+            base_mip_level: descriptor.base_mip_level,
+            mip_level_count: descriptor.mip_level_count,
+            base_array_layer: descriptor.base_array_layer,
+            array_layer_count: descriptor.array_layer_count,
+            usage: None, // Not used in this context
+        };
+
+        // Create the texture view using the wgpu texture
+        let wgpu_view = Arc::new(
+            texture_entry
+                .wgpu_texture
+                .create_view(&wgpu_view_descriptor),
+        );
+        let id = self.generate_texture_view_id();
+        self.texture_views
+            .lock()
+            .unwrap()
+            .insert(id, WgpuTextureViewEntry { wgpu_view });
+        log::info!(
+            "WgpuDevice: Created texture view '{:?}' for texture ID: {:?} with ID: {:?}",
+            descriptor
+                .label
+                .as_ref()
+                .map(|s| s.as_ref())
+                .unwrap_or_default(),
+            texture_id,
+            id
+        );
+        Ok(id)
+    }
+
+    fn destroy_texture_view(&self, id: api_tex::TextureViewId) -> Result<(), ResourceError> {
+        let mut texture_views = self.texture_views.lock().unwrap();
+
+        // Remove the texture view from the map
+        if texture_views.remove(&id).is_some() {
+            log::debug!("WgpuDevice: Destroyed texture view with ID: {:?}", id);
+            Ok(())
+        } else {
+            Err(ResourceError::NotFound)
+        }
+    }
+
+    fn create_sampler(
+        &self,
+        descriptor: &api_tex::SamplerDescriptor,
+    ) -> Result<api_tex::SamplerId, ResourceError> {
+        let context = self.context.lock().unwrap();
+        let device = &context.device;
+
+        let wgpu_sampler_descriptor = wgpu::SamplerDescriptor {
+            label: descriptor.label.as_deref(),
+            address_mode_u: descriptor.address_mode_u.into(),
+            address_mode_v: descriptor.address_mode_v.into(),
+            address_mode_w: descriptor.address_mode_w.into(),
+            mag_filter: descriptor.mag_filter.into(),
+            min_filter: descriptor.min_filter.into(),
+            mipmap_filter: descriptor.mipmap_filter.into(),
+            lod_min_clamp: descriptor.lod_min_clamp,
+            lod_max_clamp: descriptor.lod_max_clamp,
+            compare: descriptor.compare.map(|f| f.into()),
+            anisotropy_clamp: descriptor.anisotropy_clamp,
+            border_color: descriptor.border_color.map(|c| c.into()),
+        };
+
+        // Create the sampler using the wgpu device
+        let wgpu_sampler = Arc::new(device.create_sampler(&wgpu_sampler_descriptor));
+        let id = self.generate_sampler_id();
+        self.samplers
+            .lock()
+            .unwrap()
+            .insert(id, WgpuSamplerEntry { wgpu_sampler });
+        log::info!(
+            "WgpuDevice: Created sampler '{:?}' with ID: {:?}",
+            descriptor
+                .label
+                .as_ref()
+                .map(|s| s.as_ref())
+                .unwrap_or_default(),
+            id
+        );
+        Ok(id)
+    }
+
+    fn destroy_sampler(&self, id: api_tex::SamplerId) -> Result<(), ResourceError> {
+        let mut samplers = self.samplers.lock().unwrap();
+
+        // Remove the sampler from the map
+        if samplers.remove(&id).is_some() {
+            log::debug!("WgpuDevice: Destroyed sampler with ID: {:?}", id);
+            Ok(())
+        } else {
+            Err(ResourceError::NotFound)
         }
     }
 
@@ -631,141 +920,20 @@ impl GraphicsDevice for WgpuDevice {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::subsystems::renderer::api::pipeline_types::VertexFormat;
-
-    #[test]
-    fn test_convert_vertex_format_all_cases() {
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint8x2),
-            wgpu::VertexFormat::Uint8x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint8x4),
-            wgpu::VertexFormat::Uint8x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint8x2),
-            wgpu::VertexFormat::Sint8x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint8x4),
-            wgpu::VertexFormat::Sint8x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Unorm8x2),
-            wgpu::VertexFormat::Unorm8x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Unorm8x4),
-            wgpu::VertexFormat::Unorm8x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Snorm8x2),
-            wgpu::VertexFormat::Snorm8x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Snorm8x4),
-            wgpu::VertexFormat::Snorm8x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint16x2),
-            wgpu::VertexFormat::Uint16x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint16x4),
-            wgpu::VertexFormat::Uint16x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint16x2),
-            wgpu::VertexFormat::Sint16x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint16x4),
-            wgpu::VertexFormat::Sint16x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Unorm16x2),
-            wgpu::VertexFormat::Unorm16x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Unorm16x4),
-            wgpu::VertexFormat::Unorm16x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Snorm16x2),
-            wgpu::VertexFormat::Snorm16x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Snorm16x4),
-            wgpu::VertexFormat::Snorm16x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Float16x2),
-            wgpu::VertexFormat::Float16x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Float16x4),
-            wgpu::VertexFormat::Float16x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Float32),
-            wgpu::VertexFormat::Float32
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Float32x2),
-            wgpu::VertexFormat::Float32x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Float32x3),
-            wgpu::VertexFormat::Float32x3
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Float32x4),
-            wgpu::VertexFormat::Float32x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint32),
-            wgpu::VertexFormat::Uint32
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint32x2),
-            wgpu::VertexFormat::Uint32x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint32x3),
-            wgpu::VertexFormat::Uint32x3
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Uint32x4),
-            wgpu::VertexFormat::Uint32x4
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint32),
-            wgpu::VertexFormat::Sint32
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint32x2),
-            wgpu::VertexFormat::Sint32x2
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint32x3),
-            wgpu::VertexFormat::Sint32x3
-        );
-        assert_eq!(
-            WgpuDevice::convert_vertex_format(VertexFormat::Sint32x4),
-            wgpu::VertexFormat::Sint32x4
-        );
+impl core_monitoring::ResourceMonitor for WgpuDevice {
+    fn monitor_id(&self) -> Cow<'static, str> {
+        Cow::Borrowed("WgpuDevice_VRAM_Monitor") // Simple to begin (TODO: use dynamic adapter name)
     }
 
-    #[test]
-    fn test_convert_cull_mode() {
-        assert_eq!(
-            WgpuDevice::convert_cull_mode_option(Some(api_pipe::CullMode::Back)),
-            Some(wgpu::Face::Back)
-        );
-        assert_eq!(WgpuDevice::convert_cull_mode_option(None), None);
+    fn resource_type(&self) -> core_monitoring::MonitoredResourceType {
+        core_monitoring::MonitoredResourceType::Vram
+    }
+
+    fn get_usage_report(&self) -> core_monitoring::ResourceUsageReport {
+        core_monitoring::ResourceUsageReport {
+            current_bytes: self.vram_allocated_bytes.load(Ordering::Relaxed) as u64,
+            peak_bytes: Some(self.vram_peak_bytes.load(Ordering::Relaxed)),
+            total_capacity_bytes: None, //  Difficult to determine in WGPU
+        }
     }
 }

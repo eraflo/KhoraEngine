@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod conversions;
 pub mod wgpu_device;
 pub mod wgpu_graphic_context;
 pub mod wgpu_render_system;
