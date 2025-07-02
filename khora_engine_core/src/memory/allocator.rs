@@ -155,14 +155,12 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
             if fetch_result.is_err() {
                 if size_diff > 0 {
                     log::error!(
-                        "Memory tracking counter overflowed during realloc (increase)! Diff: {}",
-                        size_diff
+                        "Memory tracking counter overflowed during realloc (increase)! Diff: {size_diff}"
                     );
                 } else {
                     // Underflow on realloc decrease is serious, likely bug
                     log::error!(
-                        "Memory tracking counter underflowed during realloc (decrease)! Diff: {}",
-                        size_diff
+                        "Memory tracking counter underflowed during realloc (decrease)! Diff: {size_diff}"
                     );
                 }
             }

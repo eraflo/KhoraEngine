@@ -94,7 +94,7 @@ impl Engine {
         let mut app_handler = EngineAppHandler { engine: self };
 
         if let Err(e) = event_loop.run_app(&mut app_handler) {
-            log::error!("Event loop exited with error: {}", e);
+            log::error!("Event loop exited with error: {e}");
         }
     }
 
@@ -163,7 +163,7 @@ impl ApplicationHandler<()> for EngineAppHandler {
                         log::info!("Initializing RenderSystem with the window...");
 
                         if let Err(e) = rs.init(window_ref) {
-                            log::error!("FATAL: Failed to initialize RenderSystem: {:?}", e);
+                            log::error!("FATAL: Failed to initialize RenderSystem: {e:?}");
                             event_loop.exit();
                             return;
                         }
@@ -186,7 +186,7 @@ impl ApplicationHandler<()> for EngineAppHandler {
                     }
                 }
                 Err(e) => {
-                    log::error!("FATAL: Failed to create KhoraWindow: {}", e);
+                    log::error!("FATAL: Failed to create KhoraWindow: {e}");
                     event_loop.exit();
                 }
             }
@@ -246,7 +246,7 @@ impl ApplicationHandler<()> for EngineAppHandler {
 
                     // Case where the window is redrawn (e.g., after resizing or when requested)
                     WindowEvent::RedrawRequested => {
-                        log::trace!("Window Redraw Requested for id: {:?}", window_id);
+                        log::trace!("Window Redraw Requested for id: {window_id:?}");
 
                         // Increment frame counters BEFORE rendering
                         engine.frame_count += 1;
@@ -301,7 +301,7 @@ impl ApplicationHandler<()> for EngineAppHandler {
 
                     // Case where the window is moved by the user
                     WindowEvent::Focused(focused) => {
-                        log::debug!("Window Focus Changed: {}", focused);
+                        log::debug!("Window Focus Changed: {focused}");
                         // TODO: Publish focus change event if needed
                     }
                     _ => {}
@@ -363,7 +363,7 @@ impl Engine {
 
         // Process collected events
         for event in events_to_process {
-            log::trace!("Processing internal event: {:?}", event);
+            log::trace!("Processing internal event: {event:?}");
             self.handle_internal_event(event);
         }
     }
@@ -378,14 +378,12 @@ impl Engine {
             match rs.render(&render_objects, &view_info, &render_settings) {
                 Ok(_render_stats) => {
                     log::trace!(
-                        "Engine: Frame rendered by RenderSystem. Stats: {:?}",
-                        _render_stats
+                        "Engine: Frame rendered by RenderSystem. Stats: {_render_stats:?}"
                     );
                 }
                 Err(RenderError::SurfaceAcquisitionFailed(msg)) => {
                     log::warn!(
-                        "RenderSystem reported surface acquisition failure: {}. Attempting resize.",
-                        msg
+                        "RenderSystem reported surface acquisition failure: {msg}. Attempting resize."
                     );
 
                     if msg.contains("Lost") || msg.contains("Outdated") {
@@ -398,8 +396,7 @@ impl Engine {
                         }
                     } else if msg.contains("OutOfMemory") {
                         log::error!(
-                            "RenderSystem ran out of memory for surface! Requesting shutdown: {}",
-                            msg
+                            "RenderSystem ran out of memory for surface! Requesting shutdown: {msg}"
                         );
 
                         self.event_bus.publish(EngineEvent::ShutdownRequested);
@@ -407,8 +404,7 @@ impl Engine {
                 }
                 Err(e) => {
                     log::error!(
-                        "Engine: Error during RenderSystem::render_to_window: {:?}",
-                        e
+                        "Engine: Error during RenderSystem::render_to_window: {e:?}"
                     );
                     self.event_bus.publish(EngineEvent::ShutdownRequested);
                 }
@@ -426,7 +422,7 @@ impl Engine {
     fn handle_internal_event(&mut self, event: EngineEvent) {
         match event {
             EngineEvent::WindowResized { width, height } => {
-                log::info!("Internal Handling: Window resized: {}x{}", width, height);
+                log::info!("Internal Handling: Window resized: {width}x{height}");
 
                 if width > 0 && height > 0 {
                     // Resize the render system
@@ -435,16 +431,14 @@ impl Engine {
                     }
                 } else {
                     log::warn!(
-                        "Internal Handling: Window resized to zero size ({}x{}), not resizing render surface yet.",
-                        width,
-                        height
+                        "Internal Handling: Window resized to zero size ({width}x{height}), not resizing render surface yet."
                     );
                 }
 
                 // TODO: Notify update Camera aspect ratio, ui, etc.
             }
             EngineEvent::Input(input_event) => {
-                log::trace!("Internal Handling: Input event: {:?}", input_event);
+                log::trace!("Internal Handling: Input event: {input_event:?}");
                 // TODO: Update input state manager, dispatch to UI / game logic listeners
             }
             EngineEvent::ShutdownRequested => {

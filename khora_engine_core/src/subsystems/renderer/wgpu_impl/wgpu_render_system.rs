@@ -100,12 +100,10 @@ impl RenderSystem for WgpuRenderSystem {
             }
             Err(e) => {
                 log::error!(
-                    "WgpuRenderSystem: Failed to initialize internal GraphicsContext: {}",
-                    e
+                    "WgpuRenderSystem: Failed to initialize internal GraphicsContext: {e}"
                 );
                 Err(RenderError::InitializationFailed(format!(
-                    "GraphicsContext creation error: {}",
-                    e
+                    "GraphicsContext creation error: {e}"
                 )))
             }
         }
@@ -114,9 +112,7 @@ impl RenderSystem for WgpuRenderSystem {
     fn resize(&mut self, new_width: u32, new_height: u32) {
         if new_width > 0 && new_height > 0 {
             log::debug!(
-                "WgpuRenderSystem: resize_surface called with W:{}, H:{}",
-                new_width,
-                new_height
+                "WgpuRenderSystem: resize_surface called with W:{new_width}, H:{new_height}"
             );
             self.current_width = new_width;
             self.current_height = new_height;
@@ -129,8 +125,7 @@ impl RenderSystem for WgpuRenderSystem {
                     }
                     Err(e) => {
                         log::error!(
-                            "WgpuRenderSystem::resize_surface: Failed to lock GraphicsContext: {}",
-                            e
+                            "WgpuRenderSystem::resize_surface: Failed to lock GraphicsContext: {e}"
                         );
                     }
                 }
@@ -139,9 +134,7 @@ impl RenderSystem for WgpuRenderSystem {
             }
         } else {
             log::warn!(
-                "WgpuRenderSystem::resize_surface called with zero size ({}, {}). Ignoring.",
-                new_width,
-                new_height
+                "WgpuRenderSystem::resize_surface called with zero size ({new_width}, {new_height}). Ignoring."
             );
         }
     }
@@ -177,8 +170,7 @@ impl RenderSystem for WgpuRenderSystem {
             // Lock the GraphicsContext mutex to access the surface
             let mut gc_guard = gc.lock().map_err(|e| {
                 RenderError::Internal(format!(
-                    "Render: Failed to lock GraphicsContext Mutex for get_current_texture: {}",
-                    e
+                    "Render: Failed to lock GraphicsContext Mutex for get_current_texture: {e}"
                 ))
             })?;
 
@@ -202,33 +194,28 @@ impl RenderSystem for WgpuRenderSystem {
                             self.current_height
                         );
                         return Err(RenderError::SurfaceAcquisitionFailed(format!(
-                            "Surface Lost/Outdated ({:?}) and current size is zero",
-                            e
+                            "Surface Lost/Outdated ({e:?}) and current size is zero",
                         )));
                     }
                 }
                 Err(e @ wgpu::SurfaceError::OutOfMemory) => {
-                    log::error!("WgpuRenderSystem: Swapchain OutOfMemory! ({:?})", e);
+                    log::error!("WgpuRenderSystem: Swapchain OutOfMemory! ({e:?})");
                     return Err(RenderError::SurfaceAcquisitionFailed(format!(
-                        "OutOfMemory: {:?}",
-                        e
+                        "OutOfMemory: {e:?}"
                     )));
                 }
                 Err(e @ wgpu::SurfaceError::Timeout) => {
                     log::warn!(
-                        "WgpuRenderSystem: Swapchain Timeout acquiring frame. ({:?})",
-                        e
+                        "WgpuRenderSystem: Swapchain Timeout acquiring frame. ({e:?})"
                     );
                     return Err(RenderError::SurfaceAcquisitionFailed(format!(
-                        "Timeout: {:?}",
-                        e
+                        "Timeout: {e:?}"
                     )));
                 }
                 Err(e) => {
-                    log::error!("WgpuRenderSystem: Unexpected SurfaceError: {:?}", e);
+                    log::error!("WgpuRenderSystem: Unexpected SurfaceError: {e:?}");
                     return Err(RenderError::SurfaceAcquisitionFailed(format!(
-                        "Unexpected SurfaceError: {:?}",
-                        e
+                        "Unexpected SurfaceError: {e:?}"
                     )));
                 }
             }
@@ -260,8 +247,7 @@ impl RenderSystem for WgpuRenderSystem {
         {
             let gc_guard = gc.lock().map_err(|e| {
                 RenderError::Internal(format!(
-                    "Render: Failed to lock GraphicsContext Mutex for render pass: {}",
-                    e
+                    "Render: Failed to lock GraphicsContext Mutex for render pass: {e}"
                 ))
             })?;
 
@@ -351,8 +337,7 @@ impl RenderSystem for WgpuRenderSystem {
                     }
                     Err(poisoned_err) => {
                         log::error!(
-                            "Mutex was poisoned during shutdown: {}. Resources might not be fully cleaned.",
-                            poisoned_err
+                            "Mutex was poisoned during shutdown: {poisoned_err}. Resources might not be fully cleaned."
                         );
                     }
                 },

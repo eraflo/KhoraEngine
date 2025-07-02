@@ -116,7 +116,7 @@ pub(crate) fn translate_winit_input(event: &WindowEvent) -> Option<InputEvent> {
 /// * A string representation of the keycode.
 fn map_keycode_to_string(keycode: KeyCode) -> String {
     // Using Debug is simple and covers all keys.
-    format!("{:?}", keycode)
+    format!("{keycode:?}")
     // Consider a more specific mapping later if needed for game logic keys (W, A, S, D, Space etc.)
 }
 

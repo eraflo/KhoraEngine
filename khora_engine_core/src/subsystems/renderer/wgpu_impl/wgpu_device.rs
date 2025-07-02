@@ -178,7 +178,7 @@ impl WgpuDevice {
         F: FnOnce(&wgpu::Device) -> Result<R, ResourceError>,
     {
         let context_guard = self.context.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Failed to lock WgpuGraphicsContext: {}", e))
+            ResourceError::BackendError(format!("Failed to lock WgpuGraphicsContext: {e}"))
         })?;
         operation(&context_guard.device)
     }
@@ -225,7 +225,7 @@ impl GraphicsDevice for WgpuDevice {
         // Create a new shader module entry and insert it into the shader_modules map
         let id = self.generate_shader_id();
         let mut modules_guard = self.shader_modules.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {}", e))
+            ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {e}"))
         })?;
         modules_guard.insert(
             id,
@@ -244,11 +244,11 @@ impl GraphicsDevice for WgpuDevice {
 
     fn destroy_shader_module(&self, id: ShaderModuleId) -> Result<(), ResourceError> {
         let mut modules_guard = self.shader_modules.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {}", e))
+            ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {e}"))
         })?;
 
         if modules_guard.remove(&id).is_some() {
-            log::debug!("WgpuDevice: Destroyed shader module with ID: {:?}", id);
+            log::debug!("WgpuDevice: Destroyed shader module with ID: {id:?}");
             Ok(())
         } else {
             Err(ShaderError::NotFound { id }.into())
@@ -268,7 +268,7 @@ impl GraphicsDevice for WgpuDevice {
 
         // 1. Get the shader modules from the context
         let shader_modules_map = self.shader_modules.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {}", e))
+            ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {e}"))
         })?;
 
         let vs_module_entry = shader_modules_map
@@ -405,7 +405,7 @@ impl GraphicsDevice for WgpuDevice {
 
         // 7. Create pipeline layout and render pipeline
         let (wgpu_render_pipeline_arc, id) = self.with_wgpu_device(|device| {
-            let pipeline_layout_label = descriptor.label.as_deref().map(|s| format!("{}_Layout", s));
+            let pipeline_layout_label = descriptor.label.as_deref().map(|s| format!("{s}_Layout"));
             let wgpu_pipeline_layout =
                 device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: pipeline_layout_label.as_deref(),
@@ -458,7 +458,7 @@ impl GraphicsDevice for WgpuDevice {
         })?;
 
         let mut pipelines_guard = self.pipelines.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (pipelines): {}", e))
+            ResourceError::BackendError(format!("Mutex poisoned (pipelines): {e}"))
         })?;
         pipelines_guard.insert(
             id,
@@ -481,11 +481,11 @@ impl GraphicsDevice for WgpuDevice {
 
     fn destroy_render_pipeline(&self, id: RenderPipelineId) -> Result<(), ResourceError> {
         let mut pipelines_guard = self.pipelines.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (pipelines): {}", e))
+            ResourceError::BackendError(format!("Mutex poisoned (pipelines): {e}"))
         })?;
 
         if pipelines_guard.remove(&id).is_some() {
-            log::debug!("WgpuDevice: Destroyed render pipeline with ID: {:?}", id);
+            log::debug!("WgpuDevice: Destroyed render pipeline with ID: {id:?}");
             Ok(())
         } else {
             Err(PipelineError::InvalidRenderPipeline { id }.into())
@@ -548,7 +548,7 @@ impl GraphicsDevice for WgpuDevice {
         if let Some(entry) = buffers.remove(&id) {
             self.vram_allocated_bytes
                 .fetch_sub(entry.size as usize, Ordering::Relaxed);
-            log::debug!("WgpuDevice: Destroyed buffer with ID: {:?}", id);
+            log::debug!("WgpuDevice: Destroyed buffer with ID: {id:?}");
             Ok(())
         } else {
             Err(ResourceError::NotFound)
@@ -611,13 +611,10 @@ impl GraphicsDevice for WgpuDevice {
             // This closure runs on WGPU's internal callback thread/executor
             let final_result = if let Err(e) = result {
                 log::error!(
-                    "Failed to map buffer asynchronously for ID {:?}: {:?}",
-                    buffer_id_for_callback,
-                    e
+                    "Failed to map buffer asynchronously for ID {buffer_id_for_callback:?}: {e:?}"
                 );
                 Err(ResourceError::BackendError(format!(
-                    "WGPU map_async failed: {:?}",
-                    e
+                    "WGPU map_async failed: {e:?}"
                 )))
             } else {
                 // Mapping was successful. Now perform the actual data copy.
@@ -630,8 +627,7 @@ impl GraphicsDevice for WgpuDevice {
                 drop(mapped_range); // Explicitly unmap the buffer by dropping the guard
                 entry_wgpu_buffer_for_callback.unmap(); // Ensure WGPU knows it's unmapped
                 log::debug!(
-                    "WgpuDevice: Async map_async copy complete for buffer ID: {:?}",
-                    buffer_id_for_callback
+                    "WgpuDevice: Async map_async copy complete for buffer ID: {buffer_id_for_callback:?}"
                 );
                 Ok(())
             };
@@ -714,7 +710,7 @@ impl GraphicsDevice for WgpuDevice {
         if let Some(entry) = textures.remove(&id) {
             self.vram_allocated_bytes
                 .fetch_sub(entry.size as usize, Ordering::Relaxed);
-            log::debug!("WgpuDevice: Destroyed texture with ID: {:?}", id);
+            log::debug!("WgpuDevice: Destroyed texture with ID: {id:?}");
             Ok(())
         } else {
             Err(ResourceError::NotFound)
@@ -806,7 +802,7 @@ impl GraphicsDevice for WgpuDevice {
 
         // Remove the texture view from the map
         if texture_views.remove(&id).is_some() {
-            log::debug!("WgpuDevice: Destroyed texture view with ID: {:?}", id);
+            log::debug!("WgpuDevice: Destroyed texture view with ID: {id:?}");
             Ok(())
         } else {
             Err(ResourceError::NotFound)
@@ -859,7 +855,7 @@ impl GraphicsDevice for WgpuDevice {
 
         // Remove the sampler from the map
         if samplers.remove(&id).is_some() {
-            log::debug!("WgpuDevice: Destroyed sampler with ID: {:?}", id);
+            log::debug!("WgpuDevice: Destroyed sampler with ID: {id:?}");
             Ok(())
         } else {
             Err(ResourceError::NotFound)
@@ -911,8 +907,7 @@ impl GraphicsDevice for WgpuDevice {
                 .contains(wgpu::Features::POLYGON_MODE_POINT),
             _ => {
                 log::warn!(
-                    "WgpuDevice: Unsupported feature_name query in supports_feature: {}",
-                    feature_name
+                    "WgpuDevice: Unsupported feature_name query in supports_feature: {feature_name}"
                 );
                 false
             }

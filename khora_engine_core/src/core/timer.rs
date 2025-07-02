@@ -120,16 +120,14 @@ mod tests {
         let elapsed_duration = watch.elapsed().expect("Should have elapsed duration");
         assert!(
             elapsed_duration < Duration::from_millis(SMALL_DURATION_MS),
-            "Initial elapsed duration ({:?}) should be very small",
-            elapsed_duration
+            "Initial elapsed duration ({elapsed_duration:?}) should be very small"
         );
 
         // Check elapsed milliseconds
         let elapsed_ms = watch.elapsed_ms().expect("Should have elapsed ms");
         assert!(
             elapsed_ms < SMALL_DURATION_MS,
-            "Initial elapsed ms ({}) should be very small",
-            elapsed_ms
+            "Initial elapsed ms ({elapsed_ms}) should be very small"
         );
 
         // Check elapsed microseconds
@@ -137,8 +135,7 @@ mod tests {
         let small_duration_us = SMALL_DURATION_MS * 1000;
         assert!(
             elapsed_us < small_duration_us,
-            "Initial elapsed us ({}) should be very small",
-            elapsed_us
+            "Initial elapsed us ({elapsed_us}) should be very small"
         );
 
         let elapsed_secs_f64 = watch
@@ -146,8 +143,7 @@ mod tests {
             .expect("Should have elapsed seconds as f64");
         assert!(
             elapsed_secs_f64 < SMALL_DURATION_MS as f64 / 1000.0,
-            "Initial elapsed seconds ({}) should be very small",
-            elapsed_secs_f64
+            "Initial elapsed seconds ({elapsed_secs_f64}) should be very small"
         );
     }
 
@@ -169,15 +165,11 @@ mod tests {
             .expect("Should have elapsed duration after sleep");
         assert!(
             elapsed_duration >= min_expected_duration,
-            "Elapsed duration ({:?}) should be >= sleep duration ({:?})",
-            elapsed_duration,
-            min_expected_duration
+            "Elapsed duration ({elapsed_duration:?}) should be >= sleep duration ({min_expected_duration:?})"
         );
         assert!(
             elapsed_duration < max_expected_duration,
-            "Elapsed duration ({:?}) should be < sleep duration + margin ({:?})",
-            elapsed_duration,
-            max_expected_duration
+            "Elapsed duration ({elapsed_duration:?}) should be < sleep duration + margin ({max_expected_duration:?})"
         );
 
         // Check elapsed milliseconds
@@ -188,15 +180,11 @@ mod tests {
         let max_expected_ms = SLEEP_DURATION_MS + SLEEP_MARGIN_MS;
         assert!(
             elapsed_ms >= min_expected_ms,
-            "Elapsed ms ({}) should be >= sleep duration ms ({})",
-            elapsed_ms,
-            min_expected_ms
+            "Elapsed ms ({elapsed_ms}) should be >= sleep duration ms ({min_expected_ms})"
         );
         assert!(
             elapsed_ms < max_expected_ms,
-            "Elapsed ms ({}) should be < sleep duration ms + margin ({})",
-            elapsed_ms,
-            max_expected_ms
+            "Elapsed ms ({elapsed_ms}) should be < sleep duration ms + margin ({max_expected_ms})"
         );
 
         // Check elapsed microseconds
@@ -207,15 +195,11 @@ mod tests {
         let max_expected_us = (SLEEP_DURATION_MS + SLEEP_MARGIN_MS) * 1000;
         assert!(
             elapsed_us >= min_expected_us,
-            "Elapsed us ({}) should be >= sleep duration us ({})",
-            elapsed_us,
-            min_expected_us
+            "Elapsed us ({elapsed_us}) should be >= sleep duration us ({min_expected_us})"
         );
         assert!(
             elapsed_us < max_expected_us,
-            "Elapsed us ({}) should be < sleep duration us + margin ({})",
-            elapsed_us,
-            max_expected_us
+            "Elapsed us ({elapsed_us}) should be < sleep duration us + margin ({max_expected_us})"
         );
 
         // Check elapsed seconds as f64
@@ -226,15 +210,11 @@ mod tests {
         let max_expected_secs_f64 = (SLEEP_DURATION_MS + SLEEP_MARGIN_MS) as f64 / 1000.0;
         assert!(
             elapsed_secs_f64 >= min_expected_secs_f64,
-            "Elapsed seconds ({}) should be >= sleep duration seconds ({})",
-            elapsed_secs_f64,
-            min_expected_secs_f64
+            "Elapsed seconds ({elapsed_secs_f64}) should be >= sleep duration seconds ({min_expected_secs_f64})"
         );
         assert!(
             elapsed_secs_f64 < max_expected_secs_f64,
-            "Elapsed seconds ({}) should be < sleep duration seconds + margin ({})",
-            elapsed_secs_f64,
-            max_expected_secs_f64
+            "Elapsed seconds ({elapsed_secs_f64}) should be < sleep duration seconds + margin ({max_expected_secs_f64})"
         );
     }
 
@@ -261,14 +241,13 @@ mod tests {
 
         // They should be very close, allow a small difference for the clone operation itself
         let difference = if elapsed1 > elapsed2 {
-            elapsed1 - elapsed2
+            elapsed1.abs_diff(elapsed2)
         } else {
-            elapsed2 - elapsed1
+            elapsed2.abs_diff(elapsed1)
         };
         assert!(
             difference < 1000,
-            "Elapsed time of clones should be very close (diff: {}us)",
-            difference
+            "Elapsed time of clones should be very close (diff: {difference} us)"
         ); // Allow 1ms diff
     }
 }
