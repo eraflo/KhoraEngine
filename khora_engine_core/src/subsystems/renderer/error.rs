@@ -42,21 +42,19 @@ impl fmt::Display for ShaderError {
             ShaderError::LoadError { path, source_error } => {
                 write!(
                     f,
-                    "Failed to load shader source from '{}': {}",
-                    path, source_error
+                    "Failed to load shader source from '{path}': {source_error}"
                 )
             }
             ShaderError::CompilationError { label, details } => {
-                write!(f, "Shader compilation failed for '{}': {}", label, details)
+                write!(f, "Shader compilation failed for '{label}': {details}")
             }
             ShaderError::NotFound { id } => {
-                write!(f, "Shader module not found for ID: {:?}", id)
+                write!(f, "Shader module not found for ID: {id:?}")
             }
             ShaderError::InvalidEntryPoint { id, entry_point } => {
                 write!(
                     f,
-                    "Invalid entry point '{}' for shader module {:?}",
-                    entry_point, id
+                    "Invalid entry point '{entry_point}' for shader module {id:?}"
                 )
             }
         }
@@ -93,7 +91,7 @@ impl fmt::Display for PipelineError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PipelineError::LayoutCreationFailed(msg) => {
-                write!(f, "Pipeline layout creation failed: {}", msg)
+                write!(f, "Pipeline layout creation failed: {msg}")
             }
             PipelineError::CompilationFailed { label, details } => {
                 write!(
@@ -112,7 +110,7 @@ impl fmt::Display for PipelineError {
                 )
             }
             PipelineError::InvalidRenderPipeline { id } => {
-                write!(f, "Invalid render pipeline ID: {:?}", id)
+                write!(f, "Invalid render pipeline ID: {id:?}")
             }
             PipelineError::MissingEntryPointForFragmentShader {
                 pipeline_label,
@@ -126,13 +124,13 @@ impl fmt::Display for PipelineError {
                 )
             }
             PipelineError::IncompatibleColorTarget(msg) => {
-                write!(f, "Incompatible color target format: {}", msg)
+                write!(f, "Incompatible color target format: {msg}")
             }
             PipelineError::IncompatibleDepthStencilFormat(msg) => {
-                write!(f, "Incompatible depth/stencil format: {}", msg)
+                write!(f, "Incompatible depth/stencil format: {msg}")
             }
             PipelineError::FeatureNotSupported(msg) => {
-                write!(f, "Feature not supported: {}", msg)
+                write!(f, "Feature not supported: {msg}")
             }
         }
     }
@@ -153,12 +151,12 @@ pub enum ResourceError {
 impl fmt::Display for ResourceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ResourceError::Shader(err) => write!(f, "Shader resource error: {}", err),
-            ResourceError::Pipeline(err) => write!(f, "Pipeline resource error: {}", err),
+            ResourceError::Shader(err) => write!(f, "Shader resource error: {err}"),
+            ResourceError::Pipeline(err) => write!(f, "Pipeline resource error: {err}"),
             ResourceError::NotFound => write!(f, "Resource not found with ID."),
             ResourceError::InvalidHandle => write!(f, "Invalid resource handle or ID."),
             ResourceError::BackendError(msg) => {
-                write!(f, "Backend-specific resource error: {}", msg)
+                write!(f, "Backend-specific resource error: {msg}")
             }
         }
     }
@@ -200,23 +198,23 @@ impl fmt::Display for RenderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RenderError::InitializationFailed(msg) => {
-                write!(f, "Failed to initialize graphics backend: {}", msg)
+                write!(f, "Failed to initialize graphics backend: {msg}")
             }
             RenderError::SurfaceAcquisitionFailed(msg) => {
-                write!(f, "Failed to acquire surface for rendering: {}", msg)
+                write!(f, "Failed to acquire surface for rendering: {msg}")
             }
             RenderError::RenderingFailed(msg) => {
-                write!(f, "A critical rendering operation failed: {}", msg)
+                write!(f, "A critical rendering operation failed: {msg}")
             }
             RenderError::ResourceError(err) => {
-                write!(f, "Graphics resource operation failed: {}", err)
+                write!(f, "Graphics resource operation failed: {err}")
             }
             RenderError::DeviceLost => write!(
                 f,
                 "The graphics device was lost and needs to be reinitialized."
             ),
             RenderError::Internal(msg) => {
-                write!(f, "An internal or unexpected error occurred: {}", msg)
+                write!(f, "An internal or unexpected error occurred: {msg}")
             }
         }
     }
@@ -251,7 +249,7 @@ mod tests {
             source_error: "File not found".to_string(),
         };
         assert_eq!(
-            format!("{}", err),
+            format!("{err}"),
             "Failed to load shader source from 'path/to/shader.wgsl': File not found"
         );
 
@@ -260,7 +258,7 @@ mod tests {
             details: "Syntax error at line 5".to_string(),
         };
         assert_eq!(
-            format!("{}", err_comp),
+            format!("{err_comp}"),
             "Shader compilation failed for 'MyShader': Syntax error at line 5"
         );
     }
@@ -272,7 +270,7 @@ mod tests {
         };
         let res_err: ResourceError = shader_err.into();
         assert_eq!(
-            format!("{}", res_err),
+            format!("{res_err}"),
             "Shader resource error: Shader module not found for ID: ShaderModuleId(42)"
         );
         assert!(res_err.source().is_some());
@@ -286,7 +284,7 @@ mod tests {
         let res_err: ResourceError = shader_err.into();
         let render_err: RenderError = res_err.into();
         assert_eq!(
-            format!("{}", render_err),
+            format!("{render_err}"),
             "Graphics resource operation failed: Shader resource error: Shader module not found for ID: ShaderModuleId(101)"
         );
         assert!(render_err.source().is_some());

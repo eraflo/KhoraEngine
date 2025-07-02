@@ -208,7 +208,7 @@ mod tests {
         assert!(flags.contains(TestFlags::EMPTY));
         assert!(!flags.contains(TestFlags::FLAG_A));
         assert_eq!(TestFlags::default().bits(), 0, "Default should be empty");
-        assert_eq!(format!("{:?}", flags), "TestFlags { EMPTY }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { EMPTY }");
     }
 
     #[test]
@@ -217,7 +217,7 @@ mod tests {
         assert_eq!(flags.bits(), 1);
         assert!(flags.contains(TestFlags::FLAG_A));
         assert!(!flags.contains(TestFlags::FLAG_B));
-        assert_eq!(format!("{:?}", flags), "TestFlags { FLAG_A }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { FLAG_A }");
     }
 
     #[test]
@@ -227,7 +227,7 @@ mod tests {
         assert!(flags.contains(TestFlags::FLAG_A));
         assert!(!flags.contains(TestFlags::FLAG_B));
         assert!(flags.contains(TestFlags::FLAG_C));
-        assert_eq!(format!("{:?}", flags), "TestFlags { FLAG_A | FLAG_C }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { FLAG_A | FLAG_C }");
     }
 
     #[test]
@@ -239,19 +239,19 @@ mod tests {
         );
         assert!(flags.contains(TestFlags::FLAG_A));
         assert!(flags.contains(TestFlags::FLAG_C));
-        assert_eq!(format!("{:?}", flags), "TestFlags { FLAG_A | FLAG_C }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { FLAG_A | FLAG_C }");
     }
 
     #[test]
     fn test_from_bits_truncate_and_bits() {
         let flags = TestFlags::from_bits_truncate(5);
         assert_eq!(flags.bits(), 5);
-        assert_eq!(format!("{:?}", flags), "TestFlags { FLAG_A | FLAG_C }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { FLAG_A | FLAG_C }");
 
         // Test with unknown bits
         let unknown_bits = TestFlags::from_bits_truncate(0b10000); // 1 << 4 = 16, not a defined flag
         assert_eq!(unknown_bits.bits(), 16);
-        assert_eq!(format!("{:?}", unknown_bits), "TestFlags { UNKNOWN(0x10) }");
+        assert_eq!(format!("{unknown_bits:?}"), "TestFlags { UNKNOWN(0x10) }");
     }
 
     #[test]
@@ -285,7 +285,7 @@ mod tests {
             flags.bits(),
             TestFlags::FLAG_A.bits() | TestFlags::FLAG_B.bits()
         );
-        assert_eq!(format!("{:?}", flags), "TestFlags { FLAG_A | FLAG_B }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { FLAG_A | FLAG_B }");
     }
 
     #[test]
@@ -293,11 +293,11 @@ mod tests {
         let mut flags = TestFlags::FLAG_A | TestFlags::FLAG_B;
         flags.remove(TestFlags::FLAG_A);
         assert_eq!(flags.bits(), TestFlags::FLAG_B.bits());
-        assert_eq!(format!("{:?}", flags), "TestFlags { FLAG_B }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { FLAG_B }");
 
         flags.remove(TestFlags::FLAG_B | TestFlags::FLAG_D); // Remove B, D not present
         assert_eq!(flags.bits(), TestFlags::EMPTY.bits());
-        assert_eq!(format!("{:?}", flags), "TestFlags { EMPTY }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { EMPTY }");
     }
 
     #[test]
@@ -308,11 +308,11 @@ mod tests {
             flags.bits(),
             TestFlags::FLAG_A.bits() | TestFlags::FLAG_C.bits()
         );
-        assert_eq!(format!("{:?}", flags), "TestFlags { FLAG_A | FLAG_C }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { FLAG_A | FLAG_C }");
 
         flags.toggle(TestFlags::FLAG_A); // Remove A
         assert_eq!(flags.bits(), TestFlags::FLAG_C.bits());
-        assert_eq!(format!("{:?}", flags), "TestFlags { FLAG_C }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { FLAG_C }");
     }
 
     #[test]
@@ -323,7 +323,7 @@ mod tests {
             with_b.bits(),
             TestFlags::FLAG_A.bits() | TestFlags::FLAG_B.bits()
         );
-        assert_eq!(format!("{:?}", with_b), "TestFlags { FLAG_A | FLAG_B }");
+        assert_eq!(format!("{with_b:?}"), "TestFlags { FLAG_A | FLAG_B }");
         assert_eq!(
             initial.bits(),
             TestFlags::FLAG_A.bits(),
@@ -336,7 +336,7 @@ mod tests {
         let initial = TestFlags::FLAG_A | TestFlags::FLAG_B;
         let without_a = initial.without(TestFlags::FLAG_A);
         assert_eq!(without_a.bits(), TestFlags::FLAG_B.bits());
-        assert_eq!(format!("{:?}", without_a), "TestFlags { FLAG_B }");
+        assert_eq!(format!("{without_a:?}"), "TestFlags { FLAG_B }");
         assert_eq!(
             initial.bits(),
             (TestFlags::FLAG_A | TestFlags::FLAG_B).bits(),
@@ -354,7 +354,7 @@ mod tests {
             TestFlags::FLAG_A.bits() | TestFlags::FLAG_B.bits() | TestFlags::FLAG_C.bits()
         );
         assert_eq!(
-            format!("{:?}", result),
+            format!("{result:?}"),
             "TestFlags { FLAG_A | FLAG_B | FLAG_C }"
         );
     }
@@ -365,7 +365,7 @@ mod tests {
         let f2 = TestFlags::FLAG_B | TestFlags::FLAG_C;
         let result = f1 & f2;
         assert_eq!(result.bits(), TestFlags::FLAG_B.bits());
-        assert_eq!(format!("{:?}", result), "TestFlags { FLAG_B }");
+        assert_eq!(format!("{result:?}"), "TestFlags { FLAG_B }");
     }
 
     #[test]
@@ -377,7 +377,7 @@ mod tests {
             result.bits(),
             TestFlags::FLAG_A.bits() | TestFlags::FLAG_C.bits()
         );
-        assert_eq!(format!("{:?}", result), "TestFlags { FLAG_A | FLAG_C }");
+        assert_eq!(format!("{result:?}"), "TestFlags { FLAG_A | FLAG_C }");
     }
 
     #[test]
@@ -398,7 +398,7 @@ mod tests {
             flags.bits(),
             TestFlags::FLAG_A.bits() | TestFlags::FLAG_B.bits()
         );
-        assert_eq!(format!("{:?}", flags), "TestFlags { FLAG_A | FLAG_B }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { FLAG_A | FLAG_B }");
     }
 
     #[test]
@@ -408,7 +408,7 @@ mod tests {
         // Expected result: 0b0111 & 0b1010 = 0b0010 (FLAG_B) = 2
         flags &= TestFlags::FLAG_B | TestFlags::FLAG_D;
         assert_eq!(flags.bits(), TestFlags::FLAG_B.bits());
-        assert_eq!(format!("{:?}", flags), "TestFlags { FLAG_B }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { FLAG_B }");
     }
 
     #[test]
@@ -419,13 +419,13 @@ mod tests {
             flags.bits(),
             TestFlags::FLAG_A.bits() | TestFlags::FLAG_C.bits()
         );
-        assert_eq!(format!("{:?}", flags), "TestFlags { FLAG_A | FLAG_C }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { FLAG_A | FLAG_C }");
     }
 
     #[test]
     fn test_debug_formatting_high_bit() {
         let flags = TestFlags::CUSTOM_HIGH_BIT;
-        assert_eq!(format!("{:?}", flags), "TestFlags { CUSTOM_HIGH_BIT }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { CUSTOM_HIGH_BIT }");
     }
 
     #[test]
@@ -433,14 +433,14 @@ mod tests {
         // Test a combination of known and unknown bits
         let flags = TestFlags::FLAG_A | TestFlags::from_bits_truncate(1 << 8); // FLAG_A (0x1) | 0x100
         assert_eq!(
-            format!("{:?}", flags),
+            format!("{flags:?}"),
             "TestFlags { FLAG_A | UNKNOWN(0x100) }"
         );
 
         let flags_more_unknown =
             TestFlags::FLAG_B | TestFlags::from_bits_truncate((1 << 8) | (1 << 9)); // FLAG_B (0x2) | 0x100 | 0x200
         assert_eq!(
-            format!("{:?}", flags_more_unknown),
+            format!("{flags_more_unknown:?}"),
             "TestFlags { FLAG_B | UNKNOWN(0x300) }"
         );
     }
@@ -454,12 +454,12 @@ mod tests {
         // and 1<<20 is zero, but other bits are set.
         // Example: (1 << 4) | (1 << 5) = 0b110000 = 48 (0x30)
         let flags = TestFlags::from_bits_truncate((1 << 4) | (1 << 5));
-        assert_eq!(format!("{:?}", flags), "TestFlags { UNKNOWN(0x30) }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { UNKNOWN(0x30) }");
 
         // Another example: a single unknown bit that isn't one of the defined ones
         let flags_single_unknown = TestFlags::from_bits_truncate(1 << 4); // 0b10000 = 16 (0x10)
         assert_eq!(
-            format!("{:?}", flags_single_unknown),
+            format!("{flags_single_unknown:?}"),
             "TestFlags { UNKNOWN(0x10) }"
         );
     }
@@ -469,10 +469,10 @@ mod tests {
         // A flag with value 0 (NONE_FLAG) should not affect operations or appear in debug output
         let flags = TestFlags::FLAG_A | TestFlags::NONE_FLAG;
         assert_eq!(flags.bits(), TestFlags::FLAG_A.bits());
-        assert_eq!(format!("{:?}", flags), "TestFlags { FLAG_A }");
+        assert_eq!(format!("{flags:?}"), "TestFlags { FLAG_A }");
 
         let flags_empty = TestFlags::NONE_FLAG;
         assert_eq!(flags_empty.bits(), 0);
-        assert_eq!(format!("{:?}", flags_empty), "TestFlags { EMPTY }");
+        assert_eq!(format!("{flags_empty:?}"), "TestFlags { EMPTY }");
     }
 }

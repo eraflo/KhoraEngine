@@ -125,8 +125,8 @@ impl WgpuGraphicsContext {
 
         let active_device_features = device.features();
         let device_limits = device.limits();
-        log::info!("Active device features: {:?}", active_device_features);
-        log::info!("Device limits: {:?}", device_limits);
+        log::info!("Active device features: {active_device_features:?}");
+        log::info!("Device limits: {device_limits:?}");
 
         // --- 5. Configure Surface ---
         // Get the surface capabilities (formats, present modes, etc.) for the selected adapter.
@@ -180,18 +180,14 @@ impl WgpuGraphicsContext {
     pub fn resize(&mut self, new_width: u32, new_height: u32) {
         if new_width > 0 && new_height > 0 {
             log::info!(
-                "WGPUGraphicsContext: Resizing surface configuration to {}x{}",
-                new_width,
-                new_height
+                "WGPUGraphicsContext: Resizing surface configuration to {new_width}x{new_height}"
             );
             self.surface_config.width = new_width;
             self.surface_config.height = new_height;
             self.surface.configure(&self.device, &self.surface_config);
         } else {
             log::warn!(
-                "WGPUGraphicsContext: Ignoring resize request to zero dimensions: {}x{}",
-                new_width,
-                new_height
+                "WGPUGraphicsContext: Ignoring resize request to zero dimensions: {new_width}x{new_height}"
             );
         }
     }

@@ -51,10 +51,10 @@ impl EventBus {
     /// ## Returns
     /// None if the event was sent successfully, or an error if the receiver is disconnected.
     pub fn publish(&self, event: EngineEvent) {
-        log::trace!("Publishing EngineEvent: {:?}", event);
+        log::trace!("Publishing EngineEvent: {event:?}");
 
         if let Err(e) = self.sender.send(event) {
-            log::error!("Failed to send event: {}. Receiver likely disconnected.", e);
+            log::error!("Failed to send event: {e}. Receiver likely disconnected.");
         }
     }
 
@@ -115,7 +115,7 @@ mod tests {
         // Use recv_timeout to wait a short duration, preventing infinite hang if test fails
         match receiver.recv_timeout(Duration::from_millis(100)) {
             Ok(received_event) => assert_eq!(received_event, event_to_send),
-            Err(e) => panic!("Failed to receive event: {:?}", e),
+            Err(e) => panic!("Failed to receive event: {e:?}"),
         }
     }
 
@@ -128,8 +128,8 @@ mod tests {
 
         match receiver.try_recv() {
             Err(TryRecvError::Empty) => { /* This is expected */ }
-            Ok(event) => panic!("Received unexpected event: {:?}", event),
-            Err(e) => panic!("Received unexpected error: {:?}", e),
+            Ok(event) => panic!("Received unexpected event: {event:?}"),
+            Err(e) => panic!("Received unexpected error: {e:?}"),
         }
     }
 
@@ -157,7 +157,7 @@ mod tests {
         for _ in 0..3 {
             match receiver.recv_timeout(Duration::from_millis(50)) {
                 Ok(event) => received_events.push(event),
-                Err(e) => panic!("Failed to receive event within timeout: {:?}", e),
+                Err(e) => panic!("Failed to receive event within timeout: {e:?}"),
             }
         }
 
@@ -226,7 +226,7 @@ mod tests {
                 log::trace!("Main thread received event.");
                 assert_eq!(received_event, event_to_send);
             }
-            Err(e) => panic!("Failed to receive event from thread: {:?}", e),
+            Err(e) => panic!("Failed to receive event from thread: {e:?}"),
         }
 
         handle.join().expect("Thread join failed");
