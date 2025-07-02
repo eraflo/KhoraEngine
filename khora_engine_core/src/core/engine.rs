@@ -377,9 +377,7 @@ impl Engine {
 
             match rs.render(&render_objects, &view_info, &render_settings) {
                 Ok(_render_stats) => {
-                    log::trace!(
-                        "Engine: Frame rendered by RenderSystem. Stats: {_render_stats:?}"
-                    );
+                    log::trace!("Engine: Frame rendered by RenderSystem. Stats: {_render_stats:?}");
                 }
                 Err(RenderError::SurfaceAcquisitionFailed(msg)) => {
                     log::warn!(
@@ -403,9 +401,7 @@ impl Engine {
                     }
                 }
                 Err(e) => {
-                    log::error!(
-                        "Engine: Error during RenderSystem::render_to_window: {e:?}"
-                    );
+                    log::error!("Engine: Error during RenderSystem::render_to_window: {e:?}");
                     self.event_bus.publish(EngineEvent::ShutdownRequested);
                 }
             }

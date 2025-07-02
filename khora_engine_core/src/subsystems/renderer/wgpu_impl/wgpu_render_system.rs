@@ -99,9 +99,7 @@ impl RenderSystem for WgpuRenderSystem {
                 Ok(())
             }
             Err(e) => {
-                log::error!(
-                    "WgpuRenderSystem: Failed to initialize internal GraphicsContext: {e}"
-                );
+                log::error!("WgpuRenderSystem: Failed to initialize internal GraphicsContext: {e}");
                 Err(RenderError::InitializationFailed(format!(
                     "GraphicsContext creation error: {e}"
                 )))
@@ -205,9 +203,7 @@ impl RenderSystem for WgpuRenderSystem {
                     )));
                 }
                 Err(e @ wgpu::SurfaceError::Timeout) => {
-                    log::warn!(
-                        "WgpuRenderSystem: Swapchain Timeout acquiring frame. ({e:?})"
-                    );
+                    log::warn!("WgpuRenderSystem: Swapchain Timeout acquiring frame. ({e:?})");
                     return Err(RenderError::SurfaceAcquisitionFailed(format!(
                         "Timeout: {e:?}"
                     )));

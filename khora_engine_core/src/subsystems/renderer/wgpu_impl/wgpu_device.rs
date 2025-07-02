@@ -457,9 +457,10 @@ impl GraphicsDevice for WgpuDevice {
             Ok((Arc::new(pipeline), new_id))
         })?;
 
-        let mut pipelines_guard = self.pipelines.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (pipelines): {e}"))
-        })?;
+        let mut pipelines_guard = self
+            .pipelines
+            .lock()
+            .map_err(|e| ResourceError::BackendError(format!("Mutex poisoned (pipelines): {e}")))?;
         pipelines_guard.insert(
             id,
             WgpuRenderPipelineEntry {
@@ -480,9 +481,10 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_render_pipeline(&self, id: RenderPipelineId) -> Result<(), ResourceError> {
-        let mut pipelines_guard = self.pipelines.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (pipelines): {e}"))
-        })?;
+        let mut pipelines_guard = self
+            .pipelines
+            .lock()
+            .map_err(|e| ResourceError::BackendError(format!("Mutex poisoned (pipelines): {e}")))?;
 
         if pipelines_guard.remove(&id).is_some() {
             log::debug!("WgpuDevice: Destroyed render pipeline with ID: {id:?}");
