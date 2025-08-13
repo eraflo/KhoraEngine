@@ -390,6 +390,12 @@ impl EngineMetrics {
         self.set_gauge("triangles_gauge", stats.triangles as f64);
     }
 
+    /// Updates VRAM metrics specifically
+    pub fn update_vram_metrics(&self, vram_usage_mb: f64, vram_peak_mb: f64) {
+        self.set_gauge("vram_usage_gauge", vram_usage_mb);
+        self.set_gauge("vram_peak_gauge", vram_peak_mb);
+    }
+
     /// Gets a snapshot of all engine metrics for monitoring and debugging
     pub fn get_metrics_snapshot(&self) -> Vec<String> {
         let mut snapshot = Vec::new();

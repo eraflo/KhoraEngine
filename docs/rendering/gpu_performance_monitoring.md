@@ -2,18 +2,6 @@
 
 This document provides comprehensive coverage of GPU performance monitoring in KhoraEngine, including implementation details, usage patterns, and architectural decisions.
 
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Architecture](#architecture)
-3. [Core Components](#core-components)
-4. [Usage Guide](#usage-guide)
-5. [Integration Patterns](#integration-patterns)
-6. [Performance Characteristics](#performance-characteristics)
-7. [Implementation Details](#implementation-details)
-8. [Testing](#testing)
-9. [Future Extensions](#future-extensions)
-
 ## Overview
 
 KhoraEngine provides comprehensive GPU performance monitoring through a unified system that works across all rendering backends. The monitoring system leverages the existing `GpuPerfHook` infrastructure and provides microsecond-precision timing measurements.
@@ -26,12 +14,30 @@ KhoraEngine provides comprehensive GPU performance monitoring through a unified 
 - **ResourceMonitor Compliance**: Integrates with engine's resource monitoring system
 - **Thread Safe**: Full concurrency support with minimal overhead
 
+### Architecture Highlights
+
+- **Microsecond Precision**: Hardware timestamp queries for accurate GPU timing
+- **Zero Allocation Updates**: Lock-free hot path with minimal overhead
+- **Graceful Degradation**: Works even when GPU timestamps unavailable
+- **Cross-Platform Support**: Compatible with all WGPU backends (DirectX, Vulkan, Metal, WebGPU)
+
 ### Supported Metrics
 
 - **Hook-Based Timing**: Individual measurements for each `GpuPerfHook`
 - **Derived Durations**: Automatic calculation of main pass and frame totals
 - **CPU Correlation**: CPU preparation and submission timing
 - **Frame Tracking**: Sequential numbering for trend analysis
+
+## Table of Contents
+
+1. [Architecture](#architecture)
+2. [Core Components](#core-components)
+3. [Usage Guide](#usage-guide)
+4. [Integration Patterns](#integration-patterns)
+5. [Performance Characteristics](#performance-characteristics)
+6. [Implementation Details](#implementation-details)
+7. [Testing](#testing)
+8. [Future Extensions](#future-extensions)
 
 ## Architecture
 

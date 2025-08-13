@@ -29,5 +29,6 @@ pub mod config;
 pub mod engine;
 pub mod metrics;
 pub mod monitoring;
+pub mod resource_monitors;
 pub mod timer;
 pub mod utils;

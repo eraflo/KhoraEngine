@@ -82,15 +82,16 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
 *   ✅ **`[Feature] Implement Basic Buffer/Texture Management (Track VRAM usage)`**
     *   Comprehensive API for creating, destroying, and writing to Buffers (BufferId, BufferDescriptor), Textures (TextureId, TextureDescriptor), TextureViews (TextureViewId, TextureViewDescriptor), and Samplers (SamplerId, SamplerDescriptor) through the GraphicsDevice trait.
 *   ✅ **`[Feature] Implement GPU Performance Monitoring Hooks (Timestamps)`**
-    *   Backend-agnostic GPU timing hooks (`GpuPerfHook` enum + trait method) with a non-blocking WGPU timestamp profiler feeding per-frame stats. See comprehensive documentation `docs/rendering/gpu_performance_monitoring.md`.
+    *   Backend-agnostic GPU timing hooks (`GpuPerfHook` enum + trait method) with a comprehensive WGPU timestamp profiler providing per-frame statistics. Features include microsecond-precision timing, ResourceMonitor integration, exponential moving averages for stable readings, and intelligent surface resize strategy. See comprehensive documentation `docs/rendering/gpu_performance_monitoring.md`.
 *   ✅ **`[Feature] Implement Core Metrics System Backend v1 (In-Memory)`**
     *   Complete metrics system with thread-safe in-memory backend, JSON configuration support, and integration with GPU performance monitoring. Comprehensive documentation available in `docs/metrics/`. System tracks engine performance (FPS, CPU/GPU times, memory), rendering stats, and supports custom user metrics.
+*   ✅ **`[Feature] Implement Resource Monitoring Architecture`**
+    *   Unified resource monitoring system with global registry, ResourceMonitor trait, and modular architecture supporting GPU performance monitoring, VRAM tracking, and extensible custom monitors. Features include thread-safe registration system, optional monitor activation, and clean separation of concerns between monitoring and rendering systems.
+*   ✅ **`[Task] Integrate VRAM Tracking into Core Metrics System`**
+    *   Complete integration of VRAM monitoring into the unified resource monitoring architecture. VRAM tracking now uses the global resource registry with proper separation of concerns, harmonized initialization patterns, and consistent API design across all resource monitors.
 
 **Next Steps / Milestone 2 Tasks:**
 
-*   ➡️ **`[Task] Integrate VRAM Tracking into Core Metrics System`**
-    *   Description: Refactor WgpuDevice's VRAM tracking to report its usage (allocated bytes) to the new Core Metrics System instead of managing it internally. The GraphicsDevice (or a ResourceMonitor trait) might then query the Metrics System or WgpuDevice could still expose it directly while also reporting centrally.
-    *   Labels: `rendering`, `performance`, `refactoring`, `saa-prep`
 *   ➡️ **`[Task] Integrate System RAM Tracking into Core Metrics System`**
     *   Description: Connect the SaaTrackingAllocator (or its successor) to report global heap allocations to the Core Metrics System.
     *   Labels: `core`, `performance`, `refactoring`, `saa-prep`
@@ -98,6 +99,8 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
     *   Description: Enhance `WgpuGraphicsContext::new` to intelligently select and fall back between graphics backends.
     *   Labels: `rendering`, `core`, `platform`, `robustness`, `saa-prep`
 *   ➡️ **`[Task] Render a Single Triangle/Quad with Performance Timings`**
+    *   Description: Display a simple geometric shape using the established shader system, pipeline system, and buffer management, showing CPU/GPU timings.
+    *   Labels: `rendering`, `performance`
     *   Description: Display a simple geometric shape using the established shader system, pipeline system, and buffer management, showing CPU/GPU timings.
     *   Labels: `rendering`, `performance`
 

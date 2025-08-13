@@ -14,6 +14,7 @@
 
 use super::wgpu_graphic_context::WgpuGraphicsContext;
 use crate::core::monitoring::{self as core_monitoring};
+use crate::core::resource_monitors::VramProvider;
 use crate::math::dimension::{self as math_dim};
 use crate::subsystems::renderer::api::buffer_types::{self as api_buf};
 use crate::subsystems::renderer::api::common_types::RendererAdapterInfo;
@@ -935,11 +936,55 @@ impl core_monitoring::ResourceMonitor for WgpuDevice {
     }
 }
 
+impl WgpuDevice {
+    /// Gets current VRAM usage in bytes
+    pub fn get_vram_usage_bytes(&self) -> u64 {
+        self.vram_allocated_bytes.load(Ordering::Relaxed) as u64
+    }
+
+    /// Gets peak VRAM usage in bytes
+    pub fn get_vram_peak_bytes(&self) -> u64 {
+        self.vram_peak_bytes.load(Ordering::Relaxed)
+    }
+
+    /// Gets VRAM usage in megabytes
+    pub fn get_vram_usage_mb(&self) -> f64 {
+        self.get_vram_usage_bytes() as f64 / (1024.0 * 1024.0)
+    }
+
+    /// Gets peak VRAM usage in megabytes
+    pub fn get_vram_peak_mb(&self) -> f64 {
+        self.get_vram_peak_bytes() as f64 / (1024.0 * 1024.0)
+    }
+}
+
+impl VramProvider for WgpuDevice {
+    fn get_vram_usage_mb(&self) -> f32 {
+        let bytes = self
+            .vram_allocated_bytes
+            .load(std::sync::atomic::Ordering::SeqCst);
+        bytes as f32 / (1024.0 * 1024.0)
+    }
+
+    fn get_vram_peak_mb(&self) -> f32 {
+        let bytes = self
+            .vram_peak_bytes
+            .load(std::sync::atomic::Ordering::SeqCst);
+        bytes as f32 / (1024.0 * 1024.0)
+    }
+
+    fn get_vram_capacity_mb(&self) -> Option<f32> {
+        // TODO: Implement VRAM capacity detection if available from adapter info
+        // For now, return None as this information is not easily available in WGPU
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::monitoring::ResourceMonitor; // Import the trait for tests
-    use crate::subsystems::renderer::GpuPerformanceMonitor;
+    use crate::core::monitoring::ResourceMonitor;
+    use crate::core::resource_monitors::GpuPerformanceMonitor;
     use crate::subsystems::renderer::api::common_types::RenderStats;
 
     #[test]
