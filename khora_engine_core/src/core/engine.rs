@@ -220,92 +220,91 @@ impl ApplicationHandler<()> for EngineAppHandler {
         let engine = &mut self.engine;
 
         // Process event only if window exists and ID matches
-        if let Some(khora_window) = &engine.window {
-            if khora_window.id() == window_id {
-                // --- Translate Input Events ---
-                if let Some(input_event) = KhoraInputSubsystem::translate_winit_input(&event) {
-                    engine.event_bus.publish(EngineEvent::Input(input_event));
-                    return;
+        if let Some(khora_window) = &engine.window 
+        && khora_window.id() == window_id {
+            // --- Translate Input Events ---
+            if let Some(input_event) = KhoraInputSubsystem::translate_winit_input(&event) {
+                engine.event_bus.publish(EngineEvent::Input(input_event));
+                return;
+            }
+
+            // --- Handle Non-Input Window Events ---
+            match event {
+                // Case where the window is closed by the user
+                WindowEvent::CloseRequested => {
+                    log::info!("Window Close Requested event received.");
+                    engine.event_bus.publish(EngineEvent::ShutdownRequested);
                 }
 
-                // --- Handle Non-Input Window Events ---
-                match event {
-                    // Case where the window is closed by the user
-                    WindowEvent::CloseRequested => {
-                        log::info!("Window Close Requested event received.");
-                        engine.event_bus.publish(EngineEvent::ShutdownRequested);
-                    }
-
-                    // Case where the window is resized by the user
-                    WindowEvent::Resized(physical_size) => {
-                        engine.event_bus.publish(EngineEvent::WindowResized {
-                            width: physical_size.width,
-                            height: physical_size.height,
-                        });
-                    }
-
-                    // Case where the window is redrawn (e.g., after resizing or when requested)
-                    WindowEvent::RedrawRequested => {
-                        log::trace!("Window Redraw Requested for id: {window_id:?}");
-
-                        // Increment frame counters BEFORE rendering
-                        engine.frame_count += 1;
-                        engine.frames_since_last_log += 1;
-
-                        // --- Render Phase ---
-                        let render_time = Stopwatch::new();
-                        engine.perform_render_frame();
-
-                        let render_duration_us = render_time.elapsed_us().unwrap_or(0);
-
-                        // --- Stats Logging ---
-                        let time_since_last_log =
-                            engine.last_stats_time.elapsed_secs_f64().unwrap_or(0.0);
-
-                        if time_since_last_log >= engine.log_interval_secs {
-                            let fps = if time_since_last_log > 0.0 {
-                                (engine.frames_since_last_log as f64 / time_since_last_log) as u32
-                            } else {
-                                0 // Avoid division by zero
-                            };
-
-                            // Calculate memory usage in bytes
-                            let memory_usage_kib = get_currently_allocated_bytes() / 1024;
-
-                            let (gpu_time_ms, draw_calls, triangles) = engine
-                                .render_system
-                                .as_ref()
-                                .map_or((0.0f32, 0u32, 0u32), |rs| {
-                                    let stats = rs.get_last_frame_stats();
-                                    (
-                                        stats.gpu_time_ms,
-                                        stats.draw_calls,
-                                        stats.triangles_rendered,
-                                    )
-                                });
-
-                            log::info!(
-                                "Stats | Frame: {}, FPS: {}, Mem: {} KiB | CPU Render: {} us | GPU: {:.2} ms | {} draws, {} tris",
-                                engine.frame_count,
-                                fps,
-                                memory_usage_kib,
-                                render_duration_us,
-                                gpu_time_ms,
-                                draw_calls,
-                                triangles
-                            );
-                            engine.last_stats_time = Stopwatch::new();
-                            engine.frames_since_last_log = 0;
-                        }
-                    }
-
-                    // Case where the window is moved by the user
-                    WindowEvent::Focused(focused) => {
-                        log::debug!("Window Focus Changed: {focused}");
-                        // TODO: Publish focus change event if needed
-                    }
-                    _ => {}
+                // Case where the window is resized by the user
+                WindowEvent::Resized(physical_size) => {
+                    engine.event_bus.publish(EngineEvent::WindowResized {
+                        width: physical_size.width,
+                        height: physical_size.height,
+                    });
                 }
+
+                // Case where the window is redrawn (e.g., after resizing or when requested)
+                WindowEvent::RedrawRequested => {
+                    log::trace!("Window Redraw Requested for id: {window_id:?}");
+
+                    // Increment frame counters BEFORE rendering
+                    engine.frame_count += 1;
+                    engine.frames_since_last_log += 1;
+
+                    // --- Render Phase ---
+                    let render_time = Stopwatch::new();
+                    engine.perform_render_frame();
+
+                    let render_duration_us = render_time.elapsed_us().unwrap_or(0);
+
+                    // --- Stats Logging ---
+                    let time_since_last_log =
+                        engine.last_stats_time.elapsed_secs_f64().unwrap_or(0.0);
+
+                    if time_since_last_log >= engine.log_interval_secs {
+                        let fps = if time_since_last_log > 0.0 {
+                            (engine.frames_since_last_log as f64 / time_since_last_log) as u32
+                        } else {
+                            0 // Avoid division by zero
+                        };
+
+                        // Calculate memory usage in bytes
+                        let memory_usage_kib = get_currently_allocated_bytes() / 1024;
+
+                        let (gpu_time_ms, draw_calls, triangles) = engine
+                            .render_system
+                            .as_ref()
+                            .map_or((0.0f32, 0u32, 0u32), |rs| {
+                                let stats = rs.get_last_frame_stats();
+                                (
+                                    stats.gpu_time_ms,
+                                    stats.draw_calls,
+                                    stats.triangles_rendered,
+                                )
+                            });
+
+                        log::info!(
+                            "Stats | Frame: {}, FPS: {}, Mem: {} KiB | CPU Render: {} us | GPU: {:.2} ms | {} draws, {} tris",
+                            engine.frame_count,
+                            fps,
+                            memory_usage_kib,
+                            render_duration_us,
+                            gpu_time_ms,
+                            draw_calls,
+                            triangles
+                        );
+                        engine.last_stats_time = Stopwatch::new();
+                        engine.frames_since_last_log = 0;
+                    }
+                }
+
+                // Case where the window is moved by the user
+                WindowEvent::Focused(focused) => {
+                    log::debug!("Window Focus Changed: {focused}");
+                    // TODO: Publish focus change event if needed
+                }
+                _ => {}
             }
         }
     }
