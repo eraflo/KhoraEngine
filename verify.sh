@@ -5,6 +5,9 @@
 #   ./verify.sh            # run all checks
 #   ./verify.sh --fix      # auto-run cargo fmt before checking
 #   ./verify.sh --no-license  # skip license header verification
+#   ./verify.sh --clean    # clean cache before clippy for stricter checking
+#   ./verify.sh --full     # enable security tools (audit/deny)
+#   ./verify.sh --install-tools  # auto-install missing tools
 # Exits non-zero on first failure.
 
 set -euo pipefail
@@ -15,6 +18,7 @@ DO_FIX=false
 CHECK_LICENSE=true
 FULL=false
 INSTALL=false
+CLEAN=false
 YEAR="2025"
 LICENSE_PATTERN="// Copyright ${YEAR} eraflo"
 
@@ -24,6 +28,7 @@ for arg in "$@"; do
   --no-license) CHECK_LICENSE=false ; shift ;;
   --full) FULL=true ; shift ;;
   --install-tools) INSTALL=true ; shift ;;
+  --clean) CLEAN=true ; shift ;;
     *) echo "Unknown arg: $arg"; exit 2 ;;
   esac
 done
@@ -54,6 +59,10 @@ success "Formatting ok"
 
 # 3. Clippy
 info "Running clippy (warnings = errors)"
+if $CLEAN; then
+  info "Cleaning cache first..."
+  cargo clean || fail "cargo clean failed"
+fi
 if ! cargo clippy --workspace --all-targets --all-features -- -D warnings; then
   fail "Clippy failed"
 fi

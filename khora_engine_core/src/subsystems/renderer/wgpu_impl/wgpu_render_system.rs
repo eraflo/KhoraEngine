@@ -175,30 +175,29 @@ impl RenderSystem for WgpuRenderSystem {
                     .last_surface_config
                     .map(|t| t.elapsed().as_millis() >= 20) // small guard window
                     .unwrap_or(true);
-            if can_immediate || early_stable {
-                if let Some(gc_arc_mutex) = &self.graphics_context_shared {
-                    if let Ok(mut gc_guard) = gc_arc_mutex.lock() {
-                        gc_guard.resize(self.current_width, self.current_height);
-                        self.last_surface_config = Some(now);
-                        self.pending_resize = false;
-                        self.pending_resize_frames = 0;
-                        if early_stable {
-                            log::info!(
-                                "WGPUGraphicsContext: Early stable-size surface configuration to {}x{} (stable events {})",
-                                self.current_width,
-                                self.current_height,
-                                self.stable_size_frame_count
-                            );
-                        } else {
-                            log::info!(
-                                "WGPUGraphicsContext: Immediate throttled surface configuration to {}x{}",
-                                self.current_width,
-                                self.current_height
-                            );
-                        }
-                        return; // done
-                    }
+            if (can_immediate || early_stable)
+                && let Some(gc_arc_mutex) = &self.graphics_context_shared
+                && let Ok(mut gc_guard) = gc_arc_mutex.lock()
+            {
+                gc_guard.resize(self.current_width, self.current_height);
+                self.last_surface_config = Some(now);
+                self.pending_resize = false;
+                self.pending_resize_frames = 0;
+                if early_stable {
+                    log::info!(
+                        "WGPUGraphicsContext: Early stable-size surface configuration to {}x{} (stable events {})",
+                        self.current_width,
+                        self.current_height,
+                        self.stable_size_frame_count
+                    );
+                } else {
+                    log::info!(
+                        "WGPUGraphicsContext: Immediate throttled surface configuration to {}x{}",
+                        self.current_width,
+                        self.current_height
+                    );
                 }
+                return; // done
             }
             // Otherwise mark resize as pending → evaluated in render() (debounce/fallback logic).
             self.last_resize_event = Some(now);
@@ -250,26 +249,24 @@ impl RenderSystem for WgpuRenderSystem {
                 let max_pending_frames: u32 = 10; // fallback frames (~1/6s @ 60fps)
                 // Early stable condition inside render loop: size is unchanged for >=3 frames.
                 let early_stable = self.stable_size_frame_count >= 3;
-                if quiet_elapsed >= debounce_quiet_ms
+                if (quiet_elapsed >= debounce_quiet_ms
                     || self.pending_resize_frames >= max_pending_frames
-                    || early_stable
+                    || early_stable)
+                    && let Some(gc_arc_mutex) = &self.graphics_context_shared
+                    && let Ok(mut gc_guard) = gc_arc_mutex.lock()
                 {
-                    if let Some(gc_arc_mutex) = &self.graphics_context_shared {
-                        if let Ok(mut gc_guard) = gc_arc_mutex.lock() {
-                            gc_guard.resize(self.current_width, self.current_height);
-                            self.pending_resize = false;
-                            self.last_surface_config = Some(Instant::now());
-                            log::info!(
-                                "WGPUGraphicsContext: Deferred surface configuration to {}x{} (quiet {} ms, frames pending {}, stable events {})",
-                                self.current_width,
-                                self.current_height,
-                                quiet_elapsed,
-                                self.pending_resize_frames,
-                                self.stable_size_frame_count
-                            );
-                            self.stable_size_frame_count = 0; // reset after apply
-                        }
-                    }
+                    gc_guard.resize(self.current_width, self.current_height);
+                    self.pending_resize = false;
+                    self.last_surface_config = Some(Instant::now());
+                    log::info!(
+                        "WGPUGraphicsContext: Deferred surface configuration to {}x{} (quiet {} ms, frames pending {}, stable events {})",
+                        self.current_width,
+                        self.current_height,
+                        quiet_elapsed,
+                        self.pending_resize_frames,
+                        self.stable_size_frame_count
+                    );
+                    self.stable_size_frame_count = 0; // reset after apply
                 }
             }
         }
@@ -361,15 +358,15 @@ impl RenderSystem for WgpuRenderSystem {
             })?;
 
             // Pump async GPU work & mapping callbacks (needed for timestamp map_async completions)
-            if settings.enable_gpu_timestamps {
-                if let Some(p) = self.gpu_profiler.as_mut() {
-                    // Try polling with a reasonable default: non-blocking (PollType::Wait is blocking, so prefer PollType::Poll if exists).
-                    #[allow(unused)]
-                    use wgpu::PollType;
-                    // Heuristic: attempt to poll until all submitted work done for callbacks of prior frames.
-                    let _ = gc_guard.device().poll(wgpu::PollType::Poll); // non-blocking pump for map_async callbacks
-                    p.try_read_previous_frame();
-                }
+            if settings.enable_gpu_timestamps
+                && let Some(p) = self.gpu_profiler.as_mut()
+            {
+                // Try polling with a reasonable default: non-blocking (PollType::Wait is blocking, so prefer PollType::Poll if exists).
+                #[allow(unused)]
+                use wgpu::PollType;
+                // Heuristic: attempt to poll until all submitted work done for callbacks of prior frames.
+                let _ = gc_guard.device().poll(wgpu::PollType::Poll); // non-blocking pump for map_async callbacks
+                p.try_read_previous_frame();
             }
 
             // --- 3. Create Command Encoder
@@ -383,14 +380,14 @@ impl RenderSystem for WgpuRenderSystem {
             // --- 4. Pass A (compute only): frame_start + main_pass_begin
             // Previous attempt used an empty render pass (no attachments) which is invalid.
             // A compute pass allows timestamp_writes without needing attachments.
-            if settings.enable_gpu_timestamps {
-                if let Some(p) = self.gpu_profiler.as_ref() {
-                    let _cpass_a = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                        label: Some("WgpuRenderSystem Timestamp Compute Pass A"),
-                        timestamp_writes: Some(p.compute_pass_a_timestamp_writes()),
-                    });
-                    drop(_cpass_a);
-                }
+            if settings.enable_gpu_timestamps
+                && let Some(p) = self.gpu_profiler.as_ref()
+            {
+                let _cpass_a = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("WgpuRenderSystem Timestamp Compute Pass A"),
+                    timestamp_writes: Some(p.compute_pass_a_timestamp_writes()),
+                });
+                drop(_cpass_a);
             }
 
             // --- 5. Main Render Pass (visual)
@@ -413,23 +410,23 @@ impl RenderSystem for WgpuRenderSystem {
             drop(_render_pass);
 
             // --- 6. Pass B (compute only): main_pass_end + frame_end
-            if settings.enable_gpu_timestamps {
-                if let Some(p) = self.gpu_profiler.as_ref() {
-                    let _cpass_b = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                        label: Some("WgpuRenderSystem Timestamp Compute Pass B"),
-                        timestamp_writes: Some(p.compute_pass_b_timestamp_writes()),
-                    });
-                    drop(_cpass_b);
-                }
+            if settings.enable_gpu_timestamps
+                && let Some(p) = self.gpu_profiler.as_ref()
+            {
+                let _cpass_b = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some("WgpuRenderSystem Timestamp Compute Pass B"),
+                    timestamp_writes: Some(p.compute_pass_b_timestamp_writes()),
+                });
+                drop(_cpass_b);
             }
 
             // Resolve timestamps (now all 4 indices 0..3)
-            if settings.enable_gpu_timestamps {
-                if let Some(p) = self.gpu_profiler.as_ref() {
-                    p.resolve_and_copy(&mut encoder);
-                    // Copy resolved region into staging buffer for this frame index
-                    p.copy_to_staging(&mut encoder, self.frame_count);
-                }
+            if settings.enable_gpu_timestamps
+                && let Some(p) = self.gpu_profiler.as_ref()
+            {
+                p.resolve_and_copy(&mut encoder);
+                // Copy resolved region into staging buffer for this frame index
+                p.copy_to_staging(&mut encoder, self.frame_count);
             }
 
             // --- 7. Submit Commands ---
@@ -438,10 +435,10 @@ impl RenderSystem for WgpuRenderSystem {
             cpu_submission_duration_ms =
                 cpu_submission_timer.elapsed_secs_f64().unwrap_or(0.0) * 1000.0;
             // Deferred read plan: map the staging buffer from two frames earlier (triple-buffer, +2 frame latency)
-            if settings.enable_gpu_timestamps {
-                if let Some(p) = self.gpu_profiler.as_mut() {
-                    p.schedule_map_after_submit(self.frame_count);
-                }
+            if settings.enable_gpu_timestamps
+                && let Some(p) = self.gpu_profiler.as_mut()
+            {
+                p.schedule_map_after_submit(self.frame_count);
             }
         }
 

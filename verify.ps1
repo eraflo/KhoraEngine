@@ -1,6 +1,7 @@
 # Requires PowerShell 5+ (Windows default)
 # Run:  powershell -ExecutionPolicy Bypass -File .\verify.ps1
 # Purpose: Local pre-push gate (format, lint, test, license headers, summary)
+# Options: --full (enable security tools), --install-tools (auto-install), --clean (clean cache before clippy)
 
 $ErrorActionPreference = 'Stop'
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -10,10 +11,12 @@ Write-Host '=== KhoraEngine Pre-Push Verification ===' -ForegroundColor Cyan
 # Flags (simple parsing)
 $Full = $false      # require security tools to pass
 $Install = $false   # auto-install missing cargo tools (audit / deny)
+$Clean = $false     # clean cache before clippy
 foreach ($a in $args) {
     switch ($a) {
         '--full' { $Full = $true }
         '--install-tools' { $Install = $true }
+        '--clean' { $Clean = $true }
         default { Write-Host "Unknown arg: $a" -ForegroundColor Red; exit 2 }
     }
 }
@@ -39,6 +42,10 @@ if ($LASTEXITCODE -ne 0) { Write-Host $cargoFmt; Fail 'Formatting issues (run ca
 
 # 3. Clippy (warnings as errors)
 Write-Host '[3/9] cargo clippy' -ForegroundColor Yellow
+if ($Clean) { 
+    Write-Host ' Cleaning cache first...' -ForegroundColor DarkGray
+    & cargo clean
+}
 & cargo clippy --workspace --all-targets --all-features -- -D warnings
 if ($LASTEXITCODE -ne 0) { Fail 'Clippy failed' } else { Write-Host ' OK' -ForegroundColor Green }
 
