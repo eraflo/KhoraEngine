@@ -14,7 +14,7 @@
 
 use super::graphics_device::GraphicsDevice;
 use crate::subsystems::renderer::api::common_types::{
-    RenderObject, RenderSettings, RenderStats, RendererAdapterInfo, ViewInfo,
+    GpuPerfHook, RenderObject, RenderSettings, RenderStats, RendererAdapterInfo, ViewInfo,
 };
 use crate::subsystems::renderer::error::RenderError;
 use crate::window::KhoraWindow;
@@ -57,4 +57,10 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
 
     /// Clean up and release the resources of the rendering system.
     fn shutdown(&mut self);
+
+    /// Optional: backend may provide per-hook last timing in milliseconds.
+    /// Default impl returns None (no data or unsupported hook).
+    fn gpu_hook_time_ms(&self, _hook: GpuPerfHook) -> Option<f32> {
+        None
+    }
 }

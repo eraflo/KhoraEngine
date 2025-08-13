@@ -81,12 +81,11 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
     *   SAA Prep: This foundational utility reduces external dependencies, ensures consistent bitwise operations, and provides efficient, human-readable debug output for flags used throughout the engine, especially for resource usage and contextual data.*
 *   ✅ **`[Feature] Implement Basic Buffer/Texture Management (Track VRAM usage)`**
     *   Comprehensive API for creating, destroying, and writing to Buffers (BufferId, BufferDescriptor), Textures (TextureId, TextureDescriptor), TextureViews (TextureViewId, TextureViewDescriptor), and Samplers (SamplerId, SamplerDescriptor) through the GraphicsDevice trait.
+*   ✅ **`[Feature] Implement GPU Performance Monitoring Hooks (Timestamps)`**
+    *   Backend-agnostic GPU timing hooks (`GpuPerfHook` enum + trait method) with a non-blocking WGPU timestamp profiler feeding per-frame stats. See comprehensive documentation `docs/rendering/gpu_performance_monitoring.md`.
 
 **Next Steps / Milestone 2 Tasks:**
 
-*   ➡️ **`[Feature] Implement GPU Performance Monitoring Hooks (Timestamps)`**
-    *   Description: Use graphics API timestamp queries (via `GraphicsDevice` if abstracted, or WGPU specifics) to measure GPU time. Essential for SAA.
-    *   Labels: `rendering`, `performance`, `infra`, `saa-prep`
 *   ➡️ **`[Feature] Implement Core Metrics System Backend v1 (In-Memory)`**
     *   Description: Implement an initial in-memory backend for the Core Metrics System API. Focus on thread-safe storage (e.g., using `RwLock<HashMap<MetricId, MetricValue>>` or more specialized concurrent structures) and efficient retrieval of counters and gauges. Histograms/summaries can be deferred or simplified initially.
     *   Labels: `core`, `infra`, `performance`, `saa-prep`
@@ -102,6 +101,12 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
 *   ➡️ **`[Task] Render a Single Triangle/Quad with Performance Timings`**
     *   Description: Display a simple geometric shape using the established shader system, pipeline system, and buffer management, showing CPU/GPU timings.
     *   Labels: `rendering`, `performance`
+
+**Planned Enhancements (Upcoming Issues)**
+
+*   ➡️ **`[Enhancement] Advanced GPU Performance & Resize Heuristics`**
+    *   Description: Expose raw + smoothed timings, make EMA alpha configurable, add additional timestamp scopes (shadow, postprocess), refine resize heuristics (relative delta, temporal backoff), optional aggregation/suppression of repeated "Suboptimal present" warnings, and prepare adaptive quality decisions driven by GPU frame time. See `docs/rendering/gpu_performance_monitoring.md`.
+    *   Labels: `rendering`, `performance`, `saa-prep`
 
 **Note:** This is a highly ambitious, long-term research and development project. The SAA goal requires significant R&D.
 
@@ -131,6 +136,20 @@ cargo run --bin sandbox
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
+
+## Documentation
+
+Comprehensive documentation is available in the [`docs/`](docs/) directory:
+
+- **[Documentation Index](docs/README.md)** - Complete documentation overview and navigation
+- **[Developer Guide](docs/developer_guide.md)** - Getting started with development
+- **[Architecture Design](docs/architecture_design.md)** - Engine architecture and SAA concepts
+- **[Math Module](docs/math_module.md)** - Mathematical types and operations
+- **[Rendering System](docs/rendering/rendering_system.md)** - Graphics programming guide
+- **[Memory Management](docs/memory_management.md)** - Memory tracking and optimization
+- **[Event System](docs/event_system.md)** - Event-driven communication
+- **[Performance Monitoring](docs/performance_monitoring.md)** - Performance analysis and metrics
+- **[Integration Guide](docs/integration_guide.md)** - Adding new subsystems and features
 
 ## Community & Contributing
 

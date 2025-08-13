@@ -273,25 +273,27 @@ impl ApplicationHandler<()> for EngineAppHandler {
                         // Calculate memory usage in bytes
                         let memory_usage_kib = get_currently_allocated_bytes() / 1024;
 
-                        let (gpu_time_ms, draw_calls, triangles) = engine
+                        let (gpu_main_pass_ms, gpu_frame_total_ms, draw_calls, triangles) = engine
                             .render_system
                             .as_ref()
-                            .map_or((0.0f32, 0u32, 0u32), |rs| {
+                            .map_or((0.0f32, 0.0f32, 0u32, 0u32), |rs| {
                                 let stats = rs.get_last_frame_stats();
                                 (
-                                    stats.gpu_time_ms,
+                                    stats.gpu_main_pass_time_ms,
+                                    stats.gpu_frame_total_time_ms,
                                     stats.draw_calls,
                                     stats.triangles_rendered,
                                 )
                             });
 
                         log::info!(
-                            "Stats | Frame: {}, FPS: {}, Mem: {} KiB | CPU Render: {} us | GPU: {:.2} ms | {} draws, {} tris",
+                            "Stats | Frame:{} FPS:{} Mem:{} KiB | CPU:{} us | GPU Main:{:.2} ms | GPU Frame:{:.2} ms | {} draws, {} tris",
                             engine.frame_count,
                             fps,
                             memory_usage_kib,
                             render_duration_us,
-                            gpu_time_ms,
+                            gpu_main_pass_ms,
+                            gpu_frame_total_ms,
                             draw_calls,
                             triangles
                         );

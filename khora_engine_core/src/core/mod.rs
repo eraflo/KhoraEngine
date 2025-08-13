@@ -12,6 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! `core` module – immediate runtime nucleus.
+//!
+//! Contents:
+//! * [`engine`]: main orchestrator (loop, event dispatch, render invocation)
+//! * [`monitoring`]: stats / hooks (will evolve into full metrics backend)
+//! * [`timer`]: lightweight CPU timing primitives (`Stopwatch`)
+//! * [`utils`]: generic helpers (subject to future refactor as scope grows)
+//!
+//! Note: Future adaptive SAA components (DCC, negotiation, etc.) are not
+//! implemented yet; this module provides insertion points for metrics
+//! collection & decisions (e.g. after `update`, before `render`).
+
 pub mod engine;
 pub mod monitoring;
 pub mod timer;

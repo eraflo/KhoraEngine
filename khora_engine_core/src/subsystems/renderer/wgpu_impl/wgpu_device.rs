@@ -451,7 +451,7 @@ impl GraphicsDevice for WgpuDevice {
                 cache: None,
             };
 
-            // TODO: push_error_scope / pop_error_scope for better error handling
+            // Future improvement: wrap in push_error_scope/pop_error_scope for richer diagnostics
             let pipeline = device.create_render_pipeline(&wgpu_pipeline_descriptor);
             let new_id = self.generate_pipeline_id();
             Ok((Arc::new(pipeline), new_id))
@@ -932,5 +932,64 @@ impl core_monitoring::ResourceMonitor for WgpuDevice {
             peak_bytes: Some(self.vram_peak_bytes.load(Ordering::Relaxed)),
             total_capacity_bytes: None, //  Difficult to determine in WGPU
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::monitoring::ResourceMonitor; // Import the trait for tests
+    use crate::subsystems::renderer::GpuPerformanceMonitor;
+    use crate::subsystems::renderer::api::common_types::RenderStats;
+
+    #[test]
+    fn gpu_performance_monitor_creation() {
+        let monitor = GpuPerformanceMonitor::new("Test_WGPU".to_string());
+        assert_eq!(monitor.monitor_id(), "GpuPerf_Test_WGPU");
+        assert_eq!(
+            monitor.resource_type(),
+            core_monitoring::MonitoredResourceType::GpuPerformance
+        );
+        assert!(monitor.get_gpu_performance_report().is_none());
+    }
+
+    #[test]
+    fn gpu_performance_monitor_update_stats() {
+        let monitor = GpuPerformanceMonitor::new("Test_WGPU".to_string());
+
+        // Create sample render stats
+        let stats = RenderStats {
+            frame_number: 42,
+            cpu_preparation_time_ms: 1.5,
+            cpu_render_submission_time_ms: 0.2,
+            gpu_main_pass_time_ms: 8.0,
+            gpu_frame_total_time_ms: 10.5,
+            draw_calls: 100,
+            triangles_rendered: 5000,
+            vram_usage_estimate_mb: 256.0,
+        };
+
+        monitor.update_from_render_stats(&stats);
+
+        let report = monitor.get_gpu_performance_report().unwrap();
+        assert_eq!(report.frame_number, 42);
+        assert_eq!(report.main_pass_duration_us(), Some(8000)); // 8ms derived
+        assert_eq!(report.frame_total_duration_us(), Some(10500)); // 10.5ms derived
+        assert_eq!(report.cpu_preparation_time_us, Some(1500)); // 1.5ms = 1500μs
+        assert_eq!(report.cpu_submission_time_us, Some(200)); // 0.2ms = 200μs
+    }
+
+    #[test]
+    fn gpu_performance_monitor_resource_monitor_trait() {
+        let monitor = GpuPerformanceMonitor::new("Test_WGPU".to_string());
+
+        // Test ResourceMonitor trait implementation
+        let usage_report = monitor.get_usage_report();
+        assert_eq!(usage_report.current_bytes, 0);
+        assert_eq!(usage_report.peak_bytes, None);
+        assert_eq!(usage_report.total_capacity_bytes, None);
+
+        // Performance report should be None initially
+        assert!(monitor.get_gpu_performance_report().is_none());
     }
 }

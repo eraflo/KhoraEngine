@@ -13,6 +13,7 @@
 // limitations under the License.
 
 pub mod conversions;
+pub mod gpu_timestamp_profiler;
 pub mod wgpu_device;
 pub mod wgpu_graphic_context;
 pub mod wgpu_render_system;

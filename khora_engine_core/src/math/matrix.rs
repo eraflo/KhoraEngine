@@ -322,14 +322,14 @@ impl Index<usize> for Mat3 {
     type Output = Vec3;
     #[inline]
     fn index(&self, index: usize) -> &Self::Output {
-        &self.cols[index] // Accès direct à la colonne
+        &self.cols[index] // Direct column access
     }
 }
 
 impl IndexMut<usize> for Mat3 {
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.cols[index] // Accès mutable direct à la colonne
+        &mut self.cols[index] // Direct mutable column access
     }
 }
 

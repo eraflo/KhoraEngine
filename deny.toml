@@ -1,0 +1,31 @@
+# Minimal cargo-deny configuration for KhoraEngine
+# See: https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+ignore = []
+# fail on unpatched vulnerabilities
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "warn"
+notice = "warn"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# allow workspace crates
+allow = []
+
+[licenses]
+# Accept common permissive licenses
+allow = ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "Zlib", "ISC" ]
+confidence-threshold = 0.8
+unlicensed = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "warn"
+
+[[bans.skip]]
+# Example (remove if unused)
+# name = "some-crate"
+# version = "1.2.3"
