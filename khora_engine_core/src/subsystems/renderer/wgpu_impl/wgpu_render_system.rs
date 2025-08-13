@@ -261,6 +261,7 @@ impl RenderSystem for WgpuRenderSystem {
                     label: Some("WgpuRenderSystem Clear Screen Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &target_texture_view,
+                        depth_slice: None, // No depth slice for now
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(gc_guard.get_clear_color()),
