@@ -232,6 +232,7 @@ impl WgpuGraphicsContext {
                     label: Some("Clear Screen Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                         view: &view,          // Render directly to the swapchain texture's view
+                        depth_slice: None,    // No depth slice for now
                         resolve_target: None, // Used for multisampling; None for now
                         ops: wgpu::Operations {
                             // Action at the start of the pass for this attachment:
