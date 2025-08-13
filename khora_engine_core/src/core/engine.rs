@@ -220,8 +220,9 @@ impl ApplicationHandler<()> for EngineAppHandler {
         let engine = &mut self.engine;
 
         // Process event only if window exists and ID matches
-        if let Some(khora_window) = &engine.window 
-        && khora_window.id() == window_id {
+        if let Some(khora_window) = &engine.window
+            && khora_window.id() == window_id
+        {
             // --- Translate Input Events ---
             if let Some(input_event) = KhoraInputSubsystem::translate_winit_input(&event) {
                 engine.event_bus.publish(EngineEvent::Input(input_event));
