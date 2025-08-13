@@ -185,6 +185,33 @@ impl MetricsConfig {
             },
         );
 
+        // VRAM metrics
+        metrics.insert(
+            "vram_usage_gauge".to_string(),
+            MetricConfig {
+                namespace: "engine".to_string(),
+                name: "memory.vram_usage_mb".to_string(),
+                description: "Current VRAM usage in MB".to_string(),
+                metric_type: "gauge".to_string(),
+                unit: Some("megabytes".to_string()),
+                buckets: None,
+                labels: None,
+            },
+        );
+
+        metrics.insert(
+            "vram_peak_gauge".to_string(),
+            MetricConfig {
+                namespace: "engine".to_string(),
+                name: "memory.vram_peak_mb".to_string(),
+                description: "Peak VRAM usage in MB".to_string(),
+                metric_type: "gauge".to_string(),
+                unit: Some("megabytes".to_string()),
+                buckets: None,
+                labels: None,
+            },
+        );
+
         Self { metrics }
     }
 }

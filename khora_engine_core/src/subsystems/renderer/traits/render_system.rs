@@ -58,6 +58,9 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     /// Clean up and release the resources of the rendering system.
     fn shutdown(&mut self);
 
+    /// Downcast to Any for type-specific access
+    fn as_any(&self) -> &dyn std::any::Any;
+
     /// Optional: backend may provide per-hook last timing in milliseconds.
     /// Default impl returns None (no data or unsupported hook).
     fn gpu_hook_time_ms(&self, _hook: GpuPerfHook) -> Option<f32> {

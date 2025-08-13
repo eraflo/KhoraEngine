@@ -23,7 +23,7 @@ use crate::{core::timer::Stopwatch, window::KhoraWindow};
 use super::gpu_timestamp_profiler::WgpuTimestampProfiler;
 use super::wgpu_device::WgpuDevice;
 use super::wgpu_graphic_context::WgpuGraphicsContext;
-use crate::subsystems::renderer::GpuPerformanceMonitor;
+use crate::core::resource_monitors::{GpuPerformanceMonitor, VramProvider, VramResourceMonitor};
 use crate::subsystems::renderer::api::common_types::GpuPerfHook;
 use crate::subsystems::renderer::api::common_types::RendererAdapterInfo;
 use crate::subsystems::renderer::traits::graphics_device::GraphicsDevice;
@@ -38,8 +38,10 @@ pub struct WgpuRenderSystem {
     frame_count: u64,
     last_frame_stats: RenderStats,
     gpu_profiler: Option<WgpuTimestampProfiler>,
-    // Generic GPU performance monitor
-    gpu_performance_monitor: Arc<GpuPerformanceMonitor>,
+
+    // Resource monitors
+    gpu_performance_monitor: Option<Arc<GpuPerformanceMonitor>>,
+    vram_resource_monitor: Option<Arc<VramResourceMonitor>>,
     // --- Resize Heuristics State ---
     // Hybrid throttle + debounce + stability detection to reduce swapchain reconfigure churn
     // and minimize "Suboptimal present" warning bursts while avoiding long mismatch periods.
@@ -73,7 +75,10 @@ impl WgpuRenderSystem {
             frame_count: 0,
             last_frame_stats: RenderStats::default(),
             gpu_profiler: None,
-            gpu_performance_monitor: Arc::new(GpuPerformanceMonitor::new("WGPU".to_string())),
+
+            // Initialize resource monitors
+            gpu_performance_monitor: None,
+            vram_resource_monitor: None,
             last_resize_event: None,
             pending_resize: false,
             last_surface_config: None,
@@ -116,7 +121,18 @@ impl RenderSystem for WgpuRenderSystem {
                 // Initialize the graphics device
                 let graphics_device =
                     WgpuDevice::new(self.graphics_context_shared.clone().unwrap());
-                self.wgpu_device = Some(Arc::new(graphics_device));
+                let device_arc = Arc::new(graphics_device);
+                self.wgpu_device = Some(device_arc.clone());
+
+                // Initialize resource monitors
+                self.gpu_performance_monitor =
+                    Some(Arc::new(GpuPerformanceMonitor::new("WGPU".to_string())));
+
+                // Create VRAM resource monitor
+                self.vram_resource_monitor = Some(Arc::new(VramResourceMonitor::new(
+                    Arc::downgrade(&device_arc) as std::sync::Weak<dyn VramProvider>,
+                    "WGPU_VRAM".to_string(),
+                )));
 
                 log::info!(
                     "WgpuRenderSystem: GraphicsDevice initialized with adapter: {}",
@@ -469,9 +485,10 @@ impl RenderSystem for WgpuRenderSystem {
             vram_usage_estimate_mb: 0.0, // Placeholder until VRAM tracking is implemented
         };
 
-        // Update GPU performance monitor with latest stats using the generic monitor
-        self.gpu_performance_monitor
-            .update_from_render_system(self, &self.last_frame_stats);
+        // Update GPU performance monitor with the latest rendering statistics
+        if let Some(monitor) = &self.gpu_performance_monitor {
+            monitor.update_from_render_system(self, &self.last_frame_stats);
+        }
 
         Ok(self.last_frame_stats.clone())
     }
@@ -517,7 +534,13 @@ impl RenderSystem for WgpuRenderSystem {
         }
         self.graphics_context_shared = None;
         self.wgpu_device = None;
+        self.gpu_performance_monitor = None;
+        self.vram_resource_monitor = None;
         log::info!("WgpuRenderSystem shutdown complete.");
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
     fn get_adapter_info(&self) -> Option<RendererAdapterInfo> {
@@ -546,8 +569,16 @@ impl RenderSystem for WgpuRenderSystem {
 }
 
 impl WgpuRenderSystem {
-    /// Get a reference to the GPU performance monitor for external access
-    pub fn gpu_performance_monitor(&self) -> &GpuPerformanceMonitor {
-        &self.gpu_performance_monitor
+    /// Returns a reference to the GPU performance monitor.
+    ///
+    /// This monitor tracks various GPU performance metrics such as frame time,
+    /// GPU utilization, and rendering statistics. It implements the `ResourceMonitor`
+    /// trait and can be registered with the global resource registry.
+    ///
+    /// Returns `None` if the render system hasn't been initialized yet.
+    pub fn gpu_performance_monitor(&self) -> Option<&GpuPerformanceMonitor> {
+        self.gpu_performance_monitor
+            .as_ref()
+            .map(|arc| arc.as_ref())
     }
 }

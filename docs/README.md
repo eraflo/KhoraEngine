@@ -15,7 +15,7 @@ Welcome to the KhoraEngine documentation! This index provides an overview of all
 
 #### Rendering
 - **[Rendering System](rendering/rendering_system.md)** - Complete rendering architecture and API documentation
-- **[GPU Performance Monitoring](rendering/gpu_performance_monitoring.md)** - Comprehensive GPU timing, performance hooks, and surface resize strategy
+- **[GPU Performance Monitoring](rendering/gpu_performance_monitoring.md)** - Comprehensive GPU timing, performance hooks, and surface resize strategy with microsecond precision
 
 #### Memory Management
 - **[Memory Management](memory_management.md)** - Memory tracking, allocation monitoring, and SAA integration

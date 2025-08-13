@@ -14,6 +14,7 @@
 
 use crate::core::metrics::engine::{EngineMetrics, FrameStats};
 use crate::core::metrics::scheduler::MetricsScheduler;
+use crate::core::resource_monitors::{get_registered_monitors, initialize_resource_registry};
 use crate::core::timer::Stopwatch;
 use crate::event::{EngineEvent, EventBus};
 use crate::memory::get_currently_allocated_bytes;
@@ -61,6 +62,9 @@ impl Engine {
     /// ## Returns
     /// A new instance of the Engine struct.
     pub fn new() -> Self {
+        // Initialize the global resource registry
+        initialize_resource_registry();
+
         Self {
             is_running: false,
             event_bus: EventBus::default(),
@@ -100,6 +104,40 @@ impl Engine {
     /// Updates all engine metrics with comprehensive frame statistics.
     pub fn update_all_metrics(&mut self, stats: &FrameStats) {
         self.engine_metrics.update_all(stats);
+    }
+
+    /// Updates VRAM metrics specifically.
+    pub fn update_vram_metrics(&mut self, vram_usage_mb: f64, vram_peak_mb: f64) {
+        self.engine_metrics
+            .update_vram_metrics(vram_usage_mb, vram_peak_mb);
+    }
+
+    /// Update metrics from all registered resource monitors.
+    fn update_resource_metrics(&mut self) {
+        // Get monitors from global registry
+        let monitors = get_registered_monitors();
+
+        // Collect metrics data first to avoid borrowing issues
+        let mut vram_metrics = None;
+
+        for monitor in &monitors {
+            match monitor.resource_type() {
+                crate::core::monitoring::MonitoredResourceType::Vram => {
+                    let report = monitor.get_usage_report();
+                    let current_mb = report.current_bytes as f64 / (1024.0 * 1024.0);
+                    let peak_mb = report.peak_bytes.unwrap_or(0) as f64 / (1024.0 * 1024.0);
+                    vram_metrics = Some((current_mb, peak_mb));
+                }
+                _ => {
+                    // Handle other resource types as needed
+                }
+            }
+        }
+
+        // Update metrics after iteration
+        if let Some((current_mb, peak_mb)) = vram_metrics {
+            self.update_vram_metrics(current_mb, peak_mb);
+        }
     }
 
     /// Gets a snapshot of all engine metrics for monitoring and debugging.
@@ -354,6 +392,9 @@ impl ApplicationHandler<()> for EngineAppHandler {
                             triangles,
                         };
                         engine.update_all_metrics(&frame_stats);
+
+                        // Update metrics from all registered resource monitors
+                        engine.update_resource_metrics();
 
                         log::info!(
                             "Stats | Frame:{} FPS:{} Mem:{} KiB | CPU:{} us | GPU Main:{:.2} ms | GPU Frame:{:.2} ms | {} draws, {} tris",
