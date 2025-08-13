@@ -17,6 +17,7 @@
 //! Contents:
 //! * [`engine`]: main orchestrator (loop, event dispatch, render invocation)
 //! * [`monitoring`]: stats / hooks (will evolve into full metrics backend)
+//! * [`metrics`]: centralized metrics system with thread-safe backends
 //! * [`timer`]: lightweight CPU timing primitives (`Stopwatch`)
 //! * [`utils`]: generic helpers (subject to future refactor as scope grows)
 //!
@@ -24,7 +25,9 @@
 //! implemented yet; this module provides insertion points for metrics
 //! collection & decisions (e.g. after `update`, before `render`).
 
+pub mod config;
 pub mod engine;
+pub mod metrics;
 pub mod monitoring;
 pub mod timer;
 pub mod utils;

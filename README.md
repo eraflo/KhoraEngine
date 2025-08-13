@@ -83,12 +83,11 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
     *   Comprehensive API for creating, destroying, and writing to Buffers (BufferId, BufferDescriptor), Textures (TextureId, TextureDescriptor), TextureViews (TextureViewId, TextureViewDescriptor), and Samplers (SamplerId, SamplerDescriptor) through the GraphicsDevice trait.
 *   ✅ **`[Feature] Implement GPU Performance Monitoring Hooks (Timestamps)`**
     *   Backend-agnostic GPU timing hooks (`GpuPerfHook` enum + trait method) with a non-blocking WGPU timestamp profiler feeding per-frame stats. See comprehensive documentation `docs/rendering/gpu_performance_monitoring.md`.
+*   ✅ **`[Feature] Implement Core Metrics System Backend v1 (In-Memory)`**
+    *   Complete metrics system with thread-safe in-memory backend, JSON configuration support, and integration with GPU performance monitoring. Comprehensive documentation available in `docs/metrics/`. System tracks engine performance (FPS, CPU/GPU times, memory), rendering stats, and supports custom user metrics.
 
 **Next Steps / Milestone 2 Tasks:**
 
-*   ➡️ **`[Feature] Implement Core Metrics System Backend v1 (In-Memory)`**
-    *   Description: Implement an initial in-memory backend for the Core Metrics System API. Focus on thread-safe storage (e.g., using `RwLock<HashMap<MetricId, MetricValue>>` or more specialized concurrent structures) and efficient retrieval of counters and gauges. Histograms/summaries can be deferred or simplified initially.
-    *   Labels: `core`, `infra`, `performance`, `saa-prep`
 *   ➡️ **`[Task] Integrate VRAM Tracking into Core Metrics System`**
     *   Description: Refactor WgpuDevice's VRAM tracking to report its usage (allocated bytes) to the new Core Metrics System instead of managing it internally. The GraphicsDevice (or a ResourceMonitor trait) might then query the Metrics System or WgpuDevice could still expose it directly while also reporting centrally.
     *   Labels: `rendering`, `performance`, `refactoring`, `saa-prep`
