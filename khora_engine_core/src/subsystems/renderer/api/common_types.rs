@@ -144,6 +144,8 @@ pub struct RenderSettings {
     pub strategy: RenderStrategy,
     pub quality_level: u32, // 1 = Low, 2 = Medium, 3 = High
     pub show_wireframe: bool,
+    /// Enable/disable GPU timestamp instrumentation (runtime toggle)
+    pub enable_gpu_timestamps: bool,
 }
 
 impl Default for RenderSettings {
@@ -152,20 +154,69 @@ impl Default for RenderSettings {
             strategy: RenderStrategy::Forward,
             quality_level: 1,
             show_wireframe: false,
+            enable_gpu_timestamps: true,
         }
     }
 }
 
 /// Structure representing the render statistics.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct RenderStats {
+    /// Sequential frame counter (incremented each successful render)
     pub frame_number: u64,
+    /// CPU time spent in pre-render preparation (resource updates, culling, etc.)
+    /// NOTE: Current calculation is provisional and will be refined.
     pub cpu_preparation_time_ms: f32,
+    /// CPU time to submit encoded GPU work (encoder.finish + queue.submit overhead). Typically tiny.
     pub cpu_render_submission_time_ms: f32,
-    pub gpu_time_ms: f32,
+    /// GPU duration (ms) of the "main render pass" measured between pass_begin & pass_end timestamps.
+    /// If timestamp queries unsupported or not yet resolved, retains previous value.
+    pub gpu_main_pass_time_ms: f32,
+    /// Total GPU frame time (ms) between frame_start & frame_end timestamps (can include future multi-pass work).
+    /// May differ from main pass time when multiple passes or GPU-side operations are added.
+    pub gpu_frame_total_time_ms: f32,
+    /// Number of draw calls actually encoded (currently placeholder until drawing implemented).
     pub draw_calls: u32,
+    /// Total triangles submitted (currently placeholder).
     pub triangles_rendered: u32,
+    /// Estimated VRAM usage in MB (placeholder until integrated with VRAM tracker / metrics system).
     pub vram_usage_estimate_mb: f32,
+}
+
+/// Generic GPU performance hook identifiers. Other backends may ignore some hooks
+/// or support additional ones in the future. The logical order reflects a simple
+/// frame; extra passes (Shadow, PostProcess, etc.) can be appended later without
+/// breaking the existing API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GpuPerfHook {
+    FrameStart,
+    MainPassBegin,
+    MainPassEnd,
+    FrameEnd,
+}
+
+impl GpuPerfHook {
+    pub const ALL: [GpuPerfHook; 4] = [
+        GpuPerfHook::FrameStart,
+        GpuPerfHook::MainPassBegin,
+        GpuPerfHook::MainPassEnd,
+        GpuPerfHook::FrameEnd,
+    ];
+}
+
+impl Default for RenderStats {
+    fn default() -> Self {
+        Self {
+            frame_number: 0,
+            cpu_preparation_time_ms: 0.0,
+            cpu_render_submission_time_ms: 0.0,
+            gpu_main_pass_time_ms: 0.0,
+            gpu_frame_total_time_ms: 0.0,
+            draw_calls: 0,
+            triangles_rendered: 0,
+            vram_usage_estimate_mb: 0.0,
+        }
+    }
 }
 
 /// Structure representing the view information for rendering.

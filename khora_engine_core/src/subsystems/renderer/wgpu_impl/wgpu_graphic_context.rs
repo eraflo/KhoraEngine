@@ -123,6 +123,11 @@ impl WgpuGraphicsContext {
             .await?;
         log::info!("Logical device and command queue created.");
 
+        // Debug: log uncaptured validation errors early (to investigate encoder invalidation)
+        device.on_uncaptured_error(Box::new(|e| {
+            log::error!("WGPU Uncaptured Error: {e:?}");
+        }));
+
         let active_device_features = device.features();
         let device_limits = device.limits();
         log::info!("Active device features: {active_device_features:?}");
@@ -249,13 +254,12 @@ impl WgpuGraphicsContext {
                     })],
                     depth_stencil_attachment: None, // No depth/stencil buffer yet
                     occlusion_query_set: None,      // No occlusion queries yet
-                    // TODO: SAA Requirement: Add timestamp writes here in the dedicated task later
-                    // Needs `Features::TIMESTAMP_QUERY` enabled on the device.
+                    // Timestamp writes now handled by dedicated compute passes in WgpuRenderSystem when enabled.
                     timestamp_writes: None,
                 });
             log::trace!("Begun render pass (clearing screen)");
 
-            // TODO: Implement actual drawing commands (e.g., set_pipeline, draw)
+            // Drawing commands will be inserted here when renderable pipelines are available.
         } // `_render_pass` is dropped, ending the render pass and releasing `encoder`.
         log::trace!("Render pass finished and recorded.");
 

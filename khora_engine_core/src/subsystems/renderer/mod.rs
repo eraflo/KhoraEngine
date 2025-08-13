@@ -17,6 +17,9 @@ pub mod api;
 pub mod error;
 pub mod traits;
 
+// Generic performance monitoring
+pub mod gpu_performance_monitor;
+
 // Specific WGPU implementation
 pub mod wgpu_impl;
 
@@ -25,6 +28,9 @@ pub mod wgpu_impl;
 // Core traits
 pub use traits::graphics_device::GraphicsDevice;
 pub use traits::render_system::RenderSystem;
+
+// Generic GPU performance monitoring
+pub use gpu_performance_monitor::GpuPerformanceMonitor;
 
 // Concrete WGPU implementation of RenderSystem
 pub use wgpu_impl::WgpuRenderSystem;
