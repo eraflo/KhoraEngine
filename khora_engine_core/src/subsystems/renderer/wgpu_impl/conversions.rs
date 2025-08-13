@@ -517,13 +517,13 @@ mod tests {
 
     #[test]
     fn test_sample_count_conversion() {
-        assert_eq!(1u32, SampleCount::X1.into());
-        assert_eq!(2u32, SampleCount::X2.into());
-        assert_eq!(4u32, SampleCount::X4.into());
-        assert_eq!(8u32, SampleCount::X8.into());
-        assert_eq!(16u32, SampleCount::X16.into());
-        assert_eq!(32u32, SampleCount::X32.into());
-        assert_eq!(64u32, SampleCount::X64.into());
+        assert_eq!(1u32, Into::<u32>::into(SampleCount::X1));
+        assert_eq!(2u32, Into::<u32>::into(SampleCount::X2));
+        assert_eq!(4u32, Into::<u32>::into(SampleCount::X4));
+        assert_eq!(8u32, Into::<u32>::into(SampleCount::X8));
+        assert_eq!(16u32, Into::<u32>::into(SampleCount::X16));
+        assert_eq!(32u32, Into::<u32>::into(SampleCount::X32));
+        assert_eq!(64u32, Into::<u32>::into(SampleCount::X64));
     }
 
     #[test]

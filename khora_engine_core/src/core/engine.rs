@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::core::metrics::engine::{EngineMetrics, FrameStats};
 use crate::core::timer::Stopwatch;
 use crate::event::{EngineEvent, EventBus};
 use crate::memory::get_currently_allocated_bytes;
@@ -30,18 +31,27 @@ use winit::{
 };
 
 /// Represents the main engine structure, responsible for orchestrating subsystems.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Engine {
     is_running: bool,
     event_bus: EventBus,
     window: Option<KhoraWindow>,
     render_system: Option<Box<dyn RenderSystem>>,
 
+    // Metrics system - now simplified to just EngineMetrics
+    engine_metrics: EngineMetrics,
+
     // Timers and counters
     frame_count: u64,
     last_stats_time: Stopwatch,
     frames_since_last_log: u32,
     log_interval_secs: f64,
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Engine {
@@ -55,12 +65,48 @@ impl Engine {
             window: None,
             render_system: Some(Box::new(WgpuRenderSystem::new())),
 
+            // Initialize metrics system with default configuration
+            engine_metrics: EngineMetrics::with_default_config(),
+
             // Initialize stats counters
             frame_count: 0,
             last_stats_time: Stopwatch::new(),
             frames_since_last_log: 0,
             log_interval_secs: 1.0,
         }
+    }
+
+    /// Initializes the metrics system and registers core engine metrics.
+    /// Note: With the new configuration-based approach, metrics are automatically
+    /// initialized when creating EngineMetrics::with_default_config().
+    pub fn initialize_metrics(&mut self) {
+        // Metrics are already initialized with default config in new()
+        if !self.engine_metrics.is_initialized() {
+            log::warn!("Engine metrics were not initialized properly");
+        } else {
+            log::info!("Engine metrics initialized successfully");
+        }
+    }
+
+    /// Updates engine metrics with current performance data.
+    pub fn update_metrics(&mut self, frame_time_ms: f64, cpu_time_ms: f64, gpu_time_ms: f64) {
+        self.engine_metrics
+            .update_basic(frame_time_ms, cpu_time_ms, gpu_time_ms);
+    }
+
+    /// Updates all engine metrics with comprehensive frame statistics.
+    pub fn update_all_metrics(&mut self, stats: &FrameStats) {
+        self.engine_metrics.update_all(stats);
+    }
+
+    /// Gets a snapshot of all engine metrics for monitoring and debugging.
+    pub fn get_metrics_snapshot(&self) -> Vec<String> {
+        self.engine_metrics.get_metrics_snapshot()
+    }
+
+    /// Logs a comprehensive metrics summary from the metrics system.
+    pub fn log_metrics_summary(&self) {
+        self.engine_metrics.log_metrics_summary()
     }
 
     /// Sets up the engine, initializing subsystems and preparing for the main loop.
@@ -74,6 +120,10 @@ impl Engine {
 
         log::info!("Engine setup commencing...");
         log::info!("Memory tracking allocator active.");
+
+        // Initialize metrics system
+        self.initialize_metrics();
+        log::info!("Metrics system initialized.");
 
         // TODO: Initialize other subsystems (ECS, audio, etc.)
 
@@ -286,6 +336,18 @@ impl ApplicationHandler<()> for EngineAppHandler {
                                 )
                             });
 
+                        // Update metrics with current frame data
+                        let frame_stats = FrameStats {
+                            fps,
+                            memory_usage_kib: memory_usage_kib as u64,
+                            render_duration_us,
+                            gpu_main_pass_ms,
+                            gpu_frame_total_ms,
+                            draw_calls,
+                            triangles,
+                        };
+                        engine.update_all_metrics(&frame_stats);
+
                         log::info!(
                             "Stats | Frame:{} FPS:{} Mem:{} KiB | CPU:{} us | GPU Main:{:.2} ms | GPU Frame:{:.2} ms | {} draws, {} tris",
                             engine.frame_count,
@@ -297,6 +359,11 @@ impl ApplicationHandler<()> for EngineAppHandler {
                             draw_calls,
                             triangles
                         );
+
+                        // Log comprehensive metrics summary every 10 seconds
+                        if engine.frame_count % (fps as u64 * 10).max(300) == 0 {
+                            engine.log_metrics_summary();
+                        }
                         engine.last_stats_time = Stopwatch::new();
                         engine.frames_since_last_log = 0;
                     }
