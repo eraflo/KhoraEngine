@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::core::metrics::engine::{EngineMetrics, FrameStats};
+use crate::core::metrics::scheduler::MetricsScheduler;
 use crate::core::timer::Stopwatch;
 use crate::event::{EngineEvent, EventBus};
 use crate::memory::get_currently_allocated_bytes;
@@ -38,8 +39,9 @@ pub struct Engine {
     window: Option<KhoraWindow>,
     render_system: Option<Box<dyn RenderSystem>>,
 
-    // Metrics system - now simplified to just EngineMetrics
+    // Metrics system
     engine_metrics: EngineMetrics,
+    metrics_scheduler: MetricsScheduler,
 
     // Timers and counters
     frame_count: u64,
@@ -67,6 +69,7 @@ impl Engine {
 
             // Initialize metrics system with default configuration
             engine_metrics: EngineMetrics::with_default_config(),
+            metrics_scheduler: MetricsScheduler::with_default_interval(),
 
             // Initialize stats counters
             frame_count: 0,
@@ -140,6 +143,7 @@ impl Engine {
         // Prepare the initial state for the ApplicationHandler
         self.is_running = true;
         self.last_stats_time = Stopwatch::new();
+        self.metrics_scheduler.reset();
 
         let mut app_handler = EngineAppHandler { engine: self };
 
@@ -303,6 +307,9 @@ impl ApplicationHandler<()> for EngineAppHandler {
                     engine.frame_count += 1;
                     engine.frames_since_last_log += 1;
 
+                    // Increment frame counter in metrics (every frame)
+                    engine.engine_metrics.increment_counter("frame_counter", 1);
+
                     // --- Render Phase ---
                     let render_time = Stopwatch::new();
                     engine.perform_render_frame();
@@ -360,10 +367,12 @@ impl ApplicationHandler<()> for EngineAppHandler {
                             triangles
                         );
 
-                        // Log comprehensive metrics summary every 10 seconds
-                        if engine.frame_count % (fps as u64 * 10).max(300) == 0 {
+                        // Log comprehensive metrics summary every 10 seconds based on actual time
+                        if engine.metrics_scheduler.should_log_summary() {
                             engine.log_metrics_summary();
+                            engine.metrics_scheduler.mark_summary_logged();
                         }
+
                         engine.last_stats_time = Stopwatch::new();
                         engine.frames_since_last_log = 0;
                     }

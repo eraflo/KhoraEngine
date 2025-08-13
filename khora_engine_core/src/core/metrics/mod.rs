@@ -23,6 +23,7 @@ pub mod config;
 pub mod engine;
 pub mod memory_backend;
 pub mod registry;
+pub mod scheduler;
 pub mod types;
 
 pub use backend::*;
@@ -30,4 +31,5 @@ pub use config::*;
 pub use engine::*;
 pub use memory_backend::*;
 pub use registry::*;
+pub use scheduler::*;
 pub use types::*;

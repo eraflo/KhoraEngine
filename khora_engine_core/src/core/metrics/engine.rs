@@ -370,9 +370,6 @@ impl EngineMetrics {
 
     /// Updates all engine metrics with comprehensive frame statistics
     pub fn update_all(&self, stats: &FrameStats) {
-        // Increment frame counter
-        self.increment_counter("frame_counter", 1);
-
         // Performance metrics
         let frame_time_ms = stats.render_duration_us as f64 / 1000.0;
         let cpu_time_ms = stats.render_duration_us as f64 / 1000.0;
@@ -432,7 +429,10 @@ impl EngineMetrics {
 
         log::info!("=== Engine Metrics Summary ===");
         if snapshot.is_empty() {
-            log::info!("  No metrics found! Registry count: {}", self.registry.metric_count());
+            log::info!(
+                "  No metrics found! Registry count: {}",
+                self.registry.metric_count()
+            );
         } else {
             log::info!("  Found {} metrics:", snapshot.len());
             for metric_line in snapshot {
