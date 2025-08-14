@@ -34,12 +34,35 @@ The `SaaTrackingAllocator` is a global allocator wrapper that tracks all heap al
 ```rust
 pub struct SaaTrackingAllocator {
     inner: System,
+    // Basic tracking
     total_allocated: AtomicUsize,
     peak_allocated: AtomicU64,
-    allocation_count: AtomicUsize,
-    deallocation_count: AtomicUsize,
+    
+    // Extended statistics (NEW)
+    total_allocations: AtomicU64,
+    total_deallocations: AtomicU64,
+    total_reallocations: AtomicU64,
+    bytes_allocated_lifetime: AtomicU64,
+    bytes_deallocated_lifetime: AtomicU64,
+    
+    // Size categorization (NEW)
+    large_allocations: AtomicU64,      // ≥ 1MB
+    large_allocation_bytes: AtomicU64,
+    small_allocations: AtomicU64,      // < 1MB
+    small_allocation_bytes: AtomicU64,
+    medium_allocations: AtomicU64,     // 1KB-1MB
+    medium_allocation_bytes: AtomicU64,
 }
 ```
+
+### Extended Statistics
+
+The allocator now tracks comprehensive allocation patterns:
+
+- **Allocation Counters**: Total allocations, deallocations, reallocations
+- **Lifetime Tracking**: Total bytes allocated/deallocated throughout application lifetime
+- **Size Categories**: Automatic classification (small <1KB, medium 1KB-1MB, large ≥1MB)
+- **Performance Metrics**: Fragmentation ratio, allocation efficiency, average sizes
 
 ### Global Usage
 
@@ -116,6 +139,225 @@ The tracking adds minimal overhead:
 - **Runtime cost**: <1% in typical applications
 
 ## Integration with Engine
+
+### Specialized Memory Monitor Integration
+
+The memory tracking is now integrated through the specialized `MemoryResourceMonitor` system:
+
+```rust
+use khora_engine_core::core::resource_monitors::MemoryResourceMonitor;
+use khora_engine_core::core::monitoring::{MemoryMonitor, ResourceMonitor};
+
+// Engine automatically creates and registers memory monitor
+let memory_monitor = Arc::new(MemoryResourceMonitor::new("SystemRAM".to_string()));
+register_resource_monitor(memory_monitor.clone());
+```
+
+#### Automatic Updates
+
+The memory monitor automatically updates with each engine frame:
+
+```rust
+impl ResourceMonitor for MemoryResourceMonitor {
+    fn update(&self) {
+        self.update_memory_stats(); // Called every frame
+    }
+}
+
+impl MemoryMonitor for MemoryResourceMonitor {
+    fn update_memory_stats(&self) {
+        let current_usage = get_currently_allocated_bytes();
+        let extended_stats = get_extended_memory_stats(); // NEW: Get comprehensive statistics
+        
+        // Update peak tracking
+        let mut peak = self.peak_usage_bytes.lock().unwrap();
+        if current_usage > *peak {
+            *peak = current_usage;
+        }
+        
+        // Calculate allocation delta
+        let mut last_alloc = self.last_allocation_bytes.lock().unwrap();
+        let allocation_delta = current_usage.saturating_sub(*last_alloc);
+        *last_alloc = current_usage;
+        
+        // Update sample count
+        let mut count = self.sample_count.lock().unwrap();
+        *count += 1;
+        
+        // Create comprehensive report with all extended statistics
+        let report = MemoryReport {
+            // Basic metrics
+            current_usage_bytes: current_usage,
+            peak_usage_bytes: *peak,
+            allocation_delta_bytes: allocation_delta,
+            sample_count: *count,
+            
+            // Extended statistics from allocator
+            total_allocations: extended_stats.total_allocations,
+            total_deallocations: extended_stats.total_deallocations,
+            total_reallocations: extended_stats.total_reallocations,
+            bytes_allocated_lifetime: extended_stats.bytes_allocated_lifetime,
+            bytes_deallocated_lifetime: extended_stats.bytes_deallocated_lifetime,
+            large_allocations: extended_stats.large_allocations,
+            large_allocation_bytes: extended_stats.large_allocation_bytes,
+            small_allocations: extended_stats.small_allocations,
+            small_allocation_bytes: extended_stats.small_allocation_bytes,
+            fragmentation_ratio: extended_stats.fragmentation_ratio,
+            allocation_efficiency: extended_stats.allocation_efficiency,
+            average_allocation_size: extended_stats.average_allocation_size,
+        };
+        
+        let mut last_report = self.last_report.lock().unwrap();
+        *last_report = Some(report);
+            *peak = current_usage;
+        }
+        
+        // Calculate allocation delta and create detailed report
+        let report = MemoryReport {
+            current_usage_bytes: current_usage,
+            peak_usage_bytes: *peak,
+            allocation_delta_bytes: /* calculated delta */,
+            sample_count: /* incremented count */,
+        };
+        
+        // Store report for retrieval
+        let mut last_report = self.last_report.lock().unwrap();
+        *last_report = Some(report);
+    }
+}
+```
+
+## Advanced Memory Analysis
+
+### Extended Statistics Overview
+
+The memory tracking system now provides comprehensive analytics beyond basic allocation tracking:
+
+```rust
+pub struct ExtendedMemoryStats {
+    // Current state
+    pub current_allocated_bytes: usize,
+    pub peak_allocated_bytes: u64,
+    
+    // Allocation counters
+    pub total_allocations: u64,
+    pub total_deallocations: u64,
+    pub total_reallocations: u64,
+    pub net_allocations: i64,
+    
+    // Lifetime totals
+    pub bytes_allocated_lifetime: u64,
+    pub bytes_deallocated_lifetime: u64,
+    pub bytes_net_lifetime: i64,
+    
+    // Size category tracking
+    pub large_allocations: u64,        // ≥ 1MB
+    pub large_allocation_bytes: u64,
+    pub small_allocations: u64,        // < 1KB
+    pub small_allocation_bytes: u64,
+    pub medium_allocations: u64,       // 1KB - 1MB
+    pub medium_allocation_bytes: u64,
+    
+    // Calculated metrics
+    pub average_allocation_size: f64,
+    pub fragmentation_ratio: f64,
+    pub allocation_efficiency: f64,
+}
+```
+
+### Performance Diagnostics
+
+#### Fragmentation Analysis
+
+```rust
+if let Some(report) = memory_monitor.get_memory_report() {
+    match report.fragmentation_status() {
+        "Low" => println!("✅ Memory fragmentation is healthy"),
+        "Moderate" => println!("⚠️ Moderate fragmentation detected"), 
+        "High" => println!("🔶 High fragmentation - consider optimization"),
+        "Critical" => println!("🔴 Critical fragmentation - immediate attention required"),
+        _ => {}
+    }
+    
+    println!("Fragmentation ratio: {:.3}", report.fragmentation_ratio);
+}
+```
+
+#### Allocation Pattern Analysis
+
+```rust
+// Analyze allocation patterns
+if let Some(report) = memory_monitor.get_memory_report() {
+    println!("📊 Allocation Analysis:");
+    
+    // Size distribution
+    let large_percentage = report.large_allocation_percentage();
+    if large_percentage > 30.0 {
+        println!("⚠️ High percentage of large allocations: {:.1}%", large_percentage);
+    }
+    
+    // Memory turnover
+    let turnover = report.memory_turnover_rate();
+    if turnover > 10.0 {
+        println!("🔄 High memory turnover: {:.2} ops/sample", turnover);
+    }
+    
+    // Efficiency metrics
+    let efficiency = report.memory_utilization_efficiency();
+    if efficiency < 95.0 {
+        println!("📉 Memory efficiency below optimal: {:.1}%", efficiency);
+    }
+}
+```
+
+#### Reallocation Tracking
+
+```rust
+// Monitor reallocation patterns
+let extended_stats = get_extended_memory_stats();
+if extended_stats.total_reallocations > 0 {
+    let realloc_ratio = extended_stats.total_reallocations as f64 / 
+                       extended_stats.total_allocations as f64;
+    
+    if realloc_ratio > 0.1 {
+        println!("⚠️ High reallocation ratio: {:.1}%", realloc_ratio * 100.0);
+        println!("Consider pre-sizing collections to reduce reallocations");
+    }
+}
+```
+
+#### Metrics System Integration
+
+All memory data is automatically exposed through the metrics system:
+
+```rust
+// Automatic metrics updates (handled by engine)
+engine_metrics.update_gauge("engine.memory.usage_mb", memory_usage_mb)?;
+engine_metrics.update_gauge("engine.memory.peak_mb", memory_peak_mb)?;
+engine_metrics.update_counter("engine.memory.total_allocations", total_allocations)?;
+engine_metrics.update_gauge("engine.memory.fragmentation_ratio", fragmentation_ratio)?;
+engine_metrics.update_gauge("engine.memory.allocation_efficiency", efficiency)?;
+```
+
+#### Accessing Memory Data
+
+Applications can access memory data through multiple interfaces:
+
+```rust
+// Via resource monitor registry
+if let Some(memory_monitor) = get_registered_monitor::<MemoryResourceMonitor>("SystemRAM") {
+    if let Some(report) = memory_monitor.get_memory_report() {
+        println!("Current: {} KB, Peak: {} KB, Delta: {} KB", 
+            report.current_usage_bytes / 1024,
+            report.peak_usage_bytes / 1024,
+            report.allocation_delta_bytes / 1024);
+    }
+}
+
+// Via direct allocator stats (legacy interface)
+let stats = get_allocation_stats();
+println!("Total allocated: {} MB", stats.total_allocated_bytes as f64 / 1_048_576.0);
+```
 
 ### Engine Statistics
 

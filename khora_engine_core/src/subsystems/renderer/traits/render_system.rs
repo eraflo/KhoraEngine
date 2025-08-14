@@ -14,7 +14,7 @@
 
 use super::graphics_device::GraphicsDevice;
 use crate::subsystems::renderer::api::common_types::{
-    GpuPerfHook, RenderObject, RenderSettings, RenderStats, RendererAdapterInfo, ViewInfo,
+    RenderObject, RenderSettings, RenderStats, RendererAdapterInfo, ViewInfo,
 };
 use crate::subsystems::renderer::error::RenderError;
 use crate::window::KhoraWindow;
@@ -60,10 +60,4 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
 
     /// Downcast to Any for type-specific access
     fn as_any(&self) -> &dyn std::any::Any;
-
-    /// Optional: backend may provide per-hook last timing in milliseconds.
-    /// Default impl returns None (no data or unsupported hook).
-    fn gpu_hook_time_ms(&self, _hook: GpuPerfHook) -> Option<f32> {
-        None
-    }
 }

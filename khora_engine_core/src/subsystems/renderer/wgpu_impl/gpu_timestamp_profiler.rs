@@ -240,7 +240,7 @@ impl WgpuTimestampProfiler {
 #[cfg(test)]
 mod tests {
     use super::WgpuTimestampProfiler;
-    use crate::subsystems::renderer::api::common_types::GpuPerfHook;
+    use crate::subsystems::renderer::api::common_types::GpuHook;
 
     fn create_test_device() -> Option<(wgpu::Device, wgpu::Queue, wgpu::Features)> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn gpu_timestamp_hook_order_constant_matches_last_raw() {
-        let hooks = GpuPerfHook::ALL;
+        let hooks = GpuHook::ALL;
         assert_eq!(hooks.len(), 4, "Update test if hook count changes");
         assert_ne!(hooks[0] as u32, hooks[hooks.len() - 1] as u32);
     }

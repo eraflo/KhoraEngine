@@ -36,45 +36,107 @@ The performance monitoring system tracks multiple aspects of engine performance:
 
 ### ResourceMonitor Trait
 
-The base trait for all resource monitoring:
+The base trait for all resource monitoring in the new architecture:
 
 ```rust
-pub trait ResourceMonitor {
-    /// Get current resource usage as key-value pairs
-    fn get_resource_usage(&self) -> HashMap<String, f64>;
-    
-    /// Get resource limits/budgets
-    fn get_resource_limits(&self) -> HashMap<String, f64> {
-        HashMap::new() // Default: no limits
-    }
-    
-    /// Check if resource usage is within acceptable bounds
-    fn is_healthy(&self) -> bool {
-        true // Default: always healthy
+pub trait ResourceMonitor: Send + Sync + Debug + 'static {
+    /// Unique identifier for this monitor instance
+    fn monitor_id(&self) -> Cow<'static, str>;
+
+    /// Type of resource being monitored
+    fn resource_type(&self) -> MonitoredResourceType;
+
+    /// Get general resource usage information
+    fn get_usage_report(&self) -> ResourceUsageReport;
+
+    /// Update the monitor's internal state/statistics
+    /// Default implementation does nothing for monitors that don't need updates
+    fn update(&self) {
+        // Default: no-op
     }
 }
 ```
 
-### Timer Utilities
+### Specialized Monitor Traits
 
-High-precision timing for performance measurement:
+The system uses specialized traits for different resource types:
+
+#### Memory Monitoring
+```rust
+pub trait MemoryMonitor: ResourceMonitor {
+    /// Get memory-specific report
+    fn get_memory_report(&self) -> Option<MemoryReport>;
+    
+    /// Update memory statistics
+    fn update_memory_stats(&self);
+    
+    /// Reset peak usage tracking
+    fn reset_peak_usage(&self);
+}
+```
+
+#### GPU Performance Monitoring
+```rust
+pub trait GpuMonitor: ResourceMonitor {
+    /// Get GPU performance report
+    fn get_gpu_report(&self) -> Option<GpuReport>;
+}
+```
+
+#### VRAM Monitoring
+```rust
+pub trait VramMonitor: ResourceMonitor {
+    /// Get VRAM usage report
+    fn get_vram_report(&self) -> Option<VramReport>;
+}
+```
+
+### Monitor Implementations
+
+#### MemoryResourceMonitor
+Tracks system memory usage through integration with the SaaTrackingAllocator:
 
 ```rust
-#[derive(Debug, Clone)]
-pub struct Stopwatch {
-    start_time: Instant,
-    elapsed_time: Duration,
-    is_running: bool,
+pub struct MemoryResourceMonitor {
+    monitor_id: String,
+    last_report: Mutex<Option<MemoryReport>>,
+    peak_usage_bytes: Mutex<usize>,
+    last_allocation_bytes: Mutex<usize>,
+    sample_count: Mutex<u64>,
 }
+```
 
-impl Stopwatch {
-    pub fn new() -> Self { /* ... */ }
-    pub fn start(&mut self) { /* ... */ }
-    pub fn stop(&mut self) { /* ... */ }
-    pub fn elapsed(&self) -> Duration { /* ... */ }
-    pub fn elapsed_ms(&self) -> f32 { /* ... */ }
-    pub fn reset(&mut self) { /* ... */ }
+#### GpuMonitor
+Tracks GPU performance metrics from the render system:
+
+```rust
+pub struct GpuMonitor {
+    system_name: String,
+    last_frame_stats: Mutex<Option<GpuReport>>,
 }
+```
+
+#### VramResourceMonitor
+Monitors video memory usage through the graphics system:
+
+```rust
+pub struct VramResourceMonitor {
+    vram_provider: Weak<dyn VramProvider>,
+    monitor_id: String,
+}
+```
+
+### Resource Registry
+
+All monitors are managed through a centralized registry:
+
+```rust
+// Register monitors during engine initialization
+let memory_monitor = Arc::new(MemoryResourceMonitor::new("SystemRAM".to_string()));
+register_resource_monitor(memory_monitor.clone());
+
+let gpu_monitor = Arc::new(GpuMonitor::new("WgpuGPU".to_string()));
+register_resource_monitor(gpu_monitor.clone());
 ```
 
 ## CPU Performance Monitoring
@@ -209,53 +271,112 @@ impl GpuTimestampProfiler {
 
 ## Memory Monitoring
 
-### Heap Memory Tracking
+### System Memory Tracking with MemoryResourceMonitor
 
-The `SaaTrackingAllocator` provides real-time heap memory statistics:
+The new integrated memory monitoring system uses `MemoryResourceMonitor` which connects with the `SaaTrackingAllocator`:
 
 ```rust
-#[derive(Debug, Clone)]
-pub struct MemoryStats {
-    pub heap_allocated_bytes: usize,     // Current heap usage
-    pub heap_peak_bytes: u64,           // Peak heap usage
-    pub allocation_count: usize,        // Total allocations made
-    pub deallocation_count: usize,      // Total deallocations made
-    pub net_allocations: isize,         // Active allocations
+pub struct MemoryResourceMonitor {
+    monitor_id: String,
+    last_report: Mutex<Option<MemoryReport>>,
+    peak_usage_bytes: Mutex<usize>,
+    last_allocation_bytes: Mutex<usize>,
+    sample_count: Mutex<u64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MemoryReport {
+    pub current_usage_bytes: usize,
+    pub peak_usage_bytes: usize,
+    pub allocation_delta_bytes: usize,
+    pub sample_count: u64,
 }
 ```
 
-### VRAM Tracking
+#### Real-time Memory Updates
 
-GPU memory usage is tracked by the graphics device:
+The memory monitor automatically updates with each engine frame:
 
 ```rust
-impl WgpuDevice {
-    pub fn vram_stats(&self) -> VramStats {
-        VramStats {
-            allocated_bytes: self.vram_allocated_bytes.load(Ordering::Relaxed),
-            peak_bytes: self.vram_peak_bytes.load(Ordering::Relaxed),
-            buffer_bytes: self.calculate_buffer_usage(),
-            texture_bytes: self.calculate_texture_usage(),
+impl ResourceMonitor for MemoryResourceMonitor {
+    fn update(&self) {
+        self.update_memory_stats(); // Called every frame
+    }
+}
+
+impl MemoryMonitor for MemoryResourceMonitor {
+    fn update_memory_stats(&self) {
+        let current_usage = get_currently_allocated_bytes();
+        
+        // Update peak tracking
+        let mut peak = self.peak_usage_bytes.lock().unwrap();
+        if current_usage > *peak {
+            *peak = current_usage;
         }
+        
+        // Calculate allocation delta and store report
+        // ...
     }
 }
 ```
 
-### Memory Pressure Detection
+### VRAM Tracking with VramResourceMonitor
 
-The system can detect and report memory pressure:
+GPU memory usage is tracked through the `VramResourceMonitor`:
 
 ```rust
-pub struct MemoryPressureMonitor {
-    heap_warning_threshold_mb: f32,
-    vram_warning_threshold_mb: f32,
-    last_warning_time: Instant,
-    warning_cooldown: Duration,
+pub struct VramResourceMonitor {
+    vram_provider: Weak<dyn VramProvider>,
+    monitor_id: String,
 }
 
-impl MemoryPressureMonitor {
-    pub fn check_pressure(&mut self) -> Option<MemoryPressureEvent> {
-        let memory_stats = get_allocation_stats();
+pub trait VramProvider: Send + Sync + Debug {
+    fn get_vram_usage_mb(&self) -> f32;
+    fn get_vram_peak_mb(&self) -> f32;
+    fn get_vram_capacity_mb(&self) -> Option<f32>;
+}
+```
+
+#### Integration with Graphics System
+
+The VRAM monitor connects to the graphics device:
+
+```rust
+impl VramProvider for WgpuDevice {
+    fn get_vram_usage_mb(&self) -> f32 {
+        self.vram_allocated_bytes.load(Ordering::Relaxed) as f32 / (1024.0 * 1024.0)
+    }
+    
+    fn get_vram_peak_mb(&self) -> f32 {
+        self.vram_peak_bytes.load(Ordering::Relaxed) as f32 / (1024.0 * 1024.0)
+    }
+}
+```
+
+### Memory Metrics Integration
+
+All memory data is automatically integrated into the metrics system:
+
+```rust
+// Engine automatically updates memory metrics each frame
+engine_metrics.update_gauge("engine.memory.usage_mb", memory_usage_mb)?;
+engine_metrics.update_gauge("engine.memory.vram_usage_mb", vram_usage_mb)?;
+engine_metrics.update_gauge("engine.memory.vram_peak_mb", vram_peak_mb)?;
+```
+
+### Registry-Based Access
+
+All monitors are accessible through the centralized registry:
+
+```rust
+// Get memory monitor from registry
+if let Some(memory_monitor) = get_registered_monitor::<MemoryResourceMonitor>("SystemRAM") {
+    if let Some(report) = memory_monitor.get_memory_report() {
+        println!("Current memory: {} KB", report.current_usage_bytes / 1024);
+        println!("Peak memory: {} KB", report.peak_usage_bytes / 1024);
+    }
+}
+```
         let heap_mb = memory_stats.total_allocated_bytes as f32 / 1_048_576.0;
         
         if heap_mb > self.heap_warning_threshold_mb && 

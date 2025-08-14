@@ -17,6 +17,20 @@
 //! This module contains all configuration-related functionality for the engine.
 //! It provides a centralized place for managing engine settings, user preferences,
 //! and system configurations.
+//!
+//! ## Directory Structure
+//!
+//! - `metrics/` - JSON configuration files for the metrics system
+//!   - `memory_basic.json` - Basic memory monitoring configuration
+//!   - `memory_extended.json` - Extended memory monitoring with detailed stats
+//!   - `memory_advanced.json` - Advanced monitoring with histograms
+//!   - `monitoring_complete.json` - Complete resource monitoring setup
+//!
+//! ## Note
+//!
+//! Some preset management functionality is currently implemented in the metrics
+//! engine module for convenience. This will be moved to a dedicated configuration
+//! manager in the future as the configuration system evolves.
 
 // Future configuration modules will be added here
 // pub mod render_config;

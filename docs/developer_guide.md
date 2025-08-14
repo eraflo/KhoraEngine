@@ -1,479 +1,335 @@
-# KhoraEngine Developer Guide
+# Developer Guide
 
-This guide provides comprehensive information for developers working with or contributing to KhoraEngine.
-
-## Table of Contents
-
-1. [Getting Started](#getting-started)
-2. [Project Structure](#project-structure) 
-3. [Core Concepts](#core-concepts)
-4. [Development Workflow](#development-workflow)
-5. [Extending the Engine](#extending-the-engine)
-6. [Testing](#testing)
-7. [Performance Considerations](#performance-considerations)
-8. [Debugging Tips](#debugging-tips)
-9. [Next Steps](#next-steps)
-
-## Getting Started
-
-### Prerequisites
-
-- Rust 1.70+ (recommended latest stable)
-- A graphics driver supporting Vulkan, DirectX 12, Metal, or OpenGL
-- Git for version control
-
-### Initial Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/eraflo/KhoraEngine.git
-cd KhoraEngine
-
-# Verify everything builds
-cargo check --workspace
-
-# Run tests
-cargo test --workspace
-
-# Build and run the sandbox application
-cargo run --bin sandbox
-```
-
-### Development Environment
-
-#### Recommended VS Code Extensions
-
-- `rust-analyzer` - Rust language support
-- `CodeLLDB` - Debugging support
-- `Better TOML` - TOML file syntax highlighting
-- `GitLens` - Enhanced Git integration
-
-#### Pre-commit Verification
-
-Before pushing changes, run the verification script:
-
-```bash
-# Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -File .\verify.ps1 --install-tools --full
-
-# Linux/macOS
-./verify.sh --fix --install-tools --full
-```
+This guide provides comprehensive information for developers working on the Khora Engine project.
 
 ## Project Structure
 
-```
-KhoraEngine/
-├── khora_engine_core/          # Core engine library
-│   ├── src/
-│   │   ├── core/              # Engine runtime (loop, monitoring, timers)
-│   │   ├── event/             # Event system and bus
-│   │   ├── math/              # Mathematical primitives
-│   │   ├── memory/            # Memory management and tracking
-│   │   ├── subsystems/        # Pluggable subsystems
-│   │   │   ├── input.rs       # Input handling
-│   │   │   └── renderer/      # Rendering subsystem
-│   │   └── window/            # Window management
-│   └── Cargo.toml
-├── sandbox/                   # Example application
-├── docs/                      # Documentation
-├── assets/                    # Asset files (logos, etc.)
-└── target/                    # Build artifacts
-```
+### Core Engine (`khora_engine_core/`)
 
-### Key Modules
+The core engine contains the fundamental systems and utilities:
 
-#### `core` Module
-- **`engine.rs`**: Main engine orchestrator with the application loop
-- **`monitoring.rs`**: Performance monitoring and resource tracking  
-- **`timer.rs`**: CPU timing utilities (`Stopwatch`)
-- **`utils/`**: Generic utilities (bitflags macro, etc.)
+- `core/` - Engine core systems (metrics, monitoring, utils)
+- `event/` - Event system for inter-system communication
+- `math/` - Mathematical utilities (vectors, matrices, quaternions)
+- `memory/` - Memory management and allocation
+- `subsystems/` - Rendering, input, and other subsystems
+- `window/` - Window management
 
-#### `math` Module
-- **Vector types**: `Vec2`, `Vec3`, `Vec4` with SIMD optimizations
-- **Matrix types**: `Mat3`, `Mat4` for transformations
-- **`Quaternion`**: Rotation representation
-- **`LinearRgba`**: Color representation
-- **Geometric primitives**: `Aabb`, extents, origins
+### Sandbox (`sandbox/`)
 
-#### `subsystems` Module
-- **`input.rs`**: Cross-platform input event handling
-- **`renderer/`**: Complete rendering abstraction layer
-
-#### `event` Module
-- **Event bus**: Decoupled publish-subscribe system
-- **Engine events**: Core engine lifecycle events
-
-#### `memory` Module
-- **`SaaTrackingAllocator`**: Memory allocation tracking for SAA insights
-
-#### `window` Module
-- **Window management**: Cross-platform window creation and event handling
-
-## Core Concepts
-
-### Symbiotic Adaptive Architecture (SAA)
-
-KhoraEngine is designed around the SAA philosophy:
-
-- **Intelligent Subsystem Agents (ISAs)**: Subsystems that can adapt their behavior
-- **Dynamic Context Core (DCC)**: Central coordinator for adaptive decisions
-- **Goal-Oriented Resource Negotiation (GORNA)**: Resource allocation negotiation
-- **Context-aware adaptation**: Real-time performance and resource-driven optimization
-
-### Event-Driven Architecture
-
-The engine uses an event bus for loose coupling:
-
-```rust
-use khora_engine_core::{Engine, EngineEvent, KhoraInputEvent};
-
-// Subscribe to events
-let mut engine = Engine::new(window)?;
-
-// Handle events in your main loop
-for event in engine.poll_events() {
-    match event {
-        EngineEvent::Input(input_event) => {
-            // Handle input
-        }
-        EngineEvent::Render(render_stats) => {
-            // Handle render completion
-        }
-        // ... other events
-    }
-}
-```
-
-### Resource Management
-
-All resources are tracked for SAA decision-making:
-- **Memory allocation**: Tracked via `SaaTrackingAllocator`
-- **VRAM usage**: Monitored by graphics device
-- **CPU timing**: Measured with built-in profiling
-- **GPU timing**: Captured via timestamp queries
+The sandbox project serves as a testing and development environment for the engine.
 
 ## Development Workflow
 
-### Branch Strategy
+### Building the Project
 
-- `main`: Stable releases and major milestones
-- `develop`: Integration branch for new features
-- Feature branches: `XX-feature-description` (where XX is issue number)
+```powershell
+# Build all targets
+cargo build
 
-### Issue-Driven Development
+# Build in release mode
+cargo build --release
 
-1. Create/assign yourself to a GitHub issue
-2. Create a feature branch: `git checkout -b 42-feature-new-cool-thing`
-3. Implement with tests
-4. Run verification: `./verify.sh --full`
-5. Create pull request with filled-out template
-6. Address review feedback
-7. Merge after approval
-
-### Code Style
-
-- Follow `rustfmt` formatting (enforced by CI)
-- Use `clippy` suggestions (warnings as errors)
-- Prefer descriptive names over comments
-- Document public APIs with `///` doc comments
-- Use `Result` types over panics for error handling
-
-### Testing Strategy
-
-```bash
-# Run all tests
-cargo test --workspace
-
-# Run specific test
-cargo test --package khora_engine_core math::tests
-
-# Run with output
-cargo test -- --nocapture
-
-# Run tests with extra threads
-cargo test -- --test-threads=1
-```
-
-## Extending the Engine
-
-### Adding a New Subsystem
-
-1. **Create the subsystem module**:
-   ```rust
-   // khora_engine_core/src/subsystems/audio.rs
-   use crate::event::EngineEvent;
-   
-   pub struct AudioSystem {
-       // ... state
-   }
-   
-   impl AudioSystem {
-       pub fn new() -> Self {
-           // ... initialization
-       }
-       
-       pub fn update(&mut self) -> Vec<EngineEvent> {
-           // ... update logic, return events
-       }
-   }
-   ```
-
-2. **Update the subsystems module**:
-   ```rust
-   // khora_engine_core/src/subsystems/mod.rs
-   pub mod audio;
-   pub use audio::AudioSystem;
-   ```
-
-3. **Integrate with the engine**:
-   ```rust
-   // khora_engine_core/src/core/engine.rs
-   // Add to Engine struct and update methods
-   ```
-
-4. **Add tests and documentation**
-
-### Creating Custom Events
-
-```rust
-use crate::event::EngineEvent;
-
-#[derive(Debug, Clone)]
-pub enum CustomEvent {
-    AudioPlayed { sound_id: u32 },
-    NetworkConnected { peer_id: String },
-}
-
-// Convert to EngineEvent
-let event = EngineEvent::Custom(Box::new(CustomEvent::AudioPlayed { sound_id: 123 }));
-```
-
-### Implementing Performance-Aware Components
-
-Design components with performance monitoring in mind:
-
-1. **Resource monitoring integration**:
-   ```rust
-   use khora_engine_core::core::monitoring::ResourceMonitor;
-   
-   impl ResourceMonitor for MyComponent {
-       fn get_resource_usage(&self) -> ResourceUsage {
-           ResourceUsage {
-               cpu_time_ms: self.last_frame_time,
-               memory_bytes: self.calculate_memory_usage(),
-               custom_metrics: HashMap::new(),
-           }
-       }
-   }
-   ```
-
-2. **Multiple execution strategies**:
-   ```rust
-   pub enum RenderStrategy {
-       HighQuality,
-       Balanced,
-       Performance,
-   }
-   ```
-
-3. **Performance metrics collection**:
-   ```rust
-   pub struct SubsystemMetrics {
-       pub cpu_time_ms: f32,
-       pub memory_used_mb: f32,
-       pub operations_per_second: f32,
-   }
-   ```
-
-## Testing
-
-KhoraEngine follows Rust's standard testing conventions with tests placed directly in source files.
-
-### Unit Tests
-
-Place tests at the end of each source file using the `#[cfg(test)]` attribute:
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_vector_addition() {
-        let v1 = Vec3::new(1.0, 2.0, 3.0);
-        let v2 = Vec3::new(4.0, 5.0, 6.0);
-        let result = v1 + v2;
-        assert_eq!(result, Vec3::new(5.0, 7.0, 9.0));
-    }
-
-    #[test]
-    fn test_vector_normalization() {
-        let v = Vec3::new(1.0, 0.0, 0.0);
-        let normalized = v.normalize();
-        assert_eq!(normalized, Vec3::new(1.0, 0.0, 0.0));
-    }
-}
+# Build and run sandbox
+cargo run --bin sandbox
 ```
 
 ### Running Tests
 
-```bash
+```powershell
 # Run all tests
 cargo test
-
-# Run tests for a specific module
-cargo test math::vector
 
 # Run tests with output
 cargo test -- --nocapture
 
-# Run tests in parallel
-cargo test -- --test-threads=4
+# Run specific test
+cargo test test_name
 ```
 
-### Test Organization
+### Code Quality
 
-**Current project structure:**
-- Tests are embedded in source files at the end
-- Use `#[cfg(test)]` to exclude from release builds
-- Import parent module with `use super::*;`
-- Group related tests in the same `tests` module
+The project uses several tools to maintain code quality:
 
-**Example from the math module:**
+- **Clippy** for linting
+- **Rustfmt** for formatting
+- **Deny** for dependency auditing
+
+```powershell
+# Run clippy
+cargo clippy
+
+# Format code
+cargo fmt
+
+# Check dependencies
+cargo deny check
+```
+
+## Core Systems
+
+### Metrics System
+
+The engine includes a comprehensive metrics system for performance monitoring:
+
 ```rust
-// At the end of khora_engine_core/src/math/vector.rs
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::math::approx_eq;
+use khora_engine_core::core::metrics::EngineMetrics;
 
-    fn vec3_approx_eq(a: Vec3, b: Vec3) -> bool {
-        approx_eq(a.x, b.x) && approx_eq(a.y, b.y) && approx_eq(a.z, b.z)
-    }
+// Create metrics system
+let mut metrics = EngineMetrics::new();
 
-    #[test]
-    fn test_vec3_cross_product() {
-        let v1 = Vec3::new(1.0, 0.0, 0.0);
-        let v2 = Vec3::new(0.0, 1.0, 0.0);
-        let cross = v1.cross(v2);
-        assert!(vec3_approx_eq(cross, Vec3::new(0.0, 0.0, 1.0)));
+// Register custom metrics
+metrics.register_custom_counter("my_counter", "Description");
+metrics.register_custom_gauge("my_gauge", "Description");
+
+// Update metrics
+metrics.increment_counter("my_counter", 1.0);
+metrics.set_gauge("my_gauge", 42.0);
+```
+
+### Resource Monitoring
+
+The resource monitoring system tracks various system resources:
+
+#### Memory Monitoring
+
+```rust
+use khora_engine_core::core::resource_monitors::MemoryMonitor;
+
+let monitor = MemoryMonitor::new("MainMemory".to_string());
+monitor.update_from_bytes(1024 * 1024 * 100); // 100 MB
+
+if let Some(report) = monitor.get_memory_report() {
+    println!("Current memory usage: {} bytes", report.current_bytes);
+}
+```
+
+#### GPU Monitoring
+
+```rust
+use khora_engine_core::core::resource_monitors::GpuMonitor;
+
+let gpu_monitor = GpuMonitor::new("MainGPU".to_string());
+
+// Update with render statistics
+let stats = RenderStats {
+    frame_number: 1,
+    cpu_preparation_time_ms: 2.0,
+    cpu_render_submission_time_ms: 0.5,
+    gpu_main_pass_time_ms: 10.0,
+    gpu_frame_total_time_ms: 15.0,
+    draw_calls: 100,
+    triangles_rendered: 50000,
+    vram_usage_estimate_mb: 256.0,
+};
+
+gpu_monitor.update_from_frame_stats(&stats);
+
+if let Some(report) = gpu_monitor.get_gpu_report() {
+    println!("Frame {}: GPU time {}μs", 
+             report.frame_number,
+             report.frame_total_duration_us().unwrap_or(0));
+}
+```
+
+### Event System
+
+The event system enables communication between different engine components:
+
+```rust
+use khora_engine_core::event::EventBus;
+use khora_engine_core::core::InternalEvent;
+
+let event_bus = EventBus::new();
+let sender = event_bus.sender();
+let receiver = event_bus.receiver();
+
+// Send events
+sender.send(InternalEvent::Shutdown).unwrap();
+
+// Receive events
+if let Ok(event) = receiver.try_recv() {
+    match event {
+        InternalEvent::Shutdown => println!("Shutdown requested"),
+        _ => {}
     }
 }
 ```
 
-### Performance Tests
+### Math Utilities
 
-Use `criterion` for benchmarks:
+The engine provides comprehensive mathematical utilities:
 
-```bash
-cargo bench
+```rust
+use khora_engine_core::math::{Vec3, Mat4, Quat};
+
+// Vector operations
+let v1 = Vec3::new(1.0, 2.0, 3.0);
+let v2 = Vec3::new(4.0, 5.0, 6.0);
+let dot_product = v1.dot(v2);
+let cross_product = v1.cross(v2);
+
+// Matrix operations
+let transform = Mat4::from_translation(Vec3::new(10.0, 0.0, 0.0));
+let rotation = Mat4::from_quat(Quat::from_axis_angle(Vec3::Y, 45.0_f32.to_radians()));
+let combined = transform * rotation;
+
+// Apply transformation
+let point = Vec3::new(1.0, 0.0, 0.0);
+let transformed = combined.transform_point3(point);
+```
+
+## Rendering System
+
+### WGPU Backend
+
+The engine uses WGPU as its primary rendering backend:
+
+```rust
+use khora_engine_core::subsystems::renderer::wgpu_impl::WgpuDevice;
+
+// The rendering system is initialized automatically
+// Custom shaders and pipelines can be created through the device interface
+```
+
+### Performance Monitoring
+
+Integrate GPU monitoring into your rendering code:
+
+```rust
+// In your render loop
+let start_time = std::time::Instant::now();
+
+// ... rendering operations ...
+
+let end_time = std::time::Instant::now();
+let frame_time_ms = (end_time - start_time).as_secs_f32() * 1000.0;
+
+let render_stats = RenderStats {
+    frame_number: current_frame,
+    gpu_frame_total_time_ms: frame_time_ms,
+    // ... other stats
+};
+
+gpu_monitor.update_from_frame_stats(&render_stats);
+```
+
+## Testing Guidelines
+
+### Unit Tests
+
+Write comprehensive unit tests for all public APIs:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_component_creation() {
+        let component = MyComponent::new();
+        assert_eq!(component.value(), 0);
+    }
+
+    #[test]
+    fn test_component_behavior() {
+        let mut component = MyComponent::new();
+        component.update(42);
+        assert_eq!(component.value(), 42);
+    }
+}
+```
+
+### Integration Tests
+
+Integration tests verify that components work together correctly:
+
+```rust
+#[test]
+fn test_metrics_and_monitoring_integration() {
+    let mut metrics = EngineMetrics::new();
+    let monitor = MemoryMonitor::new("Test".to_string());
+    
+    // Test interaction between systems
+    monitor.update_from_bytes(1024);
+    let usage = monitor.get_usage_report();
+    
+    metrics.set_gauge("memory_usage", usage.current_bytes as f64);
+    
+    // Verify integration
+    assert!(metrics.get_gauge_value("memory_usage").unwrap() > 0.0);
+}
 ```
 
 ## Performance Considerations
 
 ### Memory Management
 
-- Use the provided `SaaTrackingAllocator` to monitor allocations
-- Prefer stack allocation for small, short-lived data
-- Use `Arc` and `Rc` judiciously - prefer ownership transfer
-- Monitor memory usage via engine statistics
+- Use `Arc` and `Mutex` judiciously for shared state
+- Prefer `Rc` and `RefCell` for single-threaded scenarios
+- Monitor memory usage with the built-in monitoring system
+
+### Rendering Performance
+
+- Minimize state changes between draw calls
+- Use instancing for repeated geometry
+- Monitor GPU performance with the monitoring system
+- Profile regularly to identify bottlenecks
 
 ### CPU Performance
 
-- Profile with `cargo flamegraph` or similar tools
-- Use `Stopwatch` for timing critical sections
-- Prefer data-oriented design (structs of arrays vs arrays of structs)
-- Use SIMD when beneficial (math types already optimized)
+- Use profiling tools to identify hot paths
+- Consider multithreading for independent operations
+- Cache frequently computed values
 
-### GPU Performance
+## Error Handling
 
-KhoraEngine provides comprehensive GPU performance monitoring through multiple layers:
-
-#### GPU Timestamp Profiling
-- Enable GPU timestamp profiling with `RenderSettings.enable_gpu_timestamps = true`
-- Monitor GPU frame time via `RenderStats.gpu_main_pass_time_ms` and `gpu_frame_total_time_ms`
-- Access raw timestamp data through the timestamp profiler
-
-#### ResourceMonitor for GPU Performance
-- Use `WgpuGpuPerformanceMonitor` for detailed GPU timing analysis
-- Access microsecond-precision metrics for main pass and frame totals
-- Integrate with external monitoring systems through the `ResourceMonitor` trait
+The engine uses Result types for error handling:
 
 ```rust
-// Access GPU performance monitor
-if let Some(gpu_monitor) = render_system.gpu_performance_monitor() {
-    if let Some(report) = gpu_monitor.get_gpu_performance_report() {
-        println!("Main pass: {}μs, Frame total: {}μs", 
-                 report.main_pass_duration_us.unwrap_or(0),
-                 report.frame_total_duration_us.unwrap_or(0));
+use khora_engine_core::subsystems::renderer::error::ResourceError;
+
+fn create_buffer(size: usize) -> Result<BufferId, ResourceError> {
+    if size == 0 {
+        return Err(ResourceError::InvalidSize("Buffer size cannot be zero".to_string()));
     }
+    
+    // ... create buffer ...
+    Ok(buffer_id)
+}
+
+// Usage
+match create_buffer(1024) {
+    Ok(buffer_id) => println!("Created buffer: {:?}", buffer_id),
+    Err(e) => eprintln!("Failed to create buffer: {}", e),
 }
 ```
 
-#### Performance Optimization Tips
-- Batch draw calls when possible
-- Minimize state changes
-- Use appropriate texture formats for your content
-- Profile regularly with `cargo run --release` for accurate GPU timings
-- Consider MSAA impact on fill rate
+## Contributing
 
-For detailed GPU monitoring documentation, see [GPU Performance Monitoring](gpu_performance_monitoring.md).
+### Code Style
 
-### Threading
+- Follow Rust naming conventions
+- Use descriptive variable and function names
+- Add documentation comments for public APIs
+- Run `cargo fmt` before committing
 
-- Current engine is single-threaded by design
-- Ensure thread-safety with `Send + Sync` traits for components that need it
+### Commit Messages
 
-## Debugging Tips
+Use clear, descriptive commit messages:
 
-### Logging
-
-Use structured logging throughout:
-
-```rust
-use log::{info, warn, error, debug, trace};
-
-// Different log levels
-trace!("Detailed execution flow");
-debug!("Debug information: {:?}", some_value);
-info!("General information");
-warn!("Warning: {}", warning_message);
-error!("Error occurred: {}", error);
+```
+feat: add GPU performance monitoring system
+fix: resolve memory leak in texture loading
+docs: update developer guide with monitoring examples
+test: add integration tests for metrics system
 ```
 
-Set log levels:
-```bash
-RUST_LOG=khora_engine_core=debug cargo run --bin sandbox
-RUST_LOG=trace cargo run --bin sandbox  # Very verbose
-```
+### Pull Requests
 
-### Graphics Debugging
+- Include comprehensive tests
+- Update documentation as needed
+- Ensure all CI checks pass
+- Provide clear description of changes
 
-Enable graphics debugging:
-- Use RenderDoc for frame capture
-- Enable validation layers in debug builds
-- Monitor GPU timing with built-in profiling
-
-### Memory Debugging
-
-- Use `valgrind` on Linux for memory leak detection
-- Monitor allocation patterns via `SaaTrackingAllocator`
-- Use `heaptrack` for allocation profiling
-
-### Common Issues
-
-1. **Window creation fails**: Check graphics drivers and available backends
-2. **Shader compilation errors**: Verify WGSL syntax and entry points
-3. **Performance issues**: Profile with built-in timing, check allocations
-4. **Build failures**: Run `cargo clean` and retry, check Rust version
-
-## Next Steps
-
-1. **Read the architecture documentation**: `docs/architecture_design.md`
-2. **Explore the rendering system**: `docs/rendering/`
-3. **Run the verification script**: Ensure your changes pass all checks
-4. **Join discussions**: Participate in GitHub Discussions for design decisions
-5. **Contribute**: Look for "good first issue" labels on GitHub
-
-For more specific information, refer to the individual module documentation and the architectural design documents.
+This guide provides the foundation for developing with the Khora Engine. For specific subsystems or advanced topics, refer to the dedicated documentation in the `docs/` directory.

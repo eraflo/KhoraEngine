@@ -15,7 +15,7 @@ Welcome to the KhoraEngine documentation! This index provides an overview of all
 
 #### Rendering
 - **[Rendering System](rendering/rendering_system.md)** - Complete rendering architecture and API documentation
-- **[GPU Performance Monitoring](rendering/gpu_performance_monitoring.md)** - Comprehensive GPU timing, performance hooks, and surface resize strategy with microsecond precision
+- **[GPU Monitoring](rendering/gpu_monitoring.md)** - Comprehensive GPU timing, performance hooks, and surface resize strategy with microsecond precision
 
 #### Memory Management
 - **[Memory Management](memory_management.md)** - Memory tracking, allocation monitoring, and SAA integration
@@ -25,6 +25,7 @@ Welcome to the KhoraEngine documentation! This index provides an overview of all
 
 #### Performance Monitoring
 - **[Performance Monitoring](performance_monitoring.md)** - Comprehensive performance tracking and metrics collection
+- **[Monitoring Architecture](architecture/monitoring_architecture.md)** - Specialized trait-based resource monitoring system
 - **[Metrics System](metrics/README.md)** - Complete metrics system documentation with user guide, API reference, and examples
 
 ### Development
@@ -50,7 +51,7 @@ Welcome to the KhoraEngine documentation! This index provides an overview of all
 ### For Performance Optimization
 1. **[Performance Monitoring](performance_monitoring.md)** - Understanding engine metrics
 2. **[Metrics System](metrics/README.md)** - Complete metrics system with custom metrics, JSON configuration, and monitoring
-2. **[GPU Performance Monitoring](rendering/gpu_performance_monitoring.md)** - Comprehensive GPU timing analysis, performance hooks, and optimization strategies
+2. **[GPU Monitoring](rendering/gpu_monitoring.md)** - Comprehensive GPU timing analysis, performance hooks, and optimization strategies
 3. **[Memory Management](memory_management.md)** - Memory usage and optimization
 
 ## Documentation Standards

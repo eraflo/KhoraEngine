@@ -43,6 +43,10 @@ pub enum MetricHandle {
 /// It contains its own MetricsRegistry and provides a clean API for configuring
 /// and updating metrics based on JSON configuration.
 ///
+/// **Note**: Configuration management functionality is currently integrated here
+/// for convenience but is considered temporary. Future versions will move this
+/// to a dedicated configuration manager system.
+///
 /// # Custom Metrics
 ///
 /// Users can extend the metrics system by:
@@ -69,12 +73,17 @@ pub struct EngineMetrics {
     registry: MetricsRegistry,
     // Dynamic metric handles based on configuration
     metric_handles: HashMap<String, MetricHandle>,
-    // Configuration
+    // TEMPORARY: Configuration field
+    // TODO: Remove when configuration management is moved to dedicated config manager
     config: Option<MetricsConfig>,
 }
 
 impl EngineMetrics {
     /// Creates a new EngineMetrics instance
+    ///
+    /// **Note**: For convenience, consider using `with_default_config()` instead,
+    /// though the configuration functionality is temporary and will be moved
+    /// to a dedicated configuration manager in the future.
     pub fn new() -> Self {
         Self {
             registry: MetricsRegistry::new(),
@@ -84,6 +93,9 @@ impl EngineMetrics {
     }
 
     /// Creates a new EngineMetrics instance with default configuration
+    ///
+    /// **Note**: This configuration functionality is temporary and will be moved
+    /// to a dedicated configuration manager in the future.
     pub fn with_default_config() -> Self {
         let mut metrics = Self::new();
         let config = MetricsConfig::default_engine_metrics();
@@ -94,6 +106,9 @@ impl EngineMetrics {
     }
 
     /// Initialize metrics from configuration
+    ///
+    /// **Note**: This configuration functionality is temporary and will be moved
+    /// to a dedicated configuration manager in the future.
     pub fn initialize_with_config(&mut self, config: MetricsConfig) -> MetricsResult<()> {
         self.config = Some(config.clone());
 
@@ -227,7 +242,25 @@ impl EngineMetrics {
         Ok(())
     }
 
+    // ============================================================================
+    // TEMPORARY: Configuration management methods
+    // TODO: Move all configuration-related functionality to a dedicated
+    // configuration manager when the configuration system is redesigned.
+    //
+    // Functions to move:
+    // - extend_from_file()
+    // - initialize_with_config()
+    // - register_metric_from_config()
+    //
+    // Fields to move:
+    // - config: Option<MetricsConfig>
+    // - metric_handles (configuration-based ones)
+    // ============================================================================
+
     /// Load and merge additional metrics from a configuration file
+    ///
+    /// **Note**: This configuration functionality is temporary and will be moved
+    /// to a dedicated configuration manager in the future.
     ///
     /// This allows users to extend the default engine metrics with their own
     /// custom metrics defined in JSON configuration files.
@@ -241,7 +274,7 @@ impl EngineMetrics {
     /// // After creating with default config
     /// let mut metrics = EngineMetrics::with_default_config();
     /// // Add custom metrics from file
-    /// // metrics.extend_from_file("custom_metrics.json")?;
+    /// // metrics.extend_from_file("khora_engine_core/src/core/config/metrics/memory_basic.json")?;
     /// ```
     pub fn extend_from_file(
         &mut self,
@@ -263,6 +296,9 @@ impl EngineMetrics {
     }
 
     /// Register a single metric from configuration
+    ///
+    /// **Note**: This configuration functionality is temporary and will be moved
+    /// to a dedicated configuration manager in the future.
     fn register_metric_from_config(&self, config: &MetricConfig) -> MetricsResult<MetricHandle> {
         match config.metric_type.as_str() {
             "counter" => {
