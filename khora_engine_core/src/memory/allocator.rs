@@ -76,12 +76,10 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
                     current.checked_add(size)
                 });
 
-            if result.is_err() {
-                log::error!("Memory tracking counter overflowed during alloc! Size: {size}");
-            } else {
+            if let Ok(current_total) = result {
                 // Update peak usage
-                let current_total = result.unwrap() + size;
-                PEAK_ALLOCATED_BYTES.fetch_max(current_total as u64, Ordering::Relaxed);
+                let new_total = current_total + size;
+                PEAK_ALLOCATED_BYTES.fetch_max(new_total as u64, Ordering::Relaxed);
 
                 // Track allocation statistics
                 TOTAL_ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
@@ -95,6 +93,8 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
                     SMALL_ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
                     SMALL_ALLOCATION_BYTES.fetch_add(size as u64, Ordering::Relaxed);
                 }
+            } else {
+                log::error!("Memory tracking counter overflowed during alloc! Size: {size}");
             }
         }
         ptr
@@ -142,12 +142,10 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
                     current.checked_add(size)
                 });
 
-            if result.is_err() {
-                log::error!("Memory tracking counter overflowed during alloc_zeroed! Size: {size}");
-            } else {
+            if let Ok(current_total) = result {
                 // Update peak usage
-                let current_total = result.unwrap() + size;
-                PEAK_ALLOCATED_BYTES.fetch_max(current_total as u64, Ordering::Relaxed);
+                let new_total = current_total + size;
+                PEAK_ALLOCATED_BYTES.fetch_max(new_total as u64, Ordering::Relaxed);
 
                 // Track allocation statistics
                 TOTAL_ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
@@ -161,6 +159,8 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
                     SMALL_ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
                     SMALL_ALLOCATION_BYTES.fetch_add(size as u64, Ordering::Relaxed);
                 }
+            } else {
+                log::error!("Memory tracking counter overflowed during alloc_zeroed! Size: {size}");
             }
         }
         ptr
@@ -210,10 +210,10 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
             };
 
             // Update peak if we increased
-            if size_diff > 0 {
-                if let Ok(new_total) = fetch_result {
-                    PEAK_ALLOCATED_BYTES.fetch_max(new_total as u64, Ordering::Relaxed);
-                }
+            if size_diff > 0
+                && let Ok(new_total) = fetch_result
+            {
+                PEAK_ALLOCATED_BYTES.fetch_max(new_total as u64, Ordering::Relaxed);
             }
 
             // Check for overflow or underflow
