@@ -33,7 +33,7 @@
 //! * Add instrumentation: extend `RenderStats` (and later the Core Metrics System).
 //!
 //! Rendering & GPU instrumentation:
-//! See `../docs/rendering/gpu_performance_monitoring.md` for comprehensive coverage of
+//! See `../docs/rendering/gpu_monitoring.md` for comprehensive coverage of
 //! backend-agnostic monitoring, WGPU timestamp pipeline, and adaptive resize strategies.
 //!
 //! Quick design guidelines:

@@ -983,24 +983,25 @@ impl VramProvider for WgpuDevice {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::monitoring::GpuMonitor as GpuMonitorTrait;
     use crate::core::monitoring::ResourceMonitor;
-    use crate::core::resource_monitors::GpuPerformanceMonitor;
+    use crate::core::resource_monitors::GpuMonitor;
     use crate::subsystems::renderer::api::common_types::RenderStats;
 
     #[test]
-    fn gpu_performance_monitor_creation() {
-        let monitor = GpuPerformanceMonitor::new("Test_WGPU".to_string());
-        assert_eq!(monitor.monitor_id(), "GpuPerf_Test_WGPU");
+    fn gpu_monitor_creation() {
+        let monitor = GpuMonitor::new("Test_WGPU".to_string());
+        assert_eq!(monitor.monitor_id(), "Gpu_Test_WGPU");
         assert_eq!(
             monitor.resource_type(),
-            core_monitoring::MonitoredResourceType::GpuPerformance
+            core_monitoring::MonitoredResourceType::Gpu
         );
-        assert!(monitor.get_gpu_performance_report().is_none());
+        assert!(monitor.get_gpu_report().is_none());
     }
 
     #[test]
-    fn gpu_performance_monitor_update_stats() {
-        let monitor = GpuPerformanceMonitor::new("Test_WGPU".to_string());
+    fn gpu_monitor_update_stats() {
+        let monitor = GpuMonitor::new("Test_WGPU".to_string());
 
         // Create sample render stats
         let stats = RenderStats {
@@ -1014,9 +1015,9 @@ mod tests {
             vram_usage_estimate_mb: 256.0,
         };
 
-        monitor.update_from_render_stats(&stats);
+        monitor.update_from_frame_stats(&stats);
 
-        let report = monitor.get_gpu_performance_report().unwrap();
+        let report = monitor.get_gpu_report().unwrap();
         assert_eq!(report.frame_number, 42);
         assert_eq!(report.main_pass_duration_us(), Some(8000)); // 8ms derived
         assert_eq!(report.frame_total_duration_us(), Some(10500)); // 10.5ms derived
@@ -1025,8 +1026,8 @@ mod tests {
     }
 
     #[test]
-    fn gpu_performance_monitor_resource_monitor_trait() {
-        let monitor = GpuPerformanceMonitor::new("Test_WGPU".to_string());
+    fn gpu_monitor_resource_monitor_trait() {
+        let monitor = GpuMonitor::new("Test_WGPU".to_string());
 
         // Test ResourceMonitor trait implementation
         let usage_report = monitor.get_usage_report();
@@ -1035,6 +1036,6 @@ mod tests {
         assert_eq!(usage_report.total_capacity_bytes, None);
 
         // Performance report should be None initially
-        assert!(monitor.get_gpu_performance_report().is_none());
+        assert!(monitor.get_gpu_report().is_none());
     }
 }

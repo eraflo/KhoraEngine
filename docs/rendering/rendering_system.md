@@ -74,9 +74,6 @@ pub trait RenderSystem: Send + Sync + Debug + 'static {
     /// Get the underlying graphics device
     fn graphics_device(&self) -> &dyn GraphicsDevice;
     
-    /// Get GPU timing for specific performance hooks
-    fn gpu_hook_time_ms(&self, hook: GpuPerfHook) -> Option<f32>;
-    
     /// Shutdown and cleanup
     fn shutdown(&mut self);
 }
@@ -155,9 +152,13 @@ settings.enable_gpu_timestamps = true;
 
 let stats = render_system.render(&objects, &view_info, &settings)?;
 
-// Get individual hook timings if available  
-if let Some(frame_time) = render_system.gpu_hook_time_ms(GpuPerfHook::FrameStart) {
-    println!("GPU frame time: {:.2}ms", frame_time);
+// Access GPU performance data through the monitoring system
+if let Some(gpu_monitor) = render_system.gpu_monitor() {
+    if let Some(report) = gpu_monitor.get_gpu_report() {
+        if let Some(frame_time_us) = report.frame_total_duration_us() {
+            println!("GPU frame time: {:.2}ms", frame_time_us as f32 / 1000.0);
+        }
+    }
 }
 
 println!("VRAM usage: {:.1}MB", stats.vram_used_mb);
@@ -204,7 +205,7 @@ The WGPU implementation includes sophisticated GPU timing:
 3. **Non-blocking Readback**: Asynchronous GPU-to-CPU data transfer
 4. **Smoothing**: Exponential moving average for stable metrics
 
-See `docs/rendering/gpu_performance_monitoring.md` for comprehensive implementation details, surface resize strategy, and performance optimization techniques.
+See `docs/rendering/gpu_monitoring.md` for comprehensive implementation details, surface resize strategy, and performance optimization techniques.
 
 ## Resource Management
 

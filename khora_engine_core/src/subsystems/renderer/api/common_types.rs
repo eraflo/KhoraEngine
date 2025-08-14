@@ -188,19 +188,19 @@ pub struct RenderStats {
 /// frame; extra passes (Shadow, PostProcess, etc.) can be appended later without
 /// breaking the existing API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum GpuPerfHook {
+pub enum GpuHook {
     FrameStart,
     MainPassBegin,
     MainPassEnd,
     FrameEnd,
 }
 
-impl GpuPerfHook {
-    pub const ALL: [GpuPerfHook; 4] = [
-        GpuPerfHook::FrameStart,
-        GpuPerfHook::MainPassBegin,
-        GpuPerfHook::MainPassEnd,
-        GpuPerfHook::FrameEnd,
+impl GpuHook {
+    pub const ALL: [GpuHook; 4] = [
+        GpuHook::FrameStart,
+        GpuHook::MainPassBegin,
+        GpuHook::MainPassEnd,
+        GpuHook::FrameEnd,
     ];
 }
 

@@ -86,4 +86,9 @@ impl ResourceMonitor for VramResourceMonitor {
             ResourceUsageReport::default()
         }
     }
+
+    fn update(&self) {
+        // VRAM monitor updates are handled automatically by the graphics system
+        // through the VramProvider interface, so no additional work needed here
+    }
 }

@@ -120,19 +120,6 @@ impl MetricsConfig {
         );
 
         metrics.insert(
-            "gpu_time_gauge".to_string(),
-            MetricConfig {
-                namespace: "engine".to_string(),
-                name: "performance.gpu_time_ms".to_string(),
-                description: "GPU time per frame in milliseconds".to_string(),
-                metric_type: "gauge".to_string(),
-                unit: Some("milliseconds".to_string()),
-                buckets: None,
-                labels: None,
-            },
-        );
-
-        metrics.insert(
             "fps_gauge".to_string(),
             MetricConfig {
                 namespace: "engine".to_string(),
@@ -145,6 +132,7 @@ impl MetricsConfig {
             },
         );
 
+        // GPU metrics
         metrics.insert(
             "gpu_main_pass_gauge".to_string(),
             MetricConfig {
@@ -158,28 +146,14 @@ impl MetricsConfig {
             },
         );
 
-        // Rendering metrics
         metrics.insert(
-            "draw_calls_gauge".to_string(),
+            "gpu_time_gauge".to_string(),
             MetricConfig {
                 namespace: "engine".to_string(),
-                name: "rendering.draw_calls".to_string(),
-                description: "Number of draw calls per frame".to_string(),
+                name: "performance.gpu_time_ms".to_string(),
+                description: "GPU time per frame in milliseconds".to_string(),
                 metric_type: "gauge".to_string(),
-                unit: Some("count".to_string()),
-                buckets: None,
-                labels: None,
-            },
-        );
-
-        metrics.insert(
-            "triangles_gauge".to_string(),
-            MetricConfig {
-                namespace: "engine".to_string(),
-                name: "rendering.triangles".to_string(),
-                description: "Number of triangles rendered per frame".to_string(),
-                metric_type: "gauge".to_string(),
-                unit: Some("count".to_string()),
+                unit: Some("milliseconds".to_string()),
                 buckets: None,
                 labels: None,
             },
@@ -194,6 +168,33 @@ impl MetricsConfig {
                 description: "Current VRAM usage in MB".to_string(),
                 metric_type: "gauge".to_string(),
                 unit: Some("megabytes".to_string()),
+                buckets: None,
+                labels: None,
+            },
+        );
+
+        // Rendering metrics
+        metrics.insert(
+            "triangles_gauge".to_string(),
+            MetricConfig {
+                namespace: "engine".to_string(),
+                name: "rendering.triangles".to_string(),
+                description: "Number of triangles rendered per frame".to_string(),
+                metric_type: "gauge".to_string(),
+                unit: None,
+                buckets: None,
+                labels: None,
+            },
+        );
+
+        metrics.insert(
+            "draw_calls_gauge".to_string(),
+            MetricConfig {
+                namespace: "engine".to_string(),
+                name: "rendering.draw_calls".to_string(),
+                description: "Number of draw calls per frame".to_string(),
+                metric_type: "gauge".to_string(),
+                unit: None,
                 buckets: None,
                 labels: None,
             },

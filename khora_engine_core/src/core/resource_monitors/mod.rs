@@ -18,12 +18,14 @@
 //! These monitors implement the `ResourceMonitor` trait and provide unified interfaces
 //! for tracking various types of resources like VRAM, system memory, GPU performance, etc.
 
-pub mod gpu_performance_monitor;
+pub mod gpu_monitor;
+pub mod memory_monitor;
 pub mod registry;
 pub mod vram_monitor;
 
 // Re-exports for convenience
-pub use gpu_performance_monitor::GpuPerformanceMonitor;
+pub use gpu_monitor::GpuMonitor;
+pub use memory_monitor::MemoryResourceMonitor;
 pub use registry::{
     clear_resource_registry, get_registered_monitors, initialize_resource_registry,
     register_resource_monitor,

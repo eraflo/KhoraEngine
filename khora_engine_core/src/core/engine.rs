@@ -14,7 +14,11 @@
 
 use crate::core::metrics::engine::{EngineMetrics, FrameStats};
 use crate::core::metrics::scheduler::MetricsScheduler;
-use crate::core::resource_monitors::{get_registered_monitors, initialize_resource_registry};
+use crate::core::monitoring::MemoryMonitor;
+use crate::core::resource_monitors::{
+    MemoryResourceMonitor, get_registered_monitors, initialize_resource_registry,
+    register_resource_monitor,
+};
 use crate::core::timer::Stopwatch;
 use crate::event::{EngineEvent, EventBus};
 use crate::memory::get_currently_allocated_bytes;
@@ -25,6 +29,7 @@ use crate::subsystems::renderer::{
 use crate::window::KhoraWindow;
 
 use flume::Receiver;
+use std::sync::Arc;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -64,6 +69,13 @@ impl Engine {
     pub fn new() -> Self {
         // Initialize the global resource registry
         initialize_resource_registry();
+
+        // Register system memory monitor
+        let memory_monitor = Arc::new(MemoryResourceMonitor::new("SystemRAM".to_string()));
+        register_resource_monitor(memory_monitor.clone());
+
+        // Initialize memory tracking
+        memory_monitor.update_memory_stats();
 
         Self {
             is_running: false,
@@ -114,13 +126,17 @@ impl Engine {
 
     /// Update metrics from all registered resource monitors.
     fn update_resource_metrics(&mut self) {
-        // Get monitors from global registry
+        // Get all monitors from global registry
         let monitors = get_registered_monitors();
 
-        // Collect metrics data first to avoid borrowing issues
+        // Update all monitors and collect specific metrics
         let mut vram_metrics = None;
 
         for monitor in &monitors {
+            // Update the monitor (this will call update_memory_stats for memory monitors)
+            monitor.update();
+
+            // Collect specific metrics for integration with engine metrics
             match monitor.resource_type() {
                 crate::core::monitoring::MonitoredResourceType::Vram => {
                     let report = monitor.get_usage_report();
@@ -129,7 +145,7 @@ impl Engine {
                     vram_metrics = Some((current_mb, peak_mb));
                 }
                 _ => {
-                    // Handle other resource types as needed
+                    // Other resource types are updated but don't need special handling here
                 }
             }
         }
@@ -628,5 +644,33 @@ mod tests {
         });
 
         engine.handle_internal_event(event);
+    }
+
+    #[test]
+    fn engine_memory_monitor_integration() {
+        use crate::core::monitoring::MonitoredResourceType;
+        use crate::core::resource_monitors::{clear_resource_registry, get_registered_monitors};
+
+        // Clear registry before test
+        clear_resource_registry();
+
+        // Create engine - this should register the memory monitor
+        let _engine = Engine::new();
+
+        // Check that memory monitor was registered
+        let registered_monitors = get_registered_monitors();
+
+        // Find the system RAM monitor
+        let memory_monitor = registered_monitors
+            .iter()
+            .find(|m| m.resource_type() == MonitoredResourceType::SystemRam);
+
+        assert!(memory_monitor.is_some());
+        let memory_monitor = memory_monitor.unwrap();
+        assert_eq!(memory_monitor.monitor_id(), "SystemRAM");
+
+        // Test that it provides usage reports
+        let usage_report = memory_monitor.get_usage_report();
+        assert!(usage_report.peak_bytes.is_some());
     }
 }

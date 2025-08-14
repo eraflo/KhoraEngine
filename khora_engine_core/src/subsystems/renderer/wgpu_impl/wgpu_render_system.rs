@@ -23,8 +23,7 @@ use crate::{core::timer::Stopwatch, window::KhoraWindow};
 use super::gpu_timestamp_profiler::WgpuTimestampProfiler;
 use super::wgpu_device::WgpuDevice;
 use super::wgpu_graphic_context::WgpuGraphicsContext;
-use crate::core::resource_monitors::{GpuPerformanceMonitor, VramProvider, VramResourceMonitor};
-use crate::subsystems::renderer::api::common_types::GpuPerfHook;
+use crate::core::resource_monitors::{GpuMonitor, VramProvider, VramResourceMonitor};
 use crate::subsystems::renderer::api::common_types::RendererAdapterInfo;
 use crate::subsystems::renderer::traits::graphics_device::GraphicsDevice;
 use crate::subsystems::renderer::traits::render_system::RenderSystem;
@@ -40,7 +39,7 @@ pub struct WgpuRenderSystem {
     gpu_profiler: Option<WgpuTimestampProfiler>,
 
     // Resource monitors
-    gpu_performance_monitor: Option<Arc<GpuPerformanceMonitor>>,
+    gpu_monitor: Option<Arc<GpuMonitor>>,
     vram_resource_monitor: Option<Arc<VramResourceMonitor>>,
     // --- Resize Heuristics State ---
     // Hybrid throttle + debounce + stability detection to reduce swapchain reconfigure churn
@@ -77,7 +76,7 @@ impl WgpuRenderSystem {
             gpu_profiler: None,
 
             // Initialize resource monitors
-            gpu_performance_monitor: None,
+            gpu_monitor: None,
             vram_resource_monitor: None,
             last_resize_event: None,
             pending_resize: false,
@@ -125,8 +124,7 @@ impl RenderSystem for WgpuRenderSystem {
                 self.wgpu_device = Some(device_arc.clone());
 
                 // Initialize resource monitors
-                self.gpu_performance_monitor =
-                    Some(Arc::new(GpuPerformanceMonitor::new("WGPU".to_string())));
+                self.gpu_monitor = Some(Arc::new(GpuMonitor::new("WGPU".to_string())));
 
                 // Create VRAM resource monitor
                 self.vram_resource_monitor = Some(Arc::new(VramResourceMonitor::new(
@@ -486,8 +484,8 @@ impl RenderSystem for WgpuRenderSystem {
         };
 
         // Update GPU performance monitor with the latest rendering statistics
-        if let Some(monitor) = &self.gpu_performance_monitor {
-            monitor.update_from_render_system(self, &self.last_frame_stats);
+        if let Some(monitor) = &self.gpu_monitor {
+            monitor.update_from_frame_stats(&self.last_frame_stats);
         }
 
         Ok(self.last_frame_stats.clone())
@@ -534,7 +532,7 @@ impl RenderSystem for WgpuRenderSystem {
         }
         self.graphics_context_shared = None;
         self.wgpu_device = None;
-        self.gpu_performance_monitor = None;
+        self.gpu_monitor = None;
         self.vram_resource_monitor = None;
         log::info!("WgpuRenderSystem shutdown complete.");
     }
@@ -553,19 +551,6 @@ impl RenderSystem for WgpuRenderSystem {
             .expect("WgpuRenderSystem: No WgpuDevice available.")
             .as_ref()
     }
-
-    fn gpu_hook_time_ms(&self, hook: GpuPerfHook) -> Option<f32> {
-        if let Some(p) = &self.gpu_profiler {
-            match hook {
-                GpuPerfHook::FrameStart => None, // instantaneous marker
-                GpuPerfHook::MainPassBegin => None,
-                GpuPerfHook::MainPassEnd => None,
-                GpuPerfHook::FrameEnd => Some(p.last_frame_total_ms()),
-            }
-        } else {
-            None
-        }
-    }
 }
 
 impl WgpuRenderSystem {
@@ -576,9 +561,7 @@ impl WgpuRenderSystem {
     /// trait and can be registered with the global resource registry.
     ///
     /// Returns `None` if the render system hasn't been initialized yet.
-    pub fn gpu_performance_monitor(&self) -> Option<&GpuPerformanceMonitor> {
-        self.gpu_performance_monitor
-            .as_ref()
-            .map(|arc| arc.as_ref())
+    pub fn gpu_monitor(&self) -> Option<&GpuMonitor> {
+        self.gpu_monitor.as_ref().map(|arc| arc.as_ref())
     }
 }

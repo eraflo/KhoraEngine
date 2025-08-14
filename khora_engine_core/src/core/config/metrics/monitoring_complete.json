@@ -1,0 +1,117 @@
+{
+  "metrics": {
+    "memory_usage": {
+      "namespace": "engine",
+      "name": "memory.usage_mb",
+      "description": "Current system memory usage in megabytes",
+      "metric_type": "gauge",
+      "unit": "megabytes",
+      "labels": {
+        "resource_type": "system_ram"
+      }
+    },
+    "memory_peak": {
+      "namespace": "engine",
+      "name": "memory.peak_mb",
+      "description": "Peak system memory usage since start in megabytes",
+      "metric_type": "gauge",
+      "unit": "megabytes",
+      "labels": {
+        "resource_type": "system_ram"
+      }
+    },
+    "memory_fragmentation_ratio": {
+      "namespace": "engine",
+      "name": "memory.fragmentation_ratio",
+      "description": "System memory fragmentation ratio",
+      "metric_type": "gauge",
+      "unit": "ratio",
+      "labels": {
+        "resource_type": "system_ram"
+      }
+    },
+    "memory_allocation_efficiency": {
+      "namespace": "engine",
+      "name": "memory.allocation_efficiency",
+      "description": "System memory allocation efficiency percentage",
+      "metric_type": "gauge",
+      "unit": "percentage",
+      "labels": {
+        "resource_type": "system_ram"
+      }
+    },
+    "vram_usage": {
+      "namespace": "engine",
+      "name": "memory.usage_mb",
+      "description": "Current VRAM usage in megabytes",
+      "metric_type": "gauge",
+      "unit": "megabytes",
+      "labels": {
+        "resource_type": "vram"
+      }
+    },
+    "vram_peak": {
+      "namespace": "engine",
+      "name": "memory.peak_mb",
+      "description": "Peak VRAM usage since start in megabytes",
+      "metric_type": "gauge",
+      "unit": "megabytes",
+      "labels": {
+        "resource_type": "vram"
+      }
+    },
+    "gpu_frame_time": {
+      "namespace": "engine",
+      "name": "performance.gpu_frame_time_ms",
+      "description": "GPU frame rendering time in milliseconds",
+      "metric_type": "gauge",
+      "unit": "milliseconds",
+      "labels": {
+        "resource_type": "gpu"
+      }
+    },
+    "gpu_main_pass_time": {
+      "namespace": "engine",
+      "name": "performance.gpu_main_pass_ms",
+      "description": "GPU main pass rendering time in milliseconds",
+      "metric_type": "gauge",
+      "unit": "milliseconds",
+      "labels": {
+        "resource_type": "gpu"
+      }
+    },
+    "cpu_preparation_time": {
+      "namespace": "engine",
+      "name": "performance.cpu_preparation_ms",
+      "description": "CPU frame preparation time in milliseconds",
+      "metric_type": "gauge",
+      "unit": "milliseconds",
+      "labels": {
+        "resource_type": "cpu"
+      }
+    },
+    "cpu_submission_time": {
+      "namespace": "engine",
+      "name": "performance.cpu_submission_ms",
+      "description": "CPU command submission time in milliseconds",
+      "metric_type": "gauge",
+      "unit": "milliseconds",
+      "labels": {
+        "resource_type": "cpu"
+      }
+    },
+    "frame_counter": {
+      "namespace": "engine",
+      "name": "frames.total",
+      "description": "Total frames rendered since start",
+      "metric_type": "counter"
+    },
+    "fps_gauge": {
+      "namespace": "engine",
+      "name": "performance.fps",
+      "description": "Current frames per second",
+      "metric_type": "gauge",
+      "unit": "fps"
+    }
+  }
+}

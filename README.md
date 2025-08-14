@@ -82,19 +82,20 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
 *   ✅ **`[Feature] Implement Basic Buffer/Texture Management (Track VRAM usage)`**
     *   Comprehensive API for creating, destroying, and writing to Buffers (BufferId, BufferDescriptor), Textures (TextureId, TextureDescriptor), TextureViews (TextureViewId, TextureViewDescriptor), and Samplers (SamplerId, SamplerDescriptor) through the GraphicsDevice trait.
 *   ✅ **`[Feature] Implement GPU Performance Monitoring Hooks (Timestamps)`**
-    *   Backend-agnostic GPU timing hooks (`GpuPerfHook` enum + trait method) with a comprehensive WGPU timestamp profiler providing per-frame statistics. Features include microsecond-precision timing, ResourceMonitor integration, exponential moving averages for stable readings, and intelligent surface resize strategy. See comprehensive documentation `docs/rendering/gpu_performance_monitoring.md`.
+    *   Backend-agnostic GPU timing hooks (`GpuHook` enum + trait method) with a comprehensive WGPU timestamp profiler providing per-frame statistics. Features include microsecond-precision timing, ResourceMonitor integration, exponential moving averages for stable readings, and intelligent surface resize strategy. See comprehensive documentation `docs/rendering/gpu_monitoring.md`.
 *   ✅ **`[Feature] Implement Core Metrics System Backend v1 (In-Memory)`**
     *   Complete metrics system with thread-safe in-memory backend, JSON configuration support, and integration with GPU performance monitoring. Comprehensive documentation available in `docs/metrics/`. System tracks engine performance (FPS, CPU/GPU times, memory), rendering stats, and supports custom user metrics.
 *   ✅ **`[Feature] Implement Resource Monitoring Architecture`**
     *   Unified resource monitoring system with global registry, ResourceMonitor trait, and modular architecture supporting GPU performance monitoring, VRAM tracking, and extensible custom monitors. Features include thread-safe registration system, optional monitor activation, and clean separation of concerns between monitoring and rendering systems.
 *   ✅ **`[Task] Integrate VRAM Tracking into Core Metrics System`**
     *   Complete integration of VRAM monitoring into the unified resource monitoring architecture. VRAM tracking now uses the global resource registry with proper separation of concerns, harmonized initialization patterns, and consistent API design across all resource monitors.
+*   ✅ **`[Feature] Enhanced Memory Monitoring & Advanced Analytics`**
+    *   Extended memory tracking beyond basic allocation/deallocation to comprehensive statistics including allocation size categorization, fragmentation analysis, memory turnover rates, and lifetime statistics. Features real-time efficiency metrics, detailed performance analytics, and automatic fragmentation detection with diagnostic classifications.
+*   ✅ **`[Task] Integrate System RAM Tracking into Core Metrics System`**
+    *   Complete integration of system RAM tracking via SaaTrackingAllocator into the unified core metrics system. The engine now provides real-time memory usage monitoring with seamless integration into the performance dashboard, supporting both basic allocation tracking and comprehensive memory analytics through JSON-configurable metrics.
 
 **Next Steps / Milestone 2 Tasks:**
 
-*   ➡️ **`[Task] Integrate System RAM Tracking into Core Metrics System`**
-    *   Description: Connect the SaaTrackingAllocator (or its successor) to report global heap allocations to the Core Metrics System.
-    *   Labels: `core`, `performance`, `refactoring`, `saa-prep`
 *   ➡️ **`[Feature] Implement Robust Graphics Backend Selection (Vulkan/DX12/GL Fallback)`**
     *   Description: Enhance `WgpuGraphicsContext::new` to intelligently select and fall back between graphics backends.
     *   Labels: `rendering`, `core`, `platform`, `robustness`, `saa-prep`
@@ -107,7 +108,7 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
 **Planned Enhancements (Upcoming Issues)**
 
 *   ➡️ **`[Enhancement] Advanced GPU Performance & Resize Heuristics`**
-    *   Description: Expose raw + smoothed timings, make EMA alpha configurable, add additional timestamp scopes (shadow, postprocess), refine resize heuristics (relative delta, temporal backoff), optional aggregation/suppression of repeated "Suboptimal present" warnings, and prepare adaptive quality decisions driven by GPU frame time. See `docs/rendering/gpu_performance_monitoring.md`.
+    *   Description: Expose raw + smoothed timings, make EMA alpha configurable, add additional timestamp scopes (shadow, postprocess), refine resize heuristics (relative delta, temporal backoff), optional aggregation/suppression of repeated "Suboptimal present" warnings, and prepare adaptive quality decisions driven by GPU frame time. See `docs/rendering/gpu_monitoring.md`.
     *   Labels: `rendering`, `performance`, `saa-prep`
 
 **Note:** This is a highly ambitious, long-term research and development project. The SAA goal requires significant R&D.
