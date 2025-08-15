@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod backend_selector;
 pub mod conversions;
 pub mod gpu_timestamp_profiler;
 pub mod wgpu_device;

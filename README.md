@@ -93,12 +93,14 @@ Development is underway on Milestone 2, focusing on establishing basic rendering
     *   Extended memory tracking beyond basic allocation/deallocation to comprehensive statistics including allocation size categorization, fragmentation analysis, memory turnover rates, and lifetime statistics. Features real-time efficiency metrics, detailed performance analytics, and automatic fragmentation detection with diagnostic classifications.
 *   ✅ **`[Task] Integrate System RAM Tracking into Core Metrics System`**
     *   Complete integration of system RAM tracking via SaaTrackingAllocator into the unified core metrics system. The engine now provides real-time memory usage monitoring with seamless integration into the performance dashboard, supporting both basic allocation tracking and comprehensive memory analytics through JSON-configurable metrics.
+*   ✅ **`[Feature] Implement Robust Graphics Backend Selection (Vulkan/DX12/GL Fallback)`**
+    *   Intelligent graphics backend selection with automatic fallback (Vulkan → DirectX 12 → OpenGL). Features robust adapter detection, platform-specific optimization, comprehensive error handling, and detailed selection metrics. Includes future-ready abstraction architecture via `GraphicsBackendSelector` trait for extensibility beyond WGPU. Detailed documentation in `docs/rendering/graphics_backend_selection.md`.
 
 **Next Steps / Milestone 2 Tasks:**
 
-*   ➡️ **`[Feature] Implement Robust Graphics Backend Selection (Vulkan/DX12/GL Fallback)`**
-    *   Description: Enhance `WgpuGraphicsContext::new` to intelligently select and fall back between graphics backends.
-    *   Labels: `rendering`, `core`, `platform`, `robustness`, `saa-prep`
+*   ➡️ **`[Feature] Implement Basic Command Recording & Submission`**
+    *   Description: Implement command buffer recording, queue submission, and synchronization primitives.
+    *   Labels: `rendering`, `core`, `platform`, `saa-prep`
 *   ➡️ **`[Task] Render a Single Triangle/Quad with Performance Timings`**
     *   Description: Display a simple geometric shape using the established shader system, pipeline system, and buffer management, showing CPU/GPU timings.
     *   Labels: `rendering`, `performance`

@@ -25,6 +25,10 @@ pub mod wgpu_impl;
 // --- Re-exports for convenient use by the rest of the engine ---
 
 // Core traits
+pub use traits::graphics_backend_selector::{
+    BackendSelectionConfig, BackendSelectionResult, GraphicsAdapterInfo, GraphicsBackendSelector,
+    GraphicsBackendType,
+};
 pub use traits::graphics_device::GraphicsDevice;
 pub use traits::render_system::RenderSystem;
 

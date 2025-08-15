@@ -12,5 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod graphics_backend_selector;
 pub mod graphics_device;
 pub mod render_system;
