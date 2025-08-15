@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::backend_selector::WgpuBackendSelector;
+use crate::subsystems::renderer::traits::graphics_backend_selector::{
+    BackendSelectionConfig, GraphicsBackendSelector, GraphicsBackendType,
+};
 use crate::window::KhoraWindow;
 use anyhow::Result;
 use std::sync::Arc;
 use wgpu::{
-    AdapterInfo, Backend, CommandEncoder, DeviceType, Features, InstanceDescriptor, RenderPass,
-    Surface, SurfaceCapabilities, SurfaceTexture, TextureFormat, TextureView,
-    wgt::SurfaceConfiguration,
+    CommandEncoder, Features, Instance, InstanceDescriptor, RenderPass, Surface,
+    SurfaceCapabilities, SurfaceConfiguration, SurfaceTexture, TextureFormat, TextureView,
 };
 use winit::dpi::PhysicalSize;
 
@@ -69,42 +72,67 @@ impl WgpuGraphicsContext {
             window_size.height
         );
 
-        // --- 1. Create WGPU Instance ---
-        // The instance is the entry point to the WGPU API.
-        let instance_descriptor: InstanceDescriptor = wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::VULKAN, // Use the primary backend (Vulkan, Metal, DX12, etc.)
-            ..Default::default()
-        };
-        let instance: wgpu::Instance = wgpu::Instance::new(&instance_descriptor);
-        log::debug!("WGPU instance created.");
-
-        // --- 2. Create Surface ---
-        // The surface represents the target window or canvas WGPU will draw to.
+        // --- 1. Create Instance and Surface ---
+        let instance = Instance::new(&InstanceDescriptor::default());
         let surface: Surface<'static> = instance.create_surface(window_arc.clone())?;
         log::debug!("WGPU surface created for the window.");
 
-        // --- 3. Select Adapter (Physical GPU) ---
-        // Request an adapter (GPU) that is compatible with the surface and prefers high performance.
-        let adapter: wgpu::Adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface), // Must be able to render to our surface
-                force_fallback_adapter: false, // Don't fallback to software rendering if possible
-            })
-            .await?;
+        // --- 2. Robust Backend Selection with Fallback Support ---
+        // Use our sophisticated backend selector with preferences
+        let backend_selector = WgpuBackendSelector::new(instance.clone());
 
-        let adapter_info: AdapterInfo = adapter.get_info();
+        let selection_config = BackendSelectionConfig {
+            preferred_backends: vec![
+                GraphicsBackendType::Vulkan,
+                #[cfg(target_os = "windows")]
+                GraphicsBackendType::DirectX12,
+                #[cfg(target_os = "macos")]
+                GraphicsBackendType::Metal,
+                GraphicsBackendType::OpenGL, // Fallback
+            ],
+            timeout: std::time::Duration::from_secs(10),
+            prefer_discrete_gpu: true,
+        };
+
+        let selection_result = backend_selector
+            .select_backend(&selection_config)
+            .await
+            .map_err(|e| anyhow::anyhow!("Backend selection failed: {}", e))?;
+
+        let adapter = selection_result.adapter;
+        let adapter_info = selection_result.adapter_info;
+
         log::info!(
-            "Selected GPU: \"{}\", Backend: {:?}",
+            "Selected graphics adapter: \"{}\" (Backend: {:?}, Device: {:?}) after {}ms",
             adapter_info.name,
-            adapter_info.backend
+            adapter_info.backend_type,
+            if adapter_info.is_discrete {
+                "DiscreteGpu"
+            } else {
+                "IntegratedGpu"
+            },
+            selection_result.selection_time_ms
         );
 
-        // --- 4. Create Logical Device and Command Queue ---
-
         let adapter_name: String = adapter_info.name.clone();
-        let adapter_backend: Backend = adapter_info.backend;
-        let adapter_device_type: DeviceType = adapter_info.device_type;
+        let adapter_backend_type = adapter_info.backend_type;
+        let adapter_is_discrete = adapter_info.is_discrete;
+
+        // Get WGPU-specific info from the actual adapter for internal storage
+        let wgpu_adapter_info = adapter.get_info();
+        let adapter_backend = wgpu_adapter_info.backend;
+        let adapter_device_type = wgpu_adapter_info.device_type;
+
+        log::info!(
+            "Final selected GPU: \"{adapter_name}\" (Backend: {adapter_backend_type:?}, Device: {})",
+            if adapter_is_discrete {
+                "DiscreteGpu"
+            } else {
+                "IntegratedGpu"
+            }
+        );
+
+        // --- 3. Create Logical Device and Command Queue ---
 
         let required_features_for_engine: Features = wgpu::Features::TIMESTAMP_QUERY;
         let adapter_supported_features: Features = adapter.features();
@@ -142,7 +170,7 @@ impl WgpuGraphicsContext {
             .copied()
             .find(|f| f.is_srgb())
             .unwrap_or(surface_caps.formats[0]);
-        let surface_config: SurfaceConfiguration<Vec<TextureFormat>> = wgpu::SurfaceConfiguration {
+        let surface_config: SurfaceConfiguration = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: window_size.width.max(1),
