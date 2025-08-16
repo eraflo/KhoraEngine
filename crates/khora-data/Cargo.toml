@@ -1,0 +1,8 @@
+[package]
+name = "khora-data"
+version = "0.1.0"
+edition = "2021"
+description = "Data layouts, allocators, and streaming systems"
+
+[dependencies]
+khora-core = { path = "../khora-core" }

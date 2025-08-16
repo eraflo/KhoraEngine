@@ -1,171 +1,97 @@
-      
 <p align="center">
-  <img src="assets/logos/khora_full_logo.png" alt="KhoraEngine Logo" width="250">
+  <img src="docs/assets/logos/khora_full_logo.png" alt="Khora Engine Logo" width="250">
 </p>
 
-
-<h1 align="center">KhoraEngine</h1>
+<h1 align="center">Khora Engine</h1>
 <p align="center">
     <a href="https://github.com/eraflo/KhoraEngine/actions/workflows/rust.yml"><img src="https://github.com/eraflo/KhoraEngine/actions/workflows/rust.yml/badge.svg" alt="Rust CI"/></a>
 </p>
 <p align="center">
-    KhoraEngine is an experimental game engine being developed in Rust. Its ultimate and ambitious goal is to implement a novel <strong>Symbiotic Adaptive Architecture (SAA)</strong>.
+    Khora is an experimental game engine being developed in Rust, with the goal of implementing a novel <strong>Symbiotic Adaptive Architecture (SAA)</strong>.
 </p>
 
-</br>
+## Our Vision: A Symbiotic, Self-Optimizing Architecture
 
-<p align="center">
-This architecture aims to create a deeply context-aware engine where subsystems act as cooperating agents (<strong>Intelligent Subsystem Agents - ISAs</strong>) under the guidance of a central coordinator (<strong>Dynamic Context Core - DCC</strong>). The engine will dynamically adapt its behavior, resource allocation—through a sophisticated process of <strong>Goal-Oriented Resource Negotiation (GORNA)</strong>—and even potentially its core data structures, for instance through <strong>Adaptive Game Data Flows (AGDF)</strong> techniques. This adaptation will be driven by real-time performance metrics, resource availability, application goals, and hardware capabilities, enabling the engine to strive for optimal performance and user experience across diverse scenarios.
-</p>
+Khora is not a traditional game engine. It is a living system, context-aware, that continuously adapts to deliver the best possible experience. Its subsystems are not just gears in a machine, but **intelligent agents** that collaborate and negotiate for resources in real time.
 
-## Vision: Symbiotic Adaptive Architecture (SAA)
+This approach aims to solve the fundamental problems of modern engines: costly manual optimization, rigid pipelines, and the inability to adapt to growing hardware diversity.
 
-The SAA philosophy emphasizes:
+### Key Principles
 
-*   **Context-Oriented Design:** Collecting and utilizing state, performance, and resource data from all engine aspects is paramount. The DCC will aggregate this into a comprehensive model of the engine's operational context.
-*   **Extreme Modularity / Semantic Interfaces:** Designing subsystems as potential adaptive agents (ISAs) with clear, potentially semantic interfaces (evolving towards **Semantic Contracts**). ISAs report their capabilities, current state, and resource needs.
-*   **Built-in Measurability:** Performance profiling, metrics (CPU, GPU, memory, VRAM, network, I/O), and resource tracking are fundamental, not afterthoughts, providing the essential data for the DCC's decision-making.
-*   **Strategic Flexibility:** Enabling ISAs to possess multiple execution strategies (e.g., performance vs. quality, different algorithms for physics or AI pathfinding). The DCC can then request strategy switches based on the overall context and goals.
-*   **Goal-Oriented Resource Negotiation (GORNA):** A core mechanism where ISAs actively request resource budgets (CPU time, memory, VRAM, bandwidth) and the DCC dynamically allocates these based on global objectives, ISA priorities, and available resources, fostering true symbiotic cooperation.
-*   **Adaptive Game Data Flows (AGDF) (Long-Term R&D):** Exploring the dynamic adaptation of data layouts (e.g., AoS to SoA for certain components) based on observed access patterns and performance feedback, further optimizing for the specific runtime context.
-*   **Intelligent Coordination:** The DCC will employ a sophisticated **heuristics engine (potentially evolving with ML-driven models)** to analyze the comprehensive context and make informed decisions about strategy selection and resource allocation for ISAs.
-
-The long-term vision includes robust support for **Extended Reality (XR)** applications and an integrated **editor**, all built upon and benefiting from the adaptive SAA core, allowing the engine and its tools to perform optimally across a wide range of hardware and application demands.
+*   **Context Awareness**: The engine maintains a real-time model of the current situation (CPU/GPU load, scene complexity, performance goals).
+*   **Resource Negotiation**: Subsystems (rendering, physics, AI) request resource budgets, and the engine allocates them dynamically to meet global objectives.
+*   **Strategic Adaptation**: Each subsystem can switch its algorithms on the fly (e.g., from Forward to Deferred rendering) based on the context.
+*   **Data-Oriented & Adaptive**: The organization of data itself can be optimized based on observed access patterns.
 
 ## Project Status
 
-**Phase 1, Milestone 1: Core Foundation & Context Hooks - ✅ COMPLETE**
+The project is under active development. The core foundation is complete, and work is currently focused on implementing rendering primitives and scaffolding the first intelligent agents.
 
-The foundational layer of the engine is established. Key achievements include:
+For a detailed overview of completed and upcoming tasks, please see our **[Roadmap & Issue Tracker](docs/05_roadmap_and_issues.md)**.
 
-*   Setup of the Cargo workspace (`khora_engine_core`, `sandbox`) and basic CI/CD.
-*   Implementation of core math types (`Vec2/3/4`, `Mat3/4`, `Quaternion`, etc.).
-*   Definition of core architecture patterns (thread-safe `EventBus`, initial traits).
-*   Integration of logging (`env_logger`) and event handling.
-*   Implementation of basic CPU performance timing (`Stopwatch`).
-*   Integration of heap memory allocation tracking (`SaaTrackingAllocator`).
-*   Integration of windowing (`winit` via `ApplicationHandler`) and basic input event translation.
-*   Establishment of the main application loop structure.
+## Full Documentation
 
-*(Git Tag: `v0.1.0` marks this stage)*
+All project documentation, from the high-level vision to the technical architecture details, can be found in the [`/docs`](/docs) directory.
 
----
-
-**Current Focus: Phase 1, Milestone 2 - Rendering Primitives & ISA Scaffolding**
-
-Development is underway on Milestone 2, focusing on establishing basic rendering capabilities.
-
-**Completed M2 Tasks:**
-
-*   ✅ **`[Feature] Choose & Integrate Graphics API Wrapper (wgpu/ash/etc.)`**:
-    *   `wgpu` (v0.20) integrated. `WgpuGraphicsContext` manages core `wgpu` objects.
-    *   SAA Prep: `TIMESTAMP_QUERY` feature requested.
-*   ✅ **`[Feature] Design Rendering Interface as potential ISA (Clear inputs, outputs, potential strategies)`**:
-    *   Abstract `RenderSystem` trait defined.
-    *   `WgpuRenderSystem` implements this trait, using an `Arc<Mutex<WgpuGraphicsContext>>` and an `Arc<WgpuDevice>`.
-*   ✅ **`[Feature] Implement Graphics Device Abstraction`**:
-    *   Abstract `GraphicsDevice` trait defined for resource management.
-    *   `WgpuDevice` implements this trait.
-*   ✅ **`[Feature] Implement Swapchain Management`**:
-    *   Robust management of `wgpu::Surface` within `WgpuRenderSystem` and `WgpuGraphicsContext`.
-*   ✅ **`[Feature] Implement Basic Shader System`**:
-    *   Defined backend-agnostic API for shader modules (`ShaderModuleDescriptor`, `ShaderModuleId`, etc.) in `renderer::api`.
-    *   `GraphicsDevice` trait includes `create_shader_module` and `destroy_shader_module`.
-    *   `WgpuDevice` implements these methods.
-*   ✅ **`[Feature] Implement Basic Render Pipeline System`**:
-    *   Defined backend-agnostic API for render pipelines (`RenderPipelineDescriptor`, `RenderPipelineId`, `VertexAttributeDescriptor`, `ColorTargetStateDescriptor`, etc.) in `renderer::api::pipeline_types`.
-    *   `GraphicsDevice` trait includes `create_render_pipeline` and `destroy_render_pipeline`.
-    *   `WgpuDevice` implements these methods, translating abstract descriptors to `wgpu` pipeline objects.
-*   ✅ **`[Feature] Develop Custom Bitflags Macro for Internal Engine Use`**:
-    *   Implemented a custom, declarative macro (`khora_bitflags!`) providing type-safe bitflag functionality.
-    *   SAA Prep: This foundational utility reduces external dependencies, ensures consistent bitwise operations, and provides efficient, human-readable debug output for flags used throughout the engine, especially for resource usage and contextual data.*
-*   ✅ **`[Feature] Implement Basic Buffer/Texture Management (Track VRAM usage)`**
-    *   Comprehensive API for creating, destroying, and writing to Buffers (BufferId, BufferDescriptor), Textures (TextureId, TextureDescriptor), TextureViews (TextureViewId, TextureViewDescriptor), and Samplers (SamplerId, SamplerDescriptor) through the GraphicsDevice trait.
-*   ✅ **`[Feature] Implement GPU Performance Monitoring Hooks (Timestamps)`**
-    *   Backend-agnostic GPU timing hooks (`GpuHook` enum + trait method) with a comprehensive WGPU timestamp profiler providing per-frame statistics. Features include microsecond-precision timing, ResourceMonitor integration, exponential moving averages for stable readings, and intelligent surface resize strategy. See comprehensive documentation `docs/rendering/gpu_monitoring.md`.
-*   ✅ **`[Feature] Implement Core Metrics System Backend v1 (In-Memory)`**
-    *   Complete metrics system with thread-safe in-memory backend, JSON configuration support, and integration with GPU performance monitoring. Comprehensive documentation available in `docs/metrics/`. System tracks engine performance (FPS, CPU/GPU times, memory), rendering stats, and supports custom user metrics.
-*   ✅ **`[Feature] Implement Resource Monitoring Architecture`**
-    *   Unified resource monitoring system with global registry, ResourceMonitor trait, and modular architecture supporting GPU performance monitoring, VRAM tracking, and extensible custom monitors. Features include thread-safe registration system, optional monitor activation, and clean separation of concerns between monitoring and rendering systems.
-*   ✅ **`[Task] Integrate VRAM Tracking into Core Metrics System`**
-    *   Complete integration of VRAM monitoring into the unified resource monitoring architecture. VRAM tracking now uses the global resource registry with proper separation of concerns, harmonized initialization patterns, and consistent API design across all resource monitors.
-*   ✅ **`[Feature] Enhanced Memory Monitoring & Advanced Analytics`**
-    *   Extended memory tracking beyond basic allocation/deallocation to comprehensive statistics including allocation size categorization, fragmentation analysis, memory turnover rates, and lifetime statistics. Features real-time efficiency metrics, detailed performance analytics, and automatic fragmentation detection with diagnostic classifications.
-*   ✅ **`[Task] Integrate System RAM Tracking into Core Metrics System`**
-    *   Complete integration of system RAM tracking via SaaTrackingAllocator into the unified core metrics system. The engine now provides real-time memory usage monitoring with seamless integration into the performance dashboard, supporting both basic allocation tracking and comprehensive memory analytics through JSON-configurable metrics.
-*   ✅ **`[Feature] Implement Robust Graphics Backend Selection (Vulkan/DX12/GL Fallback)`**
-    *   Intelligent graphics backend selection with automatic fallback (Vulkan → DirectX 12 → OpenGL). Features robust adapter detection, platform-specific optimization, comprehensive error handling, and detailed selection metrics. Includes future-ready abstraction architecture via `GraphicsBackendSelector` trait for extensibility beyond WGPU. Detailed documentation in `docs/rendering/graphics_backend_selection.md`.
-
-**Next Steps / Milestone 2 Tasks:**
-
-*   ➡️ **`[Feature] Implement Basic Command Recording & Submission`**
-    *   Description: Implement command buffer recording, queue submission, and synchronization primitives.
-    *   Labels: `rendering`, `core`, `platform`, `saa-prep`
-*   ➡️ **`[Task] Render a Single Triangle/Quad with Performance Timings`**
-    *   Description: Display a simple geometric shape using the established shader system, pipeline system, and buffer management, showing CPU/GPU timings.
-    *   Labels: `rendering`, `performance`
-    *   Description: Display a simple geometric shape using the established shader system, pipeline system, and buffer management, showing CPU/GPU timings.
-    *   Labels: `rendering`, `performance`
-
-**Planned Enhancements (Upcoming Issues)**
-
-*   ➡️ **`[Enhancement] Advanced GPU Performance & Resize Heuristics`**
-    *   Description: Expose raw + smoothed timings, make EMA alpha configurable, add additional timestamp scopes (shadow, postprocess), refine resize heuristics (relative delta, temporal backoff), optional aggregation/suppression of repeated "Suboptimal present" warnings, and prepare adaptive quality decisions driven by GPU frame time. See `docs/rendering/gpu_monitoring.md`.
-    *   Labels: `rendering`, `performance`, `saa-prep`
-
-**Note:** This is a highly ambitious, long-term research and development project. The SAA goal requires significant R&D.
+*   **[Documentation Index](docs/README.md)** - The starting point to explore everything.
+*   **[Core Concepts (SAA)](docs/02_core_concepts.md)** - Understand the philosophy behind Khora.
+*   **[Technical Architecture (CLAD)](docs/03_technical_architecture.md)** - A deep dive into the Rust implementation.
 
 ## Getting Started
-
-The project currently sets up core components, creates a window, handles basic OS events and input, and logs performance/memory statistics to the console.
 
 ```bash
 # Clone the repository
 git clone https://github.com/eraflo/KhoraEngine.git
 cd KhoraEngine
 
-# Check code
-cargo check --workspace
-
-# Run unit tests
+# Run tests
 cargo test --workspace
 
-# Build the project
-cargo build --workspace
-
-# Run the sandbox (outputs logs to console)
-# RUST_LOG=khora_engine_core=trace cargo run --bin sandbox
+# Run the sandbox
 cargo run --bin sandbox
 
-# (Optional but recommended) Check formatting and linting before committing
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-```
+  
 
-## Documentation
+Community & Contributing
 
-Comprehensive documentation is available in the [`docs/`](docs/) directory:
+Khora is an ambitious open-source project and we welcome all contributions.
 
-- **[Documentation Index](docs/README.md)** - Complete documentation overview and navigation
-- **[Developer Guide](docs/developer_guide.md)** - Getting started with development
-- **[Architecture Design](docs/architecture_design.md)** - Engine architecture and SAA concepts
-- **[Math Module](docs/math_module.md)** - Mathematical types and operations
-- **[Rendering System](docs/rendering/rendering_system.md)** - Graphics programming guide
-- **[Memory Management](docs/memory_management.md)** - Memory tracking and optimization
-- **[Event System](docs/event_system.md)** - Event-driven communication
-- **[Performance Monitoring](docs/performance_monitoring.md)** - Performance analysis and metrics
-- **[Integration Guide](docs/integration_guide.md)** - Adding new subsystems and features
+    Please read our Code of Conduct and Contributing Guidelines.
 
-## Community & Contributing
+    For general discussions, ideas, and questions, join us on GitHub Discussions.
 
-KhoraEngine is an open-source project and we welcome community involvement! We strive to be a welcoming and inclusive community.
+    For bug reports or feature requests, please open an Issue.
 
-*   Please read and adhere to our [**Code of Conduct**](CODE_OF_CONDUCT.md).
-*   If you're interested in contributing, please see our [**Contributing Guidelines**](CONTRIBUTING.md).
-*   For bug reports or feature suggestions, please use the [**Issues** tab](https://github.com/eraflo/KhoraEngine/issues) and try to use the provided templates.
-*   For general questions, ideas, or discussions about KhoraEngine and its SAA/AGDF concepts, please join us on our [**GitHub Discussions page**](https://github.com/eraflo/KhoraEngine/discussions)!
+License
 
+Khora Engine is licensed under the Apache License 2.0.
+code Code
+IGNORE_WHEN_COPYING_START
+IGNORE_WHEN_COPYING_END
 
-## License
+    
+# File: docs/README.md
+---
+```markdown
+# Khora Engine Documentation
 
-KhoraEngine is licensed under the [Apache License 2.0](LICENSE).
+Welcome to the complete documentation for the Khora Engine. These documents are designed to guide you through the vision, concepts, architecture, and development of the engine.
+
+### 1. Project Vision
+
+*   **[01 - Project Presentation](01_project_presentation.md)**: Why Khora exists and what our long-term vision is.
+
+### 2. Core Concepts
+
+*   **[02 - The Symbiotic Adaptive Architecture (SAA)](02_core_concepts.md)**: A dive into the philosophy that drives the engine, including DCC, ISAs, GORNA, AGDF, and the principles of Observability and Developer Guidance.
+
+### 3. Technical Architecture
+
+*   **[03 - The CLAD Architecture](03_technical_architecture.md)**: How the SAA vision is translated into a performant and modular Rust architecture.
+*   **[04 - Project & Crate Structure](04_project_structure.md)**: A detailed map of the source code, crates, and their responsibilities.
+
+### 4. Development
+
+*   **[05 - Roadmap & Issue Tracker](05_roadmap_and_issues.md)**: The complete, phased roadmap and list of all project tasks.
+
+  

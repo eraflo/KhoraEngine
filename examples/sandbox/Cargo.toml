@@ -1,0 +1,12 @@
+[package]
+name = "sandbox"
+version = "0.1.0"
+edition = "2021"
+description = "Sandbox example for testing and demos"
+
+[[bin]]
+name = "sandbox"
+path = "src/main.rs"
+
+[dependencies]
+# khora-sdk = { path = "../../crates/khora-sdk" } # TODO: Add when SDK is ready

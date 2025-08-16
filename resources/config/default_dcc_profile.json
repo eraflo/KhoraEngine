@@ -1,0 +1,20 @@
+{
+  "name": "default_dcc_profile",
+  "description": "Default DCC (Dynamic Constraint Configuration) profile for Khora Engine",
+  "version": "1.0.0",
+  "settings": {
+    "memory": {
+      "heap_size_mb": 512,
+      "stack_size_kb": 8192
+    },
+    "rendering": {
+      "default_backend": "wgpu",
+      "vsync": true,
+      "max_fps": 60
+    },
+    "physics": {
+      "timestep": 0.016666667,
+      "iterations": 8
+    }
+  }
+}

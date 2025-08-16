@@ -1,0 +1,13 @@
+[package]
+name = "khora-editor"
+version = "0.1.0"
+edition = "2021"
+description = "The engine's editor GUI"
+
+[[bin]]
+name = "khora-editor"
+path = "src/main.rs"
+
+[dependencies]
+khora-sdk = { path = "../khora-sdk" }
+egui = "0.24"

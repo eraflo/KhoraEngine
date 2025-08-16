@@ -1,0 +1,7 @@
+[package]
+name = "sandbox-legacy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+khora_engine_core = { path = "../khora_engine_core" }
