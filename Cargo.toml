@@ -1,10 +1,6 @@
 [workspace]
 resolver = "2" # Recommended for modern Rust
 members = [
-    # Legacy crates (to be migrated)
-    "khora_engine_core", # The future engine 'core'
-    "sandbox-legacy",      # Legacy example/test application
-    
     # New modular architecture
     "crates/khora-core",
     "crates/khora-control", 
@@ -12,6 +8,7 @@ members = [
     "crates/khora-lanes",
     "crates/khora-agents",
     "crates/khora-infra",
+    "crates/khora-telemetry",
     "crates/khora-editor",
     "crates/khora-plugins",
     "crates/khora-sdk",

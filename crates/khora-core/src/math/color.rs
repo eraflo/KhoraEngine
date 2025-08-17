@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::vector::Vec4;
+use crate::math::vector::Vec4;
 use std::ops::{Add, Div, Mul, Sub};
 
 /// Represents a color in Linear RGBA color space using f32 components.

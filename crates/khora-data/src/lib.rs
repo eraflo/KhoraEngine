@@ -13,5 +13,7 @@
 // limitations under the License.
 
 //! # Khora Data
-//! 
+//!
 //! Data management systems including layouts, allocators, and streaming.
+
+pub mod allocators;

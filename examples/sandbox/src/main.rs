@@ -15,9 +15,11 @@
 // Khora Engine Sandbox
 // Main binary for testing and demos
 
-fn main() {
-    println!("Khora Engine Sandbox");
-    println!("Welcome to the testing environment!");
-    
-    // TODO: Initialize engine and create demo scene
+use anyhow::Result;
+use khora_sdk::Engine;
+
+fn main() -> Result<()> {
+    env_logger::init();
+    Engine::run()?;
+    Ok(())
 }

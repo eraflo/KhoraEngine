@@ -27,8 +27,15 @@
 // limitations under the License.
 
 //! # Khora Infra
-//! 
+//!
 //! Concrete implementations of external dependencies.
 
-pub mod graphics_wgpu;
-pub mod platform_winit;
+pub mod graphics;
+pub mod platform;
+pub mod telemetry;
+
+pub use graphics::wgpu::WgpuRenderSystem;
+pub use platform::window::{WinitWindow, WinitWindowBuilder};
+pub use telemetry::{
+    gpu_monitor::GpuMonitor, memory_monitor::MemoryMonitor, vram_monitor::VramMonitor,
+};

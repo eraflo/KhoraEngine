@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// --- Fondamental Constants ---
 pub const EPSILON: f32 = 1e-5;
 
 pub use std::f32::consts::{
-    E, FRAC_PI_2, FRAC_PI_3, FRAC_PI_4, FRAC_PI_6, FRAC_PI_8, LN_2, LN_10, LOG2_E, LOG10_E, PI,
+    E, FRAC_PI_2, FRAC_PI_3, FRAC_PI_4, FRAC_PI_6, FRAC_PI_8, LN_10, LN_2, LOG10_E, LOG2_E, PI,
     SQRT_2, TAU,
 };
 
@@ -24,6 +25,8 @@ pub const DEG_TO_RAD: f32 = PI / 180.0;
 /// Factor to convert radians to degrees (180.0 / PI).
 pub const RAD_TO_DEG: f32 = 180.0 / PI;
 
+// --- Declare Sub-Modules ---
+
 pub mod color;
 pub mod dimension;
 pub mod geometry;
@@ -31,12 +34,14 @@ pub mod matrix;
 pub mod quaternion;
 pub mod vector;
 
-pub use color::LinearRgba;
-pub use dimension::{Extent1D, Extent2D, Extent3D, Origin2D, Origin3D};
-pub use geometry::Aabb;
-pub use matrix::{Mat3, Mat4};
-pub use quaternion::Quaternion;
-pub use vector::{Vec2, Vec3, Vec4};
+// --- Re-export Principal Types ---
+
+pub use self::color::LinearRgba;
+pub use self::dimension::{Extent1D, Extent2D, Extent3D, Origin2D, Origin3D};
+pub use self::geometry::Aabb;
+pub use self::matrix::{Mat3, Mat4};
+pub use self::quaternion::Quaternion;
+pub use self::vector::{Vec2, Vec3, Vec4};
 
 // --- Utility Functions ---
 

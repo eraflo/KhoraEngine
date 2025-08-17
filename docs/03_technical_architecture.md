@@ -1,4 +1,3 @@
-    
 # 03 - Technical Architecture: The CLAD Pattern
 
 The **CLAD (Control-Lane-Agent-Data)** pattern is the concrete Rust implementation of the SAA philosophy. It is designed for maximum performance by strictly separating slow, complex decision-making from fast, deterministic execution.
@@ -17,59 +16,28 @@ The entire architecture is built on isolating the **Control Plane (Cold Path)**,
     *   **Frequency**: Must execute within a single frame's budget (e.g., < 16.67ms for 60fps).
     *   **Characteristics**: Zero heap allocations, cache-friendly code, SIMD operations, maximum predictability.
 
-### The CLAD Components
+### The CLAD Crates
 
-#### C - `khora-control` (Control Plane)
-The strategic brain. It contains the **DCC** and the **GORNA** solver. It makes decisions based on reports from Agents but never performs low-level work like rendering. It only depends on `khora-core`.
+#### `khora-core` - The Foundation
+Contains only abstract traits, universal data types, and pure utilities. It has no knowledge of any specific implementation. It defines the "language" of the engine.
 
-#### L - `khora-lanes` (Data Plane)
-The ultra-fast, deterministic execution pipelines. A "Lane" is an optimized pipeline that does one thing, but does it very quickly (e.g., `render-lane`, `physics-lane`). They are "dumb" by design: they make no decisions, they only execute the configuration provided by an Agent.
+#### `khora-data` - The Data Layer
+Contains concrete implementations for data management: specialized allocators, data layout transformers (for AGDF), and streaming logic.
 
-#### A - `khora-agents` (The Bridge)
-Agents are the intelligent wrappers that connect the Control Plane to the Data Plane. An Agent:
-1.  Implements the `ISA` interface to communicate with the `DCC`.
-2.  Knows multiple strategies.
-3.  Receives a command from the `DCC` (e.g., "switch to 'high-performance' mode").
-4.  Translates this command into a concrete configuration for its associated `Lane`.
+#### `khora-lanes` - The Hot Path
+Contains the performance-critical, "dumb" execution pipelines (rendering passes, physics solvers). Optimized for speed, with no branching logic.
 
-#### D - `khora-data` (The Foundation)
-The subsystem that manages data. It provides the tools for AGDF (AoS<>SoA transformations), specialized allocators (frame arenas to avoid hot-path allocations), and manages data placement (RAM/VRAM).
+#### `khora-agents` - The Tactical Brains
+Each agent is a smart wrapper around one or more `Lanes`. It knows about different strategies (e.g., Forward vs. Deferred rendering), estimates their costs, and reports to the `Control Plane`. It translates high-level commands into concrete `Lane` configurations.
 
-### State Synchronization & The Feedback Loop
-A critical challenge is the time delay between the hot and cold paths. The Control Plane makes decisions based on data from previous frames. To mitigate this:
-1.  **Context Snapshotting**: Metrics from the hot path are precisely timestamped and snapshotted at a defined point in the frame (e.g., end of frame).
-2.  **Predictive Heuristics**: The DCC can use data from the last N frames to predict the state of the *next* frame, allowing it to make proactive rather than purely reactive decisions.
-3.  **Command Queuing**: Decisions from the Control Plane are queued and applied to the Data Plane at a safe synchronization point, preventing race conditions.
+#### `khora-control` - The Strategic Brain
+The highest level of decision-making. Contains the **DCC** and **GORNA**. It consumes telemetry, evaluates the overall situation against high-level goals, and orchestrates the `Agents`.
 
-### Simplified Dependency Graph
+#### `khora-telemetry` - The Nervous System
+A dedicated service for collecting, storing, and exposing engine-wide metrics and monitoring data. It gathers data from `khora-infra` and provides it to `khora-control` and debugging tools.
 
-  
+#### `khora-infra` - The Bridge to the World
+Contains all concrete implementations that interact with the outside world: GPU backends (WGPU), windowing (Winit), filesystem I/O, etc. It implements the traits defined in `khora-core`.
 
-khora-bin (Composition Root)
-|
-v
-+-----------------+ +----------------+
-| khora-agents |----->| khora-lanes |
-+-----------------+ +----------------+
-|                           |
-v                           v
-+-----------------+ +----------------+
-| khora-control |----->| khora-data |
-+-----------------+ +----------------+
-| |
-| v
-+----------------------->+
-v
-+--------------+
-| khora-core | (Traits & Types)
-+--------------+
-^
-|
-+--------------+
-| khora-infra | (Implementations: WGPU, etc.)
-+--------------+
-
-    
-This structure ensures that decision logic (`control`) can never depend on implementation details (`infra`) and that the fast pipelines (`lanes`) remain pure and free of business logic.
-
-  
+#### `khora-sdk` - The Public Facade
+A simple, stable API for game developers. It hides the complexity of the internal CLAD architecture and provides easy-to-use entry points like `Engine::new()`.

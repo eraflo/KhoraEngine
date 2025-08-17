@@ -13,9 +13,9 @@
 // limitations under the License.
 
 //! # Khora Agents
-//! 
+//!
 //! Intelligent wrappers that drive the Lanes with high-level logic.
 
-pub mod render_agent;
-pub mod physics_agent;
 pub mod asset_agent;
+pub mod physics_agent;
+pub mod render_agent;

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{EPSILON, Mat4, vector::Vec3};
+use super::{Mat4, Vec3, EPSILON};
 use std::ops::{Add, Mul, MulAssign, Neg, Sub};
 
 /// Represents a Quaternion for 3D rotations.

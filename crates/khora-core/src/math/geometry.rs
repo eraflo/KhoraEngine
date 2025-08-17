@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{
-    EPSILON,
-    matrix::Mat4,
-    vector::{Vec3, Vec4},
-};
+use super::{Mat4, Vec3, Vec4, EPSILON};
 
 /// Represents an Axis-Aligned Bounding Box defined by minimum and maximum corner points.
 #[derive(Debug, Clone, Copy, PartialEq)]

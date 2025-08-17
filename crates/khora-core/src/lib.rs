@@ -13,8 +13,16 @@
 // limitations under the License.
 
 //! # Khora Core
-//! 
+//!
 //! Foundational crate containing traits, core types, and interface contracts
 //! that define the engine's architecture.
 
+pub mod event;
 pub mod math;
+pub mod memory;
+pub mod platform;
+pub mod renderer;
+pub mod telemetry;
+pub mod utils;
+
+pub use utils::timer::Stopwatch;

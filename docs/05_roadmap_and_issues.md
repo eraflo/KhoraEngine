@@ -1,12 +1,11 @@
-    
 # 05 - Roadmap & Issue Tracker
 
 This document outlines the phased development plan for Khora. It integrates all open and proposed tasks into a structured series of milestones.
 
 ---
 
-## Phase 1: Core Foundation & Rendering Primitives
-**Goal:** Establish the minimal CLAD architecture and render a basic scene.
+## Phase 1: Foundational Architecture
+**Goal:** Establish the complete, decoupled CLAD crate structure and render a basic scene through the SDK.
 **(Largely Complete)**
 
 #### [Rendering Primitives & ISA Scaffolding]
@@ -22,7 +21,7 @@ This document outlines the phased development plan for Khora. It integrates all 
 #### [Scene Representation, Assets & Data Focus]
 - #39 [Feature] Design/Choose ECS - Focus on Data Layout & Iteration Perf
 - #40 [Feature] Implement Scene Hierarchy & Transform System
-- #41 [Feature] Design Asset System as potential ISA (Loading strategies, resource tracking)
+- #41 [Feature] Design Asset System as an ISA (Loading strategies, resource tracking)
 - #42 [Feature] Implement Texture Loading & Management
 - #43 [Feature] Implement Mesh Loading & Management
 - #44 [Task] Render Loaded Static Model with Basic Materials (Track asset load times/memory)
@@ -175,5 +174,3 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #123 [Feature] Implement Core Metrics System Backend v1 (In-Memory)
 - #124 [Task] Integrate VRAM Tracking into Core Metrics System 
 - #125 [Task] Integrate System RAM Tracking into Core Metrics System
-
-  

@@ -13,9 +13,9 @@
 // limitations under the License.
 
 //! # Khora Lanes
-//! 
+//!
 //! Hot-path execution pipelines optimized for performance-critical operations.
 
-pub mod render_lane;
-pub mod physics_lane;
 pub mod audio_lane;
+pub mod physics_lane;
+pub mod render_lane;

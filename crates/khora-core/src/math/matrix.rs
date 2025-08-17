@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::{
-    EPSILON, Quaternion,
-    vector::{Vec2, Vec3, Vec4},
-};
+use super::{Quaternion, Vec2, Vec3, Vec4, EPSILON};
 use std::ops::{Index, IndexMut, Mul};
 
 // --- Mat3 ---
@@ -893,7 +890,7 @@ impl Mul<Vec4> for Mat4 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::{PI, approx_eq, matrix::Mat4, quaternion::Quaternion, vector::Vec3};
+    use crate::math::{approx_eq, matrix::Mat4, quaternion::Quaternion, vector::Vec3, PI};
 
     fn vec3_approx_eq(a: Vec3, b: Vec3) -> bool {
         approx_eq(a.x, b.x) && approx_eq(a.y, b.y) && approx_eq(a.z, b.z)
@@ -1109,7 +1106,7 @@ mod tests {
         let v = Vec3::new(5.0, -1.0, 2.0);
 
         let v_rotated_q = q * v; // Rotate using quaternion directly
-        // Rotate using matrix: convert v to Vec4(point), multiply, convert back
+                                 // Rotate using matrix: convert v to Vec4(point), multiply, convert back
         let v4 = Vec4::from_vec3(v, 1.0);
         let v_rotated_m4 = m_from_q * v4;
         let v_rotated_m = v_rotated_m4.truncate();
@@ -1199,8 +1196,8 @@ mod tests {
         // Order matters: Translate then Rotate
         let tr = r * t;
         let p = Vec4::new(1.0, 0.0, 0.0, 1.0); // Point at (1,0,0)
-        // 1. Translate: p becomes (2, 0, 0, 1)
-        // 2. Rotate Z 90: (2, 0, 0) becomes (0, 2, 0)
+                                               // 1. Translate: p becomes (2, 0, 0, 1)
+                                               // 2. Rotate Z 90: (2, 0, 0) becomes (0, 2, 0)
         let expected_tr = Vec4::new(0.0, 2.0, 0.0, 1.0);
         assert!(vec4_approx_eq(tr * p, expected_tr));
 

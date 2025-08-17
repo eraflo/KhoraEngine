@@ -13,5 +13,5 @@
 // limitations under the License.
 
 //! # Khora Plugins
-//! 
+//!
 //! Packaged strategies and extensions for the engine.

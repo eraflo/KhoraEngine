@@ -13,6 +13,6 @@
 // limitations under the License.
 
 //! # Khora Control
-//! 
-//! Implementation of DCC (Dynamic Constraint Configuration) and 
+//!
+//! Implementation of DCC (Dynamic Constraint Configuration) and
 //! GORNA (Game Object Resource Network Architecture) systems.
