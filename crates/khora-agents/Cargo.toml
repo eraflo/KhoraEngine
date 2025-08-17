@@ -1,0 +1,10 @@
+[package]
+name = "khora-agents"
+version = "0.1.0"
+edition = "2021"
+description = "Intelligent wrappers driving the Lanes"
+
+[dependencies]
+khora-core = { path = "../khora-core" }
+khora-data = { path = "../khora-data" }
+khora-lanes = { path = "../khora-lanes" }

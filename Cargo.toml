@@ -1,8 +1,21 @@
 [workspace]
 resolver = "2" # Recommended for modern Rust
 members = [
-    "khora_engine_core", # The future engine 'core'
-    "sandbox"      # An example/test application to use the engine
+    # New modular architecture
+    "crates/khora-core",
+    "crates/khora-control", 
+    "crates/khora-data",
+    "crates/khora-lanes",
+    "crates/khora-agents",
+    "crates/khora-infra",
+    "crates/khora-telemetry",
+    "crates/khora-editor",
+    "crates/khora-plugins",
+    "crates/khora-sdk",
+    
+    # Examples and tools
+    "examples/sandbox",
+    "xtask",
 ]
 
 

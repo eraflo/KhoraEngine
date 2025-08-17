@@ -1,0 +1,8 @@
+[package]
+name = "khora-control"
+version = "0.1.0"
+edition = "2021"
+description = "DCC and GORNA implementation for dynamic constraint configuration"
+
+[dependencies]
+khora-core = { path = "../khora-core" }

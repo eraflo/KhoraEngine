@@ -1,7 +1,0 @@
-[package]
-name = "sandbox"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-khora_engine_core = { path = "../khora_engine_core" }

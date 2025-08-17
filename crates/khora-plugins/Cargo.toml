@@ -1,0 +1,9 @@
+[package]
+name = "khora-plugins"
+version = "0.1.0"
+edition = "2021"
+description = "Packaged strategies and extensions"
+
+[dependencies]
+khora-core = { path = "../khora-core" }
+khora-sdk = { path = "../khora-sdk" }
