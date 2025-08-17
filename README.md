@@ -49,6 +49,7 @@ cargo test --workspace
 
 # Run the sandbox application
 cargo run -p sandbox```
+```
 
 ## Community & Contributing
 
