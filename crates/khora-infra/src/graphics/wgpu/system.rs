@@ -256,12 +256,15 @@ impl RenderSystem for WgpuRenderSystem {
         // Opportunistic debounced resize: triggers if quiet >= 120ms, fallback frame count, or stability >= 3.
         if self.pending_resize {
             self.pending_resize_frames = self.pending_resize_frames.saturating_add(1);
+            let mut resized_this_frame = false;
             if let Some(t) = self.last_resize_event {
                 let quiet_elapsed = t.elapsed().as_millis();
-                let debounce_quiet_ms: u128 = 120; // silence threshold for debounce
-                let max_pending_frames: u32 = 10; // fallback frames (~1/6s @ 60fps)
-                                                  // Early stable condition inside render loop: size is unchanged for >=3 frames.
+                let debounce_quiet_ms = settings.resize_debounce_ms as u128;
+                let max_pending_frames = settings.resize_max_pending_frames;
+
+                // Early stable condition inside render loop: size is unchanged for >=3 frames.
                 let early_stable = self.stable_size_frame_count >= 3;
+
                 if quiet_elapsed >= debounce_quiet_ms
                     || self.pending_resize_frames >= max_pending_frames
                     || early_stable
@@ -280,9 +283,17 @@ impl RenderSystem for WgpuRenderSystem {
                                 self.stable_size_frame_count
                             );
                             self.stable_size_frame_count = 0; // reset after apply
+                            resized_this_frame = true;
                         }
                     }
                 }
+            }
+
+            // Early return if a resize is pending and hasn't been applied this frame
+            // Don't need to render if we're waiting for a resize
+            if self.pending_resize && !resized_this_frame {
+                log::trace!("Skipping render frame due to pending resize debounce.");
+                return Ok(self.last_frame_stats.clone());
             }
         }
 
@@ -548,30 +559,10 @@ impl RenderSystem for WgpuRenderSystem {
             );
         }
 
-        if let Some(gc_arc_mutex) = self.graphics_context_shared.take() {
-            match Arc::try_unwrap(gc_arc_mutex) {
-                Ok(mutex_gc) => match mutex_gc.into_inner() {
-                    Ok(_gc_instance) => {
-                        log::info!(
-                            "WGPUGraphicsContext successfully unwrapped and will be dropped."
-                        );
-                    }
-                    Err(poisoned_err) => {
-                        log::error!(
-                            "Mutex was poisoned during shutdown: {poisoned_err}. Resources might not be fully cleaned."
-                        );
-                    }
-                },
-                Err(_still_shared_arc) => {
-                    log::warn!(
-                        "WGPUGraphicsContext Arc is still shared elsewhere during shutdown. Resources will be dropped when last Arc reference is gone."
-                    );
-                }
-            }
+        if let Some(_context_arc) = self.graphics_context_shared.take() {
+            log::debug!("WgpuRenderSystem has released its reference to WgpuGraphicsContext.");
         }
 
-        self.graphics_context_shared = None;
-        self.wgpu_device = None;
         self.gpu_monitor = None;
         log::info!("WgpuRenderSystem shutdown complete.");
     }
