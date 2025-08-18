@@ -233,6 +233,9 @@ impl WgpuTimestampProfiler {
             log::warn!("Failed to poll device during profiler shutdown: {:?}", e);
         }
 
+        // Try to read the previous frame's data to empty the staging buffer.
+        self.try_read_previous_frame();
+
         // After waiting, we can be sure that all `staging_pending` flags have been
         // correctly updated by the callbacks. Any remaining error is likely a real issue.
 

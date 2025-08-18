@@ -158,6 +158,10 @@ pub struct RenderSettings {
     pub strategy: RenderStrategy,
     pub quality_level: u32, // 1 = Low, 2 = Medium, 3 = High
     pub show_wireframe: bool,
+    /// The quiet period in milliseconds after a resize event before the surface is reconfigured.
+    pub resize_debounce_ms: u64,
+    /// A fallback number of frames after which a pending resize is forced, even if events are still incoming.
+    pub resize_max_pending_frames: u32,
     /// Enable/disable GPU timestamp instrumentation (runtime toggle)
     pub enable_gpu_timestamps: bool,
 }
@@ -168,6 +172,8 @@ impl Default for RenderSettings {
             strategy: RenderStrategy::Forward,
             quality_level: 1,
             show_wireframe: false,
+            resize_debounce_ms: 120, // silence threshold for debounce
+            resize_max_pending_frames: 10, // fallback frames (~1/6s @ 60fps)
             enable_gpu_timestamps: true,
         }
     }
