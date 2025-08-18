@@ -261,10 +261,10 @@ impl RenderSystem for WgpuRenderSystem {
                 let quiet_elapsed = t.elapsed().as_millis();
                 let debounce_quiet_ms = settings.resize_debounce_ms as u128;
                 let max_pending_frames = settings.resize_max_pending_frames;
-                
+
                 // Early stable condition inside render loop: size is unchanged for >=3 frames.
                 let early_stable = self.stable_size_frame_count >= 3;
-                
+
                 if quiet_elapsed >= debounce_quiet_ms
                     || self.pending_resize_frames >= max_pending_frames
                     || early_stable

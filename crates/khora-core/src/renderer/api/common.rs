@@ -172,7 +172,7 @@ impl Default for RenderSettings {
             strategy: RenderStrategy::Forward,
             quality_level: 1,
             show_wireframe: false,
-            resize_debounce_ms: 120, // silence threshold for debounce
+            resize_debounce_ms: 120,       // silence threshold for debounce
             resize_max_pending_frames: 10, // fallback frames (~1/6s @ 60fps)
             enable_gpu_timestamps: true,
         }
