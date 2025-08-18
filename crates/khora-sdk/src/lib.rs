@@ -18,7 +18,7 @@
 
 use anyhow::Result;
 use khora_core::platform::window::KhoraWindow;
-use khora_core::renderer::{RenderSettings, RenderSystem};
+use khora_core::renderer::{RenderObject, RenderSettings, RenderSystem};
 use khora_core::telemetry::MonitoredResourceType;
 use khora_infra::platform::input::translate_winit_input;
 use khora_infra::platform::window::{WinitWindow, WinitWindowBuilder};
@@ -32,15 +32,42 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::WindowId;
 
-/// The internal state of the running application, managed by the winit event loop.
-struct AppState {
+pub mod prelude {
+    pub use khora_core::renderer::{
+        BufferDescriptor, BufferId, BufferUsage, ColorTargetStateDescriptor, ColorWrites,
+        IndexFormat, MultisampleStateDescriptor, PipelineLayoutDescriptor, RenderObject,
+        RenderPipelineDescriptor, RenderPipelineId, SampleCount, ShaderModuleDescriptor,
+        ShaderModuleId, ShaderSourceData, ShaderStage, VertexAttributeDescriptor,
+        VertexBufferLayoutDescriptor, VertexFormat, VertexStepMode,
+    };
+}
+
+pub struct EngineContext<'a> {
+    pub graphics_device: &'a dyn khora_core::renderer::GraphicsDevice,
+}
+
+pub trait Application: Sized + 'static {
+    /// Called once at the beginning of the application to create the initial state.
+    fn new(context: EngineContext) -> Self;
+
+    /// Called every frame for game logic updates.
+    fn update(&mut self);
+
+    /// Called every frame to handle rendering.
+    fn render(&mut self) -> Vec<RenderObject>;
+}
+
+/// The internal state of the running engine, managed by the winit event loop.
+/// It now holds the user's application state (`app: A`).
+struct EngineState<A: Application> {
+    app: Option<A>, // The user's application logic and data.
     window: Option<WinitWindow>,
     renderer: Option<Box<dyn RenderSystem>>,
     telemetry: Option<TelemetryService>,
     render_settings: RenderSettings,
 }
 
-impl AppState {
+impl<A: Application> EngineState<A> {
     /// Logs a summary of all registered telemetry monitors to the console.
     fn log_telemetry_summary(&self) {
         if let Some(telemetry) = &self.telemetry {
@@ -93,11 +120,11 @@ impl AppState {
 }
 
 /// Implementing `Drop` is the idiomatic Rust way to handle cleanup.
-/// When `AppState` goes out of scope (after the event loop exits), this `drop`
+/// When `EngineState` goes out of scope (after the event loop exits), this `drop`
 /// function will be called automatically, ensuring a controlled shutdown.
-impl Drop for AppState {
+impl<A: Application> Drop for EngineState<A> {
     fn drop(&mut self) {
-        log::info!("AppState is being dropped. Performing controlled shutdown...");
+        log::info!("EngineState is being dropped. Performing controlled shutdown...");
 
         if let Some(mut renderer) = self.renderer.take() {
             renderer.shutdown();
@@ -107,7 +134,7 @@ impl Drop for AppState {
     }
 }
 
-impl ApplicationHandler for AppState {
+impl<A: Application> ApplicationHandler for EngineState<A> {
     /// Called when the event loop is ready to start processing events.
     /// This is the ideal place to initialize systems that require a window.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -139,7 +166,13 @@ impl ApplicationHandler for AppState {
         let memory_monitor = Arc::new(MemoryMonitor::new("System_RAM".to_string()));
         telemetry.monitor_registry().register(memory_monitor);
 
-        // 5. Store the initialized systems in our application state.
+        // 5. Create the application instance.
+        let context = EngineContext {
+            graphics_device: renderer.graphics_device(),
+        };
+        self.app = Some(A::new(context));
+
+        // 6. Store the initialized systems in our application state.
         self.window = Some(window);
         self.renderer = Some(renderer);
         self.telemetry = Some(telemetry);
@@ -174,8 +207,19 @@ impl ApplicationHandler for AppState {
                             // Update "active" monitors like the memory monitor.
                             let should_log_summary = telemetry.tick();
 
+                            // Call the user's application update and render methods.
+                            let app = self.app.as_mut().unwrap();
+
+                            app.update();
+
+                            let render_objects = app.render();
+
                             // The renderer will update its own internal monitors (like GpuMonitor) during this call.
-                            match renderer.render(&[], &Default::default(), &self.render_settings) {
+                            match renderer.render(
+                                &render_objects,
+                                &Default::default(),
+                                &self.render_settings,
+                            ) {
                                 Ok(stats) => {
                                     log::trace!("Frame {} rendered.", stats.frame_number);
                                 }
@@ -216,12 +260,13 @@ impl Engine {
     /// This is the primary function for a game developer to call. It will create a window,
     /// initialize the rendering and other core systems, and start the main event loop,
     /// blocking the current thread until the application is closed.
-    pub fn run() -> Result<()> {
+    pub fn run<A: Application>() -> Result<()> {
         log::info!("Khora Engine SDK: Starting...");
         let event_loop = EventLoop::new()?;
 
         // The initial state is empty; it will be populated in the `resumed` event.
-        let mut app_state = AppState {
+        let mut app_state = EngineState::<A> {
+            app: None,
             window: None,
             renderer: None,
             telemetry: None,

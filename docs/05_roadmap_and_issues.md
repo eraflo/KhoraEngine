@@ -9,7 +9,6 @@ This document outlines the phased development plan for Khora. It integrates all 
 **(Largely Complete)**
 
 #### [Rendering Primitives & ISA Scaffolding]
-- #38 [Task] Render a Single Triangle/Quad with Performance Timings
 - #135 [Enhancement] Advanced GPU Performance & Resize Heuristics
 - #140 [Feature] Implement Basic Command Recording & Submission
 
@@ -30,13 +29,17 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #126 [Task] Integrate CPU/GPU Timers with Core Metrics System
 
 #### [Rendering Capabilities, Physics, Animation, AI & Strategy Exploration]
+- #141 [Feature] Implement SimpleUnlit RenderLane
 - #46 [Feature] Implement Camera System & Uniforms
 - #47 [Feature] Implement Material System
 - #48 [Feature] Implement Basic Lighting Models (Track shader complexity/perf)
+- #142 [Feature] Implement Forward+ Lighting RenderLane
 - #49 [Feature] Implement Depth Buffering
 - #50 [Research] Explore Alternative Rendering Paths/Strategies (e.g., Forward vs Deferred concept)
 - #100 [Feature] Implement Basic Physics System (Integration & Collision Detection)
+- #143 [Feature] Define and Implement Core PhysicsLanes (Broadphase, Solver)
 - #101 [Feature] Implement Skeletal Animation System
+- #144 [Feature] Implement SkinnedMesh ComputeLane
 - #104 [Feature] Implement Basic AI System (Placeholder Behaviors, e.g., Simple State Machine)
 
 ---
@@ -84,21 +87,23 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #58 [Feature] Implement Basic Play/Stop Mode
 - #77 [Feature] Visualize Full Context Model in Editor Debug Panel
 - #102 [Feature] Implement In-Engine UI System
-- **(New)** [Feature] Implement a "Decision Tracer" for DCC/GORNA in the editor to log and inspect every SAA decision.
-- **(New)** [Feature] Implement a Timeline Scrubber for the Context Visualization Panel to analyze metrics history.
+- #145 [Feature] Implement UiRenderLane
+- #147 [Feature] Implement a "Decision Tracer" for DCC/GORNA in the editor to log and inspect every SAA decision.
+- #148 [Feature] Implement a Timeline Scrubber for the Context Visualization Panel to analyze metrics history.
 
 #### [Editor Polish, Networking & Manual Control]
 - #66 [Feature] Implement Asset Browser
 - #67 [Feature] Implement Material Editor
 - #68 [Feature] Implement Gizmos
+- #146 [Feature] Implement EditorGizmo RenderLane
 - #69 [Feature] Implement Undo/Redo Functionality
 - #70 [Feature] Implement Editor Panels for Fine-Grained System Control
 - #103 [Feature] Implement Basic Networking System
 
 #### [Scripting v1]
-- **(New)** [Research] Evaluate and choose a scripting language (e.g., Rhai, Lua).
-- **(New)** [Feature] Implement Scripting Backend and Bindings to khora-sdk.
-- **(New)** [Feature] Make the Scripting VM an ISA (`ScriptingAgent`) to manage its own CPU budget.
+- #149 [Research] Evaluate and choose a scripting language (e.g., Rhai, Lua).
+- #150 [Feature] Implement Scripting Backend and Bindings to khora-sdk.
+- #151 [Feature] Make the Scripting VM an ISA (`ScriptingAgent`) to manage its own CPU budget.
 
 #### [Maturation, Optimization & Packaging]
 - #94 [Task] Extensive Performance Profiling & Optimization
@@ -119,8 +124,8 @@ This document outlines the phased development plan for Khora. It integrates all 
 
 #### [DCC v2 - Developer Guidance & Control]
 - #93 [Feature] Implement more Sophisticated DCC Heuristics / potentially ML-based Decision Model
-- **(New)** [Feature] Implement Engine Adaptation Modes (Learning, Stable, Manual).
-- **(New)** [Feature] Implement Developer Hints and Constraints System (e.g., `PriorityVolume`).
+- #152 [Feature] Implement Engine Adaptation Modes (Learning, Stable, Manual).
+- #153 [Feature] Implement Developer Hints and Constraints System (e.g., `PriorityVolume`).
 
 #### [Core XR Integration & Context]
 - #59 [Feature] Integrate OpenXR SDK & Bindings
@@ -174,3 +179,4 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #123 [Feature] Implement Core Metrics System Backend v1 (In-Memory)
 - #124 [Task] Integrate VRAM Tracking into Core Metrics System 
 - #125 [Task] Integrate System RAM Tracking into Core Metrics System
+- #38 [Task] Render a Single Triangle/Quad with Performance Timings

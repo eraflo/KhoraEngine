@@ -53,6 +53,18 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
         descriptor: &RenderPipelineDescriptor,
     ) -> Result<RenderPipelineId, ResourceError>;
 
+    /// Creates a pipeline layout from the provided descriptor.
+    /// ## Arguments
+    /// * `descriptor` - A reference to a `PipelineLayoutDescriptor` containing the layout configuration.
+    /// ## Returns
+    /// A `Result` containing the ID of the created pipeline layout or an error if the creation fails.
+    /// ## Errors
+    /// * `ResourceError` - If the pipeline layout creation fails.
+    fn create_pipeline_layout(
+        &self,
+        descriptor: &PipelineLayoutDescriptor,
+    ) -> Result<PipelineLayoutId, ResourceError>;
+
     /// Destroys the render pipeline associated with the given ID.
     /// This function is used to release the resources associated with the render pipeline.
     /// ## Arguments
@@ -69,6 +81,19 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// ## Returns
     /// A `Result` containing the ID of the created buffer or an error if the creation fails.
     fn create_buffer(&self, descriptor: &BufferDescriptor) -> Result<BufferId, ResourceError>;
+
+    /// Creates a new GPU buffer and initializes it with the provided data.
+    /// This is often more efficient for creating static buffers.
+    /// ## Arguments
+    /// * `descriptor` - A reference to a `BufferDescriptor` containing the buffer configuration.
+    /// * `data` - A slice of bytes containing the initial data for the buffer.
+    /// ## Returns
+    /// A `Result` containing the ID of the created buffer or an error if the creation fails.
+    fn create_buffer_with_data(
+        &self,
+        descriptor: &BufferDescriptor,
+        data: &[u8],
+    ) -> Result<BufferId, ResourceError>;
 
     /// Destroys a GPU buffer.
     /// ## Arguments
@@ -165,6 +190,9 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// ## Returns
     /// A `Result` indicating success or failure of the operation.
     fn destroy_sampler(&self, id: SamplerId) -> Result<(), ResourceError>;
+
+    /// Gets the surface format of the rendering system.
+    fn get_surface_format(&self) -> Option<TextureFormat>;
 
     /// Get the adapter information of the rendering system.
     fn get_adapter_info(&self) -> RendererAdapterInfo;

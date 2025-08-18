@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::math::{LinearRgba, Mat4, Vec3};
+use crate::{
+    math::{Mat4, Vec3},
+    renderer::{BufferId, RenderPipelineId},
+};
 
 /// Specify the size of indices in the index buffer.
 /// Used to optimize drawing by reusing vertices.
@@ -139,11 +142,13 @@ pub struct GraphicsAdapterInfo {
 }
 
 /// Structure representing a renderable object.
+/// TODO: evolve this structure to a more high level abstraction for real 3D objects.
 #[derive(Debug, Clone)]
 pub struct RenderObject {
-    pub transform: Mat4,
-    pub mesh_id: usize,
-    pub color: LinearRgba,
+    pub pipeline: RenderPipelineId,
+    pub vertex_buffer: BufferId,
+    pub index_buffer: BufferId,
+    pub index_count: u32,
 }
 
 /// Structure representing the rendering settings.

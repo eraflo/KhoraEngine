@@ -160,6 +160,33 @@ impl IntoWgpu<wgpu::TextureFormat> for TextureFormat {
     }
 }
 
+/// Converts a WGPU texture format into its Khora equivalent.
+/// This is a free function because we cannot implement `From` due to orphan rules.
+pub fn from_wgpu_texture_format(format: wgpu::TextureFormat) -> TextureFormat {
+    match format {
+        wgpu::TextureFormat::R8Unorm => TextureFormat::R8Unorm,
+        wgpu::TextureFormat::Rg8Unorm => TextureFormat::Rg8Unorm,
+        wgpu::TextureFormat::Rgba8Unorm => TextureFormat::Rgba8Unorm,
+        wgpu::TextureFormat::Rgba8UnormSrgb => TextureFormat::Rgba8UnormSrgb,
+        wgpu::TextureFormat::Bgra8UnormSrgb => TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::R16Float => TextureFormat::R16Float,
+        wgpu::TextureFormat::Rg16Float => TextureFormat::Rg16Float,
+        wgpu::TextureFormat::Rgba16Float => TextureFormat::Rgba16Float,
+        wgpu::TextureFormat::R32Float => TextureFormat::R32Float,
+        wgpu::TextureFormat::Rg32Float => TextureFormat::Rg32Float,
+        wgpu::TextureFormat::Rgba32Float => TextureFormat::Rgba32Float,
+        wgpu::TextureFormat::Depth16Unorm => TextureFormat::Depth16Unorm,
+        wgpu::TextureFormat::Depth24Plus => TextureFormat::Depth24Plus,
+        wgpu::TextureFormat::Depth32Float => TextureFormat::Depth32Float,
+        wgpu::TextureFormat::Depth24PlusStencil8 => TextureFormat::Depth24PlusStencil8,
+        wgpu::TextureFormat::Depth32FloatStencil8 => TextureFormat::Depth32FloatStencil8,
+        _ => unimplemented!(
+            "Conversion from wgpu::TextureFormat::{:?} to khora::TextureFormat is not implemented",
+            format
+        ),
+    }
+}
+
 impl IntoWgpu<u32> for SampleCount {
     fn into_wgpu(self) -> u32 {
         match self {
@@ -317,6 +344,34 @@ impl IntoWgpu<wgpu::BlendOperation> for BlendOperation {
             BlendOperation::Min => wgpu::BlendOperation::Min,
             BlendOperation::Max => wgpu::BlendOperation::Max,
         }
+    }
+}
+
+impl IntoWgpu<wgpu::BufferUsages> for BufferUsage {
+    fn into_wgpu(self) -> wgpu::BufferUsages {
+        let mut usages = wgpu::BufferUsages::empty();
+        if self.contains(BufferUsage::COPY_SRC) {
+            usages |= wgpu::BufferUsages::COPY_SRC;
+        }
+        if self.contains(BufferUsage::COPY_DST) {
+            usages |= wgpu::BufferUsages::COPY_DST;
+        }
+        if self.contains(BufferUsage::INDEX) {
+            usages |= wgpu::BufferUsages::INDEX;
+        }
+        if self.contains(BufferUsage::VERTEX) {
+            usages |= wgpu::BufferUsages::VERTEX;
+        }
+        if self.contains(BufferUsage::UNIFORM) {
+            usages |= wgpu::BufferUsages::UNIFORM;
+        }
+        if self.contains(BufferUsage::STORAGE) {
+            usages |= wgpu::BufferUsages::STORAGE;
+        }
+        if self.contains(BufferUsage::INDIRECT) {
+            usages |= wgpu::BufferUsages::INDIRECT;
+        }
+        usages
     }
 }
 
