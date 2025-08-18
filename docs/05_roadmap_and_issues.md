@@ -9,7 +9,6 @@ This document outlines the phased development plan for Khora. It integrates all 
 **(Largely Complete)**
 
 #### [Rendering Primitives & ISA Scaffolding]
-- #38 [Task] Render a Single Triangle/Quad with Performance Timings
 - #135 [Enhancement] Advanced GPU Performance & Resize Heuristics
 - #140 [Feature] Implement Basic Command Recording & Submission
 
@@ -180,3 +179,4 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #123 [Feature] Implement Core Metrics System Backend v1 (In-Memory)
 - #124 [Task] Integrate VRAM Tracking into Core Metrics System 
 - #125 [Task] Integrate System RAM Tracking into Core Metrics System
+- #38 [Task] Render a Single Triangle/Quad with Performance Timings
