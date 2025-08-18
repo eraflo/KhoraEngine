@@ -15,6 +15,7 @@
 use khora_core::telemetry::{
     MonitoredResourceType, ResourceMonitor, ResourceUsageReport, VramProvider,
 };
+use wgpu::util::DeviceExt;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::future::Future;
@@ -28,12 +29,12 @@ use khora_core::math::dimension;
 use khora_core::renderer::api::buffer::{self as api_buf};
 use khora_core::renderer::api::texture::{self as api_tex};
 use khora_core::renderer::{
-    GraphicsBackendType, GraphicsDevice, PipelineError, RenderPipelineDescriptor, RenderPipelineId,
-    RendererAdapterInfo, RendererDeviceType, ResourceError, ShaderError, ShaderModuleDescriptor,
-    ShaderModuleId, ShaderSourceData,
+    GraphicsBackendType, GraphicsDevice, PipelineError, PipelineLayoutId, RenderPipelineDescriptor,
+    RenderPipelineId, RendererAdapterInfo, RendererDeviceType, ResourceError, ShaderError,
+    ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData, TextureFormat,
 };
 
-use crate::graphics::wgpu::conversions::IntoWgpu;
+use crate::graphics::wgpu::conversions::{from_wgpu_texture_format, IntoWgpu};
 
 use super::context::WgpuGraphicsContext;
 struct MapAsyncFutureState {
@@ -71,8 +72,8 @@ struct WgpuShaderModuleEntry {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-pub struct WgpuRenderPipelineEntry {
-    wgpu_pipeline: Arc<wgpu::RenderPipeline>,
+pub(crate) struct WgpuRenderPipelineEntry {
+    pub(crate) wgpu_pipeline: Arc<wgpu::RenderPipeline>,
 }
 
 #[derive(Debug)]
@@ -111,6 +112,7 @@ pub struct WgpuDevice {
 
     next_shader_id: AtomicUsize,
     next_pipeline_id: AtomicUsize,
+    next_pipeline_layout_id: AtomicUsize,
     next_buffer_id: AtomicUsize,
     next_texture_id: AtomicUsize,
     next_texture_view_id: AtomicUsize,
@@ -133,6 +135,7 @@ impl WgpuDevice {
             samplers: Mutex::new(HashMap::new()),
             next_shader_id: AtomicUsize::new(0),
             next_pipeline_id: AtomicUsize::new(0),
+            next_pipeline_layout_id: AtomicUsize::new(0),
             next_buffer_id: AtomicUsize::new(0),
             next_texture_id: AtomicUsize::new(0),
             next_texture_view_id: AtomicUsize::new(0),
@@ -189,6 +192,20 @@ impl WgpuDevice {
             * descriptor.size.depth_or_array_layers as u64;
         num_pixels * bytes_per_pixel as u64
     }
+
+    /// Retrieves a reference-counted pointer to the internal WGPU render pipeline.
+    /// Returns `None` if the ID is invalid.
+    pub fn get_wgpu_render_pipeline(&self, id: RenderPipelineId) -> Option<Arc<wgpu::RenderPipeline>> {
+        let pipelines = self.pipelines.lock().unwrap();
+        pipelines.get(&id).map(|entry| Arc::clone(&entry.wgpu_pipeline))
+    }
+
+    /// Retrieves a reference-counted pointer to the internal WGPU buffer.
+    /// Returns `None` if the ID is invalid.
+    pub fn get_wgpu_buffer(&self, id: api_buf::BufferId) -> Option<Arc<wgpu::Buffer>> {
+        let buffers = self.buffers.lock().unwrap();
+        buffers.get(&id).map(|entry| Arc::clone(&entry.wgpu_buffer))
+    }
 }
 
 impl GraphicsDevice for WgpuDevice {
@@ -207,10 +224,8 @@ impl GraphicsDevice for WgpuDevice {
         // Create the shader module using the wgpu device
         let wgpu_module_arc = self.with_wgpu_device(|device| {
             log::debug!(
-                "WgpuDevice: Creating wgpu::ShaderModule with label: {:?}, stage: {:?}, entry: {}",
-                label,
-                descriptor.stage,
-                descriptor.entry_point
+                "WgpuDevice: Creating wgpu::ShaderModule with label: {:?}",
+                label
             );
             let wgpu_descriptor = wgpu::ShaderModuleDescriptor {
                 label,
@@ -480,6 +495,19 @@ impl GraphicsDevice for WgpuDevice {
         Ok(id)
     }
 
+    fn create_pipeline_layout(
+        &self,
+        descriptor: &khora_core::renderer::PipelineLayoutDescriptor,
+    ) -> Result<khora_core::renderer::PipelineLayoutId, ResourceError> {
+        log::debug!(
+            "WgpuDevice: Creating pipeline layout with label: {:?}",
+            descriptor.label
+        );
+        Ok(PipelineLayoutId(
+            self.next_pipeline_layout_id.fetch_add(1, Ordering::Relaxed),
+        ))
+    }
+
     fn destroy_render_pipeline(&self, id: RenderPipelineId) -> Result<(), ResourceError> {
         let mut pipelines_guard = self
             .pipelines
@@ -543,6 +571,50 @@ impl GraphicsDevice for WgpuDevice {
         Ok(id)
     }
 
+    fn create_buffer_with_data(
+        &self,
+        descriptor: &api_buf::BufferDescriptor,
+        data: &[u8],
+    ) -> Result<api_buf::BufferId, ResourceError> {
+        let context = self.context.lock().unwrap();
+
+        let wgpu_buffer = context
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: descriptor.label.as_deref(),
+            contents: data,
+            usage: descriptor.usage.into_wgpu(),
+            });
+
+        // Use the existing ID generation and storage system.
+        let id = self.generate_buffer_id();
+        let buffer_size = data.len() as u64;
+
+        // Track VRAM usage
+        self.vram_allocated_bytes
+            .fetch_add(buffer_size as usize, Ordering::Relaxed);
+        let current_vram = self.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
+        self.vram_peak_bytes
+            .fetch_max(current_vram, Ordering::Relaxed);
+
+        // Store the buffer
+        self.buffers.lock().unwrap().insert(
+            id,
+            WgpuBufferEntry {
+            wgpu_buffer: Arc::new(wgpu_buffer),
+            size: buffer_size,
+            },
+        );
+
+        log::info!(
+            "WgpuDevice: Created buffer '{:?}' with initial data. ID: {:?}, size: {} bytes",
+            descriptor.label.as_deref().unwrap_or_default(),
+            id,
+            buffer_size
+        );
+        Ok(id)
+    }
+
     fn destroy_buffer(&self, id: api_buf::BufferId) -> Result<(), ResourceError> {
         let mut buffers = self.buffers.lock().unwrap();
 
@@ -563,16 +635,28 @@ impl GraphicsDevice for WgpuDevice {
         offset: u64,
         data: &[u8],
     ) -> Result<(), ResourceError> {
+        // 1. Get the resources
         let buffers = self.buffers.lock().unwrap();
         let entry = buffers.get(&id).ok_or(ResourceError::NotFound)?;
         let context = self.context.lock().unwrap();
+
+        // 2. Check the bounds
+        let buffer_size = entry.wgpu_buffer.size();
+        let end_offset = offset + data.len() as u64;
+        if end_offset > buffer_size {
+            return Err(ResourceError::OutOfBounds);
+        }
+
+        // 3. Write directly. No padding, no allocation. It's simple and efficient.
         context.queue.write_buffer(&entry.wgpu_buffer, offset, data);
+
         log::debug!(
             "WgpuDevice: Wrote {} bytes to buffer ID: {:?} at offset {}",
             data.len(),
             id,
             offset
         );
+
         Ok(())
     }
 
@@ -862,6 +946,13 @@ impl GraphicsDevice for WgpuDevice {
         } else {
             Err(ResourceError::NotFound)
         }
+    }
+
+    fn get_surface_format(&self) -> Option<TextureFormat> {
+        self.context.lock().ok().map(|gc_guard| {
+            let wgpu_format = gc_guard.surface_config.format;
+            from_wgpu_texture_format(wgpu_format)
+        })
     }
 
     fn get_adapter_info(&self) -> RendererAdapterInfo {

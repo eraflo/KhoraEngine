@@ -145,6 +145,7 @@ pub enum ResourceError {
     NotFound,
     InvalidHandle,
     BackendError(String),
+    OutOfBounds
 }
 
 impl fmt::Display for ResourceError {
@@ -156,6 +157,9 @@ impl fmt::Display for ResourceError {
             ResourceError::InvalidHandle => write!(f, "Invalid resource handle or ID."),
             ResourceError::BackendError(msg) => {
                 write!(f, "Backend-specific resource error: {msg}")
+            },
+            ResourceError::OutOfBounds => {
+                write!(f, "Resource access out of bounds.")
             }
         }
     }

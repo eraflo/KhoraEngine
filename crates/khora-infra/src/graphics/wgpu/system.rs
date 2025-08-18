@@ -362,8 +362,8 @@ impl RenderSystem for WgpuRenderSystem {
         let cpu_submission_timer;
         let cpu_submission_duration_ms;
 
-        let mut _actual_draw_calls = 0;
-        let mut _actual_triangles = 0;
+        let mut _actual_draw_calls: u32 = 0;
+        let mut _actual_triangles: u32 = 0;
 
         {
             let gc_guard = gc.lock().map_err(|e| {
@@ -405,23 +405,45 @@ impl RenderSystem for WgpuRenderSystem {
                 }
             }
             // --- 5. Main Render Pass (visual)
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("WgpuRenderSystem Clear Screen Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &target_texture_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(gc_guard.get_clear_color()),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                occlusion_query_set: None,
-                timestamp_writes: None, // main pass no longer writes timestamps; handled by A & B
-            });
-            // Rendering of actual scene objects will be integrated here (set pipelines, bind groups, draw calls).
-            drop(_render_pass);
+            {
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("WgpuRenderSystem Main Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &target_texture_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(gc_guard.get_clear_color()),
+                            store: wgpu::StoreOp::Store,
+                        },
+                        depth_slice: None,
+                    })],
+                    depth_stencil_attachment: None,
+                    occlusion_query_set: None,
+                    timestamp_writes: None,
+                });
+
+                // Ensure we have access to the `wgpu_device` to retrieve resources.
+                if let Some(device) = self.wgpu_device.as_ref() {
+                    // Loop over all objects the sandbox asked us to draw.
+                    for object in renderables {
+                        if let (Some(pipeline_arc), Some(vertex_buffer_arc), Some(index_buffer_arc)) = (
+                            device.get_wgpu_render_pipeline(object.pipeline),
+                            device.get_wgpu_buffer(object.vertex_buffer),
+                            device.get_wgpu_buffer(object.index_buffer),
+                        ) {
+                            render_pass.set_pipeline(&pipeline_arc);
+                            render_pass.set_vertex_buffer(0, vertex_buffer_arc.slice(..));
+                            render_pass.set_index_buffer(index_buffer_arc.slice(..), wgpu::IndexFormat::Uint16);
+                            render_pass.draw_indexed(0..object.index_count, 0, 0..1);
+
+                            _actual_draw_calls += 1;
+                            _actual_triangles = _actual_triangles.saturating_add(object.index_count / 3);
+                        } else {
+                            log::warn!("Could not find all GPU resources for a RenderObject. Skipping draw call.");
+                        }
+                    }
+                }
+            }
 
             // --- 6. Pass B (compute only): main_pass_end + frame_end
             if settings.enable_gpu_timestamps {

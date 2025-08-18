@@ -297,6 +297,20 @@ pub struct RenderPipelineDescriptor<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RenderPipelineId(pub usize);
 
+/// An opaque handle representing a pipeline layout.
+/// This ID is used to identify a specific pipeline layout within the graphics device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct PipelineLayoutId(pub usize);
+
+/// Describes a pipeline layout.
+#[derive(Debug, Clone, Default)]
+pub struct PipelineLayoutDescriptor<'a> {
+    pub label: Option<Cow<'a, str>>,
+    // Pour l'instant, nous n'avons pas besoin de plus de détails.
+    // On pourra ajouter les bind group layouts ici plus tard.
+    pub _marker: std::marker::PhantomData<&'a ()>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ColorWrites, PrimitiveStateDescriptor, PrimitiveTopology};

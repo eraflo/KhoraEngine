@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::renderer::ShaderStage;
 use std::borrow::Cow;
 
 /// Represents the source data for a shader module.
@@ -26,8 +25,6 @@ pub enum ShaderSourceData<'a> {
 pub struct ShaderModuleDescriptor<'a> {
     pub label: Option<&'a str>,
     pub source: ShaderSourceData<'a>,
-    pub stage: ShaderStage,
-    pub entry_point: &'a str,
 }
 
 /// An opaque handle representing a compiled shader module.
@@ -55,13 +52,9 @@ mod tests {
         let descriptor = ShaderModuleDescriptor {
             label: Some("test_shader"),
             source: ShaderSourceData::Wgsl(Cow::Borrowed(source_code)),
-            stage: ShaderStage::Vertex,
-            entry_point: "main",
         };
 
         assert_eq!(descriptor.label, Some("test_shader"));
-        assert_eq!(descriptor.entry_point, "main");
-        assert_eq!(descriptor.stage, ShaderStage::Vertex);
         let ShaderSourceData::Wgsl(ref cow) = descriptor.source;
         assert_eq!(cow.as_ref(), source_code);
     }
