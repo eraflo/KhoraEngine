@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::{math::{Mat4, Vec3}, renderer::{BufferId, RenderPipelineId}};
+use crate::{
+    math::{Mat4, Vec3},
+    renderer::{BufferId, RenderPipelineId},
+};
 
 /// Specify the size of indices in the index buffer.
 /// Used to optimize drawing by reusing vertices.

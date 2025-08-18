@@ -34,12 +34,11 @@ use winit::window::WindowId;
 
 pub mod prelude {
     pub use khora_core::renderer::{
-        RenderObject,
         BufferDescriptor, BufferId, BufferUsage, ColorTargetStateDescriptor, ColorWrites,
-        MultisampleStateDescriptor, PipelineLayoutDescriptor, RenderPipelineDescriptor,
-        RenderPipelineId, SampleCount, ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData,
-        ShaderStage, VertexAttributeDescriptor, VertexBufferLayoutDescriptor, VertexFormat,
-        VertexStepMode, IndexFormat
+        IndexFormat, MultisampleStateDescriptor, PipelineLayoutDescriptor, RenderObject,
+        RenderPipelineDescriptor, RenderPipelineId, SampleCount, ShaderModuleDescriptor,
+        ShaderModuleId, ShaderSourceData, ShaderStage, VertexAttributeDescriptor,
+        VertexBufferLayoutDescriptor, VertexFormat, VertexStepMode,
     };
 }
 
@@ -212,11 +211,15 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
                             let app = self.app.as_mut().unwrap();
 
                             app.update();
-                            
+
                             let render_objects = app.render();
 
                             // The renderer will update its own internal monitors (like GpuMonitor) during this call.
-                            match renderer.render(&render_objects, &Default::default(), &self.render_settings) {
+                            match renderer.render(
+                                &render_objects,
+                                &Default::default(),
+                                &self.render_settings,
+                            ) {
                                 Ok(stats) => {
                                     log::trace!("Frame {} rendered.", stats.frame_number);
                                 }

@@ -426,18 +426,26 @@ impl RenderSystem for WgpuRenderSystem {
                 if let Some(device) = self.wgpu_device.as_ref() {
                     // Loop over all objects the sandbox asked us to draw.
                     for object in renderables {
-                        if let (Some(pipeline_arc), Some(vertex_buffer_arc), Some(index_buffer_arc)) = (
+                        if let (
+                            Some(pipeline_arc),
+                            Some(vertex_buffer_arc),
+                            Some(index_buffer_arc),
+                        ) = (
                             device.get_wgpu_render_pipeline(object.pipeline),
                             device.get_wgpu_buffer(object.vertex_buffer),
                             device.get_wgpu_buffer(object.index_buffer),
                         ) {
                             render_pass.set_pipeline(&pipeline_arc);
                             render_pass.set_vertex_buffer(0, vertex_buffer_arc.slice(..));
-                            render_pass.set_index_buffer(index_buffer_arc.slice(..), wgpu::IndexFormat::Uint16);
+                            render_pass.set_index_buffer(
+                                index_buffer_arc.slice(..),
+                                wgpu::IndexFormat::Uint16,
+                            );
                             render_pass.draw_indexed(0..object.index_count, 0, 0..1);
 
                             _actual_draw_calls += 1;
-                            _actual_triangles = _actual_triangles.saturating_add(object.index_count / 3);
+                            _actual_triangles =
+                                _actual_triangles.saturating_add(object.index_count / 3);
                         } else {
                             log::warn!("Could not find all GPU resources for a RenderObject. Skipping draw call.");
                         }

@@ -15,7 +15,6 @@
 use khora_core::telemetry::{
     MonitoredResourceType, ResourceMonitor, ResourceUsageReport, VramProvider,
 };
-use wgpu::util::DeviceExt;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::future::Future;
@@ -24,6 +23,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
 use wgpu;
+use wgpu::util::DeviceExt;
 
 use khora_core::math::dimension;
 use khora_core::renderer::api::buffer::{self as api_buf};
@@ -195,9 +195,14 @@ impl WgpuDevice {
 
     /// Retrieves a reference-counted pointer to the internal WGPU render pipeline.
     /// Returns `None` if the ID is invalid.
-    pub fn get_wgpu_render_pipeline(&self, id: RenderPipelineId) -> Option<Arc<wgpu::RenderPipeline>> {
+    pub fn get_wgpu_render_pipeline(
+        &self,
+        id: RenderPipelineId,
+    ) -> Option<Arc<wgpu::RenderPipeline>> {
         let pipelines = self.pipelines.lock().unwrap();
-        pipelines.get(&id).map(|entry| Arc::clone(&entry.wgpu_pipeline))
+        pipelines
+            .get(&id)
+            .map(|entry| Arc::clone(&entry.wgpu_pipeline))
     }
 
     /// Retrieves a reference-counted pointer to the internal WGPU buffer.
@@ -581,9 +586,9 @@ impl GraphicsDevice for WgpuDevice {
         let wgpu_buffer = context
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: descriptor.label.as_deref(),
-            contents: data,
-            usage: descriptor.usage.into_wgpu(),
+                label: descriptor.label.as_deref(),
+                contents: data,
+                usage: descriptor.usage.into_wgpu(),
             });
 
         // Use the existing ID generation and storage system.
@@ -601,8 +606,8 @@ impl GraphicsDevice for WgpuDevice {
         self.buffers.lock().unwrap().insert(
             id,
             WgpuBufferEntry {
-            wgpu_buffer: Arc::new(wgpu_buffer),
-            size: buffer_size,
+                wgpu_buffer: Arc::new(wgpu_buffer),
+                size: buffer_size,
             },
         );
 
