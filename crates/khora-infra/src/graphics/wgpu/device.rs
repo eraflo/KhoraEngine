@@ -27,13 +27,16 @@ use wgpu::util::DeviceExt;
 
 use khora_core::math::dimension;
 use khora_core::renderer::api::buffer::{self as api_buf};
+use khora_core::renderer::api::command::{self as api_cmd};
 use khora_core::renderer::api::texture::{self as api_tex};
+use khora_core::renderer::traits::CommandEncoder;
 use khora_core::renderer::{
     GraphicsBackendType, GraphicsDevice, PipelineError, PipelineLayoutId, RenderPipelineDescriptor,
     RenderPipelineId, RendererAdapterInfo, RendererDeviceType, ResourceError, ShaderError,
     ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData, TextureFormat,
 };
 
+use crate::graphics::wgpu::command::WgpuCommandEncoder;
 use crate::graphics::wgpu::conversions::{from_wgpu_texture_format, IntoWgpu};
 
 use super::context::WgpuGraphicsContext;
@@ -100,8 +103,10 @@ pub(crate) struct WgpuSamplerEntry {
     pub(crate) wgpu_sampler: Arc<wgpu::Sampler>,
 }
 
+/// The internal, non-clonable state of the WgpuDevice.
+/// This struct holds all the GPU resources and state, protected by an Arc.
 #[derive(Debug)]
-pub struct WgpuDevice {
+pub struct WgpuDeviceInternal {
     context: Arc<Mutex<WgpuGraphicsContext>>,
     shader_modules: Mutex<HashMap<ShaderModuleId, WgpuShaderModuleEntry>>,
     pipelines: Mutex<HashMap<RenderPipelineId, WgpuRenderPipelineEntry>>,
@@ -121,54 +126,87 @@ pub struct WgpuDevice {
     // VRAM Tracking
     vram_allocated_bytes: AtomicUsize,
     vram_peak_bytes: AtomicU64,
+
+    /// Command buffers that have been finished but not yet submitted.
+    pending_command_buffers: Mutex<HashMap<api_cmd::CommandBufferId, wgpu::CommandBuffer>>,
+    /// A thread-safe counter to generate unique command buffer IDs.
+    command_buffer_id_counter: AtomicU64,
+}
+
+/// A clonable, thread-safe handle to the WGPU graphics device.
+/// It wraps the actual device state (`WgpuDeviceInternal`) in an Arc,
+/// allowing it to be shared across threads and with command encoders.
+#[derive(Clone, Debug)]
+pub struct WgpuDevice {
+    internal: Arc<WgpuDeviceInternal>,
 }
 
 impl WgpuDevice {
     pub fn new(context: Arc<Mutex<WgpuGraphicsContext>>) -> Self {
         Self {
-            context,
-            shader_modules: Mutex::new(HashMap::new()),
-            pipelines: Mutex::new(HashMap::new()),
-            buffers: Mutex::new(HashMap::new()),
-            textures: Mutex::new(HashMap::new()),
-            texture_views: Mutex::new(HashMap::new()),
-            samplers: Mutex::new(HashMap::new()),
-            next_shader_id: AtomicUsize::new(0),
-            next_pipeline_id: AtomicUsize::new(0),
-            next_pipeline_layout_id: AtomicUsize::new(0),
-            next_buffer_id: AtomicUsize::new(0),
-            next_texture_id: AtomicUsize::new(0),
-            next_texture_view_id: AtomicUsize::new(0),
-            next_sampler_id: AtomicUsize::new(0),
-            vram_allocated_bytes: AtomicUsize::new(0),
-            vram_peak_bytes: AtomicU64::new(0),
+            internal: Arc::new(WgpuDeviceInternal {
+                context,
+                shader_modules: Mutex::new(HashMap::new()),
+                pipelines: Mutex::new(HashMap::new()),
+                buffers: Mutex::new(HashMap::new()),
+                textures: Mutex::new(HashMap::new()),
+                texture_views: Mutex::new(HashMap::new()),
+                samplers: Mutex::new(HashMap::new()),
+                next_shader_id: AtomicUsize::new(0),
+                next_pipeline_id: AtomicUsize::new(0),
+                next_pipeline_layout_id: AtomicUsize::new(0),
+                next_buffer_id: AtomicUsize::new(0),
+                next_texture_id: AtomicUsize::new(0),
+                next_texture_view_id: AtomicUsize::new(0),
+                next_sampler_id: AtomicUsize::new(0),
+                vram_allocated_bytes: AtomicUsize::new(0),
+                vram_peak_bytes: AtomicU64::new(0),
+                pending_command_buffers: Mutex::new(HashMap::new()),
+                command_buffer_id_counter: AtomicU64::new(0),
+            }),
         }
     }
 
     // --- ID Generation Helpers ---
 
     fn generate_shader_id(&self) -> ShaderModuleId {
-        ShaderModuleId(self.next_shader_id.fetch_add(1, Ordering::Relaxed))
+        ShaderModuleId(self.internal.next_shader_id.fetch_add(1, Ordering::Relaxed))
     }
 
     fn generate_pipeline_id(&self) -> RenderPipelineId {
-        RenderPipelineId(self.next_pipeline_id.fetch_add(1, Ordering::Relaxed))
+        RenderPipelineId(
+            self.internal
+                .next_pipeline_id
+                .fetch_add(1, Ordering::Relaxed),
+        )
     }
 
     fn generate_buffer_id(&self) -> api_buf::BufferId {
-        api_buf::BufferId(self.next_buffer_id.fetch_add(1, Ordering::Relaxed))
+        api_buf::BufferId(self.internal.next_buffer_id.fetch_add(1, Ordering::Relaxed))
     }
 
     fn generate_texture_id(&self) -> api_tex::TextureId {
-        api_tex::TextureId(self.next_texture_id.fetch_add(1, Ordering::Relaxed))
+        api_tex::TextureId(
+            self.internal
+                .next_texture_id
+                .fetch_add(1, Ordering::Relaxed),
+        )
     }
 
     fn generate_texture_view_id(&self) -> api_tex::TextureViewId {
-        api_tex::TextureViewId(self.next_texture_view_id.fetch_add(1, Ordering::Relaxed))
+        api_tex::TextureViewId(
+            self.internal
+                .next_texture_view_id
+                .fetch_add(1, Ordering::Relaxed),
+        )
     }
 
     fn generate_sampler_id(&self) -> api_tex::SamplerId {
-        api_tex::SamplerId(self.next_sampler_id.fetch_add(1, Ordering::Relaxed))
+        api_tex::SamplerId(
+            self.internal
+                .next_sampler_id
+                .fetch_add(1, Ordering::Relaxed),
+        )
     }
 
     /// Helper function to execute an operation with the wgpu::Device locked.
@@ -177,7 +215,7 @@ impl WgpuDevice {
     where
         F: FnOnce(&wgpu::Device) -> Result<R, ResourceError>,
     {
-        let context_guard = self.context.lock().map_err(|e| {
+        let context_guard = self.internal.context.lock().map_err(|e| {
             ResourceError::BackendError(format!("Failed to lock WgpuGraphicsContext: {e}"))
         })?;
         operation(&context_guard.device)
@@ -199,7 +237,7 @@ impl WgpuDevice {
         &self,
         id: RenderPipelineId,
     ) -> Option<Arc<wgpu::RenderPipeline>> {
-        let pipelines = self.pipelines.lock().unwrap();
+        let pipelines = self.internal.pipelines.lock().unwrap();
         pipelines
             .get(&id)
             .map(|entry| Arc::clone(&entry.wgpu_pipeline))
@@ -208,8 +246,84 @@ impl WgpuDevice {
     /// Retrieves a reference-counted pointer to the internal WGPU buffer.
     /// Returns `None` if the ID is invalid.
     pub fn get_wgpu_buffer(&self, id: api_buf::BufferId) -> Option<Arc<wgpu::Buffer>> {
-        let buffers = self.buffers.lock().unwrap();
+        let buffers = self.internal.buffers.lock().unwrap();
         buffers.get(&id).map(|entry| Arc::clone(&entry.wgpu_buffer))
+    }
+
+    /// Retrieves a reference-counted pointer to the internal WGPU texture view.
+    /// Returns `None` if the ID is invalid.
+    pub fn get_wgpu_texture_view(
+        &self,
+        id: &api_tex::TextureViewId,
+    ) -> Option<Arc<wgpu::TextureView>> {
+        let views = self.internal.texture_views.lock().unwrap();
+        views.get(id).map(|entry| Arc::clone(&entry.wgpu_view))
+    }
+
+    /// Polls the underlying wgpu::Device in a blocking manner.
+    /// This is primarily used during shutdown to ensure all pending operations
+    /// and callbacks are completed before resources are destroyed, preventing panics.
+    pub fn poll_device_blocking(&self) {
+        if let Ok(context_guard) = self.internal.context.lock() {
+            // PollType::Wait is blocking and will wait for the queue to be empty
+            // and for all `on_submitted_work_done` callbacks to be processed.
+            if let Err(e) = context_guard.device.poll(wgpu::PollType::Wait) {
+                log::warn!("Failed to poll device during shutdown: {:?}", e);
+            }
+        } else {
+            log::error!("WgpuDevice context mutex was poisoned during shutdown poll.");
+        }
+    }
+
+    /// Polls the underlying wgpu::Device in a non-blocking manner.
+    /// This is essential to process pending `map_async` callbacks from the GPU,
+    /// allowing systems like the GpuProfiler to receive data.
+    pub fn poll_device_non_blocking(&self) {
+        if let Ok(context_guard) = self.internal.context.lock() {
+            // PollType::Poll is non-blocking. It processes any completed work
+            // but returns immediately if there is none.
+            if let Err(e) = context_guard.device.poll(wgpu::PollType::Poll) {
+                log::warn!("Failed to poll device (non-blocking): {:?}", e);
+            }
+        }
+    }
+
+    /// Creates a texture view for a raw wgpu::Texture (e.g., from the swap chain)
+    /// and registers it with the device, returning an abstract ID.
+    pub fn create_texture_view_for_surface(
+        &self,
+        texture: &wgpu::Texture,
+        label: Option<&str>,
+    ) -> Result<api_tex::TextureViewId, ResourceError> {
+        let wgpu_view = Arc::new(texture.create_view(&wgpu::TextureViewDescriptor {
+            label,
+            ..Default::default()
+        }));
+        let id = self.generate_texture_view_id();
+        self.internal
+            .texture_views
+            .lock()
+            .unwrap()
+            .insert(id, WgpuTextureViewEntry { wgpu_view });
+        Ok(id)
+    }
+
+    /// (crate-internal) Registers a finished wgpu::CommandBuffer, storing it
+    /// in a map and returning an abstract ID for it.
+    pub(crate) fn register_command_buffer(
+        &self,
+        buffer: wgpu::CommandBuffer,
+    ) -> api_cmd::CommandBufferId {
+        let new_id_raw = self
+            .internal
+            .command_buffer_id_counter
+            .fetch_add(1, Ordering::SeqCst);
+        let new_id = api_cmd::CommandBufferId(new_id_raw);
+
+        let mut guard = self.internal.pending_command_buffers.lock().unwrap();
+        guard.insert(new_id, buffer);
+
+        new_id
     }
 }
 
@@ -241,7 +355,7 @@ impl GraphicsDevice for WgpuDevice {
 
         // Create a new shader module entry and insert it into the shader_modules map
         let id = self.generate_shader_id();
-        let mut modules_guard = self.shader_modules.lock().map_err(|e| {
+        let mut modules_guard = self.internal.shader_modules.lock().map_err(|e| {
             ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {e}"))
         })?;
         modules_guard.insert(
@@ -260,7 +374,7 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_shader_module(&self, id: ShaderModuleId) -> Result<(), ResourceError> {
-        let mut modules_guard = self.shader_modules.lock().map_err(|e| {
+        let mut modules_guard = self.internal.shader_modules.lock().map_err(|e| {
             ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {e}"))
         })?;
 
@@ -284,7 +398,7 @@ impl GraphicsDevice for WgpuDevice {
         );
 
         // 1. Get the shader modules from the context
-        let shader_modules_map = self.shader_modules.lock().map_err(|e| {
+        let shader_modules_map = self.internal.shader_modules.lock().map_err(|e| {
             ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {e}"))
         })?;
 
@@ -477,10 +591,10 @@ impl GraphicsDevice for WgpuDevice {
             Ok((Arc::new(pipeline), new_id))
         })?;
 
-        let mut pipelines_guard = self
-            .pipelines
-            .lock()
-            .map_err(|e| ResourceError::BackendError(format!("Mutex poisoned (pipelines): {e}")))?;
+        let mut pipelines_guard =
+            self.internal.pipelines.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (pipelines): {e}"))
+            })?;
         pipelines_guard.insert(
             id,
             WgpuRenderPipelineEntry {
@@ -509,15 +623,17 @@ impl GraphicsDevice for WgpuDevice {
             descriptor.label
         );
         Ok(PipelineLayoutId(
-            self.next_pipeline_layout_id.fetch_add(1, Ordering::Relaxed),
+            self.internal
+                .next_pipeline_layout_id
+                .fetch_add(1, Ordering::Relaxed),
         ))
     }
 
     fn destroy_render_pipeline(&self, id: RenderPipelineId) -> Result<(), ResourceError> {
-        let mut pipelines_guard = self
-            .pipelines
-            .lock()
-            .map_err(|e| ResourceError::BackendError(format!("Mutex poisoned (pipelines): {e}")))?;
+        let mut pipelines_guard =
+            self.internal.pipelines.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (pipelines): {e}"))
+            })?;
 
         if pipelines_guard.remove(&id).is_some() {
             log::debug!("WgpuDevice: Destroyed render pipeline with ID: {id:?}");
@@ -533,7 +649,7 @@ impl GraphicsDevice for WgpuDevice {
         &self,
         descriptor: &api_buf::BufferDescriptor,
     ) -> Result<api_buf::BufferId, ResourceError> {
-        let context = self.context.lock().unwrap();
+        let context = self.internal.context.lock().unwrap();
         let device = &context.device;
 
         // Create the buffer using the wgpu device
@@ -548,14 +664,16 @@ impl GraphicsDevice for WgpuDevice {
         let id = self.generate_buffer_id();
 
         // Track VRAM usage
-        self.vram_allocated_bytes
+        self.internal
+            .vram_allocated_bytes
             .fetch_add(descriptor.size as usize, Ordering::Relaxed);
-        let current_vram = self.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
-        self.vram_peak_bytes
+        let current_vram = self.internal.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
+        self.internal
+            .vram_peak_bytes
             .fetch_max(current_vram, Ordering::Relaxed);
 
         // Insert the buffer into the map
-        self.buffers.lock().unwrap().insert(
+        self.internal.buffers.lock().unwrap().insert(
             id,
             WgpuBufferEntry {
                 wgpu_buffer: Arc::new(wgpu_buffer),
@@ -581,7 +699,7 @@ impl GraphicsDevice for WgpuDevice {
         descriptor: &api_buf::BufferDescriptor,
         data: &[u8],
     ) -> Result<api_buf::BufferId, ResourceError> {
-        let context = self.context.lock().unwrap();
+        let context = self.internal.context.lock().unwrap();
 
         let wgpu_buffer = context
             .device
@@ -596,14 +714,16 @@ impl GraphicsDevice for WgpuDevice {
         let buffer_size = data.len() as u64;
 
         // Track VRAM usage
-        self.vram_allocated_bytes
+        self.internal
+            .vram_allocated_bytes
             .fetch_add(buffer_size as usize, Ordering::Relaxed);
-        let current_vram = self.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
-        self.vram_peak_bytes
+        let current_vram = self.internal.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
+        self.internal
+            .vram_peak_bytes
             .fetch_max(current_vram, Ordering::Relaxed);
 
         // Store the buffer
-        self.buffers.lock().unwrap().insert(
+        self.internal.buffers.lock().unwrap().insert(
             id,
             WgpuBufferEntry {
                 wgpu_buffer: Arc::new(wgpu_buffer),
@@ -621,11 +741,12 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_buffer(&self, id: api_buf::BufferId) -> Result<(), ResourceError> {
-        let mut buffers = self.buffers.lock().unwrap();
+        let mut buffers = self.internal.buffers.lock().unwrap();
 
         // Remove the buffer from the map and track VRAM usage
         if let Some(entry) = buffers.remove(&id) {
-            self.vram_allocated_bytes
+            self.internal
+                .vram_allocated_bytes
                 .fetch_sub(entry.size as usize, Ordering::Relaxed);
             log::debug!("WgpuDevice: Destroyed buffer with ID: {id:?}");
             Ok(())
@@ -641,9 +762,9 @@ impl GraphicsDevice for WgpuDevice {
         data: &[u8],
     ) -> Result<(), ResourceError> {
         // 1. Get the resources
-        let buffers = self.buffers.lock().unwrap();
+        let buffers = self.internal.buffers.lock().unwrap();
         let entry = buffers.get(&id).ok_or(ResourceError::NotFound)?;
-        let context = self.context.lock().unwrap();
+        let context = self.internal.context.lock().unwrap();
 
         // 2. Check the bounds
         let buffer_size = entry.wgpu_buffer.size();
@@ -671,7 +792,7 @@ impl GraphicsDevice for WgpuDevice {
         offset: u64,
         data: &'a [u8],
     ) -> Box<dyn Future<Output = Result<(), ResourceError>> + Send + 'static> {
-        let buffers_guard = self.buffers.lock().unwrap();
+        let buffers_guard = self.internal.buffers.lock().unwrap();
         let entry_wgpu_buffer = match buffers_guard.get(&id) {
             Some(e) => Arc::clone(&e.wgpu_buffer),
             None => return Box::new(async { Err(ResourceError::NotFound) }),
@@ -742,7 +863,7 @@ impl GraphicsDevice for WgpuDevice {
         &self,
         descriptor: &api_tex::TextureDescriptor,
     ) -> Result<api_tex::TextureId, ResourceError> {
-        let context = self.context.lock().unwrap();
+        let context = self.internal.context.lock().unwrap();
         let device = &context.device;
 
         let wgpu_texture_descriptor = wgpu::TextureDescriptor {
@@ -766,14 +887,16 @@ impl GraphicsDevice for WgpuDevice {
         let size_in_bytes = Self::calculate_texture_size_in_bytes(descriptor);
 
         // Track VRAM usage
-        self.vram_allocated_bytes
+        self.internal
+            .vram_allocated_bytes
             .fetch_add(size_in_bytes as usize, Ordering::Relaxed);
-        let current_vram = self.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
-        self.vram_peak_bytes
+        let current_vram = self.internal.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
+        self.internal
+            .vram_peak_bytes
             .fetch_max(current_vram, Ordering::Relaxed);
 
         // Insert the texture into the map
-        self.textures.lock().unwrap().insert(
+        self.internal.textures.lock().unwrap().insert(
             id,
             WgpuTextureEntry {
                 wgpu_texture: Arc::new(wgpu_texture),
@@ -795,11 +918,12 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_texture(&self, id: api_tex::TextureId) -> Result<(), ResourceError> {
-        let mut textures = self.textures.lock().unwrap();
+        let mut textures = self.internal.textures.lock().unwrap();
 
         // Remove the texture from the map and track VRAM usage
         if let Some(entry) = textures.remove(&id) {
-            self.vram_allocated_bytes
+            self.internal
+                .vram_allocated_bytes
                 .fetch_sub(entry.size as usize, Ordering::Relaxed);
             log::debug!("WgpuDevice: Destroyed texture with ID: {id:?}");
             Ok(())
@@ -816,9 +940,9 @@ impl GraphicsDevice for WgpuDevice {
         offset: dimension::Origin3D,
         size: dimension::Extent3D,
     ) -> Result<(), ResourceError> {
-        let textures = self.textures.lock().unwrap();
+        let textures = self.internal.textures.lock().unwrap();
         let entry = textures.get(&texture_id).ok_or(ResourceError::NotFound)?;
-        let context = self.context.lock().unwrap();
+        let context = self.internal.context.lock().unwrap();
 
         context.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
@@ -849,7 +973,7 @@ impl GraphicsDevice for WgpuDevice {
         texture_id: api_tex::TextureId,
         descriptor: &api_tex::TextureViewDescriptor,
     ) -> Result<api_tex::TextureViewId, ResourceError> {
-        let textures = self.textures.lock().unwrap();
+        let textures = self.internal.textures.lock().unwrap();
         let texture_entry = textures.get(&texture_id).ok_or(ResourceError::NotFound)?;
 
         let wgpu_view_descriptor = wgpu::TextureViewDescriptor {
@@ -861,7 +985,7 @@ impl GraphicsDevice for WgpuDevice {
             mip_level_count: descriptor.mip_level_count,
             base_array_layer: descriptor.base_array_layer,
             array_layer_count: descriptor.array_layer_count,
-            usage: None, // Not used in this context
+            usage: None,
         };
 
         // Create the texture view using the wgpu texture
@@ -871,7 +995,8 @@ impl GraphicsDevice for WgpuDevice {
                 .create_view(&wgpu_view_descriptor),
         );
         let id = self.generate_texture_view_id();
-        self.texture_views
+        self.internal
+            .texture_views
             .lock()
             .unwrap()
             .insert(id, WgpuTextureViewEntry { wgpu_view });
@@ -889,7 +1014,7 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_texture_view(&self, id: api_tex::TextureViewId) -> Result<(), ResourceError> {
-        let mut texture_views = self.texture_views.lock().unwrap();
+        let mut texture_views = self.internal.texture_views.lock().unwrap();
 
         // Remove the texture view from the map
         if texture_views.remove(&id).is_some() {
@@ -904,7 +1029,7 @@ impl GraphicsDevice for WgpuDevice {
         &self,
         descriptor: &api_tex::SamplerDescriptor,
     ) -> Result<api_tex::SamplerId, ResourceError> {
-        let context = self.context.lock().unwrap();
+        let context = self.internal.context.lock().unwrap();
         let device = &context.device;
 
         let wgpu_sampler_descriptor = wgpu::SamplerDescriptor {
@@ -925,7 +1050,8 @@ impl GraphicsDevice for WgpuDevice {
         // Create the sampler using the wgpu device
         let wgpu_sampler = Arc::new(device.create_sampler(&wgpu_sampler_descriptor));
         let id = self.generate_sampler_id();
-        self.samplers
+        self.internal
+            .samplers
             .lock()
             .unwrap()
             .insert(id, WgpuSamplerEntry { wgpu_sampler });
@@ -942,7 +1068,7 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_sampler(&self, id: api_tex::SamplerId) -> Result<(), ResourceError> {
-        let mut samplers = self.samplers.lock().unwrap();
+        let mut samplers = self.internal.samplers.lock().unwrap();
 
         // Remove the sampler from the map
         if samplers.remove(&id).is_some() {
@@ -954,7 +1080,7 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn get_surface_format(&self) -> Option<TextureFormat> {
-        self.context.lock().ok().map(|gc_guard| {
+        self.internal.context.lock().ok().map(|gc_guard| {
             let wgpu_format = gc_guard.surface_config.format;
             from_wgpu_texture_format(wgpu_format)
         })
@@ -962,6 +1088,7 @@ impl GraphicsDevice for WgpuDevice {
 
     fn get_adapter_info(&self) -> RendererAdapterInfo {
         let context_guard = self
+            .internal
             .context
             .lock()
             .expect("WgpuDevice: Mutex poisoned (context) on get_adapter_info");
@@ -987,6 +1114,7 @@ impl GraphicsDevice for WgpuDevice {
 
     fn supports_feature(&self, feature_name: &str) -> bool {
         let context_guard = self
+            .internal
             .context
             .lock()
             .expect("WgpuDevice: Mutex poisoned (context) on supports_feature");
@@ -1011,6 +1139,32 @@ impl GraphicsDevice for WgpuDevice {
             }
         }
     }
+
+    fn create_command_encoder(&self, label: Option<&str>) -> Box<dyn CommandEncoder> {
+        let context_guard = self.internal.context.lock().unwrap();
+        let descriptor = wgpu::CommandEncoderDescriptor { label };
+        let encoder = context_guard.device.create_command_encoder(&descriptor);
+
+        Box::new(WgpuCommandEncoder {
+            encoder: Some(encoder), // Wrap in Option to be `take`n in finish()
+            device: self.clone(),   // Clone the Arc handle
+        })
+    }
+
+    fn submit_command_buffer(&self, command_buffer_id: api_cmd::CommandBufferId) {
+        let mut guard = self.internal.pending_command_buffers.lock().unwrap();
+
+        // Remove the command buffer from the map. If it doesn't exist, it's a logic error.
+        if let Some(buffer) = guard.remove(&command_buffer_id) {
+            let context_guard = self.internal.context.lock().unwrap();
+            context_guard.queue.submit(std::iter::once(buffer));
+        } else {
+            log::error!(
+                "Attempted to submit a CommandBufferId ({:?}) that does not exist.",
+                command_buffer_id
+            );
+        }
+    }
 }
 
 impl ResourceMonitor for WgpuDevice {
@@ -1024,8 +1178,8 @@ impl ResourceMonitor for WgpuDevice {
 
     fn get_usage_report(&self) -> ResourceUsageReport {
         ResourceUsageReport {
-            current_bytes: self.vram_allocated_bytes.load(Ordering::Relaxed) as u64,
-            peak_bytes: Some(self.vram_peak_bytes.load(Ordering::Relaxed)),
+            current_bytes: self.internal.vram_allocated_bytes.load(Ordering::Relaxed) as u64,
+            peak_bytes: Some(self.internal.vram_peak_bytes.load(Ordering::Relaxed)),
             total_capacity_bytes: None, //  Difficult to determine in WGPU
         }
     }
@@ -1035,35 +1189,10 @@ impl ResourceMonitor for WgpuDevice {
     }
 }
 
-impl WgpuDevice {
-    /// Gets current VRAM usage in bytes
-    #[allow(dead_code)]
-    pub fn get_vram_usage_bytes(&self) -> u64 {
-        self.vram_allocated_bytes.load(Ordering::Relaxed) as u64
-    }
-
-    /// Gets peak VRAM usage in bytes
-    #[allow(dead_code)]
-    pub fn get_vram_peak_bytes(&self) -> u64 {
-        self.vram_peak_bytes.load(Ordering::Relaxed)
-    }
-
-    /// Gets VRAM usage in megabytes
-    #[allow(dead_code)]
-    pub fn get_vram_usage_mb(&self) -> f64 {
-        self.get_vram_usage_bytes() as f64 / (1024.0 * 1024.0)
-    }
-
-    /// Gets peak VRAM usage in megabytes
-    #[allow(dead_code)]
-    pub fn get_vram_peak_mb(&self) -> f64 {
-        self.get_vram_peak_bytes() as f64 / (1024.0 * 1024.0)
-    }
-}
-
 impl VramProvider for WgpuDevice {
     fn get_vram_usage_mb(&self) -> f32 {
         let bytes = self
+            .internal
             .vram_allocated_bytes
             .load(std::sync::atomic::Ordering::SeqCst);
         bytes as f32 / (1024.0 * 1024.0)
@@ -1071,6 +1200,7 @@ impl VramProvider for WgpuDevice {
 
     fn get_vram_peak_mb(&self) -> f32 {
         let bytes = self
+            .internal
             .vram_peak_bytes
             .load(std::sync::atomic::Ordering::SeqCst);
         bytes as f32 / (1024.0 * 1024.0)

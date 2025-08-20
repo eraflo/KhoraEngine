@@ -15,6 +15,7 @@
 use crate::math::dimension;
 use crate::renderer::api::*;
 use crate::renderer::error::ResourceError;
+use crate::renderer::traits::CommandEncoder;
 use std::fmt::Debug;
 use std::future::Future;
 
@@ -190,6 +191,18 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// ## Returns
     /// A `Result` indicating success or failure of the operation.
     fn destroy_sampler(&self, id: SamplerId) -> Result<(), ResourceError>;
+
+    /// Creates a new command encoder to record GPU commands.
+    /// ## Arguments
+    /// * `label` - An optional label for the command encoder.
+    /// ## Returns
+    /// A `Box` containing the created command encoder.
+    fn create_command_encoder(&self, label: Option<&str>) -> Box<dyn CommandEncoder>;
+
+    /// Submits a previously recorded command buffer to the GPU for execution.
+    /// ## Arguments
+    /// * `command_buffer` - The ID of the command buffer to submit.
+    fn submit_command_buffer(&self, command_buffer: CommandBufferId);
 
     /// Gets the surface format of the rendering system.
     fn get_surface_format(&self) -> Option<TextureFormat>;

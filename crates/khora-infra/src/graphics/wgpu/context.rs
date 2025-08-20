@@ -169,10 +169,12 @@ impl WgpuGraphicsContext {
         self.surface.get_current_texture()
     }
 
+    #[allow(dead_code)]
     pub fn device(&self) -> &wgpu::Device {
         &self.device
     }
 
+    #[allow(dead_code)]
     pub fn queue(&self) -> &wgpu::Queue {
         &self.queue
     }

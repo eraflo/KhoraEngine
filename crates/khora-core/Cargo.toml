@@ -1,6 +1,6 @@
 [package]
 name = "khora-core"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Foundational crate with traits, core types, and interface contracts"
 
