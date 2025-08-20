@@ -12,17 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bundle;
-mod component;
-mod entity;
-mod page;
-mod world;
-
-pub use bundle::ComponentBundle;
-pub use component::Component;
-pub use entity::{EntityId, EntityMetadata};
-pub use page::{ComponentPage, PageIndex};
-pub use world::World;
-
-#[cfg(test)]
-mod tests;
+/// A marker trait for types that can be used as components in the ECS.
+///
+/// This trait must be implemented for any struct you wish to attach to an entity.
+/// The `'static` lifetime ensures that the component type does not contain any
+/// non-static references, and `Send + Sync` are required to allow the component
+/// data to be safely accessed from multiple threads.
+pub trait Component: 'static + Send + Sync {}
