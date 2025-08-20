@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod backend;
+mod command;
 mod context;
 mod conversions;
 mod device;

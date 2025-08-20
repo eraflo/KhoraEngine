@@ -15,7 +15,7 @@
 use wgpu;
 use winit;
 
-use khora_core::math::{Extent2D, Extent3D, Origin3D};
+use khora_core::math::{Extent2D, Extent3D, LinearRgba, Origin3D};
 use khora_core::renderer::api::*;
 
 /// A local extension trait to convert our engine's types into WGPU-compatible types.
@@ -372,6 +372,29 @@ impl IntoWgpu<wgpu::BufferUsages> for BufferUsage {
             usages |= wgpu::BufferUsages::INDIRECT;
         }
         usages
+    }
+}
+
+impl IntoWgpu<wgpu::StoreOp> for StoreOp {
+    fn into_wgpu(self) -> wgpu::StoreOp {
+        match self {
+            StoreOp::Store => wgpu::StoreOp::Store,
+            StoreOp::Discard => wgpu::StoreOp::Discard,
+        }
+    }
+}
+
+impl IntoWgpu<wgpu::LoadOp<wgpu::Color>> for LoadOp<LinearRgba> {
+    fn into_wgpu(self) -> wgpu::LoadOp<wgpu::Color> {
+        match self {
+            LoadOp::Load => wgpu::LoadOp::Load,
+            LoadOp::Clear(color) => wgpu::LoadOp::Clear(wgpu::Color {
+                r: color.r as f64,
+                g: color.g as f64,
+                b: color.b as f64,
+                a: color.a as f64,
+            }),
+        }
     }
 }
 

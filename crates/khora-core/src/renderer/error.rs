@@ -189,6 +189,7 @@ impl From<PipelineError> for ResourceError {
 /// General errors that can occur within the rendering system or graphics device.
 #[derive(Debug)]
 pub enum RenderError {
+    NotInitialized,
     InitializationFailed(String),
     SurfaceAcquisitionFailed(String),
     RenderingFailed(String),
@@ -200,6 +201,9 @@ pub enum RenderError {
 impl fmt::Display for RenderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            RenderError::NotInitialized => {
+                write!(f, "The rendering system is not initialized.")
+            }
             RenderError::InitializationFailed(msg) => {
                 write!(f, "Failed to initialize graphics backend: {msg}")
             }
