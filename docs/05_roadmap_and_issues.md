@@ -6,10 +6,9 @@ This document outlines the phased development plan for Khora. It integrates all 
 
 ## Phase 1: Foundational Architecture
 **Goal:** Establish the complete, decoupled CLAD crate structure and render a basic scene through the SDK.
-**(Largely Complete)**
+**(Complete)**
 
-#### [Rendering Primitives & ISA Scaffolding]
-- #140 [Feature] Implement Basic Command Recording & Submission
+*With the successful abstraction of command recording and submission, the core architectural goals for the foundational phase are now met. The engine is fully decoupled from the rendering backend.*
 
 ---
 
@@ -180,3 +179,4 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #125 [Task] Integrate System RAM Tracking into Core Metrics System
 - #38 [Task] Render a Single Triangle/Quad with Performance Timings
 - #135 [Enhancement] Advanced GPU Performance & Resize Heuristics
+- **#140 [Feature] Implement Basic Command Recording & Submission**

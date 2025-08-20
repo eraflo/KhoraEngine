@@ -47,6 +47,9 @@ cd KhoraEngine
 # Run tests for the entire workspace
 cargo test --workspace
 
+# Check if your changes are good to go in prod
+cargo xtask all
+
 # Run the sandbox application
 cargo run -p sandbox```
 ```
