@@ -24,6 +24,9 @@ use crate::ecs::EntityId;
 /// This allows us to call methods like `swap_remove` on component columns without
 /// needing to know their concrete `Vec<T>` type at compile time.
 pub trait AnyVec {
+    /// Casts the trait object to `&dyn Any`.
+    fn as_any(&self) -> &dyn Any;
+
     /// Casts the trait object to `&mut dyn Any`.
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
@@ -33,6 +36,10 @@ pub trait AnyVec {
 
 // We implement this trait for any `Vec<T>` where T is `'static`.
 impl<T: 'static> AnyVec for Vec<T> {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

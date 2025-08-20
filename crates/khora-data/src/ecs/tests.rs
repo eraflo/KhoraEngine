@@ -277,3 +277,74 @@ fn test_despawn_with_swap_remove_logic() {
         "The page should now track entity B at row 0"
     );
 }
+
+#[test]
+fn test_simple_query_fetches_correct_components() {
+    // ARRANGE: Set up the world with a variety of entities.
+    let mut world = World::default();
+
+    // Spawn an entity that should be found by a `query::<&Position>()`.
+    world.spawn(Position(10));
+
+    // Spawn an entity that should *not* be found.
+    // This will create a different ComponentPage based on its unique signature.
+    world.spawn(Velocity(-5));
+
+    // Spawn another entity that should also be found.
+    world.spawn(Position(30));
+
+    // ACT: Run the query to collect all `Position` components.
+    let mut found_positions = Vec::new();
+    for position_ref in world.query::<&Position>() {
+        found_positions.push(*position_ref);
+    }
+
+    // ASSERT: Verify that the query returned the correct data.
+    // Check that we found the correct number of entities.
+    assert_eq!(
+        found_positions.len(),
+        2,
+        "Query should have found exactly 2 entities with a Position"
+    );
+
+    // Sort the results to make the test deterministic.
+    found_positions.sort_by_key(|p| p.0);
+
+    // Check that we have the correct data.
+    assert_eq!(found_positions, vec![Position(10), Position(30)]);
+}
+
+#[test]
+fn test_mutable_query_modifies_components() {
+    // --- 1. ARRANGE ---
+    // Set up a world with some entities that we intend to modify.
+    let mut world = World::default();
+
+    world.spawn(Position(10));
+    world.spawn(Velocity(-5)); // This one should be ignored.
+    world.spawn(Position(30));
+
+    // --- 2. ACT ---
+    // Run a mutable query and modify the `Position` components.
+    for position_ref in world.query::<&mut Position>() {
+        // Multiply the position's value by 2.
+        position_ref.0 *= 2;
+    }
+
+    // --- 3. ASSERT ---
+    // Run an immutable query to verify the changes were applied.
+    let mut final_positions = Vec::new();
+    for position_ref in world.query::<&Position>() {
+        final_positions.push(*position_ref);
+    }
+
+    // Sort the results for a deterministic test.
+    final_positions.sort_by_key(|p| p.0);
+
+    // Check that the values have been updated.
+    assert_eq!(
+        final_positions,
+        vec![Position(20), Position(60)], // 10*2=20, 30*2=60
+        "The mutable query should have updated the component values"
+    );
+}
