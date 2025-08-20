@@ -26,7 +26,9 @@ GORNA is the communication protocol between the DCC and the ISAs. Instead of sta
 
 ### 4. Adaptive Game Data Flows (AGDF) - The Living Data
 
-AGDF is the most advanced and experimental concept. The idea is that even the structure of data should not be static. By analyzing access patterns (how code iterates over data), the engine could decide to dynamically reorganize data in memory for better cache locality (e.g., switching from `Array-of-Structs` to `Struct-of-Arrays`).
+AGDF is the most advanced and experimental concept, and it is being realized through our custom ECS architecture, the **Chunked Relational Page ECS (CRPECS)**. The idea is that even the structure of data should not be static.
+
+Instead of just changing algorithms, the SAA can fundamentally alter how an entity's data is laid out in memory. For instance, the Control Plane can cheaply and frequently change an entity's component structure to match its current context (e.g., removing complex physics components when it is far from the player). This is made possible by the CRPECS's design, which decouples an entity's identity from the physical storage of its data, making such structural changes extremely low-cost. This is a core part of Khora's self-optimization strategy at the deepest level.
 
 ### 5. Semantic Interfaces & Contracts - The Common Language
 

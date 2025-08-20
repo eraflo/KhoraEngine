@@ -13,15 +13,18 @@ This document outlines the phased development plan for Khora. It integrates all 
 ---
 
 ## Phase 2: Scene, Assets & Basic Capabilities
-**Goal:** Build out the necessary features to represent and interact with a game world, treating the asset pipeline as a first-class adaptive citizen.
+**Goal:** Build out the necessary features to represent and interact with a game world, starting with the implementation of our revolutionary ECS.
 
 #### [Scene Representation, Assets & Data Focus]
-- #39 [Feature] Design/Choose ECS - Focus on Data Layout & Iteration Perf
-- #40 [Feature] Implement Scene Hierarchy & Transform System
+- #154 [Task] Implement Core ECS Data Structures (CRPECS v1)
+- #155 [Task] Implement Basic Entity Lifecycle (CRPECS v1)
+- #156 [Task] Implement Native Queries (CRPECS v1)
+- #40 [Feature] Implement Scene Hierarchy & Transform System (Depends on #156)
 - #41 [Feature] Design Asset System as an ISA (Loading strategies, resource tracking)
 - #42 [Feature] Implement Texture Loading & Management
 - #43 [Feature] Implement Mesh Loading & Management
-- #44 [Task] Render Loaded Static Model with Basic Materials (Track asset load times/memory)
+- #44 [Task] Render Loaded Static Model with Basic Materials (Depends on #40)
+- #157 [Task] Implement Component Removal & Basic Garbage Collection (CRPECS v1)
 - #45 [Feature] Implement Basic Scene Serialization
 - #99 [Feature] Implement Basic Audio System (Playback & Management)
 - #126 [Task] Integrate CPU/GPU Timers with Core Metrics System
@@ -34,9 +37,10 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #142 [Feature] Implement Forward+ Lighting RenderLane
 - #49 [Feature] Implement Depth Buffering
 - #50 [Research] Explore Alternative Rendering Paths/Strategies (e.g., Forward vs Deferred concept)
-- #100 [Feature] Implement Basic Physics System (Integration & Collision Detection)
+- #100 [Feature] Implement Basic Physics System (Integration & Collision Detection) (Depends on #40)
 - #143 [Feature] Define and Implement Core PhysicsLanes (Broadphase, Solver)
 - #101 [Feature] Implement Skeletal Animation System
+- #158 [Feature] Implement Transversal Queries (CRPECS v1)
 - #144 [Feature] Implement SkinnedMesh ComputeLane
 - #104 [Feature] Implement Basic AI System (Placeholder Behaviors, e.g., Simple State Machine)
 
@@ -54,10 +58,11 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #76 [Task] Refactor one Subsystem to partially implement ISA v0.1
 - #116 [Research/Refactor] Evaluate Abstraction for Windowing/Platform System
 - #128 [Feature] DCC v1 Integration with Core Metrics System
+- #159 [Feature] Make CRPECS Garbage Collector an ISA
 
 #### [Intelligent Subsystem Agents (ISA) v1 & Basic Adaptation]
 - #78 [Feature] Implement Multiple Strategies for one key ISA
-- #79 [Feature] Refine ISA Interface Contract
+- #79 [Refine] ISA Interface Contract
 - #80 [Feature] Implement DCC Heuristics Engine v1
 - #81 [Feature] Implement DCC Command System to trigger ISA Strategy Switches
 - #82 [Task] Demonstrate Automatic Renderer Strategy Switching
@@ -179,4 +184,7 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #125 [Task] Integrate System RAM Tracking into Core Metrics System
 - #38 [Task] Render a Single Triangle/Quad with Performance Timings
 - #135 [Enhancement] Advanced GPU Performance & Resize Heuristics
-- **#140 [Feature] Implement Basic Command Recording & Submission**
+- #140 [Feature] Implement Basic Command Recording & Submission
+
+#### [Scene Representation, Assets & Data Focus]
+- #39 [Research & Design] Define Khora's ECS Architecture
