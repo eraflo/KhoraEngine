@@ -1,20 +1,26 @@
+### **Mise à Jour des Documents Existants**
+
+#### `docs/README.md` (Index de la Documentation)
+
+Je vais ajouter une entrée pour notre nouvelle architecture ECS.
+
+```markdown
 # Khora Engine Documentation
 
-Welcome to the complete documentation for the Khora Engine. These documents are designed to guide you through the vision, concepts, architecture, and development of the engine.
+Welcome to the central hub for all Khora Engine documentation.
 
-### 1. Project Vision
+## Table of Contents
 
-*   **[01 - Project Presentation](01_project_presentation.md)**: Why Khora exists and what our long-term vision is.
+### I. Core Vision
+*   [**01 - Project Presentation**](01_project_presentation.md) - The "Why" behind Khora.
+*   [**02 - Core Concepts (SAA)**](02_core_concepts.md) - The philosophy of a self-adapting engine.
 
-### 2. Core Concepts
+### II. Architecture
+*   [**03 - Technical Architecture (CLAD)**](03_technical_architecture.md) - The Rust implementation pattern.
+*   [**04 - Project and Crate Structure**](04_project_structure.md) - How the code is organized.
+*   [**05 - Roadmap & Issue Tracker**](05_roadmap_and_issues.md) - Our development plan.
+*   [**06 - ECS Architecture (CRPECS)**](06_ecs_architecture.md) - A deep dive into our custom ECS.
 
-*   **[02 - The Symbiotic Adaptive Architecture (SAA)](02_core_concepts.md)**: A dive into the philosophy that drives the engine, including DCC, ISAs, GORNA, AGDF, and the principles of Observability and Developer Guidance.
-
-### 3. Technical Architecture
-
-*   **[03 - The CLAD Architecture](03_technical_architecture.md)**: How the SAA vision is translated into a performant and modular Rust architecture.
-*   **[04 - Project & Crate Structure](04_project_structure.md)**: A detailed map of the source code, crates, and their responsibilities.
-
-### 4. Development
-
-*   **[05 - Roadmap & Issue Tracker](05_roadmap_and_issues.md)**: The complete, phased roadmap and list of all project tasks.
+### III. Community
+*   [**CONTRIBUTING.md**](../CONTRIBUTING.md) - How to contribute to the project.
+*   [**CODE_OF_CONDUCT.md**](../CODE_OF_CONDUCT.md) - Our community standards.

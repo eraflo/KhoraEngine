@@ -22,7 +22,7 @@ The entire architecture is built on isolating the **Control Plane (Cold Path)**,
 Contains only abstract traits, universal data types, and pure utilities. It has no knowledge of any specific implementation. It defines the "language" of the engine.
 
 #### `khora-data` - The Data Layer
-Contains concrete implementations for data management: specialized allocators, data layout transformers (for AGDF), and streaming logic.
+The heart of Khora's data management strategy. This crate is responsible for implementing our custom, high-performance **Chunked Relational Page ECS (CRPECS)**. It provides the concrete foundation for the Adaptive Game Data Flows (AGDF) concept, containing the specialized memory management, page allocators, and the query engine that drives the entire Data Plane.
 
 #### `khora-lanes` - The Hot Path
 Contains the performance-critical, "dumb" execution pipelines (rendering passes, physics solvers). Optimized for speed, with no branching logic.
