@@ -175,7 +175,11 @@ impl Application for SandboxApp {
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
+    use env_logger::{Builder, Env};
+
+    Builder::from_env(Env::default().default_filter_or("info"))
+        .filter_module("wgpu_hal", log::LevelFilter::Error)
+        .init();
     Engine::run::<SandboxApp>()?;
     Ok(())
 }
