@@ -30,11 +30,9 @@ pub struct EntityMetadata {
     /// The location of this entity's rendering-related components (e.g., MeshHandle, MaterialHandle).
     /// `None` if the entity is not renderable.
     pub render_location: Option<PageIndex>,
-    
     // Note: As the engine grows, we will add more fields here for other domains
     // like AI, audio, UI, etc.
 }
-
 
 /// A unique identifier for an entity in the world.
 ///

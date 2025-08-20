@@ -19,6 +19,7 @@ use crate::ecs::{ComponentPage, EntityId, EntityMetadata};
 /// The `World` orchestrates the CRPECS architecture. It owns the data and provides the main
 /// API for interacting with the ECS state.
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct World {
     /// A dense list of metadata for every entity that has ever been created.
     /// The index into this vector is used as the `index` part of an `EntityId`.
@@ -29,7 +30,6 @@ pub struct World {
     /// A list of all allocated `ComponentPage`s.
     /// A `page_id` in a `PageIndex` corresponds to an index in this vector.
     pages: Vec<ComponentPage>,
-    
     // We will add more fields here later, such as a resource manager
     // or an entity ID allocator to manage recycled generations.
 }

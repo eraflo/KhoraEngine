@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{any::{Any, TypeId}, collections::HashMap};
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+};
 
 use crate::ecs::EntityId;
-
 
 /// A logical address pointing to an entity's component data within a specific `ComponentPage`.
 ///
@@ -36,6 +38,7 @@ pub struct PageIndex {
 /// It contains multiple columns, where each column is a `Vec<T>` for a specific
 /// component type `T`. This SoA layout is the key to our high iteration performance,
 /// as it guarantees contiguous data access for native queries.
+#[allow(dead_code)]
 pub struct ComponentPage {
     /// A map from a component's `TypeId` to its actual storage column.
     /// The `Box<dyn Any>` is a type-erased `Vec<T>`, allowing us to store
