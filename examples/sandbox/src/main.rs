@@ -74,6 +74,7 @@ struct SandboxApp {
     vertex_buffer: BufferId,
     index_buffer: BufferId,
     render_pipeline: RenderPipelineId,
+    index_count: u32,
 }
 
 impl Application for SandboxApp {
@@ -157,6 +158,7 @@ impl Application for SandboxApp {
             vertex_buffer,
             index_buffer,
             render_pipeline,
+            index_count: INDICES.len() as u32,
         }
     }
 
@@ -167,13 +169,17 @@ impl Application for SandboxApp {
             pipeline: self.render_pipeline,
             vertex_buffer: self.vertex_buffer,
             index_buffer: self.index_buffer,
-            index_count: 3, // Assuming a triangle
+            index_count: self.index_count,
         }]
     }
 }
 
 fn main() -> Result<()> {
-    env_logger::init();
+    use env_logger::{Builder, Env};
+
+    Builder::from_env(Env::default().default_filter_or("info"))
+        .filter_module("wgpu_hal", log::LevelFilter::Error)
+        .init();
     Engine::run::<SandboxApp>()?;
     Ok(())
 }

@@ -13,9 +13,13 @@
 // limitations under the License.
 
 mod backend_selector;
+mod command_recorder;
 mod graphics_device;
+mod profiler;
 mod render_system;
 
 pub use self::backend_selector::GraphicsBackendSelector;
+pub use self::command_recorder::*;
 pub use self::graphics_device::GraphicsDevice;
+pub use self::profiler::*;
 pub use self::render_system::RenderSystem;

@@ -42,8 +42,8 @@ pub mod prelude {
     };
 }
 
-pub struct EngineContext<'a> {
-    pub graphics_device: &'a dyn khora_core::renderer::GraphicsDevice,
+pub struct EngineContext {
+    pub graphics_device: Arc<dyn khora_core::renderer::GraphicsDevice>,
 }
 
 pub trait Application: Sized + 'static {

@@ -52,10 +52,10 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     /// Get the adapter information of the rendering system.
     fn get_adapter_info(&self) -> Option<RendererAdapterInfo>;
 
-    /// Returns a reference to the underlying `GraphicsDevice` used by this `RenderSystem`.
+    /// Returns a Arc to the underlying `GraphicsDevice` used by this `RenderSystem`.
     /// This allows other parts of the engine (e.g., asset managers) to create
     /// graphics resources like buffers, textures, shaders, and pipelines.
-    fn graphics_device(&self) -> &dyn GraphicsDevice;
+    fn graphics_device(&self) -> Arc<dyn GraphicsDevice>;
 
     /// Clean up and release the resources of the rendering system.
     fn shutdown(&mut self);

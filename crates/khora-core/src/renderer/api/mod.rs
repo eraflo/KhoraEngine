@@ -14,6 +14,7 @@
 
 pub mod backend;
 pub mod buffer;
+pub mod command;
 pub mod common;
 pub mod pipeline;
 pub mod shader;
@@ -21,6 +22,7 @@ pub mod texture;
 
 pub use self::backend::*;
 pub use self::buffer::*;
+pub use self::command::*;
 pub use self::common::*;
 pub use self::pipeline::*;
 pub use self::shader::*;
