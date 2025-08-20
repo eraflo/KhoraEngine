@@ -16,15 +16,15 @@ This document outlines the phased development plan for Khora. It integrates all 
 **Goal:** Build out the necessary features to represent and interact with a game world, starting with the implementation of our revolutionary ECS.
 
 #### [Scene Representation, Assets & Data Focus]
-- #154 [Task] Implement Core ECS Data Structures (CRPECS v1)
-- #155 [Task] Implement Basic Entity Lifecycle (CRPECS v1)
-- #156 [Task] Implement Native Queries (CRPECS v1)
-- #40 [Feature] Implement Scene Hierarchy & Transform System (Depends on #156)
+- #130 [Task] Implement Core ECS Data Structures (CRPECS v1)
+- #131 [Task] Implement Basic Entity Lifecycle (CRPECS v1)
+- #132 [Task] Implement Native Queries (CRPECS v1)
+- #40 [Feature] Implement Scene Hierarchy & Transform System (Depends on #132)
 - #41 [Feature] Design Asset System as an ISA (Loading strategies, resource tracking)
 - #42 [Feature] Implement Texture Loading & Management
 - #43 [Feature] Implement Mesh Loading & Management
 - #44 [Task] Render Loaded Static Model with Basic Materials (Depends on #40)
-- #157 [Task] Implement Component Removal & Basic Garbage Collection (CRPECS v1)
+- #133 [Task] Implement Component Removal & Basic Garbage Collection (CRPECS v1)
 - #45 [Feature] Implement Basic Scene Serialization
 - #99 [Feature] Implement Basic Audio System (Playback & Management)
 - #126 [Task] Integrate CPU/GPU Timers with Core Metrics System
@@ -40,7 +40,7 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #100 [Feature] Implement Basic Physics System (Integration & Collision Detection) (Depends on #40)
 - #143 [Feature] Define and Implement Core PhysicsLanes (Broadphase, Solver)
 - #101 [Feature] Implement Skeletal Animation System
-- #158 [Feature] Implement Transversal Queries (CRPECS v1)
+- #134 [Feature] Implement Transversal Queries (CRPECS v1)
 - #144 [Feature] Implement SkinnedMesh ComputeLane
 - #104 [Feature] Implement Basic AI System (Placeholder Behaviors, e.g., Simple State Machine)
 
@@ -58,11 +58,11 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #76 [Task] Refactor one Subsystem to partially implement ISA v0.1
 - #116 [Research/Refactor] Evaluate Abstraction for Windowing/Platform System
 - #128 [Feature] DCC v1 Integration with Core Metrics System
-- #159 [Feature] Make CRPECS Garbage Collector an ISA
+- #135 [Feature] Make CRPECS Garbage Collector an ISA
 
 #### [Intelligent Subsystem Agents (ISA) v1 & Basic Adaptation]
 - #78 [Feature] Implement Multiple Strategies for one key ISA
-- #79 [Refine] ISA Interface Contract
+- #79 [Feature] Refine ISA Interface Contract
 - #80 [Feature] Implement DCC Heuristics Engine v1
 - #81 [Feature] Implement DCC Command System to trigger ISA Strategy Switches
 - #82 [Task] Demonstrate Automatic Renderer Strategy Switching
@@ -91,8 +91,8 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #77 [Feature] Visualize Full Context Model in Editor Debug Panel
 - #102 [Feature] Implement In-Engine UI System
 - #145 [Feature] Implement UiRenderLane
-- #147 [Feature] Implement a "Decision Tracer" for DCC/GORNA in the editor to log and inspect every SAA decision.
-- #148 [Feature] Implement a Timeline Scrubber for the Context Visualization Panel to analyze metrics history.
+- #147 [Feature] Implement a "Decision Tracer" for DCC/GORNA in the editor
+- #148 [Feature] Implement a Timeline Scrubber for the Context Visualization Panel
 
 #### [Editor Polish, Networking & Manual Control]
 - #66 [Feature] Implement Asset Browser
@@ -104,9 +104,9 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #103 [Feature] Implement Basic Networking System
 
 #### [Scripting v1]
-- #149 [Research] Evaluate and choose a scripting language (e.g., Rhai, Lua).
-- #150 [Feature] Implement Scripting Backend and Bindings to khora-sdk.
-- #151 [Feature] Make the Scripting VM an ISA (`ScriptingAgent`) to manage its own CPU budget.
+- #149 [Research] Evaluate and choose a scripting language
+- #150 [Feature] Implement Scripting Backend and Bindings
+- #151 [Feature] Make the Scripting VM an ISA (`ScriptingAgent`)
 
 #### [Maturation, Optimization & Packaging]
 - #94 [Task] Extensive Performance Profiling & Optimization
@@ -127,8 +127,8 @@ This document outlines the phased development plan for Khora. It integrates all 
 
 #### [DCC v2 - Developer Guidance & Control]
 - #93 [Feature] Implement more Sophisticated DCC Heuristics / potentially ML-based Decision Model
-- #152 [Feature] Implement Engine Adaptation Modes (Learning, Stable, Manual).
-- #153 [Feature] Implement Developer Hints and Constraints System (e.g., `PriorityVolume`).
+- #152 [Feature] Implement Engine Adaptation Modes (Learning, Stable, Manual)
+- #153 [Feature] Implement Developer Hints and Constraints System (`PriorityVolume`)
 
 #### [Core XR Integration & Context]
 - #59 [Feature] Integrate OpenXR SDK & Bindings
@@ -138,6 +138,7 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #63 [Feature] Implement Head/Controller Tracking
 - #64 [Feature] Integrate XR Performance Metrics
 - #65 [Task] Display Basic Scene in VR with Performance Overlay
+
 
 ---
 
