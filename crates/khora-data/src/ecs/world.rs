@@ -15,6 +15,7 @@
 use crate::ecs::{
     entity::EntityMetadata,
     page::{ComponentPage, PageIndex},
+    query::{Query, WorldQuery},
     ComponentBundle, EntityId,
 };
 
@@ -252,5 +253,35 @@ impl World {
         // etc, for other component types
 
         true
+    }
+
+    /// Creates an iterator that queries the world for entities with a specific
+    /// set of components.
+    ///
+    /// This is the primary method for reading data from the ECS. The query `Q`
+    /// is specified via a turbofish syntax, e.g., `world.query::<&Position>()`.
+    ///
+    /// The method itself is cheap, but it performs an initial search to find all
+    /// `ComponentPage`s that match the query. The returned iterator then efficiently
+    /// iterates over the data in those pages.
+    pub fn query<'a, Q: WorldQuery>(&'a self) -> Query<'a, Q> {
+        // 1. Get the signature of the query we want to run.
+        let query_type_ids = Q::type_ids();
+
+        // 2. Find all pages that match the signature.
+        // This is the O(P) setup cost where P is the number of page types.
+        let mut matching_page_indices = Vec::new();
+        for (page_id, page) in self.pages.iter().enumerate() {
+            // A page matches if its signature contains all the component types
+            // required by the query. For native queries, this is an exact match.
+            // (Note: A more advanced implementation for transversal queries would
+            // use a subset check here).
+            if page.type_ids == query_type_ids {
+                matching_page_indices.push(page_id as u32);
+            }
+        }
+
+        // 3. Construct and return the `Query` iterator.
+        Query::new(self, matching_page_indices)
     }
 }

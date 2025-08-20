@@ -56,6 +56,40 @@ pub trait ComponentBundle {
     unsafe fn add_to_page(self, page: &mut ComponentPage);
 }
 
+// Implementation for a single component.
+impl<C1: Component> ComponentBundle for C1 {
+    fn type_ids() -> Vec<TypeId> {
+        // The signature is just the TypeId of the single component.
+        vec![TypeId::of::<C1>()]
+    }
+
+    fn create_columns() -> HashMap<TypeId, Box<dyn AnyVec>> {
+        let mut columns: HashMap<TypeId, Box<dyn AnyVec>> = HashMap::new();
+        columns.insert(
+            TypeId::of::<C1>(),
+            Box::new(Vec::<C1>::new()) as Box<dyn AnyVec>,
+        );
+        columns
+    }
+
+    fn update_metadata(metadata: &mut EntityMetadata, location: PageIndex) {
+        // --- TEMPORARY LIMITATION ---
+        // As before, we assume this belongs to the 'physics' domain for now.
+        metadata.physics_location = Some(location);
+    }
+
+    unsafe fn add_to_page(self, page: &mut ComponentPage) {
+        // Get the column and push the single component.
+        page.columns
+            .get_mut(&TypeId::of::<C1>())
+            .unwrap()
+            .as_any_mut()
+            .downcast_mut::<Vec<C1>>()
+            .unwrap()
+            .push(self);
+    }
+}
+
 // Implementation for a 2-component tuple
 impl<C1: Component, C2: Component> ComponentBundle for (C1, C2) {
     fn type_ids() -> Vec<TypeId> {

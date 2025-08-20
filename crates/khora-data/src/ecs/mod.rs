@@ -16,12 +16,14 @@ mod bundle;
 mod component;
 mod entity;
 mod page;
+mod query;
 mod world;
 
 pub use bundle::ComponentBundle;
 pub use component::Component;
 pub use entity::{EntityId, EntityMetadata};
 pub use page::{ComponentPage, PageIndex};
+pub use query::{Query, WorldQuery};
 pub use world::World;
 
 #[cfg(test)]
