@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use crate::ecs::query::Without;
+use crate::ecs::SemanticDomain;
+
 use super::component::Component;
 use super::world::World;
 
@@ -33,6 +36,8 @@ fn test_spawn_single_entity() {
     // --- 1. SETUP ---
     // Create a new, empty world.
     let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<Velocity>(SemanticDomain::Spatial);
 
     // Define the component data we want to spawn.
     let position = Position(10);
@@ -70,21 +75,11 @@ fn test_spawn_single_entity() {
     );
 
     // Check the metadata's location pointer.
-    let location = metadata
-        .physics_location
-        .expect("Physics location should be set");
-    assert_eq!(
-        location.page_id, 0,
-        "Location should point to the first page"
-    );
-    assert_eq!(
-        location.row_index, 0,
-        "Location should point to the first row"
-    );
-    assert!(
-        metadata.render_location.is_none(),
-        "Render location should not be set"
-    );
+    assert_eq!(metadata.locations.len(), 1, "Should have one location entry");
+    let location = metadata.locations.get(&SemanticDomain::Spatial)
+        .expect("Spatial location should be set");
+    assert_eq!(location.page_id, 0, "Location should point to the first page");
+    assert_eq!(location.row_index, 0, "Location should point to the first row");
 
     // Check the world's page list.
     assert_eq!(world.pages.len(), 1, "There should be one page allocated");
@@ -102,6 +97,9 @@ fn test_spawn_single_entity() {
 fn test_despawn_single_entity() {
     // --- 1. SETUP ---
     let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<Velocity>(SemanticDomain::Spatial);
+
     let entity_id = world.spawn((Position(10), Velocity(-5)));
 
     // --- 2. ACTION ---
@@ -133,6 +131,8 @@ fn test_despawn_single_entity() {
 fn test_entity_id_recycling_and_aba_protection() {
     // --- 1. SETUP ---
     let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<Velocity>(SemanticDomain::Spatial);
 
     // --- 2. ACTION & ASSERTIONS ---
 
@@ -206,6 +206,8 @@ fn test_entity_id_recycling_and_aba_protection() {
 fn test_despawn_with_swap_remove_logic() {
     // --- 1. SETUP ---
     let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<Velocity>(SemanticDomain::Spatial);
 
     // Spawn two entities with the same bundle. This ensures they will be
     // placed in the same `ComponentPage`.
@@ -225,13 +227,11 @@ fn test_despawn_with_swap_remove_logic() {
     );
 
     // Check initial metadata for entity B
-    let metadata_b_before = world.entities[entity_b.index as usize].1.as_ref().unwrap();
-    let location_b_before = metadata_b_before.physics_location.unwrap();
+    let (_, metadata_b_before_opt) = &world.entities[entity_b.index as usize];
+    let metadata_b_before = metadata_b_before_opt.as_ref().unwrap();
+    let location_b_before = metadata_b_before.locations.get(&SemanticDomain::Spatial).unwrap();
     assert_eq!(location_b_before.page_id, 0);
-    assert_eq!(
-        location_b_before.row_index, 1,
-        "Entity B should initially be at row 1"
-    );
+    assert_eq!(location_b_before.row_index, 1, "Entity B should initially be at row 1");
 
     // --- 2. ACTION ---
     // Despawn the *first* entity (entity_a). This will trigger the swap_remove
@@ -258,17 +258,12 @@ fn test_despawn_with_swap_remove_logic() {
     );
 
     // THE CRITICAL CHECK: Verify that entity B's metadata has been updated.
-    let metadata_b_after = world.entities[entity_b.index as usize].1.as_ref().unwrap();
-    let location_b_after = metadata_b_after.physics_location.unwrap();
-
-    assert_eq!(
-        location_b_after.page_id, 0,
-        "Page ID for B should not change"
-    );
-    assert_eq!(
-        location_b_after.row_index, 0,
-        "Entity B should have been moved to row 0"
-    );
+    let (_, metadata_b_after_opt) = &world.entities[entity_b.index as usize];
+    let metadata_b_after = metadata_b_after_opt.as_ref().unwrap();
+    let location_b_after = metadata_b_after.locations.get(&SemanticDomain::Spatial).unwrap();
+    
+    assert_eq!(location_b_after.page_id, 0, "Page ID for B should not change");
+    assert_eq!(location_b_after.row_index, 0, "Entity B should have been moved to row 0");
 
     // Verify that the entity ID stored in the page at the new location is correct
     let page = &world.pages[0];
@@ -282,6 +277,8 @@ fn test_despawn_with_swap_remove_logic() {
 fn test_simple_query_fetches_correct_components() {
     // ARRANGE: Set up the world with a variety of entities.
     let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<Velocity>(SemanticDomain::Spatial);
 
     // Spawn an entity that should be found by a `query::<&Position>()`.
     world.spawn(Position(10));
@@ -319,6 +316,8 @@ fn test_mutable_query_modifies_components() {
     // --- 1. ARRANGE ---
     // Set up a world with some entities that we intend to modify.
     let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<Velocity>(SemanticDomain::Spatial);
 
     world.spawn(Position(10));
     world.spawn(Velocity(-5)); // This one should be ignored.
@@ -347,4 +346,101 @@ fn test_mutable_query_modifies_components() {
         vec![Position(20), Position(60)], // 10*2=20, 30*2=60
         "The mutable query should have updated the component values"
     );
+}
+
+#[test]
+fn test_query_with_without_filter() {
+    // --- 1. ARRANGE ---
+    let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<Velocity>(SemanticDomain::Spatial);
+
+    // Spawn an entity with both components. This one should be IGNORED by the query.
+    world.spawn((Position(10), Velocity(100)));
+
+    // Spawn an entity with only a Position. This one should be FOUND.
+    world.spawn(Position(20));
+
+    // --- 2. ACT ---
+    // Query for entities that have a `Position` but `Without` a `Velocity`.
+    let mut found_positions = Vec::new();
+    for position_ref in world.query::<(&Position, Without<Velocity>)>() {
+        // The query item for a tuple is a tuple, so we destructure it.
+        // The item for `Without<Velocity>` is `()`, which we can ignore.
+        let (pos, ()) = position_ref;
+        found_positions.push(*pos);
+    }
+
+    // --- 3. ASSERT ---
+    assert_eq!(found_positions.len(), 1, "Query should find exactly one entity");
+    assert_eq!(found_positions[0], Position(20), "Query should find the entity with only a Position");
+}
+
+#[test]
+fn test_tuple_query_matches_entities_with_all_components() {
+    // --- 1. ARRANGE ---
+    let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<Velocity>(SemanticDomain::Spatial);
+
+    // Spawn an entity with both components. Should be FOUND.
+    world.spawn((Position(10), Velocity(100)));
+
+    // Spawn an entity with only one of the required components. Should be IGNORED.
+    world.spawn(Position(20));
+
+    // Spawn another entity with both components. Should be FOUND.
+    world.spawn((Position(30), Velocity(300)));
+
+    // --- 2. ACT ---
+    // Query for all entities that have *both* a `Position` and a `Velocity`.
+    let mut found_results = Vec::new();
+    for (pos_ref, vel_ref) in world.query::<(&Position, &Velocity)>() {
+        found_results.push((*pos_ref, *vel_ref));
+    }
+
+    // --- 3. ASSERT ---
+    assert_eq!(found_results.len(), 2, "Query should find exactly two entities with both components");
+
+    // Sort the results by position to make the test deterministic.
+    found_results.sort_by_key(|(pos, _vel)| pos.0);
+
+    // Check that we have the correct data.
+    assert_eq!(
+        found_results,
+        vec![(Position(10), Velocity(100)), (Position(30), Velocity(300))]
+    );
+}
+
+#[test]
+fn test_spawn_with_unregistered_component() {
+    // --- 1. ARRANGE ---
+    let mut world = World::default();
+    
+    // NOTE: We do NOT register the `Position` component.
+    // world.register_component::<Position>(SemanticDomain::Spatial);
+
+    // --- 2. ACT ---
+    // We spawn an entity with a component that the world knows nothing about.
+    let entity_id = world.spawn(Position(10));
+
+    // --- 3. ASSERT ---
+    // We verify the current behavior: the entity is created, but its
+    // metadata is empty because the component's domain could not be found.
+
+    // The entity ID is still allocated correctly.
+    assert_eq!(entity_id.index, 0);
+
+    let (_id, metadata_opt) = &world.entities[0];
+    let metadata = metadata_opt.as_ref().unwrap();
+    
+    // CRITICAL CHECK: The locations map should be empty.
+    assert!(
+        metadata.locations.is_empty(),
+        "Metadata should have no locations for an unregistered component"
+    );
+
+    // A page is still created, but the entity's metadata doesn't point to it.
+    // This highlights that the data is stored but becomes unreachable.
+    assert_eq!(world.pages.len(), 1, "A page for the new component layout should still be created");
 }

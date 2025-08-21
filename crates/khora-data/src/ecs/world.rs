@@ -13,17 +13,18 @@
 // limitations under the License.
 
 use crate::ecs::{
-    entity::EntityMetadata,
-    page::{ComponentPage, PageIndex},
-    query::{Query, WorldQuery},
-    ComponentBundle, EntityId,
+    entity::EntityMetadata, 
+    page::{ComponentPage, PageIndex}, 
+    query::{Query, WorldQuery}, 
+    registry::ComponentRegistry, 
+    Children, Component, ComponentBundle, EntityId, GlobalTransform, Parent, Transform, 
+    SemanticDomain
 };
 
 /// The central container for the entire ECS, holding all entities, components, and metadata.
 ///
 /// The `World` orchestrates the CRPECS architecture. It owns the data and provides the main
 /// API for interacting with the ECS state.
-#[derive(Default)]
 pub struct World {
     /// A dense list of metadata for every entity that has ever been created.
     /// The index into this vector is used as the `index` part of an `EntityId`.
@@ -37,6 +38,10 @@ pub struct World {
     /// A list of entity indices that have been freed by `despawn` and are available
     /// for reuse by `spawn`. This recycling mechanism keeps the `entities` vector dense.
     pub(crate) freed_entities: Vec<u32>,
+
+    /// The registry that maps component types to their storage domains.
+    registry: ComponentRegistry,
+
     // We will add more fields here later, such as a resource manager
     // or an entity ID allocator to manage recycled generations.
 }
@@ -123,36 +128,43 @@ impl World {
     /// It removes component data from the specified page location. If another entity's
     /// data is moved during this process, it uses the `update_fn` closure to update
     /// the moved entity's metadata with its new location.
-    fn remove_from_page<F>(
+    fn remove_from_page(
         &mut self,
         entity_to_despawn: EntityId,
         location: PageIndex,
-        mut update_fn: F,
-    ) where
-        // The closure now operates on the `Option<EntityMetadata>` part of the tuple.
-        F: FnMut(&mut Option<EntityMetadata>, PageIndex),
-    {
+        domain: SemanticDomain,
+    ) {
         let page = &mut self.pages[location.page_id as usize];
-        if page.entities.is_empty() {
-            return;
-        }
-
+        if page.entities.is_empty() { return; }
+        
         let last_entity_in_page = *page.entities.last().unwrap();
         page.swap_remove_row(location.row_index);
 
         if last_entity_in_page != entity_to_despawn {
-            // We get a mutable reference to the entire tuple `(EntityId, Option<EntityMetadata>)`.
-            let metadata_tuple = &mut self.entities[last_entity_in_page.index as usize];
+            let (_id, metadata_opt) = &mut self.entities[last_entity_in_page.index as usize];
+            let metadata = metadata_opt.as_mut().unwrap();
 
-            // Call the provided closure to update the `Option<EntityMetadata>` part.
-            // We pass a mutable reference to the second element of the tuple.
-            update_fn(&mut metadata_tuple.1, location);
+            // Update the metadata with the new location.
+            metadata.locations.insert(domain, location);
         }
     }
 
-    /// Creates a new, empty `World`.
+    /// Creates a new, empty `World` with pre-registered internal component types.
     pub fn new() -> Self {
-        Self::default()
+        let mut world = Self {
+            entities: Vec::new(),
+            pages: Vec::new(),
+            freed_entities: Vec::new(),
+            registry: ComponentRegistry::default(),
+        };
+        
+        // --- Register all built-in scene components ---
+        world.register_component::<Transform>(SemanticDomain::Spatial);
+        world.register_component::<GlobalTransform>(SemanticDomain::Spatial);
+        world.register_component::<Parent>(SemanticDomain::Spatial);
+        world.register_component::<Children>(SemanticDomain::Spatial);
+
+        world
     }
 
     /// Spawns a new entity with the given bundle of components.
@@ -165,39 +177,34 @@ impl World {
     ///
     /// Returns the `EntityId` of the newly created entity.
     pub fn spawn<B: ComponentBundle>(&mut self, bundle: B) -> EntityId {
-        // Step 1: Allocate a new EntityId and its metadata slot.
+        // Step 1: Allocate a new EntityId.
         let entity_id = self.create_entity();
 
-        // Step 2: Find or create a page for this specific bundle layout.
+        // Step 2: Find or create a page for this bundle.
         let page_id = self.find_or_create_page_for_bundle::<B>();
-        let page = &mut self.pages[page_id as usize];
+        
+        // --- Step 3: Push component data into the page. ---
+        let row_index;
+        {
+            // We create a smaller scope here to release the mutable borrow on `self.pages`
+            // before we need to mutably borrow `self.entities` later.
+            let page = &mut self.pages[page_id as usize];
+            row_index = page.entities.len() as u32;
 
-        // Step 3: Push the component data into the page.
-        // The row_index is the position where the new data will be.
-        let row_index = page.entities.len() as u32;
-
-        // This is safe because we've guaranteed that `page` has the correct
-        // layout for the bundle `B`, fulfilling the contract of `add_to_page`.
-        unsafe {
-            bundle.add_to_page(page);
+            unsafe { bundle.add_to_page(page); }
+            page.add_entity(entity_id);
         }
 
-        // Keep the entity list in sync with the component columns.
-        page.add_entity(entity_id);
-
-        // Step 4: Update the entity's metadata with the new location.
+        // --- Step 4: Update the entity's metadata. ---
         let location = PageIndex { page_id, row_index };
-
-        // Get a mutable reference to the `Option<EntityMetadata>` part of the tuple.
-        let metadata_slot = &mut self.entities[entity_id.index as usize].1;
-
-        // Convert the `&mut Option<T>` to `Option<&mut T>`, unwrap it (which is safe),
-        // and then get a mutable reference to the `EntityMetadata`.
-        let metadata = metadata_slot.as_mut().unwrap();
-
-        // Delegate the update logic to the bundle itself.
-        B::update_metadata(metadata, location);
-
+        
+        // Get a mutable reference to the entity's metadata slot.
+        let (_id, metadata_opt) = &mut self.entities[entity_id.index as usize];
+        let metadata = metadata_opt.as_mut().unwrap();
+        
+        // Pass the registry to `update_metadata`.
+        B::update_metadata(metadata, location, &self.registry);
+        
         entity_id
     }
 
@@ -234,23 +241,11 @@ impl World {
         // Add the now-freed index to our recycling list.
         self.freed_entities.push(entity_id.index);
 
-        // --- Step 3: Remove components from pages using our helper function ---
-
-        // Remove components from the physics page, if they exist.
-        if let Some(location) = metadata.physics_location {
-            self.remove_from_page(entity_id, location, |metadata_opt, new_loc| {
-                metadata_opt.as_mut().unwrap().physics_location = Some(new_loc);
-            });
+        // --- Step 3: Iterate over the entity's component locations and remove them ---
+        
+        for (domain, location) in metadata.locations {
+            self.remove_from_page(entity_id, location, domain);
         }
-
-        // Remove components from the render page, if they exist.
-        if let Some(location) = metadata.render_location {
-            self.remove_from_page(entity_id, location, |metadata_opt, new_loc| {
-                metadata_opt.as_mut().unwrap().render_location = Some(new_loc);
-            });
-        }
-
-        // etc, for other component types
 
         true
     }
@@ -307,5 +302,20 @@ impl World {
 
         // 3. Construct and return the `Query` iterator.
         Query::new(self, matching_page_indices)
+    }
+
+    /// Registers a component type with a specific semantic domain.
+    ///
+    /// This is a crucial setup step. Before a component of type `T` can be used
+    /// in a bundle, it must be registered with the world to define where its
+    /// data will be stored.
+    pub fn register_component<T: Component>(&mut self, domain: SemanticDomain) {
+        self.registry.register::<T>(domain);
+    }
+}
+
+impl Default for World {
+    fn default() -> Self {
+        Self::new()
     }
 }

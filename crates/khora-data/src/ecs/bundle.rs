@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use crate::ecs::component::Component;
 use crate::ecs::entity::EntityMetadata;
 use crate::ecs::page::{AnyVec, ComponentPage, PageIndex};
+use crate::ecs::registry::ComponentRegistry;
 
 /// A trait for any collection of components that can be spawned together as a single unit.
 ///
@@ -45,7 +46,11 @@ pub trait ComponentBundle {
     ///
     /// This method is called by `World::spawn` to link an entity to its newly
     /// created component data.
-    fn update_metadata(metadata: &mut EntityMetadata, location: PageIndex);
+    fn update_metadata(
+        metadata: &mut EntityMetadata,
+        location: PageIndex,
+        registry: &ComponentRegistry,
+    );
 
     /// Adds the components from this bundle into the specified `ComponentPage`.
     ///
@@ -72,10 +77,17 @@ impl<C1: Component> ComponentBundle for C1 {
         columns
     }
 
-    fn update_metadata(metadata: &mut EntityMetadata, location: PageIndex) {
-        // --- TEMPORARY LIMITATION ---
-        // As before, we assume this belongs to the 'physics' domain for now.
-        metadata.physics_location = Some(location);
+    fn update_metadata(
+        metadata: &mut EntityMetadata,
+        location: PageIndex,
+        registry: &ComponentRegistry,
+    ) {
+        // Find the domain for this component type in the registry.
+        if let Some(domain) = registry.domain_of::<Self>() {
+            // Insert or update the location for that domain.
+            metadata.locations.insert(domain, location);
+        }
+        // Note: We might want to log a warning here if a component is not registered.
     }
 
     unsafe fn add_to_page(self, page: &mut ComponentPage) {
@@ -117,12 +129,16 @@ impl<C1: Component, C2: Component> ComponentBundle for (C1, C2) {
         columns
     }
 
-    fn update_metadata(metadata: &mut EntityMetadata, location: PageIndex) {
-        // --- CURRENT LIMITATION ---
-        // For now, we make a simplistic assumption: any bundle we create belongs to the "physics" domain.
-        // This is a temporary simplification to allow us to move forward. Later, we will need
-        // a more sophisticated system to associate components with domains.
-        metadata.physics_location = Some(location);
+    fn update_metadata(
+        metadata: &mut EntityMetadata,
+        location: PageIndex,
+        registry: &ComponentRegistry,
+    ) {
+        // Assumption: all components in a bundle belong to the same semantic domain.
+        // We look up the domain of the *first* component type.
+        if let Some(domain) = registry.domain_of::<C1>() {
+            metadata.locations.insert(domain, location);
+        }
     }
 
     unsafe fn add_to_page(self, page: &mut ComponentPage) {
