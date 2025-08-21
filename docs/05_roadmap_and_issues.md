@@ -109,6 +109,9 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #95 [Task] Documentation Overhaul (Including SAA concepts)
 - #96 [Task] Build & Packaging for Target Platforms
 
+#### [Milestone: API Ergonomics & DX (Developer Experience)]
+- #173 [Feature] Implement a Fluent API for Entity Creation
+
 ---
 
 ## Phase 5: Advanced Intelligence & Future Capabilities
