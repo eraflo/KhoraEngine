@@ -255,30 +255,54 @@ impl World {
         true
     }
 
-    /// Creates an iterator that queries the world for entities with a specific
-    /// set of components.
+    /// Creates an iterator that queries the world for entities matching a set of components and filters.
     ///
-    /// This is the primary method for reading data from the ECS. The query `Q`
-    /// is specified via a turbofish syntax, e.g., `world.query::<&Position>()`.
+    /// This is the primary method for reading data from the ECS. The query `Q` is specified
+    /// as a tuple via turbofish syntax. It can include component references (e.g., `&Position`,
+    /// `&mut Velocity`) and filters (e.g., `Without<Parent>`).
     ///
-    /// The method itself is cheap, but it performs an initial search to find all
-    /// `ComponentPage`s that match the query. The returned iterator then efficiently
-    /// iterates over the data in those pages.
+    /// # Examples
+    ///
+    /// ```
+    /// // Find all entities with a `Position` and `Velocity`.
+    /// // for (pos, vel) in world.query::<(&Position, &mut Velocity)>() { ... }
+    ///
+    /// // Find all entities with a `Transform` but without a `Parent`.
+    /// // for (transform,) in world.query::<(&Transform, Without<Parent>)>() { ... }
+    /// ```
+    ///
+    /// The method itself is cheap. It performs a single, efficient search to find all
+    /// `ComponentPage`s that match the query's criteria. The returned iterator then
+    /// efficiently iterates over the data in only those pages.
     pub fn query<'a, Q: WorldQuery>(&'a self) -> Query<'a, Q> {
-        // 1. Get the signature of the query we want to run.
+        // 1. Get the component and filter signatures from the query type.
         let query_type_ids = Q::type_ids();
+        let without_type_ids = Q::without_type_ids();
 
-        // 2. Find all pages that match the signature.
-        // This is the O(P) setup cost where P is the number of page types.
+        // 2. Find all pages that match the query's criteria.
         let mut matching_page_indices = Vec::new();
-        for (page_id, page) in self.pages.iter().enumerate() {
-            // A page matches if its signature contains all the component types
-            // required by the query. For native queries, this is an exact match.
-            // (Note: A more advanced implementation for transversal queries would
-            // use a subset check here).
-            if page.type_ids == query_type_ids {
-                matching_page_indices.push(page_id as u32);
+        'page_loop: for (page_id, page) in self.pages.iter().enumerate() {
+            // --- Filtering Logic ---
+
+            // A) Check for required components.
+            // The page must contain ALL component types requested by the query.
+            for required_type in &query_type_ids {
+                // `binary_search` is fast on the sorted `page.type_ids` vector.
+                if page.type_ids.binary_search(required_type).is_err() {
+                    continue 'page_loop; // This page is missing a required component, skip it.
+                }
             }
+
+            // B) Check for excluded components.
+            // The page must NOT contain ANY component types from the `without` filter.
+            for excluded_type in &without_type_ids {
+                if page.type_ids.binary_search(excluded_type).is_ok() {
+                    continue 'page_loop; // This page contains an excluded component, skip it.
+                }
+            }
+
+            // If we reach this point, the page is a match.
+            matching_page_indices.push(page_id as u32);
         }
 
         // 3. Construct and return the `Query` iterator.

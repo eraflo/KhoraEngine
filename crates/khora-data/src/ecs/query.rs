@@ -18,6 +18,10 @@ use crate::ecs::{
 };
 use std::{any::TypeId, marker::PhantomData};
 
+// ------------------------- //
+// ---- WorldQuery Part ---- //
+// ------------------------- //
+
 /// A trait implemented by types that can be used to query data from the `World`.
 ///
 /// This trait defines the contract for what a query is. It's implemented on tuples
@@ -31,6 +35,14 @@ pub trait WorldQuery {
     /// Returns the sorted list of `TypeId`s for the components accessed by this query.
     /// This signature is used to find the `ComponentPage`s that match the query.
     fn type_ids() -> Vec<TypeId>;
+
+    /// Returns the list of `TypeId`s for components to be EXCLUDED.
+    /// Used to filter out pages that contain these components.
+    ///
+    /// By default, a query has no exclusion filters.
+    fn without_type_ids() -> Vec<TypeId> {
+        Vec::new() // Default implementation.
+    }
 
     /// Fetches the query's item from a specific row in a `ComponentPage`.
     ///
@@ -102,6 +114,45 @@ impl<T: Component> WorldQuery for &mut T {
         vec.get_unchecked_mut(row_index)
     }
 }
+
+// Implementation for a query of a 2-item tuple.
+// This is now generic over any two types that implement `WorldQuery`.
+impl<'query, Q1: WorldQuery, Q2: WorldQuery> WorldQuery for (Q1, Q2) {
+    /// The iterator will yield a tuple of the items from the inner queries.
+    type Item<'a> = (Q1::Item<'a>, Q2::Item<'a>);
+
+    /// Combines the `type_ids` from both inner queries.
+    fn type_ids() -> Vec<TypeId> {
+        let mut ids = Q1::type_ids();
+        ids.extend(Q2::type_ids());
+        // Sorting is crucial to maintain a canonical signature.
+        ids.sort();
+        // We also remove duplicates, in case of queries like `(&T, &T)`.
+        ids.dedup();
+        ids
+    }
+
+    /// Combines the `without_type_ids` from both inner queries.
+    fn without_type_ids() -> Vec<TypeId> {
+        let mut ids = Q1::without_type_ids();
+        ids.extend(Q2::without_type_ids());
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+
+    /// Fetches the data for both inner queries and returns them as a tuple.
+    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
+        // Fetch data for each part of the tuple individually.
+        let item1 = Q1::fetch(page_ptr, row_index);
+        let item2 = Q2::fetch(page_ptr, row_index);
+        (item1, item2)
+    }
+}
+
+// -------------------- //
+// ---- Query Part ---- //
+// -------------------- //
 
 /// An iterator that yields the results of a `WorldQuery`.
 ///
@@ -182,5 +233,37 @@ impl<'a, Q: WorldQuery> Iterator for Query<'a, Q> {
                                             // The `loop` will then re-evaluate with the new page index.
             }
         }
+    }
+}
+
+
+/// A `WorldQuery` filter that matches entities that do NOT have component `T`.
+///
+/// This is used as a marker in a query tuple to exclude entities. For example,
+/// `Query<(&Position, Without<Velocity>)>` will iterate over all entities
+/// that have a `Position` but no `Velocity`.
+pub struct Without<T: Component>(PhantomData<T>);
+
+// `Without<T>` itself doesn't fetch any data, so its `WorldQuery` implementation
+// is mostly empty. It acts as a signal to the query engine.
+impl<T: Component> WorldQuery for Without<T> {
+    /// This query item is a zero-sized unit type, as it fetches no data.
+    type Item<'a> = ();
+
+    /// A `Without` filter does not add any component types to the query's main
+    /// signature for page matching. The filtering is handled separately.
+    fn type_ids() -> Vec<TypeId> {
+        Vec::new() // Returns an empty Vec.
+    }
+
+    fn without_type_ids() -> Vec<TypeId> {
+        // This is the key change: it returns the TypeId of the component to filter out.
+        vec![TypeId::of::<T>()]
+    }
+
+    /// Fetches nothing. Returns a unit type `()`.
+    unsafe fn fetch<'a>(_page_ptr: *const ComponentPage, _row_index: usize) -> Self::Item<'a> {
+        // This function will be called but its result is ignored.
+        ()
     }
 }
