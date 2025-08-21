@@ -12,26 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::ecs::page::PageIndex;
+use std::collections::HashMap;
+
+use crate::ecs::{page::PageIndex, SemanticDomain};
 
 /// Represents the central record for an entity, acting as a "table of contents"
 /// that points to the physical location of its component data across various `ComponentPage`s.
-///
-/// This struct does not contain any component data itself. Instead, it holds a collection
-/// of `PageIndex`es, one for each semantic group of components (e.g., physics, rendering).
-/// This design allows an entity's data to be physically scattered while remaining logically unified,
-/// making structural changes (like adding/removing entire component groups) extremely cheap.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct EntityMetadata {
-    /// The location of this entity's physics-related components (e.g., Position, Velocity).
-    /// `None` if the entity has no physics components.
-    pub physics_location: Option<PageIndex>,
-
-    /// The location of this entity's rendering-related components (e.g., MeshHandle, MaterialHandle).
-    /// `None` if the entity is not renderable.
-    pub render_location: Option<PageIndex>,
-    // Note: As the engine grows, we will add more fields here for other domains
-    // like AI, audio, UI, etc.
+    /// A map from a semantic domain to the location of the component data for that domain.
+    /// This allows an entity to have component data in multiple different pages,
+    /// each specialized for a specific domain (e.g., Spatial, Render).
+    pub(crate) locations: HashMap<SemanticDomain, PageIndex>,
 }
 
 /// A unique identifier for an entity in the world.

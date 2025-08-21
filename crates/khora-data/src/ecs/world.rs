@@ -12,18 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::any::TypeId;
+
 use crate::ecs::{
     entity::EntityMetadata,
     page::{ComponentPage, PageIndex},
     query::{Query, WorldQuery},
-    ComponentBundle, EntityId,
+    registry::ComponentRegistry,
+    Children, Component, ComponentBundle, EntityId, GlobalTransform, Parent, SemanticDomain,
+    Transform,
 };
 
 /// The central container for the entire ECS, holding all entities, components, and metadata.
 ///
 /// The `World` orchestrates the CRPECS architecture. It owns the data and provides the main
 /// API for interacting with the ECS state.
-#[derive(Default)]
 pub struct World {
     /// A dense list of metadata for every entity that has ever been created.
     /// The index into this vector is used as the `index` part of an `EntityId`.
@@ -37,6 +40,9 @@ pub struct World {
     /// A list of entity indices that have been freed by `despawn` and are available
     /// for reuse by `spawn`. This recycling mechanism keeps the `entities` vector dense.
     pub(crate) freed_entities: Vec<u32>,
+
+    /// The registry that maps component types to their storage domains.
+    registry: ComponentRegistry,
     // We will add more fields here later, such as a resource manager
     // or an entity ID allocator to manage recycled generations.
 }
@@ -123,15 +129,12 @@ impl World {
     /// It removes component data from the specified page location. If another entity's
     /// data is moved during this process, it uses the `update_fn` closure to update
     /// the moved entity's metadata with its new location.
-    fn remove_from_page<F>(
+    fn remove_from_page(
         &mut self,
         entity_to_despawn: EntityId,
         location: PageIndex,
-        mut update_fn: F,
-    ) where
-        // The closure now operates on the `Option<EntityMetadata>` part of the tuple.
-        F: FnMut(&mut Option<EntityMetadata>, PageIndex),
-    {
+        domain: SemanticDomain,
+    ) {
         let page = &mut self.pages[location.page_id as usize];
         if page.entities.is_empty() {
             return;
@@ -141,18 +144,30 @@ impl World {
         page.swap_remove_row(location.row_index);
 
         if last_entity_in_page != entity_to_despawn {
-            // We get a mutable reference to the entire tuple `(EntityId, Option<EntityMetadata>)`.
-            let metadata_tuple = &mut self.entities[last_entity_in_page.index as usize];
+            let (_id, metadata_opt) = &mut self.entities[last_entity_in_page.index as usize];
+            let metadata = metadata_opt.as_mut().unwrap();
 
-            // Call the provided closure to update the `Option<EntityMetadata>` part.
-            // We pass a mutable reference to the second element of the tuple.
-            update_fn(&mut metadata_tuple.1, location);
+            // Update the metadata with the new location.
+            metadata.locations.insert(domain, location);
         }
     }
 
-    /// Creates a new, empty `World`.
+    /// Creates a new, empty `World` with pre-registered internal component types.
     pub fn new() -> Self {
-        Self::default()
+        let mut world = Self {
+            entities: Vec::new(),
+            pages: Vec::new(),
+            freed_entities: Vec::new(),
+            registry: ComponentRegistry::default(),
+        };
+
+        // --- Register all built-in scene components ---
+        world.register_component::<Transform>(SemanticDomain::Spatial);
+        world.register_component::<GlobalTransform>(SemanticDomain::Spatial);
+        world.register_component::<Parent>(SemanticDomain::Spatial);
+        world.register_component::<Children>(SemanticDomain::Spatial);
+
+        world
     }
 
     /// Spawns a new entity with the given bundle of components.
@@ -165,38 +180,35 @@ impl World {
     ///
     /// Returns the `EntityId` of the newly created entity.
     pub fn spawn<B: ComponentBundle>(&mut self, bundle: B) -> EntityId {
-        // Step 1: Allocate a new EntityId and its metadata slot.
+        // Step 1: Allocate a new EntityId.
         let entity_id = self.create_entity();
 
-        // Step 2: Find or create a page for this specific bundle layout.
+        // Step 2: Find or create a page for this bundle.
         let page_id = self.find_or_create_page_for_bundle::<B>();
-        let page = &mut self.pages[page_id as usize];
 
-        // Step 3: Push the component data into the page.
-        // The row_index is the position where the new data will be.
-        let row_index = page.entities.len() as u32;
+        // --- Step 3: Push component data into the page. ---
+        let row_index;
+        {
+            // We create a smaller scope here to release the mutable borrow on `self.pages`
+            // before we need to mutably borrow `self.entities` later.
+            let page = &mut self.pages[page_id as usize];
+            row_index = page.entities.len() as u32;
 
-        // This is safe because we've guaranteed that `page` has the correct
-        // layout for the bundle `B`, fulfilling the contract of `add_to_page`.
-        unsafe {
-            bundle.add_to_page(page);
+            unsafe {
+                bundle.add_to_page(page);
+            }
+            page.add_entity(entity_id);
         }
 
-        // Keep the entity list in sync with the component columns.
-        page.add_entity(entity_id);
-
-        // Step 4: Update the entity's metadata with the new location.
+        // --- Step 4: Update the entity's metadata. ---
         let location = PageIndex { page_id, row_index };
 
-        // Get a mutable reference to the `Option<EntityMetadata>` part of the tuple.
-        let metadata_slot = &mut self.entities[entity_id.index as usize].1;
+        // Get a mutable reference to the entity's metadata slot.
+        let (_id, metadata_opt) = &mut self.entities[entity_id.index as usize];
+        let metadata = metadata_opt.as_mut().unwrap();
 
-        // Convert the `&mut Option<T>` to `Option<&mut T>`, unwrap it (which is safe),
-        // and then get a mutable reference to the `EntityMetadata`.
-        let metadata = metadata_slot.as_mut().unwrap();
-
-        // Delegate the update logic to the bundle itself.
-        B::update_metadata(metadata, location);
+        // Pass the registry to `update_metadata`.
+        B::update_metadata(metadata, location, &self.registry);
 
         entity_id
     }
@@ -234,54 +246,137 @@ impl World {
         // Add the now-freed index to our recycling list.
         self.freed_entities.push(entity_id.index);
 
-        // --- Step 3: Remove components from pages using our helper function ---
+        // --- Step 3: Iterate over the entity's component locations and remove them ---
 
-        // Remove components from the physics page, if they exist.
-        if let Some(location) = metadata.physics_location {
-            self.remove_from_page(entity_id, location, |metadata_opt, new_loc| {
-                metadata_opt.as_mut().unwrap().physics_location = Some(new_loc);
-            });
+        for (domain, location) in metadata.locations {
+            self.remove_from_page(entity_id, location, domain);
         }
-
-        // Remove components from the render page, if they exist.
-        if let Some(location) = metadata.render_location {
-            self.remove_from_page(entity_id, location, |metadata_opt, new_loc| {
-                metadata_opt.as_mut().unwrap().render_location = Some(new_loc);
-            });
-        }
-
-        // etc, for other component types
 
         true
     }
 
-    /// Creates an iterator that queries the world for entities with a specific
-    /// set of components.
+    /// Creates an iterator that queries the world for entities matching a set of components and filters.
     ///
-    /// This is the primary method for reading data from the ECS. The query `Q`
-    /// is specified via a turbofish syntax, e.g., `world.query::<&Position>()`.
+    /// This is the primary method for reading data from the ECS. The query `Q` is specified
+    /// as a tuple via turbofish syntax. It can include component references (e.g., `&Position`,
+    /// `&mut Velocity`) and filters (e.g., `Without<Parent>`).
     ///
-    /// The method itself is cheap, but it performs an initial search to find all
-    /// `ComponentPage`s that match the query. The returned iterator then efficiently
-    /// iterates over the data in those pages.
+    /// # Examples
+    ///
+    /// ```
+    /// // Find all entities with a `Position` and `Velocity`.
+    /// // for (pos, vel) in world.query::<(&Position, &mut Velocity)>() { ... }
+    ///
+    /// // Find all entities with a `Transform` but without a `Parent`.
+    /// // for (transform,) in world.query::<(&Transform, Without<Parent>)>() { ... }
+    /// ```
+    ///
+    /// The method itself is cheap. It performs a single, efficient search to find all
+    /// `ComponentPage`s that match the query's criteria. The returned iterator then
+    /// efficiently iterates over the data in only those pages.
     pub fn query<'a, Q: WorldQuery>(&'a self) -> Query<'a, Q> {
-        // 1. Get the signature of the query we want to run.
+        // 1. Get the component and filter signatures from the query type.
         let query_type_ids = Q::type_ids();
+        let without_type_ids = Q::without_type_ids();
 
-        // 2. Find all pages that match the signature.
-        // This is the O(P) setup cost where P is the number of page types.
+        // 2. Find all pages that match the query's criteria.
         let mut matching_page_indices = Vec::new();
-        for (page_id, page) in self.pages.iter().enumerate() {
-            // A page matches if its signature contains all the component types
-            // required by the query. For native queries, this is an exact match.
-            // (Note: A more advanced implementation for transversal queries would
-            // use a subset check here).
-            if page.type_ids == query_type_ids {
-                matching_page_indices.push(page_id as u32);
+        'page_loop: for (page_id, page) in self.pages.iter().enumerate() {
+            // --- Filtering Logic ---
+
+            // A) Check for required components.
+            // The page must contain ALL component types requested by the query.
+            for required_type in &query_type_ids {
+                // `binary_search` is fast on the sorted `page.type_ids` vector.
+                if page.type_ids.binary_search(required_type).is_err() {
+                    continue 'page_loop; // This page is missing a required component, skip it.
+                }
             }
+
+            // B) Check for excluded components.
+            // The page must NOT contain ANY component types from the `without` filter.
+            for excluded_type in &without_type_ids {
+                if page.type_ids.binary_search(excluded_type).is_ok() {
+                    continue 'page_loop; // This page contains an excluded component, skip it.
+                }
+            }
+
+            // If we reach this point, the page is a match.
+            matching_page_indices.push(page_id as u32);
         }
 
         // 3. Construct and return the `Query` iterator.
         Query::new(self, matching_page_indices)
+    }
+
+    /// Gets a mutable reference to a single component `T` for a given entity.
+    ///
+    /// This provides direct, random access to a component.
+    ///
+    /// Returns `None` if the entity is not alive, is not registered, or does
+    /// not have the requested component.
+    pub fn get_mut<T: Component>(&mut self, entity_id: EntityId) -> Option<&mut T> {
+        // 1. Validate the entity ID.
+        let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
+        if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
+            return None;
+        }
+        let metadata = metadata_opt.as_ref().unwrap();
+
+        // 2. Use the registry to find the component's domain and its location.
+        let domain = self.registry.domain_of::<T>()?;
+        let location = metadata.locations.get(&domain)?;
+
+        // 3. Get the component data from the page.
+        let type_id = TypeId::of::<T>();
+        let page = self.pages.get_mut(location.page_id as usize)?;
+        let column = page.columns.get_mut(&type_id)?;
+        let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
+
+        vec.get_mut(location.row_index as usize)
+    }
+
+    /// Gets an immutable reference to a single component `T` for a given entity.
+    ///
+    /// Returns `None` if the entity is not alive, is not registered, or does
+    /// not have the requested component.
+    pub fn get<T: Component>(&self, entity_id: EntityId) -> Option<&T> {
+        // 1. Validate the entity ID.
+        let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
+        if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
+            return None;
+        }
+        let metadata = metadata_opt.as_ref().unwrap();
+
+        // 2. Use the registry to find the component's domain and its location.
+        let domain = self.registry.domain_of::<T>()?;
+        let location = metadata.locations.get(&domain)?;
+
+        // 3. Get the component data from the page.
+        let type_id = TypeId::of::<T>();
+        let page = self.pages.get(location.page_id as usize)?;
+        let vec = page
+            .columns
+            .get(&type_id)?
+            .as_any()
+            .downcast_ref::<Vec<T>>()?;
+
+        // 4. Return the immutable reference.
+        vec.get(location.row_index as usize)
+    }
+
+    /// Registers a component type with a specific semantic domain.
+    ///
+    /// This is a crucial setup step. Before a component of type `T` can be used
+    /// in a bundle, it must be registered with the world to define where its
+    /// data will be stored.
+    pub fn register_component<T: Component>(&mut self, domain: SemanticDomain) {
+        self.registry.register::<T>(domain);
+    }
+}
+
+impl Default for World {
+    fn default() -> Self {
+        Self::new()
     }
 }

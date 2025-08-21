@@ -12,23 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bundle;
-mod component;
-mod components;
-mod entity;
-mod page;
-mod query;
-mod registry;
-mod world;
+use crate::ecs::{Component, EntityId};
 
-pub use bundle::ComponentBundle;
-pub use component::Component;
-pub use components::{Children, GlobalTransform, Parent, Transform};
-pub use entity::{EntityId, EntityMetadata};
-pub use page::{ComponentPage, PageIndex};
-pub use query::{Query, Without, WorldQuery};
-pub use registry::SemanticDomain;
-pub use world::World;
+/// A component that establishes a parent-child relationship.
+///
+/// When an entity has a `Parent` component, its transform is considered
+/// relative to the transform of the entity specified by the `EntityId`.
+/// This is the foundational component for building scene hierarchies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Parent(pub EntityId);
 
-#[cfg(test)]
-mod tests;
+impl Component for Parent {}

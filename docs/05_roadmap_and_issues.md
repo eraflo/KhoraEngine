@@ -16,7 +16,6 @@ This document outlines the phased development plan for Khora. It integrates all 
 **Goal:** Build out the necessary features to represent and interact with a game world, starting with the implementation of our revolutionary ECS.
 
 #### [Scene Representation, Assets & Data Focus]
-- #40 [Feature] Implement Scene Hierarchy & Transform System (Depends on #156)
 - #41 [Feature] Design Asset System as an ISA (Loading strategies, resource tracking)
 - #42 [Feature] Implement Texture Loading & Management
 - #43 [Feature] Implement Mesh Loading & Management
@@ -110,6 +109,9 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #95 [Task] Documentation Overhaul (Including SAA concepts)
 - #96 [Task] Build & Packaging for Target Platforms
 
+#### [Milestone: API Ergonomics & DX (Developer Experience)]
+- #173 [Feature] Implement a Fluent API for Entity Creation
+
 ---
 
 ## Phase 5: Advanced Intelligence & Future Capabilities
@@ -188,3 +190,4 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #154 [Task] Implement Core ECS Data Structures (CRPECS v1)
 - #155 [Task] Implement Basic Entity Lifecycle (CRPECS v1)
 - #156 [Task] Implement Native Queries (CRPECS v1)
+- #40 [Feature] Implement Scene Hierarchy & Transform System (Depends on #156)
