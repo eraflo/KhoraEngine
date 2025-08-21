@@ -75,11 +75,23 @@ fn test_spawn_single_entity() {
     );
 
     // Check the metadata's location pointer.
-    assert_eq!(metadata.locations.len(), 1, "Should have one location entry");
-    let location = metadata.locations.get(&SemanticDomain::Spatial)
+    assert_eq!(
+        metadata.locations.len(),
+        1,
+        "Should have one location entry"
+    );
+    let location = metadata
+        .locations
+        .get(&SemanticDomain::Spatial)
         .expect("Spatial location should be set");
-    assert_eq!(location.page_id, 0, "Location should point to the first page");
-    assert_eq!(location.row_index, 0, "Location should point to the first row");
+    assert_eq!(
+        location.page_id, 0,
+        "Location should point to the first page"
+    );
+    assert_eq!(
+        location.row_index, 0,
+        "Location should point to the first row"
+    );
 
     // Check the world's page list.
     assert_eq!(world.pages.len(), 1, "There should be one page allocated");
@@ -229,9 +241,15 @@ fn test_despawn_with_swap_remove_logic() {
     // Check initial metadata for entity B
     let (_, metadata_b_before_opt) = &world.entities[entity_b.index as usize];
     let metadata_b_before = metadata_b_before_opt.as_ref().unwrap();
-    let location_b_before = metadata_b_before.locations.get(&SemanticDomain::Spatial).unwrap();
+    let location_b_before = metadata_b_before
+        .locations
+        .get(&SemanticDomain::Spatial)
+        .unwrap();
     assert_eq!(location_b_before.page_id, 0);
-    assert_eq!(location_b_before.row_index, 1, "Entity B should initially be at row 1");
+    assert_eq!(
+        location_b_before.row_index, 1,
+        "Entity B should initially be at row 1"
+    );
 
     // --- 2. ACTION ---
     // Despawn the *first* entity (entity_a). This will trigger the swap_remove
@@ -260,10 +278,19 @@ fn test_despawn_with_swap_remove_logic() {
     // THE CRITICAL CHECK: Verify that entity B's metadata has been updated.
     let (_, metadata_b_after_opt) = &world.entities[entity_b.index as usize];
     let metadata_b_after = metadata_b_after_opt.as_ref().unwrap();
-    let location_b_after = metadata_b_after.locations.get(&SemanticDomain::Spatial).unwrap();
-    
-    assert_eq!(location_b_after.page_id, 0, "Page ID for B should not change");
-    assert_eq!(location_b_after.row_index, 0, "Entity B should have been moved to row 0");
+    let location_b_after = metadata_b_after
+        .locations
+        .get(&SemanticDomain::Spatial)
+        .unwrap();
+
+    assert_eq!(
+        location_b_after.page_id, 0,
+        "Page ID for B should not change"
+    );
+    assert_eq!(
+        location_b_after.row_index, 0,
+        "Entity B should have been moved to row 0"
+    );
 
     // Verify that the entity ID stored in the page at the new location is correct
     let page = &world.pages[0];
@@ -372,8 +399,16 @@ fn test_query_with_without_filter() {
     }
 
     // --- 3. ASSERT ---
-    assert_eq!(found_positions.len(), 1, "Query should find exactly one entity");
-    assert_eq!(found_positions[0], Position(20), "Query should find the entity with only a Position");
+    assert_eq!(
+        found_positions.len(),
+        1,
+        "Query should find exactly one entity"
+    );
+    assert_eq!(
+        found_positions[0],
+        Position(20),
+        "Query should find the entity with only a Position"
+    );
 }
 
 #[test]
@@ -400,7 +435,11 @@ fn test_tuple_query_matches_entities_with_all_components() {
     }
 
     // --- 3. ASSERT ---
-    assert_eq!(found_results.len(), 2, "Query should find exactly two entities with both components");
+    assert_eq!(
+        found_results.len(),
+        2,
+        "Query should find exactly two entities with both components"
+    );
 
     // Sort the results by position to make the test deterministic.
     found_results.sort_by_key(|(pos, _vel)| pos.0);
@@ -416,7 +455,7 @@ fn test_tuple_query_matches_entities_with_all_components() {
 fn test_spawn_with_unregistered_component() {
     // --- 1. ARRANGE ---
     let mut world = World::default();
-    
+
     // NOTE: We do NOT register the `Position` component.
     // world.register_component::<Position>(SemanticDomain::Spatial);
 
@@ -433,7 +472,7 @@ fn test_spawn_with_unregistered_component() {
 
     let (_id, metadata_opt) = &world.entities[0];
     let metadata = metadata_opt.as_ref().unwrap();
-    
+
     // CRITICAL CHECK: The locations map should be empty.
     assert!(
         metadata.locations.is_empty(),
@@ -442,5 +481,9 @@ fn test_spawn_with_unregistered_component() {
 
     // A page is still created, but the entity's metadata doesn't point to it.
     // This highlights that the data is stored but becomes unreachable.
-    assert_eq!(world.pages.len(), 1, "A page for the new component layout should still be created");
+    assert_eq!(
+        world.pages.len(),
+        1,
+        "A page for the new component layout should still be created"
+    );
 }

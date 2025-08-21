@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::any::TypeId;
+
 use crate::ecs::{
-    entity::EntityMetadata, 
-    page::{ComponentPage, PageIndex}, 
-    query::{Query, WorldQuery}, 
-    registry::ComponentRegistry, 
-    Children, Component, ComponentBundle, EntityId, GlobalTransform, Parent, Transform, 
-    SemanticDomain
+    entity::EntityMetadata,
+    page::{ComponentPage, PageIndex},
+    query::{Query, WorldQuery},
+    registry::ComponentRegistry,
+    Children, Component, ComponentBundle, EntityId, GlobalTransform, Parent, SemanticDomain,
+    Transform,
 };
 
 /// The central container for the entire ECS, holding all entities, components, and metadata.
@@ -41,7 +43,6 @@ pub struct World {
 
     /// The registry that maps component types to their storage domains.
     registry: ComponentRegistry,
-
     // We will add more fields here later, such as a resource manager
     // or an entity ID allocator to manage recycled generations.
 }
@@ -135,8 +136,10 @@ impl World {
         domain: SemanticDomain,
     ) {
         let page = &mut self.pages[location.page_id as usize];
-        if page.entities.is_empty() { return; }
-        
+        if page.entities.is_empty() {
+            return;
+        }
+
         let last_entity_in_page = *page.entities.last().unwrap();
         page.swap_remove_row(location.row_index);
 
@@ -157,7 +160,7 @@ impl World {
             freed_entities: Vec::new(),
             registry: ComponentRegistry::default(),
         };
-        
+
         // --- Register all built-in scene components ---
         world.register_component::<Transform>(SemanticDomain::Spatial);
         world.register_component::<GlobalTransform>(SemanticDomain::Spatial);
@@ -182,7 +185,7 @@ impl World {
 
         // Step 2: Find or create a page for this bundle.
         let page_id = self.find_or_create_page_for_bundle::<B>();
-        
+
         // --- Step 3: Push component data into the page. ---
         let row_index;
         {
@@ -191,20 +194,22 @@ impl World {
             let page = &mut self.pages[page_id as usize];
             row_index = page.entities.len() as u32;
 
-            unsafe { bundle.add_to_page(page); }
+            unsafe {
+                bundle.add_to_page(page);
+            }
             page.add_entity(entity_id);
         }
 
         // --- Step 4: Update the entity's metadata. ---
         let location = PageIndex { page_id, row_index };
-        
+
         // Get a mutable reference to the entity's metadata slot.
         let (_id, metadata_opt) = &mut self.entities[entity_id.index as usize];
         let metadata = metadata_opt.as_mut().unwrap();
-        
+
         // Pass the registry to `update_metadata`.
         B::update_metadata(metadata, location, &self.registry);
-        
+
         entity_id
     }
 
@@ -242,7 +247,7 @@ impl World {
         self.freed_entities.push(entity_id.index);
 
         // --- Step 3: Iterate over the entity's component locations and remove them ---
-        
+
         for (domain, location) in metadata.locations {
             self.remove_from_page(entity_id, location, domain);
         }
@@ -302,6 +307,62 @@ impl World {
 
         // 3. Construct and return the `Query` iterator.
         Query::new(self, matching_page_indices)
+    }
+
+    /// Gets a mutable reference to a single component `T` for a given entity.
+    ///
+    /// This provides direct, random access to a component.
+    ///
+    /// Returns `None` if the entity is not alive, is not registered, or does
+    /// not have the requested component.
+    pub fn get_mut<T: Component>(&mut self, entity_id: EntityId) -> Option<&mut T> {
+        // 1. Validate the entity ID.
+        let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
+        if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
+            return None;
+        }
+        let metadata = metadata_opt.as_ref().unwrap();
+
+        // 2. Use the registry to find the component's domain and its location.
+        let domain = self.registry.domain_of::<T>()?;
+        let location = metadata.locations.get(&domain)?;
+
+        // 3. Get the component data from the page.
+        let type_id = TypeId::of::<T>();
+        let page = self.pages.get_mut(location.page_id as usize)?;
+        let column = page.columns.get_mut(&type_id)?;
+        let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
+
+        vec.get_mut(location.row_index as usize)
+    }
+
+    /// Gets an immutable reference to a single component `T` for a given entity.
+    ///
+    /// Returns `None` if the entity is not alive, is not registered, or does
+    /// not have the requested component.
+    pub fn get<T: Component>(&self, entity_id: EntityId) -> Option<&T> {
+        // 1. Validate the entity ID.
+        let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
+        if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
+            return None;
+        }
+        let metadata = metadata_opt.as_ref().unwrap();
+
+        // 2. Use the registry to find the component's domain and its location.
+        let domain = self.registry.domain_of::<T>()?;
+        let location = metadata.locations.get(&domain)?;
+
+        // 3. Get the component data from the page.
+        let type_id = TypeId::of::<T>();
+        let page = self.pages.get(location.page_id as usize)?;
+        let vec = page
+            .columns
+            .get(&type_id)?
+            .as_any()
+            .downcast_ref::<Vec<T>>()?;
+
+        // 4. Return the immutable reference.
+        vec.get(location.row_index as usize)
     }
 
     /// Registers a component type with a specific semantic domain.

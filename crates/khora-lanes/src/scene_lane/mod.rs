@@ -12,23 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod bundle;
-mod component;
-mod components;
-mod entity;
-mod page;
-mod query;
-mod registry;
-mod world;
+mod transform_propagation;
 
-pub use bundle::ComponentBundle;
-pub use component::Component;
-pub use components::{Children, GlobalTransform, Parent, Transform};
-pub use entity::{EntityId, EntityMetadata};
-pub use page::{ComponentPage, PageIndex};
-pub use query::{Query, Without, WorldQuery};
-pub use registry::SemanticDomain;
-pub use world::World;
-
-#[cfg(test)]
-mod tests;
+pub use transform_propagation::transform_propagation_system;

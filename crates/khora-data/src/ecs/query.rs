@@ -14,7 +14,7 @@
 
 use crate::ecs::{
     page::{AnyVec, ComponentPage},
-    Component, World,
+    Component, EntityId, World,
 };
 use std::{any::TypeId, marker::PhantomData};
 
@@ -117,7 +117,7 @@ impl<T: Component> WorldQuery for &mut T {
 
 // Implementation for a query of a 2-item tuple.
 // This is now generic over any two types that implement `WorldQuery`.
-impl<'query, Q1: WorldQuery, Q2: WorldQuery> WorldQuery for (Q1, Q2) {
+impl<Q1: WorldQuery, Q2: WorldQuery> WorldQuery for (Q1, Q2) {
     /// The iterator will yield a tuple of the items from the inner queries.
     type Item<'a> = (Q1::Item<'a>, Q2::Item<'a>);
 
@@ -147,6 +147,97 @@ impl<'query, Q1: WorldQuery, Q2: WorldQuery> WorldQuery for (Q1, Q2) {
         let item1 = Q1::fetch(page_ptr, row_index);
         let item2 = Q2::fetch(page_ptr, row_index);
         (item1, item2)
+    }
+}
+
+// Implementation for a query of a 3-item tuple.
+impl<Q1: WorldQuery, Q2: WorldQuery, Q3: WorldQuery> WorldQuery for (Q1, Q2, Q3) {
+    /// The iterator will yield a tuple of the items from the inner queries.
+    type Item<'a> = (Q1::Item<'a>, Q2::Item<'a>, Q3::Item<'a>);
+
+    /// Combines the `type_ids` from all three inner queries.
+    fn type_ids() -> Vec<TypeId> {
+        let mut ids = Q1::type_ids();
+        ids.extend(Q2::type_ids());
+        ids.extend(Q3::type_ids());
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+
+    /// Combines the `without_type_ids` from all three inner queries.
+    fn without_type_ids() -> Vec<TypeId> {
+        let mut ids = Q1::without_type_ids();
+        ids.extend(Q2::without_type_ids());
+        ids.extend(Q3::without_type_ids());
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+
+    /// Fetches the data for all three inner queries and returns them as a tuple.
+    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
+        // Fetch data for each part of the tuple individually.
+        let item1 = Q1::fetch(page_ptr, row_index);
+        let item2 = Q2::fetch(page_ptr, row_index);
+        let item3 = Q3::fetch(page_ptr, row_index);
+        (item1, item2, item3)
+    }
+}
+
+// Implementation for a query of a 4-item tuple.
+impl<Q1: WorldQuery, Q2: WorldQuery, Q3: WorldQuery, Q4: WorldQuery> WorldQuery
+    for (Q1, Q2, Q3, Q4)
+{
+    type Item<'a> = (Q1::Item<'a>, Q2::Item<'a>, Q3::Item<'a>, Q4::Item<'a>);
+
+    fn type_ids() -> Vec<TypeId> {
+        let mut ids = Q1::type_ids();
+        ids.extend(Q2::type_ids());
+        ids.extend(Q3::type_ids());
+        ids.extend(Q4::type_ids());
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+
+    fn without_type_ids() -> Vec<TypeId> {
+        let mut ids = Q1::without_type_ids();
+        ids.extend(Q2::without_type_ids());
+        ids.extend(Q3::without_type_ids());
+        ids.extend(Q4::without_type_ids());
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+
+    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
+        (
+            Q1::fetch(page_ptr, row_index),
+            Q2::fetch(page_ptr, row_index),
+            Q3::fetch(page_ptr, row_index),
+            Q4::fetch(page_ptr, row_index),
+        )
+    }
+}
+
+// To fetch an entity's ID, we need to access the page's own entity list.
+// We also need to query for the entity ID itself.
+impl WorldQuery for EntityId {
+    type Item<'a> = EntityId;
+
+    // EntityId is not a component, it doesn't have a TypeId in the page signature.
+    fn type_ids() -> Vec<TypeId> {
+        Vec::new()
+    }
+
+    // It doesn't have a `without` filter either.
+    // The default implementation is sufficient.
+
+    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
+        let page = &*page_ptr;
+        // The entity ID is fetched from the page's own list of entities.
+        *page.entities.get_unchecked(row_index)
     }
 }
 
@@ -236,7 +327,6 @@ impl<'a, Q: WorldQuery> Iterator for Query<'a, Q> {
     }
 }
 
-
 /// A `WorldQuery` filter that matches entities that do NOT have component `T`.
 ///
 /// This is used as a marker in a query tuple to exclude entities. For example,
@@ -264,6 +354,5 @@ impl<T: Component> WorldQuery for Without<T> {
     /// Fetches nothing. Returns a unit type `()`.
     unsafe fn fetch<'a>(_page_ptr: *const ComponentPage, _row_index: usize) -> Self::Item<'a> {
         // This function will be called but its result is ignored.
-        ()
     }
 }

@@ -177,3 +177,83 @@ impl<C1: Component, C2: Component> ComponentBundle for (C1, C2) {
         c2_vec.push(self.1);
     }
 }
+
+// Implementation for a 3-component tuple.
+impl<C1: Component, C2: Component, C3: Component> ComponentBundle for (C1, C2, C3) {
+    fn type_ids() -> Vec<TypeId> {
+        let mut ids = vec![TypeId::of::<C1>(), TypeId::of::<C2>(), TypeId::of::<C3>()];
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+
+    fn create_columns() -> HashMap<TypeId, Box<dyn AnyVec>> {
+        let mut columns: HashMap<TypeId, Box<dyn AnyVec>> = HashMap::new();
+        columns.insert(
+            TypeId::of::<C1>(),
+            Box::new(Vec::<C1>::new()) as Box<dyn AnyVec>,
+        );
+        columns.insert(
+            TypeId::of::<C2>(),
+            Box::new(Vec::<C2>::new()) as Box<dyn AnyVec>,
+        );
+        columns.insert(
+            TypeId::of::<C3>(),
+            Box::new(Vec::<C3>::new()) as Box<dyn AnyVec>,
+        );
+        columns
+    }
+
+    fn update_metadata(
+        metadata: &mut EntityMetadata,
+        location: PageIndex,
+        registry: &ComponentRegistry,
+    ) {
+        // Assumption: all components in a bundle belong to the same semantic domain.
+        // We look up the domain of the *first* component type.
+        if let Some(domain) = registry.domain_of::<C1>() {
+            metadata.locations.insert(domain, location);
+        }
+    }
+
+    unsafe fn add_to_page(self, page: &mut ComponentPage) {
+        let type_id1 = TypeId::of::<C1>();
+        let type_id2 = TypeId::of::<C2>();
+        let type_id3 = TypeId::of::<C3>();
+        assert_ne!(
+            type_id1, type_id2,
+            "Bundles cannot contain duplicate component types."
+        );
+        assert_ne!(
+            type_id1, type_id3,
+            "Bundles cannot contain duplicate component types."
+        );
+        assert_ne!(
+            type_id2, type_id3,
+            "Bundles cannot contain duplicate component types."
+        );
+
+        let [c1_anyvec, c2_anyvec, c3_anyvec] = page
+            .columns
+            .get_disjoint_mut([&type_id1, &type_id2, &type_id3]);
+
+        c1_anyvec
+            .unwrap()
+            .as_any_mut()
+            .downcast_mut::<Vec<C1>>()
+            .unwrap()
+            .push(self.0);
+        c2_anyvec
+            .unwrap()
+            .as_any_mut()
+            .downcast_mut::<Vec<C2>>()
+            .unwrap()
+            .push(self.1);
+        c3_anyvec
+            .unwrap()
+            .as_any_mut()
+            .downcast_mut::<Vec<C3>>()
+            .unwrap()
+            .push(self.2);
+    }
+}
