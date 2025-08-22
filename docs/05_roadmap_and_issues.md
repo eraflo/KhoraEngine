@@ -16,10 +16,10 @@ This document outlines the phased development plan for Khora. It integrates all 
 **Goal:** Build out the necessary features to represent and interact with a game world, starting with the implementation of our revolutionary ECS.
 
 #### [Scene Representation, Assets & Data Focus]
-- #41 [Feature] Design Asset System as an ISA (Loading strategies, resource tracking)
-- #42 [Feature] Implement Texture Loading & Management
-- #43 [Feature] Implement Mesh Loading & Management
-- #44 [Task] Render Loaded Static Model with Basic Materials (Depends on #40)
+- #174 [Feature] Implement VFS Packfile Builder & Runtime (Depends on #41)
+- #42 [Feature] Implement Texture Loading & Management (Depends on #174)
+- #43 [Feature] Implement Mesh Loading & Management (Depends on #174)
+- #44 [Task] Render Loaded Static Model with Basic Materials (Depends on #40, #42, #43)
 - #157 [Task] Implement Component Removal & Basic Garbage Collection (CRPECS v1)
 - #45 [Feature] Implement Basic Scene Serialization
 - #99 [Feature] Implement Basic Audio System (Playback & Management)
@@ -57,6 +57,7 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #163 [Feature] Make CRPECS Garbage Collector an ISA
 
 #### [Intelligent Subsystem Agents (ISA) v1 & Basic Adaptation]
+- #176 [Feature] Evolve AssetAgent into a full ISA (Depends on #174)
 - #78 [Feature] Implement Multiple Strategies for one key ISA
 - #79 [Feature] Refine ISA Interface Contract
 - #80 [Feature] Implement DCC Heuristics Engine v1
@@ -91,7 +92,8 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #166 [Feature] Implement a Timeline Scrubber for the Context Visualization Panel
 
 #### [Editor Polish, Networking & Manual Control]
-- #66 [Feature] Implement Asset Browser
+- #175 [Feature] Implement Real-time Asset Database for Editor (Depends on #41)
+- #66 [Feature] Implement Asset Browser (Depends on #175)
 - #67 [Feature] Implement Material Editor
 - #68 [Feature] Implement Gizmos
 - #167 [Feature] Implement EditorGizmo RenderLane
@@ -191,3 +193,4 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #155 [Task] Implement Basic Entity Lifecycle (CRPECS v1)
 - #156 [Task] Implement Native Queries (CRPECS v1)
 - #40 [Feature] Implement Scene Hierarchy & Transform System (Depends on #156)
+- #41 [Design] Design Asset System with VFS & Define Core Structs
