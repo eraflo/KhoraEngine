@@ -51,7 +51,7 @@ cargo test --workspace
 cargo xtask all
 
 # Run the sandbox application
-cargo run -p sandbox```
+cargo run -p sandbox
 ```
 
 ## Community & Contributing
