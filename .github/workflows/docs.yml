@@ -1,14 +1,11 @@
 name: Deploy Documentation
 
-# Triggers the workflow on every push to the `main` branch
 on:
   push:
     branches:
       - main
-  # Allows manual workflow dispatch from the GitHub "Actions" tab
   workflow_dispatch:
 
-# Sets the required permissions for deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
@@ -20,57 +17,45 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checks out the repository source code
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Installs the stable Rust toolchain
+      # 2. Install Rust toolchain
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      # 3. Installs mdBook to build the book
+      # 3. Install mdBook
       - name: Install mdBook
         run: cargo install mdbook --locked
 
-      # 4. Builds the documentation book
-      # Output will be in `docs/book/`
-      - name: Build mdBook
-        run: mdbook build docs
-
-      # 5. Builds the API reference with rustdoc
-      # Output will be in `target/doc/`
+      # 4. Build rustdoc API reference first
       - name: Build rustdoc API reference
         run: cargo doc --workspace --no-deps --all-features
 
-      # 6. Assembles the final site in a `site/` folder
-      - name: Assemble final site
+      # 5. Prepare the book's source directory
+      - name: Prepare book source directory
         run: |
-          # Create the site root folder
-          mkdir site
-          # Copy the compiled mdBook to the site root
-          cp -r docs/book/* site/
-          # Create the subfolder for the API
-          mkdir -p site/api
-          # Copy the rustdoc documentation into the API subfolder
-          cp -r target/doc/* site/api/
+          # Crée le dossier `api` à l'intérieur du dossier source du livre
+          mkdir -p docs/src/api
+          # Copie la documentation de l'API générée à cet emplacement
+          cp -r target/doc/* docs/src/api/
 
-      # 7. Fixes the API link in the book for deployment
-      # This crucial step replaces the local link with the deployed site link.
-      - name: Patch API link in HTML
-        run: |
-          # This replaces the local-friendly link with the deployment-friendly link.
-          # Note: The original path now includes `./api/index.html` from mdBook's perspective.
-          find site -type f -name "*.html" -exec sed -i 's|href="./api/index.html"|href="/KhoraEngine/api/index.html"|g' {} +
-          # We also fix the rustdoc link itself, just in case.
-          find site -type f -name "*.html" -exec sed -i 's|href="../../target/doc/index.html"|href="/KhoraEngine/api/index.html"|g' {} +
+      # 6. Build the mdBook
+      - name: Build mdBook
+        run: mdbook build docs
 
-      # 8. Prepares the artifact for deployment to GitHub Pages
+      # 7. Assemble the final site for deployment
+      - name: Prepare artifact
+        run: mv docs/book site # Renomme simplement le dossier de sortie
+
+      # 8. Upload the final site as an artifact
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./site
 
-      # 9. Deploys the artifact to GitHub Pages
+      # 9. Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
