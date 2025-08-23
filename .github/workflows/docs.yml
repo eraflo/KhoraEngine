@@ -17,32 +17,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout, install Rust & mdBook
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-      
       - name: Install mdBook
         run: cargo install mdbook --locked
 
+      # 2. Build both documentation sites
       - name: Build mdBook
         run: mdbook build docs
-
       - name: Build rustdoc API reference
         run: cargo doc --workspace --no-deps --all-features
 
+      # 3. Assemble the final site
       - name: Assemble final site
         run: |
           mv docs/book site
           mkdir -p site/api
           cp -r target/doc/* site/api/
 
+      # 4. Find the broken placeholder link in the generated HTML and replace it.
+      - name: Patch API Placeholder Link
+        run: |
+          find site -type f -name "*.html" -exec sed -i 's|href="./API_REFERENCE_DO_NOT_TOUCH.html"|href="/KhoraEngine/api/khora/index.html"|g' {} +
+          find site -type f -name "*.html" -exec sed -i 's|href="../API_REFERENCE_DO_NOT_TOUCH.html"|href="/KhoraEngine/api/khora/index.html"|g' {} +
+
+      # 5. Upload and Deploy
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./site
-
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
