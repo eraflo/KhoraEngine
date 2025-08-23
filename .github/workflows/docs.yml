@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # --- PHASE 1: SETUP ---
+      # --- 1. SETUP ---
       - name: Checkout repository
         uses: actions/checkout@v4
       - name: Install Rust toolchain
@@ -25,27 +25,20 @@ jobs:
       - name: Install mdBook
         run: cargo install mdbook --locked
 
-      # --- PHASE 2: BUILD (IN ISOLATION) ---
+      # --- 2. BUILD (IN ISOLATION) ---
       - name: Build rustdoc API reference
         run: cargo doc --workspace --no-deps --all-features --target-dir build/rustdoc
       - name: Build mdBook
         run: mdbook build docs -d ../build/book
 
-      # --- PHASE 3: ASSEMBLE ---
+      # --- 3. ASSEMBLE ---
       - name: Assemble final site
         run: |
           mv build/book site
           mkdir -p site/api
           cp -r build/rustdoc/doc/* site/api/
-          cat .github/workflows/templates/api_index.html > site/api/index.html
 
-      # --- PHASE 4: PATCH ---
-      - name: Patch API Placeholder Link
-        run: |
-          find site -type f -name "*.html" -exec sed -i 's|href="./API_REFERENCE_DO_NOT_TOUCH.html"|href="/KhoraEngine/api/index.html"|g' {} +
-          find site -type f -name "*.html" -exec sed -i 's|href="../API_REFERENCE_DO_NOT_TOUCH.html"|href="/KhoraEngine/api/index.html"|g' {} +
-
-      # --- PHASE 5: DEPLOY ---
+      # --- 4. DEPLOY ---
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
