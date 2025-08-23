@@ -12,6 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Provides the foundational traits and data structures for engine telemetry.
+//!
+//! This module defines the "common language" for all metrics and monitoring within
+//! Khora. It contains the core contracts and data types that allow different parts
+//! of the engine to report performance data and resource usage in a standardized way.
+//!
+//! Following the CLAD architecture, this module defines the abstract "what" of
+//! telemetry, while `khora-telemetry` provides the central service for aggregating
+//! it, and `khora-infra` provides the concrete implementations for collecting it.
+
 pub mod metrics;
 pub mod monitoring;
 

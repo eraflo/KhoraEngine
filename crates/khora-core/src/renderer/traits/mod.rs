@@ -12,6 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Defines the core architectural traits for the rendering subsystem.
+//!
+//! This module contains the fundamental contracts that decouple the engine's rendering
+//! logic from any specific graphics backend.
+//!
+//! - [`GraphicsDevice`]: The main interface for creating and managing GPU resources.
+//! - [`CommandRecorder`]: An interface for recording GPU commands.
+//! - [`RenderSystem`]: A high-level trait representing the entire rendering pipeline.
+//! - [`GraphicsBackendSelector`]: A trait for selecting the appropriate graphics backend.
+//! - [`GpuProfiler`]: An interface for performance profiling on the GPU.
+
 mod backend_selector;
 mod command_recorder;
 mod graphics_device;

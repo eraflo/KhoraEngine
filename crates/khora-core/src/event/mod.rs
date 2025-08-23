@@ -12,6 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Provides foundational primitives for event-driven communication.
+//!
+//! This module contains generic, decoupled components for creating and managing
+//! event channels. The primary component is the [`EventBus`], a generic, thread-safe
+//! MPSC (multi-producer, single-consumer) channel.
+//!
+//! By keeping these primitives generic, `khora-core` allows higher-level crates
+//! to define their own specific event types without creating circular dependencies.
+
 mod bus;
 
 pub use self::bus::EventBus;

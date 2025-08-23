@@ -16,6 +16,8 @@
 //!
 //! Hot-path execution pipelines optimized for performance-critical operations.
 
+#![warn(missing_docs)]
+
 pub mod asset_lane;
 pub mod audio_lane;
 pub mod physics_lane;

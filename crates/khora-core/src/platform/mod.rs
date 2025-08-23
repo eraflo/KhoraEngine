@@ -12,4 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Provides abstractions over platform-specific functionalities.
+//!
+//! This module contains traits and types that define a common, engine-wide interface
+//! for interacting with the underlying operating system and its features, such as
+//! windowing, input, and filesystem access.
+//!
+//! The goal is to keep the core engine logic in crates like `khora-agents` and
+//! `khora-lanes` completely decoupled from any specific platform implementation
+//! (like Winit or SDL2), which are handled in `khora-infra`.
+
 pub mod window;

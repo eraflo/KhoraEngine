@@ -12,23 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Provides a Quaternion type for representing 3D rotations.
+
 use super::{Mat4, Vec3, EPSILON};
 use std::ops::{Add, Mul, MulAssign, Neg, Sub};
 
-/// Represents a Quaternion for 3D rotations.
-/// Stored as (x, y, z, w) where (x, y, z) is the vector part and w is the scalar part.
-/// Typically represents a unit quaternion where x² + y² + z² + w² = 1.
+/// Represents a quaternion for efficient 3D rotations.
+///
+/// Quaternions are a four-dimensional complex number system that can represent
+/// rotations in 3D space. They are generally more efficient and numerically stable
+/// than rotation matrices, avoiding issues like gimbal lock.
+///
+/// A quaternion is stored as `(x, y, z, w)`, where `[x, y, z]` is the "vector" part
+/// and `w` is the "scalar" part. For representing rotations, it should be a "unit
+/// quaternion" where `x² + y² + z² + w² = 1`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Quaternion {
+    /// The x component of the vector part.
     pub x: f32,
+    /// The y component of the vector part.
     pub y: f32,
+    /// The z component of the vector part.
     pub z: f32,
+    /// The scalar (real) part.
     pub w: f32,
 }
 
 impl Quaternion {
-    /// The identity quaternion (representing no rotation).
+    /// The identity quaternion, representing no rotation.
     pub const IDENTITY: Quaternion = Quaternion {
         x: 0.0,
         y: 0.0,
@@ -36,28 +48,23 @@ impl Quaternion {
         w: 1.0,
     };
 
-    /// Creates a new quaternion from the given components.
-    /// ## Arguments
-    /// * `x` - The x component of the quaternion.
-    /// * `y` - The y component of the quaternion.
-    /// * `z` - The z component of the quaternion.
-    /// * `w` - The w component of the quaternion.
-    /// ## Returns
-    /// * A new `Quaternion` instance.
+    /// Creates a new quaternion from its raw components.
+    ///
+    /// Note: This does not guarantee a unit quaternion. For creating rotations,
+    /// prefer using `from_axis_angle` or other rotation-specific constructors.
     #[inline]
     pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
         Self { x, y, z, w }
     }
 
     /// Creates a quaternion representing a rotation around a given axis by a given angle.
-    /// ## Arguments
-    /// * `axis` - The axis of rotation (should be a unit vector).
-    /// * `angle_radians` - The angle of rotation in radians.
-    /// ## Returns
-    /// * A new `Quaternion` instance representing the rotation.
+    ///
+    /// # Arguments
+    ///
+    /// * `axis`: The axis of rotation. It is recommended to pass a normalized vector.
+    /// * `angle_radians`: The angle of rotation in radians.
     #[inline]
     pub fn from_axis_angle(axis: Vec3, angle_radians: f32) -> Self {
-        // Normalize defensively, though the user *should* pass a normalized axis.
         let normalized_axis = axis.normalize();
         let half_angle = angle_radians * 0.5;
         let s = half_angle.sin();
@@ -70,22 +77,17 @@ impl Quaternion {
         }
     }
 
-    /// Creates a quaternion from a rotation matrix.
-    /// ## Arguments
-    /// * `m` - The rotation matrix (upper 3x3 part).
-    /// ## Returns
-    /// * A new `Quaternion` instance representing the rotation.
+    /// Creates a quaternion from a 4x4 rotation matrix.
+    ///
+    /// This method only considers the upper 3x3 part of the matrix for the conversion.
     #[inline]
     pub fn from_rotation_matrix(m: &Mat4) -> Self {
-        // Extracts the upper 3x3 rotation part implicitly
         let m00 = m.cols[0].x;
         let m10 = m.cols[0].y;
         let m20 = m.cols[0].z;
-
         let m01 = m.cols[1].x;
         let m11 = m.cols[1].y;
         let m21 = m.cols[1].z;
-
         let m02 = m.cols[2].x;
         let m12 = m.cols[2].y;
         let m22 = m.cols[2].z;
@@ -101,51 +103,41 @@ impl Quaternion {
             q.y = (m02 - m20) / s;
             q.z = (m10 - m01) / s;
         } else if m00 > m11 && m00 > m22 {
-            // Column 0 max trace
             let s = 2.0 * (1.0 + m00 - m11 - m22).sqrt();
             q.w = (m21 - m12) / s;
             q.x = 0.25 * s;
             q.y = (m01 + m10) / s;
             q.z = (m02 + m20) / s;
         } else if m11 > m22 {
-            // Column 1 max trace
             let s = 2.0 * (1.0 + m11 - m00 - m22).sqrt();
             q.w = (m02 - m20) / s;
             q.x = (m01 + m10) / s;
             q.y = 0.25 * s;
             q.z = (m12 + m21) / s;
         } else {
-            // Column 2 max trace
             let s = 2.0 * (1.0 + m22 - m00 - m11).sqrt();
             q.w = (m10 - m01) / s;
             q.x = (m02 + m20) / s;
             q.y = (m12 + m21) / s;
             q.z = 0.25 * s;
         }
-        // It should already be normalized due to the way it's calculated,
-        // but normalizing defensively can help with precision errors.
         q.normalize()
     }
 
-    /// Returns the squared magnitude of the quaternion.
-    /// ## Returns
-    /// * The squared magnitude of the quaternion.
+    /// Calculates the squared length (magnitude) of the quaternion.
     #[inline]
     pub fn magnitude_squared(&self) -> f32 {
         self.x * self.x + self.y * self.y + self.z * self.z + self.w * self.w
     }
 
-    /// Returns the magnitude of the quaternion.
-    /// ## Returns
-    /// * The magnitude of the quaternion.
+    /// Calculates the length (magnitude) of the quaternion.
     #[inline]
     pub fn magnitude(&self) -> f32 {
         self.magnitude_squared().sqrt()
     }
 
-    /// Normalizes the quaternion to unit length.
-    /// ## Returns
-    /// * A new `Quaternion` instance that is normalized.
+    /// Returns a normalized version of the quaternion with a length of 1.
+    /// If the quaternion has a near-zero magnitude, it returns the identity quaternion.
     pub fn normalize(&self) -> Self {
         let mag_sqrt = self.magnitude_squared();
         if mag_sqrt > EPSILON {
@@ -161,9 +153,7 @@ impl Quaternion {
         }
     }
 
-    /// Returns the conjugate of the quaternion.
-    /// ## Returns
-    /// * A new `Quaternion` instance that is the conjugate of the original.
+    /// Computes the conjugate of the quaternion, which negates the vector part.
     #[inline]
     pub fn conjugate(&self) -> Self {
         Self {
@@ -174,9 +164,8 @@ impl Quaternion {
         }
     }
 
-    /// Returns the inverse of the quaternion.
-    /// ## Returns
-    /// * A new `Quaternion` instance that is the inverse of the original.
+    /// Computes the inverse of the quaternion.
+    /// For a unit quaternion, the inverse is equal to its conjugate.
     #[inline]
     pub fn inverse(&self) -> Self {
         let mag_squared = self.magnitude_squared();
@@ -187,39 +176,27 @@ impl Quaternion {
         }
     }
 
-    /// Returns the dot product of two quaternions.
-    /// ## Arguments
-    /// * `other` - The other quaternion to compute the dot product with.
-    /// ## Returns
-    /// * The dot product of the two quaternions.
+    /// Computes the dot product of two quaternions.
     #[inline]
     pub fn dot(&self, other: Self) -> f32 {
         self.x * other.x + self.y * other.y + self.z * other.z + self.w * other.w
     }
 
-    /// Rotates a vector by the quaternion.
-    /// ## Arguments
-    /// * `v` - The vector to rotate.
-    /// ## Returns
-    /// * A new `Vec3` instance that is the rotated vector.
+    /// Rotates a 3D vector by this quaternion.
     pub fn rotate_vec3(&self, v: Vec3) -> Vec3 {
-        // Optimized formula: v' = 2(u * v)u + (w² - u²)v + 2w(u x v)
         let u = Vec3::new(self.x, self.y, self.z);
         let s: f32 = self.w;
-
         2.0 * u.dot(v) * u + (s * s - u.dot(u)) * v + 2.0 * s * u.cross(v)
     }
 
-    /// Do a spherical linear interpolation between two quaternions (slerp).
-    /// ## Arguments
-    /// * `self` - The starting quaternion.
-    /// * `other` - The ending quaternion.
-    /// * `t` - The interpolation factor (0.0 to 1.0).
-    /// ## Returns
-    /// * A new `Quaternion` instance that is the result of the interpolation.
+    /// Performs a Spherical Linear Interpolation (Slerp) between two quaternions.
+    ///
+    /// Slerp provides a smooth, constant-speed interpolation between two rotations,
+    /// following the shortest path on the surface of a 4D sphere.
+    ///
+    /// *   `t` - The interpolation factor, clamped to the `[0.0, 1.0]` range.
     pub fn slerp(start: Self, end: Self, t: f32) -> Self {
         let t = t.clamp(0.0, 1.0);
-
         let mut cos_theta = start.dot(end);
         let mut end_adjusted = end;
 
@@ -231,38 +208,35 @@ impl Quaternion {
             end_adjusted = -end;
         }
 
-        // If the quaternions are very close, use linear interpolation.
-        // This avoids division by zero and ensures numerical stability.
         if cos_theta > 1.0 - EPSILON {
             // Linear Interpolation: (1-t)*start + t*end_adjusted
             // Normalize the result to avoid drift due to floating point errors.
             let result = (start * (1.0 - t)) + (end_adjusted * t);
             result.normalize()
         } else {
-            // SLERP standard
-            let angle = cos_theta.acos(); // Angle between the two quaternions
-            let sin_theta_inv = 1.0 / angle.sin(); // Compute the inverse sine of the angle
-
+            let angle = cos_theta.acos();
+            let sin_theta_inv = 1.0 / angle.sin();
             let scale_start = ((1.0 - t) * angle).sin() * sin_theta_inv;
             let scale_end = (t * angle).sin() * sin_theta_inv;
-
             (start * scale_start) + (end_adjusted * scale_end)
         }
     }
 }
 
-// --- Operators Overloading ---
+// --- Operator Overloads ---
 
 impl Default for Quaternion {
+    /// Returns the identity quaternion, representing no rotation.
     #[inline]
     fn default() -> Self {
         Self::IDENTITY
     }
 }
 
-/// Implementing Add trait for Quaternion (using Hamilton product).
 impl Mul<Quaternion> for Quaternion {
     type Output = Self;
+    /// Combines two rotations using the Hamilton product.
+    /// Note that quaternion multiplication is not commutative.
     #[inline]
     fn mul(self, rhs: Self) -> Self::Output {
         Self {
@@ -275,6 +249,7 @@ impl Mul<Quaternion> for Quaternion {
 }
 
 impl MulAssign<Quaternion> for Quaternion {
+    /// Combines this rotation with another.
     #[inline]
     fn mul_assign(&mut self, rhs: Self) {
         *self = *self * rhs;
@@ -283,16 +258,17 @@ impl MulAssign<Quaternion> for Quaternion {
 
 impl Mul<Vec3> for Quaternion {
     type Output = Vec3;
+    /// Rotates a `Vec3` by this quaternion.
     #[inline]
     fn mul(self, rhs: Vec3) -> Self::Output {
-        // Rotate the vector by the quaternion (assuring the quaternion is normalized).
-        // Using the formula: q * v * q_conjugate
         self.normalize().rotate_vec3(rhs)
     }
 }
 
 impl Add<Quaternion> for Quaternion {
     type Output = Self;
+    /// Adds two quaternions component-wise.
+    /// Note: This is not a standard rotation operation.
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         Self {
@@ -306,6 +282,7 @@ impl Add<Quaternion> for Quaternion {
 
 impl Sub<Quaternion> for Quaternion {
     type Output = Self;
+    /// Subtracts two quaternions component-wise.
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
@@ -319,6 +296,7 @@ impl Sub<Quaternion> for Quaternion {
 
 impl Mul<f32> for Quaternion {
     type Output = Self;
+    /// Scales all components of the quaternion by a scalar.
     #[inline]
     fn mul(self, scalar: f32) -> Self::Output {
         Self {
@@ -332,6 +310,7 @@ impl Mul<f32> for Quaternion {
 
 impl Neg for Quaternion {
     type Output = Self;
+    /// Negates all components of the quaternion.
     #[inline]
     fn neg(self) -> Self::Output {
         Self {

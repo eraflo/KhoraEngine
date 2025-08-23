@@ -1,4 +1,4 @@
-# 05 - Roadmap & Issue Tracker
+# 08 - Roadmap & Issue Tracker
 
 This document outlines the phased development plan for Khora. It integrates all open and proposed tasks into a structured series of milestones.
 

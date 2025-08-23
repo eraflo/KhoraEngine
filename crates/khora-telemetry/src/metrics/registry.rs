@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Registry for managing metrics.
+
 use crate::storage::{backend::MetricsBackend, memory_backend::InMemoryBackend};
 use khora_core::telemetry::metrics::{Metric, MetricId, MetricType, MetricsError, MetricsResult};
 use std::sync::Arc;

@@ -12,7 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Control
+//! The strategic brain of the Khora Engine, responsible for the **[C]ontrol Plane**.
 //!
-//! Implementation of DCC (Dynamic Constraint Configuration) and
-//! GORNA (Game Object Resource Network Architecture) systems.
+//! This crate implements the core logic of the Symbiotic Adaptive Architecture (SAA).
+//! It is designed to make high-level, strategic decisions based on telemetry data,
+//! but it never performs real-time, performance-critical work itself.
+//!
+//! Its primary responsibilities include:
+//!
+//! - **The Dynamic Context Core (DCC):** A service that aggregates engine-wide
+//!   telemetry (from `khora-telemetry`) to build a constantly updated situational
+//!   model of the application's performance and state.
+//!
+//! - **Goal-Oriented Resource Negotiation & Allocation (GORNA):** The protocol
+//!   and logic used by the DCC to analyze requests from `Agents` and to allocate
+//!   resource budgets (e.g., CPU/GPU time) to them in order to meet high-level
+//!   performance goals.
+//!
+//! This crate represents the "cold path" of the engine, operating at a lower
+//! frequency and focusing on intelligent analysis rather than raw execution speed.
+
+#![warn(missing_docs)]

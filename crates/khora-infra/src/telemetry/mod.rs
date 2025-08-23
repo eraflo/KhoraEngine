@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Telemetry monitoring for system resources.
+
 pub mod gpu_monitor;
 pub mod memory_monitor;
 pub mod vram_monitor;

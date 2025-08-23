@@ -18,41 +18,62 @@ use crate::renderer::{
 };
 use async_trait::async_trait;
 
-/// Generic trait for graphics backend selection.
+/// A trait for a system that discovers and selects a suitable graphics backend.
+///
+/// This trait abstracts the logic for initializing a graphics context, querying the
+/// available adapters (GPUs), and selecting the best one based on a given configuration.
+/// Since adapter enumeration can be a slow I/O operation, the primary methods are
+/// asynchronous.
+///
+/// A concrete implementation of this trait will live in `khora-infra` and will typically
+/// wrap a library like `wgpu`.
 #[async_trait]
 pub trait GraphicsBackendSelector<TAdapter> {
+    /// The error type returned if backend selection fails.
     type Error: std::fmt::Debug + std::fmt::Display + Send + Sync + 'static;
 
-    /// Select the best available graphics backend based on the provided configuration.
+    /// Asynchronously selects the best available graphics adapter based on the provided configuration.
     ///
-    /// ## Arguments
-    /// * `config` - Configuration specifying backend preferences and constraints
+    /// This method will attempt to honor the preferences in the `config` (e.g.,
+    /// prefer a discrete GPU, or a specific backend API like Vulkan), falling back
+    /// to other options if the preferred ones are not available.
     ///
-    /// ## Returns
-    /// * `Result<BackendSelectionResult<TAdapter>, Self::Error>` - The selection result or an error
+    /// # Arguments
+    ///
+    /// * `config`: A [`BackendSelectionConfig`] specifying backend preferences and constraints.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a [`BackendSelectionResult`] with the chosen adapter
+    /// and instance, or an error if no suitable adapter could be found.
     async fn select_backend(
         &self,
         config: &BackendSelectionConfig,
     ) -> Result<BackendSelectionResult<TAdapter>, Self::Error>;
 
-    /// Get information about available adapters for a specific backend type.
+    /// Asynchronously queries and lists all available adapters for a specific backend API.
     ///
-    /// ## Arguments
-    /// * `backend_type` - The backend type to query
+    /// # Arguments
     ///
-    /// ## Returns
-    /// * `Result<Vec<GraphicsAdapterInfo>, Self::Error>` - List of available adapters or an error
+    /// * `backend_type`: The specific backend API (e.g., Vulkan, Dx12) to query.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a `Vec` of [`GraphicsAdapterInfo`] for all compatible
+    /// adapters, or an error if the backend API is not available.
     async fn list_adapters(
         &self,
         backend_type: GraphicsBackendType,
     ) -> Result<Vec<GraphicsAdapterInfo>, Self::Error>;
 
-    /// Check if a specific backend type is supported on the current platform.
+    /// Synchronously checks if a specific backend API is supported on the current platform.
     ///
-    /// ## Arguments
-    /// * `backend_type` - The backend type to check
+    /// # Arguments
     ///
-    /// ## Returns
-    /// * `bool` - Whether the backend is supported
+    /// * `backend_type`: The backend API to check.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the backend is likely to be supported, `false` otherwise.
     fn is_backend_supported(&self, backend_type: GraphicsBackendType) -> bool;
 }

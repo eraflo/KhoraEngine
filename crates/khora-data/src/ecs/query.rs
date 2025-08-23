@@ -24,41 +24,40 @@ use std::{any::TypeId, marker::PhantomData};
 
 /// A trait implemented by types that can be used to query data from the `World`.
 ///
-/// This trait defines the contract for what a query is. It's implemented on tuples
-/// of component references, like `&'a Position` or `(&'a Position, &'a mut Velocity)`.
-/// It provides the necessary information for the query engine to find the correct
-/// pages and safely access the component data.
+/// This "sealed" trait provides the necessary information for the query engine to
+/// find the correct pages and safely access component data. It is implemented for
+/// component references (`&T`, `&mut T`), `EntityId`, filters like `Without<T>`,
+/// and tuples of other `WorldQuery` types.
 pub trait WorldQuery {
-    /// The type of item that the query iterator will yield (e.g., `&'a Position`).
+    /// The type of item that the query iterator will yield (e.g., `(&'a Position, &'a mut Velocity)`).
     type Item<'a>;
 
-    /// Returns the sorted list of `TypeId`s for the components accessed by this query.
-    /// This signature is used to find the `ComponentPage`s that match the query.
+    /// Returns the sorted list of `TypeId`s for the components to be INCLUDED in the query.
+    /// This signature is used to find `ComponentPage`s that contain all these components.
     fn type_ids() -> Vec<TypeId>;
 
-    /// Returns the list of `TypeId`s for components to be EXCLUDED.
+    /// Returns the sorted list of `TypeId`s for components to be EXCLUDED from the query.
     /// Used to filter out pages that contain these components.
-    ///
-    /// By default, a query has no exclusion filters.
     fn without_type_ids() -> Vec<TypeId> {
-        Vec::new() // Default implementation.
+        Vec::new()
     }
 
     /// Fetches the query's item from a specific row in a `ComponentPage`.
     ///
     /// # Safety
-    /// This is unsafe because the caller guarantees the page and index are valid.
-    /// The raw pointer `page_ptr` allows for mutable access when needed, and it's
-    /// the query engine's responsibility to ensure aliasing rules are not violated.
+    ///
+    /// This function is unsafe because the caller (the `Query` iterator) must guarantee
+    /// several invariants:
+    /// 1. The page pointed to by `page_ptr` is valid and matches the query's signature.
+    /// 2. `row_index` is a valid index within the page's columns.
+    /// 3. Aliasing rules are not violated (e.g., no two `&mut T` to the same data).
     unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a>;
 }
 
 // Implementation for a query of a single, immutable component reference.
 impl<T: Component> WorldQuery for &T {
-    /// The iterator will yield immutable references to the component `T`.
     type Item<'a> = &'a T;
 
-    /// The signature of this query is just the `TypeId` of the single component.
     fn type_ids() -> Vec<TypeId> {
         vec![TypeId::of::<T>()]
     }
@@ -89,10 +88,8 @@ impl<T: Component> WorldQuery for &T {
 
 // Implementation for a query of a single, mutable component reference.
 impl<T: Component> WorldQuery for &mut T {
-    /// The iterator will yield mutable references to the component `T`.
     type Item<'a> = &'a mut T;
 
-    /// The signature is the same as for an immutable reference.
     fn type_ids() -> Vec<TypeId> {
         vec![TypeId::of::<T>()]
     }
@@ -118,10 +115,8 @@ impl<T: Component> WorldQuery for &mut T {
 // Implementation for a query of a 2-item tuple.
 // This is now generic over any two types that implement `WorldQuery`.
 impl<Q1: WorldQuery, Q2: WorldQuery> WorldQuery for (Q1, Q2) {
-    /// The iterator will yield a tuple of the items from the inner queries.
     type Item<'a> = (Q1::Item<'a>, Q2::Item<'a>);
 
-    /// Combines the `type_ids` from both inner queries.
     fn type_ids() -> Vec<TypeId> {
         let mut ids = Q1::type_ids();
         ids.extend(Q2::type_ids());
@@ -132,7 +127,6 @@ impl<Q1: WorldQuery, Q2: WorldQuery> WorldQuery for (Q1, Q2) {
         ids
     }
 
-    /// Combines the `without_type_ids` from both inner queries.
     fn without_type_ids() -> Vec<TypeId> {
         let mut ids = Q1::without_type_ids();
         ids.extend(Q2::without_type_ids());
@@ -141,7 +135,6 @@ impl<Q1: WorldQuery, Q2: WorldQuery> WorldQuery for (Q1, Q2) {
         ids
     }
 
-    /// Fetches the data for both inner queries and returns them as a tuple.
     unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
         // Fetch data for each part of the tuple individually.
         let item1 = Q1::fetch(page_ptr, row_index);
@@ -152,10 +145,8 @@ impl<Q1: WorldQuery, Q2: WorldQuery> WorldQuery for (Q1, Q2) {
 
 // Implementation for a query of a 3-item tuple.
 impl<Q1: WorldQuery, Q2: WorldQuery, Q3: WorldQuery> WorldQuery for (Q1, Q2, Q3) {
-    /// The iterator will yield a tuple of the items from the inner queries.
     type Item<'a> = (Q1::Item<'a>, Q2::Item<'a>, Q3::Item<'a>);
 
-    /// Combines the `type_ids` from all three inner queries.
     fn type_ids() -> Vec<TypeId> {
         let mut ids = Q1::type_ids();
         ids.extend(Q2::type_ids());
@@ -165,7 +156,6 @@ impl<Q1: WorldQuery, Q2: WorldQuery, Q3: WorldQuery> WorldQuery for (Q1, Q2, Q3)
         ids
     }
 
-    /// Combines the `without_type_ids` from all three inner queries.
     fn without_type_ids() -> Vec<TypeId> {
         let mut ids = Q1::without_type_ids();
         ids.extend(Q2::without_type_ids());
@@ -175,7 +165,6 @@ impl<Q1: WorldQuery, Q2: WorldQuery, Q3: WorldQuery> WorldQuery for (Q1, Q2, Q3)
         ids
     }
 
-    /// Fetches the data for all three inner queries and returns them as a tuple.
     unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
         // Fetch data for each part of the tuple individually.
         let item1 = Q1::fetch(page_ptr, row_index);
@@ -247,7 +236,7 @@ impl WorldQuery for EntityId {
 
 /// An iterator that yields the results of a `WorldQuery`.
 ///
-/// This struct is created by the `World::query()` method. It holds a reference
+/// This struct is created by the [`World::query()`] method. It holds a reference
 /// to the world and iterates through all `ComponentPage`s that match the query's
 /// signature, fetching the requested data for each entity in those pages.
 pub struct Query<'a, Q: WorldQuery> {
@@ -270,7 +259,7 @@ pub struct Query<'a, Q: WorldQuery> {
 }
 
 impl<'a, Q: WorldQuery> Query<'a, Q> {
-    /// Creates a new `Query` iterator.
+    /// (Internal) Creates a new `Query` iterator.
     ///
     /// This is intended to be called only by `World::query()`.
     /// It takes the world and the list of matching pages as arguments.
@@ -346,6 +335,7 @@ impl<T: Component> WorldQuery for Without<T> {
         Vec::new() // Returns an empty Vec.
     }
 
+    /// This is the key part of the filter: it returns the TypeId of the component to filter out.
     fn without_type_ids() -> Vec<TypeId> {
         // This is the key change: it returns the TypeId of the component to filter out.
         vec![TypeId::of::<T>()]

@@ -16,6 +16,8 @@
 //!
 //! Central telemetry service for the Khora Engine.
 
+#![warn(missing_docs)]
+
 pub mod metrics;
 pub mod monitoring;
 pub mod service;

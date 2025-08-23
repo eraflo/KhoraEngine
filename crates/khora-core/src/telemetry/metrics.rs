@@ -12,23 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Abstract definitions for engine metrics and telemetry.
+
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::time::Instant;
 
-/// Unique identifier for a metric in the system
+/// A unique, structured identifier for a metric.
+///
+/// A `MetricId` is composed of a namespace, a name, and a set of key-value labels,
+/// allowing for powerful filtering and querying of telemetry data.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MetricId {
-    /// Namespace for the metric (e.g., "engine", "renderer", "memory")
+    /// The broad category of the metric (e.g., "renderer", "memory").
     pub namespace: String,
-    /// Name of the metric (e.g., "frame_time_ms", "triangles_rendered")
+    /// The specific name of the metric (e.g., "frame_time_ms", "triangles_rendered").
     pub name: String,
-    /// Optional labels for dimension filtering (e.g., {"gpu": "nvidia", "quality": "high"})
+    /// Optional, sorted key-value pairs for dimensional filtering.
     pub labels: Vec<(String, String)>,
 }
 
 impl MetricId {
-    /// Create a new MetricId with namespace and name
+    /// Creates a new `MetricId` with a namespace and a name.
     pub fn new(namespace: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             namespace: namespace.into(),
@@ -37,15 +42,15 @@ impl MetricId {
         }
     }
 
-    /// Add a label to this metric ID
+    /// Adds a dimensional label to the metric ID, returning a new `MetricId`.
+    /// Labels are kept sorted by key for consistent hashing and display.
     pub fn with_label(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.labels.push((key.into(), value.into()));
-        // Keep labels sorted for consistent hashing
         self.labels.sort_by(|a, b| a.0.cmp(&b.0));
         self
     }
 
-    /// Get a formatted string representation
+    /// Returns a formatted string representation of the ID (e.g., "namespace:name[k=v,...]").
     pub fn to_string_formatted(&self) -> String {
         if self.labels.is_empty() {
             format!("{}:{}", self.namespace, self.name)
@@ -67,34 +72,37 @@ impl Display for MetricId {
     }
 }
 
-/// The type of metric being stored
+/// The fundamental type of a metric.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MetricType {
-    /// A counter that only goes up (e.g., total requests, errors)
+    /// A value that only ever increases or resets to zero (e.g., total requests).
     Counter,
-    /// A gauge that can go up and down (e.g., memory usage, active connections)
+    /// A value that can go up or down (e.g., current memory usage).
     Gauge,
-    /// A histogram for tracking distributions (simplified for v1)
+    /// A value that tracks the distribution of a set of measurements.
     Histogram,
 }
 
-/// A metric value that can be stored in the system
+/// An enumeration of possible metric values.
 #[derive(Debug, Clone)]
 pub enum MetricValue {
-    /// Counter value - monotonically increasing
+    /// A 64-bit unsigned integer for counters.
     Counter(u64),
-    /// Gauge value - can increase or decrease
+    /// A 64-bit float for gauges.
     Gauge(f64),
-    /// Histogram with buckets and samples (simplified for v1)
+    /// A collection of samples and their distribution across predefined buckets.
     Histogram {
+        /// The raw samples recorded.
         samples: Vec<f64>,
+        /// The upper bounds of the histogram buckets.
         bucket_bounds: Vec<f64>,
+        /// The count of samples within each bucket.
         bucket_counts: Vec<u64>,
     },
 }
 
 impl MetricValue {
-    /// Get the type of this metric value
+    /// Returns the [`MetricType`] corresponding to this value.
     pub fn metric_type(&self) -> MetricType {
         match self {
             MetricValue::Counter(_) => MetricType::Counter,
@@ -103,16 +111,16 @@ impl MetricValue {
         }
     }
 
-    /// Get the numeric value as f64 (for counters and gauges)
+    /// Returns the value as an `f64` if it is a `Counter` or `Gauge`.
     pub fn as_f64(&self) -> Option<f64> {
         match self {
             MetricValue::Counter(v) => Some(*v as f64),
             MetricValue::Gauge(v) => Some(*v),
-            MetricValue::Histogram { .. } => None, // Histograms don't have a single value
+            MetricValue::Histogram { .. } => None,
         }
     }
 
-    /// Get counter value if this is a counter
+    /// Returns the value as a `u64` if it is a `Counter`.
     pub fn as_counter(&self) -> Option<u64> {
         match self {
             MetricValue::Counter(v) => Some(*v),
@@ -120,7 +128,7 @@ impl MetricValue {
         }
     }
 
-    /// Get gauge value if this is a gauge
+    /// Returns the value as an `f64` if it is a `Gauge`.
     pub fn as_gauge(&self) -> Option<f64> {
         match self {
             MetricValue::Gauge(v) => Some(*v),
@@ -129,24 +137,25 @@ impl MetricValue {
     }
 }
 
-/// Metadata about a metric
+/// Descriptive, static metadata about a metric.
 #[derive(Debug, Clone)]
 pub struct MetricMetadata {
-    /// The metric's unique identifier
+    /// The metric's unique identifier.
     pub id: MetricId,
-    /// The type of metric
+    /// The type of the metric.
     pub metric_type: MetricType,
-    /// Human-readable description
+    /// A human-readable description of what the metric measures.
     pub description: String,
-    /// Unit of measurement (e.g., "ms", "bytes", "count")
+    /// The unit of measurement (e.g., "ms", "bytes").
     pub unit: String,
-    /// When this metric was first created
+    /// The timestamp when this metric was first registered.
     pub created_at: Instant,
-    /// When this metric was last updated
+    /// The timestamp when this metric was last updated.
     pub last_updated: Instant,
 }
 
 impl MetricMetadata {
+    /// Creates new metadata for a metric.
     pub fn new(
         id: MetricId,
         metric_type: MetricType,
@@ -164,19 +173,23 @@ impl MetricMetadata {
         }
     }
 
+    /// Updates the `last_updated` timestamp to the current time.
     pub fn update_timestamp(&mut self) {
         self.last_updated = Instant::now();
     }
 }
 
-/// A complete metric entry with value and metadata
+/// A complete metric entry, combining its value with its descriptive metadata.
 #[derive(Debug, Clone)]
 pub struct Metric {
+    /// The static, descriptive metadata for the metric.
     pub metadata: MetricMetadata,
+    /// The current, dynamic value of the metric.
     pub value: MetricValue,
 }
 
 impl Metric {
+    /// A convenience constructor for creating a new `Counter` metric.
     pub fn new_counter(id: MetricId, description: impl Into<String>, initial_value: u64) -> Self {
         Self {
             metadata: MetricMetadata::new(id, MetricType::Counter, description, "count"),
@@ -184,6 +197,7 @@ impl Metric {
         }
     }
 
+    /// A convenience constructor for creating a new `Gauge` metric.
     pub fn new_gauge(
         id: MetricId,
         description: impl Into<String>,
@@ -196,6 +210,7 @@ impl Metric {
         }
     }
 
+    /// A convenience constructor for creating a new `Histogram` metric.
     pub fn new_histogram(
         id: MetricId,
         description: impl Into<String>,
@@ -214,22 +229,25 @@ impl Metric {
     }
 }
 
-/// Result type for metric operations
+/// A specialized `Result` type for metric-related operations.
 pub type MetricsResult<T> = Result<T, MetricsError>;
 
-/// Errors that can occur in the metrics system
+/// An error that can occur within the metrics system.
 #[derive(Debug, Clone)]
 pub enum MetricsError {
-    /// Metric with given ID not found
+    /// The requested metric was not found in the registry.
     MetricNotFound(MetricId),
-    /// Trying to perform incompatible operation (e.g., increment a gauge as counter)
+    /// An operation was attempted on a metric of the wrong type
+    /// (e.g., trying to set a gauge value on a counter).
     TypeMismatch {
+        /// The expected metric type for the operation.
         expected: MetricType,
+        /// The actual metric type that was found.
         found: MetricType,
     },
-    /// Backend storage error
+    /// An error originating from the backend storage layer.
     StorageError(String),
-    /// Invalid operation
+    /// An invalid operation was attempted (e.g., invalid histogram bounds).
     InvalidOperation(String),
 }
 

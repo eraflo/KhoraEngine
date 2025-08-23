@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Storage backends for telemetry data.
+
 use khora_core::telemetry::{
     metrics::MetricType, Metric, MetricId, MetricValue, MetricsError, MetricsResult,
 };

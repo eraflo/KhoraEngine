@@ -14,10 +14,40 @@
 
 use log;
 
-/// Manages a generic, thread-safe event channel.
+/// Manages a generic, multi-producer, single-consumer (MPSC), thread-safe event channel.
 ///
-/// This EventBus is generic over the type `T` of event it transports. This ensures
-/// that `khora-core` remains decoupled from specific event types defined in higher-level crates.
+/// This `EventBus` is generic over the event type `T` it transports. It serves as a
+/// foundational communication primitive within Khora, allowing different parts of the
+/// engine to communicate in a decoupled manner.
+///
+/// The design is intentional: there are many senders but only one receiver, ensuring
+/// that a single, authoritative system is responsible for processing all events of a
+/// given type. Senders can be cloned freely and passed to different threads.
+///
+/// # Examples
+///
+/// ```
+/// # use khora_core::event::EventBus;
+/// #[derive(Clone, Debug, PartialEq)]
+/// enum GameEvent {
+///     PlayerJumped,
+///     ScoreChanged(u32),
+/// }
+///
+/// // Create a new bus for our specific event type.
+/// let event_bus = EventBus::<GameEvent>::new();
+///
+/// // Clone the sender to give to a game system.
+/// let sender = event_bus.sender();
+///
+/// // A system publishes an event.
+/// sender.send(GameEvent::PlayerJumped);
+///
+/// // The main event loop (the owner of the bus) processes the event.
+/// if let Ok(event) = event_bus.receiver().try_recv() {
+///     assert_eq!(event, GameEvent::PlayerJumped);
+/// }
+/// ```
 #[derive(Debug)]
 pub struct EventBus<T: Clone + Send + Sync + 'static> {
     sender: flume::Sender<T>,
@@ -25,44 +55,50 @@ pub struct EventBus<T: Clone + Send + Sync + 'static> {
 }
 
 impl<T: Clone + Send + Sync + 'static> EventBus<T> {
-    /// Creates a new EventBus with an unbounded channel for a specific event type.
-    ///
-    /// ## Returns
-    /// A new instance of the EventBus struct.
+    /// Creates a new `EventBus` with an unbounded channel.
     pub fn new() -> Self {
         let (sender, receiver) = flume::unbounded();
-        log::info!("Generic EventBus initialized.");
+        log::info!(
+            "Generic EventBus initialized for type {}.",
+            std::any::type_name::<T>()
+        );
         Self { sender, receiver }
     }
 
-    /// Attempts to send an event, logging an error if the receiver is disconnected.
+    /// Publishes an event to all receivers.
     ///
-    /// ## Arguments
-    /// * `event` - The event to be sent over the channel.
+    /// This method is a convenience wrapper around the channel's `send` operation.
+    /// It logs an error if the send fails, which typically means the receiver
+    /// (and thus the `EventBus` instance) has been dropped.
+    ///
+    /// # Arguments
+    ///
+    /// * `event`: The event of type `T` to be sent over the channel.
     pub fn publish(&self, event: T) {
-        // The event itself can no longer be formatted without a `Debug` trait bound,
-        // which we omit to keep the bus as generic as possible.
-        log::trace!("Publishing an event.");
+        log::trace!(
+            "Publishing an event of type {}.",
+            std::any::type_name::<T>()
+        );
 
         if let Err(e) = self.sender.send(event) {
             log::error!("Failed to send event: {e}. Receiver likely disconnected.");
         }
     }
 
-    /// Returns a clone of the sender end of the channel.
-    /// Use this to allow other parts of the system to send events.
+    /// Returns a clone of the sender part of the channel.
     ///
-    /// ## Returns
-    /// A clone of the sender end of the channel.
+    /// This is the primary way to allow other parts of the system to send events
+    /// without giving them ownership of the entire bus. Senders can be cloned
+    /// multiple times and sent across threads.
     pub fn sender(&self) -> flume::Sender<T> {
         self.sender.clone()
     }
 
-    /// Returns a reference to the receiver end of the channel.
-    /// Intended for the owner of the bus to process events.
+    /// Returns a reference to the receiver part of the channel.
     ///
-    /// ## Returns
-    /// A reference to the receiver end of the channel.
+    /// This is intended for the owner of the bus (e.g., the main event loop) to
+    /// process incoming events. It returns a reference to prevent the receiver
+    /// from being moved out of the `EventBus`.
     pub fn receiver(&self) -> &flume::Receiver<T> {
         &self.receiver
     }

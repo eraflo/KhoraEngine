@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! In-memory metrics storage backend.
+
 use crate::storage::backend::{BackendStats, MetricsBackend};
 use khora_core::telemetry::metrics::{Metric, MetricId, MetricType, MetricsError, MetricsResult};
 use std::collections::HashMap;

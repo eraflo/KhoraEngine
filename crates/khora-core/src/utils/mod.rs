@@ -12,5 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Provides a collection of general-purpose utilities for the Khora Engine.
+//!
+//! This module contains various helper components, macros, and functions that are
+//! widely used across different engine crates but are not specific to any single
+//! domain like mathematics or rendering.
+
 pub mod bitflags;
 pub mod timer;

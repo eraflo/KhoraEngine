@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Scene management
+
 mod transform_propagation;
 
 pub use transform_propagation::transform_propagation_system;

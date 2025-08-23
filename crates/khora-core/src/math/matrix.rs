@@ -12,47 +12,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Defines the `Mat3` and `Mat4` types and associated operations.
+
 use super::{Quaternion, Vec2, Vec3, Vec4, EPSILON};
 use std::ops::{Index, IndexMut, Mul};
 
 // --- Mat3 ---
 
-/// Represents a 3x3 matrix for 2D transformations.
+/// A 3x3 column-major matrix, typically used for 2D affine transformations (scale, rotation).
+///
+/// While it can represent any 3x3 matrix, its primary role in a 3D engine is often
+/// as the upper-left rotation and scale part of a `Mat4`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Mat3 {
+    /// The columns of the matrix. `cols[0]` is the first column, and so on.
     pub cols: [Vec3; 3],
 }
 
 impl Mat3 {
-    /// Create the Identity matrix.
+    /// The 3x3 identity matrix.
     pub const IDENTITY: Self = Self {
         cols: [Vec3::X, Vec3::Y, Vec3::Z],
     };
 
-    /// Create a constant 0 matrix.
-    /// This is a 3x3 matrix with all elements set to 0
+    /// A 3x3 matrix with all elements set to 0.
     pub const ZERO: Self = Self {
         cols: [Vec3::ZERO; 3],
     };
 
-    /// Create a new matrix from 3 columns.
-    /// ## Arguments
-    /// * `c0` - The first column of the matrix.
-    /// * `c1` - The second column of the matrix.
-    /// * `c2` - The third column of the matrix.
-    /// ## Returns
-    /// * A new matrix with the given columns.
+    /// Creates a new matrix from three column vectors.
     #[inline]
     pub fn from_cols(c0: Vec3, c1: Vec3, c2: Vec3) -> Self {
         Self { cols: [c0, c1, c2] }
     }
 
-    /// Returns the row of the matrix at the given index.
-    /// ## Arguments
-    /// * `index` - The index of the row to return.
-    /// ## Returns
-    /// * A new vector representing the row of the matrix.
+    /// Returns a row of the matrix as a `Vec3`.
     #[allow(dead_code)]
     #[inline]
     fn get_row(&self, index: usize) -> Vec3 {
@@ -63,21 +58,15 @@ impl Mat3 {
         }
     }
 
-    /// Create a 2D scaling matrix. (scales X and Y axes, Z axis is ignored)
-    /// ## Arguments
-    /// * `scale` - The scaling vector.
-    /// ## Returns
-    /// * A new scaling matrix.
+    /// Creates a 2D scaling matrix.
+    ///
+    /// The Z-axis scale is set to 1.0, making it a no-op in that dimension.
     #[inline]
     pub fn from_scale_vec2(scale: Vec2) -> Self {
         Self::from_scale(Vec3::new(scale.x, scale.y, 1.0))
     }
 
-    /// Create a 3D scaling matrix.
-    /// ## Arguments
-    /// * `scale` - The scaling vector.
-    /// ## Returns
-    /// * A new scaling matrix.
+    /// Creates a 3D scaling matrix.
     #[inline]
     pub fn from_scale(scale: Vec3) -> Self {
         Self {
@@ -89,11 +78,11 @@ impl Mat3 {
         }
     }
 
-    /// Create a rotation matrix around the X axis.
-    /// ## Arguments
-    /// * `angle_radians` - The angle in radians.
-    /// ## Returns
-    /// * A new rotation matrix.
+    /// Creates a matrix for a rotation around the X-axis.
+    ///
+    /// # Arguments
+    ///
+    /// * `angle_radians`: The angle of rotation in radians.
     #[inline]
     pub fn from_rotation_x(angle_radians: f32) -> Self {
         let (s, c) = angle_radians.sin_cos();
@@ -106,28 +95,28 @@ impl Mat3 {
         }
     }
 
-    /// Create a rotation matrix around the Y axis.
-    /// ## Arguments
-    /// * `angle_radians` - The angle in radians.
-    /// ## Returns
-    /// * A new rotation matrix.
+    /// Creates a matrix for a right-handed rotation around the Y-axis.
+    ///
+    /// # Arguments
+    ///
+    /// * `angle_radians`: The angle of rotation in radians.
     #[inline]
     pub fn from_rotation_y(angle_radians: f32) -> Self {
         let (s, c) = angle_radians.sin_cos();
         Self {
             cols: [
-                Vec3::new(c, 0.0, -s), // RH system
+                Vec3::new(c, 0.0, -s),
                 Vec3::new(0.0, 1.0, 0.0),
-                Vec3::new(s, 0.0, c), // RH system
+                Vec3::new(s, 0.0, c),
             ],
         }
     }
 
-    /// Create a rotation matrix around the Z axis.
-    /// ## Arguments
-    /// * `angle_radians` - The angle in radians.
-    /// ## Returns
-    /// * A new rotation matrix.
+    /// Creates a matrix for a rotation around the Z-axis.
+    ///
+    /// # Arguments
+    ///
+    /// * `angle_radians`: The angle of rotation in radians.
     #[inline]
     pub fn from_rotation_z(angle_radians: f32) -> Self {
         let (s, c) = angle_radians.sin_cos();
@@ -140,12 +129,12 @@ impl Mat3 {
         }
     }
 
-    /// Create a rotation matrix from an axis and angle.
-    /// ## Arguments
-    /// * `axis` - The axis of rotation.
-    /// * `angle_radians` - The angle in radians.
-    /// ## Returns
-    /// * A new rotation matrix.
+    /// Creates a rotation matrix from a normalized axis and an angle.
+    ///
+    /// # Arguments
+    ///
+    /// * `axis`: The axis of rotation. Must be a unit vector.
+    /// * `angle_radians`: The angle of rotation in radians.
     #[inline]
     pub fn from_axis_angle(axis: Vec3, angle_radians: f32) -> Self {
         let (s, c) = angle_radians.sin_cos();
@@ -162,32 +151,24 @@ impl Mat3 {
         }
     }
 
-    /// Create a rotation matrix from a quaternion.
-    /// ## Arguments
-    /// * `q` - The quaternion representing the rotation.
-    /// ## Returns
-    /// * A new rotation matrix.
+    /// Creates a rotation matrix from a quaternion.
+    /// The quaternion is normalized before conversion to ensure a valid rotation matrix.
     #[inline]
     pub fn from_quat(q: Quaternion) -> Self {
-        let q = q.normalize(); // Normalize the quaternion to ensure a valid rotation matrix
-
+        let q = q.normalize();
         let x = q.x;
         let y = q.y;
         let z = q.z;
         let w = q.w;
-
         let x2 = x + x;
         let y2 = y + y;
         let z2 = z + z;
-
         let xx = x * x2;
         let xy = x * y2;
         let xz = x * z2;
-
         let yy = y * y2;
         let yz = y * z2;
         let zz = z * z2;
-
         let wx = w * x2;
         let wy = w * y2;
         let wz = w * z2;
@@ -199,7 +180,8 @@ impl Mat3 {
         )
     }
 
-    /// Creates a Mat3 from a Mat4 from the 3x3 upper-left corner.
+    /// Creates a `Mat3` from the upper-left 3x3 corner of a [`Mat4`].
+    /// This effectively extracts the rotation and scale components, discarding translation.
     #[inline]
     pub fn from_mat4(m4: &Mat4) -> Self {
         Self::from_cols(
@@ -209,10 +191,10 @@ impl Mat3 {
         )
     }
 
-    /// Returns the determinant of the matrix.
-    /// The determinant is a scalar value that can be used to determine if the matrix is invertible.
-    /// ## Returns
-    /// * The determinant of the matrix.
+    /// Computes the determinant of the matrix.
+    ///
+    /// The determinant is a scalar value indicating the volume scaling factor of the
+    /// linear transformation. A determinant of 0 means the matrix is not invertible.
     #[inline]
     pub fn determinant(&self) -> f32 {
         let c0 = self.cols[0];
@@ -222,10 +204,7 @@ impl Mat3 {
             + c2.x * (c0.y * c1.z - c1.y * c0.z)
     }
 
-    /// Returns the transpose of the matrix.
-    /// The transpose of a matrix is obtained by swapping its rows and columns.
-    /// ## Returns
-    /// * A new matrix that is the transpose of the original matrix.
+    /// Returns the transpose of the matrix, where rows and columns are swapped.
     #[inline]
     pub fn transpose(&self) -> Self {
         Self::from_cols(
@@ -235,28 +214,17 @@ impl Mat3 {
         )
     }
 
-    /// Returns the inverse of the matrix.
-    /// The inverse of a matrix is a matrix that, when multiplied with the original matrix, yields the identity matrix.
-    /// ## Returns
-    /// * An `Option<Self>` that is `Some` if the matrix is invertible, or `None` if it is not.
+    /// Computes the inverse of the matrix.
+    ///
+    /// If the matrix is not invertible (i.e., its determinant is close to zero),
+    /// this method returns `None`.
     pub fn inverse(&self) -> Option<Self> {
         let c0 = self.cols[0];
         let c1 = self.cols[1];
         let c2 = self.cols[2];
-
-        // Calculate cofactors
         let m00 = c1.y * c2.z - c2.y * c1.z;
         let m10 = c2.y * c0.z - c0.y * c2.z;
         let m20 = c0.y * c1.z - c1.y * c0.z;
-
-        let m01 = c2.x * c1.z - c1.x * c2.z;
-        let m11 = c0.x * c2.z - c2.x * c0.z;
-        let m21 = c1.x * c0.z - c0.x * c1.z;
-
-        let m02 = c1.x * c2.y - c2.x * c1.y;
-        let m12 = c2.x * c0.y - c0.x * c2.y;
-        let m22 = c0.x * c1.y - c1.x * c0.y;
-
         let det = c0.x * m00 + c1.x * m10 + c2.x * m20;
 
         if det.abs() < EPSILON {
@@ -264,25 +232,29 @@ impl Mat3 {
         }
 
         let inv_det = 1.0 / det;
+        let m01 = c2.x * c1.z - c1.x * c2.z;
+        let m11 = c0.x * c2.z - c2.x * c0.z;
+        let m21 = c1.x * c0.z - c0.x * c1.z;
+        let m02 = c1.x * c2.y - c2.x * c1.y;
+        let m12 = c2.x * c0.y - c0.x * c2.y;
+        let m22 = c0.x * c1.y - c1.x * c0.y;
 
-        // Inverse = (1/det) * Adjugate(==Transpose(Cofactor))
         Some(Self::from_cols(
-            Vec3::new(m00, m10, m20) * inv_det, // Column 0 = Row 0 of cofactors / det
-            Vec3::new(m01, m11, m21) * inv_det, // Column 1 = Row 1 of cofactors / det
-            Vec3::new(m02, m12, m22) * inv_det, // Column 2 = Row 2 of cofactors / det
+            Vec3::new(m00, m10, m20) * inv_det,
+            Vec3::new(m01, m11, m21) * inv_det,
+            Vec3::new(m02, m12, m22) * inv_det,
         ))
     }
 
-    /// Converts the matrix to a 4x4 matrix.
-    /// ## Returns
-    /// * A new 4x4 matrix with the same values as the 3x3 matrix.
+    /// Converts this `Mat3` into a [`Mat4`], preserving its values in the upper-left corner.
+    /// The new fourth column and row are set to `(0, 0, 0, 1)`.
     #[inline]
     pub fn to_mat4(&self) -> Mat4 {
         Mat4::from_cols(
             Vec4::from_vec3(self.cols[0], 0.0),
             Vec4::from_vec3(self.cols[1], 0.0),
             Vec4::from_vec3(self.cols[2], 0.0),
-            Vec4::W, // (0, 0, 0, 1)
+            Vec4::W,
         )
     }
 }
@@ -290,78 +262,75 @@ impl Mat3 {
 // --- Operator Overloads ---
 
 impl Default for Mat3 {
+    /// Returns the 3x3 identity matrix.
     #[inline]
     fn default() -> Self {
         Self::IDENTITY
     }
 }
 
-/// Mat3 * Mat3 multiplication
 impl Mul<Mat3> for Mat3 {
     type Output = Self;
+    /// Multiplies this matrix by another `Mat3`.
     #[inline]
     fn mul(self, rhs: Mat3) -> Self::Output {
         Self::from_cols(self * rhs.cols[0], self * rhs.cols[1], self * rhs.cols[2])
     }
 }
 
-/// Mat3 * Vec3 multiplication
 impl Mul<Vec3> for Mat3 {
     type Output = Vec3;
+    /// Transforms a `Vec3` by this matrix.
     #[inline]
     fn mul(self, v: Vec3) -> Self::Output {
-        // result = col0*v.x + col1*v.y + col2*v.z
         self.cols[0] * v.x + self.cols[1] * v.y + self.cols[2] * v.z
     }
 }
 
 impl Index<usize> for Mat3 {
     type Output = Vec3;
+    /// Allows accessing a matrix column by index.
     #[inline]
     fn index(&self, index: usize) -> &Self::Output {
-        &self.cols[index] // Direct column access
+        &self.cols[index]
     }
 }
 
 impl IndexMut<usize> for Mat3 {
+    /// Allows mutably accessing a matrix column by index.
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.cols[index] // Direct mutable column access
+        &mut self.cols[index]
     }
 }
 
-// --- End of Mat3 Implementation ---
-
 // --- Mat4 ---
 
-/// Represents a 4x4 matrix for 3D transformations.
+/// A 4x4 column-major matrix, used for 3D affine transformations.
+///
+/// This is the primary type for representing transformations (translation, rotation,
+/// scale) in 3D space. It is also used for camera view and projection matrices.
+/// The memory layout is column-major, which is compatible with modern graphics APIs
+/// like Vulkan, Metal, and DirectX.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Mat4 {
+    /// The columns of the matrix. `cols[0]` is the first column, and so on.
     pub cols: [Vec4; 4],
 }
 
 impl Mat4 {
-    /// Create the Identity matrix.
+    /// The 4x4 identity matrix.
     pub const IDENTITY: Self = Self {
         cols: [Vec4::X, Vec4::Y, Vec4::Z, Vec4::W],
     };
 
-    /// Create a constant 0 matrix.
-    /// This is a 4x4 matrix with all elements set to 0, except the last element which is set to 1.
-    /// This is useful for representing a zero transformation in 3D space.
+    /// A 4x4 matrix with all elements set to 0.
     pub const ZERO: Self = Self {
         cols: [Vec4::ZERO; 4],
     };
 
-    /// Create a new matrix from 4 columns.
-    /// ## Arguments
-    /// * `c0` - The first column of the matrix.
-    /// * `c1` - The second column of the matrix.
-    /// * `c2` - The third column of the matrix.
-    /// * `c3` - The fourth column of the matrix.
-    /// ## Returns
-    /// * A new matrix with the given columns.
+    /// Creates a new matrix from four column vectors.
     #[inline]
     pub fn from_cols(c0: Vec4, c1: Vec4, c2: Vec4, c3: Vec4) -> Self {
         Self {
@@ -369,11 +338,7 @@ impl Mat4 {
         }
     }
 
-    /// Returns the row of the matrix at the given index.
-    /// ## Arguments
-    /// * `index` - The index of the row to return.
-    /// ## Returns
-    /// * A new vector representing the row of the matrix.
+    /// Returns a row of the matrix as a `Vec4`.
     #[inline]
     fn get_row(&self, index: usize) -> Vec4 {
         Vec4 {
@@ -384,28 +349,24 @@ impl Mat4 {
         }
     }
 
-    /// Create a translation matrix.
-    /// ## Arguments
-    /// * `translation` - The translation vector.
-    /// ## Returns
-    /// * A new translation matrix.
+    /// Creates a translation matrix.
+    ///
+    /// # Arguments
+    ///
+    /// * `v`: The translation vector to apply.
     #[inline]
     pub fn from_translation(v: Vec3) -> Self {
         Self {
             cols: [
-                Vec4::new(1.0, 0.0, 0.0, 0.0), // column 0
-                Vec4::new(0.0, 1.0, 0.0, 0.0), // column 1
-                Vec4::new(0.0, 0.0, 1.0, 0.0), // column 2
-                Vec4::new(v.x, v.y, v.z, 1.0), // column 3 (translation)
+                Vec4::new(1.0, 0.0, 0.0, 0.0),
+                Vec4::new(0.0, 1.0, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, 1.0, 0.0),
+                Vec4::new(v.x, v.y, v.z, 1.0),
             ],
         }
     }
 
-    /// Create a scaling matrix.
-    /// ## Arguments
-    /// * `scale` - The scaling vector.
-    /// ## Returns
-    /// * A new scaling matrix.
+    /// Creates a non-uniform scaling matrix.
     #[inline]
     pub fn from_scale(scale: Vec3) -> Self {
         Self {
@@ -418,11 +379,11 @@ impl Mat4 {
         }
     }
 
-    /// Create a rotation matrix around the X axis.
-    /// ## Arguments
-    /// * `angle` - The angle in radians.
-    /// ## Returns
-    /// * A new rotation matrix.
+    /// Creates a matrix for a rotation around the X-axis.
+    ///
+    /// # Arguments
+    ///
+    /// * `angle`: The angle of rotation in radians.
     #[inline]
     pub fn from_rotation_x(angle: f32) -> Self {
         let c = angle.cos();
@@ -437,11 +398,11 @@ impl Mat4 {
         }
     }
 
-    /// Create a rotation matrix around the Y axis.
-    /// ## Arguments
-    /// * `angle` - The angle in radians.
-    /// ## Returns
-    /// * A new rotation matrix.
+    /// Creates a matrix for a right-handed rotation around the Y-axis.
+    ///
+    /// # Arguments
+    ///
+    /// * `angle`: The angle of rotation in radians.
     #[inline]
     pub fn from_rotation_y(angle: f32) -> Self {
         let c = angle.cos();
@@ -456,11 +417,11 @@ impl Mat4 {
         }
     }
 
-    /// Create a rotation matrix around the Z axis.
-    /// ## Arguments
-    /// * `angle` - The angle in radians.
-    /// ## Returns
-    /// * A new rotation matrix.
+    /// Creates a matrix for a rotation around the Z-axis.
+    ///
+    /// # Arguments
+    ///
+    /// * `angle`: The angle of rotation in radians.
     #[inline]
     pub fn from_rotation_z(angle: f32) -> Self {
         let c = angle.cos();
@@ -475,23 +436,22 @@ impl Mat4 {
         }
     }
 
-    /// Returns the rotation matrix from the given axis and angle.
-    /// ## Arguments
-    /// * `axis` - The axis of rotation.
-    /// * `angle` - The angle in radians.
-    /// ## Returns
-    /// * A new rotation matrix.
+    /// Creates a rotation matrix from a normalized axis and an angle.
+    ///
+    /// # Arguments
+    ///
+    /// * `axis`: The axis of rotation. Must be a unit vector.
+    /// * `angle`: The angle of rotation in radians.
     #[inline]
     pub fn from_axis_angle(axis: Vec3, angle: f32) -> Self {
-        let c = angle.cos(); // Cosine of the angle
-        let s = angle.sin(); // Sine of the angle
-        let t = 1.0 - c; // 1 - Cosine of the angle
-        let x = axis.x; // X component of the axis
-        let y = axis.y; // Y component of the axis
-        let z = axis.z; // Z component of the axis
+        let c = angle.cos();
+        let s = angle.sin();
+        let t = 1.0 - c;
+        let x = axis.x;
+        let y = axis.y;
+        let z = axis.z;
 
         Self {
-            // Create the rotation matrix using the axis-angle formula
             cols: [
                 Vec4::new(t * x * x + c, t * x * y - s * z, t * x * z + s * y, 0.0),
                 Vec4::new(t * y * x + s * z, t * y * y + c, t * y * z - s * x, 0.0),
@@ -502,30 +462,21 @@ impl Mat4 {
     }
 
     /// Creates a rotation matrix from a quaternion.
-    /// ## Arguments
-    /// * `q` - The quaternion representing the rotation.
-    /// ## Returns
-    /// * A new rotation matrix.
     #[inline]
     pub fn from_quat(q: Quaternion) -> Self {
-        // Extract the components of the quaternion
         let x = q.x;
         let y = q.y;
         let z = q.z;
         let w = q.w;
-
         let x2 = x + x;
         let y2 = y + y;
         let z2 = z + z;
-
         let xx = x * x2;
         let xy = x * y2;
         let xz = x * z2;
-
         let yy = y * y2;
         let yz = y * z2;
         let zz = z * z2;
-
         let wx = w * x2;
         let wy = w * y2;
         let wz = w * z2;
@@ -534,18 +485,18 @@ impl Mat4 {
             Vec4::new(1.0 - (yy + zz), xy + wz, xz - wy, 0.0),
             Vec4::new(xy - wz, 1.0 - (xx + zz), yz + wx, 0.0),
             Vec4::new(xz + wy, yz - wx, 1.0 - (xx + yy), 0.0),
-            Vec4::W, // Translation = (0,0,0), W = 1
+            Vec4::W,
         )
     }
 
-    /// Creates a right-handed perspective projection matrix with a depth range of [0, 1].
-    /// ## Arguments
+    /// Creates a right-handed perspective projection matrix with a [0, 1] depth range (ZO).
+    ///
+    /// # Arguments
+    ///
     /// * `fov_y_radians`: Vertical field of view in radians.
     /// * `aspect_ratio`: Width divided by height of the viewport.
     /// * `z_near`: Distance to the near clipping plane (must be positive).
-    /// * `z_far`: Distance to the far clipping plane (must be positive and > z_near).
-    /// ## Returns
-    /// * A new perspective projection matrix.
+    /// * `z_far`: Distance to the far clipping plane (must be positive and > `z_near`).
     #[inline]
     pub fn perspective_rh_zo(
         fov_y_radians: f32,
@@ -553,36 +504,23 @@ impl Mat4 {
         z_near: f32,
         z_far: f32,
     ) -> Self {
-        assert!(
-            z_near > 0.0 && z_far > z_near,
-            "z_near must be > 0, z_far must be > z_near"
-        );
-
+        assert!(z_near > 0.0 && z_far > z_near);
         let tan_half_fovy = (fov_y_radians / 2.0).tan();
         let f = 1.0 / tan_half_fovy;
         let aa = f / aspect_ratio;
         let bb = f;
-        let cc = z_far / (z_near - z_far); // zero-to-one depth mapping
-        let dd = (z_near * z_far) / (z_near - z_far); // zero-to-one depth mapping
+        let cc = z_far / (z_near - z_far);
+        let dd = (z_near * z_far) / (z_near - z_far);
 
         Self::from_cols(
             Vec4::new(aa, 0.0, 0.0, 0.0),
             Vec4::new(0.0, bb, 0.0, 0.0),
-            Vec4::new(0.0, 0.0, cc, -1.0), // Note the -1.0 in W for RH perspective
+            Vec4::new(0.0, 0.0, cc, -1.0),
             Vec4::new(0.0, 0.0, dd, 0.0),
         )
     }
 
-    /// Creates a right-handed orthographic projection matrix with a depth range of [0, 1].
-    /// ## Arguments
-    /// * `left`: Left clipping plane.
-    /// * `right`: Right clipping plane.
-    /// * `bottom`: Bottom clipping plane.
-    /// * `top`: Top clipping plane.
-    /// * `z_near`: Distance to the near clipping plane (must be positive).
-    /// * `z_far`: Distance to the far clipping plane (must be positive and > z_near).
-    /// ## Returns
-    /// * A new orthographic projection matrix.
+    /// Creates a right-handed orthographic projection matrix with a [0, 1] depth range (ZO).
     #[inline]
     pub fn orthographic_rh_zo(
         left: f32,
@@ -592,20 +530,18 @@ impl Mat4 {
         z_near: f32,
         z_far: f32,
     ) -> Self {
-        let rml = right - left; // rml : right minus left
-        let rpl = right + left; // rpl : right plus left
-        let tmb = top - bottom; // tmb : top minus bottom
-        let tpb = top + bottom; // tpb : top plus bottom
-        let fmn = z_far - z_near; // fmn : far minus near
+        let rml = right - left;
+        let rpl = right + left;
+        let tmb = top - bottom;
+        let tpb = top + bottom;
+        let fmn = z_far - z_near;
+        let aa = 2.0 / rml;
+        let bb = 2.0 / tmb;
+        let cc = -1.0 / fmn;
+        let dd = -rpl / rml;
+        let ee = -tpb / tmb;
+        let ff = -z_near / fmn;
 
-        let aa = 2.0 / rml; // compute the scale factor for x-axis
-        let bb = 2.0 / tmb; // compute the scale factor for y-axis
-        let cc = -1.0 / fmn; // zero-to-one depth mapping
-        let dd = -rpl / rml; // compute the translation factor for x-axis
-        let ee = -tpb / tmb; // compute the translation factor for y-axis
-        let ff = -z_near / fmn; // zero-to-one depth mapping
-
-        // Create the orthographic projection matrix
         Self::from_cols(
             Vec4::new(aa, 0.0, 0.0, 0.0),
             Vec4::new(0.0, bb, 0.0, 0.0),
@@ -614,65 +550,41 @@ impl Mat4 {
         )
     }
 
-    /// Creates a right-handed view matrix for a camera looking at a target point.
-    /// ## Arguments
+    /// Creates a right-handed view matrix for a camera looking from `eye` towards `target`.
+    ///
+    /// # Arguments
+    ///
     /// * `eye`: The position of the camera in world space.
     /// * `target`: The point in world space that the camera is looking at.
-    /// * `up`: The up direction of the camera in world space.
-    /// ## Returns
-    /// * A new view matrix.
-    /// ## Note
-    /// * The `up` vector should be normalized. If it is not, the resulting matrix may not be orthogonal.
-    /// * The `target` vector should not be equal to the `eye` vector. If they are equal, the resulting matrix will be invalid.
+    /// * `up`: A vector indicating the "up" direction of the world (commonly `Vec3::Y`).
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(Mat4)` if a valid view matrix can be constructed, or `None` if
+    /// `eye` and `target` are too close, or if `up` is parallel to the view direction.
     #[inline]
     pub fn look_at_rh(eye: Vec3, target: Vec3, up: Vec3) -> Option<Self> {
-        // Compute the forward vector (the direction the camera is looking at).
         let forward = target - eye;
-
-        // Defensive check: if the eye and target positions are the same, the forward vector is zero.
-        // In this case, we cannot construct a valid view matrix.
         if forward.length_squared() < crate::math::EPSILON * crate::math::EPSILON {
-            return None; // eye and target are too close
+            return None;
         }
-
-        let f = forward.normalize(); // Forward (negative Z axis of camera)
+        let f = forward.normalize();
         let s = f.cross(up);
-
-        // Defensive check: if forward and up are colinear, the cross product will be zero.
-        // This would produce an invalid right vector and break the basis.
         if s.length_squared() < crate::math::EPSILON * crate::math::EPSILON {
-            return None; // up vector is parallel to forward
+            return None;
         }
+        let s = s.normalize();
+        let u = s.cross(f);
 
-        let s = s.normalize(); // Right (X axis of camera)
-        let u = s.cross(f); // Up (Y axis of camera)
-
-        // The view matrix is the inverse of the camera's transformation matrix. (T * R).
-        // The camera's transformation matrix is a combination of translation (T) and rotation (R).
-        // The inverse of a rotation matrix is its transpose. (R^T).
-        // The inverse of a translation matrix is the negation of the translation vector. (T^-1 = -T).
-        // Therefore, the inverse of the camera's transformation matrix is:
-        // Inv(T * R) = Inv(R) * Inv(T) = Transpose(R) * (-T).
-        // The view matrix is constructed by taking the transpose of the rotation matrix and applying the negation of the translation vector.
-        // The resulting matrix is a right-handed view matrix.
-        // The last column of the view matrix is the negation of the translation vector, which is the position of the camera in world space.
-        // The last row of the view matrix is the homogeneous coordinate, which is set to 1.0.
-        // The resulting matrix is a 4x4 matrix that transforms points from world space to camera space.
-        // Final view matrix formula:
-        // ViewMatrix = Transpose(R) * Inv(T)
-        // where R is the rotation matrix and T is the translation matrix.
         Some(Self::from_cols(
-            Vec4::new(s.x, u.x, -f.x, 0.0), // Row 0 of Transpose(R)
-            Vec4::new(s.y, u.y, -f.y, 0.0), // Row 1 of Transpose(R)
-            Vec4::new(s.z, u.z, -f.z, 0.0), // Row 2 of Transpose(R)
-            Vec4::new(-eye.dot(s), -eye.dot(u), eye.dot(f), 1.0), // Apply Inv(T)
+            Vec4::new(s.x, u.x, -f.x, 0.0),
+            Vec4::new(s.y, u.y, -f.y, 0.0),
+            Vec4::new(s.z, u.z, -f.z, 0.0),
+            Vec4::new(-eye.dot(s), -eye.dot(u), eye.dot(f), 1.0),
         ))
     }
 
-    /// Returns the transpose of the matrix.
-    /// The transpose of a matrix is obtained by swapping its rows and columns.
-    /// ## Returns
-    /// * A new matrix that is the transpose of the original matrix.
+    /// Returns the transpose of the matrix, where rows and columns are swapped.
     #[inline]
     pub fn transpose(&self) -> Self {
         Self::from_cols(
@@ -703,10 +615,7 @@ impl Mat4 {
         )
     }
 
-    /// Returns the determinant of the matrix.
-    /// The determinant is a scalar value that can be used to determine if the matrix is invertible.
-    /// ## Returns
-    /// * The determinant of the matrix.
+    /// Computes the determinant of the matrix.
     pub fn determinant(&self) -> f32 {
         let c0 = self.cols[0];
         let c1 = self.cols[1];
@@ -725,17 +634,14 @@ impl Mat4 {
         c0.x * m00 - c1.x * m01 + c2.x * m02 - c3.x * m03
     }
 
-    /// Returns the inverse of the matrix.
-    /// The inverse of a matrix is a matrix that, when multiplied with the original matrix, yields the identity matrix.
-    /// ## Returns
-    /// * An `Option<Self>` that is `Some` if the matrix is invertible, or `None` if it is not.
+    /// Computes the inverse of the matrix.
+    /// Returns `None` if the matrix is not invertible.
     pub fn inverse(&self) -> Option<Self> {
         let c0 = self.cols[0];
         let c1 = self.cols[1];
         let c2 = self.cols[2];
         let c3 = self.cols[3];
 
-        // Compute cofactors (elements of the adjugate matrix's transpose)
         let a00 = c1.y * (c2.z * c3.w - c3.z * c2.w) - c2.y * (c1.z * c3.w - c3.z * c1.w)
             + c3.y * (c1.z * c2.w - c2.z * c1.w);
         let a01 = -(c1.x * (c2.z * c3.w - c3.z * c2.w) - c2.x * (c1.z * c3.w - c3.z * c1.w)
@@ -773,12 +679,9 @@ impl Mat4 {
             + c2.x * (c0.y * c1.z - c1.y * c0.z);
 
         let det = c0.x * a00 + c1.x * a10 + c2.x * a20 + c3.x * a30;
-
         if det.abs() < crate::math::EPSILON {
-            // Check if determinant is close to zero
             return None;
         }
-
         let inv_det = 1.0 / det;
 
         Some(Self::from_cols(
@@ -789,44 +692,37 @@ impl Mat4 {
         ))
     }
 
-    /// Calculates the inverse of an affine transformation matrix (composed of Translate, Rotate, Scale).
-    /// Faster and more numerically stable than general inverse for this common case.
-    /// ## Arguments
-    /// * `self` - The affine transformation matrix.
-    /// ## Returns
-    /// * `None` if the scaling part is zero (singular) else `Some(Self)` with the inverse matrix.
+    /// Computes the inverse of an affine transformation matrix more efficiently
+    /// and with better numerical stability than the general `inverse` method.
+    ///
+    /// An affine matrix is one composed of only translation, rotation, and scale.
+    ///
+    /// # Returns
+    ///
+    /// `None` if the matrix is not affine or is not invertible.
     #[inline]
     pub fn affine_inverse(&self) -> Option<Self> {
-        // Extract upper 3x3 (rotation/scale part) and translation part
-        let c0 = self.cols[0].truncate(); // Vec3
-        let c1 = self.cols[1].truncate(); // Vec3
-        let c2 = self.cols[2].truncate(); // Vec3
-        let translation = self.cols[3].truncate(); // Vec3
-
-        // Calculate determinant of upper 3x3
+        let c0 = self.cols[0].truncate();
+        let c1 = self.cols[1].truncate();
+        let c2 = self.cols[2].truncate();
+        let translation = self.cols[3].truncate();
         let det3x3 = c0.x * (c1.y * c2.z - c2.y * c1.z) - c1.x * (c0.y * c2.z - c2.y * c0.z)
             + c2.x * (c0.y * c1.z - c1.y * c0.z);
 
         if det3x3.abs() < crate::math::EPSILON {
             return None;
-        } // Singular if scale is zero
+        }
 
         let inv_det3x3 = 1.0 / det3x3;
-
-        // Calculate inverse of upper 3x3 using cofactors
         let inv00 = (c1.y * c2.z - c2.y * c1.z) * inv_det3x3;
         let inv10 = -(c2.y * c0.z - c0.y * c2.z) * inv_det3x3;
         let inv20 = (c0.y * c1.z - c1.y * c0.z) * inv_det3x3;
-
         let inv01 = -(c2.x * c1.z - c1.x * c2.z) * inv_det3x3;
         let inv11 = (c0.x * c2.z - c2.x * c0.z) * inv_det3x3;
         let inv21 = -(c1.x * c0.z - c0.x * c1.z) * inv_det3x3;
-
         let inv02 = (c1.x * c2.y - c2.x * c1.y) * inv_det3x3;
         let inv12 = -(c2.x * c0.y - c0.x * c2.y) * inv_det3x3;
         let inv22 = (c0.x * c1.y - c1.x * c0.y) * inv_det3x3;
-
-        // Inverse translation = - (Inverse(Upper3x3) * Translation)
         let inv_tx = -(inv00 * translation.x + inv01 * translation.y + inv02 * translation.z);
         let inv_ty = -(inv10 * translation.x + inv11 * translation.y + inv12 * translation.z);
         let inv_tz = -(inv20 * translation.x + inv21 * translation.y + inv22 * translation.z);
@@ -843,14 +739,16 @@ impl Mat4 {
 // --- Operators Overloading ---
 
 impl Default for Mat4 {
+    /// Returns the 4x4 identity matrix.
+    #[inline]
     fn default() -> Self {
         Self::IDENTITY
     }
 }
 
-/// Matrix * Matrix multiplication.
 impl Mul<Mat4> for Mat4 {
     type Output = Self;
+    /// Multiplies this matrix by another `Mat4`. Note that matrix multiplication is not commutative.
     #[inline]
     fn mul(self, rhs: Mat4) -> Self::Output {
         let mut result_cols = [Vec4 {
@@ -859,7 +757,6 @@ impl Mul<Mat4> for Mat4 {
             z: 0.0,
             w: 0.0,
         }; 4];
-
         for (c_idx, target_col_ref_mut) in result_cols.iter_mut().enumerate().take(4) {
             let col_from_rhs = rhs.cols[c_idx];
             *target_col_ref_mut = Vec4 {
@@ -869,21 +766,18 @@ impl Mul<Mat4> for Mat4 {
                 w: self.get_row(3).dot(col_from_rhs),
             };
         }
-
         Mat4 { cols: result_cols }
     }
 }
 
-/// Matrix * Vec4 multiplication (transforming a point/vector).
 impl Mul<Vec4> for Mat4 {
     type Output = Vec4;
+    /// Transforms a `Vec4` by this matrix.
     #[inline]
     fn mul(self, rhs: Vec4) -> Self::Output {
         self.cols[0] * rhs.x + self.cols[1] * rhs.y + self.cols[2] * rhs.z + self.cols[3] * rhs.w
     }
 }
-
-// --- End of Mat4 Implementation ---
 
 // --- Tests ---
 

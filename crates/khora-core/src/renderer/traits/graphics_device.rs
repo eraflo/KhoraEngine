@@ -19,107 +19,85 @@ use crate::renderer::traits::CommandEncoder;
 use std::fmt::Debug;
 use std::future::Future;
 
+/// Defines the abstract interface for a graphics device.
+///
+/// This trait is the central point of interaction with the underlying graphics API
+/// (like WGPU, Vulkan, etc.). It abstracts away the specifics of the backend and
+/// provides a unified API for creating, managing, and destroying GPU resources such
+/// as buffers, textures, and pipelines.
+///
+/// It is the cornerstone of the `khora-infra` crate's responsibility, where a
+/// concrete type will implement this trait to provide actual rendering capabilities.
 pub trait GraphicsDevice: Send + Sync + Debug + 'static {
-    /// Creates a shader module from the provided descriptor.
-    /// ## Arguments
-    /// * `descriptor` - A reference to a `ShaderModuleDescriptor` containing the shader source and other properties.
-    /// ## Returns
-    /// A `Result` containing the ID of the created shader module or an error if the creation fails.
-    /// ## Errors
-    /// * `ResourceError` - If the shader module creation fails.
+    // --- Shader Management ---
+
+    /// Creates a shader module from a descriptor.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if the shader source is invalid or fails to compile.
     fn create_shader_module(
         &self,
         descriptor: &ShaderModuleDescriptor,
     ) -> Result<ShaderModuleId, ResourceError>;
 
-    /// Destroys the shader module associated with the given ID.
-    /// This function is used to release the resources associated with the shader module.
-    /// ## Arguments
-    /// * `id` - The ID of the shader module to be destroyed.
-    /// ## Returns
-    /// A `Result` indicating success or failure of the operation.
-    /// ## Errors
-    /// * `ResourceError` - If the shader module destruction fails.
+    /// Destroys a shader module, releasing its GPU resources.
     fn destroy_shader_module(&self, id: ShaderModuleId) -> Result<(), ResourceError>;
 
-    /// Creates a render pipeline from the provided descriptor.
-    /// ## Arguments
-    /// * `descriptor` - A reference to a `RenderPipelineDescriptor` containing the pipeline configuration.
-    /// ## Returns
-    /// A `Result` containing the ID of the created render pipeline or an error if the creation fails.
-    /// ## Errors
-    /// * `ResourceError` - If the render pipeline creation fails.
+    // --- Pipeline Management ---
+
+    /// Creates a render pipeline from a descriptor.
+    ///
+    /// A render pipeline represents the entire configurable state of the GPU for a
+    /// draw call, including shaders, vertex layouts, and blend states.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if the pipeline configuration is invalid or compilation fails.
     fn create_render_pipeline(
         &self,
         descriptor: &RenderPipelineDescriptor,
     ) -> Result<RenderPipelineId, ResourceError>;
 
-    /// Creates a pipeline layout from the provided descriptor.
-    /// ## Arguments
-    /// * `descriptor` - A reference to a `PipelineLayoutDescriptor` containing the layout configuration.
-    /// ## Returns
-    /// A `Result` containing the ID of the created pipeline layout or an error if the creation fails.
-    /// ## Errors
-    /// * `ResourceError` - If the pipeline layout creation fails.
+    /// Creates a pipeline layout from a descriptor.
+    ///
+    /// The pipeline layout defines the set of resource bindings (e.g., uniform buffers,
+    /// textures) that a pipeline can access.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if the layout is invalid.
     fn create_pipeline_layout(
         &self,
         descriptor: &PipelineLayoutDescriptor,
     ) -> Result<PipelineLayoutId, ResourceError>;
 
-    /// Destroys the render pipeline associated with the given ID.
-    /// This function is used to release the resources associated with the render pipeline.
-    /// ## Arguments
-    /// * `id` - The ID of the render pipeline to be destroyed.
-    /// ## Returns
-    /// A `Result` indicating success or failure of the operation.
-    /// ## Errors
-    /// * `ResourceError` - If the render pipeline destruction fails.
+    /// Destroys a render pipeline, releasing its GPU resources.
     fn destroy_render_pipeline(&self, id: RenderPipelineId) -> Result<(), ResourceError>;
 
+    // --- Buffer Management ---
+
     /// Creates a new GPU buffer.
-    /// ## Arguments
-    /// * `descriptor` - A reference to a `BufferDescriptor` containing the buffer configuration.
-    /// ## Returns
-    /// A `Result` containing the ID of the created buffer or an error if the creation fails.
     fn create_buffer(&self, descriptor: &BufferDescriptor) -> Result<BufferId, ResourceError>;
 
     /// Creates a new GPU buffer and initializes it with the provided data.
-    /// This is often more efficient for creating static buffers.
-    /// ## Arguments
-    /// * `descriptor` - A reference to a `BufferDescriptor` containing the buffer configuration.
-    /// * `data` - A slice of bytes containing the initial data for the buffer.
-    /// ## Returns
-    /// A `Result` containing the ID of the created buffer or an error if the creation fails.
+    /// This is often more efficient than `create_buffer` followed by `write_buffer` for static data.
     fn create_buffer_with_data(
         &self,
         descriptor: &BufferDescriptor,
         data: &[u8],
     ) -> Result<BufferId, ResourceError>;
 
-    /// Destroys a GPU buffer.
-    /// ## Arguments
-    /// * `id` - The ID of the buffer to be destroyed.
-    /// ## Returns
-    /// A `Result` indicating success or failure of the operation.
+    /// Destroys a GPU buffer, releasing its memory.
     fn destroy_buffer(&self, id: BufferId) -> Result<(), ResourceError>;
 
-    /// Writes data to a GPU buffer.
-    /// ## Arguments
-    /// * `id` - The ID of the buffer to write to.
-    /// * `offset` - The offset in the buffer where the data will be written.
-    /// * `data` - A slice of bytes containing the data to be written.
-    /// ## Returns
-    /// A `Result` indicating success or failure of the operation.
+    /// Writes data to a specific region of a GPU buffer.
+    ///
+    /// # Arguments
+    /// * `id`: The identifier of the buffer to write to.
+    /// * `offset`: The offset in bytes from the beginning of the buffer to start writing.
+    /// * `data`: The slice of bytes to write into the buffer.
     fn write_buffer(&self, id: BufferId, offset: u64, data: &[u8]) -> Result<(), ResourceError>;
 
-    /// Writes data to a GPU buffer asynchronously (returns a Future).
-    /// This is an optimization for larger data uploads.
-    /// ## Arguments
-    /// * `id` - The ID of the buffer to write to.
-    /// * `offset` - The offset in the buffer where the data will be written.
-    /// * `data` - A slice of bytes containing the data to be written.
-    /// ## Returns
-    /// A `Box` containing a `Future` that resolves to a `Result` indicating success or failure of the operation.
+    /// Asynchronously writes data to a GPU buffer.
+    /// This can be more performant for large data uploads by avoiding stalls.
     fn write_buffer_async<'a>(
         &'a self,
         id: BufferId,
@@ -127,29 +105,22 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
         data: &'a [u8],
     ) -> Box<dyn Future<Output = Result<(), ResourceError>> + Send + 'static>;
 
+    // --- Texture & Sampler Management ---
+
     /// Creates a new GPU texture.
-    /// ## Arguments
-    /// * `descriptor` - A reference to a `TextureDescriptor` containing the texture configuration.
-    /// ## Returns
-    /// A `Result` containing the ID of the created texture or an error if the creation fails.
     fn create_texture(&self, descriptor: &TextureDescriptor) -> Result<TextureId, ResourceError>;
 
-    /// Destroys a GPU texture.
-    /// ## Arguments
-    /// * `id` - The ID of the texture to be destroyed.
-    /// ## Returns
-    /// A `Result` indicating success or failure of the operation.
+    /// Destroys a GPU texture, releasing its memory.
     fn destroy_texture(&self, id: TextureId) -> Result<(), ResourceError>;
 
-    /// Writes data to a GPU texture.
-    /// ## Arguments
-    /// * `texture_id` - The ID of the texture to write to.
-    /// * `data` - A slice of bytes containing the data to be written.
-    /// * `bytes_per_row` - The number of bytes per row in the texture data.
-    /// * `offset` - The offset in the texture where the data will be written.
-    /// * `size` - The size of the texture.
-    /// ## Returns
-    /// A `Result` indicating success or failure of the operation.
+    /// Writes data to a specific region of a GPU texture.
+    ///
+    /// # Arguments
+    /// * `texture_id`: The identifier of the texture to write to.
+    /// * `data`: The raw image data to write.
+    /// * `bytes_per_row`: The number of bytes for a single row of texels in `data`.
+    /// * `offset`: The 3D offset (x, y, z/layer) in the texture to start writing.
+    /// * `size`: The 3D extent (width, height, depth/layers) of the data to write.
     fn write_texture(
         &self,
         texture_id: TextureId,
@@ -160,11 +131,7 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     ) -> Result<(), ResourceError>;
 
     /// Creates a new texture view for a given texture.
-    /// ## Arguments
-    /// * `texture_id` - The ID of the texture for which the view will be created.
-    /// * `descriptor` - A reference to a `TextureViewDescriptor` containing the view configuration.
-    /// ## Returns
-    /// A `Result` containing the ID of the created texture view or an error if the creation fails.
+    /// A view describes how a shader will interpret a texture's data (e.g., its format, mip levels).
     fn create_texture_view(
         &self,
         texture_id: TextureId,
@@ -172,44 +139,34 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     ) -> Result<TextureViewId, ResourceError>;
 
     /// Destroys a texture view.
-    /// ## Arguments
-    /// * `id` - The ID of the texture view to be destroyed.
-    /// ## Returns
-    /// A `Result` indicating success or failure of the operation.
     fn destroy_texture_view(&self, id: TextureViewId) -> Result<(), ResourceError>;
 
     /// Creates a new sampler.
-    /// ## Arguments
-    /// * `descriptor` - A reference to a `SamplerDescriptor` containing the sampler configuration.
-    /// ## Returns
-    /// A `Result` containing the ID of the created sampler or an error if the creation fails.
+    /// A sampler defines how a shader will sample from a texture (e.g., filtering, wrapping).
     fn create_sampler(&self, descriptor: &SamplerDescriptor) -> Result<SamplerId, ResourceError>;
 
     /// Destroys a sampler.
-    /// ## Arguments
-    /// * `id` - The ID of the sampler to be destroyed.
-    /// ## Returns
-    /// A `Result` indicating success or failure of the operation.
     fn destroy_sampler(&self, id: SamplerId) -> Result<(), ResourceError>;
 
+    // --- Command Management ---
+
     /// Creates a new command encoder to record GPU commands.
-    /// ## Arguments
-    /// * `label` - An optional label for the command encoder.
-    /// ## Returns
-    /// A `Box` containing the created command encoder.
+    ///
+    /// # Arguments
+    /// * `label`: An optional debug label for the command encoder.
     fn create_command_encoder(&self, label: Option<&str>) -> Box<dyn CommandEncoder>;
 
-    /// Submits a previously recorded command buffer to the GPU for execution.
-    /// ## Arguments
-    /// * `command_buffer` - The ID of the command buffer to submit.
+    /// Submits a previously recorded command buffer to the GPU's command queue for execution.
     fn submit_command_buffer(&self, command_buffer: CommandBufferId);
 
-    /// Gets the surface format of the rendering system.
+    // --- Device Introspection ---
+
+    /// Gets the texture format of the primary render surface.
     fn get_surface_format(&self) -> Option<TextureFormat>;
 
-    /// Get the adapter information of the rendering system.
+    /// Gets information about the active graphics adapter (GPU).
     fn get_adapter_info(&self) -> RendererAdapterInfo;
 
-    /// Indicate if a specific feature is supported.
+    /// Checks if a specific, optional rendering feature is supported by the backend.
     fn supports_feature(&self, feature_name: &str) -> bool;
 }

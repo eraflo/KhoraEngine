@@ -12,21 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Defines data structures for graphics backend selection and introspection.
+
 use super::common::{GraphicsAdapterInfo, GraphicsBackendType};
 use std::time::Duration;
 
-/// Configuration for backend selection.
+/// Configuration for the graphics backend selection process.
+///
+/// This struct is passed to the [`GraphicsBackendSelector`] to guide its decision on
+/// which GPU and API to use for rendering.
 #[derive(Debug, Clone)]
 pub struct BackendSelectionConfig {
-    /// Preferred backends in order of preference
+    /// An ordered list of preferred graphics APIs. The selector will try them in this order.
     pub preferred_backends: Vec<GraphicsBackendType>,
-    /// Maximum time to spend on backend selection
+    /// The maximum time allowed for the entire adapter discovery and selection process.
     pub timeout: Duration,
-    /// Whether to prefer discrete GPUs over integrated ones
+    /// If `true`, the selector will prioritize discrete (dedicated) GPUs over integrated ones.
     pub prefer_discrete_gpu: bool,
 }
 
 impl Default for BackendSelectionConfig {
+    /// Creates a default `BackendSelectionConfig` with sensible, platform-specific preferences.
+    ///
+    /// The default order is generally Vulkan > DirectX12 > Metal > OpenGL, depending on the OS.
+    /// It also defaults to preferring a discrete GPU.
     fn default() -> Self {
         Self {
             preferred_backends: {
@@ -62,15 +71,19 @@ impl Default for BackendSelectionConfig {
     }
 }
 
-/// Result of a backend selection operation.
+/// The successful result of a backend selection operation.
+///
+/// This struct contains the chosen adapter handle (`TAdapter`), which is a generic
+/// type provided by the specific backend implementation (e.g., `wgpu::Adapter`),
+/// along with metadata about the selection process.
 #[derive(Debug)]
 pub struct BackendSelectionResult<TAdapter> {
-    /// The selected adapter
+    /// The handle to the selected graphics adapter (GPU).
     pub adapter: TAdapter,
-    /// Information about the selected adapter
+    /// Detailed information about the selected adapter.
     pub adapter_info: GraphicsAdapterInfo,
-    /// Time taken for the selection process
+    /// The total time taken for the selection process, in milliseconds.
     pub selection_time_ms: u64,
-    /// All backends that were attempted during selection
+    /// A list of all backend APIs that were attempted during the selection process.
     pub attempted_backends: Vec<GraphicsBackendType>,
 }

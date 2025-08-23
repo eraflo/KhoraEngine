@@ -12,41 +12,50 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Defines the `KhoraWindow` trait and related types for windowing abstraction.
+
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::sync::Arc;
 
-/// A new trait that combines the windowing handle traits required by graphics backends.
-/// This is used to satisfy Rust's "trait object" rules.
+/// A marker trait that combines windowing handle requirements for use in trait objects.
+///
+/// Rust's trait object safety rules require that a trait's supertraits must also be
+/// object-safe. `HasWindowHandle` and `HasDisplayHandle` are, but creating a direct
+/// `dyn HasWindowHandle + HasDisplayHandle` is complex. This trait serves as a simple,
+/// unified supertrait to make creating the `KhoraWindowHandle` type alias possible.
 pub trait WindowHandle: HasWindowHandle + HasDisplayHandle {}
 
-// We can automatically implement this new trait for any type that
-// already implements the required subtraits. This is a powerful blanket implementation.
+// A blanket implementation automatically implements `WindowHandle` for any type
+// that already satisfies its requirements.
 impl<T: HasWindowHandle + HasDisplayHandle> WindowHandle for T {}
 
-// Now, our type alias uses our new, single, "normal" trait.
-// `Send` and `Sync` can follow because they are "auto traits".
+/// A thread-safe, reference-counted trait object representing a window.
+///
+/// This type alias is used to pass a handle to a window across thread boundaries,
+/// for example, from the main application thread to a rendering thread.
 pub type KhoraWindowHandle = Arc<dyn WindowHandle + Send + Sync>;
 
-/// A trait that abstracts the behavior of a window.
+/// A trait that abstracts the behavior of an application window.
 ///
-/// Any windowing backend (Winit, SDL2, Glfw, etc.) can implement this trait
-/// to be compatible with the Khora engine.
+/// This is the primary contract for windowing integration in Khora. Any windowing
+/// backend (like the Winit implementation in `khora-infra`) must implement this trait
+/// to be usable by the engine's rendering and input systems.
 pub trait KhoraWindow: HasWindowHandle + HasDisplayHandle + Send + Sync {
-    /// Returns the physical dimensions (width, height) of the window's inner area.
+    /// Returns the physical dimensions (width, height) in pixels of the window's inner client area.
     fn inner_size(&self) -> (u32, u32);
 
-    /// Returns the scale factor of the window.
+    /// Returns the display's scale factor, used for HiDPI rendering.
     fn scale_factor(&self) -> f64;
 
-    /// Requests that the window be redrawn.
+    /// Requests that the operating system schedule a redraw for the window.
     fn request_redraw(&self);
 
-    /// Clones an Arc'd, thread-safe handle to the window.
-    /// This is necessary for the renderer to create a surface.
+    /// Clones a thread-safe, reference-counted handle to the window.
+    ///
+    /// This is the primary mechanism for the renderer to obtain a handle it can use
+    /// to create a render surface, without needing to know the concrete window type.
     fn clone_handle_arc(&self) -> KhoraWindowHandle;
 
-    /// Returns the unique identifier for the window.
+    /// Returns a unique identifier for the window.
     fn id(&self) -> u64;
-
-    // TODO: add more window management methods as needed
 }

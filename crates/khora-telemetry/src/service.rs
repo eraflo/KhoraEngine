@@ -12,10 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Service for managing telemetry data and resource monitoring.
+
 use crate::metrics::registry::MetricsRegistry;
 use crate::monitoring::registry::MonitorRegistry;
 use std::time::{Duration, Instant};
 
+/// Service for managing telemetry data and resource monitoring.
 #[derive(Debug)]
 pub struct TelemetryService {
     metrics: MetricsRegistry,
@@ -25,6 +28,7 @@ pub struct TelemetryService {
 }
 
 impl TelemetryService {
+    /// Creates a new telemetry service with the given update interval.
     pub fn new(update_interval: Duration) -> Self {
         Self {
             metrics: MetricsRegistry::new(),
@@ -47,10 +51,12 @@ impl TelemetryService {
         }
     }
 
+    /// Returns a reference to the metrics registry.
     pub fn metrics_registry(&self) -> &MetricsRegistry {
         &self.metrics
     }
 
+    /// Returns a reference to the monitor registry.
     pub fn monitor_registry(&self) -> &MonitorRegistry {
         &self.monitors
     }

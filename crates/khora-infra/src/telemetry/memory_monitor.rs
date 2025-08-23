@@ -39,6 +39,7 @@ pub struct MemoryMonitor {
 }
 
 impl MemoryMonitor {
+    /// Creates a new memory monitor with the given identifier.
     pub fn new(id: String) -> Self {
         let current_usage = get_currently_allocated_bytes();
         Self {

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Registry for managing resource monitors.
+
 use khora_core::telemetry::ResourceMonitor;
 use std::sync::{Arc, Mutex};
 

@@ -12,25 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Defines the hierarchy of error types for the rendering subsystem.
+
 use super::api::{RenderPipelineId, ShaderModuleId};
 use std::fmt;
 
-/// Errors specific to shader module creation or management.
+/// An error related to the creation, loading, or compilation of a shader module.
 #[derive(Debug)]
 pub enum ShaderError {
+    /// An error occurred while trying to load the shader source from a path.
     LoadError {
+        /// The path of the file that failed to load.
         path: String,
+        /// The underlying I/O or source error.
         source_error: String,
     },
+    /// The shader source failed to compile into a backend-specific module.
     CompilationError {
+        /// A descriptive label for the shader, if available.
         label: String,
+        /// Detailed error messages from the shader compiler.
         details: String,
     },
+    /// The requested shader module could not be found.
     NotFound {
+        /// The ID of the shader module that was not found.
         id: ShaderModuleId,
     },
+    /// The specified entry point (e.g., `vs_main`) is not valid for the shader module.
     InvalidEntryPoint {
+        /// The ID of the shader module.
         id: ShaderModuleId,
+        /// The entry point name that was not found.
         entry_point: String,
     },
 }
@@ -62,27 +75,42 @@ impl fmt::Display for ShaderError {
 
 impl std::error::Error for ShaderError {}
 
-/// Errors related to graphics pipeline creation or management.
+/// An error related to the creation or management of a graphics pipeline.
 #[derive(Debug)]
 pub enum PipelineError {
+    /// Failed to create a pipeline layout from the provided shader reflection data.
     LayoutCreationFailed(String),
+    /// The graphics backend failed to compile the full pipeline state object.
     CompilationFailed {
+        /// A descriptive label for the pipeline, if available.
         label: Option<String>,
+        /// Detailed error messages from the backend.
         details: String,
     },
+    /// A shader module provided for the pipeline was invalid or missing.
     InvalidShaderModuleForPipeline {
+        /// The ID of the invalid shader module.
         id: ShaderModuleId,
+        /// The label of the pipeline being created.
         pipeline_label: Option<String>,
     },
+    /// The specified render pipeline ID is not valid.
     InvalidRenderPipeline {
+        /// The ID of the invalid render pipeline.
         id: RenderPipelineId,
     },
+    /// The fragment shader stage is present but no entry point was specified.
     MissingEntryPointForFragmentShader {
+        /// The label of the pipeline being created.
         pipeline_label: Option<String>,
+        /// The ID of the fragment shader module.
         shader_id: ShaderModuleId,
     },
+    /// The color target format is not compatible with the pipeline or device.
     IncompatibleColorTarget(String),
+    /// The depth/stencil format is not compatible with the pipeline or device.
     IncompatibleDepthStencilFormat(String),
+    /// A required graphics feature is not supported by the device.
     FeatureNotSupported(String),
 }
 
@@ -137,14 +165,20 @@ impl fmt::Display for PipelineError {
 
 impl std::error::Error for PipelineError {}
 
-/// Errors related to graphics resource management.
+/// An error related to the creation or use of a GPU resource (buffers, textures, etc.).
 #[derive(Debug)]
 pub enum ResourceError {
+    /// A shader-specific error occurred.
     Shader(ShaderError),
+    /// A pipeline-specific error occurred.
     Pipeline(PipelineError),
+    /// A generic resource could not be found.
     NotFound,
+    /// The handle or ID used to reference a resource is invalid.
     InvalidHandle,
+    /// An error originating from the specific graphics backend implementation.
     BackendError(String),
+    /// An attempt was made to access a resource out of its bounds (e.g., in a buffer).
     OutOfBounds,
 }
 
@@ -186,15 +220,23 @@ impl From<PipelineError> for ResourceError {
     }
 }
 
-/// General errors that can occur within the rendering system or graphics device.
+/// A high-level error that can occur within the main rendering system or graphics device.
 #[derive(Debug)]
 pub enum RenderError {
+    /// An operation was attempted before the rendering system was initialized.
     NotInitialized,
+    /// A failure occurred during the initialization of the graphics backend.
     InitializationFailed(String),
+    /// Failed to acquire the next frame from the swapchain/surface for rendering.
     SurfaceAcquisitionFailed(String),
+    /// A critical, unrecoverable rendering operation failed.
     RenderingFailed(String),
+    /// An error occurred while managing a GPU resource.
     ResourceError(ResourceError),
+    /// The graphics device was lost (e.g., GPU driver crashed or was updated).
+    /// This is a catastrophic error that typically requires reinitialization.
     DeviceLost,
+    /// An unexpected or internal error occurred.
     Internal(String),
 }
 
