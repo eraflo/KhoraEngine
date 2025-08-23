@@ -37,6 +37,7 @@ jobs:
           mv build/book site
           mkdir -p site/api
           cp -r build/rustdoc/doc/* site/api/
+          cat .github/workflows/templates/api_index.html > site/api/index.html
 
       # --- 4. DEPLOY ---
       - name: Upload GitHub Pages artifact

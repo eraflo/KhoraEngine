@@ -16,4 +16,4 @@
 - [Roadmap & Issue Tracker](./08_roadmap_and_issues.md)
 
 # IV. API Reference
-- [**Complete Crate Reference**](/KhoraEngine/api/khora/index.html)
+- [**Complete Crate Reference**](https://eraflo.github.io/KhoraEngine/api/index.html)
