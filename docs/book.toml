@@ -6,3 +6,6 @@ title = "Khora Engine Documentation"
 
 [output.html]
 site-url = "/KhoraEngine/"
+
+[output.html.redirects]
+"api_reference.html" = "api/khora/index.html"
