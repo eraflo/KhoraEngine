@@ -17,41 +17,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Install Rust toolchain & mdBook
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      
       - name: Install mdBook
         run: cargo install mdbook --locked
 
-      # 3. Build the mdBook
       - name: Build mdBook
         run: mdbook build docs
 
-      # 4. Build the rustdoc API reference
       - name: Build rustdoc API reference
         run: cargo doc --workspace --no-deps --all-features
 
-      # 5. Assemble the final site for deployment
       - name: Assemble final site
         run: |
-          # The book is already built in `docs/book`, we rename it to `site`
           mv docs/book site
-          # Create the `api` subdirectory inside `site`
           mkdir -p site/api
-          # Copy the rustdoc output into the `api` subdirectory
           cp -r target/doc/* site/api/
 
-      # 6. Upload the artifact
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./site
 
-      # 7. Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
