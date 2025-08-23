@@ -30,6 +30,8 @@
 //!
 //! Concrete implementations of external dependencies.
 
+#![warn(missing_docs)]
+
 pub mod graphics;
 pub mod platform;
 pub mod telemetry;

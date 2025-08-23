@@ -15,23 +15,26 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// A unique, stable identifier for an asset.
+/// A globally unique, persistent identifier for a logical asset.
 ///
-/// This UUID serves as the primary key for all assets within the engine's
-/// Virtual File System (VFS). It decouples the asset's identity from its
-/// file path, allowing for flexible storage and management.
+/// This UUID represents the "idea" of an asset, completely decoupled from its
+/// physical file path. It is the primary key used by the Virtual File System (VFS)
+/// to track and retrieve asset metadata.
+///
+/// By using a stable UUID, assets can be moved, renamed, or have their source
+/// data modified without breaking references to them in scenes or other assets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AssetUUID(Uuid);
 
 impl AssetUUID {
-    /// Creates a new, unique AssetUUID (version 4).
+    /// Creates a new, random (version 4) `AssetUUID`.
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
 }
 
 impl Default for AssetUUID {
-    /// Creates a new, unique AssetUUID.
+    /// Creates a new, random (version 4) `AssetUUID`.
     fn default() -> Self {
         Self::new()
     }

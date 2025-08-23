@@ -12,42 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Provides 2D, 3D, and 4D vector types and their associated operations.
+
 use super::EPSILON;
 use std::ops::{Add, Div, Index, IndexMut, Mul, Neg, Sub};
 
-// --- Vector2D ---
+// --- Vec2 ---
 
-// Deriving Debug, Default, Copy, Clone, and PartialEq for convenience in debugging, cloning, and comparisons.
-// The Copy trait is derived because Vec2 is a lightweight struct with no heap allocation,
-// making it safe and efficient to duplicate.
-/// A simple 2D vector for mathematical operations.
+/// A 2-dimensional vector with `f32` components.
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 #[repr(C)]
 pub struct Vec2 {
+    /// The x component of the vector.
     pub x: f32,
+    /// The y component of the vector.
     pub y: f32,
 }
 
 impl Vec2 {
+    /// A vector with all components set to `0.0`.
     pub const ZERO: Self = Self { x: 0.0, y: 0.0 };
+    /// A vector with all components set to `1.0`.
     pub const ONE: Self = Self { x: 1.0, y: 1.0 };
+    /// The unit vector pointing along the positive X-axis.
     pub const X: Self = Self { x: 1.0, y: 0.0 };
+    /// The unit vector pointing along the positive Y-axis.
     pub const Y: Self = Self { x: 0.0, y: 1.0 };
 
-    /// Creates a new Vec2 instance.
-    /// ## Arguments
-    /// * `x` - The x component of the vector.
-    /// * `y` - The y component of the vector.
-    /// ## Returns
-    /// * A new Vec2 instance with the specified components.
+    /// Creates a new `Vec2` with the specified components.
     #[inline]
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
 
     /// Returns a new vector with the absolute value of each component.
-    /// ## Returns
-    /// * A new Vec2 instance with the absolute values of the components.
     #[inline]
     pub const fn abs(self) -> Self {
         Self {
@@ -56,25 +54,21 @@ impl Vec2 {
         }
     }
 
-    /// Calculates the squared magnitude (length) of the vector.
-    /// ## Returns
-    /// * The squared length of the vector.
+    /// Calculates the squared length (magnitude) of the vector.
+    /// This is faster than `length()` as it avoids a square root.
     #[inline]
     pub fn length_squared(&self) -> f32 {
         self.dot(*self)
     }
 
-    /// Calculates the magnitude (length) of the vector.
-    /// ## Returns
-    /// * The length of the vector.
+    /// Calculates the length (magnitude) of the vector.
     #[inline]
     pub fn length(&self) -> f32 {
         self.length_squared().sqrt()
     }
 
-    /// Normalizes the vector to unit length. Returns ZERO if length is near zero.
-    /// ## Returns
-    /// * A new Vec2 instance that is the normalized version of the original vector.
+    /// Returns a normalized version of the vector with a length of 1.
+    /// If the vector's length is near zero, it returns `Vec2::ZERO`.
     #[inline]
     pub fn normalize(&self) -> Self {
         let len_sq = self.length_squared();
@@ -85,26 +79,17 @@ impl Vec2 {
         }
     }
 
-    /// Calculates the dot product between this vector and another.
-    /// ## Arguments
-    /// * `rhs` - The other vector to compute the dot product with.
-    /// ## Returns
-    /// * The dot product of the two vectors.
+    /// Calculates the dot product of this vector and another.
     #[inline]
     pub fn dot(&self, rhs: Self) -> f32 {
         self.x * rhs.x + self.y * rhs.y
     }
 
-    /// Linear interpolation between two vectors.
-    /// ## Arguments
-    /// * `start` - The starting vector.
-    /// * `end` - The ending vector.
-    /// * `t` - The interpolation factor (0.0 to 1.0).
-    /// ## Returns
-    /// * A new Vec2 instance that is the result of the interpolation.
+    /// Performs a linear interpolation between two vectors.
+    /// The interpolation factor `t` is clamped to the `[0.0, 1.0]` range.
     #[inline]
     pub fn lerp(start: Self, end: Self, t: f32) -> Self {
-        start + (end - start) * t.clamp(0.0, 1.0) // Clamp t for safety
+        start + (end - start) * t.clamp(0.0, 1.0)
     }
 }
 
@@ -112,6 +97,7 @@ impl Vec2 {
 
 impl Add for Vec2 {
     type Output = Self;
+    /// Adds two vectors component-wise.
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         Self {
@@ -123,6 +109,7 @@ impl Add for Vec2 {
 
 impl Sub for Vec2 {
     type Output = Self;
+    /// Subtracts two vectors component-wise.
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
@@ -134,6 +121,7 @@ impl Sub for Vec2 {
 
 impl Mul<f32> for Vec2 {
     type Output = Self;
+    /// Multiplies the vector by a scalar.
     #[inline]
     fn mul(self, rhs: f32) -> Self::Output {
         Self {
@@ -145,15 +133,16 @@ impl Mul<f32> for Vec2 {
 
 impl Mul<Vec2> for f32 {
     type Output = Vec2;
+    /// Multiplies a scalar by a vector.
     #[inline]
     fn mul(self, rhs: Vec2) -> Self::Output {
         rhs * self
     }
 }
 
-// Component-wise multiplication
 impl Mul<Vec2> for Vec2 {
     type Output = Self;
+    /// Multiplies two vectors component-wise.
     #[inline]
     fn mul(self, rhs: Vec2) -> Self::Output {
         Self {
@@ -165,6 +154,7 @@ impl Mul<Vec2> for Vec2 {
 
 impl Div<f32> for Vec2 {
     type Output = Self;
+    /// Divides the vector by a scalar.
     #[inline]
     fn div(self, rhs: f32) -> Self::Output {
         let inv_rhs = 1.0 / rhs;
@@ -177,6 +167,7 @@ impl Div<f32> for Vec2 {
 
 impl Neg for Vec2 {
     type Output = Self;
+    /// Negates the vector.
     #[inline]
     fn neg(self) -> Self::Output {
         Self {
@@ -188,6 +179,10 @@ impl Neg for Vec2 {
 
 impl Index<usize> for Vec2 {
     type Output = f32;
+    /// Allows accessing a vector component by index (`v[0]`, `v[1]`).
+    ///
+    /// # Panics
+    /// Panics if `index` is not 0 or 1.
     #[inline]
     fn index(&self, index: usize) -> &Self::Output {
         match index {
@@ -199,6 +194,10 @@ impl Index<usize> for Vec2 {
 }
 
 impl IndexMut<usize> for Vec2 {
+    /// Allows mutably accessing a vector component by index (`v[0] = ...`).
+    ///
+    /// # Panics
+    /// Panics if `index` is not 0 or 1.
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         match index {
@@ -209,95 +208,81 @@ impl IndexMut<usize> for Vec2 {
     }
 }
 
-// --- End of Vec2 Implementation ---
-
 // --- Vector3D ---
 
-// Deriving Debug, Clone, and PartialEq for convenience in debugging, cloning, and comparisons.
-// The Copy trait is derived because Vec3 is a lightweight struct with no heap allocation,
-// making it safe and efficient to duplicate.
-/// A simple 3D vector for mathematical operations.
+/// A 3-dimensional vector with `f32` components.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Vec3 {
+    /// The x component of the vector.
     pub x: f32,
+    /// The y component of the vector.
     pub y: f32,
+    /// The z component of the vector.
     pub z: f32,
 }
 
 impl Vec3 {
+    /// A vector with all components set to `0.0`.
     pub const ZERO: Self = Self {
         x: 0.0,
         y: 0.0,
         z: 0.0,
     };
+    /// A vector with all components set to `1.0`.
     pub const ONE: Self = Self {
         x: 1.0,
         y: 1.0,
         z: 1.0,
     };
-
+    /// The unit vector pointing along the positive X-axis.
     pub const X: Self = Self {
         x: 1.0,
         y: 0.0,
         z: 0.0,
     };
+    /// The unit vector pointing along the positive Y-axis.
     pub const Y: Self = Self {
         x: 0.0,
         y: 1.0,
         z: 0.0,
     };
+    /// The unit vector pointing along the positive Z-axis.
     pub const Z: Self = Self {
         x: 0.0,
         y: 0.0,
         z: 1.0,
     };
 
-    /// Creates a new Vec3 instance with the given x, y, and z components.
-    /// ## Arguments
-    /// * `x` - The x component of the vector.
-    /// * `y` - The y component of the vector.
-    /// * `z` - The z component of the vector.
-    /// ## Returns
-    /// * A new Vec3 instance with the specified components.
+    /// Creates a new `Vec3` with the specified components.
     #[inline]
     pub const fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
     }
 
     /// Returns a new vector with the absolute value of each component.
-    /// ## Returns
-    /// * A new Vec3 instance with the absolute values of the components.
     #[inline]
     pub const fn abs(self) -> Self {
         Self {
-            x: if self.x < 0.0 { -self.x } else { self.x }, // const-compatible abs
+            x: if self.x < 0.0 { -self.x } else { self.x },
             y: if self.y < 0.0 { -self.y } else { self.y },
             z: if self.z < 0.0 { -self.z } else { self.z },
         }
     }
 
-    /// Returns the length squared of the vector.
-    /// ## Returns
-    /// * The squared length of the vector.
+    /// Calculates the squared length (magnitude) of the vector.
     #[inline]
     pub fn length_squared(&self) -> f32 {
         self.dot(*self)
     }
 
-    /// Returns the length of the vector.
-    /// ## Returns
-    /// * The length of the vector.
+    /// Calculates the length (magnitude) of the vector.
     #[inline]
     pub fn length(&self) -> f32 {
         self.length_squared().sqrt()
     }
 
-    /// Normalizes the vector, making it a unit vector.
-    /// ## Returns
-    /// * A new Vec3 instance that is the normalized version of the original vector.
-    /// ## Panics
-    /// * Panics if the vector is a zero vector (length is 0).
+    /// Returns a normalized version of the vector with a length of 1.
     #[inline]
     pub fn normalize(&self) -> Self {
         let len_sq = self.length_squared();
@@ -310,21 +295,13 @@ impl Vec3 {
         }
     }
 
-    /// Returns the dot product of this vector and another vector.
-    /// ## Arguments
-    /// * `other` - The other vector to compute the dot product with.
-    /// ## Returns
-    /// * The dot product of the two vectors.
+    /// Calculates the dot product of this vector and another.
     #[inline]
     pub fn dot(&self, other: Self) -> f32 {
         self.x * other.x + self.y * other.y + self.z * other.z
     }
 
-    /// Returns the cross product of this vector and another vector.
-    /// ## Arguments
-    /// * `other` - The other vector to compute the cross product with.
-    /// ## Returns
-    /// * A new Vec3 instance that is the cross product of the two vectors.
+    /// Computes the cross product of this vector and another.
     #[inline]
     pub fn cross(&self, other: Self) -> Self {
         Self {
@@ -334,11 +311,7 @@ impl Vec3 {
         }
     }
 
-    /// Returns the distance squared between this vector and another vector.
-    /// ## Arguments
-    /// * `other` - The other vector to compute the distance to.
-    /// ## Returns
-    /// * The distance squared between the two vectors.
+    /// Calculates the squared distance between this vector and another.
     #[inline]
     pub fn distance_squared(&self, other: Self) -> f32 {
         let dx = self.x - other.x;
@@ -347,23 +320,13 @@ impl Vec3 {
         dx * dx + dy * dy + dz * dz
     }
 
-    /// Returns the distance between this vector and another vector.
-    /// ## Arguments
-    /// * `other` - The other vector to compute the distance to.
-    /// ## Returns
-    /// * The distance between the two vectors.
+    /// Calculates the distance between this vector and another.
     #[inline]
     pub fn distance(&self, other: Self) -> f32 {
         self.distance_squared(other).sqrt()
     }
 
-    /// Returns linear interpolation between this vector and another vector.
-    /// ## Arguments
-    /// * `start` - The starting vector.
-    /// * `end` - The ending vector.
-    /// * `t` - The interpolation factor (0.0 to 1.0).
-    /// ## Returns
-    /// * A new Vec3 instance that is the result of the interpolation.
+    /// Performs a linear interpolation between two vectors.
     #[inline]
     pub fn lerp(start: Self, end: Self, t: f32) -> Self {
         Self {
@@ -373,11 +336,10 @@ impl Vec3 {
         }
     }
 
-    /// Returns the element at the specified index.
-    /// ## Arguments
-    /// * `index` - The index of the element to retrieve (0-2).
-    /// ## Returns
-    /// * The element at the specified index.
+    /// Retrieves a component of the vector by its index.
+    ///
+    /// # Panics
+    /// Panics if `index` is not 0, 1, or 2.
     #[inline]
     pub fn get(&self, index: usize) -> f32 {
         match index {
@@ -392,15 +354,16 @@ impl Vec3 {
 // --- Operator Overloads ---
 
 impl Default for Vec3 {
+    /// Returns `Vec3::ZERO`.
     #[inline]
     fn default() -> Self {
         Self::ZERO
     }
 }
 
-/// Implement Add for Vec3
 impl Add for Vec3 {
     type Output = Self;
+    /// Adds two vectors component-wise.
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         Self {
@@ -411,9 +374,9 @@ impl Add for Vec3 {
     }
 }
 
-/// Implement Sub for Vec3
 impl Sub for Vec3 {
     type Output = Self;
+    /// Subtracts two vectors component-wise.
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
@@ -424,9 +387,9 @@ impl Sub for Vec3 {
     }
 }
 
-/// Scalar multiplication (Vec3 * f32)
 impl Mul<f32> for Vec3 {
     type Output = Self;
+    /// Multiplies the vector by a scalar.
     #[inline]
     fn mul(self, rhs: f32) -> Self::Output {
         Self {
@@ -437,20 +400,20 @@ impl Mul<f32> for Vec3 {
     }
 }
 
-/// Allow scalar multiplication (f32 * Vec3)
 impl Mul<Vec3> for f32 {
     type Output = Vec3;
+    /// Multiplies a scalar by a vector.
     #[inline]
     fn mul(self, rhs: Vec3) -> Self::Output {
-        rhs * self // Reuse the Vec3 * f32 implementation
+        rhs * self
     }
 }
 
-/// Component-wise multiplication (often useful for colors or scaling)
 impl Mul<Vec3> for Vec3 {
     type Output = Self;
+    /// Multiplies two vectors component-wise.
     #[inline]
-    fn mul(self, rhs: Vec3) -> Self::Output {
+    fn mul(self, rhs: Self) -> Self::Output {
         Self {
             x: self.x * rhs.x,
             y: self.y * rhs.y,
@@ -459,13 +422,11 @@ impl Mul<Vec3> for Vec3 {
     }
 }
 
-/// Component-wise division (often useful for colors or scaling)
 impl Div<f32> for Vec3 {
     type Output = Self;
+    /// Divides the vector by a scalar.
     #[inline]
     fn div(self, rhs: f32) -> Self::Output {
-        // Consider how to handle division by zero if necessary,
-        // here we rely on standard f32 division behavior (NaN/Infinity)
         let inv_rhs = 1.0 / rhs;
         Self {
             x: self.x * inv_rhs,
@@ -475,9 +436,9 @@ impl Div<f32> for Vec3 {
     }
 }
 
-/// Implement Neg for Vec3
 impl Neg for Vec3 {
     type Output = Self;
+    /// Negates the vector.
     #[inline]
     fn neg(self) -> Self::Output {
         Self {
@@ -490,6 +451,9 @@ impl Neg for Vec3 {
 
 impl Index<usize> for Vec3 {
     type Output = f32;
+    /// Allows accessing a vector component by index.
+    /// # Panics
+    /// Panics if `index` is not 0, 1, or 2.
     #[inline]
     fn index(&self, index: usize) -> &Self::Output {
         match index {
@@ -502,9 +466,11 @@ impl Index<usize> for Vec3 {
 }
 
 impl IndexMut<usize> for Vec3 {
+    /// Allows mutably accessing a vector component by index.
+    /// # Panics
+    /// Panics if `index` is not 0, 1, or 2.
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        // Prend &mut self
         match index {
             0 => &mut self.x,
             1 => &mut self.y,
@@ -514,51 +480,62 @@ impl IndexMut<usize> for Vec3 {
     }
 }
 
-// --- End of Vec3 Implementation ---
-
 // --- Vector4D ---
 
+/// A 4-dimensional vector with `f32` components, often used for homogeneous coordinates.
+///
+/// In 3D graphics, `Vec4` is primarily used to represent points (`w`=1.0) and
+/// vectors (`w`=0.0) in homogeneous space, allowing them to be transformed by a `Mat4`.
 #[derive(Debug, Default, Copy, Clone, PartialEq)]
 #[repr(C)]
 pub struct Vec4 {
+    /// The x component of the vector.
     pub x: f32,
+    /// The y component of the vector.
     pub y: f32,
+    /// The z component of the vector.
     pub z: f32,
+    /// The w component, used for homogeneous coordinates.
     pub w: f32,
 }
 
 impl Vec4 {
+    /// A vector with all components set to `0.0`.
     pub const ZERO: Self = Self {
         x: 0.0,
         y: 0.0,
         z: 0.0,
         w: 0.0,
     };
+    /// A vector with all components set to `1.0`.
     pub const ONE: Self = Self {
         x: 1.0,
         y: 1.0,
         z: 1.0,
         w: 1.0,
     };
-
+    /// The unit vector pointing along the positive X-axis.
     pub const X: Self = Self {
         x: 1.0,
         y: 0.0,
         z: 0.0,
         w: 0.0,
     };
+    /// The unit vector pointing along the positive Y-axis.
     pub const Y: Self = Self {
         x: 0.0,
         y: 1.0,
         z: 0.0,
         w: 0.0,
     };
+    /// The unit vector pointing along the positive Z-axis.
     pub const Z: Self = Self {
         x: 0.0,
         y: 0.0,
         z: 1.0,
         w: 0.0,
     };
+    /// The unit vector pointing along the positive W-axis.
     pub const W: Self = Self {
         x: 0.0,
         y: 0.0,
@@ -566,23 +543,13 @@ impl Vec4 {
         w: 1.0,
     };
 
-    /// --- Constructors ---
-    /// Creates a new Vec4 instance with the given x, y, z, and w components.
-    /// ## Arguments
-    /// * `x` - The x component of the vector.
-    /// * `y` - The y component of the vector.
-    /// * `z` - The z component of the vector.
-    /// * `w` - The w component of the vector.
-    /// ## Returns
-    /// * A new Vec4 instance with the specified components.
+    /// Creates a new `Vec4` with the specified components.
     #[inline]
     pub const fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
         Self { x, y, z, w }
     }
 
     /// Returns a new vector with the absolute value of each component.
-    /// ## Returns
-    /// * A new Vec4 instance with the absolute values of the components.
     #[inline]
     pub const fn abs(self) -> Self {
         Self {
@@ -593,40 +560,28 @@ impl Vec4 {
         }
     }
 
-    /// Returns a Vec4 from a Vec3 by adding a w component.
-    /// ## Arguments
-    /// * `v` - The Vec3 to convert.
-    /// * `w` - The w component to add.
-    /// ## Returns
-    /// * A new Vec4 instance with the specified components.
+    /// Creates a `Vec4` from a `Vec3` and a `w` component.
     #[inline]
     pub fn from_vec3(v: Vec3, w: f32) -> Self {
         Self::new(v.x, v.y, v.z, w)
     }
 
-    /// Returns the Vec3 part of the Vec4.
-    /// ## Returns
-    /// * A new Vec3 instance with the x, y, and z components of the Vec4.
+    /// Returns the `[x, y, z]` components of the vector as a `Vec3`, discarding `w`.
     #[inline]
     pub fn truncate(&self) -> Vec3 {
         Vec3::new(self.x, self.y, self.z)
     }
 
-    /// Returns dot product of this vector and another vector.
-    /// ## Arguments
-    /// * `other` - The other vector to compute the dot product with.
-    /// ## Returns
-    /// * The dot product of the two vectors.
+    /// Calculates the dot product of this vector and another.
     #[inline]
     pub fn dot(&self, other: Self) -> f32 {
         self.x * other.x + self.y * other.y + self.z * other.z + self.w * other.w
     }
 
-    /// Returns the element at the specified index.
-    /// ## Arguments
-    /// * `index` - The index of the element to retrieve (0-3).
-    /// ## Returns
-    /// * The element at the specified index.
+    /// Retrieves a component of the vector by its index.
+    ///
+    /// # Panics
+    /// Panics if `index` is not between 0 and 3.
     #[inline]
     pub fn get(&self, index: usize) -> f32 {
         match index {
@@ -641,9 +596,9 @@ impl Vec4 {
 
 // --- Operator Overloads ---
 
-/// Implement Add for Vec4
 impl Add for Vec4 {
     type Output = Self;
+    /// Adds two vectors component-wise.
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         Self {
@@ -655,9 +610,9 @@ impl Add for Vec4 {
     }
 }
 
-/// Implement Sub for Vec4
 impl Sub for Vec4 {
     type Output = Self;
+    /// Subtracts two vectors component-wise.
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
@@ -669,9 +624,9 @@ impl Sub for Vec4 {
     }
 }
 
-/// Scalar multiplication (Vec4 * f32)
 impl Mul<f32> for Vec4 {
     type Output = Self;
+    /// Multiplies the vector by a scalar.
     #[inline]
     fn mul(self, rhs: f32) -> Self::Output {
         Self {
@@ -683,20 +638,20 @@ impl Mul<f32> for Vec4 {
     }
 }
 
-/// Allow scalar multiplication (f32 * Vec4)
 impl Mul<Vec4> for f32 {
     type Output = Vec4;
+    /// Multiplies a scalar by a vector.
     #[inline]
     fn mul(self, rhs: Vec4) -> Self::Output {
-        rhs * self // Reuse the Vec4 * f32 implementation
+        rhs * self
     }
 }
 
-/// Component-wise multiplication (often useful for colors or scaling)
 impl Mul<Vec4> for Vec4 {
     type Output = Self;
+    /// Multiplies two vectors component-wise.
     #[inline]
-    fn mul(self, rhs: Vec4) -> Self::Output {
+    fn mul(self, rhs: Self) -> Self::Output {
         Self {
             x: self.x * rhs.x,
             y: self.y * rhs.y,
@@ -706,13 +661,11 @@ impl Mul<Vec4> for Vec4 {
     }
 }
 
-/// Component-wise division (often useful for colors or scaling)
 impl Div<f32> for Vec4 {
     type Output = Self;
+    /// Divides the vector by a scalar.
     #[inline]
     fn div(self, rhs: f32) -> Self::Output {
-        // Consider how to handle division by zero if necessary,
-        // here we rely on standard f32 division behavior (NaN/Infinity)
         let inv_rhs = 1.0 / rhs;
         Self {
             x: self.x * inv_rhs,
@@ -723,9 +676,9 @@ impl Div<f32> for Vec4 {
     }
 }
 
-/// Implement Neg for Vec4
 impl Neg for Vec4 {
     type Output = Self;
+    /// Negates the vector.
     #[inline]
     fn neg(self) -> Self::Output {
         Self {
@@ -737,9 +690,11 @@ impl Neg for Vec4 {
     }
 }
 
-/// Implement Index for Vec4
 impl Index<usize> for Vec4 {
     type Output = f32;
+    /// Allows accessing a vector component by index.
+    /// # Panics
+    /// Panics if `index` is not between 0 and 3.
     #[inline]
     fn index(&self, index: usize) -> &Self::Output {
         match index {
@@ -752,8 +707,10 @@ impl Index<usize> for Vec4 {
     }
 }
 
-/// Implement IndexMut for Vec4
 impl IndexMut<usize> for Vec4 {
+    /// Allows mutably accessing a vector component by index.
+    /// # Panics
+    /// Panics if `index` is not between 0 and 3.
     #[inline]
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         match index {
@@ -765,8 +722,6 @@ impl IndexMut<usize> for Vec4 {
         }
     }
 }
-
-// --- End of Vec4 Implementation ---
 
 /// --- Tests ---
 #[cfg(test)]

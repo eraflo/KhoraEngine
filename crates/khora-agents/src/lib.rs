@@ -16,6 +16,8 @@
 //!
 //! Intelligent wrappers that drive the Lanes with high-level logic.
 
+#![warn(missing_docs)]
+
 pub mod asset_agent;
 pub mod physics_agent;
 pub mod render_agent;

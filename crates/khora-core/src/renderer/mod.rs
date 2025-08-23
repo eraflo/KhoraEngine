@@ -12,10 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The public, backend-agnostic rendering API for Khora Engine.
+//! Provides the public, backend-agnostic rendering contracts for the Khora Engine.
 //!
-//! This module defines the 'what' of rendering (traits, data structures, error types)
-//! without specifying the 'how' (which is handled by a concrete implementation in `khora-infra`).
+//! This module defines the "common language" for all rendering operations. It contains
+//! the abstract `traits` (like [`GraphicsDevice`]), data structures (like [`BufferDescriptor`]),
+//! and error types that form the stable, public-facing API for rendering.
+//!
+//! Following the CLAD architecture, this module defines the 'what' of rendering,
+//! while the 'how' is handled by a concrete backend implementation in the `khora-infra`
+//! crate (e.g., a WGPU backend) which implements these traits. The `khora-lanes`
+//! and `khora-agents` then use these traits to perform their work without needing to
+//! know the specifics of the underlying graphics API.
 
 pub mod api;
 pub mod error;

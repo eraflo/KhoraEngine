@@ -12,22 +12,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Defines data structures for representing shader modules.
+
 use std::borrow::Cow;
 
-/// Represents the source data for a shader module.
+/// Represents the source code for a shader module.
+///
+/// This enum allows for future expansion to other shader languages (like GLSL or SPIR-V)
+/// while maintaining a unified API.
 #[derive(Debug, Clone)]
 pub enum ShaderSourceData<'a> {
+    /// The shader source is provided as a WGSL (WebGPU Shading Language) string.
     Wgsl(Cow<'a, str>),
 }
 
-/// Describes a shader module to be created by the `GraphicsDevice`.
+/// A descriptor used to create a [`ShaderModuleId`].
+///
+/// This struct provides all the necessary information for the `GraphicsDevice` to
+/// compile a piece of shader code into a usable, backend-specific shader module.
 #[derive(Debug, Clone)]
 pub struct ShaderModuleDescriptor<'a> {
+    /// An optional debug label for the shader module.
     pub label: Option<&'a str>,
+    /// The source code of the shader.
     pub source: ShaderSourceData<'a>,
 }
 
-/// An opaque handle representing a compiled shader module.
+/// An opaque handle to a compiled shader module.
+///
+/// This ID is returned by [`GraphicsDevice::create_shader_module`] and is used to
+/// reference the shader in a [`RenderPipelineDescriptor`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ShaderModuleId(pub usize);
 

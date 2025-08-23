@@ -16,6 +16,8 @@
 //! This crate provides a simple and stable API for game developers to create
 //! and run applications using Khora.
 
+#![warn(missing_docs)]
+
 use anyhow::Result;
 use khora_core::platform::window::KhoraWindow;
 use khora_core::renderer::{RenderObject, RenderSettings, RenderSystem};
@@ -32,6 +34,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::WindowId;
 
+/// Publicly re-exported types and traits for ease of use.
 pub mod prelude {
     pub use khora_core::renderer::{
         BufferDescriptor, BufferId, BufferUsage, ColorTargetStateDescriptor, ColorWrites,
@@ -42,10 +45,13 @@ pub mod prelude {
     };
 }
 
+/// Engine context providing access to various subsystems.
 pub struct EngineContext {
+    /// The graphics device used for rendering.
     pub graphics_device: Arc<dyn khora_core::renderer::GraphicsDevice>,
 }
 
+/// Application trait for user-defined applications.
 pub trait Application: Sized + 'static {
     /// Called once at the beginning of the application to create the initial state.
     fn new(context: EngineContext) -> Self;

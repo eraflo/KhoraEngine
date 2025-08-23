@@ -12,33 +12,44 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Provides geometric primitive shapes for spatial calculations.
+//!
+//! This module contains common geometric structures used in collision detection,
+//! culling, and other spatial reasoning tasks within the engine.
+
 use super::{Mat4, Vec3, Vec4, EPSILON};
 
-/// Represents an Axis-Aligned Bounding Box defined by minimum and maximum corner points.
+/// Represents an Axis-Aligned Bounding Box (AABB).
+///
+/// An AABB is a rectangular prism aligned with the coordinate axes, defined by its
+/// minimum and maximum corner points. It is a simple but highly efficient volume
+/// for broad-phase collision detection and visibility culling.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Aabb {
+    /// The corner of the box with the smallest coordinates on all axes.
     pub min: Vec3,
+    /// The corner of the box with the largest coordinates on all axes.
     pub max: Vec3,
 }
 
 impl Aabb {
-    /// An invalid AABB where min is greater than max (useful as a starting point for merging).
+    /// An invalid `Aabb` where `min` components are positive infinity and `max` are negative infinity.
+    ///
+    /// This is useful as a neutral starting point for merging operations. Merging any
+    /// valid `Aabb` with `INVALID` will result in that valid `Aabb`.
     pub const INVALID: Self = Self {
         min: Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY),
         max: Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY),
     };
 
-    /// Creates a new AABB from minimum and maximum corner points.
-    /// Ensures that min coordinates are less than or equal to max coordinates.
-    /// ## Arguments
-    /// * `min_pt` - The minimum corner point of the AABB.
-    /// * `max_pt` - The maximum corner point of the AABB.
-    /// ## Returns
-    /// * A new AABB with min and max points.
+    /// Creates a new `Aabb` from two corner points.
+    ///
+    /// This constructor automatically ensures that the `min` field holds the
+    /// component-wise minimum and `max` holds the component-wise maximum,
+    /// regardless of the order the points are passed in.
     #[inline]
     pub fn from_min_max(min_pt: Vec3, max_pt: Vec3) -> Self {
-        // Ensure min <= max on all axes
         Self {
             min: Vec3::new(
                 min_pt.x.min(max_pt.x),
@@ -53,28 +64,24 @@ impl Aabb {
         }
     }
 
-    /// Creates a new AABB centered at a point with given half-extents.
-    /// Half-extents should be non-negative.
-    /// ## Arguments
-    /// * `center` - The center point of the AABB.
-    /// * `half_extents` - The half-extents of the AABB (should be non-negative).
-    /// ## Returns
-    /// * A new AABB with min and max points calculated from the center and half-extents.
+    /// Creates a new `Aabb` from a center point and its half-extents.
+    ///
+    /// The half-extents represent the distance from the center to the faces of the box.
+    /// The provided `half_extents` will be made non-negative.
     #[inline]
     pub fn from_center_half_extents(center: Vec3, half_extents: Vec3) -> Self {
-        // Ensure half-extents are non-negative
-        let safe_half_extents = half_extents.abs();
+        let safe_half_extents = Vec3::new(
+            half_extents.x.abs(),
+            half_extents.y.abs(),
+            half_extents.z.abs(),
+        ); // Assuming Vec3 doesn't have .abs()
         Self {
             min: center - safe_half_extents,
             max: center + safe_half_extents,
         }
     }
 
-    /// Creates a degenerate AABB containing a single point.
-    /// ## Arguments
-    /// * `point` - The point to create the AABB from.
-    /// ## Returns
-    /// * A new AABB with min and max points equal to the point.
+    /// Creates a degenerate `Aabb` containing a single point (min and max are the same).
     #[inline]
     pub fn from_point(point: Vec3) -> Self {
         Self {
@@ -83,11 +90,11 @@ impl Aabb {
         }
     }
 
-    /// Creates an AABB that tightly encloses a set of points.
-    /// ## Arguments
-    /// * `points` - A slice of points to encompass.
-    /// ## Returns
-    /// * An `Option<Self>` containing the AABB if points are provided, or `None` if the slice is empty.
+    /// Creates an `Aabb` that tightly encloses a given set of points.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(Aabb)` if the input slice is not empty, otherwise `None`.
     pub fn from_points(points: &[Vec3]) -> Option<Self> {
         if points.is_empty() {
             return None;
@@ -112,44 +119,32 @@ impl Aabb {
         })
     }
 
-    /// Calculates the center point of the AABB.
-    /// ## Returns
-    /// * The center point of the AABB.
+    /// Calculates the center point of the `Aabb`.
     #[inline]
     pub fn center(&self) -> Vec3 {
         (self.min + self.max) * 0.5
     }
 
-    /// Calculates the half-extents (half the size) of the AABB.
-    /// ## Returns
-    /// * The half-extents of the AABB.
+    /// Calculates the half-extents (half the size on each axis) of the `Aabb`.
     #[inline]
     pub fn half_extents(&self) -> Vec3 {
         (self.max - self.min) * 0.5
     }
 
-    /// Calculates the size (width, height, depth) of the AABB.
-    /// ## Returns
-    /// * The size of the AABB.
+    /// Calculates the full size (width, height, depth) of the `Aabb`.
     #[inline]
     pub fn size(&self) -> Vec3 {
         self.max - self.min
     }
 
-    /// Checks if the AABB is valid (min <= max on all axes).
-    /// Degenerate boxes (min == max) are considered valid.
-    /// ## Returns
-    /// * `true` if the AABB is valid, `false` otherwise.
+    /// Checks if the `Aabb` is valid (i.e., `min` <= `max` on all axes).
+    /// Degenerate boxes where `min == max` are considered valid.
     #[inline]
     pub fn is_valid(&self) -> bool {
         self.min.x <= self.max.x && self.min.y <= self.max.y && self.min.z <= self.max.z
     }
 
-    /// Checks if a point is contained within or on the boundary of the AABB.
-    /// ## Arguments
-    /// * `point` - The point to check.
-    /// ## Returns
-    /// * `true` if the point is inside or on the boundary of the AABB, `false` otherwise.
+    /// Checks if a point is contained within or on the boundary of the `Aabb`.
     #[inline]
     pub fn contains_point(&self, point: Vec3) -> bool {
         point.x >= self.min.x
@@ -160,25 +155,18 @@ impl Aabb {
             && point.z <= self.max.z
     }
 
-    /// Checks if this AABB intersects with another AABB.
-    /// Uses the Separating Axis Theorem (SAT) for AABBs. (https://research.ncl.ac.uk/game/mastersdegree/gametechnologies/previousinformation/physics4collisiondetection/2017%20Tutorial%204%20-%20Collision%20Detection.pdf)
-    /// ## Arguments
-    /// * `other` - The other AABB to check for intersection.
-    /// ## Returns
-    /// * `true` if the AABBs intersect, `false` otherwise.
+    /// Checks if this `Aabb` intersects with another `Aabb`.
+    ///
+    /// Two `Aabb`s intersect if they overlap on all three axes. Boxes that only
+    /// touch at the boundary are considered to be intersecting.
     #[inline]
     pub fn intersects_aabb(&self, other: &Aabb) -> bool {
-        // Check for overlap on each axis
         (self.min.x <= other.max.x && self.max.x >= other.min.x)
             && (self.min.y <= other.max.y && self.max.y >= other.min.y)
             && (self.min.z <= other.max.z && self.max.z >= other.min.z)
     }
 
-    /// Creates a new AABB that encompasses both this AABB and another one.
-    /// ## Arguments
-    /// * `other` - The other AABB to merge with.
-    /// ## Returns
-    /// * A new AABB that is the union of this AABB and the other one.
+    /// Creates a new `Aabb` that encompasses both this `Aabb` and another one.
     #[inline]
     pub fn merge(&self, other: &Aabb) -> Self {
         Self {
@@ -195,11 +183,7 @@ impl Aabb {
         }
     }
 
-    /// Creates a new AABB that encompasses both this AABB and an additional point.
-    /// ## Arguments
-    /// * `point` - The point to merge with.
-    /// ## Returns
-    /// * A new AABB that is the union of this AABB and the point.
+    /// Creates a new `Aabb` that encompasses both this `Aabb` and an additional point.
     #[inline]
     pub fn merged_with_point(&self, point: Vec3) -> Self {
         Self {
@@ -216,20 +200,21 @@ impl Aabb {
         }
     }
 
-    /// Calculates the AABB that encompasses this AABB after being transformed by a matrix.
-    /// Uses a faster algorithm than transforming all 8 corners for affine transforms.
-    /// Handles potential perspective correctly if w != 1.
-    /// ## Arguments
-    /// * `matrix` - The transformation matrix to apply.
-    /// ## Returns
-    /// * A new AABB that is the result of transforming this AABB by the matrix.
+    /// Computes the bounding box that encloses this `Aabb` after a transformation.
+    ///
+    /// This method is more efficient than transforming all 8 corners of the box for
+    /// affine transformations. It works by transforming the center of the box and
+    /// then calculating the new extents by projecting the original extents onto
+    /// the axes of the transformed space.
+    ///
+    /// # Note
+    /// This method is designed for affine transformations (like rotation, translation, scale).
+    /// It may not produce the tightest-fitting box for transformations involving perspective.
     pub fn transform(&self, matrix: &Mat4) -> Self {
-        // Transform the center point
         let center = self.center();
         let half_extents = self.half_extents();
         let transformed_center_v4 = *matrix * Vec4::from_vec3(center, 1.0);
 
-        // Perform perspective division if necessary (w is not close to 1 or 0)
         let transformed_center = if (transformed_center_v4.w - 1.0).abs() > EPSILON
             && transformed_center_v4.w.abs() > EPSILON
         {
@@ -238,29 +223,31 @@ impl Aabb {
             transformed_center_v4.truncate()
         };
 
-        // Calculate the new half-extents based on the absolute values of the matrix's
-        // basis vectors (rotation/scale part) scaled by the original half-extents.
-        // Extent along new X = sum of projections of old extents onto new X basis
-        let x_axis = matrix.cols[0].truncate().abs();
-        let y_axis = matrix.cols[1].truncate().abs();
-        let z_axis = matrix.cols[2].truncate().abs();
+        let x_abs_col = Vec3::new(
+            matrix.cols[0][0].abs(),
+            matrix.cols[0][1].abs(),
+            matrix.cols[0][2].abs(),
+        );
+        let y_abs_col = Vec3::new(
+            matrix.cols[1][0].abs(),
+            matrix.cols[1][1].abs(),
+            matrix.cols[1][2].abs(),
+        );
+        let z_abs_col = Vec3::new(
+            matrix.cols[2][0].abs(),
+            matrix.cols[2][1].abs(),
+            matrix.cols[2][2].abs(),
+        );
 
-        let new_half_extent_x =
-            x_axis.x * half_extents.x + y_axis.x * half_extents.y + z_axis.x * half_extents.z;
-        let new_half_extent_y =
-            x_axis.y * half_extents.x + y_axis.y * half_extents.y + z_axis.y * half_extents.z;
-        let new_half_extent_z =
-            x_axis.z * half_extents.x + y_axis.z * half_extents.y + z_axis.z * half_extents.z;
+        let new_half_extents =
+            x_abs_col * half_extents.x + y_abs_col * half_extents.y + z_abs_col * half_extents.z;
 
-        let new_half_extents = Vec3::new(new_half_extent_x, new_half_extent_y, new_half_extent_z);
-
-        // Create the new AABB
         Aabb::from_center_half_extents(transformed_center, new_half_extents)
     }
 }
 
 impl Default for Aabb {
-    /// Default AABB is invalid (min > max), useful for starting merges.
+    /// Returns the default `Aabb`, which is `Aabb::INVALID`.
     #[inline]
     fn default() -> Self {
         Self::INVALID

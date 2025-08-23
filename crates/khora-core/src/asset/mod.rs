@@ -12,9 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Asset management module.
-//! Contains things use for the VFS (Virtual File System)
-//! This includes asset handles, metadata, and UUID generation.
+//! Provides the foundational traits and primitive types for Khora's asset system.
+//!
+//! This module defines the "common language" for all asset-related operations in the
+//! engine. It contains the core contracts that other crates will implement or use,
+//! but it has no knowledge of how assets are loaded or stored.
+//!
+//! The key components are:
+//! - The [`Asset`] trait: A marker for all types that can be treated as assets.
+//! - Stable, unique identifiers used to reference assets throughout the engine.
+//! - Abstract interfaces for loading and managing assets.
+//!
+//! These low-level primitives are the foundation upon which higher-level systems,
+//! such as an asset database or a virtual file system (VFS), are built in other
+//! crates.
 
 mod handle;
 mod metadata;
@@ -26,7 +37,26 @@ pub use uuid::*;
 
 /// A marker trait for types that can be managed by the asset system.
 ///
-/// To be considered an asset, a type must be thread-safe (`Send + Sync`)
-/// and have a static lifetime (`'static`). This ensures that assets can be
-/// safely loaded in background threads and shared across various engine subsystems.
+/// This trait's primary purpose is to categorize a type, making it eligible for
+/// use within the engine's asset infrastructure (e.g., in a `Handle<T>`).
+///
+/// The supertraits enforce critical safety guarantees:
+/// - `Send` + `Sync`: The asset type can be safely shared and sent between threads.
+///   This is essential for background loading.
+/// - `'static`: The asset type does not contain any non-static references, ensuring
+///   it can be stored for the lifetime of the application.
+///
+/// # Examples
+///
+/// ```
+/// use khora_core::asset::Asset;
+///
+/// // A simple struct representing a texture.
+/// struct Texture {
+///     // ... fields
+/// }
+///
+/// // By implementing Asset, `Texture` can now be used by the asset system.
+/// impl Asset for Texture {}
+/// ```
 pub trait Asset: Send + Sync + 'static {}

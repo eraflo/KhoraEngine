@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! The concrete, WGPU-based implementation of the `RenderSystem` trait.
+
 use crate::telemetry::gpu_monitor::GpuMonitor;
 
 use super::backend::WgpuBackendSelector;
@@ -36,6 +38,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use winit::dpi::PhysicalSize;
 
+/// The concrete, WGPU-based implementation of the [`RenderSystem`] trait.
+///
+/// This struct encapsulates all the state necessary to drive rendering with WGPU,
+/// including the graphics context, the logical device, GPU profiler, and complex
+/// state for handling window resizing gracefully.
+///
+/// It acts as the primary rendering backend for the engine when the WGPU feature is enabled.
 pub struct WgpuRenderSystem {
     graphics_context_shared: Option<Arc<Mutex<WgpuGraphicsContext>>>,
     wgpu_device: Option<Arc<WgpuDevice>>,
@@ -82,6 +91,9 @@ impl Default for WgpuRenderSystem {
 }
 
 impl WgpuRenderSystem {
+    /// Creates a new, uninitialized `WgpuRenderSystem`.
+    ///
+    /// The system is not usable until [`RenderSystem::init`] is called.
     pub fn new() -> Self {
         log::info!("WgpuRenderSystem created (uninitialized).");
         Self {

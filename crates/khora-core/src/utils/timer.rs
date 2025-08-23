@@ -12,17 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Provides simple timer utilities for performance measurement.
+
 use std::time::{Duration, Instant};
 
+/// A simple stopwatch for measuring elapsed time.
+///
+/// The stopwatch starts automatically upon creation.
+///
+/// # Examples
+///
+/// ```
+/// use khora_core::utils::timer::Stopwatch;
+/// use std::thread;
+/// use std::time::Duration;
+///
+/// let watch = Stopwatch::new();
+/// thread::sleep(Duration::from_millis(50));
+/// let elapsed_ms = watch.elapsed_ms().unwrap_or(0);
+///
+/// assert!(elapsed_ms >= 50);
+/// ```
 #[derive(Debug, Clone)]
 pub struct Stopwatch {
     start_time: Option<Instant>,
 }
 
 impl Stopwatch {
-    /// Creates a new Stopwatch instance.
-    /// ## Returns
-    /// A new instance of the Stopwatch struct.
+    /// Creates and starts a new `Stopwatch`.
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -30,41 +47,27 @@ impl Stopwatch {
         }
     }
 
-    /// Returns the elapsed time since the stopwatch was started.
-    /// ## Arguments
-    /// * `&self` - A reference to the Stopwatch instance.
-    /// ## Returns
-    /// An Option containing the elapsed time as a Duration, or None if the stopwatch has not been started.
+    /// Returns the elapsed time since the stopwatch was created.
+    ///
+    /// Returns `None` if the stopwatch was not properly initialized.
     #[inline]
     pub fn elapsed(&self) -> Option<Duration> {
         self.start_time.map(|start| start.elapsed())
     }
 
-    /// Returns the elapsed time since the stopwatch was started in milliseconds.
-    /// ## Arguments
-    /// * `&self` - A reference to the Stopwatch instance.
-    /// ## Returns
-    /// An Option containing the elapsed time in milliseconds as a u64, or None if the stopwatch has not been started.
+    /// Returns the elapsed time in whole milliseconds.
     #[inline]
     pub fn elapsed_ms(&self) -> Option<u64> {
         self.elapsed().map(|d| d.as_millis() as u64)
     }
 
-    /// Returns the elapsed time since the stopwatch was started in microseconds.
-    /// ## Arguments
-    /// * `&self` - A reference to the Stopwatch instance.
-    /// ## Returns
-    /// An Option containing the elapsed time in microseconds as a u64, or None if the stopwatch has not been started.
+    /// Returns the elapsed time in whole microseconds.
     #[inline]
     pub fn elapsed_us(&self) -> Option<u64> {
         self.elapsed().map(|d| d.as_micros() as u64)
     }
 
-    /// Returns the elapsed time since the stopwatch was started in seconds as f64.
-    /// ## Arguments
-    /// * `&self` - A reference to the Stopwatch instance.
-    /// ## Returns
-    /// An Option containing the elapsed time in seconds as f64, or None if the stopwatch has not been started.
+    /// Returns the elapsed time in fractional seconds as an `f64`.
     #[inline]
     pub fn elapsed_secs_f64(&self) -> Option<f64> {
         self.elapsed().map(|d| d.as_secs_f64())
@@ -72,6 +75,7 @@ impl Stopwatch {
 }
 
 impl Default for Stopwatch {
+    /// Creates and starts a new `Stopwatch`.
     fn default() -> Self {
         Self::new()
     }

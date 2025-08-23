@@ -1,0 +1,72 @@
+name: Deploy Documentation
+
+# Triggers the workflow on every push to the `main` branch
+on:
+  push:
+    branches:
+      - main
+  # Allows manual workflow dispatch from the GitHub "Actions" tab
+  workflow_dispatch:
+
+# Sets the required permissions for deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy-docs:
+    name: Build and Deploy Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checks out the repository source code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Installs the stable Rust toolchain
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # 3. Installs mdBook to build the book
+      - name: Install mdBook
+        run: cargo install mdbook --locked
+
+      # 4. Builds the documentation book
+      # Output will be in `docs/book/`
+      - name: Build mdBook
+        run: mdbook build docs
+
+      # 5. Builds the API reference with rustdoc
+      # Output will be in `target/doc/`
+      - name: Build rustdoc API reference
+        run: cargo doc --workspace --no-deps --all-features
+
+      # 6. Assembles the final site in a `site/` folder
+      - name: Assemble final site
+        run: |
+          # Create the site root folder
+          mkdir site
+          # Copy the compiled mdBook to the site root
+          cp -r docs/book/* site/
+          # Create the subfolder for the API
+          mkdir -p site/api
+          # Copy the rustdoc documentation into the API subfolder
+          cp -r target/doc/* site/api/
+
+      # 7. Fixes the API link in the book for deployment
+      # This crucial step replaces the local link with the deployed site link.
+      - name: Patch API link in HTML
+        run: |
+          find site -type f -name "*.html" -exec sed -i 's|\.\./target/doc/khora/index\.html|api/khora/index.html|g' {} +
+
+      # 8. Prepares the artifact for deployment to GitHub Pages
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v2
+        with:
+          path: ./site
+
+      # 9. Deploys the artifact to GitHub Pages
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2

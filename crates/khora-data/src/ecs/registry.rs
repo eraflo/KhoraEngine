@@ -12,29 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{any::TypeId, collections::HashMap};
+//! Defines the `ComponentRegistry` and `SemanticDomain` for the CRPECS.
 
 use crate::ecs::Component;
+use std::{any::TypeId, collections::HashMap};
 
 /// Defines the semantic domains a component can belong to.
 ///
-/// This is used by the `ComponentRegistry` to map a component type to the
-/// correct metadata field (e.g., `physics_location`) and to group components
-/// into appropriate `ComponentPage`s.
+/// This is used by the [`ComponentRegistry`] to map a component type to its
+/// corresponding `ComponentPage` group. This grouping is the core principle that
+/// allows the CRPECS to have fast, domain-specific queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SemanticDomain {
-    /// For components related to position, physics, and scene hierarchy.
+    /// For components related to position, physics, and the scene graph.
     Spatial,
-    /// For components related to rendering.
+    /// For components related to rendering, such as mesh and material handles.
     Render,
-    // Add other domains like `Ai`, `Audio`, `Ui` here in the future.
 }
 
 /// A registry that maps component types to their semantic domains.
 ///
-/// This is a critical part of the ECS's internal architecture. It provides a single
-/// source of truth for where a component's data should be stored and how to
-/// find it.
+/// This is a critical internal part of the `World`. It provides a single source
+/// of truth for determining which semantic group a component's data belongs to,
+/// enabling the `World` to correctly store and retrieve component data from pages.
 #[derive(Debug, Default)]
 pub struct ComponentRegistry {
     /// The core map from a component's `TypeId` to its assigned `SemanticDomain`.
@@ -42,14 +42,14 @@ pub struct ComponentRegistry {
 }
 
 impl ComponentRegistry {
-    /// Registers a component type with a specific semantic domain.
+    /// (Internal) Registers a component type with a specific semantic domain.
     ///
-    /// This should be called by the engine setup logic for all known component types.
+    /// This should be called by the engine or `World` setup logic for all known component types.
     pub(crate) fn register<T: Component>(&mut self, domain: SemanticDomain) {
         self.mapping.insert(TypeId::of::<T>(), domain);
     }
 
-    /// Looks up the domain for a given component type.
+    /// (Internal) Looks up the `SemanticDomain` for a given component type.
     pub fn domain_of<T: Component>(&self) -> Option<SemanticDomain> {
         self.mapping.get(&TypeId::of::<T>()).copied()
     }

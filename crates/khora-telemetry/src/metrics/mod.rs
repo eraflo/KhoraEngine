@@ -12,4 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Metrics storage and retrieval.
+
 pub mod registry;

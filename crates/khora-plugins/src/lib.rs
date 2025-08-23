@@ -15,3 +15,5 @@
 //! # Khora Plugins
 //!
 //! Packaged strategies and extensions for the engine.
+
+#![warn(missing_docs)]

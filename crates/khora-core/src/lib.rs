@@ -17,6 +17,8 @@
 //! Foundational crate containing traits, core types, and interface contracts
 //! that define the engine's architecture.
 
+#![warn(missing_docs)]
+
 pub mod asset;
 pub mod event;
 pub mod math;

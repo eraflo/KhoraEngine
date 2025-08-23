@@ -16,5 +16,7 @@
 //!
 //! Data management systems including layouts, allocators, and streaming.
 
+#![warn(missing_docs)]
+
 pub mod allocators;
 pub mod ecs;

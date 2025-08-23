@@ -16,34 +16,43 @@ use super::uuid::AssetUUID;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 
-/// Serializable metadata that describes an asset and its relationship to other assets.
+/// Serializable metadata that describes an asset and its relationships.
 ///
-/// This structure contains all the information the Virtual File System (VFS)
-/// and the `AssetAgent` need to manage, load, and adapt asset usage without
-/// having to load the actual asset data from disk. It serves as the "identity card"
-/// for each asset.
+/// This structure serves as the "identity card" for each asset within the engine's
+/// Virtual File System (VFS). It contains all the information needed by the
+/// `AssetAgent` to make intelligent loading and management decisions *without*
+/// having to load the actual asset data from disk.
+///
+/// A collection of these metadata entries forms the VFS "Index".
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetMetadata {
-    /// The unique, stable identifier for this asset.
+    /// The unique, stable identifier for this asset. This is the primary key.
     pub uuid: AssetUUID,
 
-    /// The path to the original source file (e.g., a `.blend` or `.png` file).
-    /// This is primarily used by the asset importer in the editor.
+    /// The canonical path to the original source file (e.g., a `.blend` or `.png`).
+    /// This is primarily used by the asset importer and editor tooling.
     pub source_path: PathBuf,
 
-    /// A string identifier for the asset's type (e.g., "texture", "mesh").
-    /// This is used by the `AssetAgent` to select the correct `AssetLoader`.
+    /// A string identifier for the asset's type (e.g., "texture", "mesh", "material").
+    /// This is used by the loading system to select the correct `AssetLoader` trait object.
     pub asset_type_name: String,
 
-    /// A list of other assets that this asset depends on.
-    /// For example, a material asset would list its texture assets here.
+    /// A list of other assets that this asset directly depends on.
+    /// For example, a material asset would list its required texture assets here.
+    /// This information is crucial for tracking dependencies and ensuring all
+    /// necessary assets are loaded.
     pub dependencies: Vec<AssetUUID>,
 
-    /// A map of available asset variants.
+    /// A map of available, pre-processed asset variants ready for runtime use.
+    ///
     /// The key is a variant identifier (e.g., "LOD0", "4K", "low_quality"),
-    /// and the value is the path to the compiled file for that variant.
+    /// and the value is the path to the compiled, engine-ready file for that variant.
+    /// This map allows the `AssetAgent` to make strategic choices, such as loading
+    /// a lower-quality texture to stay within a VRAM budget.
     pub variants: HashMap<String, PathBuf>,
 
     /// A collection of semantic tags for advanced querying and organization.
+    /// Tags can be used to group assets for collective operations, such as
+    /// loading all assets for a specific game level or character.
     pub tags: Vec<String>,
 }

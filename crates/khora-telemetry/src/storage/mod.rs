@@ -12,5 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Storage backends for telemetry data.
+
 pub mod backend;
 pub mod memory_backend;

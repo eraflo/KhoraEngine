@@ -1,20 +1,33 @@
-# Khora Engine Documentation
+# Khora Engine Documentation Source
 
-Welcome to the central hub for all Khora Engine documentation.
+Welcome to the `/docs` directory, which contains the source files for the official Khora Engine documentation.
 
-## Table of Contents
+These Markdown files are compiled into a user-friendly, searchable book using `mdBook`.
 
-### I. Core Vision
-*   [**01 - Project Presentation**](01_project_presentation.md) - The "Why" behind Khora.
-*   [**02 - Core Concepts (SAA)**](02_core_concepts.md) - The philosophy of a self-adapting engine.
+## Read the Published Documentation
 
-### II. Architecture
-*   [**03 - Technical Architecture (CLAD)**](03_technical_architecture.md) - The Rust implementation pattern.
-*   [**04 - Project and Crate Structure**](04_project_structure.md) - How the code is organized.
-*   [**05 - Roadmap & Issue Tracker**](05_roadmap_and_issues.md) - Our development plan.
-*   [**06 - ECS Architecture (CRPECS)**](06_ecs_architecture.md) - A deep dive into our custom ECS.
-*   [**07 - Asset Architecture (VFS)**](07_asset_architecture_vfs.md) - The design of our intelligent asset system.
+For the best reading experience, we strongly recommend reading the published version of the book:
 
-### III. Community
-*   [**CONTRIBUTING.md**](../CONTRIBUTING.md) - How to contribute to the project.
-*   [**CODE_OF_CONDUCT.md**](../CODE_OF_CONDUCT.md) - Our community standards.
+### **[Khora Engine Book](https://eraflo.github.io/KhoraEngine/)**
+
+## Source File Contents
+
+If you wish to browse the raw source files or contribute to the documentation, this directory contains the engine's conceptual and architectural guides. The table of contents is managed by `src/SUMMARY.md`.
+
+### Part I: The Philosophy (SAA)
+*   [**1. Project Vision**](./src/01_project_presentation.md)
+*   [**2. Core Concepts**](./src/02_core_concepts.md)
+*   [**3. The SAA-CLAD Symbiosis**](./src/03_saa_clad_symbiosis.md)
+
+### Part II: The Architecture (CLAD)
+*   [**4. Technical Architecture**](./src/04_technical_architecture.md)
+*   [**5. Project and Crate Structure**](./src/05_project_structure.md)
+*   [**6. ECS Architecture: CRPECS**](./src/06_ecs_architecture.md)
+*   [**7. Asset Architecture: The Strategic System**](./src/07_asset_architecture.md)
+
+### Part III: Development
+*   [**8. Roadmap & Issues**](./src/08_roadmap.md)
+
+### Community
+*   [**Contributing Guidelines**](../CONTRIBUTING.md)
+*   [**Code of Conduct**](../CODE_OF_CONDUCT.md)

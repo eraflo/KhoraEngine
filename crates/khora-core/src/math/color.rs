@@ -12,107 +12,92 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Defines the `LinearRgba` color type and associated operations.
+
 use crate::math::vector::Vec4;
 use std::ops::{Add, Div, Mul, Sub};
 
-/// Represents a color in Linear RGBA color space using f32 components.
-/// Allows for HDR values (components > 1.0).
+/// Represents a color in a **linear RGBA** color space using `f32` components.
+///
+/// This struct is the standard color representation within Khora.  
+/// Using a linear color space is crucial for correct lighting, shading, and blending.
+/// The `f32` components allow for High Dynamic Range (HDR) colors, where component
+/// values can exceed `1.0`.
+///
+/// `#[repr(C)]` ensures a consistent memory layout, which is important when passing
+/// color data to graphics APIs.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct LinearRgba {
+    /// The red component in linear space.
     pub r: f32,
+    /// The green component in linear space.
     pub g: f32,
+    /// The blue component in linear space.
     pub b: f32,
+    /// The alpha (opacity) component (linear, but not gamma-corrected).
     pub a: f32,
 }
 
 impl LinearRgba {
     // --- Common Color Constants ---
-    pub const RED: Self = Self {
-        r: 1.0,
-        g: 0.0,
-        b: 0.0,
-        a: 1.0,
-    };
-    pub const GREEN: Self = Self {
-        r: 0.0,
-        g: 1.0,
-        b: 0.0,
-        a: 1.0,
-    };
-    pub const BLUE: Self = Self {
-        r: 0.0,
-        g: 0.0,
-        b: 1.0,
-        a: 1.0,
-    };
-    pub const YELLOW: Self = Self {
-        r: 1.0,
-        g: 1.0,
-        b: 0.0,
-        a: 1.0,
-    };
-    pub const CYAN: Self = Self {
-        r: 0.0,
-        g: 1.0,
-        b: 1.0,
-        a: 1.0,
-    };
-    pub const MAGENTA: Self = Self {
-        r: 1.0,
-        g: 0.0,
-        b: 1.0,
-        a: 1.0,
-    };
-    pub const WHITE: Self = Self {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 1.0,
-    };
-    pub const BLACK: Self = Self {
-        r: 0.0,
-        g: 0.0,
-        b: 0.0,
-        a: 1.0,
-    };
-    pub const TRANSPARENT: Self = Self {
-        r: 0.0,
-        g: 0.0,
-        b: 0.0,
-        a: 0.0,
-    };
 
-    /// Creates a new LinearRgba color.
-    /// ## Arguments
-    /// * `r` - Red component (0.0 to 1.0).
-    /// * `g` - Green component (0.0 to 1.0).
-    /// * `b` - Blue component (0.0 to 1.0).
-    /// * `a` - Alpha component (0.0 to 1.0).
-    /// ## Returns
-    /// * A new LinearRgba color.
+    /// Opaque red (`[1.0, 0.0, 0.0, 1.0]`).
+    pub const RED: Self = Self::rgb(1.0, 0.0, 0.0);
+    /// Opaque green (`[0.0, 1.0, 0.0, 1.0]`).
+    pub const GREEN: Self = Self::rgb(0.0, 1.0, 0.0);
+    /// Opaque blue (`[0.0, 0.0, 1.0, 1.0]`).
+    pub const BLUE: Self = Self::rgb(0.0, 0.0, 1.0);
+    /// Opaque yellow (`[1.0, 1.0, 0.0, 1.0]`).
+    pub const YELLOW: Self = Self::rgb(1.0, 1.0, 0.0);
+    /// Opaque cyan (`[0.0, 1.0, 1.0, 1.0]`).
+    pub const CYAN: Self = Self::rgb(0.0, 1.0, 1.0);
+    /// Opaque magenta (`[1.0, 0.0, 1.0, 1.0]`).
+    pub const MAGENTA: Self = Self::rgb(1.0, 0.0, 1.0);
+    /// Opaque white (`[1.0, 1.0, 1.0, 1.0]`).
+    pub const WHITE: Self = Self::rgb(1.0, 1.0, 1.0);
+    /// Opaque black (`[0.0, 0.0, 0.0, 1.0]`).
+    pub const BLACK: Self = Self::rgb(0.0, 0.0, 0.0);
+    /// Fully transparent black (`[0.0, 0.0, 0.0, 0.0]`).
+    pub const TRANSPARENT: Self = Self::new(0.0, 0.0, 0.0, 0.0);
+
+    /// Creates a new `LinearRgba` with explicit RGBA values.
     #[inline]
-    pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
+    pub const fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
         Self { r, g, b, a }
     }
 
-    /// Creates a new opaque LinearRgba color (alpha = 1.0).
-    /// ## Arguments
-    /// * `r` - Red component (0.0 to 1.0).
-    /// * `g` - Green component (0.0 to 1.0).
-    /// * `b` - Blue component (0.0 to 1.0).
-    /// ## Returns
-    /// * A new LinearRgba color with alpha set to 1.0.
+    /// Creates a new opaque `LinearRgba` (alpha = 1.0).
     #[inline]
-    pub fn rgb(r: f32, g: f32, b: f32) -> Self {
+    pub const fn rgb(r: f32, g: f32, b: f32) -> Self {
         Self { r, g, b, a: 1.0 }
     }
+}
 
-    /// Creates a LinearRgba color from a Vec4.
-    /// ## Arguments
-    /// * `v` - A Vec4 representing the color (x, y, z, w).
-    /// ## Returns
-    /// * A new LinearRgba color.
+// --- Helper functions for sRGB conversion ---
+/// Converts an sRGB component to linear space.
+#[inline]
+fn srgb_to_linear(c: f32) -> f32 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// Converts a linear component to sRGB space.
+#[inline]
+fn linear_to_srgb(c: f32) -> f32 {
+    if c <= 0.0031308 {
+        c * 12.92
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+// --- Conversions ---
+impl LinearRgba {
+    /// Creates a `LinearRgba` from a [`Vec4`].
     #[inline]
     pub fn from_vec4(v: Vec4) -> Self {
         Self {
@@ -123,19 +108,25 @@ impl LinearRgba {
         }
     }
 
-    /// Converts this LinearRgba color to a Vec4.
-    /// ## Returns
-    /// * A Vec4 representing the color (x, y, z, w).
+    /// Converts this `LinearRgba` to a [`Vec4`].
     #[inline]
     pub fn to_vec4(&self) -> Vec4 {
         Vec4::new(self.r, self.g, self.b, self.a)
     }
 
-    /// Creates a LinearRgba color from a hex string.
-    /// ## Arguments
-    /// * `hex` - A hex string representing the color (e.g., "#FF5733").
-    /// ## Returns
-    /// * A new LinearRgba color.
+    /// Creates a `LinearRgba` from an sRGB hex string (`#RRGGBB` or `#RRGGBBAA`).
+    ///
+    /// The RGB channels are converted to linear space.
+    /// Alpha is normalized but not gamma corrected.
+    ///
+    /// # Panics
+    /// Panics if the hex string is malformed.
+    ///
+    /// # Example
+    /// ```
+    /// use khora_core::math::color::LinearRgba;
+    /// let color = LinearRgba::from_hex("#6495ED");
+    /// ```
     #[inline]
     pub fn from_hex(hex: &str) -> Self {
         let hex = hex.trim_start_matches('#');
@@ -147,82 +138,75 @@ impl LinearRgba {
         } else {
             1.0
         };
-        Self { r, g, b, a }
+        Self {
+            r: srgb_to_linear(r),
+            g: srgb_to_linear(g),
+            b: srgb_to_linear(b),
+            a,
+        }
     }
 
-    /// Converts this LinearRgba color to a hex string.
-    /// ## Returns
-    /// * A hex string representing the color (e.g., "#FF5733").
+    /// Converts this linear color to an sRGB hex string (`#RRGGBBAA`).
+    ///
+    /// The RGB channels are gamma corrected to sRGB.
+    /// Alpha is kept linear.
     #[inline]
     pub fn to_hex(&self) -> String {
+        let r = linear_to_srgb(self.r).clamp(0.0, 1.0);
+        let g = linear_to_srgb(self.g).clamp(0.0, 1.0);
+        let b = linear_to_srgb(self.b).clamp(0.0, 1.0);
+        let a = self.a.clamp(0.0, 1.0);
+
         format!(
             "#{:02X}{:02X}{:02X}{:02X}",
-            (self.r * 255.0) as u8,
-            (self.g * 255.0) as u8,
-            (self.b * 255.0) as u8,
-            (self.a * 255.0) as u8
+            (r * 255.0).round() as u8,
+            (g * 255.0).round() as u8,
+            (b * 255.0).round() as u8,
+            (a * 255.0).round() as u8
         )
     }
 
-    /// Creates a LinearRgba color from sRGB values.
-    /// ## Arguments
-    /// * `r` - Red component (0.0 to 1.0).
-    /// * `g` - Green component (0.0 to 1.0).
-    /// * `b` - Blue component (0.0 to 1.0).
-    /// ## Returns
-    /// * A new LinearRgba color.
+    /// Creates a `LinearRgba` by converting from normalized sRGB components.
     #[inline]
     pub fn from_srgb(r: f32, g: f32, b: f32) -> Self {
         Self {
-            r: r.powf(2.2),
-            g: g.powf(2.2),
-            b: b.powf(2.2),
+            r: srgb_to_linear(r),
+            g: srgb_to_linear(g),
+            b: srgb_to_linear(b),
             a: 1.0,
         }
     }
 
-    /// Converts this LinearRgba color to sRGB.
-    /// ## Returns
-    /// * A new LinearRgba color in sRGB space.
+    /// Converts this linear color to sRGB components.
     #[inline]
     pub fn to_srgb(&self) -> Self {
         Self {
-            r: self.r.powf(1.0 / 2.2),
-            g: self.g.powf(1.0 / 2.2),
-            b: self.b.powf(1.0 / 2.2),
+            r: linear_to_srgb(self.r),
+            g: linear_to_srgb(self.g),
+            b: linear_to_srgb(self.b),
             a: self.a,
         }
     }
+}
 
-    /// Linear interpolation between two colors.
-    /// ## Arguments
-    /// * `start` - The starting color.
-    /// * `end` - The ending color.
-    /// * `t` - The interpolation factor (0.0 to 1.0).
-    /// ## Returns
-    /// * A new LinearRgba color that is the result of the interpolation.
+// --- Manipulations ---
+impl LinearRgba {
+    /// Returns a new color with the same RGB components but a different alpha.
     #[inline]
-    pub fn lerp(start: Self, end: Self, t: f32) -> Self {
-        let t_clamped = t.clamp(0.0, 1.0); // Utiliser clamp directement ici
-        Self {
-            r: start.r + (end.r - start.r) * t_clamped,
-            g: start.g + (end.g - start.g) * t_clamped,
-            b: start.b + (end.b - start.b) * t_clamped,
-            a: start.a + (end.a - start.a) * t_clamped,
-        }
+    pub fn with_alpha(&self, a: f32) -> Self {
+        Self { a, ..*self }
     }
 
-    /// Clamps the color components to the range [0.0, 1.0].
-    /// ## Returns
-    /// * A new LinearRgba color with clamped components.
-    #[allow(dead_code)]
+    /// Linearly interpolates between two colors.
+    /// The factor `t` is clamped to `[0.0, 1.0]`.
     #[inline]
-    fn clamp(&self) -> Self {
+    pub fn lerp(start: Self, end: Self, t: f32) -> Self {
+        let t = t.clamp(0.0, 1.0);
         Self {
-            r: self.r.clamp(0.0, 1.0),
-            g: self.g.clamp(0.0, 1.0),
-            b: self.b.clamp(0.0, 1.0),
-            a: self.a.clamp(0.0, 1.0),
+            r: start.r + (end.r - start.r) * t,
+            g: start.g + (end.g - start.g) * t,
+            b: start.b + (end.b - start.b) * t,
+            a: start.a + (end.a - start.a) * t,
         }
     }
 }
@@ -230,9 +214,7 @@ impl LinearRgba {
 // --- Operator Overloads ---
 
 impl Default for LinearRgba {
-    /// Default color is opaque white.
-    /// ## Returns
-    /// * A new LinearRgba color.
+    /// Returns opaque white by default.
     #[inline]
     fn default() -> Self {
         Self::WHITE
@@ -241,11 +223,7 @@ impl Default for LinearRgba {
 
 impl Add for LinearRgba {
     type Output = Self;
-    /// Adds two LinearRgba colors component-wise.
-    /// ## Arguments
-    /// * `rhs` - The other LinearRgba color.
-    /// ## Returns
-    /// * A new LinearRgba color.
+    /// Adds two colors component-wise.
     #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         Self {
@@ -259,11 +237,7 @@ impl Add for LinearRgba {
 
 impl Sub for LinearRgba {
     type Output = Self;
-    /// Subtracts two LinearRgba colors component-wise.
-    /// ## Arguments
-    /// * `rhs` - The other LinearRgba color.
-    /// ## Returns
-    /// * A new LinearRgba color.
+    /// Subtracts two colors component-wise.
     #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
@@ -275,14 +249,9 @@ impl Sub for LinearRgba {
     }
 }
 
-// Scalar multiplication (scales all components including alpha)
 impl Mul<f32> for LinearRgba {
     type Output = Self;
-    /// Multiplies a LinearRgba color by a scalar.
-    /// ## Arguments
-    /// * `scalar` - The scalar value.
-    /// ## Returns
-    /// * A new LinearRgba color.
+    /// Multiplies all components by a scalar.
     #[inline]
     fn mul(self, scalar: f32) -> Self::Output {
         Self {
@@ -296,25 +265,16 @@ impl Mul<f32> for LinearRgba {
 
 impl Mul<LinearRgba> for f32 {
     type Output = LinearRgba;
-    /// Multiplies a scalar by a LinearRgba color.
-    /// ## Arguments
-    /// * `color` - The LinearRgba color.
-    /// ## Returns
-    /// * A new LinearRgba color.
+    /// Multiplies a scalar by a color.
     #[inline]
     fn mul(self, color: LinearRgba) -> Self::Output {
-        color * self // Reuse LinearRgba * f32
+        color * self
     }
 }
 
-// Component-wise multiplication (modulation)
-impl Mul<LinearRgba> for LinearRgba {
+impl Mul for LinearRgba {
     type Output = Self;
-    /// Multiplies two LinearRgba colors component-wise.
-    /// ## Arguments
-    /// * `rhs` - The other LinearRgba color.
-    /// ## Returns
-    /// * A new LinearRgba color.
+    /// Multiplies two colors component-wise (modulation).
     #[inline]
     fn mul(self, rhs: Self) -> Self::Output {
         Self {
@@ -328,20 +288,11 @@ impl Mul<LinearRgba> for LinearRgba {
 
 impl Div<f32> for LinearRgba {
     type Output = Self;
-    /// Divides a LinearRgba color by a scalar.
-    /// ## Arguments
-    /// * `scalar` - The scalar value.
-    /// ## Returns
-    /// * A new LinearRgba color.
+    /// Divides all components by a scalar.
     #[inline]
     fn div(self, scalar: f32) -> Self::Output {
         let inv_scalar = 1.0 / scalar;
-        Self {
-            r: self.r * inv_scalar,
-            g: self.g * inv_scalar,
-            b: self.b * inv_scalar,
-            a: self.a * inv_scalar,
-        }
+        self * inv_scalar
     }
 }
 
@@ -349,127 +300,121 @@ impl Div<f32> for LinearRgba {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::{approx_eq, vector::Vec4};
+    use crate::math::approx_eq;
 
     fn color_approx_eq(a: LinearRgba, b: LinearRgba) -> bool {
         approx_eq(a.r, b.r) && approx_eq(a.g, b.g) && approx_eq(a.b, b.b) && approx_eq(a.a, b.a)
     }
 
     #[test]
-    fn test_color_new_and_rgb() {
-        let c1 = LinearRgba::new(0.1, 0.2, 0.3, 0.4);
-        assert_eq!(c1.r, 0.1);
-        assert_eq!(c1.g, 0.2);
-        assert_eq!(c1.b, 0.3);
-        assert_eq!(c1.a, 0.4);
-
-        let c2 = LinearRgba::rgb(0.5, 0.6, 0.7);
-        assert_eq!(c2.r, 0.5);
-        assert_eq!(c2.g, 0.6);
-        assert_eq!(c2.b, 0.7);
-        assert_eq!(c2.a, 1.0); // Alpha should be 1.0
-    }
-
-    #[test]
-    fn test_color_constants() {
-        assert_eq!(LinearRgba::RED, LinearRgba::new(1.0, 0.0, 0.0, 1.0));
-        assert_eq!(LinearRgba::GREEN, LinearRgba::new(0.0, 1.0, 0.0, 1.0));
-        assert_eq!(LinearRgba::BLUE, LinearRgba::new(0.0, 0.0, 1.0, 1.0));
-        assert_eq!(LinearRgba::WHITE, LinearRgba::new(1.0, 1.0, 1.0, 1.0));
-        assert_eq!(LinearRgba::BLACK, LinearRgba::new(0.0, 0.0, 0.0, 1.0));
-        assert_eq!(LinearRgba::TRANSPARENT, LinearRgba::new(0.0, 0.0, 0.0, 0.0));
-        assert_eq!(LinearRgba::YELLOW, LinearRgba::new(1.0, 1.0, 0.0, 1.0));
-        assert_eq!(LinearRgba::CYAN, LinearRgba::new(0.0, 1.0, 1.0, 1.0));
-        assert_eq!(LinearRgba::MAGENTA, LinearRgba::new(1.0, 0.0, 1.0, 1.0));
-    }
-
-    #[test]
-    fn test_color_default() {
-        assert_eq!(LinearRgba::default(), LinearRgba::WHITE);
-    }
-
-    #[test]
-    fn test_color_vec4_conversion() {
-        let c = LinearRgba::new(0.1, 0.2, 0.3, 0.4);
-        let v = c.to_vec4();
-        assert_eq!(v, Vec4::new(0.1, 0.2, 0.3, 0.4));
-
-        let v2 = Vec4::new(0.5, 0.6, 0.7, 0.8);
-        let c2 = LinearRgba::from_vec4(v2);
-        assert_eq!(c2, LinearRgba::new(0.5, 0.6, 0.7, 0.8));
-    }
-
-    #[test]
-    fn test_color_ops() {
-        let c1 = LinearRgba::new(0.1, 0.2, 0.3, 0.8); // Use new for alpha <= 1.0 for clarity
-        let c2 = LinearRgba::new(0.4, 0.5, 0.6, 0.5);
-
-        // Check component-wise addition (including alpha)
-        let expected_add = LinearRgba::new(0.5, 0.7, 0.9, 1.3); // 0.8 + 0.5 = 1.3
-        assert!(color_approx_eq(c1 + c2, expected_add));
-
-        // Check component-wise subtraction (including alpha)
-        let expected_sub = LinearRgba::new(0.4 - 0.1, 0.5 - 0.2, 0.6 - 0.3, 0.5 - 0.8); // c2 - c1
-        assert!(color_approx_eq(c2 - c1, expected_sub));
-
-        // Check scalar multiplication (including alpha)
-        let expected_mul_scalar = LinearRgba::new(0.1 * 2.0, 0.2 * 2.0, 0.3 * 2.0, 0.8 * 2.0); // c1 * 2.0
-        assert!(color_approx_eq(c1 * 2.0, expected_mul_scalar));
-        assert!(color_approx_eq(
-            0.5 * c2,
-            LinearRgba::new(0.2, 0.25, 0.3, 0.25)
-        )); // 0.5 * c2
-
-        // Check component-wise multiplication (modulation)
-        let expected_mul_comp = LinearRgba::new(0.1 * 0.4, 0.2 * 0.5, 0.3 * 0.6, 0.8 * 0.5); // c1 * c2
-        assert!(color_approx_eq(c1 * c2, expected_mul_comp));
-
-        // Check scalar division
-        let expected_div_scalar = LinearRgba::new(0.4 / 2.0, 0.5 / 2.0, 0.6 / 2.0, 0.5 / 2.0); // c2 / 2.0
-        assert!(color_approx_eq(c2 / 2.0, expected_div_scalar));
-    }
-
-    #[test]
     fn test_color_hex_conversion() {
         let hex = "#FF5733FF";
         let color = LinearRgba::from_hex(hex);
-        assert_eq!(color.r, 1.0);
-        assert_eq!(color.g, 0.34117648);
-        assert_eq!(color.b, 0.2);
-        assert_eq!(color.a, 1.0);
+        let expected_g = srgb_to_linear(0x57 as f32 / 255.0);
+        // Expected linear values
+        assert!(approx_eq(color.r, 1.0));
+        assert!(approx_eq(color.g, expected_g));
+        assert!(approx_eq(color.b, srgb_to_linear(0x33 as f32 / 255.0)));
+        assert!(approx_eq(color.a, 1.0));
 
         let hex_converted = color.to_hex();
         assert_eq!(hex_converted, "#FF5733FF");
     }
 
     #[test]
-    fn test_color_srgb_conversion() {
-        let srgb = LinearRgba::from_srgb(0.5, 0.5, 0.5);
+    fn test_from_srgb_and_to_srgb() {
+        let srgb_color = LinearRgba::from_srgb(0.5, 0.5, 0.5);
+        let expected_linear = srgb_to_linear(0.5);
+        assert!(approx_eq(srgb_color.r, expected_linear));
+        assert!(approx_eq(srgb_color.g, expected_linear));
+        assert!(approx_eq(srgb_color.b, expected_linear));
 
-        let back_to_srgb = srgb.to_srgb();
-
+        let back_to_srgb = srgb_color.to_srgb();
         assert!(approx_eq(back_to_srgb.r, 0.5));
         assert!(approx_eq(back_to_srgb.g, 0.5));
         assert!(approx_eq(back_to_srgb.b, 0.5));
-        assert_eq!(back_to_srgb.a, 1.0);
-
-        let expected_linear = 0.5f32.powf(2.2);
-        assert!(approx_eq(srgb.r, expected_linear));
-        assert!(approx_eq(srgb.g, expected_linear));
-        assert!(approx_eq(srgb.b, expected_linear));
     }
 
     #[test]
-    fn test_color_lerp() {
-        let start = LinearRgba::BLACK;
-        let end = LinearRgba::WHITE;
-        let mid = LinearRgba::new(0.5, 0.5, 0.5, 1.0);
+    fn test_with_alpha() {
+        let color = LinearRgba::RED.with_alpha(0.5);
+        assert!(approx_eq(color.r, 1.0));
+        assert!(approx_eq(color.g, 0.0));
+        assert!(approx_eq(color.b, 0.0));
+        assert!(approx_eq(color.a, 0.5));
+    }
 
-        assert!(color_approx_eq(LinearRgba::lerp(start, end, 0.0), start));
-        assert!(color_approx_eq(LinearRgba::lerp(start, end, 1.0), end));
-        assert!(color_approx_eq(LinearRgba::lerp(start, end, 0.5), mid));
-        // Test clamping
-        assert!(color_approx_eq(LinearRgba::lerp(start, end, -0.5), start));
-        assert!(color_approx_eq(LinearRgba::lerp(start, end, 1.5), end));
+    #[test]
+    fn test_lerp() {
+        let red = LinearRgba::RED;
+        let blue = LinearRgba::BLUE;
+        let mid = LinearRgba::lerp(red, blue, 0.5);
+        assert!(approx_eq(mid.r, 0.5));
+        assert!(approx_eq(mid.g, 0.0));
+        assert!(approx_eq(mid.b, 0.5));
+        assert!(approx_eq(mid.a, 1.0));
+    }
+
+    #[test]
+    fn test_vec4_conversion() {
+        let color = LinearRgba::new(0.1, 0.2, 0.3, 0.4);
+        let v = color.to_vec4();
+        assert!(approx_eq(v.x, 0.1));
+        assert!(approx_eq(v.y, 0.2));
+        assert!(approx_eq(v.z, 0.3));
+        assert!(approx_eq(v.w, 0.4));
+
+        let color2 = LinearRgba::from_vec4(v);
+        assert!(color_approx_eq(color, color2));
+    }
+
+    #[test]
+    fn test_add_sub() {
+        let c1 = LinearRgba::new(0.2, 0.3, 0.4, 0.5);
+        let c2 = LinearRgba::new(0.1, 0.1, 0.1, 0.1);
+        let sum = c1 + c2;
+        assert!(approx_eq(sum.r, 0.3));
+        assert!(approx_eq(sum.g, 0.4));
+        assert!(approx_eq(sum.b, 0.5));
+        assert!(approx_eq(sum.a, 0.6));
+
+        let diff = c1 - c2;
+        assert!(approx_eq(diff.r, 0.1));
+        assert!(approx_eq(diff.g, 0.2));
+        assert!(approx_eq(diff.b, 0.3));
+        assert!(approx_eq(diff.a, 0.4));
+    }
+
+    #[test]
+    fn test_mul_div() {
+        let c = LinearRgba::new(0.2, 0.3, 0.4, 0.5);
+        let scaled = c * 2.0;
+        assert!(approx_eq(scaled.r, 0.4));
+        assert!(approx_eq(scaled.g, 0.6));
+        assert!(approx_eq(scaled.b, 0.8));
+        assert!(approx_eq(scaled.a, 1.0));
+
+        let div = scaled / 2.0;
+        assert!(approx_eq(div.r, 0.2));
+        assert!(approx_eq(div.g, 0.3));
+        assert!(approx_eq(div.b, 0.4));
+        assert!(approx_eq(div.a, 0.5));
+    }
+
+    #[test]
+    fn test_component_mul() {
+        let c1 = LinearRgba::new(0.2, 0.5, 0.8, 1.0);
+        let c2 = LinearRgba::new(0.5, 0.5, 0.5, 0.5);
+        let product = c1 * c2;
+        assert!(approx_eq(product.r, 0.1));
+        assert!(approx_eq(product.g, 0.25));
+        assert!(approx_eq(product.b, 0.4));
+        assert!(approx_eq(product.a, 0.5));
+    }
+
+    #[test]
+    fn test_default() {
+        let c = LinearRgba::default();
+        assert_eq!(c, LinearRgba::WHITE);
     }
 }

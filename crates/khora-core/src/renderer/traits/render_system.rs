@@ -19,23 +19,56 @@ use crate::renderer::error::RenderError;
 use crate::renderer::{api::*, GraphicsDevice};
 use crate::telemetry::ResourceMonitor;
 
-/// Trait representing a render system.
-/// This trait defines the methods that a render system must implement.
+/// A high-level trait representing the entire rendering subsystem.
+///
+/// This trait defines the primary interface for the engine to interact with the renderer.
+/// A concrete implementation of `RenderSystem` (likely in `khora-infra`) encapsulates
+/// all the state and logic needed to render a frame, including device management,
+/// swapchain handling, and the execution of render pipelines.
+///
+/// This can be considered the main "contract" for a `RenderAgent` to manage.
 pub trait RenderSystem: std::fmt::Debug + Send + Sync {
-    /// Initialize the rendering system.
-    /// Returns a list of resource monitors it has created.
+    /// Initializes the rendering system with a given window.
+    ///
+    /// This method sets up the graphics device, swapchain, and any other necessary
+    /// backend resources. It should be called once at application startup.
+    ///
+    /// # Returns
+    ///
+    /// On success, it returns a `Vec` of `ResourceMonitor` trait objects that the
+    /// telemetry system can use to track GPU-specific resources like VRAM.
     fn init(
         &mut self,
         window: &dyn KhoraWindow,
     ) -> Result<Vec<Arc<dyn ResourceMonitor>>, RenderError>;
 
-    /// Resize the window of the render system.
+    /// Notifies the rendering system that the output window has been resized.
+    ///
+    /// The implementation should handle recreating the swapchain and any other
+    /// size-dependent resources (like depth textures).
     fn resize(&mut self, new_width: u32, new_height: u32);
 
-    /// Prepare the frame for rendering.
+    /// Prepares for a new frame.
+    ///
+    /// This is typically called once per frame before `render`. It can be used
+    /// to update internal resources, like uniform buffers, based on the camera's
+    /// `ViewInfo`.
     fn prepare_frame(&mut self, view_info: &ViewInfo);
 
-    /// Render the frame to the window.
+    /// Renders a single frame.
+    ///
+    /// This is the main workload function, responsible for executing all necessary
+    /// render passes to draw the provided `renderables` to the screen.
+    ///
+    /// # Arguments
+    ///
+    /// * `renderables`: A slice of `RenderObject`s representing the scene to be drawn.
+    /// * `view_info`: Contains camera and projection information for the frame.
+    /// * `settings`: Contains global rendering settings for the frame.
+    ///
+    /// # Returns
+    ///
+    /// On success, it returns `RenderStats` with performance metrics for the frame.
     fn render(
         &mut self,
         renderables: &[RenderObject],
@@ -43,23 +76,25 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
         settings: &RenderSettings,
     ) -> Result<RenderStats, RenderError>;
 
-    /// Get the stats of the last rendered frame.
+    /// Returns a reference to the statistics of the last successfully rendered frame.
     fn get_last_frame_stats(&self) -> &RenderStats;
 
-    /// Indicate if a specific feature is supported.
+    /// Checks if a specific, optional rendering feature is supported by the backend.
     fn supports_feature(&self, feature_name: &str) -> bool;
 
-    /// Get the adapter information of the rendering system.
+    /// Returns information about the active graphics adapter (GPU).
     fn get_adapter_info(&self) -> Option<RendererAdapterInfo>;
 
-    /// Returns a Arc to the underlying `GraphicsDevice` used by this `RenderSystem`.
-    /// This allows other parts of the engine (e.g., asset managers) to create
-    /// graphics resources like buffers, textures, shaders, and pipelines.
+    /// Returns a shared, thread-safe reference to the underlying `GraphicsDevice`.
+    ///
+    /// This allows other parts of the engine (e.g., the asset system) to create
+    /// graphics resources like buffers and textures on the correct GPU device.
     fn graphics_device(&self) -> Arc<dyn GraphicsDevice>;
 
-    /// Clean up and release the resources of the rendering system.
+    /// Cleans up and releases all graphics resources.
+    /// This should be called once at application shutdown.
     fn shutdown(&mut self);
 
-    /// Downcast to Any for type-specific access
+    /// Allows downcasting to a concrete `RenderSystem` type.
     fn as_any(&self) -> &dyn std::any::Any;
 }
