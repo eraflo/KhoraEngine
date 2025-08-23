@@ -58,15 +58,19 @@ jobs:
       # This crucial step replaces the local link with the deployed site link.
       - name: Patch API link in HTML
         run: |
-          find site -type f -name "*.html" -exec sed -i 's|\.\./target/doc/khora/index\.html|api/khora/index.html|g' {} +
+          # This replaces the local-friendly link with the deployment-friendly link.
+          # Note: The original path now includes `./api/index.html` from mdBook's perspective.
+          find site -type f -name "*.html" -exec sed -i 's|href="./api/index.html"|href="/KhoraEngine/api/index.html"|g' {} +
+          # We also fix the rustdoc link itself, just in case.
+          find site -type f -name "*.html" -exec sed -i 's|href="../../target/doc/index.html"|href="/KhoraEngine/api/index.html"|g' {} +
 
       # 8. Prepares the artifact for deployment to GitHub Pages
       - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v2
+        uses: actions/upload-pages-artifact@v3
         with:
           path: ./site
 
       # 9. Deploys the artifact to GitHub Pages
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v2
+        uses: actions/deploy-pages@v4
