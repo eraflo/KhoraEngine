@@ -16,4 +16,4 @@
 - [Roadmap & Issue Tracker](./08_roadmap_and_issues.md)
 
 # IV. API Reference
-- [**Complete Crate Reference**](./api/index.html)
+- [**Complete Crate Reference**](/KhoraEngine/api/index.html)
