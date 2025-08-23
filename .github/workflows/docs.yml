@@ -27,67 +27,21 @@ jobs:
 
       # --- PHASE 2: BUILD (IN ISOLATION) ---
       - name: Build rustdoc API reference
-        # On force la sortie dans un dossier `build/rustdoc` complètement séparé
         run: cargo doc --workspace --no-deps --all-features --target-dir build/rustdoc
-
       - name: Build mdBook
-        # On force la sortie dans un dossier `build/book` complètement séparé
         run: mdbook build docs -d ../build/book
 
-      # --- PHASE 3: ASSEMBLE & CREATE CUSTOM INDEX ---
+      # --- PHASE 3: ASSEMBLE ---
       - name: Assemble final site
         run: |
-          # Crée le dossier de déploiement final
           mv build/book site
-          # Crée le dossier /api/
           mkdir -p site/api
-          # Copie la documentation de l'API depuis son dossier de sortie isolé et prédictible
           cp -r build/rustdoc/doc/* site/api/
-
-          # --- THIS IS THE KEY FIX ---
-          # Crée un fichier index.html personnalisé dans /api/
-          cat <<EOF > site/api/index.html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Khora Engine API Reference</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; line-height: 1.6; background-color: #f8f9fa; color: #212529; margin: 0; padding: 2rem; }
-        .container { max-width: 800px; margin: 0 auto; }
-        h1 { color: #343a40; border-bottom: 2px solid #dee2e6; padding-bottom: 0.5rem; }
-        ul { list-style-type: none; padding: 0; }
-        li { background-color: #ffffff; margin: 0.5em 0; padding: 1em 1.5em; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        a { text-decoration: none; color: #007bff; font-weight: 600; font-size: 1.1em; }
-        a:hover { text-decoration: underline; }
-        span { color: #6c757d; display: block; margin-top: 0.25em; font-size: 0.9em; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>Khora Engine API Reference</h1>
-        <p>This is the central index for the auto-generated API documentation for all crates in the Khora Engine workspace.</p>
-        <ul>
-            <li><a href="khora_sdk/index.html">khora_sdk</a> <span>The stable, public-facing API for game developers.</span></li>
-            <li><a href="khora_core/index.html">khora_core</a> <span>Foundational traits, core types, and interface contracts.</span></li>
-            <li><a href="khora_agents/index.html">khora_agents</a> <span>Intelligent wrappers driving the Lanes (ISAs).</span></li>
-            <li><a href="khora_lanes/index.html">khora_lanes</a> <span>Hot-path execution pipelines for performance-critical operations.</span></li>
-            <li><a href="khora_data/index.html">khora_data</a> <span>Data layouts, allocators, and the CRPECS.</span></li>
-            <li><a href="khora_control/index.html">khora_control</a> <span>The SAA strategic brain (DCC/GORNA).</span></li>
-            <li><a href="khora_infra/index.html">khora_infra</a> <span>Concrete implementations of external dependencies.</span></li>
-            <li><a href="khora_telemetry/index.html">khora_telemetry</a> <span>Telemetry, logging, and monitoring systems.</span></li>
-            <li><a href="khora_plugins/index.html">khora_plugins</a> <span>Packaged strategies and extensions.</span></li>
-        </ul>
-    </div>
-</body>
-</html>
-EOF
+          cat .github/workflows/templates/api_index.html > site/api/index.html
 
       # --- PHASE 4: PATCH ---
       - name: Patch API Placeholder Link
         run: |
-          # On remplace le placeholder par le lien vers NOTRE index.html personnalisé
           find site -type f -name "*.html" -exec sed -i 's|href="./API_REFERENCE_DO_NOT_TOUCH.html"|href="/KhoraEngine/api/index.html"|g' {} +
           find site -type f -name "*.html" -exec sed -i 's|href="../API_REFERENCE_DO_NOT_TOUCH.html"|href="/KhoraEngine/api/index.html"|g' {} +
 
