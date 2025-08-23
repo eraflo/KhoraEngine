@@ -3,3 +3,6 @@ authors = ["eraflo"]
 language = "en"
 src = "src"
 title = "Khora Engine Documentation"
+
+[output.html]
+site-url = "/KhoraEngine/"
