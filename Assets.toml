@@ -1,0 +1,6 @@
+# A list of all directories that the asset packager should scan for source assets.
+source_directories = [
+    "resources/assets",
+    # We can add paths for specific examples or plugins here.
+    # "examples/sandbox/assets", 
+]

@@ -16,6 +16,25 @@ use super::uuid::AssetUUID;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 
+/// Represents the physical source of an asset's data.
+///
+/// This enum allows the asset system to transparently handle assets from two
+/// different contexts:
+/// - In editor/development mode, assets are loaded directly from loose files on disk (`Path`).
+/// - In release/standalone mode, assets are loaded from an optimized packfile (`Packed`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AssetSource {
+    /// The asset is a loose file on disk. The `PathBuf` points to the file.
+    Path(PathBuf),
+    /// The asset is located within a packfile.
+    Packed {
+        /// The byte offset from the beginning of the packfile where the data starts.
+        offset: u64,
+        /// The total size of the asset's data in bytes.
+        size: u64,
+    },
+}
+
 /// Serializable metadata that describes an asset and its relationships.
 ///
 /// This structure serves as the "identity card" for each asset within the engine's
@@ -46,10 +65,10 @@ pub struct AssetMetadata {
     /// A map of available, pre-processed asset variants ready for runtime use.
     ///
     /// The key is a variant identifier (e.g., "LOD0", "4K", "low_quality"),
-    /// and the value is the path to the compiled, engine-ready file for that variant.
+    /// and the value is the source of the compiled, engine-ready file for that variant. (Which contains the necessary metadata for loading the asset.)
     /// This map allows the `AssetAgent` to make strategic choices, such as loading
     /// a lower-quality texture to stay within a VRAM budget.
-    pub variants: HashMap<String, PathBuf>,
+    pub variants: HashMap<String, AssetSource>,
 
     /// A collection of semantic tags for advanced querying and organization.
     /// Tags can be used to group assets for collective operations, such as
