@@ -15,7 +15,7 @@
 use anyhow::Result;
 use khora_agents::asset_agent::agent::AssetAgent;
 use khora_core::asset::{Asset, AssetMetadata, AssetSource, AssetUUID};
-use khora_lanes::asset_lane::AssetLoader;
+use khora_lanes::asset_lane::AssetLoaderLane;
 use std::{collections::HashMap, error::Error, fs::File};
 use tempfile::tempdir;
 
@@ -27,7 +27,7 @@ struct TestTexture {
 impl Asset for TestTexture {}
 
 struct TestTextureLoader;
-impl AssetLoader<TestTexture> for TestTextureLoader {
+impl AssetLoaderLane<TestTexture> for TestTextureLoader {
     fn load(&self, bytes: &[u8]) -> Result<TestTexture, Box<dyn Error + Send + Sync>> {
         let id = u32::from_le_bytes(bytes.try_into().unwrap());
         Ok(TestTexture { id })
