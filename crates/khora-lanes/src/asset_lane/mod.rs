@@ -15,5 +15,7 @@
 //! Asset loading and management.
 
 mod loader;
+mod pack_loader;
 
 pub use loader::*;
+pub use pack_loader::*;

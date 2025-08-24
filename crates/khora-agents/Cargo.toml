@@ -8,3 +8,8 @@ description = "Intelligent wrappers driving the Lanes"
 khora-core = { path = "../khora-core" }
 khora-data = { path = "../khora-data" }
 khora-lanes = { path = "../khora-lanes" }
+
+# Error handling
+anyhow = "1.0"
+tempfile = "3.10.1"
+bincode = { version = "2.0.1", features = ["serde"] }

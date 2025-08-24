@@ -25,3 +25,6 @@
 //!
 //! The primary entry point for users is the `AssetServer` resource, which orchestrates
 //! the asset loading lifecycle.
+
+pub mod agent;
+pub mod loader;

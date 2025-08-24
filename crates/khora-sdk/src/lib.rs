@@ -36,6 +36,7 @@ use winit::window::WindowId;
 
 /// Publicly re-exported types and traits for ease of use.
 pub mod prelude {
+    pub use khora_core::asset::{AssetMetadata, AssetSource, AssetUUID};
     pub use khora_core::renderer::{
         BufferDescriptor, BufferId, BufferUsage, ColorTargetStateDescriptor, ColorWrites,
         IndexFormat, MultisampleStateDescriptor, PipelineLayoutDescriptor, RenderObject,

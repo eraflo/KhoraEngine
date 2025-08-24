@@ -16,7 +16,6 @@ This document outlines the phased development plan for Khora. It integrates all 
 **Goal:** Build out the necessary features to represent and interact with a game world, starting with the implementation of our revolutionary ECS.
 
 #### [Scene Representation, Assets & Data Focus]
-- #174 [Feature] Implement VFS Packfile Builder & Runtime (Depends on #41)
 - #42 [Feature] Implement Texture Loading & Management (Depends on #174)
 - #43 [Feature] Implement Mesh Loading & Management (Depends on #174)
 - #44 [Task] Render Loaded Static Model with Basic Materials (Depends on #40, #42, #43)
@@ -194,3 +193,4 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #156 [Task] Implement Native Queries (CRPECS v1)
 - #40 [Feature] Implement Scene Hierarchy & Transform System (Depends on #156)
 - #41 [Design] Design Asset System with VFS & Define Core Structs
+- #174 [Feature] Implement VFS Packfile Builder & Runtime (Depends on #41)
