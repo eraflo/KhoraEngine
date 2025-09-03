@@ -11,5 +11,9 @@ khora-lanes = { path = "../khora-lanes" }
 
 # Error handling
 anyhow = "1.0"
+
+# Image handling
+image = "0.25.8"
+
 tempfile = "3.10.1"
 bincode = { version = "2.0.1", features = ["serde"] }
