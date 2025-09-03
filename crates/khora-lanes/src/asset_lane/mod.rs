@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Asset loading and management.
+//! Lanes related to asset loading and management.
 
-mod loader;
+mod loading;
 mod pack_loader;
 
-pub use loader::*;
+pub use loading::*;
 pub use pack_loader::*;

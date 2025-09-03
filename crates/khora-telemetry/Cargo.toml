@@ -10,11 +10,9 @@ khora-core = { path = "../khora-core" }
 # Logging and tracing
 log = "0.4"
 env_logger = "0.11"
-tracing = "0.1"
-tracing-subscriber = "0.3"
 
 # Metrics and monitoring
-sysinfo = "0.35"
+sysinfo = "0.37.0"
 
 # Serialization for telemetry data
 serde = { version = "1.0", features = ["derive"] }

@@ -16,18 +16,18 @@
 
 use anyhow::{anyhow, Result};
 use khora_core::asset::Asset;
-use khora_lanes::asset_lane::AssetLoader;
+use khora_lanes::asset_lane::AssetLoaderLane;
 use std::{any::Any, collections::HashMap};
 
 /// Internal trait for loading any asset type.
-trait AnyLoader: Send + Sync {
+trait AnyLoaderLane: Send + Sync {
     fn load_any(&self, bytes: &[u8]) -> Result<Box<dyn Any + Send>>;
 }
 
 /// A "wrapper" that takes a generic `AssetLoader<A>` and implements `AnyLoader`.
-struct LoaderWrapper<A: Asset, L: AssetLoader<A>>(L, std::marker::PhantomData<A>);
+struct AssetLoaderLaneWrapper<A: Asset, L: AssetLoaderLane<A>>(L, std::marker::PhantomData<A>);
 
-impl<A: Asset, L: AssetLoader<A> + Send + Sync> AnyLoader for LoaderWrapper<A, L> {
+impl<A: Asset, L: AssetLoaderLane<A> + Send + Sync> AnyLoaderLane for AssetLoaderLaneWrapper<A, L> {
     fn load_any(&self, bytes: &[u8]) -> Result<Box<dyn Any + Send>> {
         // Call the GENERIC and TYPE-SAFE load() method...
         let asset: A = self.0.load(bytes).map_err(|e| anyhow!(e.to_string()))?;
@@ -37,11 +37,11 @@ impl<A: Asset, L: AssetLoader<A> + Send + Sync> AnyLoader for LoaderWrapper<A, L
 }
 
 /// The registry that manages complexity for the AssetAgent.
-pub(crate) struct LoaderRegistry {
-    loaders: HashMap<String, Box<dyn AnyLoader>>,
+pub(crate) struct AssetLoaderLaneRegistry {
+    loaders: HashMap<String, Box<dyn AnyLoaderLane>>,
 }
 
-impl LoaderRegistry {
+impl AssetLoaderLaneRegistry {
     /// Creates a new `LoaderRegistry`.
     pub(crate) fn new() -> Self {
         Self {
@@ -53,9 +53,9 @@ impl LoaderRegistry {
     pub(crate) fn register<A: Asset>(
         &mut self,
         type_name: &str,
-        loader: impl AssetLoader<A> + Send + Sync + 'static,
+        loader: impl AssetLoaderLane<A> + Send + Sync + 'static,
     ) {
-        let wrapped = LoaderWrapper(loader, std::marker::PhantomData);
+        let wrapped = AssetLoaderLaneWrapper(loader, std::marker::PhantomData);
         self.loaders
             .insert(type_name.to_string(), Box::new(wrapped));
     }

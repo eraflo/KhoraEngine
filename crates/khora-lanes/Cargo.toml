@@ -10,3 +10,6 @@ khora-data = { path = "../khora-data" }
 
 # Error handling
 anyhow = "1.0"
+
+# Image handling
+image = "0.25.8"

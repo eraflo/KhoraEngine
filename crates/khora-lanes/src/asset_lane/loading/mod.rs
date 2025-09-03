@@ -12,6 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Asset loading utilities.
+
+mod texture_loader_lane;
+
+pub use texture_loader_lane::*;
+
 use khora_core::asset::Asset;
 use std::error::Error;
 
@@ -21,8 +27,8 @@ use std::error::Error;
 /// trait are responsible for the potentially CPU-intensive work of parsing and
 /// decoding raw file data into a usable, engine-ready asset type.
 ///
-/// Each `AssetLoader` is specialized for a single asset type `A`.
-pub trait AssetLoader<A: Asset> {
+/// Each `AssetLoaderLane` is specialized for a single asset type `A`.
+pub trait AssetLoaderLane<A: Asset> {
     /// Parses a byte slice and converts it into an instance of the asset `A`.
     ///
     /// # Parameters
