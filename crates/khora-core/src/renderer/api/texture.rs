@@ -182,6 +182,49 @@ pub struct SamplerDescriptor<'a> {
     pub border_color: Option<SamplerBorderColor>,
 }
 
+/// A CPU-side representation of a decoded texture, ready to be uploaded to the GPU.
+#[derive(Debug)]
+pub struct CpuTexture {
+    /// The raw pixel data (e.g., in RGBA format)
+    pub pixels: Vec<u8>,
+    /// The size of the texture
+    pub size: Extent3D,
+    /// The format of the pixel data
+    pub format: TextureFormat,
+    /// The number of mip levels
+    pub mip_level_count: u32,
+    /// The number of samples per pixel
+    pub sample_count: SampleCount,
+    /// The dimensionality of the texture
+    pub dimension: TextureDimension,
+    /// The allowed usages for the future GPU texture
+    pub usage: TextureUsage,
+}
+
+impl crate::asset::Asset for CpuTexture {}
+
+impl CpuTexture {
+    /// Creates a texture descriptor from this CPU texture data
+    pub fn to_descriptor<'a>(&self, label: Option<Cow<'a, str>>) -> TextureDescriptor<'a> {
+        TextureDescriptor {
+            label,
+            size: self.size,
+            mip_level_count: self.mip_level_count,
+            sample_count: self.sample_count,
+            dimension: self.dimension,
+            format: self.format,
+            usage: self.usage,
+            view_formats: Cow::Borrowed(&[]),
+        }
+    }
+
+    /// Gets the row size in bytes (important for texture upload alignment)
+    pub fn row_size(&self) -> usize {
+        let bytes_per_pixel = self.format.bytes_per_pixel();
+        self.size.width as usize * bytes_per_pixel as usize
+    }
+}
+
 /// An opaque handle to a GPU texture resource.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TextureId(pub usize);

@@ -14,6 +14,10 @@
 
 //! Asset loading utilities.
 
+mod texture_loader_lane;
+
+pub use texture_loader_lane::*;
+
 use khora_core::asset::Asset;
 use std::error::Error;
 
