@@ -192,9 +192,9 @@ fn test_asset_caching_and_shared_ownership() -> Result<()> {
         tags: vec![],
     };
 
-    let index_bytes = bincode::serde::encode_to_vec(&vec![metadata], bincode::config::standard())?;
+    let index_bytes = bincode::serde::encode_to_vec(vec![metadata], bincode::config::standard())?;
     std::fs::write(&index_path, &index_bytes)?;
-    std::fs::write(&data_path, &texture_data)?;
+    std::fs::write(&data_path, texture_data)?;
 
     let data_file = File::open(&data_path)?;
     let mut asset_agent = AssetAgent::new(&index_bytes, data_file)?;

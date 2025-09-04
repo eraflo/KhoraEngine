@@ -69,7 +69,14 @@ pub fn clippy() -> Result<()> {
     );
     execute_command(
         "cargo",
-        &["clippy", "--workspace", "--", "-D", "warnings"],
+        &[
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings",
+        ],
         "Clippy",
     )?;
     Ok(())
