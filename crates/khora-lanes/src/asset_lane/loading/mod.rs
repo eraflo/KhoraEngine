@@ -14,8 +14,10 @@
 
 //! Asset loading utilities.
 
+mod mesh_loader_lane;
 mod texture_loader_lane;
 
+pub use mesh_loader_lane::*;
 pub use texture_loader_lane::*;
 
 use khora_core::asset::Asset;

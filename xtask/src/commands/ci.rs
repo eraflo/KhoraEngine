@@ -22,7 +22,11 @@ pub fn build() -> Result<()> {
         "{}💡 Info:{} Compiling all workspace crates in debug mode",
         BOLD, RESET
     );
-    execute_command("cargo", &["build", "--workspace"], "Build")?;
+    execute_command(
+        "cargo",
+        &["build", "--workspace", "--exclude", "xtask"],
+        "Build",
+    )?;
     Ok(())
 }
 

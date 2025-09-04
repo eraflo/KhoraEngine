@@ -5,6 +5,8 @@ edition = "2021"
 description = "Foundational crate with traits, core types, and interface contracts"
 
 [dependencies]
+bytemuck = { version = "1.23.2", features = ["derive"] }
+
 # Math and approximation
 approx = "0.5"
 

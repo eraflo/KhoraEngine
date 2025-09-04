@@ -12,12 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Data
-//!
-//! Data management systems including layouts, allocators, and streaming.
+//! Defines asset types and their associated data structures.
 
-#![warn(missing_docs)]
+mod storage;
 
-pub mod allocators;
-pub mod assets;
-pub mod ecs;
+pub use storage::*;

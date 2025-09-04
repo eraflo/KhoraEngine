@@ -14,13 +14,18 @@
 
 //! The AssetAgent is responsible for managing asset loading and retrieval.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use khora_core::{
     asset::{Asset, AssetHandle, AssetUUID},
     vfs::VirtualFileSystem,
 };
+use khora_data::assets::Assets;
 use khora_lanes::asset_lane::{AssetLoaderLane, PackLoadingLane};
-use std::fs::File;
+use std::{
+    any::{Any, TypeId},
+    collections::HashMap,
+    fs::File,
+};
 
 use crate::asset_agent::loader::AssetLoaderLaneRegistry;
 
@@ -32,6 +37,9 @@ pub struct AssetAgent {
     loading_lane: PackLoadingLane,
     /// The registry that manages asset loaders.
     loaders: AssetLoaderLaneRegistry,
+    /// Type-erased storage for different types of loaded assets.
+    /// Maps a TypeId to a Box<Any> that holds an `Assets<A>`.
+    storages: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
 }
 
 impl AssetAgent {
@@ -46,6 +54,7 @@ impl AssetAgent {
             vfs,
             loading_lane,
             loaders: AssetLoaderLaneRegistry::new(),
+            storages: HashMap::new(),
         })
     }
 
@@ -65,12 +74,43 @@ impl AssetAgent {
     ///
     /// This is the main, fully-featured loading method.
     pub fn load<A: Asset>(&mut self, uuid: &AssetUUID) -> Result<AssetHandle<A>> {
-        let metadata = self.vfs.get_metadata(uuid).context("...")?;
-        let source = metadata.variants.get("default").context("...")?;
+        let type_id = TypeId::of::<A>();
+
+        // --- 1. Get or create the specific storage for the asset type `A` ---
+        let storage = self
+            .storages
+            .entry(type_id)
+            .or_insert_with(|| Box::new(Assets::<A>::new()));
+
+        // Downcast the `Box<dyn Any>` to `&mut Assets<A>`
+        let assets = storage
+            .downcast_mut::<Assets<A>>()
+            .ok_or_else(|| anyhow!("Mismatched asset storage type"))?;
+
+        // --- 2. Check if the asset is already cached ---
+        if let Some(handle) = assets.get(uuid) {
+            return Ok(handle.clone()); // Cache hit!
+        }
+
+        // --- 3. If not cached, load the asset (Cache miss) ---
+        let metadata = self
+            .vfs
+            .get_metadata(uuid)
+            .ok_or_else(|| anyhow!("Asset with UUID {:?} not found in VFS", uuid))?;
+
+        let source = metadata
+            .variants
+            .get("default")
+            .ok_or_else(|| anyhow!("Asset {:?} has no 'default' variant", uuid))?;
+
         let bytes = self.loading_lane.load_asset_bytes(source)?;
 
-        let asset = self.loaders.load::<A>(&metadata.asset_type_name, &bytes)?;
+        let asset: A = self.loaders.load::<A>(&metadata.asset_type_name, &bytes)?;
 
-        Ok(AssetHandle::new(asset))
+        // --- 4. Create the handle and store it in the cache before returning ---
+        let handle = AssetHandle::new(asset);
+        assets.insert(*uuid, handle.clone());
+
+        Ok(handle)
     }
 }

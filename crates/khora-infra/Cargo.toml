@@ -12,7 +12,7 @@ wgpu = "26.0"
 raw-window-handle = "0.6"
 pollster = "0.4"
 async-trait = "0.1"
-bytemuck = "1.23.2"
+bytemuck = { version = "1.23.2", features = ["derive"] }
 
 # Platform dependencies (winit)
 winit = "0.30"
