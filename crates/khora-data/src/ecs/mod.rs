@@ -35,12 +35,12 @@ mod world;
 
 pub use bundle::ComponentBundle;
 pub use component::Component;
-pub use components::{Children, GlobalTransform, Parent, Transform};
-pub use entity::{EntityId, EntityMetadata};
-pub use page::{ComponentPage, PageIndex};
-pub use query::{Query, Without, WorldQuery};
-pub use registry::SemanticDomain;
-pub use world::World;
+pub use components::*;
+pub use entity::*;
+pub use page::*;
+pub use query::*;
+pub use registry::*;
+pub use world::*;
 
 #[cfg(test)]
 mod tests;

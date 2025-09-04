@@ -29,6 +29,15 @@ impl Component for Position {}
 struct Velocity(i32);
 impl Component for Velocity {}
 
+// A component that is Clone but not Copy, to test migration logic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NonCopyableComponent(String);
+impl Component for NonCopyableComponent {}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RenderTag;
+impl Component for RenderTag {}
+
 // --- TESTS ---
 
 #[test]
@@ -485,5 +494,144 @@ fn test_spawn_with_unregistered_component() {
         world.pages.len(),
         1,
         "A page for the new component layout should still be created"
+    );
+}
+
+#[test]
+fn test_add_component_to_new_domain() {
+    // --- 1. ARRANGE ---
+    let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<RenderTag>(SemanticDomain::Render); // Register in a different domain
+
+    let entity = world.spawn(Position(100));
+
+    // --- 2. ACT ---
+    let success = world.add_component(entity, RenderTag);
+
+    // --- 3. ASSERT ---
+    assert!(success, "add_component should succeed");
+
+    // Check metadata: should now have TWO locations.
+    let (_id, metadata_opt) = &world.entities[entity.index as usize];
+    let metadata = metadata_opt.as_ref().unwrap();
+    assert_eq!(
+        metadata.locations.len(),
+        2,
+        "Entity should have locations in two domains"
+    );
+
+    // Check the Spatial location: it should NOT have moved.
+    let spatial_loc = metadata.locations.get(&SemanticDomain::Spatial).unwrap();
+    assert_eq!(spatial_loc.page_id, 0);
+    assert_eq!(spatial_loc.row_index, 0);
+
+    // Check the new Render location.
+    let render_loc = metadata.locations.get(&SemanticDomain::Render).unwrap();
+    assert_eq!(
+        render_loc.page_id, 1,
+        "Render component should be in a new page"
+    );
+    assert_eq!(render_loc.row_index, 0);
+
+    // Check that the data is correct in both pages.
+    let spatial_pos = world.get::<Position>(entity).unwrap();
+    assert_eq!(spatial_pos.0, 100);
+    let render_tag = world.get::<RenderTag>(entity).unwrap();
+    assert_eq!(*render_tag, RenderTag);
+}
+
+#[test]
+fn test_add_component_triggers_data_migration() {
+    // --- 1. ARRANGE ---
+    let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<Velocity>(SemanticDomain::Spatial);
+    world.register_component::<NonCopyableComponent>(SemanticDomain::Spatial);
+
+    // Entity A will be modified.
+    let entity_a = world.spawn((Position(10), NonCopyableComponent("Hello".to_string())));
+    // Entity B is a "witness" in the same page that should not be affected.
+    let entity_b = world.spawn((Position(20), NonCopyableComponent("World".to_string())));
+
+    // Pre-action state verification
+    assert_eq!(
+        world.pages.len(),
+        1,
+        "Both entities should be in a single page"
+    );
+    let initial_page = &world.pages[0];
+    assert_eq!(initial_page.row_count(), 2);
+    let initial_loc_a = world.entities[entity_a.index as usize]
+        .1
+        .as_ref()
+        .unwrap()
+        .locations
+        .get(&SemanticDomain::Spatial)
+        .unwrap();
+    assert_eq!(initial_loc_a.page_id, 0);
+
+    // --- 2. ACT ---
+    // Add Velocity to entity A. This forces it to migrate to a new page.
+    let success = world.add_component(entity_a, Velocity(100));
+
+    // --- 3. ASSERT ---
+    assert!(success, "add_component should succeed");
+
+    // A) Check Page State
+    assert_eq!(
+        world.pages.len(),
+        2,
+        "A new page should have been created for the new component layout"
+    );
+
+    // The old page (page 0) should now only contain entity B.
+    let old_page = &world.pages[0];
+    assert_eq!(
+        old_page.row_count(),
+        1,
+        "Old page should now have one entity"
+    );
+    assert_eq!(
+        old_page.entities[0], entity_b,
+        "Old page should only contain entity B"
+    );
+
+    // The new page (page 1) should now contain entity A.
+    let new_page = &world.pages[1];
+    assert_eq!(new_page.row_count(), 1, "New page should have one entity");
+    assert_eq!(
+        new_page.entities[0], entity_a,
+        "New page should contain entity A"
+    );
+
+    // B) Check Entity A's Metadata and Data
+    let (_id, metadata_a_opt) = &world.entities[entity_a.index as usize];
+    let metadata_a = metadata_a_opt.as_ref().unwrap();
+    let loc_a = metadata_a.locations.get(&SemanticDomain::Spatial).unwrap();
+    assert_eq!(
+        loc_a.page_id, 1,
+        "Entity A's metadata should point to the new page"
+    );
+    assert_eq!(
+        loc_a.row_index, 0,
+        "Entity A should be at the first row of the new page"
+    );
+
+    // Verify all of A's components are accessible and correct.
+    let pos_a = world.get::<Position>(entity_a).unwrap();
+    let vel_a = world.get::<Velocity>(entity_a).unwrap();
+    let non_copy_a = world.get::<NonCopyableComponent>(entity_a).unwrap();
+    assert_eq!(pos_a.0, 10);
+    assert_eq!(vel_a.0, 100);
+    assert_eq!(non_copy_a.0, "Hello");
+
+    // C) Check Entity B's State (should be unchanged)
+    let (_id, metadata_b_opt) = &world.entities[entity_b.index as usize];
+    let metadata_b = metadata_b_opt.as_ref().unwrap();
+    let loc_b = metadata_b.locations.get(&SemanticDomain::Spatial).unwrap();
+    assert_eq!(
+        loc_b.page_id, 0,
+        "Entity B's metadata should still point to the old page"
     );
 }

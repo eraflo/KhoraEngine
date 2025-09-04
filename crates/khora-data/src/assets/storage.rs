@@ -52,5 +52,8 @@ impl<A: Asset> Assets<A> {
         self.storage.get(uuid)
     }
 
-    // Other methods (remove, etc.) can be added as needed.
+    /// Checks if an asset with the specified UUID exists in the storage.
+    pub fn contains(&self, uuid: &AssetUUID) -> bool {
+        self.storage.contains_key(uuid)
+    }
 }

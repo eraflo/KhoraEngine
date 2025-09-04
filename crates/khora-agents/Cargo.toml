@@ -9,6 +9,8 @@ khora-core = { path = "../khora-core" }
 khora-data = { path = "../khora-data" }
 khora-lanes = { path = "../khora-lanes" }
 
+bytemuck = { version = "1.23.2", features = ["derive"] }
+
 # Error handling
 anyhow = "1.0"
 

@@ -14,10 +14,12 @@
 
 mod children;
 mod global_transform;
+mod handle;
 mod parent;
 mod transform;
 
-pub use children::Children;
-pub use global_transform::GlobalTransform;
-pub use parent::Parent;
-pub use transform::Transform;
+pub use children::*;
+pub use global_transform::*;
+pub use handle::*;
+pub use parent::*;
+pub use transform::*;

@@ -39,6 +39,11 @@ impl GlobalTransform {
     pub fn identity() -> Self {
         Self(Mat4::IDENTITY)
     }
+
+    /// Returns the inner `Mat4` representation.
+    pub fn to_matrix(&self) -> Mat4 {
+        self.0
+    }
 }
 
 impl Default for GlobalTransform {
