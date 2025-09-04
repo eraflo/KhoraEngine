@@ -12,12 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Data
-//!
-//! Data management systems including layouts, allocators, and streaming.
+//! Defines lanes for loading mesh assets.
 
-#![warn(missing_docs)]
+mod gltf_loader_lane;
+mod obj_loader_lane;
+mod resource_resolver;
 
-pub mod allocators;
-pub mod assets;
-pub mod ecs;
+pub use gltf_loader_lane::*;
+pub use obj_loader_lane::*;
+pub use resource_resolver::*;
+
+use super::AssetLoaderLane;
+use khora_core::renderer::api::Mesh;
+
+/// Common trait for all mesh loaders
+pub trait MeshLoaderLane: AssetLoaderLane<Mesh> + Send + Sync + 'static {}
+
+// Implement the trait for all types that implement AssetLoaderLane<Mesh>
+impl<T> MeshLoaderLane for T where T: AssetLoaderLane<Mesh> + Send + Sync + 'static {}

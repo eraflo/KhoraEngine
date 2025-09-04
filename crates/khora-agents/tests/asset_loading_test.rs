@@ -164,3 +164,69 @@ fn test_load_texture_from_pack() -> Result<()> {
     println!("Texture loading test passed: PNG texture loaded and decoded correctly");
     Ok(())
 }
+
+#[test]
+fn test_asset_caching_and_shared_ownership() -> Result<()> {
+    // --- 1. Setup: Identique au premier test ---
+    let dir = tempdir()?;
+    let index_path = dir.path().join("index.bin");
+    let data_path = dir.path().join("data.pack");
+
+    let texture_uuid = AssetUUID::new_v5("test/texture.png");
+    let texture_data = 1234u32.to_le_bytes();
+
+    let mut variants = HashMap::new();
+    variants.insert(
+        "default".to_string(),
+        AssetSource::Packed {
+            offset: 0,
+            size: texture_data.len() as u64,
+        },
+    );
+    let metadata = AssetMetadata {
+        uuid: texture_uuid,
+        source_path: "test/texture.png".into(),
+        asset_type_name: "texture".to_string(),
+        dependencies: vec![],
+        variants,
+        tags: vec![],
+    };
+
+    let index_bytes = bincode::serde::encode_to_vec(vec![metadata], bincode::config::standard())?;
+    std::fs::write(&index_path, &index_bytes)?;
+    std::fs::write(&data_path, texture_data)?;
+
+    let data_file = File::open(&data_path)?;
+    let mut asset_agent = AssetAgent::new(&index_bytes, data_file)?;
+    asset_agent.register_loader("texture", TestTextureLoader);
+
+    // --- 2. Load the asset for the first time (Cache Miss) ---
+    let handle1 = asset_agent.load::<TestTexture>(&texture_uuid)?;
+    println!("First load (cache miss) successful.");
+
+    // --- 3. Load the EXACT SAME asset a second time (Cache Hit) ---
+    let handle2 = asset_agent.load::<TestTexture>(&texture_uuid)?;
+    println!("Second load (cache hit) successful.");
+
+    // --- 4. Assert: Verify correctness and shared ownership ---
+
+    // Sanity check: both handles point to valid data.
+    assert_eq!(handle1.id, 1234);
+    assert_eq!(handle2.id, 1234);
+
+    // THE CRUCIAL TEST:
+    // We dereference the handles to get a reference to the inner `TestTexture`,
+    // then get the raw pointer to that data.
+    // If the pointers are equal, it proves both handles point to the exact
+    // same allocation in memory.
+    let ptr1: *const TestTexture = &*handle1;
+    let ptr2: *const TestTexture = &*handle2;
+
+    assert!(
+        std::ptr::eq(ptr1, ptr2),
+        "Handles do not point to the same memory allocation!"
+    );
+
+    println!("Cache test passed: Asset is loaded only once and handles share the same data.");
+    Ok(())
+}
