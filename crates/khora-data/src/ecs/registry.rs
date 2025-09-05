@@ -14,8 +14,11 @@
 
 //! Defines the `ComponentRegistry` and `SemanticDomain` for the CRPECS.
 
-use crate::ecs::Component;
+use crate::ecs::{AnyVec, Component};
 use std::{any::TypeId, collections::HashMap};
+
+/// Type alias for the row copy function pointer.
+type RowCopyFn = unsafe fn(&dyn AnyVec, usize, &mut dyn AnyVec);
 
 /// Defines the semantic domains a component can belong to.
 ///
@@ -30,6 +33,17 @@ pub enum SemanticDomain {
     Render,
 }
 
+/// Stores the set of type-erased functions for a registered component.
+#[derive(Debug)]
+struct ComponentVTable {
+    /// The semantic domain this component belongs to.
+    domain: SemanticDomain,
+    /// Creates a new, empty `Box<dyn AnyVec>` for this component type.
+    create_column: fn() -> Box<dyn AnyVec>,
+    /// Copies a single element from a source column to a destination column.
+    copy_row: RowCopyFn,
+}
+
 /// A registry that maps component types to their semantic domains.
 ///
 /// This is a critical internal part of the `World`. It provides a single source
@@ -37,20 +51,44 @@ pub enum SemanticDomain {
 /// enabling the `World` to correctly store and retrieve component data from pages.
 #[derive(Debug, Default)]
 pub struct ComponentRegistry {
-    /// The core map from a component's `TypeId` to its assigned `SemanticDomain`.
-    mapping: HashMap<TypeId, SemanticDomain>,
+    /// Maps a component's `TypeId` to its VTable of operations.
+    mapping: HashMap<TypeId, ComponentVTable>,
 }
 
 impl ComponentRegistry {
-    /// (Internal) Registers a component type with a specific semantic domain.
-    ///
-    /// This should be called by the engine or `World` setup logic for all known component types.
+    /// Registers a component type with its domain and lifecycle functions.
     pub(crate) fn register<T: Component>(&mut self, domain: SemanticDomain) {
-        self.mapping.insert(TypeId::of::<T>(), domain);
+        self.mapping.insert(
+            TypeId::of::<T>(),
+            ComponentVTable {
+                domain,
+                create_column: || Box::new(Vec::<T>::new()),
+                copy_row: |src_col, src_row, dest_col| unsafe {
+                    let src_vec = src_col.as_any().downcast_ref::<Vec<T>>().unwrap();
+                    let dest_vec = dest_col.as_any_mut().downcast_mut::<Vec<T>>().unwrap();
+                    dest_vec.push(src_vec.get_unchecked(src_row).clone());
+                },
+            },
+        );
     }
 
     /// (Internal) Looks up the `SemanticDomain` for a given component type.
     pub fn domain_of<T: Component>(&self) -> Option<SemanticDomain> {
-        self.mapping.get(&TypeId::of::<T>()).copied()
+        self.mapping
+            .get(&TypeId::of::<T>())
+            .map(|vtable| vtable.domain)
+    }
+
+    /// (Internal) Gets the column constructor function for a given TypeId.
+    pub(crate) fn get_column_constructor(
+        &self,
+        type_id: &TypeId,
+    ) -> Option<fn() -> Box<dyn AnyVec>> {
+        self.mapping.get(type_id).map(|vtable| vtable.create_column)
+    }
+
+    /// (Internal) Gets the row copy function for a given TypeId.
+    pub(crate) fn get_row_copier(&self, type_id: &TypeId) -> Option<RowCopyFn> {
+        self.mapping.get(type_id).map(|vtable| vtable.copy_row)
     }
 }

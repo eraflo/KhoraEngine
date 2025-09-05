@@ -21,10 +21,12 @@ use khora_core::{
 };
 use khora_data::assets::Assets;
 use khora_lanes::asset_lane::{AssetLoaderLane, PackLoadingLane};
+use khora_telemetry::MetricsRegistry;
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
     fs::File,
+    sync::Arc,
 };
 
 use crate::asset_agent::loader::AssetLoaderLaneRegistry;
@@ -44,7 +46,11 @@ pub struct AssetAgent {
 
 impl AssetAgent {
     /// Creates a new `AssetAgent` with the given VFS and loading lane.
-    pub fn new(index_bytes: &[u8], data_file: File) -> Result<Self> {
+    pub fn new(
+        index_bytes: &[u8],
+        data_file: File,
+        metrics_registry: Arc<MetricsRegistry>,
+    ) -> Result<Self> {
         let vfs = VirtualFileSystem::new(index_bytes)
             .context("Failed to initialize VirtualFileSystem from index bytes")?;
 
@@ -53,7 +59,7 @@ impl AssetAgent {
         Ok(Self {
             vfs,
             loading_lane,
-            loaders: AssetLoaderLaneRegistry::new(),
+            loaders: AssetLoaderLaneRegistry::new(metrics_registry),
             storages: HashMap::new(),
         })
     }

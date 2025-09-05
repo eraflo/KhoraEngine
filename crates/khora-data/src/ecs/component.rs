@@ -18,4 +18,6 @@
 /// The `'static` lifetime ensures that the component type does not contain any
 /// non-static references, and `Send + Sync` are required to allow the component
 /// data to be safely accessed from multiple threads.
-pub trait Component: 'static + Send + Sync {}
+/// `Clone` is required to allow component data to be moved between pages
+/// during structural changes (like adding or removing components).
+pub trait Component: Clone + 'static + Send + Sync {}

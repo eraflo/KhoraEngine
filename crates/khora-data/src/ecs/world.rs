@@ -12,15 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::any::TypeId;
+use std::{any::TypeId, collections::HashMap};
+
+use khora_core::renderer::{GpuMesh, Mesh};
 
 use crate::ecs::{
+    components::HandleComponent,
     entity::EntityMetadata,
     page::{ComponentPage, PageIndex},
     query::{Query, WorldQuery},
     registry::ComponentRegistry,
-    Children, Component, ComponentBundle, EntityId, GlobalTransform, Parent, SemanticDomain,
-    Transform,
+    Children, Component, ComponentBundle, EntityId, GlobalTransform, MaterialComponent, Parent,
+    SemanticDomain, Transform,
 };
 
 /// The central container for the entire ECS, holding all entities, components, and metadata.
@@ -132,6 +135,32 @@ impl World {
         }
     }
 
+    /// Finds or creates a page for the given signature of component `TypeId`s.
+    fn find_or_create_page_for_signature(&mut self, signature: &[TypeId]) -> u32 {
+        if let Some((id, _)) = self
+            .pages
+            .iter()
+            .enumerate()
+            .find(|(_, p)| p.type_ids == signature)
+        {
+            return id as u32;
+        }
+
+        let new_page_id = self.pages.len() as u32;
+        let mut columns = HashMap::new();
+        for type_id in signature {
+            let constructor = self.registry.get_column_constructor(type_id).unwrap();
+            columns.insert(*type_id, constructor());
+        }
+
+        self.pages.push(ComponentPage {
+            type_ids: signature.to_vec(),
+            columns,
+            entities: Vec::new(),
+        });
+        new_page_id
+    }
+
     /// Creates a new, empty `World` with pre-registered internal component types.
     pub fn new() -> Self {
         let mut world = Self {
@@ -140,10 +169,16 @@ impl World {
             freed_entities: Vec::new(),
             registry: ComponentRegistry::default(),
         };
+        // Registration of built-in components
         world.register_component::<Transform>(SemanticDomain::Spatial);
         world.register_component::<GlobalTransform>(SemanticDomain::Spatial);
         world.register_component::<Parent>(SemanticDomain::Spatial);
         world.register_component::<Children>(SemanticDomain::Spatial);
+
+        // Registration of render components
+        world.register_component::<HandleComponent<Mesh>>(SemanticDomain::Render);
+        world.register_component::<HandleComponent<GpuMesh>>(SemanticDomain::Render);
+        world.register_component::<MaterialComponent>(SemanticDomain::Render);
         world
     }
 
@@ -276,6 +311,106 @@ impl World {
 
         // 3. Construct and return the `Query` iterator.
         Query::new(self, matching_page_indices)
+    }
+
+    /// Adds a new component to an existing entity.
+    ///
+    /// This method allows dynamically adding a component to an entity after it has been spawned.
+    /// It handles the necessary migration of the entity's data to a new `ComponentPage`
+    pub fn add_component<C: Component>(&mut self, entity_id: EntityId, component: C) -> bool {
+        // 1. Validate EntityId
+        let Some((id_in_world, Some(_))) = self.entities.get(entity_id.index as usize) else {
+            return false;
+        };
+        if id_in_world.generation != entity_id.generation {
+            return false;
+        }
+
+        let Some(domain) = self.registry.domain_of::<C>() else {
+            return false;
+        };
+        let mut metadata = self.entities[entity_id.index as usize].1.take().unwrap();
+
+        let old_location_opt = metadata.locations.get(&domain).copied();
+
+        // 2. Determine old and new page signatures
+        let old_type_ids = old_location_opt.map_or(Vec::new(), |loc| {
+            self.pages[loc.page_id as usize].type_ids.clone()
+        });
+        let mut new_type_ids = old_type_ids.clone();
+        new_type_ids.push(TypeId::of::<C>());
+        new_type_ids.sort();
+        new_type_ids.dedup();
+
+        // If the signature hasn't changed, the component is already present.
+        if new_type_ids == old_type_ids {
+            self.entities[entity_id.index as usize].1 = Some(metadata); // Put it back
+            return false;
+        }
+
+        // 3. Find or create the destination page
+        let dest_page_id = self.find_or_create_page_for_signature(&new_type_ids);
+
+        // 4. Perform the migration
+        let dest_row_index;
+        unsafe {
+            let (src_page_opt, dest_page) = if let Some(loc) = old_location_opt {
+                if loc.page_id == dest_page_id {
+                    // This is an optimization for a future `remove_component` case.
+                    // For `add`, this branch is unlikely.
+                    let page = &mut self.pages[loc.page_id as usize];
+                    (None, page)
+                } else {
+                    let (src_slice, dest_slice) = self.pages.split_at_mut(dest_page_id as usize);
+                    let dest_page = &mut dest_slice[0];
+                    let src_page = &src_slice[loc.page_id as usize];
+                    (Some(src_page), dest_page)
+                }
+            } else {
+                (None, &mut self.pages[dest_page_id as usize])
+            };
+
+            dest_row_index = dest_page.entities.len() as u32;
+
+            // Copy old components (if any)
+            if let Some(src_page) = src_page_opt {
+                let src_row = old_location_opt.unwrap().row_index as usize;
+                for type_id in &old_type_ids {
+                    let copier = self.registry.get_row_copier(type_id).unwrap();
+                    let src_col = src_page.columns.get(type_id).unwrap();
+                    let dest_col = dest_page.columns.get_mut(type_id).unwrap();
+                    copier(src_col.as_ref(), src_row, dest_col.as_mut());
+                }
+            }
+
+            // Add the new component
+            dest_page
+                .columns
+                .get_mut(&TypeId::of::<C>())
+                .unwrap()
+                .as_any_mut()
+                .downcast_mut::<Vec<C>>()
+                .unwrap()
+                .push(component);
+
+            dest_page.add_entity(entity_id);
+        }
+
+        // 5. Remove from old page
+        if let Some(loc) = old_location_opt {
+            self.remove_from_page(entity_id, loc, domain);
+        }
+
+        // 6. Update metadata
+        metadata.locations.insert(
+            domain,
+            PageIndex {
+                page_id: dest_page_id,
+                row_index: dest_row_index,
+            },
+        );
+        self.entities[entity_id.index as usize].1 = Some(metadata);
+        true
     }
 
     /// Gets a mutable reference to a single component `T` for a given entity.

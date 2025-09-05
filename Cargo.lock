@@ -1275,10 +1275,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
+ "bytemuck",
  "image",
  "khora-core",
  "khora-data",
  "khora-lanes",
+ "khora-telemetry",
  "tempfile",
 ]
 
@@ -1368,6 +1370,7 @@ dependencies = [
  "khora-agents",
  "khora-control",
  "khora-core",
+ "khora-data",
  "khora-infra",
  "khora-telemetry",
  "log",

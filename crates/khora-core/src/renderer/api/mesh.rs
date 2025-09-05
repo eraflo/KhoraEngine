@@ -17,7 +17,10 @@
 use crate::{
     asset::Asset,
     math::{geometry::Aabb, Vec2, Vec3, Vec4},
-    renderer::api::{PrimitiveTopology, VertexAttributeDescriptor},
+    renderer::{
+        api::{PrimitiveTopology, VertexAttributeDescriptor},
+        BufferId, IndexFormat,
+    },
 };
 
 /// Represents a complete mesh with vertex data and indices.
@@ -141,3 +144,17 @@ impl Mesh {
         buffer
     }
 }
+
+/// A GPU-ready representation of a mesh, containing buffer IDs and draw parameters.
+pub struct GpuMesh {
+    /// The vertex buffer ID containing interleaved vertex data.
+    pub vertex_buffer: BufferId,
+    /// The index buffer ID, if the mesh uses indexed drawing.
+    pub index_buffer: BufferId,
+    /// The number of vertices or indices to draw.
+    pub index_count: u32,
+    /// The type of primitives to render (e.g., triangles, lines).
+    pub index_format: IndexFormat,
+}
+
+impl Asset for GpuMesh {}

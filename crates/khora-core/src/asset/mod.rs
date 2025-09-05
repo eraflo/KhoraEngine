@@ -28,10 +28,12 @@
 //! crates.
 
 mod handle;
+mod materials;
 mod metadata;
 mod uuid;
 
 pub use handle::*;
+pub use materials::*;
 pub use metadata::*;
 pub use uuid::*;
 

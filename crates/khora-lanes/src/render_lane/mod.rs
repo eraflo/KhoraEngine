@@ -13,3 +13,9 @@
 // limitations under the License.
 
 //! Rendering lane - hot path for graphics operations
+
+mod extract_lane;
+mod world;
+
+pub use extract_lane::*;
+pub use world::*;

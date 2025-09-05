@@ -44,6 +44,7 @@ pub mod prelude {
         ShaderModuleId, ShaderSourceData, ShaderStage, VertexAttributeDescriptor,
         VertexBufferLayoutDescriptor, VertexFormat, VertexStepMode,
     };
+    pub use khora_data::allocators::SaaTrackingAllocator;
 }
 
 /// Engine context providing access to various subsystems.

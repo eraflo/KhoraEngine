@@ -16,6 +16,8 @@ use anyhow::Result;
 use khora_agents::asset_agent::agent::AssetAgent;
 use khora_core::asset::{Asset, AssetMetadata, AssetSource, AssetUUID};
 use khora_lanes::asset_lane::AssetLoaderLane;
+use khora_telemetry::MetricsRegistry;
+use std::sync::Arc;
 use std::{collections::HashMap, error::Error, fs::File};
 use tempfile::tempdir;
 
@@ -73,7 +75,8 @@ fn test_load_asset_from_pack() -> Result<()> {
 
     // --- 2. Initialize the AssetAgent with REAL files ---
     let data_file = File::open(&data_path)?;
-    let mut asset_agent = AssetAgent::new(&index_bytes, data_file)?;
+    let metrics_registry = Arc::new(MetricsRegistry::new());
+    let mut asset_agent = AssetAgent::new(&index_bytes, data_file, metrics_registry)?;
 
     // --- 3. Register the loader ---
     asset_agent.register_loader("texture", TestTextureLoader);
@@ -144,7 +147,8 @@ fn test_load_texture_from_pack() -> Result<()> {
 
     // --- 2. Initialize the AssetAgent with REAL files ---
     let data_file = File::open(&data_path)?;
-    let mut asset_agent = AssetAgent::new(&index_bytes, data_file)?;
+    let metrics_registry = Arc::new(MetricsRegistry::new());
+    let mut asset_agent = AssetAgent::new(&index_bytes, data_file, metrics_registry)?;
 
     // --- 3. Register the texture loader ---
     asset_agent.register_loader("texture", TextureLoaderLane);
@@ -197,7 +201,8 @@ fn test_asset_caching_and_shared_ownership() -> Result<()> {
     std::fs::write(&data_path, texture_data)?;
 
     let data_file = File::open(&data_path)?;
-    let mut asset_agent = AssetAgent::new(&index_bytes, data_file)?;
+    let metrics_registry = Arc::new(MetricsRegistry::new());
+    let mut asset_agent = AssetAgent::new(&index_bytes, data_file, metrics_registry)?;
     asset_agent.register_loader("texture", TestTextureLoader);
 
     // --- 2. Load the asset for the first time (Cache Miss) ---

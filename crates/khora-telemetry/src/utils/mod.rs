@@ -12,19 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Telemetry
-//!
-//! Central telemetry service for the Khora Engine.
+//! Utilities for telemetry and performance measurement.
 
-#![warn(missing_docs)]
+mod timer;
 
-pub mod metrics;
-pub mod monitoring;
-pub mod service;
-pub mod storage;
-pub mod utils;
-
-pub use self::service::TelemetryService;
-pub use crate::metrics::registry::MetricsRegistry;
-pub use crate::monitoring::registry::MonitorRegistry;
-pub use crate::utils::*;
+pub use timer::*;
