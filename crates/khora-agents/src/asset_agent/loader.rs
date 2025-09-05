@@ -17,7 +17,10 @@
 use anyhow::{anyhow, Result};
 use khora_core::asset::Asset;
 use khora_lanes::asset_lane::AssetLoaderLane;
-use khora_telemetry::{metrics::registry::{CounterHandle, HistogramHandle}, MetricsRegistry, ScopedMetricTimer};
+use khora_telemetry::{
+    metrics::registry::{CounterHandle, HistogramHandle},
+    MetricsRegistry, ScopedMetricTimer,
+};
 use std::{any::Any, collections::HashMap, sync::Arc};
 
 /// Internal trait for loading any asset type.
@@ -55,13 +58,22 @@ struct LoaderMetrics {
 impl LoaderMetrics {
     fn new(registry: &MetricsRegistry) -> Self {
         Self {
-            load_time_ms: registry.register_histogram(
-                "assets", "load_time", "Asset decoding time", "ms",
-                vec![1.0, 5.0, 16.0, 33.0, 100.0, 500.0],
-            ).expect("Failed to register asset load time metric"),
-            assets_loaded_total: registry.register_counter(
-                "assets", "loaded_total", "Total number of assets loaded from disk",
-            ).expect("Failed to register asset count metric"),
+            load_time_ms: registry
+                .register_histogram(
+                    "assets",
+                    "load_time",
+                    "Asset decoding time",
+                    "ms",
+                    vec![1.0, 5.0, 16.0, 33.0, 100.0, 500.0],
+                )
+                .expect("Failed to register asset load time metric"),
+            assets_loaded_total: registry
+                .register_counter(
+                    "assets",
+                    "loaded_total",
+                    "Total number of assets loaded from disk",
+                )
+                .expect("Failed to register asset count metric"),
         }
     }
 }

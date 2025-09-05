@@ -18,7 +18,7 @@
 //! optimized for consumption by the rendering pipelines (`RenderLane`s). It is
 //! populated by an "extraction" phase that reads data from the main ECS `World`.
 
-use khora_core::{asset::{AssetUUID}, math::Mat4};
+use khora_core::{asset::AssetUUID, math::Mat4};
 
 /// A flat, GPU-friendly representation of a single mesh to be rendered.
 ///

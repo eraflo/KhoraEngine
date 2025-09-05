@@ -15,16 +15,11 @@
 //! Defines the RenderAgent, the central orchestrator for the rendering subsystem.
 
 use super::mesh_preparation::MeshPreparationSystem;
-use khora_core::{
-    renderer::{
-        api::{GpuMesh, RenderObject},
-        GraphicsDevice, Mesh,
-    },
+use khora_core::renderer::{
+    api::{GpuMesh, RenderObject},
+    GraphicsDevice, Mesh,
 };
-use khora_data::{
-    assets::{Assets},
-    ecs::World,
-};
+use khora_data::{assets::Assets, ecs::World};
 use khora_lanes::render_lane::{ExtractRenderablesLane, RenderWorld};
 use std::sync::{Arc, RwLock};
 

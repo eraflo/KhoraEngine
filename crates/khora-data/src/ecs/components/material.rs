@@ -15,7 +15,7 @@
 //! Defines a component for attaching a generic material handle to an entity.
 
 use crate::ecs::Component;
-use khora_core::asset::{AssetHandle, Material, AssetUUID};
+use khora_core::asset::{AssetHandle, AssetUUID, Material};
 
 /// A component that attaches any type of material to an entity.
 ///

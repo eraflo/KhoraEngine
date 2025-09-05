@@ -14,8 +14,8 @@
 
 //! Provides RAII-based timers for automatically recording metrics. (RAII = Resource Acquisition Is Initialization)
 
-use khora_core::utils::timer::Stopwatch;
 use crate::metrics::registry::HistogramHandle;
+use khora_core::utils::timer::Stopwatch;
 
 /// A utility for timing the duration of a scope and automatically recording
 /// the result in a `Histogram` when it is dropped.

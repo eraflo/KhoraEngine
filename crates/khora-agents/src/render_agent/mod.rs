@@ -26,8 +26,8 @@
 //! - Selecting the optimal rendering strategy based on the budget allocated by GORNA
 //!   and the current performance goals (e.g., prioritizing framerate vs. visual quality).
 
-mod mesh_preparation;
 mod agent;
+mod mesh_preparation;
 
-pub use mesh_preparation::*;
 pub use agent::*;
+pub use mesh_preparation::*;

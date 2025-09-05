@@ -25,7 +25,8 @@ use khora_telemetry::MetricsRegistry;
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    fs::File, sync::Arc,
+    fs::File,
+    sync::Arc,
 };
 
 use crate::asset_agent::loader::AssetLoaderLaneRegistry;
@@ -45,7 +46,11 @@ pub struct AssetAgent {
 
 impl AssetAgent {
     /// Creates a new `AssetAgent` with the given VFS and loading lane.
-    pub fn new(index_bytes: &[u8], data_file: File, metrics_registry: Arc<MetricsRegistry>) -> Result<Self> {
+    pub fn new(
+        index_bytes: &[u8],
+        data_file: File,
+        metrics_registry: Arc<MetricsRegistry>,
+    ) -> Result<Self> {
         let vfs = VirtualFileSystem::new(index_bytes)
             .context("Failed to initialize VirtualFileSystem from index bytes")?;
 

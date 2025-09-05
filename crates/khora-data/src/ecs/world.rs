@@ -14,10 +14,16 @@
 
 use std::{any::TypeId, collections::HashMap};
 
-use khora_core::{renderer::{GpuMesh, Mesh}};
+use khora_core::renderer::{GpuMesh, Mesh};
 
 use crate::ecs::{
-    components::HandleComponent, entity::EntityMetadata, page::{ComponentPage, PageIndex}, query::{Query, WorldQuery}, registry::ComponentRegistry, Children, Component, ComponentBundle, EntityId, GlobalTransform, MaterialComponent, Parent, SemanticDomain, Transform
+    components::HandleComponent,
+    entity::EntityMetadata,
+    page::{ComponentPage, PageIndex},
+    query::{Query, WorldQuery},
+    registry::ComponentRegistry,
+    Children, Component, ComponentBundle, EntityId, GlobalTransform, MaterialComponent, Parent,
+    SemanticDomain, Transform,
 };
 
 /// The central container for the entire ECS, holding all entities, components, and metadata.

@@ -14,7 +14,10 @@
 
 //! Defines unlit materials for the rendering system.
 
-use crate::{asset::{Asset, Material}, math::LinearRgba};
+use crate::{
+    asset::{Asset, Material},
+    math::LinearRgba,
+};
 
 /// A simple, unlit material.
 ///
