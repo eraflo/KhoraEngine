@@ -17,9 +17,11 @@ mod global_transform;
 mod handle;
 mod parent;
 mod transform;
+mod material;
 
 pub use children::*;
 pub use global_transform::*;
 pub use handle::*;
 pub use parent::*;
+pub use material::*;
 pub use transform::*;

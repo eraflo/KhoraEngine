@@ -30,10 +30,12 @@
 mod handle;
 mod metadata;
 mod uuid;
+mod materials;
 
 pub use handle::*;
 pub use metadata::*;
 pub use uuid::*;
+pub use materials::*;
 
 /// A marker trait for types that can be managed by the asset system.
 ///

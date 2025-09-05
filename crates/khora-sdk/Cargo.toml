@@ -10,6 +10,7 @@ khora-agents = { path = "../khora-agents" }
 khora-control = { path = "../khora-control" }
 khora-infra = { path = "../khora-infra" }
 khora-telemetry = { path = "../khora-telemetry" }
+khora-data = { path = "../khora-data" }
 
 winit = "0.30"
 log = "0.4"

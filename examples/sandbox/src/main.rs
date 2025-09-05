@@ -22,6 +22,9 @@ use anyhow::Result;
 use khora_sdk::prelude::*;
 use khora_sdk::{Application, Engine, EngineContext};
 
+#[global_allocator]
+static GLOBAL: SaaTrackingAllocator = SaaTrackingAllocator::new(std::alloc::System);
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {

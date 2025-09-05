@@ -14,16 +14,10 @@
 
 use std::{any::TypeId, collections::HashMap};
 
-use khora_core::renderer::{GpuMesh, Mesh};
+use khora_core::{renderer::{GpuMesh, Mesh}};
 
 use crate::ecs::{
-    components::HandleComponent,
-    entity::EntityMetadata,
-    page::{ComponentPage, PageIndex},
-    query::{Query, WorldQuery},
-    registry::ComponentRegistry,
-    Children, Component, ComponentBundle, EntityId, GlobalTransform, Parent, SemanticDomain,
-    Transform,
+    components::HandleComponent, entity::EntityMetadata, page::{ComponentPage, PageIndex}, query::{Query, WorldQuery}, registry::ComponentRegistry, Children, Component, ComponentBundle, EntityId, GlobalTransform, MaterialComponent, Parent, SemanticDomain, Transform
 };
 
 /// The central container for the entire ECS, holding all entities, components, and metadata.
@@ -169,15 +163,16 @@ impl World {
             freed_entities: Vec::new(),
             registry: ComponentRegistry::default(),
         };
-        // Enregistrement des composants de base
+        // Registration of built-in components
         world.register_component::<Transform>(SemanticDomain::Spatial);
         world.register_component::<GlobalTransform>(SemanticDomain::Spatial);
         world.register_component::<Parent>(SemanticDomain::Spatial);
         world.register_component::<Children>(SemanticDomain::Spatial);
 
-        // Enregistrement des composants Handle
+        // Registration of render components
         world.register_component::<HandleComponent<Mesh>>(SemanticDomain::Render);
         world.register_component::<HandleComponent<GpuMesh>>(SemanticDomain::Render);
+        world.register_component::<MaterialComponent>(SemanticDomain::Render);
         world
     }
 

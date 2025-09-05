@@ -49,8 +49,8 @@ impl ExtractRenderablesLane {
             let extracted_mesh = ExtractedMesh {
                 // We assume `GlobalTransform` has a method to convert it to a matrix.
                 transform: transform.to_matrix(),
-                // Clone the AssetHandle from within the component. This is a cheap Arc clone.
-                gpu_mesh_handle: gpu_mesh_handle_comp.handle.clone(),
+                // Extract the UUID of the GpuMesh asset.
+                gpu_mesh_uuid: gpu_mesh_handle_comp.uuid,
             };
             render_world.meshes.push(extracted_mesh);
         }
