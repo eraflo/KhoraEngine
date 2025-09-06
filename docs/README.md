@@ -24,9 +24,10 @@ If you wish to browse the raw source files or contribute to the documentation, t
 *   [**5. Project and Crate Structure**](./src/05_project_structure.md)
 *   [**6. ECS Architecture: CRPECS**](./src/06_ecs_architecture.md)
 *   [**7. Asset Architecture: The Strategic System**](./src/07_asset_architecture.md)
+*   [**8. Serialization Architecture: SAA-Serialize**](./src/08_serialization_architecture.md)
 
 ### Part III: Development
-*   [**8. Roadmap & Issues**](./src/08_roadmap.md)
+*   [**9. Roadmap & Issues**](./src/09_roadmap_and_issues.md)
 
 ### Community
 *   [**Contributing Guidelines**](../CONTRIBUTING.md)
