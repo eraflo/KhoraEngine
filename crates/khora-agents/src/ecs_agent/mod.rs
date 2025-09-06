@@ -12,13 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Agents
-//!
-//! Intelligent wrappers that drive the Lanes with high-level logic.
+//! Ecs Agents
 
-#![warn(missing_docs)]
-
-pub mod asset_agent;
-pub mod ecs_agent;
-pub mod physics_agent;
-pub mod render_agent;
+pub mod garbage_collector_agent;

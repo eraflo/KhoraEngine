@@ -26,6 +26,27 @@ use crate::ecs::{
     SemanticDomain, Transform,
 };
 
+/// Errors that can occur when adding a component to an entity.
+#[derive(Debug, PartialEq, Eq)]
+pub enum AddComponentError {
+    /// The specified entity does not exist or is not alive.
+    EntityNotFound,
+    /// The specified component type is not registered in the ECS.
+    ComponentNotRegistered,
+    /// The entity already has a component of the specified type.
+    ComponentAlreadyExists,
+}
+
+/// A trait providing low-level access to the World for maintenance tasks.
+///
+/// This trait should only be used by trusted, engine-internal systems like
+/// a `CompactionLane`, which need to perform dangerous operations like
+/// cleaning up orphaned data. It is not part of the public API for game logic.
+pub trait WorldMaintenance {
+    /// Cleans up an orphaned data slot in a page.
+    fn cleanup_orphan_at(&mut self, location: PageIndex, domain: SemanticDomain);
+}
+
 /// The central container for the entire ECS, holding all entities, components, and metadata.
 ///
 /// The `World` orchestrates the CRPECS architecture. It owns all ECS data and provides the main
@@ -313,24 +334,51 @@ impl World {
         Query::new(self, matching_page_indices)
     }
 
-    /// Adds a new component to an existing entity.
+    /// Registers a component type with a specific semantic domain.
     ///
-    /// This method allows dynamically adding a component to an entity after it has been spawned.
-    /// It handles the necessary migration of the entity's data to a new `ComponentPage`
-    pub fn add_component<C: Component>(&mut self, entity_id: EntityId, component: C) -> bool {
-        // 1. Validate EntityId
+    /// This is a crucial setup step. Before a component of type `T` can be used
+    /// in a bundle, it must be registered with the world to define which semantic
+    /// page group its data will be stored in.
+    pub fn register_component<T: Component>(&mut self, domain: SemanticDomain) {
+        self.registry.register::<T>(domain);
+    }
+
+    /// Adds a new component `C` to an existing entity, migrating its domain data.
+    ///
+    /// This operation is designed to be fast. It performs the necessary data
+    /// migration to move the entity's components for the given `SemanticDomain`
+    /// to a new `ComponentPage` that matches the new layout.
+    ///
+    /// Crucially, it does NOT clean up the "hole" left in the old page. Instead,
+    /// it returns the location of the orphaned data, delegating the cleanup task
+    /// to an asynchronous garbage collection system.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Option<PageIndex>)`: On success. The `Option` contains the location of
+    ///   orphaned data if a migration occurred, which should be sent to a garbage collector.
+    ///   It is `None` if no migration was needed (e.g., adding to a new domain).
+    /// - `Err(AddComponentError)`: If the operation failed (e.g., entity not alive,
+    ///   component not registered, or component already present).
+    pub fn add_component<C: Component>(
+        &mut self,
+        entity_id: EntityId,
+        component: C,
+    ) -> Result<Option<PageIndex>, AddComponentError> {
+        // 1. Validate EntityId and get metadata
         let Some((id_in_world, Some(_))) = self.entities.get(entity_id.index as usize) else {
-            return false;
+            return Err(AddComponentError::EntityNotFound);
         };
+
         if id_in_world.generation != entity_id.generation {
-            return false;
+            return Err(AddComponentError::EntityNotFound);
         }
 
         let Some(domain) = self.registry.domain_of::<C>() else {
-            return false;
+            return Err(AddComponentError::ComponentNotRegistered);
         };
-        let mut metadata = self.entities[entity_id.index as usize].1.take().unwrap();
 
+        let mut metadata = self.entities[entity_id.index as usize].1.take().unwrap();
         let old_location_opt = metadata.locations.get(&domain).copied();
 
         // 2. Determine old and new page signatures
@@ -342,10 +390,9 @@ impl World {
         new_type_ids.sort();
         new_type_ids.dedup();
 
-        // If the signature hasn't changed, the component is already present.
         if new_type_ids == old_type_ids {
             self.entities[entity_id.index as usize].1 = Some(metadata); // Put it back
-            return false;
+            return Err(AddComponentError::ComponentAlreadyExists);
         }
 
         // 3. Find or create the destination page
@@ -356,14 +403,12 @@ impl World {
         unsafe {
             let (src_page_opt, dest_page) = if let Some(loc) = old_location_opt {
                 if loc.page_id == dest_page_id {
-                    // This is an optimization for a future `remove_component` case.
-                    // For `add`, this branch is unlikely.
-                    let page = &mut self.pages[loc.page_id as usize];
-                    (None, page)
+                    unreachable!(); // Should be caught by signature check above
                 } else {
-                    let (src_slice, dest_slice) = self.pages.split_at_mut(dest_page_id as usize);
-                    let dest_page = &mut dest_slice[0];
-                    let src_page = &src_slice[loc.page_id as usize];
+                    // This unsafe block is needed to get mutable access to two different pages
+                    let all_pages_ptr = self.pages.as_mut_ptr();
+                    let dest_page = &mut *all_pages_ptr.add(dest_page_id as usize);
+                    let src_page = &*all_pages_ptr.add(loc.page_id as usize);
                     (Some(src_page), dest_page)
                 }
             } else {
@@ -372,7 +417,6 @@ impl World {
 
             dest_row_index = dest_page.entities.len() as u32;
 
-            // Copy old components (if any)
             if let Some(src_page) = src_page_opt {
                 let src_row = old_location_opt.unwrap().row_index as usize;
                 for type_id in &old_type_ids {
@@ -383,7 +427,6 @@ impl World {
                 }
             }
 
-            // Add the new component
             dest_page
                 .columns
                 .get_mut(&TypeId::of::<C>())
@@ -396,12 +439,7 @@ impl World {
             dest_page.add_entity(entity_id);
         }
 
-        // 5. Remove from old page
-        if let Some(loc) = old_location_opt {
-            self.remove_from_page(entity_id, loc, domain);
-        }
-
-        // 6. Update metadata
+        // 5. Update metadata and put it back
         metadata.locations.insert(
             domain,
             PageIndex {
@@ -410,7 +448,43 @@ impl World {
             },
         );
         self.entities[entity_id.index as usize].1 = Some(metadata);
-        true
+
+        // 6. Return the old location for cleanup, without performing swap_remove
+        Ok(old_location_opt)
+    }
+
+    /// Logically removes all components belonging to a specific `SemanticDomain` from an entity.
+    ///
+    /// This is an extremely fast, O(1) operation that only modifies the entity's
+    /// metadata. It does not immediately deallocate or move any component data.
+    /// The component data is "orphaned" and will be cleaned up later by a
+    /// garbage collection process.
+    ///
+    /// This method is generic over a component `C` to determine which domain to remove.
+    ///
+    /// # Returns
+    ///
+    /// - `Some(PageIndex)`: Contains the location of the orphaned data if the
+    ///   components were successfully removed. This can be sent to a garbage collector.
+    /// - `None`: If the entity is not alive or did not have any components in the
+    ///   specified `SemanticDomain`.
+    pub fn remove_component_domain<C: Component>(
+        &mut self,
+        entity_id: EntityId,
+    ) -> Option<PageIndex> {
+        // 1. Validate the entity ID to ensure we're acting on a live entity.
+        let (id_in_world, metadata_slot) = self.entities.get_mut(entity_id.index as usize)?;
+        if id_in_world.generation != entity_id.generation || metadata_slot.is_none() {
+            return None;
+        }
+
+        // 2. Use the registry to find the component's domain.
+        let domain = self.registry.domain_of::<C>()?;
+
+        // 3. Remove the location entry from the entity's metadata.
+        //    `HashMap::remove` returns the value that was at that key, which is exactly what we need.
+        let metadata = metadata_slot.as_mut().unwrap();
+        metadata.locations.remove(&domain)
     }
 
     /// Gets a mutable reference to a single component `T` for a given entity.
@@ -473,14 +547,22 @@ impl World {
             .downcast_ref::<Vec<T>>()?;
         vec.get(location.row_index as usize)
     }
+}
 
-    /// Registers a component type with a specific semantic domain.
-    ///
-    /// This is a crucial setup step. Before a component of type `T` can be used
-    /// in a bundle, it must be registered with the world to define which semantic
-    /// page group its data will be stored in.
-    pub fn register_component<T: Component>(&mut self, domain: SemanticDomain) {
-        self.registry.register::<T>(domain);
+impl WorldMaintenance for World {
+    fn cleanup_orphan_at(&mut self, location: PageIndex, domain: SemanticDomain) {
+        let page = &mut self.pages[location.page_id as usize];
+        if page.entities.is_empty() || location.row_index as usize >= page.entities.len() {
+            return;
+        }
+
+        let last_entity_in_page = *page.entities.last().unwrap();
+        page.swap_remove_row(location.row_index);
+
+        let (_id, metadata_opt) = &mut self.entities[last_entity_in_page.index as usize];
+        if let Some(metadata) = metadata_opt.as_mut() {
+            metadata.locations.insert(domain, location);
+        }
     }
 }
 

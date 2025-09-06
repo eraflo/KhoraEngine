@@ -1,4 +1,4 @@
-# 6. ECS Architecture: The CRPECS
+# 6. ECS Architecture: The CRPECS (Documentation Mise à Jour)
 
 This document details the architecture of Khora's custom **Chunked Relational Page ECS (CRPECS)**. It was designed from the ground up to be the high-performance backbone of the SAA and to enable its most advanced concept: **Adaptive Game Data Flows (AGDF)**.
 
@@ -18,7 +18,7 @@ Its core principle is to **completely dissociate an entity's logical identity fr
 
 Instead of storing components based on the entity's complete structure (its archetype), we group them by **semantic domain** into fixed-size memory blocks called **Pages** (e.g., 16KB).
 *   A **`PhysicsPage`** would store the contiguous `Vec`s for `Position`, `Velocity`, and `Collider`.
-*   A **`RenderPage`** would store the contiguous `Vec`s for `MeshHandle`, `MaterialHandle`, and `Visibility`.
+*   A **`RenderPage`** would store the contiguous `Vec`s for `HandleComponent<Mesh>`, `MaterialComponent`, etc.
 
 Within each Page, component data is stored as a **Structure of Arrays (SoA)**, guaranteeing optimal cache performance for any system iterating *within that domain*.
 
@@ -50,21 +50,23 @@ The data for a single entity is physically scattered across multiple Pages, but 
 *   **Performance: Near-Optimal.**
 *   The query understands that `Position` and `Velocity` both belong to the `Physics` semantic domain. It therefore only needs to iterate through all active `PhysicsPage`s, accessing their contiguous `Vec`s. This achieves performance nearly identical to a pure Archetypal ECS for domain-specific queries.
 
-#### Adding/Removing Components (Structural Changes)
-*   **Performance: Extremely High.**
-*   To remove an entity's AI behavior, we simply remove an entry from the `locations` `HashMap` in its `EntityMetadata`. This is a near-instantaneous `O(1)` operation. The actual component data is now "orphaned" and will be cleaned up later by a low-priority garbage collection process.
-*   Adding a component only requires modifying the data within a single semantic domain, leaving all other component data for that entity completely untouched.
+#### Structural Changes: Fast Logic, Asynchronous Cleanup
+*   **`add_component<C>()`**: This is a fast operation that handles the addition of a new component to an entity. It migrates the entity's existing components for the relevant `SemanticDomain` to a new `ComponentPage` that matches the new component layout. Crucially, it does **not** clean up the "hole" left in the old page. Instead, it orphans the data at the old location and queues it for garbage collection.
+*   **`remove_component_domain<C>()`**: This is an **extremely high-performance `O(1)` operation**. It removes all components in a given `SemanticDomain` from an entity by simply deleting an entry from the `locations` `HashMap` in its `EntityMetadata`. Like `add_component`, this operation orphans the actual component data and queues it for cleanup by the garbage collector.
+
+#### The Garbage Collection Process
+*   The actual component data from `add` and `remove` operations is now "orphaned" and will be cleaned up later by a low-priority, asynchronous garbage collection process, ensuring that performance-critical code is not blocked by expensive cleanup operations.
 
 ## The Intelligent Compromise: Transversal Queries
 
-The explicit trade-off for this flexibility is the performance cost of **transversal queries**—queries that access data from different semantic domains simultaneously (e.g., `Query<(&Position, &MeshHandle)>`).
+The explicit trade-off for this flexibility is the performance cost of **transversal queries**—queries that access data from different semantic domains simultaneously (e.g., `Query<(&Position, &HandleComponent<Mesh>)>`).
 
-*   **Mechanism**: Such a query cannot iterate linearly over a single set of Pages. It must perform a "join," typically by iterating over the pages of one domain (e.g., `PhysicsPage`s) and using each entity's ID to look up its `EntityMetadata`, which then points to the location of its data in the other domain (e.g., `RenderPage`s).
+*   **Mechanism**: Such a query cannot iterate linearly over a single set of Pages. It must perform a "join," typically by iterating over the pages of one domain and using each entity's ID to look up its `EntityMetadata`, which then points to the location of its data in the other domain.
 *   **Cost**: This lookup process introduces pointer chasing and potential cache misses. A transversal query can be significantly slower than a native, domain-specific query.
-*   **Architectural Benefit**: This is a deliberate design choice. It creates a strong "architectural gravity" that encourages developers to write clean, decoupled systems. The physics engine should operate on physics data, and the rendering engine on rendering data. We make the common, well-designed case extremely fast, at the expense of the rare, coupled case.
+*   **Architectural Benefit**: This is a deliberate design choice. It creates a strong "architectural gravity" that encourages developers to write clean, decoupled systems.
 
 ## Integration with CLAD and SAA
 
 The CRPECS is the cornerstone of the **`khora-data`** crate and the ultimate implementation of the **[D]ata** in CLAD.
-*   It provides the perfect foundation for **AGDF**, as the SAA's Control Plane can cheaply and frequently alter data layouts by modifying `EntityMetadata`.
-*   The **garbage collection** and page compaction processes can themselves be implemented as **Intelligent Subsystem Agents (ISAs)**, operating on a low-priority thread when the system has spare resources, making the ECS itself a living, self-optimizing part of the SAA.
+*   It provides the perfect foundation for **AGDF**, as the SAA's Control Plane can cheaply and frequently alter data layouts by modifying `EntityMetadata` using the now-implemented `add_component` and `remove_component_domain` methods.
+*   The **garbage collection** and page compaction process has been implemented as a prime example of the CLAD and SAA philosophy. A `GarbageCollectorAgent` (**[A]**), acting as an **ISA**, makes strategic decisions about when and how much to clean. It dispatches this work to a dedicated `CompactionLane` (**[L]**), which performs the heavy lifting of modifying the component page **[D]ata**. This makes the ECS itself a living, self-optimizing part of the SAA.

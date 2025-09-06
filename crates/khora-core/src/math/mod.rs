@@ -109,7 +109,8 @@ pub fn clamp<T: PartialOrd>(value: T, min_val: T, max_val: T) -> T {
 ///
 /// # Examples
 ///
-/// ```/// use khora_core::math::saturate;
+/// ```
+/// use khora_core::math::saturate;
 /// assert_eq!(saturate(1.5), 1.0);
 /// assert_eq!(saturate(-0.5), 0.0);
 /// ```

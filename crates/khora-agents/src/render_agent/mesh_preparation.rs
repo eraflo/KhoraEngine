@@ -120,7 +120,7 @@ impl MeshPreparationSystem {
         // Now, iterate over the collected additions and apply them to the world.
         // This is safe because we are no longer borrowing the world for the query.
         for (entity_id, component) in pending_additions {
-            world.add_component(entity_id, component);
+            let _ = world.add_component(entity_id, component);
         }
     }
 

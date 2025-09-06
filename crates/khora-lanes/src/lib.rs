@@ -20,6 +20,7 @@
 
 pub mod asset_lane;
 pub mod audio_lane;
+pub mod ecs_lane;
 pub mod physics_lane;
 pub mod render_lane;
 pub mod scene_lane;
