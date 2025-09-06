@@ -12,22 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Core
+//! Groups all systems and data structures related to the logical concept of a "Scene".
 //!
-//! Foundational crate containing traits, core types, and interface contracts
-//! that define the engine's architecture.
+//! A scene in Khora is a collection of entities, components, and their relationships that
+//! form a coherent part of the application's world. This module provides the tools
+//! for defining, manipulating, and persisting these scenes.
 
-#![warn(missing_docs)]
+mod serialization;
+mod format;
 
-pub mod asset;
-pub mod event;
-pub mod math;
-pub mod memory;
-pub mod platform;
-pub mod renderer;
-pub mod scene;
-pub mod telemetry;
-pub mod utils;
-pub mod vfs;
-
-pub use utils::timer::Stopwatch;
+pub use serialization::*;
+pub use format::*;
