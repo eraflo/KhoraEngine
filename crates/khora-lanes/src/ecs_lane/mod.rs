@@ -12,13 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Agents
-//!
-//! Intelligent wrappers that drive the Lanes with high-level logic.
+//! Lanes related to the maintenance and operation of the Entity-Component-System.
 
-#![warn(missing_docs)]
+mod compaction_lane;
 
-pub mod asset_agent;
-pub mod ecs_agent;
-pub mod physics_agent;
-pub mod render_agent;
+pub use compaction_lane::*;
