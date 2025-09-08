@@ -45,4 +45,8 @@ pub enum SerializationGoal {
     /// The format used will be decoupled from the engine's internal memory layout,
     /// ensuring the scene file can be loaded by future versions of Khora.
     LongTermStability,
+
+    /// Prioritizes a flexible, structured format suitable for editor
+    /// operations, prefabs, and tool interchange.
+    EditorInterchange,
 }

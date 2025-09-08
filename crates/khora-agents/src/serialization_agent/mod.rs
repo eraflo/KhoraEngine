@@ -80,7 +80,7 @@ impl SerializationAgent {
             SerializationGoal::HumanReadableDebug | SerializationGoal::LongTermStability => {
                 "KH_DEFINITION_RON_V1"
             }
-            SerializationGoal::SmallestFileSize => "KH_RECIPE_V1",
+            SerializationGoal::SmallestFileSize | SerializationGoal::EditorInterchange => "KH_RECIPE_V1",
             SerializationGoal::FastestLoad => "KH_ARCHETYPE_V1",
         };
 
@@ -212,7 +212,7 @@ mod tests {
         let agent = SerializationAgent::new();
         // We ask for the recipe strategy explicitly via the goal.
         let scene_file = agent
-            .save_world(&source_world, SerializationGoal::SmallestFileSize)
+            .save_world(&source_world, SerializationGoal::EditorInterchange)
             .unwrap();
 
         let mut dest_world = World::new();
