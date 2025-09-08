@@ -12,15 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::ecs::Component;
-use khora_core::ecs::entity::EntityId;
+//! Serializable representation of Transform component.
 
-/// A component that establishes a parent-child relationship.
-///
-/// When an entity has a `Parent` component, its transform is considered
-/// relative to the transform of the entity specified by the `EntityId`.
-/// This is the foundational component for building scene hierarchies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Parent(pub EntityId);
+use bincode::{Decode, Encode};
+use khora_core::math::{Quaternion, Vec3};
+use serde::{Deserialize, Serialize};
 
-impl Component for Parent {}
+/// Serializable representation of a `Transform` component.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
+pub struct SerializableTransform {
+    /// Position of the entity in 3D space.
+    pub translation: Vec3,
+    /// Rotation of the entity in 3D space.
+    pub rotation: Quaternion,
+    /// Scale of the entity in 3D space.
+    pub scale: Vec3,
+}

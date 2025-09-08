@@ -1,4 +1,4 @@
-# 08 - Roadmap & Issue Tracker
+# 09 - Roadmap & Issue Tracker
 
 This document outlines the phased development plan for Khora. It integrates all open and proposed tasks into a structured series of milestones.
 
@@ -16,7 +16,6 @@ This document outlines the phased development plan for Khora. It integrates all 
 **Goal:** Build out the necessary features to represent and interact with a game world, starting with the implementation of our revolutionary ECS.
 
 #### [Scene Representation, Assets & Data Focus]
-- #45 [Feature] Implement Basic Scene Serialization
 - #99 [Feature] Implement Basic Audio System (Playback & Management)
 - #126 [Task] Integrate CPU/GPU Timers with Core Metrics System
 
@@ -88,6 +87,7 @@ This document outlines the phased development plan for Khora. It integrates all 
 
 #### [Editor Polish, Networking & Manual Control]
 - #175 [Feature] Implement Real-time Asset Database for Editor (Depends on #41)
+- #177 [Feature] Implement DeltaSerializationLane for Game Saves & Undo/Redo (Depends on #45)
 - #66 [Feature] Implement Asset Browser (Depends on #175)
 - #67 [Feature] Implement Material Editor
 - #68 [Feature] Implement Gizmos
@@ -194,3 +194,4 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #43 [Feature] Implement Mesh Loading & Management (Depends on #174)
 - #44 [Task] Render Loaded Static Model with Basic Materials (Depends on #40, #42, #43)
 - #157 [Task] Implement Component Removal & Basic Garbage Collection (CRPECS v1)
+- #45 [Feature] Implement Basic Scene Serialization

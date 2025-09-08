@@ -11,9 +11,10 @@
 - [Project and Crate Structure](./05_project_structure.md)
 - [ECS Architecture (CRPECS)](./06_ecs_architecture.md)
 - [Asset Architecture: The Strategic System](./07_asset_architecture_vfs.md)
+- [Serialization Architecture: SAA-Serialize](./08_serialization_architecture.md)
 
 # III. Development
-- [Roadmap & Issue Tracker](./08_roadmap_and_issues.md)
+- [Roadmap & Issue Tracker](./09_roadmap_and_issues.md)
 
 # IV. API Reference
 - [**Complete Crate Reference**](https://eraflo.github.io/KhoraEngine/api/index.html)

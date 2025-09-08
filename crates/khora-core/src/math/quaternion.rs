@@ -14,6 +14,9 @@
 
 //! Provides a Quaternion type for representing 3D rotations.
 
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+
 use super::{Mat4, Vec3, EPSILON};
 use std::ops::{Add, Mul, MulAssign, Neg, Sub};
 
@@ -26,7 +29,7 @@ use std::ops::{Add, Mul, MulAssign, Neg, Sub};
 /// A quaternion is stored as `(x, y, z, w)`, where `[x, y, z]` is the "vector" part
 /// and `w` is the "scalar" part. For representing rotations, it should be a "unit
 /// quaternion" where `x² + y² + z² + w² = 1`.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
 #[repr(C)]
 pub struct Quaternion {
     /// The x component of the vector part.

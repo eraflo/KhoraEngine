@@ -14,13 +14,28 @@
 
 //! Provides 2D, 3D, and 4D vector types and their associated operations.
 
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+
 use super::EPSILON;
 use std::ops::{Add, Div, Index, IndexMut, Mul, Neg, Sub};
 
 // --- Vec2 ---
 
 /// A 2-dimensional vector with `f32` components.
-#[derive(Debug, Default, Copy, Clone, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(
+    Debug,
+    Default,
+    Copy,
+    Clone,
+    PartialEq,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+)]
 #[repr(C)]
 pub struct Vec2 {
     /// The x component of the vector.
@@ -211,7 +226,18 @@ impl IndexMut<usize> for Vec2 {
 // --- Vector3D ---
 
 /// A 3-dimensional vector with `f32` components.
-#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+)]
 #[repr(C)]
 pub struct Vec3 {
     /// The x component of the vector.
@@ -486,7 +512,19 @@ impl IndexMut<usize> for Vec3 {
 ///
 /// In 3D graphics, `Vec4` is primarily used to represent points (`w`=1.0) and
 /// vectors (`w`=0.0) in homogeneous space, allowing them to be transformed by a `Mat4`.
-#[derive(Debug, Default, Copy, Clone, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(
+    Debug,
+    Default,
+    Copy,
+    Clone,
+    PartialEq,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+)]
 #[repr(C)]
 pub struct Vec4 {
     /// The x component of the vector.

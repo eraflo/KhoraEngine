@@ -22,3 +22,4 @@ pub mod asset_agent;
 pub mod ecs_agent;
 pub mod physics_agent;
 pub mod render_agent;
+pub mod serialization_agent;

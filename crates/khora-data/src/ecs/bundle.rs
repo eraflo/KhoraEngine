@@ -61,6 +61,29 @@ pub trait ComponentBundle {
     unsafe fn add_to_page(self, page: &mut ComponentPage);
 }
 
+/// Implementation for the empty tuple, allowing spawning of empty entities.
+impl ComponentBundle for () {
+    fn type_ids() -> Vec<TypeId> {
+        Vec::new()
+    }
+
+    fn create_columns() -> HashMap<TypeId, Box<dyn AnyVec>> {
+        HashMap::new()
+    }
+
+    fn update_metadata(
+        _metadata: &mut EntityMetadata,
+        _location: PageIndex,
+        _registry: &ComponentRegistry,
+    ) {
+        // No components, so no location information to update.
+    }
+
+    unsafe fn add_to_page(self, _page: &mut ComponentPage) {
+        // No components to add, so this is a no-op.
+    }
+}
+
 // Implementation for a single component.
 impl<C1: Component> ComponentBundle for C1 {
     fn type_ids() -> Vec<TypeId> {

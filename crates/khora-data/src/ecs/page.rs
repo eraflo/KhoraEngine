@@ -17,13 +17,14 @@ use std::{
     collections::HashMap,
 };
 
-use crate::ecs::EntityId;
+use bincode::{Decode, Encode};
+use khora_core::ecs::entity::EntityId;
 
 /// An internal helper trait to perform vector operations on a type-erased `Box<dyn Any>`.
 ///
 /// This allows us to call methods like `swap_remove` on component columns without
 /// needing to know their concrete `Vec<T>` type at compile time.
-pub trait AnyVec {
+pub trait AnyVec: Any + Send + Sync {
     /// Casts the trait object to `&dyn Any`.
     fn as_any(&self) -> &dyn Any;
 
@@ -32,10 +33,21 @@ pub trait AnyVec {
 
     /// Performs a `swap_remove` on the underlying `Vec`, removing the element at `index`.
     fn swap_remove_any(&mut self, index: usize);
+
+    /// # Safety
+    /// Returns the raw byte slice of the underlying `Vec<T>`.
+    /// The caller must ensure that this byte representation is handled correctly.
+    unsafe fn as_bytes(&self) -> &[u8];
+
+    /// # Safety
+    /// Replaces the contents of the `Vec<T>` with the given raw bytes.
+    /// The caller must guarantee that the bytes represent a valid sequence of `T`
+    /// with the correct size and alignment.
+    unsafe fn set_from_bytes(&mut self, bytes: &[u8]);
 }
 
 // We implement this trait for any `Vec<T>` where T is `'static`.
-impl<T: 'static> AnyVec for Vec<T> {
+impl<T: 'static + Send + Sync> AnyVec for Vec<T> {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -47,18 +59,59 @@ impl<T: 'static> AnyVec for Vec<T> {
     fn swap_remove_any(&mut self, index: usize) {
         self.swap_remove(index);
     }
+
+    unsafe fn as_bytes(&self) -> &[u8] {
+        std::slice::from_raw_parts(
+            self.as_ptr() as *const u8,
+            self.len() * std::mem::size_of::<T>(),
+        )
+    }
+
+    unsafe fn set_from_bytes(&mut self, bytes: &[u8]) {
+        let elem_size = std::mem::size_of::<T>();
+        if elem_size == 0 {
+            return; // Correctly handle Zero-Sized Types.
+        }
+        assert_eq!(
+            bytes.len() % elem_size,
+            0,
+            "Byte slice length is not a multiple of element size"
+        );
+
+        // Calculate the new length and resize the Vec accordingly.
+        let new_len = bytes.len() / elem_size;
+        self.clear();
+        self.reserve(new_len);
+
+        // Perform the copy directly into the Vec's allocated memory.
+        let ptr = self.as_mut_ptr() as *mut u8;
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len());
+        self.set_len(new_len);
+    }
 }
 
 /// A logical address pointing to an entity's component data within a specific `ComponentPage`.
 ///
 /// This struct is the core of the relational aspect of our ECS. It decouples an entity's
 /// identity from the physical storage of its data by acting as a coordinate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
 pub struct PageIndex {
     /// The unique identifier of the `ComponentPage` that stores the component data.
     pub page_id: u32,
     /// The index of the row within the page where this entity's components are stored.
     pub row_index: u32,
+}
+
+/// A serializable representation of a single `ComponentPage`.
+#[derive(Encode, Decode)]
+pub(crate) struct SerializedPage {
+    /// The unique identifiers of this page.
+    pub(crate) type_names: Vec<String>,
+    /// The list of entities whose component data is stored in this page.
+    pub(crate) entities: Vec<EntityId>,
+    /// The actual serialized component data columns. Each column is a byte vector
+    /// representing the serialized `Vec<T>` for a specific component
+    pub(crate) columns: HashMap<String, Vec<u8>>,
 }
 
 /// A page of memory that stores the component data for multiple entities

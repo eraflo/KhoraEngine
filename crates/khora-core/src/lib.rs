@@ -20,11 +20,14 @@
 #![warn(missing_docs)]
 
 pub mod asset;
+pub mod ecs;
 pub mod event;
+pub mod graph;
 pub mod math;
 pub mod memory;
 pub mod platform;
 pub mod renderer;
+pub mod scene;
 pub mod telemetry;
 pub mod utils;
 pub mod vfs;

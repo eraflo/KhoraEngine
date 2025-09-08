@@ -14,6 +14,8 @@
 
 //! Scene management
 
+mod strategies;
 mod transform_propagation;
 
+pub use strategies::*;
 pub use transform_propagation::transform_propagation_system;

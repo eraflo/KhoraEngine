@@ -12,15 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::ecs::Component;
-use khora_core::ecs::entity::EntityId;
+//! Contains foundational, public-facing types related to the Entity-Component-System.
+//!
+//! This module provides core data structures like [`entity::EntityId`]. The concrete ECS
+//! implementation lives in the `khora-data` crate, which depends on these types.
 
-/// A component that establishes a parent-child relationship.
-///
-/// When an entity has a `Parent` component, its transform is considered
-/// relative to the transform of the entity specified by the `EntityId`.
-/// This is the foundational component for building scene hierarchies.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Parent(pub EntityId);
-
-impl Component for Parent {}
+pub mod entity;

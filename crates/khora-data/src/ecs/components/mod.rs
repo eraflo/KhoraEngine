@@ -17,6 +17,7 @@ mod global_transform;
 mod handle;
 mod material;
 mod parent;
+mod serializable;
 mod transform;
 
 pub use children::*;
@@ -24,4 +25,5 @@ pub use global_transform::*;
 pub use handle::*;
 pub use material::*;
 pub use parent::*;
+pub use serializable::*;
 pub use transform::*;

@@ -10,9 +10,11 @@ khora-data = { path = "../khora-data" }
 
 ahash = "0.8"
 base64 = "0.22.1" # For data URI decoding
+bincode = "2.0.1"
 
 # Error handling
 anyhow = "1.0"
+thiserror = "2.0.16"
 
 # Image handling
 image = "0.25.8"
@@ -20,3 +22,7 @@ image = "0.25.8"
 # Mesh handling
 tobj = "4.0"
 gltf = { version = "1.0", features = ["import"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+ron = "0.11.0"

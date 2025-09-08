@@ -16,6 +16,7 @@
 
 use khora_core::{
     asset::AssetHandle,
+    ecs::entity::EntityId,
     renderer::{
         api::{BufferDescriptor, BufferUsage, GpuMesh, IndexFormat},
         GraphicsDevice, Mesh,
@@ -23,7 +24,7 @@ use khora_core::{
 };
 use khora_data::{
     assets::Assets,
-    ecs::{EntityId, HandleComponent, Without, World},
+    ecs::{HandleComponent, Without, World},
 };
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
