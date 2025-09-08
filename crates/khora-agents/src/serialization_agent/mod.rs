@@ -80,7 +80,9 @@ impl SerializationAgent {
             SerializationGoal::HumanReadableDebug | SerializationGoal::LongTermStability => {
                 "KH_DEFINITION_RON_V1"
             }
-            SerializationGoal::SmallestFileSize | SerializationGoal::EditorInterchange => "KH_RECIPE_V1",
+            SerializationGoal::SmallestFileSize | SerializationGoal::EditorInterchange => {
+                "KH_RECIPE_V1"
+            }
             SerializationGoal::FastestLoad => "KH_ARCHETYPE_V1",
         };
 
