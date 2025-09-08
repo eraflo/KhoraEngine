@@ -87,6 +87,7 @@ This document outlines the phased development plan for Khora. It integrates all 
 
 #### [Editor Polish, Networking & Manual Control]
 - #175 [Feature] Implement Real-time Asset Database for Editor (Depends on #41)
+- #177 [Feature] Implement DeltaSerializationLane for Game Saves & Undo/Redo (Depends on #45)
 - #66 [Feature] Implement Asset Browser (Depends on #175)
 - #67 [Feature] Implement Material Editor
 - #68 [Feature] Implement Gizmos
