@@ -14,6 +14,7 @@
 
 //! Defines core types related to entities in the ECS architecture.
 
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 /// A unique identifier for an entity in the world.
@@ -23,7 +24,7 @@ use serde::{Deserialize, Serialize};
 /// but the generation is incremented. This ensures that old `EntityId` handles
 /// pointing to a recycled index become invalid and cannot accidentally affect
 /// the new entity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
 pub struct EntityId {
     /// The index of the entity's metadata in the central `Vec<EntityMetadata>`.
     pub index: u32,

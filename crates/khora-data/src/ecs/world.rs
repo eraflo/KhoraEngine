@@ -14,6 +14,7 @@
 
 use std::{any::TypeId, collections::HashMap};
 
+use bincode::config;
 use khora_core::{
     ecs::entity::EntityId,
     renderer::{GpuMesh, Mesh},
@@ -25,8 +26,9 @@ use crate::ecs::{
     page::{ComponentPage, PageIndex},
     query::{Query, WorldQuery},
     registry::ComponentRegistry,
+    serialization::SceneMemoryLayout,
     Children, Component, ComponentBundle, GlobalTransform, MaterialComponent, Parent,
-    SemanticDomain, Transform,
+    SemanticDomain, SerializedPage, Transform, TypeRegistry,
 };
 
 /// Errors that can occur when adding a component to an entity.
@@ -70,6 +72,9 @@ pub struct World {
 
     /// The registry that maps component types to their storage domains.
     registry: ComponentRegistry,
+
+    /// The type registry for serialization purposes.
+    type_registry: TypeRegistry,
     // We will add more fields here later, such as a resource manager
     // or an entity ID allocator to manage recycled generations.
 }
@@ -192,6 +197,7 @@ impl World {
             pages: Vec::new(),
             freed_entities: Vec::new(),
             registry: ComponentRegistry::default(),
+            type_registry: TypeRegistry::default(),
         };
         // Registration of built-in components
         world.register_component::<Transform>(SemanticDomain::Spatial);
@@ -344,6 +350,7 @@ impl World {
     /// page group its data will be stored in.
     pub fn register_component<T: Component>(&mut self, domain: SemanticDomain) {
         self.registry.register::<T>(domain);
+        self.type_registry.register::<T>();
     }
 
     /// Adds a new component `C` to an existing entity, migrating its domain data.
@@ -556,6 +563,91 @@ impl World {
         self.entities
             .iter()
             .filter_map(|(id, metadata_opt)| metadata_opt.as_ref().map(|_| *id))
+    }
+
+    /// Serializes the entire World state using a direct memory layout strategy.
+    ///
+    /// This method is highly unsafe as it reads raw component memory.
+    pub fn serialize_archetype(&self) -> Result<Vec<u8>, bincode::error::EncodeError> {
+        let mut serialized_pages = Vec::with_capacity(self.pages.len());
+        for page in &self.pages {
+            let mut serialized_columns = HashMap::new();
+
+            // Use the TypeRegistry to get the stable string name for each TypeId.
+            let type_names: Vec<String> = page
+                .type_ids
+                .iter()
+                .map(|id| self.type_registry.get_name_of(id).unwrap().to_string())
+                .collect();
+
+            for type_id in &page.type_ids {
+                let type_name = self.type_registry.get_name_of(type_id).unwrap();
+                let column = &page.columns[type_id];
+                // UNSAFE: Copying raw bytes from the component vector.
+                let bytes = unsafe { column.as_bytes() };
+                serialized_columns.insert(type_name.to_string(), bytes.to_vec());
+            }
+
+            serialized_pages.push(SerializedPage {
+                type_names,
+                entities: page.entities.clone(),
+                columns: serialized_columns,
+            });
+        }
+        let layout = SceneMemoryLayout {
+            entities: self.entities.clone(),
+            freed_entities: self.freed_entities.clone(),
+            pages: serialized_pages,
+        };
+        bincode::encode_to_vec(layout, config::standard())
+    }
+
+    /// Deserializes and completely replaces the World state from a memory layout.
+    ///
+    /// This method is highly unsafe as it writes raw bytes into component vectors.
+    pub fn deserialize_archetype(
+        &mut self,
+        data: &[u8],
+    ) -> Result<(), bincode::error::DecodeError> {
+        let (layout, _): (SceneMemoryLayout, _) =
+            bincode::decode_from_slice(data, config::standard())?;
+
+        self.entities = layout.entities;
+        self.freed_entities = layout.freed_entities;
+        self.pages.clear();
+
+        for serialized_page in layout.pages {
+            // Use the TypeRegistry to convert string names back to TypeIds.
+            let type_ids: Vec<TypeId> = serialized_page
+                .type_names
+                .iter()
+                .map(|name| {
+                    self.type_registry
+                        .get_id_of(name)
+                        .expect("Serialized component type not registered")
+                })
+                .collect();
+
+            let mut new_page = ComponentPage {
+                type_ids,
+                entities: serialized_page.entities,
+                columns: HashMap::new(),
+            };
+
+            for (type_name, bytes) in &serialized_page.columns {
+                let type_id = self.type_registry.get_id_of(type_name).unwrap();
+                let constructor = self.registry.get_column_constructor(&type_id).unwrap();
+                let mut column = constructor();
+                // UNSAFE: Writing raw bytes into the newly created component vector.
+                unsafe {
+                    column.set_from_bytes(bytes);
+                }
+                new_page.columns.insert(type_id, column);
+            }
+            self.pages.push(new_page);
+        }
+
+        Ok(())
     }
 }
 

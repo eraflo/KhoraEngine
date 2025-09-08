@@ -14,6 +14,7 @@
 
 //! Provides 2D, 3D, and 4D vector types and their associated operations.
 
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::EPSILON;
@@ -32,6 +33,8 @@ use std::ops::{Add, Div, Index, IndexMut, Mul, Neg, Sub};
     bytemuck::Zeroable,
     Serialize,
     Deserialize,
+    Encode,
+    Decode,
 )]
 #[repr(C)]
 pub struct Vec2 {
@@ -224,7 +227,16 @@ impl IndexMut<usize> for Vec2 {
 
 /// A 3-dimensional vector with `f32` components.
 #[derive(
-    Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
 )]
 #[repr(C)]
 pub struct Vec3 {
@@ -510,6 +522,8 @@ impl IndexMut<usize> for Vec3 {
     bytemuck::Zeroable,
     Serialize,
     Deserialize,
+    Encode,
+    Decode,
 )]
 #[repr(C)]
 pub struct Vec4 {

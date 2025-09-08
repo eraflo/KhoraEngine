@@ -18,9 +18,13 @@
 //! a unified interface for all serialization `Lanes`. This allows the `SerializationAgent`
 //! to manage and dispatch tasks to different strategies polymorphically.
 
+mod archetype_lane;
 mod definition_lane;
+mod recipe_lane;
 
+pub use archetype_lane::*;
 pub use definition_lane::*;
+pub use recipe_lane::*;
 
 use khora_data::ecs::World;
 use std::fmt;

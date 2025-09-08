@@ -15,5 +15,7 @@
 //! Scene module containing the Scene struct and related functionality.
 
 mod definition;
+mod recipe;
 
 pub use definition::*;
+pub use recipe::*;

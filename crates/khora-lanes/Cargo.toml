@@ -10,6 +10,7 @@ khora-data = { path = "../khora-data" }
 
 ahash = "0.8"
 base64 = "0.22.1" # For data URI decoding
+bincode = "2.0.1"
 
 # Error handling
 anyhow = "1.0"

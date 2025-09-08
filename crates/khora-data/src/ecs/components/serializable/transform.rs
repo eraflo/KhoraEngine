@@ -14,11 +14,12 @@
 
 //! Serializable representation of Transform component.
 
+use bincode::{Decode, Encode};
 use khora_core::math::{Quaternion, Vec3};
 use serde::{Deserialize, Serialize};
 
 /// Serializable representation of a `Transform` component.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct SerializableTransform {
     /// Position of the entity in 3D space.
     pub translation: Vec3,

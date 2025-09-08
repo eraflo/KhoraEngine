@@ -31,6 +31,7 @@ mod entity;
 mod page;
 mod query;
 mod registry;
+mod serialization;
 mod world;
 
 pub use bundle::ComponentBundle;

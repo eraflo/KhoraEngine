@@ -12,24 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Core
-//!
-//! Foundational crate containing traits, core types, and interface contracts
-//! that define the engine's architecture.
+//! Provides generic, reusable graph algorithms and data structures.
 
-#![warn(missing_docs)]
+mod topological_sort;
 
-pub mod asset;
-pub mod ecs;
-pub mod event;
-pub mod graph;
-pub mod math;
-pub mod memory;
-pub mod platform;
-pub mod renderer;
-pub mod scene;
-pub mod telemetry;
-pub mod utils;
-pub mod vfs;
-
-pub use utils::timer::Stopwatch;
+pub use topological_sort::*;

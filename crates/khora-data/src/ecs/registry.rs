@@ -14,8 +14,13 @@
 
 //! Defines the `ComponentRegistry` and `SemanticDomain` for the CRPECS.
 
+use bincode::{Decode, Encode};
+
 use crate::ecs::{AnyVec, Component};
-use std::{any::TypeId, collections::HashMap};
+use std::{
+    any::{self, TypeId},
+    collections::HashMap,
+};
 
 /// Type alias for the row copy function pointer.
 type RowCopyFn = unsafe fn(&dyn AnyVec, usize, &mut dyn AnyVec);
@@ -25,7 +30,7 @@ type RowCopyFn = unsafe fn(&dyn AnyVec, usize, &mut dyn AnyVec);
 /// This is used by the [`ComponentRegistry`] to map a component type to its
 /// corresponding `ComponentPage` group. This grouping is the core principle that
 /// allows the CRPECS to have fast, domain-specific queries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Encode, Decode)]
 pub enum SemanticDomain {
     /// For components related to position, physics, and the scene graph.
     Spatial,
@@ -90,5 +95,34 @@ impl ComponentRegistry {
     /// (Internal) Gets the row copy function for a given TypeId.
     pub(crate) fn get_row_copier(&self, type_id: &TypeId) -> Option<RowCopyFn> {
         self.mapping.get(type_id).map(|vtable| vtable.copy_row)
+    }
+}
+
+/// A registry that provides reflection data, like type names.
+#[derive(Debug, Default)]
+pub struct TypeRegistry {
+    /// Maps a component's `TypeId` to its string name.
+    id_to_name: HashMap<TypeId, String>,
+    /// Maps a component's string name to its `TypeId`.
+    name_to_id: HashMap<String, TypeId>,
+}
+
+impl TypeRegistry {
+    /// Registers a component type, storing its name and TypeId.
+    pub(crate) fn register<T: Component>(&mut self) {
+        let type_id = TypeId::of::<T>();
+        let type_name = any::type_name::<T>().to_string();
+        self.id_to_name.insert(type_id, type_name.clone());
+        self.name_to_id.insert(type_name, type_id);
+    }
+
+    /// Gets the string name for a given TypeId.
+    pub(crate) fn get_name_of(&self, type_id: &TypeId) -> Option<&str> {
+        self.id_to_name.get(type_id).map(|s| s.as_str())
+    }
+
+    /// Gets the TypeId for a given string name.
+    pub(crate) fn get_id_of(&self, type_name: &str) -> Option<TypeId> {
+        self.name_to_id.get(type_name).copied()
     }
 }

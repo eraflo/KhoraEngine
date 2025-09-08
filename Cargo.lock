@@ -1312,6 +1312,7 @@ dependencies = [
 name = "khora-data"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "khora-core",
  "log",
  "serde",
@@ -1349,6 +1350,7 @@ dependencies = [
  "ahash",
  "anyhow",
  "base64 0.22.1",
+ "bincode",
  "gltf",
  "image",
  "khora-core",

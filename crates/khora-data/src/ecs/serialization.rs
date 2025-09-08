@@ -12,12 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Serializable representation of Parent component.
+//! Defines root data structures for different serialization strategies of the ECS World.
 
+use crate::ecs::{entity::EntityMetadata, SerializedPage};
 use bincode::{Decode, Encode};
 use khora_core::ecs::entity::EntityId;
-use serde::{Deserialize, Serialize};
 
-/// Serializable representation of a `Parent` component.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
-pub struct SerializableParent(pub EntityId);
+/// A direct, low-level snapshot of a `World`'s memory layout.
+#[derive(Encode, Decode)]
+pub(crate) struct SceneMemoryLayout {
+    /// The entities present in the world at the time of serialization.
+    pub(crate) entities: Vec<(EntityId, Option<EntityMetadata>)>,
+    /// The freed entity IDs available for reuse.
+    pub(crate) freed_entities: Vec<u32>,
+    /// The serialized component pages in the world.
+    pub(crate) pages: Vec<SerializedPage>,
+}
