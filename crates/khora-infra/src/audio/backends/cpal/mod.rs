@@ -12,25 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Core
-//!
-//! Foundational crate containing traits, core types, and interface contracts
-//! that define the engine's architecture.
+//! A concrete implementation of the `AudioDevice` trait using the `cpal` library.
 
-#![warn(missing_docs)]
-
-pub mod asset;
-pub mod audio;
-pub mod ecs;
-pub mod event;
-pub mod graph;
-pub mod math;
-pub mod memory;
-pub mod platform;
-pub mod renderer;
-pub mod scene;
-pub mod telemetry;
-pub mod utils;
-pub mod vfs;
-
-pub use utils::timer::Stopwatch;
+mod device;
+pub use device::*;
