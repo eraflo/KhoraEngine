@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::ecs::{Component, EntityId};
+use crate::ecs::Component;
+use khora_core::ecs::entity::EntityId;
 
 /// A component that lists the direct children of an entity.
 ///

@@ -18,8 +18,8 @@
 //! form a coherent part of the application's world. This module provides the tools
 //! for defining, manipulating, and persisting these scenes.
 
-mod serialization;
 mod format;
+mod serialization;
 
-pub use serialization::*;
 pub use format::*;
+pub use serialization::*;

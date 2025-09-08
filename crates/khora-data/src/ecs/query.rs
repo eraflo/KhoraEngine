@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use khora_core::ecs::entity::EntityId;
+
 use crate::ecs::{
     page::{AnyVec, ComponentPage},
-    Component, EntityId, World,
+    Component, World,
 };
 use std::{any::TypeId, marker::PhantomData};
 

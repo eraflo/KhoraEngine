@@ -17,7 +17,7 @@ use std::{
     collections::HashMap,
 };
 
-use crate::ecs::EntityId;
+use khora_core::ecs::entity::EntityId;
 
 /// An internal helper trait to perform vector operations on a type-erased `Box<dyn Any>`.
 ///

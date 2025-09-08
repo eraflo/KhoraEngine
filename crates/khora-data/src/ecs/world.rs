@@ -14,7 +14,10 @@
 
 use std::{any::TypeId, collections::HashMap};
 
-use khora_core::renderer::{GpuMesh, Mesh};
+use khora_core::{
+    ecs::entity::EntityId,
+    renderer::{GpuMesh, Mesh},
+};
 
 use crate::ecs::{
     components::HandleComponent,
@@ -22,7 +25,7 @@ use crate::ecs::{
     page::{ComponentPage, PageIndex},
     query::{Query, WorldQuery},
     registry::ComponentRegistry,
-    Children, Component, ComponentBundle, EntityId, GlobalTransform, MaterialComponent, Parent,
+    Children, Component, ComponentBundle, GlobalTransform, MaterialComponent, Parent,
     SemanticDomain, Transform,
 };
 
@@ -546,6 +549,13 @@ impl World {
             .as_any()
             .downcast_ref::<Vec<T>>()?;
         vec.get(location.row_index as usize)
+    }
+
+    /// Returns an iterator over all currently living `EntityId`s in the world.
+    pub fn iter_entities(&self) -> impl Iterator<Item = EntityId> + '_ {
+        self.entities
+            .iter()
+            .filter_map(|(id, metadata_opt)| metadata_opt.as_ref().map(|_| *id))
     }
 }
 

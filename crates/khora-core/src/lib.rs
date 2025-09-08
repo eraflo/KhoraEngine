@@ -20,6 +20,7 @@
 #![warn(missing_docs)]
 
 pub mod asset;
+pub mod ecs;
 pub mod event;
 pub mod math;
 pub mod memory;

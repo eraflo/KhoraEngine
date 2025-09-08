@@ -21,3 +21,4 @@
 pub mod allocators;
 pub mod assets;
 pub mod ecs;
+pub mod scene;

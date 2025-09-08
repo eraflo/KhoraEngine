@@ -14,7 +14,8 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use khora_data::ecs::{EntityId, GlobalTransform, Parent, Transform, Without, World};
+use khora_core::ecs::entity::EntityId;
+use khora_data::ecs::{GlobalTransform, Parent, Transform, Without, World};
 
 /// A system that propagates local `Transform` changes through the scene hierarchy
 /// to compute the final `GlobalTransform` for each entity.

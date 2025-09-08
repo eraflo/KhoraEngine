@@ -25,18 +25,3 @@ pub struct EntityMetadata {
     /// each specialized for a specific domain (e.g., Spatial, Render).
     pub(crate) locations: HashMap<SemanticDomain, PageIndex>,
 }
-
-/// A unique identifier for an entity in the world.
-///
-/// It combines an index with a generation count to solve the "ABA problem".
-/// When an entity is despawned, its index can be recycled for a new entity,
-/// but the generation is incremented. This ensures that old `EntityId` handles
-/// pointing to a recycled index become invalid and cannot accidentally affect
-/// the new entity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct EntityId {
-    /// The index of the entity's metadata in the central `Vec<EntityMetadata>`.
-    pub index: u32,
-    /// A generation counter that is incremented each time the index is recycled.
-    pub generation: u32,
-}

@@ -66,16 +66,13 @@ impl SceneHeader {
         if magic_bytes != HEADER_MAGIC_BYTES {
             return Err("Invalid magic bytes; not a Khora scene file");
         }
-        
+
         let format_version = bytes[8];
 
-        let strategy_id: [u8; STRATEGY_ID_LEN] = bytes[9..9 + STRATEGY_ID_LEN]
-            .try_into()
-            .unwrap();
+        let strategy_id: [u8; STRATEGY_ID_LEN] = bytes[9..9 + STRATEGY_ID_LEN].try_into().unwrap();
 
-        let payload_length = u64::from_le_bytes(
-            bytes[9 + STRATEGY_ID_LEN..Self::SIZE].try_into().unwrap(),
-        );
+        let payload_length =
+            u64::from_le_bytes(bytes[9 + STRATEGY_ID_LEN..Self::SIZE].try_into().unwrap());
 
         Ok(Self {
             magic_bytes,
