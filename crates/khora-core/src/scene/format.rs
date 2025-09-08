@@ -26,6 +26,15 @@ use std::convert::TryInto;
 pub const HEADER_MAGIC_BYTES: [u8; 8] = *b"KHORASCN";
 const STRATEGY_ID_LEN: usize = 32;
 
+/// An error that can occur when parsing a `SceneFile` from bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SceneFileError {
+    /// The byte slice is too short to contain a valid header.
+    TooShort,
+    /// The file's magic bytes do not match `HEADER_MAGIC_BYTES`.
+    InvalidMagicBytes,
+}
+
 /// The fixed-size header at the beginning of every Khora scene file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SceneHeader {
@@ -80,5 +89,42 @@ impl SceneHeader {
             strategy_id,
             payload_length,
         })
+    }
+
+    /// Serializes the header into a fixed-size byte array.
+    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
+        let mut bytes = [0u8; Self::SIZE];
+        bytes[0..8].copy_from_slice(&self.magic_bytes);
+        bytes[8] = self.format_version;
+        bytes[9..9 + STRATEGY_ID_LEN].copy_from_slice(&self.strategy_id);
+        let payload_bytes = self.payload_length.to_le_bytes();
+        bytes[9 + STRATEGY_ID_LEN..Self::SIZE].copy_from_slice(&payload_bytes);
+        bytes
+    }
+}
+
+impl SceneFile {
+    /// Parses a `SceneFile` from a byte slice.
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, SceneFileError> {
+        let header =
+            SceneHeader::from_bytes(bytes).map_err(|_| SceneFileError::InvalidMagicBytes)?;
+        let header_size = SceneHeader::SIZE;
+        let payload_end = header_size + header.payload_length as usize;
+
+        if bytes.len() < payload_end {
+            return Err(SceneFileError::TooShort);
+        }
+
+        let payload = bytes[header_size..payload_end].to_vec();
+        Ok(Self { header, payload })
+    }
+
+    /// Serializes the entire `SceneFile` (header + payload) into a single byte vector.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let header_bytes = self.header.to_bytes();
+        let mut file_bytes = Vec::with_capacity(header_bytes.len() + self.payload.len());
+        file_bytes.extend_from_slice(&header_bytes);
+        file_bytes.extend_from_slice(&self.payload);
+        file_bytes
     }
 }

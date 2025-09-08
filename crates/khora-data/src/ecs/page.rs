@@ -24,7 +24,7 @@ use khora_core::ecs::entity::EntityId;
 ///
 /// This allows us to call methods like `swap_remove` on component columns without
 /// needing to know their concrete `Vec<T>` type at compile time.
-pub trait AnyVec {
+pub trait AnyVec: Any + Send + Sync {
     /// Casts the trait object to `&dyn Any`.
     fn as_any(&self) -> &dyn Any;
 
@@ -47,7 +47,7 @@ pub trait AnyVec {
 }
 
 // We implement this trait for any `Vec<T>` where T is `'static`.
-impl<T: 'static> AnyVec for Vec<T> {
+impl<T: 'static + Send + Sync> AnyVec for Vec<T> {
     fn as_any(&self) -> &dyn Any {
         self
     }
