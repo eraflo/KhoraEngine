@@ -5,6 +5,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'The branch to build and index'
+        required: true
+        default: 'main'
 
 permissions:
   contents: read
