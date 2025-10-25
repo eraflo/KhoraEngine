@@ -81,6 +81,7 @@ jobs:
         env:
           # URL of the deployed site is an output of the deployment step
           SITE_URL: ${{ needs.deploy-docs.outputs.page_url }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         run: |
           python scripts/create_index.py --url $SITE_URL --output ./index_output
 
