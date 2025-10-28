@@ -5,11 +5,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      branch:
-        description: 'The branch to build and index'
-        required: true
-        default: 'main'
 
 permissions:
   contents: read
@@ -20,9 +15,6 @@ jobs:
   deploy-docs:
     name: Build and Deploy Documentation
     runs-on: ubuntu-latest
-
-    outputs:
-      page_url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       # --- 1. SETUP ---
@@ -55,38 +47,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-  
-  build-index:
-    name: Build Search Index
-    runs-on: ubuntu-latest
-    needs: deploy-docs
-
-    steps:
-      - name: Checkout doc-agent repository
-        uses: actions/checkout@v4
-        with:
-          # We clone the project containing the indexing script
-          repository: ${{ secrets.DOC_AGENT_REPO }}
-          token: ${{ secrets.AGENT_REPO_PAT  }} # A PAT if repo is private
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run indexing script
-        env:
-          # URL of the deployed site is an output of the deployment step
-          SITE_URL: ${{ needs.deploy-docs.outputs.page_url }}
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-        run: |
-          python scripts/create_index.py --url $SITE_URL --output ./index_output
-
-      - name: Upload index artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: doc-index
-          path: ./index_output
