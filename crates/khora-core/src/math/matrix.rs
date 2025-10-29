@@ -340,7 +340,7 @@ impl Mat4 {
 
     /// Returns a row of the matrix as a `Vec4`.
     #[inline]
-    fn get_row(&self, index: usize) -> Vec4 {
+    pub fn get_row(&self, index: usize) -> Vec4 {
         Vec4 {
             x: self.cols[0].get(index),
             y: self.cols[1].get(index),

@@ -12,20 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod audio;
-mod children;
-mod global_transform;
-mod handle;
-mod material;
-mod parent;
-mod serializable;
-mod transform;
+//! Defines the `AudioListener` component for 3D spatial audio.
 
-pub use audio::*;
-pub use children::*;
-pub use global_transform::*;
-pub use handle::*;
-pub use material::*;
-pub use parent::*;
-pub use serializable::*;
-pub use transform::*;
+use khora_macros::Component;
+
+/// An ECS component that defines the point of audition in the scene.
+///
+/// There should typically be only one `AudioListener` in a `World`, attached
+/// to the entity that represents the player or the main camera. Its `GlobalTransform`
+/// will be used by the audio system to calculate 3D audio spatialization effects
+/// like panning and attenuation.
+#[derive(Debug, Default, Clone, Copy, Component)]
+pub struct AudioListener;

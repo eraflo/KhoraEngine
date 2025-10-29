@@ -12,20 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod audio;
-mod children;
-mod global_transform;
-mod handle;
-mod material;
-mod parent;
-mod serializable;
-mod transform;
+//! Defines the foundational, abstract components for Khora's audio system.
+//!
+//! This module contains the core contracts, such as the `AudioDevice` trait, that
+//! allow the engine to remain decoupled from any specific audio backend implementation.
 
-pub use audio::*;
-pub use children::*;
-pub use global_transform::*;
-pub use handle::*;
-pub use material::*;
-pub use parent::*;
-pub use serializable::*;
-pub use transform::*;
+pub mod device;

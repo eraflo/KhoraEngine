@@ -13,8 +13,7 @@
 // limitations under the License.
 
 use khora_core::math::{Mat4, Quaternion, Vec3};
-
-use crate::ecs::Component;
+use khora_macros::Component;
 
 /// A component that describes an entity's position, rotation, and scale
 /// relative to its `Parent`. If the entity has no `Parent`, this is relative
@@ -23,7 +22,7 @@ use crate::ecs::Component;
 /// This is the component that users and other systems should modify. A dedicated
 /// transform propagation system will use this component's value to calculate
 /// the final `GlobalTransform`.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Component)]
 pub struct Transform {
     /// The translation (position) of the entity.
     pub translation: Vec3,
@@ -32,8 +31,6 @@ pub struct Transform {
     /// The scale of the entity.
     pub scale: Vec3,
 }
-
-impl Component for Transform {}
 
 impl Transform {
     /// Creates a new `Transform` with a given translation, rotation, and scale.

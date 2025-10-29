@@ -36,6 +36,8 @@ pub enum SemanticDomain {
     Spatial,
     /// For components related to rendering, such as mesh and material handles.
     Render,
+    /// For components related to audio, such as audio sources and listeners.
+    Audio,
 }
 
 /// Stores the set of type-erased functions for a registered component.
