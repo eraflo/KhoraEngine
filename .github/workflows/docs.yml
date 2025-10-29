@@ -1,5 +1,4 @@
 name: Deploy Documentation
-
 on:
   push:
     branches:
@@ -15,22 +14,29 @@ jobs:
   deploy-docs:
     name: Build and Deploy Documentation
     runs-on: ubuntu-latest
-
     steps:
       # --- 1. SETUP ---
       - name: Checkout repository
         uses: actions/checkout@v4
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config
+      
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      
       - name: Install mdBook
         run: cargo install mdbook --locked
-
+      
       # --- 2. BUILD (IN ISOLATION) ---
       - name: Build rustdoc API reference
         run: cargo doc --workspace --no-deps --all-features --target-dir build/rustdoc
+      
       - name: Build mdBook
         run: mdbook build docs -d ../build/book
-
+      
       # --- 3. ASSEMBLE ---
       - name: Assemble final site
         run: |
@@ -38,12 +44,13 @@ jobs:
           mkdir -p site/api
           cp -r build/rustdoc/doc/* site/api/
           cat .github/workflows/templates/api_index.html > site/api/index.html
-
+      
       # --- 4. DEPLOY ---
       - name: Upload GitHub Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./site
+      
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

@@ -1,4 +1,4 @@
-# 6. ECS Architecture: The CRPECS (Documentation Mise à Jour)
+# 6. ECS Architecture: The CRPECS
 
 This document details the architecture of Khora's custom **Chunked Relational Page ECS (CRPECS)**. It was designed from the ground up to be the high-performance backbone of the SAA and to enable its most advanced concept: **Adaptive Game Data Flows (AGDF)**.
 

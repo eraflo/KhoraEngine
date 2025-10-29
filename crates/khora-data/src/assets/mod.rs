@@ -14,6 +14,8 @@
 
 //! Defines asset types and their associated data structures.
 
+mod audio;
 mod storage;
 
+pub use audio::*;
 pub use storage::*;
