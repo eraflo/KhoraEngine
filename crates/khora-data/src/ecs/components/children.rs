@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::ecs::Component;
 use khora_core::ecs::entity::EntityId;
+use khora_macros::Component;
 
 /// A component that lists the direct children of an entity.
 ///
@@ -23,7 +23,5 @@ use khora_core::ecs::entity::EntityId;
 ///
 /// Note: This component should be managed by a dedicated hierarchy maintenance
 /// system to ensure it stays in sync with `Parent` components on child entities.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Component)]
 pub struct Children(pub Vec<EntityId>);
-
-impl Component for Children {}

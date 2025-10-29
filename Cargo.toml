@@ -12,6 +12,7 @@ members = [
     "crates/khora-editor",
     "crates/khora-plugins",
     "crates/khora-sdk",
+    "crates/khora-macros",
     
     # Examples and tools
     "examples/sandbox",

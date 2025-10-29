@@ -14,20 +14,18 @@
 
 //! Defines a component for attaching a generic material handle to an entity.
 
-use crate::ecs::Component;
 use khora_core::asset::{AssetHandle, AssetUUID, Material};
+use khora_macros::Component;
 
 /// A component that attaches any type of material to an entity.
 ///
 /// It uses a trait object (`Box<dyn Material>`) to store a handle to any
 /// concrete material type, allowing the ECS to remain agnostic to the specific
 /// material implementations.
-#[derive(Clone)]
+#[derive(Clone, Component)]
 pub struct MaterialComponent {
     /// A shared handle to the type-erased material data.
     pub handle: AssetHandle<Box<dyn Material>>,
     /// The unique identifier of the material asset.
     pub uuid: AssetUUID,
 }
-
-impl Component for MaterialComponent {}

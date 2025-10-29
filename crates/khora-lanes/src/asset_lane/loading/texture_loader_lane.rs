@@ -32,7 +32,7 @@ impl AssetLoaderLane<CpuTexture> for TextureLoaderLane {
     fn load(
         &self,
         bytes: &[u8],
-    ) -> Result<CpuTexture, Box<(dyn std::error::Error + Send + Sync + 'static)>> {
+    ) -> Result<CpuTexture, Box<dyn std::error::Error + Send + Sync + 'static>> {
         // Decode the image using the `image` crate
         let img = image::load_from_memory(bytes).context("Failed to decode image from memory")?;
 
