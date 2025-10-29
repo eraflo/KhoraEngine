@@ -12,4 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Audio lane - hot path for audio operations
+//! Contains lanes for audio processing.
+
+mod mixing;
+
+pub use mixing::*;

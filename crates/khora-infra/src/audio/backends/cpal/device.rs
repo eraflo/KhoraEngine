@@ -25,7 +25,7 @@ pub struct CpalAudioDevice;
 impl CpalAudioDevice {
     /// Creates a new instance of the CPAL audio device backend.
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 
@@ -49,23 +49,20 @@ impl AudioDevice for CpalAudioDevice {
         let audio_callback = move |output_buffer: &mut [f32], _: &cpal::OutputCallbackInfo| {
             on_mix_needed(output_buffer, &stream_info);
         };
-        
+
         let error_callback = |err| {
             eprintln!("An error occurred on the audio stream: {}", err);
         };
 
         let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => device.build_output_stream(
-                &config.into(),
-                audio_callback,
-                error_callback,
-                None,
-            )?,
+            cpal::SampleFormat::F32 => {
+                device.build_output_stream(&config.into(), audio_callback, error_callback, None)?
+            }
             format => return Err(anyhow!("Unsupported sample format: {}", format)),
         };
 
         stream.play()?;
-        
+
         // Detach the stream to keep it running for the lifetime of the application.
         std::mem::forget(stream);
 

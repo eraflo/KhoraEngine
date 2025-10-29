@@ -30,7 +30,7 @@ pub struct SymphoniaLoaderLane;
 impl SymphoniaLoaderLane {
     /// Creates a new instance of `SymphoniaLoaderLane`.
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 
@@ -50,10 +50,16 @@ impl AssetLoaderLane<SoundData> for SymphoniaLoaderLane {
         let track = format_reader
             .default_track()
             .ok_or_else(|| anyhow!("No default audio track found"))?;
-        
+
         let track_id = track.id;
-        let sample_rate = track.codec_params.sample_rate.ok_or_else(|| anyhow!("Unknown sample rate"))?;
-        let channels = track.codec_params.channels.ok_or_else(|| anyhow!("Unknown channel count"))?;
+        let sample_rate = track
+            .codec_params
+            .sample_rate
+            .ok_or_else(|| anyhow!("Unknown sample rate"))?;
+        let channels = track
+            .codec_params
+            .channels
+            .ok_or_else(|| anyhow!("Unknown channel count"))?;
 
         // 4. Create a decoder for the track.
         let dec_opts: DecoderOptions = Default::default();
@@ -68,12 +74,15 @@ impl AssetLoaderLane<SoundData> for SymphoniaLoaderLane {
                     if packet.track_id() != track_id {
                         continue;
                     }
-                    
+
                     match decoder.decode(&packet) {
                         Ok(decoded) => {
                             // Symphonia gives us samples in planes (e.g., LLL..., RRR...).
                             // We need to convert and interleave them into our LRLR... format.
-                            let mut sample_buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+                            let mut sample_buf = SampleBuffer::<f32>::new(
+                                decoded.capacity() as u64,
+                                *decoded.spec(),
+                            );
                             sample_buf.copy_interleaved_ref(decoded);
                             all_samples.extend_from_slice(sample_buf.samples());
                         }

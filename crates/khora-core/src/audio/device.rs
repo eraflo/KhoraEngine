@@ -16,6 +16,9 @@
 
 use anyhow::Result;
 
+/// A type alias for the audio mixing callback function.
+type MixCallback = Box<dyn FnMut(&mut [f32], &StreamInfo) + Send>;
+
 /// A struct providing information about the audio stream.
 #[derive(Debug, Clone, Copy)]
 pub struct StreamInfo {
@@ -47,8 +50,5 @@ pub trait AudioDevice: Send + Sync {
     /// # Returns
     ///
     /// A `Result` indicating success or failure in initializing the audio stream.
-    fn start(
-        self: Box<Self>,
-        on_mix_needed: Box<dyn FnMut(&mut [f32], &StreamInfo) + Send>,
-    ) -> Result<()>;
+    fn start(self: Box<Self>, on_mix_needed: MixCallback) -> Result<()>;
 }

@@ -1413,6 +1413,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "khora-core",
+ "khora-macros",
  "log",
  "serde",
  "serde_json",
@@ -1461,6 +1462,14 @@ dependencies = [
  "symphonia",
  "thiserror 2.0.16",
  "tobj",
+]
+
+[[package]]
+name = "khora-macros"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn",
 ]
 
 [[package]]

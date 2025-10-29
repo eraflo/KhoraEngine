@@ -26,7 +26,7 @@ pub struct WavLoaderLane;
 impl WavLoaderLane {
     /// Creates a new instance of `WavLoaderLane`.
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 
@@ -56,5 +56,45 @@ impl AssetLoaderLane<SoundData> for WavLoaderLane {
             channels: spec.channels,
             sample_rate: spec.sample_rate,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A WAV file 16-bit, mono, 44100Hz, containing 4 samples (0.1, -0.1, 0.2, -0.2).
+    const TEST_WAV_BYTES: &[u8] = &[
+        82, 73, 70, 70, 52, 0, 0, 0, 87, 65, 86, 69, 102, 109, 116, 32, 16, 0, 0, 0, 1, 0, 1, 0,
+        68, 172, 0, 0, 136, 88, 1, 0, 2, 0, 16, 0, 100, 97, 116, 97, 8, 0, 0, 0, 0, 12, 204, 251,
+        51, 13, 205, 243,
+    ];
+
+    #[test]
+    fn test_wav_loader_success() {
+        let loader = WavLoaderLane::new();
+        let result = loader.load(TEST_WAV_BYTES);
+
+        assert!(result.is_ok(), "The WAV loading should not fail");
+        let sound_data = result.unwrap();
+
+        assert_eq!(
+            sound_data.sample_rate, 44100,
+            "The sample rate is incorrect"
+        );
+        assert_eq!(
+            sound_data.channels, 1,
+            "The number of channels is incorrect"
+        );
+        assert!(!sound_data.samples.is_empty(), "No samples were loaded");
+    }
+
+    #[test]
+    fn test_wav_loader_invalid_bytes() {
+        let loader = WavLoaderLane::new();
+        let invalid_bytes = &[0, 1, 2, 3, 4];
+        let result = loader.load(invalid_bytes);
+
+        assert!(result.is_err(), "The loading of invalid bytes should fail");
     }
 }
