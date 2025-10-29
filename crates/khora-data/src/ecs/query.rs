@@ -114,6 +114,23 @@ impl<T: Component> WorldQuery for &mut T {
     }
 }
 
+// Implementation for a 1-item tuple query.
+impl<Q1: WorldQuery> WorldQuery for (Q1,) {
+    type Item<'a> = (Q1::Item<'a>,);
+
+    fn type_ids() -> Vec<TypeId> {
+        Q1::type_ids()
+    }
+
+    fn without_type_ids() -> Vec<TypeId> {
+        Q1::without_type_ids()
+    }
+
+    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
+        (Q1::fetch(page_ptr, row_index),)
+    }
+}
+
 // Implementation for a query of a 2-item tuple.
 // This is now generic over any two types that implement `WorldQuery`.
 impl<Q1: WorldQuery, Q2: WorldQuery> WorldQuery for (Q1, Q2) {
@@ -346,5 +363,68 @@ impl<T: Component> WorldQuery for Without<T> {
     /// Fetches nothing. Returns a unit type `()`.
     unsafe fn fetch<'a>(_page_ptr: *const ComponentPage, _row_index: usize) -> Self::Item<'a> {
         // This function will be called but its result is ignored.
+    }
+}
+
+// ------------------------- //
+// ---- QueryMut Part ---- //
+// ------------------------- //
+
+/// An iterator that yields the results of a mutable `WorldQuery`.
+///
+/// This struct is created by the [`World::query_mut()`] method.
+pub struct QueryMut<'a, Q: WorldQuery> {
+    world_ptr: *mut World,
+    matching_page_indices: Vec<u32>,
+    current_page_index: usize,
+    current_row_index: usize,
+    _phantom: PhantomData<(&'a (), Q)>,
+}
+
+impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
+    pub(crate) fn new(world: &'a mut World, matching_page_indices: Vec<u32>) -> Self {
+        Self {
+            world_ptr: world as *mut _,
+            matching_page_indices,
+            current_page_index: 0,
+            current_row_index: 0,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<'a, Q: WorldQuery> Iterator for QueryMut<'a, Q> {
+    type Item = Q::Item<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.current_page_index >= self.matching_page_indices.len() {
+                return None;
+            }
+
+            // SAFETY: `world_ptr` is guaranteed to be valid for the lifetime 'a.
+            let world = unsafe { &mut *self.world_ptr };
+            let page_id = self.matching_page_indices[self.current_page_index] as usize;
+
+            // We get a mutable reference to the page, which is a safe operation
+            // because `world` is a mutable reference.
+            let page = &mut world.pages[page_id];
+
+            if self.current_row_index < page.row_count() {
+                let item = unsafe {
+                    // We can now safely pass a pointer that originates from a mutable reference.
+                    // The `fetch` implementation for `&mut T` will cast this pointer, but the operation
+                    // is now sound because the original source was mutable. This eliminates the UB.
+                    Q::fetch(page as *mut _ as *const _, self.current_row_index)
+                };
+
+                self.current_row_index += 1;
+                return Some(item);
+            } else {
+                // No more rows, advance to the next page.
+                self.current_page_index += 1;
+                self.current_row_index = 0;
+            }
+        }
     }
 }

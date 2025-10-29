@@ -27,8 +27,8 @@ use crate::ecs::{
     query::{Query, WorldQuery},
     registry::ComponentRegistry,
     serialization::SceneMemoryLayout,
-    Children, Component, ComponentBundle, GlobalTransform, MaterialComponent, Parent,
-    SemanticDomain, SerializedPage, Transform, TypeRegistry,
+    AudioListener, AudioSource, Children, Component, ComponentBundle, GlobalTransform,
+    MaterialComponent, Parent, QueryMut, SemanticDomain, SerializedPage, Transform, TypeRegistry,
 };
 
 /// Errors that can occur when adding a component to an entity.
@@ -209,6 +209,11 @@ impl World {
         world.register_component::<HandleComponent<Mesh>>(SemanticDomain::Render);
         world.register_component::<HandleComponent<GpuMesh>>(SemanticDomain::Render);
         world.register_component::<MaterialComponent>(SemanticDomain::Render);
+
+        // Registration of audio components
+        world.register_component::<AudioSource>(SemanticDomain::Audio);
+        world.register_component::<AudioListener>(SemanticDomain::Audio);
+
         world
     }
 
@@ -341,6 +346,45 @@ impl World {
 
         // 3. Construct and return the `Query` iterator.
         Query::new(self, matching_page_indices)
+    }
+
+    /// Creates a mutable iterator that queries the world for entities matching a set of components and filters.
+    ///
+    /// This method is similar to `query`, but it allows mutable access to the components.
+    /// The same filtering logic applies, ensuring that only pages containing the required
+    pub fn query_mut<'a, Q: WorldQuery>(&'a mut self) -> QueryMut<'a, Q> {
+        // 1. Get the component and filter signatures from the query type.
+        let query_type_ids = Q::type_ids();
+        let without_type_ids = Q::without_type_ids();
+
+        // 2. Find all pages that match the query's criteria.
+        let mut matching_page_indices = Vec::new();
+        'page_loop: for (page_id, page) in self.pages.iter().enumerate() {
+            // --- Filtering Logic ---
+
+            // A) Check for required components.
+            // The page must contain ALL component types requested by the query.
+            for required_type in &query_type_ids {
+                // `binary_search` is fast on the sorted `page.type_ids` vector.
+                if page.type_ids.binary_search(required_type).is_err() {
+                    continue 'page_loop; // This page is missing a required component, skip it.
+                }
+            }
+
+            // B) Check for excluded components.
+            // The page must NOT contain ANY component types from the `without` filter.
+            for excluded_type in &without_type_ids {
+                if page.type_ids.binary_search(excluded_type).is_ok() {
+                    continue 'page_loop; // This page contains an excluded component, skip it.
+                }
+            }
+
+            // If we reach this point, the page is a match.
+            matching_page_indices.push(page_id as u32);
+        }
+
+        // 3. Construct and return the `Query` iterator.
+        QueryMut::new(self, matching_page_indices)
     }
 
     /// Registers a component type with a specific semantic domain.

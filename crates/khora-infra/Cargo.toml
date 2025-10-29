@@ -17,6 +17,9 @@ bytemuck = { version = "1.23.2", features = ["derive"] }
 # Platform dependencies (winit)
 winit = "0.30"
 
+# Audio
+cpal = "0.16.0"
+
 # Logging
 log = "0.4"
 env_logger = "0.11"

@@ -12,20 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod audio;
-mod children;
-mod global_transform;
-mod handle;
-mod material;
-mod parent;
-mod serializable;
-mod transform;
+//! A concrete implementation of the `AudioDevice` trait using the `cpal` library.
 
-pub use audio::*;
-pub use children::*;
-pub use global_transform::*;
-pub use handle::*;
-pub use material::*;
-pub use parent::*;
-pub use serializable::*;
-pub use transform::*;
+mod device;
+pub use device::*;

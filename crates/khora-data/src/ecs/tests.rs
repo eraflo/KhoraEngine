@@ -647,3 +647,77 @@ fn test_add_component_triggers_data_migration() {
 
     assert_eq!(pos_b.0, 20, "Entity B's data should be unaffected");
 }
+
+// --- MUTABLE QUERY TESTS ---
+
+#[test]
+fn test_simple_mutable_query_modifies_components() {
+    // --- 1. ARRANGE ---
+    let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.spawn(Position(10));
+    world.spawn(Position(30));
+
+    // --- 2. ACT ---
+    // Run a mutable query to modify the `Position` components.
+    for position_mut in world.query_mut::<&mut Position>() {
+        position_mut.0 *= 2;
+    }
+
+    // --- 3. ASSERT ---
+    // Run an immutable query to verify the changes.
+    let mut final_positions = Vec::new();
+    for position_ref in world.query::<&Position>() {
+        final_positions.push(*position_ref);
+    }
+    final_positions.sort_by_key(|p| p.0);
+    assert_eq!(final_positions, vec![Position(20), Position(60)]);
+}
+
+#[test]
+fn test_complex_mutable_query_with_filter() {
+    // --- 1. ARRANGE ---
+    let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<Velocity>(SemanticDomain::Spatial);
+    world.register_component::<RenderTag>(SemanticDomain::Render);
+
+    // Entity 1: Should be processed. Has Position and Velocity, but no RenderTag.
+    world.spawn((Position(10), Velocity(5)));
+
+    // Entity 2: Should be ignored. Has Position, but no Velocity.
+    world.spawn(Position(20));
+
+    // Entity 3: Should be processed.
+    world.spawn((Position(30), Velocity(1)));
+
+    // Entity 4: Should be ignored. Has all components, but the `Without<RenderTag>` filter excludes it.
+    world.spawn((Position(40), Velocity(1), RenderTag));
+
+    // --- 2. ACT ---
+    // Query for entities with a mutable Position and an immutable Velocity,
+    // but only if they do NOT have a RenderTag.
+    // The physics system is a classic example of this pattern.
+    for (pos_mut, vel_ref, ()) in
+        world.query_mut::<(&mut Position, &Velocity, Without<RenderTag>)>()
+    {
+        pos_mut.0 += vel_ref.0;
+    }
+
+    // --- 3. ASSERT ---
+    // Check the final state of all entities to ensure only the correct ones were modified.
+    let mut final_positions = Vec::new();
+    for pos in world.query::<&Position>() {
+        final_positions.push(*pos);
+    }
+    final_positions.sort_by_key(|p| p.0);
+
+    // Entity 1: 10 + 5 = 15
+    // Entity 2: 20 (unchanged)
+    // Entity 3: 30 + 1 = 31
+    // Entity 4: 40 (unchanged)
+    assert_eq!(
+        final_positions,
+        vec![Position(15), Position(20), Position(31), Position(40)]
+    );
+}

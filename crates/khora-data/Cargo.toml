@@ -6,6 +6,7 @@ description = "Data layouts, allocators, and streaming systems"
 
 [dependencies]
 khora-core = { path = "../khora-core" }
+khora-macros = { path = "../khora-macros" }
 
 log = "0.4"
 

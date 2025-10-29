@@ -14,7 +14,7 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use khora_core::ecs::entity::EntityId;
+use khora_core::{ecs::entity::EntityId, math::Mat4};
 use khora_data::ecs::{GlobalTransform, Parent, Transform, Without, World};
 
 /// A system that propagates local `Transform` changes through the scene hierarchy
@@ -33,7 +33,7 @@ pub fn transform_propagation_system(world: &mut World) {
     for (id, transform, global_transform, _) in
         world.query::<(EntityId, &Transform, &mut GlobalTransform, Without<Parent>)>()
     {
-        global_transform.0 = transform.to_mat4();
+        global_transform.0 = transform.to_mat4().into();
         queue.push_back(id);
     }
 
@@ -60,11 +60,11 @@ pub fn transform_propagation_system(world: &mut World) {
             for &child_id in children {
                 // Read the child's local transform.
                 if let Some(local_transform) = world.get::<Transform>(child_id) {
-                    let child_matrix = parent_matrix * local_transform.to_mat4();
+                    let child_matrix = Mat4::from(parent_matrix) * local_transform.to_mat4();
 
                     // Update the child's `GlobalTransform` component directly.
                     if let Some(global_transform) = world.get_mut::<GlobalTransform>(child_id) {
-                        global_transform.0 = child_matrix;
+                        global_transform.0 = child_matrix.into();
                     }
 
                     // Add the child to the end of the queue. Its own children will be processed
@@ -144,6 +144,6 @@ mod tests {
         // The expected result is the parent's translation combined with the child's.
         let expected_matrix = Mat4::from_translation(Vec3::new(10.0, 2.0, 0.0));
 
-        assert_matrix_approx_eq(child_global_transform.0, expected_matrix);
+        assert_matrix_approx_eq(child_global_transform.0.into(), expected_matrix);
     }
 }
