@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::ecs::component::Component;
-use khora_core::math::Mat4;
+use khora_core::math::{affine_transform::AffineTransform, Mat4};
+use khora_macros::Component;
 
 /// A component that stores the final, calculated, world-space transformation of an entity.
 ///
@@ -24,25 +24,23 @@ use khora_core::math::Mat4;
 /// It should only be written to by the dedicated transform propagation system.
 /// This acts as a cache to avoid re-calculating the full transform hierarchy every time
 /// it's needed.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GlobalTransform(pub Mat4);
-
-impl Component for GlobalTransform {}
+#[derive(Debug, Clone, Copy, PartialEq, Component)]
+pub struct GlobalTransform(pub AffineTransform);
 
 impl GlobalTransform {
     /// Creates a new `GlobalTransform` from a `Mat4`.
     pub fn new(matrix: Mat4) -> Self {
-        Self(matrix)
+        Self(AffineTransform(matrix))
     }
 
     /// Creates a new identity `GlobalTransform`.
     pub fn identity() -> Self {
-        Self(Mat4::IDENTITY)
+        Self(AffineTransform::IDENTITY)
     }
 
     /// Returns the inner `Mat4` representation.
     pub fn to_matrix(&self) -> Mat4 {
-        self.0
+        self.0.into()
     }
 }
 
