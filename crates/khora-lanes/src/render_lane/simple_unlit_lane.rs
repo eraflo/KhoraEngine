@@ -26,6 +26,8 @@
 //! and deterministic execution. It contains minimal branching logic and is designed to
 //! be driven by a higher-level `RenderAgent`.
 
+use crate::render_lane::RenderLane;
+
 use super::RenderWorld;
 use khora_core::{
     asset::{AssetUUID, Material},
@@ -33,7 +35,7 @@ use khora_core::{
     renderer::{
         api::{
             command::{LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp},
-            PrimitiveTopology, RenderObject,
+            PrimitiveTopology,
         },
         traits::CommandEncoder,
         GpuMesh, RenderPipelineId, TextureViewId,
@@ -63,19 +65,13 @@ impl SimpleUnlitLane {
     pub fn new() -> Self {
         Self
     }
+}
 
-    /// Gets the appropriate render pipeline for a given material UUID.
-    ///
-    /// This method determines which pipeline to use based on the material's properties.
-    /// For `SimpleUnlitLane`, all UnlitMaterial instances currently use the same pipeline,
-    /// as we don't yet support texture-based variants or alpha blending modes.
-    ///
-    /// # Arguments
-    /// * `material_uuid` - The UUID of the material, if any
-    /// * `materials` - The cache of Material assets
-    ///
-    /// # Returns
-    /// The `RenderPipelineId` to use for rendering with this material.
+impl RenderLane for SimpleUnlitLane {
+    fn strategy_name(&self) -> &'static str {
+        "SimpleUnlit"
+    }
+
     fn get_pipeline_for_material(
         &self,
         material_uuid: Option<AssetUUID>,
@@ -97,31 +93,7 @@ impl SimpleUnlitLane {
         RenderPipelineId(0)
     }
 
-    /// Renders the contents of the `RenderWorld` using a simple, unlit strategy.
-    ///
-    /// This method encodes all necessary GPU commands to draw the meshes extracted
-    /// by the `ExtractRenderablesLane`. It expects:
-    /// - A properly configured command encoder
-    /// - A swapchain texture view to render into
-    /// - Access to the GPU mesh asset cache
-    /// - Access to the material asset cache
-    ///
-    /// # Arguments
-    /// * `render_world` - The intermediate representation of the scene to render
-    /// * `encoder` - The command encoder to record drawing commands into
-    /// * `color_target` - The texture view to render the output to (typically from the swapchain)
-    /// * `gpu_meshes` - A thread-safe cache of GPU mesh resources
-    /// * `materials` - A thread-safe cache of material assets
-    /// * `clear_color` - The color to clear the framebuffer to at the start of the pass
-    ///
-    /// # Returns
-    /// A vector of `RenderObject`s that were successfully rendered. This is primarily
-    /// used for statistics tracking and debugging.
-    ///
-    /// # Performance Note
-    /// This method is designed to execute within a strict frame budget. It performs
-    /// minimal heap allocations and iterates linearly over the mesh list.
-    pub fn render(
+    fn render(
         &self,
         render_world: &RenderWorld,
         encoder: &mut dyn CommandEncoder,
@@ -129,10 +101,7 @@ impl SimpleUnlitLane {
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
         materials: &RwLock<Assets<Box<dyn Material>>>,
         clear_color: LinearRgba,
-    ) -> Vec<RenderObject> {
-        // Track the objects we successfully render for statistics
-        let mut render_objects = Vec::with_capacity(render_world.meshes.len());
-
+    ) {
         // Acquire read locks on the caches
         let gpu_mesh_assets = gpu_meshes.read().unwrap();
         let material_assets = materials.read().unwrap();
@@ -192,65 +161,11 @@ impl SimpleUnlitLane {
 
                 // Issue the indexed draw call
                 render_pass.draw_indexed(0..gpu_mesh_handle.index_count, 0, 0..1);
-
-                // Record this object as rendered
-                render_objects.push(RenderObject {
-                    pipeline: *pipeline,
-                    vertex_buffer: gpu_mesh_handle.vertex_buffer,
-                    index_buffer: gpu_mesh_handle.index_buffer,
-                    index_count: gpu_mesh_handle.index_count,
-                });
             }
         }
-
-        // The render pass is automatically ended when `render_pass` is dropped here
-        drop(render_pass);
-
-        render_objects
     }
 
-    /// Returns a human-readable identifier for this rendering strategy.
-    ///
-    /// This can be used by the `RenderAgent` for logging and debugging purposes.
-    pub fn strategy_name(&self) -> &'static str {
-        "SimpleUnlit"
-    }
-
-    /// Estimates the GPU cost of rendering the given `RenderWorld` with this strategy.
-    ///
-    /// This method calculates an approximate rendering cost based on the number of
-    /// triangles and draw calls required. The cost metric can be used by GORNA
-    /// (Goal-Oriented Resource Negotiation & Allocation) to decide whether to use
-    /// this rendering strategy or switch to a more optimized one.
-    ///
-    /// # Cost Calculation
-    /// The cost is computed as:
-    /// ```text
-    /// cost = (triangle_count * TRIANGLE_COST) + (draw_call_count * DRAW_CALL_COST)
-    /// ```
-    ///
-    /// This formula weighs:
-    /// - **Triangle count**: Each triangle has a base cost of 0.001
-    /// - **Draw call count**: Each draw call has a fixed overhead of 0.1
-    ///
-    /// # Triangle Calculation
-    /// The number of triangles is calculated based on the mesh's primitive topology:
-    /// - `TriangleList`: `index_count / 3`
-    /// - `TriangleStrip`: `index_count - 2`
-    /// - Other topologies are not counted as triangles
-    ///
-    /// # Arguments
-    /// * `render_world` - The scene data to estimate the cost for
-    /// * `gpu_meshes` - The cache of GPU mesh resources to query triangle counts
-    ///
-    /// # Returns
-    /// A floating-point cost estimate. Higher values indicate more expensive rendering.
-    /// The value is roughly proportional to GPU microseconds on a reference GPU.
-    pub fn estimate_cost(
-        &self,
-        render_world: &RenderWorld,
-        gpu_meshes: &RwLock<Assets<GpuMesh>>,
-    ) -> f32 {
+    fn estimate_cost(&self, render_world: &RenderWorld, gpu_meshes: &RwLock<Assets<GpuMesh>>) -> f32 {
         let gpu_mesh_assets = gpu_meshes.read().unwrap();
         
         let mut total_triangles = 0u32;

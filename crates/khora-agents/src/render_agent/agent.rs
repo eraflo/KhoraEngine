@@ -15,12 +15,17 @@
 //! Defines the RenderAgent, the central orchestrator for the rendering subsystem.
 
 use super::mesh_preparation::MeshPreparationSystem;
-use khora_core::renderer::{
-    api::{GpuMesh, RenderObject},
-    GraphicsDevice, Mesh,
+use khora_core::{
+    asset::Material,
+    math::LinearRgba,
+    renderer::{
+        api::{GpuMesh, RenderObject, TextureViewId},
+        traits::CommandEncoder,
+        GraphicsDevice, Mesh,
+    },
 };
 use khora_data::{assets::Assets, ecs::World};
-use khora_lanes::render_lane::{ExtractRenderablesLane, RenderWorld};
+use khora_lanes::render_lane::{ExtractRenderablesLane, RenderLane, RenderWorld, SimpleUnlitLane};
 use std::sync::{Arc, RwLock};
 
 /// The agent responsible for managing the state and logic of the rendering pipeline.
@@ -37,6 +42,8 @@ pub struct RenderAgent {
     mesh_preparation_system: MeshPreparationSystem,
     // Lane that extracts data from the ECS into the RenderWorld.
     extract_lane: ExtractRenderablesLane,
+    // Chosen render lane (strategy) as an abstraction.
+    render_lane: Box<dyn RenderLane>,
 }
 
 impl RenderAgent {
@@ -48,6 +55,7 @@ impl RenderAgent {
             gpu_meshes: gpu_meshes.clone(),
             mesh_preparation_system: MeshPreparationSystem::new(gpu_meshes),
             extract_lane: ExtractRenderablesLane::new(),
+            render_lane: Box::new(SimpleUnlitLane::new()),
         }
     }
 
@@ -70,32 +78,85 @@ impl RenderAgent {
         self.extract_lane.run(world, &mut self.render_world);
     }
 
+    /// Renders a frame by preparing the scene data and encoding GPU commands.
+    ///
+    /// This is the main rendering method that orchestrates the entire rendering pipeline:
+    /// 1. Calls `prepare_frame()` to extract and prepare all renderable data
+    /// 2. Calls `produce_render_objects()` to build the RenderObject list with proper pipelines
+    /// 3. Delegates to the selected render lane to encode GPU commands
+    ///
+    /// # Arguments
+    ///
+    /// * `world`: The ECS world containing scene data
+    /// * `cpu_meshes`: The cache of CPU-side mesh assets
+    /// * `graphics_device`: The graphics device for GPU resource creation
+    /// * `encoder`: The command encoder to record GPU commands into
+    /// * `color_target`: The texture view to render into (typically the swapchain)
+    /// * `materials`: The cache of material assets
+    /// * `clear_color`: The color to clear the framebuffer with
+    pub fn render(
+        &mut self,
+        world: &mut World,
+        cpu_meshes: &Assets<Mesh>,
+        graphics_device: &dyn GraphicsDevice,
+        encoder: &mut dyn CommandEncoder,
+        color_target: &TextureViewId,
+        materials: &RwLock<Assets<Box<dyn Material>>>,
+        clear_color: LinearRgba,
+    ) {
+        // Step 1: Prepare the frame (extract and prepare data)
+        self.prepare_frame(world, cpu_meshes, graphics_device);
+
+        // Step 2: Build RenderObjects with proper pipelines
+        // (This is where the lane determines which pipeline to use for each material)
+        let _render_objects = self.produce_render_objects(materials);
+
+        // Step 3: Delegate to the render lane to encode GPU commands
+        self.render_lane.render(
+            &self.render_world,
+            encoder,
+            color_target,
+            &self.gpu_meshes,
+            materials,
+            clear_color,
+        );
+    }
+
     /// Translates the prepared data from the `RenderWorld` into a list of `RenderObject`s.
     ///
     /// This method should be called after `prepare_frame`. It reads the intermediate
     /// `RenderWorld` and produces the final, low-level data structure required by
     /// the `RenderSystem`.
-    pub fn produce_render_objects(&self) -> Vec<RenderObject> {
-        let mut render_objects = Vec::new();
-        let gpu_meshes = self.gpu_meshes.read().unwrap();
+    ///
+    /// This logic uses the render lane to determine the appropriate pipeline for each
+    /// material, then builds the RenderObjects list.
+    ///
+    /// # Arguments
+    ///
+    /// * `materials`: The cache of material assets for pipeline selection
+    pub fn produce_render_objects(&self, materials: &RwLock<Assets<Box<dyn Material>>>) -> Vec<RenderObject> {
+        let mut render_objects = Vec::with_capacity(self.render_world.meshes.len());
+        let gpu_meshes_guard = self.gpu_meshes.read().unwrap();
+        let materials_guard = materials.read().unwrap();
 
         for extracted_mesh in &self.render_world.meshes {
-            // Find the corresponding GpuMesh in the cache.
-            if let Some(gpu_mesh_handle) = gpu_meshes.get(&extracted_mesh.gpu_mesh_uuid) {
-                // The RenderObject requires a pipeline. For now, we don't have a material
-                // system, so we can't determine the correct pipeline yet. This is a placeholder.
-                // In a real scenario, this would come from the material.
-                // TODO: Replace with a real pipeline from a material system.
-                let placeholder_pipeline = khora_core::renderer::RenderPipelineId(0);
+            // Find the corresponding GpuMesh in the cache
+            if let Some(gpu_mesh_handle) = gpu_meshes_guard.get(&extracted_mesh.gpu_mesh_uuid) {
+                // Use the render lane to determine the appropriate pipeline
+                let pipeline = self.render_lane.get_pipeline_for_material(
+                    extracted_mesh.material_uuid,
+                    &materials_guard,
+                );
 
                 render_objects.push(RenderObject {
-                    pipeline: placeholder_pipeline,
+                    pipeline,
                     vertex_buffer: gpu_mesh_handle.vertex_buffer,
                     index_buffer: gpu_mesh_handle.index_buffer,
                     index_count: gpu_mesh_handle.index_count,
                 });
             }
         }
+
         render_objects
     }
 }
