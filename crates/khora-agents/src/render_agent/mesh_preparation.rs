@@ -180,6 +180,7 @@ impl MeshPreparationSystem {
             index_buffer,
             index_count,
             index_format: IndexFormat::Uint32, // Assuming U32 indices as per our mesh loader.
+            primitive_topology: mesh.primitive_type,
         }
     }
 }

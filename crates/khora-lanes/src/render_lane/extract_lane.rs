@@ -16,7 +16,7 @@
 
 use super::{ExtractedMesh, RenderWorld};
 use khora_core::renderer::GpuMesh;
-use khora_data::ecs::{GlobalTransform, HandleComponent, World};
+use khora_data::ecs::{GlobalTransform, HandleComponent, MaterialComponent, World};
 
 /// A lane that performs the "extraction" phase of the rendering pipeline.
 ///
@@ -42,15 +42,25 @@ impl ExtractRenderablesLane {
         render_world.clear();
 
         // 2. Execute the transversal query to find all renderable meshes.
+        // We query for entities that have both a GlobalTransform and a GpuMesh handle.
+        // The MaterialComponent is optional, so we'll handle it separately.
         let query = world.query::<(&GlobalTransform, &HandleComponent<GpuMesh>)>();
 
         // 3. Iterate directly over the query and populate the RenderWorld.
-        for (transform, gpu_mesh_handle_comp) in query {
+        for (entity_id, (transform, gpu_mesh_handle_comp)) in query.enumerate() {
+            // Try to get the material component if it exists
+            let material_uuid = world
+                .query::<&MaterialComponent>()
+                .nth(entity_id)
+                .map(|material_comp| material_comp.uuid);
+
             let extracted_mesh = ExtractedMesh {
-                // We assume `GlobalTransform` has a method to convert it to a matrix.
-                transform: transform.to_matrix(),
+                // Extract the affine transform directly from GlobalTransform
+                transform: transform.0,
                 // Extract the UUID of the GpuMesh asset.
                 gpu_mesh_uuid: gpu_mesh_handle_comp.uuid,
+                // Extract the UUID of the Material asset, if present.
+                material_uuid,
             };
             render_world.meshes.push(extracted_mesh);
         }

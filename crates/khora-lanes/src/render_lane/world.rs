@@ -18,7 +18,7 @@
 //! optimized for consumption by the rendering pipelines (`RenderLane`s). It is
 //! populated by an "extraction" phase that reads data from the main ECS `World`.
 
-use khora_core::{asset::AssetUUID, math::Mat4};
+use khora_core::{asset::AssetUUID, math::affine_transform::AffineTransform};
 
 /// A flat, GPU-friendly representation of a single mesh to be rendered.
 ///
@@ -26,9 +26,12 @@ use khora_core::{asset::AssetUUID, math::Mat4};
 /// components, required to issue a draw call for a mesh.
 pub struct ExtractedMesh {
     /// The world-space transformation matrix of the mesh, derived from `GlobalTransform`.
-    pub transform: Mat4,
+    pub transform: AffineTransform,
     /// The unique identifier of the GpuMesh asset to be rendered.
     pub gpu_mesh_uuid: AssetUUID,
+    /// The unique identifier of the material to be used for rendering.
+    /// If `None`, a default material should be used.
+    pub material_uuid: Option<AssetUUID>,
 }
 
 /// A collection of all data extracted from the main `World` needed for rendering a single frame.

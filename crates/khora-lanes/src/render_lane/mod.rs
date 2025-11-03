@@ -15,7 +15,9 @@
 //! Rendering lane - hot path for graphics operations
 
 mod extract_lane;
+mod simple_unlit_lane;
 mod world;
 
 pub use extract_lane::*;
+pub use simple_unlit_lane::*;
 pub use world::*;
