@@ -66,3 +66,411 @@ impl ExtractRenderablesLane {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::{
+        asset::{AssetHandle, AssetUUID},
+        math::{affine_transform::AffineTransform, Vec3},
+        renderer::GpuMesh,
+    };
+
+    // Helper function to create a dummy GpuMesh for testing
+    fn create_dummy_gpu_mesh() -> GpuMesh {
+        use khora_core::renderer::{api::PrimitiveTopology, BufferId, IndexFormat};
+        GpuMesh {
+            vertex_buffer: BufferId(0),
+            index_buffer: BufferId(0),
+            index_count: 0,
+            index_format: IndexFormat::Uint32,
+            primitive_topology: PrimitiveTopology::TriangleList,
+        }
+    }
+
+    // Dummy material for testing - implements both Material and Asset
+    #[derive(Clone)]
+    struct DummyMaterial;
+    
+    impl khora_core::asset::Material for DummyMaterial {}
+    impl khora_core::asset::Asset for DummyMaterial {}
+
+    #[test]
+    fn test_extract_lane_creation() {
+        let lane = ExtractRenderablesLane::new();
+        // Just verify it can be created
+        let _ = lane;
+    }
+
+    #[test]
+    fn test_extract_lane_default() {
+        let _lane = ExtractRenderablesLane::default();
+    }
+
+    #[test]
+    fn test_extract_empty_world() {
+        let lane = ExtractRenderablesLane::new();
+        let world = World::new();
+        let mut render_world = RenderWorld::default();
+
+        lane.run(&world, &mut render_world);
+
+        assert_eq!(render_world.meshes.len(), 0, "Empty world should extract no meshes");
+    }
+
+    #[test]
+    fn test_extract_single_entity_without_material() {
+        let lane = ExtractRenderablesLane::new();
+        let mut world = World::new();
+        let mut render_world = RenderWorld::default();
+
+        // Create a simple transform
+        let transform = GlobalTransform(AffineTransform::from_translation(Vec3::new(1.0, 2.0, 3.0)));
+
+        // Create a GPU mesh handle
+        let mesh_uuid = AssetUUID::new();
+        let gpu_mesh_handle = HandleComponent::<GpuMesh> {
+            handle: AssetHandle::new(create_dummy_gpu_mesh()),
+            uuid: mesh_uuid,
+        };
+
+        // Spawn an entity with transform and mesh
+        world.spawn((transform, gpu_mesh_handle));
+
+        lane.run(&world, &mut render_world);
+
+        assert_eq!(render_world.meshes.len(), 1, "Should extract 1 mesh");
+        
+        let extracted = &render_world.meshes[0];
+        assert_eq!(extracted.gpu_mesh_uuid, mesh_uuid);
+        assert_eq!(extracted.material_uuid, None);
+        assert_eq!(extracted.transform.translation(), Vec3::new(1.0, 2.0, 3.0));
+    }
+
+    #[test]
+    fn test_extract_single_entity_with_material() {
+        let lane = ExtractRenderablesLane::new();
+        let mut world = World::new();
+        let mut render_world = RenderWorld::default();
+
+        // Create components
+        let transform = GlobalTransform(AffineTransform::from_translation(Vec3::new(5.0, 10.0, 15.0)));
+        let mesh_uuid = AssetUUID::new();
+        let material_uuid = AssetUUID::new();
+        
+        let gpu_mesh_handle = HandleComponent::<GpuMesh> {
+            handle: AssetHandle::new(create_dummy_gpu_mesh()),
+            uuid: mesh_uuid,
+        };
+        
+        // Create a dummy material wrapped in Box<dyn Material>
+        let dummy_material: Box<dyn khora_core::asset::Material> = Box::new(DummyMaterial);
+        let material = MaterialComponent {
+            handle: AssetHandle::new(dummy_material),
+            uuid: material_uuid,
+        };
+
+        // Spawn an entity with all components
+        world.spawn((transform, gpu_mesh_handle, material));
+
+        lane.run(&world, &mut render_world);
+
+        assert_eq!(render_world.meshes.len(), 1, "Should extract 1 mesh");
+        
+        let extracted = &render_world.meshes[0];
+        assert_eq!(extracted.gpu_mesh_uuid, mesh_uuid);
+        assert_eq!(extracted.material_uuid, Some(material_uuid));
+        assert_eq!(extracted.transform.translation(), Vec3::new(5.0, 10.0, 15.0));
+    }
+
+    #[test]
+    fn test_extract_multiple_entities() {
+        let lane = ExtractRenderablesLane::new();
+        let mut world = World::new();
+        let mut render_world = RenderWorld::default();
+
+        let mut with_material_count = 0;
+        let mut without_material_count = 0;
+
+        // Create 5 entities with different transforms
+        for i in 0..5 {
+            let transform = GlobalTransform(AffineTransform::from_translation(
+                Vec3::new(i as f32, i as f32 * 2.0, i as f32 * 3.0)
+            ));
+            let mesh_uuid = AssetUUID::new();
+            let gpu_mesh_handle = HandleComponent::<GpuMesh> { 
+                handle: AssetHandle::new(create_dummy_gpu_mesh()),
+                uuid: mesh_uuid 
+            };
+
+            // Add material to some entities but not all
+            if i % 2 == 0 {
+                let dummy_material: Box<dyn khora_core::asset::Material> = Box::new(DummyMaterial);
+                let material = MaterialComponent { 
+                    handle: AssetHandle::new(dummy_material),
+                    uuid: AssetUUID::new() 
+                };
+                world.spawn((transform, gpu_mesh_handle, material));
+                with_material_count += 1;
+            } else {
+                world.spawn((transform, gpu_mesh_handle));
+                without_material_count += 1;
+            }
+        }
+
+        lane.run(&world, &mut render_world);
+
+        assert_eq!(render_world.meshes.len(), 5, "Should extract 5 meshes");
+
+        // Count how many extracted meshes have materials (don't rely on order)
+        let extracted_with_material = render_world.meshes
+            .iter()
+            .filter(|m| m.material_uuid.is_some())
+            .count();
+        let extracted_without_material = render_world.meshes
+            .iter()
+            .filter(|m| m.material_uuid.is_none())
+            .count();
+
+        assert_eq!(extracted_with_material, with_material_count, 
+            "Should have {} entities with materials", with_material_count);
+        assert_eq!(extracted_without_material, without_material_count, 
+            "Should have {} entities without materials", without_material_count);
+    }
+
+    #[test]
+    fn test_extract_with_different_transforms() {
+        let lane = ExtractRenderablesLane::new();
+        let mut world = World::new();
+        let mut render_world = RenderWorld::default();
+
+        // Entity with translation
+        let transform1 = GlobalTransform(AffineTransform::from_translation(Vec3::new(10.0, 20.0, 30.0)));
+        world.spawn((
+            transform1, 
+            HandleComponent::<GpuMesh> { 
+                handle: AssetHandle::new(create_dummy_gpu_mesh()),
+                uuid: AssetUUID::new() 
+            }
+        ));
+
+        // Entity with rotation around Y axis
+        use khora_core::math::Quaternion;
+        let transform2 = GlobalTransform(AffineTransform::from_quat(
+            Quaternion::from_axis_angle(Vec3::Y, std::f32::consts::PI / 2.0)
+        ));
+        world.spawn((
+            transform2, 
+            HandleComponent::<GpuMesh> { 
+                handle: AssetHandle::new(create_dummy_gpu_mesh()),
+                uuid: AssetUUID::new() 
+            }
+        ));
+
+        // Entity with scale
+        let transform3 = GlobalTransform(AffineTransform::from_scale(Vec3::new(2.0, 3.0, 4.0)));
+        world.spawn((
+            transform3, 
+            HandleComponent::<GpuMesh> { 
+                handle: AssetHandle::new(create_dummy_gpu_mesh()),
+                uuid: AssetUUID::new() 
+            }
+        ));
+
+        lane.run(&world, &mut render_world);
+
+        assert_eq!(render_world.meshes.len(), 3, "Should extract 3 meshes");
+
+        // Verify first transform (translation)
+        assert_eq!(render_world.meshes[0].transform.translation(), Vec3::new(10.0, 20.0, 30.0));
+
+        // Verify transforms are different (comparing the matrices directly)
+        let mat0 = render_world.meshes[0].transform.to_matrix();
+        let mat1 = render_world.meshes[1].transform.to_matrix();
+        let mat2 = render_world.meshes[2].transform.to_matrix();
+        assert_ne!(mat0, mat1);
+        assert_ne!(mat1, mat2);
+    }
+
+    #[test]
+    fn test_extract_clears_previous_data() {
+        let lane = ExtractRenderablesLane::new();
+        let mut world = World::new();
+        let mut render_world = RenderWorld::default();
+
+        // First extraction with 3 entities
+        for _ in 0..3 {
+            let transform = GlobalTransform(AffineTransform::IDENTITY);
+            let gpu_mesh_handle = HandleComponent::<GpuMesh> { 
+                handle: AssetHandle::new(create_dummy_gpu_mesh()),
+                uuid: AssetUUID::new() 
+            };
+            world.spawn((transform, gpu_mesh_handle));
+        }
+
+        lane.run(&world, &mut render_world);
+        assert_eq!(render_world.meshes.len(), 3, "First run should extract 3 meshes");
+
+        // Create a new world with only 1 entity
+        let mut world2 = World::new();
+        let transform = GlobalTransform(AffineTransform::IDENTITY);
+        let gpu_mesh_handle = HandleComponent::<GpuMesh> { 
+            handle: AssetHandle::new(create_dummy_gpu_mesh()),
+            uuid: AssetUUID::new() 
+        };
+        world2.spawn((transform, gpu_mesh_handle));
+
+        // Second extraction should clear previous data
+        lane.run(&world2, &mut render_world);
+        assert_eq!(render_world.meshes.len(), 1, "Second run should extract only 1 mesh (cleared previous)");
+    }
+
+    #[test]
+    fn test_extract_entities_without_mesh_component() {
+        let lane = ExtractRenderablesLane::new();
+        let mut world = World::new();
+        let mut render_world = RenderWorld::default();
+
+        // Create entities with only transform (no GpuMesh handle)
+        // Note: World::spawn requires at least one component, so we add a Transform too
+        use khora_data::ecs::Transform;
+        for _ in 0..3 {
+            let transform = GlobalTransform(AffineTransform::IDENTITY);
+            // Add Transform as a second component to satisfy ComponentBundle
+            world.spawn((transform, Transform::default()));
+        }
+
+        // Create one entity with both GlobalTransform and GpuMesh handle
+        let transform = GlobalTransform(AffineTransform::IDENTITY);
+        let gpu_mesh_handle = HandleComponent::<GpuMesh> { 
+            handle: AssetHandle::new(create_dummy_gpu_mesh()),
+            uuid: AssetUUID::new() 
+        };
+        world.spawn((transform, gpu_mesh_handle));
+
+        lane.run(&world, &mut render_world);
+
+        // Should only extract the entity that has both transform and mesh
+        assert_eq!(render_world.meshes.len(), 1, "Should only extract entities with both components");
+    }
+
+    #[test]
+    fn test_extract_preserves_mesh_uuids() {
+        let lane = ExtractRenderablesLane::new();
+        let mut world = World::new();
+        let mut render_world = RenderWorld::default();
+
+        // Create entities with specific UUIDs
+        let uuid1 = AssetUUID::new();
+        let uuid2 = AssetUUID::new();
+        let uuid3 = AssetUUID::new();
+
+        let transform = GlobalTransform(AffineTransform::IDENTITY);
+        
+        world.spawn((
+            transform, 
+            HandleComponent::<GpuMesh> { 
+                handle: AssetHandle::new(create_dummy_gpu_mesh()),
+                uuid: uuid1 
+            }
+        ));
+        world.spawn((
+            transform, 
+            HandleComponent::<GpuMesh> { 
+                handle: AssetHandle::new(create_dummy_gpu_mesh()),
+                uuid: uuid2 
+            }
+        ));
+        world.spawn((
+            transform, 
+            HandleComponent::<GpuMesh> { 
+                handle: AssetHandle::new(create_dummy_gpu_mesh()),
+                uuid: uuid3 
+            }
+        ));
+
+        lane.run(&world, &mut render_world);
+
+        assert_eq!(render_world.meshes.len(), 3);
+
+        // Verify UUIDs are preserved (order might vary depending on ECS implementation)
+        let extracted_uuids: Vec<AssetUUID> = render_world.meshes
+            .iter()
+            .map(|m| m.gpu_mesh_uuid)
+            .collect();
+
+        assert!(extracted_uuids.contains(&uuid1), "Should contain uuid1");
+        assert!(extracted_uuids.contains(&uuid2), "Should contain uuid2");
+        assert!(extracted_uuids.contains(&uuid3), "Should contain uuid3");
+    }
+
+    #[test]
+    fn test_extract_with_identity_transform() {
+        let lane = ExtractRenderablesLane::new();
+        let mut world = World::new();
+        let mut render_world = RenderWorld::default();
+
+        let transform = GlobalTransform(AffineTransform::IDENTITY);
+        let mesh_uuid = AssetUUID::new();
+        world.spawn((
+            transform, 
+            HandleComponent::<GpuMesh> { 
+                handle: AssetHandle::new(create_dummy_gpu_mesh()),
+                uuid: mesh_uuid 
+            }
+        ));
+
+        lane.run(&world, &mut render_world);
+
+        assert_eq!(render_world.meshes.len(), 1);
+        
+        let extracted = &render_world.meshes[0];
+        use khora_core::math::Mat4;
+        assert_eq!(extracted.transform.to_matrix(), Mat4::IDENTITY);
+    }
+
+    #[test]
+    fn test_extract_multiple_runs() {
+        let lane = ExtractRenderablesLane::new();
+        let mut world = World::new();
+        let mut render_world = RenderWorld::default();
+
+        // Add initial entity
+        let transform = GlobalTransform(AffineTransform::IDENTITY);
+        world.spawn((
+            transform, 
+            HandleComponent::<GpuMesh> { 
+                handle: AssetHandle::new(create_dummy_gpu_mesh()),
+                uuid: AssetUUID::new() 
+            }
+        ));
+
+        // First run
+        lane.run(&world, &mut render_world);
+        assert_eq!(render_world.meshes.len(), 1);
+
+        // Add more entities
+        world.spawn((
+            transform, 
+            HandleComponent::<GpuMesh> { 
+                handle: AssetHandle::new(create_dummy_gpu_mesh()),
+                uuid: AssetUUID::new() 
+            }
+        ));
+        world.spawn((
+            transform, 
+            HandleComponent::<GpuMesh> { 
+                handle: AssetHandle::new(create_dummy_gpu_mesh()),
+                uuid: AssetUUID::new() 
+            }
+        ));
+
+        // Second run should see all entities
+        lane.run(&world, &mut render_world);
+        assert_eq!(render_world.meshes.len(), 3, "Should extract all 3 entities");
+
+        // Third run should still work correctly
+        lane.run(&world, &mut render_world);
+        assert_eq!(render_world.meshes.len(), 3, "Should consistently extract 3 entities");
+    }
+}
