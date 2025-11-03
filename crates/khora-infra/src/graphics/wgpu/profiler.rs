@@ -280,6 +280,7 @@ mod tests {
             label: Some("Khora Test Device"),
             required_features,
             required_limits: wgpu::Limits::default(),
+            experimental_features: wgpu::ExperimentalFeatures::default(),
             memory_hints: wgpu::MemoryHints::Performance,
             trace: wgpu::Trace::Off,
         }))
