@@ -15,9 +15,6 @@ This document outlines the phased development plan for Khora. It integrates all 
 ## Phase 2: Scene, Assets & Basic Capabilities
 **Goal:** Build out the necessary features to represent and interact with a game world, starting with the implementation of our revolutionary ECS.
 
-#### [Scene Representation, Assets & Data Focus]
-- #126 [Task] Integrate CPU/GPU Timers with Core Metrics System
-
 #### [Rendering Capabilities, Physics, Animation, AI & Strategy Exploration]
 - #159 [Feature] Implement SimpleUnlit RenderLane
 - #46 [Feature] Implement Camera System & Uniforms
