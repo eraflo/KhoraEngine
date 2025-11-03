@@ -86,6 +86,7 @@ impl WgpuGraphicsContext {
                 label: Some("Khora Engine Logical Device"),
                 required_features: features_to_enable,
                 required_limits: wgpu::Limits::default(),
+                experimental_features: wgpu::ExperimentalFeatures::default(),
                 memory_hints: wgpu::MemoryHints::default(),
                 trace: wgpu::Trace::default(),
             })
@@ -93,7 +94,7 @@ impl WgpuGraphicsContext {
             .map_err(|e| anyhow!("Failed to create logical device: {}", e))?;
         log::info!("Logical device and command queue created.");
 
-        device.on_uncaptured_error(Box::new(|e| {
+        device.on_uncaptured_error(std::sync::Arc::new(|e| {
             log::error!("WGPU Uncaptured Error: {e:?}");
         }));
 

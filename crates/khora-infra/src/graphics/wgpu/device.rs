@@ -267,7 +267,10 @@ impl WgpuDevice {
         if let Ok(context_guard) = self.internal.context.lock() {
             // PollType::Wait is blocking and will wait for the queue to be empty
             // and for all `on_submitted_work_done` callbacks to be processed.
-            if let Err(e) = context_guard.device.poll(wgpu::PollType::Wait) {
+            if let Err(e) = context_guard.device.poll(wgpu::PollType::Wait {
+                submission_index: None,
+                timeout: None,
+            }) {
                 log::warn!("Failed to poll device during shutdown: {:?}", e);
             }
         } else {
