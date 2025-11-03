@@ -14,7 +14,7 @@ bincode = "2.0.1"
 
 # Error handling
 anyhow = "1.0"
-thiserror = "2.0.16"
+thiserror = "2.0.17"
 
 # Image handling
 image = "0.25.8"
