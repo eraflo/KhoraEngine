@@ -17,13 +17,17 @@
 use super::mesh_preparation::MeshPreparationSystem;
 use khora_core::{
     asset::Material,
+    math::Mat4,
     renderer::{
         api::{GpuMesh, RenderContext, RenderObject},
         traits::CommandEncoder,
-        GraphicsDevice, Mesh,
+        GraphicsDevice, Mesh, ViewInfo,
     },
 };
-use khora_data::{assets::Assets, ecs::World};
+use khora_data::{
+    assets::Assets,
+    ecs::{Camera, GlobalTransform, World},
+};
 use khora_lanes::render_lane::{ExtractRenderablesLane, RenderLane, RenderWorld, SimpleUnlitLane};
 use std::sync::{Arc, RwLock};
 
@@ -157,6 +161,51 @@ impl RenderAgent {
         }
 
         render_objects
+    }
+
+    /// Extracts the active camera from the ECS world and generates a `ViewInfo`.
+    ///
+    /// This method queries the ECS for entities with both a `Camera` and `GlobalTransform`
+    /// component, finds the first active camera, and constructs a ViewInfo containing
+    /// the camera's view and projection matrices.
+    ///
+    /// # Arguments
+    ///
+    /// * `world`: The ECS world containing camera entities
+    ///
+    /// # Returns
+    ///
+    /// A `ViewInfo` containing the camera's matrices and position. If no active camera
+    /// is found, returns a default ViewInfo with identity matrices.
+    pub fn extract_camera_view(&self, world: &World) -> ViewInfo {
+        // Query for entities with Camera and GlobalTransform components
+        let query = world.query::<(&Camera, &GlobalTransform)>();
+
+        // Find the first active camera
+        for (camera, global_transform) in query {
+            if camera.is_active {
+                // Extract camera position from the global transform
+                let camera_position = global_transform.0.translation();
+
+                // Calculate the view matrix from the global transform
+                // The view matrix is the inverse of the camera's world transform
+                let view_matrix = if let Some(inv) = global_transform.to_matrix().inverse() {
+                    inv
+                } else {
+                    eprintln!("Warning: Failed to invert camera transform, using identity");
+                    Mat4::IDENTITY
+                };
+
+                // Get the projection matrix from the camera
+                let projection_matrix = camera.projection_matrix();
+
+                return ViewInfo::new(view_matrix, projection_matrix, camera_position);
+            }
+        }
+
+        // No active camera found, return default
+        eprintln!("Warning: No active camera found in scene, using default ViewInfo");
+        ViewInfo::default()
     }
 }
 

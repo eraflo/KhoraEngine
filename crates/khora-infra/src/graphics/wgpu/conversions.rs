@@ -213,6 +213,12 @@ impl IntoWgpu<wgpu::ShaderStages> for ShaderStage {
     }
 }
 
+impl IntoWgpu<wgpu::ShaderStages> for ShaderStageFlags {
+    fn into_wgpu(self) -> wgpu::ShaderStages {
+        wgpu::ShaderStages::from_bits_truncate(self.bits())
+    }
+}
+
 impl IntoWgpu<wgpu::VertexFormat> for VertexFormat {
     fn into_wgpu(self) -> wgpu::VertexFormat {
         match self {

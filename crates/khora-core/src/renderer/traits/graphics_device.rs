@@ -72,6 +72,39 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// Destroys a render pipeline, releasing its GPU resources.
     fn destroy_render_pipeline(&self, id: RenderPipelineId) -> Result<(), ResourceError>;
 
+    // --- Bind Group Management ---
+
+    /// Creates a bind group layout from a descriptor.
+    ///
+    /// A bind group layout describes the structure and types of resources that can be
+    /// bound to shaders at a specific bind group index.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if the layout is invalid.
+    fn create_bind_group_layout(
+        &self,
+        descriptor: &BindGroupLayoutDescriptor,
+    ) -> Result<BindGroupLayoutId, ResourceError>;
+
+    /// Creates a bind group from a descriptor.
+    ///
+    /// A bind group represents the actual bound resources (buffers, textures, etc.)
+    /// that conform to a specific bind group layout.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if the bind group configuration is invalid or
+    /// doesn't match its layout.
+    fn create_bind_group(
+        &self,
+        descriptor: &BindGroupDescriptor,
+    ) -> Result<BindGroupId, ResourceError>;
+
+    /// Destroys a bind group layout, releasing its resources.
+    fn destroy_bind_group_layout(&self, id: BindGroupLayoutId) -> Result<(), ResourceError>;
+
+    /// Destroys a bind group, releasing its resources.
+    fn destroy_bind_group(&self, id: BindGroupId) -> Result<(), ResourceError>;
+
     // --- Buffer Management ---
 
     /// Creates a new GPU buffer.

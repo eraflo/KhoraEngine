@@ -27,7 +27,7 @@ use crate::ecs::{
     query::{Query, WorldQuery},
     registry::ComponentRegistry,
     serialization::SceneMemoryLayout,
-    AudioListener, AudioSource, Children, Component, ComponentBundle, GlobalTransform,
+    AudioListener, AudioSource, Camera, Children, Component, ComponentBundle, GlobalTransform,
     MaterialComponent, Parent, QueryMut, SemanticDomain, SerializedPage, Transform, TypeRegistry,
 };
 
@@ -209,6 +209,7 @@ impl World {
         world.register_component::<HandleComponent<Mesh>>(SemanticDomain::Render);
         world.register_component::<HandleComponent<GpuMesh>>(SemanticDomain::Render);
         world.register_component::<MaterialComponent>(SemanticDomain::Render);
+        world.register_component::<Camera>(SemanticDomain::Render);
 
         // Registration of audio components
         world.register_component::<AudioSource>(SemanticDomain::Audio);
