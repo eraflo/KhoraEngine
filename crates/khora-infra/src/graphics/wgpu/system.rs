@@ -86,9 +86,21 @@ impl fmt::Debug for WgpuRenderSystem {
                 &self.gpu_profiler.as_ref().map(|_| "GpuProfiler(...)"),
             )
             .field("current_frame_view_id", &self.current_frame_view_id)
-            .field("camera_uniform_buffer", &self.camera_uniform_buffer.as_ref().map(|_| "Buffer(...)"))
-            .field("camera_bind_group", &self.camera_bind_group.as_ref().map(|_| "BindGroup(...)"))
-            .field("camera_bind_group_layout", &self.camera_bind_group_layout.as_ref().map(|_| "BindGroupLayout(...)"))
+            .field(
+                "camera_uniform_buffer",
+                &self.camera_uniform_buffer.as_ref().map(|_| "Buffer(...)"),
+            )
+            .field(
+                "camera_bind_group",
+                &self.camera_bind_group.as_ref().map(|_| "BindGroup(...)"),
+            )
+            .field(
+                "camera_bind_group_layout",
+                &self
+                    .camera_bind_group_layout
+                    .as_ref()
+                    .map(|_| "BindGroupLayout(...)"),
+            )
             .finish()
     }
 }
@@ -221,9 +233,12 @@ impl WgpuRenderSystem {
             mapped_at_creation: false,
         };
 
-        let uniform_buffer = device
-            .create_buffer(&buffer_descriptor)
-            .map_err(|e| RenderError::InitializationFailed(format!("Failed to create camera uniform buffer: {:?}", e)))?;
+        let uniform_buffer = device.create_buffer(&buffer_descriptor).map_err(|e| {
+            RenderError::InitializationFailed(format!(
+                "Failed to create camera uniform buffer: {:?}",
+                e
+            ))
+        })?;
 
         // Create the bind group layout using the abstract API
         let layout_entry = BindGroupLayoutEntry {
@@ -243,7 +258,12 @@ impl WgpuRenderSystem {
 
         let bind_group_layout = device
             .create_bind_group_layout(&layout_descriptor)
-            .map_err(|e| RenderError::InitializationFailed(format!("Failed to create camera bind group layout: {:?}", e)))?;
+            .map_err(|e| {
+                RenderError::InitializationFailed(format!(
+                    "Failed to create camera bind group layout: {:?}",
+                    e
+                ))
+            })?;
 
         // Create the bind group using the abstract API
         let bind_group_entry = BindGroupEntry {
@@ -264,7 +284,12 @@ impl WgpuRenderSystem {
 
         let bind_group = device
             .create_bind_group(&bind_group_descriptor)
-            .map_err(|e| RenderError::InitializationFailed(format!("Failed to create camera bind group: {:?}", e)))?;
+            .map_err(|e| {
+                RenderError::InitializationFailed(format!(
+                    "Failed to create camera bind group: {:?}",
+                    e
+                ))
+            })?;
 
         self.camera_uniform_buffer = Some(uniform_buffer);
         self.camera_bind_group_layout = Some(bind_group_layout);
@@ -284,12 +309,11 @@ impl WgpuRenderSystem {
 
         let uniform_data = CameraUniformData::from_view_info(view_info);
 
-        if let (Some(device), Some(buffer_id)) = (
-            &self.wgpu_device,
-            &self.camera_uniform_buffer,
-        ) {
+        if let (Some(device), Some(buffer_id)) = (&self.wgpu_device, &self.camera_uniform_buffer) {
             // Write the uniform data to the buffer using the abstract API
-            if let Err(e) = device.write_buffer(*buffer_id, 0, bytemuck::cast_slice(&[uniform_data])) {
+            if let Err(e) =
+                device.write_buffer(*buffer_id, 0, bytemuck::cast_slice(&[uniform_data]))
+            {
                 log::warn!("Failed to write camera uniform data: {:?}", e);
             }
         }

@@ -24,18 +24,9 @@ fn test_extract_camera_view_with_active_camera() {
     let mut world = World::new();
 
     // Create a camera entity
-    let camera = Camera::new_perspective(
-        60.0_f32.to_radians(),
-        16.0 / 9.0,
-        0.1,
-        1000.0,
-    );
+    let camera = Camera::new_perspective(60.0_f32.to_radians(), 16.0 / 9.0, 0.1, 1000.0);
 
-    let transform = Transform::new(
-        Vec3::new(0.0, 5.0, 10.0),
-        Quaternion::IDENTITY,
-        Vec3::ONE,
-    );
+    let transform = Transform::new(Vec3::new(0.0, 5.0, 10.0), Quaternion::IDENTITY, Vec3::ONE);
 
     // GlobalTransform is typically computed, but for tests we use the transform matrix directly
     let global_transform = GlobalTransform::new(transform.to_mat4());
@@ -82,8 +73,10 @@ fn test_extract_camera_view_inactive_camera() {
     let mut world = World::new();
 
     // Create an inactive camera
-    let mut camera = Camera::default();
-    camera.is_active = false;
+    let camera = Camera {
+        is_active: false,
+        ..Default::default()
+    };
 
     let transform = Transform::default();
     let global_transform = GlobalTransform::new(transform.to_mat4());
@@ -108,18 +101,12 @@ fn test_extract_camera_view_multiple_cameras() {
     let mut world = World::new();
 
     // Create multiple cameras, but only one active
-    let inactive_camera = {
-        let mut cam = Camera::default();
-        cam.is_active = false;
-        cam
+    let inactive_camera = Camera {
+        is_active: false,
+        ..Default::default()
     };
 
-    let active_camera = Camera::new_perspective(
-        90.0_f32.to_radians(),
-        1.0,
-        1.0,
-        100.0,
-    );
+    let active_camera = Camera::new_perspective(90.0_f32.to_radians(), 1.0, 1.0, 100.0);
 
     let transform1 = Transform::new(Vec3::new(10.0, 0.0, 0.0), Quaternion::IDENTITY, Vec3::ONE);
     let transform2 = Transform::new(Vec3::new(0.0, 10.0, 0.0), Quaternion::IDENTITY, Vec3::ONE);
@@ -127,14 +114,14 @@ fn test_extract_camera_view_multiple_cameras() {
     // Spawn inactive camera first
     world.spawn((
         inactive_camera,
-        transform1.clone(),
+        transform1,
         GlobalTransform::new(transform1.to_mat4()),
     ));
 
     // Spawn active camera second
     world.spawn((
         active_camera,
-        transform2.clone(),
+        transform2,
         GlobalTransform::new(transform2.to_mat4()),
     ));
 
@@ -185,12 +172,9 @@ fn test_extract_camera_view_with_rotated_camera() {
 
     // Create a camera looking down from above
     let camera = Camera::default();
-    let rotation = Quaternion::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), -std::f32::consts::FRAC_PI_2); // Looking down
-    let transform = Transform::new(
-        Vec3::new(0.0, 10.0, 0.0),
-        rotation,
-        Vec3::ONE,
-    );
+    let rotation =
+        Quaternion::from_axis_angle(Vec3::new(1.0, 0.0, 0.0), -std::f32::consts::FRAC_PI_2); // Looking down
+    let transform = Transform::new(Vec3::new(0.0, 10.0, 0.0), rotation, Vec3::ONE);
     let global_transform = GlobalTransform::new(transform.to_mat4());
 
     world.spawn((camera, transform, global_transform));

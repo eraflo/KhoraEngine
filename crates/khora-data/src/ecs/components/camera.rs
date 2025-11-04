@@ -91,12 +91,7 @@ impl Camera {
     /// - Near plane: 0.1
     /// - Far plane: 1000.0
     pub fn default_perspective() -> Self {
-        Self::new_perspective(
-            60.0_f32.to_radians(),
-            16.0 / 9.0,
-            0.1,
-            1000.0,
-        )
+        Self::new_perspective(60.0_f32.to_radians(), 16.0 / 9.0, 0.1, 1000.0)
     }
 
     /// Creates a default orthographic camera.
@@ -116,12 +111,7 @@ impl Camera {
     pub fn projection_matrix(&self) -> Mat4 {
         match self.projection {
             ProjectionType::Perspective { fov_y_radians } => {
-                Mat4::perspective_rh_zo(
-                    fov_y_radians,
-                    self.aspect_ratio,
-                    self.z_near,
-                    self.z_far,
-                )
+                Mat4::perspective_rh_zo(fov_y_radians, self.aspect_ratio, self.z_near, self.z_far)
             }
             ProjectionType::Orthographic { width, height } => {
                 let half_width = width / 2.0;
@@ -206,10 +196,10 @@ mod tests {
     fn test_camera_projection_matrix() {
         let camera = Camera::new_perspective(PI / 2.0, 1.0, 1.0, 10.0);
         let proj = camera.projection_matrix();
-        
+
         // The projection matrix should not be identity
         assert_ne!(proj, Mat4::IDENTITY);
-        
+
         // Check that the matrix is not degenerate (determinant != 0)
         let det = proj.determinant();
         assert!(det.abs() > 0.0001, "Projection matrix is degenerate");
@@ -219,10 +209,10 @@ mod tests {
     fn test_camera_orthographic_projection_matrix() {
         let camera = Camera::new_orthographic(100.0, 100.0, 0.1, 100.0);
         let proj = camera.projection_matrix();
-        
+
         // The projection matrix should not be identity
         assert_ne!(proj, Mat4::IDENTITY);
-        
+
         // Simply verify the matrix was created successfully
         // Orthographic projection matrices are always valid for non-zero dimensions
     }
@@ -231,9 +221,9 @@ mod tests {
     fn test_camera_aspect_ratio_update() {
         let mut camera = Camera::default();
         camera.set_aspect_ratio(2560, 1080); // 21:9 ultrawide
-        
+
         assert!((camera.aspect_ratio - 2560.0 / 1080.0).abs() < 0.001);
-        
+
         let proj = camera.projection_matrix();
         assert_ne!(proj, Mat4::IDENTITY);
     }
@@ -242,7 +232,7 @@ mod tests {
     fn test_camera_aspect_ratio_zero_height() {
         let mut camera = Camera::default();
         let old_aspect = camera.aspect_ratio;
-        
+
         // Should not crash or change aspect ratio
         camera.set_aspect_ratio(1920, 0);
         assert_eq!(camera.aspect_ratio, old_aspect);
@@ -252,7 +242,7 @@ mod tests {
     fn test_camera_active_flag() {
         let mut camera = Camera::default();
         assert!(camera.is_active);
-        
+
         camera.is_active = false;
         assert!(!camera.is_active);
     }
@@ -282,7 +272,7 @@ mod tests {
     fn test_camera_default_perspective() {
         let camera1 = Camera::default();
         let camera2 = Camera::default_perspective();
-        
+
         assert_eq!(camera1.projection, camera2.projection);
         assert_eq!(camera1.aspect_ratio, camera2.aspect_ratio);
         assert_eq!(camera1.z_near, camera2.z_near);

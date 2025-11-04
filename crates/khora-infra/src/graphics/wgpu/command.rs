@@ -44,14 +44,15 @@ impl<'pass> RenderPass<'pass> for WgpuRenderPass<'pass> {
         }
     }
 
-    fn set_bind_group(&mut self, index: u32, bind_group_id: &'pass khora_core::renderer::BindGroupId) {
+    fn set_bind_group(
+        &mut self,
+        index: u32,
+        bind_group_id: &'pass khora_core::renderer::BindGroupId,
+    ) {
         if let Some(bind_group) = self.device.get_wgpu_bind_group(*bind_group_id) {
             self.pass.set_bind_group(index, bind_group.as_ref(), &[]);
         } else {
-            log::warn!(
-                "WgpuRenderPass: BindGroupId {:?} not found.",
-                bind_group_id
-            );
+            log::warn!("WgpuRenderPass: BindGroupId {:?} not found.", bind_group_id);
         }
     }
 

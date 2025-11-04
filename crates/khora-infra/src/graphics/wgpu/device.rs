@@ -126,7 +126,8 @@ pub struct WgpuDeviceInternal {
     textures: Mutex<HashMap<api_tex::TextureId, WgpuTextureEntry>>,
     texture_views: Mutex<HashMap<api_tex::TextureViewId, WgpuTextureViewEntry>>,
     samplers: Mutex<HashMap<api_tex::SamplerId, WgpuSamplerEntry>>,
-    bind_group_layouts: Mutex<HashMap<khora_core::renderer::BindGroupLayoutId, WgpuBindGroupLayoutEntry>>,
+    bind_group_layouts:
+        Mutex<HashMap<khora_core::renderer::BindGroupLayoutId, WgpuBindGroupLayoutEntry>>,
     bind_groups: Mutex<HashMap<khora_core::renderer::BindGroupId, WgpuBindGroupEntry>>,
 
     next_shader_id: AtomicUsize,
@@ -303,7 +304,9 @@ impl WgpuDevice {
         id: khora_core::renderer::BindGroupId,
     ) -> Option<Arc<wgpu::BindGroup>> {
         let bind_groups = self.internal.bind_groups.lock().unwrap();
-        bind_groups.get(&id).map(|entry| Arc::clone(&entry.wgpu_bind_group))
+        bind_groups
+            .get(&id)
+            .map(|entry| Arc::clone(&entry.wgpu_bind_group))
     }
 
     /// Polls the underlying wgpu::Device in a blocking manner.
@@ -1255,7 +1258,9 @@ impl GraphicsDevice for WgpuDevice {
                             multisampled: *multisampled,
                         }
                     }
-                    BindingType::Sampler => wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    BindingType::Sampler => {
+                        wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)
+                    }
                 };
 
                 wgpu::BindGroupLayoutEntry {
@@ -1305,27 +1310,29 @@ impl GraphicsDevice for WgpuDevice {
         let wgpu_layout = Arc::clone(&layout_entry.wgpu_layout);
         drop(layouts);
 
-        // Collect Arc references to buffers first
-        let buffers_lock = self.internal.buffers.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (buffers): {e}"))
-        })?;
+        // Type alias to simplify complex type
+        type BufferBindingInfo = (u32, Arc<wgpu::Buffer>, u64, Option<std::num::NonZeroU64>);
 
-        let buffer_arcs: Result<Vec<(u32, Arc<wgpu::Buffer>, u64, Option<std::num::NonZeroU64>)>, ResourceError> = descriptor
+        // Collect Arc references to buffers first
+        let buffers_lock =
+            self.internal.buffers.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (buffers): {e}"))
+            })?;
+
+        let buffer_arcs: Result<Vec<BufferBindingInfo>, ResourceError> = descriptor
             .entries
             .iter()
-            .map(|entry| {
-                match &entry.resource {
-                    BindingResource::Buffer(buffer_binding) => {
-                        let buffer_entry = buffers_lock
-                            .get(&buffer_binding.buffer)
-                            .ok_or(ResourceError::NotFound)?;
-                        Ok((
-                            entry.binding,
-                            Arc::clone(&buffer_entry.wgpu_buffer),
-                            buffer_binding.offset,
-                            buffer_binding.size,
-                        ))
-                    }
+            .map(|entry| match &entry.resource {
+                BindingResource::Buffer(buffer_binding) => {
+                    let buffer_entry = buffers_lock
+                        .get(&buffer_binding.buffer)
+                        .ok_or(ResourceError::NotFound)?;
+                    Ok((
+                        entry.binding,
+                        Arc::clone(&buffer_entry.wgpu_buffer),
+                        buffer_binding.offset,
+                        buffer_binding.size,
+                    ))
                 }
             })
             .collect();
@@ -1336,15 +1343,13 @@ impl GraphicsDevice for WgpuDevice {
         // Now create wgpu entries with references to the Arc'd buffers
         let wgpu_entries: Vec<wgpu::BindGroupEntry> = buffer_arcs
             .iter()
-            .map(|(binding, buffer, offset, size)| {
-                wgpu::BindGroupEntry {
-                    binding: *binding,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: buffer.as_ref(),
-                        offset: *offset,
-                        size: *size,
-                    }),
-                }
+            .map(|(binding, buffer, offset, size)| wgpu::BindGroupEntry {
+                binding: *binding,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: buffer.as_ref(),
+                    offset: *offset,
+                    size: *size,
+                }),
             })
             .collect();
 

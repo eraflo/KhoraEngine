@@ -490,16 +490,16 @@ mod tests {
         let view_matrix = Mat4::IDENTITY;
         let projection_matrix = Mat4::IDENTITY;
         let camera_position = Vec3::new(1.0, 2.0, 3.0);
-        
+
         let view_info = ViewInfo::new(view_matrix, projection_matrix, camera_position);
         let uniform_data = CameraUniformData::from_view_info(&view_info);
-        
+
         // Check that camera position is correctly set
         assert_eq!(uniform_data.camera_position[0], 1.0);
         assert_eq!(uniform_data.camera_position[1], 2.0);
         assert_eq!(uniform_data.camera_position[2], 3.0);
         assert_eq!(uniform_data.camera_position[3], 0.0); // Padding
-        
+
         // Check that view_projection is set
         let expected_vp = projection_matrix * view_matrix;
         assert_eq!(uniform_data.view_projection, expected_vp);
@@ -509,7 +509,7 @@ mod tests {
     fn test_camera_uniform_data_as_bytes() {
         let view_info = ViewInfo::default();
         let uniform_data = CameraUniformData::from_view_info(&view_info);
-        
+
         let bytes = uniform_data.as_bytes();
         assert_eq!(bytes.len(), std::mem::size_of::<CameraUniformData>());
     }
@@ -521,7 +521,7 @@ mod tests {
             view_projection: Mat4::IDENTITY,
             camera_position: [0.0, 0.0, 0.0, 0.0],
         };
-        
+
         let data_array = [uniform_data];
         let bytes: &[u8] = bytemuck::cast_slice(&data_array);
         assert_eq!(bytes.len(), std::mem::size_of::<CameraUniformData>());
@@ -532,9 +532,9 @@ mod tests {
         let view = Mat4::from_translation(Vec3::new(0.0, 0.0, -5.0));
         let proj = Mat4::IDENTITY;
         let pos = Vec3::new(0.0, 1.0, 5.0);
-        
+
         let view_info = ViewInfo::new(view, proj, pos);
-        
+
         assert_eq!(view_info.view_matrix, view);
         assert_eq!(view_info.projection_matrix, proj);
         assert_eq!(view_info.camera_position, pos);
@@ -545,10 +545,10 @@ mod tests {
         let view = Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0));
         let proj = Mat4::from_scale(Vec3::new(2.0, 2.0, 1.0));
         let pos = Vec3::ZERO;
-        
+
         let view_info = ViewInfo::new(view, proj, pos);
         let vp = view_info.view_projection_matrix();
-        
+
         // view_projection should be projection * view
         assert_eq!(vp, proj * view);
     }
@@ -556,7 +556,7 @@ mod tests {
     #[test]
     fn test_view_info_default() {
         let view_info = ViewInfo::default();
-        
+
         assert_eq!(view_info.view_matrix, Mat4::IDENTITY);
         assert_eq!(view_info.projection_matrix, Mat4::IDENTITY);
         assert_eq!(view_info.camera_position, Vec3::ZERO);
@@ -565,7 +565,7 @@ mod tests {
     #[test]
     fn test_shader_stage_flags_bitwise() {
         let vertex_fragment = ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT;
-        
+
         assert!(vertex_fragment.contains(ShaderStage::Vertex));
         assert!(vertex_fragment.contains(ShaderStage::Fragment));
         assert!(!vertex_fragment.contains(ShaderStage::Compute));
@@ -574,7 +574,7 @@ mod tests {
     #[test]
     fn test_shader_stage_flags_all() {
         let all = ShaderStageFlags::ALL;
-        
+
         assert!(all.contains(ShaderStage::Vertex));
         assert!(all.contains(ShaderStage::Fragment));
         assert!(all.contains(ShaderStage::Compute));
@@ -585,7 +585,7 @@ mod tests {
         let vertex = ShaderStageFlags::VERTEX;
         let fragment = ShaderStageFlags::FRAGMENT;
         let combined = vertex.union(fragment);
-        
+
         assert!(combined.contains(ShaderStage::Vertex));
         assert!(combined.contains(ShaderStage::Fragment));
         assert!(!combined.contains(ShaderStage::Compute));
@@ -595,10 +595,10 @@ mod tests {
     fn test_shader_stage_flags_from_stage() {
         let vertex_flags = ShaderStageFlags::from_stage(ShaderStage::Vertex);
         assert_eq!(vertex_flags, ShaderStageFlags::VERTEX);
-        
+
         let fragment_flags = ShaderStageFlags::from_stage(ShaderStage::Fragment);
         assert_eq!(fragment_flags, ShaderStageFlags::FRAGMENT);
-        
+
         let compute_flags = ShaderStageFlags::from_stage(ShaderStage::Compute);
         assert_eq!(compute_flags, ShaderStageFlags::COMPUTE);
     }
@@ -607,7 +607,7 @@ mod tests {
     fn test_shader_stage_flags_is_empty() {
         let none = ShaderStageFlags::NONE;
         assert!(none.is_empty());
-        
+
         let vertex = ShaderStageFlags::VERTEX;
         assert!(!vertex.is_empty());
     }
@@ -616,7 +616,7 @@ mod tests {
     fn test_shader_stage_flags_bitor_assign() {
         let mut flags = ShaderStageFlags::VERTEX;
         flags |= ShaderStageFlags::FRAGMENT;
-        
+
         assert!(flags.contains(ShaderStage::Vertex));
         assert!(flags.contains(ShaderStage::Fragment));
     }
