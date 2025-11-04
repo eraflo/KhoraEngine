@@ -134,7 +134,10 @@ impl RenderAgent {
     /// # Arguments
     ///
     /// * `materials`: The cache of material assets for pipeline selection
-    pub fn produce_render_objects(&self, materials: &RwLock<Assets<Box<dyn Material>>>) -> Vec<RenderObject> {
+    pub fn produce_render_objects(
+        &self,
+        materials: &RwLock<Assets<Box<dyn Material>>>,
+    ) -> Vec<RenderObject> {
         let mut render_objects = Vec::with_capacity(self.render_world.meshes.len());
         let gpu_meshes_guard = self.gpu_meshes.read().unwrap();
         let materials_guard = materials.read().unwrap();
@@ -143,10 +146,9 @@ impl RenderAgent {
             // Find the corresponding GpuMesh in the cache
             if let Some(gpu_mesh_handle) = gpu_meshes_guard.get(&extracted_mesh.gpu_mesh_uuid) {
                 // Use the render lane to determine the appropriate pipeline
-                let pipeline = self.render_lane.get_pipeline_for_material(
-                    extracted_mesh.material_uuid,
-                    &materials_guard,
-                );
+                let pipeline = self
+                    .render_lane
+                    .get_pipeline_for_material(extracted_mesh.material_uuid, &materials_guard);
 
                 render_objects.push(RenderObject {
                     pipeline,

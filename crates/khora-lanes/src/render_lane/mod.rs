@@ -117,5 +117,9 @@ pub trait RenderLane: Send + Sync {
     /// # Returns
     ///
     /// An estimated cost value. Higher values indicate more expensive rendering.
-    fn estimate_cost(&self, render_world: &RenderWorld, gpu_meshes: &RwLock<Assets<GpuMesh>>) -> f32;
+    fn estimate_cost(
+        &self,
+        render_world: &RenderWorld,
+        gpu_meshes: &RwLock<Assets<GpuMesh>>,
+    ) -> f32;
 }

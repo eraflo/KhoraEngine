@@ -34,7 +34,9 @@ use khora_core::{
     math::LinearRgba,
     renderer::{
         api::{
-            command::{LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp},
+            command::{
+                LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
+            },
             PrimitiveTopology,
         },
         traits::CommandEncoder,
@@ -84,7 +86,7 @@ impl RenderLane for SimpleUnlitLane {
                 let _ = uuid; // Silence unused warning
             }
         }
-        
+
         // All unlit materials currently use the same pipeline
         // Future enhancements could differentiate based on:
         // - Texture presence (textured vs. untextured)
@@ -165,9 +167,13 @@ impl RenderLane for SimpleUnlitLane {
         }
     }
 
-    fn estimate_cost(&self, render_world: &RenderWorld, gpu_meshes: &RwLock<Assets<GpuMesh>>) -> f32 {
+    fn estimate_cost(
+        &self,
+        render_world: &RenderWorld,
+        gpu_meshes: &RwLock<Assets<GpuMesh>>,
+    ) -> f32 {
         let gpu_mesh_assets = gpu_meshes.read().unwrap();
-        
+
         let mut total_triangles = 0u32;
         let mut draw_call_count = 0u32;
 
@@ -188,7 +194,7 @@ impl RenderLane for SimpleUnlitLane {
                     | PrimitiveTopology::LineStrip
                     | PrimitiveTopology::PointList => 0,
                 };
-                
+
                 total_triangles += triangle_count;
                 draw_call_count += 1;
             }
@@ -229,18 +235,18 @@ mod tests {
         let lane = SimpleUnlitLane::new();
         let render_world = RenderWorld::default();
         let gpu_meshes = Arc::new(RwLock::new(Assets::<GpuMesh>::new()));
-        
+
         let cost = lane.estimate_cost(&render_world, &gpu_meshes);
         assert_eq!(cost, 0.0, "Empty world should have zero cost");
     }
 
     #[test]
     fn test_cost_estimation_triangle_list() {
-        use khora_core::asset::AssetUUID;
         use crate::render_lane::world::ExtractedMesh;
+        use khora_core::asset::AssetUUID;
 
         let lane = SimpleUnlitLane::new();
-        
+
         // Create a GPU mesh with 300 indices (100 triangles) using TriangleList
         let mesh_uuid = AssetUUID::new();
         let gpu_mesh = GpuMesh {
@@ -250,31 +256,34 @@ mod tests {
             index_format: IndexFormat::Uint32,
             primitive_topology: PrimitiveTopology::TriangleList,
         };
-        
+
         let mut gpu_meshes = Assets::<GpuMesh>::new();
         gpu_meshes.insert(mesh_uuid, AssetHandle::new(gpu_mesh));
-        
+
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
             gpu_mesh_uuid: mesh_uuid,
             material_uuid: None,
         });
-        
+
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
         let cost = lane.estimate_cost(&render_world, &gpu_meshes_lock);
-        
+
         // Expected: 100 triangles * 0.001 + 1 draw call * 0.1 = 0.1 + 0.1 = 0.2
-        assert_eq!(cost, 0.2, "Cost should be 0.2 for 100 triangles + 1 draw call");
+        assert_eq!(
+            cost, 0.2,
+            "Cost should be 0.2 for 100 triangles + 1 draw call"
+        );
     }
 
     #[test]
     fn test_cost_estimation_triangle_strip() {
-        use khora_core::asset::AssetUUID;
         use crate::render_lane::world::ExtractedMesh;
+        use khora_core::asset::AssetUUID;
 
         let lane = SimpleUnlitLane::new();
-        
+
         // Create a GPU mesh with 52 indices (50 triangles) using TriangleStrip
         let mesh_uuid = AssetUUID::new();
         let gpu_mesh = GpuMesh {
@@ -284,35 +293,38 @@ mod tests {
             index_format: IndexFormat::Uint16,
             primitive_topology: PrimitiveTopology::TriangleStrip,
         };
-        
+
         let mut gpu_meshes = Assets::<GpuMesh>::new();
         gpu_meshes.insert(mesh_uuid, AssetHandle::new(gpu_mesh));
-        
+
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
             gpu_mesh_uuid: mesh_uuid,
             material_uuid: None,
         });
-        
+
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
         let cost = lane.estimate_cost(&render_world, &gpu_meshes_lock);
-        
+
         // Expected: 50 triangles * 0.001 + 1 draw call * 0.1 = 0.05 + 0.1 = 0.15
-        assert_eq!(cost, 0.15, "Cost should be 0.15 for 50 triangles + 1 draw call");
+        assert_eq!(
+            cost, 0.15,
+            "Cost should be 0.15 for 50 triangles + 1 draw call"
+        );
     }
 
     #[test]
     fn test_cost_estimation_lines_and_points() {
-        use khora_core::asset::AssetUUID;
         use crate::render_lane::world::ExtractedMesh;
+        use khora_core::asset::AssetUUID;
 
         let lane = SimpleUnlitLane::new();
-        
+
         // Create meshes with non-triangle topologies
         let line_uuid = AssetUUID::new();
         let point_uuid = AssetUUID::new();
-        
+
         let line_mesh = GpuMesh {
             vertex_buffer: BufferId(0),
             index_buffer: BufferId(1),
@@ -320,7 +332,7 @@ mod tests {
             index_format: IndexFormat::Uint32,
             primitive_topology: PrimitiveTopology::LineList,
         };
-        
+
         let point_mesh = GpuMesh {
             vertex_buffer: BufferId(2),
             index_buffer: BufferId(3),
@@ -328,11 +340,11 @@ mod tests {
             index_format: IndexFormat::Uint32,
             primitive_topology: PrimitiveTopology::PointList,
         };
-        
+
         let mut gpu_meshes = Assets::<GpuMesh>::new();
         gpu_meshes.insert(line_uuid, AssetHandle::new(line_mesh));
         gpu_meshes.insert(point_uuid, AssetHandle::new(point_mesh));
-        
+
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
@@ -344,26 +356,29 @@ mod tests {
             gpu_mesh_uuid: point_uuid,
             material_uuid: None,
         });
-        
+
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
         let cost = lane.estimate_cost(&render_world, &gpu_meshes_lock);
-        
+
         // Expected: 0 triangles * 0.001 + 2 draw calls * 0.1 = 0.0 + 0.2 = 0.2
-        assert_eq!(cost, 0.2, "Cost should be 0.2 for 2 draw calls with no triangles");
+        assert_eq!(
+            cost, 0.2,
+            "Cost should be 0.2 for 2 draw calls with no triangles"
+        );
     }
 
     #[test]
     fn test_cost_estimation_multiple_meshes() {
-        use khora_core::asset::AssetUUID;
         use crate::render_lane::world::ExtractedMesh;
+        use khora_core::asset::AssetUUID;
 
         let lane = SimpleUnlitLane::new();
-        
+
         // Create 3 different meshes
         let mesh1_uuid = AssetUUID::new();
         let mesh2_uuid = AssetUUID::new();
         let mesh3_uuid = AssetUUID::new();
-        
+
         let mesh1 = GpuMesh {
             vertex_buffer: BufferId(0),
             index_buffer: BufferId(1),
@@ -371,7 +386,7 @@ mod tests {
             index_format: IndexFormat::Uint32,
             primitive_topology: PrimitiveTopology::TriangleList,
         };
-        
+
         let mesh2 = GpuMesh {
             vertex_buffer: BufferId(2),
             index_buffer: BufferId(3),
@@ -379,7 +394,7 @@ mod tests {
             index_format: IndexFormat::Uint16,
             primitive_topology: PrimitiveTopology::TriangleStrip,
         };
-        
+
         let mesh3 = GpuMesh {
             vertex_buffer: BufferId(4),
             index_buffer: BufferId(5),
@@ -387,12 +402,12 @@ mod tests {
             index_format: IndexFormat::Uint32,
             primitive_topology: PrimitiveTopology::TriangleList,
         };
-        
+
         let mut gpu_meshes = Assets::<GpuMesh>::new();
         gpu_meshes.insert(mesh1_uuid, AssetHandle::new(mesh1));
         gpu_meshes.insert(mesh2_uuid, AssetHandle::new(mesh2));
         gpu_meshes.insert(mesh3_uuid, AssetHandle::new(mesh3));
-        
+
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
@@ -409,23 +424,27 @@ mod tests {
             gpu_mesh_uuid: mesh3_uuid,
             material_uuid: None,
         });
-        
+
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
         let cost = lane.estimate_cost(&render_world, &gpu_meshes_lock);
-        
+
         // Expected: (200 + 100 + 50) triangles * 0.001 + 3 draw calls * 0.1
         //         = 350 * 0.001 + 3 * 0.1 = 0.35 + 0.3 = 0.65
-        assert!((cost - 0.65).abs() < 0.0001, "Cost should be approximately 0.65 for 350 triangles + 3 draw calls, got {}", cost);
+        assert!(
+            (cost - 0.65).abs() < 0.0001,
+            "Cost should be approximately 0.65 for 350 triangles + 3 draw calls, got {}",
+            cost
+        );
     }
 
     #[test]
     fn test_cost_estimation_missing_mesh() {
-        use khora_core::asset::AssetUUID;
         use crate::render_lane::world::ExtractedMesh;
+        use khora_core::asset::AssetUUID;
 
         let lane = SimpleUnlitLane::new();
         let gpu_meshes = Arc::new(RwLock::new(Assets::<GpuMesh>::new()));
-        
+
         // Reference a mesh that doesn't exist in the cache
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
@@ -433,20 +452,20 @@ mod tests {
             gpu_mesh_uuid: AssetUUID::new(),
             material_uuid: None,
         });
-        
+
         let cost = lane.estimate_cost(&render_world, &gpu_meshes);
-        
+
         // Expected: 0 cost since mesh is not found
         assert_eq!(cost, 0.0, "Missing mesh should contribute zero cost");
     }
 
     #[test]
     fn test_cost_estimation_degenerate_triangle_strip() {
-        use khora_core::asset::AssetUUID;
         use crate::render_lane::world::ExtractedMesh;
+        use khora_core::asset::AssetUUID;
 
         let lane = SimpleUnlitLane::new();
-        
+
         // Create a triangle strip with only 2 indices (not enough for a triangle)
         let mesh_uuid = AssetUUID::new();
         let gpu_mesh = GpuMesh {
@@ -456,41 +475,52 @@ mod tests {
             index_format: IndexFormat::Uint16,
             primitive_topology: PrimitiveTopology::TriangleStrip,
         };
-        
+
         let mut gpu_meshes = Assets::<GpuMesh>::new();
         gpu_meshes.insert(mesh_uuid, AssetHandle::new(gpu_mesh));
-        
+
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
             gpu_mesh_uuid: mesh_uuid,
             material_uuid: None,
         });
-        
+
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
         let cost = lane.estimate_cost(&render_world, &gpu_meshes_lock);
-        
+
         // Expected: 0 triangles + 1 draw call * 0.1 = 0.1
-        assert_eq!(cost, 0.1, "Degenerate triangle strip should only cost draw call overhead");
+        assert_eq!(
+            cost, 0.1,
+            "Degenerate triangle strip should only cost draw call overhead"
+        );
     }
 
     #[test]
     fn test_get_pipeline_for_material_with_none() {
         let lane = SimpleUnlitLane::new();
         let materials = Assets::<Box<dyn Material>>::new();
-        
+
         let pipeline = lane.get_pipeline_for_material(None, &materials);
-        assert_eq!(pipeline, RenderPipelineId(0), "None material should use default pipeline");
+        assert_eq!(
+            pipeline,
+            RenderPipelineId(0),
+            "None material should use default pipeline"
+        );
     }
 
     #[test]
     fn test_get_pipeline_for_material_not_found() {
         use khora_core::asset::AssetUUID;
-        
+
         let lane = SimpleUnlitLane::new();
         let materials = Assets::<Box<dyn Material>>::new();
-        
+
         let pipeline = lane.get_pipeline_for_material(Some(AssetUUID::new()), &materials);
-        assert_eq!(pipeline, RenderPipelineId(0), "Missing material should use default pipeline");
+        assert_eq!(
+            pipeline,
+            RenderPipelineId(0),
+            "Missing material should use default pipeline"
+        );
     }
 }
