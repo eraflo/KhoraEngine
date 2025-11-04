@@ -218,6 +218,25 @@ impl AffineTransform {
     }
 
     // --- SEMANTIC ACCESSORS---
+    /// Converts the `AffineTransform` to a `Mat4`.
+    ///
+    /// This is useful when you need to pass the transformation matrix to shaders
+    /// or other systems that expect a raw matrix.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use khora_core::math::Vec3;
+    /// use khora_core::math::affine_transform::AffineTransform;
+    ///
+    /// let transform = AffineTransform::IDENTITY;
+    /// let matrix = transform.to_matrix();
+    /// ```
+    #[inline]
+    pub fn to_matrix(&self) -> Mat4 {
+        self.0
+    }
+
     /// Extracts the translation component from the affine transform.
     ///
     /// Returns the translation vector representing the position offset

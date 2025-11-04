@@ -16,7 +16,7 @@ Every major engine subsystem (Rendering, Physics, Audio, AI, Assets) is designed
 *   **Multi-Strategy**: It possesses multiple algorithms to accomplish its task, each with different performance characteristics (e.g., a precise but slow physics solver vs. a fast but approximate one).
 *   **Cost Estimation**: It can accurately predict the resource cost (CPU time, memory) of each of its strategies under the current conditions.
 
-### 3. Goal-Oriented Resource Negotiation (GORNA) - The Council Protocol
+### 3. Goal-Oriented Resource Negotiation & Allocation (GORNA) - The Council Protocol
 
 GORNA is the formal communication protocol used by the DCC and the ISAs to dynamically allocate resources. This negotiation process replaces static, pre-defined budgets.
 1.  **Request**: ISAs submit their desired resource needs to the DCC, often specifying the strategy they intend to use (e.g., "The Rendering Agent requests 8ms of GPU time to execute its High-Fidelity strategy").

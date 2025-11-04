@@ -153,8 +153,10 @@ pub struct GpuMesh {
     pub index_buffer: BufferId,
     /// The number of vertices or indices to draw.
     pub index_count: u32,
-    /// The type of primitives to render (e.g., triangles, lines).
+    /// The format of indices in the index buffer.
     pub index_format: IndexFormat,
+    /// The topology of primitives to render (e.g., TriangleList, TriangleStrip).
+    pub primitive_topology: PrimitiveTopology,
 }
 
 impl Asset for GpuMesh {}
