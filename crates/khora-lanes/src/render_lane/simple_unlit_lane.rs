@@ -31,7 +31,6 @@ use crate::render_lane::RenderLane;
 use super::RenderWorld;
 use khora_core::{
     asset::{AssetUUID, Material},
-    math::LinearRgba,
     renderer::{
         api::{
             command::{
@@ -40,7 +39,7 @@ use khora_core::{
             PrimitiveTopology,
         },
         traits::CommandEncoder,
-        GpuMesh, RenderPipelineId, TextureViewId,
+        GpuMesh, RenderContext, RenderPipelineId,
     },
 };
 use khora_data::assets::Assets;
@@ -99,10 +98,9 @@ impl RenderLane for SimpleUnlitLane {
         &self,
         render_world: &RenderWorld,
         encoder: &mut dyn CommandEncoder,
-        color_target: &TextureViewId,
+        render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
         materials: &RwLock<Assets<Box<dyn Material>>>,
-        clear_color: LinearRgba,
     ) {
         // Acquire read locks on the caches
         let gpu_mesh_assets = gpu_meshes.read().unwrap();
@@ -118,10 +116,10 @@ impl RenderLane for SimpleUnlitLane {
 
         // Configure the render pass to render into the provided color target
         let color_attachment = RenderPassColorAttachment {
-            view: color_target,
+            view: render_ctx.color_target,
             resolve_target: None,
             ops: Operations {
-                load: LoadOp::Clear(clear_color),
+                load: LoadOp::Clear(render_ctx.clear_color),
                 store: StoreOp::Store,
             },
         };
@@ -226,7 +224,7 @@ mod tests {
 
     #[test]
     fn test_default_construction() {
-        let lane = SimpleUnlitLane::default();
+        let lane = SimpleUnlitLane;
         assert_eq!(lane.strategy_name(), "SimpleUnlit");
     }
 

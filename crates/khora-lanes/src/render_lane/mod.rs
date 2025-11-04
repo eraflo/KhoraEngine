@@ -16,9 +16,8 @@
 
 use khora_core::{
     asset::{AssetUUID, Material},
-    math::LinearRgba,
     renderer::{
-        api::{GpuMesh, TextureViewId},
+        api::{GpuMesh, RenderContext},
         traits::CommandEncoder,
         RenderPipelineId,
     },
@@ -86,18 +85,16 @@ pub trait RenderLane: Send + Sync {
     ///
     /// * `render_world`: The intermediate world containing extracted mesh data.
     /// * `encoder`: The command encoder to record GPU commands into (from core traits).
-    /// * `color_target`: The texture view to render into.
+    /// * `render_ctx`: The rendering context containing the color target and clear color.
     /// * `gpu_meshes`: The cache of GPU-resident meshes.
     /// * `materials`: The cache of materials for pipeline selection.
-    /// * `clear_color`: The color to clear the render target with.
     fn render(
         &self,
         render_world: &RenderWorld,
         encoder: &mut dyn CommandEncoder,
-        color_target: &TextureViewId,
+        render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
         materials: &RwLock<Assets<Box<dyn Material>>>,
-        clear_color: LinearRgba,
     );
 
     /// Estimates the GPU cost of rendering the given `RenderWorld` with this strategy.

@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn test_extract_lane_default() {
-        let _lane = ExtractRenderablesLane::default();
+        let _lane = ExtractRenderablesLane;
     }
 
     #[test]

@@ -17,9 +17,8 @@
 use super::mesh_preparation::MeshPreparationSystem;
 use khora_core::{
     asset::Material,
-    math::LinearRgba,
     renderer::{
-        api::{GpuMesh, RenderObject, TextureViewId},
+        api::{GpuMesh, RenderContext, RenderObject},
         traits::CommandEncoder,
         GraphicsDevice, Mesh,
     },
@@ -90,19 +89,18 @@ impl RenderAgent {
     /// * `world`: The ECS world containing scene data
     /// * `cpu_meshes`: The cache of CPU-side mesh assets
     /// * `graphics_device`: The graphics device for GPU resource creation
+    /// * `materials`: The cache of material assets
     /// * `encoder`: The command encoder to record GPU commands into
     /// * `color_target`: The texture view to render into (typically the swapchain)
-    /// * `materials`: The cache of material assets
     /// * `clear_color`: The color to clear the framebuffer with
     pub fn render(
         &mut self,
         world: &mut World,
         cpu_meshes: &Assets<Mesh>,
         graphics_device: &dyn GraphicsDevice,
-        encoder: &mut dyn CommandEncoder,
-        color_target: &TextureViewId,
         materials: &RwLock<Assets<Box<dyn Material>>>,
-        clear_color: LinearRgba,
+        encoder: &mut dyn CommandEncoder,
+        render_ctx: &RenderContext,
     ) {
         // Step 1: Prepare the frame (extract and prepare data)
         self.prepare_frame(world, cpu_meshes, graphics_device);
@@ -115,10 +113,9 @@ impl RenderAgent {
         self.render_lane.render(
             &self.render_world,
             encoder,
-            color_target,
+            render_ctx,
             &self.gpu_meshes,
             materials,
-            clear_color,
         );
     }
 
