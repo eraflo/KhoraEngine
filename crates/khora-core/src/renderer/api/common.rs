@@ -107,6 +107,85 @@ pub enum ShaderStage {
     Compute,
 }
 
+/// Flags representing which shader stages can access a resource binding.
+///
+/// This is used in bind group layouts to specify visibility of resources.
+/// Multiple stages can be combined using bitwise operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ShaderStageFlags {
+    bits: u32,
+}
+
+impl ShaderStageFlags {
+    /// No shader stages.
+    pub const NONE: Self = Self { bits: 0 };
+    /// Vertex shader stage.
+    pub const VERTEX: Self = Self { bits: 1 << 0 };
+    /// Fragment shader stage.
+    pub const FRAGMENT: Self = Self { bits: 1 << 1 };
+    /// Compute shader stage.
+    pub const COMPUTE: Self = Self { bits: 1 << 2 };
+    /// All graphics stages (vertex + fragment).
+    pub const VERTEX_FRAGMENT: Self = Self {
+        bits: Self::VERTEX.bits | Self::FRAGMENT.bits,
+    };
+    /// All stages.
+    pub const ALL: Self = Self {
+        bits: Self::VERTEX.bits | Self::FRAGMENT.bits | Self::COMPUTE.bits,
+    };
+
+    /// Creates a new set of shader stage flags from raw bits.
+    pub const fn from_bits(bits: u32) -> Self {
+        Self { bits }
+    }
+
+    /// Creates flags from a single shader stage.
+    pub const fn from_stage(stage: ShaderStage) -> Self {
+        match stage {
+            ShaderStage::Vertex => Self::VERTEX,
+            ShaderStage::Fragment => Self::FRAGMENT,
+            ShaderStage::Compute => Self::COMPUTE,
+        }
+    }
+
+    /// Returns the raw bits.
+    pub const fn bits(&self) -> u32 {
+        self.bits
+    }
+
+    /// Combines two sets of flags.
+    pub const fn union(self, other: Self) -> Self {
+        Self {
+            bits: self.bits | other.bits,
+        }
+    }
+
+    /// Checks if these flags contain a specific stage.
+    pub const fn contains(&self, stage: ShaderStage) -> bool {
+        let stage_bits = Self::from_stage(stage).bits;
+        (self.bits & stage_bits) == stage_bits
+    }
+
+    /// Checks if these flags are empty (no stages).
+    pub const fn is_empty(&self) -> bool {
+        self.bits == 0
+    }
+}
+
+impl std::ops::BitOr for ShaderStageFlags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        self.union(rhs)
+    }
+}
+
+impl std::ops::BitOrAssign for ShaderStageFlags {
+    fn bitor_assign(&mut self, rhs: Self) {
+        *self = self.union(rhs);
+    }
+}
+
 /// Defines the memory format of pixels in a texture.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TextureFormat {
@@ -314,6 +393,25 @@ pub struct ViewInfo {
     pub camera_position: Vec3,
 }
 
+impl ViewInfo {
+    /// Creates a new `ViewInfo` from individual components.
+    pub fn new(view_matrix: Mat4, projection_matrix: Mat4, camera_position: Vec3) -> Self {
+        Self {
+            view_matrix,
+            projection_matrix,
+            camera_position,
+        }
+    }
+
+    /// Calculates the combined view-projection matrix.
+    ///
+    /// This is the product of the projection matrix and the view matrix,
+    /// which transforms from world space directly to clip space.
+    pub fn view_projection_matrix(&self) -> Mat4 {
+        self.projection_matrix * self.view_matrix
+    }
+}
+
 impl Default for ViewInfo {
     fn default() -> Self {
         Self {
@@ -321,5 +419,205 @@ impl Default for ViewInfo {
             projection_matrix: Mat4::IDENTITY,
             camera_position: Vec3::ZERO,
         }
+    }
+}
+
+/// The GPU-side representation of camera uniform data.
+///
+/// This structure is designed to be directly uploaded to a uniform buffer.
+/// The layout must match the uniform block declaration in the shader.
+///
+/// **Important:** WGSL has specific alignment requirements. Mat4 is aligned to 16 bytes,
+/// and Vec3 needs padding to be treated as Vec4 in uniform buffers.
+#[repr(C, align(16))]
+#[derive(Debug, Clone, Copy)]
+pub struct CameraUniformData {
+    /// The combined view-projection matrix (projection * view).
+    pub view_projection: Mat4,
+    /// The camera's position in world space.
+    /// Note: The fourth component is padding for alignment.
+    pub camera_position: [f32; 4],
+}
+
+impl CameraUniformData {
+    /// Creates camera uniform data from a `ViewInfo`.
+    pub fn from_view_info(view_info: &ViewInfo) -> Self {
+        Self {
+            view_projection: view_info.view_projection_matrix(),
+            camera_position: [
+                view_info.camera_position.x,
+                view_info.camera_position.y,
+                view_info.camera_position.z,
+                0.0, // Padding for alignment
+            ],
+        }
+    }
+
+    /// Returns the data as a byte slice suitable for uploading to a GPU buffer.
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(
+                self as *const Self as *const u8,
+                std::mem::size_of::<Self>(),
+            )
+        }
+    }
+}
+
+// Ensure the struct can be safely cast to bytes for GPU upload
+unsafe impl bytemuck::Pod for CameraUniformData {}
+unsafe impl bytemuck::Zeroable for CameraUniformData {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_camera_uniform_data_size() {
+        // Mat4 = 64 bytes, Vec4 (padding included) = 16 bytes
+        // Total should be 80 bytes
+        assert_eq!(std::mem::size_of::<CameraUniformData>(), 80);
+    }
+
+    #[test]
+    fn test_camera_uniform_data_alignment() {
+        // CameraUniformData should be aligned to 16 bytes for GPU compatibility
+        assert_eq!(std::mem::align_of::<CameraUniformData>(), 16);
+    }
+
+    #[test]
+    fn test_camera_uniform_data_from_view_info() {
+        let view_matrix = Mat4::IDENTITY;
+        let projection_matrix = Mat4::IDENTITY;
+        let camera_position = Vec3::new(1.0, 2.0, 3.0);
+
+        let view_info = ViewInfo::new(view_matrix, projection_matrix, camera_position);
+        let uniform_data = CameraUniformData::from_view_info(&view_info);
+
+        // Check that camera position is correctly set
+        assert_eq!(uniform_data.camera_position[0], 1.0);
+        assert_eq!(uniform_data.camera_position[1], 2.0);
+        assert_eq!(uniform_data.camera_position[2], 3.0);
+        assert_eq!(uniform_data.camera_position[3], 0.0); // Padding
+
+        // Check that view_projection is set
+        let expected_vp = projection_matrix * view_matrix;
+        assert_eq!(uniform_data.view_projection, expected_vp);
+    }
+
+    #[test]
+    fn test_camera_uniform_data_as_bytes() {
+        let view_info = ViewInfo::default();
+        let uniform_data = CameraUniformData::from_view_info(&view_info);
+
+        let bytes = uniform_data.as_bytes();
+        assert_eq!(bytes.len(), std::mem::size_of::<CameraUniformData>());
+    }
+
+    #[test]
+    fn test_camera_uniform_data_bytemuck() {
+        // Test that we can use bytemuck functions
+        let uniform_data = CameraUniformData {
+            view_projection: Mat4::IDENTITY,
+            camera_position: [0.0, 0.0, 0.0, 0.0],
+        };
+
+        let data_array = [uniform_data];
+        let bytes: &[u8] = bytemuck::cast_slice(&data_array);
+        assert_eq!(bytes.len(), std::mem::size_of::<CameraUniformData>());
+    }
+
+    #[test]
+    fn test_view_info_new() {
+        let view = Mat4::from_translation(Vec3::new(0.0, 0.0, -5.0));
+        let proj = Mat4::IDENTITY;
+        let pos = Vec3::new(0.0, 1.0, 5.0);
+
+        let view_info = ViewInfo::new(view, proj, pos);
+
+        assert_eq!(view_info.view_matrix, view);
+        assert_eq!(view_info.projection_matrix, proj);
+        assert_eq!(view_info.camera_position, pos);
+    }
+
+    #[test]
+    fn test_view_info_view_projection_matrix() {
+        let view = Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0));
+        let proj = Mat4::from_scale(Vec3::new(2.0, 2.0, 1.0));
+        let pos = Vec3::ZERO;
+
+        let view_info = ViewInfo::new(view, proj, pos);
+        let vp = view_info.view_projection_matrix();
+
+        // view_projection should be projection * view
+        assert_eq!(vp, proj * view);
+    }
+
+    #[test]
+    fn test_view_info_default() {
+        let view_info = ViewInfo::default();
+
+        assert_eq!(view_info.view_matrix, Mat4::IDENTITY);
+        assert_eq!(view_info.projection_matrix, Mat4::IDENTITY);
+        assert_eq!(view_info.camera_position, Vec3::ZERO);
+    }
+
+    #[test]
+    fn test_shader_stage_flags_bitwise() {
+        let vertex_fragment = ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT;
+
+        assert!(vertex_fragment.contains(ShaderStage::Vertex));
+        assert!(vertex_fragment.contains(ShaderStage::Fragment));
+        assert!(!vertex_fragment.contains(ShaderStage::Compute));
+    }
+
+    #[test]
+    fn test_shader_stage_flags_all() {
+        let all = ShaderStageFlags::ALL;
+
+        assert!(all.contains(ShaderStage::Vertex));
+        assert!(all.contains(ShaderStage::Fragment));
+        assert!(all.contains(ShaderStage::Compute));
+    }
+
+    #[test]
+    fn test_shader_stage_flags_union() {
+        let vertex = ShaderStageFlags::VERTEX;
+        let fragment = ShaderStageFlags::FRAGMENT;
+        let combined = vertex.union(fragment);
+
+        assert!(combined.contains(ShaderStage::Vertex));
+        assert!(combined.contains(ShaderStage::Fragment));
+        assert!(!combined.contains(ShaderStage::Compute));
+    }
+
+    #[test]
+    fn test_shader_stage_flags_from_stage() {
+        let vertex_flags = ShaderStageFlags::from_stage(ShaderStage::Vertex);
+        assert_eq!(vertex_flags, ShaderStageFlags::VERTEX);
+
+        let fragment_flags = ShaderStageFlags::from_stage(ShaderStage::Fragment);
+        assert_eq!(fragment_flags, ShaderStageFlags::FRAGMENT);
+
+        let compute_flags = ShaderStageFlags::from_stage(ShaderStage::Compute);
+        assert_eq!(compute_flags, ShaderStageFlags::COMPUTE);
+    }
+
+    #[test]
+    fn test_shader_stage_flags_is_empty() {
+        let none = ShaderStageFlags::NONE;
+        assert!(none.is_empty());
+
+        let vertex = ShaderStageFlags::VERTEX;
+        assert!(!vertex.is_empty());
+    }
+
+    #[test]
+    fn test_shader_stage_flags_bitor_assign() {
+        let mut flags = ShaderStageFlags::VERTEX;
+        flags |= ShaderStageFlags::FRAGMENT;
+
+        assert!(flags.contains(ShaderStage::Vertex));
+        assert!(flags.contains(ShaderStage::Fragment));
     }
 }

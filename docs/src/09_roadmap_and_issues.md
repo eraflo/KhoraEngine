@@ -16,7 +16,6 @@ This document outlines the phased development plan for Khora. It integrates all 
 **Goal:** Build out the necessary features to represent and interact with a game world, starting with the implementation of our revolutionary ECS.
 
 #### [Rendering Capabilities, Physics, Animation, AI & Strategy Exploration]
-- #46 [Feature] Implement Camera System & Uniforms
 - #47 [Feature] Implement Material System
 - #48 [Feature] Implement Basic Lighting Models (Track shader complexity/perf)
 - #160 [Feature] Implement Forward+ Lighting RenderLane
@@ -194,3 +193,4 @@ This document outlines the phased development plan for Khora. It integrates all 
 
 #### [Rendering Capabilities, Physics, Animation, AI & Strategy Exploration]
 - #159 [Feature] Implement SimpleUnlit RenderLane
+- #46 [Feature] Implement Camera System & Uniforms

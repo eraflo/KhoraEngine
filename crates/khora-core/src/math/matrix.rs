@@ -312,7 +312,7 @@ impl IndexMut<usize> for Mat3 {
 /// scale) in 3D space. It is also used for camera view and projection matrices.
 /// The memory layout is column-major, which is compatible with modern graphics APIs
 /// like Vulkan, Metal, and DirectX.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Mat4 {
     /// The columns of the matrix. `cols[0]` is the first column, and so on.

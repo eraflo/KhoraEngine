@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod audio;
+mod camera;
 mod children;
 mod global_transform;
 mod handle;
@@ -22,6 +23,7 @@ mod serializable;
 mod transform;
 
 pub use audio::*;
+pub use camera::*;
 pub use children::*;
 pub use global_transform::*;
 pub use handle::*;

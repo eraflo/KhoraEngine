@@ -1385,7 +1385,7 @@ dependencies = [
 
 [[package]]
 name = "khora-agents"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -1407,7 +1407,7 @@ dependencies = [
 
 [[package]]
 name = "khora-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "approx",
@@ -1424,7 +1424,7 @@ dependencies = [
 
 [[package]]
 name = "khora-data"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bincode",
  "khora-core",
@@ -1444,7 +1444,7 @@ dependencies = [
 
 [[package]]
 name = "khora-infra"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-trait",

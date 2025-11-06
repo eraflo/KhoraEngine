@@ -1,5 +1,14 @@
 // --- Vertex Shader ---
 
+// Camera uniform block containing view and projection matrices
+struct CameraUniforms {
+    view_projection: mat4x4<f32>,  // Combined projection * view matrix
+    camera_position: vec4<f32>,     // Camera position in world space (w is padding)
+};
+
+@group(0) @binding(0)
+var<uniform> camera: CameraUniforms;
+
 // This structure describes the data we read from the Vertex Buffer.
 // The `@location(n)` must correspond to the `shader_location` defined
 // in the `VertexBufferLayoutDescriptor` in Rust.
@@ -24,9 +33,10 @@ struct VertexOutput {
 @vertex
 fn vs_main(model: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    // We convert the 3D position to a 4D position for clip space.
-    // The `1.0` for the 'w' coordinate is standard.
-    out.clip_position = vec4<f32>(model.position, 1.0);
+    
+    // Transform the vertex position from model space to clip space using the camera's view-projection matrix
+    out.clip_position = camera.view_projection * vec4<f32>(model.position, 1.0);
+    
     // We simply pass through the color.
     out.color = model.color;
     return out;

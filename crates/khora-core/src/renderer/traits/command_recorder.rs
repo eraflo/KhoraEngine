@@ -14,7 +14,7 @@
 
 use crate::renderer::api::command::{CommandBufferId, ComputePassDescriptor, RenderPassDescriptor};
 use crate::renderer::traits::GpuProfiler;
-use crate::renderer::{BufferId, IndexFormat, RenderPipelineId};
+use crate::renderer::{BindGroupId, BufferId, IndexFormat, RenderPipelineId};
 use std::any::Any;
 use std::ops::Range;
 
@@ -28,6 +28,13 @@ use std::ops::Range;
 pub trait RenderPass<'pass> {
     /// Sets the active render pipeline for subsequent draw calls.
     fn set_pipeline(&mut self, pipeline: &'pass RenderPipelineId);
+
+    /// Binds a bind group to a specific binding slot.
+    ///
+    /// # Arguments
+    /// * `index` - The bind group index (must match shader @group(N) declarations)
+    /// * `bind_group` - The bind group to bind
+    fn set_bind_group(&mut self, index: u32, bind_group: &'pass BindGroupId);
 
     /// Binds a vertex buffer to a specific slot.
     fn set_vertex_buffer(&mut self, slot: u32, buffer: &'pass BufferId, offset: u64);

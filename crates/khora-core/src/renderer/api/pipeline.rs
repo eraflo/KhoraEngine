@@ -447,12 +447,14 @@ pub struct PipelineLayoutId(pub usize);
 
 /// A descriptor for a [`PipelineLayoutId`].
 /// Defines the set of resource bindings (e.g., uniform buffers, textures) a pipeline can access.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PipelineLayoutDescriptor<'a> {
     /// An optional debug label.
     pub label: Option<Cow<'a, str>>,
-    /// Bind group layouts will be added here in the future.
-    pub _marker: std::marker::PhantomData<&'a ()>,
+    /// The bind group layouts used by this pipeline, indexed by set number.
+    /// Each bind group layout describes the structure of resources that will be
+    /// bound at a specific set index.
+    pub bind_group_layouts: &'a [crate::renderer::BindGroupLayoutId],
 }
 
 #[cfg(test)]

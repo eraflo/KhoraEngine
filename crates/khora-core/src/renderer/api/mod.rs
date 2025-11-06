@@ -23,6 +23,7 @@
 //! parent module's `traits` submodule.
 
 pub mod backend;
+pub mod bind_group;
 pub mod buffer;
 pub mod command;
 pub mod common;
@@ -33,6 +34,7 @@ pub mod shader;
 pub mod texture;
 
 pub use self::backend::*;
+pub use self::bind_group::*;
 pub use self::buffer::*;
 pub use self::command::*;
 pub use self::common::*;

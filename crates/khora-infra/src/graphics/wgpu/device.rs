@@ -103,6 +103,18 @@ pub(crate) struct WgpuSamplerEntry {
     pub(crate) wgpu_sampler: Arc<wgpu::Sampler>,
 }
 
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) struct WgpuBindGroupLayoutEntry {
+    pub(crate) wgpu_layout: Arc<wgpu::BindGroupLayout>,
+}
+
+#[allow(dead_code)]
+#[derive(Debug)]
+pub(crate) struct WgpuBindGroupEntry {
+    pub(crate) wgpu_bind_group: Arc<wgpu::BindGroup>,
+}
+
 /// The internal, non-clonable state of the WgpuDevice.
 /// This struct holds all the GPU resources and state, protected by an Arc.
 #[derive(Debug)]
@@ -114,6 +126,9 @@ pub struct WgpuDeviceInternal {
     textures: Mutex<HashMap<api_tex::TextureId, WgpuTextureEntry>>,
     texture_views: Mutex<HashMap<api_tex::TextureViewId, WgpuTextureViewEntry>>,
     samplers: Mutex<HashMap<api_tex::SamplerId, WgpuSamplerEntry>>,
+    bind_group_layouts:
+        Mutex<HashMap<khora_core::renderer::BindGroupLayoutId, WgpuBindGroupLayoutEntry>>,
+    bind_groups: Mutex<HashMap<khora_core::renderer::BindGroupId, WgpuBindGroupEntry>>,
 
     next_shader_id: AtomicUsize,
     next_pipeline_id: AtomicUsize,
@@ -122,6 +137,8 @@ pub struct WgpuDeviceInternal {
     next_texture_id: AtomicUsize,
     next_texture_view_id: AtomicUsize,
     next_sampler_id: AtomicUsize,
+    next_bind_group_layout_id: AtomicUsize,
+    next_bind_group_id: AtomicUsize,
 
     // VRAM Tracking
     vram_allocated_bytes: AtomicUsize,
@@ -152,6 +169,8 @@ impl WgpuDevice {
                 textures: Mutex::new(HashMap::new()),
                 texture_views: Mutex::new(HashMap::new()),
                 samplers: Mutex::new(HashMap::new()),
+                bind_group_layouts: Mutex::new(HashMap::new()),
+                bind_groups: Mutex::new(HashMap::new()),
                 next_shader_id: AtomicUsize::new(0),
                 next_pipeline_id: AtomicUsize::new(0),
                 next_pipeline_layout_id: AtomicUsize::new(0),
@@ -159,6 +178,8 @@ impl WgpuDevice {
                 next_texture_id: AtomicUsize::new(0),
                 next_texture_view_id: AtomicUsize::new(0),
                 next_sampler_id: AtomicUsize::new(0),
+                next_bind_group_layout_id: AtomicUsize::new(0),
+                next_bind_group_id: AtomicUsize::new(0),
                 vram_allocated_bytes: AtomicUsize::new(0),
                 vram_peak_bytes: AtomicU64::new(0),
                 pending_command_buffers: Mutex::new(HashMap::new()),
@@ -205,6 +226,22 @@ impl WgpuDevice {
         api_tex::SamplerId(
             self.internal
                 .next_sampler_id
+                .fetch_add(1, Ordering::Relaxed),
+        )
+    }
+
+    fn generate_bind_group_layout_id(&self) -> khora_core::renderer::BindGroupLayoutId {
+        khora_core::renderer::BindGroupLayoutId(
+            self.internal
+                .next_bind_group_layout_id
+                .fetch_add(1, Ordering::Relaxed),
+        )
+    }
+
+    fn generate_bind_group_id(&self) -> khora_core::renderer::BindGroupId {
+        khora_core::renderer::BindGroupId(
+            self.internal
+                .next_bind_group_id
                 .fetch_add(1, Ordering::Relaxed),
         )
     }
@@ -258,6 +295,18 @@ impl WgpuDevice {
     ) -> Option<Arc<wgpu::TextureView>> {
         let views = self.internal.texture_views.lock().unwrap();
         views.get(id).map(|entry| Arc::clone(&entry.wgpu_view))
+    }
+
+    /// Retrieves a reference-counted pointer to the internal WGPU bind group.
+    /// Returns `None` if the ID is invalid.
+    pub fn get_wgpu_bind_group(
+        &self,
+        id: khora_core::renderer::BindGroupId,
+    ) -> Option<Arc<wgpu::BindGroup>> {
+        let bind_groups = self.internal.bind_groups.lock().unwrap();
+        bind_groups
+            .get(&id)
+            .map(|entry| Arc::clone(&entry.wgpu_bind_group))
     }
 
     /// Polls the underlying wgpu::Device in a blocking manner.
@@ -1166,6 +1215,196 @@ impl GraphicsDevice for WgpuDevice {
                 "Attempted to submit a CommandBufferId ({:?}) that does not exist.",
                 command_buffer_id
             );
+        }
+    }
+
+    // --- Bind Group Operations ---
+
+    fn create_bind_group_layout(
+        &self,
+        descriptor: &khora_core::renderer::BindGroupLayoutDescriptor,
+    ) -> Result<khora_core::renderer::BindGroupLayoutId, ResourceError> {
+        use khora_core::renderer::{BindingType, BufferBindingType};
+
+        let wgpu_entries: Vec<wgpu::BindGroupLayoutEntry> = descriptor
+            .entries
+            .iter()
+            .map(|entry| {
+                let ty = match &entry.ty {
+                    BindingType::Buffer {
+                        ty,
+                        has_dynamic_offset,
+                        min_binding_size,
+                    } => {
+                        let buffer_ty = match ty {
+                            BufferBindingType::Uniform => wgpu::BufferBindingType::Uniform,
+                            BufferBindingType::Storage { read_only } => {
+                                wgpu::BufferBindingType::Storage {
+                                    read_only: *read_only,
+                                }
+                            }
+                        };
+                        wgpu::BindingType::Buffer {
+                            ty: buffer_ty,
+                            has_dynamic_offset: *has_dynamic_offset,
+                            min_binding_size: *min_binding_size,
+                        }
+                    }
+                    BindingType::Texture { multisampled } => {
+                        // Basic 2D texture support
+                        wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: *multisampled,
+                        }
+                    }
+                    BindingType::Sampler => {
+                        wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)
+                    }
+                };
+
+                wgpu::BindGroupLayoutEntry {
+                    binding: entry.binding,
+                    visibility: entry.visibility.into_wgpu(),
+                    ty,
+                    count: None,
+                }
+            })
+            .collect();
+
+        let wgpu_layout = self.with_wgpu_device(|device| {
+            let wgpu_descriptor = wgpu::BindGroupLayoutDescriptor {
+                label: descriptor.label,
+                entries: &wgpu_entries,
+            };
+            Ok(Arc::new(device.create_bind_group_layout(&wgpu_descriptor)))
+        })?;
+
+        let id = self.generate_bind_group_layout_id();
+        let mut layouts = self.internal.bind_group_layouts.lock().map_err(|e| {
+            ResourceError::BackendError(format!("Mutex poisoned (bind_group_layouts): {e}"))
+        })?;
+        layouts.insert(id, WgpuBindGroupLayoutEntry { wgpu_layout });
+
+        log::info!(
+            "WgpuDevice: Created bind group layout '{:?}' with ID: {:?}",
+            descriptor.label.unwrap_or_default(),
+            id
+        );
+        Ok(id)
+    }
+
+    fn create_bind_group(
+        &self,
+        descriptor: &khora_core::renderer::BindGroupDescriptor,
+    ) -> Result<khora_core::renderer::BindGroupId, ResourceError> {
+        use khora_core::renderer::BindingResource;
+
+        // Get the bind group layout
+        let layouts = self.internal.bind_group_layouts.lock().map_err(|e| {
+            ResourceError::BackendError(format!("Mutex poisoned (bind_group_layouts): {e}"))
+        })?;
+        let layout_entry = layouts
+            .get(&descriptor.layout)
+            .ok_or(ResourceError::NotFound)?;
+        let wgpu_layout = Arc::clone(&layout_entry.wgpu_layout);
+        drop(layouts);
+
+        // Type alias to simplify complex type
+        type BufferBindingInfo = (u32, Arc<wgpu::Buffer>, u64, Option<std::num::NonZeroU64>);
+
+        // Collect Arc references to buffers first
+        let buffers_lock =
+            self.internal.buffers.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (buffers): {e}"))
+            })?;
+
+        let buffer_arcs: Result<Vec<BufferBindingInfo>, ResourceError> = descriptor
+            .entries
+            .iter()
+            .map(|entry| match &entry.resource {
+                BindingResource::Buffer(buffer_binding) => {
+                    let buffer_entry = buffers_lock
+                        .get(&buffer_binding.buffer)
+                        .ok_or(ResourceError::NotFound)?;
+                    Ok((
+                        entry.binding,
+                        Arc::clone(&buffer_entry.wgpu_buffer),
+                        buffer_binding.offset,
+                        buffer_binding.size,
+                    ))
+                }
+            })
+            .collect();
+
+        let buffer_arcs = buffer_arcs?;
+        drop(buffers_lock);
+
+        // Now create wgpu entries with references to the Arc'd buffers
+        let wgpu_entries: Vec<wgpu::BindGroupEntry> = buffer_arcs
+            .iter()
+            .map(|(binding, buffer, offset, size)| wgpu::BindGroupEntry {
+                binding: *binding,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: buffer.as_ref(),
+                    offset: *offset,
+                    size: *size,
+                }),
+            })
+            .collect();
+
+        let wgpu_bind_group = self.with_wgpu_device(|device| {
+            let wgpu_descriptor = wgpu::BindGroupDescriptor {
+                label: descriptor.label,
+                layout: &wgpu_layout,
+                entries: &wgpu_entries,
+            };
+            Ok(Arc::new(device.create_bind_group(&wgpu_descriptor)))
+        })?;
+
+        let id = self.generate_bind_group_id();
+        let mut bind_groups = self.internal.bind_groups.lock().map_err(|e| {
+            ResourceError::BackendError(format!("Mutex poisoned (bind_groups): {e}"))
+        })?;
+        bind_groups.insert(id, WgpuBindGroupEntry { wgpu_bind_group });
+
+        log::info!(
+            "WgpuDevice: Created bind group '{:?}' with ID: {:?}",
+            descriptor.label.unwrap_or_default(),
+            id
+        );
+        Ok(id)
+    }
+
+    fn destroy_bind_group_layout(
+        &self,
+        id: khora_core::renderer::BindGroupLayoutId,
+    ) -> Result<(), ResourceError> {
+        let mut layouts = self.internal.bind_group_layouts.lock().map_err(|e| {
+            ResourceError::BackendError(format!("Mutex poisoned (bind_group_layouts): {e}"))
+        })?;
+
+        if layouts.remove(&id).is_some() {
+            log::debug!("WgpuDevice: Destroyed bind group layout with ID: {id:?}");
+            Ok(())
+        } else {
+            Err(ResourceError::NotFound)
+        }
+    }
+
+    fn destroy_bind_group(
+        &self,
+        id: khora_core::renderer::BindGroupId,
+    ) -> Result<(), ResourceError> {
+        let mut bind_groups = self.internal.bind_groups.lock().map_err(|e| {
+            ResourceError::BackendError(format!("Mutex poisoned (bind_groups): {e}"))
+        })?;
+
+        if bind_groups.remove(&id).is_some() {
+            log::debug!("WgpuDevice: Destroyed bind group with ID: {id:?}");
+            Ok(())
+        } else {
+            Err(ResourceError::NotFound)
         }
     }
 }
