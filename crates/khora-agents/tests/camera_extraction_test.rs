@@ -15,7 +15,7 @@
 //! Integration tests for camera extraction from the ECS world.
 
 use khora_agents::render_agent::RenderAgent;
-use khora_core::math::{EPSILON, Mat4, Quaternion, Vec3};
+use khora_core::math::{Mat4, Quaternion, Vec3, EPSILON};
 use khora_data::ecs::{Camera, GlobalTransform, Transform, World};
 
 /// Helper function to compare two Mat4 matrices with floating point tolerance.
