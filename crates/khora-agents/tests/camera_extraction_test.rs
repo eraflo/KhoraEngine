@@ -15,8 +15,23 @@
 //! Integration tests for camera extraction from the ECS world.
 
 use khora_agents::render_agent::RenderAgent;
-use khora_core::math::{Mat4, Quaternion, Vec3};
+use khora_core::math::{EPSILON, Mat4, Quaternion, Vec3};
 use khora_data::ecs::{Camera, GlobalTransform, Transform, World};
+
+/// Helper function to compare two Mat4 matrices with floating point tolerance.
+fn assert_mat4_approx_eq(left: Mat4, right: Mat4, epsilon: f32) {
+    for i in 0..4 {
+        for j in 0..4 {
+            let left_val = left.cols[i][j];
+            let right_val = right.cols[i][j];
+            assert!(
+                (left_val - right_val).abs() < epsilon,
+                "Matrix elements differ at [{i}][{j}]: left={left_val}, right={right_val}, diff={}",
+                (left_val - right_val).abs()
+            );
+        }
+    }
+}
 
 #[test]
 fn test_extract_camera_view_with_active_camera() {
@@ -161,8 +176,8 @@ fn test_extract_camera_view_projection_calculation() {
     // Calculate expected projection matrix
     let expected_proj = Mat4::perspective_rh_zo(fov, aspect, near, far);
 
-    // Verify the projection matrix matches
-    assert_eq!(view_info.projection_matrix, expected_proj);
+    // Verify the projection matrix matches (with tolerance for cross-platform floating point differences)
+    assert_mat4_approx_eq(view_info.projection_matrix, expected_proj, EPSILON);
 }
 
 #[test]
