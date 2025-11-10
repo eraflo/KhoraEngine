@@ -13,6 +13,6 @@ khora-sdk = { path = "../crates/khora-sdk" }
 clap = { version = "4.5.51", features = ["derive", "cargo"] }
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-toml = "0.9.5"
+toml = "0.9.8"
 walkdir = "2.5.0"
 bincode = { version = "2.0.1", features = ["serde"] }
