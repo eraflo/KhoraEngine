@@ -10,4 +10,4 @@ path = "src/main.rs"
 
 [dependencies]
 khora-sdk = { path = "../khora-sdk" }
-egui = "0.32"
+egui = "0.33"
