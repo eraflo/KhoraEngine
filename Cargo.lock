@@ -3329,12 +3329,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6485ef6d0d9b5d0ec17244ff7eb05310113c3f316f2d14200d4de56b3cb98f8d"
 dependencies = [
  "indexmap",
-<<<<<<< HEAD
- "toml_datetime",
- "toml_parser",
-=======
  "toml_datetime 0.6.11",
->>>>>>> dependabot/cargo/image-0.25.9
  "winnow",
 ]
 
