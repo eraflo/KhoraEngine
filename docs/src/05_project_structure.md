@@ -54,9 +54,12 @@ crates/
 ├── khora-sdk/       # The stable, public-facing API for game developers.
 │   └── src/
 │
-├── khora-editor/    # The engine's editor GUI.
+├── khora-editor/    # [FUTURE] The engine's editor GUI (placeholder).
 │   └── src/
 │
-└── khora-plugins/   # Packaged strategies and extensions.
+├── khora-plugins/   # [FUTURE] Packaged strategies and extensions (planned).
+│   └── src/
+│
+└── khora-macros/    # Procedural macros for code generation (derive macros).
     └── src/
 ```

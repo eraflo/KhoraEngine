@@ -21,13 +21,13 @@ The entire engine is architected around isolating the **Control Plane (Cold Path
 ### The CLAD Crates: Roles and Responsibilities
 
 #### `khora-core` - The Foundation
-The bedrock of the engine. It contains only abstract `traits`, universal data types (like math primitives), and interface contracts. It has zero dependencies on other `khora-*` crates and defines the universal "language" of the engine.
+The bedrock of the engine. It contains only abstract `traits`, universal data types (like math primitives), and interface contracts. It has zero dependencies on other `khora-*` crates and defines the universal \"language\" of the engine.
 
 #### `khora-data` - The Data Layer ([D]ata)
 The heart of Khora's data management strategy. This crate's primary responsibility is the implementation of our custom, high-performance **CRPECS**. It provides the concrete foundation for the **AGDF** concept, containing the specialized memory allocators, page structures, and the query engine that drives the entire Data Plane.
 
 #### `khora-lanes` - The Hot Path ([L]ane)
-This crate contains the performance-critical, "dumb" execution pipelines. A `Lane` is a specific implementation of an ISA's **strategy** (e.g., a rendering pass, a physics solver). They are optimized for linear data processing and contain no complex branching logic.
+This crate contains the performance-critical, \"dumb\" execution pipelines. A `Lane` is a specific implementation of an ISA's **strategy** (e.g., a rendering pass, a physics solver). They are optimized for linear data processing and contain no complex branching logic.
 
 #### `khora-agents` - The Tactical Brains ([A]gent)
 This crate is the home of the **ISAs**. Each agent is an intelligent wrapper around one or more `Lanes`. It is responsible for reporting its status to the Control Plane, estimating the cost of its strategies, and, upon receiving a budget, configuring and dispatching the appropriate `Lane`.
@@ -43,3 +43,6 @@ This crate contains all concrete implementations that interact with external sys
 
 #### `khora-sdk` - The Public Facade
 A simple, stable API designed for game developers. It hides the complexity of the internal CLAD architecture and provides ergonomic, easy-to-use entry points for building an application with Khora.
+
+#### `khora-macros` - Development Ergonomics
+A procedural macro crate that provides derive macros to reduce boilerplate and improve developer experience. This crate implements compile-time code generation to automatically implement common traits throughout the engine. Currently provides the `#[derive(Component)]` macro for automatically implementing the `khora_data::ecs::Component` trait while enforcing its required bounds (`Clone`, `Send`, `Sync`, `'static`). As the engine evolves, this crate will house additional derive macros and attribute macros to streamline development across all CLAD layers.
