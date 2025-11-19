@@ -8,8 +8,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTC_WRAPPER: sccache
-  SCCACHE_GHA_ENABLED: "true"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -32,9 +30,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy # Ensure rustfmt and clippy are installed
-
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
@@ -66,7 +61,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Enable sccache
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
@@ -95,7 +95,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Enable sccache
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
@@ -123,7 +128,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Enable sccache
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+          echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
