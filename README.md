@@ -36,8 +36,8 @@ You can also browse the source files for the documentation directly in the [`/do
 git clone https://github.com/eraflo/KhoraEngine.git
 cd KhoraEngine
 
-# Run tests for the entire workspace
-cargo test --workspace
+# Run tests for the entire workspace (requires cargo-nextest)
+cargo nextest run --workspace
 
 # Check for formatting and linting issues
 cargo xtask all

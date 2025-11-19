@@ -35,7 +35,7 @@ jobs:
         run: cargo doc --workspace --no-deps --all-features --target-dir build/rustdoc
       
       - name: Build mdBook
-        run: mdbook build docs -d ../build/book
+        run: mdbook build docs -d build/book
       
       # --- 3. ASSEMBLE ---
       - name: Assemble final site

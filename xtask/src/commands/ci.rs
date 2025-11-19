@@ -33,10 +33,10 @@ pub fn build() -> Result<()> {
 pub fn test() -> Result<()> {
     print_task_start("Running All Tests", TEST_TUBE, GREEN);
     println!(
-        "{}💡 Info:{} Running unit tests, integration tests and doc tests",
+        "{}💡 Info:{} Running tests using cargo-nextest (faster parallel execution)",
         BOLD, RESET
     );
-    execute_command("cargo", &["test", "--workspace"], "Tests")?;
+    execute_command("cargo", &["nextest", "run", "--workspace"], "Tests")?;
     Ok(())
 }
 
