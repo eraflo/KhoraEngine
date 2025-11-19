@@ -17,7 +17,7 @@ anyhow = "1.0"
 thiserror = "2.0.17"
 
 # Image handling
-image = "0.25.8"
+image = "0.25.9"
 
 # Mesh handling
 tobj = "4.0"
