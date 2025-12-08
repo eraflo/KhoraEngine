@@ -42,3 +42,10 @@ KhoraEngine is built on the **Symbiotic Adaptive Architecture (SAA)** implemente
 1.  **Check Docs First**: Before implementing a feature or fix, verify if it aligns with the SAA/CLAD principles.
 2.  **Respect the Architecture**: Do not bypass the SAA (e.g., don't hardcode resource usage without negotiation unless in a specific "Lane" context).
 3.  **Update Docs**: If you change code, update the corresponding `mdBook` entry or rustdoc.
+
+## Quality Checks
+
+Before every commit, run:
+```bash
+cargo xtask all  # build, test, check, format, clippy
+```
