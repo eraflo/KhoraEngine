@@ -38,12 +38,13 @@
 /// // Full blending (e.g., glass, water)
 /// let blended = AlphaMode::Blend;
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum AlphaMode {
     /// The material is fully opaque with no transparency.
     ///
     /// This is the default and most performant mode. Fragments are always written
     /// to the framebuffer without alpha testing or blending.
+    #[default]
     Opaque,
 
     /// The material uses alpha testing to create binary transparency.
@@ -63,12 +64,6 @@ pub enum AlphaMode {
     /// different rendering strategies based on the number of blend-mode objects
     /// in the scene to balance quality and performance.
     Blend,
-}
-
-impl Default for AlphaMode {
-    fn default() -> Self {
-        Self::Opaque
-    }
 }
 
 #[cfg(test)]

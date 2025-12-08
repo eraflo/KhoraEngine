@@ -19,12 +19,19 @@ use std::time::Instant;
 pub fn build() -> Result<()> {
     print_task_start("Building All Crates", HAMMER, BLUE);
     println!(
-        "{}💡 Info:{} Compiling all workspace crates in debug mode",
+        "{}💡 Info:{} Compiling all workspace crates with all features and targets (excluding xtask)",
         BOLD, RESET
     );
     execute_command(
         "cargo",
-        &["build", "--workspace", "--exclude", "xtask"],
+        &[
+            "build",
+            "--workspace",
+            "--exclude",
+            "xtask",
+            "--all-targets",
+            "--all-features",
+        ],
         "Build",
     )?;
     Ok(())
@@ -33,10 +40,20 @@ pub fn build() -> Result<()> {
 pub fn test() -> Result<()> {
     print_task_start("Running All Tests", TEST_TUBE, GREEN);
     println!(
-        "{}💡 Info:{} Running tests using cargo-nextest (faster parallel execution)",
+        "{}💡 Info:{} Running tests using cargo-nextest with all features and targets",
         BOLD, RESET
     );
-    execute_command("cargo", &["nextest", "run", "--workspace"], "Tests")?;
+    execute_command(
+        "cargo",
+        &[
+            "nextest",
+            "run",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+        ],
+        "Tests",
+    )?;
     Ok(())
 }
 
@@ -53,18 +70,18 @@ pub fn check() -> Result<()> {
 pub fn format() -> Result<()> {
     print_task_start("Formatting Code", BRUSH, MAGENTA);
     println!(
-        "{}💡 Info:{} Formatting code using rustfmt with default settings",
+        "{}💡 Info:{} Checking code formatting (use 'cargo fmt --all' to auto-fix)",
         BOLD, RESET
     );
-    // Note: `fmt` requires `--all` not `--workspace`
-    execute_command("cargo", &["fmt", "--all"], "Format")?;
+    // Match CI: check formatting without modifying files
+    execute_command("cargo", &["fmt", "--all", "--", "--check"], "Format")?;
     Ok(())
 }
 
 pub fn clippy() -> Result<()> {
     print_task_start("Running Clippy", CLIPPY, YELLOW);
     println!(
-        "{}💡 Info:{} Running Clippy linter with warnings as errors",
+        "{}💡 Info:{} Running Clippy linter with all features and warnings as errors",
         BOLD, RESET
     );
     execute_command(
@@ -73,6 +90,7 @@ pub fn clippy() -> Result<()> {
             "clippy",
             "--workspace",
             "--all-targets",
+            "--all-features",
             "--",
             "-D",
             "warnings",
