@@ -12,11 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the core traits and basic materials for the rendering system.
+//! Defines the core traits and material types for the rendering system.
 
+mod alpha_mode;
+mod emissive;
+mod standard;
 mod unlit;
+mod wireframe;
 
+pub use alpha_mode::*;
+pub use emissive::*;
+pub use standard::*;
 pub use unlit::*;
+pub use wireframe::*;
 
 use super::Asset;
 
