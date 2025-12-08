@@ -1,57 +1,28 @@
-// --- Vertex Shader ---
+// Simple Unlit Shader - No camera uniforms, just vertex colors
 
-// Camera uniform block containing view and projection matrices
-struct CameraUniforms {
-    view_projection: mat4x4<f32>,  // Combined projection * view matrix
-    camera_position: vec4<f32>,     // Camera position in world space (w is padding)
-};
-
-@group(0) @binding(0)
-var<uniform> camera: CameraUniforms;
-
-// This structure describes the data we read from the Vertex Buffer.
-// The `@location(n)` must correspond to the `shader_location` defined
-// in the `VertexBufferLayoutDescriptor` in Rust.
+// Vertex input from the vertex buffer
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) color: vec3<f32>,
 };
 
-// This structure describes the data that the vertex shader sends to the fragment shader.
-// The GPU will interpolate these values for each pixel of the triangle.
+// Output from vertex shader to fragment shader
 struct VertexOutput {
-    // `@builtin(position)` is a special variable. It's the vertex position
-    // in "clip space" that the GPU will use for rasterization.
     @builtin(position) clip_position: vec4<f32>,
-
-    // We pass the color to the fragment shader via `@location(0)`.
     @location(0) color: vec3<f32>,
 };
 
-// `@vertex` indicates that this is the main function of the vertex shader.
-// The name `vs_main` must correspond to the `vertex_entry_point` in Rust.
+// Vertex shader - transforms positions and passes through colors
 @vertex
-fn vs_main(model: VertexInput) -> VertexOutput {
-    var out: VertexOutput;
-    
-    // Transform the vertex position from model space to clip space using the camera's view-projection matrix
-    out.clip_position = camera.view_projection * vec4<f32>(model.position, 1.0);
-    
-    // We simply pass through the color.
-    out.color = model.color;
-    return out;
+fn vs_main(input: VertexInput) -> VertexOutput {
+    var output: VertexOutput;
+    output.clip_position = vec4<f32>(input.position, 1.0);
+    output.color = input.color;
+    return output;
 }
 
-
-// --- Fragment Shader ---
-
-// `@fragment` indicates that this is the main function of the fragment shader.
-// The name `fs_main` must correspond to the `fragment_entry_point` in Rust.
-// It takes as input the `VertexOutput` structure (interpolated) and returns
-// the final color of the pixel at location `@location(0)`.
+// Fragment shader - outputs interpolated vertex color
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // We take the interpolated color (a vec3) and add an alpha component
-    // of 1.0 (fully opaque) to create the final color (a vec4).
-    return vec4<f32>(in.color, 1.0);
+fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(input.color, 1.0);
 }
