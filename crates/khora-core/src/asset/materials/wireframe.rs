@@ -77,7 +77,7 @@ impl Default for WireframeMaterial {
     fn default() -> Self {
         Self {
             color: LinearRgba::new(0.0, 1.0, 0.0, 1.0), // Green - common for wireframes
-            line_width: 1.0,                             // Standard 1-pixel lines
+            line_width: 1.0,                            // Standard 1-pixel lines
         }
     }
 }

@@ -188,7 +188,7 @@ mod tests {
         assert_eq!(material.emissive, LinearRgba::new(0.0, 0.0, 0.0, 1.0));
         assert_eq!(material.alpha_mode, AlphaMode::Opaque);
         assert_eq!(material.alpha_cutoff, 0.5);
-        assert_eq!(material.double_sided, false);
+        assert!(!material.double_sided);
         // assert!(material.base_color_texture.is_none());
         // assert!(material.metallic_roughness_texture.is_none());
         // assert!(material.normal_map.is_none());
@@ -271,13 +271,13 @@ mod tests {
             double_sided: false,
             ..Default::default()
         };
-        assert_eq!(single_sided.double_sided, false);
+        assert!(!single_sided.double_sided);
 
         let double_sided = StandardMaterial {
             double_sided: true,
             ..Default::default()
         };
-        assert_eq!(double_sided.double_sided, true);
+        assert!(double_sided.double_sided);
     }
 
     #[test]
