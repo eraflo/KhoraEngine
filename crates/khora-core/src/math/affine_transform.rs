@@ -319,6 +319,34 @@ impl AffineTransform {
         self.0.cols[2].truncate()
     }
 
+    /// Extracts the rotation component as a quaternion.
+    ///
+    /// This method extracts the rotation represented by the upper-left 3x3
+    /// portion of the transformation matrix.
+    ///
+    /// # Note
+    ///
+    /// This assumes the transform has uniform or no scale. For transforms
+    /// with non-uniform scale, the result may not represent a pure rotation.
+    /// In such cases, consider normalizing the direction vectors first.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use khora_core::math::{Quaternion, Vec3};
+    /// use khora_core::math::affine_transform::AffineTransform;
+    /// use std::f32::consts::PI;
+    ///
+    /// let q = Quaternion::from_axis_angle(Vec3::Y, PI / 2.0);
+    /// let transform = AffineTransform::from_quat(q);
+    /// let extracted = transform.rotation();
+    /// // extracted should be approximately equal to q
+    /// ```
+    #[inline]
+    pub fn rotation(&self) -> Quaternion {
+        Quaternion::from_rotation_matrix(&self.0)
+    }
+
     /// Computes the inverse of the affine transformation.
     ///
     /// This uses an optimized affine inverse algorithm that's more efficient than

@@ -84,13 +84,13 @@ impl Application for SandboxApp {
     fn new(context: EngineContext) -> Self {
         log::info!("SandboxApp: Initializing GPU resources...");
 
-        // --- Step 1: Load the shader ---
-        let shader_code = std::fs::read_to_string("examples/sandbox/assets/shaders/unlit.wgsl")
-            .expect("Failed to read shader file");
+        // --- Step 1: Load the shader from embedded engine shaders ---
+        // Use the embedded shader from khora-sdk prelude
+        use khora_sdk::prelude::shaders::UNLIT_WGSL;
 
         let shader_desc = ShaderModuleDescriptor {
             label: Some("Unlit Shader"),
-            source: ShaderSourceData::Wgsl(Cow::Borrowed(&shader_code)),
+            source: ShaderSourceData::Wgsl(Cow::Borrowed(UNLIT_WGSL)),
         };
         let shader_module = context
             .graphics_device

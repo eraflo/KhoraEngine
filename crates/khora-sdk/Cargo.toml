@@ -9,6 +9,7 @@ khora-core = { path = "../khora-core" }
 khora-agents = { path = "../khora-agents" }
 khora-control = { path = "../khora-control" }
 khora-infra = { path = "../khora-infra" }
+khora-lanes = { path = "../khora-lanes" }
 khora-telemetry = { path = "../khora-telemetry" }
 khora-data = { path = "../khora-data" }
 

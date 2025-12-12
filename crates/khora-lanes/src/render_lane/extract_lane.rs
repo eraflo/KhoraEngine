@@ -87,12 +87,16 @@ impl ExtractRenderablesLane {
             let position = global_transform.0.translation();
 
             // Extract direction based on light type
-            // Note: For now we use the direction stored in the light type directly.
-            // A more complete implementation would transform the direction by the
-            // entity's rotation from GlobalTransform.
+            // For directional lights, use the direction from the light type
+            // For spot lights, transform the local direction by the global rotation
+            // For point lights, direction is not used but we set a default
             let direction = match &light_comp.light_type {
                 LightType::Directional(dir_light) => dir_light.direction,
-                LightType::Spot(spot_light) => spot_light.direction,
+                LightType::Spot(spot_light) => {
+                    // Transform the spot light's local direction by the entity's rotation
+                    let rotation = global_transform.0.rotation();
+                    rotation * spot_light.direction
+                }
                 LightType::Point(_) => Vec3::ZERO, // Not used for point lights
             };
 

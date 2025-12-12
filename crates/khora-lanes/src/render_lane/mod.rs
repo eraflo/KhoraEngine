@@ -27,6 +27,7 @@ use std::sync::RwLock;
 
 mod extract_lane;
 mod lit_forward_lane;
+pub mod shaders;
 mod simple_unlit_lane;
 mod world;
 
