@@ -1558,6 +1558,7 @@ dependencies = [
  "khora-core",
  "khora-data",
  "khora-infra",
+ "khora-lanes",
  "khora-telemetry",
  "log",
  "winit",

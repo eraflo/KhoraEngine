@@ -26,10 +26,13 @@ use khora_data::assets::Assets;
 use std::sync::RwLock;
 
 mod extract_lane;
+mod lit_forward_lane;
+pub mod shaders;
 mod simple_unlit_lane;
 mod world;
 
 pub use extract_lane::*;
+pub use lit_forward_lane::*;
 pub use simple_unlit_lane::*;
 pub use world::*;
 

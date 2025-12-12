@@ -16,7 +16,6 @@ This document outlines the phased development plan for Khora. It integrates all 
 **Goal:** Build out the necessary features to represent and interact with a game world, starting with the implementation of our revolutionary ECS.
 
 #### [Rendering Capabilities, Physics, Animation, AI & Strategy Exploration]
-- #48 [Feature] Implement Basic Lighting Models (Track shader complexity/perf)
 - #160 [Feature] Implement Forward+ Lighting RenderLane
 - #49 [Feature] Implement Depth Buffering
 - #50 [Research] Explore Alternative Rendering Paths/Strategies (e.g., Forward vs Deferred concept)
@@ -50,6 +49,8 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #80 [Feature] Implement DCC Heuristics Engine v1
 - #81 [Feature] Implement DCC Command System to trigger ISA Strategy Switches
 - #82 [Task] Demonstrate Automatic Renderer Strategy Switching
+- #224 [Feature] Implement RenderLane Resource Ownership (Shaders, Pipelines, BindGroups) (Depends on #79)
+- #225 [Feature] Implement Light Uniform Buffer System in LitForwardLane (Depends on #224)
 - #83 [Task] Refactor a Second Subsystem as ISA v0.1
 
 #### [Goal-Oriented Resource Negotiation (GORNA) v1]
@@ -194,3 +195,4 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #159 [Feature] Implement SimpleUnlit RenderLane
 - #46 [Feature] Implement Camera System & Uniforms
 - #47 [Feature] Implement Material System
+- #48 [Feature] Implement Basic Lighting Models (Track shader complexity/perf)

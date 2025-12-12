@@ -184,8 +184,6 @@ macro_rules! khora_bitflags {
 
 #[cfg(test)]
 mod tests {
-    // Import the macro for testing within this module
-    use crate::khora_bitflags;
 
     // Define a test bitflag type using the macro
     khora_bitflags! {

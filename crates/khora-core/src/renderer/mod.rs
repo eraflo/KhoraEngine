@@ -26,9 +26,11 @@
 
 pub mod api;
 pub mod error;
+pub mod light;
 pub mod traits;
 
 // Re-export the most important traits and types for easier use.
 pub use self::api::*;
 pub use self::error::{PipelineError, RenderError, ResourceError, ShaderError};
+pub use self::light::{DirectionalLight, LightType, PointLight, SpotLight};
 pub use self::traits::{GraphicsDevice, RenderSystem};

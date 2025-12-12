@@ -45,6 +45,11 @@ pub mod prelude {
         VertexBufferLayoutDescriptor, VertexFormat, VertexStepMode,
     };
     pub use khora_data::allocators::SaaTrackingAllocator;
+
+    /// Built-in engine shaders.
+    pub mod shaders {
+        pub use khora_lanes::render_lane::shaders::*;
+    }
 }
 
 /// Engine context providing access to various subsystems.

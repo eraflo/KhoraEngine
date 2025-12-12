@@ -1,8 +1,12 @@
 # AI Guidelines for KhoraEngine
 
 > [!IMPORTANT]
-> **ALWAYS** consult these guidelines and the project documentation before making changes.
+> **ALWAYS** consult these guidelines and the project documentation before making changes (voir @docs folder)
 > **ALWAYS** follow the principles defined in the documentation.
+> **ALWAYS** use the snippets provided in the `.vscode` directory to implement the changes.
+> **ALWAYS** consider that you are building things fro a real engine, and provide the most advanced and performant solutions.
+> **ALWAYS** finish a feature by adding tests.
+> **ALWAYS** use the `cargo xtask` commands to build, test, and check the code.
 
 ## Documentation Resources
 
