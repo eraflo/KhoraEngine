@@ -49,8 +49,8 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #80 [Feature] Implement DCC Heuristics Engine v1
 - #81 [Feature] Implement DCC Command System to trigger ISA Strategy Switches
 - #82 [Task] Demonstrate Automatic Renderer Strategy Switching
-- #178 [Feature] Implement RenderLane Resource Ownership (Shaders, Pipelines, BindGroups) (Depends on #79)
-- #179 [Feature] Implement Light Uniform Buffer System in LitForwardLane (Depends on #178)
+- #224 [Feature] Implement RenderLane Resource Ownership (Shaders, Pipelines, BindGroups) (Depends on #79)
+- #225 [Feature] Implement Light Uniform Buffer System in LitForwardLane (Depends on #224)
 - #83 [Task] Refactor a Second Subsystem as ISA v0.1
 
 #### [Goal-Oriented Resource Negotiation (GORNA) v1]
