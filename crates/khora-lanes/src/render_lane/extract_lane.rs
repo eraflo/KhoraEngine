@@ -14,9 +14,12 @@
 
 //! Defines the lane responsible for extracting renderable data from the main ECS world.
 
-use super::{ExtractedMesh, RenderWorld};
-use khora_core::renderer::GpuMesh;
-use khora_data::ecs::{GlobalTransform, HandleComponent, MaterialComponent, World};
+use super::{ExtractedLight, ExtractedMesh, RenderWorld};
+use khora_core::{
+    math::Vec3,
+    renderer::{light::LightType, GpuMesh},
+};
+use khora_data::ecs::{GlobalTransform, HandleComponent, Light, MaterialComponent, World};
 
 /// A lane that performs the "extraction" phase of the rendering pipeline.
 ///
@@ -63,6 +66,43 @@ impl ExtractRenderablesLane {
                 material_uuid,
             };
             render_world.meshes.push(extracted_mesh);
+        }
+
+        // 4. Extract all active lights from the world.
+        self.extract_lights(world, render_world);
+    }
+
+    /// Extracts light components from the world into the render world.
+    fn extract_lights(&self, world: &World, render_world: &mut RenderWorld) {
+        // Query for entities that have both a Light component and a GlobalTransform.
+        let light_query = world.query::<(&Light, &GlobalTransform)>();
+
+        for (light_comp, global_transform) in light_query {
+            // Skip disabled lights
+            if !light_comp.enabled {
+                continue;
+            }
+
+            // Extract position from the global transform
+            let position = global_transform.0.translation();
+
+            // Extract direction based on light type
+            // Note: For now we use the direction stored in the light type directly.
+            // A more complete implementation would transform the direction by the
+            // entity's rotation from GlobalTransform.
+            let direction = match &light_comp.light_type {
+                LightType::Directional(dir_light) => dir_light.direction,
+                LightType::Spot(spot_light) => spot_light.direction,
+                LightType::Point(_) => Vec3::ZERO, // Not used for point lights
+            };
+
+            let extracted = ExtractedLight {
+                light_type: light_comp.light_type,
+                position,
+                direction,
+            };
+
+            render_world.lights.push(extracted);
         }
     }
 }
