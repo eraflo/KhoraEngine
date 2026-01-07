@@ -43,7 +43,7 @@ impl AudioDevice for CpalAudioDevice {
 
         let stream_info = StreamInfo {
             channels: config.channels(),
-            sample_rate: config.sample_rate().0,
+            sample_rate: config.sample_rate(),
         };
 
         let audio_callback = move |output_buffer: &mut [f32], _: &cpal::OutputCallbackInfo| {
