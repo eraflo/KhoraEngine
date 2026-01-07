@@ -619,7 +619,7 @@ impl GraphicsDevice for WgpuDevice {
                 device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: pipeline_layout_label.as_deref(),
                     bind_group_layouts: &[],
-                    push_constant_ranges: &[],
+                    immediate_size: 0,
                 });
 
             let wgpu_pipeline_descriptor = wgpu::RenderPipelineDescriptor {
@@ -656,7 +656,7 @@ impl GraphicsDevice for WgpuDevice {
                 primitive: primitive_state,
                 depth_stencil: depth_stencil_state,
                 multisample: multisample_state,
-                multiview: None,
+                multiview_mask: None,
                 cache: None,
             };
 

@@ -80,6 +80,15 @@ pub enum FilterMode {
     Linear,
 }
 
+/// Defines the filtering mode between mipmap levels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum MipmapFilterMode {
+    /// Use the nearest mipmap level.
+    Nearest,
+    /// Linearly interpolate between the two nearest mipmap levels.
+    Linear,
+}
+
 /// The border color to use when `AddressMode::ClampToBorder` is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SamplerBorderColor {
@@ -169,7 +178,7 @@ pub struct SamplerDescriptor<'a> {
     /// The filter mode for minification (when the texture is smaller on screen than its resolution).
     pub min_filter: FilterMode,
     /// The filter mode to use between mipmap levels.
-    pub mipmap_filter: FilterMode,
+    pub mipmap_filter: MipmapFilterMode,
     /// The minimum level of detail (LOD) to use for mipmapping.
     pub lod_min_clamp: f32,
     /// The maximum level of detail (LOD) to use for mipmapping.
