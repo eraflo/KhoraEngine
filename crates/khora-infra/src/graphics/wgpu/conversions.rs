@@ -108,6 +108,15 @@ impl IntoWgpu<wgpu::FilterMode> for FilterMode {
     }
 }
 
+impl IntoWgpu<wgpu::MipmapFilterMode> for MipmapFilterMode {
+    fn into_wgpu(self) -> wgpu::MipmapFilterMode {
+        match self {
+            MipmapFilterMode::Nearest => wgpu::MipmapFilterMode::Nearest,
+            MipmapFilterMode::Linear => wgpu::MipmapFilterMode::Linear,
+        }
+    }
+}
+
 impl IntoWgpu<Option<wgpu::SamplerBorderColor>> for SamplerBorderColor {
     fn into_wgpu(self) -> Option<wgpu::SamplerBorderColor> {
         match self {
