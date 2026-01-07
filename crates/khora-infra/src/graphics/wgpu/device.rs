@@ -31,9 +31,10 @@ use khora_core::renderer::api::command::{self as api_cmd};
 use khora_core::renderer::api::texture::{self as api_tex};
 use khora_core::renderer::traits::CommandEncoder;
 use khora_core::renderer::{
-    GraphicsBackendType, GraphicsDevice, PipelineError, PipelineLayoutId, RenderPipelineDescriptor,
-    RenderPipelineId, RendererAdapterInfo, RendererDeviceType, ResourceError, ShaderError,
-    ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData, TextureFormat,
+    ComputePipelineId, GraphicsBackendType, GraphicsDevice, PipelineError, PipelineLayoutId,
+    RenderPipelineDescriptor, RenderPipelineId, RendererAdapterInfo, RendererDeviceType,
+    ResourceError, ShaderError, ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData,
+    TextureFormat,
 };
 
 use crate::graphics::wgpu::command::WgpuCommandEncoder;
@@ -80,6 +81,11 @@ pub(crate) struct WgpuRenderPipelineEntry {
 }
 
 #[derive(Debug)]
+pub(crate) struct WgpuComputePipelineEntry {
+    pub(crate) wgpu_pipeline: Arc<wgpu::ComputePipeline>,
+}
+
+#[derive(Debug)]
 pub(crate) struct WgpuBufferEntry {
     pub(crate) wgpu_buffer: Arc<wgpu::Buffer>,
     pub(crate) size: u64, // To track VRAM accurately on destruction
@@ -122,6 +128,7 @@ pub struct WgpuDeviceInternal {
     context: Arc<Mutex<WgpuGraphicsContext>>,
     shader_modules: Mutex<HashMap<ShaderModuleId, WgpuShaderModuleEntry>>,
     pipelines: Mutex<HashMap<RenderPipelineId, WgpuRenderPipelineEntry>>,
+    compute_pipelines: Mutex<HashMap<ComputePipelineId, WgpuComputePipelineEntry>>,
     buffers: Mutex<HashMap<api_buf::BufferId, WgpuBufferEntry>>,
     textures: Mutex<HashMap<api_tex::TextureId, WgpuTextureEntry>>,
     texture_views: Mutex<HashMap<api_tex::TextureViewId, WgpuTextureViewEntry>>,
@@ -132,6 +139,8 @@ pub struct WgpuDeviceInternal {
 
     next_shader_id: AtomicUsize,
     next_pipeline_id: AtomicUsize,
+    #[allow(dead_code)] // Will be used when create_compute_pipeline is implemented
+    next_compute_pipeline_id: AtomicU64,
     next_pipeline_layout_id: AtomicUsize,
     next_buffer_id: AtomicUsize,
     next_texture_id: AtomicUsize,
@@ -165,6 +174,7 @@ impl WgpuDevice {
                 context,
                 shader_modules: Mutex::new(HashMap::new()),
                 pipelines: Mutex::new(HashMap::new()),
+                compute_pipelines: Mutex::new(HashMap::new()),
                 buffers: Mutex::new(HashMap::new()),
                 textures: Mutex::new(HashMap::new()),
                 texture_views: Mutex::new(HashMap::new()),
@@ -173,6 +183,7 @@ impl WgpuDevice {
                 bind_groups: Mutex::new(HashMap::new()),
                 next_shader_id: AtomicUsize::new(0),
                 next_pipeline_id: AtomicUsize::new(0),
+                next_compute_pipeline_id: AtomicU64::new(0),
                 next_pipeline_layout_id: AtomicUsize::new(0),
                 next_buffer_id: AtomicUsize::new(0),
                 next_texture_id: AtomicUsize::new(0),
@@ -275,6 +286,18 @@ impl WgpuDevice {
         id: RenderPipelineId,
     ) -> Option<Arc<wgpu::RenderPipeline>> {
         let pipelines = self.internal.pipelines.lock().unwrap();
+        pipelines
+            .get(&id)
+            .map(|entry| Arc::clone(&entry.wgpu_pipeline))
+    }
+
+    /// Retrieves a reference-counted pointer to the internal WGPU compute pipeline.
+    /// Returns `None` if the ID is invalid.
+    pub fn get_wgpu_compute_pipeline(
+        &self,
+        id: ComputePipelineId,
+    ) -> Option<Arc<wgpu::ComputePipeline>> {
+        let pipelines = self.internal.compute_pipelines.lock().unwrap();
         pipelines
             .get(&id)
             .map(|entry| Arc::clone(&entry.wgpu_pipeline))
@@ -692,6 +715,73 @@ impl GraphicsDevice for WgpuDevice {
             Ok(())
         } else {
             Err(PipelineError::InvalidRenderPipeline { id }.into())
+        }
+    }
+
+    fn create_compute_pipeline(
+        &self,
+        descriptor: &khora_core::renderer::api::ComputePipelineDescriptor,
+    ) -> Result<ComputePipelineId, ResourceError> {
+        let context = self.internal.context.lock().unwrap();
+        let device = &context.device;
+
+        // 1. Get shader module
+        let shader_modules_guard = self.internal.shader_modules.lock().map_err(|e| {
+            ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {e}"))
+        })?;
+
+        let shader_entry =
+            shader_modules_guard
+                .get(&descriptor.shader_module)
+                .ok_or(ShaderError::NotFound {
+                    id: descriptor.shader_module,
+                })?;
+
+        // 2. Create compute pipeline
+        // For now, we don't handle custom layouts in compute pipelines via the descriptor
+        // but it could be expanded.
+        let wgpu_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: descriptor.label.as_deref(),
+            layout: None, // Let wgpu derive it for now
+            module: &shader_entry.wgpu_module,
+            entry_point: Some(descriptor.entry_point.as_ref()),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        // 3. Store and return ID
+        let mut compute_pipelines_guard = self.internal.compute_pipelines.lock().map_err(|e| {
+            ResourceError::BackendError(format!("Mutex poisoned (compute_pipelines): {e}"))
+        })?;
+
+        let id = ComputePipelineId(
+            self.internal
+                .next_compute_pipeline_id
+                .fetch_add(1, Ordering::Relaxed),
+        );
+
+        compute_pipelines_guard.insert(
+            id,
+            WgpuComputePipelineEntry {
+                wgpu_pipeline: Arc::new(wgpu_pipeline),
+            },
+        );
+
+        Ok(id)
+    }
+
+    fn destroy_compute_pipeline(&self, id: ComputePipelineId) -> Result<(), ResourceError> {
+        let mut compute_pipelines_guard = self.internal.compute_pipelines.lock().map_err(|e| {
+            ResourceError::BackendError(format!("Mutex poisoned (compute_pipelines): {e}"))
+        })?;
+
+        if compute_pipelines_guard.remove(&id).is_some() {
+            log::debug!("WgpuDevice: Destroyed compute pipeline with ID: {id:?}");
+            Ok(())
+        } else {
+            Err(ResourceError::BackendError(format!(
+                "Invalid compute pipeline ID: {id:?}"
+            )))
         }
     }
 
