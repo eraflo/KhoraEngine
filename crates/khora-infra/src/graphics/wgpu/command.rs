@@ -16,7 +16,9 @@ use khora_core::renderer::api::command::{
     CommandBufferId, ComputePassDescriptor, RenderPassDescriptor,
 };
 use khora_core::renderer::traits::{CommandEncoder, ComputePass, GpuProfiler, RenderPass};
-use khora_core::renderer::{api::buffer as api_buf, IndexFormat, RenderPipelineId};
+use khora_core::renderer::{
+    api::buffer as api_buf, ComputePipelineId, IndexFormat, RenderPipelineId,
+};
 use std::any::Any;
 use std::ops::Range;
 
@@ -88,11 +90,41 @@ impl<'pass> RenderPass<'pass> for WgpuRenderPass<'pass> {
 }
 
 pub struct WgpuComputePass<'a> {
-    #[allow(dead_code)]
     pub(crate) pass: wgpu::ComputePass<'a>,
+    pub(crate) device: &'a WgpuDevice,
 }
 
-impl<'pass> ComputePass<'pass> for WgpuComputePass<'pass> {}
+impl<'pass> ComputePass<'pass> for WgpuComputePass<'pass> {
+    fn set_pipeline(&mut self, pipeline_id: &'pass ComputePipelineId) {
+        if let Some(pipeline) = self.device.get_wgpu_compute_pipeline(*pipeline_id) {
+            self.pass.set_pipeline(&pipeline);
+        } else {
+            log::warn!(
+                "WgpuComputePass: ComputePipelineId {:?} not found.",
+                pipeline_id
+            );
+        }
+    }
+
+    fn set_bind_group(
+        &mut self,
+        index: u32,
+        bind_group_id: &'pass khora_core::renderer::BindGroupId,
+    ) {
+        if let Some(bind_group) = self.device.get_wgpu_bind_group(*bind_group_id) {
+            self.pass.set_bind_group(index, bind_group.as_ref(), &[]);
+        } else {
+            log::warn!(
+                "WgpuComputePass: BindGroupId {:?} not found.",
+                bind_group_id
+            );
+        }
+    }
+
+    fn dispatch_workgroups(&mut self, x: u32, y: u32, z: u32) {
+        self.pass.dispatch_workgroups(x, y, z);
+    }
+}
 
 pub struct WgpuCommandEncoder {
     pub(crate) encoder: Option<wgpu::CommandEncoder>,
@@ -187,7 +219,10 @@ impl CommandEncoder for WgpuCommandEncoder {
                     timestamp_writes: None, // TODO
                 });
 
-        Box::new(WgpuComputePass { pass })
+        Box::new(WgpuComputePass {
+            pass,
+            device: &self.device,
+        })
     }
 
     fn begin_profiler_compute_pass<'encoder>(
@@ -216,7 +251,10 @@ impl CommandEncoder for WgpuCommandEncoder {
                     timestamp_writes: Some(timestamp_writes),
                 });
 
-        Box::new(WgpuComputePass { pass })
+        Box::new(WgpuComputePass {
+            pass,
+            device: &self.device,
+        })
     }
 
     fn copy_buffer_to_buffer(

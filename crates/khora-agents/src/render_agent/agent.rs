@@ -28,8 +28,29 @@ use khora_data::{
     assets::Assets,
     ecs::{Camera, GlobalTransform, World},
 };
-use khora_lanes::render_lane::{ExtractRenderablesLane, RenderLane, RenderWorld, SimpleUnlitLane};
+use khora_lanes::render_lane::{
+    ExtractRenderablesLane, ForwardPlusLane, LitForwardLane, RenderLane, RenderWorld,
+    SimpleUnlitLane,
+};
 use std::sync::{Arc, RwLock};
+
+/// Threshold for switching to Forward+ rendering.
+/// When the scene has more than this many lights, Forward+ is preferred.
+const FORWARD_PLUS_LIGHT_THRESHOLD: usize = 20;
+
+/// Rendering strategy selection mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RenderingStrategy {
+    /// Simple unlit rendering (vertex colors only).
+    #[default]
+    Unlit,
+    /// Standard forward rendering with lighting.
+    LitForward,
+    /// Forward+ (tiled forward) rendering with compute-based light culling.
+    ForwardPlus,
+    /// Automatic selection based on scene complexity (light count).
+    Auto,
+}
 
 /// The agent responsible for managing the state and logic of the rendering pipeline.
 ///
@@ -45,20 +66,98 @@ pub struct RenderAgent {
     mesh_preparation_system: MeshPreparationSystem,
     // Lane that extracts data from the ECS into the RenderWorld.
     extract_lane: ExtractRenderablesLane,
-    // Chosen render lane (strategy) as an abstraction.
-    render_lane: Box<dyn RenderLane>,
+    // Available render lanes (strategies), extensible collection.
+    lanes: Vec<Box<dyn RenderLane>>,
+    // Current rendering strategy.
+    strategy: RenderingStrategy,
 }
 
 impl RenderAgent {
-    /// Creates a new `RenderAgent`.
+    /// Creates a new `RenderAgent` with default lanes and automatic strategy selection.
     pub fn new() -> Self {
         let gpu_meshes = Arc::new(RwLock::new(Assets::new()));
+
+        // Default set of available lanes
+        let lanes: Vec<Box<dyn RenderLane>> = vec![
+            Box::new(SimpleUnlitLane::new()),
+            Box::new(LitForwardLane::new()),
+            Box::new(ForwardPlusLane::new()),
+        ];
+
         Self {
             render_world: RenderWorld::new(),
             gpu_meshes: gpu_meshes.clone(),
             mesh_preparation_system: MeshPreparationSystem::new(gpu_meshes),
             extract_lane: ExtractRenderablesLane::new(),
-            render_lane: Box::new(SimpleUnlitLane::new()),
+            lanes,
+            strategy: RenderingStrategy::Auto,
+        }
+    }
+
+    /// Creates a new `RenderAgent` with the specified rendering strategy.
+    pub fn with_strategy(strategy: RenderingStrategy) -> Self {
+        let mut agent = Self::new();
+        agent.strategy = strategy;
+        agent
+    }
+
+    /// Adds a custom render lane to the available lanes.
+    pub fn add_lane(&mut self, lane: Box<dyn RenderLane>) {
+        self.lanes.push(lane);
+    }
+
+    /// Sets the rendering strategy.
+    pub fn set_strategy(&mut self, strategy: RenderingStrategy) {
+        self.strategy = strategy;
+    }
+
+    /// Returns the current rendering strategy.
+    pub fn strategy(&self) -> RenderingStrategy {
+        self.strategy
+    }
+
+    /// Returns a reference to the available lanes.
+    pub fn lanes(&self) -> &[Box<dyn RenderLane>] {
+        &self.lanes
+    }
+
+    /// Finds a lane by its strategy name.
+    fn find_lane_by_name(&self, name: &str) -> Option<&dyn RenderLane> {
+        self.lanes
+            .iter()
+            .find(|lane| lane.strategy_name() == name)
+            .map(|boxed| boxed.as_ref())
+    }
+
+    /// Selects the appropriate render lane based on the current strategy.
+    pub fn select_lane(&self) -> &dyn RenderLane {
+        match self.strategy {
+            RenderingStrategy::Unlit => self
+                .find_lane_by_name("SimpleUnlit")
+                .unwrap_or(self.lanes.first().map(|b| b.as_ref()).unwrap()),
+            RenderingStrategy::LitForward => self
+                .find_lane_by_name("LitForward")
+                .unwrap_or(self.lanes.first().map(|b| b.as_ref()).unwrap()),
+            RenderingStrategy::ForwardPlus => self
+                .find_lane_by_name("ForwardPlus")
+                .unwrap_or(self.lanes.first().map(|b| b.as_ref()).unwrap()),
+            RenderingStrategy::Auto => {
+                // Automatic selection based on light count
+                let total_lights = self.render_world.directional_light_count()
+                    + self.render_world.point_light_count()
+                    + self.render_world.spot_light_count();
+
+                if total_lights > FORWARD_PLUS_LIGHT_THRESHOLD {
+                    self.find_lane_by_name("ForwardPlus")
+                        .unwrap_or(self.lanes.first().map(|b| b.as_ref()).unwrap())
+                } else if total_lights > 0 {
+                    self.find_lane_by_name("LitForward")
+                        .unwrap_or(self.lanes.first().map(|b| b.as_ref()).unwrap())
+                } else {
+                    self.find_lane_by_name("SimpleUnlit")
+                        .unwrap_or(self.lanes.first().map(|b| b.as_ref()).unwrap())
+                }
+            }
         }
     }
 
@@ -113,8 +212,8 @@ impl RenderAgent {
         // (This is where the lane determines which pipeline to use for each material)
         let _render_objects = self.produce_render_objects(materials);
 
-        // Step 3: Delegate to the render lane to encode GPU commands
-        self.render_lane.render(
+        // Step 3: Delegate to the selected render lane to encode GPU commands
+        self.select_lane().render(
             &self.render_world,
             encoder,
             render_ctx,
@@ -146,10 +245,10 @@ impl RenderAgent {
         for extracted_mesh in &self.render_world.meshes {
             // Find the corresponding GpuMesh in the cache
             if let Some(gpu_mesh_handle) = gpu_meshes_guard.get(&extracted_mesh.gpu_mesh_uuid) {
-                // Use the render lane to determine the appropriate pipeline
-                let pipeline = self
-                    .render_lane
-                    .get_pipeline_for_material(extracted_mesh.material_uuid, &materials_guard);
+                // Use the selected render lane to determine the appropriate pipeline
+                let lane = self.select_lane();
+                let pipeline =
+                    lane.get_pipeline_for_material(extracted_mesh.material_uuid, &materials_guard);
 
                 render_objects.push(RenderObject {
                     pipeline,
