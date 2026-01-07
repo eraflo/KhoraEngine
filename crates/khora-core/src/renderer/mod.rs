@@ -26,11 +26,13 @@
 
 pub mod api;
 pub mod error;
+pub mod forward_plus;
 pub mod light;
 pub mod traits;
 
 // Re-export the most important traits and types for easier use.
 pub use self::api::*;
 pub use self::error::{PipelineError, RenderError, ResourceError, ShaderError};
+pub use self::forward_plus::{ForwardPlusTileConfig, GpuLight, LightCullingUniforms, TileSize};
 pub use self::light::{DirectionalLight, LightType, PointLight, SpotLight};
 pub use self::traits::{GraphicsDevice, RenderSystem};

@@ -14,7 +14,7 @@
 
 use crate::renderer::api::command::{CommandBufferId, ComputePassDescriptor, RenderPassDescriptor};
 use crate::renderer::traits::GpuProfiler;
-use crate::renderer::{BindGroupId, BufferId, IndexFormat, RenderPipelineId};
+use crate::renderer::{BindGroupId, BufferId, ComputePipelineId, IndexFormat, RenderPipelineId};
 use std::any::Any;
 use std::ops::Range;
 
@@ -50,7 +50,37 @@ pub trait RenderPass<'pass> {
 }
 
 /// A trait representing an active compute pass, used for recording dispatch commands.
-pub trait ComputePass<'pass> {}
+///
+/// A `ComputePass` object is obtained from a [`CommandEncoder`] and provides methods
+/// to set the compute pipeline, bind resources, and dispatch workgroups.
+///
+/// The `'pass` lifetime ensures that the pass object cannot outlive the [`CommandEncoder`]
+/// that created it, and that any resources bound to it also live long enough.
+pub trait ComputePass<'pass> {
+    /// Sets the active compute pipeline for subsequent dispatch calls.
+    ///
+    /// # Arguments
+    /// * `pipeline` - The compute pipeline to use
+    fn set_pipeline(&mut self, pipeline: &'pass ComputePipelineId);
+
+    /// Binds a bind group to a specific binding slot.
+    ///
+    /// # Arguments
+    /// * `index` - The bind group index (must match shader @group(N) declarations)
+    /// * `bind_group` - The bind group to bind
+    fn set_bind_group(&mut self, index: u32, bind_group: &'pass BindGroupId);
+
+    /// Dispatches compute workgroups.
+    ///
+    /// The total number of invocations is `(x * y * z) * workgroup_size` where
+    /// `workgroup_size` is defined in the compute shader with `@workgroup_size`.
+    ///
+    /// # Arguments
+    /// * `x` - Number of workgroups in the X dimension
+    /// * `y` - Number of workgroups in the Y dimension
+    /// * `z` - Number of workgroups in the Z dimension
+    fn dispatch_workgroups(&mut self, x: u32, y: u32, z: u32);
+}
 
 /// A trait for an object that records a sequence of GPU commands.
 ///

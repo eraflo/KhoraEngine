@@ -72,6 +72,20 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// Destroys a render pipeline, releasing its GPU resources.
     fn destroy_render_pipeline(&self, id: RenderPipelineId) -> Result<(), ResourceError>;
 
+    // --- Compute Pipeline Management ---
+
+    /// Creates a compute pipeline from a descriptor.
+    ///
+    /// # Errors
+    /// Returns a [`ResourceError`] if the pipeline configuration is invalid or compilation fails.
+    fn create_compute_pipeline(
+        &self,
+        descriptor: &ComputePipelineDescriptor,
+    ) -> Result<ComputePipelineId, ResourceError>;
+
+    /// Destroys a compute pipeline, releasing its GPU resources.
+    fn destroy_compute_pipeline(&self, id: ComputePipelineId) -> Result<(), ResourceError>;
+
     // --- Bind Group Management ---
 
     /// Creates a bind group layout from a descriptor.
