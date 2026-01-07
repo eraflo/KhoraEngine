@@ -76,6 +76,26 @@ pub const EMISSIVE_WGSL: &str = include_str!("emissive.wgsl");
 /// edge distances. Useful for debugging mesh topology.
 pub const WIREFRAME_WGSL: &str = include_str!("wireframe.wgsl");
 
+/// Light culling compute shader for Forward+ rendering.
+///
+/// Performs tile-based light culling by:
+/// - Computing frustum planes for each 16x16 pixel tile
+/// - Testing each light against the tile frustum
+/// - Building a per-tile light index list
+///
+/// Outputs:
+/// - `light_index_list`: Indices of lights affecting each tile
+/// - `light_grid`: (offset, count) pairs per tile
+pub const LIGHT_CULLING_WGSL: &str = include_str!("light_culling.wgsl");
+
+/// Forward+ rendering shader with tile-based light lookup.
+///
+/// Uses pre-computed light culling data to only iterate over lights
+/// that actually affect the current pixel's tile. Implements Blinn-Phong
+/// lighting with the same quality as [`LIT_FORWARD_WGSL`] but with
+/// O(lights_per_tile) complexity instead of O(all_lights).
+pub const FORWARD_PLUS_WGSL: &str = include_str!("forward_plus.wgsl");
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,5 +128,18 @@ mod tests {
     fn test_wireframe_shader_valid() {
         assert!(WIREFRAME_WGSL.contains("@vertex"));
         assert!(WIREFRAME_WGSL.contains("@fragment"));
+    }
+
+    #[test]
+    fn test_light_culling_shader_valid() {
+        assert!(LIGHT_CULLING_WGSL.contains("@compute"));
+        assert!(LIGHT_CULLING_WGSL.contains("@workgroup_size"));
+    }
+
+    #[test]
+    fn test_forward_plus_shader_valid() {
+        assert!(FORWARD_PLUS_WGSL.contains("@vertex"));
+        assert!(FORWARD_PLUS_WGSL.contains("@fragment"));
+        assert!(FORWARD_PLUS_WGSL.contains("light_grid"));
     }
 }
