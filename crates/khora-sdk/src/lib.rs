@@ -39,10 +39,11 @@ pub mod prelude {
     pub use khora_core::asset::{AssetMetadata, AssetSource, AssetUUID};
     pub use khora_core::renderer::{
         BufferDescriptor, BufferId, BufferUsage, ColorTargetStateDescriptor, ColorWrites,
-        IndexFormat, MultisampleStateDescriptor, PipelineLayoutDescriptor, RenderObject,
+        CompareFunction, DepthBiasState, DepthStencilStateDescriptor, IndexFormat,
+        MultisampleStateDescriptor, PipelineLayoutDescriptor, RenderObject,
         RenderPipelineDescriptor, RenderPipelineId, SampleCount, ShaderModuleDescriptor,
-        ShaderModuleId, ShaderSourceData, ShaderStage, VertexAttributeDescriptor,
-        VertexBufferLayoutDescriptor, VertexFormat, VertexStepMode,
+        ShaderModuleId, ShaderSourceData, ShaderStage, StencilFaceState, TextureFormat,
+        VertexAttributeDescriptor, VertexBufferLayoutDescriptor, VertexFormat, VertexStepMode,
     };
     pub use khora_data::allocators::SaaTrackingAllocator;
 

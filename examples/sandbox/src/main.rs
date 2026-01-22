@@ -139,7 +139,16 @@ impl Application for SandboxApp {
             fragment_entry_point: Some("fs_main".into()),
             vertex_buffers_layout: Cow::Borrowed(&[Vertex::get_buffer_layout()]),
             primitive_state: Default::default(),
-            depth_stencil_state: None,
+            depth_stencil_state: Some(DepthStencilStateDescriptor {
+                format: TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: CompareFunction::Less,
+                stencil_front: StencilFaceState::default(),
+                stencil_back: StencilFaceState::default(),
+                stencil_read_mask: 0xFF,
+                stencil_write_mask: 0xFF,
+                bias: DepthBiasState::default(),
+            }),
             color_target_states: Cow::Borrowed(&[ColorTargetStateDescriptor {
                 format: surface_format,
                 blend: None,

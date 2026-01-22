@@ -413,6 +413,24 @@ impl IntoWgpu<wgpu::LoadOp<wgpu::Color>> for LoadOp<LinearRgba> {
     }
 }
 
+impl IntoWgpu<wgpu::LoadOp<f32>> for LoadOp<f32> {
+    fn into_wgpu(self) -> wgpu::LoadOp<f32> {
+        match self {
+            LoadOp::Load => wgpu::LoadOp::Load,
+            LoadOp::Clear(depth) => wgpu::LoadOp::Clear(depth),
+        }
+    }
+}
+
+impl IntoWgpu<wgpu::LoadOp<u32>> for LoadOp<u32> {
+    fn into_wgpu(self) -> wgpu::LoadOp<u32> {
+        match self {
+            LoadOp::Load => wgpu::LoadOp::Load,
+            LoadOp::Clear(stencil) => wgpu::LoadOp::Clear(stencil),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

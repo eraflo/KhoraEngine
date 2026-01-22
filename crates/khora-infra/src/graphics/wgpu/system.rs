@@ -62,6 +62,10 @@ pub struct WgpuRenderSystem {
     camera_bind_group: Option<BindGroupId>,
     camera_bind_group_layout: Option<BindGroupLayoutId>,
 
+    // --- Depth Buffer Resources ---
+    depth_texture: Option<khora_core::renderer::TextureId>,
+    depth_texture_view: Option<TextureViewId>,
+
     // --- Resize Heuristics State ---
     last_resize_event: Option<Instant>,
     pending_resize: bool,
@@ -130,6 +134,8 @@ impl WgpuRenderSystem {
             camera_uniform_buffer: None,
             camera_bind_group: None,
             camera_bind_group_layout: None,
+            depth_texture: None,
+            depth_texture_view: None,
             last_resize_event: None,
             pending_resize: false,
             last_surface_config: None,
@@ -202,6 +208,9 @@ impl WgpuRenderSystem {
 
         // Initialize camera uniform resources
         self.initialize_camera_uniforms()?;
+
+        // Initialize depth texture for depth buffering
+        self.create_depth_texture()?;
 
         Ok(created_monitors)
     }
@@ -318,6 +327,88 @@ impl WgpuRenderSystem {
             }
         }
     }
+
+    /// Creates or recreates the depth texture for depth buffering.
+    ///
+    /// This method should be called during initialization and whenever the window is resized.
+    /// It destroys any existing depth texture resources before creating new ones.
+    fn create_depth_texture(&mut self) -> Result<(), RenderError> {
+        use khora_core::math::Extent3D;
+        use khora_core::renderer::{
+            ImageAspect, SampleCount, TextureDescriptor, TextureDimension, TextureFormat,
+            TextureUsage, TextureViewDescriptor,
+        };
+        use std::borrow::Cow;
+
+        let device = self.wgpu_device.as_ref().ok_or_else(|| {
+            RenderError::InitializationFailed("WGPU device not initialized".to_string())
+        })?;
+
+        // Skip if dimensions are zero
+        if self.current_width == 0 || self.current_height == 0 {
+            return Ok(());
+        }
+
+        // Destroy old depth texture resources if they exist
+        if let Some(old_view) = self.depth_texture_view.take() {
+            let _ = device.destroy_texture_view(old_view);
+        }
+        if let Some(old_tex) = self.depth_texture.take() {
+            let _ = device.destroy_texture(old_tex);
+        }
+
+        // Create new depth texture
+        let texture_desc = TextureDescriptor {
+            label: Some(Cow::Borrowed("Depth Texture")),
+            size: Extent3D {
+                width: self.current_width,
+                height: self.current_height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: SampleCount::X1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Depth32Float,
+            usage: TextureUsage::RENDER_ATTACHMENT,
+            view_formats: Cow::Borrowed(&[]),
+        };
+
+        let texture_id = device.create_texture(&texture_desc).map_err(|e| {
+            RenderError::InitializationFailed(format!("Failed to create depth texture: {:?}", e))
+        })?;
+
+        // Create depth texture view
+        let view_desc = TextureViewDescriptor {
+            label: Some(Cow::Borrowed("Depth Texture View")),
+            format: Some(TextureFormat::Depth32Float),
+            dimension: None,
+            aspect: ImageAspect::DepthOnly,
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: None,
+        };
+
+        let view_id = device
+            .create_texture_view(texture_id, &view_desc)
+            .map_err(|e| {
+                RenderError::InitializationFailed(format!(
+                    "Failed to create depth texture view: {:?}",
+                    e
+                ))
+            })?;
+
+        self.depth_texture = Some(texture_id);
+        self.depth_texture_view = Some(view_id);
+
+        log::info!(
+            "Depth texture created: {}x{} (Depth32Float)",
+            self.current_width,
+            self.current_height
+        );
+
+        Ok(())
+    }
 }
 
 impl RenderSystem for WgpuRenderSystem {
@@ -359,19 +450,27 @@ impl RenderSystem for WgpuRenderSystem {
                     .map(|t| t.elapsed().as_millis() >= 20)
                     .unwrap_or(true);
             if can_immediate || early_stable {
+                let mut did_resize = false;
                 if let Some(gc_arc_mutex) = &self.graphics_context_shared {
                     if let Ok(mut gc_guard) = gc_arc_mutex.lock() {
                         gc_guard.resize(self.current_width, self.current_height);
                         self.last_surface_config = Some(now);
                         self.pending_resize = false;
                         self.pending_resize_frames = 0;
-                        log::info!(
-                            "WGPUGraphicsContext: Immediate/Early surface configuration to {}x{}",
-                            self.current_width,
-                            self.current_height
-                        );
-                        return;
+                        did_resize = true;
                     }
+                }
+                if did_resize {
+                    // Recreate depth texture to match new size (after lock is released)
+                    if let Err(e) = self.create_depth_texture() {
+                        log::warn!("Failed to recreate depth texture during resize: {:?}", e);
+                    }
+                    log::info!(
+                        "WGPUGraphicsContext: Immediate/Early surface configuration to {}x{}",
+                        self.current_width,
+                        self.current_height
+                    );
+                    return;
                 }
             }
             self.last_resize_event = Some(now);
@@ -406,7 +505,7 @@ impl RenderSystem for WgpuRenderSystem {
 
         let device = self
             .wgpu_device
-            .as_ref()
+            .clone()
             .ok_or(RenderError::NotInitialized)?;
 
         // Poll the device to process any pending GPU-to-CPU callbacks, such as
@@ -415,7 +514,7 @@ impl RenderSystem for WgpuRenderSystem {
 
         let gc = self
             .graphics_context_shared
-            .as_ref()
+            .clone()
             .ok_or(RenderError::NotInitialized)?;
 
         if let Some(p) = self.gpu_profiler.as_mut() {
@@ -423,9 +522,9 @@ impl RenderSystem for WgpuRenderSystem {
         }
 
         // --- Handle Pending Resizes ---
+        let mut resized_this_frame = false;
         if self.pending_resize {
             self.pending_resize_frames = self.pending_resize_frames.saturating_add(1);
-            let mut resized_this_frame = false;
             if let Some(t) = self.last_resize_event {
                 let quiet_elapsed = t.elapsed().as_millis();
                 let debounce_quiet_ms = settings.resize_debounce_ms as u128;
@@ -452,6 +551,16 @@ impl RenderSystem for WgpuRenderSystem {
             }
             if self.pending_resize && !resized_this_frame {
                 return Ok(self.last_frame_stats.clone());
+            }
+        }
+
+        // Recreate depth texture if we just resized
+        if resized_this_frame {
+            if let Err(e) = self.create_depth_texture() {
+                log::warn!(
+                    "Failed to recreate depth texture during deferred resize: {:?}",
+                    e
+                );
             }
         }
 
@@ -549,9 +658,24 @@ impl RenderSystem for WgpuRenderSystem {
                     store: StoreOp::Store,
                 },
             };
+
+            // Create depth/stencil attachment if depth texture is available
+            use khora_core::renderer::api::command::RenderPassDepthStencilAttachment;
+            let depth_attachment = self.depth_texture_view.as_ref().map(|depth_view| {
+                RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0), // Clear to far plane (1.0)
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: None, // No stencil operations
+                }
+            });
+
             let pass_descriptor = RenderPassDescriptor {
                 label: Some("Khora Main Abstract Render Pass"),
                 color_attachments: &[color_attachment],
+                depth_stencil_attachment: depth_attachment,
             };
 
             let mut render_pass = command_encoder.begin_render_pass(&pass_descriptor);

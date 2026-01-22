@@ -1,6 +1,6 @@
 [package]
 name = "khora-lanes"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "Hot-path execution pipelines for performance-critical operations"
 
