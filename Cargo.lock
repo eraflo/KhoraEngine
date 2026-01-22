@@ -1464,7 +1464,7 @@ dependencies = [
 
 [[package]]
 name = "khora-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "approx",
@@ -1501,7 +1501,7 @@ dependencies = [
 
 [[package]]
 name = "khora-infra"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1518,7 +1518,7 @@ dependencies = [
 
 [[package]]
 name = "khora-lanes"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ahash",
  "anyhow",

@@ -32,7 +32,8 @@ use khora_core::{
     renderer::{
         api::{
             command::{
-                LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
+                LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
+                RenderPassDescriptor, StoreOp,
             },
             PrimitiveTopology,
         },
@@ -229,6 +230,16 @@ impl RenderLane for LitForwardLane {
         let render_pass_desc = RenderPassDescriptor {
             label: Some("Lit Forward Pass"),
             color_attachments: &[color_attachment],
+            depth_stencil_attachment: render_ctx.depth_target.map(|depth_view| {
+                RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }
+            }),
         };
 
         // Begin the render pass

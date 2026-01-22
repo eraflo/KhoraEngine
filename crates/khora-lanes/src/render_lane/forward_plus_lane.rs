@@ -54,7 +54,7 @@ use khora_core::{
             buffer::BufferId,
             command::{
                 ComputePassDescriptor, LoadOp, Operations, RenderPassColorAttachment,
-                RenderPassDescriptor, StoreOp,
+                RenderPassDepthStencilAttachment, RenderPassDescriptor, StoreOp,
             },
             PrimitiveTopology,
         },
@@ -337,6 +337,16 @@ impl RenderLane for ForwardPlusLane {
         let render_pass_desc = RenderPassDescriptor {
             label: Some("Forward+ Render Pass"),
             color_attachments: &[color_attachment],
+            depth_stencil_attachment: render_ctx.depth_target.map(|depth_view| {
+                RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(Operations {
+                        load: LoadOp::Clear(1.0),
+                        store: StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }
+            }),
         };
 
         let mut render_pass = encoder.begin_render_pass(&render_pass_desc);

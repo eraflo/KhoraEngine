@@ -181,15 +181,38 @@ impl CommandEncoder for WgpuCommandEncoder {
                         load: att.ops.load.clone().into_wgpu(),
                         store: att.ops.store.clone().into_wgpu(),
                     },
-                    depth_slice: None, // Depth/stencil attachments are not yet supported
+                    depth_slice: None,
                 })
             })
             .collect();
 
+        // Handle depth/stencil attachment
+        let depth_view: Option<wgpu::TextureView> =
+            descriptor.depth_stencil_attachment.as_ref().and_then(|ds| {
+                self.device
+                    .get_wgpu_texture_view(ds.view)
+                    .map(|arc_view| (*arc_view).clone())
+            });
+
+        let depth_stencil_attachment = match (&descriptor.depth_stencil_attachment, &depth_view) {
+            (Some(ds), Some(view)) => Some(wgpu::RenderPassDepthStencilAttachment {
+                view,
+                depth_ops: ds.depth_ops.as_ref().map(|ops| wgpu::Operations {
+                    load: ops.load.clone().into_wgpu(),
+                    store: ops.store.clone().into_wgpu(),
+                }),
+                stencil_ops: ds.stencil_ops.as_ref().map(|ops| wgpu::Operations {
+                    load: ops.load.clone().into_wgpu(),
+                    store: ops.store.clone().into_wgpu(),
+                }),
+            }),
+            _ => None,
+        };
+
         let wgpu_descriptor = wgpu::RenderPassDescriptor {
             label: descriptor.label,
             color_attachments: &color_attachments,
-            depth_stencil_attachment: None,
+            depth_stencil_attachment,
             timestamp_writes: None,
             occlusion_query_set: None,
             multiview_mask: None,
