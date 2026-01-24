@@ -721,3 +721,177 @@ fn test_complex_mutable_query_with_filter() {
         vec![Position(15), Position(20), Position(31), Position(40)]
     );
 }
+
+#[test]
+fn test_transversal_lifecycle() {
+    let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<RenderTag>(SemanticDomain::Render);
+
+    // 1. Spawn: Verify bits are set
+    let entity = world.spawn((Position(1), RenderTag));
+
+    {
+        let spatial_bitset = world.domain_bitsets.get(&SemanticDomain::Spatial).unwrap();
+        let render_bitset = world.domain_bitsets.get(&SemanticDomain::Render).unwrap();
+
+        assert!(spatial_bitset.is_set(entity.index));
+        assert!(render_bitset.is_set(entity.index));
+    }
+
+    // 2. Remove domain: Verify bit is cleared
+    world.remove_component_domain::<RenderTag>(entity).unwrap();
+    {
+        let render_bitset = world.domain_bitsets.get(&SemanticDomain::Render).unwrap();
+        let spatial_bitset = world.domain_bitsets.get(&SemanticDomain::Spatial).unwrap();
+        assert!(!render_bitset.is_set(entity.index));
+        assert!(spatial_bitset.is_set(entity.index)); // Spatial should remain
+    }
+
+    // 3. Add component: Verify bit is set again
+    world.add_component(entity, RenderTag).unwrap();
+    {
+        let render_bitset = world.domain_bitsets.get(&SemanticDomain::Render).unwrap();
+        assert!(render_bitset.is_set(entity.index));
+    }
+
+    // 4. Despawn: Verify all bits cleared
+    world.despawn(entity);
+    {
+        let spatial_bitset = world.domain_bitsets.get(&SemanticDomain::Spatial).unwrap();
+        let render_bitset = world.domain_bitsets.get(&SemanticDomain::Render).unwrap();
+        assert!(!spatial_bitset.is_set(entity.index));
+        assert!(!render_bitset.is_set(entity.index));
+    }
+}
+
+#[test]
+fn test_transversal_join() {
+    let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<RenderTag>(SemanticDomain::Render);
+
+    // Spawn entities across different domains
+    world.spawn((Position(1), RenderTag)); // Entity 0: both
+    world.spawn(Position(2)); // Entity 1: Spatial only
+    world.spawn(RenderTag); // Entity 2: Render only
+    world.spawn((Position(3), RenderTag)); // Entity 3: both
+
+    // Native query: Spatial only
+    let spatial_count = world.query::<&Position>().count();
+    assert_eq!(spatial_count, 3); // 0, 1, 3
+
+    // Transversal query: Spatial + Render
+    let join_results: Vec<_> = world
+        .query::<(&Position, &RenderTag)>()
+        .map(|(p, _)| p.0)
+        .collect();
+
+    assert_eq!(join_results, vec![1, 3]);
+
+    // Verify it works with QueryMut too
+    for (p, _) in world.query_mut::<(&mut Position, &RenderTag)>() {
+        p.0 += 10;
+    }
+
+    let final_results: Vec<_> = world
+        .query::<(&Position, &RenderTag)>()
+        .map(|(p, _)| p.0)
+        .collect();
+    assert_eq!(final_results, vec![11, 13]);
+}
+
+#[test]
+fn test_transversal_recycled_entities() {
+    let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<RenderTag>(SemanticDomain::Render);
+
+    // 1. Spawn and despawn to create a "hole"
+    let e1 = world.spawn((Position(10), RenderTag));
+    world.despawn(e1);
+
+    // 2. Spawn a new entity - it should recycle the index
+    let e2 = world.spawn((Position(20), RenderTag));
+    assert_eq!(e1.index, e2.index);
+    assert_ne!(e1.generation, e2.generation);
+
+    // 3. Query should only find the new entity
+    let mut query = world.query::<(&Position, &RenderTag)>();
+    let (p, _) = query.next().unwrap();
+    assert_eq!(p.0, 20);
+    assert!(query.next().is_none());
+
+    // 4. Verify bitset was cleared and set correctly
+    {
+        let spatial_bitset = world.domain_bitsets.get(&SemanticDomain::Spatial).unwrap();
+        assert!(spatial_bitset.is_set(e2.index));
+    }
+}
+
+#[test]
+fn test_transversal_sparse_join() {
+    let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<RenderTag>(SemanticDomain::Render);
+
+    // Create a sparse situation:
+    // Domain A (Spatial) has many entities.
+    // Domain B (Render) has very few.
+    for i in 0..100 {
+        world.spawn(Position(i));
+    }
+
+    // Only 2 entities have both
+    world.spawn((Position(1000), RenderTag));
+    world.spawn((Position(2000), RenderTag));
+
+    // Another 50 in Domain B only
+    for _ in 0..50 {
+        world.spawn(RenderTag);
+    }
+
+    // Query for BOTH.
+    // The driver should ideally be Render (Domain B) because it has fewer pages/entities
+    // (though in this small test it might vary, the bitset intersection should fast-skip).
+    let results: Vec<_> = world
+        .query::<(&Position, &RenderTag)>()
+        .map(|(p, _)| p.0)
+        .collect();
+
+    assert_eq!(results.len(), 2);
+    assert!(results.contains(&1000));
+    assert!(results.contains(&2000));
+}
+
+#[test]
+fn test_transversal_concurrency() {
+    let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<RenderTag>(SemanticDomain::Render);
+
+    for i in 0..1000 {
+        if i % 2 == 0 {
+            world.spawn((Position(i), RenderTag));
+        } else {
+            world.spawn(Position(i));
+        }
+    }
+
+    // Wrap World in Arc for sharing (note: query is &self, so it should be Send/Sync)
+    use std::sync::Arc;
+    let world = Arc::new(world);
+    let mut handles = Vec::new();
+
+    for _ in 0..8 {
+        let world_clone = world.clone();
+        handles.push(std::thread::spawn(move || {
+            let count = world_clone.query::<(&Position, &RenderTag)>().count();
+            assert_eq!(count, 500);
+        }));
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
+}

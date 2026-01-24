@@ -12,7 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{any::TypeId, collections::HashMap};
+//! The heart of the CRPECS: the `World` struct.
+
+use std::{
+    any::TypeId,
+    collections::{HashMap, HashSet},
+    sync::RwLock,
+};
 
 use bincode::config;
 use khora_core::{
@@ -27,8 +33,9 @@ use crate::ecs::{
     query::{Query, WorldQuery},
     registry::ComponentRegistry,
     serialization::SceneMemoryLayout,
-    AudioListener, AudioSource, Camera, Children, Component, ComponentBundle, GlobalTransform,
-    MaterialComponent, Parent, QueryMut, SemanticDomain, SerializedPage, Transform, TypeRegistry,
+    AudioListener, AudioSource, Camera, Children, Component, ComponentBundle, DomainBitset,
+    GlobalTransform, MaterialComponent, Parent, QueryMut, QueryPlan, SemanticDomain,
+    SerializedPage, Transform, TypeRegistry,
 };
 
 /// Errors that can occur when adding a component to an entity.
@@ -40,6 +47,15 @@ pub enum AddComponentError {
     ComponentNotRegistered,
     /// The entity already has a component of the specified type.
     ComponentAlreadyExists,
+}
+
+/// Simple statistics for a semantic domain.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct DomainStats {
+    /// Total number of entities in this domain.
+    pub entity_count: u32,
+    /// Total number of pages allocated for this domain.
+    pub page_count: u32,
 }
 
 /// A trait providing low-level access to the World for maintenance tasks.
@@ -71,12 +87,19 @@ pub struct World {
     pub(crate) freed_entities: Vec<u32>,
 
     /// The registry that maps component types to their storage domains.
-    registry: ComponentRegistry,
+    pub(crate) registry: ComponentRegistry,
 
     /// The type registry for serialization purposes.
     type_registry: TypeRegistry,
-    // We will add more fields here later, such as a resource manager
-    // or an entity ID allocator to manage recycled generations.
+
+    /// Bitsets tracking which entities have components in which semantic domains.
+    pub(crate) domain_bitsets: HashMap<SemanticDomain, DomainBitset>,
+
+    /// Cached query plans for fast lookup.
+    pub(crate) query_cache: RwLock<HashMap<Vec<TypeId>, QueryPlan>>,
+
+    /// Simple statistics per domain to facilitate density-based driver selection.
+    pub(crate) domain_stats: HashMap<SemanticDomain, DomainStats>,
 }
 
 impl World {
@@ -130,6 +153,14 @@ impl World {
         // At this point, the loop has finished and found no match.
         // The ID for the new page will be the current number of pages.
         let new_page_id = self.pages.len() as u32;
+
+        // Update domain stats using the signature before it's moved into the new page.
+        if let Some(first_type) = bundle_type_ids.first() {
+            if let Some(domain) = self.registry.get_domain(*first_type) {
+                self.domain_stats.entry(domain).or_default().page_count += 1;
+            }
+        }
+
         let new_page = ComponentPage {
             type_ids: bundle_type_ids,
             columns: B::create_columns(),
@@ -182,6 +213,13 @@ impl World {
             columns.insert(*type_id, constructor());
         }
 
+        // Update domain stats
+        if let Some(first_type) = signature.first() {
+            if let Some(domain) = self.registry.get_domain(*first_type) {
+                self.domain_stats.entry(domain).or_default().page_count += 1;
+            }
+        }
+
         self.pages.push(ComponentPage {
             type_ids: signature.to_vec(),
             columns,
@@ -198,6 +236,9 @@ impl World {
             freed_entities: Vec::new(),
             registry: ComponentRegistry::default(),
             type_registry: TypeRegistry::default(),
+            domain_bitsets: HashMap::new(),
+            query_cache: RwLock::new(HashMap::new()),
+            domain_stats: HashMap::new(),
         };
         // Registration of built-in components
         world.register_component::<Transform>(SemanticDomain::Spatial);
@@ -225,6 +266,7 @@ impl World {
     /// 2. Finds or creates a suitable `ComponentPage` for the component bundle.
     /// 3. Pushes the component data into the page's columns.
     /// 4. Updates the entity's metadata to point to the new data's location.
+    /// 5. Updates domain bitsets and stats for the newly created entity components.
     ///
     /// Returns the `EntityId` of the newly created entity.
     pub fn spawn<B: ComponentBundle>(&mut self, bundle: B) -> EntityId {
@@ -250,6 +292,17 @@ impl World {
         let (_id, metadata_opt) = &mut self.entities[entity_id.index as usize];
         let metadata = metadata_opt.as_mut().unwrap();
         B::update_metadata(metadata, location, &self.registry);
+
+        // --- Step 5: Update domain bitsets and stats for the newly created entity components. ---
+        for domain in metadata.locations.keys() {
+            self.domain_bitsets
+                .entry(*domain)
+                .or_default()
+                .set(entity_id.index);
+
+            self.domain_stats.entry(*domain).or_default().entity_count += 1;
+        }
+
         entity_id
     }
 
@@ -287,6 +340,14 @@ impl World {
         // --- Step 3: Iterate over the entity's component locations and remove them ---
         for (domain, location) in metadata.locations {
             self.remove_from_page(entity_id, location, domain);
+
+            // Clear the entity's bit in the domain bitset and update stats.
+            if let Some(bitset) = self.domain_bitsets.get_mut(&domain) {
+                bitset.clear(entity_id.index);
+            }
+            if let Some(stats) = self.domain_stats.get_mut(&domain) {
+                stats.entity_count = stats.entity_count.saturating_sub(1);
+            }
         }
         true
     }
@@ -315,77 +376,60 @@ impl World {
     /// }
     /// ```
     pub fn query<'a, Q: WorldQuery>(&'a self) -> Query<'a, Q> {
-        // 1. Get the component and filter signatures from the query type.
-        let query_type_ids = Q::type_ids();
-        let without_type_ids = Q::without_type_ids();
+        let type_ids = Q::type_ids();
 
-        // 2. Find all pages that match the query's criteria.
-        let mut matching_page_indices = Vec::new();
-        'page_loop: for (page_id, page) in self.pages.iter().enumerate() {
-            // --- Filtering Logic ---
-
-            // A) Check for required components.
-            // The page must contain ALL component types requested by the query.
-            for required_type in &query_type_ids {
-                // `binary_search` is fast on the sorted `page.type_ids` vector.
-                if page.type_ids.binary_search(required_type).is_err() {
-                    continue 'page_loop; // This page is missing a required component, skip it.
-                }
+        // 1. Try to fetch the strategy plan from the cache.
+        // We cache the execution logic (Native vs Transversal), not the page indices.
+        let plan = {
+            let cache = self.query_cache.read().unwrap();
+            if let Some(plan) = cache.get(&type_ids) {
+                plan.clone()
+            } else {
+                drop(cache);
+                let new_plan = self.analyze_query(&type_ids);
+                let mut cache = self.query_cache.write().unwrap();
+                cache.insert(type_ids, new_plan.clone());
+                new_plan
             }
+        };
 
-            // B) Check for excluded components.
-            // The page must NOT contain ANY component types from the `without` filter.
-            for excluded_type in &without_type_ids {
-                if page.type_ids.binary_search(excluded_type).is_ok() {
-                    continue 'page_loop; // This page contains an excluded component, skip it.
-                }
-            }
+        // 2. Dynamically find matching pages for this call.
+        // This ensures the query is correct even if new archetypes were created
+        // in a different domain since the last call.
+        let matching_page_indices =
+            self.find_matching_pages(&plan.driver_signature, &Q::without_type_ids());
 
-            // If we reach this point, the page is a match.
-            matching_page_indices.push(page_id as u32);
-        }
-
-        // 3. Construct and return the `Query` iterator.
-        Query::new(self, matching_page_indices)
+        // 3. Return the query with the plan and the current matching pages.
+        Query::new(self, plan, matching_page_indices)
     }
 
     /// Creates a mutable iterator that queries the world for entities matching a set of components and filters.
     ///
     /// This method is similar to `query`, but it allows mutable access to the components.
-    /// The same filtering logic applies, ensuring that only pages containing the required
+    /// It uses the same dynamic plan re-finding to ensure thread-safe consistency.
     pub fn query_mut<'a, Q: WorldQuery>(&'a mut self) -> QueryMut<'a, Q> {
-        // 1. Get the component and filter signatures from the query type.
-        let query_type_ids = Q::type_ids();
-        let without_type_ids = Q::without_type_ids();
+        let type_ids = Q::type_ids();
 
-        // 2. Find all pages that match the query's criteria.
-        let mut matching_page_indices = Vec::new();
-        'page_loop: for (page_id, page) in self.pages.iter().enumerate() {
-            // --- Filtering Logic ---
-
-            // A) Check for required components.
-            // The page must contain ALL component types requested by the query.
-            for required_type in &query_type_ids {
-                // `binary_search` is fast on the sorted `page.type_ids` vector.
-                if page.type_ids.binary_search(required_type).is_err() {
-                    continue 'page_loop; // This page is missing a required component, skip it.
-                }
+        // 1. Get strategy from cache
+        let plan = {
+            let cache = self.query_cache.read().unwrap();
+            if let Some(plan) = cache.get(&type_ids) {
+                plan.clone()
+            } else {
+                drop(cache);
+                let new_plan = self.analyze_query(&type_ids);
+                let mut cache = self.query_cache.write().unwrap();
+                cache.insert(type_ids, new_plan.clone());
+                new_plan
             }
+        };
 
-            // B) Check for excluded components.
-            // The page must NOT contain ANY component types from the `without` filter.
-            for excluded_type in &without_type_ids {
-                if page.type_ids.binary_search(excluded_type).is_ok() {
-                    continue 'page_loop; // This page contains an excluded component, skip it.
-                }
-            }
+        // 2. Dynamically find pages
+        let matching_page_indices =
+            self.find_matching_pages(&plan.driver_signature, &Q::without_type_ids());
 
-            // If we reach this point, the page is a match.
-            matching_page_indices.push(page_id as u32);
-        }
-
-        // 3. Construct and return the `Query` iterator.
-        QueryMut::new(self, matching_page_indices)
+        // 3. Construct the iterator
+        QueryMut::new(self, plan, matching_page_indices)
     }
 
     /// Registers a component type with a specific semantic domain.
@@ -398,8 +442,104 @@ impl World {
         self.type_registry.register::<T>();
     }
 
-    /// Adds a new component `C` to an existing entity, migrating its domain data.
+    /// Analyzes a query's component signature to create an optimized execution plan.
     ///
+    /// This method identifies if a query is transversal (spanning multiple domains)
+    /// and selects the most efficient "Driver Domain" based on entity density.
+    pub(crate) fn analyze_query(&self, type_ids: &[TypeId]) -> QueryPlan {
+        let mut domains = HashSet::new();
+        for type_id in type_ids {
+            if let Some(domain) = self.registry.get_domain(*type_id) {
+                domains.insert(domain);
+            }
+        }
+
+        if domains.len() <= 1 {
+            // NATIVE MODE: All components belong to the same semantic domain (or none).
+            // This is the fastest execution path as it avoids any cross-domain joins.
+            let first_domain = domains.into_iter().next();
+            let plan = QueryPlan::new(false, first_domain, HashSet::new(), type_ids.to_vec());
+            return plan;
+        }
+
+        // TRANSVERSAL MODE
+        // Select the domain with the highest density of entities as the driver domain.
+        // Highest density = most entities per page => page_A_count * entity_B_count < page_B_count * entity_A_count
+        let driver_domain = domains
+            .iter()
+            .min_by(|&&a, &&b| {
+                let stats_a = self.domain_stats.get(&a).copied().unwrap_or_default();
+                let stats_b = self.domain_stats.get(&b).copied().unwrap_or_default();
+                let score_a = (stats_a.page_count as u64) * (stats_b.entity_count as u64);
+                let score_b = (stats_b.page_count as u64) * (stats_a.entity_count as u64);
+                score_a.cmp(&score_b)
+            })
+            .copied()
+            .unwrap(); // Should always be Some if domains.len() > 1
+
+        let mut peer_domains = domains;
+        peer_domains.remove(&driver_domain);
+
+        // Calculate driver signature (subset of type_ids in the driver domain)
+        let mut driver_signature = Vec::new();
+        for type_id in type_ids {
+            if self.registry.get_domain(*type_id) == Some(driver_domain) {
+                driver_signature.push(*type_id);
+            }
+        }
+        driver_signature.sort();
+
+        // Initialize the final plan.
+        // In transversal mode, the driver signature is the subset of components
+        // that belong to the driver domain.
+        QueryPlan::new(true, Some(driver_domain), peer_domains, driver_signature)
+    }
+
+    /// Internal helper to find pages matching a signature and filter.
+    fn find_matching_pages(&self, type_ids: &[TypeId], without_type_ids: &[TypeId]) -> Vec<u32> {
+        let mut matching_page_indices = Vec::new();
+        'page_loop: for (page_id, page) in self.pages.iter().enumerate() {
+            for required_type in type_ids {
+                if page.type_ids.binary_search(required_type).is_err() {
+                    continue 'page_loop;
+                }
+            }
+            for excluded_type in without_type_ids {
+                if page.type_ids.binary_search(excluded_type).is_ok() {
+                    continue 'page_loop;
+                }
+            }
+            matching_page_indices.push(page_id as u32);
+        }
+        matching_page_indices
+    }
+
+    /// (Internal) Computes a bitset that represents the intersection of all domains
+    /// involved in a transversal query. This is used to speed up joins by skipping
+    /// metadata lookups for entities that are guaranteed to not satisfy the query.
+    pub(crate) fn compute_query_bitset(&self, plan: &QueryPlan) -> Option<DomainBitset> {
+        if plan.mode == crate::ecs::QueryMode::Native {
+            return None;
+        }
+
+        let driver_domain = plan.driver_domain?;
+
+        // Start with the driver domain's bitset.
+        let mut bitset = self.domain_bitsets.get(&driver_domain)?.clone();
+
+        // Intersect with all peer domains.
+        for peer_domain in &plan.peer_domains {
+            if let Some(peer_bitset) = self.domain_bitsets.get(peer_domain) {
+                bitset.intersect(peer_bitset);
+            } else {
+                // If a required peer domain has NO components at all, the intersection is empty.
+                return Some(DomainBitset::new());
+            }
+        }
+
+        Some(bitset)
+    }
+
     /// This operation is designed to be fast. It performs the necessary data
     /// migration to move the entity's components for the given `SemanticDomain`
     /// to a new `ComponentPage` that matches the new layout.
@@ -429,7 +569,7 @@ impl World {
             return Err(AddComponentError::EntityNotFound);
         }
 
-        let Some(domain) = self.registry.domain_of::<C>() else {
+        let Some(domain) = self.registry.get_domain(TypeId::of::<C>()) else {
             return Err(AddComponentError::ComponentNotRegistered);
         };
 
@@ -502,6 +642,13 @@ impl World {
                 row_index: dest_row_index,
             },
         );
+
+        // Update the domain bitset for the entity.
+        self.domain_bitsets
+            .entry(domain)
+            .or_default()
+            .set(entity_id.index);
+
         self.entities[entity_id.index as usize].1 = Some(metadata);
 
         // 6. Return the old location for cleanup, without performing swap_remove
@@ -534,12 +681,21 @@ impl World {
         }
 
         // 2. Use the registry to find the component's domain.
-        let domain = self.registry.domain_of::<C>()?;
+        let domain = self.registry.get_domain(TypeId::of::<C>())?;
 
         // 3. Remove the location entry from the entity's metadata.
         //    `HashMap::remove` returns the value that was at that key, which is exactly what we need.
         let metadata = metadata_slot.as_mut().unwrap();
-        metadata.locations.remove(&domain)
+        let location = metadata.locations.remove(&domain);
+
+        // Clear the domain bitset if a component was removed.
+        if location.is_some() {
+            if let Some(bitset) = self.domain_bitsets.get_mut(&domain) {
+                bitset.clear(entity_id.index);
+            }
+        }
+
+        location
     }
 
     /// Gets a mutable reference to a single component `T` for a given entity.
@@ -559,7 +715,7 @@ impl World {
         let metadata = metadata_opt.as_ref().unwrap();
 
         // 2. Use the registry to find the component's domain and its location.
-        let domain = self.registry.domain_of::<T>()?;
+        let domain = self.registry.get_domain(TypeId::of::<T>())?;
         let location = metadata.locations.get(&domain)?;
 
         // 3. Get the component data from the page.
@@ -587,7 +743,7 @@ impl World {
         let metadata = metadata_opt.as_ref().unwrap();
 
         // 2. Use the registry to find the component's domain and its location.
-        let domain = self.registry.domain_of::<T>()?;
+        let domain = self.registry.get_domain(TypeId::of::<T>())?;
         let location = metadata.locations.get(&domain)?;
 
         // 3. Get the component data from the page.
