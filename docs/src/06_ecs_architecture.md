@@ -12,6 +12,29 @@ Khora's SAA vision requires the best of both worlds: fast, predictable iteration
 
 Its core principle is to **completely dissociate an entity's logical identity from the physical storage location of its component data**.
 
+```mermaid
+graph LR
+    subgraph Metadata ["Entity Registry (Metadata)"]
+        E1[Entity 1]
+        E2[Entity 2]
+    end
+
+    subgraph Pages ["Component Pages (SoA)"]
+        subgraph PhysicsDomain ["Physics Domain Page"]
+            P1[Pos: x,y,z]
+            V1[Vel: x,y,z]
+        end
+        subgraph RenderDomain ["Render Domain Page"]
+            M1[Mesh Handle]
+            Mat1[Material Handle]
+        end
+    end
+
+    E1 -.-> |"Pointer"| P1
+    E1 -.-> |"Pointer"| M1
+    E2 -.-> |"Pointer"| V1
+```
+
 ## Core Principles
 
 ### 1. Component Pages: Semantic Data Grouping

@@ -6,6 +6,27 @@ The **CLAD (Control-Lane-Agent-Data)** pattern is the concrete Rust implementati
 
 The entire engine is architected around isolating the **Control Plane (Cold Path)** from the **Data Plane (Hot Path)**.
 
+```mermaid
+sequenceDiagram
+    participant DCC as khora-control (DCC)
+    participant Agent as khora-agents (ISA)
+    participant Lane as khora-lanes (Lane)
+    participant Data as khora-data (CRPECS)
+
+    Note over DCC,Agent: Cold Path (Control Plane)
+    DCC->>Agent: Allocate Budget & Strategy
+    Agent->>Lane: Configure & Dispatch
+    
+    Note over Lane,Data: Hot Path (Data Plane)
+    loop Every Frame
+        Lane->>Data: Query Transversal Data
+        Data-->>Lane: Contiguous Component Pages
+        Lane->>Lane: Execute SIMD/Optimized Work
+    end
+    
+    Lane-->>DCC: Telemetry (Cost/Perf)
+```
+
 *   **Cold Path (Control Plane)**:
     *   **Purpose**: Complex, stateful decision-making.
     *   **Components**: `khora-control`, `khora-agents`.

@@ -7,6 +7,32 @@ The Khora Engine is built on two core architectural concepts: the **Symbiotic Ad
 
 Every abstract concept in the SAA has a direct, physical home within the CLAD structure. This explicit mapping ensures that our code is always a faithful implementation of our vision and provides a clear mental model for development.
 
+```mermaid
+graph TD
+    subgraph SAA ["Symbiotic Adaptive Architecture (The WHY)"]
+        DCC[Dynamic Context Core]
+        ISA[Intelligent Subsystem Agents]
+        GORNA[GORNA Protocol]
+        Strategies[Multiple Strategies]
+    end
+
+    subgraph CLAD ["CLAD Crate Pattern (The HOW)"]
+        Control[khora-control]
+        Agents[khora-agents]
+        Lanes[khora-lanes]
+        Core[khora-core]
+    end
+
+    DCC --> Control
+    GORNA --> Control
+    ISA --> Agents
+    Strategies --> Lanes
+    
+    Control -.-> |"Orchestrates"| Agents
+    Agents -.-> |"Switches"| Lanes
+    Lanes -.-> |"Uses Traits"| Core
+```
+
 ### The SAA-CLAD Mapping
 
 | **SAA Concept (The "Why")** | **CLAD Crate (The "How")** | **Role in the Symbiosis** |
