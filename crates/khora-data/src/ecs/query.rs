@@ -16,7 +16,7 @@ use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::{
     page::{AnyVec, ComponentPage},
-    Component, World,
+    Component, DomainBitset, QueryMode, QueryPlan, World,
 };
 use std::{any::TypeId, marker::PhantomData};
 
@@ -54,6 +54,15 @@ pub trait WorldQuery {
     /// 2. `row_index` is a valid index within the page's columns.
     /// 3. Aliasing rules are not violated (e.g., no two `&mut T` to the same data).
     unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a>;
+
+    /// Fetches the query's item directly from the world for a specific entity.
+    ///
+    /// # Safety
+    /// Caller must ensure `world` is valid and no aliasing rules are violated.
+    unsafe fn fetch_from_world<'a>(
+        world: *const World,
+        entity_id: EntityId,
+    ) -> Option<Self::Item<'a>>;
 }
 
 // Implementation for a query of a single, immutable component reference.
@@ -86,6 +95,28 @@ impl<T: Component> WorldQuery for &T {
         // index is in bounds. This avoids a bounds check.
         vec.get_unchecked(row_index)
     }
+
+    unsafe fn fetch_from_world<'a>(
+        world: *const World,
+        entity_id: EntityId,
+    ) -> Option<Self::Item<'a>> {
+        let world = &*world;
+
+        // Get the entity's metadata.
+        let metadata = world.entities.get(entity_id.index as usize)?.1.as_ref()?;
+
+        // Get the domain for the component type.
+        let domain = world.registry.get_domain(TypeId::of::<T>())?;
+
+        // Get the location of the entity in the domain.
+        let location = metadata.locations.get(&domain)?;
+
+        // Get the page for the entity.
+        let page = &world.pages[location.page_id as usize];
+        let column = page.columns.get(&TypeId::of::<T>())?;
+        let vec = column.as_any().downcast_ref::<Vec<T>>()?;
+        vec.get(location.row_index as usize)
+    }
 }
 
 // Implementation for a query of a single, mutable component reference.
@@ -112,6 +143,25 @@ impl<T: Component> WorldQuery for &mut T {
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>().unwrap();
         vec.get_unchecked_mut(row_index)
     }
+
+    unsafe fn fetch_from_world<'a>(
+        world: *const World,
+        entity_id: EntityId,
+    ) -> Option<Self::Item<'a>> {
+        let world_mut = &mut *(world as *mut World);
+        let metadata = world_mut
+            .entities
+            .get_mut(entity_id.index as usize)?
+            .1
+            .as_mut()?;
+        let _domain = world_mut.registry.get_domain(TypeId::of::<T>())?;
+        let location = metadata.locations.get(&_domain)?;
+
+        let page = &mut world_mut.pages[location.page_id as usize];
+        let column = page.columns.get_mut(&TypeId::of::<T>())?;
+        let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
+        vec.get_mut(location.row_index as usize)
+    }
 }
 
 // Implementation for a 1-item tuple query.
@@ -128,6 +178,14 @@ impl<Q1: WorldQuery> WorldQuery for (Q1,) {
 
     unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
         (Q1::fetch(page_ptr, row_index),)
+    }
+
+    unsafe fn fetch_from_world<'a>(
+        world: *const World,
+        entity_id: EntityId,
+    ) -> Option<Self::Item<'a>> {
+        let item1 = unsafe { Q1::fetch_from_world(world, entity_id)? };
+        Some((item1,))
     }
 }
 
@@ -160,6 +218,15 @@ impl<Q1: WorldQuery, Q2: WorldQuery> WorldQuery for (Q1, Q2) {
         let item2 = Q2::fetch(page_ptr, row_index);
         (item1, item2)
     }
+
+    unsafe fn fetch_from_world<'a>(
+        world: *const World,
+        entity_id: EntityId,
+    ) -> Option<Self::Item<'a>> {
+        let item1 = unsafe { Q1::fetch_from_world(world, entity_id)? };
+        let item2 = unsafe { Q2::fetch_from_world(world, entity_id)? };
+        Some((item1, item2))
+    }
 }
 
 // Implementation for a query of a 3-item tuple.
@@ -190,6 +257,16 @@ impl<Q1: WorldQuery, Q2: WorldQuery, Q3: WorldQuery> WorldQuery for (Q1, Q2, Q3)
         let item2 = Q2::fetch(page_ptr, row_index);
         let item3 = Q3::fetch(page_ptr, row_index);
         (item1, item2, item3)
+    }
+
+    unsafe fn fetch_from_world<'a>(
+        world: *const World,
+        entity_id: EntityId,
+    ) -> Option<Self::Item<'a>> {
+        let item1 = unsafe { Q1::fetch_from_world(world, entity_id)? };
+        let item2 = unsafe { Q2::fetch_from_world(world, entity_id)? };
+        let item3 = unsafe { Q3::fetch_from_world(world, entity_id)? };
+        Some((item1, item2, item3))
     }
 }
 
@@ -227,6 +304,17 @@ impl<Q1: WorldQuery, Q2: WorldQuery, Q3: WorldQuery, Q4: WorldQuery> WorldQuery
             Q4::fetch(page_ptr, row_index),
         )
     }
+
+    unsafe fn fetch_from_world<'a>(
+        world: *const World,
+        entity_id: EntityId,
+    ) -> Option<Self::Item<'a>> {
+        let item1 = unsafe { Q1::fetch_from_world(world, entity_id)? };
+        let item2 = unsafe { Q2::fetch_from_world(world, entity_id)? };
+        let item3 = unsafe { Q3::fetch_from_world(world, entity_id)? };
+        let item4 = unsafe { Q4::fetch_from_world(world, entity_id)? };
+        Some((item1, item2, item3, item4))
+    }
 }
 
 // To fetch an entity's ID, we need to access the page's own entity list.
@@ -247,6 +335,14 @@ impl WorldQuery for EntityId {
         // The entity ID is fetched from the page's own list of entities.
         *page.entities.get_unchecked(row_index)
     }
+
+    unsafe fn fetch_from_world<'a>(
+        _world: *const World,
+        entity_id: EntityId,
+    ) -> Option<Self::Item<'a>> {
+        // We already have the entity ID, just return it.
+        Some(entity_id)
+    }
 }
 
 // -------------------- //
@@ -263,8 +359,11 @@ pub struct Query<'a, Q: WorldQuery> {
     /// and gives us the flexibility to provide either mutable or immutable access.
     world_ptr: *const World,
 
-    /// The list of page indices that match this query.
+    /// The list of page indices that match this query (used in Native mode).
     matching_page_indices: Vec<u32>,
+
+    /// The execution plan for this query.
+    plan: QueryPlan,
 
     /// The index of the current page we are iterating through.
     current_page_index: usize,
@@ -275,20 +374,27 @@ pub struct Query<'a, Q: WorldQuery> {
     /// A marker to associate this iterator with the lifetime `'a` and the query type `Q`.
     /// It tells Rust that our iterator behaves as if it's borrowing `&'a Q` from the world.
     _phantom: PhantomData<(&'a (), Q)>,
+
+    /// Pre-computed bitset intersection for fast-failing transversal lookups.
+    combined_bitset: Option<DomainBitset>,
 }
 
 impl<'a, Q: WorldQuery> Query<'a, Q> {
     /// (Internal) Creates a new `Query` iterator.
     ///
     /// This is intended to be called only by `World::query()`.
-    /// It takes the world and the list of matching pages as arguments.
-    pub(crate) fn new(world: &'a World, matching_page_indices: Vec<u32>) -> Self {
+    /// It takes the world, the plan (strategy), and the pre-calculated list
+    /// of matching pages as arguments.
+    pub(crate) fn new(world: &'a World, plan: QueryPlan, matching_page_indices: Vec<u32>) -> Self {
+        let combined_bitset = world.compute_query_bitset(&plan);
         Self {
             world_ptr: world as *const _,
             matching_page_indices,
+            plan,
             current_page_index: 0,
             current_row_index: 0,
             _phantom: PhantomData,
+            combined_bitset,
         }
     }
 }
@@ -299,6 +405,18 @@ impl<'a, Q: WorldQuery> Iterator for Query<'a, Q> {
 
     /// Advances the iterator and returns the next item.
     fn next(&mut self) -> Option<Self::Item> {
+        // Delegate to the appropriate execution path based on the pre-calculated plan.
+        match self.plan.mode {
+            QueryMode::Native => self.next_native(),
+            QueryMode::Transversal => self.next_transversal(),
+        }
+    }
+}
+
+impl<'a, Q: WorldQuery> Query<'a, Q> {
+    /// (Internal) Performs a "Native" iteration, fetching data from a single domain.
+    /// This is the most efficient execution path.
+    fn next_native(&mut self) -> Option<Q::Item<'a>> {
         loop {
             // 1. Check if there are any pages left to iterate through.
             if self.current_page_index >= self.matching_page_indices.len() {
@@ -315,10 +433,8 @@ impl<'a, Q: WorldQuery> Iterator for Query<'a, Q> {
 
             // 3. Check if there are rows left in the current page.
             if self.current_row_index < page.row_count() {
-                // There are rows left, so we can fetch the data.
                 let item = unsafe {
-                    // This is safe because we've already matched the page signature
-                    // and we are iterating within the page's bounds.
+                    // Safe because the page signature matches the query requirements.
                     Q::fetch(page as *const _, self.current_row_index)
                 };
 
@@ -326,10 +442,46 @@ impl<'a, Q: WorldQuery> Iterator for Query<'a, Q> {
                 self.current_row_index += 1;
                 return Some(item);
             } else {
-                // 4. No more rows in this page. Move to the next page.
                 self.current_page_index += 1;
                 self.current_row_index = 0; // Reset the row index for the new page.
                                             // The `loop` will then re-evaluate with the new page index.
+            }
+        }
+    }
+
+    /// (Internal) Performs a "Transversal" iteration, joining data across domains.
+    /// This uses the driver domain to find entities and then pulls peer data from other domains.
+    fn next_transversal(&mut self) -> Option<Q::Item<'a>> {
+        loop {
+            if self.current_page_index >= self.matching_page_indices.len() {
+                return None;
+            }
+
+            let world = unsafe { &*self.world_ptr };
+            let page_id = self.matching_page_indices[self.current_page_index];
+            let page = &world.pages[page_id as usize];
+
+            if self.current_row_index < page.row_count() {
+                // In transversal mode, we use the EntityId from the driver page to look up
+                // counterpart components in the peer domains.
+                let entity_id = page.entities[self.current_row_index];
+                self.current_row_index += 1;
+
+                // Optimization: Skip metadata lookup if the entity is not in the combined bitset.
+                if let Some(bitset) = &self.combined_bitset {
+                    if !bitset.is_set(entity_id.index) {
+                        continue;
+                    }
+                }
+
+                // Attempt to fetch the Full item (driver + peers) from the world.
+                if let Some(item) = unsafe { Q::fetch_from_world(world as *const _, entity_id) } {
+                    return Some(item);
+                }
+                // If the join failed for this entity, we continue to the next one.
+            } else {
+                self.current_page_index += 1;
+                self.current_row_index = 0;
             }
         }
     }
@@ -364,6 +516,24 @@ impl<T: Component> WorldQuery for Without<T> {
     unsafe fn fetch<'a>(_page_ptr: *const ComponentPage, _row_index: usize) -> Self::Item<'a> {
         // This function will be called but its result is ignored.
     }
+
+    unsafe fn fetch_from_world<'a>(
+        world: *const World,
+        entity_id: EntityId,
+    ) -> Option<Self::Item<'a>> {
+        let world = unsafe { &*world };
+        let metadata = world.entities.get(entity_id.index as usize)?.1.as_ref()?;
+
+        // Check ALL pages associated with this entity.
+        // If ANY page contains the forbidden component, filtering failed.
+        for location in metadata.locations.values() {
+            let page = &world.pages[location.page_id as usize];
+            if page.type_ids.binary_search(&TypeId::of::<T>()).is_ok() {
+                return None;
+            }
+        }
+        Some(())
+    }
 }
 
 // ------------------------- //
@@ -376,19 +546,32 @@ impl<T: Component> WorldQuery for Without<T> {
 pub struct QueryMut<'a, Q: WorldQuery> {
     world_ptr: *mut World,
     matching_page_indices: Vec<u32>,
+    plan: QueryPlan,
     current_page_index: usize,
     current_row_index: usize,
     _phantom: PhantomData<(&'a (), Q)>,
+    /// Pre-computed bitset intersection for fast-failing transversal lookups.
+    combined_bitset: Option<DomainBitset>,
 }
 
 impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
-    pub(crate) fn new(world: &'a mut World, matching_page_indices: Vec<u32>) -> Self {
+    /// Creates a new `QueryMut` iterator.
+    ///
+    /// This is intended to be called only by `World::query_mut()`.
+    pub(crate) fn new(
+        world: &'a mut World,
+        plan: QueryPlan,
+        matching_page_indices: Vec<u32>,
+    ) -> Self {
+        let combined_bitset = world.compute_query_bitset(&plan);
         Self {
             world_ptr: world as *mut _,
             matching_page_indices,
+            plan,
             current_page_index: 0,
             current_row_index: 0,
             _phantom: PhantomData,
+            combined_bitset,
         }
     }
 }
@@ -397,6 +580,15 @@ impl<'a, Q: WorldQuery> Iterator for QueryMut<'a, Q> {
     type Item = Q::Item<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        match self.plan.mode {
+            QueryMode::Native => self.next_native(),
+            QueryMode::Transversal => self.next_transversal(),
+        }
+    }
+}
+
+impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
+    fn next_native(&mut self) -> Option<Q::Item<'a>> {
         loop {
             if self.current_page_index >= self.matching_page_indices.len() {
                 return None;
@@ -411,17 +603,45 @@ impl<'a, Q: WorldQuery> Iterator for QueryMut<'a, Q> {
             let page = &mut world.pages[page_id];
 
             if self.current_row_index < page.row_count() {
-                let item = unsafe {
-                    // We can now safely pass a pointer that originates from a mutable reference.
-                    // The `fetch` implementation for `&mut T` will cast this pointer, but the operation
-                    // is now sound because the original source was mutable. This eliminates the UB.
-                    Q::fetch(page as *mut _ as *const _, self.current_row_index)
-                };
+                let item = unsafe { Q::fetch(page as *mut _ as *const _, self.current_row_index) };
 
                 self.current_row_index += 1;
                 return Some(item);
             } else {
-                // No more rows, advance to the next page.
+                self.current_page_index += 1;
+                self.current_row_index = 0;
+            }
+        }
+    }
+
+    fn next_transversal(&mut self) -> Option<Q::Item<'a>> {
+        loop {
+            if self.current_page_index >= self.matching_page_indices.len() {
+                return None;
+            }
+
+            // Get the current page.
+            let world = unsafe { &mut *self.world_ptr };
+            let page_id = self.matching_page_indices[self.current_page_index] as usize;
+            let page = &mut world.pages[page_id];
+
+            // Check if there are rows left in the current page.
+            if self.current_row_index < page.row_count() {
+                let entity_id = page.entities[self.current_row_index];
+                self.current_row_index += 1;
+
+                // Skip entities that are not in the combined bitset.
+                if let Some(combined) = &self.combined_bitset {
+                    if !combined.is_set(entity_id.index) {
+                        continue;
+                    }
+                }
+
+                // Attempt to fetch the Full item (driver + peers) from the world.
+                if let Some(item) = unsafe { Q::fetch_from_world(world as *const _, entity_id) } {
+                    return Some(item);
+                }
+            } else {
                 self.current_page_index += 1;
                 self.current_row_index = 0;
             }

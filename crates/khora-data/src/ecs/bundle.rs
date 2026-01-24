@@ -106,7 +106,7 @@ impl<C1: Component> ComponentBundle for C1 {
         registry: &ComponentRegistry,
     ) {
         // Find the domain for this component type in the registry.
-        if let Some(domain) = registry.domain_of::<Self>() {
+        if let Some(domain) = registry.get_domain(TypeId::of::<Self>()) {
             // Insert or update the location for that domain.
             metadata.locations.insert(domain, location);
         }
@@ -157,9 +157,12 @@ impl<C1: Component, C2: Component> ComponentBundle for (C1, C2) {
         location: PageIndex,
         registry: &ComponentRegistry,
     ) {
-        // Assumption: all components in a bundle belong to the same semantic domain.
-        // We look up the domain of the *first* component type.
-        if let Some(domain) = registry.domain_of::<C1>() {
+        // Iterate over both component types and update the metadata for their respective domains.
+        // This ensures that hybrid bundles (spanning multiple domains) are correctly indexed.
+        if let Some(domain) = registry.get_domain(TypeId::of::<C1>()) {
+            metadata.locations.insert(domain, location);
+        }
+        if let Some(domain) = registry.get_domain(TypeId::of::<C2>()) {
             metadata.locations.insert(domain, location);
         }
     }
@@ -232,9 +235,14 @@ impl<C1: Component, C2: Component, C3: Component> ComponentBundle for (C1, C2, C
         location: PageIndex,
         registry: &ComponentRegistry,
     ) {
-        // Assumption: all components in a bundle belong to the same semantic domain.
-        // We look up the domain of the *first* component type.
-        if let Some(domain) = registry.domain_of::<C1>() {
+        // Iterate over all component types and update the metadata for their respective domains.
+        if let Some(domain) = registry.get_domain(TypeId::of::<C1>()) {
+            metadata.locations.insert(domain, location);
+        }
+        if let Some(domain) = registry.get_domain(TypeId::of::<C2>()) {
+            metadata.locations.insert(domain, location);
+        }
+        if let Some(domain) = registry.get_domain(TypeId::of::<C3>()) {
             metadata.locations.insert(domain, location);
         }
     }

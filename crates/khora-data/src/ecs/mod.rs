@@ -24,22 +24,26 @@
 //!
 //! The primary entry point for interacting with the ECS is the [`World`] struct.
 
+mod bitset;
 mod bundle;
 mod component;
 mod components;
 mod entity;
 mod page;
 mod query;
+mod query_plan;
 mod registry;
 mod serialization;
 mod world;
 
+pub use bitset::DomainBitset;
 pub use bundle::ComponentBundle;
 pub use component::Component;
 pub use components::*;
 pub use entity::*;
 pub use page::*;
 pub use query::*;
+pub use query_plan::{QueryMode, QueryPlan};
 pub use registry::*;
 pub use world::*;
 

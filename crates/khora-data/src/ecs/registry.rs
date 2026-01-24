@@ -79,11 +79,9 @@ impl ComponentRegistry {
         );
     }
 
-    /// (Internal) Looks up the `SemanticDomain` for a given component type.
-    pub fn domain_of<T: Component>(&self) -> Option<SemanticDomain> {
-        self.mapping
-            .get(&TypeId::of::<T>())
-            .map(|vtable| vtable.domain)
+    /// Looks up the `SemanticDomain` for a given `TypeId`.
+    pub fn get_domain(&self, type_id: TypeId) -> Option<SemanticDomain> {
+        self.mapping.get(&type_id).map(|vtable| vtable.domain)
     }
 
     /// (Internal) Gets the column constructor function for a given TypeId.

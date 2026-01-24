@@ -82,14 +82,112 @@ The data for a single entity is physically scattered across multiple Pages, but 
 
 ## The Intelligent Compromise: Transversal Queries
 
-The explicit trade-off for this flexibility is the performance cost of **transversal queries**—queries that access data from different semantic domains simultaneously (e.g., `Query<(&Position, &HandleComponent<Mesh>)>`).
+Khora now provides a full implementation for **transversal queries**—queries that access data from different semantic domains simultaneously (e.g., `Query<(&Position, &RenderTag)>`).
 
-*   **Mechanism**: Such a query cannot iterate linearly over a single set of Pages. It must perform a "join," typically by iterating over the pages of one domain and using each entity's ID to look up its `EntityMetadata`, which then points to the location of its data in the other domain.
-*   **Cost**: This lookup process introduces pointer chasing and potential cache misses. A transversal query can be significantly slower than a native, domain-specific query.
-*   **Architectural Benefit**: This is a deliberate design choice. It creates a strong "architectural gravity" that encourages developers to write clean, decoupled systems.
+### Mechanism: The Domain Join
+Such a query cannot iterate linearly over a single set of Pages. It performs a "join" across domains using a **Driver Domain** strategy.
+
+```mermaid
+sequenceDiagram
+    participant Q as QueryIterator
+    participant W as World / Registry
+    participant D as Driver Domain (e.g. Render)
+    participant M as EntityMetadata
+    participant P as Peer Domains (e.g. Spatial)
+
+    Q->>W: Request Plan (Driver = Render)
+    W-->>Q: QueryPlan + Matching Pages [P1, P2...]
+    loop For each Entity in Driver Page
+        Q->>Q: Get EntityId from Driver Row
+        Q->>Q: Check Bitset Intersection (Fast Skip)
+        alt Bitset Set
+            Q->>M: Lookup Peer PageIndex
+            M-->>Q: Page P1, Row 5
+            Q->>P: Fetch Peer Component
+            P-->>Q: Return Joined Item
+        else Bitset Clear
+            Q->>Q: Skip to next row
+        end
+    end
+```
+
+### Bitset-Guided Optimization
+To minimize the cost of metadata lookups, Khora uses a **Signature-Based Bitset Join**. Before starting iteration, the `World` computes the bitwise intersection of the `DomainBitset`s for all domains involved in the query. 
+
+*   **Fast-Skip**: The iterator uses this pre-computed bitset to instantly skip any entity that does not exist in all required domains.
+*   **Result**: This avoids expensive pointer lookups (Metadata HashMap access) for entities that are guaranteed to fail the join, making transversal queries highly efficient even in sparse scenarios.
+
+### Dynamic Strategy & Cache
+The query system uses a **Stateful Strategy Plan**. Even though it resides in the **Data Plane**, it distinguishes between the heavy architectural analysis and the lightweight per-call execution.
+
+```mermaid
+graph TD
+    subgraph Init ["1. Strategy Analysis (First-Call)"]
+        Analyze[Analyze Query Tuple] --> Domains[Identify Domains]
+        Domains --> Mode{Transversal?}
+        Mode -- No --> Native[Native Plan]
+        Mode -- Yes --> SelectDriver[Select Driver Domain]
+        SelectDriver --> Trans[Transversal Plan]
+    end
+
+    subgraph Dynamic ["2. Dynamic Resolution (Per-Call)"]
+        Native --> ReFind[Re-evaluate Page Indices]
+        Trans --> ReFind
+        ReFind --> Bitset[Compute/Fetch Bitset Intersection]
+        Bitset --> Iterate[Return Iterator]
+    end
+
+    subgraph HotLoop ["3. Iteration (The Hot Loop)"]
+        Iterate --> RowCheck{Row/Bitset Check}
+        RowCheck -- Set --> Fetch[Fetch Across Domains]
+        RowCheck -- Clear --> Skip[Skip Row]
+        Fetch --> RowCheck
+    end
+
+    Cache[(Strategy Cache)]
+    Trans -.-> |Store| Cache
+    Native -.-> |Store| Cache
+    Cache -.-> |Reuse Strategy| ReFind
+```
+
+*   **Strategy Memoization**: The execution strategy (which domain drives, which are peers) is memoized to avoid repeating the architectural analysis.
+*   **Per-Call Correctness**: While the strategy is cached, the **matching page indices** and **bitset intersections** are re-evaluated dynamically on every call. This ensures the engine remains stable and correct even if the world's archetype layout changes frequently.
+
+### Memory Layout: The Transversal View
+A transversal join essentially creates a virtual, temporary "bridge" between physically disjoint SoA pages.
+
+```mermaid
+graph LR
+    subgraph Driver ["Spatial Domain (Driver)"]
+        DP["Page 0"]
+        DR1["Row 0: ID 101"]
+        DR2["Row 1: ID 102"]
+    end
+
+    subgraph Bitset ["Selection Filter"]
+        BS["Bit 101: [1]<br/>Bit 102: [0]"]
+    end
+
+    subgraph Peer ["Render Domain (Peer)"]
+        PP["Page 5"]
+        PR1["Row 12: MeshA"]
+        PR2["Row 13: MeshB"]
+    end
+
+    DR1 --> BS
+    BS -- "Match!" --> Metadata[Metadata Lookup]
+    Metadata --> PR1
+    PR1 --> Result["Joined (Pos, Mesh)"]
+    
+    DR2 --> BS
+    BS -- "NO MATCH" --> Skip["Fast Skip"]
+```
+
+### Architectural Benefit
+This is a deliberate design choice. While transversal joins are highly optimized, they remain slightly slower than native, domain-specific iteration. This creates a natural **"architectural gravity"** that encourages developers to group related data into the same semantic domain, leading to cleaner and more performant systems.
 
 ## Integration with CLAD and SAA
 
 The CRPECS is the cornerstone of the **`khora-data`** crate and the ultimate implementation of the **[D]ata** in CLAD.
-*   It provides the perfect foundation for **AGDF**, as the SAA's Control Plane can cheaply and frequently alter data layouts by modifying `EntityMetadata` using the now-implemented `add_component` and `remove_component_domain` methods.
+*   It provides the perfect foundation for **AGDF**, as the SAA's Control Plane can cheaply and frequently alter data layouts by modifying `EntityMetadata` using the `add_component` and `remove_component_domain` methods.
 *   The **garbage collection** and page compaction process has been implemented as a prime example of the CLAD and SAA philosophy. A `GarbageCollectorAgent` (**[A]**), acting as an **ISA**, makes strategic decisions about when and how much to clean. It dispatches this work to a dedicated `CompactionLane` (**[L]**), which performs the heavy lifting of modifying the component page **[D]ata**. This makes the ECS itself a living, self-optimizing part of the SAA.
