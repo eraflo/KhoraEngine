@@ -32,6 +32,9 @@ jobs:
           cargo install mdbook --locked
           cargo install mdbook-mermaid --locked
       
+      - name: Setup mdBook-Mermaid
+        run: mdbook-mermaid install docs
+      
       # --- 2. BUILD (IN ISOLATION) ---
       - name: Build rustdoc API reference
         run: cargo doc --workspace --no-deps --all-features --target-dir build/rustdoc
