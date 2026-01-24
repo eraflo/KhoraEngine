@@ -20,6 +20,7 @@ mod handle;
 mod light;
 mod material;
 mod parent;
+mod physics;
 mod serializable;
 mod transform;
 
@@ -31,5 +32,6 @@ pub use handle::*;
 pub use light::*;
 pub use material::*;
 pub use parent::*;
+pub use physics::*;
 pub use serializable::*;
 pub use transform::*;

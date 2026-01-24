@@ -27,7 +27,11 @@ env_logger = "0.11"
 # Error handling
 anyhow = "1.0"
 
+# Physics
+rapier3d = "0.22"
+
 [features]
-default = ["graphics", "platform"]
+default = ["graphics", "platform", "physics"]
 graphics = []
 platform = []
+physics = []
