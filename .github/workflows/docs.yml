@@ -28,7 +28,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       
       - name: Install mdBook
-        run: cargo install mdbook --locked
+        run: |
+          cargo install mdbook --locked
+          cargo install mdbook-mermaid --locked
       
       # --- 2. BUILD (IN ISOLATION) ---
       - name: Build rustdoc API reference

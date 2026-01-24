@@ -6,4 +6,11 @@ title = "Khora Engine Documentation"
 
 [output.html]
 site-url = "/KhoraEngine/"
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output.html.mermaid]
+# Optionally, you can customize the mermaid version here
+# version = "10.6.1"
   
