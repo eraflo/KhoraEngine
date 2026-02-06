@@ -12,20 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Infra
-//!
-//! Concrete implementations of external dependencies.
+use khora_core::physics::CollisionEvent;
+use khora_macros::Component;
+use serde::{Deserialize, Serialize};
 
-#![warn(missing_docs)]
-
-pub mod audio;
-pub mod graphics;
-pub mod physics;
-pub mod platform;
-pub mod telemetry;
-
-pub use graphics::wgpu::WgpuRenderSystem;
-pub use platform::window::{WinitWindow, WinitWindowBuilder};
-pub use telemetry::{
-    gpu_monitor::GpuMonitor, memory_monitor::MemoryMonitor, vram_monitor::VramMonitor,
-};
+/// A component that stores collision events for the current frame.
+/// Typically attached to a singleton entity or used as a resource.
+#[derive(Debug, Clone, Default, Component, Serialize, Deserialize)]
+pub struct CollisionEvents {
+    /// List of events that occurred in the last physics step.
+    pub events: Vec<CollisionEvent>,
+}

@@ -16,7 +16,6 @@ This document outlines the phased development plan for Khora. It integrates all 
 **Goal:** Build out the necessary features to represent and interact with a game world, starting with the implementation of our revolutionary ECS.
 
 #### [Rendering Capabilities, Physics, Animation, AI & Strategy Exploration]
-- #100 [Feature] Implement Basic Physics System (Integration & Collision Detection) (Depends on #40)
 - #161 [Feature] Define and Implement Core PhysicsLanes (Broadphase, Solver)
 - #101 [Feature] Implement Skeletal Animation System
 - #162 [Feature] Implement SkinnedMesh ComputeLane
@@ -127,6 +126,48 @@ This document outlines the phased development plan for Khora. It integrates all 
 
 ---
 
+## Phase 6: Next-Generation Custom Physics
+**Goal:** Replace the 3rd-party solver with a native Khora solver implementing cutting-edge physical simulation research.
+
+#### [Pillar 1: Unified Simulation & Material Point Method]
+- #300 [Research] **Unified Simulation (MLS-MPM)**
+    > [!TIP]
+    > Implement "MLS-MPM: Moving Least Squares Material Point Method" for unified simulation of snow, sand, and fluids. Target: Pure algorithmic interaction between disparate materials.
+- #301 [Research] **Sparse Volume Physics (NanoVDB)**
+    > [!NOTE]
+    > Integrate NanoVDB (OpenVDB) for GPU-accelerated sparse volume simulation (fire, smoke, large-scale explosions).
+
+#### [Pillar 2: Robust Constraints & Collision (The End of Clipping)]
+- #302 [Research] **Incremental Potential Contact (IPC)**
+    > [!IMPORTANT]
+    > Integrate ["Incremental Potential Contact (Li et al. 2020)"](https://ipc-sim.github.io/) to guarantee intersection-free and inversion-free simulation. Focus: Eliminating clipping in soft-bodies and high-speed collisions.
+- #303 [Research] **Stable Constraints (XPBD & ADMM)**
+    > [!NOTE]
+    > Combine [XPBD](https://matthias-research.github.io/pages/publications/XPBD.pdf) for stability with [ADMM optimization](https://rahulnarain.net/publications/admm_sca16.pdf) for complex, hard constraints and heterogeneous materials.
+
+#### [Pillar 3: Soft-Body & Gaussian Dynamics]
+- #304 [Research] **High-Speed Soft Bodies (Projective Dynamics)**
+    > [!NOTE]
+    > Study Projective Dynamics for real-time muscle and "flesh" simulation with implicit stability.
+- #305 [Research] **Differentiable & Gaussian Physics**
+    > [!NOTE]
+    > Explore [PhysGaussian](https://xpandora.github.io/PhysGaussian/) and [DiffTaichi](https://arxiv.org/abs/1910.00935) for physics-integrated Gaussian splatting and differentiable simulation.
+
+#### [Pillar 4: Intelligent Characters & Neural Simulation]
+- #306 [Research] **Learning-Based Character Motion (DeepMimic)**
+    > [!TIP]
+    > Research [DeepMimic (Arxiv)](https://arxiv.org/abs/1804.02717) for physics-based character animation using Reinforcement Learning.
+- #307 [Research] **Graph Network Simulation (DeepMind)**
+    > [!NOTE]
+    > Analysis of ["Learning to Simulate Complex Physics with Graph Networks"](https://arxiv.org/abs/2002.09405) for complex particle-based interactions.
+
+#### [Implementation & Transition]
+- #308 [Feature] Implement Custom Khora-Solver v1 (Rigid Body + XPBD Core)
+- #309 [Feature] Transition PhysicsAgent & Lanes to Native Solver
+- #310 [Task] Performance Match & Exceed against previous 3rd-party backend
+
+---
+
 ## Closed Issues (Historical Reference)
 
 ### [Core Foundation & Basic Window]
@@ -196,3 +237,4 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #49 [Feature] Implement Depth Buffering
 - #50 [Research] Explore Alternative Rendering Paths/Strategies (e.g., Forward vs Deferred concept)
 - #158 [Feature] Implement Transversal Queries (CRPECS v1)
+- #100 [Feature] Implement Basic Physics System (Integration & Collision Detection) (Depends on #40)

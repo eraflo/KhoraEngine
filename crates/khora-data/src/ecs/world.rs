@@ -33,9 +33,9 @@ use crate::ecs::{
     query::{Query, WorldQuery},
     registry::ComponentRegistry,
     serialization::SceneMemoryLayout,
-    AudioListener, AudioSource, Camera, Children, Component, ComponentBundle, DomainBitset,
-    GlobalTransform, MaterialComponent, Parent, QueryMut, QueryPlan, SemanticDomain,
-    SerializedPage, Transform, TypeRegistry,
+    AudioListener, AudioSource, Camera, Children, Collider, Component, ComponentBundle,
+    DomainBitset, GlobalTransform, MaterialComponent, Parent, QueryMut, QueryPlan, RigidBody,
+    SemanticDomain, SerializedPage, Transform, TypeRegistry,
 };
 
 /// Errors that can occur when adding a component to an entity.
@@ -255,6 +255,13 @@ impl World {
         // Registration of audio components
         world.register_component::<AudioSource>(SemanticDomain::Audio);
         world.register_component::<AudioListener>(SemanticDomain::Audio);
+
+        // Registration of physics components
+        world.register_component::<RigidBody>(SemanticDomain::Physics);
+        world.register_component::<Collider>(SemanticDomain::Physics);
+        world.register_component::<crate::ecs::KinematicCharacterController>(
+            SemanticDomain::Physics,
+        );
 
         world
     }

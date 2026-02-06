@@ -12,20 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Infra
-//!
-//! Concrete implementations of external dependencies.
+use khora_macros::Component;
+use serde::{Deserialize, Serialize};
 
-#![warn(missing_docs)]
-
-pub mod audio;
-pub mod graphics;
-pub mod physics;
-pub mod platform;
-pub mod telemetry;
-
-pub use graphics::wgpu::WgpuRenderSystem;
-pub use platform::window::{WinitWindow, WinitWindowBuilder};
-pub use telemetry::{
-    gpu_monitor::GpuMonitor, memory_monitor::MemoryMonitor, vram_monitor::VramMonitor,
-};
+/// Indicates that an entity should receive collision events.
+/// By default, the physics engine does not report collisions for every entity
+/// to save on performance. Adding this component enables reporting for this entity.
+#[derive(Debug, Clone, Copy, Default, Component, Serialize, Deserialize)]
+pub struct ActiveEvents;

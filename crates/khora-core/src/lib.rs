@@ -26,6 +26,7 @@ pub mod event;
 pub mod graph;
 pub mod math;
 pub mod memory;
+pub mod physics;
 pub mod platform;
 pub mod renderer;
 pub mod scene;

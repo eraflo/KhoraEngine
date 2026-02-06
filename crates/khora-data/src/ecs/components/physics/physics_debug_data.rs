@@ -12,20 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Infra
-//!
-//! Concrete implementations of external dependencies.
+use khora_core::math::Vec3;
+use khora_macros::Component;
+use serde::{Deserialize, Serialize};
 
-#![warn(missing_docs)]
-
-pub mod audio;
-pub mod graphics;
-pub mod physics;
-pub mod platform;
-pub mod telemetry;
-
-pub use graphics::wgpu::WgpuRenderSystem;
-pub use platform::window::{WinitWindow, WinitWindowBuilder};
-pub use telemetry::{
-    gpu_monitor::GpuMonitor, memory_monitor::MemoryMonitor, vram_monitor::VramMonitor,
-};
+/// Component that holds debug rendering data for the physics simulation.
+#[derive(Debug, Clone, Default, Component, Serialize, Deserialize)]
+pub struct PhysicsDebugData {
+    /// Vertices of the debug wireframe.
+    pub vertices: Vec<Vec3>,
+    /// Indices of the lines.
+    pub indices: Vec<[u32; 2]>,
+    /// Whether this debug visualization is enabled.
+    pub enabled: bool,
+}

@@ -42,6 +42,11 @@ impl GlobalTransform {
     pub fn to_matrix(&self) -> Mat4 {
         self.0.into()
     }
+
+    /// Creates a `GlobalTransform` representing a translation.
+    pub fn at_position(position: khora_core::math::Vec3) -> Self {
+        Self::new(Mat4::from_translation(position))
+    }
 }
 
 impl Default for GlobalTransform {

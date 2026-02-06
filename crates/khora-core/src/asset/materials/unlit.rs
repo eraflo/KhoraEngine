@@ -43,7 +43,7 @@ use super::AlphaMode;
 /// # Examples
 ///
 /// ```
-/// use khora_core::asset::UnlitMaterial;
+/// use khora_core::asset::{UnlitMaterial, AlphaMode};
 /// use khora_core::math::LinearRgba;
 ///
 /// // Create a solid red unlit material

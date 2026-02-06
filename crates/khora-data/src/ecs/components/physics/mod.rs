@@ -12,20 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Infra
-//!
-//! Concrete implementations of external dependencies.
+mod active_events;
+mod collider;
+mod collision_events;
+mod kinematic_character_controller;
+mod physics_debug_data;
+mod physics_material;
+mod rigid_body;
 
-#![warn(missing_docs)]
-
-pub mod audio;
-pub mod graphics;
-pub mod physics;
-pub mod platform;
-pub mod telemetry;
-
-pub use graphics::wgpu::WgpuRenderSystem;
-pub use platform::window::{WinitWindow, WinitWindowBuilder};
-pub use telemetry::{
-    gpu_monitor::GpuMonitor, memory_monitor::MemoryMonitor, vram_monitor::VramMonitor,
-};
+pub use active_events::*;
+pub use collider::*;
+pub use collision_events::*;
+pub use kinematic_character_controller::*;
+pub use physics_debug_data::*;
+pub use physics_material::*;
+pub use rigid_body::*;
