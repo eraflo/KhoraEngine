@@ -12,18 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod active_events;
-mod collider;
-mod collision_events;
-mod kinematic_character_controller;
-mod physics_debug_data;
-mod physics_material;
-mod rigid_body;
+use khora_macros::Component;
+use serde::{Deserialize, Serialize};
 
-pub use active_events::*;
-pub use collider::*;
-pub use collision_events::*;
-pub use kinematic_character_controller::*;
-pub use physics_debug_data::*;
-pub use physics_material::*;
-pub use rigid_body::*;
+/// Indicates that an entity should receive collision events.
+/// By default, the physics engine does not report collisions for every entity
+/// to save on performance. Adding this component enables reporting for this entity.
+#[derive(Debug, Clone, Copy, Default, Component, Serialize, Deserialize)]
+pub struct ActiveEvents;

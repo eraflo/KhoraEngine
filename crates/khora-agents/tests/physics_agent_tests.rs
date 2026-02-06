@@ -47,3 +47,74 @@ fn test_physics_gravity_influence() {
         transform.translation.y
     );
 }
+
+#[test]
+fn test_physics_raycast() {
+    let mut world = World::new();
+    let provider = Box::new(RapierPhysicsWorld::default());
+    let mut agent = PhysicsAgent::new(provider);
+
+    // Add a static box at (0, 0, 0)
+    world.spawn((
+        Transform::default(),
+        khora_data::ecs::GlobalTransform::default(),
+        RigidBody::new_static(),
+        khora_data::ecs::Collider::new_box(Vec3::ONE),
+    ));
+
+    // Sync for one step
+    agent.step(&mut world, 0.016);
+
+    // Ray from (0, 5, 0) pointing down
+    let ray = khora_core::physics::Ray {
+        origin: Vec3::new(0.0, 5.0, 0.0),
+        direction: Vec3::new(0.0, -1.0, 0.0),
+    };
+
+    let hit = agent.cast_ray(&ray, 10.0, true);
+    assert!(hit.is_some(), "Ray should hit the box");
+    let hit = hit.unwrap();
+    // The box top surface is at Y=1.0 (half-extents 1 means size 2x2x2)
+    assert!((hit.position.y - 1.0).abs() < 0.01);
+}
+
+#[test]
+fn test_physics_kcc_grounding() {
+    let mut world = World::new();
+    let provider = Box::new(RapierPhysicsWorld::default());
+    let mut agent = PhysicsAgent::new(provider);
+
+    // 1. Static ground
+    world.spawn((
+        Transform::default(),
+        khora_data::ecs::GlobalTransform::default(),
+        RigidBody::new_static(),
+        khora_data::ecs::Collider::new_box(Vec3::new(10.0, 0.1, 10.0)),
+    ));
+
+    // 2. Character just above ground
+    let char_id = world.spawn((
+        Transform::from_translation(Vec3::new(0.0, 0.5, 0.0)),
+        khora_data::ecs::GlobalTransform::at_position(Vec3::new(0.0, 0.5, 0.0)),
+        khora_data::ecs::KinematicCharacterController {
+            desired_translation: Vec3::new(0.0, -0.6, 0.0), // Move down onto ground
+            ..Default::default()
+        },
+        khora_data::ecs::Collider::new_sphere(0.3),
+    ));
+
+    // Run step
+    agent.step(&mut world, 0.016);
+
+    let kcc = world
+        .get::<khora_data::ecs::KinematicCharacterController>(char_id)
+        .unwrap();
+    assert!(
+        kcc.is_grounded,
+        "Character should be grounded after moving down"
+    );
+
+    let transform = world.get::<Transform>(char_id).unwrap();
+    // Sphere radius 0.3. Ground top at 0.1. So sphere center at 0.4.
+    assert!(transform.translation.y > 0.39 && transform.translation.y < 0.45);
+}

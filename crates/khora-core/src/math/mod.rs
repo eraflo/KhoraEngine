@@ -50,6 +50,7 @@ pub mod vector;
 
 // --- Re-export Principal Types ---
 
+pub use self::affine_transform::AffineTransform;
 pub use self::color::LinearRgba;
 pub use self::dimension::{Extent1D, Extent2D, Extent3D, Origin2D, Origin3D};
 pub use self::geometry::Aabb;

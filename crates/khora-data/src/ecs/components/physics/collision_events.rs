@@ -12,18 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod active_events;
-mod collider;
-mod collision_events;
-mod kinematic_character_controller;
-mod physics_debug_data;
-mod physics_material;
-mod rigid_body;
+use khora_core::physics::CollisionEvent;
+use khora_macros::Component;
+use serde::{Deserialize, Serialize};
 
-pub use active_events::*;
-pub use collider::*;
-pub use collision_events::*;
-pub use kinematic_character_controller::*;
-pub use physics_debug_data::*;
-pub use physics_material::*;
-pub use rigid_body::*;
+/// A component that stores collision events for the current frame.
+/// Typically attached to a singleton entity or used as a resource.
+#[derive(Debug, Clone, Default, Component, Serialize, Deserialize)]
+pub struct CollisionEvents {
+    /// List of events that occurred in the last physics step.
+    pub events: Vec<CollisionEvent>,
+}

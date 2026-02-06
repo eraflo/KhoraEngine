@@ -19,7 +19,7 @@
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-use crate::math::{Quat, Vec3};
+use crate::math::{LinearRgba, Quat, Vec3};
 
 /// Opaque handle to a rigid body in the physics engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
@@ -53,21 +53,29 @@ pub struct RigidBodyDesc {
     pub linear_velocity: Vec3,
     /// Angular velocity.
     pub angular_velocity: Vec3,
-    /// Mass of the body in kg (dynamic only).
+    /// Mass of the body in kilograms.
     pub mass: f32,
+    /// Whether to enable Continuous Collision Detection (CCD).
+    pub ccd_enabled: bool,
 }
 
 /// Description for creating a collider.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColliderDesc {
-    /// Associated rigid body if any.
+    /// Parent rigid body to attach to (if any).
     pub parent_body: Option<RigidBodyHandle>,
-    /// Relative position to parent/world.
+    /// Relative or absolute position.
     pub position: Vec3,
-    /// Relative rotation to parent/world.
+    /// Relative or absolute rotation.
     pub rotation: Quat,
-    /// Shape description (placeholder for now, will expand with enum).
+    /// Shape definition.
     pub shape: ColliderShape,
+    /// Whether to enable collision events for this collider.
+    pub active_events: bool,
+    /// Friction coefficient.
+    pub friction: f32,
+    /// Restitution (bounciness) coefficient.
+    pub restitution: f32,
 }
 
 /// Supported collider shapes.
@@ -106,4 +114,93 @@ pub trait PhysicsProvider: Send + Sync {
 
     /// Manually sets the position and rotation of a rigid body.
     fn set_body_transform(&mut self, handle: RigidBodyHandle, pos: Vec3, rot: Quat);
+
+    /// Returns a list of all active rigid body handles.
+    fn get_all_bodies(&self) -> Vec<RigidBodyHandle>;
+
+    /// Returns a list of all active collider handles.
+    fn get_all_colliders(&self) -> Vec<ColliderHandle>;
+
+    /// Updates the properties of an existing rigid body.
+    fn update_body_properties(&mut self, handle: RigidBodyHandle, desc: RigidBodyDesc);
+
+    /// Updates the properties of an existing collider.
+    fn update_collider_properties(&mut self, handle: ColliderHandle, desc: ColliderDesc);
+
+    /// Returns debug rendering lines from the physics engine.
+    fn get_debug_render_data(&self) -> (Vec<Vec3>, Vec<[u32; 2]>);
+
+    /// Casts a ray into the physics world and returns the closest hit.
+    fn cast_ray(&self, ray: &Ray, max_toi: f32, solid: bool) -> Option<RaycastHit>;
+
+    /// Returns the collision events that occurred during the last step.
+    fn get_collision_events(&self) -> Vec<CollisionEvent>;
+
+    /// Resolves movement for a kinematic character controller.
+    /// Returns the actual translation applied and whether the character is grounded.
+    fn move_character(
+        &self,
+        collider: ColliderHandle,
+        desired_translation: Vec3,
+        options: &CharacterControllerOptions,
+    ) -> (Vec3, bool);
+}
+
+/// Options for resolving kinematic character movement.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
+pub struct CharacterControllerOptions {
+    /// Max height of obstacles the character can step over.
+    pub autostep_height: f32,
+    /// Min width of obstacles for autostepping.
+    pub autostep_min_width: f32,
+    /// Whether autostepping is enabled.
+    pub autostep_enabled: bool,
+    /// Max angle for climbing slopes.
+    pub max_slope_climb_angle: f32,
+    /// Min angle for sliding down slopes.
+    pub min_slope_slide_angle: f32,
+    /// Distance to maintain from obstacles.
+    pub offset: f32,
+}
+
+/// Events representing collision start/end.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
+pub enum CollisionEvent {
+    /// Collision between two colliders started.
+    Started(ColliderHandle, ColliderHandle),
+    /// Collision between two colliders stopped.
+    Stopped(ColliderHandle, ColliderHandle),
+}
+
+/// A ray in 3D space.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
+pub struct Ray {
+    /// Origin point.
+    pub origin: Vec3,
+    /// Direction vector (should be normalized).
+    pub direction: Vec3,
+}
+
+/// Information about a raycast hit.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
+pub struct RaycastHit {
+    /// The collider that was hit.
+    pub collider: ColliderHandle,
+    /// Distance from ray origin to hit point.
+    pub distance: f32,
+    /// Normal vector at the hit point.
+    pub normal: Vec3,
+    /// Exact position of the hit.
+    pub position: Vec3,
+}
+
+/// A simple line for debug rendering.
+#[derive(Debug, Clone, Copy)]
+pub struct DebugLine {
+    /// Start point.
+    pub start: Vec3,
+    /// End point.
+    pub end: Vec3,
+    /// Color.
+    pub color: LinearRgba,
 }

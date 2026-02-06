@@ -125,166 +125,125 @@ impl<C1: Component> ComponentBundle for C1 {
     }
 }
 
-// Implementation for a 2-component tuple
-impl<C1: Component, C2: Component> ComponentBundle for (C1, C2) {
-    fn type_ids() -> Vec<TypeId> {
-        let mut ids = vec![TypeId::of::<C1>(), TypeId::of::<C2>()];
-        // It's crucial to sort the IDs to have a canonical signature.
-        ids.sort();
-        ids
-    }
+// Implementation for tuples of components.
+// We use a macro to handle various tuple sizes efficienty, following the
+// same architectural patterns as `WorldQuery`.
+macro_rules! impl_bundle_tuple {
+    ($(($C:ident, $idx:tt)),*) => {
+        impl<$($C: Component),*> ComponentBundle for ($($C,)*) {
+            fn type_ids() -> Vec<TypeId> {
+                let mut ids = vec![$(TypeId::of::<$C>()),*];
+                ids.sort();
+                ids.dedup();
+                ids
+            }
 
-    fn create_columns() -> HashMap<TypeId, Box<dyn AnyVec>> {
-        // Create a HashMap to hold the type-erased component vectors.
-        let mut columns: HashMap<TypeId, Box<dyn AnyVec>> = HashMap::new();
+            fn create_columns() -> HashMap<TypeId, Box<dyn AnyVec>> {
+                let mut columns: HashMap<TypeId, Box<dyn AnyVec>> = HashMap::new();
+                $(
+                    columns.insert(TypeId::of::<$C>(), Box::new(Vec::<$C>::new()) as Box<dyn AnyVec>);
+                )*
+                columns
+            }
 
-        // For each component in the bundle, create an empty `Vec<T>`,
-        // box it, and insert it into the map with its `TypeId` as the key.
-        columns.insert(
-            TypeId::of::<C1>(),
-            Box::new(Vec::<C1>::new()) as Box<dyn AnyVec>,
-        );
-        columns.insert(
-            TypeId::of::<C2>(),
-            Box::new(Vec::<C2>::new()) as Box<dyn AnyVec>,
-        );
+            fn update_metadata(
+                metadata: &mut EntityMetadata,
+                location: PageIndex,
+                registry: &ComponentRegistry,
+            ) {
+                $(
+                    if let Some(domain) = registry.get_domain(TypeId::of::<$C>()) {
+                        metadata.locations.insert(domain, location);
+                    }
+                )*
+            }
 
-        columns
-    }
-
-    fn update_metadata(
-        metadata: &mut EntityMetadata,
-        location: PageIndex,
-        registry: &ComponentRegistry,
-    ) {
-        // Iterate over both component types and update the metadata for their respective domains.
-        // This ensures that hybrid bundles (spanning multiple domains) are correctly indexed.
-        if let Some(domain) = registry.get_domain(TypeId::of::<C1>()) {
-            metadata.locations.insert(domain, location);
+            unsafe fn add_to_page(self, page: &mut ComponentPage) {
+                $(
+                    page.columns
+                        .get_mut(&TypeId::of::<$C>())
+                        .unwrap()
+                        .as_any_mut()
+                        .downcast_mut::<Vec<$C>>()
+                        .unwrap()
+                        .push(self.$idx);
+                )*
+            }
         }
-        if let Some(domain) = registry.get_domain(TypeId::of::<C2>()) {
-            metadata.locations.insert(domain, location);
-        }
-    }
-
-    unsafe fn add_to_page(self, page: &mut ComponentPage) {
-        // --- THIS IS A CRITICAL SAFETY REGION ---
-
-        // 1. Store the TypeIds in local variables to create references with a valid lifetime.
-        let type_id1 = TypeId::of::<C1>();
-        let type_id2 = TypeId::of::<C2>();
-
-        // 2. Assert that we are not trying to mutably alias the same component type.
-        // This is a critical runtime safety check for our logic.
-        assert_ne!(
-            type_id1, type_id2,
-            "Bundles cannot contain duplicate component types."
-        );
-
-        // 3. Get mutable references to both columns simultaneously using the correct, stable API.
-        let [c1_anyvec, c2_anyvec] = page.columns.get_disjoint_mut([&type_id1, &type_id2]);
-
-        // 4. Safely unwrap and downcast each reference.
-        // We can safely unwrap here because the `unsafe` contract of this function
-        // guarantees that the columns exist.
-        let c1_vec = c1_anyvec
-            .unwrap()
-            .as_any_mut()
-            .downcast_mut::<Vec<C1>>()
-            .unwrap();
-        let c2_vec = c2_anyvec
-            .unwrap()
-            .as_any_mut()
-            .downcast_mut::<Vec<C2>>()
-            .unwrap();
-
-        // 5. Push the component data.
-        c1_vec.push(self.0);
-        c2_vec.push(self.1);
-    }
+    };
 }
 
-// Implementation for a 3-component tuple.
-impl<C1: Component, C2: Component, C3: Component> ComponentBundle for (C1, C2, C3) {
-    fn type_ids() -> Vec<TypeId> {
-        let mut ids = vec![TypeId::of::<C1>(), TypeId::of::<C2>(), TypeId::of::<C3>()];
-        ids.sort();
-        ids.dedup();
-        ids
-    }
-
-    fn create_columns() -> HashMap<TypeId, Box<dyn AnyVec>> {
-        let mut columns: HashMap<TypeId, Box<dyn AnyVec>> = HashMap::new();
-        columns.insert(
-            TypeId::of::<C1>(),
-            Box::new(Vec::<C1>::new()) as Box<dyn AnyVec>,
-        );
-        columns.insert(
-            TypeId::of::<C2>(),
-            Box::new(Vec::<C2>::new()) as Box<dyn AnyVec>,
-        );
-        columns.insert(
-            TypeId::of::<C3>(),
-            Box::new(Vec::<C3>::new()) as Box<dyn AnyVec>,
-        );
-        columns
-    }
-
-    fn update_metadata(
-        metadata: &mut EntityMetadata,
-        location: PageIndex,
-        registry: &ComponentRegistry,
-    ) {
-        // Iterate over all component types and update the metadata for their respective domains.
-        if let Some(domain) = registry.get_domain(TypeId::of::<C1>()) {
-            metadata.locations.insert(domain, location);
-        }
-        if let Some(domain) = registry.get_domain(TypeId::of::<C2>()) {
-            metadata.locations.insert(domain, location);
-        }
-        if let Some(domain) = registry.get_domain(TypeId::of::<C3>()) {
-            metadata.locations.insert(domain, location);
-        }
-    }
-
-    unsafe fn add_to_page(self, page: &mut ComponentPage) {
-        let type_id1 = TypeId::of::<C1>();
-        let type_id2 = TypeId::of::<C2>();
-        let type_id3 = TypeId::of::<C3>();
-        assert_ne!(
-            type_id1, type_id2,
-            "Bundles cannot contain duplicate component types."
-        );
-        assert_ne!(
-            type_id1, type_id3,
-            "Bundles cannot contain duplicate component types."
-        );
-        assert_ne!(
-            type_id2, type_id3,
-            "Bundles cannot contain duplicate component types."
-        );
-
-        let [c1_anyvec, c2_anyvec, c3_anyvec] = page
-            .columns
-            .get_disjoint_mut([&type_id1, &type_id2, &type_id3]);
-
-        c1_anyvec
-            .unwrap()
-            .as_any_mut()
-            .downcast_mut::<Vec<C1>>()
-            .unwrap()
-            .push(self.0);
-        c2_anyvec
-            .unwrap()
-            .as_any_mut()
-            .downcast_mut::<Vec<C2>>()
-            .unwrap()
-            .push(self.1);
-        c3_anyvec
-            .unwrap()
-            .as_any_mut()
-            .downcast_mut::<Vec<C3>>()
-            .unwrap()
-            .push(self.2);
-    }
-}
+impl_bundle_tuple!((C1, 0), (C2, 1));
+impl_bundle_tuple!((C1, 0), (C2, 1), (C3, 2));
+impl_bundle_tuple!((C1, 0), (C2, 1), (C3, 2), (C4, 3));
+impl_bundle_tuple!((C1, 0), (C2, 1), (C3, 2), (C4, 3), (C5, 4));
+impl_bundle_tuple!((C1, 0), (C2, 1), (C3, 2), (C4, 3), (C5, 4), (C6, 5));
+impl_bundle_tuple!(
+    (C1, 0),
+    (C2, 1),
+    (C3, 2),
+    (C4, 3),
+    (C5, 4),
+    (C6, 5),
+    (C7, 6)
+);
+impl_bundle_tuple!(
+    (C1, 0),
+    (C2, 1),
+    (C3, 2),
+    (C4, 3),
+    (C5, 4),
+    (C6, 5),
+    (C7, 6),
+    (C8, 7)
+);
+impl_bundle_tuple!(
+    (C1, 0),
+    (C2, 1),
+    (C3, 2),
+    (C4, 3),
+    (C5, 4),
+    (C6, 5),
+    (C7, 6),
+    (C8, 7),
+    (C9, 8)
+);
+impl_bundle_tuple!(
+    (C1, 0),
+    (C2, 1),
+    (C3, 2),
+    (C4, 3),
+    (C5, 4),
+    (C6, 5),
+    (C7, 6),
+    (C8, 7),
+    (C9, 8),
+    (C10, 9)
+);
+impl_bundle_tuple!(
+    (C1, 0),
+    (C2, 1),
+    (C3, 2),
+    (C4, 3),
+    (C5, 4),
+    (C6, 5),
+    (C7, 6),
+    (C8, 7),
+    (C9, 8),
+    (C10, 9),
+    (C11, 10)
+);
+impl_bundle_tuple!(
+    (C1, 0),
+    (C2, 1),
+    (C3, 2),
+    (C4, 3),
+    (C5, 4),
+    (C6, 5),
+    (C7, 6),
+    (C8, 7),
+    (C9, 8),
+    (C10, 9),
+    (C11, 10),
+    (C12, 11)
+);

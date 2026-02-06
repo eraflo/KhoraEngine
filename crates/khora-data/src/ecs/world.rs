@@ -259,6 +259,9 @@ impl World {
         // Registration of physics components
         world.register_component::<RigidBody>(SemanticDomain::Physics);
         world.register_component::<Collider>(SemanticDomain::Physics);
+        world.register_component::<crate::ecs::KinematicCharacterController>(
+            SemanticDomain::Physics,
+        );
 
         world
     }

@@ -26,6 +26,8 @@ pub struct RigidBody {
     pub body_type: BodyType,
     /// Mass of the body in kilograms.
     pub mass: f32,
+    /// Whether to enable Continuous Collision Detection (CCD).
+    pub ccd_enabled: bool,
     /// Current linear velocity.
     pub linear_velocity: Vec3,
     /// Current angular velocity.
@@ -38,6 +40,7 @@ impl Default for RigidBody {
             handle: None,
             body_type: BodyType::Dynamic,
             mass: 1.0,
+            ccd_enabled: false,
             linear_velocity: Vec3::ZERO,
             angular_velocity: Vec3::ZERO,
         }
@@ -51,6 +54,7 @@ impl RigidBody {
             handle: None,
             body_type: BodyType::Dynamic,
             mass,
+            ccd_enabled: false,
             linear_velocity: Vec3::ZERO,
             angular_velocity: Vec3::ZERO,
         }
@@ -62,6 +66,7 @@ impl RigidBody {
             handle: None,
             body_type: BodyType::Static,
             mass: 0.0,
+            ccd_enabled: false,
             linear_velocity: Vec3::ZERO,
             angular_velocity: Vec3::ZERO,
         }

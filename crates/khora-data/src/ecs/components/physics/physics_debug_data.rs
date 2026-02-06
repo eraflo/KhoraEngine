@@ -12,18 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod active_events;
-mod collider;
-mod collision_events;
-mod kinematic_character_controller;
-mod physics_debug_data;
-mod physics_material;
-mod rigid_body;
+use khora_core::math::Vec3;
+use khora_macros::Component;
+use serde::{Deserialize, Serialize};
 
-pub use active_events::*;
-pub use collider::*;
-pub use collision_events::*;
-pub use kinematic_character_controller::*;
-pub use physics_debug_data::*;
-pub use physics_material::*;
-pub use rigid_body::*;
+/// Component that holds debug rendering data for the physics simulation.
+#[derive(Debug, Clone, Default, Component, Serialize, Deserialize)]
+pub struct PhysicsDebugData {
+    /// Vertices of the debug wireframe.
+    pub vertices: Vec<Vec3>,
+    /// Indices of the lines.
+    pub indices: Vec<[u32; 2]>,
+    /// Whether this debug visualization is enabled.
+    pub enabled: bool,
+}
