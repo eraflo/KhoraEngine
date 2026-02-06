@@ -164,158 +164,56 @@ impl<T: Component> WorldQuery for &mut T {
     }
 }
 
-// Implementation for a 1-item tuple query.
-impl<Q1: WorldQuery> WorldQuery for (Q1,) {
-    type Item<'a> = (Q1::Item<'a>,);
+// Implementation for tuples of WorldQuery types.
+// We use a macro to avoid "infinity" of manual implementations while maintaining
+// the same rigorous safety standards as the single-component cases.
+macro_rules! impl_query_tuple {
+    ($($Q:ident),*) => {
+        impl<$($Q: WorldQuery),*> WorldQuery for ($($Q,)*) {
+            type Item<'a> = ($($Q::Item<'a>,)*);
 
-    fn type_ids() -> Vec<TypeId> {
-        Q1::type_ids()
-    }
+            fn type_ids() -> Vec<TypeId> {
+                let mut ids = Vec::new();
+                $(ids.extend($Q::type_ids());)*
+                ids.sort();
+                ids.dedup(); // Ensure unique TypeIds for canonical signature
+                ids
+            }
 
-    fn without_type_ids() -> Vec<TypeId> {
-        Q1::without_type_ids()
-    }
+            fn without_type_ids() -> Vec<TypeId> {
+                let mut ids = Vec::new();
+                $(ids.extend($Q::without_type_ids());)*
+                ids.sort();
+                ids.dedup(); // Ensure unique TypeIds for canonical signature
+                ids
+            }
 
-    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
-        (Q1::fetch(page_ptr, row_index),)
-    }
+            unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
+                ($($Q::fetch(page_ptr, row_index),)*)
+            }
 
-    unsafe fn fetch_from_world<'a>(
-        world: *const World,
-        entity_id: EntityId,
-    ) -> Option<Self::Item<'a>> {
-        let item1 = unsafe { Q1::fetch_from_world(world, entity_id)? };
-        Some((item1,))
-    }
+            unsafe fn fetch_from_world<'a>(
+                world: *const World,
+                entity_id: EntityId,
+            ) -> Option<Self::Item<'a>> {
+                Some(($($Q::fetch_from_world(world, entity_id)?,)*))
+            }
+        }
+    };
 }
 
-// Implementation for a query of a 2-item tuple.
-// This is now generic over any two types that implement `WorldQuery`.
-impl<Q1: WorldQuery, Q2: WorldQuery> WorldQuery for (Q1, Q2) {
-    type Item<'a> = (Q1::Item<'a>, Q2::Item<'a>);
-
-    fn type_ids() -> Vec<TypeId> {
-        let mut ids = Q1::type_ids();
-        ids.extend(Q2::type_ids());
-        // Sorting is crucial to maintain a canonical signature.
-        ids.sort();
-        // We also remove duplicates, in case of queries like `(&T, &T)`.
-        ids.dedup();
-        ids
-    }
-
-    fn without_type_ids() -> Vec<TypeId> {
-        let mut ids = Q1::without_type_ids();
-        ids.extend(Q2::without_type_ids());
-        ids.sort();
-        ids.dedup();
-        ids
-    }
-
-    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
-        // Fetch data for each part of the tuple individually.
-        let item1 = Q1::fetch(page_ptr, row_index);
-        let item2 = Q2::fetch(page_ptr, row_index);
-        (item1, item2)
-    }
-
-    unsafe fn fetch_from_world<'a>(
-        world: *const World,
-        entity_id: EntityId,
-    ) -> Option<Self::Item<'a>> {
-        let item1 = unsafe { Q1::fetch_from_world(world, entity_id)? };
-        let item2 = unsafe { Q2::fetch_from_world(world, entity_id)? };
-        Some((item1, item2))
-    }
-}
-
-// Implementation for a query of a 3-item tuple.
-impl<Q1: WorldQuery, Q2: WorldQuery, Q3: WorldQuery> WorldQuery for (Q1, Q2, Q3) {
-    type Item<'a> = (Q1::Item<'a>, Q2::Item<'a>, Q3::Item<'a>);
-
-    fn type_ids() -> Vec<TypeId> {
-        let mut ids = Q1::type_ids();
-        ids.extend(Q2::type_ids());
-        ids.extend(Q3::type_ids());
-        ids.sort();
-        ids.dedup();
-        ids
-    }
-
-    fn without_type_ids() -> Vec<TypeId> {
-        let mut ids = Q1::without_type_ids();
-        ids.extend(Q2::without_type_ids());
-        ids.extend(Q3::without_type_ids());
-        ids.sort();
-        ids.dedup();
-        ids
-    }
-
-    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
-        // Fetch data for each part of the tuple individually.
-        let item1 = Q1::fetch(page_ptr, row_index);
-        let item2 = Q2::fetch(page_ptr, row_index);
-        let item3 = Q3::fetch(page_ptr, row_index);
-        (item1, item2, item3)
-    }
-
-    unsafe fn fetch_from_world<'a>(
-        world: *const World,
-        entity_id: EntityId,
-    ) -> Option<Self::Item<'a>> {
-        let item1 = unsafe { Q1::fetch_from_world(world, entity_id)? };
-        let item2 = unsafe { Q2::fetch_from_world(world, entity_id)? };
-        let item3 = unsafe { Q3::fetch_from_world(world, entity_id)? };
-        Some((item1, item2, item3))
-    }
-}
-
-// Implementation for a query of a 4-item tuple.
-impl<Q1: WorldQuery, Q2: WorldQuery, Q3: WorldQuery, Q4: WorldQuery> WorldQuery
-    for (Q1, Q2, Q3, Q4)
-{
-    type Item<'a> = (Q1::Item<'a>, Q2::Item<'a>, Q3::Item<'a>, Q4::Item<'a>);
-
-    fn type_ids() -> Vec<TypeId> {
-        let mut ids = Q1::type_ids();
-        ids.extend(Q2::type_ids());
-        ids.extend(Q3::type_ids());
-        ids.extend(Q4::type_ids());
-        ids.sort();
-        ids.dedup();
-        ids
-    }
-
-    fn without_type_ids() -> Vec<TypeId> {
-        let mut ids = Q1::without_type_ids();
-        ids.extend(Q2::without_type_ids());
-        ids.extend(Q3::without_type_ids());
-        ids.extend(Q4::without_type_ids());
-        ids.sort();
-        ids.dedup();
-        ids
-    }
-
-    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
-        (
-            Q1::fetch(page_ptr, row_index),
-            Q2::fetch(page_ptr, row_index),
-            Q3::fetch(page_ptr, row_index),
-            Q4::fetch(page_ptr, row_index),
-        )
-    }
-
-    unsafe fn fetch_from_world<'a>(
-        world: *const World,
-        entity_id: EntityId,
-    ) -> Option<Self::Item<'a>> {
-        let item1 = unsafe { Q1::fetch_from_world(world, entity_id)? };
-        let item2 = unsafe { Q2::fetch_from_world(world, entity_id)? };
-        let item3 = unsafe { Q3::fetch_from_world(world, entity_id)? };
-        let item4 = unsafe { Q4::fetch_from_world(world, entity_id)? };
-        Some((item1, item2, item3, item4))
-    }
-}
+impl_query_tuple!(Q1);
+impl_query_tuple!(Q1, Q2);
+impl_query_tuple!(Q1, Q2, Q3);
+impl_query_tuple!(Q1, Q2, Q3, Q4);
+impl_query_tuple!(Q1, Q2, Q3, Q4, Q5);
+impl_query_tuple!(Q1, Q2, Q3, Q4, Q5, Q6);
+impl_query_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7);
+impl_query_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8);
+impl_query_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9);
+impl_query_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10);
+impl_query_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11);
+impl_query_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11, Q12);
 
 // To fetch an entity's ID, we need to access the page's own entity list.
 // We also need to query for the entity ID itself.

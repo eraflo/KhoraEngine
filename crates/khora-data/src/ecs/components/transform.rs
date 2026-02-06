@@ -42,6 +42,15 @@ impl Transform {
         }
     }
 
+    /// Creates a new `Transform` with a given translation, and identity rotation/scale.
+    pub fn from_translation(translation: Vec3) -> Self {
+        Self {
+            translation,
+            rotation: Quaternion::IDENTITY,
+            scale: Vec3::ONE,
+        }
+    }
+
     /// Creates a new identity `Transform`, with no translation, rotation, or scaling.
     /// This represents the origin.
     pub fn identity() -> Self {

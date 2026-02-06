@@ -24,3 +24,7 @@
 //!   slow physics solver and a faster, less precise one.
 //! - Adapting simulation parameters (e.g., timestep frequency) based on the budget
 //!   allocated by GORNA to maintain stability or performance.
+
+mod agent;
+
+pub use agent::*;

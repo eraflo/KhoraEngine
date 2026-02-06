@@ -12,20 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Infra
-//!
-//! Concrete implementations of external dependencies.
+use khora_macros::Component;
+use serde::{Deserialize, Serialize};
 
-#![warn(missing_docs)]
+/// Defines the physical properties of a collider surface.
+#[derive(Debug, Clone, Copy, Component, Serialize, Deserialize)]
+pub struct PhysicsMaterial {
+    /// Friction coefficient.
+    pub friction: f32,
+    /// Restitution (bounciness) coefficient.
+    pub restitution: f32,
+}
 
-pub mod audio;
-pub mod graphics;
-pub mod physics;
-pub mod platform;
-pub mod telemetry;
-
-pub use graphics::wgpu::WgpuRenderSystem;
-pub use platform::window::{WinitWindow, WinitWindowBuilder};
-pub use telemetry::{
-    gpu_monitor::GpuMonitor, memory_monitor::MemoryMonitor, vram_monitor::VramMonitor,
-};
+impl Default for PhysicsMaterial {
+    fn default() -> Self {
+        Self {
+            friction: 0.5,
+            restitution: 0.0,
+        }
+    }
+}

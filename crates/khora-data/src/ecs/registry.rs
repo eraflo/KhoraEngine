@@ -38,6 +38,8 @@ pub enum SemanticDomain {
     Render,
     /// For components related to audio, such as audio sources and listeners.
     Audio,
+    /// For components related to physics simulation.
+    Physics,
 }
 
 /// Stores the set of type-erased functions for a registered component.
