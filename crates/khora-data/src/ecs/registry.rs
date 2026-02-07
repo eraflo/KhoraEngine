@@ -98,6 +98,19 @@ impl ComponentRegistry {
     pub(crate) fn get_row_copier(&self, type_id: &TypeId) -> Option<RowCopyFn> {
         self.mapping.get(type_id).map(|vtable| vtable.copy_row)
     }
+
+    /// (Internal) Creates empty columns for a given type signature.
+    pub(crate) fn create_columns_for_signature(
+        &self,
+        signature: &[TypeId],
+    ) -> HashMap<TypeId, Box<dyn AnyVec>> {
+        let mut columns = HashMap::new();
+        for type_id in signature {
+            let constructor = self.get_column_constructor(type_id).unwrap();
+            columns.insert(*type_id, constructor());
+        }
+        columns
+    }
 }
 
 /// A registry that provides reflection data, like type names.

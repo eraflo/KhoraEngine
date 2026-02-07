@@ -61,6 +61,7 @@ impl GarbageCollectorAgent {
         let work_plan = GcWorkPlan {
             budget,
             items_to_clean,
+            pages_to_vacuum: Vec::new(),
         };
 
         // --- Dispatch to Lane ---

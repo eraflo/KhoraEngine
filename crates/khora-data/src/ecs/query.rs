@@ -106,13 +106,13 @@ impl<T: Component> WorldQuery for &T {
         let metadata = world.entities.get(entity_id.index as usize)?.1.as_ref()?;
 
         // Get the domain for the component type.
-        let domain = world.registry.get_domain(TypeId::of::<T>())?;
+        let domain = world.storage.registry.get_domain(TypeId::of::<T>())?;
 
         // Get the location of the entity in the domain.
         let location = metadata.locations.get(&domain)?;
 
         // Get the page for the entity.
-        let page = &world.pages[location.page_id as usize];
+        let page = &world.storage.pages[location.page_id as usize];
         let column = page.columns.get(&TypeId::of::<T>())?;
         let vec = column.as_any().downcast_ref::<Vec<T>>()?;
         vec.get(location.row_index as usize)
@@ -154,10 +154,10 @@ impl<T: Component> WorldQuery for &mut T {
             .get_mut(entity_id.index as usize)?
             .1
             .as_mut()?;
-        let _domain = world_mut.registry.get_domain(TypeId::of::<T>())?;
+        let _domain = world_mut.storage.registry.get_domain(TypeId::of::<T>())?;
         let location = metadata.locations.get(&_domain)?;
 
-        let page = &mut world_mut.pages[location.page_id as usize];
+        let page = &mut world_mut.storage.pages[location.page_id as usize];
         let column = page.columns.get_mut(&TypeId::of::<T>())?;
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
         vec.get_mut(location.row_index as usize)
@@ -327,7 +327,7 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
 
             // 2. Get the current page.
             let page_id = self.matching_page_indices[self.current_page_index];
-            let page = &world.pages[page_id as usize];
+            let page = &world.storage.pages[page_id as usize];
 
             // 3. Check if there are rows left in the current page.
             if self.current_row_index < page.row_count() {
@@ -357,7 +357,7 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
 
             let world = unsafe { &*self.world_ptr };
             let page_id = self.matching_page_indices[self.current_page_index];
-            let page = &world.pages[page_id as usize];
+            let page = &world.storage.pages[page_id as usize];
 
             if self.current_row_index < page.row_count() {
                 // In transversal mode, we use the EntityId from the driver page to look up
@@ -425,7 +425,7 @@ impl<T: Component> WorldQuery for Without<T> {
         // Check ALL pages associated with this entity.
         // If ANY page contains the forbidden component, filtering failed.
         for location in metadata.locations.values() {
-            let page = &world.pages[location.page_id as usize];
+            let page = &world.storage.pages[location.page_id as usize];
             if page.type_ids.binary_search(&TypeId::of::<T>()).is_ok() {
                 return None;
             }
@@ -498,7 +498,7 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
 
             // We get a mutable reference to the page, which is a safe operation
             // because `world` is a mutable reference.
-            let page = &mut world.pages[page_id];
+            let page = &mut world.storage.pages[page_id];
 
             if self.current_row_index < page.row_count() {
                 let item = unsafe { Q::fetch(page as *mut _ as *const _, self.current_row_index) };
@@ -521,7 +521,7 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             // Get the current page.
             let world = unsafe { &mut *self.world_ptr };
             let page_id = self.matching_page_indices[self.current_page_index] as usize;
-            let page = &mut world.pages[page_id];
+            let page = &mut world.storage.pages[page_id];
 
             // Check if there are rows left in the current page.
             if self.current_row_index < page.row_count() {
