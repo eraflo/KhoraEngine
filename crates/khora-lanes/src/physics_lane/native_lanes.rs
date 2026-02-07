@@ -111,11 +111,10 @@ impl NativeBroadphaseLane {
         // We find the first entity with CollisionPairs or spawn one.
         let mut found = false;
         {
-            let query = world.query_mut::<&mut CollisionPairs>();
-            for pairs_comp in query {
+            let mut query = world.query_mut::<&mut CollisionPairs>();
+            if let Some(pairs_comp) = query.next() {
                 pairs_comp.pairs = all_pairs.clone();
                 found = true;
-                break;
             }
         }
 
@@ -129,6 +128,12 @@ impl NativeBroadphaseLane {
 /// It uses the Sequential Impulse method for stable constraint resolution.
 pub struct NativeSolverLane {
     solver: SequentialImpulseSolver,
+}
+
+impl Default for NativeSolverLane {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NativeSolverLane {

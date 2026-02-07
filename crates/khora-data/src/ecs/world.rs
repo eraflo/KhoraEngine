@@ -17,7 +17,6 @@
 use std::{
     any::TypeId,
     collections::{HashMap, HashSet},
-    sync::RwLock,
 };
 
 use bincode::config;
@@ -28,11 +27,13 @@ use khora_core::{
 
 use crate::ecs::{
     components::HandleComponent,
-    entity::EntityMetadata,
+    entity_store::EntityStore,
     page::{ComponentPage, PageIndex},
+    planner::QueryPlanner,
     query::{Query, WorldQuery},
     registry::ComponentRegistry,
     serialization::SceneMemoryLayout,
+    storage::StorageManager,
     AudioListener, AudioSource, Camera, Children, Collider, Component, ComponentBundle,
     DomainBitset, GlobalTransform, MaterialComponent, Parent, QueryMut, QueryPlan, RigidBody,
     SemanticDomain, SerializedPage, Transform, TypeRegistry,
@@ -59,128 +60,42 @@ pub struct DomainStats {
 }
 
 /// A trait providing low-level access to the World for maintenance tasks.
-///
-/// This trait should only be used by trusted, engine-internal systems like
-/// a `CompactionLane`, which need to perform dangerous operations like
-/// cleaning up orphaned data. It is not part of the public API for game logic.
 pub trait WorldMaintenance {
     /// Cleans up an orphaned data slot in a page.
     fn cleanup_orphan_at(&mut self, location: PageIndex, domain: SemanticDomain);
 }
 
 /// The central container for the entire ECS, holding all entities, components, and metadata.
-///
-/// The `World` orchestrates the CRPECS architecture. It owns all ECS data and provides the main
-/// API for creating and destroying entities, and for querying their component data.
 pub struct World {
-    /// A dense list of metadata for every entity slot that has ever been created.
-    /// The index into this vector is used as the `index` part of an `EntityId`.
-    /// The `Option<EntityMetadata>` is `None` if the entity slot is currently free.
-    pub(crate) entities: Vec<(EntityId, Option<EntityMetadata>)>,
-
-    /// A list of all allocated `ComponentPage`s, where component data is stored.
-    /// A `page_id` in a `PageIndex` corresponds to an index in this vector.
-    pub(crate) pages: Vec<ComponentPage>,
-
-    /// A list of entity indices that have been freed by `despawn` and are available
-    /// for reuse by `spawn`. This recycling mechanism keeps the `entities` vector dense.
-    pub(crate) freed_entities: Vec<u32>,
-
-    /// The registry that maps component types to their storage domains.
-    pub(crate) registry: ComponentRegistry,
-
+    /// Manages entity IDs and metadata.
+    pub(crate) entities: EntityStore,
+    /// Manages component storage and pages.
+    pub(crate) storage: StorageManager,
+    /// Manages query planning and caching.
+    pub(crate) planner: QueryPlanner,
     /// The type registry for serialization purposes.
     type_registry: TypeRegistry,
-
-    /// Bitsets tracking which entities have components in which semantic domains.
-    pub(crate) domain_bitsets: HashMap<SemanticDomain, DomainBitset>,
-
-    /// Cached query plans for fast lookup.
-    pub(crate) query_cache: RwLock<HashMap<Vec<TypeId>, QueryPlan>>,
-
-    /// Simple statistics per domain to facilitate density-based driver selection.
-    pub(crate) domain_stats: HashMap<SemanticDomain, DomainStats>,
 }
 
 impl World {
     /// (Internal) Allocates a new or recycled `EntityId` and reserves its metadata slot.
-    ///
-    /// This is the first step in the spawning process. It prioritizes recycling
-    /// freed entity indices to keep the entity list dense. If no indices are free,
-    /// it creates a new entry. It also handles incrementing the generation count
-    /// for recycled entities to prevent the ABA problem.
     fn create_entity(&mut self) -> EntityId {
-        if let Some(index) = self.freed_entities.pop() {
-            // --- Recycle an existing slot ---
-            let index = index as usize;
-            let (id_slot, metadata_slot) = &mut self.entities[index];
-            id_slot.generation += 1;
-            *metadata_slot = Some(EntityMetadata::default());
-            *id_slot
-        } else {
-            // --- Allocate a new slot ---
-            let index = self.entities.len() as u32;
-            let new_id = EntityId {
-                index,
-                generation: 0,
-            };
-            self.entities
-                .push((new_id, Some(EntityMetadata::default())));
-            new_id
-        }
+        self.entities.create_entity()
     }
 
     /// (Internal) Finds a page suitable for the given `ComponentBundle`, or creates one if none exists.
-    ///
-    /// A page is considered suitable if it stores the exact same set of component types
-    /// as the bundle. This method iterates through existing pages to find a match based
-    /// on their canonical type signatures. If no match is found, it allocates a new `ComponentPage`.
-    ///
-    /// Returns the `page_id` of the suitable page.
     fn find_or_create_page_for_bundle<B: ComponentBundle>(&mut self) -> u32 {
-        // 1. Get the canonical signature for the bundle we want to insert.
-        let bundle_type_ids = B::type_ids();
-
-        // 2. --- Search for an existing page ---
-        // Iterate through all currently allocated pages.
-        for (page_id, page) in self.pages.iter().enumerate() {
-            if page.type_ids == bundle_type_ids {
-                return page_id as u32;
-            }
-        }
-
-        // 3. --- Create a new page if none was found ---
-        // At this point, the loop has finished and found no match.
-        // The ID for the new page will be the current number of pages.
-        let new_page_id = self.pages.len() as u32;
-
-        // Update domain stats using the signature before it's moved into the new page.
-        if let Some(first_type) = bundle_type_ids.first() {
-            if let Some(domain) = self.registry.get_domain(*first_type) {
-                self.domain_stats.entry(domain).or_default().page_count += 1;
-            }
-        }
-
-        let new_page = ComponentPage {
-            type_ids: bundle_type_ids,
-            columns: B::create_columns(),
-            entities: Vec::new(),
-        };
-        self.pages.push(new_page);
-        new_page_id
+        self.storage.find_or_create_page_for_bundle::<B>()
     }
 
     /// (Internal) A helper function to handle the `swap_remove` logic for a single component group.
-    ///
-    /// It removes component data from the specified page location. If another entity's
-    /// data is moved during this process, its metadata is updated with its new location.
     fn remove_from_page(
         &mut self,
         entity_to_despawn: EntityId,
         location: PageIndex,
         domain: SemanticDomain,
     ) {
-        let page = &mut self.pages[location.page_id as usize];
+        let page = &mut self.storage.pages[location.page_id as usize];
         if page.entities.is_empty() {
             return;
         }
@@ -189,56 +104,23 @@ impl World {
         page.swap_remove_row(location.row_index);
 
         if last_entity_in_page != entity_to_despawn {
-            let (_id, metadata_opt) = &mut self.entities[last_entity_in_page.index as usize];
-            let metadata = metadata_opt.as_mut().unwrap();
+            let metadata = self.entities.get_metadata_mut(last_entity_in_page).unwrap();
             metadata.locations.insert(domain, location);
         }
     }
 
     /// Finds or creates a page for the given signature of component `TypeId`s.
     fn find_or_create_page_for_signature(&mut self, signature: &[TypeId]) -> u32 {
-        if let Some((id, _)) = self
-            .pages
-            .iter()
-            .enumerate()
-            .find(|(_, p)| p.type_ids == signature)
-        {
-            return id as u32;
-        }
-
-        let new_page_id = self.pages.len() as u32;
-        let mut columns = HashMap::new();
-        for type_id in signature {
-            let constructor = self.registry.get_column_constructor(type_id).unwrap();
-            columns.insert(*type_id, constructor());
-        }
-
-        // Update domain stats
-        if let Some(first_type) = signature.first() {
-            if let Some(domain) = self.registry.get_domain(*first_type) {
-                self.domain_stats.entry(domain).or_default().page_count += 1;
-            }
-        }
-
-        self.pages.push(ComponentPage {
-            type_ids: signature.to_vec(),
-            columns,
-            entities: Vec::new(),
-        });
-        new_page_id
+        self.storage.find_or_create_page_for_signature(signature)
     }
 
     /// Creates a new, empty `World` with pre-registered internal component types.
     pub fn new() -> Self {
         let mut world = Self {
-            entities: Vec::new(),
-            pages: Vec::new(),
-            freed_entities: Vec::new(),
-            registry: ComponentRegistry::default(),
+            entities: EntityStore::new(),
+            storage: StorageManager::new(ComponentRegistry::default()),
+            planner: QueryPlanner::new(),
             type_registry: TypeRegistry::default(),
-            domain_bitsets: HashMap::new(),
-            query_cache: RwLock::new(HashMap::new()),
-            domain_stats: HashMap::new(),
         };
         // Registration of built-in components
         world.register_component::<Transform>(SemanticDomain::Spatial);
@@ -286,7 +168,7 @@ impl World {
         // --- Step 3: Push component data into the page. ---
         let row_index;
         {
-            let page = &mut self.pages[page_id as usize];
+            let page = &mut self.storage.pages[page_id as usize];
             row_index = page.entities.len() as u32;
             unsafe {
                 bundle.add_to_page(page);
@@ -296,18 +178,22 @@ impl World {
 
         // --- Step 4: Update the entity's metadata. ---
         let location = PageIndex { page_id, row_index };
-        let (_id, metadata_opt) = &mut self.entities[entity_id.index as usize];
-        let metadata = metadata_opt.as_mut().unwrap();
-        B::update_metadata(metadata, location, &self.registry);
+        let metadata = self.entities.get_metadata_mut(entity_id).unwrap();
+        B::update_metadata(metadata, location, &self.storage.registry);
 
         // --- Step 5: Update domain bitsets and stats for the newly created entity components. ---
         for domain in metadata.locations.keys() {
-            self.domain_bitsets
+            self.storage
+                .domain_bitsets
                 .entry(*domain)
                 .or_default()
                 .set(entity_id.index);
 
-            self.domain_stats.entry(*domain).or_default().entity_count += 1;
+            self.storage
+                .domain_stats
+                .entry(*domain)
+                .or_default()
+                .entity_count += 1;
         }
 
         entity_id
@@ -329,7 +215,7 @@ impl World {
         }
 
         // Get the data at the slot.
-        let (id_in_world, metadata_slot) = &self.entities[entity_id.index as usize];
+        let (id_in_world, metadata_slot) = self.entities.get(entity_id.index as usize).unwrap();
 
         // An ID is valid if its generation matches the one in the world,
         // AND if the metadata slot is currently occupied (`is_some`).
@@ -341,18 +227,24 @@ impl World {
 
         // Step 2: Take the metadata out of the slot, leaving it `None`.
         // This is what officially "kills" the entity.
-        let metadata = self.entities[entity_id.index as usize].1.take().unwrap();
-        self.freed_entities.push(entity_id.index);
+        let metadata = self
+            .entities
+            .get_mut(entity_id.index as usize)
+            .unwrap()
+            .1
+            .take()
+            .unwrap();
+        self.entities.freed_entities.push(entity_id.index);
 
         // --- Step 3: Iterate over the entity's component locations and remove them ---
         for (domain, location) in metadata.locations {
             self.remove_from_page(entity_id, location, domain);
 
             // Clear the entity's bit in the domain bitset and update stats.
-            if let Some(bitset) = self.domain_bitsets.get_mut(&domain) {
+            if let Some(bitset) = self.storage.domain_bitsets.get_mut(&domain) {
                 bitset.clear(entity_id.index);
             }
-            if let Some(stats) = self.domain_stats.get_mut(&domain) {
+            if let Some(stats) = self.storage.domain_stats.get_mut(&domain) {
                 stats.entity_count = stats.entity_count.saturating_sub(1);
             }
         }
@@ -388,13 +280,13 @@ impl World {
         // 1. Try to fetch the strategy plan from the cache.
         // We cache the execution logic (Native vs Transversal), not the page indices.
         let plan = {
-            let cache = self.query_cache.read().unwrap();
+            let cache = self.planner.query_cache.read().unwrap();
             if let Some(plan) = cache.get(&type_ids) {
                 plan.clone()
             } else {
                 drop(cache);
                 let new_plan = self.analyze_query(&type_ids);
-                let mut cache = self.query_cache.write().unwrap();
+                let mut cache = self.planner.query_cache.write().unwrap();
                 cache.insert(type_ids, new_plan.clone());
                 new_plan
             }
@@ -419,13 +311,13 @@ impl World {
 
         // 1. Get strategy from cache
         let plan = {
-            let cache = self.query_cache.read().unwrap();
+            let cache = self.planner.query_cache.read().unwrap();
             if let Some(plan) = cache.get(&type_ids) {
                 plan.clone()
             } else {
                 drop(cache);
                 let new_plan = self.analyze_query(&type_ids);
-                let mut cache = self.query_cache.write().unwrap();
+                let mut cache = self.planner.query_cache.write().unwrap();
                 cache.insert(type_ids, new_plan.clone());
                 new_plan
             }
@@ -445,7 +337,7 @@ impl World {
     /// in a bundle, it must be registered with the world to define which semantic
     /// page group its data will be stored in.
     pub fn register_component<T: Component>(&mut self, domain: SemanticDomain) {
-        self.registry.register::<T>(domain);
+        self.storage.registry.register::<T>(domain);
         self.type_registry.register::<T>();
     }
 
@@ -456,7 +348,7 @@ impl World {
     pub(crate) fn analyze_query(&self, type_ids: &[TypeId]) -> QueryPlan {
         let mut domains = HashSet::new();
         for type_id in type_ids {
-            if let Some(domain) = self.registry.get_domain(*type_id) {
+            if let Some(domain) = self.storage.registry.get_domain(*type_id) {
                 domains.insert(domain);
             }
         }
@@ -475,8 +367,18 @@ impl World {
         let driver_domain = domains
             .iter()
             .min_by(|&&a, &&b| {
-                let stats_a = self.domain_stats.get(&a).copied().unwrap_or_default();
-                let stats_b = self.domain_stats.get(&b).copied().unwrap_or_default();
+                let stats_a = self
+                    .storage
+                    .domain_stats
+                    .get(&a)
+                    .copied()
+                    .unwrap_or_default();
+                let stats_b = self
+                    .storage
+                    .domain_stats
+                    .get(&b)
+                    .copied()
+                    .unwrap_or_default();
                 let score_a = (stats_a.page_count as u64) * (stats_b.entity_count as u64);
                 let score_b = (stats_b.page_count as u64) * (stats_a.entity_count as u64);
                 score_a.cmp(&score_b)
@@ -490,7 +392,7 @@ impl World {
         // Calculate driver signature (subset of type_ids in the driver domain)
         let mut driver_signature = Vec::new();
         for type_id in type_ids {
-            if self.registry.get_domain(*type_id) == Some(driver_domain) {
+            if self.storage.registry.get_domain(*type_id) == Some(driver_domain) {
                 driver_signature.push(*type_id);
             }
         }
@@ -505,7 +407,7 @@ impl World {
     /// Internal helper to find pages matching a signature and filter.
     fn find_matching_pages(&self, type_ids: &[TypeId], without_type_ids: &[TypeId]) -> Vec<u32> {
         let mut matching_page_indices = Vec::new();
-        'page_loop: for (page_id, page) in self.pages.iter().enumerate() {
+        'page_loop: for (page_id, page) in self.storage.pages.iter().enumerate() {
             for required_type in type_ids {
                 if page.type_ids.binary_search(required_type).is_err() {
                     continue 'page_loop;
@@ -532,11 +434,11 @@ impl World {
         let driver_domain = plan.driver_domain?;
 
         // Start with the driver domain's bitset.
-        let mut bitset = self.domain_bitsets.get(&driver_domain)?.clone();
+        let mut bitset = self.storage.domain_bitsets.get(&driver_domain)?.clone();
 
         // Intersect with all peer domains.
         for peer_domain in &plan.peer_domains {
-            if let Some(peer_bitset) = self.domain_bitsets.get(peer_domain) {
+            if let Some(peer_bitset) = self.storage.domain_bitsets.get(peer_domain) {
                 bitset.intersect(peer_bitset);
             } else {
                 // If a required peer domain has NO components at all, the intersection is empty.
@@ -576,16 +478,22 @@ impl World {
             return Err(AddComponentError::EntityNotFound);
         }
 
-        let Some(domain) = self.registry.get_domain(TypeId::of::<C>()) else {
+        let Some(domain) = self.storage.registry.get_domain(TypeId::of::<C>()) else {
             return Err(AddComponentError::ComponentNotRegistered);
         };
 
-        let mut metadata = self.entities[entity_id.index as usize].1.take().unwrap();
+        let mut metadata = self
+            .entities
+            .get_mut(entity_id.index as usize)
+            .unwrap()
+            .1
+            .take()
+            .unwrap();
         let old_location_opt = metadata.locations.get(&domain).copied();
 
         // 2. Determine old and new page signatures
         let old_type_ids = old_location_opt.map_or(Vec::new(), |loc| {
-            self.pages[loc.page_id as usize].type_ids.clone()
+            self.storage.pages[loc.page_id as usize].type_ids.clone()
         });
         let mut new_type_ids = old_type_ids.clone();
         new_type_ids.push(TypeId::of::<C>());
@@ -593,7 +501,7 @@ impl World {
         new_type_ids.dedup();
 
         if new_type_ids == old_type_ids {
-            self.entities[entity_id.index as usize].1 = Some(metadata); // Put it back
+            self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata); // Put it back
             return Err(AddComponentError::ComponentAlreadyExists);
         }
 
@@ -608,13 +516,13 @@ impl World {
                     unreachable!(); // Should be caught by signature check above
                 } else {
                     // This unsafe block is needed to get mutable access to two different pages
-                    let all_pages_ptr = self.pages.as_mut_ptr();
+                    let all_pages_ptr = self.storage.pages.as_mut_ptr();
                     let dest_page = &mut *all_pages_ptr.add(dest_page_id as usize);
                     let src_page = &*all_pages_ptr.add(loc.page_id as usize);
                     (Some(src_page), dest_page)
                 }
             } else {
-                (None, &mut self.pages[dest_page_id as usize])
+                (None, &mut self.storage.pages[dest_page_id as usize])
             };
 
             dest_row_index = dest_page.entities.len() as u32;
@@ -622,7 +530,7 @@ impl World {
             if let Some(src_page) = src_page_opt {
                 let src_row = old_location_opt.unwrap().row_index as usize;
                 for type_id in &old_type_ids {
-                    let copier = self.registry.get_row_copier(type_id).unwrap();
+                    let copier = self.storage.registry.get_row_copier(type_id).unwrap();
                     let src_col = src_page.columns.get(type_id).unwrap();
                     let dest_col = dest_page.columns.get_mut(type_id).unwrap();
                     copier(src_col.as_ref(), src_row, dest_col.as_mut());
@@ -651,12 +559,13 @@ impl World {
         );
 
         // Update the domain bitset for the entity.
-        self.domain_bitsets
+        self.storage
+            .domain_bitsets
             .entry(domain)
             .or_default()
             .set(entity_id.index);
 
-        self.entities[entity_id.index as usize].1 = Some(metadata);
+        self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
 
         // 6. Return the old location for cleanup, without performing swap_remove
         Ok(old_location_opt)
@@ -688,7 +597,7 @@ impl World {
         }
 
         // 2. Use the registry to find the component's domain.
-        let domain = self.registry.get_domain(TypeId::of::<C>())?;
+        let domain = self.storage.registry.get_domain(TypeId::of::<C>())?;
 
         // 3. Remove the location entry from the entity's metadata.
         //    `HashMap::remove` returns the value that was at that key, which is exactly what we need.
@@ -697,7 +606,7 @@ impl World {
 
         // Clear the domain bitset if a component was removed.
         if location.is_some() {
-            if let Some(bitset) = self.domain_bitsets.get_mut(&domain) {
+            if let Some(bitset) = self.storage.domain_bitsets.get_mut(&domain) {
                 bitset.clear(entity_id.index);
             }
         }
@@ -715,19 +624,19 @@ impl World {
     /// `None` if the entity is not alive or does not have the requested component.
     pub fn get_mut<T: Component>(&mut self, entity_id: EntityId) -> Option<&mut T> {
         // 1. Validate the entity ID.
-        let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
+        let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize).unwrap();
         if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
             return None;
         }
         let metadata = metadata_opt.as_ref().unwrap();
 
         // 2. Use the registry to find the component's domain and its location.
-        let domain = self.registry.get_domain(TypeId::of::<T>())?;
+        let domain = self.storage.registry.get_domain(TypeId::of::<T>())?;
         let location = metadata.locations.get(&domain)?;
 
         // 3. Get the component data from the page.
         let type_id = TypeId::of::<T>();
-        let page = self.pages.get_mut(location.page_id as usize)?;
+        let page = self.storage.pages.get_mut(location.page_id as usize)?;
         let column = page.columns.get_mut(&type_id)?;
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
 
@@ -750,7 +659,7 @@ impl World {
         let mut results: [Option<&mut T>; N] = std::array::from_fn(|_| None);
 
         let type_id = TypeId::of::<T>();
-        let domain = match self.registry.get_domain(type_id) {
+        let domain = match self.storage.registry.get_domain(type_id) {
             Some(d) => d,
             None => return results,
         };
@@ -794,7 +703,7 @@ impl World {
                     // We can't borrow self.pages multiple times mutably in the loop,
                     // but we know the indices are disjoint or the data is disjoint.
                     let world_ptr = self as *mut Self;
-                    if let Some(page) = (&mut *world_ptr).pages.get_mut(page_id as usize) {
+                    if let Some(page) = (&mut *world_ptr).storage.pages.get_mut(page_id as usize) {
                         if let Some(column) = page.columns.get_mut(&type_id) {
                             if let Some(vec) = column.as_any_mut().downcast_mut::<Vec<T>>() {
                                 results[i] = Some(vec.get_unchecked_mut(row_index as usize));
@@ -817,19 +726,19 @@ impl World {
     /// `None` if the entity is not alive or does not have the requested component.
     pub fn get<T: Component>(&self, entity_id: EntityId) -> Option<&T> {
         // 1. Validate the entity ID.
-        let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
+        let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize).unwrap();
         if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
             return None;
         }
         let metadata = metadata_opt.as_ref().unwrap();
 
         // 2. Use the registry to find the component's domain and its location.
-        let domain = self.registry.get_domain(TypeId::of::<T>())?;
+        let domain = self.storage.registry.get_domain(TypeId::of::<T>())?;
         let location = metadata.locations.get(&domain)?;
 
         // 3. Get the component data from the page.
         let type_id = TypeId::of::<T>();
-        let page = self.pages.get(location.page_id as usize)?;
+        let page = self.storage.pages.get(location.page_id as usize)?;
 
         // 4. Return the immutable reference.
         let vec = page
@@ -851,8 +760,8 @@ impl World {
     ///
     /// This method is highly unsafe as it reads raw component memory.
     pub fn serialize_archetype(&self) -> Result<Vec<u8>, bincode::error::EncodeError> {
-        let mut serialized_pages = Vec::with_capacity(self.pages.len());
-        for page in &self.pages {
+        let mut serialized_pages = Vec::with_capacity(self.storage.pages.len());
+        for page in &self.storage.pages {
             let mut serialized_columns = HashMap::new();
 
             // Use the TypeRegistry to get the stable string name for each TypeId.
@@ -877,8 +786,8 @@ impl World {
             });
         }
         let layout = SceneMemoryLayout {
-            entities: self.entities.clone(),
-            freed_entities: self.freed_entities.clone(),
+            entities: self.entities.entities.clone(),
+            freed_entities: self.entities.freed_entities.clone(),
             pages: serialized_pages,
         };
         bincode::encode_to_vec(layout, config::standard())
@@ -894,9 +803,9 @@ impl World {
         let (layout, _): (SceneMemoryLayout, _) =
             bincode::decode_from_slice(data, config::standard())?;
 
-        self.entities = layout.entities;
-        self.freed_entities = layout.freed_entities;
-        self.pages.clear();
+        self.entities.entities = layout.entities;
+        self.entities.freed_entities = layout.freed_entities;
+        self.storage.pages.clear();
 
         for serialized_page in layout.pages {
             // Use the TypeRegistry to convert string names back to TypeIds.
@@ -918,7 +827,11 @@ impl World {
 
             for (type_name, bytes) in &serialized_page.columns {
                 let type_id = self.type_registry.get_id_of(type_name).unwrap();
-                let constructor = self.registry.get_column_constructor(&type_id).unwrap();
+                let constructor = self
+                    .storage
+                    .registry
+                    .get_column_constructor(&type_id)
+                    .unwrap();
                 let mut column = constructor();
                 // UNSAFE: Writing raw bytes into the newly created component vector.
                 unsafe {
@@ -926,7 +839,7 @@ impl World {
                 }
                 new_page.columns.insert(type_id, column);
             }
-            self.pages.push(new_page);
+            self.storage.pages.push(new_page);
         }
 
         Ok(())
@@ -935,7 +848,7 @@ impl World {
 
 impl WorldMaintenance for World {
     fn cleanup_orphan_at(&mut self, location: PageIndex, domain: SemanticDomain) {
-        let page = &mut self.pages[location.page_id as usize];
+        let page = &mut self.storage.pages[location.page_id as usize];
         if page.entities.is_empty() || location.row_index as usize >= page.entities.len() {
             return;
         }
@@ -943,7 +856,10 @@ impl WorldMaintenance for World {
         let last_entity_in_page = *page.entities.last().unwrap();
         page.swap_remove_row(location.row_index);
 
-        let (_id, metadata_opt) = &mut self.entities[last_entity_in_page.index as usize];
+        let (_id, metadata_opt) = self
+            .entities
+            .get_mut(last_entity_in_page.index as usize)
+            .unwrap();
         if let Some(metadata) = metadata_opt.as_mut() {
             metadata.locations.insert(domain, location);
         }

@@ -72,7 +72,7 @@ fn test_spawn_single_entity() {
         1,
         "There should be one entity entry in the world"
     );
-    let (stored_id, metadata_opt) = &world.entities[0];
+    let (stored_id, metadata_opt) = world.entities.get(0).unwrap();
     assert!(metadata_opt.is_some(), "Entity slot should be occupied");
 
     let metadata = metadata_opt.as_ref().unwrap();
@@ -103,8 +103,12 @@ fn test_spawn_single_entity() {
     );
 
     // Check the world's page list.
-    assert_eq!(world.pages.len(), 1, "There should be one page allocated");
-    let page = &world.pages[0];
+    assert_eq!(
+        world.storage.pages.len(),
+        1,
+        "There should be one page allocated"
+    );
+    let page = &world.storage.pages[0];
 
     // Check the page's entity list.
     assert_eq!(page.entities.len(), 1, "The page should track one entity");
@@ -132,14 +136,14 @@ fn test_despawn_single_entity() {
     // Check entity list and free list.
     assert_eq!(world.entities.len(), 1);
     assert!(
-        world.entities[0].1.is_none(),
+        world.entities.get(0).unwrap().1.is_none(),
         "The entity's metadata slot should now be None"
     );
-    assert_eq!(world.freed_entities, vec![0]);
+    assert_eq!(world.entities.freed_entities, vec![0]);
 
     // Check the page's state.
-    assert_eq!(world.pages.len(), 1);
-    let page = &world.pages[0];
+    assert_eq!(world.storage.pages.len(), 1);
+    let page = &world.storage.pages[0];
     // Use our new helper method to confirm data was removed.
     assert_eq!(
         page.row_count(),
@@ -166,8 +170,8 @@ fn test_entity_id_recycling_and_aba_protection() {
     // Despawn it to free up its index.
     let despawn_result_a = world.despawn(id_a);
     assert!(despawn_result_a);
-    assert_eq!(world.freed_entities, vec![0]); // Index 0 is now free.
-    assert!(world.entities[0].1.is_none());
+    assert_eq!(world.entities.freed_entities, vec![0]); // Index 0 is now free.
+    assert!(world.entities.get(0).unwrap().1.is_none());
 
     // --- Part B: Recycle the ID ---
     // Spawn a second entity. It should reuse the index 0.
@@ -180,11 +184,11 @@ fn test_entity_id_recycling_and_aba_protection() {
         "The generation should be incremented to 1"
     );
     assert!(
-        world.freed_entities.is_empty(),
+        world.entities.freed_entities.is_empty(),
         "The free list should be empty again"
     );
     assert!(
-        world.entities[0].1.is_some(),
+        world.entities.get(0).unwrap().1.is_some(),
         "The slot should be occupied again"
     );
 
@@ -201,10 +205,10 @@ fn test_entity_id_recycling_and_aba_protection() {
     // Verify that the world state was NOT affected by the failed despawn.
     // The entity `id_b` should still be alive and well.
     assert!(
-        world.entities[0].1.is_some(),
+        world.entities.get(0).unwrap().1.is_some(),
         "The slot for id_b should not have been freed"
     );
-    let (current_id, _) = &world.entities[0];
+    let (current_id, _) = world.entities.get(0).unwrap();
     assert_eq!(
         *current_id, id_b,
         "The entity in the world should still be id_b"
@@ -218,7 +222,7 @@ fn test_entity_id_recycling_and_aba_protection() {
         "Despawning with the correct ID should succeed"
     );
     assert!(
-        world.entities[0].1.is_none(),
+        world.entities.get(0).unwrap().1.is_none(),
         "The slot should be free again after the correct despawn"
     );
 }
@@ -237,18 +241,18 @@ fn test_despawn_with_swap_remove_logic() {
 
     // Pre-action sanity checks
     assert_eq!(
-        world.pages.len(),
+        world.storage.pages.len(),
         1,
         "Both entities should be in the same, single page"
     );
     assert_eq!(
-        world.pages[0].row_count(),
+        world.storage.pages[0].row_count(),
         2,
         "The page should have two rows"
     );
 
     // Check initial metadata for entity B
-    let (_, metadata_b_before_opt) = &world.entities[entity_b.index as usize];
+    let (_, metadata_b_before_opt) = world.entities.get(entity_b.index as usize).unwrap();
     let metadata_b_before = metadata_b_before_opt.as_ref().unwrap();
     let location_b_before = metadata_b_before
         .locations
@@ -271,21 +275,31 @@ fn test_despawn_with_swap_remove_logic() {
 
     // Check basic world state
     assert_eq!(
-        world.pages[0].row_count(),
+        world.storage.pages[0].row_count(),
         1,
         "The page should now have only one row"
     );
     assert!(
-        world.entities[entity_a.index as usize].1.is_none(),
+        world
+            .entities
+            .get(entity_a.index as usize)
+            .unwrap()
+            .1
+            .is_none(),
         "Entity A's slot should be None"
     );
     assert!(
-        world.entities[entity_b.index as usize].1.is_some(),
+        world
+            .entities
+            .get(entity_b.index as usize)
+            .unwrap()
+            .1
+            .is_some(),
         "Entity B's slot should still be Some"
     );
 
     // THE CRITICAL CHECK: Verify that entity B's metadata has been updated.
-    let (_, metadata_b_after_opt) = &world.entities[entity_b.index as usize];
+    let (_, metadata_b_after_opt) = world.entities.get(entity_b.index as usize).unwrap();
     let metadata_b_after = metadata_b_after_opt.as_ref().unwrap();
     let location_b_after = metadata_b_after
         .locations
@@ -302,7 +316,7 @@ fn test_despawn_with_swap_remove_logic() {
     );
 
     // Verify that the entity ID stored in the page at the new location is correct
-    let page = &world.pages[0];
+    let page = &world.storage.pages[0];
     assert_eq!(
         page.entities[0], entity_b,
         "The page should now track entity B at row 0"
@@ -479,7 +493,7 @@ fn test_spawn_with_unregistered_component() {
     // The entity ID is still allocated correctly.
     assert_eq!(entity_id.index, 0);
 
-    let (_id, metadata_opt) = &world.entities[0];
+    let (_id, metadata_opt) = world.entities.get(0).unwrap();
     let metadata = metadata_opt.as_ref().unwrap();
 
     // CRITICAL CHECK: The locations map should be empty.
@@ -491,7 +505,7 @@ fn test_spawn_with_unregistered_component() {
     // A page is still created, but the entity's metadata doesn't point to it.
     // This highlights that the data is stored but becomes unreachable.
     assert_eq!(
-        world.pages.len(),
+        world.storage.pages.len(),
         1,
         "A page for the new component layout should still be created"
     );
@@ -516,7 +530,7 @@ fn test_add_component_to_new_domain() {
     );
 
     // Check metadata: should now have TWO locations.
-    let (_id, metadata_opt) = &world.entities[entity.index as usize];
+    let (_id, metadata_opt) = world.entities.get(entity.index as usize).unwrap();
     let metadata = metadata_opt.as_ref().unwrap();
     assert_eq!(
         metadata.locations.len(),
@@ -556,11 +570,14 @@ fn test_add_component_triggers_data_migration() {
     let entity_b = world.spawn((Position(20), NonCopyableComponent("World".to_string())));
 
     assert_eq!(
-        world.pages.len(),
+        world.storage.pages.len(),
         1,
         "Both entities should be in a single page"
     );
-    let initial_loc_a = *world.entities[entity_a.index as usize]
+    let initial_loc_a = *world
+        .entities
+        .get(entity_a.index as usize)
+        .unwrap()
         .1
         .as_ref()
         .unwrap()
@@ -588,14 +605,14 @@ fn test_add_component_triggers_data_migration() {
 
     // B) Check Page State (before Garbage Collection)
     assert_eq!(
-        world.pages.len(),
+        world.storage.pages.len(),
         2,
         "A new page should have been created for the new component layout"
     );
 
     // The old page (page 0) still contains the orphaned data for entity A
     // and the valid data for entity B. Its row count has NOT changed yet.
-    let old_page = &world.pages[0];
+    let old_page = &world.storage.pages[0];
     assert_eq!(
         old_page.row_count(),
         2,
@@ -603,7 +620,7 @@ fn test_add_component_triggers_data_migration() {
     );
 
     // The new page (page 1) should now contain entity A.
-    let new_page = &world.pages[1];
+    let new_page = &world.storage.pages[1];
     assert_eq!(new_page.row_count(), 1, "New page should have one entity");
     assert_eq!(
         new_page.entities[0], entity_a,
@@ -611,7 +628,7 @@ fn test_add_component_triggers_data_migration() {
     );
 
     // C) Check Entity A's Metadata and Data
-    let (_id, metadata_a_opt) = &world.entities[entity_a.index as usize];
+    let (_id, metadata_a_opt) = world.entities.get(entity_a.index as usize).unwrap();
     let metadata_a = metadata_a_opt.as_ref().unwrap();
     let loc_a = metadata_a.locations.get(&SemanticDomain::Spatial).unwrap();
 
@@ -634,7 +651,7 @@ fn test_add_component_triggers_data_migration() {
     assert_eq!(non_copy_a.0, "Hello");
 
     // D) Check Entity B's State (should be completely unchanged by the migration)
-    let (_id, metadata_b_opt) = &world.entities[entity_b.index as usize];
+    let (_id, metadata_b_opt) = world.entities.get(entity_b.index as usize).unwrap();
     let metadata_b = metadata_b_opt.as_ref().unwrap();
     let loc_b = metadata_b.locations.get(&SemanticDomain::Spatial).unwrap();
 
@@ -732,8 +749,16 @@ fn test_transversal_lifecycle() {
     let entity = world.spawn((Position(1), RenderTag));
 
     {
-        let spatial_bitset = world.domain_bitsets.get(&SemanticDomain::Spatial).unwrap();
-        let render_bitset = world.domain_bitsets.get(&SemanticDomain::Render).unwrap();
+        let spatial_bitset = world
+            .storage
+            .domain_bitsets
+            .get(&SemanticDomain::Spatial)
+            .unwrap();
+        let render_bitset = world
+            .storage
+            .domain_bitsets
+            .get(&SemanticDomain::Render)
+            .unwrap();
 
         assert!(spatial_bitset.is_set(entity.index));
         assert!(render_bitset.is_set(entity.index));
@@ -742,8 +767,16 @@ fn test_transversal_lifecycle() {
     // 2. Remove domain: Verify bit is cleared
     world.remove_component_domain::<RenderTag>(entity).unwrap();
     {
-        let render_bitset = world.domain_bitsets.get(&SemanticDomain::Render).unwrap();
-        let spatial_bitset = world.domain_bitsets.get(&SemanticDomain::Spatial).unwrap();
+        let render_bitset = world
+            .storage
+            .domain_bitsets
+            .get(&SemanticDomain::Render)
+            .unwrap();
+        let spatial_bitset = world
+            .storage
+            .domain_bitsets
+            .get(&SemanticDomain::Spatial)
+            .unwrap();
         assert!(!render_bitset.is_set(entity.index));
         assert!(spatial_bitset.is_set(entity.index)); // Spatial should remain
     }
@@ -751,15 +784,27 @@ fn test_transversal_lifecycle() {
     // 3. Add component: Verify bit is set again
     world.add_component(entity, RenderTag).unwrap();
     {
-        let render_bitset = world.domain_bitsets.get(&SemanticDomain::Render).unwrap();
+        let render_bitset = world
+            .storage
+            .domain_bitsets
+            .get(&SemanticDomain::Render)
+            .unwrap();
         assert!(render_bitset.is_set(entity.index));
     }
 
     // 4. Despawn: Verify all bits cleared
     world.despawn(entity);
     {
-        let spatial_bitset = world.domain_bitsets.get(&SemanticDomain::Spatial).unwrap();
-        let render_bitset = world.domain_bitsets.get(&SemanticDomain::Render).unwrap();
+        let spatial_bitset = world
+            .storage
+            .domain_bitsets
+            .get(&SemanticDomain::Spatial)
+            .unwrap();
+        let render_bitset = world
+            .storage
+            .domain_bitsets
+            .get(&SemanticDomain::Render)
+            .unwrap();
         assert!(!spatial_bitset.is_set(entity.index));
         assert!(!render_bitset.is_set(entity.index));
     }
@@ -824,7 +869,11 @@ fn test_transversal_recycled_entities() {
 
     // 4. Verify bitset was cleared and set correctly
     {
-        let spatial_bitset = world.domain_bitsets.get(&SemanticDomain::Spatial).unwrap();
+        let spatial_bitset = world
+            .storage
+            .domain_bitsets
+            .get(&SemanticDomain::Spatial)
+            .unwrap();
         assert!(spatial_bitset.is_set(e2.index));
     }
 }

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Internal narrow-phase collision detection.
+
 use super::{ColliderShape, ContactManifold};
 use crate::math::{AffineTransform, Vec3, Vec4};
 
