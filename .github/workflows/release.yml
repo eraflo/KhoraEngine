@@ -27,6 +27,15 @@ jobs:
           semantic_version: 23
           extra_plugins: |
             @semantic-release/changelog
-            @semantic-release/git
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Create Pull Request for release changes
+        if: success()
+        uses: peter-evans/create-pull-request@v5
+        with:
+          commit-message: 'chore(release): update changelog'
+          branch: release-changes
+          title: 'Release: Update Changelog'
+          body: 'Automated release PR with CHANGELOG.md updates.'
+          base: main
