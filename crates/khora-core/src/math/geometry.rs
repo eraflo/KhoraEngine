@@ -70,14 +70,20 @@ impl Aabb {
     /// The provided `half_extents` will be made non-negative.
     #[inline]
     pub fn from_center_half_extents(center: Vec3, half_extents: Vec3) -> Self {
-        let safe_half_extents = Vec3::new(
-            half_extents.x.abs(),
-            half_extents.y.abs(),
-            half_extents.z.abs(),
-        ); // Assuming Vec3 doesn't have .abs()
+        let safe_half_extents = half_extents.abs();
         Self {
             min: center - safe_half_extents,
             max: center + safe_half_extents,
+        }
+    }
+
+    /// Creates a new `Aabb` centered at the origin with the given half-extents.
+    #[inline]
+    pub fn from_half_extents(half_extents: Vec3) -> Self {
+        let safe_half_extents = half_extents.abs();
+        Self {
+            min: -safe_half_extents,
+            max: safe_half_extents,
         }
     }
 
@@ -244,6 +250,48 @@ impl Aabb {
 
         Aabb::from_center_half_extents(transformed_center, new_half_extents)
     }
+
+    /// Calculates the surface area of the `Aabb`.
+    ///
+    /// Useful for SAH (Surface Area Heuristic) in BVH construction.
+    #[inline]
+    pub fn surface_area(&self) -> f32 {
+        let d = self.max - self.min;
+        2.0 * (d.x * d.y + d.y * d.z + d.z * d.x)
+    }
+
+    /// Checks if this `Aabb` fully contains another `Aabb`.
+    #[inline]
+    pub fn contains_aabb(&self, other: &Aabb) -> bool {
+        self.min.x <= other.min.x
+            && self.max.x >= other.max.x
+            && self.min.y <= other.min.y
+            && self.max.y >= other.max.y
+            && self.min.z <= other.min.z
+            && self.max.z >= other.max.z
+    }
+
+    /// Intersection test against a ray using the Slab Method.
+    ///
+    /// `inv_dir` should be `1.0 / ray.direction`. If a component of direction is zero, `inv_dir` should be infinity.
+    /// Returns the distance to the intersection point if it occurs.
+    pub fn intersect_ray(&self, origin: Vec3, inv_dir: Vec3) -> Option<f32> {
+        let t1 = (self.min.x - origin.x) * inv_dir.x;
+        let t2 = (self.max.x - origin.x) * inv_dir.x;
+        let t3 = (self.min.y - origin.y) * inv_dir.y;
+        let t4 = (self.max.y - origin.y) * inv_dir.y;
+        let t5 = (self.min.z - origin.z) * inv_dir.z;
+        let t6 = (self.max.z - origin.z) * inv_dir.z;
+
+        let tmin = t1.min(t2).max(t3.min(t4)).max(t5.min(t6));
+        let tmax = t1.max(t2).min(t3.max(t4)).min(t5.max(t6));
+
+        if tmax < 0.0 || tmin > tmax {
+            return None;
+        }
+
+        Some(tmin)
+    }
 }
 
 impl Default for Aabb {
@@ -395,6 +443,24 @@ mod tests {
         let aabb8 = Aabb::from_min_max(Vec3::new(0.0, 0.0, 2.1), Vec3::new(2.0, 2.0, 3.0));
         assert!(!aabb1.intersects_aabb(&aabb8));
         assert!(!aabb8.intersects_aabb(&aabb1));
+    }
+
+    #[test]
+    fn test_aabb_contains_aabb() {
+        let aabb1 = Aabb::from_min_max(Vec3::new(0.0, 0.0, 0.0), Vec3::new(10.0, 10.0, 10.0));
+
+        // Fully inside
+        let aabb2 = Aabb::from_min_max(Vec3::new(2.0, 2.0, 2.0), Vec3::new(8.0, 8.0, 8.0));
+        assert!(aabb1.contains_aabb(&aabb2));
+        assert!(!aabb2.contains_aabb(&aabb1));
+
+        // Overlapping but not contained
+        let aabb3 = Aabb::from_min_max(Vec3::new(5.0, 5.0, 5.0), Vec3::new(15.0, 15.0, 15.0));
+        assert!(aabb1.intersects_aabb(&aabb3));
+        assert!(!aabb1.contains_aabb(&aabb3));
+
+        // Identical
+        assert!(aabb1.contains_aabb(&aabb1));
     }
 
     #[test]

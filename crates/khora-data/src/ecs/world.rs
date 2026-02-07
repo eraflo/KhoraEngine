@@ -734,6 +734,80 @@ impl World {
         vec.get_mut(location.row_index as usize)
     }
 
+    /// Gets mutable references to components of type `T` for multiple entities simultaneously.
+    ///
+    /// This is safer than `get_mut` in a loop because it allows retrieving multiple
+    /// disjoint mutable references to components of the same type.
+    ///
+    /// # Returns
+    ///
+    /// An array of `Option<&mut T>`. If any entity is not found, does not have the component,
+    /// or if there are duplicate requests for the same component instance, that entry will be `None`.
+    pub fn get_many_mut<T: Component, const N: usize>(
+        &mut self,
+        ids: [EntityId; N],
+    ) -> [Option<&mut T>; N] {
+        let mut results: [Option<&mut T>; N] = std::array::from_fn(|_| None);
+
+        let type_id = TypeId::of::<T>();
+        let domain = match self.registry.get_domain(type_id) {
+            Some(d) => d,
+            None => return results,
+        };
+
+        // 1. Collect locations and check for duplicates
+        let mut locations = [(0u32, 0u32); N];
+        let mut found_mask = [false; N];
+
+        for i in 0..N {
+            if let Some((stored_id, Some(metadata))) = self.entities.get(ids[i].index as usize) {
+                // Ensure the EntityId matches (including generation)
+                if *stored_id == ids[i] {
+                    if let Some(loc) = metadata.locations.get(&domain) {
+                        locations[i] = (loc.page_id, loc.row_index);
+                        found_mask[i] = true;
+                    }
+                }
+            }
+        }
+
+        // 2. Check for collisions in (page, row) to prevent aliasing
+        for i in 0..N {
+            if !found_mask[i] {
+                continue;
+            }
+            for j in (i + 1)..N {
+                if found_mask[j] && locations[i] == locations[j] {
+                    // Collision detected: return all None for safety
+                    return std::array::from_fn(|_| None);
+                }
+            }
+        }
+
+        // 3. Retrieve references using unsafe to bypass split_at_mut complexity.
+        // SAFETY: We have verified that all (page, row) pairs are unique,
+        // so we are not creating multiple mutable references to the same data.
+        for i in 0..N {
+            if found_mask[i] {
+                let (page_id, row_index) = locations[i];
+                unsafe {
+                    // We can't borrow self.pages multiple times mutably in the loop,
+                    // but we know the indices are disjoint or the data is disjoint.
+                    let world_ptr = self as *mut Self;
+                    if let Some(page) = (&mut *world_ptr).pages.get_mut(page_id as usize) {
+                        if let Some(column) = page.columns.get_mut(&type_id) {
+                            if let Some(vec) = column.as_any_mut().downcast_mut::<Vec<T>>() {
+                                results[i] = Some(vec.get_unchecked_mut(row_index as usize));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        results
+    }
+
     /// Gets an immutable reference to a single component `T` for a given entity.
     ///
     /// This provides direct, "random" access to a component.

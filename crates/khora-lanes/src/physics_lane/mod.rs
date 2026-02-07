@@ -16,8 +16,10 @@
 //!
 //! The physics lane is responsible for synchronizing the physics world with the ECS world.
 
+mod native_lanes;
 mod physics_debug_lane;
 
+pub use native_lanes::*;
 pub use physics_debug_lane::*;
 
 use std::collections::{HashMap, HashSet};

@@ -16,6 +16,14 @@
 //!
 //! Universal traits and types for physics simulation providers.
 
+pub mod collision;
+pub mod dynamic_tree;
+pub mod solver;
+
+pub use collision::*;
+pub use dynamic_tree::*;
+pub use solver::*;
+
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -87,6 +95,23 @@ pub enum ColliderShape {
     Sphere(f32),
     /// Capsule with half-height and radius.
     Capsule(f32, f32),
+}
+
+impl ColliderShape {
+    /// Computes the axis-aligned bounding box (AABB) for this shape in local space.
+    pub fn compute_aabb(&self) -> crate::math::Aabb {
+        match self {
+            ColliderShape::Box(half_extents) => crate::math::Aabb::from_half_extents(*half_extents),
+            ColliderShape::Sphere(radius) => {
+                crate::math::Aabb::from_half_extents(Vec3::new(*radius, *radius, *radius))
+            }
+            ColliderShape::Capsule(half_height, radius) => {
+                let r = Vec3::new(*radius, *radius, *radius);
+                let h = Vec3::new(0.0, *half_height, 0.0);
+                crate::math::Aabb::from_half_extents(r + h)
+            }
+        }
+    }
 }
 
 /// Interface contract for any physics engine implementation (e.g., Rapier).
@@ -192,6 +217,28 @@ pub struct RaycastHit {
     pub normal: Vec3,
     /// Exact position of the hit.
     pub position: Vec3,
+}
+
+/// Detailed information about a contact between two colliders.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
+pub struct ContactManifold {
+    /// Normal vector pointing from entity A to entity B.
+    pub normal: Vec3,
+    /// Intersection depth.
+    pub depth: f32,
+    /// Contact point in world space.
+    pub point: Vec3,
+}
+
+impl ContactManifold {
+    /// Returns the inverted manifold (flipped normal).
+    pub fn inverted(&self) -> Self {
+        Self {
+            normal: -self.normal,
+            depth: self.depth,
+            point: self.point,
+        }
+    }
 }
 
 /// A simple line for debug rendering.

@@ -895,3 +895,51 @@ fn test_transversal_concurrency() {
         handle.join().unwrap();
     }
 }
+
+#[test]
+fn test_get_many_mut() {
+    let mut world = World::default();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<Velocity>(SemanticDomain::Spatial);
+
+    let e1 = world.spawn((Position(10), Velocity(1)));
+    let e2 = world.spawn((Position(20), Velocity(2)));
+    let e3 = world.spawn(Position(30));
+
+    // 1. Success case: disjoint entities
+    {
+        let [p1, p2] = world.get_many_mut::<Position, 2>([e1, e2]);
+        assert_eq!(p1.as_ref().unwrap().0, 10);
+        assert_eq!(p2.as_ref().unwrap().0, 20);
+
+        p1.unwrap().0 += 100;
+        p2.unwrap().0 += 200;
+    }
+    assert_eq!(world.get::<Position>(e1).unwrap().0, 110);
+    assert_eq!(world.get::<Position>(e2).unwrap().0, 220);
+
+    // 2. Failure case: duplicate IDs
+    {
+        let [p1, p2] = world.get_many_mut::<Position, 2>([e1, e1]);
+        assert!(p1.is_none());
+        assert!(p2.is_none());
+    }
+
+    // 3. Mixed case: one missing component
+    {
+        let [p1, p2] = world.get_many_mut::<Velocity, 2>([e1, e3]);
+        assert!(p1.is_some());
+        assert!(p2.is_none()); // e3 only has Position
+    }
+
+    // 4. Case: invalid EntityId
+    {
+        use khora_core::ecs::entity::EntityId;
+        let invalid_id = EntityId {
+            index: 999,
+            generation: 0,
+        };
+        let [p1] = world.get_many_mut::<Position, 1>([invalid_id]);
+        assert!(p1.is_none());
+    }
+}
