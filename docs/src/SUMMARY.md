@@ -12,6 +12,7 @@
 - [ECS Architecture (CRPECS)](./06_ecs_architecture.md)
 - [Asset Architecture: The Strategic System](./07_asset_architecture_vfs.md)
 - [Serialization Architecture: SAA-Serialize](./08_serialization_architecture.md)
+- [DCC Architecture](./11_dcc_architecture.md)
 
 # III. Development
 - [Roadmap & Issue Tracker](09_roadmap_and_issues.md)
