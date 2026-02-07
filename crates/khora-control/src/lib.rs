@@ -33,3 +33,10 @@
 //! frequency and focusing on intelligent analysis rather than raw execution speed.
 
 #![warn(missing_docs)]
+
+pub mod context;
+pub mod metrics;
+pub mod service;
+
+pub use service::{DccConfig, DccService};
+pub use context::{Context, ExecutionPhase, HardwareState, ThermalStatus, BatteryLevel};

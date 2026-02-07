@@ -26,7 +26,6 @@ This document outlines the phased development plan for Khora. It integrates all 
 **Goal:** Implement the "magic" of Khora: the DCC, ISAs, and GORNA, proving the SAA concept.
 
 #### [Dynamic Context Core (DCC) v1 - Awareness]
-- #71 [Feature] Design DCC Architecture
 - #72 [Feature] Implement DCC Core Service
 - #73 [Feature] Integrate Performance/Resource Metrics Collection into DCC
 - #74 [Feature] Implement Game State Monitoring Hook into DCC
@@ -34,7 +33,6 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #76 [Task] Refactor one Subsystem to partially implement ISA v0.1
 - #116 [Research/Refactor] Evaluate Abstraction for Windowing/Platform System
 - #128 [Feature] DCC v1 Integration with Core Metrics System
-- #163 [Feature] Make CRPECS Garbage Collector an ISA
 
 #### [Intelligent Subsystem Agents (ISA) v1 & Basic Adaptation]
 - #176 [Feature] Evolve AssetAgent into a full ISA (Depends on #174)
@@ -238,3 +236,7 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #158 [Feature] Implement Transversal Queries (CRPECS v1)
 - #100 [Feature] Implement Basic Physics System (Integration & Collision Detection) (Depends on #40)
 - #161 [Feature] Define and Implement Core PhysicsLanes (Broadphase, Solver)
+
+#### [Dynamic Context Core (DCC) v1 - Awareness]
+- #71 [Feature] Design DCC Architecture
+- #163 [Feature] Make CRPECS Garbage Collector an ISA
