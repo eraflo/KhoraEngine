@@ -23,6 +23,9 @@ pub struct GcWorkPlan {
     pub budget: usize,
     /// The list of orphaned data locations to clean up.
     pub items_to_clean: Vec<(PageIndex, SemanticDomain)>,
+    /// The list of pages that have fragmentation (holes) to be vacuumed.
+    /// Stores `(page_index, hole_row_index)`.
+    pub pages_to_vacuum: Vec<(u32, u32)>,
 }
 
 /// The lane responsible for executing the physical cleanup of orphaned component data.
@@ -40,8 +43,14 @@ impl CompactionLane {
     /// It requires a trait object with `WorldMaintenance` capabilities to perform
     /// its low-level cleanup operations.
     pub fn run(&self, world: &mut dyn WorldMaintenance, work_plan: &GcWorkPlan) {
+        // 1. Cleanup orphans
         for (location, domain) in work_plan.items_to_clean.iter().take(work_plan.budget) {
             world.cleanup_orphan_at(*location, *domain);
+        }
+
+        // 2. Vacuum pages (compact fragmentation)
+        for (page_id, hole_row_index) in work_plan.pages_to_vacuum.iter().take(work_plan.budget) {
+            world.vacuum_hole_at(*page_id, *hole_row_index);
         }
     }
 }

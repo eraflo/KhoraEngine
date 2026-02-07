@@ -63,6 +63,13 @@ pub struct DomainStats {
 pub trait WorldMaintenance {
     /// Cleans up an orphaned data slot in a page.
     fn cleanup_orphan_at(&mut self, location: PageIndex, domain: SemanticDomain);
+
+    /// Vacuums a hole in a page by moving the last entity into it.
+    ///
+    /// # Arguments
+    /// * `page_index` - The index of the page containing the hole.
+    /// * `hole_row_index` - The row index of the hole to be filled.
+    fn vacuum_hole_at(&mut self, page_index: u32, hole_row_index: u32);
 }
 
 /// The central container for the entire ECS, holding all entities, components, and metadata.
@@ -856,12 +863,35 @@ impl WorldMaintenance for World {
         let last_entity_in_page = *page.entities.last().unwrap();
         page.swap_remove_row(location.row_index);
 
-        let (_id, metadata_opt) = self
-            .entities
-            .get_mut(last_entity_in_page.index as usize)
-            .unwrap();
-        if let Some(metadata) = metadata_opt.as_mut() {
-            metadata.locations.insert(domain, location);
+        if let Some((_id, metadata_opt)) = self.entities.get_mut(last_entity_in_page.index as usize)
+        {
+            if let Some(metadata) = metadata_opt.as_mut() {
+                if let Some(loc) = metadata.locations.get_mut(&domain) {
+                    *loc = location;
+                }
+            }
+        }
+    }
+
+    fn vacuum_hole_at(&mut self, page_index: u32, hole_row_index: u32) {
+        // Find the domain for this page.
+        // We can infer the domain from the first component type in the page.
+        let domain = {
+            let page = &self.storage.pages[page_index as usize];
+            if let Some(first_type) = page.type_ids.first() {
+                self.storage.registry.get_domain(*first_type)
+            } else {
+                None
+            }
+        };
+
+        if let Some(domain) = domain {
+            // Reuse cleanup logic, constructing a transient PageIndex.
+            let location = PageIndex {
+                page_id: page_index,
+                row_index: hole_row_index,
+            };
+            self.cleanup_orphan_at(location, domain);
         }
     }
 }
