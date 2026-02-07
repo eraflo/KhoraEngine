@@ -16,7 +16,6 @@ This document outlines the phased development plan for Khora. It integrates all 
 **Goal:** Build out the necessary features to represent and interact with a game world, starting with the implementation of our revolutionary ECS.
 
 #### [Rendering Capabilities, Physics, Animation, AI & Strategy Exploration]
-- #161 [Feature] Define and Implement Core PhysicsLanes (Broadphase, Solver)
 - #101 [Feature] Implement Skeletal Animation System
 - #162 [Feature] Implement SkinnedMesh ComputeLane
 - #104 [Feature] Implement Basic AI System (Placeholder Behaviors, e.g., Simple State Machine)
@@ -238,3 +237,4 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #50 [Research] Explore Alternative Rendering Paths/Strategies (e.g., Forward vs Deferred concept)
 - #158 [Feature] Implement Transversal Queries (CRPECS v1)
 - #100 [Feature] Implement Basic Physics System (Integration & Collision Detection) (Depends on #40)
+- #161 [Feature] Define and Implement Core PhysicsLanes (Broadphase, Solver)
