@@ -19,8 +19,12 @@
 
 #![warn(missing_docs)]
 
+pub mod agent;
 pub mod asset;
 pub mod audio;
+pub mod context;
+pub mod control;
+
 pub mod ecs;
 pub mod event;
 pub mod graph;
@@ -34,4 +38,5 @@ pub mod telemetry;
 pub mod utils;
 pub mod vfs;
 
+pub use context::EngineContext;
 pub use utils::timer::Stopwatch;

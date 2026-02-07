@@ -87,6 +87,7 @@ graph TD
     subgraph Hot_Path [Hot Path Data Plane]
         Lanes[Lanes Rendering/Physics]
         Perif[Sensors OS/Hardware]
+        App[Application Logic/ECS]
     end
 
     subgraph Telemetry_System [Telemetry System]
@@ -114,9 +115,11 @@ graph TD
     Store --> State
     State --> Brain
     
-    Brain -- "Budget Command" --> RenderAgent
-    Brain -- "Budget Command" --> PhysicsAgent
+    Brain -- "1. Negotiate" --> RenderAgent
+    Brain -- "2. Apply Budget" --> RenderAgent
     
+    App -- "3. Tactical Coordination" --> RenderAgent
+    RenderAgent -- "Extract" --> App
     RenderAgent -.->|Configure| Lanes
 ```
 
@@ -139,10 +142,15 @@ Compare the current `Context` against the defined goals. The **GORNA (Goal-Orien
 | `Thermal == Critical` | Reduce `RenderBudget.resolution_scale`. |
 | `FrameTime > Target` | Signal `RenderAgent` to switch to a cheaper Strategy (e.g., `High` -> `Medium`). |
 
-### Step 4: Act
-Send `ControlCommand` messages to the relevant **ISAs**.
-*   `RenderAgent`: "Limit frame budget to 14ms."
-*   `PhysicsAgent`: "Reduce sub-steps."
+### Step 4: Act (Arbitration & Application)
+The DCC runs the `GornaArbitrator` to resolve resource conflicts and issues budgets to the agents.
+*   **Negotiate**: The DCC asks agents for strategy options based on the current `target_latency`.
+*   **Apply Budget**: The DCC selects the optimal strategy and issues a `ResourceBudget` to each agent.
+
+### Step 5: Tactical Coordination (`Agent::update`)
+Beyond strategic budgeting, agents perform high-frequency tactical work. This is triggered by the main engine loop (e.g., in `RedrawRequested`) via the `DccService::update_agents` method.
+*   **Mechanism**: The engine provides an `EngineContext` containing type-erased (`Any`) pointers to the ECS `World` and `Assets`.
+*   **Action**: Agents (like the `RenderAgent`) downcast these pointers to extract data, prepare GPU meshes, and coordinate multi-threaded data flows between the Data Plane and the Data Lane.
 
 ## 5. Integration Strategy
 

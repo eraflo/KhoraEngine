@@ -23,6 +23,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::analysis::HeuristicEngine;
+use crate::gorna::GornaArbitrator;
+use khora_core::agent::Agent;
+
 /// Configuration for the DCC Service.
 #[derive(Debug, Clone)]
 pub struct DccConfig {
@@ -37,12 +41,10 @@ impl Default for DccConfig {
 }
 
 /// The Dynamic Context Core service.
-///
-/// It runs a background thread that consumes telemetry events and updates
-/// the situational context of the engine.
 pub struct DccService {
     config: DccConfig,
     context: Arc<std::sync::RwLock<Context>>,
+    agents: Arc<std::sync::Mutex<Vec<Arc<std::sync::Mutex<dyn Agent>>>>>,
     running: Arc<AtomicBool>,
     handle: Option<thread::JoinHandle<()>>,
     event_tx: Sender<TelemetryEvent>,
@@ -55,11 +57,22 @@ impl DccService {
         let service = Self {
             config,
             context: Arc::new(std::sync::RwLock::new(Context::default())),
+            agents: Arc::new(std::sync::Mutex::new(Vec::new())),
             running: Arc::new(AtomicBool::new(false)),
             handle: None,
             event_tx: tx,
         };
         (service, rx)
+    }
+
+    /// Registers an Intelligent Subsystem Agent with the DCC.
+    pub fn register_agent(&self, agent: Arc<std::sync::Mutex<dyn Agent>>) {
+        let mut agents = self.agents.lock().unwrap();
+        {
+            let a = agent.lock().unwrap();
+            log::info!("DCC: Registered agent {:?}", a.id());
+        }
+        agents.push(agent);
     }
 
     /// Starts the DCC background thread.
@@ -71,10 +84,14 @@ impl DccService {
         self.running.store(true, Ordering::SeqCst);
         let running = Arc::clone(&self.running);
         let context = Arc::clone(&self.context);
+        let agents = Arc::clone(&self.agents);
         let tick_duration = Duration::from_secs_f32(1.0 / self.config.tick_rate as f32);
 
         let handle = thread::spawn(move || {
             let mut store = MetricStore::new();
+            let heuristic_engine = HeuristicEngine;
+            let arbitrator = GornaArbitrator;
+
             log::info!("DCC Service thread started.");
 
             while running.load(Ordering::Relaxed) {
@@ -88,9 +105,20 @@ impl DccService {
                                 store.push(id, v as f32);
                             }
                         }
-                        TelemetryEvent::ResourceReport(report) => {
-                            // TODO: Integrate raw resource reports into metrics or hardware state
-                            log::trace!("DCC received resource report: {:?}", report);
+                        TelemetryEvent::ResourceReport(_) => {
+                            // Memory/VRAM reports are handled via individual metrics for now
+                        }
+                        TelemetryEvent::HardwareReport(report) => {
+                            let mut ctx = context.write().unwrap();
+                            ctx.hardware.thermal = report.thermal;
+                            ctx.hardware.cpu_load = report.cpu_load;
+                            ctx.hardware.gpu_load = report.gpu_load.unwrap_or(0.0);
+                            log::debug!(
+                                "DCC Hardware updated: Thermal={:?}, CPU={:.2}, GPU={:?}",
+                                ctx.hardware.thermal,
+                                ctx.hardware.cpu_load,
+                                ctx.hardware.gpu_load
+                            );
                         }
                         TelemetryEvent::PhaseChange(phase_name) => {
                             let mut ctx = context.write().unwrap();
@@ -106,8 +134,18 @@ impl DccService {
                     }
                 }
 
-                // 2. Perform Analysis (Heuristics)
-                // TODO: Update HardwareState based on MetricStore trends
+                // 2. Perform Analysis & Arbitration
+                let (needs_negotiation, ctx_copy) = {
+                    let ctx = context.read().unwrap();
+                    let report = heuristic_engine.analyze(&ctx, &store);
+                    (report.needs_negotiation, ctx.clone())
+                };
+
+                if needs_negotiation {
+                    let mut agents_lock = agents.lock().unwrap();
+                    // Each agent is an Arc<Mutex<dyn Agent>>, the arbitrator needs to lock them.
+                    arbitrator.arbitrate(&ctx_copy, &mut agents_lock);
+                }
 
                 // 3. Sleep until next tick
                 let elapsed = start_time.elapsed();
@@ -134,9 +172,21 @@ impl DccService {
         self.event_tx.clone()
     }
 
-    /// Returns a copy of the current context.
+    /// Periodically updates the engine's situational model.
     pub fn get_context(&self) -> Context {
         self.context.read().unwrap().clone()
+    }
+
+    /// Triggers the tactical update phase for all registered agents.
+    /// This should be called by the engine loop (e.g. in the redraw request).
+    pub fn update_agents(&self, context: &mut khora_core::EngineContext<'_>) {
+        if let Ok(mut agents) = self.agents.lock() {
+            for agent_mutex in agents.iter_mut() {
+                if let Ok(mut agent) = agent_mutex.lock() {
+                    agent.update(context);
+                }
+            }
+        }
     }
 }
 

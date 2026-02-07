@@ -12,35 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! High-level situational model of the engine and hardware.
+//! Context for the Dynamic Context Core.
 
-/// Represents the thermal state of the device.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ThermalStatus {
-    /// Device is running cool.
-    #[default]
-    Cool,
-    /// Device is warming up but within normal bounds.
-    Warm,
-    /// Device is actively throttling performance to shed heat.
-    Throttling,
-    /// Device is at critical temperature, emergency measures required.
-    Critical,
-}
-
-/// Represents the power source and battery level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum BatteryLevel {
-    /// Device is connected to a stable power source.
-    #[default]
-    Mains,
-    /// Battery is high (e.g. > 50%).
-    High,
-    /// Battery is low (e.g. < 20%).
-    Low,
-    /// Battery is at critical level, power saving is mandatory.
-    Critical,
-}
+pub use khora_core::platform::{BatteryLevel, ThermalStatus};
 
 /// Hardware context observed by the DCC.
 #[derive(Debug, Clone, Default)]

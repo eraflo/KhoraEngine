@@ -12,8 +12,4 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Platform abstraction implementation
-
-pub mod input;
-pub mod sysinfo_impl;
-pub mod window;
+pub mod gorna;

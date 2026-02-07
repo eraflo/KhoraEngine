@@ -21,6 +21,7 @@
 use std::borrow::Cow;
 use std::fmt::Debug;
 
+use crate::platform::{BatteryLevel, ThermalStatus};
 use crate::renderer::GpuHook;
 
 /// The core trait for a resource monitor.
@@ -58,6 +59,8 @@ pub enum MonitoredResourceType {
     SystemRam,
     /// General GPU performance (e.g., execution timing).
     Gpu,
+    /// General platform hardware status (thermal, CPU load).
+    Hardware,
 }
 
 /// A generic, unified report of resource usage, typically in bytes.
@@ -69,6 +72,19 @@ pub struct ResourceUsageReport {
     pub peak_bytes: Option<u64>,
     /// The total capacity of the resource in bytes, if known.
     pub total_capacity_bytes: Option<u64>,
+}
+
+/// A report of physical hardware status (CPU, thermal, etc.).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HardwareReport {
+    /// Current thermal status.
+    pub thermal: ThermalStatus,
+    /// Current battery/power status.
+    pub battery: BatteryLevel,
+    /// Overall CPU load (0.0 to 1.0).
+    pub cpu_load: f32,
+    /// Overall GPU load (0.0 to 1.0), if reported by the hardware monitor.
+    pub gpu_load: Option<f32>,
 }
 
 /// A report of GPU performance timings for a single frame.

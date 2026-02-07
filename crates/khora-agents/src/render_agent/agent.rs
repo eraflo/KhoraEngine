@@ -16,13 +16,18 @@
 
 use super::mesh_preparation::MeshPreparationSystem;
 use khora_core::{
+    agent::Agent,
     asset::Material,
+    control::gorna::{
+        AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyOption,
+    },
     math::Mat4,
     renderer::{
         api::{GpuMesh, RenderContext, RenderObject},
         traits::CommandEncoder,
         GraphicsDevice, Mesh, ViewInfo,
     },
+    EngineContext,
 };
 use khora_data::{
     assets::Assets,
@@ -33,6 +38,9 @@ use khora_lanes::render_lane::{
     SimpleUnlitLane,
 };
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
+
+use khora_core::control::gorna::{AgentId, StrategyId};
 
 /// Threshold for switching to Forward+ rendering.
 /// When the scene has more than this many lights, Forward+ is preferred.
@@ -53,10 +61,6 @@ pub enum RenderingStrategy {
 }
 
 /// The agent responsible for managing the state and logic of the rendering pipeline.
-///
-/// It orchestrates the various systems and lanes involved in preparing and
-/// translating scene data from the ECS into a format consumable by the low-level
-/// `RenderSystem`.
 pub struct RenderAgent {
     // Intermediate data structure populated by the extraction phase.
     render_world: RenderWorld,
@@ -68,8 +72,113 @@ pub struct RenderAgent {
     extract_lane: ExtractRenderablesLane,
     // Available render lanes (strategies), extensible collection.
     lanes: Vec<Box<dyn RenderLane>>,
-    // Current rendering strategy.
+    // Current rendering strategy selection mode.
     strategy: RenderingStrategy,
+    // Current active strategy ID from negotiation.
+    current_strategy: StrategyId,
+}
+
+impl Agent for RenderAgent {
+    fn id(&self) -> AgentId {
+        AgentId::Renderer
+    }
+
+    fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
+        let mut strategies = Vec::new();
+
+        // Strategy 1: Unlit (Low Power / Very Low Cost)
+        strategies.push(StrategyOption {
+            id: StrategyId::LowPower,
+            estimated_time: Duration::from_millis(2),
+            estimated_vram: 0, // Differential
+        });
+
+        // Strategy 2: LitForward (Balanced / Standard)
+        strategies.push(StrategyOption {
+            id: StrategyId::Balanced,
+            estimated_time: Duration::from_millis(8),
+            estimated_vram: 1024 * 1024 * 10, // 10MB approx
+        });
+
+        // Strategy 3: ForwardPlus (High Performance / High Cost for many lights)
+        let total_lights = self.render_world.directional_light_count()
+            + self.render_world.point_light_count()
+            + self.render_world.spot_light_count();
+
+        if total_lights > 5 {
+            strategies.push(StrategyOption {
+                id: StrategyId::HighPerformance,
+                estimated_time: Duration::from_millis(12),
+                estimated_vram: 1024 * 1024 * 20,
+            });
+        }
+
+        NegotiationResponse { strategies }
+    }
+
+    fn apply_budget(&mut self, budget: ResourceBudget) {
+        log::info!(
+            "RenderAgent: Dynamic strategy update to {:?}",
+            budget.strategy_id
+        );
+
+        // Clear existing lanes and set up new ones based on the chosen strategy.
+        // Note: The ExtractRenderablesLane is typically a separate system that populates RenderWorld,
+        // not a RenderLane itself. The provided instruction seems to re-purpose it here.
+        // Assuming the intent is to dynamically configure the *rendering* lanes.
+        self.lanes.clear();
+        match budget.strategy_id {
+            StrategyId::LowPower => {
+                self.lanes.push(Box::new(SimpleUnlitLane::new()));
+                self.strategy = RenderingStrategy::Unlit;
+            }
+            StrategyId::Balanced => {
+                self.lanes.push(Box::new(LitForwardLane::new()));
+                self.strategy = RenderingStrategy::LitForward;
+            }
+            StrategyId::HighPerformance => {
+                self.lanes.push(Box::new(ForwardPlusLane::new()));
+                self.strategy = RenderingStrategy::ForwardPlus;
+            }
+            StrategyId::Custom(_) => {
+                log::warn!(
+                    "RenderAgent received unsupported custom strategy. Falling back to Balanced."
+                );
+                self.lanes.push(Box::new(LitForwardLane::new()));
+                self.strategy = RenderingStrategy::LitForward;
+            }
+        }
+
+        self.current_strategy = budget.strategy_id;
+    }
+
+    fn update(&mut self, context: &mut EngineContext<'_>) {
+        // Step 1: Downcast the World and Asset Registry from the type-erased context.
+        if let Some(world_any) = context.world.as_deref_mut() {
+            if let Some(world) = world_any.downcast_mut::<World>() {
+                // Step 2: Access the CPU mesh assets.
+                if let Some(assets_any) = context.assets {
+                    if let Some(mesh_assets) = assets_any.downcast_ref::<Assets<Mesh>>() {
+                        // Step 3: Run the preparation and extraction logic.
+                        self.prepare_frame(world, mesh_assets, context.graphics_device.as_ref());
+                        log::trace!("RenderAgent: Tactical update complete. Frame data prepared.");
+                    }
+                }
+            }
+        }
+    }
+
+    fn report_status(&self) -> AgentStatus {
+        // The health score currently remains optimal if the agent is correctly
+        // operating under its assigned strategy.
+        AgentStatus {
+            agent_id: self.id(),
+            health_score: 1.0,
+            current_strategy: self.current_strategy,
+            is_stalled: false,
+            message: format!("Lights: {}", self.render_world.point_light_count()),
+        }
+    }
 }
 
 impl RenderAgent {
@@ -91,6 +200,7 @@ impl RenderAgent {
             extract_lane: ExtractRenderablesLane::new(),
             lanes,
             strategy: RenderingStrategy::Auto,
+            current_strategy: StrategyId::Balanced,
         }
     }
 

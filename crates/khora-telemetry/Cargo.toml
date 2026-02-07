@@ -9,6 +9,7 @@ khora-core = { path = "../khora-core" }
 
 # Logging and tracing
 log = "0.4"
+crossbeam-channel = "0.5"
 env_logger = "0.11"
 
 # Metrics and monitoring

@@ -276,8 +276,10 @@ pub struct GraphicsAdapterInfo {
     pub device_type: RendererDeviceType,
 }
 
-/// A simple representation of a single object to be rendered in a pass.
-/// TODO: evolve this structure to a more high level abstraction for real 3D objects.
+/// A low-level representation of a single draw call to be processed by a [`RenderLane`].
+///
+/// This structure links GPU buffers and pipelines, serving as the common data format
+/// produced by ISAs (like `RenderAgent`) and consumed by specialized rendering lanes.
 #[derive(Debug, Clone)]
 pub struct RenderObject {
     /// The [`RenderPipelineId`] to bind for this object.
