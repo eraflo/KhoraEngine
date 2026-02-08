@@ -15,7 +15,7 @@
 //! Provides common, backend-agnostic enums and data structures for the rendering API.
 
 use crate::{
-    math::{Mat4, Vec3},
+    math::{LinearRgba, Mat4, Vec3},
     renderer::{BufferId, RenderPipelineId},
 };
 
@@ -469,6 +469,79 @@ impl CameraUniformData {
 // Ensure the struct can be safely cast to bytes for GPU upload
 unsafe impl bytemuck::Pod for CameraUniformData {}
 unsafe impl bytemuck::Zeroable for CameraUniformData {}
+
+// --- Uniform Buffers ---
+
+/// Data for a single directional light, formatted for GPU consumption.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct DirectionalLightUniform {
+    /// Direction vector (xyz), with padding (w).
+    pub direction: [f32; 4], // w is padding
+    /// Color (rgb) and Intensity (a).
+    pub color: LinearRgba,
+}
+
+/// Data for a single point light, formatted for GPU consumption.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PointLightUniform {
+    /// Position (xyz) and Range (w).
+    pub position: [f32; 4], // w is range
+    /// Color (rgb) and Intensity (a).
+    pub color: LinearRgba,
+}
+
+/// Data for a single spot light, formatted for GPU consumption.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SpotLightUniform {
+    /// Position (xyz) and Range (w).
+    pub position: [f32; 4], // w is range
+    /// Direction (xyz) and Inner Cone Cosine (w).
+    pub direction: [f32; 4], // w is inner_cone_cos
+    /// Color (rgb) and Intensity (a).
+    pub color: LinearRgba,
+    /// Outer Cone Cosine (x) and Padding (yzw).
+    pub params: [f32; 4], // x = outer_cone_cos, yzw = padding
+}
+
+/// Constants for maximum light counts.
+pub const MAX_DIRECTIONAL_LIGHTS: usize = 4;
+pub const MAX_POINT_LIGHTS: usize = 16;
+pub const MAX_SPOT_LIGHTS: usize = 8;
+
+/// The structure of the global lighting uniform buffer.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct LightingUniforms {
+    pub directional_lights: [DirectionalLightUniform; MAX_DIRECTIONAL_LIGHTS],
+    pub point_lights: [PointLightUniform; MAX_POINT_LIGHTS],
+    pub spot_lights: [SpotLightUniform; MAX_SPOT_LIGHTS],
+    pub num_directional_lights: u32,
+    pub num_point_lights: u32,
+    pub num_spot_lights: u32,
+    pub _padding: u32,
+}
+
+/// Data for a model's transform, formatted for GPU consumption.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ModelUniforms {
+    pub model_matrix: [[f32; 4]; 4],
+    pub normal_matrix: [[f32; 4]; 4],
+}
+
+/// Data for a material's properties, formatted for the standard Lit Shader.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct MaterialUniforms {
+    pub base_color: LinearRgba,
+    /// Emissive color (rgb) and Specular Power (a).
+    pub emissive: LinearRgba,
+    /// Ambient color (rgb) and Padding (a).
+    pub ambient: LinearRgba,
+}
 
 #[cfg(test)]
 mod tests {

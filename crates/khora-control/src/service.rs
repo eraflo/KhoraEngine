@@ -111,8 +111,25 @@ impl DccService {
                         TelemetryEvent::HardwareReport(report) => {
                             let mut ctx = context.write().unwrap();
                             ctx.hardware.thermal = report.thermal;
+                            ctx.hardware.battery = report.battery;
                             ctx.hardware.cpu_load = report.cpu_load;
                             ctx.hardware.gpu_load = report.gpu_load.unwrap_or(0.0);
+                            // Eagerly update the budget multiplier on hardware changes.
+                            ctx.refresh_budget_multiplier();
+
+                            // Extract frame time metrics if available
+                            if let Some(gpu_timings) = report.gpu_timings {
+                                if let Some(frame_time_us) = gpu_timings.frame_total_duration_us() {
+                                    store.push(
+                                        khora_core::telemetry::MetricId::new(
+                                            "renderer",
+                                            "frame_time",
+                                        ),
+                                        frame_time_us as f32 / 1000.0, // Convert to ms
+                                    );
+                                }
+                            }
+
                             log::debug!(
                                 "DCC Hardware updated: Thermal={:?}, CPU={:.2}, GPU={:?}",
                                 ctx.hardware.thermal,
@@ -131,20 +148,52 @@ impl DccService {
                             };
                             log::debug!("DCC Phase changed to: {:?}", ctx.phase);
                         }
+                        TelemetryEvent::GpuReport(report) => {
+                            // Ingest GPU timing data into the metric store.
+                            if let Some(frame_time_us) = report.frame_total_duration_us() {
+                                store.push(
+                                    khora_core::telemetry::MetricId::new(
+                                        "renderer",
+                                        "gpu_frame_time",
+                                    ),
+                                    frame_time_us as f32 / 1000.0,
+                                );
+                            }
+                            store.push(
+                                khora_core::telemetry::MetricId::new(
+                                    "renderer",
+                                    "draw_calls",
+                                ),
+                                report.draw_calls as f32,
+                            );
+                            store.push(
+                                khora_core::telemetry::MetricId::new(
+                                    "renderer",
+                                    "triangles_rendered",
+                                ),
+                                report.triangles_rendered as f32,
+                            );
+                        }
                     }
                 }
 
                 // 2. Perform Analysis & Arbitration
-                let (needs_negotiation, ctx_copy) = {
-                    let ctx = context.read().unwrap();
+                let (report, ctx_copy) = {
+                    let mut ctx = context.write().unwrap();
+                    // Recompute global budget multiplier from latest hardware state.
+                    ctx.refresh_budget_multiplier();
                     let report = heuristic_engine.analyze(&ctx, &store);
-                    (report.needs_negotiation, ctx.clone())
+                    (report, ctx.clone())
                 };
 
-                if needs_negotiation {
+                // Log analysis alerts for observability.
+                for alert in &report.alerts {
+                    log::info!("DCC Analysis: {}", alert);
+                }
+
+                if report.needs_negotiation {
                     let mut agents_lock = agents.lock().unwrap();
-                    // Each agent is an Arc<Mutex<dyn Agent>>, the arbitrator needs to lock them.
-                    arbitrator.arbitrate(&ctx_copy, &mut agents_lock);
+                    arbitrator.arbitrate(&ctx_copy, &report, &mut agents_lock);
                 }
 
                 // 3. Sleep until next tick

@@ -41,4 +41,6 @@ pub mod metrics;
 pub mod service;
 
 pub use context::{BatteryLevel, Context, ExecutionPhase, HardwareState, ThermalStatus};
+pub use analysis::AnalysisReport;
+pub use gorna::GornaArbitrator;
 pub use service::{DccConfig, DccService};

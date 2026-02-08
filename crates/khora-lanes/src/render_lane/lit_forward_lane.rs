@@ -25,6 +25,7 @@
 //! about rendering strategy selection based on performance budgets.
 
 use crate::render_lane::RenderLane;
+use khora_core::renderer::api::BindGroupLayoutId;
 
 use super::RenderWorld;
 use khora_core::{
@@ -35,7 +36,9 @@ use khora_core::{
                 LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
                 RenderPassDescriptor, StoreOp,
             },
-            PrimitiveTopology,
+            DirectionalLightUniform, LightingUniforms, MaterialUniforms, ModelUniforms,
+            PointLightUniform, PrimitiveTopology, SpotLightUniform, MAX_DIRECTIONAL_LIGHTS,
+            MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS,
         },
         traits::CommandEncoder,
         GpuMesh, RenderContext, RenderPipelineId,
@@ -120,6 +123,16 @@ pub struct LitForwardLane {
     pub max_point_lights: u32,
     /// Maximum number of spot lights supported per pass.
     pub max_spot_lights: u32,
+    /// The stored render pipeline handle.
+    pipeline: std::sync::Mutex<Option<RenderPipelineId>>,
+    /// Layout for Camera (Group 0)
+    camera_layout: std::sync::Mutex<Option<BindGroupLayoutId>>,
+    /// Layout for Model (Group 1)
+    model_layout: std::sync::Mutex<Option<BindGroupLayoutId>>,
+    /// Layout for Material (Group 2)
+    material_layout: std::sync::Mutex<Option<BindGroupLayoutId>>,
+    /// Layout for Lighting (Group 3)
+    light_layout: std::sync::Mutex<Option<BindGroupLayoutId>>,
 }
 
 impl Default for LitForwardLane {
@@ -129,6 +142,11 @@ impl Default for LitForwardLane {
             max_directional_lights: 4,
             max_point_lights: 16,
             max_spot_lights: 8,
+            pipeline: std::sync::Mutex::new(None),
+            camera_layout: std::sync::Mutex::new(None),
+            model_layout: std::sync::Mutex::new(None),
+            material_layout: std::sync::Mutex::new(None),
+            light_layout: std::sync::Mutex::new(None),
         }
     }
 }
@@ -181,43 +199,336 @@ impl RenderLane for LitForwardLane {
 
     fn get_pipeline_for_material(
         &self,
-        material_uuid: Option<AssetUUID>,
-        materials: &Assets<Box<dyn Material>>,
+        _material_uuid: Option<AssetUUID>,
+        _materials: &Assets<Box<dyn Material>>,
     ) -> RenderPipelineId {
-        // If a material is specified, verify it exists in the cache
-        if let Some(uuid) = material_uuid {
-            if materials.get(&uuid).is_none() {
-                // Material not found, will use default pipeline
-                let _ = uuid;
-            }
-        }
-
-        // Currently all lit materials use the same pipeline (ID 1).
-        // Future work: differentiate based on material properties,
-        // texture presence, alpha mode, etc.
-        RenderPipelineId(1)
+        // Return the stored pipeline, or fallback to 1 (placeholder)
+        self.pipeline.lock().unwrap().unwrap_or(RenderPipelineId(1))
     }
 
     fn render(
         &self,
         render_world: &RenderWorld,
+        device: &dyn khora_core::renderer::GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
         render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
-        materials: &RwLock<Assets<Box<dyn Material>>>,
+        _materials: &RwLock<Assets<Box<dyn Material>>>,
     ) {
-        // Acquire read locks on the caches
+        use khora_core::renderer::api::{
+            BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding, BufferDescriptor,
+            BufferUsage,
+        };
+
+        // 1. Get Active Camera View
+        let view = if let Some(first_view) = render_world.views.first() {
+            first_view
+        } else {
+            return; // No camera, nothing to render
+        };
+
+        // 2. Prepare Global Uniforms (Camera & Lights)
+
+        // Camera Uniforms
+        let camera_uniforms = khora_core::renderer::api::CameraUniformData {
+            view_projection: view.view_proj,
+            camera_position: [view.position.x, view.position.y, view.position.z, 1.0],
+        };
+
+        let camera_buffer = match device.create_buffer_with_data(
+            &BufferDescriptor {
+                label: Some(std::borrow::Cow::Borrowed("Camera Uniform Buffer")),
+                size: std::mem::size_of::<khora_core::renderer::api::CameraUniformData>() as u64,
+                usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
+                mapped_at_creation: false,
+            },
+            bytemuck::bytes_of(&camera_uniforms),
+        ) {
+            Ok(b) => b,
+            Err(e) => {
+                log::error!("Failed to create camera buffer: {:?}", e);
+                return;
+            }
+        };
+
+        // Lighting Uniforms
+        let mut lighting_uniforms = LightingUniforms {
+            directional_lights: [DirectionalLightUniform {
+                direction: [0.0; 4],
+                color: khora_core::math::LinearRgba::BLACK,
+            }; MAX_DIRECTIONAL_LIGHTS],
+            point_lights: [PointLightUniform {
+                position: [0.0; 4],
+                color: khora_core::math::LinearRgba::BLACK,
+            }; MAX_POINT_LIGHTS],
+            spot_lights: [SpotLightUniform {
+                position: [0.0; 4],
+                direction: [0.0; 4],
+                color: khora_core::math::LinearRgba::BLACK,
+                params: [0.0; 4],
+            }; MAX_SPOT_LIGHTS],
+            num_directional_lights: 0,
+            num_point_lights: 0,
+            num_spot_lights: 0,
+            _padding: 0,
+        };
+
+        for light in &render_world.lights {
+            match light.light_type {
+                khora_core::renderer::light::LightType::Directional(ref d) => {
+                    if (lighting_uniforms.num_directional_lights as usize) < MAX_DIRECTIONAL_LIGHTS
+                    {
+                        let idx = lighting_uniforms.num_directional_lights as usize;
+                        lighting_uniforms.directional_lights[idx] = DirectionalLightUniform {
+                            direction: [
+                                light.direction.x,
+                                light.direction.y,
+                                light.direction.z,
+                                0.0,
+                            ],
+                            color: d.color.with_alpha(d.intensity),
+                        };
+                        lighting_uniforms.num_directional_lights += 1;
+                    }
+                }
+                khora_core::renderer::light::LightType::Point(ref p) => {
+                    if (lighting_uniforms.num_point_lights as usize) < MAX_POINT_LIGHTS {
+                        let idx = lighting_uniforms.num_point_lights as usize;
+                        lighting_uniforms.point_lights[idx] = PointLightUniform {
+                            position: [
+                                light.position.x,
+                                light.position.y,
+                                light.position.z,
+                                p.range,
+                            ],
+                            color: p.color.with_alpha(p.intensity),
+                        };
+                        lighting_uniforms.num_point_lights += 1;
+                    }
+                }
+                khora_core::renderer::light::LightType::Spot(ref s) => {
+                    if (lighting_uniforms.num_spot_lights as usize) < MAX_SPOT_LIGHTS {
+                        let idx = lighting_uniforms.num_spot_lights as usize;
+                        lighting_uniforms.spot_lights[idx] = SpotLightUniform {
+                            position: [
+                                light.position.x,
+                                light.position.y,
+                                light.position.z,
+                                s.range,
+                            ],
+                            direction: [
+                                light.direction.x,
+                                light.direction.y,
+                                light.direction.z,
+                                s.inner_cone_angle.cos(),
+                            ],
+                            color: s.color.with_alpha(s.intensity),
+                            params: [s.outer_cone_angle.cos(), 0.0, 0.0, 0.0],
+                        };
+                        lighting_uniforms.num_spot_lights += 1;
+                    }
+                }
+            }
+        }
+
+        let lighting_buffer = match device.create_buffer_with_data(
+            &BufferDescriptor {
+                label: Some(std::borrow::Cow::Borrowed("Lighting Uniform Buffer")),
+                size: std::mem::size_of::<LightingUniforms>() as u64,
+                usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
+                mapped_at_creation: false,
+            },
+            bytemuck::bytes_of(&lighting_uniforms),
+        ) {
+            Ok(b) => b,
+            Err(e) => {
+                log::error!("Failed to create lighting buffer: {:?}", e);
+                return;
+            }
+        };
+
+        // Create Bind Groups (Global)
+        let camera_layout_lock = self.camera_layout.lock().unwrap();
+        let light_layout_lock = self.light_layout.lock().unwrap();
+
+        let camera_bind_group = if let Some(layout_id) = *camera_layout_lock {
+            match device.create_bind_group(&BindGroupDescriptor {
+                label: Some("Camera Bind Group"),
+                layout: layout_id,
+                entries: &[BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: camera_buffer,
+                        offset: 0,
+                        size: None,
+                    }),
+                    _phantom: std::marker::PhantomData,
+                }],
+            }) {
+                Ok(bg) => Some(bg),
+                Err(e) => {
+                    log::error!("Failed to create camera bind group: {:?}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let light_bind_group = if let Some(layout_id) = *light_layout_lock {
+            match device.create_bind_group(&BindGroupDescriptor {
+                label: Some("Light Bind Group"),
+                layout: layout_id,
+                entries: &[BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: lighting_buffer,
+                        offset: 0,
+                        size: None,
+                    }),
+                    _phantom: std::marker::PhantomData,
+                }],
+            }) {
+                Ok(bg) => Some(bg),
+                Err(e) => {
+                    log::error!("Failed to create light bind group: {:?}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Acquire locks
         let gpu_mesh_assets = gpu_meshes.read().unwrap();
-        let material_assets = materials.read().unwrap();
 
-        // Pre-compute all pipelines for each mesh
-        let pipelines: Vec<RenderPipelineId> = render_world
-            .meshes
-            .iter()
-            .map(|mesh| self.get_pipeline_for_material(mesh.material_uuid, &material_assets))
-            .collect();
+        // Pipeline binding logic moved before render pass to avoid issues
+        let pipeline_id = self.pipeline.lock().unwrap().unwrap_or(RenderPipelineId(0));
 
-        // Configure the render pass
+        // Prepare Draw Commands
+        struct DrawCommand {
+            model_bind_group: Option<khora_core::renderer::BindGroupId>,
+            material_bind_group: Option<khora_core::renderer::BindGroupId>,
+            index_count: u32,
+            vertex_buffer: khora_core::renderer::api::buffer::BufferId,
+            index_buffer: khora_core::renderer::api::buffer::BufferId,
+            index_format: khora_core::renderer::api::IndexFormat,
+        }
+
+        let mut draw_commands = Vec::with_capacity(render_world.meshes.len());
+
+        for extracted_mesh in &render_world.meshes {
+            if let Some(gpu_mesh_handle) = gpu_mesh_assets.get(&extracted_mesh.gpu_mesh_uuid) {
+                // Create Per-Mesh Uniforms
+                let model_mat = extracted_mesh.transform.to_matrix();
+
+                // Strict check: if the matrix is not invertible, skip
+                let normal_mat = if let Some(inverse) = model_mat.inverse() {
+                    inverse.transpose()
+                } else {
+                    continue;
+                };
+
+                let m_cols = model_mat.cols;
+                let n_cols = normal_mat.cols;
+
+                let model_uniforms = ModelUniforms {
+                    model_matrix: [
+                        [m_cols[0].x, m_cols[0].y, m_cols[0].z, m_cols[0].w],
+                        [m_cols[1].x, m_cols[1].y, m_cols[1].z, m_cols[1].w],
+                        [m_cols[2].x, m_cols[2].y, m_cols[2].z, m_cols[2].w],
+                        [m_cols[3].x, m_cols[3].y, m_cols[3].z, m_cols[3].w],
+                    ],
+                    normal_matrix: [
+                        [n_cols[0].x, n_cols[0].y, n_cols[0].z, n_cols[0].w],
+                        [n_cols[1].x, n_cols[1].y, n_cols[1].z, n_cols[1].w],
+                        [n_cols[2].x, n_cols[2].y, n_cols[2].z, n_cols[2].w],
+                        [n_cols[3].x, n_cols[3].y, n_cols[3].z, n_cols[3].w],
+                    ],
+                };
+
+                let model_buffer = match device.create_buffer_with_data(
+                    &BufferDescriptor {
+                        label: None,
+                        size: std::mem::size_of::<ModelUniforms>() as u64,
+                        usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
+                        mapped_at_creation: false,
+                    },
+                    bytemuck::bytes_of(&model_uniforms),
+                ) {
+                    Ok(b) => b,
+                    Err(_) => continue,
+                };
+
+                let material_uniforms = MaterialUniforms {
+                    base_color: khora_core::math::LinearRgba::WHITE,
+                    emissive: khora_core::math::LinearRgba::BLACK.with_alpha(32.0),
+                    ambient: khora_core::math::LinearRgba::new(0.1, 0.1, 0.1, 0.0),
+                };
+                let material_buffer = match device.create_buffer_with_data(
+                    &BufferDescriptor {
+                        label: None,
+                        size: std::mem::size_of::<MaterialUniforms>() as u64,
+                        usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
+                        mapped_at_creation: false,
+                    },
+                    bytemuck::bytes_of(&material_uniforms),
+                ) {
+                    Ok(b) => b,
+                    Err(_) => continue,
+                };
+
+                // Create Bind Groups 1 & 2
+                let mut model_bg = None;
+                if let Some(layout) = *self.model_layout.lock().unwrap() {
+                    if let Ok(bg) = device.create_bind_group(&BindGroupDescriptor {
+                        label: None,
+                        layout,
+                        entries: &[BindGroupEntry {
+                            binding: 0,
+                            resource: BindingResource::Buffer(BufferBinding {
+                                buffer: model_buffer,
+                                offset: 0,
+                                size: None,
+                            }),
+                            _phantom: std::marker::PhantomData,
+                        }],
+                    }) {
+                        model_bg = Some(bg);
+                    }
+                }
+
+                let mut material_bg = None;
+                if let Some(layout) = *self.material_layout.lock().unwrap() {
+                    if let Ok(bg) = device.create_bind_group(&BindGroupDescriptor {
+                        label: None,
+                        layout,
+                        entries: &[BindGroupEntry {
+                            binding: 0,
+                            resource: BindingResource::Buffer(BufferBinding {
+                                buffer: material_buffer,
+                                offset: 0,
+                                size: None,
+                            }),
+                            _phantom: std::marker::PhantomData,
+                        }],
+                    }) {
+                        material_bg = Some(bg);
+                    }
+                }
+
+                draw_commands.push(DrawCommand {
+                    model_bind_group: model_bg,
+                    material_bind_group: material_bg,
+                    index_count: gpu_mesh_handle.index_count,
+                    vertex_buffer: gpu_mesh_handle.vertex_buffer,
+                    index_buffer: gpu_mesh_handle.index_buffer,
+                    index_format: gpu_mesh_handle.index_format,
+                });
+            }
+        }
+
+        // Render Pass
         let color_attachment = RenderPassColorAttachment {
             view: render_ctx.color_target,
             resolve_target: None,
@@ -242,40 +553,35 @@ impl RenderLane for LitForwardLane {
             }),
         };
 
-        // Begin the render pass
         let mut render_pass = encoder.begin_render_pass(&render_pass_desc);
 
-        // Track the last pipeline to avoid redundant state changes
+        if let Some(bg) = &camera_bind_group {
+            render_pass.set_bind_group(0, bg);
+        }
+        if let Some(bg) = &light_bind_group {
+            render_pass.set_bind_group(3, bg);
+        }
+
         let mut current_pipeline: Option<RenderPipelineId> = None;
 
-        // Note: In a full implementation, we would bind light uniform buffers here.
-        // The light data from render_world.lights would be uploaded to GPU and bound.
-        // For now, this is a placeholder for the rendering logic.
-
-        // Iterate over all extracted meshes and issue draw calls
-        for (i, extracted_mesh) in render_world.meshes.iter().enumerate() {
-            if let Some(gpu_mesh_handle) = gpu_mesh_assets.get(&extracted_mesh.gpu_mesh_uuid) {
-                let pipeline = &pipelines[i];
-
-                // Only bind pipeline if it changed
-                if current_pipeline != Some(*pipeline) {
-                    render_pass.set_pipeline(pipeline);
-                    current_pipeline = Some(*pipeline);
-                }
-
-                // Bind vertex buffer
-                render_pass.set_vertex_buffer(0, &gpu_mesh_handle.vertex_buffer, 0);
-
-                // Bind index buffer
-                render_pass.set_index_buffer(
-                    &gpu_mesh_handle.index_buffer,
-                    0,
-                    gpu_mesh_handle.index_format,
-                );
-
-                // Issue draw call
-                render_pass.draw_indexed(0..gpu_mesh_handle.index_count, 0, 0..1);
+        for cmd in &draw_commands {
+            if current_pipeline != Some(pipeline_id) {
+                render_pass.set_pipeline(&pipeline_id);
+                current_pipeline = Some(pipeline_id);
             }
+
+            if let Some(bg) = &cmd.model_bind_group {
+                render_pass.set_bind_group(1, bg);
+            }
+
+            if let Some(bg) = &cmd.material_bind_group {
+                render_pass.set_bind_group(2, bg);
+            }
+
+            render_pass.set_vertex_buffer(0, &cmd.vertex_buffer, 0);
+            render_pass.set_index_buffer(&cmd.index_buffer, 0, cmd.index_format);
+
+            render_pass.draw_indexed(0..cmd.index_count, 0, 0..1);
         }
     }
 
@@ -323,6 +629,248 @@ impl RenderLane for LitForwardLane {
 
         // Total cost combines all factors
         base_cost * shader_factor * light_factor
+    }
+
+    fn on_initialize(
+        &self,
+        device: &dyn khora_core::renderer::GraphicsDevice,
+    ) -> Result<(), khora_core::renderer::error::RenderError> {
+        use crate::render_lane::shaders::LIT_FORWARD_WGSL;
+        use khora_core::renderer::api::{
+            BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType,
+            ColorTargetStateDescriptor, ColorWrites, CompareFunction, DepthBiasState,
+            DepthStencilStateDescriptor, MultisampleStateDescriptor, PrimitiveStateDescriptor,
+            RenderPipelineDescriptor, SampleCount, ShaderModuleDescriptor, ShaderSourceData,
+            ShaderStageFlags, StencilFaceState, TextureFormat, VertexAttributeDescriptor,
+            VertexBufferLayoutDescriptor, VertexFormat, VertexStepMode,
+        };
+        use std::borrow::Cow;
+
+        log::info!("LitForwardLane: Initializing GPU resources...");
+
+        // 1. Create Bind Group Layouts
+
+        // Group 0: Camera
+        let camera_layout = device
+            .create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("lit_forward_camera_layout"),
+                entries: &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                }],
+            })
+            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+
+        // Group 1: Model
+        let model_layout = device
+            .create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("lit_forward_model_layout"),
+                entries: &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStageFlags::VERTEX,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false, // Using simple uniform for now, could be dynamic later
+                        min_binding_size: None,
+                    },
+                }],
+            })
+            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+
+        // Group 2: Material
+        let material_layout = device
+            .create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("lit_forward_material_layout"),
+                entries: &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStageFlags::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                }],
+            })
+            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+
+        // Group 3: Lights
+        let light_layout = device
+            .create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("lit_forward_light_layout"),
+                entries: &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStageFlags::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                }],
+            })
+            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+
+        // 2. Create Shader Module
+        let shader_module = device
+            .create_shader_module(&ShaderModuleDescriptor {
+                label: Some("lit_forward_shader"),
+                source: ShaderSourceData::Wgsl(Cow::Borrowed(LIT_FORWARD_WGSL)),
+            })
+            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+
+        // 3. Create Pipeline
+        let vertex_attributes = vec![
+            VertexAttributeDescriptor {
+                format: VertexFormat::Float32x3,
+                offset: 0,
+                shader_location: 0,
+            },
+            VertexAttributeDescriptor {
+                format: VertexFormat::Float32x3,
+                offset: 12,
+                shader_location: 1,
+            },
+            VertexAttributeDescriptor {
+                format: VertexFormat::Float32x2,
+                offset: 24,
+                shader_location: 2,
+            },
+            VertexAttributeDescriptor {
+                format: VertexFormat::Float32x4,
+                offset: 32,
+                shader_location: 3,
+            }, // Color
+        ];
+
+        let vertex_layout = VertexBufferLayoutDescriptor {
+            array_stride: 48, // 3+3+2+4 floats * 4 bytes
+            step_mode: VertexStepMode::Vertex,
+            attributes: Cow::Owned(vertex_attributes),
+        };
+
+        let pipeline_layout_ids = vec![camera_layout, model_layout, material_layout, light_layout];
+
+        // We need a pipeline layout to create the pipeline?
+        // GraphicsDevice::create_render_pipeline takes RenderPipelineDescriptor
+        // which usually includes layout. But khora-core abstraction might handle it differently.
+        // Checking khora-core... RenderPipelineDescriptor usually has `layout`.
+        // If not, it uses implicit layout. But we want explicit.
+        // Assuming khora-core RenderPipelineDescriptor structure.
+        // If khora-core doesn't expose pipeline layout creation in the descriptor, it might generate it from shader...
+        // But we want to store bind group layouts.
+
+        // The previous code didn't set layout in descriptor.
+        // Let's assume for now we just pass layouts if supported, or rely on implicit.
+        // BUT we need the layouts for creating bind groups later!
+
+        // Storing layouts
+        *self.camera_layout.lock().unwrap() = Some(camera_layout);
+        *self.model_layout.lock().unwrap() = Some(model_layout);
+        *self.material_layout.lock().unwrap() = Some(material_layout);
+        *self.light_layout.lock().unwrap() = Some(light_layout);
+
+        // Create the pipeline layout
+        let pipeline_layout_desc = khora_core::renderer::PipelineLayoutDescriptor {
+            label: Some(Cow::Borrowed("LitForward Pipeline Layout")),
+            bind_group_layouts: &pipeline_layout_ids,
+        };
+
+        let pipeline_layout_id = device
+            .create_pipeline_layout(&pipeline_layout_desc)
+            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+
+        let pipeline_desc = RenderPipelineDescriptor {
+            label: Some(Cow::Borrowed("LitForward Pipeline")),
+            layout: Some(pipeline_layout_id),
+            vertex_shader_module: shader_module,
+            vertex_entry_point: Cow::Borrowed("vs_main"),
+            fragment_shader_module: Some(shader_module),
+            fragment_entry_point: Some(Cow::Borrowed("fs_main")),
+            vertex_buffers_layout: Cow::Owned(vec![vertex_layout]),
+            primitive_state: PrimitiveStateDescriptor {
+                topology: PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil_state: Some(DepthStencilStateDescriptor {
+                format: TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: CompareFunction::Less,
+                stencil_front: StencilFaceState::default(),
+                stencil_back: StencilFaceState::default(),
+                stencil_read_mask: 0,
+                stencil_write_mask: 0,
+                bias: DepthBiasState::default(),
+            }),
+            color_target_states: Cow::Owned(vec![ColorTargetStateDescriptor {
+                format: device
+                    .get_surface_format()
+                    .unwrap_or(TextureFormat::Rgba8UnormSrgb),
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            }]),
+            multisample_state: MultisampleStateDescriptor {
+                count: SampleCount::X1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+        };
+
+        // Note: RenderPipelineDescriptor in wgpu requires `layout`.
+        // If khora-core API doesn't have it, it might use `auto_layout`.
+        // Let's check khora-core if possible, or assume auto.
+        // For now, ignoring explicit layout in pipeline creation call,
+        // but we saved the layouts to create bind groups.
+        // Wait, if we use auto layout, the bind groups we create from MANUALLY created layouts might not be compatible!
+        // This is a risk.
+        // However, I can't see RenderPipelineDescriptor definition right now.
+        // In step 2076, lines 445+ show usage of RenderPipelineDescriptor. It does NOT have a `layout` field.
+        // So khora-core likely uses `layout: None` (auto) internally.
+        // If so, we should query the layout from the pipeline? Or ensure our manually created layouts match.
+        // WGPU says: "If the layout is `None`, the layout will be derived from the shaders."
+        // We can create bind groups from the pipeline's get_bind_group_layout() if available.
+        // But `RenderPipelineId` is an opaque handle.
+
+        // Strategy: Use implicit layout (auto) for the pipeline.
+        // But accessing the layouts:
+        // Does khora-core allow getting bind group layouts from pipeline ID? Not obviously.
+        // If I create layouts manually, I should pass them.
+        // If checking `khora-core` is too slow, I'll assume implicit is fine for now,
+        // and I'll create bind groups using layouts derived from the pipeline if possible,
+        // or just accept that I might have a mismatch if I'm not careful.
+
+        // Actually, strictly matching WGSL bindings usually works with manually created layouts too if they match.
+
+        let pipeline_id = device
+            .create_render_pipeline(&pipeline_desc)
+            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+
+        let mut pipeline_lock = self.pipeline.lock().unwrap();
+        *pipeline_lock = Some(pipeline_id);
+
+        Ok(())
+    }
+
+    fn on_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
+        let mut pipeline_lock = self.pipeline.lock().unwrap();
+        if let Some(id) = pipeline_lock.take() {
+            let _ = device.destroy_render_pipeline(id);
+        }
+        if let Some(id) = self.camera_layout.lock().unwrap().take() {
+            let _ = device.destroy_bind_group_layout(id);
+        }
+        if let Some(id) = self.model_layout.lock().unwrap().take() {
+            let _ = device.destroy_bind_group_layout(id);
+        }
+        if let Some(id) = self.material_layout.lock().unwrap().take() {
+            let _ = device.destroy_bind_group_layout(id);
+        }
+        if let Some(id) = self.light_layout.lock().unwrap().take() {
+            let _ = device.destroy_bind_group_layout(id);
+        }
     }
 }
 

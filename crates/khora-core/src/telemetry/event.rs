@@ -15,7 +15,7 @@
 //! Event types for engine-wide telemetry.
 
 use crate::telemetry::metrics::{MetricId, MetricValue};
-use crate::telemetry::monitoring::{HardwareReport, ResourceUsageReport};
+use crate::telemetry::monitoring::{GpuReport, HardwareReport, ResourceUsageReport};
 
 /// A high-level telemetry event produced by the Hot Path or hardware sensors.
 #[derive(Debug, Clone)]
@@ -31,6 +31,8 @@ pub enum TelemetryEvent {
     ResourceReport(ResourceUsageReport),
     /// A physical hardware health report (thermal, CPU load).
     HardwareReport(HardwareReport),
+    /// A GPU performance report (frame timings, draw calls, triangles).
+    GpuReport(GpuReport),
     /// A change in the execution phase signaled by the engine.
     PhaseChange(String),
 }

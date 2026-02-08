@@ -26,22 +26,14 @@ This document outlines the phased development plan for Khora. It integrates all 
 **Goal:** Implement the "magic" of Khora: the DCC, ISAs, and GORNA, proving the SAA concept.
 
 #### [Dynamic Context Core (DCC) v1 - Awareness]
-- #128 [Feature] DCC v1 Integration with Core Metrics System (Wiring needed)
 - #116 [Research/Refactor] Evaluate Abstraction for Windowing/Platform System
 
 #### [Intelligent Subsystem Agents (ISA) v1 & Basic Adaptation]
 - #176 [Feature] Evolve AssetAgent into a full ISA (Depends on #174)
-- #78 [Feature] Implement Multiple Strategies for one key ISA
-- #79 [Feature] Refine ISA Interface Contract
-- #80 [Feature] Implement DCC Heuristics Engine v1
-- #81 [Feature] Implement DCC Command System to trigger ISA Strategy Switches (Plumbing works, missing live trigger)
-- #82 [Task] Demonstrate Automatic Renderer Strategy Switching (Lanes are placeholders)
-- #224 [Feature] Implement RenderLane Resource Ownership (Shaders, Pipelines, BindGroups) (Depends on #79)
-- #225 [Feature] Implement Light Uniform Buffer System in LitForwardLane (Depends on #224)
+- #225 [Feature] Implement Light Uniform Buffer System in LitForwardLane (Persistent ring buffer needed)
 - #83 [Task] Refactor a Second Subsystem as ISA v0.1
 
 #### [Goal-Oriented Resource Negotiation (GORNA) v1]
-- #86 [Feature] Enhance ISAs to Estimate Resource Needs per Strategy
 - #88 [Task] Demonstrate Dynamic Resource Re-allocation under Load
 
 ---
@@ -232,14 +224,22 @@ This document outlines the phased development plan for Khora. It integrates all 
 #### [Intelligent Subsystem Agents (ISA) v1 & Basic Adaptation]
 - #75 [Feature] Design Initial ISA Interface Contract v0.1
 - #76 [Task] Refactor one Subsystem to partially implement ISA v0.1 (RenderAgent Base)
+- #78 [Feature] Implement Multiple Strategies for one key ISA (RenderAgent: Unlit, LitForward, ForwardPlus, Auto)
+- #79 [Feature] Refine ISA Interface Contract (Agent trait: negotiate, apply_budget, report_status)
+- #80 [Feature] Implement DCC Heuristics Engine v1 (9 heuristics in khora-control)
+- #81 [Feature] Implement DCC Command System to trigger ISA Strategy Switches (GornaArbitrator → apply_budget flow)
+- #82 [Task] Demonstrate Automatic Renderer Strategy Switching (Auto mode + GORNA negotiation, 16 tests)
+- #224 [Feature] Implement RenderLane Resource Ownership (Pipelines, buffers, bind groups; proper on_shutdown)
 
 #### [Goal-Oriented Resource Negotiation (GORNA) v1]
 - #84 [Research] Design GORNA Protocol
 - #85 [Feature] Implement Resource Budgeting in DCC
+- #86 [Feature] Enhance ISAs to Estimate Resource Needs per Strategy (estimate_cost + VRAM-aware negotiate)
 
 #### [Dynamic Context Core (DCC) v1 - Awareness]
 - #71 [Feature] Design DCC Architecture
 - #72 [Feature] Implement DCC Core Service
 - #73 [Feature] Integrate Performance/Resource Metrics Collection into DCC
 - #74 [Feature] Implement Game State Monitoring Hook into DCC
+- #128 [Feature] DCC v1 Integration with Core Metrics System (MetricStore, RingBuffer, GpuReport ingestion)
 - #163 [Feature] Make CRPECS Garbage Collector an ISA

@@ -138,6 +138,7 @@ impl Application for SandboxApp {
             fragment_shader_module: Some(shader_module),
             fragment_entry_point: Some("fs_main".into()),
             vertex_buffers_layout: Cow::Borrowed(&[Vertex::get_buffer_layout()]),
+            layout: None,
             primitive_state: Default::default(),
             depth_stencil_state: Some(DepthStencilStateDescriptor {
                 format: TextureFormat::Depth32Float,

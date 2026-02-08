@@ -40,6 +40,26 @@ pub trait ResourceMonitor: Send + Sync + Debug + 'static {
     /// Returns a snapshot of the current usage data for the monitored resource.
     fn get_usage_report(&self) -> ResourceUsageReport;
 
+    /// Returns a GPU performance report, if this monitor supports it.
+    fn get_gpu_report(&self) -> Option<GpuReport> {
+        None
+    }
+
+    /// Returns a hardware health report, if this monitor supports it.
+    fn get_hardware_report(&self) -> Option<HardwareReport> {
+        None
+    }
+
+    /// Returns a list of discrete metrics collected by this monitor.
+    fn get_metrics(
+        &self,
+    ) -> Vec<(
+        crate::telemetry::metrics::MetricId,
+        crate::telemetry::metrics::MetricValue,
+    )> {
+        Vec::new()
+    }
+
     /// Allows downcasting to a concrete `ResourceMonitor` type.
     fn as_any(&self) -> &dyn std::any::Any;
 
@@ -85,6 +105,8 @@ pub struct HardwareReport {
     pub cpu_load: f32,
     /// Overall GPU load (0.0 to 1.0), if reported by the hardware monitor.
     pub gpu_load: Option<f32>,
+    /// Detailed GPU timing report for the current frame.
+    pub gpu_timings: Option<GpuReport>,
 }
 
 /// A report of GPU performance timings for a single frame.
@@ -99,6 +121,10 @@ pub struct GpuReport {
     pub cpu_preparation_time_us: Option<u32>,
     /// The CPU time spent submitting commands for the frame, in microseconds.
     pub cpu_submission_time_us: Option<u32>,
+    /// The number of draw calls in this frame.
+    pub draw_calls: u32,
+    /// The number of triangles rendered in this frame.
+    pub triangles_rendered: u32,
 }
 
 /// A detailed report of system memory (RAM) usage and allocation patterns.

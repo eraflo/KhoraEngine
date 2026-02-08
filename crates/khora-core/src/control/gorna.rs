@@ -53,6 +53,19 @@ pub enum StrategyId {
     Custom(u32),
 }
 
+/// Hard resource constraints the DCC imposes on an Agent during negotiation.
+///
+/// These represent non-negotiable limits that any proposed strategy must respect.
+#[derive(Debug, Clone, Default)]
+pub struct ResourceConstraints {
+    /// Maximum VRAM usage allowed, in bytes. `None` means unconstrained.
+    pub max_vram_bytes: Option<u64>,
+    /// Maximum system memory allowed, in bytes. `None` means unconstrained.
+    pub max_memory_bytes: Option<u64>,
+    /// If `true`, this agent is critical and must always execute (e.g. physics in Simulation).
+    pub must_run: bool,
+}
+
 /// A request sent by the DCC to an Agent to negotiate resources.
 #[derive(Debug, Clone)]
 pub struct NegotiationRequest {
@@ -60,6 +73,8 @@ pub struct NegotiationRequest {
     pub target_latency: Duration,
     /// Priority weight (0.0 to 1.0) assigned by the DCC.
     pub priority_weight: f32,
+    /// Hard resource constraints that any proposed strategy must respect.
+    pub constraints: ResourceConstraints,
 }
 
 /// A response from an Agent offering various execution strategies.
@@ -87,6 +102,8 @@ pub struct ResourceBudget {
     pub strategy_id: StrategyId,
     /// Maximum time allowed for execution.
     pub time_limit: Duration,
+    /// Maximum VRAM budget in bytes, if constrained.
+    pub memory_limit: Option<u64>,
     /// Additional ISA-specific parameters.
     pub extra_params: HashMap<String, String>,
 }

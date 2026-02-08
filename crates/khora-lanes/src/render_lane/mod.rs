@@ -96,6 +96,7 @@ pub trait RenderLane: Send + Sync {
     fn render(
         &self,
         render_world: &RenderWorld,
+        device: &dyn khora_core::renderer::GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
         render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
@@ -124,4 +125,18 @@ pub trait RenderLane: Send + Sync {
         render_world: &RenderWorld,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) -> f32;
+
+    /// Called when the lane is first registered or when the graphics device changes.
+    ///
+    /// This is where the lane should create its long-lived GPU resources, such as
+    /// render pipelines, bind group layouts, and persistent buffers.
+    fn on_initialize(
+        &self,
+        _device: &dyn khora_core::renderer::GraphicsDevice,
+    ) -> Result<(), khora_core::renderer::error::RenderError> {
+        Ok(())
+    }
+
+    /// Called when the lane is being destroyed or the graphics device is shutting down.
+    fn on_shutdown(&self, _device: &dyn khora_core::renderer::GraphicsDevice) {}
 }

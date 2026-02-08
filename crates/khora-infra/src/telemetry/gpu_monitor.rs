@@ -70,6 +70,8 @@ impl GpuMonitor {
             cpu_submission_time_us: Some(
                 (render_stats.cpu_render_submission_time_ms * 1000.0) as u32,
             ),
+            draw_calls: render_stats.draw_calls as u32,
+            triangles_rendered: render_stats.triangles_rendered as u32,
         };
 
         let mut last_stats = self.last_frame_stats.lock().unwrap();
@@ -89,6 +91,47 @@ impl ResourceMonitor for GpuMonitor {
     fn get_usage_report(&self) -> ResourceUsageReport {
         // GPU performance doesn't have byte-based usage, so return default
         ResourceUsageReport::default()
+    }
+
+    fn get_gpu_report(&self) -> Option<GpuReport> {
+        self.get_gpu_report()
+    }
+
+    fn get_metrics(
+        &self,
+    ) -> Vec<(
+        khora_core::telemetry::metrics::MetricId,
+        khora_core::telemetry::metrics::MetricValue,
+    )> {
+        use khora_core::telemetry::metrics::{MetricId, MetricValue};
+        let mut metrics = Vec::new();
+
+        if let Some(report) = self.get_gpu_report() {
+            metrics.push((
+                MetricId::new("renderer", "draw_calls"),
+                MetricValue::Gauge(report.draw_calls as f64),
+            ));
+            metrics.push((
+                MetricId::new("renderer", "triangles"),
+                MetricValue::Gauge(report.triangles_rendered as f64),
+            ));
+
+            if let Some(total_ms) = report.frame_total_duration_us() {
+                metrics.push((
+                    MetricId::new("renderer", "frame_time"),
+                    MetricValue::Gauge(total_ms as f64 / 1000.0),
+                ));
+            }
+
+            if let Some(main_ms) = report.main_pass_duration_us() {
+                metrics.push((
+                    MetricId::new("renderer", "gpu_time"),
+                    MetricValue::Gauge(main_ms as f64 / 1000.0),
+                ));
+            }
+        }
+
+        metrics
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

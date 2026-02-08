@@ -14,12 +14,12 @@
 
 //! Defines the lane responsible for extracting renderable data from the main ECS world.
 
-use super::{ExtractedLight, ExtractedMesh, RenderWorld};
+use super::{ExtractedLight, ExtractedMesh, ExtractedView, RenderWorld};
 use khora_core::{
     math::Vec3,
     renderer::{light::LightType, GpuMesh},
 };
-use khora_data::ecs::{GlobalTransform, HandleComponent, Light, MaterialComponent, World};
+use khora_data::ecs::{Camera, GlobalTransform, HandleComponent, Light, MaterialComponent, World};
 
 /// A lane that performs the "extraction" phase of the rendering pipeline.
 ///
@@ -70,6 +70,41 @@ impl ExtractRenderablesLane {
 
         // 4. Extract all active lights from the world.
         self.extract_lights(world, render_world);
+
+        // 5. Extract all active cameras (views) from the world.
+        self.extract_views(world, render_world);
+    }
+
+    /// Extracts active camera components from the world into the render world.
+    fn extract_views(&self, world: &World, render_world: &mut RenderWorld) {
+        // Query for entities that have both a Camera component and a GlobalTransform.
+        let camera_query = world.query::<(&Camera, &GlobalTransform)>();
+
+        for (camera, global_transform) in camera_query {
+            if !camera.is_active {
+                continue;
+            }
+
+            // Calculate View Matrix (inverse of camera transform)
+            let view_matrix = if let Some(matrix) = global_transform.0.to_matrix().inverse() {
+                matrix
+            } else {
+                continue; // Skip valid cameras with singular transforms
+            };
+
+            // Get Projection Matrix
+            let proj_matrix = camera.projection_matrix();
+
+            // View-Projection Matrix
+            let view_proj = proj_matrix * view_matrix;
+
+            let extracted_view = ExtractedView {
+                view_proj,
+                position: global_transform.0.translation(),
+            };
+
+            render_world.views.push(extracted_view);
+        }
     }
 
     /// Extracts light components from the world into the render world.

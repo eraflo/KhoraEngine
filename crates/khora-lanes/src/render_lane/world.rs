@@ -57,6 +57,15 @@ pub struct ExtractedLight {
     pub direction: Vec3,
 }
 
+/// A flat representation of a camera view for rendering.
+#[derive(Debug, Clone)]
+pub struct ExtractedView {
+    /// The view-projection matrix for this camera.
+    pub view_proj: khora_core::math::Mat4,
+    /// The world-space position of the camera.
+    pub position: Vec3,
+}
+
 /// A collection of all data extracted from the main `World` needed for rendering a single frame.
 ///
 /// This acts as the primary input to the entire rendering system. By decoupling
@@ -68,6 +77,8 @@ pub struct RenderWorld {
     pub meshes: Vec<ExtractedMesh>,
     /// A list of all active lights affecting the current frame.
     pub lights: Vec<ExtractedLight>,
+    /// A list of all active camera views for the current frame.
+    pub views: Vec<ExtractedView>,
 }
 
 impl RenderWorld {
@@ -80,6 +91,7 @@ impl RenderWorld {
     pub fn clear(&mut self) {
         self.meshes.clear();
         self.lights.clear();
+        self.views.clear();
     }
 
     /// Returns the number of directional lights in the render world.

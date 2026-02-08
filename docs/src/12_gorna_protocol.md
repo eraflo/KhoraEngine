@@ -147,4 +147,5 @@ As a device heats up, the DCC gradually reduces the `GlobalBudgetMultiplier`.
 ## 5. Implementation Roadmap
 - [x] **v0.1**: Static priority arbitration (Cold Path only).
 - [x] **v0.2**: Dynamic weight calculation based on `ExecutionPhase`, situational hierarchy, and Hardware awareness (Thermal/CPU).
+- [x] **v0.3**: Cost-based negotiation with `lane.estimate_cost()`, VRAM-aware filtering, health score reporting, and `GpuReport` telemetry integration.
 - [ ] **v1.0**: Predictive arbitration using `MetricStore` trends and multi-agent resource bargaining.
