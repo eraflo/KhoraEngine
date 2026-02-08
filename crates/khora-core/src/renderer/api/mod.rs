@@ -33,6 +33,7 @@ pub mod mesh;
 pub mod pipeline;
 pub mod shader;
 pub mod texture;
+pub mod uniform_ring_buffer;
 
 pub use self::backend::*;
 pub use self::bind_group::*;
@@ -45,3 +46,4 @@ pub use self::mesh::*;
 pub use self::pipeline::*;
 pub use self::shader::*;
 pub use self::texture::*;
+pub use self::uniform_ring_buffer::*;

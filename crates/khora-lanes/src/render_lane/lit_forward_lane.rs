@@ -28,6 +28,7 @@ use crate::render_lane::RenderLane;
 use khora_core::renderer::api::BindGroupLayoutId;
 
 use super::RenderWorld;
+use khora_core::renderer::api::uniform_ring_buffer::UniformRingBuffer;
 use khora_core::{
     asset::{AssetUUID, Material},
     renderer::{
@@ -133,6 +134,10 @@ pub struct LitForwardLane {
     material_layout: std::sync::Mutex<Option<BindGroupLayoutId>>,
     /// Layout for Lighting (Group 3)
     light_layout: std::sync::Mutex<Option<BindGroupLayoutId>>,
+    /// Persistent ring buffer for camera uniforms (eliminates per-frame allocation).
+    camera_ring: std::sync::Mutex<Option<UniformRingBuffer>>,
+    /// Persistent ring buffer for lighting uniforms (eliminates per-frame allocation).
+    lighting_ring: std::sync::Mutex<Option<UniformRingBuffer>>,
 }
 
 impl Default for LitForwardLane {
@@ -147,6 +152,8 @@ impl Default for LitForwardLane {
             model_layout: std::sync::Mutex::new(None),
             material_layout: std::sync::Mutex::new(None),
             light_layout: std::sync::Mutex::new(None),
+            camera_ring: std::sync::Mutex::new(None),
+            lighting_ring: std::sync::Mutex::new(None),
         }
     }
 }
@@ -227,31 +234,34 @@ impl RenderLane for LitForwardLane {
             return; // No camera, nothing to render
         };
 
-        // 2. Prepare Global Uniforms (Camera & Lights)
+        // 2. Prepare Global Uniforms via Persistent Ring Buffers
+        //    Instead of creating new GPU buffers every frame, we advance the ring
+        //    buffer to the next slot and write the updated data in-place.
 
-        // Camera Uniforms
+        // Camera Uniforms — write to persistent ring buffer
         let camera_uniforms = khora_core::renderer::api::CameraUniformData {
             view_projection: view.view_proj,
             camera_position: [view.position.x, view.position.y, view.position.z, 1.0],
         };
 
-        let camera_buffer = match device.create_buffer_with_data(
-            &BufferDescriptor {
-                label: Some(std::borrow::Cow::Borrowed("Camera Uniform Buffer")),
-                size: std::mem::size_of::<khora_core::renderer::api::CameraUniformData>() as u64,
-                usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
-                mapped_at_creation: false,
-            },
-            bytemuck::bytes_of(&camera_uniforms),
-        ) {
-            Ok(b) => b,
-            Err(e) => {
-                log::error!("Failed to create camera buffer: {:?}", e);
+        let camera_bind_group = {
+            let mut lock = self.camera_ring.lock().unwrap();
+            let ring = match lock.as_mut() {
+                Some(r) => r,
+                None => {
+                    log::warn!("LitForwardLane: camera ring buffer not initialized");
+                    return;
+                }
+            };
+            ring.advance();
+            if let Err(e) = ring.write(device, bytemuck::bytes_of(&camera_uniforms)) {
+                log::error!("Failed to write camera ring buffer: {:?}", e);
                 return;
             }
+            *ring.current_bind_group() // Copy the BindGroupId out
         };
 
-        // Lighting Uniforms
+        // Lighting Uniforms — build struct CPU-side, then write to persistent ring buffer
         let mut lighting_uniforms = LightingUniforms {
             directional_lights: [DirectionalLightUniform {
                 direction: [0.0; 4],
@@ -331,72 +341,21 @@ impl RenderLane for LitForwardLane {
             }
         }
 
-        let lighting_buffer = match device.create_buffer_with_data(
-            &BufferDescriptor {
-                label: Some(std::borrow::Cow::Borrowed("Lighting Uniform Buffer")),
-                size: std::mem::size_of::<LightingUniforms>() as u64,
-                usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
-                mapped_at_creation: false,
-            },
-            bytemuck::bytes_of(&lighting_uniforms),
-        ) {
-            Ok(b) => b,
-            Err(e) => {
-                log::error!("Failed to create lighting buffer: {:?}", e);
+        let lighting_bind_group = {
+            let mut lock = self.lighting_ring.lock().unwrap();
+            let ring = match lock.as_mut() {
+                Some(r) => r,
+                None => {
+                    log::warn!("LitForwardLane: lighting ring buffer not initialized");
+                    return;
+                }
+            };
+            ring.advance();
+            if let Err(e) = ring.write(device, bytemuck::bytes_of(&lighting_uniforms)) {
+                log::error!("Failed to write lighting ring buffer: {:?}", e);
                 return;
             }
-        };
-
-        // Create Bind Groups (Global)
-        let camera_layout_lock = self.camera_layout.lock().unwrap();
-        let light_layout_lock = self.light_layout.lock().unwrap();
-
-        let camera_bind_group = if let Some(layout_id) = *camera_layout_lock {
-            match device.create_bind_group(&BindGroupDescriptor {
-                label: Some("Camera Bind Group"),
-                layout: layout_id,
-                entries: &[BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: camera_buffer,
-                        offset: 0,
-                        size: None,
-                    }),
-                    _phantom: std::marker::PhantomData,
-                }],
-            }) {
-                Ok(bg) => Some(bg),
-                Err(e) => {
-                    log::error!("Failed to create camera bind group: {:?}", e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        let light_bind_group = if let Some(layout_id) = *light_layout_lock {
-            match device.create_bind_group(&BindGroupDescriptor {
-                label: Some("Light Bind Group"),
-                layout: layout_id,
-                entries: &[BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: lighting_buffer,
-                        offset: 0,
-                        size: None,
-                    }),
-                    _phantom: std::marker::PhantomData,
-                }],
-            }) {
-                Ok(bg) => Some(bg),
-                Err(e) => {
-                    log::error!("Failed to create light bind group: {:?}", e);
-                    None
-                }
-            }
-        } else {
-            None
+            *ring.current_bind_group() // Copy the BindGroupId out
         };
 
         // Acquire locks
@@ -555,12 +514,9 @@ impl RenderLane for LitForwardLane {
 
         let mut render_pass = encoder.begin_render_pass(&render_pass_desc);
 
-        if let Some(bg) = &camera_bind_group {
-            render_pass.set_bind_group(0, bg);
-        }
-        if let Some(bg) = &light_bind_group {
-            render_pass.set_bind_group(3, bg);
-        }
+        // Use pre-created bind groups from persistent ring buffers (no per-frame allocation)
+        render_pass.set_bind_group(0, &camera_bind_group);
+        render_pass.set_bind_group(3, &lighting_bind_group);
 
         let mut current_pipeline: Option<RenderPipelineId> = None;
 
@@ -851,10 +807,49 @@ impl RenderLane for LitForwardLane {
         let mut pipeline_lock = self.pipeline.lock().unwrap();
         *pipeline_lock = Some(pipeline_id);
 
+        // 4. Create Persistent Ring Buffers for camera and lighting uniforms.
+        // This eliminates per-frame buffer allocation in the render hot path.
+
+        let camera_ring = UniformRingBuffer::new(
+            device,
+            camera_layout,
+            0,
+            std::mem::size_of::<khora_core::renderer::api::CameraUniformData>() as u64,
+            "Camera Uniform Ring",
+        )
+        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+
+        let lighting_ring = UniformRingBuffer::new(
+            device,
+            light_layout,
+            0,
+            std::mem::size_of::<LightingUniforms>() as u64,
+            "Lighting Uniform Ring",
+        )
+        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+
+        *self.camera_ring.lock().unwrap() = Some(camera_ring);
+        *self.lighting_ring.lock().unwrap() = Some(lighting_ring);
+
+        log::info!(
+            "LitForwardLane: Persistent ring buffers created (camera: {} bytes, lighting: {} bytes, {} slots each)",
+            std::mem::size_of::<khora_core::renderer::api::CameraUniformData>(),
+            std::mem::size_of::<LightingUniforms>(),
+            khora_core::renderer::api::uniform_ring_buffer::MAX_FRAMES_IN_FLIGHT,
+        );
+
         Ok(())
     }
 
     fn on_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
+        // Destroy ring buffers first (they own buffers + bind groups)
+        if let Some(ring) = self.camera_ring.lock().unwrap().take() {
+            ring.destroy(device);
+        }
+        if let Some(ring) = self.lighting_ring.lock().unwrap().take() {
+            ring.destroy(device);
+        }
+
         let mut pipeline_lock = self.pipeline.lock().unwrap();
         if let Some(id) = pipeline_lock.take() {
             let _ = device.destroy_render_pipeline(id);

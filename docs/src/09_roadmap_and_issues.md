@@ -30,7 +30,6 @@ This document outlines the phased development plan for Khora. It integrates all 
 
 #### [Intelligent Subsystem Agents (ISA) v1 & Basic Adaptation]
 - #176 [Feature] Evolve AssetAgent into a full ISA (Depends on #174)
-- #225 [Feature] Implement Light Uniform Buffer System in LitForwardLane (Persistent ring buffer needed)
 - #83 [Task] Refactor a Second Subsystem as ISA v0.1
 
 #### [Goal-Oriented Resource Negotiation (GORNA) v1]
@@ -230,6 +229,7 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #81 [Feature] Implement DCC Command System to trigger ISA Strategy Switches (GornaArbitrator → apply_budget flow)
 - #82 [Task] Demonstrate Automatic Renderer Strategy Switching (Auto mode + GORNA negotiation, 16 tests)
 - #224 [Feature] Implement RenderLane Resource Ownership (Pipelines, buffers, bind groups; proper on_shutdown)
+- #225 [Feature] Implement Light Uniform Buffer System (UniformRingBuffer in khora-core, persistent GPU ring buffers for camera/lighting uniforms)
 
 #### [Goal-Oriented Resource Negotiation (GORNA) v1]
 - #84 [Research] Design GORNA Protocol
