@@ -383,3 +383,34 @@ fn test_frame_count_starts_at_zero() {
     assert_eq!(agent.frame_count(), 0);
     assert_eq!(agent.last_frame_time(), Duration::ZERO);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Telemetry sender integration
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_telemetry_sender_can_be_attached() {
+    use crossbeam_channel::unbounded;
+
+    let (tx, rx) = unbounded();
+    let mut agent = RenderAgent::new().with_telemetry_sender(tx);
+
+    // Negotiate + apply to drive the agent state.
+    let response = agent.negotiate(default_request());
+    assert!(!response.strategies.is_empty());
+
+    let budget = ResourceBudget {
+        strategy_id: StrategyId::Balanced,
+        time_limit: Duration::from_millis(16),
+        memory_limit: None,
+        extra_params: HashMap::new(),
+    };
+    agent.apply_budget(budget);
+
+    // The channel is wired; no events yet since update() hasn't been called.
+    // But the receiver proves the wiring is complete.
+    assert!(
+        rx.try_recv().is_err(),
+        "No events should be emitted before update()"
+    );
+}

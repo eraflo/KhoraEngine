@@ -40,8 +40,11 @@ use khora_lanes::render_lane::{
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
+use crossbeam_channel::Sender;
 use khora_core::control::gorna::{AgentId, StrategyId};
 use khora_core::renderer::api::PrimitiveTopology;
+use khora_core::telemetry::event::TelemetryEvent;
+use khora_core::telemetry::monitoring::GpuReport;
 
 /// Threshold for switching to Forward+ rendering.
 /// When the scene has more than this many lights, Forward+ is preferred.
@@ -86,6 +89,8 @@ pub struct RenderAgent {
     current_strategy: StrategyId,
     // Cached reference to the graphics device for lane lifecycle management.
     device: Option<Arc<dyn GraphicsDevice>>,
+    // Optional channel to emit telemetry events to the DCC.
+    telemetry_sender: Option<Sender<TelemetryEvent>>,
     // --- Performance Metrics (for GORNA health reporting) ---
     // Duration of the last render() call.
     last_frame_time: Duration,
@@ -222,6 +227,9 @@ impl Agent for RenderAgent {
                 }
             }
         }
+
+        // Emit telemetry to the DCC if a sender is wired.
+        self.emit_telemetry();
     }
 
     fn report_status(&self) -> AgentStatus {
@@ -231,8 +239,8 @@ impl Agent for RenderAgent {
         } else {
             // Health = how well we fit within the GORNA time budget.
             // 1.0 = at or under budget, <1.0 = over budget.
-            let ratio = self.time_budget.as_secs_f32()
-                / self.last_frame_time.as_secs_f32().max(0.0001);
+            let ratio =
+                self.time_budget.as_secs_f32() / self.last_frame_time.as_secs_f32().max(0.0001);
             ratio.min(1.0)
         };
 
@@ -277,6 +285,7 @@ impl RenderAgent {
             strategy: RenderingStrategy::Auto,
             current_strategy: StrategyId::Balanced,
             device: None,
+            telemetry_sender: None,
             last_frame_time: Duration::ZERO,
             time_budget: Duration::ZERO,
             draw_call_count: 0,
@@ -290,6 +299,12 @@ impl RenderAgent {
         let mut agent = Self::new();
         agent.strategy = strategy;
         agent
+    }
+
+    /// Attaches a telemetry sender so the agent can emit `GpuReport` events to the DCC.
+    pub fn with_telemetry_sender(mut self, sender: Sender<TelemetryEvent>) -> Self {
+        self.telemetry_sender = Some(sender);
+        self
     }
 
     /// Adds a custom render lane to the available lanes.
@@ -514,6 +529,19 @@ impl RenderAgent {
         // No active camera found, return default
         log::warn!("No active camera found in scene, using default ViewInfo");
         ViewInfo::default()
+    }
+
+    /// Emits a `GpuReport` telemetry event to the DCC with current frame metrics.
+    fn emit_telemetry(&self) {
+        if let Some(sender) = &self.telemetry_sender {
+            let report = GpuReport {
+                frame_number: self.frame_count,
+                draw_calls: self.draw_call_count,
+                triangles_rendered: self.triangle_count,
+                ..Default::default()
+            };
+            let _ = sender.send(TelemetryEvent::GpuReport(report));
+        }
     }
 
     /// Counts the total triangles in the current render world.

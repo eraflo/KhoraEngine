@@ -70,8 +70,8 @@ impl GpuMonitor {
             cpu_submission_time_us: Some(
                 (render_stats.cpu_render_submission_time_ms * 1000.0) as u32,
             ),
-            draw_calls: render_stats.draw_calls as u32,
-            triangles_rendered: render_stats.triangles_rendered as u32,
+            draw_calls: render_stats.draw_calls,
+            triangles_rendered: render_stats.triangles_rendered,
         };
 
         let mut last_stats = self.last_frame_stats.lock().unwrap();

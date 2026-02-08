@@ -57,7 +57,6 @@ use std::sync::RwLock;
 /// - **Linear iteration** over the extracted mesh list
 /// - **Minimal state changes** (one pipeline bind per material, ideally)
 /// - **Suitable for**: High frame rates, simple scenes, or as a debug/fallback renderer
-
 pub struct SimpleUnlitLane {
     pipeline: std::sync::Mutex<Option<RenderPipelineId>>,
 }
@@ -236,7 +235,7 @@ impl RenderLane for SimpleUnlitLane {
                 label: Some("simple_unlit_shader"),
                 source: ShaderSourceData::Wgsl(Cow::Borrowed(UNLIT_WGSL)),
             })
-            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         // 2. Define Vertex Layout (matching our standard vertex buffer)
         // Attribute 0: Position (vec3<f32>)
@@ -299,7 +298,7 @@ impl RenderLane for SimpleUnlitLane {
 
         let pipeline_id = device
             .create_render_pipeline(&pipeline_desc)
-            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         let mut pipeline_lock = self.pipeline.lock().unwrap();
         *pipeline_lock = Some(pipeline_id);

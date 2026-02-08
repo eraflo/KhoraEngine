@@ -49,7 +49,8 @@ The GORNA loop is a continuous cycle of sensing and adapting.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Awareness
+    [*] --> InitialRound
+    InitialRound --> Awareness: Baseline Budgets Issued
     Awareness --> Analysis: Telemetry Ingested
     Analysis --> Negotiation: Threshold Tripped
     Negotiation --> Arbitration: Options Submitted
@@ -57,10 +58,13 @@ stateDiagram-v2
     Application --> Awareness: Context Updated
 ```
 
-## 2. Protocol Phases
+### Phase 0: Initial Round (Boot)
+On the **first DCC tick after agents are registered**, the DCC forces a full GORNA negotiation round regardless of heuristic state. This ensures every agent receives a baseline `ResourceBudget` before telemetry-driven arbitration takes over.
+
+Without this initial round, agents would remain throttled at their defaults indefinitely on healthy systems where no performance threshold is ever crossed.
 
 ### Phase A: Awareness (Telemetry)
-Hot Paths (`Lanes`) emit `TelemetryEvents` (frametime, VRAM usage, draw calls). These are ingested by the `DccService`.
+Hot Paths (`Lanes`) emit `TelemetryEvents` (frametime, VRAM usage, draw calls). These are ingested by the `DccService`. Additionally, agents with a wired `Sender<TelemetryEvent>` (e.g., the `RenderAgent`) push `GpuReport` events directly into the DCC channel after their tactical `update()` work.
 
 ### Phase B: Analysis (DCC Heuristics)
 The DCC analyzes trends. 

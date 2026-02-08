@@ -63,7 +63,7 @@ A dedicated service for collecting, aggregating, and exposing engine-wide metric
 This crate contains all concrete implementations that interact with external systems: GPU backends (WGPU), windowing (Winit), filesystem I/O, networking libraries, etc. It primarily implements the generic `traits` defined in `khora-core`.
 
 #### `khora-sdk` - The Public Facade
-A simple, stable API designed for game developers. It hides the complexity of the internal CLAD architecture and provides ergonomic, easy-to-use entry points for building an application with Khora.
+A simple, stable API designed for game developers. It hides the complexity of the internal CLAD architecture and provides ergonomic, easy-to-use entry points for building an application with Khora. It owns the ECS `World` and `Assets` internally and exposes them through the `GameWorld` facade — users never interact with raw engine types.
 
 #### `khora-macros` - Development Ergonomics
 A procedural macro crate that provides derive macros to reduce boilerplate and improve developer experience. This crate implements compile-time code generation to automatically implement common traits throughout the engine. Currently provides the `#[derive(Component)]` macro for automatically implementing the `khora_data::ecs::Component` trait while enforcing its required bounds (`Clone`, `Send`, `Sync`, `'static`). As the engine evolves, this crate will house additional derive macros and attribute macros to streamline development across all CLAD layers.

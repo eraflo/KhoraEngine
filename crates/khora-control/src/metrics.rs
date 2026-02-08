@@ -25,6 +25,12 @@ pub struct RingBuffer<T, const N: usize> {
     count: usize,
 }
 
+impl<T: Default + Copy, const N: usize> Default for RingBuffer<T, N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Default + Copy, const N: usize> RingBuffer<T, N> {
     /// Creates a new, empty ring buffer.
     pub fn new() -> Self {
@@ -131,10 +137,7 @@ impl MetricStore {
 
     /// Pushes a new sample for the given metric.
     pub fn push(&mut self, id: MetricId, value: f32) {
-        self.buffers
-            .entry(id)
-            .or_insert_with(RingBuffer::new)
-            .push(value);
+        self.buffers.entry(id).or_default().push(value);
     }
 
     /// Returns the average value for a metric, or 0.0 if not found.
@@ -156,18 +159,12 @@ impl MetricStore {
 
     /// Returns the maximum value for a metric, or 0.0 if not found.
     pub fn get_max(&self, id: &MetricId) -> f32 {
-        self.buffers
-            .get(id)
-            .map(|b| b.max())
-            .unwrap_or(f32::MIN)
+        self.buffers.get(id).map(|b| b.max()).unwrap_or(f32::MIN)
     }
 
     /// Returns the minimum value for a metric, or 0.0 if not found.
     pub fn get_min(&self, id: &MetricId) -> f32 {
-        self.buffers
-            .get(id)
-            .map(|b| b.min())
-            .unwrap_or(f32::MAX)
+        self.buffers.get(id).map(|b| b.min()).unwrap_or(f32::MAX)
     }
 
     /// Returns the sample count for a metric, or 0 if not found.

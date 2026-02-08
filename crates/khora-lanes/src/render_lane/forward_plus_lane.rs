@@ -449,7 +449,7 @@ impl RenderLane for ForwardPlusLane {
                 label: Some("forward_plus_shader"),
                 source: ShaderSourceData::Wgsl(Cow::Borrowed(UNLIT_WGSL)),
             })
-            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         let vertex_attributes = vec![
             VertexAttributeDescriptor {
@@ -508,7 +508,7 @@ impl RenderLane for ForwardPlusLane {
 
         let pipeline_id = device
             .create_render_pipeline(&pipeline_desc)
-            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         let mut resources = self.gpu_resources.lock().unwrap();
         resources.render_pipeline = Some(pipeline_id);
@@ -525,7 +525,7 @@ impl RenderLane for ForwardPlusLane {
                         | khora_core::renderer::api::BufferUsage::COPY_DST,
                     mapped_at_creation: false,
                 })
-                .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?,
+                .map_err(khora_core::renderer::error::RenderError::ResourceError)?,
         );
 
         // Light Index List (Storage Buffer)
@@ -539,7 +539,7 @@ impl RenderLane for ForwardPlusLane {
                         | khora_core::renderer::api::BufferUsage::COPY_DST,
                     mapped_at_creation: false,
                 })
-                .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?,
+                .map_err(khora_core::renderer::error::RenderError::ResourceError)?,
         );
 
         // Light Grid (Storage Buffer)
@@ -553,7 +553,7 @@ impl RenderLane for ForwardPlusLane {
                         | khora_core::renderer::api::BufferUsage::COPY_DST,
                     mapped_at_creation: false,
                 })
-                .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?,
+                .map_err(khora_core::renderer::error::RenderError::ResourceError)?,
         );
 
         // Culling Uniforms
@@ -566,7 +566,7 @@ impl RenderLane for ForwardPlusLane {
                         | khora_core::renderer::api::BufferUsage::COPY_DST,
                     mapped_at_creation: false,
                 })
-                .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?,
+                .map_err(khora_core::renderer::error::RenderError::ResourceError)?,
         );
 
         // Placeholder for Culling Pipeline/BindGroup (requires Compute Shader)

@@ -221,10 +221,7 @@ impl GornaArbitrator {
                 extra_params: std::collections::HashMap::new(),
             };
 
-            log::warn!(
-                "GORNA: Emergency LowPower issued to {:?}.",
-                agent.id()
-            );
+            log::warn!("GORNA: Emergency LowPower issued to {:?}.", agent.id());
             agent.apply_budget(budget);
         }
     }
@@ -285,8 +282,7 @@ impl GornaArbitrator {
         // Now upgrade agents one at a time in priority order.
         for &idx in &sorted_indices {
             let negotiation = &negotiations[idx];
-            let current_cost_ms =
-                allocations[idx].strategy.estimated_time.as_secs_f32() * 1000.0;
+            let current_cost_ms = allocations[idx].strategy.estimated_time.as_secs_f32() * 1000.0;
 
             // Try each strategy from most expensive to least expensive,
             // pick the most expensive one that fits in remaining budget.
@@ -367,8 +363,8 @@ mod tests {
     use crate::context::Context;
     use khora_core::agent::Agent;
     use khora_core::control::gorna::{
-        AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget,
-        StrategyId, StrategyOption,
+        AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
+        StrategyOption,
     };
     use khora_core::EngineContext;
 
@@ -459,10 +455,11 @@ mod tests {
     }
 
     fn simulation_ctx() -> Context {
-        let mut ctx = Context::default();
-        ctx.phase = ExecutionPhase::Simulation;
-        ctx.global_budget_multiplier = 1.0;
-        ctx
+        Context {
+            phase: ExecutionPhase::Simulation,
+            global_budget_multiplier: 1.0,
+            ..Default::default()
+        }
     }
 
     // ── Tests ────────────────────────────────────────────────────────
@@ -478,10 +475,11 @@ mod tests {
         arbitrator.arbitrate(&ctx, &report, &mut agents);
 
         let lock = agents[0].lock().unwrap();
-        let mock = unsafe {
-            &*((&*lock as *const dyn Agent) as *const MockAgent)
-        };
-        let budget = mock.applied_budget.as_ref().expect("Budget should be applied");
+        let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+        let budget = mock
+            .applied_budget
+            .as_ref()
+            .expect("Budget should be applied");
         // With 16.66ms total budget and a single agent, it should get HighPerformance (14ms)
         assert_eq!(budget.strategy_id, StrategyId::HighPerformance);
     }
@@ -509,9 +507,7 @@ mod tests {
         // Both should have received budgets
         for agent_mutex in &agents {
             let lock = agent_mutex.lock().unwrap();
-            let mock = unsafe {
-                &*((&*lock as *const dyn Agent) as *const MockAgent)
-            };
+            let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
             assert!(mock.applied_budget.is_some());
         }
 
@@ -520,10 +516,13 @@ mod tests {
             .iter()
             .map(|a| {
                 let lock = a.lock().unwrap();
-                let mock = unsafe {
-                    &*((&*lock as *const dyn Agent) as *const MockAgent)
-                };
-                mock.applied_budget.as_ref().unwrap().time_limit.as_secs_f64() * 1000.0
+                let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+                mock.applied_budget
+                    .as_ref()
+                    .unwrap()
+                    .time_limit
+                    .as_secs_f64()
+                    * 1000.0
             })
             .sum();
         assert!(
@@ -549,10 +548,11 @@ mod tests {
         arbitrator.arbitrate(&ctx, &report, &mut agents);
 
         let lock = agents[0].lock().unwrap();
-        let mock = unsafe {
-            &*((&*lock as *const dyn Agent) as *const MockAgent)
-        };
-        let budget = mock.applied_budget.as_ref().expect("Budget should be applied");
+        let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+        let budget = mock
+            .applied_budget
+            .as_ref()
+            .expect("Budget should be applied");
         // Effective budget: 33.33 * 0.6 = ~20ms. Agent can easily get HighPerformance (14ms).
         assert_eq!(budget.strategy_id, StrategyId::HighPerformance);
     }
@@ -576,10 +576,11 @@ mod tests {
         // Both agents should be forced to LowPower
         for agent_mutex in &agents {
             let lock = agent_mutex.lock().unwrap();
-            let mock = unsafe {
-                &*((&*lock as *const dyn Agent) as *const MockAgent)
-            };
-            let budget = mock.applied_budget.as_ref().expect("Budget should be applied");
+            let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+            let budget = mock
+                .applied_budget
+                .as_ref()
+                .expect("Budget should be applied");
             assert_eq!(budget.strategy_id, StrategyId::LowPower);
         }
     }
@@ -603,10 +604,11 @@ mod tests {
         // Both should be forced to LowPower
         for agent_mutex in &agents {
             let lock = agent_mutex.lock().unwrap();
-            let mock = unsafe {
-                &*((&*lock as *const dyn Agent) as *const MockAgent)
-            };
-            let budget = mock.applied_budget.as_ref().expect("Budget should be applied");
+            let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+            let budget = mock
+                .applied_budget
+                .as_ref()
+                .expect("Budget should be applied");
             assert_eq!(budget.strategy_id, StrategyId::LowPower);
         }
     }
@@ -635,10 +637,8 @@ mod tests {
 
         let renderer = MockAgent::new(AgentId::Renderer);
         let asset = MockAgent::new(AgentId::Asset);
-        let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![
-            Arc::new(Mutex::new(renderer)),
-            Arc::new(Mutex::new(asset)),
-        ];
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> =
+            vec![Arc::new(Mutex::new(renderer)), Arc::new(Mutex::new(asset))];
 
         arbitrator.arbitrate(&ctx, &tight_report, &mut agents);
 
@@ -646,9 +646,8 @@ mod tests {
         // Renderer (priority 1.0) should be upgraded first: +6ms → Balanced (8ms).
         // Asset (priority 0.5) stays at LowPower (2ms). Total: 8+2=10ms ≤ 10ms.
         let renderer_lock = agents[0].lock().unwrap();
-        let renderer_mock = unsafe {
-            &*((&*renderer_lock as *const dyn Agent) as *const MockAgent)
-        };
+        let renderer_mock =
+            unsafe { &*((&*renderer_lock as *const dyn Agent) as *const MockAgent) };
         assert_eq!(
             renderer_mock.applied_budget.as_ref().unwrap().strategy_id,
             StrategyId::Balanced
@@ -658,12 +657,8 @@ mod tests {
     #[test]
     fn test_background_phase_minimal_priority() {
         let arbitrator = GornaArbitrator;
-        assert!(
-            arbitrator.get_agent_priority(AgentId::Renderer, ExecutionPhase::Background) < 0.2
-        );
-        assert!(
-            arbitrator.get_agent_priority(AgentId::Physics, ExecutionPhase::Background) < 0.2
-        );
+        assert!(arbitrator.get_agent_priority(AgentId::Renderer, ExecutionPhase::Background) < 0.2);
+        assert!(arbitrator.get_agent_priority(AgentId::Physics, ExecutionPhase::Background) < 0.2);
     }
 
     #[test]

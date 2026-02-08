@@ -35,6 +35,10 @@ crates/
 │
 ├── khora-lanes/     # [L]ANES: Hot-path execution pipelines (systems).
 │   └── src/
+│       ├── asset_lane/
+│       ├── audio_lane/
+│       ├── ecs_lane/
+│       ├── physics_lane/
 │       ├── render_lane/
 │       └── scene_lane/
 │
@@ -48,8 +52,11 @@ crates/
 │
 ├── khora-infra/     # Concrete implementations of external dependencies.
 │   └── src/
+│       ├── audio/
 │       ├── graphics/
-│       └── platform/
+│       ├── physics/
+│       ├── platform/
+│       └── telemetry/
 │
 ├── khora-sdk/       # The stable, public-facing API for game developers.
 │   └── src/

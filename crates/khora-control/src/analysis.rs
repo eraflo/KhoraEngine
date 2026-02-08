@@ -85,8 +85,8 @@ impl HeuristicEngine {
 
         // ── 1. Phase-Based Target ────────────────────────────────────────
         report.suggested_latency_ms = match context.phase {
-            ExecutionPhase::Boot => 33.33,       // Loading — no frame budget needed
-            ExecutionPhase::Menu => 33.33,       // 30 FPS in menus is sufficient
+            ExecutionPhase::Boot => 33.33, // Loading — no frame budget needed
+            ExecutionPhase::Menu => 33.33, // 30 FPS in menus is sufficient
             ExecutionPhase::Simulation => 16.66, // 60 FPS target
             ExecutionPhase::Background => 200.0, // 5 FPS — absolute minimum
         };
@@ -105,8 +105,7 @@ impl HeuristicEngine {
             ThermalStatus::Critical => {
                 log::warn!("Heuristic: CRITICAL thermal state — emergency budget reduction.");
                 report.needs_negotiation = true;
-                report.suggested_latency_ms =
-                    f32::max(report.suggested_latency_ms, 50.0); // ~20 FPS cap
+                report.suggested_latency_ms = f32::max(report.suggested_latency_ms, 50.0); // ~20 FPS cap
                 report
                     .alerts
                     .push("Thermal: CRITICAL — emergency load reduction.".into());
@@ -115,8 +114,7 @@ impl HeuristicEngine {
             ThermalStatus::Throttling => {
                 log::warn!("Heuristic: Device is throttling. Recommending load reduction.");
                 report.needs_negotiation = true;
-                report.suggested_latency_ms =
-                    f32::max(report.suggested_latency_ms, 33.33); // 30 FPS cap
+                report.suggested_latency_ms = f32::max(report.suggested_latency_ms, 33.33); // 30 FPS cap
                 report
                     .alerts
                     .push("Thermal: Throttling — capping to 30 FPS.".into());
@@ -133,8 +131,7 @@ impl HeuristicEngine {
             BatteryLevel::Critical => {
                 log::warn!("Heuristic: Battery CRITICAL — mandatory power saving.");
                 report.needs_negotiation = true;
-                report.suggested_latency_ms =
-                    f32::max(report.suggested_latency_ms, 50.0); // ~20 FPS
+                report.suggested_latency_ms = f32::max(report.suggested_latency_ms, 50.0); // ~20 FPS
                 report
                     .alerts
                     .push("Battery: CRITICAL — mandatory power saving.".into());
@@ -143,8 +140,7 @@ impl HeuristicEngine {
             BatteryLevel::Low => {
                 log::info!("Heuristic: Battery low — reducing target to 30 FPS.");
                 report.needs_negotiation = true;
-                report.suggested_latency_ms =
-                    f32::max(report.suggested_latency_ms, 33.33);
+                report.suggested_latency_ms = f32::max(report.suggested_latency_ms, 33.33);
                 report
                     .alerts
                     .push("Battery: Low — capping to 30 FPS.".into());
@@ -259,9 +255,10 @@ impl HeuristicEngine {
             );
             report.death_spiral_detected = true;
             report.needs_negotiation = true;
-            report
-                .alerts
-                .push(format!("DEATH SPIRAL: {} simultaneous pressures.", pressure_count));
+            report.alerts.push(format!(
+                "DEATH SPIRAL: {} simultaneous pressures.",
+                pressure_count
+            ));
         }
 
         report
@@ -278,9 +275,10 @@ mod tests {
     }
 
     fn simulation_context() -> Context {
-        let mut ctx = Context::default();
-        ctx.phase = ExecutionPhase::Simulation;
-        ctx
+        Context {
+            phase: ExecutionPhase::Simulation,
+            ..Default::default()
+        }
     }
 
     // ── Phase Heuristics ─────────────────────────────────────────────
@@ -445,8 +443,8 @@ mod tests {
         let engine = HeuristicEngine;
         let mut ctx = simulation_context();
         ctx.hardware.thermal = ThermalStatus::Critical; // +1 pressure
-        ctx.hardware.cpu_load = 0.98;                   // +1 pressure
-        ctx.hardware.gpu_load = 0.97;                   // +1 pressure
+        ctx.hardware.cpu_load = 0.98; // +1 pressure
+        ctx.hardware.gpu_load = 0.97; // +1 pressure
         let store = MetricStore::new();
 
         let report = engine.analyze(&ctx, &store);

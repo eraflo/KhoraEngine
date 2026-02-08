@@ -163,7 +163,7 @@ mod tests {
     fn test_combined_thermal_and_battery_takes_minimum() {
         let mut ctx = Context::default();
         ctx.hardware.thermal = ThermalStatus::Throttling; // 0.6
-        ctx.hardware.battery = BatteryLevel::Critical;     // 0.5
+        ctx.hardware.battery = BatteryLevel::Critical; // 0.5
         ctx.refresh_budget_multiplier();
         // Should pick the more restrictive value: 0.5
         assert!((ctx.global_budget_multiplier - 0.5).abs() < 0.001);

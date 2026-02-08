@@ -18,6 +18,9 @@
 
 #![warn(missing_docs)]
 
+mod game_world;
+pub use game_world::GameWorld;
+
 use anyhow::Result;
 use khora_agents::render_agent::RenderAgent;
 use khora_control::service::{DccConfig, DccService};
@@ -50,6 +53,12 @@ pub mod prelude {
     pub use khora_core::EngineContext;
     pub use khora_data::allocators::SaaTrackingAllocator;
 
+    /// ECS types used by the `GameWorld` facade.
+    pub mod ecs {
+        pub use khora_core::ecs::entity::EntityId;
+        pub use khora_data::ecs::{Camera, Component, ComponentBundle, GlobalTransform, Transform};
+    }
+
     /// Built-in engine shaders.
     pub mod shaders {
         pub use khora_lanes::render_lane::shaders::*;
@@ -59,37 +68,42 @@ pub mod prelude {
 pub use khora_core::EngineContext;
 
 /// Application trait for user-defined applications.
+///
+/// The engine owns the [`GameWorld`] internally. Users interact with
+/// it through the `&mut GameWorld` parameter passed to [`setup`](Application::setup)
+/// and [`update`](Application::update) — no raw `World` access required.
 pub trait Application: Sized + 'static {
     /// Called once at the beginning of the application to create the initial state.
     fn new(context: EngineContext) -> Self;
 
+    /// Called once after construction to set up the game world (spawn
+    /// cameras, initial entities, etc.).
+    ///
+    /// The default implementation does nothing.
+    fn setup(&mut self, _world: &mut GameWorld) {}
+
     /// Called every frame for game logic updates.
-    fn update(&mut self);
+    ///
+    /// Use the provided [`GameWorld`] to spawn/despawn entities, run
+    /// queries, and modify components.
+    fn update(&mut self, _world: &mut GameWorld);
 
     /// Called every frame to handle rendering.
     fn render(&mut self) -> Vec<RenderObject>;
-
-    /// Returns a tuple of (World, Assets) for use in agent tactical updates.
-    /// This avoids double-borrow issues when populating the EngineContext.
-    fn context_data(
-        &mut self,
-    ) -> (
-        Option<&mut khora_data::ecs::World>,
-        Option<&khora_data::assets::Assets<khora_core::renderer::Mesh>>,
-    ) {
-        (None, None)
-    }
 }
 
 /// The internal state of the running engine, managed by the winit event loop.
 /// It now holds the user's application state (`app: A`).
 struct EngineState<A: Application> {
     app: Option<A>, // The user's application logic and data.
+    game_world: Option<GameWorld>,
     window: Option<WinitWindow>,
     renderer: Option<Box<dyn RenderSystem>>,
     telemetry: Option<TelemetryService>,
     dcc: Option<DccService>,
     render_settings: RenderSettings,
+    /// Tracks whether the simulation phase has started (first RedrawRequested).
+    simulation_started: bool,
 }
 
 impl<A: Application> EngineState<A> {
@@ -206,20 +220,35 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
             world: None,
             assets: None,
         };
-        self.app = Some(A::new(context));
+        let mut app = A::new(context);
+
+        // 6b. Create the GameWorld and let the app set up its scene.
+        let mut game_world = GameWorld::new();
+        app.setup(&mut game_world);
+        self.app = Some(app);
 
         // 7. Register default agents.
         // We instantiate concrete agents but register them as Arc<Mutex<dyn Agent>>
         // to keep the SDK abstract.
-        let render_agent = Arc::new(Mutex::new(RenderAgent::new()));
+        let render_agent = RenderAgent::new().with_telemetry_sender(dcc.event_sender());
+        let render_agent = Arc::new(Mutex::new(render_agent));
         dcc.register_agent(render_agent);
 
-        // 8. Store the initialized systems in our application state.
+        // 8. Signal Boot phase to the DCC.
+        let _ = dcc
+            .event_sender()
+            .send(khora_core::telemetry::TelemetryEvent::PhaseChange(
+                "boot".to_string(),
+            ));
+
+        // 9. Store the initialized systems in our application state.
         self.window = Some(window);
         self.renderer = Some(renderer);
         self.telemetry = Some(telemetry);
         self.dcc = Some(dcc);
+        self.game_world = Some(game_world);
         self.render_settings = RenderSettings::default();
+        self.simulation_started = false;
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
@@ -247,6 +276,17 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
                         if let (Some(renderer), Some(telemetry)) =
                             (self.renderer.as_mut(), self.telemetry.as_mut())
                         {
+                            // Transition to Simulation phase on first frame.
+                            if !self.simulation_started {
+                                if let Some(dcc) = &self.dcc {
+                                    let _ = dcc.event_sender().send(
+                                        khora_core::telemetry::TelemetryEvent::PhaseChange(
+                                            "simulation".to_string(),
+                                        ),
+                                    );
+                                }
+                                self.simulation_started = true;
+                            }
                             // Update "active" monitors like the memory monitor.
                             let should_log_summary = telemetry.tick();
 
@@ -256,16 +296,17 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
                             // 1. Tactical ISA Update Phase
                             // This allows agents to extract data from the ECS and prepare GPU resources.
                             if let Some(dcc) = self.dcc.as_ref() {
-                                let (world, assets) = app.context_data();
-                                let mut context = EngineContext {
-                                    graphics_device: renderer.graphics_device(),
-                                    world: world.map(|w| w as &mut dyn std::any::Any),
-                                    assets: assets.map(|a| a as &dyn std::any::Any),
-                                };
-                                dcc.update_agents(&mut context);
+                                if let Some(gw) = self.game_world.as_mut() {
+                                    let mut context =
+                                        gw.as_engine_context(renderer.graphics_device());
+                                    dcc.update_agents(&mut context);
+                                }
                             }
 
-                            app.update();
+                            // 2. User update — receives a &mut GameWorld.
+                            if let Some(gw) = self.game_world.as_mut() {
+                                app.update(gw);
+                            }
 
                             let render_objects = app.render();
 
@@ -322,11 +363,13 @@ impl Engine {
         // The initial state is empty; it will be populated in the `resumed` event.
         let mut app_state = EngineState::<A> {
             app: None,
+            game_world: None,
             window: None,
             renderer: None,
             telemetry: None,
             dcc: None,
             render_settings: RenderSettings::default(),
+            simulation_started: false,
         };
 
         event_loop.run_app(&mut app_state)?;

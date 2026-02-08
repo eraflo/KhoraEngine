@@ -40,11 +40,14 @@ impl Default for DccConfig {
     }
 }
 
+/// Shared, mutex-protected list of agents managed by the DCC service.
+type SharedAgentList = Arc<std::sync::Mutex<Vec<Arc<std::sync::Mutex<dyn Agent>>>>>;
+
 /// The Dynamic Context Core service.
 pub struct DccService {
     config: DccConfig,
     context: Arc<std::sync::RwLock<Context>>,
-    agents: Arc<std::sync::Mutex<Vec<Arc<std::sync::Mutex<dyn Agent>>>>>,
+    agents: SharedAgentList,
     running: Arc<AtomicBool>,
     handle: Option<thread::JoinHandle<()>>,
     event_tx: Sender<TelemetryEvent>,
@@ -91,6 +94,7 @@ impl DccService {
             let mut store = MetricStore::new();
             let heuristic_engine = HeuristicEngine;
             let arbitrator = GornaArbitrator;
+            let mut initial_negotiation_done = false;
 
             log::info!("DCC Service thread started.");
 
@@ -160,10 +164,7 @@ impl DccService {
                                 );
                             }
                             store.push(
-                                khora_core::telemetry::MetricId::new(
-                                    "renderer",
-                                    "draw_calls",
-                                ),
+                                khora_core::telemetry::MetricId::new("renderer", "draw_calls"),
                                 report.draw_calls as f32,
                             );
                             store.push(
@@ -194,6 +195,16 @@ impl DccService {
                 if report.needs_negotiation {
                     let mut agents_lock = agents.lock().unwrap();
                     arbitrator.arbitrate(&ctx_copy, &report, &mut agents_lock);
+                    initial_negotiation_done = true;
+                } else if !initial_negotiation_done {
+                    // Force an initial GORNA round so every agent receives a
+                    // baseline budget before any telemetry-driven trigger fires.
+                    let mut agents_lock = agents.lock().unwrap();
+                    if !agents_lock.is_empty() {
+                        log::info!("GORNA: Running initial negotiation round.");
+                        arbitrator.arbitrate(&ctx_copy, &report, &mut agents_lock);
+                        initial_negotiation_done = true;
+                    }
                 }
 
                 // 3. Sleep until next tick
@@ -236,6 +247,12 @@ impl DccService {
                 }
             }
         }
+    }
+}
+
+impl Drop for DccService {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -290,10 +307,65 @@ mod tests {
 
         dcc.stop();
     }
-}
 
-impl Drop for DccService {
-    fn drop(&mut self) {
-        self.stop();
+    #[test]
+    fn test_dcc_initial_negotiation_fires_with_agent() {
+        use khora_core::agent::Agent;
+        use khora_core::control::gorna::{
+            AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget,
+            StrategyId, StrategyOption,
+        };
+        use std::sync::{Arc, Mutex};
+
+        /// Minimal stub agent that tracks whether apply_budget was called.
+        struct StubAgent {
+            budget_applied: bool,
+        }
+
+        impl Agent for StubAgent {
+            fn id(&self) -> AgentId {
+                AgentId::Renderer
+            }
+            fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
+                NegotiationResponse {
+                    strategies: vec![StrategyOption {
+                        id: StrategyId::Balanced,
+                        estimated_time: Duration::from_millis(8),
+                        estimated_vram: 1024,
+                    }],
+                }
+            }
+            fn apply_budget(&mut self, _: ResourceBudget) {
+                self.budget_applied = true;
+            }
+            fn update(&mut self, _: &mut khora_core::EngineContext<'_>) {}
+            fn report_status(&self) -> AgentStatus {
+                AgentStatus {
+                    agent_id: AgentId::Renderer,
+                    current_strategy: StrategyId::Balanced,
+                    health_score: 1.0,
+                    is_stalled: false,
+                    message: String::new(),
+                }
+            }
+        }
+
+        let (mut dcc, rx) = DccService::new(DccConfig { tick_rate: 100 });
+        let agent = Arc::new(Mutex::new(StubAgent {
+            budget_applied: false,
+        }));
+        dcc.register_agent(agent.clone());
+        dcc.start(rx);
+
+        // Wait enough for the first DCC tick to run initial negotiation.
+        thread::sleep(Duration::from_millis(200));
+
+        let applied = agent.lock().unwrap().budget_applied;
+        dcc.stop();
+
+        assert!(
+            applied,
+            "Initial GORNA negotiation should have called apply_budget on the agent"
+        );
     }
 }

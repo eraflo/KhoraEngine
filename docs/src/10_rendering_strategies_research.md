@@ -59,6 +59,8 @@ pub struct RenderAgent {
     draw_call_count: u32,
     triangle_count: u32,
     frame_count: u64,
+    // --- Telemetry ---
+    telemetry_sender: Option<Sender<TelemetryEvent>>,  // Wired via .with_telemetry_sender()
 }
 ```
 
@@ -206,7 +208,8 @@ The rendering subsystem is the canonical embodiment of the **CLAD Pattern**:
 - [x] Stall detection for the DCC watchdog.
 - [x] `GpuReport` telemetry event integration with `MetricStore`.
 - [x] Proper GPU resource cleanup in `ForwardPlusLane::on_shutdown()`.
-- [x] 16 GORNA integration tests (negotiate, apply_budget, report_status, full cycle).
+- [x] Telemetry sender wiring (`Sender<TelemetryEvent>` for `GpuReport` emission to DCC).
+- [x] 17 GORNA integration tests (negotiate, apply_budget, report_status, telemetry, full cycle).
 
 ### Known Limitations & Future Work
 - [ ] Auto-mode uses a simple light-count threshold; could leverage DCC heuristics instead.

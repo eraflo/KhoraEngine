@@ -1606,6 +1606,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "bytemuck",
+ "crossbeam-channel",
  "image",
  "khora-core",
  "khora-data",

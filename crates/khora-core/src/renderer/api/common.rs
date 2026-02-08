@@ -508,19 +508,28 @@ pub struct SpotLightUniform {
 
 /// Constants for maximum light counts.
 pub const MAX_DIRECTIONAL_LIGHTS: usize = 4;
+/// Maximum number of point lights supported in the global lighting buffer.
 pub const MAX_POINT_LIGHTS: usize = 16;
+/// Maximum number of spot lights supported in the global lighting buffer.
 pub const MAX_SPOT_LIGHTS: usize = 8;
 
 /// The structure of the global lighting uniform buffer.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct LightingUniforms {
+    /// Array of directional light uniforms.
     pub directional_lights: [DirectionalLightUniform; MAX_DIRECTIONAL_LIGHTS],
+    /// Array of point light uniforms.
     pub point_lights: [PointLightUniform; MAX_POINT_LIGHTS],
+    /// Array of spot light uniforms.
     pub spot_lights: [SpotLightUniform; MAX_SPOT_LIGHTS],
+    /// Number of active directional lights.
     pub num_directional_lights: u32,
+    /// Number of active point lights.
     pub num_point_lights: u32,
+    /// Number of active spot lights.
     pub num_spot_lights: u32,
+    /// Padding for 16-byte alignment.
     pub _padding: u32,
 }
 
@@ -528,7 +537,9 @@ pub struct LightingUniforms {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ModelUniforms {
+    /// The model-to-world transformation matrix.
     pub model_matrix: [[f32; 4]; 4],
+    /// The transposed inverse of the model matrix for correct normal transformation.
     pub normal_matrix: [[f32; 4]; 4],
 }
 
@@ -536,6 +547,7 @@ pub struct ModelUniforms {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MaterialUniforms {
+    /// Base color of the material (linear RGBA).
     pub base_color: LinearRgba,
     /// Emissive color (rgb) and Specular Power (a).
     pub emissive: LinearRgba,

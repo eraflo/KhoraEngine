@@ -664,7 +664,7 @@ impl RenderLane for LitForwardLane {
                     },
                 }],
             })
-            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         // Group 1: Model
         let model_layout = device
@@ -680,7 +680,7 @@ impl RenderLane for LitForwardLane {
                     },
                 }],
             })
-            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         // Group 2: Material
         let material_layout = device
@@ -696,7 +696,7 @@ impl RenderLane for LitForwardLane {
                     },
                 }],
             })
-            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         // Group 3: Lights
         let light_layout = device
@@ -712,7 +712,7 @@ impl RenderLane for LitForwardLane {
                     },
                 }],
             })
-            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         // 2. Create Shader Module
         let shader_module = device
@@ -720,7 +720,7 @@ impl RenderLane for LitForwardLane {
                 label: Some("lit_forward_shader"),
                 source: ShaderSourceData::Wgsl(Cow::Borrowed(LIT_FORWARD_WGSL)),
             })
-            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         // 3. Create Pipeline
         let vertex_attributes = vec![
@@ -781,7 +781,7 @@ impl RenderLane for LitForwardLane {
 
         let pipeline_layout_id = device
             .create_pipeline_layout(&pipeline_layout_desc)
-            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         let pipeline_desc = RenderPipelineDescriptor {
             label: Some(Cow::Borrowed("LitForward Pipeline")),
@@ -846,7 +846,7 @@ impl RenderLane for LitForwardLane {
 
         let pipeline_id = device
             .create_render_pipeline(&pipeline_desc)
-            .map_err(|e| khora_core::renderer::error::RenderError::ResourceError(e))?;
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         let mut pipeline_lock = self.pipeline.lock().unwrap();
         *pipeline_lock = Some(pipeline_id);

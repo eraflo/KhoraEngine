@@ -19,8 +19,9 @@ use std::borrow::Cow;
 use std::mem;
 
 use anyhow::Result;
+use khora_sdk::prelude::ecs::Camera;
 use khora_sdk::prelude::*;
-use khora_sdk::{Application, Engine, EngineContext};
+use khora_sdk::{Application, Engine, EngineContext, GameWorld};
 
 #[global_allocator]
 static GLOBAL: SaaTrackingAllocator = SaaTrackingAllocator::new(std::alloc::System);
@@ -175,7 +176,19 @@ impl Application for SandboxApp {
         }
     }
 
-    fn update(&mut self) {}
+    fn setup(&mut self, world: &mut GameWorld) {
+        // Spawn a default perspective camera.
+        let camera = Camera::new_perspective(
+            std::f32::consts::FRAC_PI_4, // 45° FOV
+            16.0 / 9.0,                  // aspect ratio
+            0.1,                         // near plane
+            1000.0,                      // far plane
+        );
+        world.spawn_camera(camera);
+        log::info!("SandboxApp: Camera spawned via GameWorld.");
+    }
+
+    fn update(&mut self, _world: &mut GameWorld) {}
 
     fn render(&mut self) -> Vec<RenderObject> {
         vec![RenderObject {
