@@ -121,6 +121,11 @@ pub(crate) struct WgpuBindGroupEntry {
     pub(crate) wgpu_bind_group: Arc<wgpu::BindGroup>,
 }
 
+#[derive(Debug)]
+pub(crate) struct WgpuPipelineLayoutEntry {
+    pub(crate) wgpu_layout: Arc<wgpu::PipelineLayout>,
+}
+
 /// The internal, non-clonable state of the WgpuDevice.
 /// This struct holds all the GPU resources and state, protected by an Arc.
 #[derive(Debug)]
@@ -136,6 +141,7 @@ pub struct WgpuDeviceInternal {
     bind_group_layouts:
         Mutex<HashMap<khora_core::renderer::BindGroupLayoutId, WgpuBindGroupLayoutEntry>>,
     bind_groups: Mutex<HashMap<khora_core::renderer::BindGroupId, WgpuBindGroupEntry>>,
+    pipeline_layouts: Mutex<HashMap<PipelineLayoutId, WgpuPipelineLayoutEntry>>,
 
     next_shader_id: AtomicUsize,
     next_pipeline_id: AtomicUsize,
@@ -181,6 +187,7 @@ impl WgpuDevice {
                 samplers: Mutex::new(HashMap::new()),
                 bind_group_layouts: Mutex::new(HashMap::new()),
                 bind_groups: Mutex::new(HashMap::new()),
+                pipeline_layouts: Mutex::new(HashMap::new()),
                 next_shader_id: AtomicUsize::new(0),
                 next_pipeline_id: AtomicUsize::new(0),
                 next_compute_pipeline_id: AtomicU64::new(0),
@@ -614,17 +621,23 @@ impl GraphicsDevice for WgpuDevice {
 
         // 7. Create pipeline layout and render pipeline
         let (wgpu_render_pipeline_arc, id) = self.with_wgpu_device(|device| {
-            let pipeline_layout_label = descriptor.label.as_deref().map(|s| format!("{s}_Layout"));
-            let wgpu_pipeline_layout =
-                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: pipeline_layout_label.as_deref(),
-                    bind_group_layouts: &[],
-                    immediate_size: 0,
-                });
+            // Look up pipeline layout if provided
+            let layout_entry_opt = if let Some(layout_id) = descriptor.layout {
+                 let layouts = self.internal.pipeline_layouts.lock().unwrap(); // Potential deadlock if called from within another lock? 
+                 // Note: create_render_pipeline already locks shader_modules. 
+                 // Locking pipeline_layouts here is fine as long as strict ordering is maintained.
+                 // Ideally we should get it before entering with_wgpu_device callback if we can, 
+                 // but with_wgpu_device just locks context. 
+                 // So: Lock Context -> Lock ShaderModules -> Lock PipelineLayouts.
+                 // Safe.
+                 layouts.get(&layout_id).map(|e| Arc::clone(&e.wgpu_layout))
+            } else {
+                None
+            };
 
             let wgpu_pipeline_descriptor = wgpu::RenderPipelineDescriptor {
                 label: descriptor.label.as_deref(),
-                layout: Some(&wgpu_pipeline_layout),
+                layout: layout_entry_opt.as_deref(),
                 vertex: wgpu::VertexState {
                     module: vs_wgpu_module,
                     entry_point: Some(descriptor.vertex_entry_point.as_ref()),
@@ -693,15 +706,48 @@ impl GraphicsDevice for WgpuDevice {
         &self,
         descriptor: &khora_core::renderer::PipelineLayoutDescriptor,
     ) -> Result<khora_core::renderer::PipelineLayoutId, ResourceError> {
-        log::debug!(
-            "WgpuDevice: Creating pipeline layout with label: {:?}",
-            descriptor.label
-        );
-        Ok(PipelineLayoutId(
+        let bg_layouts_guard = self.internal.bind_group_layouts.lock().map_err(|e| {
+            ResourceError::BackendError(format!("Mutex poisoned (bind_group_layouts): {e}"))
+        })?;
+
+        let mut wgpu_bind_group_layouts = Vec::with_capacity(descriptor.bind_group_layouts.len());
+        for id in descriptor.bind_group_layouts {
+            let entry = bg_layouts_guard.get(id).ok_or(ResourceError::NotFound)?;
+            wgpu_bind_group_layouts.push(&entry.wgpu_layout);
+        }
+
+        let wgpu_layout = self.with_wgpu_device(|device| {
+            let wgpu_desc = wgpu::PipelineLayoutDescriptor {
+                label: descriptor.label.as_deref(),
+                bind_group_layouts: &wgpu_bind_group_layouts
+                    .iter()
+                    .map(|l| l.as_ref())
+                    .collect::<Vec<_>>(),
+                immediate_size: 0, // Not used/exposed yet
+            };
+            Ok(Arc::new(device.create_pipeline_layout(&wgpu_desc)))
+        })?;
+
+        let id = PipelineLayoutId(
             self.internal
                 .next_pipeline_layout_id
                 .fetch_add(1, Ordering::Relaxed),
-        ))
+        );
+
+        self.internal
+            .pipeline_layouts
+            .lock()
+            .map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (pipeline_layouts): {e}"))
+            })?
+            .insert(id, WgpuPipelineLayoutEntry { wgpu_layout });
+
+        log::debug!(
+            "WgpuDevice: Created pipeline layout '{:?}' with ID: {:?}",
+            descriptor.label,
+            id
+        );
+        Ok(id)
     }
 
     fn destroy_render_pipeline(&self, id: RenderPipelineId) -> Result<(), ResourceError> {

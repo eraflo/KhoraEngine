@@ -57,15 +57,22 @@ use std::sync::RwLock;
 /// - **Linear iteration** over the extracted mesh list
 /// - **Minimal state changes** (one pipeline bind per material, ideally)
 /// - **Suitable for**: High frame rates, simple scenes, or as a debug/fallback renderer
-#[derive(Default)]
-pub struct SimpleUnlitLane;
+pub struct SimpleUnlitLane {
+    pipeline: std::sync::Mutex<Option<RenderPipelineId>>,
+}
+
+impl Default for SimpleUnlitLane {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SimpleUnlitLane {
     /// Creates a new `SimpleUnlitLane`.
-    ///
-    /// This lane is stateless, so construction is trivial.
     pub fn new() -> Self {
-        Self
+        Self {
+            pipeline: std::sync::Mutex::new(None),
+        }
     }
 }
 
@@ -76,28 +83,17 @@ impl RenderLane for SimpleUnlitLane {
 
     fn get_pipeline_for_material(
         &self,
-        material_uuid: Option<AssetUUID>,
-        materials: &Assets<Box<dyn Material>>,
+        _material_uuid: Option<AssetUUID>,
+        _materials: &Assets<Box<dyn Material>>,
     ) -> RenderPipelineId {
-        // If a material is specified, verify it exists in the cache
-        if let Some(uuid) = material_uuid {
-            if materials.get(&uuid).is_none() {
-                // Material not found, will use default pipeline
-                let _ = uuid; // Silence unused warning
-            }
-        }
-
-        // All unlit materials currently use the same pipeline
-        // Future enhancements could differentiate based on:
-        // - Texture presence (textured vs. untextured)
-        // - Alpha blend mode (opaque, masked, transparent)
-        // - Two-sided rendering
-        RenderPipelineId(0)
+        // Return the stored pipeline, or 0 if not initialized.
+        self.pipeline.lock().unwrap().unwrap_or(RenderPipelineId(0))
     }
 
     fn render(
         &self,
         render_world: &RenderWorld,
+        _device: &dyn khora_core::renderer::GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
         render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
@@ -216,6 +212,106 @@ impl RenderLane for SimpleUnlitLane {
 
         (total_triangles as f32 * TRIANGLE_COST) + (draw_call_count as f32 * DRAW_CALL_COST)
     }
+
+    fn on_initialize(
+        &self,
+        device: &dyn khora_core::renderer::GraphicsDevice,
+    ) -> Result<(), khora_core::renderer::error::RenderError> {
+        use crate::render_lane::shaders::UNLIT_WGSL;
+        use khora_core::renderer::api::{
+            ColorTargetStateDescriptor, ColorWrites, CompareFunction, DepthBiasState,
+            DepthStencilStateDescriptor, MultisampleStateDescriptor, PrimitiveStateDescriptor,
+            RenderPipelineDescriptor, SampleCount, ShaderModuleDescriptor, ShaderSourceData,
+            StencilFaceState, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
+            VertexFormat, VertexStepMode,
+        };
+        use std::borrow::Cow;
+
+        log::info!("SimpleUnlitLane: Initializing GPU resources...");
+
+        // 1. Create Shader Module
+        let shader_module = device
+            .create_shader_module(&ShaderModuleDescriptor {
+                label: Some("simple_unlit_shader"),
+                source: ShaderSourceData::Wgsl(Cow::Borrowed(UNLIT_WGSL)),
+            })
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+
+        // 2. Define Vertex Layout (matching our standard vertex buffer)
+        // Attribute 0: Position (vec3<f32>)
+        // Attribute 1: Color (vec4<f32>)
+        let vertex_attributes = vec![
+            VertexAttributeDescriptor {
+                format: VertexFormat::Float32x3,
+                offset: 0,
+                shader_location: 0,
+            },
+            VertexAttributeDescriptor {
+                format: VertexFormat::Float32x4,
+                offset: 12, // 3 * size_of<f32>
+                shader_location: 1,
+            },
+        ];
+
+        let vertex_layout = VertexBufferLayoutDescriptor {
+            array_stride: 28, // 3*4 + 4*4
+            step_mode: VertexStepMode::Vertex,
+            attributes: Cow::Owned(vertex_attributes),
+        };
+
+        // 3. Create Render Pipeline
+        let pipeline_desc = RenderPipelineDescriptor {
+            label: Some(Cow::Borrowed("SimpleUnlit Pipeline")),
+            vertex_shader_module: shader_module,
+            vertex_entry_point: Cow::Borrowed("vs_main"),
+            fragment_shader_module: Some(shader_module),
+            fragment_entry_point: Some(Cow::Borrowed("fs_main")),
+            vertex_buffers_layout: Cow::Owned(vec![vertex_layout]),
+            layout: None, // Implicit layout derived from shader.
+            primitive_state: PrimitiveStateDescriptor {
+                topology: PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil_state: Some(DepthStencilStateDescriptor {
+                format: khora_core::renderer::api::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: CompareFunction::Less,
+                stencil_front: StencilFaceState::default(),
+                stencil_back: StencilFaceState::default(),
+                stencil_read_mask: 0,
+                stencil_write_mask: 0,
+                bias: DepthBiasState::default(),
+            }),
+            color_target_states: Cow::Owned(vec![ColorTargetStateDescriptor {
+                format: device
+                    .get_surface_format()
+                    .unwrap_or(khora_core::renderer::api::TextureFormat::Rgba8UnormSrgb),
+                blend: None, // REPLACE
+                write_mask: ColorWrites::ALL,
+            }]),
+            multisample_state: MultisampleStateDescriptor {
+                count: SampleCount::X1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+        };
+
+        let pipeline_id = device
+            .create_render_pipeline(&pipeline_desc)
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+
+        let mut pipeline_lock = self.pipeline.lock().unwrap();
+        *pipeline_lock = Some(pipeline_id);
+
+        Ok(())
+    }
+
+    fn on_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
+        let mut pipeline_lock = self.pipeline.lock().unwrap();
+        if let Some(id) = pipeline_lock.take() {
+            let _ = device.destroy_render_pipeline(id);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -235,7 +331,7 @@ mod tests {
 
     #[test]
     fn test_default_construction() {
-        let lane = SimpleUnlitLane;
+        let lane = SimpleUnlitLane::new();
         assert_eq!(lane.strategy_name(), "SimpleUnlit");
     }
 

@@ -15,7 +15,7 @@
 //! Provides common, backend-agnostic enums and data structures for the rendering API.
 
 use crate::{
-    math::{Mat4, Vec3},
+    math::{LinearRgba, Mat4, Vec3},
     renderer::{BufferId, RenderPipelineId},
 };
 
@@ -276,8 +276,10 @@ pub struct GraphicsAdapterInfo {
     pub device_type: RendererDeviceType,
 }
 
-/// A simple representation of a single object to be rendered in a pass.
-/// TODO: evolve this structure to a more high level abstraction for real 3D objects.
+/// A low-level representation of a single draw call to be processed by a [`RenderLane`].
+///
+/// This structure links GPU buffers and pipelines, serving as the common data format
+/// produced by ISAs (like `RenderAgent`) and consumed by specialized rendering lanes.
 #[derive(Debug, Clone)]
 pub struct RenderObject {
     /// The [`RenderPipelineId`] to bind for this object.
@@ -467,6 +469,91 @@ impl CameraUniformData {
 // Ensure the struct can be safely cast to bytes for GPU upload
 unsafe impl bytemuck::Pod for CameraUniformData {}
 unsafe impl bytemuck::Zeroable for CameraUniformData {}
+
+// --- Uniform Buffers ---
+
+/// Data for a single directional light, formatted for GPU consumption.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct DirectionalLightUniform {
+    /// Direction vector (xyz), with padding (w).
+    pub direction: [f32; 4], // w is padding
+    /// Color (rgb) and Intensity (a).
+    pub color: LinearRgba,
+}
+
+/// Data for a single point light, formatted for GPU consumption.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct PointLightUniform {
+    /// Position (xyz) and Range (w).
+    pub position: [f32; 4], // w is range
+    /// Color (rgb) and Intensity (a).
+    pub color: LinearRgba,
+}
+
+/// Data for a single spot light, formatted for GPU consumption.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SpotLightUniform {
+    /// Position (xyz) and Range (w).
+    pub position: [f32; 4], // w is range
+    /// Direction (xyz) and Inner Cone Cosine (w).
+    pub direction: [f32; 4], // w is inner_cone_cos
+    /// Color (rgb) and Intensity (a).
+    pub color: LinearRgba,
+    /// Outer Cone Cosine (x) and Padding (yzw).
+    pub params: [f32; 4], // x = outer_cone_cos, yzw = padding
+}
+
+/// Constants for maximum light counts.
+pub const MAX_DIRECTIONAL_LIGHTS: usize = 4;
+/// Maximum number of point lights supported in the global lighting buffer.
+pub const MAX_POINT_LIGHTS: usize = 16;
+/// Maximum number of spot lights supported in the global lighting buffer.
+pub const MAX_SPOT_LIGHTS: usize = 8;
+
+/// The structure of the global lighting uniform buffer.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct LightingUniforms {
+    /// Array of directional light uniforms.
+    pub directional_lights: [DirectionalLightUniform; MAX_DIRECTIONAL_LIGHTS],
+    /// Array of point light uniforms.
+    pub point_lights: [PointLightUniform; MAX_POINT_LIGHTS],
+    /// Array of spot light uniforms.
+    pub spot_lights: [SpotLightUniform; MAX_SPOT_LIGHTS],
+    /// Number of active directional lights.
+    pub num_directional_lights: u32,
+    /// Number of active point lights.
+    pub num_point_lights: u32,
+    /// Number of active spot lights.
+    pub num_spot_lights: u32,
+    /// Padding for 16-byte alignment.
+    pub _padding: u32,
+}
+
+/// Data for a model's transform, formatted for GPU consumption.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ModelUniforms {
+    /// The model-to-world transformation matrix.
+    pub model_matrix: [[f32; 4]; 4],
+    /// The transposed inverse of the model matrix for correct normal transformation.
+    pub normal_matrix: [[f32; 4]; 4],
+}
+
+/// Data for a material's properties, formatted for the standard Lit Shader.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct MaterialUniforms {
+    /// Base color of the material (linear RGBA).
+    pub base_color: LinearRgba,
+    /// Emissive color (rgb) and Specular Power (a).
+    pub emissive: LinearRgba,
+    /// Ambient color (rgb) and Padding (a).
+    pub ambient: LinearRgba,
+}
 
 #[cfg(test)]
 mod tests {

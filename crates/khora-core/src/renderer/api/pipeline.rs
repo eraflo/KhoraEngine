@@ -427,6 +427,8 @@ pub struct RenderPipelineDescriptor<'a> {
     pub fragment_entry_point: Option<Cow<'a, str>>,
     /// The layout of the vertex buffers.
     pub vertex_buffers_layout: Cow<'a, [VertexBufferLayoutDescriptor<'a>]>,
+    /// The pipeline layout, if any.
+    pub layout: Option<PipelineLayoutId>,
     /// The state for primitive assembly and rasterization.
     pub primitive_state: PrimitiveStateDescriptor,
     /// The state for depth and stencil testing. If `None`, these tests are disabled.

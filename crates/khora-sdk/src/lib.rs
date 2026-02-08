@@ -18,7 +18,12 @@
 
 #![warn(missing_docs)]
 
+mod game_world;
+pub use game_world::GameWorld;
+
 use anyhow::Result;
+use khora_agents::render_agent::RenderAgent;
+use khora_control::service::{DccConfig, DccService};
 use khora_core::platform::window::KhoraWindow;
 use khora_core::renderer::{RenderObject, RenderSettings, RenderSystem};
 use khora_core::telemetry::MonitoredResourceType;
@@ -27,7 +32,7 @@ use khora_infra::platform::window::{WinitWindow, WinitWindowBuilder};
 use khora_infra::telemetry::memory_monitor::MemoryMonitor;
 use khora_infra::{GpuMonitor, WgpuRenderSystem};
 use khora_telemetry::TelemetryService;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -45,7 +50,14 @@ pub mod prelude {
         ShaderModuleId, ShaderSourceData, ShaderStage, StencilFaceState, TextureFormat,
         VertexAttributeDescriptor, VertexBufferLayoutDescriptor, VertexFormat, VertexStepMode,
     };
+    pub use khora_core::EngineContext;
     pub use khora_data::allocators::SaaTrackingAllocator;
+
+    /// ECS types used by the `GameWorld` facade.
+    pub mod ecs {
+        pub use khora_core::ecs::entity::EntityId;
+        pub use khora_data::ecs::{Camera, Component, ComponentBundle, GlobalTransform, Transform};
+    }
 
     /// Built-in engine shaders.
     pub mod shaders {
@@ -53,19 +65,28 @@ pub mod prelude {
     }
 }
 
-/// Engine context providing access to various subsystems.
-pub struct EngineContext {
-    /// The graphics device used for rendering.
-    pub graphics_device: Arc<dyn khora_core::renderer::GraphicsDevice>,
-}
+pub use khora_core::EngineContext;
 
 /// Application trait for user-defined applications.
+///
+/// The engine owns the [`GameWorld`] internally. Users interact with
+/// it through the `&mut GameWorld` parameter passed to [`setup`](Application::setup)
+/// and [`update`](Application::update) — no raw `World` access required.
 pub trait Application: Sized + 'static {
     /// Called once at the beginning of the application to create the initial state.
     fn new(context: EngineContext) -> Self;
 
+    /// Called once after construction to set up the game world (spawn
+    /// cameras, initial entities, etc.).
+    ///
+    /// The default implementation does nothing.
+    fn setup(&mut self, _world: &mut GameWorld) {}
+
     /// Called every frame for game logic updates.
-    fn update(&mut self);
+    ///
+    /// Use the provided [`GameWorld`] to spawn/despawn entities, run
+    /// queries, and modify components.
+    fn update(&mut self, _world: &mut GameWorld);
 
     /// Called every frame to handle rendering.
     fn render(&mut self) -> Vec<RenderObject>;
@@ -75,10 +96,14 @@ pub trait Application: Sized + 'static {
 /// It now holds the user's application state (`app: A`).
 struct EngineState<A: Application> {
     app: Option<A>, // The user's application logic and data.
+    game_world: Option<GameWorld>,
     window: Option<WinitWindow>,
     renderer: Option<Box<dyn RenderSystem>>,
     telemetry: Option<TelemetryService>,
+    dcc: Option<DccService>,
     render_settings: RenderSettings,
+    /// Tracks whether the simulation phase has started (first RedrawRequested).
+    simulation_started: bool,
 }
 
 impl<A: Application> EngineState<A> {
@@ -118,13 +143,17 @@ impl<A: Application> EngineState<A> {
                         if let Some(gpu_monitor) = monitor.as_any().downcast_ref::<GpuMonitor>() {
                             if let Some(gpu_report) = gpu_monitor.get_gpu_report() {
                                 log::info!(
-                                    "  GPU Time: {:.3} ms (Main Pass: {:.3} ms)",
+                                    "  GPU Time: {:.3} ms (Main Pass: {:.3} ms, Frame: {})",
                                     gpu_report.frame_total_duration_us().unwrap_or(0) as f32
                                         / 1000.0,
-                                    gpu_report.main_pass_duration_us().unwrap_or(0) as f32 / 1000.0
+                                    gpu_report.main_pass_duration_us().unwrap_or(0) as f32 / 1000.0,
+                                    gpu_report.frame_number
                                 );
                             }
                         }
+                    }
+                    MonitoredResourceType::Hardware => {
+                        log::info!("  Hardware Monitoring: Active");
                     }
                 }
             }
@@ -165,10 +194,15 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
         let mut renderer: Box<dyn RenderSystem> = Box::new(WgpuRenderSystem::new());
         let renderer_monitors = renderer.init(&window).unwrap();
 
-        // 3. Create the telemetry service.
-        let telemetry = TelemetryService::new(Duration::from_secs(1));
+        // 3. Create the telemetry service and DCC.
+        let (mut dcc, dcc_rx) = DccService::new(DccConfig::default());
+        let telemetry =
+            TelemetryService::new(Duration::from_secs(1)).with_dcc_sender(dcc.event_sender());
 
-        // 4. Register all available default monitors with the telemetry service.
+        // 4. Start the DCC analysis thread.
+        dcc.start(dcc_rx);
+
+        // 5. Register all available default monitors with the telemetry service.
         log::info!("Registering default resource monitors...");
 
         // Register the monitors that were created and returned by the renderer.
@@ -180,17 +214,41 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
         let memory_monitor = Arc::new(MemoryMonitor::new("System_RAM".to_string()));
         telemetry.monitor_registry().register(memory_monitor);
 
-        // 5. Create the application instance.
+        // 6. Create the application instance.
         let context = EngineContext {
             graphics_device: renderer.graphics_device(),
+            world: None,
+            assets: None,
         };
-        self.app = Some(A::new(context));
+        let mut app = A::new(context);
 
-        // 6. Store the initialized systems in our application state.
+        // 6b. Create the GameWorld and let the app set up its scene.
+        let mut game_world = GameWorld::new();
+        app.setup(&mut game_world);
+        self.app = Some(app);
+
+        // 7. Register default agents.
+        // We instantiate concrete agents but register them as Arc<Mutex<dyn Agent>>
+        // to keep the SDK abstract.
+        let render_agent = RenderAgent::new().with_telemetry_sender(dcc.event_sender());
+        let render_agent = Arc::new(Mutex::new(render_agent));
+        dcc.register_agent(render_agent);
+
+        // 8. Signal Boot phase to the DCC.
+        let _ = dcc
+            .event_sender()
+            .send(khora_core::telemetry::TelemetryEvent::PhaseChange(
+                "boot".to_string(),
+            ));
+
+        // 9. Store the initialized systems in our application state.
         self.window = Some(window);
         self.renderer = Some(renderer);
         self.telemetry = Some(telemetry);
+        self.dcc = Some(dcc);
+        self.game_world = Some(game_world);
         self.render_settings = RenderSettings::default();
+        self.simulation_started = false;
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
@@ -218,13 +276,37 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
                         if let (Some(renderer), Some(telemetry)) =
                             (self.renderer.as_mut(), self.telemetry.as_mut())
                         {
+                            // Transition to Simulation phase on first frame.
+                            if !self.simulation_started {
+                                if let Some(dcc) = &self.dcc {
+                                    let _ = dcc.event_sender().send(
+                                        khora_core::telemetry::TelemetryEvent::PhaseChange(
+                                            "simulation".to_string(),
+                                        ),
+                                    );
+                                }
+                                self.simulation_started = true;
+                            }
                             // Update "active" monitors like the memory monitor.
                             let should_log_summary = telemetry.tick();
 
                             // Call the user's application update and render methods.
-                            let app = self.app.as_mut().unwrap();
+                            let app = self.app.as_mut().expect("Application not initialized");
 
-                            app.update();
+                            // 1. Tactical ISA Update Phase
+                            // This allows agents to extract data from the ECS and prepare GPU resources.
+                            if let Some(dcc) = self.dcc.as_ref() {
+                                if let Some(gw) = self.game_world.as_mut() {
+                                    let mut context =
+                                        gw.as_engine_context(renderer.graphics_device());
+                                    dcc.update_agents(&mut context);
+                                }
+                            }
+
+                            // 2. User update — receives a &mut GameWorld.
+                            if let Some(gw) = self.game_world.as_mut() {
+                                app.update(gw);
+                            }
 
                             let render_objects = app.render();
 
@@ -281,10 +363,13 @@ impl Engine {
         // The initial state is empty; it will be populated in the `resumed` event.
         let mut app_state = EngineState::<A> {
             app: None,
+            game_world: None,
             window: None,
             renderer: None,
             telemetry: None,
+            dcc: None,
             render_settings: RenderSettings::default(),
+            simulation_started: false,
         };
 
         event_loop.run_app(&mut app_state)?;

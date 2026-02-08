@@ -6,3 +6,5 @@ description = "DCC and GORNA implementation for dynamic constraint configuration
 
 [dependencies]
 khora-core = { path = "../khora-core" }
+crossbeam-channel = "0.5"
+log = "0.4"

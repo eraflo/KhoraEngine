@@ -22,9 +22,11 @@
 //! telemetry, while `khora-telemetry` provides the central service for aggregating
 //! it, and `khora-infra` provides the concrete implementations for collecting it.
 
+pub mod event;
 pub mod metrics;
 pub mod monitoring;
 
+pub use self::event::TelemetryEvent;
 pub use self::metrics::{Metric, MetricId, MetricValue, MetricsError, MetricsResult};
 pub use self::monitoring::{
     GpuReport, MemoryReport, MonitoredResourceType, ResourceMonitor, ResourceUsageReport,

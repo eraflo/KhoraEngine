@@ -13,10 +13,11 @@
 - [Asset Architecture: The Strategic System](./07_asset_architecture_vfs.md)
 - [Serialization Architecture: SAA-Serialize](./08_serialization_architecture.md)
 - [DCC Architecture](./11_dcc_architecture.md)
+- [GORNA Protocol Specification](./12_gorna_protocol.md)
 
 # III. Development
 - [Roadmap & Issue Tracker](09_roadmap_and_issues.md)
-- [Research: Rendering Strategies](10_rendering_strategies_research.md)
+- [Rendering Strategies & RenderAgent ISA](10_rendering_strategies_research.md)
 
 # IV. API Reference
 - [**Complete Crate Reference**](https://eraflo.github.io/KhoraEngine/api/index.html)
