@@ -14,4 +14,4 @@ khora-sdk = { path = "../../crates/khora-sdk" }
 env_logger = "0.11"
 anyhow = "1.0"
 log = "0.4.29"
-bytemuck = { version = "1.24", features = ["derive"] }
+bytemuck = { version = "1.25", features = ["derive"] }
