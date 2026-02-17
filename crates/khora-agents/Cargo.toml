@@ -10,7 +10,7 @@ khora-data = { path = "../khora-data" }
 khora-lanes = { path = "../khora-lanes" }
 khora-telemetry = { path = "../khora-telemetry" }
 
-bytemuck = { version = "1.24.0", features = ["derive"] }
+bytemuck = { version = "1.25.0", features = ["derive"] }
 
 # Error handling
 anyhow = "1.0"
