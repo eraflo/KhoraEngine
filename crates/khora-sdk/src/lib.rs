@@ -47,7 +47,7 @@ use winit::window::WindowId;
 
 pub mod prelude {
     //! Common imports for convenience.
-    pub use khora_core::asset::{AssetMetadata, AssetSource, AssetUUID};
+    pub use khora_core::asset::{AssetHandle, AssetMetadata, AssetSource, AssetUUID};
     pub use khora_core::renderer::{
         BufferDescriptor, BufferId, BufferUsage, ColorTargetStateDescriptor, ColorWrites,
         CompareFunction, DepthBiasState, DepthStencilStateDescriptor, IndexFormat,

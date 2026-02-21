@@ -67,3 +67,9 @@ A simple, stable API designed for game developers. It hides the complexity of th
 
 #### `khora-macros` - Development Ergonomics
 A procedural macro crate that provides derive macros to reduce boilerplate and improve developer experience. This crate implements compile-time code generation to automatically implement common traits throughout the engine. Currently provides the `#[derive(Component)]` macro for automatically implementing the `khora_data::ecs::Component` trait while enforcing its required bounds (`Clone`, `Send`, `Sync`, `'static`). As the engine evolves, this crate will house additional derive macros and attribute macros to streamline development across all CLAD layers.
+
+#### `khora-plugins` - Extensions and Packages
+A specialized crate that packages independent strategies, lanes, or pre-configured systems into modular plugins. This allows the engine to be extended with new capabilities (e.g., specific rendering techniques, AI behaviors) without bloating the core architecture.
+
+#### `khora-editor` - The Engine Tooling
+An interactive graphical application built on top of the `khora-sdk` utilizing `egui`. It serves as the primary visual tool for interacting with the engine, providing a real-time viewport, scene hierarchy panel, and context visualization for the DCC's decisions.

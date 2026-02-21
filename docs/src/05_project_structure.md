@@ -7,7 +7,7 @@ The Khora project is organized as a Cargo workspace to enforce modularity, enabl
 *   `.github/`: Contains GitHub-specific configurations like CI workflows and issue templates.
 *   `crates/`: The heart of the engine. Contains all the core `khora-*` source code, organized into modular crates.
 *   `docs/`: Contains all project documentation, including the source for this book.
-*   `examples/`: Engine usage examples and testbeds, with `sandbox` being our primary test application.
+*   `examples/`: Engine usage examples and testbeds, with `sandbox` being our primary test application demonstrating `khora-sdk` usage without internal `khora-core` dependencies.
 *   `resources/`: Runtime configuration files, such as default profiles for the DCC.
 *   `xtask/`: A dedicated crate for build automation and scripting tasks (`cargo-xtask`).
 *   `Cargo.toml`: The root workspace definition, specifying members and compilation profiles.
@@ -58,13 +58,13 @@ crates/
 │       ├── platform/
 │       └── telemetry/
 │
-├── khora-sdk/       # The stable, public-facing API for game developers.
+├── khora-sdk/       # [USER-FACING] The stable, public-facing API for game developers.
+│   └── src/         # No internal engine data structures are exposed here, only traits and Vessels.
+│
+├── khora-editor/    # [TOOLING] The engine's editor GUI using egui.
 │   └── src/
 │
-├── khora-editor/    # [FUTURE] The engine's editor GUI (placeholder).
-│   └── src/
-│
-├── khora-plugins/   # [FUTURE] Packaged strategies and extensions (planned).
+├── khora-plugins/   # [EXTENSIONS] Packaged strategies and extensions.
 │   └── src/
 │
 └── khora-macros/    # Procedural macros for code generation (derive macros).

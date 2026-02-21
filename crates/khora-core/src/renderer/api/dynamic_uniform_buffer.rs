@@ -167,10 +167,11 @@ impl DynamicUniformRingBuffer {
 
             // Check if the next chunk has enough capacity
             if slot.active_chunk_index + 1 < slot.chunks.len()
-                && slot.chunks[slot.active_chunk_index + 1].capacity >= aligned_size {
-                    slot.active_chunk_index += 1;
-                    chunk_found = true;
-                }
+                && slot.chunks[slot.active_chunk_index + 1].capacity >= aligned_size
+            {
+                slot.active_chunk_index += 1;
+                chunk_found = true;
+            }
 
             // If no chunk is found, create a new one
             if !chunk_found {

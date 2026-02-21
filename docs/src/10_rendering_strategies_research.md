@@ -53,14 +53,14 @@ pub struct RenderAgent {
     strategy: RenderingStrategy,      // Current active strategy enum
     current_strategy: StrategyId,     // GORNA strategy ID
     device: Option<Arc<dyn GraphicsDevice>>,
+    render_system: Option<Arc<Mutex<Box<dyn RenderSystem>>>>, // Cached for tactical work
+    telemetry_sender: Option<Sender<TelemetryEvent>>,         // Wired via .with_telemetry_sender()
     // --- Performance Metrics ---
     last_frame_time: Duration,
     time_budget: Duration,            // Assigned by GORNA
     draw_call_count: u32,
     triangle_count: u32,
     frame_count: u64,
-    // --- Telemetry ---
-    telemetry_sender: Option<Sender<TelemetryEvent>>,  // Wired via .with_telemetry_sender()
 }
 ```
 
@@ -210,12 +210,14 @@ The rendering subsystem is the canonical embodiment of the **CLAD Pattern**:
 - [x] Proper GPU resource cleanup in `ForwardPlusLane::on_shutdown()`.
 - [x] Telemetry sender wiring (`Sender<TelemetryEvent>` for `GpuReport` emission to DCC).
 - [x] 17 GORNA integration tests (negotiate, apply_budget, report_status, telemetry, full cycle).
+- [x] Tiled Forward+ Compute culling and fragment shaders implemented.
+- [x] Directional Light matrix rotation properly extracted to `GpuLight`.
 
 ### Known Limitations & Future Work
+- [ ] **NO SHADOW MAPPING YET:** Directional lights do not cast shadows. A cube lit by a directional light will look flat and unshaded on its top face due to the nature of Blinn-Phong shading without shadow occlusion.
 - [ ] Auto-mode uses a simple light-count threshold; could leverage DCC heuristics instead.
 - [ ] `extract_lane` material query uses `.nth(entity_id)` which may not match actual material IDs.
 - [ ] `LitForwardLane` allocates uniform buffers per-frame (should use a persistent ring buffer).
-- [ ] `ForwardPlusLane` still uses the unlit shader as a placeholder — needs proper tiled forward shaders.
 - [ ] Vertex layout assumptions differ between lanes (not currently validated).
 - [ ] `MaterialUniforms` struct is hardcoded; should derive from material properties dynamically.
 
