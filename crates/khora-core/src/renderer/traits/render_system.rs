@@ -14,10 +14,14 @@
 
 use std::sync::Arc;
 
+use super::CommandEncoder;
 use crate::platform::window::KhoraWindow;
 use crate::renderer::error::RenderError;
 use crate::renderer::{api::*, GraphicsDevice};
 use crate::telemetry::ResourceMonitor;
+
+/// Type alias for the render encoder closure.
+pub type RenderEncoderFn<'a> = Box<dyn FnOnce(&mut dyn CommandEncoder, &RenderContext) + Send + 'a>;
 
 /// A high-level trait representing the entire rendering subsystem.
 ///
@@ -55,6 +59,25 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     /// `ViewInfo`.
     fn prepare_frame(&mut self, view_info: &ViewInfo);
 
+    /// Renders a single frame using agent-driven encoding.
+    ///
+    /// This method acquires the frame, creates an encoder, calls the provided
+    /// closure to encode commands (typically from RenderAgent), and submits.
+    ///
+    /// # Arguments
+    ///
+    /// * `clear_color`: The color to clear the framebuffer with
+    /// * `encoder_fn`: A boxed closure that encodes GPU commands
+    ///
+    /// # Returns
+    ///
+    /// On success, it returns `RenderStats` with performance metrics for the frame.
+    fn render_with_encoder(
+        &mut self,
+        clear_color: crate::math::LinearRgba,
+        encoder_fn: RenderEncoderFn<'_>,
+    ) -> Result<RenderStats, RenderError>;
+
     /// Renders a single frame.
     ///
     /// This is the main workload function, responsible for executing all necessary
@@ -83,7 +106,7 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     fn supports_feature(&self, feature_name: &str) -> bool;
 
     /// Returns information about the active graphics adapter (GPU).
-    fn get_adapter_info(&self) -> Option<RendererAdapterInfo>;
+    fn get_adapter_info(&self) -> Option<GraphicsAdapterInfo>;
 
     /// Returns a shared, thread-safe reference to the underlying `GraphicsDevice`.
     ///

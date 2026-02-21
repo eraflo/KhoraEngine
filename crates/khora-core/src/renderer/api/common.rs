@@ -254,17 +254,6 @@ impl TextureFormat {
 
 // --- Structs ---
 
-/// Provides standardized, backend-agnostic information about the graphics adapter.
-#[derive(Debug, Clone, Default)]
-pub struct RendererAdapterInfo {
-    /// The name of the adapter (e.g., "NVIDIA GeForce RTX 4090").
-    pub name: String,
-    /// The graphics API backend this adapter is associated with.
-    pub backend_type: GraphicsBackendType,
-    /// The physical type of the adapter.
-    pub device_type: RendererDeviceType,
-}
-
 /// Provides standardized, backend-agnostic information about a graphics adapter.
 #[derive(Debug, Clone, Default)]
 pub struct GraphicsAdapterInfo {
@@ -275,6 +264,9 @@ pub struct GraphicsAdapterInfo {
     /// The physical type of the adapter.
     pub device_type: RendererDeviceType,
 }
+
+/// Maximum number of frames that can be in-flight simultaneously.
+pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 /// A low-level representation of a single draw call to be processed by a [`RenderLane`].
 ///
@@ -432,10 +424,10 @@ impl Default for ViewInfo {
 /// **Important:** WGSL has specific alignment requirements. Mat4 is aligned to 16 bytes,
 /// and Vec3 needs padding to be treated as Vec4 in uniform buffers.
 #[repr(C, align(16))]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniformData {
     /// The combined view-projection matrix (projection * view).
-    pub view_projection: Mat4,
+    pub view_projection: [[f32; 4]; 4],
     /// The camera's position in world space.
     /// Note: The fourth component is padding for alignment.
     pub camera_position: [f32; 4],
@@ -445,7 +437,7 @@ impl CameraUniformData {
     /// Creates camera uniform data from a `ViewInfo`.
     pub fn from_view_info(view_info: &ViewInfo) -> Self {
         Self {
-            view_projection: view_info.view_projection_matrix(),
+            view_projection: view_info.view_projection_matrix().to_cols_array_2d(),
             camera_position: [
                 view_info.camera_position.x,
                 view_info.camera_position.y,
@@ -465,10 +457,6 @@ impl CameraUniformData {
         }
     }
 }
-
-// Ensure the struct can be safely cast to bytes for GPU upload
-unsafe impl bytemuck::Pod for CameraUniformData {}
-unsafe impl bytemuck::Zeroable for CameraUniformData {}
 
 // --- Uniform Buffers ---
 
@@ -533,6 +521,26 @@ pub struct LightingUniforms {
     pub _padding: u32,
 }
 
+/// Data for the light culling compute shader.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct CullingUniformsData {
+    /// The combined view-projection matrix.
+    pub view_projection: [[f32; 4]; 4],
+    /// The inverse of the view-projection matrix.
+    pub inverse_projection: [[f32; 4]; 4],
+    /// The dimensions of the screen in pixels.
+    pub screen_dimensions: [f32; 2],
+    /// The number of tiles in the X and Y dimensions.
+    pub tile_count: [u32; 2],
+    /// The total number of lights in the scene.
+    pub num_lights: u32,
+    /// The size of a tile in pixels.
+    pub tile_size: u32,
+    /// Padding for 16-byte alignment.
+    pub _padding: [f32; 2],
+}
+
 /// Data for a model's transform, formatted for GPU consumption.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
@@ -589,7 +597,7 @@ mod tests {
 
         // Check that view_projection is set
         let expected_vp = projection_matrix * view_matrix;
-        assert_eq!(uniform_data.view_projection, expected_vp);
+        assert_eq!(uniform_data.view_projection, expected_vp.to_cols_array_2d());
     }
 
     #[test]
@@ -605,7 +613,7 @@ mod tests {
     fn test_camera_uniform_data_bytemuck() {
         // Test that we can use bytemuck functions
         let uniform_data = CameraUniformData {
-            view_projection: Mat4::IDENTITY,
+            view_projection: Mat4::IDENTITY.to_cols_array_2d(),
             camera_position: [0.0, 0.0, 0.0, 0.0],
         };
 

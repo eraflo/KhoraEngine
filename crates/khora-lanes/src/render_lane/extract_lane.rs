@@ -52,18 +52,18 @@ impl ExtractRenderablesLane {
         // 3. Iterate directly over the query and populate the RenderWorld.
         for (entity_id, (transform, gpu_mesh_handle_comp)) in query.enumerate() {
             // Try to get the material component if it exists
-            let material_uuid = world
+            let material = world
                 .query::<&MaterialComponent>()
                 .nth(entity_id)
-                .map(|material_comp| material_comp.uuid);
+                .map(|material_comp| material_comp.handle.clone());
 
             let extracted_mesh = ExtractedMesh {
                 // Extract the affine transform directly from GlobalTransform
                 transform: transform.0,
-                // Extract the UUID of the GpuMesh asset.
-                gpu_mesh_uuid: gpu_mesh_handle_comp.uuid,
-                // Extract the UUID of the Material asset, if present.
-                material_uuid,
+                cpu_mesh_uuid: gpu_mesh_handle_comp.uuid,
+                // Pass the asset handle directly
+                gpu_mesh: gpu_mesh_handle_comp.handle.clone(),
+                material,
             };
             render_world.meshes.push(extracted_mesh);
         }
@@ -79,18 +79,29 @@ impl ExtractRenderablesLane {
     fn extract_views(&self, world: &World, render_world: &mut RenderWorld) {
         // Query for entities that have both a Camera component and a GlobalTransform.
         let camera_query = world.query::<(&Camera, &GlobalTransform)>();
+        let cameras: Vec<_> = camera_query.collect();
+        log::debug!("ExtractViews: Found {} cameras", cameras.len());
 
-        for (camera, global_transform) in camera_query {
+        for (camera, global_transform) in cameras {
+            log::trace!(
+                "ExtractViews: Checking camera is_active={}",
+                camera.is_active
+            );
             if !camera.is_active {
                 continue;
             }
 
-            // Calculate View Matrix (inverse of camera transform)
-            let view_matrix = if let Some(matrix) = global_transform.0.to_matrix().inverse() {
-                matrix
-            } else {
-                continue; // Skip valid cameras with singular transforms
-            };
+            // Calculate View Matrix properly
+            // View matrix = inverse of camera transform
+            // For a camera: view = R(-rotation) * T(-position)
+            // We extract rotation and position separately for correct view matrix construction
+            let position = global_transform.0.translation();
+            let rotation = global_transform.0.rotation();
+
+            // Create view matrix: first rotate (inverse rotation), then translate (inverse position)
+            let rotation_matrix = khora_core::math::Mat4::from_quat(rotation.inverse());
+            let translation_matrix = khora_core::math::Mat4::from_translation(-position);
+            let view_matrix = rotation_matrix * translation_matrix;
 
             // Get Projection Matrix
             let proj_matrix = camera.projection_matrix();
@@ -98,9 +109,16 @@ impl ExtractRenderablesLane {
             // View-Projection Matrix
             let view_proj = proj_matrix * view_matrix;
 
+            let forward = global_transform.0.forward();
+            log::trace!(
+                "ExtractViews: Camera at pos={:?} forward={:?}",
+                position,
+                forward
+            );
+
             let extracted_view = ExtractedView {
                 view_proj,
-                position: global_transform.0.translation(),
+                position,
             };
 
             render_world.views.push(extracted_view);
@@ -126,7 +144,10 @@ impl ExtractRenderablesLane {
             // For spot lights, transform the local direction by the global rotation
             // For point lights, direction is not used but we set a default
             let direction = match &light_comp.light_type {
-                LightType::Directional(dir_light) => dir_light.direction,
+                LightType::Directional(dir_light) => {
+                    let rotation = global_transform.0.rotation();
+                    rotation * dir_light.direction
+                }
                 LightType::Spot(spot_light) => {
                     // Transform the spot light's local direction by the entity's rotation
                     let rotation = global_transform.0.rotation();
@@ -226,8 +247,8 @@ mod tests {
         assert_eq!(render_world.meshes.len(), 1, "Should extract 1 mesh");
 
         let extracted = &render_world.meshes[0];
-        assert_eq!(extracted.gpu_mesh_uuid, mesh_uuid);
-        assert_eq!(extracted.material_uuid, None);
+        assert_eq!(extracted.cpu_mesh_uuid, mesh_uuid);
+        assert!(extracted.material.is_none());
         assert_eq!(extracted.transform.translation(), Vec3::new(1.0, 2.0, 3.0));
     }
 
@@ -264,8 +285,8 @@ mod tests {
         assert_eq!(render_world.meshes.len(), 1, "Should extract 1 mesh");
 
         let extracted = &render_world.meshes[0];
-        assert_eq!(extracted.gpu_mesh_uuid, mesh_uuid);
-        assert_eq!(extracted.material_uuid, Some(material_uuid));
+        assert_eq!(extracted.cpu_mesh_uuid, mesh_uuid);
+        assert!(extracted.material.is_some());
         assert_eq!(
             extracted.transform.translation(),
             Vec3::new(5.0, 10.0, 15.0)
@@ -317,12 +338,12 @@ mod tests {
         let extracted_with_material = render_world
             .meshes
             .iter()
-            .filter(|m| m.material_uuid.is_some())
+            .filter(|m| m.material.is_some())
             .count();
         let extracted_without_material = render_world
             .meshes
             .iter()
-            .filter(|m| m.material_uuid.is_none())
+            .filter(|m| m.material.is_none())
             .count();
 
         assert_eq!(
@@ -514,7 +535,7 @@ mod tests {
         let extracted_uuids: Vec<AssetUUID> = render_world
             .meshes
             .iter()
-            .map(|m| m.gpu_mesh_uuid)
+            .map(|m| m.cpu_mesh_uuid)
             .collect();
 
         assert!(extracted_uuids.contains(&uuid1), "Should contain uuid1");

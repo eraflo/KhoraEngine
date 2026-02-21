@@ -17,6 +17,7 @@
 use crate::control::gorna::AgentId;
 use crate::control::gorna::{AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget};
 use crate::EngineContext;
+use std::any::Any;
 
 /// The foundational interface for an Intelligent Subsystem Agent (ISA).
 ///
@@ -40,4 +41,14 @@ pub trait Agent: Send + Sync {
 
     /// Reports the current status and health of the agent.
     fn report_status(&self) -> AgentStatus;
+
+    /// Executes the agent's primary function for this frame.
+    /// Called after update(), this is where the agent performs its main work.
+    fn execute(&mut self);
+
+    /// Allows downcasting to concrete agent types.
+    fn as_any(&self) -> &dyn Any;
+
+    /// Allows mutable downcasting to concrete agent types.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }

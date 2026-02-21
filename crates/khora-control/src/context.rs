@@ -27,6 +27,10 @@ pub struct HardwareState {
     pub cpu_load: f32,
     /// Overall GPU load (0.0 to 1.0).
     pub gpu_load: f32,
+    /// Available VRAM in bytes (if known).
+    pub available_vram: Option<u64>,
+    /// Total VRAM in bytes (if known).
+    pub total_vram: Option<u64>,
 }
 
 /// The high-level workload state of the engine.
@@ -41,6 +45,54 @@ pub enum ExecutionPhase {
     Simulation,
     /// Application is minimized or lost focus.
     Background,
+}
+
+impl ExecutionPhase {
+    /// Returns true if the transition from `self` to `target` is valid.
+    ///
+    /// Valid transitions:
+    /// - Boot → Menu, Simulation
+    /// - Menu → Simulation, Background
+    /// - Simulation → Menu, Background
+    /// - Background → Menu, Simulation
+    pub fn can_transition_to(&self, target: ExecutionPhase) -> bool {
+        match self {
+            ExecutionPhase::Boot => {
+                matches!(target, ExecutionPhase::Menu | ExecutionPhase::Simulation)
+            }
+            ExecutionPhase::Menu => matches!(
+                target,
+                ExecutionPhase::Simulation | ExecutionPhase::Background
+            ),
+            ExecutionPhase::Simulation => {
+                matches!(target, ExecutionPhase::Menu | ExecutionPhase::Background)
+            }
+            ExecutionPhase::Background => {
+                matches!(target, ExecutionPhase::Menu | ExecutionPhase::Simulation)
+            }
+        }
+    }
+
+    /// Returns a human-readable name for this phase.
+    pub fn name(&self) -> &'static str {
+        match self {
+            ExecutionPhase::Boot => "boot",
+            ExecutionPhase::Menu => "menu",
+            ExecutionPhase::Simulation => "simulation",
+            ExecutionPhase::Background => "background",
+        }
+    }
+
+    /// Parses a phase from a string (case-insensitive).
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.to_lowercase().as_str() {
+            "boot" => Some(ExecutionPhase::Boot),
+            "menu" => Some(ExecutionPhase::Menu),
+            "simulation" => Some(ExecutionPhase::Simulation),
+            "background" => Some(ExecutionPhase::Background),
+            _ => None,
+        }
+    }
 }
 
 /// The complete context model used for strategic decision making.

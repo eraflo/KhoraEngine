@@ -212,7 +212,7 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     fn get_surface_format(&self) -> Option<TextureFormat>;
 
     /// Gets information about the active graphics adapter (GPU).
-    fn get_adapter_info(&self) -> RendererAdapterInfo;
+    fn get_adapter_info(&self) -> GraphicsAdapterInfo;
 
     /// Checks if a specific, optional rendering feature is supported by the backend.
     fn supports_feature(&self, feature_name: &str) -> bool;

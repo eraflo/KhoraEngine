@@ -15,7 +15,7 @@
 //! Rendering lane - hot path for graphics operations
 
 use khora_core::{
-    asset::{AssetUUID, Material},
+    asset::{AssetHandle, Material},
     renderer::{
         api::{GpuMesh, RenderContext},
         traits::CommandEncoder,
@@ -69,16 +69,14 @@ pub trait RenderLane: Send + Sync {
     ///
     /// # Arguments
     ///
-    /// * `material_uuid`: The UUID of the material, if any
-    /// * `materials`: The cache of Material assets
+    /// * `material`: The handle to the material, if any
     ///
     /// # Returns
     ///
     /// The `RenderPipelineId` to use for rendering with this material.
     fn get_pipeline_for_material(
         &self,
-        material_uuid: Option<AssetUUID>,
-        materials: &Assets<Box<dyn Material>>,
+        material: Option<&AssetHandle<Box<dyn Material>>>,
     ) -> RenderPipelineId;
 
     /// Encodes GPU commands to render the scene into the provided command encoder.
@@ -92,7 +90,6 @@ pub trait RenderLane: Send + Sync {
     /// * `encoder`: The command encoder to record GPU commands into (from core traits).
     /// * `render_ctx`: The rendering context containing the color target and clear color.
     /// * `gpu_meshes`: The cache of GPU-resident meshes.
-    /// * `materials`: The cache of materials for pipeline selection.
     fn render(
         &self,
         render_world: &RenderWorld,
@@ -100,7 +97,6 @@ pub trait RenderLane: Send + Sync {
         encoder: &mut dyn CommandEncoder,
         render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
-        materials: &RwLock<Assets<Box<dyn Material>>>,
     );
 
     /// Estimates the GPU cost of rendering the given `RenderWorld` with this strategy.

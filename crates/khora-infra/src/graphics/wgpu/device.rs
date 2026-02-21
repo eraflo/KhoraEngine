@@ -31,8 +31,8 @@ use khora_core::renderer::api::command::{self as api_cmd};
 use khora_core::renderer::api::texture::{self as api_tex};
 use khora_core::renderer::traits::CommandEncoder;
 use khora_core::renderer::{
-    ComputePipelineId, GraphicsBackendType, GraphicsDevice, PipelineError, PipelineLayoutId,
-    RenderPipelineDescriptor, RenderPipelineId, RendererAdapterInfo, RendererDeviceType,
+    ComputePipelineId, GraphicsAdapterInfo, GraphicsBackendType, GraphicsDevice, PipelineError,
+    PipelineLayoutId, RenderPipelineDescriptor, RenderPipelineId, RendererDeviceType,
     ResourceError, ShaderError, ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData,
     TextureFormat,
 };
@@ -783,12 +783,18 @@ impl GraphicsDevice for WgpuDevice {
                     id: descriptor.shader_module,
                 })?;
 
-        // 2. Create compute pipeline
-        // For now, we don't handle custom layouts in compute pipelines via the descriptor
-        // but it could be expanded.
+        // 2. Look up pipeline layout if provided
+        let layout_entry_opt = if let Some(layout_id) = descriptor.layout {
+            let layouts = self.internal.pipeline_layouts.lock().unwrap();
+            layouts.get(&layout_id).map(|e| Arc::clone(&e.wgpu_layout))
+        } else {
+            None
+        };
+
+        // 3. Create compute pipeline
         let wgpu_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: descriptor.label.as_deref(),
-            layout: None, // Let wgpu derive it for now
+            layout: layout_entry_opt.as_deref(),
             module: &shader_entry.wgpu_module,
             entry_point: Some(descriptor.entry_point.as_ref()),
             compilation_options: Default::default(),
@@ -1274,13 +1280,13 @@ impl GraphicsDevice for WgpuDevice {
         })
     }
 
-    fn get_adapter_info(&self) -> RendererAdapterInfo {
+    fn get_adapter_info(&self) -> GraphicsAdapterInfo {
         let context_guard = self
             .internal
             .context
             .lock()
             .expect("WgpuDevice: Mutex poisoned (context) on get_adapter_info");
-        RendererAdapterInfo {
+        GraphicsAdapterInfo {
             name: context_guard.adapter_name.clone(),
             backend_type: match context_guard.adapter_backend {
                 wgpu::Backend::Vulkan => GraphicsBackendType::Vulkan,

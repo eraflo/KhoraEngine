@@ -30,7 +30,7 @@ use khora_core::renderer::api::BindGroupLayoutId;
 use super::RenderWorld;
 use khora_core::renderer::api::uniform_ring_buffer::UniformRingBuffer;
 use khora_core::{
-    asset::{AssetUUID, Material},
+    asset::Material,
     renderer::{
         api::{
             command::{
@@ -206,8 +206,7 @@ impl RenderLane for LitForwardLane {
 
     fn get_pipeline_for_material(
         &self,
-        _material_uuid: Option<AssetUUID>,
-        _materials: &Assets<Box<dyn Material>>,
+        _material: Option<&khora_core::asset::AssetHandle<Box<dyn Material>>>,
     ) -> RenderPipelineId {
         // Return the stored pipeline, or fallback to 1 (placeholder)
         self.pipeline.lock().unwrap().unwrap_or(RenderPipelineId(1))
@@ -220,7 +219,6 @@ impl RenderLane for LitForwardLane {
         encoder: &mut dyn CommandEncoder,
         render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
-        _materials: &RwLock<Assets<Box<dyn Material>>>,
     ) {
         use khora_core::renderer::api::{
             BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding, BufferDescriptor,
@@ -240,7 +238,7 @@ impl RenderLane for LitForwardLane {
 
         // Camera Uniforms — write to persistent ring buffer
         let camera_uniforms = khora_core::renderer::api::CameraUniformData {
-            view_projection: view.view_proj,
+            view_projection: view.view_proj.to_cols_array_2d(),
             camera_position: [view.position.x, view.position.y, view.position.z, 1.0],
         };
 
@@ -365,19 +363,10 @@ impl RenderLane for LitForwardLane {
         let pipeline_id = self.pipeline.lock().unwrap().unwrap_or(RenderPipelineId(0));
 
         // Prepare Draw Commands
-        struct DrawCommand {
-            model_bind_group: Option<khora_core::renderer::BindGroupId>,
-            material_bind_group: Option<khora_core::renderer::BindGroupId>,
-            index_count: u32,
-            vertex_buffer: khora_core::renderer::api::buffer::BufferId,
-            index_buffer: khora_core::renderer::api::buffer::BufferId,
-            index_format: khora_core::renderer::api::IndexFormat,
-        }
-
         let mut draw_commands = Vec::with_capacity(render_world.meshes.len());
 
         for extracted_mesh in &render_world.meshes {
-            if let Some(gpu_mesh_handle) = gpu_mesh_assets.get(&extracted_mesh.gpu_mesh_uuid) {
+            if let Some(gpu_mesh_handle) = gpu_mesh_assets.get(&extracted_mesh.cpu_mesh_uuid) {
                 // Create Per-Mesh Uniforms
                 let model_mat = extracted_mesh.transform.to_matrix();
 
@@ -388,22 +377,19 @@ impl RenderLane for LitForwardLane {
                     continue;
                 };
 
-                let m_cols = model_mat.cols;
-                let n_cols = normal_mat.cols;
+                let mut base_color = khora_core::math::LinearRgba::WHITE;
+                let mut emissive = khora_core::math::LinearRgba::BLACK;
+                let mut specular_power = 32.0;
+
+                if let Some(mat_handle) = &extracted_mesh.material {
+                    base_color = mat_handle.base_color();
+                    emissive = mat_handle.emissive_color();
+                    specular_power = mat_handle.specular_power();
+                }
 
                 let model_uniforms = ModelUniforms {
-                    model_matrix: [
-                        [m_cols[0].x, m_cols[0].y, m_cols[0].z, m_cols[0].w],
-                        [m_cols[1].x, m_cols[1].y, m_cols[1].z, m_cols[1].w],
-                        [m_cols[2].x, m_cols[2].y, m_cols[2].z, m_cols[2].w],
-                        [m_cols[3].x, m_cols[3].y, m_cols[3].z, m_cols[3].w],
-                    ],
-                    normal_matrix: [
-                        [n_cols[0].x, n_cols[0].y, n_cols[0].z, n_cols[0].w],
-                        [n_cols[1].x, n_cols[1].y, n_cols[1].z, n_cols[1].w],
-                        [n_cols[2].x, n_cols[2].y, n_cols[2].z, n_cols[2].w],
-                        [n_cols[3].x, n_cols[3].y, n_cols[3].z, n_cols[3].w],
-                    ],
+                    model_matrix: model_mat.to_cols_array_2d(),
+                    normal_matrix: normal_mat.to_cols_array_2d(),
                 };
 
                 let model_buffer = match device.create_buffer_with_data(
@@ -420,8 +406,8 @@ impl RenderLane for LitForwardLane {
                 };
 
                 let material_uniforms = MaterialUniforms {
-                    base_color: khora_core::math::LinearRgba::WHITE,
-                    emissive: khora_core::math::LinearRgba::BLACK.with_alpha(32.0),
+                    base_color,
+                    emissive: emissive.with_alpha(specular_power),
                     ambient: khora_core::math::LinearRgba::new(0.1, 0.1, 0.1, 0.0),
                 };
                 let material_buffer = match device.create_buffer_with_data(
@@ -476,13 +462,16 @@ impl RenderLane for LitForwardLane {
                     }
                 }
 
-                draw_commands.push(DrawCommand {
-                    model_bind_group: model_bg,
-                    material_bind_group: material_bg,
-                    index_count: gpu_mesh_handle.index_count,
+                draw_commands.push(khora_core::renderer::api::command::DrawCommand {
+                    pipeline: pipeline_id,
                     vertex_buffer: gpu_mesh_handle.vertex_buffer,
                     index_buffer: gpu_mesh_handle.index_buffer,
                     index_format: gpu_mesh_handle.index_format,
+                    index_count: gpu_mesh_handle.index_count,
+                    model_bind_group: model_bg,
+                    model_offset: 0,
+                    material_bind_group: material_bg,
+                    material_offset: 0,
                 });
             }
         }
@@ -514,9 +503,9 @@ impl RenderLane for LitForwardLane {
 
         let mut render_pass = encoder.begin_render_pass(&render_pass_desc);
 
-        // Use pre-created bind groups from persistent ring buffers (no per-frame allocation)
-        render_pass.set_bind_group(0, &camera_bind_group);
-        render_pass.set_bind_group(3, &lighting_bind_group);
+        // Use pre-created bind groups from persistent ring        // Bind global camera and lighting
+        render_pass.set_bind_group(0, &camera_bind_group, &[]);
+        render_pass.set_bind_group(3, &lighting_bind_group, &[]);
 
         let mut current_pipeline: Option<RenderPipelineId> = None;
 
@@ -527,11 +516,11 @@ impl RenderLane for LitForwardLane {
             }
 
             if let Some(bg) = &cmd.model_bind_group {
-                render_pass.set_bind_group(1, bg);
+                render_pass.set_bind_group(1, bg, &[]);
             }
 
             if let Some(bg) = &cmd.material_bind_group {
-                render_pass.set_bind_group(2, bg);
+                render_pass.set_bind_group(2, bg, &[]);
             }
 
             render_pass.set_vertex_buffer(0, &cmd.vertex_buffer, 0);
@@ -552,7 +541,7 @@ impl RenderLane for LitForwardLane {
         let mut draw_call_count = 0u32;
 
         for extracted_mesh in &render_world.meshes {
-            if let Some(gpu_mesh) = gpu_mesh_assets.get(&extracted_mesh.gpu_mesh_uuid) {
+            if let Some(gpu_mesh) = gpu_mesh_assets.get(&extracted_mesh.cpu_mesh_uuid) {
                 // Calculate triangle count based on primitive topology
                 let triangle_count = match gpu_mesh.primitive_topology {
                     PrimitiveTopology::TriangleList => gpu_mesh.index_count / 3,
@@ -695,41 +684,22 @@ impl RenderLane for LitForwardLane {
                 offset: 24,
                 shader_location: 2,
             },
-            VertexAttributeDescriptor {
-                format: VertexFormat::Float32x4,
-                offset: 32,
-                shader_location: 3,
-            }, // Color
         ];
 
         let vertex_layout = VertexBufferLayoutDescriptor {
-            array_stride: 48, // 3+3+2+4 floats * 4 bytes
+            array_stride: 32, // 3+3+2 floats * 4 bytes
             step_mode: VertexStepMode::Vertex,
             attributes: Cow::Owned(vertex_attributes),
         };
 
         let pipeline_layout_ids = vec![camera_layout, model_layout, material_layout, light_layout];
-
-        // We need a pipeline layout to create the pipeline?
-        // GraphicsDevice::create_render_pipeline takes RenderPipelineDescriptor
-        // which usually includes layout. But khora-core abstraction might handle it differently.
-        // Checking khora-core... RenderPipelineDescriptor usually has `layout`.
-        // If not, it uses implicit layout. But we want explicit.
-        // Assuming khora-core RenderPipelineDescriptor structure.
-        // If khora-core doesn't expose pipeline layout creation in the descriptor, it might generate it from shader...
-        // But we want to store bind group layouts.
-
-        // The previous code didn't set layout in descriptor.
-        // Let's assume for now we just pass layouts if supported, or rely on implicit.
-        // BUT we need the layouts for creating bind groups later!
-
-        // Storing layouts
+        // Store bind group layouts for creating bind groups during rendering.
         *self.camera_layout.lock().unwrap() = Some(camera_layout);
         *self.model_layout.lock().unwrap() = Some(model_layout);
         *self.material_layout.lock().unwrap() = Some(material_layout);
         *self.light_layout.lock().unwrap() = Some(light_layout);
 
-        // Create the pipeline layout
+        // Create the pipeline layout from our bind group layouts.
         let pipeline_layout_desc = khora_core::renderer::PipelineLayoutDescriptor {
             label: Some(Cow::Borrowed("LitForward Pipeline Layout")),
             bind_group_layouts: &pipeline_layout_ids,
@@ -775,31 +745,6 @@ impl RenderLane for LitForwardLane {
             },
         };
 
-        // Note: RenderPipelineDescriptor in wgpu requires `layout`.
-        // If khora-core API doesn't have it, it might use `auto_layout`.
-        // Let's check khora-core if possible, or assume auto.
-        // For now, ignoring explicit layout in pipeline creation call,
-        // but we saved the layouts to create bind groups.
-        // Wait, if we use auto layout, the bind groups we create from MANUALLY created layouts might not be compatible!
-        // This is a risk.
-        // However, I can't see RenderPipelineDescriptor definition right now.
-        // In step 2076, lines 445+ show usage of RenderPipelineDescriptor. It does NOT have a `layout` field.
-        // So khora-core likely uses `layout: None` (auto) internally.
-        // If so, we should query the layout from the pipeline? Or ensure our manually created layouts match.
-        // WGPU says: "If the layout is `None`, the layout will be derived from the shaders."
-        // We can create bind groups from the pipeline's get_bind_group_layout() if available.
-        // But `RenderPipelineId` is an opaque handle.
-
-        // Strategy: Use implicit layout (auto) for the pipeline.
-        // But accessing the layouts:
-        // Does khora-core allow getting bind group layouts from pipeline ID? Not obviously.
-        // If I create layouts manually, I should pass them.
-        // If checking `khora-core` is too slow, I'll assume implicit is fine for now,
-        // and I'll create bind groups using layouts derived from the pipeline if possible,
-        // or just accept that I might have a mismatch if I'm not careful.
-
-        // Actually, strictly matching WGSL bindings usually works with manually created layouts too if they match.
-
         let pipeline_id = device
             .create_render_pipeline(&pipeline_desc)
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
@@ -835,7 +780,7 @@ impl RenderLane for LitForwardLane {
             "LitForwardLane: Persistent ring buffers created (camera: {} bytes, lighting: {} bytes, {} slots each)",
             std::mem::size_of::<khora_core::renderer::api::CameraUniformData>(),
             std::mem::size_of::<LightingUniforms>(),
-            khora_core::renderer::api::uniform_ring_buffer::MAX_FRAMES_IN_FLIGHT,
+            khora_core::renderer::api::common::MAX_FRAMES_IN_FLIGHT,
         );
 
         Ok(())
@@ -940,8 +885,9 @@ mod tests {
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: AffineTransform::default(),
-            gpu_mesh_uuid: mesh_uuid,
-            material_uuid: None,
+            cpu_mesh_uuid: mesh_uuid,
+            gpu_mesh: AssetHandle::new(create_test_gpu_mesh(300)),
+            material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -974,8 +920,9 @@ mod tests {
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: AffineTransform::default(),
-            gpu_mesh_uuid: mesh_uuid,
-            material_uuid: None,
+            cpu_mesh_uuid: mesh_uuid,
+            gpu_mesh: AssetHandle::new(create_test_gpu_mesh(300)),
+            material: None,
         });
 
         // Add 4 directional lights
@@ -1012,8 +959,9 @@ mod tests {
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: AffineTransform::default(),
-            gpu_mesh_uuid: mesh_uuid,
-            material_uuid: None,
+            cpu_mesh_uuid: mesh_uuid,
+            gpu_mesh: AssetHandle::new(create_test_gpu_mesh(300)),
+            material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -1080,14 +1028,14 @@ mod tests {
     #[test]
     fn test_get_pipeline_for_material() {
         let lane = LitForwardLane::new();
-        let materials = Assets::<Box<dyn Material>>::new();
 
         // No material should return pipeline ID 1 (lit default)
-        let pipeline = lane.get_pipeline_for_material(None, &materials);
+        let pipeline = lane.get_pipeline_for_material(None);
         assert_eq!(pipeline, RenderPipelineId(1));
 
         // Non-existent material should also return default
-        let pipeline = lane.get_pipeline_for_material(Some(AssetUUID::new()), &materials);
+        // In the new system, if you pass None (no material provided), it returns default.
+        let pipeline = lane.get_pipeline_for_material(None);
         assert_eq!(pipeline, RenderPipelineId(1));
     }
 }

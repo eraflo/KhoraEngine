@@ -19,15 +19,15 @@
 //! entities and components through a controlled API, never touching the raw
 //! `World` or `Assets` directly.
 
+use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::ecs::entity::EntityId;
 use khora_core::renderer::Mesh;
 use khora_core::EngineContext;
-use khora_data::assets::Assets;
 use khora_data::ecs::{
-    Camera, Component, ComponentBundle, GlobalTransform, Query, QueryMut, World, WorldQuery,
+    Camera, Component, ComponentBundle, GlobalTransform, HandleComponent, Query, QueryMut,
+    Transform, World, WorldQuery,
 };
 use std::any::Any;
-use std::sync::Arc;
 
 /// A high-level facade over the internal ECS `World` and `Assets` registry.
 ///
@@ -51,8 +51,6 @@ use std::sync::Arc;
 pub struct GameWorld {
     /// The internal ECS world.
     world: World,
-    /// CPU-side mesh assets.
-    mesh_assets: Assets<Mesh>,
 }
 
 impl GameWorld {
@@ -60,7 +58,6 @@ impl GameWorld {
     pub(crate) fn new() -> Self {
         Self {
             world: World::new(),
-            mesh_assets: Assets::new(),
         }
     }
 
@@ -102,6 +99,35 @@ impl GameWorld {
     /// Returns the [`EntityId`] of the camera entity.
     pub fn spawn_camera(&mut self, camera: Camera) -> EntityId {
         self.world.spawn((camera, GlobalTransform::identity()))
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Asset Management
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Adds a mesh to the asset registry and returns a handle component.
+    ///
+    /// The returned `HandleComponent<Mesh>` can be attached to entities
+    /// to give them a visible mesh. The `RenderAgent` will automatically
+    /// upload the mesh to GPU when the entity is rendered.
+    ///
+    /// # Arguments
+    /// * `mesh` - The CPU-side mesh data.
+    ///
+    /// # Returns
+    /// A `HandleComponent<Mesh>` that references the stored mesh.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let plane_mesh = create_plane(10.0, 0.0);
+    /// let handle = world.add_mesh(plane_mesh);
+    /// let entity = world.spawn((Transform::identity(), handle));
+    /// ```
+    pub fn add_mesh(&mut self, mesh: Mesh) -> HandleComponent<Mesh> {
+        let uuid = AssetUUID::new();
+        let handle = AssetHandle::new(mesh);
+        HandleComponent { handle, uuid }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -155,21 +181,133 @@ impl GameWorld {
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Convenience Methods
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Spawns an entity with just a transform component.
+    ///
+    /// Returns the [`EntityId`] of the newly created entity.
+    pub fn spawn_entity(&mut self, transform: &Transform) -> EntityId {
+        let global = GlobalTransform::at_position(transform.translation);
+        self.world.spawn((*transform, global))
+    }
+
+    /// Returns an iterator over all entity IDs in the world.
+    pub fn iter_entities(&self) -> impl Iterator<Item = EntityId> + '_ {
+        self.world.iter_entities()
+    }
+
+    /// Gets a mutable reference to a transform component.
+    ///
+    /// Returns `None` if the entity doesn't exist or has no transform.
+    pub fn get_transform_mut(&mut self, entity: EntityId) -> Option<&mut Transform> {
+        self.world.get_mut::<Transform>(entity)
+    }
+
+    /// Gets a reference to a transform component.
+    ///
+    /// Returns `None` if the entity doesn't exist or has no transform.
+    pub fn get_transform(&self, entity: EntityId) -> Option<&Transform> {
+        self.world.get::<Transform>(entity)
+    }
+
+    /// Gets a mutable reference to any component.
+    ///
+    /// Returns `None` if the entity doesn't exist or has no such component.
+    pub fn get_component_mut<C: Component>(&mut self, entity: EntityId) -> Option<&mut C> {
+        self.world.get_mut::<C>(entity)
+    }
+
+    /// Gets a reference to any component.
+    ///
+    /// Returns `None` if the entity doesn't exist or has no such component.
+    pub fn get_component<C: Component>(&self, entity: EntityId) -> Option<&C> {
+        self.world.get::<C>(entity)
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Transform Synchronization
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Synchronizes the GlobalTransform component from the Transform component.
+    ///
+    /// This should be called after modifying a Transform to ensure the changes
+    /// are visible to the rendering system. This is a convenience method that
+    /// copies the local transform to the global transform.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// // Move entity
+    /// if let Some(transform) = world.get_transform_mut(entity) {
+    ///     transform.translation += Vec3::Y * delta;
+    /// }
+    /// // Sync to rendering
+    /// world.sync_global_transform(entity);
+    /// ```
+    pub fn sync_global_transform(&mut self, entity: EntityId) {
+        if let Some(transform) = self.world.get::<Transform>(entity) {
+            let matrix = transform.to_mat4();
+            if let Some(global) = self.world.get_mut::<GlobalTransform>(entity) {
+                *global = GlobalTransform::new(matrix);
+            }
+        }
+    }
+
+    /// Updates an entity's transform and immediately syncs it to GlobalTransform.
+    ///
+    /// This is a convenience method that combines getting the transform,
+    /// applying a modification function, and syncing to GlobalTransform.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// world.update_transform(entity, |t| {
+    ///     t.translation += Vec3::Y * delta;
+    /// });
+    /// ```
+    pub fn update_transform<F>(&mut self, entity: EntityId, f: F)
+    where
+        F: FnOnce(&mut Transform),
+    {
+        if let Some(transform) = self.world.get_mut::<Transform>(entity) {
+            f(transform);
+        }
+        self.sync_global_transform(entity);
+    }
+
+    /// Adds a material to the asset registry and returns a handle component.
+    ///
+    /// The returned `MaterialComponent` can be attached to entities
+    /// to give them a visible material.
+    ///
+    /// # Arguments
+    /// * `material` - The CPU-side material data (e.g., StandardMaterial).
+    ///
+    /// # Returns
+    /// A `MaterialComponent` that references the stored material.
+    pub fn add_material<M: khora_core::asset::Material>(
+        &mut self,
+        material: M,
+    ) -> khora_data::ecs::MaterialComponent {
+        let uuid = AssetUUID::new();
+        let handle = AssetHandle::new(Box::new(material) as Box<dyn khora_core::asset::Material>);
+        khora_data::ecs::MaterialComponent { handle, uuid }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Internal — used by the SDK, not exposed to users
     // ─────────────────────────────────────────────────────────────────────
 
     /// Builds an [`EngineContext`] for the DCC agent update cycle.
     ///
-    /// This type-erases `World` and `Assets<Mesh>` into `dyn Any` pointers,
+    /// This type-erases `World` and `Assets` into `dyn Any` pointers,
     /// which agents downcast internally. Users never call this.
     pub(crate) fn as_engine_context(
         &mut self,
-        device: Arc<dyn khora_core::renderer::GraphicsDevice>,
+        services: khora_core::ServiceRegistry,
     ) -> EngineContext<'_> {
         EngineContext {
-            graphics_device: device,
             world: Some(&mut self.world as &mut dyn Any),
-            assets: Some(&self.mesh_assets as &dyn Any),
+            services,
         }
     }
 }

@@ -98,7 +98,15 @@ impl Default for EmissiveMaterial {
 }
 
 impl Asset for EmissiveMaterial {}
-impl Material for EmissiveMaterial {}
+impl Material for EmissiveMaterial {
+    fn base_color(&self) -> crate::math::LinearRgba {
+        crate::math::LinearRgba::BLACK
+    }
+
+    fn emissive_color(&self) -> crate::math::LinearRgba {
+        self.emissive_color
+    }
+}
 
 #[cfg(test)]
 mod tests {

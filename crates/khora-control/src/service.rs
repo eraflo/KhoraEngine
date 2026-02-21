@@ -17,6 +17,7 @@
 use crate::context::{Context, ExecutionPhase};
 use crate::metrics::MetricStore;
 use crossbeam_channel::{Receiver, Sender};
+use khora_core::agent::Agent;
 use khora_core::telemetry::TelemetryEvent;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -25,29 +26,40 @@ use std::time::{Duration, Instant};
 
 use crate::analysis::HeuristicEngine;
 use crate::gorna::GornaArbitrator;
-use khora_core::agent::Agent;
+use crate::registry::AgentRegistry;
+use khora_core::control::gorna::AgentId;
+use std::sync::Mutex;
 
 /// Configuration for the DCC Service.
 #[derive(Debug, Clone)]
 pub struct DccConfig {
-    /// frequency of the analysis loop in Hz.
+    /// Frequency of the analysis loop in Hz.
     pub tick_rate: u32,
+    /// Maximum number of telemetry events to buffer.
+    /// If the buffer is full, new events are dropped.
+    pub telemetry_buffer_size: usize,
+    /// Timeout for acquiring locks on agents during negotiation.
+    /// If an agent lock cannot be acquired within this time, the agent is skipped.
+    pub agent_lock_timeout_ms: u64,
 }
 
 impl Default for DccConfig {
     fn default() -> Self {
-        Self { tick_rate: 20 } // 20Hz is a good balance for cold-path analysis
+        Self {
+            tick_rate: 20,
+            telemetry_buffer_size: 1000,
+            agent_lock_timeout_ms: 100,
+        }
     }
 }
 
-/// Shared, mutex-protected list of agents managed by the DCC service.
-type SharedAgentList = Arc<std::sync::Mutex<Vec<Arc<std::sync::Mutex<dyn Agent>>>>>;
-
 /// The Dynamic Context Core service.
+///
+/// Manages the cold-path analysis loop, GORNA arbitration, and agent coordination.
 pub struct DccService {
     config: DccConfig,
     context: Arc<std::sync::RwLock<Context>>,
-    agents: SharedAgentList,
+    registry: Arc<std::sync::Mutex<AgentRegistry>>,
     running: Arc<AtomicBool>,
     handle: Option<thread::JoinHandle<()>>,
     event_tx: Sender<TelemetryEvent>,
@@ -56,11 +68,11 @@ pub struct DccService {
 impl DccService {
     /// Creates a new DCC service.
     pub fn new(config: DccConfig) -> (Self, Receiver<TelemetryEvent>) {
-        let (tx, rx) = crossbeam_channel::unbounded();
+        let (tx, rx) = crossbeam_channel::bounded(config.telemetry_buffer_size);
         let service = Self {
             config,
             context: Arc::new(std::sync::RwLock::new(Context::default())),
-            agents: Arc::new(std::sync::Mutex::new(Vec::new())),
+            registry: Arc::new(std::sync::Mutex::new(AgentRegistry::new())),
             running: Arc::new(AtomicBool::new(false)),
             handle: None,
             event_tx: tx,
@@ -68,14 +80,12 @@ impl DccService {
         (service, rx)
     }
 
-    /// Registers an Intelligent Subsystem Agent with the DCC.
-    pub fn register_agent(&self, agent: Arc<std::sync::Mutex<dyn Agent>>) {
-        let mut agents = self.agents.lock().unwrap();
-        {
-            let a = agent.lock().unwrap();
-            log::info!("DCC: Registered agent {:?}", a.id());
-        }
-        agents.push(agent);
+    /// Registers an agent with a priority value.
+    ///
+    /// Higher priority values mean the agent is updated first in each frame.
+    pub fn register_agent(&self, agent: Arc<std::sync::Mutex<dyn Agent>>, priority: f32) {
+        let mut registry = self.registry.lock().unwrap();
+        registry.register(agent, priority);
     }
 
     /// Starts the DCC background thread.
@@ -87,13 +97,14 @@ impl DccService {
         self.running.store(true, Ordering::SeqCst);
         let running = Arc::clone(&self.running);
         let context = Arc::clone(&self.context);
-        let agents = Arc::clone(&self.agents);
+        let registry = Arc::clone(&self.registry);
         let tick_duration = Duration::from_secs_f32(1.0 / self.config.tick_rate as f32);
+        let agent_lock_timeout = Duration::from_millis(self.config.agent_lock_timeout_ms);
 
         let handle = thread::spawn(move || {
             let mut store = MetricStore::new();
             let heuristic_engine = HeuristicEngine;
-            let arbitrator = GornaArbitrator;
+            let arbitrator = GornaArbitrator::new(agent_lock_timeout);
             let mut initial_negotiation_done = false;
 
             log::info!("DCC Service thread started.");
@@ -109,19 +120,16 @@ impl DccService {
                                 store.push(id, v as f32);
                             }
                         }
-                        TelemetryEvent::ResourceReport(_) => {
-                            // Memory/VRAM reports are handled via individual metrics for now
-                        }
+                        TelemetryEvent::ResourceReport(_) => {}
                         TelemetryEvent::HardwareReport(report) => {
                             let mut ctx = context.write().unwrap();
                             ctx.hardware.thermal = report.thermal;
                             ctx.hardware.battery = report.battery;
                             ctx.hardware.cpu_load = report.cpu_load;
                             ctx.hardware.gpu_load = report.gpu_load.unwrap_or(0.0);
-                            // Eagerly update the budget multiplier on hardware changes.
+                            ctx.hardware.available_vram = report.gpu_timings.as_ref().map(|_| 0);
                             ctx.refresh_budget_multiplier();
 
-                            // Extract frame time metrics if available
                             if let Some(gpu_timings) = report.gpu_timings {
                                 if let Some(frame_time_us) = gpu_timings.frame_total_duration_us() {
                                     store.push(
@@ -129,13 +137,13 @@ impl DccService {
                                             "renderer",
                                             "frame_time",
                                         ),
-                                        frame_time_us as f32 / 1000.0, // Convert to ms
+                                        frame_time_us as f32 / 1000.0,
                                     );
                                 }
                             }
 
                             log::debug!(
-                                "DCC Hardware updated: Thermal={:?}, CPU={:.2}, GPU={:?}",
+                                "DCC Hardware: Thermal={:?}, CPU={:.2}, GPU={:?}",
                                 ctx.hardware.thermal,
                                 ctx.hardware.cpu_load,
                                 ctx.hardware.gpu_load
@@ -143,17 +151,22 @@ impl DccService {
                         }
                         TelemetryEvent::PhaseChange(phase_name) => {
                             let mut ctx = context.write().unwrap();
-                            ctx.phase = match phase_name.to_lowercase().as_str() {
-                                "boot" => ExecutionPhase::Boot,
-                                "menu" => ExecutionPhase::Menu,
-                                "simulation" => ExecutionPhase::Simulation,
-                                "background" => ExecutionPhase::Background,
-                                _ => ctx.phase,
-                            };
-                            log::debug!("DCC Phase changed to: {:?}", ctx.phase);
+                            if let Some(new_phase) = ExecutionPhase::from_name(&phase_name) {
+                                if ctx.phase.can_transition_to(new_phase) {
+                                    log::debug!("DCC Phase: {:?} → {:?}", ctx.phase, new_phase);
+                                    ctx.phase = new_phase;
+                                } else {
+                                    log::warn!(
+                                        "DCC: Invalid transition {:?} → {:?}",
+                                        ctx.phase,
+                                        new_phase
+                                    );
+                                }
+                            } else {
+                                log::warn!("DCC: Unknown phase '{}'", phase_name);
+                            }
                         }
                         TelemetryEvent::GpuReport(report) => {
-                            // Ingest GPU timing data into the metric store.
                             if let Some(frame_time_us) = report.frame_total_duration_us() {
                                 store.push(
                                     khora_core::telemetry::MetricId::new(
@@ -181,33 +194,29 @@ impl DccService {
                 // 2. Perform Analysis & Arbitration
                 let (report, ctx_copy) = {
                     let mut ctx = context.write().unwrap();
-                    // Recompute global budget multiplier from latest hardware state.
                     ctx.refresh_budget_multiplier();
                     let report = heuristic_engine.analyze(&ctx, &store);
                     (report, ctx.clone())
                 };
 
-                // Log analysis alerts for observability.
                 for alert in &report.alerts {
                     log::info!("DCC Analysis: {}", alert);
                 }
 
-                if report.needs_negotiation {
-                    let mut agents_lock = agents.lock().unwrap();
-                    arbitrator.arbitrate(&ctx_copy, &report, &mut agents_lock);
-                    initial_negotiation_done = true;
-                } else if !initial_negotiation_done {
-                    // Force an initial GORNA round so every agent receives a
-                    // baseline budget before any telemetry-driven trigger fires.
-                    let mut agents_lock = agents.lock().unwrap();
-                    if !agents_lock.is_empty() {
-                        log::info!("GORNA: Running initial negotiation round.");
-                        arbitrator.arbitrate(&ctx_copy, &report, &mut agents_lock);
+                // 3. GORNA Negotiation
+                if report.needs_negotiation || !initial_negotiation_done {
+                    let registry_lock = registry.lock().unwrap();
+                    if !registry_lock.is_empty() {
+                        let agents: Vec<_> = registry_lock.iter().cloned().collect();
+                        drop(registry_lock);
+
+                        let mut agents_slice: Vec<Arc<std::sync::Mutex<dyn Agent>>> = agents;
+                        arbitrator.arbitrate(&ctx_copy, &report, &mut agents_slice);
                         initial_negotiation_done = true;
                     }
                 }
 
-                // 3. Sleep until next tick
+                // 4. Sleep until next tick
                 let elapsed = start_time.elapsed();
                 if elapsed < tick_duration {
                     thread::sleep(tick_duration - elapsed);
@@ -232,21 +241,38 @@ impl DccService {
         self.event_tx.clone()
     }
 
-    /// Periodically updates the engine's situational model.
+    /// Returns the current context.
     pub fn get_context(&self) -> Context {
         self.context.read().unwrap().clone()
     }
 
-    /// Triggers the tactical update phase for all registered agents.
-    /// This should be called by the engine loop (e.g. in the redraw request).
+    /// Updates all registered agents in priority order.
+    ///
+    /// This is called each frame by the engine loop.
     pub fn update_agents(&self, context: &mut khora_core::EngineContext<'_>) {
-        if let Ok(mut agents) = self.agents.lock() {
-            for agent_mutex in agents.iter_mut() {
-                if let Ok(mut agent) = agent_mutex.lock() {
-                    agent.update(context);
-                }
-            }
+        if let Ok(registry) = self.registry.lock() {
+            registry.update_all(context);
         }
+    }
+
+    /// Executes all registered agents in priority order.
+    ///
+    /// Called each frame after [`update_agents`](Self::update_agents).
+    /// Each agent performs its primary work (e.g., the `RenderAgent` renders).
+    pub fn execute_agents(&self) {
+        if let Ok(registry) = self.registry.lock() {
+            registry.execute_all();
+        }
+    }
+
+    /// Returns the number of registered agents.
+    pub fn agent_count(&self) -> usize {
+        self.registry.lock().map(|r| r.len()).unwrap_or(0)
+    }
+
+    /// Returns a reference to the agent with the given ID, if registered.
+    pub fn get_agent(&self, id: AgentId) -> Option<Arc<Mutex<dyn Agent>>> {
+        self.registry.lock().ok()?.get_by_id(id)
     }
 }
 
@@ -259,8 +285,50 @@ impl Drop for DccService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::telemetry::MetricId;
-    use khora_core::telemetry::MetricValue;
+    use khora_core::control::gorna::{
+        AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
+        StrategyOption,
+    };
+    use khora_core::telemetry::{MetricId, MetricValue};
+
+    struct StubAgent {
+        budget_applied: bool,
+    }
+
+    impl Agent for StubAgent {
+        fn id(&self) -> AgentId {
+            AgentId::Renderer
+        }
+        fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
+            NegotiationResponse {
+                strategies: vec![StrategyOption {
+                    id: StrategyId::Balanced,
+                    estimated_time: Duration::from_millis(8),
+                    estimated_vram: 1024,
+                }],
+            }
+        }
+        fn apply_budget(&mut self, _: ResourceBudget) {
+            self.budget_applied = true;
+        }
+        fn update(&mut self, _: &mut khora_core::EngineContext<'_>) {}
+        fn report_status(&self) -> AgentStatus {
+            AgentStatus {
+                agent_id: AgentId::Renderer,
+                current_strategy: StrategyId::Balanced,
+                health_score: 1.0,
+                is_stalled: false,
+                message: String::new(),
+            }
+        }
+        fn execute(&mut self) {}
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
 
     #[test]
     fn test_dcc_service_lifecycle() {
@@ -280,7 +348,6 @@ mod tests {
         tx.send(TelemetryEvent::PhaseChange("Simulation".to_string()))
             .unwrap();
 
-        // Give some time for the thread to process
         thread::sleep(Duration::from_millis(100));
 
         let ctx = dcc.get_context();
@@ -302,62 +369,22 @@ mod tests {
         })
         .unwrap();
 
-        // Smoke test: should not panic/hang
         thread::sleep(Duration::from_millis(50));
-
         dcc.stop();
     }
 
     #[test]
     fn test_dcc_initial_negotiation_fires_with_agent() {
-        use khora_core::agent::Agent;
-        use khora_core::control::gorna::{
-            AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget,
-            StrategyId, StrategyOption,
-        };
-        use std::sync::{Arc, Mutex};
-
-        /// Minimal stub agent that tracks whether apply_budget was called.
-        struct StubAgent {
-            budget_applied: bool,
-        }
-
-        impl Agent for StubAgent {
-            fn id(&self) -> AgentId {
-                AgentId::Renderer
-            }
-            fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
-                NegotiationResponse {
-                    strategies: vec![StrategyOption {
-                        id: StrategyId::Balanced,
-                        estimated_time: Duration::from_millis(8),
-                        estimated_vram: 1024,
-                    }],
-                }
-            }
-            fn apply_budget(&mut self, _: ResourceBudget) {
-                self.budget_applied = true;
-            }
-            fn update(&mut self, _: &mut khora_core::EngineContext<'_>) {}
-            fn report_status(&self) -> AgentStatus {
-                AgentStatus {
-                    agent_id: AgentId::Renderer,
-                    current_strategy: StrategyId::Balanced,
-                    health_score: 1.0,
-                    is_stalled: false,
-                    message: String::new(),
-                }
-            }
-        }
-
-        let (mut dcc, rx) = DccService::new(DccConfig { tick_rate: 100 });
-        let agent = Arc::new(Mutex::new(StubAgent {
+        let (mut dcc, rx) = DccService::new(DccConfig {
+            tick_rate: 100,
+            ..Default::default()
+        });
+        let agent = Arc::new(std::sync::Mutex::new(StubAgent {
             budget_applied: false,
         }));
-        dcc.register_agent(agent.clone());
+        dcc.register_agent(agent.clone(), 1.0);
         dcc.start(rx);
 
-        // Wait enough for the first DCC tick to run initial negotiation.
         thread::sleep(Duration::from_millis(200));
 
         let applied = agent.lock().unwrap().budget_applied;
@@ -365,7 +392,7 @@ mod tests {
 
         assert!(
             applied,
-            "Initial GORNA negotiation should have called apply_budget on the agent"
+            "Initial GORNA negotiation should have called apply_budget"
         );
     }
 }

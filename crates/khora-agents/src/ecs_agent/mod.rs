@@ -15,3 +15,5 @@
 //! Ecs Agents
 
 pub mod garbage_collector_agent;
+
+pub use garbage_collector_agent::GarbageCollectorAgent;

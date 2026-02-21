@@ -2,7 +2,7 @@
 name = "sandbox"
 version = "0.2.0"
 edition = "2021"
-description = "Sandbox example for testing and demos"
+description = "Sandbox example demonstrating high-level game logic"
 
 [[bin]]
 name = "sandbox"
@@ -13,5 +13,4 @@ khora-sdk = { path = "../../crates/khora-sdk" }
 
 env_logger = "0.11"
 anyhow = "1.0"
-log = "0.4.29"
-bytemuck = { version = "1.24", features = ["derive"] }
+log = "0.4"

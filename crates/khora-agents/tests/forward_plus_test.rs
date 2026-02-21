@@ -5,10 +5,8 @@ use khora_core::renderer::light::{DirectionalLight, LightType, PointLight};
 use khora_core::renderer::traits::{CommandEncoder, ComputePass, GraphicsDevice, RenderPass};
 use khora_core::renderer::{
     BindGroupId, BufferId, ComputePipelineId, GraphicsBackendType, IndexFormat, PipelineLayoutId,
-    RenderPipelineId, RendererAdapterInfo, RendererDeviceType, ResourceError, ShaderModuleId,
-    TextureFormat,
+    RenderPipelineId, RendererDeviceType, ResourceError, ShaderModuleId, TextureFormat,
 };
-use khora_data::assets::Assets;
 use khora_data::ecs::{GlobalTransform, Light, Transform, World};
 use std::any::Any;
 use std::future::Future;
@@ -23,7 +21,7 @@ struct MockComputePass;
 
 impl RenderPass<'_> for MockRenderPass {
     fn set_pipeline(&mut self, _pipeline: &RenderPipelineId) {}
-    fn set_bind_group(&mut self, _index: u32, _bind_group: &BindGroupId) {}
+    fn set_bind_group(&mut self, _index: u32, _bind_group: &BindGroupId, _offsets: &[u32]) {}
     fn set_vertex_buffer(&mut self, _slot: u32, _buffer: &BufferId, _offset: u64) {}
     fn set_index_buffer(&mut self, _buffer: &BufferId, _offset: u64, _index_format: IndexFormat) {}
     fn draw(&mut self, _vertices: Range<u32>, _instances: Range<u32>) {}
@@ -32,7 +30,7 @@ impl RenderPass<'_> for MockRenderPass {
 
 impl ComputePass<'_> for MockComputePass {
     fn set_pipeline(&mut self, _pipeline: &ComputePipelineId) {}
-    fn set_bind_group(&mut self, _index: u32, _bind_group: &BindGroupId) {}
+    fn set_bind_group(&mut self, _index: u32, _bind_group: &BindGroupId, _offsets: &[u32]) {}
     fn dispatch_workgroups(&mut self, _x: u32, _y: u32, _z: u32) {}
 }
 
@@ -221,8 +219,8 @@ impl GraphicsDevice for MockGraphicsDevice {
         None
     }
 
-    fn get_adapter_info(&self) -> RendererAdapterInfo {
-        RendererAdapterInfo {
+    fn get_adapter_info(&self) -> GraphicsAdapterInfo {
+        GraphicsAdapterInfo {
             name: "Mock".to_string(),
             backend_type: GraphicsBackendType::Unknown,
             device_type: RendererDeviceType::Unknown,
@@ -236,7 +234,6 @@ impl GraphicsDevice for MockGraphicsDevice {
 
 #[test]
 fn test_render_agent_strategy_selection() {
-    let mesh_assets: Assets<khora_core::renderer::Mesh> = Assets::new();
     let device = MockGraphicsDevice;
 
     // Setup RenderAgent
@@ -244,7 +241,7 @@ fn test_render_agent_strategy_selection() {
 
     // Case 1: No lights -> SimpleUnlit
     let mut world = World::new();
-    agent.prepare_frame(&mut world, &mesh_assets, &device);
+    agent.prepare_frame(&mut world, &device);
     let lane = agent.select_lane();
     assert_eq!(lane.strategy_name(), "SimpleUnlit");
 
@@ -261,7 +258,7 @@ fn test_render_agent_strategy_selection() {
         GlobalTransform::default(),
     ));
 
-    agent.prepare_frame(&mut world, &mesh_assets, &device);
+    agent.prepare_frame(&mut world, &device);
     let lane = agent.select_lane();
     assert_eq!(lane.strategy_name(), "LitForward");
 
@@ -284,7 +281,7 @@ fn test_render_agent_strategy_selection() {
         ));
     }
 
-    agent.prepare_frame(&mut world, &mesh_assets, &device);
+    agent.prepare_frame(&mut world, &device);
     let lane = agent.select_lane();
     assert_eq!(lane.strategy_name(), "ForwardPlus");
 

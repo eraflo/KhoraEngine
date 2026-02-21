@@ -17,15 +17,13 @@
 use super::mesh_preparation::MeshPreparationSystem;
 use khora_core::{
     agent::Agent,
-    asset::Material,
     control::gorna::{
         AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyOption,
     },
     math::Mat4,
     renderer::{
-        api::{GpuMesh, RenderContext, RenderObject},
-        traits::CommandEncoder,
-        GraphicsDevice, Mesh, ViewInfo,
+        api::{GpuMesh, RenderObject},
+        GraphicsDevice, RenderSystem, ViewInfo,
     },
     EngineContext,
 };
@@ -37,7 +35,7 @@ use khora_lanes::render_lane::{
     ExtractRenderablesLane, ForwardPlusLane, LitForwardLane, RenderLane, RenderWorld,
     SimpleUnlitLane,
 };
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::Sender;
@@ -89,6 +87,8 @@ pub struct RenderAgent {
     current_strategy: StrategyId,
     // Cached reference to the graphics device for lane lifecycle management.
     device: Option<Arc<dyn GraphicsDevice>>,
+    // Cached reference to the render system (obtained from ServiceRegistry in update()).
+    render_system: Option<Arc<Mutex<Box<dyn RenderSystem>>>>,
     // Optional channel to emit telemetry events to the DCC.
     telemetry_sender: Option<Sender<TelemetryEvent>>,
     // --- Performance Metrics (for GORNA health reporting) ---
@@ -196,14 +196,14 @@ impl Agent for RenderAgent {
     }
 
     fn update(&mut self, context: &mut EngineContext<'_>) {
-        // Cache the device for future lifecycle calls
+        // Cache the graphics device from the service registry.
         if self.device.is_none() {
-            self.device = Some(context.graphics_device.clone());
+            if let Some(device) = context.services.get::<Arc<dyn GraphicsDevice>>() {
+                self.device = Some(device.clone());
 
-            // Initialize existing lanes if they were created without a device
-            if let Some(device) = &self.device {
+                // Initialize existing lanes now that we have the device.
                 for lane in &self.lanes {
-                    if let Err(e) = lane.on_initialize(device.as_ref()) {
+                    if let Err(e) = lane.on_initialize(self.device.as_ref().unwrap().as_ref()) {
                         log::error!(
                             "Failed to initialize render lane {}: {}",
                             lane.strategy_name(),
@@ -214,19 +214,71 @@ impl Agent for RenderAgent {
             }
         }
 
-        // Step 1: Downcast the World and Asset Registry from the type-erased context.
+        // Cache the render system from the service registry.
+        if self.render_system.is_none() {
+            if let Some(rs) = context.services.get::<Arc<Mutex<Box<dyn RenderSystem>>>>() {
+                self.render_system = Some(rs.clone());
+            }
+        }
+
+        let Some(device) = self.device.clone() else {
+            return;
+        };
+
+        // Step 1: Extract scene data from ECS into RenderWorld.
         if let Some(world_any) = context.world.as_deref_mut() {
             if let Some(world) = world_any.downcast_mut::<World>() {
-                // Step 2: Access the CPU mesh assets.
-                if let Some(assets_any) = context.assets {
-                    if let Some(mesh_assets) = assets_any.downcast_ref::<Assets<Mesh>>() {
-                        // Step 3: Run the preparation and extraction logic.
-                        self.prepare_frame(world, mesh_assets, context.graphics_device.as_ref());
-                        log::trace!("RenderAgent: Tactical update complete. Frame data prepared.");
+                // Access the CPU mesh assets and material assets.
+                self.prepare_frame(world, device.as_ref());
+
+                // Step 2: Extract camera view and push to RenderSystem.
+                let view_info = self.extract_camera_view(world);
+                if let Some(rs) = &self.render_system {
+                    if let Ok(mut rs) = rs.lock() {
+                        rs.prepare_frame(&view_info);
                     }
                 }
             }
         }
+
+        // Step 3: Render — call render_with_encoder on the cached render system.
+        if let Some(rs) = self.render_system.clone() {
+            if let Ok(mut rs) = rs.lock() {
+                let clear_color = khora_core::math::LinearRgba::new(0.1, 0.1, 0.15, 1.0);
+
+                // With '_ lifetime on the closure, we can borrow from self directly.
+                let render_world = &self.render_world;
+                let gpu_meshes = &self.gpu_meshes;
+                let lane = self.select_lane();
+
+                let frame_start = Instant::now();
+
+                match rs.render_with_encoder(
+                    clear_color,
+                    Box::new(|encoder, render_ctx| {
+                        lane.render(
+                            render_world,
+                            device.as_ref(),
+                            encoder,
+                            render_ctx,
+                            gpu_meshes,
+                        );
+                    }),
+                ) {
+                    Ok(_stats) => {
+                        log::trace!("RenderAgent: Frame rendered successfully.");
+                    }
+                    Err(e) => log::error!("RenderAgent: Render error: {}", e),
+                }
+
+                self.last_frame_time = frame_start.elapsed();
+            }
+        }
+
+        // Update frame metrics.
+        self.draw_call_count = self.render_world.meshes.len() as u32;
+        self.triangle_count = self.count_triangles();
+        self.frame_count += 1;
 
         // Emit telemetry to the DCC if a sender is wired.
         self.emit_telemetry();
@@ -262,6 +314,19 @@ impl Agent for RenderAgent {
             ),
         }
     }
+
+    fn execute(&mut self) {
+        // RenderAgent doesn't do anything in generic execute()
+        // Use render() method for actual rendering with encoder
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 impl RenderAgent {
@@ -285,6 +350,7 @@ impl RenderAgent {
             strategy: RenderingStrategy::Auto,
             current_strategy: StrategyId::Balanced,
             device: None,
+            render_system: None,
             telemetry_sender: None,
             last_frame_time: Duration::ZERO,
             time_budget: Duration::ZERO,
@@ -292,6 +358,35 @@ impl RenderAgent {
             triangle_count: 0,
             frame_count: 0,
         }
+    }
+
+    /// Renders the scene using the provided encoder and render context.
+    ///
+    /// This is the main rendering method that encodes GPU commands via the selected lane.
+    pub fn render(
+        &mut self,
+        encoder: &mut dyn khora_core::renderer::traits::CommandEncoder,
+        render_ctx: &khora_core::renderer::RenderContext,
+    ) {
+        let frame_start = Instant::now();
+
+        let Some(device) = self.device.clone() else {
+            return;
+        };
+
+        self.draw_call_count = self.render_world.meshes.len() as u32;
+        self.triangle_count = self.count_triangles();
+
+        self.select_lane().render(
+            &self.render_world,
+            device.as_ref(),
+            encoder,
+            render_ctx,
+            &self.gpu_meshes,
+        );
+
+        self.last_frame_time = frame_start.elapsed();
+        self.frame_count += 1;
     }
 
     /// Creates a new `RenderAgent` with the specified rendering strategy.
@@ -383,67 +478,18 @@ impl RenderAgent {
     /// This method runs the entire Control Plane logic for rendering:
     /// 1. Prepares GPU resources for any newly loaded meshes.
     /// 2. Extracts all visible objects from the ECS into the internal `RenderWorld`.
-    pub fn prepare_frame(
-        &mut self,
-        world: &mut World,
-        cpu_meshes: &Assets<Mesh>,
-        graphics_device: &dyn GraphicsDevice,
-    ) {
-        // First, ensure all necessary GpuMeshes are created and cached.
-        self.mesh_preparation_system
-            .run(world, cpu_meshes, graphics_device);
+    pub fn prepare_frame(&mut self, world: &mut World, graphics_device: &dyn GraphicsDevice) {
+        log::trace!("RenderAgent: prepare_frame called");
 
-        // Then, extract the prepared renderable data into our local RenderWorld.
+        self.mesh_preparation_system.run(world, graphics_device);
+
+        log::trace!("RenderAgent: Running extract_lane");
         self.extract_lane.run(world, &mut self.render_world);
-    }
-
-    /// Renders a frame by preparing the scene data and encoding GPU commands.
-    ///
-    /// This is the main rendering method that orchestrates the entire rendering pipeline:
-    /// 1. Calls `prepare_frame()` to extract and prepare all renderable data
-    /// 2. Calls `produce_render_objects()` to build the RenderObject list with proper pipelines
-    /// 3. Delegates to the selected render lane to encode GPU commands
-    ///
-    /// # Arguments
-    ///
-    /// * `world`: The ECS world containing scene data
-    /// * `cpu_meshes`: The cache of CPU-side mesh assets
-    /// * `graphics_device`: The graphics device for GPU resource creation
-    /// * `materials`: The cache of material assets
-    /// * `encoder`: The command encoder to record GPU commands into
-    /// * `color_target`: The texture view to render into (typically the swapchain)
-    /// * `clear_color`: The color to clear the framebuffer with
-    pub fn render(
-        &mut self,
-        world: &mut World,
-        cpu_meshes: &Assets<Mesh>,
-        graphics_device: &dyn GraphicsDevice,
-        materials: &RwLock<Assets<Box<dyn Material>>>,
-        encoder: &mut dyn CommandEncoder,
-        render_ctx: &RenderContext,
-    ) {
-        let frame_start = Instant::now();
-
-        // Step 1: Prepare the frame (extract and prepare data).
-        self.prepare_frame(world, cpu_meshes, graphics_device);
-
-        // Step 2: Update per-frame metrics from the extracted scene.
-        self.draw_call_count = self.render_world.meshes.len() as u32;
-        self.triangle_count = self.count_triangles();
-
-        // Step 3: Delegate to the selected render lane to encode GPU commands.
-        self.select_lane().render(
-            &self.render_world,
-            graphics_device,
-            encoder,
-            render_ctx,
-            &self.gpu_meshes,
-            materials,
+        log::trace!(
+            "RenderAgent: Extracted {} meshes, {} views",
+            self.render_world.meshes.len(),
+            self.render_world.views.len()
         );
-
-        // Step 4: Record frame timing for GORNA health reporting.
-        self.last_frame_time = frame_start.elapsed();
-        self.frame_count += 1;
     }
 
     /// Translates the prepared data from the `RenderWorld` into a list of `RenderObject`s.
@@ -454,25 +500,16 @@ impl RenderAgent {
     ///
     /// This logic uses the render lane to determine the appropriate pipeline for each
     /// material, then builds the RenderObjects list.
-    ///
-    /// # Arguments
-    ///
-    /// * `materials`: The cache of material assets for pipeline selection
-    pub fn produce_render_objects(
-        &self,
-        materials: &RwLock<Assets<Box<dyn Material>>>,
-    ) -> Vec<RenderObject> {
+    pub fn produce_render_objects(&self) -> Vec<RenderObject> {
         let mut render_objects = Vec::with_capacity(self.render_world.meshes.len());
         let gpu_meshes_guard = self.gpu_meshes.read().unwrap();
-        let materials_guard = materials.read().unwrap();
 
         for extracted_mesh in &self.render_world.meshes {
             // Find the corresponding GpuMesh in the cache
-            if let Some(gpu_mesh_handle) = gpu_meshes_guard.get(&extracted_mesh.gpu_mesh_uuid) {
+            if let Some(gpu_mesh_handle) = gpu_meshes_guard.get(&extracted_mesh.cpu_mesh_uuid) {
                 // Use the selected render lane to determine the appropriate pipeline
                 let lane = self.select_lane();
-                let pipeline =
-                    lane.get_pipeline_for_material(extracted_mesh.material_uuid, &materials_guard);
+                let pipeline = lane.get_pipeline_for_material(extracted_mesh.material.as_ref());
 
                 render_objects.push(RenderObject {
                     pipeline,
@@ -503,9 +540,12 @@ impl RenderAgent {
     pub fn extract_camera_view(&self, world: &World) -> ViewInfo {
         // Query for entities with Camera and GlobalTransform components
         let query = world.query::<(&Camera, &GlobalTransform)>();
+        let cameras: Vec<_> = query.collect();
+        log::trace!("Found {} cameras in scene", cameras.len());
 
         // Find the first active camera
-        for (camera, global_transform) in query {
+        for (camera, global_transform) in cameras {
+            log::trace!("Checking camera: is_active={}", camera.is_active);
             if camera.is_active {
                 // Extract camera position from the global transform
                 let camera_position = global_transform.0.translation();
@@ -522,6 +562,7 @@ impl RenderAgent {
                 // Get the projection matrix from the camera
                 let projection_matrix = camera.projection_matrix();
 
+                log::trace!("Camera extracted at position: {:?}", camera_position);
                 return ViewInfo::new(view_matrix, projection_matrix, camera_position);
             }
         }
@@ -552,7 +593,7 @@ impl RenderAgent {
         };
         let mut total = 0u32;
         for mesh in &self.render_world.meshes {
-            if let Some(gpu_mesh) = gpu_meshes_guard.get(&mesh.gpu_mesh_uuid) {
+            if let Some(gpu_mesh) = gpu_meshes_guard.get(&mesh.cpu_mesh_uuid) {
                 total += match gpu_mesh.primitive_topology {
                     PrimitiveTopology::TriangleList => gpu_mesh.index_count / 3,
                     PrimitiveTopology::TriangleStrip => gpu_mesh.index_count.saturating_sub(2),
@@ -576,6 +617,21 @@ impl RenderAgent {
     /// Returns the current GORNA strategy ID.
     pub fn current_strategy_id(&self) -> StrategyId {
         self.current_strategy
+    }
+
+    /// Returns a reference to the internal RenderWorld.
+    pub fn render_world(&self) -> &RenderWorld {
+        &self.render_world
+    }
+
+    /// Returns a mutable reference to the internal RenderWorld.
+    pub fn render_world_mut(&mut self) -> &mut RenderWorld {
+        &mut self.render_world
+    }
+
+    /// Returns a reference to the GPU meshes cache.
+    pub fn gpu_meshes(&self) -> &Arc<RwLock<Assets<GpuMesh>>> {
+        &self.gpu_meshes
     }
 }
 

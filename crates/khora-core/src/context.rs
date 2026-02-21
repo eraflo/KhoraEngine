@@ -14,22 +14,25 @@
 
 //! Core engine context providing access to foundational subsystems.
 
-use crate::renderer::GraphicsDevice;
+use crate::service_registry::ServiceRegistry;
 use std::any::Any;
-use std::sync::Arc;
 
 /// Engine context providing access to various subsystems.
 ///
 /// This structure is shared across both the Strategic Brain (Agents)
 /// and the user-facing application logic.
+///
+/// # Design
+///
+/// Subsystem-specific services (e.g., `GraphicsDevice`, `RenderSystem`) are
+/// accessed through the generic [`ServiceRegistry`] instead of named fields.
+/// This respects the Interface Segregation Principle: each agent fetches only
+/// the services it needs, and adding new services never changes this struct.
 pub struct EngineContext<'a> {
-    /// The graphics device used for rendering.
-    pub graphics_device: Arc<dyn GraphicsDevice>,
-
     /// A type-erased pointer to the main ECS World.
     /// This allows agents to access data without khora-core depending on khora-data.
     pub world: Option<&'a mut dyn Any>,
 
-    /// A type-erased pointer to the asset registry.
-    pub assets: Option<&'a dyn Any>,
+    /// Generic service registry — agents fetch typed services as needed.
+    pub services: ServiceRegistry,
 }

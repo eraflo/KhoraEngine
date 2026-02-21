@@ -188,6 +188,45 @@ impl GpuLight {
     pub const TYPE_POINT: u32 = 1;
     /// Light type constant for spot lights.
     pub const TYPE_SPOT: u32 = 2;
+
+    /// Creates a `GpuLight` from world-space position, direction, and light properties.
+    pub fn from_parts(
+        position: [f32; 3],
+        direction: [f32; 3],
+        ty: &super::light::LightType,
+    ) -> Self {
+        match ty {
+            super::light::LightType::Directional(l) => Self {
+                position: [0.0; 3],
+                range: 0.0,
+                color: [l.color.r, l.color.g, l.color.b],
+                intensity: l.intensity,
+                direction,
+                light_type: Self::TYPE_DIRECTIONAL,
+                ..Default::default()
+            },
+            super::light::LightType::Point(l) => Self {
+                position,
+                range: l.range,
+                color: [l.color.r, l.color.g, l.color.b],
+                intensity: l.intensity,
+                direction: [0.0; 3],
+                light_type: Self::TYPE_POINT,
+                ..Default::default()
+            },
+            super::light::LightType::Spot(l) => Self {
+                position,
+                range: l.range,
+                color: [l.color.r, l.color.g, l.color.b],
+                intensity: l.intensity,
+                direction,
+                light_type: Self::TYPE_SPOT,
+                inner_cone_cos: l.inner_cone_angle.cos(),
+                outer_cone_cos: l.outer_cone_angle.cos(),
+                ..Default::default()
+            },
+        }
+    }
 }
 
 impl Default for GpuLight {

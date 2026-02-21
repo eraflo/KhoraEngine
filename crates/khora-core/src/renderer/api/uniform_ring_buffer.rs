@@ -37,19 +37,13 @@ use crate::renderer::{
             BindGroupDescriptor, BindGroupEntry, BindGroupLayoutId, BindingResource, BufferBinding,
         },
         buffer::{BufferDescriptor, BufferId, BufferUsage},
+        common::MAX_FRAMES_IN_FLIGHT,
     },
     error::ResourceError,
     traits::GraphicsDevice,
     BindGroupId,
 };
 use std::borrow::Cow;
-
-/// Maximum number of frames that can be in-flight simultaneously.
-///
-/// This determines how many buffer slots the ring buffer maintains.
-/// A value of 2 supports double-buffering (the most common configuration),
-/// allowing the GPU to read from one slot while the CPU writes to the other.
-pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
 /// A single slot in the ring buffer, holding a GPU buffer and its associated bind group.
 #[derive(Debug)]
@@ -248,8 +242,8 @@ mod tests {
             ShaderModuleDescriptor, ShaderStageFlags, TextureDescriptor, TextureViewDescriptor,
         },
         traits::{CommandEncoder, ComputePass, RenderPass},
-        BindGroupId, ComputePipelineId, GraphicsBackendType, IndexFormat, PipelineLayoutId,
-        RenderPipelineId, RendererAdapterInfo, RendererDeviceType, ResourceError, ShaderModuleId,
+        BindGroupId, ComputePipelineId, GraphicsAdapterInfo, GraphicsBackendType, IndexFormat,
+        PipelineLayoutId, RenderPipelineId, RendererDeviceType, ResourceError, ShaderModuleId,
         TextureFormat,
     };
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -278,7 +272,7 @@ mod tests {
 
     impl RenderPass<'_> for MockRenderPass {
         fn set_pipeline(&mut self, _p: &RenderPipelineId) {}
-        fn set_bind_group(&mut self, _i: u32, _bg: &BindGroupId) {}
+        fn set_bind_group(&mut self, _i: u32, _bg: &BindGroupId, _o: &[u32]) {}
         fn set_vertex_buffer(&mut self, _s: u32, _b: &BufferId, _o: u64) {}
         fn set_index_buffer(&mut self, _b: &BufferId, _o: u64, _f: IndexFormat) {}
         fn draw(&mut self, _v: std::ops::Range<u32>, _i: std::ops::Range<u32>) {}
@@ -288,7 +282,7 @@ mod tests {
 
     impl ComputePass<'_> for MockComputePass {
         fn set_pipeline(&mut self, _p: &ComputePipelineId) {}
-        fn set_bind_group(&mut self, _i: u32, _bg: &BindGroupId) {}
+        fn set_bind_group(&mut self, _i: u32, _bg: &BindGroupId, _o: &[u32]) {}
         fn dispatch_workgroups(&mut self, _x: u32, _y: u32, _z: u32) {}
     }
 
@@ -465,8 +459,8 @@ mod tests {
         fn get_surface_format(&self) -> Option<TextureFormat> {
             Some(TextureFormat::Rgba8UnormSrgb)
         }
-        fn get_adapter_info(&self) -> RendererAdapterInfo {
-            RendererAdapterInfo {
+        fn get_adapter_info(&self) -> GraphicsAdapterInfo {
+            GraphicsAdapterInfo {
                 name: "MockDevice".to_string(),
                 backend_type: GraphicsBackendType::Unknown,
                 device_type: RendererDeviceType::Unknown,

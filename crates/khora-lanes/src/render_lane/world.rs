@@ -19,9 +19,9 @@
 //! populated by an "extraction" phase that reads data from the main ECS `World`.
 
 use khora_core::{
-    asset::AssetUUID,
+    asset::{AssetHandle, AssetUUID, Material},
     math::{affine_transform::AffineTransform, Vec3},
-    renderer::light::LightType,
+    renderer::{api::GpuMesh, light::LightType},
 };
 
 /// A flat, GPU-friendly representation of a single mesh to be rendered.
@@ -31,11 +31,13 @@ use khora_core::{
 pub struct ExtractedMesh {
     /// The world-space transformation matrix of the mesh, derived from `GlobalTransform`.
     pub transform: AffineTransform,
-    /// The unique identifier of the GpuMesh asset to be rendered.
-    pub gpu_mesh_uuid: AssetUUID,
-    /// The unique identifier of the material to be used for rendering.
+    /// The UUID of the loaded CPU Mesh. Used for debugging or mapping.
+    pub cpu_mesh_uuid: AssetUUID,
+    /// A handle to the uploaded GPU mesh data.
+    pub gpu_mesh: AssetHandle<GpuMesh>,
+    /// A handle to the material to be used for rendering.
     /// If `None`, a default material should be used.
-    pub material_uuid: Option<AssetUUID>,
+    pub material: Option<AssetHandle<Box<dyn Material>>>,
 }
 
 /// A flat, GPU-friendly representation of a light source for rendering.

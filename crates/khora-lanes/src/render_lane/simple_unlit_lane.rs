@@ -30,7 +30,7 @@ use crate::render_lane::RenderLane;
 
 use super::RenderWorld;
 use khora_core::{
-    asset::{AssetUUID, Material},
+    asset::Material,
     renderer::{
         api::{
             command::{
@@ -59,6 +59,17 @@ use std::sync::RwLock;
 /// - **Suitable for**: High frame rates, simple scenes, or as a debug/fallback renderer
 pub struct SimpleUnlitLane {
     pipeline: std::sync::Mutex<Option<RenderPipelineId>>,
+    camera_layout: std::sync::Mutex<Option<khora_core::renderer::api::BindGroupLayoutId>>,
+    model_layout: std::sync::Mutex<Option<khora_core::renderer::api::BindGroupLayoutId>>,
+    camera_ring:
+        std::sync::Mutex<Option<khora_core::renderer::api::uniform_ring_buffer::UniformRingBuffer>>,
+    model_ring: std::sync::Mutex<
+        Option<khora_core::renderer::api::dynamic_uniform_buffer::DynamicUniformRingBuffer>,
+    >,
+    material_layout: std::sync::Mutex<Option<khora_core::renderer::api::BindGroupLayoutId>>,
+    material_ring: std::sync::Mutex<
+        Option<khora_core::renderer::api::dynamic_uniform_buffer::DynamicUniformRingBuffer>,
+    >,
 }
 
 impl Default for SimpleUnlitLane {
@@ -72,6 +83,12 @@ impl SimpleUnlitLane {
     pub fn new() -> Self {
         Self {
             pipeline: std::sync::Mutex::new(None),
+            camera_layout: std::sync::Mutex::new(None),
+            model_layout: std::sync::Mutex::new(None),
+            camera_ring: std::sync::Mutex::new(None),
+            model_ring: std::sync::Mutex::new(None),
+            material_layout: std::sync::Mutex::new(None),
+            material_ring: std::sync::Mutex::new(None),
         }
     }
 }
@@ -83,8 +100,7 @@ impl RenderLane for SimpleUnlitLane {
 
     fn get_pipeline_for_material(
         &self,
-        _material_uuid: Option<AssetUUID>,
-        _materials: &Assets<Box<dyn Material>>,
+        _material: Option<&khora_core::asset::AssetHandle<Box<dyn Material>>>,
     ) -> RenderPipelineId {
         // Return the stored pipeline, or 0 if not initialized.
         self.pipeline.lock().unwrap().unwrap_or(RenderPipelineId(0))
@@ -93,23 +109,125 @@ impl RenderLane for SimpleUnlitLane {
     fn render(
         &self,
         render_world: &RenderWorld,
-        _device: &dyn khora_core::renderer::GraphicsDevice,
+        device: &dyn khora_core::renderer::GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
         render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
-        materials: &RwLock<Assets<Box<dyn Material>>>,
     ) {
+        use khora_core::renderer::api::{CameraUniformData, ModelUniforms};
+
+        // 1. Get Active Camera View
+        let view = if let Some(first_view) = render_world.views.first() {
+            first_view
+        } else {
+            return; // No camera, nothing to render
+        };
+
+        // 2. Prepare Camera Uniforms via Persistent Ring Buffer
+        let camera_uniforms = CameraUniformData {
+            view_projection: view.view_proj.to_cols_array_2d(),
+            camera_position: [view.position.x, view.position.y, view.position.z, 1.0],
+        };
+
+        let camera_bind_group = {
+            let mut lock = self.camera_ring.lock().unwrap();
+            let ring = match lock.as_mut() {
+                Some(r) => r,
+                None => {
+                    log::warn!("SimpleUnlitLane: camera ring buffer not initialized");
+                    return;
+                }
+            };
+            ring.advance();
+            if let Err(e) = ring.write(device, bytemuck::bytes_of(&camera_uniforms)) {
+                log::error!("Failed to write camera ring buffer: {:?}", e);
+                return;
+            }
+            *ring.current_bind_group()
+        };
+
+        // Lock the model ring buffer and advance it for this frame
+        let mut model_ring_lock = self.model_ring.lock().unwrap();
+        let model_ring = match model_ring_lock.as_mut() {
+            Some(mr) => {
+                mr.advance();
+                mr
+            }
+            None => return,
+        };
+
+        let mut material_ring_lock = self.material_ring.lock().unwrap();
+        let material_ring = match material_ring_lock.as_mut() {
+            Some(mr) => {
+                mr.advance();
+                mr
+            }
+            None => return,
+        };
+
         // Acquire read locks on the caches
         let gpu_mesh_assets = gpu_meshes.read().unwrap();
-        let material_assets = materials.read().unwrap();
 
-        // Pre-compute all pipelines for each mesh to ensure they live long enough
-        // for the render pass references
-        let pipelines: Vec<RenderPipelineId> = render_world
-            .meshes
-            .iter()
-            .map(|mesh| self.get_pipeline_for_material(mesh.material_uuid, &material_assets))
-            .collect();
+        // 3. Prepare Draw Commands
+        let mut draw_commands = Vec::with_capacity(render_world.meshes.len());
+
+        for extracted_mesh in &render_world.meshes {
+            if let Some(gpu_mesh_handle) = gpu_mesh_assets.get(&extracted_mesh.cpu_mesh_uuid) {
+                // Get the pre-computed pipeline for this mesh
+                let pipeline = self.get_pipeline_for_material(extracted_mesh.material.as_ref());
+
+                // Create Per-Mesh Uniforms
+                let model_mat = extracted_mesh.transform.to_matrix();
+
+                let normal_mat = if let Some(inverse) = model_mat.inverse() {
+                    inverse.transpose()
+                } else {
+                    continue; // Skip if degenerate transform
+                };
+
+                let mut base_color = khora_core::math::LinearRgba::WHITE;
+                if let Some(mat_handle) = &extracted_mesh.material {
+                    base_color = mat_handle.base_color();
+                }
+
+                let model_uniforms = ModelUniforms {
+                    model_matrix: model_mat.to_cols_array_2d(),
+                    normal_matrix: normal_mat.to_cols_array_2d(),
+                };
+
+                let offset = match model_ring.push(device, bytemuck::bytes_of(&model_uniforms)) {
+                    Ok(off) => off,
+                    Err(_) => continue,
+                };
+                let model_bg = *model_ring.current_bind_group();
+
+                // Build MaterialUniforms
+                let material_uniforms = khora_core::renderer::api::MaterialUniforms {
+                    base_color,
+                    emissive: khora_core::math::LinearRgba::BLACK,
+                    ambient: khora_core::math::LinearRgba::BLACK,
+                };
+
+                let mat_offset =
+                    match material_ring.push(device, bytemuck::bytes_of(&material_uniforms)) {
+                        Ok(off) => off,
+                        Err(_) => continue,
+                    };
+                let material_bg = *material_ring.current_bind_group();
+
+                draw_commands.push(khora_core::renderer::api::command::DrawCommand {
+                    pipeline,
+                    vertex_buffer: gpu_mesh_handle.vertex_buffer,
+                    index_buffer: gpu_mesh_handle.index_buffer,
+                    index_format: gpu_mesh_handle.index_format,
+                    index_count: gpu_mesh_handle.index_count,
+                    model_bind_group: Some(model_bg),
+                    model_offset: offset,
+                    material_bind_group: Some(material_bg),
+                    material_offset: mat_offset,
+                });
+            }
+        }
 
         // Configure the render pass to render into the provided color target
         let color_attachment = RenderPassColorAttachment {
@@ -139,36 +257,29 @@ impl RenderLane for SimpleUnlitLane {
         // Begin the render pass
         let mut render_pass = encoder.begin_render_pass(&render_pass_desc);
 
+        // Bind global camera
+        render_pass.set_bind_group(0, &camera_bind_group, &[]);
+
         // Track the last pipeline we bound to avoid redundant state changes
         let mut current_pipeline: Option<RenderPipelineId> = None;
 
-        // Iterate over all extracted meshes and issue draw calls
-        for (i, extracted_mesh) in render_world.meshes.iter().enumerate() {
-            // Look up the corresponding GpuMesh in the cache
-            if let Some(gpu_mesh_handle) = gpu_mesh_assets.get(&extracted_mesh.gpu_mesh_uuid) {
-                // Get the pre-computed pipeline for this mesh
-                let pipeline = &pipelines[i];
-
-                // Only bind the pipeline if it's different from the current one
-                // This is a basic optimization to reduce GPU state changes
-                if current_pipeline != Some(*pipeline) {
-                    render_pass.set_pipeline(pipeline);
-                    current_pipeline = Some(*pipeline);
-                }
-
-                // Bind the vertex buffer
-                render_pass.set_vertex_buffer(0, &gpu_mesh_handle.vertex_buffer, 0);
-
-                // Bind the index buffer with the correct format from the mesh
-                render_pass.set_index_buffer(
-                    &gpu_mesh_handle.index_buffer,
-                    0,
-                    gpu_mesh_handle.index_format,
-                );
-
-                // Issue the indexed draw call
-                render_pass.draw_indexed(0..gpu_mesh_handle.index_count, 0, 0..1);
+        for cmd in &draw_commands {
+            if current_pipeline != Some(cmd.pipeline) {
+                render_pass.set_pipeline(&cmd.pipeline);
+                current_pipeline = Some(cmd.pipeline);
             }
+
+            if let Some(ref bg) = cmd.model_bind_group {
+                render_pass.set_bind_group(1, bg, &[cmd.model_offset]);
+            }
+
+            if let Some(ref bg) = cmd.material_bind_group {
+                render_pass.set_bind_group(2, bg, &[cmd.material_offset]);
+            }
+
+            render_pass.set_vertex_buffer(0, &cmd.vertex_buffer, 0);
+            render_pass.set_index_buffer(&cmd.index_buffer, 0, cmd.index_format);
+            render_pass.draw_indexed(0..cmd.index_count, 0, 0..1);
         }
     }
 
@@ -183,7 +294,7 @@ impl RenderLane for SimpleUnlitLane {
         let mut draw_call_count = 0u32;
 
         for extracted_mesh in &render_world.meshes {
-            if let Some(gpu_mesh) = gpu_mesh_assets.get(&extracted_mesh.gpu_mesh_uuid) {
+            if let Some(gpu_mesh) = gpu_mesh_assets.get(&extracted_mesh.cpu_mesh_uuid) {
                 // Calculate triangle count based on primitive topology
                 let triangle_count = match gpu_mesh.primitive_topology {
                     PrimitiveTopology::TriangleList => gpu_mesh.index_count / 3,
@@ -219,27 +330,87 @@ impl RenderLane for SimpleUnlitLane {
     ) -> Result<(), khora_core::renderer::error::RenderError> {
         use crate::render_lane::shaders::UNLIT_WGSL;
         use khora_core::renderer::api::{
+            uniform_ring_buffer::UniformRingBuffer, BindGroupLayoutDescriptor,
+            BindGroupLayoutEntry, BindingType, BufferBindingType, CameraUniformData,
             ColorTargetStateDescriptor, ColorWrites, CompareFunction, DepthBiasState,
-            DepthStencilStateDescriptor, MultisampleStateDescriptor, PrimitiveStateDescriptor,
-            RenderPipelineDescriptor, SampleCount, ShaderModuleDescriptor, ShaderSourceData,
-            StencilFaceState, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
-            VertexFormat, VertexStepMode,
+            DepthStencilStateDescriptor, ModelUniforms, MultisampleStateDescriptor,
+            PrimitiveStateDescriptor, RenderPipelineDescriptor, SampleCount,
+            ShaderModuleDescriptor, ShaderSourceData, ShaderStageFlags, StencilFaceState,
+            VertexAttributeDescriptor, VertexBufferLayoutDescriptor, VertexFormat, VertexStepMode,
         };
         use std::borrow::Cow;
 
         log::info!("SimpleUnlitLane: Initializing GPU resources...");
 
-        // 1. Create Shader Module
-        let shader_module = device
-            .create_shader_module(&ShaderModuleDescriptor {
-                label: Some("simple_unlit_shader"),
-                source: ShaderSourceData::Wgsl(Cow::Borrowed(UNLIT_WGSL)),
+        // 1. Create Bind Group Layouts
+
+        let camera_layout = device
+            .create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("simple_unlit_camera_layout"),
+                entries: &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                }],
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        // 2. Define Vertex Layout (matching our standard vertex buffer)
+        let model_layout = device
+            .create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("simple_unlit_model_layout"),
+                entries: &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStageFlags::VERTEX,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: std::num::NonZeroU64::new(
+                            std::mem::size_of::<ModelUniforms>() as u64,
+                        ),
+                    },
+                }],
+            })
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+
+        let material_layout = device
+            .create_bind_group_layout(&BindGroupLayoutDescriptor {
+                label: Some("simple_unlit_material_layout"),
+                entries: &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStageFlags::FRAGMENT, // Material uniforms primarily in FS
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: std::num::NonZeroU64::new(std::mem::size_of::<
+                            khora_core::renderer::api::MaterialUniforms,
+                        >()
+                            as u64),
+                    },
+                }],
+            })
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+
+        *self.camera_layout.lock().unwrap() = Some(camera_layout);
+        *self.model_layout.lock().unwrap() = Some(model_layout);
+        *self.material_layout.lock().unwrap() = Some(material_layout);
+
+        // 2. Create Shader Module
+        let shader_src = UNLIT_WGSL.to_string();
+        let shader_module = device
+            .create_shader_module(&ShaderModuleDescriptor {
+                label: Some("simple_unlit_shader"),
+                source: ShaderSourceData::Wgsl(Cow::Owned(shader_src)),
+            })
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+
+        // 3. Define Vertex Layout (matching our standard vertex buffer)
         // Attribute 0: Position (vec3<f32>)
-        // Attribute 1: Color (vec4<f32>)
+        // Attribute 1: Normal (vec3<f32>)
+        // Attribute 2: UV (vec2<f32>)
         let vertex_attributes = vec![
             VertexAttributeDescriptor {
                 format: VertexFormat::Float32x3,
@@ -247,19 +418,35 @@ impl RenderLane for SimpleUnlitLane {
                 shader_location: 0,
             },
             VertexAttributeDescriptor {
-                format: VertexFormat::Float32x4,
+                format: VertexFormat::Float32x3,
                 offset: 12, // 3 * size_of<f32>
                 shader_location: 1,
+            },
+            VertexAttributeDescriptor {
+                format: VertexFormat::Float32x2,
+                offset: 24, // 6 * size_of<f32>
+                shader_location: 2,
             },
         ];
 
         let vertex_layout = VertexBufferLayoutDescriptor {
-            array_stride: 28, // 3*4 + 4*4
+            array_stride: 32, // 3*4 + 3*4 + 2*4
             step_mode: VertexStepMode::Vertex,
             attributes: Cow::Owned(vertex_attributes),
         };
 
-        // 3. Create Render Pipeline
+        // 4. Create Pipeline Layout
+        let pipeline_layout_ids = vec![camera_layout, model_layout, material_layout];
+        let pipeline_layout_desc = khora_core::renderer::PipelineLayoutDescriptor {
+            label: Some(Cow::Borrowed("SimpleUnlit Pipeline Layout")),
+            bind_group_layouts: &pipeline_layout_ids,
+        };
+
+        let pipeline_layout_id = device
+            .create_pipeline_layout(&pipeline_layout_desc)
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+
+        // 5. Create Render Pipeline
         let pipeline_desc = RenderPipelineDescriptor {
             label: Some(Cow::Borrowed("SimpleUnlit Pipeline")),
             vertex_shader_module: shader_module,
@@ -267,7 +454,7 @@ impl RenderLane for SimpleUnlitLane {
             fragment_shader_module: Some(shader_module),
             fragment_entry_point: Some(Cow::Borrowed("fs_main")),
             vertex_buffers_layout: Cow::Owned(vec![vertex_layout]),
-            layout: None, // Implicit layout derived from shader.
+            layout: Some(pipeline_layout_id),
             primitive_state: PrimitiveStateDescriptor {
                 topology: PrimitiveTopology::TriangleList,
                 ..Default::default()
@@ -303,10 +490,58 @@ impl RenderLane for SimpleUnlitLane {
         let mut pipeline_lock = self.pipeline.lock().unwrap();
         *pipeline_lock = Some(pipeline_id);
 
+        let camera_ring = UniformRingBuffer::new(
+            device,
+            camera_layout,
+            0,
+            std::mem::size_of::<CameraUniformData>() as u64,
+            "Camera Uniform Ring Runlit",
+        )
+        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+
+        *self.camera_ring.lock().unwrap() = Some(camera_ring);
+
+        let model_ring =
+            khora_core::renderer::api::dynamic_uniform_buffer::DynamicUniformRingBuffer::new(
+                device,
+                model_layout,
+                0,
+                std::mem::size_of::<ModelUniforms>() as u32,
+                khora_core::renderer::api::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
+                khora_core::renderer::api::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+                "Model Dynamic Ring Runlit",
+            )
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+
+        *self.model_ring.lock().unwrap() = Some(model_ring);
+
+        let material_ring =
+            khora_core::renderer::api::dynamic_uniform_buffer::DynamicUniformRingBuffer::new(
+                device,
+                material_layout,
+                0, // Binding size
+                std::mem::size_of::<khora_core::renderer::api::MaterialUniforms>() as u32,
+                khora_core::renderer::api::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
+                khora_core::renderer::api::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+                "Material Dynamic Ring Runlit",
+            )
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+
+        *self.material_ring.lock().unwrap() = Some(material_ring);
+
         Ok(())
     }
 
     fn on_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
+        if let Some(ring) = self.camera_ring.lock().unwrap().take() {
+            ring.destroy(device);
+        }
+        if let Some(ring) = self.model_ring.lock().unwrap().take() {
+            ring.destroy(device);
+        }
+        if let Some(ring) = self.material_ring.lock().unwrap().take() {
+            ring.destroy(device);
+        }
         let mut pipeline_lock = self.pipeline.lock().unwrap();
         if let Some(id) = pipeline_lock.take() {
             let _ = device.destroy_render_pipeline(id);
@@ -361,15 +596,16 @@ mod tests {
             index_format: IndexFormat::Uint32,
             primitive_topology: PrimitiveTopology::TriangleList,
         };
-
+        let gpu_mesh_handle = AssetHandle::new(gpu_mesh);
         let mut gpu_meshes = Assets::<GpuMesh>::new();
-        gpu_meshes.insert(mesh_uuid, AssetHandle::new(gpu_mesh));
+        gpu_meshes.insert(mesh_uuid, gpu_mesh_handle.clone());
 
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
-            gpu_mesh_uuid: mesh_uuid,
-            material_uuid: None,
+            cpu_mesh_uuid: mesh_uuid,
+            gpu_mesh: gpu_mesh_handle,
+            material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -398,15 +634,16 @@ mod tests {
             index_format: IndexFormat::Uint16,
             primitive_topology: PrimitiveTopology::TriangleStrip,
         };
-
+        let gpu_mesh_handle = AssetHandle::new(gpu_mesh);
         let mut gpu_meshes = Assets::<GpuMesh>::new();
-        gpu_meshes.insert(mesh_uuid, AssetHandle::new(gpu_mesh));
+        gpu_meshes.insert(mesh_uuid, gpu_mesh_handle.clone());
 
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
-            gpu_mesh_uuid: mesh_uuid,
-            material_uuid: None,
+            cpu_mesh_uuid: mesh_uuid,
+            gpu_mesh: gpu_mesh_handle,
+            material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -445,21 +682,25 @@ mod tests {
             index_format: IndexFormat::Uint32,
             primitive_topology: PrimitiveTopology::PointList,
         };
+        let line_mesh_handle = AssetHandle::new(line_mesh);
+        let point_mesh_handle = AssetHandle::new(point_mesh);
 
         let mut gpu_meshes = Assets::<GpuMesh>::new();
-        gpu_meshes.insert(line_uuid, AssetHandle::new(line_mesh));
-        gpu_meshes.insert(point_uuid, AssetHandle::new(point_mesh));
+        gpu_meshes.insert(line_uuid, line_mesh_handle.clone());
+        gpu_meshes.insert(point_uuid, point_mesh_handle.clone());
 
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
-            gpu_mesh_uuid: line_uuid,
-            material_uuid: None,
+            cpu_mesh_uuid: line_uuid,
+            gpu_mesh: line_mesh_handle,
+            material: None,
         });
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
-            gpu_mesh_uuid: point_uuid,
-            material_uuid: None,
+            cpu_mesh_uuid: point_uuid,
+            gpu_mesh: point_mesh_handle,
+            material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -516,18 +757,21 @@ mod tests {
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
-            gpu_mesh_uuid: mesh1_uuid,
-            material_uuid: None,
+            cpu_mesh_uuid: mesh1_uuid,
+            gpu_mesh: AssetHandle::new(create_test_mesh(600)),
+            material: None,
         });
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
-            gpu_mesh_uuid: mesh2_uuid,
-            material_uuid: None,
+            cpu_mesh_uuid: mesh2_uuid,
+            gpu_mesh: AssetHandle::new(create_test_mesh(102)),
+            material: None,
         });
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
-            gpu_mesh_uuid: mesh3_uuid,
-            material_uuid: None,
+            cpu_mesh_uuid: mesh3_uuid,
+            gpu_mesh: AssetHandle::new(create_test_mesh(150)),
+            material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -542,6 +786,17 @@ mod tests {
         );
     }
 
+    // Helper to create test mesh
+    fn create_test_mesh(index_count: u32) -> GpuMesh {
+        GpuMesh {
+            vertex_buffer: BufferId(0),
+            index_buffer: BufferId(1),
+            index_count,
+            index_format: IndexFormat::Uint32,
+            primitive_topology: PrimitiveTopology::TriangleList,
+        }
+    }
+
     #[test]
     fn test_cost_estimation_missing_mesh() {
         use crate::render_lane::world::ExtractedMesh;
@@ -554,8 +809,9 @@ mod tests {
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
-            gpu_mesh_uuid: AssetUUID::new(),
-            material_uuid: None,
+            cpu_mesh_uuid: AssetUUID::new(),
+            gpu_mesh: AssetHandle::new(create_test_mesh(300)),
+            material: None,
         });
 
         let cost = lane.estimate_cost(&render_world, &gpu_meshes);
@@ -581,14 +837,16 @@ mod tests {
             primitive_topology: PrimitiveTopology::TriangleStrip,
         };
 
+        let handle = AssetHandle::new(gpu_mesh);
         let mut gpu_meshes = Assets::<GpuMesh>::new();
-        gpu_meshes.insert(mesh_uuid, AssetHandle::new(gpu_mesh));
+        gpu_meshes.insert(mesh_uuid, handle.clone());
 
         let mut render_world = RenderWorld::default();
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
-            gpu_mesh_uuid: mesh_uuid,
-            material_uuid: None,
+            cpu_mesh_uuid: mesh_uuid,
+            gpu_mesh: handle,
+            material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -604,9 +862,8 @@ mod tests {
     #[test]
     fn test_get_pipeline_for_material_with_none() {
         let lane = SimpleUnlitLane::new();
-        let materials = Assets::<Box<dyn Material>>::new();
 
-        let pipeline = lane.get_pipeline_for_material(None, &materials);
+        let pipeline = lane.get_pipeline_for_material(None);
         assert_eq!(
             pipeline,
             RenderPipelineId(0),
@@ -616,12 +873,11 @@ mod tests {
 
     #[test]
     fn test_get_pipeline_for_material_not_found() {
-        use khora_core::asset::AssetUUID;
-
         let lane = SimpleUnlitLane::new();
-        let materials = Assets::<Box<dyn Material>>::new();
 
-        let pipeline = lane.get_pipeline_for_material(Some(AssetUUID::new()), &materials);
+        // Since there is no registry anymore, we just test with None or a dummy handle.
+        // The old test "missing material" is now redundant with "None material".
+        let pipeline = lane.get_pipeline_for_material(None);
         assert_eq!(
             pipeline,
             RenderPipelineId(0),

@@ -18,18 +18,20 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
-/// Unique identifier for engine agents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Unique identifier for engine agents with implicit priority ordering.
+///
+/// The order of variants defines the default execution priority (first = highest).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 pub enum AgentId {
-    /// The primary rendering agent.
+    /// The primary rendering agent (highest priority in Simulation).
     Renderer,
     /// The physics simulation agent.
     Physics,
-    /// The audio processing agent.
-    Audio,
     /// The ECS/Logic coordination agent.
     Ecs,
-    /// The asset management agent.
+    /// The audio processing agent.
+    Audio,
+    /// The asset management agent (highest priority in Boot).
     Asset,
 }
 

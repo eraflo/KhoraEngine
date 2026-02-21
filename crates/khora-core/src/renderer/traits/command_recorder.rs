@@ -34,7 +34,13 @@ pub trait RenderPass<'pass> {
     /// # Arguments
     /// * `index` - The bind group index (must match shader @group(N) declarations)
     /// * `bind_group` - The bind group to bind
-    fn set_bind_group(&mut self, index: u32, bind_group: &'pass BindGroupId);
+    /// * `dynamic_offsets` - Optional dynamic offsets if the bind group layout specifies dynamic entries
+    fn set_bind_group(
+        &mut self,
+        index: u32,
+        bind_group: &'pass BindGroupId,
+        dynamic_offsets: &[u32],
+    );
 
     /// Binds a vertex buffer to a specific slot.
     fn set_vertex_buffer(&mut self, slot: u32, buffer: &'pass BufferId, offset: u64);
@@ -68,7 +74,13 @@ pub trait ComputePass<'pass> {
     /// # Arguments
     /// * `index` - The bind group index (must match shader @group(N) declarations)
     /// * `bind_group` - The bind group to bind
-    fn set_bind_group(&mut self, index: u32, bind_group: &'pass BindGroupId);
+    /// * `dynamic_offsets` - Optional dynamic offsets if the bind group layout specifies dynamic entries
+    fn set_bind_group(
+        &mut self,
+        index: u32,
+        bind_group: &'pass BindGroupId,
+        dynamic_offsets: &[u32],
+    );
 
     /// Dispatches compute workgroups.
     ///

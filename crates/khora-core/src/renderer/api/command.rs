@@ -24,6 +24,30 @@ use crate::renderer::{GpuHook, TextureViewId};
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct CommandBufferId(pub u64);
 
+/// A generalized draw command containing all necessary state and bindings for a single draw call.
+/// Used by RenderLanes to collect and sort draw calls before recording them.
+#[derive(Debug, Clone)]
+pub struct DrawCommand {
+    /// The render pipeline to use for this draw call.
+    pub pipeline: crate::renderer::RenderPipelineId,
+    /// The vertex buffer containing the geometry.
+    pub vertex_buffer: crate::renderer::BufferId,
+    /// The index buffer defining the draw order.
+    pub index_buffer: crate::renderer::BufferId,
+    /// The format of the indices (16-bit or 32-bit).
+    pub index_format: crate::renderer::IndexFormat,
+    /// The number of indices to draw.
+    pub index_count: u32,
+    /// An optional bind group for model-specific uniforms (typically group 1).
+    pub model_bind_group: Option<crate::renderer::BindGroupId>,
+    /// Optional dynamic offset for the model bind group.
+    pub model_offset: u32,
+    /// An optional bind group for material-specific uniforms (typically group 2).
+    pub material_bind_group: Option<crate::renderer::BindGroupId>,
+    /// Optional dynamic offset for the material bind group.
+    pub material_offset: u32,
+}
+
 /// Describes the operation to perform on an attachment at the start of a render pass.
 #[derive(Clone, Debug)]
 pub enum LoadOp<V> {

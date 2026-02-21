@@ -31,40 +31,65 @@ use khora_core::control::gorna::{
     AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId, StrategyOption,
 };
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-/// Maximum number of agents allowed to be stalled before triggering death spiral.
 const MAX_STALLED_AGENTS: usize = 2;
+
+fn try_lock_agent_with_timeout<T: ?Sized>(
+    mutex: &Mutex<T>,
+    timeout: Duration,
+) -> Option<std::sync::MutexGuard<'_, T>> {
+    let start = Instant::now();
+    loop {
+        match mutex.try_lock() {
+            Ok(guard) => return Some(guard),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                if start.elapsed() >= timeout {
+                    return None;
+                }
+                std::thread::yield_now();
+            }
+            Err(std::sync::TryLockError::Poisoned(err)) => {
+                log::error!("Agent mutex poisoned: {}", err);
+                return None;
+            }
+        }
+    }
+}
 
 /// Arbitrates resource allocation between multiple ISAs.
 ///
 /// The arbitrator implements a two-pass approach:
 /// - **Pass 1 (Negotiation)**: Collects strategy options from all agents.
 /// - **Pass 2 (Fitting)**: Selects the optimal strategy combination that fits
-///   within the global frame budget, respecting priorities.
-pub struct GornaArbitrator;
+///   within the global frame budget, respecting priorities and VRAM constraints.
+pub struct GornaArbitrator {
+    lock_timeout: Duration,
+}
 
 /// A collected negotiation from a single agent, used during the fitting pass.
 struct AgentNegotiation {
-    /// Index into the agents array.
     agent_index: usize,
-    /// Agent identifier.
     agent_id: AgentId,
-    /// Priority weight (higher = more important).
     priority: f32,
-    /// Available strategies sorted from lowest cost to highest.
     strategies: Vec<StrategyOption>,
 }
 
 /// A resolved allocation for a single agent.
 struct AgentAllocation {
-    /// Index into the agents array.
     agent_index: usize,
-    /// The selected strategy.
     strategy: StrategyOption,
 }
 
 impl GornaArbitrator {
+    /// Creates a new arbitrator with the specified lock timeout.
+    ///
+    /// The lock timeout determines how long to wait when acquiring locks on agents
+    /// during negotiation and budget issuance. Agents that cannot be locked within
+    /// this timeout are skipped.
+    pub fn new(lock_timeout: Duration) -> Self {
+        Self { lock_timeout }
+    }
     /// Performs a full GORNA arbitration round.
     ///
     /// # Arguments
@@ -117,7 +142,14 @@ impl GornaArbitrator {
         let mut negotiations: Vec<AgentNegotiation> = Vec::with_capacity(agents.len());
 
         for (i, agent_mutex) in agents.iter().enumerate() {
-            let mut agent = agent_mutex.lock().unwrap();
+            let Some(mut agent) = try_lock_agent_with_timeout(agent_mutex, self.lock_timeout)
+            else {
+                log::warn!(
+                    "GORNA: Failed to lock agent {} for negotiation (timeout). Skipping.",
+                    i
+                );
+                continue;
+            };
             let agent_id = agent.id();
             let priority = self.get_agent_priority(agent_id, context.phase);
 
@@ -153,11 +185,23 @@ impl GornaArbitrator {
         }
 
         // ── 3. Global Budget Fitting ─────────────────────────────────────
-        let allocations = self.fit_budgets(&negotiations, effective_budget_ms);
+        let max_vram = context
+            .hardware
+            .available_vram
+            .or(context.hardware.total_vram);
+        let allocations = self.fit_budgets(&negotiations, effective_budget_ms, max_vram);
 
         // ── 4. Issuance Pass ─────────────────────────────────────────────
         for alloc in &allocations {
-            let mut agent = agents[alloc.agent_index].lock().unwrap();
+            let Some(mut agent) =
+                try_lock_agent_with_timeout(&agents[alloc.agent_index], self.lock_timeout)
+            else {
+                log::warn!(
+                    "GORNA: Failed to lock agent for budget issuance (index {}). Skipping.",
+                    alloc.agent_index
+                );
+                continue;
+            };
 
             let budget = ResourceBudget {
                 strategy_id: alloc.strategy.id,
@@ -186,8 +230,14 @@ impl GornaArbitrator {
     /// Polls all agents for health status and returns the count of stalled agents.
     fn check_agent_health(&self, agents: &[Arc<Mutex<dyn Agent>>]) -> usize {
         let mut stalled = 0;
-        for agent_mutex in agents {
-            let agent = agent_mutex.lock().unwrap();
+        for (i, agent_mutex) in agents.iter().enumerate() {
+            let Some(agent) = try_lock_agent_with_timeout(agent_mutex, self.lock_timeout) else {
+                log::warn!(
+                    "GORNA: Failed to lock agent {} for health check (timeout).",
+                    i
+                );
+                continue;
+            };
             let status = agent.report_status();
             if status.is_stalled {
                 log::warn!(
@@ -211,8 +261,15 @@ impl GornaArbitrator {
 
     /// Forces all agents to their lowest-cost strategy as an emergency measure.
     fn emergency_stop(&self, agents: &mut [Arc<Mutex<dyn Agent>>]) {
-        for agent_mutex in agents {
-            let mut agent = agent_mutex.lock().unwrap();
+        for (i, agent_mutex) in agents.iter_mut().enumerate() {
+            let Some(mut agent) = try_lock_agent_with_timeout(agent_mutex, self.lock_timeout)
+            else {
+                log::warn!(
+                    "GORNA: Failed to lock agent {} for emergency stop (timeout).",
+                    i
+                );
+                continue;
+            };
 
             let budget = ResourceBudget {
                 strategy_id: StrategyId::LowPower,
@@ -232,16 +289,17 @@ impl GornaArbitrator {
     /// 1. Sort agents by priority (highest first).
     /// 2. Try to give each agent its most expensive strategy that fits.
     /// 3. If the total exceeds the budget, downgrade lower-priority agents first.
+    /// 4. Respect VRAM constraints if specified.
     fn fit_budgets(
         &self,
         negotiations: &[AgentNegotiation],
         total_budget_ms: f32,
+        max_vram_bytes: Option<u64>,
     ) -> Vec<AgentAllocation> {
         if negotiations.is_empty() {
             return Vec::new();
         }
 
-        // Sort by priority descending (highest priority agents get first pick).
         let mut sorted_indices: Vec<usize> = (0..negotiations.len()).collect();
         sorted_indices.sort_by(|&a, &b| {
             negotiations[b]
@@ -250,12 +308,11 @@ impl GornaArbitrator {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        // Start by assigning each agent its cheapest (lowest cost) strategy.
         let mut allocations: Vec<AgentAllocation> = negotiations
             .iter()
             .map(|n| AgentAllocation {
                 agent_index: n.agent_index,
-                strategy: n.strategies[0].clone(), // cheapest
+                strategy: n.strategies[0].clone(),
             })
             .collect();
 
@@ -264,9 +321,9 @@ impl GornaArbitrator {
             .map(|a| a.strategy.estimated_time.as_secs_f32() * 1000.0)
             .sum();
 
+        let total_min_vram: u64 = allocations.iter().map(|a| a.strategy.estimated_vram).sum();
+
         if total_min_ms > total_budget_ms {
-            // Even minimum strategies exceed budget — nothing more we can do,
-            // every agent gets their cheapest option.
             log::warn!(
                 "GORNA: Even minimum strategies ({:.2}ms) exceed budget ({:.2}ms). \
                 All agents at LowPower.",
@@ -276,21 +333,36 @@ impl GornaArbitrator {
             return allocations;
         }
 
-        // Remaining budget after assigning minimum to everyone.
-        let mut remaining_ms = total_budget_ms - total_min_ms;
+        if let Some(max_vram) = max_vram_bytes {
+            if total_min_vram > max_vram {
+                log::warn!(
+                    "GORNA: Even minimum strategies VRAM ({:.2}MB) exceeds budget ({:.2}MB).",
+                    total_min_vram as f64 / (1024.0 * 1024.0),
+                    max_vram as f64 / (1024.0 * 1024.0)
+                );
+            }
+        }
 
-        // Now upgrade agents one at a time in priority order.
+        let mut remaining_ms = total_budget_ms - total_min_ms;
+        let mut current_vram = total_min_vram;
+
         for &idx in &sorted_indices {
             let negotiation = &negotiations[idx];
             let current_cost_ms = allocations[idx].strategy.estimated_time.as_secs_f32() * 1000.0;
+            let current_vram_cost = allocations[idx].strategy.estimated_vram;
 
-            // Try each strategy from most expensive to least expensive,
-            // pick the most expensive one that fits in remaining budget.
             let mut best_upgrade: Option<&StrategyOption> = None;
             for strategy in negotiation.strategies.iter().rev() {
                 let cost_ms = strategy.estimated_time.as_secs_f32() * 1000.0;
-                let delta = cost_ms - current_cost_ms;
-                if delta <= remaining_ms {
+                let delta_ms = cost_ms - current_cost_ms;
+                let delta_vram = strategy.estimated_vram.saturating_sub(current_vram_cost);
+
+                let time_fits = delta_ms <= remaining_ms;
+                let vram_fits = max_vram_bytes
+                    .map(|max| current_vram + delta_vram <= max)
+                    .unwrap_or(true);
+
+                if time_fits && vram_fits {
                     best_upgrade = Some(strategy);
                     break;
                 }
@@ -299,17 +371,30 @@ impl GornaArbitrator {
             if let Some(upgrade) = best_upgrade {
                 let old_cost = current_cost_ms;
                 let new_cost = upgrade.estimated_time.as_secs_f32() * 1000.0;
+                let delta_vram = upgrade.estimated_vram.saturating_sub(current_vram_cost);
+
                 remaining_ms -= new_cost - old_cost;
+                current_vram += delta_vram;
                 allocations[idx].strategy = upgrade.clone();
 
                 log::trace!(
-                    "GORNA: Upgraded {:?} from {:.2}ms to {:.2}ms (remaining={:.2}ms)",
+                    "GORNA: Upgraded {:?} from {:.2}ms to {:.2}ms (remaining={:.2}ms, vram={:.2}MB)",
                     negotiation.agent_id,
                     old_cost,
                     new_cost,
-                    remaining_ms
+                    remaining_ms,
+                    current_vram as f64 / (1024.0 * 1024.0)
                 );
             }
+        }
+
+        if let Some(max_vram) = max_vram_bytes {
+            let total_vram: u64 = allocations.iter().map(|a| a.strategy.estimated_vram).sum();
+            log::debug!(
+                "GORNA: Total VRAM allocated: {:.2}MB / {:.2}MB",
+                total_vram as f64 / (1024.0 * 1024.0),
+                max_vram as f64 / (1024.0 * 1024.0)
+            );
         }
 
         allocations
@@ -443,6 +528,16 @@ mod tests {
                 message: String::new(),
             }
         }
+
+        fn execute(&mut self) {}
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
     }
 
     fn normal_report() -> AnalysisReport {
@@ -464,9 +559,13 @@ mod tests {
 
     // ── Tests ────────────────────────────────────────────────────────
 
+    fn create_arbitrator() -> GornaArbitrator {
+        GornaArbitrator::new(Duration::from_millis(100))
+    }
+
     #[test]
     fn test_arbitrate_single_agent_gets_best_strategy() {
-        let arbitrator = GornaArbitrator;
+        let arbitrator = create_arbitrator();
         let ctx = simulation_ctx();
         let report = normal_report();
         let agent = MockAgent::new(AgentId::Renderer);
@@ -486,7 +585,7 @@ mod tests {
 
     #[test]
     fn test_arbitrate_respects_global_budget() {
-        let arbitrator = GornaArbitrator;
+        let arbitrator = create_arbitrator();
         let ctx = simulation_ctx();
         let report = normal_report();
 
@@ -534,7 +633,7 @@ mod tests {
 
     #[test]
     fn test_arbitrate_thermal_reduces_budget() {
-        let arbitrator = GornaArbitrator;
+        let arbitrator = create_arbitrator();
         let mut ctx = simulation_ctx();
         ctx.hardware.thermal = khora_core::platform::ThermalStatus::Throttling;
         ctx.refresh_budget_multiplier(); // 0.6
@@ -559,7 +658,7 @@ mod tests {
 
     #[test]
     fn test_emergency_stop_on_death_spiral() {
-        let arbitrator = GornaArbitrator;
+        let arbitrator = create_arbitrator();
         let ctx = simulation_ctx();
         let mut report = normal_report();
         report.death_spiral_detected = true;
@@ -587,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_emergency_stop_on_stalled_agents() {
-        let arbitrator = GornaArbitrator;
+        let arbitrator = create_arbitrator();
         let ctx = simulation_ctx();
         let report = normal_report();
 
@@ -615,7 +714,7 @@ mod tests {
 
     #[test]
     fn test_arbitrate_empty_agents() {
-        let arbitrator = GornaArbitrator;
+        let arbitrator = create_arbitrator();
         let ctx = simulation_ctx();
         let report = normal_report();
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![];
@@ -626,7 +725,7 @@ mod tests {
 
     #[test]
     fn test_priority_order_renderer_before_asset_in_simulation() {
-        let arbitrator = GornaArbitrator;
+        let arbitrator = create_arbitrator();
         let ctx = simulation_ctx();
         let report = normal_report();
 
@@ -656,14 +755,14 @@ mod tests {
 
     #[test]
     fn test_background_phase_minimal_priority() {
-        let arbitrator = GornaArbitrator;
+        let arbitrator = create_arbitrator();
         assert!(arbitrator.get_agent_priority(AgentId::Renderer, ExecutionPhase::Background) < 0.2);
         assert!(arbitrator.get_agent_priority(AgentId::Physics, ExecutionPhase::Background) < 0.2);
     }
 
     #[test]
     fn test_simulation_critical_agents() {
-        let arbitrator = GornaArbitrator;
+        let arbitrator = create_arbitrator();
         assert!(arbitrator.is_critical_agent(AgentId::Renderer, ExecutionPhase::Simulation));
         assert!(arbitrator.is_critical_agent(AgentId::Physics, ExecutionPhase::Simulation));
         assert!(arbitrator.is_critical_agent(AgentId::Ecs, ExecutionPhase::Simulation));

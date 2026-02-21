@@ -27,6 +27,14 @@ pub struct Assets<A: Asset> {
     storage: HashMap<AssetUUID, AssetHandle<A>>,
 }
 
+impl<A: Asset> Clone for Assets<A> {
+    fn clone(&self) -> Self {
+        Self {
+            storage: self.storage.clone(),
+        }
+    }
+}
+
 impl<A: Asset> Assets<A> {
     /// Creates a new, empty asset storage.
     pub fn new() -> Self {

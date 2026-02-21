@@ -28,9 +28,9 @@ use khora_core::renderer::api::command::{
 use khora_core::renderer::api::texture::TextureViewId;
 use khora_core::renderer::traits::{GpuProfiler, GraphicsBackendSelector};
 use khora_core::renderer::{
-    BackendSelectionConfig, BindGroupId, BindGroupLayoutId, BufferId, GraphicsDevice, IndexFormat,
-    Operations, RenderError, RenderObject, RenderSettings, RenderStats, RenderSystem,
-    RendererAdapterInfo, ViewInfo,
+    BackendSelectionConfig, BindGroupId, BindGroupLayoutId, BufferId, GraphicsAdapterInfo,
+    GraphicsDevice, IndexFormat, Operations, RenderError, RenderObject, RenderSettings,
+    RenderStats, RenderSystem, ViewInfo,
 };
 use khora_core::telemetry::ResourceMonitor;
 use khora_core::Stopwatch;
@@ -680,11 +680,10 @@ impl RenderSystem for WgpuRenderSystem {
 
             let mut render_pass = command_encoder.begin_render_pass(&pass_descriptor);
 
-            // Bind the camera uniform bind group (group 0)
+            // Apply the same bind group and pipeline to all chunks to limit state changes
             if let Some(camera_bind_group) = &self.camera_bind_group {
-                render_pass.set_bind_group(0, camera_bind_group);
+                render_pass.set_bind_group(0, camera_bind_group, &[]);
             }
-
             let (draw_calls, triangles) = renderables.iter().fold((0, 0), |(dc, tris), obj| {
                 render_pass.set_pipeline(&obj.pipeline);
                 render_pass.set_vertex_buffer(0, &obj.vertex_buffer, 0);
@@ -747,6 +746,135 @@ impl RenderSystem for WgpuRenderSystem {
         Ok(self.last_frame_stats.clone())
     }
 
+    fn render_with_encoder(
+        &mut self,
+        clear_color: khora_core::math::LinearRgba,
+        encoder_fn: Box<
+            dyn FnOnce(
+                    &mut dyn khora_core::renderer::traits::CommandEncoder,
+                    &khora_core::renderer::RenderContext,
+                ) + Send
+                + '_,
+        >,
+    ) -> Result<RenderStats, RenderError> {
+        use khora_core::renderer::RenderContext;
+
+        let full_frame_timer = Stopwatch::new();
+
+        let device = self
+            .wgpu_device
+            .clone()
+            .ok_or(RenderError::NotInitialized)?;
+
+        device.poll_device_non_blocking();
+
+        let gc = self
+            .graphics_context_shared
+            .clone()
+            .ok_or(RenderError::NotInitialized)?;
+
+        if let Some(p) = self.gpu_profiler.as_mut() {
+            p.try_read_previous_frame();
+        }
+
+        // --- Handle Pending Resizes ---
+        let mut resized_this_frame = false;
+        if self.pending_resize {
+            self.pending_resize_frames = self.pending_resize_frames.saturating_add(1);
+            if let Some(t) = self.last_resize_event {
+                let quiet_elapsed = t.elapsed().as_millis();
+                let debounce_quiet_ms = 120u128;
+                let max_pending_frames = 10u32;
+                let early_stable = self.stable_size_frame_count >= 3;
+
+                if quiet_elapsed >= debounce_quiet_ms
+                    || self.pending_resize_frames >= max_pending_frames
+                    || early_stable
+                {
+                    if let Ok(mut gc_guard) = gc.lock() {
+                        gc_guard.resize(self.current_width, self.current_height);
+                        self.pending_resize = false;
+                        self.last_surface_config = Some(Instant::now());
+                        self.stable_size_frame_count = 0;
+                        resized_this_frame = true;
+                    }
+                }
+            }
+            if self.pending_resize && !resized_this_frame {
+                return Ok(self.last_frame_stats.clone());
+            }
+        }
+
+        if resized_this_frame {
+            if let Err(e) = self.create_depth_texture() {
+                log::warn!("Failed to recreate depth texture: {:?}", e);
+            }
+        }
+
+        // --- Acquire Frame ---
+        let output_surface_texture = loop {
+            let mut gc_guard = gc.lock().unwrap();
+            match gc_guard.get_current_texture() {
+                Ok(texture) => break texture,
+                Err(e) => {
+                    if self.current_width > 0 && self.current_height > 0 {
+                        gc_guard.resize(self.current_width, self.current_height);
+                        continue;
+                    }
+                    return Err(RenderError::SurfaceAcquisitionFailed(format!("{:?}", e)));
+                }
+            }
+        };
+
+        let command_recording_timer = Stopwatch::new();
+
+        // --- Create texture view ---
+        if let Some(old_id) = self.current_frame_view_id.take() {
+            device.destroy_texture_view(old_id)?;
+        }
+        let target_view_id = device.create_texture_view_for_surface(
+            &output_surface_texture.texture,
+            Some("Primary Swap Chain View"),
+        )?;
+        self.current_frame_view_id = Some(target_view_id);
+
+        // --- Create encoder ---
+        let mut command_encoder = device.create_command_encoder(Some("Khora Main Command Encoder"));
+
+        // --- Build RenderContext with actual target ---
+        let actual_render_ctx = RenderContext {
+            color_target: &target_view_id,
+            depth_target: self.depth_texture_view.as_ref(),
+            clear_color,
+        };
+
+        // --- Call the encoder function (agents do their rendering here) ---
+        encoder_fn(command_encoder.as_mut(), &actual_render_ctx);
+
+        // --- Submit ---
+        let submission_timer = Stopwatch::new();
+        let command_buffer = command_encoder.finish();
+        device.submit_command_buffer(command_buffer);
+        let submission_ms = submission_timer.elapsed_ms().unwrap_or(0);
+
+        // --- Present ---
+        output_surface_texture.present();
+
+        // --- Update stats ---
+        self.frame_count += 1;
+        let full_frame_ms = full_frame_timer.elapsed_ms().unwrap_or(0);
+        self.last_frame_stats.frame_number = self.frame_count;
+        self.last_frame_stats.cpu_preparation_time_ms =
+            (full_frame_ms - command_recording_timer.elapsed_ms().unwrap_or(0)) as f32;
+        self.last_frame_stats.cpu_render_submission_time_ms = submission_ms as f32;
+
+        if let Some(monitor) = &self.gpu_monitor {
+            monitor.update_from_frame_stats(&self.last_frame_stats);
+        }
+
+        Ok(self.last_frame_stats.clone())
+    }
+
     fn get_last_frame_stats(&self) -> &RenderStats {
         &self.last_frame_stats
     }
@@ -783,7 +911,7 @@ impl RenderSystem for WgpuRenderSystem {
         self
     }
 
-    fn get_adapter_info(&self) -> Option<RendererAdapterInfo> {
+    fn get_adapter_info(&self) -> Option<GraphicsAdapterInfo> {
         self.wgpu_device.as_ref().map(|d| d.get_adapter_info())
     }
 

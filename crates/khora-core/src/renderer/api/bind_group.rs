@@ -45,6 +45,27 @@ pub struct BindGroupLayoutEntry {
     pub ty: BindingType,
 }
 
+impl BindGroupLayoutEntry {
+    /// Helper to create a BindGroupLayoutEntry for a buffer resource.
+    pub fn buffer(
+        binding: u32,
+        visibility: ShaderStageFlags,
+        ty: BufferBindingType,
+        has_dynamic_offset: bool,
+        min_binding_size: Option<std::num::NonZeroU64>,
+    ) -> Self {
+        Self {
+            binding,
+            visibility,
+            ty: BindingType::Buffer {
+                ty,
+                has_dynamic_offset,
+                min_binding_size,
+            },
+        }
+    }
+}
+
 /// Describes the type of buffer binding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BufferBindingType {
@@ -126,4 +147,24 @@ pub struct BindGroupEntry<'a> {
     pub resource: BindingResource,
     /// Phantom data to preserve lifetime
     pub _phantom: std::marker::PhantomData<&'a ()>,
+}
+
+impl<'a> BindGroupEntry<'a> {
+    /// Helper to create a BindGroupEntry for a buffer with default offset (0) and size (None).
+    pub fn buffer(
+        binding: u32,
+        buffer: crate::renderer::api::BufferId,
+        offset: u64,
+        size: Option<std::num::NonZeroU64>,
+    ) -> Self {
+        Self {
+            binding,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer,
+                offset,
+                size,
+            }),
+            _phantom: std::marker::PhantomData,
+        }
+    }
 }

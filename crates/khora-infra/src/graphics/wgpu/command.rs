@@ -50,9 +50,11 @@ impl<'pass> RenderPass<'pass> for WgpuRenderPass<'pass> {
         &mut self,
         index: u32,
         bind_group_id: &'pass khora_core::renderer::BindGroupId,
+        dynamic_offsets: &[u32],
     ) {
         if let Some(bind_group) = self.device.get_wgpu_bind_group(*bind_group_id) {
-            self.pass.set_bind_group(index, bind_group.as_ref(), &[]);
+            self.pass
+                .set_bind_group(index, bind_group.as_ref(), dynamic_offsets);
         } else {
             log::warn!("WgpuRenderPass: BindGroupId {:?} not found.", bind_group_id);
         }
@@ -110,9 +112,11 @@ impl<'pass> ComputePass<'pass> for WgpuComputePass<'pass> {
         &mut self,
         index: u32,
         bind_group_id: &'pass khora_core::renderer::BindGroupId,
+        dynamic_offsets: &[u32],
     ) {
         if let Some(bind_group) = self.device.get_wgpu_bind_group(*bind_group_id) {
-            self.pass.set_bind_group(index, bind_group.as_ref(), &[]);
+            self.pass
+                .set_bind_group(index, bind_group.as_ref(), dynamic_offsets);
         } else {
             log::warn!(
                 "WgpuComputePass: BindGroupId {:?} not found.",
