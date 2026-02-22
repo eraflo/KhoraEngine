@@ -160,7 +160,7 @@ fn test_apply_budget_switches_strategy() {
     };
     agent.apply_budget(budget);
 
-    assert_eq!(agent.strategy(), RenderingStrategy::Unlit);
+    assert_eq!(agent.strategy(), RenderingStrategy::Auto);
     assert_eq!(agent.current_strategy_id(), StrategyId::LowPower);
 }
 
@@ -168,7 +168,7 @@ fn test_apply_budget_switches_strategy() {
 fn test_apply_budget_preserves_all_lanes() {
     let mut agent = RenderAgent::new();
     let initial_lanes = agent.lanes().len();
-    assert_eq!(initial_lanes, 3, "Should start with 3 default lanes");
+    assert_eq!(initial_lanes, 4, "Should start with 4 default lanes (3 render + 1 shadow)");
 
     // Apply budget — lanes should NOT be destroyed.
     let budget = ResourceBudget {
@@ -197,7 +197,7 @@ fn test_apply_budget_then_switch_back_to_auto() {
         memory_limit: None,
         extra_params: HashMap::new(),
     });
-    assert_eq!(agent.strategy(), RenderingStrategy::Unlit);
+    assert_eq!(agent.strategy(), RenderingStrategy::Auto);
 
     // User manually sets back to Auto
     agent.set_strategy(RenderingStrategy::Auto);
@@ -358,8 +358,8 @@ fn test_negotiate_then_switch_strategy_preserves_lanes() {
         // Lanes should never shrink
         assert_eq!(
             agent.lanes().len(),
-            3,
-            "All 3 lanes must survive strategy switching"
+            4,
+            "All 4 lanes must survive strategy switching"
         );
 
         // Selected lane should match the strategy

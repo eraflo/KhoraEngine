@@ -59,6 +59,24 @@ impl AssetLoaderLane<SoundData> for WavLoaderLane {
     }
 }
 
+impl khora_core::lane::Lane for WavLoaderLane {
+    fn strategy_name(&self) -> &'static str {
+        "WavLoader"
+    }
+
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Asset
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

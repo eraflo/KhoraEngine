@@ -17,8 +17,7 @@
 use std::borrow::Cow;
 use std::sync::Mutex;
 
-use khora_core::renderer::api::RenderStats;
-use khora_core::renderer::GpuHook;
+use khora_core::renderer::api::core::{GpuHook, RenderStats};
 use khora_core::telemetry::monitoring::{
     GpuReport, MonitoredResourceType, ResourceMonitor, ResourceUsageReport,
 };

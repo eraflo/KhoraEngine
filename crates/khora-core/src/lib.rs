@@ -28,6 +28,7 @@ pub mod control;
 pub mod ecs;
 pub mod event;
 pub mod graph;
+pub mod lane;
 pub mod math;
 pub mod memory;
 pub mod physics;

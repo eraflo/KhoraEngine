@@ -28,7 +28,9 @@ pub use vessel::{spawn_cube_at, spawn_plane, spawn_sphere, Vessel};
 use anyhow::Result;
 use khora_control::{DccConfig, DccService};
 use khora_core::platform::KhoraWindow;
-use khora_core::renderer::{RenderObject, RenderSettings, RenderSystem};
+use khora_core::renderer::api::scene::RenderObject;
+use khora_core::renderer::api::core::RenderSettings;
+use khora_core::renderer::traits::RenderSystem;
 use khora_core::telemetry::MonitoredResourceType;
 use khora_core::ServiceRegistry;
 use khora_infra::platform::input::translate_winit_input;
@@ -48,13 +50,18 @@ use winit::window::WindowId;
 pub mod prelude {
     //! Common imports for convenience.
     pub use khora_core::asset::{AssetHandle, AssetMetadata, AssetSource, AssetUUID};
-    pub use khora_core::renderer::{
-        BufferDescriptor, BufferId, BufferUsage, ColorTargetStateDescriptor, ColorWrites,
-        CompareFunction, DepthBiasState, DepthStencilStateDescriptor, IndexFormat,
-        MultisampleStateDescriptor, PipelineLayoutDescriptor, RenderObject,
-        RenderPipelineDescriptor, RenderPipelineId, SampleCount, ShaderModuleDescriptor,
-        ShaderModuleId, ShaderSourceData, ShaderStage, StencilFaceState, TextureFormat,
-        VertexAttributeDescriptor, VertexBufferLayoutDescriptor, VertexFormat, VertexStepMode,
+    pub use khora_core::renderer::api::{
+        core::{ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData},
+        pipeline::{
+            ColorTargetStateDescriptor, ColorWrites, CompareFunction, DepthStencilStateDescriptor,
+            MultisampleStateDescriptor, PipelineLayoutDescriptor, RenderPipelineDescriptor,
+            RenderPipelineId, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
+            VertexFormat, VertexStepMode,
+        },
+        pipeline::state::{DepthBiasState, StencilFaceState},
+        resource::{BufferDescriptor, BufferId, BufferUsage},
+        scene::RenderObject,
+        util::{IndexFormat, SampleCount, ShaderStageFlags as ShaderStage, TextureFormat},
     };
     pub use khora_core::EngineContext;
     pub use khora_data::allocators::SaaTrackingAllocator;

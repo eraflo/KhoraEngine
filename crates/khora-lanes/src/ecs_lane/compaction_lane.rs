@@ -54,3 +54,33 @@ impl CompactionLane {
         }
     }
 }
+
+impl khora_core::lane::Lane for CompactionLane {
+    fn strategy_name(&self) -> &'static str {
+        "Compaction"
+    }
+
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Ecs
+    }
+
+    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+        use khora_core::lane::{LaneError, Slot};
+
+        let world = ctx.get::<Slot<dyn WorldMaintenance>>()
+            .ok_or(LaneError::missing("Slot<dyn WorldMaintenance>"))?.get();
+        let work_plan = ctx.get::<Slot<GcWorkPlan>>()
+            .ok_or(LaneError::missing("Slot<GcWorkPlan>"))?.get_ref();
+
+        self.run(world, work_plan);
+        Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}

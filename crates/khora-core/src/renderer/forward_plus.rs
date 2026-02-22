@@ -154,7 +154,7 @@ impl ForwardPlusTileConfig {
 ///
 /// # Memory Layout
 ///
-/// Total size: 64 bytes (16 × 4-byte floats), well-aligned for GPU access.
+/// Total size: 72 bytes (18 × 4-byte fields), padded from 64 after shadow fields were added.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
 pub struct GpuLight {
@@ -177,8 +177,15 @@ pub struct GpuLight {
     pub inner_cone_cos: f32,
     /// Cosine of outer cone angle (spot lights only).
     pub outer_cone_cos: f32,
-    /// Padding to ensure 64-byte alignment.
-    pub _padding: [f32; 2],
+
+    /// Index into the shadow texture array, or -1 if no shadow.
+    pub shadow_map_index: i32,
+    /// Shadow bias.
+    pub shadow_bias: f32,
+    /// Shadow normal bias.
+    pub shadow_normal_bias: f32,
+    /// Padding/Reserved.
+    pub _unused: f32,
 }
 
 impl GpuLight {
@@ -203,7 +210,12 @@ impl GpuLight {
                 intensity: l.intensity,
                 direction,
                 light_type: Self::TYPE_DIRECTIONAL,
-                ..Default::default()
+                inner_cone_cos: 0.0,
+                outer_cone_cos: 0.0,
+                shadow_map_index: -1,
+                shadow_bias: l.shadow_bias,
+                shadow_normal_bias: l.shadow_normal_bias,
+                _unused: 0.0,
             },
             super::light::LightType::Point(l) => Self {
                 position,
@@ -212,7 +224,12 @@ impl GpuLight {
                 intensity: l.intensity,
                 direction: [0.0; 3],
                 light_type: Self::TYPE_POINT,
-                ..Default::default()
+                inner_cone_cos: 0.0,
+                outer_cone_cos: 0.0,
+                shadow_map_index: -1,
+                shadow_bias: l.shadow_bias,
+                shadow_normal_bias: l.shadow_normal_bias,
+                _unused: 0.0,
             },
             super::light::LightType::Spot(l) => Self {
                 position,
@@ -223,7 +240,10 @@ impl GpuLight {
                 light_type: Self::TYPE_SPOT,
                 inner_cone_cos: l.inner_cone_angle.cos(),
                 outer_cone_cos: l.outer_cone_angle.cos(),
-                ..Default::default()
+                shadow_map_index: -1,
+                shadow_bias: l.shadow_bias,
+                shadow_normal_bias: l.shadow_normal_bias,
+                _unused: 0.0,
             },
         }
     }
@@ -240,7 +260,10 @@ impl Default for GpuLight {
             light_type: Self::TYPE_POINT,
             inner_cone_cos: 0.9, // ~25 degrees
             outer_cone_cos: 0.7, // ~45 degrees
-            _padding: [0.0, 0.0],
+            shadow_map_index: -1,
+            shadow_bias: 0.01,
+            shadow_normal_bias: 0.0,
+            _unused: 0.0,
         }
     }
 }
@@ -266,8 +289,10 @@ pub struct LightCullingUniforms {
     pub num_lights: u32,
     /// Tile size in pixels.
     pub tile_size: u32,
+    /// Index of the first directional light's shadow map.
+    pub shadow_atlas_index: i32,
     /// Padding for 16-byte alignment.
-    pub _padding: [f32; 2],
+    pub _padding: [f32; 1],
 }
 
 impl Default for LightCullingUniforms {
@@ -279,7 +304,8 @@ impl Default for LightCullingUniforms {
             tile_count: [120, 68], // 1920/16, 1080/16 rounded up
             num_lights: 0,
             tile_size: 16,
-            _padding: [0.0, 0.0],
+            shadow_atlas_index: -1,
+            _padding: [0.0; 1],
         }
     }
 }
@@ -322,8 +348,9 @@ mod tests {
 
     #[test]
     fn test_gpu_light_size_and_alignment() {
-        // GpuLight should be exactly 64 bytes for good GPU alignment
-        assert_eq!(std::mem::size_of::<GpuLight>(), 64);
+        // GpuLight should be exactly 72 bytes (18 x 4-byte fields)
+        // Updated from 64 after shadow fields (shadow_map_index, shadow_bias, shadow_normal_bias, _padding) were added.
+        assert_eq!(std::mem::size_of::<GpuLight>(), 72);
     }
 
     #[test]

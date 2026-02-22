@@ -109,3 +109,21 @@ impl AssetLoaderLane<SoundData> for SymphoniaLoaderLane {
         })
     }
 }
+
+impl khora_core::lane::Lane for SymphoniaLoaderLane {
+    fn strategy_name(&self) -> &'static str {
+        "SymphoniaLoader"
+    }
+
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Asset
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}

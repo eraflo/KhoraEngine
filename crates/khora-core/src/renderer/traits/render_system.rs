@@ -16,8 +16,13 @@ use std::sync::Arc;
 
 use super::CommandEncoder;
 use crate::platform::window::KhoraWindow;
+use crate::renderer::api::{
+    core::{GraphicsAdapterInfo, RenderContext, RenderSettings, RenderStats},
+    resource::ViewInfo,
+    scene::RenderObject,
+};
 use crate::renderer::error::RenderError;
-use crate::renderer::{api::*, GraphicsDevice};
+use crate::renderer::GraphicsDevice;
 use crate::telemetry::ResourceMonitor;
 
 /// Type alias for the render encoder closure.

@@ -25,11 +25,13 @@ use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
 };
+use khora_core::lane::{Lane, LaneContext, LaneKind, LaneRegistry, Slot};
 use khora_core::physics::PhysicsProvider;
 use khora_core::telemetry::event::TelemetryEvent;
 use khora_core::telemetry::monitoring::GpuReport;
 use khora_data::ecs::World;
-use khora_lanes::physics_lane::{PhysicsLane, StandardPhysicsLane};
+use khora_core::lane::PhysicsDeltaTime;
+use khora_lanes::physics_lane::StandardPhysicsLane;
 use khora_telemetry::metrics::registry::{GaugeHandle, MetricsRegistry};
 
 /// Scale factor to convert complexity units to estimated milliseconds.
@@ -64,8 +66,8 @@ struct PhysicsMetrics {
 pub struct PhysicsAgent {
     /// The concrete physics solver provider.
     provider: Box<dyn PhysicsProvider>,
-    /// Available physics lanes (strategies).
-    lanes: Vec<Box<dyn PhysicsLane>>,
+    /// All physics lanes stored generically.
+    lanes: LaneRegistry,
     /// Current selected strategy.
     strategy: PhysicsStrategy,
     /// Current GORNA strategy ID.
@@ -204,10 +206,9 @@ impl Agent for PhysicsAgent {
 impl PhysicsAgent {
     /// Creates a new `PhysicsAgent` with a given provider.
     pub fn new(provider: Box<dyn PhysicsProvider>) -> Self {
-        let lanes: Vec<Box<dyn PhysicsLane>> = vec![
-            Box::new(StandardPhysicsLane::new()),
-            Box::new(khora_lanes::physics_lane::PhysicsDebugLane::new()),
-        ];
+        let mut lanes = LaneRegistry::new();
+        lanes.register(Box::new(StandardPhysicsLane::new()));
+        lanes.register(Box::new(khora_lanes::physics_lane::PhysicsDebugLane::new()));
 
         Self {
             provider,
@@ -265,16 +266,17 @@ impl PhysicsAgent {
     pub fn step(&mut self, world: &mut World, dt: f32) {
         let start = Instant::now();
 
-        match self.strategy {
-            PhysicsStrategy::Standard | PhysicsStrategy::Simplified => {
-                self.lanes[0].step(world, self.provider.as_mut(), dt);
-            }
-            PhysicsStrategy::Debug => {
-                if self.lanes.len() > 1 {
-                    self.lanes[1].step(world, self.provider.as_mut(), dt);
-                } else {
-                    self.lanes[0].step(world, self.provider.as_mut(), dt);
-                }
+        // Build LaneContext with all required data.
+        let mut ctx = LaneContext::new();
+        ctx.insert(PhysicsDeltaTime(dt));
+        ctx.insert(Slot::new(world));
+        ctx.insert(Slot::new(self.provider.as_mut()));
+
+        // Select and execute the appropriate lane.
+        let lane_name = self.select_lane_name();
+        if let Some(lane) = self.lanes.get(lane_name) {
+            if let Err(e) = lane.execute(&mut ctx) {
+                log::error!("Physics lane {} failed: {}", lane.strategy_name(), e);
             }
         }
 
@@ -306,23 +308,24 @@ impl PhysicsAgent {
         }
     }
 
-    /// Selects the appropriate physics lane based on the current strategy.
-    pub fn select_lane(&self) -> &dyn PhysicsLane {
+    /// Returns the strategy name of the currently selected physics lane.
+    fn select_lane_name(&self) -> &'static str {
         match self.strategy {
-            PhysicsStrategy::Standard | PhysicsStrategy::Simplified => self
-                .find_lane_by_name("StandardPhysics")
-                .unwrap_or_else(|| self.lanes.first().map(|b| b.as_ref()).unwrap()),
-            PhysicsStrategy::Debug => self
-                .find_lane_by_name("PhysicsDebug")
-                .unwrap_or_else(|| self.lanes.first().map(|b| b.as_ref()).unwrap()),
+            PhysicsStrategy::Standard | PhysicsStrategy::Simplified => "StandardPhysics",
+            PhysicsStrategy::Debug => "PhysicsDebug",
         }
     }
 
-    fn find_lane_by_name(&self, name: &str) -> Option<&dyn PhysicsLane> {
-        self.lanes
-            .iter()
-            .find(|lane| lane.strategy_name() == name)
-            .map(|boxed| boxed.as_ref())
+    /// Selects the appropriate physics lane based on the current strategy.
+    pub fn select_lane(&self) -> &dyn Lane {
+        let name = self.select_lane_name();
+        self.lanes.get(name).unwrap_or_else(|| {
+            self.lanes
+                .find_by_kind(LaneKind::Physics)
+                .first()
+                .copied()
+                .expect("PhysicsAgent has no physics lanes configured")
+        })
     }
 
     /// Exposes raycasting from the provider.

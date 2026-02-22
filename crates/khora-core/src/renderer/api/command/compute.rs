@@ -20,8 +20,7 @@
 
 use std::borrow::Cow;
 
-use super::pipeline::PipelineLayoutId;
-use super::shader::ShaderModuleId;
+use crate::renderer::api::{core::shader::ShaderModuleId, pipeline::layout::PipelineLayoutId};
 
 /// An opaque handle to a compiled compute pipeline state object.
 ///

@@ -33,15 +33,15 @@
 
 use crate::renderer::{
     api::{
-        bind_group::{
-            BindGroupDescriptor, BindGroupEntry, BindGroupLayoutId, BindingResource, BufferBinding,
+        command::{
+            BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutId, BindingResource,
+            BufferBinding,
         },
-        buffer::{BufferDescriptor, BufferId, BufferUsage},
-        common::MAX_FRAMES_IN_FLIGHT,
+        core::MAX_FRAMES_IN_FLIGHT,
+        resource::{buffer::BufferDescriptor, buffer::BufferId, buffer::BufferUsage},
     },
     error::ResourceError,
     traits::GraphicsDevice,
-    BindGroupId,
 };
 use std::borrow::Cow;
 
@@ -192,6 +192,11 @@ impl UniformRingBuffer {
         &self.slots[self.current_index].bind_group
     }
 
+    /// Returns the buffer ID for the current slot.
+    pub fn current_buffer(&self) -> BufferId {
+        self.slots[self.current_index].buffer
+    }
+
     /// Returns the current slot index (for debugging/telemetry).
     pub fn current_slot_index(&self) -> usize {
         self.current_index
@@ -236,15 +241,33 @@ mod tests {
     use super::*;
     use crate::renderer::{
         api::{
-            bind_group::{BindGroupLayoutDescriptor, BindGroupLayoutEntry},
-            BindGroupLayoutId, BindingType, BufferBindingType, ComputePipelineDescriptor,
-            PipelineLayoutDescriptor, RenderPipelineDescriptor, SamplerDescriptor,
-            ShaderModuleDescriptor, ShaderStageFlags, TextureDescriptor, TextureViewDescriptor,
+            command::{
+                BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor,
+                BindGroupLayoutId, BindingType, BufferBindingType,
+                CommandBufferId, ComputePassDescriptor, ComputePipelineDescriptor,
+                ComputePipelineId, RenderPassDescriptor,
+            },
+            core::{
+                GraphicsAdapterInfo, ShaderModuleDescriptor, ShaderModuleId, MAX_FRAMES_IN_FLIGHT,
+            },
+            pipeline::{
+                PipelineLayoutDescriptor, PipelineLayoutId, RenderPipelineDescriptor,
+                RenderPipelineId,
+            },
+            resource::{
+                buffer::{BufferDescriptor, BufferId},
+                texture::{
+                    self as texture_mod, SamplerDescriptor, SamplerId,
+                    TextureId, TextureViewDescriptor, TextureViewId,
+                },
+            },
+            util::{
+                GraphicsBackendType, IndexFormat, RendererDeviceType, ShaderStageFlags,
+                TextureFormat,
+            },
         },
-        traits::{CommandEncoder, ComputePass, RenderPass},
-        BindGroupId, ComputePipelineId, GraphicsAdapterInfo, GraphicsBackendType, IndexFormat,
-        PipelineLayoutId, RenderPipelineId, RendererDeviceType, ResourceError, ShaderModuleId,
-        TextureFormat,
+        error::ResourceError,
+        traits::{CommandEncoder, ComputePass, GraphicsDevice, RenderPass},
     };
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -278,6 +301,8 @@ mod tests {
         fn draw(&mut self, _v: std::ops::Range<u32>, _i: std::ops::Range<u32>) {}
         fn draw_indexed(&mut self, _idx: std::ops::Range<u32>, _bv: i32, _i: std::ops::Range<u32>) {
         }
+        fn set_viewport(&mut self, _x: f32, _y: f32, _w: f32, _h: f32, _min: f32, _max: f32) {}
+        fn set_scissor_rect(&mut self, _x: u32, _y: u32, _w: u32, _h: u32) {}
     }
 
     impl ComputePass<'_> for MockComputePass {
@@ -289,14 +314,14 @@ mod tests {
     impl CommandEncoder for MockCommandEncoder {
         fn begin_render_pass<'enc>(
             &'enc mut self,
-            _desc: &crate::renderer::api::command::RenderPassDescriptor<'enc>,
+            _desc: &RenderPassDescriptor<'enc>,
         ) -> Box<dyn RenderPass<'enc> + 'enc> {
             Box::new(MockRenderPass)
         }
 
         fn begin_compute_pass<'enc>(
             &'enc mut self,
-            _desc: &crate::renderer::api::command::ComputePassDescriptor<'enc>,
+            _desc: &ComputePassDescriptor<'enc>,
         ) -> Box<dyn ComputePass<'enc> + 'enc> {
             Box::new(MockComputePass)
         }
@@ -320,8 +345,8 @@ mod tests {
         ) {
         }
 
-        fn finish(self: Box<Self>) -> crate::renderer::api::command::CommandBufferId {
-            crate::renderer::api::command::CommandBufferId(0)
+        fn finish(self: Box<Self>) -> CommandBufferId {
+            CommandBufferId(0)
         }
 
         fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
@@ -413,16 +438,16 @@ mod tests {
         }
         fn create_texture(
             &self,
-            _d: &TextureDescriptor,
-        ) -> Result<crate::renderer::TextureId, ResourceError> {
-            Ok(crate::renderer::TextureId(self.next()))
+            _d: &texture_mod::TextureDescriptor,
+        ) -> Result<TextureId, ResourceError> {
+            Ok(TextureId(self.next()))
         }
-        fn destroy_texture(&self, _id: crate::renderer::TextureId) -> Result<(), ResourceError> {
+        fn destroy_texture(&self, _id: TextureId) -> Result<(), ResourceError> {
             Ok(())
         }
         fn write_texture(
             &self,
-            _id: crate::renderer::TextureId,
+            _id: TextureId,
             _data: &[u8],
             _bpr: Option<u32>,
             _offset: crate::math::dimension::Origin3D,
@@ -432,30 +457,24 @@ mod tests {
         }
         fn create_texture_view(
             &self,
-            _id: crate::renderer::TextureId,
+            _id: TextureId,
             _d: &TextureViewDescriptor,
-        ) -> Result<crate::renderer::TextureViewId, ResourceError> {
-            Ok(crate::renderer::TextureViewId(self.next()))
+        ) -> Result<TextureViewId, ResourceError> {
+            Ok(TextureViewId(self.next()))
         }
-        fn destroy_texture_view(
-            &self,
-            _id: crate::renderer::TextureViewId,
-        ) -> Result<(), ResourceError> {
+        fn destroy_texture_view(&self, _id: TextureViewId) -> Result<(), ResourceError> {
             Ok(())
         }
-        fn create_sampler(
-            &self,
-            _d: &SamplerDescriptor,
-        ) -> Result<crate::renderer::SamplerId, ResourceError> {
-            Ok(crate::renderer::SamplerId(self.next()))
+        fn create_sampler(&self, _d: &SamplerDescriptor) -> Result<SamplerId, ResourceError> {
+            Ok(SamplerId(self.next()))
         }
-        fn destroy_sampler(&self, _id: crate::renderer::SamplerId) -> Result<(), ResourceError> {
+        fn destroy_sampler(&self, _id: SamplerId) -> Result<(), ResourceError> {
             Ok(())
         }
         fn create_command_encoder(&self, _label: Option<&str>) -> Box<dyn CommandEncoder> {
             Box::new(MockCommandEncoder)
         }
-        fn submit_command_buffer(&self, _cb: crate::renderer::api::command::CommandBufferId) {}
+        fn submit_command_buffer(&self, _cb: CommandBufferId) {}
         fn get_surface_format(&self) -> Option<TextureFormat> {
             Some(TextureFormat::Rgba8UnormSrgb)
         }
@@ -473,9 +492,9 @@ mod tests {
 
     fn create_test_layout(device: &MockGraphicsDevice) -> BindGroupLayoutId {
         device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
+            .create_bind_group_layout(&crate::renderer::api::command::BindGroupLayoutDescriptor {
                 label: Some("test_layout"),
-                entries: &[BindGroupLayoutEntry {
+                entries: &[crate::renderer::api::command::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
                     ty: BindingType::Buffer {

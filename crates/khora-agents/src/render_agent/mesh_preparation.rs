@@ -18,8 +18,12 @@ use khora_core::{
     asset::AssetHandle,
     ecs::entity::EntityId,
     renderer::{
-        api::{BufferDescriptor, BufferUsage, GpuMesh, IndexFormat},
-        GraphicsDevice, Mesh,
+        api::{
+            resource::{BufferDescriptor, BufferUsage},
+            scene::{GpuMesh, Mesh},
+            util::IndexFormat,
+        },
+        GraphicsDevice,
     },
 };
 use khora_data::{

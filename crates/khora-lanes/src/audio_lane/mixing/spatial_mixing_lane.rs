@@ -17,8 +17,6 @@
 use khora_core::audio::device::StreamInfo;
 use khora_data::ecs::{AudioListener, AudioSource, GlobalTransform, PlaybackState, World};
 
-use crate::audio_lane::AudioMixingLane;
-
 /// A lane that performs spatialized audio mixing.
 #[derive(Default)]
 pub struct SpatialMixingLane;
@@ -30,9 +28,42 @@ impl SpatialMixingLane {
     }
 }
 
-impl AudioMixingLane for SpatialMixingLane {
+impl khora_core::lane::Lane for SpatialMixingLane {
+    fn strategy_name(&self) -> &'static str {
+        "SpatialMixing"
+    }
+
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Audio
+    }
+
+    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+        use khora_core::lane::{LaneError, Slot, AudioStreamInfo, AudioOutputSlot};
+
+        let stream_info = ctx.get::<AudioStreamInfo>()
+            .ok_or(LaneError::missing("AudioStreamInfo"))?.0;
+        let output_slot = ctx.get::<AudioOutputSlot>()
+            .ok_or(LaneError::missing("AudioOutputSlot"))?;
+        let output_buffer = output_slot.get();
+        let world = ctx.get::<Slot<World>>()
+            .ok_or(LaneError::missing("Slot<World>"))?.get();
+
+        self.mix(world, output_buffer, &stream_info);
+        Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+impl SpatialMixingLane {
     /// Mixes all active `AudioSource`s into a single output buffer, applying 3D spatialization.
-    fn mix(&self, world: &mut World, output_buffer: &mut [f32], stream_info: &StreamInfo) {
+    pub fn mix(&self, world: &mut World, output_buffer: &mut [f32], stream_info: &StreamInfo) {
         output_buffer.fill(0.0);
 
         // --- Step 1: Find the listener (if any) ---

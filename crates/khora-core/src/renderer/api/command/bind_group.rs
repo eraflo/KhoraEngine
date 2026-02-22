@@ -18,7 +18,10 @@
 //! to shaders in a graphics pipeline. They provide an abstraction over the different
 //! binding models of various graphics APIs (descriptor sets in Vulkan, bind groups in WebGPU).
 
-use crate::renderer::{BufferId, ShaderStageFlags};
+use crate::renderer::api::{
+    resource::{BufferId, SamplerId, TextureViewId},
+    util::flags::ShaderStageFlags,
+};
 
 /// An opaque handle to a bind group layout resource.
 ///
@@ -78,6 +81,50 @@ pub enum BufferBindingType {
     },
 }
 
+/// The type of texture view dimension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextureViewDimension {
+    /// A 1D texture view.
+    D1,
+    /// A 2D texture view.
+    D2,
+    /// A 2D array texture view.
+    D2Array,
+    /// A cube texture view.
+    Cube,
+    /// A cube array texture view.
+    CubeArray,
+    /// A 3D texture view.
+    D3,
+}
+
+/// The type of texture sample.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextureSampleType {
+    /// A floating-point texture sample.
+    Float {
+        /// Whether the texture can be filtered.
+        filterable: bool,
+    },
+    /// A depth texture sample.
+    Depth,
+    /// An unsigned integer texture sample.
+    Uint,
+    /// A signed integer texture sample.
+    Sint,
+}
+
+/// The type of sampler binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SamplerBindingType {
+    /// A filtering sampler.
+    Filtering,
+    /// A non-filtering sampler.
+    NonFiltering,
+    /// A comparison sampler.
+    Comparison,
+}
+
 /// The type of resource bound at a binding point.
 #[derive(Debug, Clone)]
 pub enum BindingType {
@@ -92,11 +139,15 @@ pub enum BindingType {
     },
     /// A sampled texture binding.
     Texture {
+        /// The type of sampler that can sample this texture.
+        sample_type: TextureSampleType,
+        /// The dimension of the texture view.
+        view_dimension: TextureViewDimension,
         /// Whether the texture supports multisampling.
         multisampled: bool,
     },
     /// A sampler binding.
-    Sampler,
+    Sampler(SamplerBindingType),
 }
 
 /// Describes a bind group layout to be created.
@@ -124,7 +175,10 @@ pub struct BufferBinding {
 pub enum BindingResource {
     /// Binds a buffer with optional offset and size.
     Buffer(BufferBinding),
-    // Future: Add texture and sampler variants
+    /// Binds a texture view.
+    TextureView(TextureViewId),
+    /// Binds a sampler.
+    Sampler(SamplerId),
 }
 
 /// Describes a bind group to be created.
@@ -153,7 +207,7 @@ impl<'a> BindGroupEntry<'a> {
     /// Helper to create a BindGroupEntry for a buffer with default offset (0) and size (None).
     pub fn buffer(
         binding: u32,
-        buffer: crate::renderer::api::BufferId,
+        buffer: BufferId,
         offset: u64,
         size: Option<std::num::NonZeroU64>,
     ) -> Self {

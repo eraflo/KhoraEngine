@@ -19,7 +19,11 @@ use ahash::AHashMap;
 use anyhow::{Context, Result};
 use khora_core::{
     math::{geometry::Aabb, Vec2, Vec3},
-    renderer::api::{Mesh, PrimitiveTopology, VertexAttributeDescriptor, VertexFormat},
+    renderer::api::{
+        pipeline::enums::{PrimitiveTopology, VertexFormat},
+        pipeline::VertexAttributeDescriptor,
+        scene::Mesh,
+    },
 };
 use std::error::Error;
 
@@ -130,5 +134,23 @@ impl AssetLoaderLane<Mesh> for ObjLoaderLane {
             bounding_box,
             vertex_layout,
         })
+    }
+}
+
+impl khora_core::lane::Lane for ObjLoaderLane {
+    fn strategy_name(&self) -> &'static str {
+        "ObjLoader"
+    }
+
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Asset
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

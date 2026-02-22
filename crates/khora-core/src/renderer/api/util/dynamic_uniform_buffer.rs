@@ -16,15 +16,15 @@
 
 use crate::renderer::{
     api::{
-        bind_group::{
-            BindGroupDescriptor, BindGroupEntry, BindGroupLayoutId, BindingResource, BufferBinding,
+        command::{
+            BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutId, BindingResource,
+            BufferBinding,
         },
-        buffer::{BufferDescriptor, BufferId, BufferUsage},
-        common::MAX_FRAMES_IN_FLIGHT,
+        core::MAX_FRAMES_IN_FLIGHT,
+        resource::{BufferDescriptor, BufferId, BufferUsage},
     },
     error::ResourceError,
     traits::GraphicsDevice,
-    BindGroupId,
 };
 use std::borrow::Cow;
 

@@ -37,7 +37,10 @@
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Aabb, Vec2, Vec3};
-use khora_core::renderer::{Mesh, PrimitiveTopology, VertexAttributeDescriptor, VertexFormat};
+use khora_core::renderer::api::{
+    pipeline::{PrimitiveTopology, VertexAttributeDescriptor, VertexFormat},
+    scene::Mesh,
+};
 use khora_data::ecs::{GlobalTransform, Transform};
 
 use crate::GameWorld;

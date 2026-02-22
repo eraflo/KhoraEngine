@@ -232,9 +232,12 @@ impl Application for SandboxGame {
         let mut sun_light = khora_sdk::prelude::ecs::Light::directional();
         if let khora_sdk::prelude::ecs::LightType::Directional(ref mut d) = sun_light.light_type {
             d.intensity = 2.5; // Bump intensity to see diffuse clearly
+            d.shadow_enabled = true;
+            d.shadow_bias = 0.005;
+            d.shadow_normal_bias = 0.02;
         }
 
-        khora_sdk::Vessel::at(world, Vec3::new(0.0, 10.0, 5.0))
+        khora_sdk::Vessel::at(world, Vec3::new(0.0, 20.0, 5.0))
             .with_component(sun_light)
             .with_rotation(sun_rotation)
             .build();

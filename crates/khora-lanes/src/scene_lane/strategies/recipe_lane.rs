@@ -24,6 +24,7 @@ use khora_data::{
     scene::{SceneCommand, SceneRecipe},
 };
 use std::{any, collections::HashMap};
+use khora_core::lane::Lane;
 
 // --- Deserialization Registry ---
 
@@ -116,9 +117,27 @@ impl RecipeSerializationLane {
     }
 }
 
+impl khora_core::lane::Lane for RecipeSerializationLane {
+    fn strategy_name(&self) -> &'static str {
+        "KH_RECIPE_V1"
+    }
+
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Scene
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
 impl SerializationStrategy for RecipeSerializationLane {
     fn get_strategy_id(&self) -> &'static str {
-        "KH_RECIPE_V1"
+        self.strategy_name()
     }
 
     // --- SERIALIZATION ---

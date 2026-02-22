@@ -21,7 +21,7 @@
 use khora_core::{
     asset::{AssetHandle, AssetUUID, Material},
     math::{affine_transform::AffineTransform, Vec3},
-    renderer::{api::GpuMesh, light::LightType},
+    renderer::{api::scene::GpuMesh, light::LightType},
 };
 
 /// A flat, GPU-friendly representation of a single mesh to be rendered.
@@ -57,6 +57,10 @@ pub struct ExtractedLight {
     /// For point lights, this is typically ignored.
     /// For directional and spot lights, this is the direction the light is pointing.
     pub direction: Vec3,
+    /// View-projection matrix for the shadow map.
+    pub shadow_view_proj: khora_core::math::Mat4,
+    /// Index into the shadow atlas, or None if no shadow.
+    pub shadow_atlas_index: Option<i32>,
 }
 
 /// A flat representation of a camera view for rendering.
@@ -140,6 +144,8 @@ mod tests {
             light_type: LightType::Directional(DirectionalLight::default()),
             position: Vec3::ZERO,
             direction: Vec3::new(0.0, -1.0, 0.0),
+            shadow_view_proj: khora_core::math::Mat4::IDENTITY,
+            shadow_atlas_index: None,
         });
         assert_eq!(world.lights.len(), 1);
 
@@ -157,21 +163,29 @@ mod tests {
             light_type: LightType::Directional(DirectionalLight::default()),
             position: Vec3::ZERO,
             direction: Vec3::new(0.0, -1.0, 0.0),
+            shadow_view_proj: khora_core::math::Mat4::IDENTITY,
+            shadow_atlas_index: None,
         });
         world.lights.push(ExtractedLight {
             light_type: LightType::Point(PointLight::default()),
             position: Vec3::new(1.0, 2.0, 3.0),
             direction: Vec3::ZERO,
+            shadow_view_proj: khora_core::math::Mat4::IDENTITY,
+            shadow_atlas_index: None,
         });
         world.lights.push(ExtractedLight {
             light_type: LightType::Point(PointLight::default()),
             position: Vec3::new(-1.0, 2.0, 3.0),
             direction: Vec3::ZERO,
+            shadow_view_proj: khora_core::math::Mat4::IDENTITY,
+            shadow_atlas_index: None,
         });
         world.lights.push(ExtractedLight {
             light_type: LightType::Spot(SpotLight::default()),
             position: Vec3::ZERO,
             direction: Vec3::new(0.0, -1.0, 0.0),
+            shadow_view_proj: khora_core::math::Mat4::IDENTITY,
+            shadow_atlas_index: None,
         });
 
         assert_eq!(world.directional_light_count(), 1);

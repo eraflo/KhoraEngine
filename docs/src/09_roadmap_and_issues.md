@@ -25,15 +25,9 @@ This document outlines the phased development plan for Khora. It integrates all 
 ## Phase 3: The Adaptive Core
 **Goal:** Implement the "magic" of Khora: the DCC, ISAs, and GORNA, proving the SAA concept.
 
-#### [Dynamic Context Core (DCC) v1 - Awareness]
-- #116 [Research/Refactor] Evaluate Abstraction for Windowing/Platform System
-
 #### [Intelligent Subsystem Agents (ISA) v1 & Basic Adaptation]
 - #176 [Feature] Evolve AssetAgent into a full ISA (Depends on #174)
 - #83 [Task] Refactor a Second Subsystem as ISA v0.1
-
-#### [Goal-Oriented Resource Negotiation (GORNA) v1]
-- #88 [Task] Demonstrate Dynamic Resource Re-allocation under Load
 
 ---
 
@@ -235,6 +229,7 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #84 [Research] Design GORNA Protocol
 - #85 [Feature] Implement Resource Budgeting in DCC
 - #86 [Feature] Enhance ISAs to Estimate Resource Needs per Strategy (estimate_cost + VRAM-aware negotiate)
+- #88 [Task] Demonstrate Dynamic Resource Re-allocation under Load
 
 #### [Dynamic Context Core (DCC) v1 - Awareness]
 - #71 [Feature] Design DCC Architecture
@@ -243,3 +238,4 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #74 [Feature] Implement Game State Monitoring Hook into DCC
 - #128 [Feature] DCC v1 Integration with Core Metrics System (MetricStore, RingBuffer, GpuReport ingestion)
 - #163 [Feature] Make CRPECS Garbage Collector an ISA
+- #116 [Research/Refactor] Evaluate Abstraction for Windowing/Platform System

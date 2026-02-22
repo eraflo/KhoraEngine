@@ -21,7 +21,7 @@
 
 use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::ecs::entity::EntityId;
-use khora_core::renderer::Mesh;
+use khora_core::renderer::api::scene::Mesh;
 use khora_core::EngineContext;
 use khora_data::ecs::{
     Camera, Component, ComponentBundle, GlobalTransform, HandleComponent, Query, QueryMut,

@@ -23,7 +23,7 @@ pub use obj_loader_lane::*;
 pub use resource_resolver::*;
 
 use super::AssetLoaderLane;
-use khora_core::renderer::api::Mesh;
+use khora_core::renderer::api::scene::Mesh;
 
 /// Common trait for all mesh loaders
 pub trait MeshLoaderLane: AssetLoaderLane<Mesh> + Send + Sync + 'static {}

@@ -45,25 +45,31 @@
 //! - Runtime-adjustable configuration via `ForwardPlusTileConfig`
 
 use super::RenderWorld;
-use crate::render_lane::{RenderLane, ShaderComplexity};
+use crate::render_lane::ShaderComplexity;
 
-use khora_core::renderer::api::dynamic_uniform_buffer::DynamicUniformRingBuffer;
-use khora_core::renderer::api::uniform_ring_buffer::UniformRingBuffer;
-use khora_core::renderer::api::BindGroupLayoutId;
+use khora_core::renderer::api::{
+    command::BindGroupLayoutId,
+    util::{
+        dynamic_uniform_buffer::DynamicUniformRingBuffer, uniform_ring_buffer::UniformRingBuffer,
+    },
+};
 use khora_core::{
     asset::Material,
     renderer::{
         api::{
-            buffer::BufferId,
             command::{
-                ComputePassDescriptor, LoadOp, Operations, RenderPassColorAttachment,
-                RenderPassDepthStencilAttachment, RenderPassDescriptor, StoreOp,
+                BindGroupId, ComputePassDescriptor, ComputePipelineId, LoadOp, Operations,
+                RenderPassColorAttachment, RenderPassDepthStencilAttachment, RenderPassDescriptor,
+                StoreOp,
             },
-            PrimitiveTopology,
+            core::RenderContext,
+            pipeline::enums::PrimitiveTopology,
+            pipeline::RenderPipelineId,
+            resource::{BufferId, CameraUniformData},
+            scene::GpuMesh,
         },
         traits::CommandEncoder,
-        BindGroupId, ComputePipelineId, ForwardPlusTileConfig, GpuMesh, RenderContext,
-        RenderPipelineId,
+        ForwardPlusTileConfig,
     },
 };
 use khora_data::assets::Assets;
@@ -277,21 +283,91 @@ impl ForwardPlusLane {
     }
 }
 
-impl RenderLane for ForwardPlusLane {
+impl khora_core::lane::Lane for ForwardPlusLane {
     fn strategy_name(&self) -> &'static str {
         "ForwardPlus"
     }
 
-    fn get_pipeline_for_material(
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Render
+    }
+
+    fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
+        let render_world = match ctx.get::<khora_core::lane::Slot<crate::render_lane::RenderWorld>>() {
+            Some(slot) => slot.get_ref(),
+            None => return 1.0,
+        };
+        let gpu_meshes = match ctx.get::<std::sync::Arc<std::sync::RwLock<khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>>>>() {
+            Some(arc) => arc,
+            None => return 1.0,
+        };
+        self.estimate_render_cost(render_world, gpu_meshes)
+    }
+
+    fn on_initialize(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+        let device = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
+            .ok_or(khora_core::lane::LaneError::missing("Arc<dyn GraphicsDevice>"))?;
+        self.on_gpu_init(device.as_ref()).map_err(|e| {
+            khora_core::lane::LaneError::InitializationFailed(Box::new(e))
+        })
+    }
+
+    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+        use khora_core::lane::{LaneError, Slot};
+        let device = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
+            .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?.clone();
+        let gpu_meshes = ctx.get::<std::sync::Arc<std::sync::RwLock<khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>>>>()
+            .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?.clone();
+        let encoder = ctx.get::<Slot<dyn khora_core::renderer::traits::CommandEncoder>>()
+            .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?.get();
+        let render_world = ctx.get::<Slot<crate::render_lane::RenderWorld>>()
+            .ok_or(LaneError::missing("Slot<RenderWorld>"))?.get_ref();
+        let color_target = ctx.get::<khora_core::lane::ColorTarget>()
+            .ok_or(LaneError::missing("ColorTarget"))?.0;
+        let depth_target = ctx.get::<khora_core::lane::DepthTarget>()
+            .ok_or(LaneError::missing("DepthTarget"))?.0;
+        let clear_color = ctx.get::<khora_core::lane::ClearColor>()
+            .ok_or(LaneError::missing("ClearColor"))?.0;
+        let shadow_atlas = ctx.get::<khora_core::lane::ShadowAtlasView>().map(|v| v.0);
+        let shadow_sampler = ctx.get::<khora_core::lane::ShadowComparisonSampler>().map(|v| v.0);
+
+        let mut render_ctx = khora_core::renderer::api::core::RenderContext::new(
+            &color_target, Some(&depth_target), clear_color,
+        );
+        render_ctx.shadow_atlas = shadow_atlas.as_ref();
+        render_ctx.shadow_sampler = shadow_sampler.as_ref();
+
+        self.render(render_world, device.as_ref(), encoder, &render_ctx, &gpu_meshes);
+        Ok(())
+    }
+
+    fn on_shutdown(&self, ctx: &mut khora_core::lane::LaneContext) {
+        if let Some(device) = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>() {
+            self.on_gpu_shutdown(device.as_ref());
+        }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+impl ForwardPlusLane {
+    /// Returns the render pipeline for the given material (or default).
+    pub fn get_pipeline_for_material(
         &self,
         _material: Option<&khora_core::asset::AssetHandle<Box<dyn Material>>>,
     ) -> RenderPipelineId {
-        // Return the stored pipeline, or fallback to 2 (placeholder)
+        // Return the stored pipeline. Fallback to pipeline 0 if on_gpu_init hasn't run yet.
         self.gpu_resources
             .lock()
             .unwrap()
             .render_pipeline
-            .unwrap_or(RenderPipelineId(2))
+            .unwrap_or(RenderPipelineId(0))
     }
 
     fn render(
@@ -312,7 +388,7 @@ impl RenderLane for ForwardPlusLane {
         };
 
         // 2. Prepare Camera Uniforms (Group 0)
-        let camera_uniforms = khora_core::renderer::api::CameraUniformData {
+        let camera_uniforms = CameraUniformData {
             view_projection: view.view_proj.to_cols_array_2d(),
             camera_position: [view.position.x, view.position.y, view.position.z, 1.0],
         };
@@ -369,7 +445,7 @@ impl RenderLane for ForwardPlusLane {
 
             let inv_vp = view.view_proj.inverse().unwrap_or_default();
 
-            let culling_data = khora_core::renderer::api::CullingUniformsData {
+            let culling_data = khora_core::renderer::api::scene::CullingUniformsData {
                 view_projection: view.view_proj.to_cols_array_2d(),
                 inverse_projection: inv_vp.to_cols_array_2d(),
                 screen_dimensions: [width as f32, height as f32],
@@ -427,12 +503,12 @@ impl RenderLane for ForwardPlusLane {
                     specular_power = mat_handle.specular_power();
                 }
 
-                let model_uniforms = khora_core::renderer::api::ModelUniforms {
+                let model_uniforms = khora_core::renderer::api::scene::ModelUniforms {
                     model_matrix: model_mat.to_cols_array_2d(),
                     normal_matrix: normal_mat.to_cols_array_2d(),
                 };
 
-                let material_uniforms = khora_core::renderer::api::MaterialUniforms {
+                let material_uniforms = khora_core::renderer::api::scene::MaterialUniforms {
                     base_color,
                     emissive: emissive.with_alpha(specular_power),
                     ambient: khora_core::math::LinearRgba::new(0.05, 0.05, 0.05, 1.0),
@@ -483,6 +559,7 @@ impl RenderLane for ForwardPlusLane {
                 load: LoadOp::Clear(render_ctx.clear_color),
                 store: StoreOp::Store,
             },
+            base_array_layer: 0,
         };
 
         let render_pass_desc = RenderPassDescriptor {
@@ -496,6 +573,7 @@ impl RenderLane for ForwardPlusLane {
                         store: StoreOp::Store,
                     }),
                     stencil_ops: None,
+                    base_array_layer: 0,
                 }
             }),
         };
@@ -532,7 +610,7 @@ impl RenderLane for ForwardPlusLane {
         }
     }
 
-    fn estimate_cost(
+    fn estimate_render_cost(
         &self,
         render_world: &RenderWorld,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
@@ -580,19 +658,27 @@ impl RenderLane for ForwardPlusLane {
         compute_cost + (geometry_cost * shader_multiplier * light_factor)
     }
 
-    fn on_initialize(
+    fn on_gpu_init(
         &self,
         device: &dyn khora_core::renderer::GraphicsDevice,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
         use crate::render_lane::shaders::FORWARD_PLUS_WGSL;
         use khora_core::renderer::api::{
-            BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
-            BindingType, BufferBindingType, CameraUniformData, ColorTargetStateDescriptor,
-            ColorWrites, CompareFunction, DepthBiasState, DepthStencilStateDescriptor,
-            MaterialUniforms, ModelUniforms, MultisampleStateDescriptor, PrimitiveStateDescriptor,
-            RenderPipelineDescriptor, SampleCount, ShaderModuleDescriptor, ShaderSourceData,
-            ShaderStageFlags, StencilFaceState, VertexAttributeDescriptor,
-            VertexBufferLayoutDescriptor, VertexFormat, VertexStepMode,
+            command::{
+                BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
+                BindGroupLayoutEntry, BindingType, BufferBindingType,
+            },
+            core::{ShaderModuleDescriptor, ShaderSourceData},
+            resource::CameraUniformData,
+            pipeline::enums::{CompareFunction, VertexFormat, VertexStepMode},
+            pipeline::state::{ColorWrites, DepthBiasState, StencilFaceState},
+            pipeline::{
+                ColorTargetStateDescriptor, DepthStencilStateDescriptor,
+                MultisampleStateDescriptor, PrimitiveStateDescriptor, RenderPipelineDescriptor,
+                VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
+            },
+            scene::{MaterialUniforms, ModelUniforms},
+            util::{SampleCount, ShaderStageFlags},
         };
         use std::borrow::Cow;
 
@@ -771,10 +857,17 @@ impl RenderLane for ForwardPlusLane {
 
         // Explicit Render Pipeline Layout
         let render_pipeline_layout = device
-            .create_pipeline_layout(&khora_core::renderer::PipelineLayoutDescriptor {
-                label: Some(Cow::Borrowed("Forward+ Render Pipeline Layout")),
-                bind_group_layouts: &[camera_layout, model_layout, material_layout, forward_layout],
-            })
+            .create_pipeline_layout(
+                &khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
+                    label: Some(Cow::Borrowed("Forward+ Render Pipeline Layout")),
+                    bind_group_layouts: &[
+                        camera_layout,
+                        model_layout,
+                        material_layout,
+                        forward_layout,
+                    ],
+                },
+            )
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         let pipeline_desc = RenderPipelineDescriptor {
@@ -790,7 +883,7 @@ impl RenderLane for ForwardPlusLane {
                 ..Default::default()
             },
             depth_stencil_state: Some(DepthStencilStateDescriptor {
-                format: khora_core::renderer::api::TextureFormat::Depth32Float,
+                format: khora_core::renderer::api::util::TextureFormat::Depth32Float,
                 depth_write_enabled: true,
                 depth_compare: CompareFunction::Less,
                 stencil_front: StencilFaceState::default(),
@@ -802,7 +895,7 @@ impl RenderLane for ForwardPlusLane {
             color_target_states: Cow::Owned(vec![ColorTargetStateDescriptor {
                 format: device
                     .get_surface_format()
-                    .unwrap_or(khora_core::renderer::api::TextureFormat::Rgba8UnormSrgb),
+                    .unwrap_or(khora_core::renderer::api::util::TextureFormat::Rgba8UnormSrgb),
                 blend: None,
                 write_mask: ColorWrites::ALL,
             }]),
@@ -819,10 +912,12 @@ impl RenderLane for ForwardPlusLane {
 
         // Compute Pipeline for Culling
         let culling_pipeline_layout = device
-            .create_pipeline_layout(&khora_core::renderer::PipelineLayoutDescriptor {
-                label: Some(Cow::Borrowed("Forward+ Culling Pipeline Layout")),
-                bind_group_layouts: &[culling_layout],
-            })
+            .create_pipeline_layout(
+                &khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
+                    label: Some(Cow::Borrowed("Forward+ Culling Pipeline Layout")),
+                    bind_group_layouts: &[culling_layout],
+                },
+            )
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         let culling_shader_module = device
@@ -835,67 +930,69 @@ impl RenderLane for ForwardPlusLane {
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         let culling_pipeline = device
-            .create_compute_pipeline(&khora_core::renderer::api::ComputePipelineDescriptor {
-                label: Some(Cow::Borrowed("Forward+ Culling Pipeline")),
-                layout: Some(culling_pipeline_layout),
-                shader_module: culling_shader_module,
-                entry_point: Cow::Borrowed("cs_main"),
-            })
+            .create_compute_pipeline(
+                &khora_core::renderer::api::command::ComputePipelineDescriptor {
+                    label: Some(Cow::Borrowed("Forward+ Culling Pipeline")),
+                    layout: Some(culling_pipeline_layout),
+                    shader_module: culling_shader_module,
+                    entry_point: Cow::Borrowed("cs_main"),
+                },
+            )
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         // 3. Create Buffers and Rings
 
         // Light Data Buffer
         let light_buffer = device
-            .create_buffer(&khora_core::renderer::api::BufferDescriptor {
+            .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
                 label: Some(Cow::Borrowed("Forward+ Light Buffer")),
                 size: 64 * 1024,
-                usage: khora_core::renderer::api::BufferUsage::STORAGE
-                    | khora_core::renderer::api::BufferUsage::COPY_DST,
+                usage: khora_core::renderer::api::resource::BufferUsage::STORAGE
+                    | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
                 mapped_at_creation: false,
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         // Light Index List
         let light_index_buffer = device
-            .create_buffer(&khora_core::renderer::api::BufferDescriptor {
+            .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
                 label: Some(Cow::Borrowed("Forward+ Light Index Buffer")),
                 size: 120 * 68 * 256 * 4,
-                usage: khora_core::renderer::api::BufferUsage::STORAGE
-                    | khora_core::renderer::api::BufferUsage::COPY_DST,
+                usage: khora_core::renderer::api::resource::BufferUsage::STORAGE
+                    | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
                 mapped_at_creation: false,
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         // Light Grid
         let light_grid_buffer = device
-            .create_buffer(&khora_core::renderer::api::BufferDescriptor {
+            .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
                 label: Some(Cow::Borrowed("Forward+ Light Grid Buffer")),
                 size: 120 * 68 * 2 * 4,
-                usage: khora_core::renderer::api::BufferUsage::STORAGE
-                    | khora_core::renderer::api::BufferUsage::COPY_DST,
+                usage: khora_core::renderer::api::resource::BufferUsage::STORAGE
+                    | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
                 mapped_at_creation: false,
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         // Tile Info Buffer
         let tile_info_buffer = device
-            .create_buffer(&khora_core::renderer::api::BufferDescriptor {
+            .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
                 label: Some(Cow::Borrowed("Forward+ Tile Info")),
                 size: 256,
-                usage: khora_core::renderer::api::BufferUsage::UNIFORM
-                    | khora_core::renderer::api::BufferUsage::COPY_DST,
+                usage: khora_core::renderer::api::resource::BufferUsage::UNIFORM
+                    | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
                 mapped_at_creation: false,
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         // Culling Uniforms
         let culling_uniforms_buffer = device
-            .create_buffer(&khora_core::renderer::api::BufferDescriptor {
+            .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
                 label: Some(Cow::Borrowed("Forward+ Culling Uniforms")),
                 size: 256,
-                usage: khora_core::renderer::api::BufferUsage::UNIFORM
-                    | khora_core::renderer::api::BufferUsage::COPY_DST,
+                usage: khora_core::renderer::api::resource::BufferUsage::UNIFORM
+                    | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
                 mapped_at_creation: false,
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
@@ -915,8 +1012,8 @@ impl RenderLane for ForwardPlusLane {
             model_layout,
             0,
             std::mem::size_of::<ModelUniforms>() as u32,
-            khora_core::renderer::api::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
-            khora_core::renderer::api::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+            khora_core::renderer::api::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
+            khora_core::renderer::api::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
             "Forward+ Model Ring",
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
@@ -926,8 +1023,8 @@ impl RenderLane for ForwardPlusLane {
             material_layout,
             0,
             std::mem::size_of::<MaterialUniforms>() as u32,
-            khora_core::renderer::api::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
-            khora_core::renderer::api::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+            khora_core::renderer::api::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
+            khora_core::renderer::api::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
             "Forward+ Material Ring",
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
@@ -983,7 +1080,7 @@ impl RenderLane for ForwardPlusLane {
         Ok(())
     }
 
-    fn on_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
+    fn on_gpu_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
         let mut resources = self.gpu_resources.lock().unwrap();
 
         if let Some(ring) = resources.camera_ring.take() {
@@ -1014,6 +1111,7 @@ impl RenderLane for ForwardPlusLane {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use khora_core::lane::Lane;
     use khora_core::renderer::TileSize;
 
     #[test]
@@ -1057,7 +1155,8 @@ mod tests {
     #[test]
     fn test_pipeline_id() {
         let lane = ForwardPlusLane::new();
+        // No GPU init → pipeline not yet created → fallback to RenderPipelineId(0)
         let pipeline = lane.get_pipeline_for_material(None);
-        assert_eq!(pipeline, RenderPipelineId(2));
+        assert_eq!(pipeline, RenderPipelineId(0));
     }
 }

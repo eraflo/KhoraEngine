@@ -21,7 +21,11 @@ use base64::Engine;
 use gltf::{mesh::Reader, Buffer};
 use khora_core::{
     math::{geometry::Aabb, Vec2, Vec3, Vec4},
-    renderer::api::{Mesh, PrimitiveTopology, VertexAttributeDescriptor, VertexFormat},
+    renderer::api::{
+        pipeline::enums::{PrimitiveTopology, VertexFormat},
+        pipeline::VertexAttributeDescriptor,
+        scene::Mesh,
+    },
 };
 use std::{error::Error, sync::Arc};
 
@@ -265,5 +269,23 @@ impl GltfLoaderLane {
             gltf::mesh::Mode::Points => PrimitiveTopology::PointList,
             _ => PrimitiveTopology::TriangleList,
         }
+    }
+}
+
+impl khora_core::lane::Lane for GltfLoaderLane {
+    fn strategy_name(&self) -> &'static str {
+        "GltfLoader"
+    }
+
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Asset
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

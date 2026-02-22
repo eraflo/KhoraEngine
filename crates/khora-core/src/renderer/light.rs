@@ -36,6 +36,9 @@ use crate::math::{LinearRgba, Vec3};
 ///     direction: Vec3::new(-0.5, -1.0, -0.3).normalize(),
 ///     color: LinearRgba::new(1.0, 0.95, 0.8, 1.0),
 ///     intensity: 1.0,
+///     shadow_enabled: true,
+///     shadow_bias: 0.005,
+///     shadow_normal_bias: 0.02,
 /// };
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -54,6 +57,13 @@ pub struct DirectionalLight {
     /// A value of 1.0 represents standard intensity.
     /// Higher values create brighter lights, useful for HDR rendering.
     pub intensity: f32,
+
+    /// Whether this light casts shadows.
+    pub shadow_enabled: bool,
+    /// Constant bias to apply to depth values to prevent shadow acne.
+    pub shadow_bias: f32,
+    /// Normal-based bias to apply to prevent shadow acne on sloped surfaces.
+    pub shadow_normal_bias: f32,
 }
 
 impl Default for DirectionalLight {
@@ -63,6 +73,9 @@ impl Default for DirectionalLight {
             direction: Vec3::new(0.0, -1.0, -0.5).normalize(),
             color: LinearRgba::WHITE,
             intensity: 1.0,
+            shadow_enabled: false,
+            shadow_bias: 0.005,
+            shadow_normal_bias: 0.0,
         }
     }
 }
@@ -84,6 +97,9 @@ impl Default for DirectionalLight {
 ///     color: LinearRgba::new(1.0, 0.9, 0.7, 1.0),
 ///     intensity: 100.0,
 ///     range: 10.0,
+///     shadow_enabled: false,
+///     shadow_bias: 0.01,
+///     shadow_normal_bias: 0.0,
 /// };
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -103,6 +119,13 @@ pub struct PointLight {
     /// performance optimization to cull lights that won't contribute
     /// to a fragment's lighting.
     pub range: f32,
+
+    /// Whether this light casts shadows.
+    pub shadow_enabled: bool,
+    /// Constant bias to apply to depth values to prevent shadow acne.
+    pub shadow_bias: f32,
+    /// Normal-based bias to apply to prevent shadow acne on sloped surfaces.
+    pub shadow_normal_bias: f32,
 }
 
 impl Default for PointLight {
@@ -111,6 +134,9 @@ impl Default for PointLight {
             color: LinearRgba::WHITE,
             intensity: 100.0,
             range: 10.0,
+            shadow_enabled: false,
+            shadow_bias: 0.01,
+            shadow_normal_bias: 0.0,
         }
     }
 }
@@ -134,6 +160,9 @@ impl Default for PointLight {
 ///     range: 20.0,
 ///     inner_cone_angle: 15.0_f32.to_radians(),
 ///     outer_cone_angle: 30.0_f32.to_radians(),
+///     shadow_enabled: false,
+///     shadow_bias: 0.01,
+///     shadow_normal_bias: 0.0,
 /// };
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -160,6 +189,13 @@ pub struct SpotLight {
     /// Beyond this angle from the center of the cone, there is no light.
     /// The region between inner and outer cone angles has smooth falloff.
     pub outer_cone_angle: f32,
+
+    /// Whether this light casts shadows.
+    pub shadow_enabled: bool,
+    /// Constant bias to apply to depth values to prevent shadow acne.
+    pub shadow_bias: f32,
+    /// Normal-based bias to apply to prevent shadow acne on sloped surfaces.
+    pub shadow_normal_bias: f32,
 }
 
 impl Default for SpotLight {
@@ -171,6 +207,9 @@ impl Default for SpotLight {
             range: 15.0,
             inner_cone_angle: 20.0_f32.to_radians(),
             outer_cone_angle: 35.0_f32.to_radians(),
+            shadow_enabled: false,
+            shadow_bias: 0.01,
+            shadow_normal_bias: 0.0,
         }
     }
 }
@@ -220,6 +259,9 @@ mod tests {
             direction,
             color: LinearRgba::new(1.0, 0.5, 0.0, 1.0),
             intensity: 2.0,
+            shadow_enabled: false,
+            shadow_bias: 0.005,
+            shadow_normal_bias: 0.0,
         };
         assert!(approx_eq(light.direction.length(), 1.0));
         assert!(approx_eq(light.intensity, 2.0));
@@ -239,6 +281,9 @@ mod tests {
             color: LinearRgba::new(0.0, 1.0, 0.0, 1.0),
             intensity: 50.0,
             range: 5.0,
+            shadow_enabled: false,
+            shadow_bias: 0.01,
+            shadow_normal_bias: 0.0,
         };
         assert!(approx_eq(light.intensity, 50.0));
         assert!(approx_eq(light.range, 5.0));

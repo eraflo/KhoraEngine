@@ -26,8 +26,6 @@
 //! and deterministic execution. It contains minimal branching logic and is designed to
 //! be driven by a higher-level `RenderAgent`.
 
-use crate::render_lane::RenderLane;
-
 use super::RenderWorld;
 use khora_core::{
     asset::Material,
@@ -37,10 +35,12 @@ use khora_core::{
                 LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
                 RenderPassDescriptor, StoreOp,
             },
-            PrimitiveTopology,
+            core::RenderContext,
+            pipeline::enums::PrimitiveTopology,
+            pipeline::RenderPipelineId,
+            scene::GpuMesh,
         },
         traits::CommandEncoder,
-        GpuMesh, RenderContext, RenderPipelineId,
     },
 };
 use khora_data::assets::Assets;
@@ -59,16 +59,16 @@ use std::sync::RwLock;
 /// - **Suitable for**: High frame rates, simple scenes, or as a debug/fallback renderer
 pub struct SimpleUnlitLane {
     pipeline: std::sync::Mutex<Option<RenderPipelineId>>,
-    camera_layout: std::sync::Mutex<Option<khora_core::renderer::api::BindGroupLayoutId>>,
-    model_layout: std::sync::Mutex<Option<khora_core::renderer::api::BindGroupLayoutId>>,
+    camera_layout: std::sync::Mutex<Option<khora_core::renderer::api::command::BindGroupLayoutId>>,
+    model_layout: std::sync::Mutex<Option<khora_core::renderer::api::command::BindGroupLayoutId>>,
     camera_ring:
-        std::sync::Mutex<Option<khora_core::renderer::api::uniform_ring_buffer::UniformRingBuffer>>,
+        std::sync::Mutex<Option<khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer>>,
     model_ring: std::sync::Mutex<
-        Option<khora_core::renderer::api::dynamic_uniform_buffer::DynamicUniformRingBuffer>,
+        Option<khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer>,
     >,
-    material_layout: std::sync::Mutex<Option<khora_core::renderer::api::BindGroupLayoutId>>,
+    material_layout: std::sync::Mutex<Option<khora_core::renderer::api::command::BindGroupLayoutId>>,
     material_ring: std::sync::Mutex<
-        Option<khora_core::renderer::api::dynamic_uniform_buffer::DynamicUniformRingBuffer>,
+        Option<khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer>,
     >,
 }
 
@@ -93,12 +93,82 @@ impl SimpleUnlitLane {
     }
 }
 
-impl RenderLane for SimpleUnlitLane {
+impl khora_core::lane::Lane for SimpleUnlitLane {
     fn strategy_name(&self) -> &'static str {
         "SimpleUnlit"
     }
 
-    fn get_pipeline_for_material(
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Render
+    }
+
+    fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
+        let render_world = match ctx.get::<khora_core::lane::Slot<crate::render_lane::RenderWorld>>() {
+            Some(slot) => slot.get_ref(),
+            None => return 1.0,
+        };
+        let gpu_meshes = match ctx.get::<std::sync::Arc<std::sync::RwLock<khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>>>>() {
+            Some(arc) => arc,
+            None => return 1.0,
+        };
+        self.estimate_render_cost(render_world, gpu_meshes)
+    }
+
+    fn on_initialize(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+        let device = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
+            .ok_or(khora_core::lane::LaneError::missing("Arc<dyn GraphicsDevice>"))?;
+        self.on_gpu_init(device.as_ref()).map_err(|e| {
+            khora_core::lane::LaneError::InitializationFailed(Box::new(e))
+        })
+    }
+
+    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+        use khora_core::lane::{LaneError, Slot};
+        let device = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
+            .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?.clone();
+        let gpu_meshes = ctx.get::<std::sync::Arc<std::sync::RwLock<khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>>>>()
+            .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?.clone();
+        let encoder = ctx.get::<Slot<dyn khora_core::renderer::traits::CommandEncoder>>()
+            .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?.get();
+        let render_world = ctx.get::<Slot<crate::render_lane::RenderWorld>>()
+            .ok_or(LaneError::missing("Slot<RenderWorld>"))?.get_ref();
+        let color_target = ctx.get::<khora_core::lane::ColorTarget>()
+            .ok_or(LaneError::missing("ColorTarget"))?.0;
+        let depth_target = ctx.get::<khora_core::lane::DepthTarget>()
+            .ok_or(LaneError::missing("DepthTarget"))?.0;
+        let clear_color = ctx.get::<khora_core::lane::ClearColor>()
+            .ok_or(LaneError::missing("ClearColor"))?.0;
+        let shadow_atlas = ctx.get::<khora_core::lane::ShadowAtlasView>().map(|v| v.0);
+        let shadow_sampler = ctx.get::<khora_core::lane::ShadowComparisonSampler>().map(|v| v.0);
+
+        let mut render_ctx = khora_core::renderer::api::core::RenderContext::new(
+            &color_target, Some(&depth_target), clear_color,
+        );
+        render_ctx.shadow_atlas = shadow_atlas.as_ref();
+        render_ctx.shadow_sampler = shadow_sampler.as_ref();
+
+        self.render(render_world, device.as_ref(), encoder, &render_ctx, &gpu_meshes);
+        Ok(())
+    }
+
+    fn on_shutdown(&self, ctx: &mut khora_core::lane::LaneContext) {
+        if let Some(device) = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>() {
+            self.on_gpu_shutdown(device.as_ref());
+        }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+impl SimpleUnlitLane {
+    /// Returns the render pipeline for the given material (or default).
+    pub fn get_pipeline_for_material(
         &self,
         _material: Option<&khora_core::asset::AssetHandle<Box<dyn Material>>>,
     ) -> RenderPipelineId {
@@ -114,7 +184,7 @@ impl RenderLane for SimpleUnlitLane {
         render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) {
-        use khora_core::renderer::api::{CameraUniformData, ModelUniforms};
+        use khora_core::renderer::api::{resource::CameraUniformData, scene::ModelUniforms};
 
         // 1. Get Active Camera View
         let view = if let Some(first_view) = render_world.views.first() {
@@ -202,7 +272,7 @@ impl RenderLane for SimpleUnlitLane {
                 let model_bg = *model_ring.current_bind_group();
 
                 // Build MaterialUniforms
-                let material_uniforms = khora_core::renderer::api::MaterialUniforms {
+                let material_uniforms = khora_core::renderer::api::scene::MaterialUniforms {
                     base_color,
                     emissive: khora_core::math::LinearRgba::BLACK,
                     ambient: khora_core::math::LinearRgba::BLACK,
@@ -237,6 +307,7 @@ impl RenderLane for SimpleUnlitLane {
                 load: LoadOp::Clear(render_ctx.clear_color),
                 store: StoreOp::Store,
             },
+            base_array_layer: 0,
         };
 
         let render_pass_desc = RenderPassDescriptor {
@@ -250,6 +321,7 @@ impl RenderLane for SimpleUnlitLane {
                         store: StoreOp::Store,
                     }),
                     stencil_ops: None,
+                    base_array_layer: 0,
                 }
             }),
         };
@@ -283,7 +355,7 @@ impl RenderLane for SimpleUnlitLane {
         }
     }
 
-    fn estimate_cost(
+    fn estimate_render_cost(
         &self,
         render_world: &RenderWorld,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
@@ -324,19 +396,27 @@ impl RenderLane for SimpleUnlitLane {
         (total_triangles as f32 * TRIANGLE_COST) + (draw_call_count as f32 * DRAW_CALL_COST)
     }
 
-    fn on_initialize(
+    fn on_gpu_init(
         &self,
         device: &dyn khora_core::renderer::GraphicsDevice,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
         use crate::render_lane::shaders::UNLIT_WGSL;
         use khora_core::renderer::api::{
-            uniform_ring_buffer::UniformRingBuffer, BindGroupLayoutDescriptor,
-            BindGroupLayoutEntry, BindingType, BufferBindingType, CameraUniformData,
-            ColorTargetStateDescriptor, ColorWrites, CompareFunction, DepthBiasState,
-            DepthStencilStateDescriptor, ModelUniforms, MultisampleStateDescriptor,
-            PrimitiveStateDescriptor, RenderPipelineDescriptor, SampleCount,
-            ShaderModuleDescriptor, ShaderSourceData, ShaderStageFlags, StencilFaceState,
-            VertexAttributeDescriptor, VertexBufferLayoutDescriptor, VertexFormat, VertexStepMode,
+            command::{
+                BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType,
+            },
+            core::{ShaderModuleDescriptor, ShaderSourceData},
+            resource::CameraUniformData,
+            pipeline::enums::{CompareFunction, VertexFormat, VertexStepMode},
+            pipeline::state::{ColorWrites, DepthBiasState, StencilFaceState},
+            pipeline::{
+                ColorTargetStateDescriptor, DepthStencilStateDescriptor,
+                MultisampleStateDescriptor, PrimitiveStateDescriptor, RenderPipelineDescriptor,
+                VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
+            },
+            scene::ModelUniforms,
+            util::uniform_ring_buffer::UniformRingBuffer,
+            util::{SampleCount, ShaderStageFlags},
         };
         use std::borrow::Cow;
 
@@ -386,7 +466,7 @@ impl RenderLane for SimpleUnlitLane {
                         ty: BufferBindingType::Uniform,
                         has_dynamic_offset: true,
                         min_binding_size: std::num::NonZeroU64::new(std::mem::size_of::<
-                            khora_core::renderer::api::MaterialUniforms,
+                            khora_core::renderer::api::scene::MaterialUniforms,
                         >()
                             as u64),
                     },
@@ -437,7 +517,7 @@ impl RenderLane for SimpleUnlitLane {
 
         // 4. Create Pipeline Layout
         let pipeline_layout_ids = vec![camera_layout, model_layout, material_layout];
-        let pipeline_layout_desc = khora_core::renderer::PipelineLayoutDescriptor {
+        let pipeline_layout_desc = khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
             label: Some(Cow::Borrowed("SimpleUnlit Pipeline Layout")),
             bind_group_layouts: &pipeline_layout_ids,
         };
@@ -460,7 +540,7 @@ impl RenderLane for SimpleUnlitLane {
                 ..Default::default()
             },
             depth_stencil_state: Some(DepthStencilStateDescriptor {
-                format: khora_core::renderer::api::TextureFormat::Depth32Float,
+                format: khora_core::renderer::api::util::TextureFormat::Depth32Float,
                 depth_write_enabled: true,
                 depth_compare: CompareFunction::Less,
                 stencil_front: StencilFaceState::default(),
@@ -472,7 +552,7 @@ impl RenderLane for SimpleUnlitLane {
             color_target_states: Cow::Owned(vec![ColorTargetStateDescriptor {
                 format: device
                     .get_surface_format()
-                    .unwrap_or(khora_core::renderer::api::TextureFormat::Rgba8UnormSrgb),
+                    .unwrap_or(khora_core::renderer::api::util::TextureFormat::Rgba8UnormSrgb),
                 blend: None, // REPLACE
                 write_mask: ColorWrites::ALL,
             }]),
@@ -502,13 +582,13 @@ impl RenderLane for SimpleUnlitLane {
         *self.camera_ring.lock().unwrap() = Some(camera_ring);
 
         let model_ring =
-            khora_core::renderer::api::dynamic_uniform_buffer::DynamicUniformRingBuffer::new(
+            khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::new(
                 device,
                 model_layout,
                 0,
                 std::mem::size_of::<ModelUniforms>() as u32,
-                khora_core::renderer::api::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
-                khora_core::renderer::api::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+                khora_core::renderer::api::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
+                khora_core::renderer::api::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
                 "Model Dynamic Ring Runlit",
             )
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
@@ -516,13 +596,13 @@ impl RenderLane for SimpleUnlitLane {
         *self.model_ring.lock().unwrap() = Some(model_ring);
 
         let material_ring =
-            khora_core::renderer::api::dynamic_uniform_buffer::DynamicUniformRingBuffer::new(
+            khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::new(
                 device,
                 material_layout,
                 0, // Binding size
-                std::mem::size_of::<khora_core::renderer::api::MaterialUniforms>() as u32,
-                khora_core::renderer::api::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
-                khora_core::renderer::api::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+                std::mem::size_of::<khora_core::renderer::api::scene::MaterialUniforms>() as u32,
+                khora_core::renderer::api::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
+                khora_core::renderer::api::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
                 "Material Dynamic Ring Runlit",
             )
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
@@ -532,7 +612,7 @@ impl RenderLane for SimpleUnlitLane {
         Ok(())
     }
 
-    fn on_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
+    fn on_gpu_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
         if let Some(ring) = self.camera_ring.lock().unwrap().take() {
             ring.destroy(device);
         }
@@ -552,9 +632,12 @@ impl RenderLane for SimpleUnlitLane {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use khora_core::lane::Lane;
     use khora_core::{
         asset::AssetHandle,
-        renderer::{api::PrimitiveTopology, BufferId, IndexFormat},
+        renderer::api::{
+            pipeline::enums::PrimitiveTopology, resource::BufferId, util::IndexFormat,
+        },
     };
     use std::sync::Arc;
 
@@ -576,7 +659,7 @@ mod tests {
         let render_world = RenderWorld::default();
         let gpu_meshes = Arc::new(RwLock::new(Assets::<GpuMesh>::new()));
 
-        let cost = lane.estimate_cost(&render_world, &gpu_meshes);
+        let cost = lane.estimate_render_cost(&render_world, &gpu_meshes);
         assert_eq!(cost, 0.0, "Empty world should have zero cost");
     }
 
@@ -609,7 +692,7 @@ mod tests {
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
-        let cost = lane.estimate_cost(&render_world, &gpu_meshes_lock);
+        let cost = lane.estimate_render_cost(&render_world, &gpu_meshes_lock);
 
         // Expected: 100 triangles * 0.001 + 1 draw call * 0.1 = 0.1 + 0.1 = 0.2
         assert_eq!(
@@ -647,7 +730,7 @@ mod tests {
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
-        let cost = lane.estimate_cost(&render_world, &gpu_meshes_lock);
+        let cost = lane.estimate_render_cost(&render_world, &gpu_meshes_lock);
 
         // Expected: 50 triangles * 0.001 + 1 draw call * 0.1 = 0.05 + 0.1 = 0.15
         assert_eq!(
@@ -704,7 +787,7 @@ mod tests {
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
-        let cost = lane.estimate_cost(&render_world, &gpu_meshes_lock);
+        let cost = lane.estimate_render_cost(&render_world, &gpu_meshes_lock);
 
         // Expected: 0 triangles * 0.001 + 2 draw calls * 0.1 = 0.0 + 0.2 = 0.2
         assert_eq!(
@@ -775,7 +858,7 @@ mod tests {
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
-        let cost = lane.estimate_cost(&render_world, &gpu_meshes_lock);
+        let cost = lane.estimate_render_cost(&render_world, &gpu_meshes_lock);
 
         // Expected: (200 + 100 + 50) triangles * 0.001 + 3 draw calls * 0.1
         //         = 350 * 0.001 + 3 * 0.1 = 0.35 + 0.3 = 0.65
@@ -814,7 +897,7 @@ mod tests {
             material: None,
         });
 
-        let cost = lane.estimate_cost(&render_world, &gpu_meshes);
+        let cost = lane.estimate_render_cost(&render_world, &gpu_meshes);
 
         // Expected: 0 cost since mesh is not found
         assert_eq!(cost, 0.0, "Missing mesh should contribute zero cost");
@@ -850,7 +933,7 @@ mod tests {
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
-        let cost = lane.estimate_cost(&render_world, &gpu_meshes_lock);
+        let cost = lane.estimate_render_cost(&render_world, &gpu_meshes_lock);
 
         // Expected: 0 triangles + 1 draw call * 0.1 = 0.1
         assert_eq!(

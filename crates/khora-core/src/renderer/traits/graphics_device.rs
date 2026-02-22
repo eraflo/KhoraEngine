@@ -13,7 +13,21 @@
 // limitations under the License.
 
 use crate::math::dimension;
-use crate::renderer::api::*;
+use crate::renderer::api::{
+    command::{
+        BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutId,
+        CommandBufferId, ComputePipelineDescriptor, ComputePipelineId,
+    },
+    core::{GraphicsAdapterInfo, ShaderModuleDescriptor, ShaderModuleId},
+    pipeline::{
+        PipelineLayoutDescriptor, PipelineLayoutId, RenderPipelineDescriptor, RenderPipelineId,
+    },
+    resource::{
+        BufferDescriptor, BufferId, SamplerDescriptor, SamplerId, TextureDescriptor, TextureId,
+        TextureViewDescriptor, TextureViewId,
+    },
+    util::TextureFormat,
+};
 use crate::renderer::error::ResourceError;
 use crate::renderer::traits::CommandEncoder;
 use std::fmt::Debug;

@@ -28,15 +28,6 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::physics::{ColliderDesc, PhysicsProvider, RigidBodyDesc};
 use khora_data::ecs::{Collider, GlobalTransform, Parent, RigidBody, Transform, World};
 
-/// A trait defining the behavior of a physics lane.
-pub trait PhysicsLane: Send + Sync {
-    /// Returns the name of the strategy.
-    fn strategy_name(&self) -> &'static str;
-
-    /// Executes the physics step.
-    fn step(&self, world: &mut World, provider: &mut dyn PhysicsProvider, dt: f32);
-}
-
 /// The standard physics lane for industrial-grade simulation.
 #[derive(Debug, Default)]
 pub struct StandardPhysicsLane;
@@ -313,12 +304,41 @@ impl StandardPhysicsLane {
     }
 }
 
-impl PhysicsLane for StandardPhysicsLane {
+impl khora_core::lane::Lane for StandardPhysicsLane {
     fn strategy_name(&self) -> &'static str {
         "StandardPhysics"
     }
 
-    fn step(&self, world: &mut World, provider: &mut dyn PhysicsProvider, dt: f32) {
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Physics
+    }
+
+    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+        use khora_core::lane::{LaneError, Slot};
+
+        let dt = ctx.get::<khora_core::lane::PhysicsDeltaTime>()
+            .ok_or(LaneError::missing("PhysicsDeltaTime"))?.0;
+        let world = ctx.get::<Slot<World>>()
+            .ok_or(LaneError::missing("Slot<World>"))?.get();
+        let provider = ctx.get::<Slot<dyn PhysicsProvider>>()
+            .ok_or(LaneError::missing("Slot<dyn PhysicsProvider>"))?.get();
+
+        self.step(world, provider, dt);
+        Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+impl StandardPhysicsLane {
+    /// Executes the full physics step: sync, simulate, writeback, characters, events.
+    pub fn step(&self, world: &mut World, provider: &mut dyn PhysicsProvider, dt: f32) {
         // 1. Sync ECS -> Physics World
         self.sync_to_world(world, provider);
 

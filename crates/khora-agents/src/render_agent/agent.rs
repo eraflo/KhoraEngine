@@ -20,10 +20,11 @@ use khora_core::{
     control::gorna::{
         AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyOption,
     },
+    lane::{Lane, LaneContext, LaneKind, LaneRegistry, Slot},
     math::Mat4,
     renderer::{
-        api::{GpuMesh, RenderObject},
-        GraphicsDevice, RenderSystem, ViewInfo,
+        api::{scene::{GpuMesh, RenderObject}, resource::ViewInfo},
+        GraphicsDevice, RenderSystem,
     },
     EngineContext,
 };
@@ -31,16 +32,18 @@ use khora_data::{
     assets::Assets,
     ecs::{Camera, GlobalTransform, World},
 };
+use khora_core::lane::{ClearColor, ColorTarget, DepthTarget};
 use khora_lanes::render_lane::{
-    ExtractRenderablesLane, ForwardPlusLane, LitForwardLane, RenderLane, RenderWorld,
-    SimpleUnlitLane,
+    ExtractRenderablesLane, ForwardPlusLane,
+    LitForwardLane, RenderWorld, ShadowPassLane, SimpleUnlitLane,
 };
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::Sender;
 use khora_core::control::gorna::{AgentId, StrategyId};
-use khora_core::renderer::api::PrimitiveTopology;
+use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
+use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::telemetry::event::TelemetryEvent;
 use khora_core::telemetry::monitoring::GpuReport;
 
@@ -79,8 +82,8 @@ pub struct RenderAgent {
     mesh_preparation_system: MeshPreparationSystem,
     // Lane that extracts data from the ECS into the RenderWorld.
     extract_lane: ExtractRenderablesLane,
-    // Available render lanes (strategies). Not destroyed on strategy change.
-    lanes: Vec<Box<dyn RenderLane>>,
+    // All processing lanes (render + shadow) stored generically.
+    lanes: LaneRegistry,
     // Current rendering strategy selection mode.
     strategy: RenderingStrategy,
     // Current active strategy ID from negotiation.
@@ -114,9 +117,14 @@ impl Agent for RenderAgent {
         let mesh_count = self.render_world.meshes.len() as u64;
         let base_vram = mesh_count * DEFAULT_VRAM_PER_MESH;
 
-        // Build strategy options from each available lane using actual cost data.
-        for lane in &self.lanes {
-            let cost = lane.estimate_cost(&self.render_world, &self.gpu_meshes);
+        // Build a minimal context for cost estimation.
+        let mut ctx = LaneContext::new();
+        ctx.insert(Slot::new(&mut self.render_world));
+        ctx.insert(self.gpu_meshes.clone());
+
+        // Build strategy options from each available render lane using actual cost data.
+        for lane in self.lanes.find_by_kind(LaneKind::Render) {
+            let cost = lane.estimate_cost(&ctx);
             let estimated_time =
                 Duration::from_secs_f32((cost * COST_TO_MS_SCALE).max(0.1) / 1000.0);
 
@@ -173,9 +181,12 @@ impl Agent for RenderAgent {
 
         // Map the GORNA strategy to our internal rendering strategy.
         // Lanes remain alive — we only switch which one is active.
+        // LowPower maps to Auto — this lets the agent use Unlit when there are
+        // no lights, but automatically switch to LitForward when the scene
+        // contains lights so that shadows and lighting work correctly.
         match budget.strategy_id {
             StrategyId::LowPower => {
-                self.strategy = RenderingStrategy::Unlit;
+                self.strategy = RenderingStrategy::Auto;
             }
             StrategyId::Balanced => {
                 self.strategy = RenderingStrategy::LitForward;
@@ -198,14 +209,16 @@ impl Agent for RenderAgent {
     fn update(&mut self, context: &mut EngineContext<'_>) {
         // Cache the graphics device from the service registry.
         if self.device.is_none() {
-            if let Some(device) = context.services.get::<Arc<dyn GraphicsDevice>>() {
-                self.device = Some(device.clone());
+            if let Some(device_arc) = context.services.get::<Arc<dyn GraphicsDevice>>() {
+                self.device = Some(device_arc.clone());
 
-                // Initialize existing lanes now that we have the device.
-                for lane in &self.lanes {
-                    if let Err(e) = lane.on_initialize(self.device.as_ref().unwrap().as_ref()) {
+                // Initialize all lanes via Lane abstraction.
+                let mut init_ctx = LaneContext::new();
+                init_ctx.insert(device_arc.clone());
+                for lane in self.lanes.all() {
+                    if let Err(e) = lane.on_initialize(&mut init_ctx) {
                         log::error!(
-                            "Failed to initialize render lane {}: {}",
+                            "Failed to initialize lane {}: {}",
                             lane.strategy_name(),
                             e
                         );
@@ -242,27 +255,63 @@ impl Agent for RenderAgent {
         }
 
         // Step 3: Render — call render_with_encoder on the cached render system.
+        //
+        // The closure builds a LaneContext and executes lanes through the Lane abstraction:
+        //   1. Shadow lanes: encode depth-only draw calls, patch lights, store shadow resources
+        //   2. Main pass: render scene with shadow data
         if let Some(rs) = self.render_system.clone() {
             if let Ok(mut rs) = rs.lock() {
                 let clear_color = khora_core::math::LinearRgba::new(0.1, 0.1, 0.15, 1.0);
+                let selected_name = self.select_lane_name();
 
-                // With '_ lifetime on the closure, we can borrow from self directly.
-                let render_world = &self.render_world;
+                let render_world = &mut self.render_world;
                 let gpu_meshes = &self.gpu_meshes;
-                let lane = self.select_lane();
+                let lanes = &self.lanes;
 
                 let frame_start = Instant::now();
 
                 match rs.render_with_encoder(
                     clear_color,
                     Box::new(|encoder, render_ctx| {
-                        lane.render(
-                            render_world,
-                            device.as_ref(),
-                            encoder,
-                            render_ctx,
-                            gpu_meshes,
-                        );
+                        let mut ctx = LaneContext::new();
+                        ctx.insert(device.clone());
+                        ctx.insert(gpu_meshes.clone());
+                        // SAFETY: encoder lives for the entirety of this closure.
+                        // ctx is created and consumed within the same closure scope.
+                        // transmute erases the trait object lifetime ('1 → 'static)
+                        // which is safe because the data outlives the Slot.
+                        let encoder_slot = Slot::new(encoder);
+                        ctx.insert(unsafe {
+                            std::mem::transmute::<_, Slot<dyn khora_core::renderer::traits::CommandEncoder>>(encoder_slot)
+                        });
+                        ctx.insert(Slot::new(render_world));
+                        ctx.insert(ColorTarget(*render_ctx.color_target));
+                        if let Some(dt) = render_ctx.depth_target {
+                            ctx.insert(DepthTarget(*dt));
+                        }
+                        ctx.insert(ClearColor(render_ctx.clear_color));
+
+                        // 1. Execute shadow lanes (they insert ShadowAtlasView + ShadowComparisonSampler)
+                        for shadow_lane in lanes.find_by_kind(LaneKind::Shadow) {
+                            if let Err(e) = shadow_lane.execute(&mut ctx) {
+                                log::error!(
+                                    "Shadow lane {} failed: {}",
+                                    shadow_lane.strategy_name(),
+                                    e
+                                );
+                            }
+                        }
+
+                        // 2. Execute selected render lane
+                        if let Some(lane) = lanes.get(selected_name) {
+                            if let Err(e) = lane.execute(&mut ctx) {
+                                log::error!(
+                                    "Render lane {} failed: {}",
+                                    lane.strategy_name(),
+                                    e
+                                );
+                            }
+                        }
                     }),
                 ) {
                     Ok(_stats) => {
@@ -334,12 +383,12 @@ impl RenderAgent {
     pub fn new() -> Self {
         let gpu_meshes = Arc::new(RwLock::new(Assets::new()));
 
-        // Default set of available lanes
-        let lanes: Vec<Box<dyn RenderLane>> = vec![
-            Box::new(SimpleUnlitLane::new()),
-            Box::new(LitForwardLane::new()),
-            Box::new(ForwardPlusLane::new()),
-        ];
+        // Register all default lanes (render + shadow) generically.
+        let mut lanes = LaneRegistry::new();
+        lanes.register(Box::new(SimpleUnlitLane::new()));
+        lanes.register(Box::new(LitForwardLane::new()));
+        lanes.register(Box::new(ForwardPlusLane::new()));
+        lanes.register(Box::new(ShadowPassLane::new()));
 
         Self {
             render_world: RenderWorld::new(),
@@ -363,10 +412,11 @@ impl RenderAgent {
     /// Renders the scene using the provided encoder and render context.
     ///
     /// This is the main rendering method that encodes GPU commands via the selected lane.
+    /// Shadow lanes are executed first, followed by the selected render lane.
     pub fn render(
         &mut self,
         encoder: &mut dyn khora_core::renderer::traits::CommandEncoder,
-        render_ctx: &khora_core::renderer::RenderContext,
+        render_ctx: &khora_core::renderer::api::core::RenderContext,
     ) {
         let frame_start = Instant::now();
 
@@ -377,13 +427,38 @@ impl RenderAgent {
         self.draw_call_count = self.render_world.meshes.len() as u32;
         self.triangle_count = self.count_triangles();
 
-        self.select_lane().render(
-            &self.render_world,
-            device.as_ref(),
-            encoder,
-            render_ctx,
-            &self.gpu_meshes,
-        );
+        // Build LaneContext with all required data.
+        let mut ctx = LaneContext::new();
+        ctx.insert(device);
+        ctx.insert(self.gpu_meshes.clone());
+        // SAFETY: encoder lives for the entirety of this method call.
+        // ctx is stack-scoped and dropped before returning.
+        // transmute erases the trait object lifetime ('a → 'static).
+        let encoder_slot = Slot::new(encoder);
+        ctx.insert(unsafe {
+            std::mem::transmute::<_, Slot<dyn khora_core::renderer::traits::CommandEncoder>>(encoder_slot)
+        });
+        ctx.insert(Slot::new(&mut self.render_world));
+        ctx.insert(ColorTarget(*render_ctx.color_target));
+        if let Some(dt) = render_ctx.depth_target {
+            ctx.insert(DepthTarget(*dt));
+        }
+        ctx.insert(ClearColor(render_ctx.clear_color));
+
+        // 1. Execute shadow lanes (they insert ShadowAtlasView + ShadowComparisonSampler)
+        for shadow_lane in self.lanes.find_by_kind(LaneKind::Shadow) {
+            if let Err(e) = shadow_lane.execute(&mut ctx) {
+                log::error!("Shadow lane {} failed: {}", shadow_lane.strategy_name(), e);
+            }
+        }
+
+        // 2. Execute selected render lane
+        let selected_name = self.select_lane_name();
+        if let Some(lane) = self.lanes.get(selected_name) {
+            if let Err(e) = lane.execute(&mut ctx) {
+                log::error!("Render lane {} failed: {}", lane.strategy_name(), e);
+            }
+        }
 
         self.last_frame_time = frame_start.elapsed();
         self.frame_count += 1;
@@ -402,9 +477,9 @@ impl RenderAgent {
         self
     }
 
-    /// Adds a custom render lane to the available lanes.
-    pub fn add_lane(&mut self, lane: Box<dyn RenderLane>) {
-        self.lanes.push(lane);
+    /// Adds a custom lane to the registry.
+    pub fn add_lane(&mut self, lane: Box<dyn Lane>) {
+        self.lanes.register(lane);
     }
 
     /// Sets the rendering strategy.
@@ -417,60 +492,43 @@ impl RenderAgent {
         self.strategy
     }
 
-    /// Returns a reference to the available lanes.
-    pub fn lanes(&self) -> &[Box<dyn RenderLane>] {
+    /// Returns a reference to the lane registry.
+    pub fn lanes(&self) -> &LaneRegistry {
         &self.lanes
     }
 
-    /// Finds a lane by its strategy name.
-    fn find_lane_by_name(&self, name: &str) -> Option<&dyn RenderLane> {
-        self.lanes
-            .iter()
-            .find(|lane| lane.strategy_name() == name)
-            .map(|boxed| boxed.as_ref())
-    }
-
-    /// Returns the first available lane.
-    ///
-    /// # Panics
-    ///
-    /// Panics if no lanes are configured (should never happen after `new()`).
-    fn first_lane(&self) -> &dyn RenderLane {
-        self.lanes
-            .first()
-            .map(|b| b.as_ref())
-            .expect("RenderAgent has no lanes configured")
-    }
-
-    /// Selects the appropriate render lane based on the current strategy.
-    pub fn select_lane(&self) -> &dyn RenderLane {
+    /// Returns the strategy name of the currently selected render lane.
+    fn select_lane_name(&self) -> &'static str {
         match self.strategy {
-            RenderingStrategy::Unlit => self
-                .find_lane_by_name("SimpleUnlit")
-                .unwrap_or_else(|| self.first_lane()),
-            RenderingStrategy::LitForward => self
-                .find_lane_by_name("LitForward")
-                .unwrap_or_else(|| self.first_lane()),
-            RenderingStrategy::ForwardPlus => self
-                .find_lane_by_name("ForwardPlus")
-                .unwrap_or_else(|| self.first_lane()),
+            RenderingStrategy::Unlit => "SimpleUnlit",
+            RenderingStrategy::LitForward => "LitForward",
+            RenderingStrategy::ForwardPlus => "ForwardPlus",
             RenderingStrategy::Auto => {
                 let total_lights = self.render_world.directional_light_count()
                     + self.render_world.point_light_count()
                     + self.render_world.spot_light_count();
 
                 if total_lights > FORWARD_PLUS_LIGHT_THRESHOLD {
-                    self.find_lane_by_name("ForwardPlus")
-                        .unwrap_or_else(|| self.first_lane())
+                    "ForwardPlus"
                 } else if total_lights > 0 {
-                    self.find_lane_by_name("LitForward")
-                        .unwrap_or_else(|| self.first_lane())
+                    "LitForward"
                 } else {
-                    self.find_lane_by_name("SimpleUnlit")
-                        .unwrap_or_else(|| self.first_lane())
+                    "SimpleUnlit"
                 }
             }
         }
+    }
+
+    /// Selects the appropriate render lane based on the current strategy.
+    pub fn select_lane(&self) -> &dyn Lane {
+        let name = self.select_lane_name();
+        self.lanes.get(name).unwrap_or_else(|| {
+            self.lanes
+                .find_by_kind(LaneKind::Render)
+                .first()
+                .copied()
+                .expect("RenderAgent has no render lanes configured")
+        })
     }
 
     /// Prepares all rendering data for the current frame.
@@ -498,18 +556,30 @@ impl RenderAgent {
     /// `RenderWorld` and produces the final, low-level data structure required by
     /// the `RenderSystem`.
     ///
-    /// This logic uses the render lane to determine the appropriate pipeline for each
-    /// material, then builds the RenderObjects list.
+    /// Uses the selected lane's domain-specific pipeline selection if available,
+    /// otherwise falls back to a default pipeline.
     pub fn produce_render_objects(&self) -> Vec<RenderObject> {
         let mut render_objects = Vec::with_capacity(self.render_world.meshes.len());
         let gpu_meshes_guard = self.gpu_meshes.read().unwrap();
 
+        // Downcast to concrete lane types to get pipeline selection.
+        let selected = self.select_lane();
+        let get_pipeline = |material: Option<&khora_core::asset::AssetHandle<Box<dyn khora_core::asset::Material>>>| -> RenderPipelineId {
+            if let Some(lane) = selected.as_any().downcast_ref::<SimpleUnlitLane>() {
+                return lane.get_pipeline_for_material(material);
+            }
+            if let Some(lane) = selected.as_any().downcast_ref::<LitForwardLane>() {
+                return lane.get_pipeline_for_material(material);
+            }
+            if let Some(lane) = selected.as_any().downcast_ref::<ForwardPlusLane>() {
+                return lane.get_pipeline_for_material(material);
+            }
+            RenderPipelineId(0)
+        };
+
         for extracted_mesh in &self.render_world.meshes {
-            // Find the corresponding GpuMesh in the cache
             if let Some(gpu_mesh_handle) = gpu_meshes_guard.get(&extracted_mesh.cpu_mesh_uuid) {
-                // Use the selected render lane to determine the appropriate pipeline
-                let lane = self.select_lane();
-                let pipeline = lane.get_pipeline_for_material(extracted_mesh.material.as_ref());
+                let pipeline = get_pipeline(extracted_mesh.material.as_ref());
 
                 render_objects.push(RenderObject {
                     pipeline,

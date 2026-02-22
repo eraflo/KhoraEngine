@@ -1,12 +1,26 @@
 use khora_agents::render_agent::{RenderAgent, RenderingStrategy};
 use khora_core::math::{LinearRgba, Vec3};
-use khora_core::renderer::api::*;
+use khora_core::renderer::api::command::{
+    BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutId,
+    ComputePassDescriptor, ComputePipelineId, RenderPassDescriptor,
+};
+use khora_core::renderer::api::core::{ShaderModuleDescriptor, ShaderModuleId};
+use khora_core::renderer::api::command::ComputePipelineDescriptor;
+use khora_core::renderer::api::pipeline::{
+    PipelineLayoutDescriptor, PipelineLayoutId, RenderPipelineDescriptor,
+    RenderPipelineId,
+};
+use khora_core::renderer::api::resource::{
+    BufferDescriptor, BufferId, SamplerDescriptor, SamplerId, TextureDescriptor, TextureId,
+    TextureViewDescriptor, TextureViewId,
+};
+use khora_core::renderer::api::core::GraphicsAdapterInfo;
+use khora_core::renderer::api::util::{
+    GraphicsBackendType, IndexFormat, RendererDeviceType, TextureFormat,
+};
+use khora_core::renderer::error::ResourceError;
 use khora_core::renderer::light::{DirectionalLight, LightType, PointLight};
 use khora_core::renderer::traits::{CommandEncoder, ComputePass, GraphicsDevice, RenderPass};
-use khora_core::renderer::{
-    BindGroupId, BufferId, ComputePipelineId, GraphicsBackendType, IndexFormat, PipelineLayoutId,
-    RenderPipelineId, RendererDeviceType, ResourceError, ShaderModuleId, TextureFormat,
-};
 use khora_data::ecs::{GlobalTransform, Light, Transform, World};
 use std::any::Any;
 use std::future::Future;
@@ -26,6 +40,8 @@ impl RenderPass<'_> for MockRenderPass {
     fn set_index_buffer(&mut self, _buffer: &BufferId, _offset: u64, _index_format: IndexFormat) {}
     fn draw(&mut self, _vertices: Range<u32>, _instances: Range<u32>) {}
     fn draw_indexed(&mut self, _indices: Range<u32>, _base_vertex: i32, _instances: Range<u32>) {}
+    fn set_viewport(&mut self, _x: f32, _y: f32, _w: f32, _h: f32, _min_d: f32, _max_d: f32) {}
+    fn set_scissor_rect(&mut self, _x: u32, _y: u32, _w: u32, _h: u32) {}
 }
 
 impl ComputePass<'_> for MockComputePass {
@@ -253,6 +269,9 @@ fn test_render_agent_strategy_selection() {
             direction: Vec3::new(0.0, -1.0, 0.0),
             color: LinearRgba::WHITE,
             intensity: 1.0,
+            shadow_enabled: false,
+            shadow_bias: 0.0,
+            shadow_normal_bias: 0.0,
         })),
         Transform::default(),
         GlobalTransform::default(),
@@ -272,6 +291,9 @@ fn test_render_agent_strategy_selection() {
                 color: LinearRgba::WHITE,
                 intensity: 10.0,
                 range: 5.0,
+                shadow_enabled: false,
+                shadow_bias: 0.0,
+                shadow_normal_bias: 0.0,
             })),
             Transform {
                 translation: Vec3::new(i as f32, 0.0, 0.0),

@@ -152,4 +152,16 @@ As a device heats up, the DCC gradually reduces the `GlobalBudgetMultiplier`.
 - [x] **v0.1**: Static priority arbitration (Cold Path only).
 - [x] **v0.2**: Dynamic weight calculation based on `ExecutionPhase`, situational hierarchy, and Hardware awareness (Thermal/CPU).
 - [x] **v0.3**: Cost-based negotiation with `lane.estimate_cost()`, VRAM-aware filtering, health score reporting, and `GpuReport` telemetry integration.
+- [ ] **v0.4**: Migrate AudioAgent, SerializationAgent, and AssetAgent to full GORNA compliance (Agent trait + LaneRegistry + LaneContext).
 - [ ] **v1.0**: Predictive arbitration using `MetricStore` trends and multi-agent resource bargaining.
+
+### Current GORNA Compliance
+
+| Agent | Agent Trait | LaneRegistry | LaneContext | GORNA Negotiation |
+| :--- | :---: | :---: | :---: | :---: |
+| `RenderAgent` | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
+| `PhysicsAgent` | :white_check_mark: | :white_check_mark: | :white_check_mark: | :white_check_mark: |
+| `GarbageCollectorAgent` | :white_check_mark: | :x: | :x: | :white_check_mark: |
+| `AudioAgent` | :x: | :x: | :x: | :x: |
+| `SerializationAgent` | :x: | :x: | :x: | :x: |
+| `AssetAgent` | Partial | Custom | :x: | :x: |

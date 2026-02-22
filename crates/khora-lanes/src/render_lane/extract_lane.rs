@@ -17,7 +17,7 @@
 use super::{ExtractedLight, ExtractedMesh, ExtractedView, RenderWorld};
 use khora_core::{
     math::Vec3,
-    renderer::{light::LightType, GpuMesh},
+    renderer::{api::scene::GpuMesh, light::LightType},
 };
 use khora_data::ecs::{Camera, GlobalTransform, HandleComponent, Light, MaterialComponent, World};
 
@@ -160,10 +160,42 @@ impl ExtractRenderablesLane {
                 light_type: light_comp.light_type,
                 position,
                 direction,
+                shadow_view_proj: khora_core::math::Mat4::IDENTITY,
+                shadow_atlas_index: None,
             };
 
             render_world.lights.push(extracted);
         }
+    }
+}
+
+impl khora_core::lane::Lane for ExtractRenderablesLane {
+    fn strategy_name(&self) -> &'static str {
+        "ExtractRenderables"
+    }
+
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Render
+    }
+
+    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+        use khora_core::lane::{LaneError, Slot};
+
+        let world = ctx.get::<Slot<World>>()
+            .ok_or(LaneError::missing("Slot<World>"))?.get_ref();
+        let render_world = ctx.get::<Slot<super::RenderWorld>>()
+            .ok_or(LaneError::missing("Slot<RenderWorld>"))?.get();
+
+        self.run(world, render_world);
+        Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -173,12 +205,14 @@ mod tests {
     use khora_core::{
         asset::{AssetHandle, AssetUUID},
         math::{affine_transform::AffineTransform, Vec3},
-        renderer::GpuMesh,
+        renderer::api::scene::GpuMesh,
     };
 
     // Helper function to create a dummy GpuMesh for testing
     fn create_dummy_gpu_mesh() -> GpuMesh {
-        use khora_core::renderer::{api::PrimitiveTopology, BufferId, IndexFormat};
+        use khora_core::renderer::api::{
+            pipeline::enums::PrimitiveTopology, resource::BufferId, util::IndexFormat,
+        };
         GpuMesh {
             vertex_buffer: BufferId(0),
             index_buffer: BufferId(0),
