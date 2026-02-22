@@ -10,7 +10,7 @@ khora-data = { path = "../khora-data" }
 khora-lanes = { path = "../khora-lanes" }
 khora-telemetry = { path = "../khora-telemetry" }
 
-bytemuck = { version = "1.24.0", features = ["derive"] }
+bytemuck = { version = "1.25.0", features = ["derive"] }
 crossbeam-channel = "0.5"
 log = "0.4"
 
@@ -20,7 +20,7 @@ anyhow = "1.0"
 # Image handling
 image = "0.25.9"
 
-tempfile = "3.23.0"
+tempfile = "3.25.0"
 bincode = { version = "2.0.1", features = ["serde"] }
 
 [dev-dependencies]
