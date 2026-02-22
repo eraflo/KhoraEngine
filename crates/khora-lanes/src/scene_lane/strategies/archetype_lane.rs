@@ -17,8 +17,8 @@
 use crate::scene_lane::strategies::{
     DeserializationError, SerializationError, SerializationStrategy,
 };
-use khora_data::ecs::World;
 use khora_core::lane::Lane;
+use khora_data::ecs::World;
 
 // --- The Lane ---
 

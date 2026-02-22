@@ -133,11 +133,16 @@ impl khora_core::lane::Lane for NativeBroadphaseLane {
         khora_core::lane::LaneKind::Physics
     }
 
-    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+    fn execute(
+        &self,
+        ctx: &mut khora_core::lane::LaneContext,
+    ) -> Result<(), khora_core::lane::LaneError> {
         use khora_core::lane::{LaneError, Slot};
 
-        let world = ctx.get::<Slot<World>>()
-            .ok_or(LaneError::missing("Slot<World>"))?.get();
+        let world = ctx
+            .get::<Slot<World>>()
+            .ok_or(LaneError::missing("Slot<World>"))?
+            .get();
 
         self.step(world);
         Ok(())
@@ -226,13 +231,20 @@ impl khora_core::lane::Lane for NativeSolverLane {
         khora_core::lane::LaneKind::Physics
     }
 
-    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+    fn execute(
+        &self,
+        ctx: &mut khora_core::lane::LaneContext,
+    ) -> Result<(), khora_core::lane::LaneError> {
         use khora_core::lane::{LaneError, Slot};
 
-        let dt = ctx.get::<khora_core::lane::PhysicsDeltaTime>()
-            .ok_or(LaneError::missing("PhysicsDeltaTime"))?.0;
-        let world = ctx.get::<Slot<World>>()
-            .ok_or(LaneError::missing("Slot<World>"))?.get();
+        let dt = ctx
+            .get::<khora_core::lane::PhysicsDeltaTime>()
+            .ok_or(LaneError::missing("PhysicsDeltaTime"))?
+            .0;
+        let world = ctx
+            .get::<Slot<World>>()
+            .ok_or(LaneError::missing("Slot<World>"))?
+            .get();
 
         self.step(world, dt);
         Ok(())

@@ -18,11 +18,11 @@ use crate::scene_lane::strategies::{
     DeserializationError, SerializationError, SerializationStrategy,
 };
 use khora_core::ecs::entity::EntityId;
+use khora_core::lane::Lane;
 use khora_data::{
     ecs::{GlobalTransform, Parent, SerializableParent, SerializableTransform, Transform, World},
     scene::{ComponentDefinition, EntityDefinition, SceneDefinition},
 };
-use khora_core::lane::Lane;
 use std::collections::HashMap;
 
 /// A serialization strategy that uses a stable, intermediate representation (`SceneDefinition`).

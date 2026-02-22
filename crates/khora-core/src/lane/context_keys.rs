@@ -116,6 +116,7 @@ impl AudioOutputSlot {
     /// # Safety contract
     ///
     /// Safe when called within the scope where the original slice is alive.
+    #[allow(clippy::mut_from_ref)]
     pub fn get(&self) -> &mut [f32] {
         // SAFETY: guaranteed by frame-scoped execution
         unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }

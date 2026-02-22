@@ -168,7 +168,10 @@ fn test_apply_budget_switches_strategy() {
 fn test_apply_budget_preserves_all_lanes() {
     let mut agent = RenderAgent::new();
     let initial_lanes = agent.lanes().len();
-    assert_eq!(initial_lanes, 4, "Should start with 4 default lanes (3 render + 1 shadow)");
+    assert_eq!(
+        initial_lanes, 4,
+        "Should start with 4 default lanes (3 render + 1 shadow)"
+    );
 
     // Apply budget — lanes should NOT be destroyed.
     let budget = ResourceBudget {

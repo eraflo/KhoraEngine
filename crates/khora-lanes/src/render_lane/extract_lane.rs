@@ -178,13 +178,20 @@ impl khora_core::lane::Lane for ExtractRenderablesLane {
         khora_core::lane::LaneKind::Render
     }
 
-    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+    fn execute(
+        &self,
+        ctx: &mut khora_core::lane::LaneContext,
+    ) -> Result<(), khora_core::lane::LaneError> {
         use khora_core::lane::{LaneError, Slot};
 
-        let world = ctx.get::<Slot<World>>()
-            .ok_or(LaneError::missing("Slot<World>"))?.get_ref();
-        let render_world = ctx.get::<Slot<super::RenderWorld>>()
-            .ok_or(LaneError::missing("Slot<RenderWorld>"))?.get();
+        let world = ctx
+            .get::<Slot<World>>()
+            .ok_or(LaneError::missing("Slot<World>"))?
+            .get_ref();
+        let render_world = ctx
+            .get::<Slot<super::RenderWorld>>()
+            .ok_or(LaneError::missing("Slot<RenderWorld>"))?
+            .get();
 
         self.run(world, render_world);
         Ok(())

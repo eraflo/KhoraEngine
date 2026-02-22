@@ -25,12 +25,12 @@ use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
 };
+use khora_core::lane::PhysicsDeltaTime;
 use khora_core::lane::{Lane, LaneContext, LaneKind, LaneRegistry, Slot};
 use khora_core::physics::PhysicsProvider;
 use khora_core::telemetry::event::TelemetryEvent;
 use khora_core::telemetry::monitoring::GpuReport;
 use khora_data::ecs::World;
-use khora_core::lane::PhysicsDeltaTime;
 use khora_lanes::physics_lane::StandardPhysicsLane;
 use khora_telemetry::metrics::registry::{GaugeHandle, MetricsRegistry};
 

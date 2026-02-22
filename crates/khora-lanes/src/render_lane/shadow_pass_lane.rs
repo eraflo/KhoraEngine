@@ -181,58 +181,97 @@ impl khora_core::lane::Lane for ShadowPassLane {
     }
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
-        let render_world = match ctx.get::<khora_core::lane::Slot<crate::render_lane::RenderWorld>>() {
-            Some(slot) => slot.get_ref(),
-            None => return 1.0,
-        };
-        let gpu_meshes = match ctx.get::<std::sync::Arc<std::sync::RwLock<khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>>>>() {
+        let render_world =
+            match ctx.get::<khora_core::lane::Slot<crate::render_lane::RenderWorld>>() {
+                Some(slot) => slot.get_ref(),
+                None => return 1.0,
+            };
+        let gpu_meshes = match ctx.get::<std::sync::Arc<
+            std::sync::RwLock<
+                khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
+            >,
+        >>() {
             Some(arc) => arc,
             None => return 1.0,
         };
         self.estimate_shadow_cost(render_world, gpu_meshes)
     }
 
-    fn on_initialize(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
-        let device = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
-            .ok_or(khora_core::lane::LaneError::missing("Arc<dyn GraphicsDevice>"))?;
-        self.on_gpu_init(device.as_ref()).map_err(|e| {
-            khora_core::lane::LaneError::InitializationFailed(Box::new(e))
-        })
+    fn on_initialize(
+        &self,
+        ctx: &mut khora_core::lane::LaneContext,
+    ) -> Result<(), khora_core::lane::LaneError> {
+        let device = ctx
+            .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
+            .ok_or(khora_core::lane::LaneError::missing(
+                "Arc<dyn GraphicsDevice>",
+            ))?;
+        self.on_gpu_init(device.as_ref())
+            .map_err(|e| khora_core::lane::LaneError::InitializationFailed(Box::new(e)))
     }
 
-    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+    fn execute(
+        &self,
+        ctx: &mut khora_core::lane::LaneContext,
+    ) -> Result<(), khora_core::lane::LaneError> {
         use khora_core::lane::{LaneError, Slot};
 
         // Phase 1: Render shadow maps
         {
-            let device = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
-                .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?.clone();
-            let gpu_meshes = ctx.get::<std::sync::Arc<std::sync::RwLock<khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>>>>()
-                .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?.clone();
-            let encoder = ctx.get::<Slot<dyn khora_core::renderer::traits::CommandEncoder>>()
-                .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?.get();
-            let render_world = ctx.get::<Slot<crate::render_lane::RenderWorld>>()
-                .ok_or(LaneError::missing("Slot<RenderWorld>"))?.get_ref();
-            let color_target = ctx.get::<khora_core::lane::ColorTarget>()
-                .ok_or(LaneError::missing("ColorTarget"))?.0;
-            let depth_target = ctx.get::<khora_core::lane::DepthTarget>()
-                .ok_or(LaneError::missing("DepthTarget"))?.0;
-            let clear_color = ctx.get::<khora_core::lane::ClearColor>()
-                .ok_or(LaneError::missing("ClearColor"))?.0;
+            let device = ctx
+                .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
+                .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
+                .clone();
+            let gpu_meshes = ctx
+                .get::<std::sync::Arc<
+                    std::sync::RwLock<
+                        khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
+                    >,
+                >>()
+                .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?
+                .clone();
+            let encoder = ctx
+                .get::<Slot<dyn khora_core::renderer::traits::CommandEncoder>>()
+                .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?
+                .get();
+            let render_world = ctx
+                .get::<Slot<crate::render_lane::RenderWorld>>()
+                .ok_or(LaneError::missing("Slot<RenderWorld>"))?
+                .get_ref();
+            let color_target = ctx
+                .get::<khora_core::lane::ColorTarget>()
+                .ok_or(LaneError::missing("ColorTarget"))?
+                .0;
+            let depth_target = ctx
+                .get::<khora_core::lane::DepthTarget>()
+                .ok_or(LaneError::missing("DepthTarget"))?
+                .0;
+            let clear_color = ctx
+                .get::<khora_core::lane::ClearColor>()
+                .ok_or(LaneError::missing("ClearColor"))?
+                .0;
 
             let render_ctx = khora_core::renderer::api::core::RenderContext::new(
-                &color_target, Some(&depth_target), clear_color,
+                &color_target,
+                Some(&depth_target),
+                clear_color,
             );
 
             self.render_shadows(
-                render_world, device.as_ref(), encoder, &render_ctx, &gpu_meshes,
+                render_world,
+                device.as_ref(),
+                encoder,
+                &render_ctx,
+                &gpu_meshes,
             );
         }
 
         // Phase 2: Patch lights with shadow data
         {
-            let render_world = ctx.get::<Slot<crate::render_lane::RenderWorld>>()
-                .ok_or(LaneError::missing("Slot<RenderWorld>"))?.get();
+            let render_world = ctx
+                .get::<Slot<crate::render_lane::RenderWorld>>()
+                .ok_or(LaneError::missing("Slot<RenderWorld>"))?
+                .get();
             let shadow_results = self.get_shadow_results();
             for (i, (matrix, index)) in shadow_results.iter() {
                 if let Some(light) = render_world.lights.get_mut(*i) {
@@ -254,7 +293,8 @@ impl khora_core::lane::Lane for ShadowPassLane {
     }
 
     fn on_shutdown(&self, ctx: &mut khora_core::lane::LaneContext) {
-        if let Some(device) = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>() {
+        if let Some(device) = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
+        {
             self.on_gpu_shutdown(device.as_ref());
         }
     }
@@ -277,7 +317,9 @@ impl ShadowPassLane {
         _render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) {
-        use khora_core::renderer::api::{command::BindGroupId, resource::BufferId, util::IndexFormat};
+        use khora_core::renderer::api::{
+            command::BindGroupId, resource::BufferId, util::IndexFormat,
+        };
 
         let pipeline = if let Some(p) = *self.pipeline.read().unwrap() {
             p
@@ -365,12 +407,7 @@ impl ShadowPassLane {
             // 2. Push camera (light VP) uniform for this light
             let camera_data = CameraUniformData {
                 view_projection: shadow_view_proj.to_cols_array_2d(),
-                camera_position: [
-                    light.position.x,
-                    light.position.y,
-                    light.position.z,
-                    1.0,
-                ],
+                camera_position: [light.position.x, light.position.y, light.position.z, 1.0],
             };
 
             let camera_offset = match camera_ring.push(device, bytemuck::bytes_of(&camera_data)) {
@@ -399,17 +436,15 @@ impl ShadowPassLane {
                         normal_matrix: normal_mat.to_cols_array_2d(),
                     };
 
-                    let model_offset =
-                        match model_ring.push(device, bytemuck::bytes_of(&model_uniforms)) {
-                            Ok(off) => off,
-                            Err(e) => {
-                                log::error!(
-                                    "ShadowPassLane: Failed to push model uniform: {:?}",
-                                    e
-                                );
-                                continue;
-                            }
-                        };
+                    let model_offset = match model_ring
+                        .push(device, bytemuck::bytes_of(&model_uniforms))
+                    {
+                        Ok(off) => off,
+                        Err(e) => {
+                            log::error!("ShadowPassLane: Failed to push model uniform: {:?}", e);
+                            continue;
+                        }
+                    };
 
                     draw_cmds.push(ShadowDrawCmd {
                         model_bg: *model_ring.current_bind_group(),
@@ -465,7 +500,6 @@ impl ShadowPassLane {
         }
     }
 
-
     fn estimate_shadow_cost(
         &self,
         render_world: &RenderWorld,
@@ -484,7 +518,9 @@ impl ShadowPassLane {
         (shadow_lights as f32) * (render_world.meshes.len() as f32) * 0.001
     }
 
-    fn get_shadow_results(&self) -> std::collections::HashMap<usize, (khora_core::math::Mat4, i32)> {
+    fn get_shadow_results(
+        &self,
+    ) -> std::collections::HashMap<usize, (khora_core::math::Mat4, i32)> {
         self.shadow_results.read().unwrap().clone()
     }
 
@@ -506,10 +542,7 @@ impl ShadowPassLane {
                 BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType,
             },
             core::{ShaderModuleDescriptor, ShaderSourceData},
-            pipeline::enums::{
-                CompareFunction, PrimitiveTopology, VertexFormat,
-                VertexStepMode,
-            },
+            pipeline::enums::{CompareFunction, PrimitiveTopology, VertexFormat, VertexStepMode},
             pipeline::state::{DepthBiasState, StencilFaceState},
             pipeline::{
                 DepthStencilStateDescriptor, MultisampleStateDescriptor, PipelineLayoutDescriptor,
@@ -735,44 +768,29 @@ impl ShadowPassLane {
         // Destroy bind group layouts
         if let Some(layout) = self.camera_layout.write().unwrap().take() {
             if let Err(e) = device.destroy_bind_group_layout(layout) {
-                log::warn!(
-                    "ShadowPassLane: Failed to destroy camera layout: {:?}",
-                    e
-                );
+                log::warn!("ShadowPassLane: Failed to destroy camera layout: {:?}", e);
             }
         }
         if let Some(layout) = self.model_layout.write().unwrap().take() {
             if let Err(e) = device.destroy_bind_group_layout(layout) {
-                log::warn!(
-                    "ShadowPassLane: Failed to destroy model layout: {:?}",
-                    e
-                );
+                log::warn!("ShadowPassLane: Failed to destroy model layout: {:?}", e);
             }
         }
 
         // Destroy atlas texture, view, and sampler
         if let Some(view) = self.atlas_view.write().unwrap().take() {
             if let Err(e) = device.destroy_texture_view(view) {
-                log::warn!(
-                    "ShadowPassLane: Failed to destroy atlas view: {:?}",
-                    e
-                );
+                log::warn!("ShadowPassLane: Failed to destroy atlas view: {:?}", e);
             }
         }
         if let Some(texture) = self.atlas_texture.write().unwrap().take() {
             if let Err(e) = device.destroy_texture(texture) {
-                log::warn!(
-                    "ShadowPassLane: Failed to destroy atlas texture: {:?}",
-                    e
-                );
+                log::warn!("ShadowPassLane: Failed to destroy atlas texture: {:?}", e);
             }
         }
         if let Some(sampler) = self.shadow_sampler.write().unwrap().take() {
             if let Err(e) = device.destroy_sampler(sampler) {
-                log::warn!(
-                    "ShadowPassLane: Failed to destroy shadow sampler: {:?}",
-                    e
-                );
+                log::warn!("ShadowPassLane: Failed to destroy shadow sampler: {:?}", e);
             }
         }
     }

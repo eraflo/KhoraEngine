@@ -64,13 +64,20 @@ impl khora_core::lane::Lane for CompactionLane {
         khora_core::lane::LaneKind::Ecs
     }
 
-    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+    fn execute(
+        &self,
+        ctx: &mut khora_core::lane::LaneContext,
+    ) -> Result<(), khora_core::lane::LaneError> {
         use khora_core::lane::{LaneError, Slot};
 
-        let world = ctx.get::<Slot<dyn WorldMaintenance>>()
-            .ok_or(LaneError::missing("Slot<dyn WorldMaintenance>"))?.get();
-        let work_plan = ctx.get::<Slot<GcWorkPlan>>()
-            .ok_or(LaneError::missing("Slot<GcWorkPlan>"))?.get_ref();
+        let world = ctx
+            .get::<Slot<dyn WorldMaintenance>>()
+            .ok_or(LaneError::missing("Slot<dyn WorldMaintenance>"))?
+            .get();
+        let work_plan = ctx
+            .get::<Slot<GcWorkPlan>>()
+            .ok_or(LaneError::missing("Slot<GcWorkPlan>"))?
+            .get_ref();
 
         self.run(world, work_plan);
         Ok(())

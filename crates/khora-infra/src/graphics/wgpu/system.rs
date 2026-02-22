@@ -30,12 +30,12 @@ use khora_core::renderer::api::core::{
     BackendSelectionConfig, GraphicsAdapterInfo, RenderSettings, RenderStats,
 };
 use khora_core::renderer::api::resource::{
-    BufferId, ImageAspect, TextureDescriptor, TextureDimension,
-    TextureId, TextureUsage, TextureViewDescriptor, TextureViewId, ViewInfo,
+    BufferId, ImageAspect, TextureDescriptor, TextureDimension, TextureId, TextureUsage,
+    TextureViewDescriptor, TextureViewId, ViewInfo,
 };
 use khora_core::renderer::api::scene::RenderObject;
-use khora_core::renderer::api::util::{IndexFormat, SampleCount, TextureFormat};
 use khora_core::renderer::api::util::ShaderStageFlags;
+use khora_core::renderer::api::util::{IndexFormat, SampleCount, TextureFormat};
 use khora_core::renderer::traits::{GpuProfiler, GraphicsBackendSelector, RenderSystem};
 use khora_core::renderer::{GraphicsDevice, RenderError};
 use khora_core::telemetry::ResourceMonitor;
@@ -232,7 +232,9 @@ impl WgpuRenderSystem {
             BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
             BindingResource, BindingType, BufferBinding, BufferBindingType,
         };
-        use khora_core::renderer::api::resource::{BufferDescriptor, BufferUsage, CameraUniformData};
+        use khora_core::renderer::api::resource::{
+            BufferDescriptor, BufferUsage, CameraUniformData,
+        };
 
         let device = self.wgpu_device.as_ref().ok_or_else(|| {
             RenderError::InitializationFailed("WGPU device not initialized".to_string())

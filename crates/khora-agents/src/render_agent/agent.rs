@@ -15,6 +15,7 @@
 //! Defines the RenderAgent, the central orchestrator for the rendering subsystem.
 
 use super::mesh_preparation::MeshPreparationSystem;
+use khora_core::lane::{ClearColor, ColorTarget, DepthTarget};
 use khora_core::{
     agent::Agent,
     control::gorna::{
@@ -23,7 +24,10 @@ use khora_core::{
     lane::{Lane, LaneContext, LaneKind, LaneRegistry, Slot},
     math::Mat4,
     renderer::{
-        api::{scene::{GpuMesh, RenderObject}, resource::ViewInfo},
+        api::{
+            resource::ViewInfo,
+            scene::{GpuMesh, RenderObject},
+        },
         GraphicsDevice, RenderSystem,
     },
     EngineContext,
@@ -32,10 +36,9 @@ use khora_data::{
     assets::Assets,
     ecs::{Camera, GlobalTransform, World},
 };
-use khora_core::lane::{ClearColor, ColorTarget, DepthTarget};
 use khora_lanes::render_lane::{
-    ExtractRenderablesLane, ForwardPlusLane,
-    LitForwardLane, RenderWorld, ShadowPassLane, SimpleUnlitLane,
+    ExtractRenderablesLane, ForwardPlusLane, LitForwardLane, RenderWorld, ShadowPassLane,
+    SimpleUnlitLane,
 };
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
@@ -217,11 +220,7 @@ impl Agent for RenderAgent {
                 init_ctx.insert(device_arc.clone());
                 for lane in self.lanes.all() {
                     if let Err(e) = lane.on_initialize(&mut init_ctx) {
-                        log::error!(
-                            "Failed to initialize lane {}: {}",
-                            lane.strategy_name(),
-                            e
-                        );
+                        log::error!("Failed to initialize lane {}: {}", lane.strategy_name(), e);
                     }
                 }
             }
@@ -282,7 +281,10 @@ impl Agent for RenderAgent {
                         // which is safe because the data outlives the Slot.
                         let encoder_slot = Slot::new(encoder);
                         ctx.insert(unsafe {
-                            std::mem::transmute::<_, Slot<dyn khora_core::renderer::traits::CommandEncoder>>(encoder_slot)
+                            std::mem::transmute::<
+                                Slot<dyn khora_core::renderer::traits::CommandEncoder>,
+                                Slot<dyn khora_core::renderer::traits::CommandEncoder>,
+                            >(encoder_slot)
                         });
                         ctx.insert(Slot::new(render_world));
                         ctx.insert(ColorTarget(*render_ctx.color_target));
@@ -305,11 +307,7 @@ impl Agent for RenderAgent {
                         // 2. Execute selected render lane
                         if let Some(lane) = lanes.get(selected_name) {
                             if let Err(e) = lane.execute(&mut ctx) {
-                                log::error!(
-                                    "Render lane {} failed: {}",
-                                    lane.strategy_name(),
-                                    e
-                                );
+                                log::error!("Render lane {} failed: {}", lane.strategy_name(), e);
                             }
                         }
                     }),
@@ -436,7 +434,10 @@ impl RenderAgent {
         // transmute erases the trait object lifetime ('a → 'static).
         let encoder_slot = Slot::new(encoder);
         ctx.insert(unsafe {
-            std::mem::transmute::<_, Slot<dyn khora_core::renderer::traits::CommandEncoder>>(encoder_slot)
+            std::mem::transmute::<
+                Slot<dyn khora_core::renderer::traits::CommandEncoder>,
+                Slot<dyn khora_core::renderer::traits::CommandEncoder>,
+            >(encoder_slot)
         });
         ctx.insert(Slot::new(&mut self.render_world));
         ctx.insert(ColorTarget(*render_ctx.color_target));
@@ -564,7 +565,10 @@ impl RenderAgent {
 
         // Downcast to concrete lane types to get pipeline selection.
         let selected = self.select_lane();
-        let get_pipeline = |material: Option<&khora_core::asset::AssetHandle<Box<dyn khora_core::asset::Material>>>| -> RenderPipelineId {
+        let get_pipeline = |material: Option<
+            &khora_core::asset::AssetHandle<Box<dyn khora_core::asset::Material>>,
+        >|
+         -> RenderPipelineId {
             if let Some(lane) = selected.as_any().downcast_ref::<SimpleUnlitLane>() {
                 return lane.get_pipeline_for_material(material);
             }
@@ -708,5 +712,101 @@ impl RenderAgent {
 impl Default for RenderAgent {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::control::gorna::{NegotiationRequest, ResourceConstraints, StrategyId};
+    use khora_core::math::{Mat4, Vec3};
+    use khora_core::renderer::light::{LightType, PointLight};
+    use khora_lanes::render_lane::ExtractedLight;
+    use std::time::Duration;
+
+    fn dummy_light(light_type: LightType) -> ExtractedLight {
+        ExtractedLight {
+            light_type,
+            position: Vec3::ZERO,
+            direction: Vec3::ZERO,
+            shadow_view_proj: Mat4::IDENTITY,
+            shadow_atlas_index: None,
+        }
+    }
+
+    #[test]
+    fn test_strategy_selection_auto() {
+        let mut agent = RenderAgent::with_strategy(RenderingStrategy::Auto);
+
+        // 0 lights -> SimpleUnlit
+        assert_eq!(agent.select_lane_name(), "SimpleUnlit");
+
+        // 1 light -> LitForward
+        agent
+            .render_world_mut()
+            .lights
+            .push(dummy_light(LightType::Point(PointLight::default())));
+        assert_eq!(agent.select_lane_name(), "LitForward");
+
+        // 21 lights -> ForwardPlus
+        for _ in 0..20 {
+            agent
+                .render_world_mut()
+                .lights
+                .push(dummy_light(LightType::Point(PointLight::default())));
+        }
+        assert_eq!(agent.select_lane_name(), "ForwardPlus");
+    }
+
+    #[test]
+    fn test_negotiation_vram_limits() {
+        let mut agent = RenderAgent::new();
+
+        // 1. Unconstrained: should return LowPower (Unlit), Balanced (LitForward), HighPerformance (ForwardPlus)
+        let req_unconstrained = NegotiationRequest {
+            target_latency: Duration::from_millis(16),
+            priority_weight: 1.0,
+            constraints: ResourceConstraints::default(),
+        };
+        let res = agent.negotiate(req_unconstrained);
+        assert_eq!(res.strategies.len(), 3);
+
+        // 2. Tightly constrained VRAM (10 bytes max is too small for Balanced/HighPerformance)
+        let req_constrained = NegotiationRequest {
+            target_latency: Duration::from_millis(16),
+            priority_weight: 1.0,
+            constraints: ResourceConstraints {
+                max_vram_bytes: Some(10),
+                ..Default::default()
+            },
+        };
+        let res2 = agent.negotiate(req_constrained);
+        assert_eq!(res2.strategies.len(), 1);
+        assert_eq!(res2.strategies[0].id, StrategyId::LowPower);
+    }
+
+    #[test]
+    fn test_report_status_health() {
+        let mut agent = RenderAgent::new();
+        // initially frame count is 0, should be healthy
+        let status = agent.report_status();
+        assert_eq!(status.health_score, 1.0);
+
+        // Frame count > 0 and budget 10ms, but took 20ms
+        agent.frame_count = 1;
+        agent.time_budget = Duration::from_millis(10);
+        agent.last_frame_time = Duration::from_millis(20);
+        let status = agent.report_status();
+        assert_eq!(status.health_score, 0.5); // 10 / 20
+
+        // At budget
+        agent.last_frame_time = Duration::from_millis(10);
+        let status = agent.report_status();
+        assert_eq!(status.health_score, 1.0);
+
+        // Under budget
+        agent.last_frame_time = Duration::from_millis(5);
+        let status = agent.report_status();
+        assert_eq!(status.health_score, 1.0); // min(1.0, 10/5=2.0)
     }
 }

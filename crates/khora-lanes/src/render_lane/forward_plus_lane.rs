@@ -293,56 +293,98 @@ impl khora_core::lane::Lane for ForwardPlusLane {
     }
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
-        let render_world = match ctx.get::<khora_core::lane::Slot<crate::render_lane::RenderWorld>>() {
-            Some(slot) => slot.get_ref(),
-            None => return 1.0,
-        };
-        let gpu_meshes = match ctx.get::<std::sync::Arc<std::sync::RwLock<khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>>>>() {
+        let render_world =
+            match ctx.get::<khora_core::lane::Slot<crate::render_lane::RenderWorld>>() {
+                Some(slot) => slot.get_ref(),
+                None => return 1.0,
+            };
+        let gpu_meshes = match ctx.get::<std::sync::Arc<
+            std::sync::RwLock<
+                khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
+            >,
+        >>() {
             Some(arc) => arc,
             None => return 1.0,
         };
         self.estimate_render_cost(render_world, gpu_meshes)
     }
 
-    fn on_initialize(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
-        let device = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
-            .ok_or(khora_core::lane::LaneError::missing("Arc<dyn GraphicsDevice>"))?;
-        self.on_gpu_init(device.as_ref()).map_err(|e| {
-            khora_core::lane::LaneError::InitializationFailed(Box::new(e))
-        })
+    fn on_initialize(
+        &self,
+        ctx: &mut khora_core::lane::LaneContext,
+    ) -> Result<(), khora_core::lane::LaneError> {
+        let device = ctx
+            .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
+            .ok_or(khora_core::lane::LaneError::missing(
+                "Arc<dyn GraphicsDevice>",
+            ))?;
+        self.on_gpu_init(device.as_ref())
+            .map_err(|e| khora_core::lane::LaneError::InitializationFailed(Box::new(e)))
     }
 
-    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
+    fn execute(
+        &self,
+        ctx: &mut khora_core::lane::LaneContext,
+    ) -> Result<(), khora_core::lane::LaneError> {
         use khora_core::lane::{LaneError, Slot};
-        let device = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
-            .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?.clone();
-        let gpu_meshes = ctx.get::<std::sync::Arc<std::sync::RwLock<khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>>>>()
-            .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?.clone();
-        let encoder = ctx.get::<Slot<dyn khora_core::renderer::traits::CommandEncoder>>()
-            .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?.get();
-        let render_world = ctx.get::<Slot<crate::render_lane::RenderWorld>>()
-            .ok_or(LaneError::missing("Slot<RenderWorld>"))?.get_ref();
-        let color_target = ctx.get::<khora_core::lane::ColorTarget>()
-            .ok_or(LaneError::missing("ColorTarget"))?.0;
-        let depth_target = ctx.get::<khora_core::lane::DepthTarget>()
-            .ok_or(LaneError::missing("DepthTarget"))?.0;
-        let clear_color = ctx.get::<khora_core::lane::ClearColor>()
-            .ok_or(LaneError::missing("ClearColor"))?.0;
+        let device = ctx
+            .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
+            .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
+            .clone();
+        let gpu_meshes = ctx
+            .get::<std::sync::Arc<
+                std::sync::RwLock<
+                    khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
+                >,
+            >>()
+            .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?
+            .clone();
+        let encoder = ctx
+            .get::<Slot<dyn khora_core::renderer::traits::CommandEncoder>>()
+            .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?
+            .get();
+        let render_world = ctx
+            .get::<Slot<crate::render_lane::RenderWorld>>()
+            .ok_or(LaneError::missing("Slot<RenderWorld>"))?
+            .get_ref();
+        let color_target = ctx
+            .get::<khora_core::lane::ColorTarget>()
+            .ok_or(LaneError::missing("ColorTarget"))?
+            .0;
+        let depth_target = ctx
+            .get::<khora_core::lane::DepthTarget>()
+            .ok_or(LaneError::missing("DepthTarget"))?
+            .0;
+        let clear_color = ctx
+            .get::<khora_core::lane::ClearColor>()
+            .ok_or(LaneError::missing("ClearColor"))?
+            .0;
         let shadow_atlas = ctx.get::<khora_core::lane::ShadowAtlasView>().map(|v| v.0);
-        let shadow_sampler = ctx.get::<khora_core::lane::ShadowComparisonSampler>().map(|v| v.0);
+        let shadow_sampler = ctx
+            .get::<khora_core::lane::ShadowComparisonSampler>()
+            .map(|v| v.0);
 
         let mut render_ctx = khora_core::renderer::api::core::RenderContext::new(
-            &color_target, Some(&depth_target), clear_color,
+            &color_target,
+            Some(&depth_target),
+            clear_color,
         );
         render_ctx.shadow_atlas = shadow_atlas.as_ref();
         render_ctx.shadow_sampler = shadow_sampler.as_ref();
 
-        self.render(render_world, device.as_ref(), encoder, &render_ctx, &gpu_meshes);
+        self.render(
+            render_world,
+            device.as_ref(),
+            encoder,
+            &render_ctx,
+            &gpu_meshes,
+        );
         Ok(())
     }
 
     fn on_shutdown(&self, ctx: &mut khora_core::lane::LaneContext) {
-        if let Some(device) = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>() {
+        if let Some(device) = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
+        {
             self.on_gpu_shutdown(device.as_ref());
         }
     }
@@ -669,7 +711,6 @@ impl ForwardPlusLane {
                 BindGroupLayoutEntry, BindingType, BufferBindingType,
             },
             core::{ShaderModuleDescriptor, ShaderSourceData},
-            resource::CameraUniformData,
             pipeline::enums::{CompareFunction, VertexFormat, VertexStepMode},
             pipeline::state::{ColorWrites, DepthBiasState, StencilFaceState},
             pipeline::{
@@ -677,6 +718,7 @@ impl ForwardPlusLane {
                 MultisampleStateDescriptor, PrimitiveStateDescriptor, RenderPipelineDescriptor,
                 VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
             },
+            resource::CameraUniformData,
             scene::{MaterialUniforms, ModelUniforms},
             util::{SampleCount, ShaderStageFlags},
         };

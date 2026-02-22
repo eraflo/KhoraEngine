@@ -37,16 +37,24 @@ impl khora_core::lane::Lane for SpatialMixingLane {
         khora_core::lane::LaneKind::Audio
     }
 
-    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), khora_core::lane::LaneError> {
-        use khora_core::lane::{LaneError, Slot, AudioStreamInfo, AudioOutputSlot};
+    fn execute(
+        &self,
+        ctx: &mut khora_core::lane::LaneContext,
+    ) -> Result<(), khora_core::lane::LaneError> {
+        use khora_core::lane::{AudioOutputSlot, AudioStreamInfo, LaneError, Slot};
 
-        let stream_info = ctx.get::<AudioStreamInfo>()
-            .ok_or(LaneError::missing("AudioStreamInfo"))?.0;
-        let output_slot = ctx.get::<AudioOutputSlot>()
+        let stream_info = ctx
+            .get::<AudioStreamInfo>()
+            .ok_or(LaneError::missing("AudioStreamInfo"))?
+            .0;
+        let output_slot = ctx
+            .get::<AudioOutputSlot>()
             .ok_or(LaneError::missing("AudioOutputSlot"))?;
         let output_buffer = output_slot.get();
-        let world = ctx.get::<Slot<World>>()
-            .ok_or(LaneError::missing("Slot<World>"))?.get();
+        let world = ctx
+            .get::<Slot<World>>()
+            .ok_or(LaneError::missing("Slot<World>"))?
+            .get();
 
         self.mix(world, output_buffer, &stream_info);
         Ok(())

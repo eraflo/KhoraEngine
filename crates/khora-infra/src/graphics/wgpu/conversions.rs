@@ -16,9 +16,7 @@ use wgpu;
 use winit;
 
 use khora_core::math::{Extent2D, Extent3D, LinearRgba, Origin3D};
-use khora_core::renderer::api::command::bind_group::{
-    SamplerBindingType, TextureSampleType,
-};
+use khora_core::renderer::api::command::bind_group::{SamplerBindingType, TextureSampleType};
 use khora_core::renderer::api::command::pass::{LoadOp, StoreOp};
 use khora_core::renderer::api::pipeline::enums::{
     BlendFactor, BlendOperation, CompareFunction, CullMode, FrontFace, PolygonMode,

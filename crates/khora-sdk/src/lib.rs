@@ -28,8 +28,8 @@ pub use vessel::{spawn_cube_at, spawn_plane, spawn_sphere, Vessel};
 use anyhow::Result;
 use khora_control::{DccConfig, DccService};
 use khora_core::platform::KhoraWindow;
-use khora_core::renderer::api::scene::RenderObject;
 use khora_core::renderer::api::core::RenderSettings;
+use khora_core::renderer::api::scene::RenderObject;
 use khora_core::renderer::traits::RenderSystem;
 use khora_core::telemetry::MonitoredResourceType;
 use khora_core::ServiceRegistry;
@@ -52,13 +52,13 @@ pub mod prelude {
     pub use khora_core::asset::{AssetHandle, AssetMetadata, AssetSource, AssetUUID};
     pub use khora_core::renderer::api::{
         core::{ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData},
+        pipeline::state::{DepthBiasState, StencilFaceState},
         pipeline::{
             ColorTargetStateDescriptor, ColorWrites, CompareFunction, DepthStencilStateDescriptor,
             MultisampleStateDescriptor, PipelineLayoutDescriptor, RenderPipelineDescriptor,
             RenderPipelineId, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
             VertexFormat, VertexStepMode,
         },
-        pipeline::state::{DepthBiasState, StencilFaceState},
         resource::{BufferDescriptor, BufferId, BufferUsage},
         scene::RenderObject,
         util::{IndexFormat, SampleCount, ShaderStageFlags as ShaderStage, TextureFormat},

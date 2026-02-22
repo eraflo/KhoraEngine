@@ -93,7 +93,10 @@ impl fmt::Display for LaneError {
         match self {
             LaneError::NotInitialized => write!(f, "Lane not initialized"),
             LaneError::InvalidContext { expected, received } => {
-                write!(f, "Invalid lane context: expected {expected}, got {received}")
+                write!(
+                    f,
+                    "Invalid lane context: expected {expected}, got {received}"
+                )
             }
             LaneError::ExecutionFailed(e) => write!(f, "Lane execution failed: {e}"),
             LaneError::InitializationFailed(e) => write!(f, "Lane initialization failed: {e}"),
@@ -310,6 +313,7 @@ impl<T: ?Sized> Slot<T> {
     ///
     /// Safe when called within the scope where the original reference is
     /// still alive and no other reference to the same data exists.
+    #[allow(clippy::mut_from_ref)]
     pub fn get(&self) -> &mut T {
         // SAFETY: guaranteed by single-lane-at-a-time execution
         unsafe { &mut *self.0 }

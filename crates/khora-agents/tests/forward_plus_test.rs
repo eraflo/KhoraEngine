@@ -1,20 +1,19 @@
 use khora_agents::render_agent::{RenderAgent, RenderingStrategy};
 use khora_core::math::{LinearRgba, Vec3};
+use khora_core::renderer::api::command::ComputePipelineDescriptor;
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutId,
     ComputePassDescriptor, ComputePipelineId, RenderPassDescriptor,
 };
+use khora_core::renderer::api::core::GraphicsAdapterInfo;
 use khora_core::renderer::api::core::{ShaderModuleDescriptor, ShaderModuleId};
-use khora_core::renderer::api::command::ComputePipelineDescriptor;
 use khora_core::renderer::api::pipeline::{
-    PipelineLayoutDescriptor, PipelineLayoutId, RenderPipelineDescriptor,
-    RenderPipelineId,
+    PipelineLayoutDescriptor, PipelineLayoutId, RenderPipelineDescriptor, RenderPipelineId,
 };
 use khora_core::renderer::api::resource::{
     BufferDescriptor, BufferId, SamplerDescriptor, SamplerId, TextureDescriptor, TextureId,
     TextureViewDescriptor, TextureViewId,
 };
-use khora_core::renderer::api::core::GraphicsAdapterInfo;
 use khora_core::renderer::api::util::{
     GraphicsBackendType, IndexFormat, RendererDeviceType, TextureFormat,
 };

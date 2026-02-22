@@ -242,10 +242,9 @@ mod tests {
     use crate::renderer::{
         api::{
             command::{
-                BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor,
-                BindGroupLayoutId, BindingType, BufferBindingType,
-                CommandBufferId, ComputePassDescriptor, ComputePipelineDescriptor,
-                ComputePipelineId, RenderPassDescriptor,
+                BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutId,
+                BindingType, BufferBindingType, CommandBufferId, ComputePassDescriptor,
+                ComputePipelineDescriptor, ComputePipelineId, RenderPassDescriptor,
             },
             core::{
                 GraphicsAdapterInfo, ShaderModuleDescriptor, ShaderModuleId, MAX_FRAMES_IN_FLIGHT,
@@ -257,8 +256,8 @@ mod tests {
             resource::{
                 buffer::{BufferDescriptor, BufferId},
                 texture::{
-                    self as texture_mod, SamplerDescriptor, SamplerId,
-                    TextureId, TextureViewDescriptor, TextureViewId,
+                    self as texture_mod, SamplerDescriptor, SamplerId, TextureId,
+                    TextureViewDescriptor, TextureViewId,
                 },
             },
             util::{

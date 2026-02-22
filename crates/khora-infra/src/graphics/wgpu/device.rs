@@ -1439,12 +1439,12 @@ impl GraphicsDevice for WgpuDevice {
                         view_dimension,
                         multisampled,
                     } => wgpu::BindingType::Texture {
-                        sample_type: sample_type.clone().into_wgpu(),
-                        view_dimension: view_dimension.clone().into_wgpu(),
+                        sample_type: (*sample_type).into_wgpu(),
+                        view_dimension: (*view_dimension).into_wgpu(),
                         multisampled: *multisampled,
                     },
                     BindingType::Sampler(sampler_ty) => {
-                        wgpu::BindingType::Sampler(sampler_ty.clone().into_wgpu())
+                        wgpu::BindingType::Sampler((*sampler_ty).into_wgpu())
                     }
                 };
 
