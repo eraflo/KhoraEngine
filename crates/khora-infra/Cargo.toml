@@ -29,7 +29,7 @@ env_logger = "0.11"
 anyhow = "1.0"
 
 # Physics
-rapier3d = { version = "0.22", features = ["debug-render"] }
+rapier3d = { version = "0.32", features = ["debug-render"] }
 
 [features]
 default = ["graphics", "platform", "physics"]

@@ -35,16 +35,15 @@ use events::*;
 pub struct RapierPhysicsWorld {
     rigid_body_set: RigidBodySet,
     collider_set: ColliderSet,
-    gravity: Vector<Real>,
+    gravity: Vector,
     integration_parameters: IntegrationParameters,
     physics_pipeline: PhysicsPipeline,
     island_manager: IslandManager,
-    broad_phase: BroadPhaseMultiSap,
+    broad_phase: BroadPhaseBvh,
     narrow_phase: NarrowPhase,
     impulse_joint_set: ImpulseJointSet,
     multibody_joint_set: MultibodyJointSet,
     ccd_solver: CCDSolver,
-    query_pipeline: QueryPipeline,
     events: Arc<Mutex<Vec<CollisionEvent>>>,
 }
 
@@ -53,16 +52,15 @@ impl Default for RapierPhysicsWorld {
         Self {
             rigid_body_set: RigidBodySet::new(),
             collider_set: ColliderSet::new(),
-            gravity: vector![0.0, -9.81, 0.0],
+            gravity: Vector::new(0.0, -9.81, 0.0),
             integration_parameters: IntegrationParameters::default(),
             physics_pipeline: PhysicsPipeline::new(),
             island_manager: IslandManager::new(),
-            broad_phase: BroadPhaseMultiSap::new(),
+            broad_phase: BroadPhaseBvh::new(),
             narrow_phase: NarrowPhase::new(),
             impulse_joint_set: ImpulseJointSet::new(),
             multibody_joint_set: MultibodyJointSet::new(),
             ccd_solver: CCDSolver::new(),
-            query_pipeline: QueryPipeline::new(),
             events: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -76,7 +74,7 @@ impl PhysicsProvider for RapierPhysicsWorld {
         };
 
         self.physics_pipeline.step(
-            &self.gravity,
+            self.gravity,
             &self.integration_parameters,
             &mut self.island_manager,
             &mut self.broad_phase,
@@ -86,11 +84,9 @@ impl PhysicsProvider for RapierPhysicsWorld {
             &mut self.impulse_joint_set,
             &mut self.multibody_joint_set,
             &mut self.ccd_solver,
-            Some(&mut self.query_pipeline),
             &(),
             &event_handler,
         );
-        self.query_pipeline.update(&self.collider_set);
     }
 
     fn set_gravity(&mut self, gravity: Vec3) {
@@ -106,7 +102,7 @@ impl PhysicsProvider for RapierPhysicsWorld {
 
         let rigid_body = RigidBodyBuilder::new(rb_type)
             .translation(to_rapier_vec(desc.position))
-            .rotation(to_rapier_quat(desc.rotation).scaled_axis())
+            .rotation(to_rapier_quat(desc.rotation).to_scaled_axis())
             .linvel(to_rapier_vec(desc.linear_velocity))
             .angvel(to_rapier_vec(desc.angular_velocity))
             .additional_mass(desc.mass)
@@ -138,7 +134,7 @@ impl PhysicsProvider for RapierPhysicsWorld {
 
         let collider = ColliderBuilder::new(shape)
             .translation(to_rapier_vec(desc.position))
-            .rotation(to_rapier_quat(desc.rotation).scaled_axis())
+            .rotation(to_rapier_quat(desc.rotation).to_scaled_axis())
             .active_events(if desc.active_events {
                 ActiveEvents::COLLISION_EVENTS
             } else {
@@ -174,7 +170,7 @@ impl PhysicsProvider for RapierPhysicsWorld {
         if let Some(rb) = self.rigid_body_set.get(rb_handle) {
             let t = rb.translation();
             let r = rb.rotation();
-            (from_rapier_point((*t).into()), from_rapier_quat(*r))
+            (from_rapier_vec(t), from_rapier_quat(*r))
         } else {
             (Vec3::ZERO, Quat::IDENTITY)
         }
@@ -249,16 +245,17 @@ impl PhysicsProvider for RapierPhysicsWorld {
 
     fn cast_ray(&self, ray: &Ray, max_toi: f32, solid: bool) -> Option<RaycastHit> {
         let rapier_ray =
-            rapier3d::geometry::Ray::new(to_rapier_point(ray.origin), to_rapier_vec(ray.direction));
+            rapier3d::geometry::Ray::new(to_rapier_vec(ray.origin), to_rapier_vec(ray.direction));
 
-        let (handle, intersection) = self.query_pipeline.cast_ray_and_get_normal(
+        let query_pipeline = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
             &self.rigid_body_set,
             &self.collider_set,
-            &rapier_ray,
-            max_toi,
-            solid,
             QueryFilter::default(),
-        )?;
+        );
+
+        let (handle, intersection) =
+            query_pipeline.cast_ray_and_get_normal(&rapier_ray, max_toi, solid)?;
 
         let hit_pos = rapier_ray.point_at(intersection.time_of_impact);
 
@@ -266,7 +263,7 @@ impl PhysicsProvider for RapierPhysicsWorld {
             collider: ColliderHandle(handle.into_raw_parts().0 as u64),
             distance: intersection.time_of_impact,
             normal: from_rapier_vec(intersection.normal),
-            position: from_rapier_vec(hit_pos.coords),
+            position: from_rapier_vec(hit_pos),
         })
     }
 
@@ -299,15 +296,19 @@ impl PhysicsProvider for RapierPhysicsWorld {
                 ..Default::default()
             };
 
-            let result = kcc.move_shape(
-                self.integration_parameters.dt,
+            let query_pipeline = self.broad_phase.as_query_pipeline(
+                self.narrow_phase.query_dispatcher(),
                 &self.rigid_body_set,
                 &self.collider_set,
-                &self.query_pipeline,
+                QueryFilter::default().exclude_collider(cl_handle),
+            );
+
+            let result = kcc.move_shape(
+                self.integration_parameters.dt,
+                &query_pipeline,
                 cl.shape(),
                 cl.position(),
                 to_rapier_vec(desired_translation),
-                QueryFilter::default().exclude_collider(cl_handle),
                 |_| {},
             );
 
