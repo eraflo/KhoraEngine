@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/logos/khora_full_logo.png" alt="Khora Engine Logo" width="250">
+  <img src="docs/src/logos/khora_full_logo.png" alt="Khora Engine Logo" width="250">
 </p>
 
 <h1 align="center">Khora Engine</h1>
