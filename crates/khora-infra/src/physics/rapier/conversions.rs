@@ -13,29 +13,20 @@
 // limitations under the License.
 
 use khora_core::math::{Quat, Vec3};
-use rapier3d::na::{Point3, Quaternion, UnitQuaternion, Vector3};
-use rapier3d::prelude::Real;
+use rapier3d::math::{Rotation, Vector};
 
-pub fn to_rapier_vec(v: Vec3) -> Vector3<Real> {
-    Vector3::new(v.x, v.y, v.z)
+pub fn to_rapier_vec(v: Vec3) -> Vector {
+    Vector::new(v.x, v.y, v.z)
 }
 
-pub fn to_rapier_point(v: Vec3) -> Point3<Real> {
-    Point3::new(v.x, v.y, v.z)
+pub fn to_rapier_quat(q: Quat) -> Rotation {
+    Rotation::from_xyzw(q.x, q.y, q.z, q.w)
 }
 
-pub fn to_rapier_quat(q: Quat) -> UnitQuaternion<Real> {
-    UnitQuaternion::from_quaternion(Quaternion::new(q.w, q.x, q.y, q.z))
-}
-
-pub fn from_rapier_vec(v: Vector3<Real>) -> Vec3 {
+pub fn from_rapier_vec(v: Vector) -> Vec3 {
     Vec3::new(v.x, v.y, v.z)
 }
 
-pub fn from_rapier_point(p: Point3<Real>) -> Vec3 {
-    Vec3::new(p.x, p.y, p.z)
-}
-
-pub fn from_rapier_quat(q: UnitQuaternion<Real>) -> Quat {
-    Quat::new(q.i, q.j, q.k, q.w)
+pub fn from_rapier_quat(q: Rotation) -> Quat {
+    Quat::new(q.w, q.x, q.y, q.z)
 }
