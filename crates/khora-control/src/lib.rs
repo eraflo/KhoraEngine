@@ -29,7 +29,23 @@
 //!   resource budgets (e.g., CPU/GPU time) to them in order to meet high-level
 //!   performance goals.
 //!
+//! - **Agent Registry:** Automatic registration and ordered iteration of all
+//!   engine agents with priority-based execution ordering.
+//!
 //! This crate represents the "cold path" of the engine, operating at a lower
 //! frequency and focusing on intelligent analysis rather than raw execution speed.
 
 #![warn(missing_docs)]
+
+pub mod analysis;
+pub mod context;
+pub mod gorna;
+pub mod metrics;
+pub mod registry;
+pub mod service;
+
+pub use analysis::AnalysisReport;
+pub use context::{BatteryLevel, Context, ExecutionPhase, HardwareState, ThermalStatus};
+pub use gorna::GornaArbitrator;
+pub use registry::AgentRegistry;
+pub use service::{DccConfig, DccService};

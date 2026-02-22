@@ -12,9 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::renderer::api::command::{CommandBufferId, ComputePassDescriptor, RenderPassDescriptor};
+use crate::renderer::api::{
+    command::{
+        BindGroupId, CommandBufferId, ComputePassDescriptor, ComputePipelineId,
+        RenderPassDescriptor,
+    },
+    pipeline::RenderPipelineId,
+    resource::BufferId,
+    util::IndexFormat,
+};
 use crate::renderer::traits::GpuProfiler;
-use crate::renderer::{BindGroupId, BufferId, ComputePipelineId, IndexFormat, RenderPipelineId};
 use std::any::Any;
 use std::ops::Range;
 
@@ -34,7 +41,13 @@ pub trait RenderPass<'pass> {
     /// # Arguments
     /// * `index` - The bind group index (must match shader @group(N) declarations)
     /// * `bind_group` - The bind group to bind
-    fn set_bind_group(&mut self, index: u32, bind_group: &'pass BindGroupId);
+    /// * `dynamic_offsets` - Optional dynamic offsets if the bind group layout specifies dynamic entries
+    fn set_bind_group(
+        &mut self,
+        index: u32,
+        bind_group: &'pass BindGroupId,
+        dynamic_offsets: &[u32],
+    );
 
     /// Binds a vertex buffer to a specific slot.
     fn set_vertex_buffer(&mut self, slot: u32, buffer: &'pass BufferId, offset: u64);
@@ -47,6 +60,20 @@ pub trait RenderPass<'pass> {
 
     /// Records an indexed draw call.
     fn draw_indexed(&mut self, indices: Range<u32>, base_vertex: i32, instances: Range<u32>);
+
+    /// Sets the viewport for subsequent draw calls.
+    fn set_viewport(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        min_depth: f32,
+        max_depth: f32,
+    );
+
+    /// Sets the scissor rectangle for subsequent draw calls.
+    fn set_scissor_rect(&mut self, x: u32, y: u32, width: u32, height: u32);
 }
 
 /// A trait representing an active compute pass, used for recording dispatch commands.
@@ -68,7 +95,13 @@ pub trait ComputePass<'pass> {
     /// # Arguments
     /// * `index` - The bind group index (must match shader @group(N) declarations)
     /// * `bind_group` - The bind group to bind
-    fn set_bind_group(&mut self, index: u32, bind_group: &'pass BindGroupId);
+    /// * `dynamic_offsets` - Optional dynamic offsets if the bind group layout specifies dynamic entries
+    fn set_bind_group(
+        &mut self,
+        index: u32,
+        bind_group: &'pass BindGroupId,
+        dynamic_offsets: &[u32],
+    );
 
     /// Dispatches compute workgroups.
     ///

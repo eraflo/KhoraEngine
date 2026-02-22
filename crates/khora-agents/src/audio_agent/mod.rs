@@ -17,7 +17,7 @@
 use anyhow::Result;
 use khora_core::audio::device::AudioDevice;
 use khora_data::ecs::World;
-use khora_lanes::audio_lane::{AudioMixingLane, SpatialMixingLane};
+use khora_lanes::audio_lane::SpatialMixingLane;
 use std::sync::{Arc, RwLock};
 
 /// The ISA that orchestrates the entire audio system.
@@ -25,7 +25,7 @@ pub struct AudioAgent {
     /// The audio device used for playback.
     device: Option<Box<dyn AudioDevice>>,
     /// The audio mixing lane responsible for mixing audio sources.
-    mixing_lane: Arc<dyn AudioMixingLane>,
+    mixing_lane: Arc<SpatialMixingLane>,
     /// A thread-safe, shareable reference to the ECS `World`.
     world: Arc<RwLock<World>>,
 }

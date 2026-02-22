@@ -11,6 +11,8 @@ khora-lanes = { path = "../khora-lanes" }
 khora-telemetry = { path = "../khora-telemetry" }
 
 bytemuck = { version = "1.25.0", features = ["derive"] }
+crossbeam-channel = "0.5"
+log = "0.4"
 
 # Error handling
 anyhow = "1.0"

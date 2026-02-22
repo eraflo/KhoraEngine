@@ -12,36 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Contains all the public data structures and enums for the backend-agnostic rendering API.
+//! Backend-agnostic rendering API.
 //!
-//! This module defines the "nouns" of the rendering language: the descriptors used
-//! to create resources (e.g., [`BufferDescriptor`], [`TextureDescriptor`]), the handles
-//! used to identify them (e.g., [`BufferId`], [`TextureId`]), and the various enums
-//! that configure their behavior (e.g., [`TextureFormat`]).
+//! Organized into several logical sub-modules:
 //!
-//! These types are used in the method signatures of the traits defined in the
-//! parent module's `traits` submodule.
+//! - **[`core`]**: Infrastructure, backend abstraction, and global state.
+//! - **[`resource`]**: GPU handles (Buffer, Texture) and their descriptors.
+//! - **[`command`]**: Command recording, encoders, and pass definitions.
+//! - **[`pipeline`]**: Static pipeline state, layouts, and configuration.
+//! - **[`scene`]**: High-level rendering entities (Light, Mesh, RenderObject).
+//! - **[`util`]**: Generic utility types and containers.
 
-pub mod backend;
-pub mod bind_group;
-pub mod buffer;
 pub mod command;
-pub mod common;
-pub mod compute;
-pub mod context;
-pub mod mesh;
+pub mod core;
 pub mod pipeline;
-pub mod shader;
-pub mod texture;
-
-pub use self::backend::*;
-pub use self::bind_group::*;
-pub use self::buffer::*;
-pub use self::command::*;
-pub use self::common::*;
-pub use self::compute::*;
-pub use self::context::*;
-pub use self::mesh::*;
-pub use self::pipeline::*;
-pub use self::shader::*;
-pub use self::texture::*;
+pub mod resource;
+pub mod scene;
+pub mod util;

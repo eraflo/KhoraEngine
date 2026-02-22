@@ -12,10 +12,13 @@
 - [ECS Architecture (CRPECS)](./06_ecs_architecture.md)
 - [Asset Architecture: The Strategic System](./07_asset_architecture_vfs.md)
 - [Serialization Architecture: SAA-Serialize](./08_serialization_architecture.md)
+- [DCC Architecture](./11_dcc_architecture.md)
+- [GORNA Protocol Specification](./12_gorna_protocol.md)
 
 # III. Development
-- [Roadmap & Issue Tracker](09_roadmap_and_issues.md)
-- [Research: Rendering Strategies](10_rendering_strategies_research.md)
+- [Roadmap & Issue Tracker](./09_roadmap_and_issues.md)
+- [Rendering Architecture](./10_rendering_strategies_research.md)
+- [The Khora SDK Engine API](./13_khora_sdk.md)
 
 # IV. API Reference
-- [**Complete Crate Reference**](https://eraflo.github.io/KhoraEngine/api/index.html)
+- [Complete Crate Reference](./API_REFERENCE.md)

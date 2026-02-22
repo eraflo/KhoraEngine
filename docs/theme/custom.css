@@ -1,0 +1,198 @@
+/* ============================================================
+   Khora Engine — Custom mdBook Theme
+   ============================================================ */
+
+/* ---------- Root Variables (Ayu Dark overrides) ---------- */
+:root {
+    --khora-accent: #e0a526;
+    --khora-accent-dim: #c48d1a;
+    --khora-bg-dark: #0d1117;
+    --khora-bg-sidebar: #0c0e13;
+    --khora-bg-code: #161b22;
+    --khora-text: #c9d1d9;
+    --khora-text-dim: #8b949e;
+    --khora-border: #21262d;
+    --khora-link: #58a6ff;
+    --khora-heading: #f0f6fc;
+}
+
+/* ---------- Global Overrides ---------- */
+.ayu .content main {
+    max-width: 900px;
+}
+
+.ayu {
+    --bg: var(--khora-bg-dark);
+    --fg: var(--khora-text);
+    --sidebar-bg: var(--khora-bg-sidebar);
+    --sidebar-fg: var(--khora-text-dim);
+    --sidebar-active: var(--khora-accent);
+    --links: var(--khora-link);
+}
+
+/* ---------- Sidebar ---------- */
+.sidebar .sidebar-scrollbox {
+    padding-top: 16px;
+}
+
+.sidebar .sidebar-scrollbox::before {
+    content: "";
+    display: block;
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 12px auto;
+    background-image: url("../logos/logo_round.png");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.sidebar .sidebar-scrollbox .chapter li a {
+    transition: color 0.15s ease, border-left-color 0.15s ease;
+}
+
+.sidebar .sidebar-scrollbox .chapter li a:hover,
+.sidebar .sidebar-scrollbox .chapter li a.active {
+    color: var(--khora-accent) !important;
+}
+
+/* ---------- Headings ---------- */
+.content main h1,
+.content main h2,
+.content main h3,
+.content main h4 {
+    color: var(--khora-heading);
+    border-bottom: none;
+}
+
+.content main h1 {
+    font-size: 2em;
+    margin-top: 0;
+    padding-bottom: 0.3em;
+    border-bottom: 2px solid var(--khora-accent);
+}
+
+.content main h2 {
+    font-size: 1.5em;
+    margin-top: 2em;
+    padding-bottom: 0.25em;
+    border-bottom: 1px solid var(--khora-border);
+}
+
+.content main h3 {
+    font-size: 1.2em;
+    margin-top: 1.6em;
+}
+
+/* ---------- Code blocks ---------- */
+.content main pre {
+    background-color: var(--khora-bg-code) !important;
+    border: 1px solid var(--khora-border);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.content main code {
+    border-radius: 4px;
+    padding: 0.15em 0.35em;
+    font-size: 0.9em;
+}
+
+/* ---------- Tables ---------- */
+.content main table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1em 0;
+}
+
+.content main table th {
+    background-color: rgba(224, 165, 38, 0.08);
+    color: var(--khora-accent);
+    font-weight: 600;
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 2px solid var(--khora-accent-dim);
+}
+
+.content main table td {
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--khora-border);
+}
+
+.content main table tr:hover td {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* ---------- Blockquotes / Admonitions ---------- */
+.content main blockquote {
+    border-left: 4px solid var(--khora-accent);
+    background-color: rgba(224, 165, 38, 0.04);
+    padding: 12px 16px;
+    margin: 1.2em 0;
+    border-radius: 0 6px 6px 0;
+}
+
+/* ---------- Links ---------- */
+.content main a {
+    color: var(--khora-link);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-bottom-color 0.15s ease;
+}
+
+.content main a:hover {
+    border-bottom-color: var(--khora-link);
+}
+
+/* ---------- Checkbox lists ---------- */
+.content main li input[type="checkbox"] {
+    accent-color: var(--khora-accent);
+    margin-right: 6px;
+}
+
+/* ---------- Horizontal rules ---------- */
+.content main hr {
+    border: none;
+    border-top: 1px solid var(--khora-border);
+    margin: 2em 0;
+}
+
+/* ---------- Navigation buttons ---------- */
+.nav-chapters:hover {
+    color: var(--khora-accent) !important;
+}
+
+/* ---------- Scrollbar (Webkit) ---------- */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--khora-bg-dark);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--khora-border);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--khora-text-dim);
+}
+
+/* ---------- Mermaid diagram styling ---------- */
+.mermaid svg {
+    max-width: 100%;
+}
+
+/* ---------- Print cleanup ---------- */
+@media print {
+    .sidebar,
+    .nav-chapters {
+        display: none !important;
+    }
+
+    .content main {
+        max-width: 100%;
+    }
+}

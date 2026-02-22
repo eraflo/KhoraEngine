@@ -16,10 +16,11 @@
 
 use crate::{
     asset::Asset,
-    math::{geometry::Aabb, Vec2, Vec3, Vec4},
-    renderer::{
-        api::{PrimitiveTopology, VertexAttributeDescriptor},
-        BufferId, IndexFormat,
+    math::{Aabb, Vec2, Vec3, Vec4},
+    renderer::api::{
+        pipeline::{PrimitiveTopology, VertexAttributeDescriptor},
+        resource::BufferId,
+        util::IndexFormat,
     },
 };
 

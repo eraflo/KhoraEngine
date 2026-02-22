@@ -26,7 +26,7 @@ use std::ops::{Add, Div, Mul, Sub};
 ///
 /// `#[repr(C)]` ensures a consistent memory layout, which is important when passing
 /// color data to graphics APIs.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct LinearRgba {
     /// The red component in linear space.

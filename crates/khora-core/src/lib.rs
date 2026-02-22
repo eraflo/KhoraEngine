@@ -19,19 +19,27 @@
 
 #![warn(missing_docs)]
 
+pub mod agent;
 pub mod asset;
 pub mod audio;
+pub mod context;
+pub mod control;
+
 pub mod ecs;
 pub mod event;
 pub mod graph;
+pub mod lane;
 pub mod math;
 pub mod memory;
 pub mod physics;
 pub mod platform;
 pub mod renderer;
 pub mod scene;
+pub mod service_registry;
 pub mod telemetry;
 pub mod utils;
 pub mod vfs;
 
+pub use context::EngineContext;
+pub use service_registry::ServiceRegistry;
 pub use utils::timer::Stopwatch;

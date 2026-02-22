@@ -17,9 +17,45 @@
 //! This module contains traits and types that define a common, engine-wide interface
 //! for interacting with the underlying operating system and its features, such as
 //! windowing, input, and filesystem access.
-//!
-//! The goal is to keep the core engine logic in crates like `khora-agents` and
-//! `khora-lanes` completely decoupled from any specific platform implementation
-//! (like Winit or SDL2), which are handled in `khora-infra`.
 
 pub mod window;
+
+pub use window::{KhoraWindow, KhoraWindowHandle, WindowHandle};
+
+/// Represents the thermal state of the device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ThermalStatus {
+    /// Device is running cool.
+    #[default]
+    Cool,
+    /// Device is warming up but within normal bounds.
+    Warm,
+    /// Device is actively throttling performance to shed heat.
+    Throttling,
+    /// Device is at critical temperature, emergency measures required.
+    Critical,
+}
+
+/// Represents the power source and battery level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BatteryLevel {
+    /// Device is connected to a stable power source.
+    #[default]
+    Mains,
+    /// Battery is high (e.g. > 50%).
+    High,
+    /// Battery is low (e.g. < 20%).
+    Low,
+    /// Battery is at critical level, power saving is mandatory.
+    Critical,
+}
+
+/// Trait for observing the physical state of the host platform.
+pub trait HardwareMonitor: Send + Sync {
+    /// Returns the current thermal status.
+    fn thermal_status(&self) -> ThermalStatus;
+    /// Returns the current battery/power level.
+    fn battery_level(&self) -> BatteryLevel;
+    /// Returns the current overall CPU load (0.0 to 1.0).
+    fn cpu_load(&self) -> f32;
+}

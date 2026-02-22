@@ -55,12 +55,26 @@ const TILE_SIZE: u32 = 16u;
 const MAX_LIGHTS_PER_TILE: u32 = 128u;
 
 var<workgroup> shared_light_count: atomic<u32>;
-var<workgroup> shared_light_indices: array<u32, MAX_LIGHTS_PER_TILE>;
+var<workgroup> shared_light_indices: array<u32, 128u>;
 var<workgroup> tile_frustum_planes: array<vec4<f32>, 4>;  // Left, Right, Top, Bottom
 var<workgroup> tile_min_z: atomic<u32>;
 var<workgroup> tile_max_z: atomic<u32>;
 
 // --- Helper Functions ---
+
+// Custom implementation of bitcast for u32 to f32
+fn bitcast_f32(v: u32) -> f32 {
+    if (v == 0u) {
+        return 0.0;
+    }
+    var sign: f32 = 1.0;
+    if ((v & 0x80000000u) != 0u) {
+        sign = -1.0;
+    }
+    let exponent = f32((v >> 23u) & 0xFFu) - 127.0;
+    let mantissa = 1.0 + f32(v & 0x7FFFFFu) / 8388608.0;
+    return sign * mantissa * exp2(exponent);
+}
 
 // Convert clip-space NDC to view-space position
 fn ndc_to_view(ndc: vec3<f32>) -> vec3<f32> {
@@ -94,8 +108,8 @@ fn light_intersects_tile(light_pos_view: vec3<f32>, light_range: f32) -> bool {
     }
     
     // Check against depth range (z is negative in view space)
-    let min_z_f = bitcast<f32>(atomicLoad(&tile_min_z));
-    let max_z_f = bitcast<f32>(atomicLoad(&tile_max_z));
+    let min_z_f = bitcast_f32(atomicLoad(&tile_min_z));
+    let max_z_f = bitcast_f32(atomicLoad(&tile_max_z));
     
     // Light is too far (z more negative than max depth)
     if (light_pos_view.z + light_range < -max_z_f) {
@@ -124,9 +138,9 @@ fn cs_main(
     
     // Initialize shared memory (first thread only)
     if (local_index == 0u) {
-        atomicStore(&shared_light_count, 0u);
-        atomicStore(&tile_min_z, bitcast<u32>(1.0f32));  // Near = 1.0
-        atomicStore(&tile_max_z, bitcast<u32>(0.0f32));  // Far = 0.0
+        atomicExchange(&shared_light_count, 0u);
+        atomicExchange(&tile_min_z, 0x3F800000u);  // Near = 1.0f (bit pattern)
+        atomicExchange(&tile_max_z, 0u);           // Far = 0.0f (bit pattern)
     }
     
     // Construct tile frustum planes (first 4 threads)
@@ -203,8 +217,8 @@ fn cs_main(
         let offset = tile_index * MAX_LIGHTS_PER_TILE;
         
         // Store offset and count in light_grid
-        atomicStore(&light_grid[tile_index * 2u], offset);
-        atomicStore(&light_grid[tile_index * 2u + 1u], count);
+        atomicExchange(&light_grid[tile_index * 2u], offset);
+        atomicExchange(&light_grid[tile_index * 2u + 1u], count);
     }
     
     workgroupBarrier();

@@ -16,7 +16,21 @@ use wgpu;
 use winit;
 
 use khora_core::math::{Extent2D, Extent3D, LinearRgba, Origin3D};
-use khora_core::renderer::api::*;
+use khora_core::renderer::api::command::bind_group::{SamplerBindingType, TextureSampleType};
+use khora_core::renderer::api::command::pass::{LoadOp, StoreOp};
+use khora_core::renderer::api::pipeline::enums::{
+    BlendFactor, BlendOperation, CompareFunction, CullMode, FrontFace, PolygonMode,
+    PrimitiveTopology, StencilOperation, VertexFormat, VertexStepMode,
+};
+use khora_core::renderer::api::resource::buffer::BufferUsage;
+use khora_core::renderer::api::resource::texture::{
+    AddressMode, FilterMode, ImageAspect, MipmapFilterMode, SamplerBorderColor, TextureDimension,
+    TextureViewDimension,
+};
+use khora_core::renderer::api::util::enums::{
+    IndexFormat, SampleCount, ShaderStage, TextureFormat,
+};
+use khora_core::renderer::api::util::flags::ShaderStageFlags;
 
 /// A local extension trait to convert our engine's types into WGPU-compatible types.
 /// This avoids Rust's orphan rules while keeping an idiomatic `.into_wgpu()` syntax.
@@ -74,6 +88,46 @@ impl IntoWgpu<wgpu::TextureViewDimension> for TextureViewDimension {
             TextureViewDimension::Cube => wgpu::TextureViewDimension::Cube,
             TextureViewDimension::CubeArray => wgpu::TextureViewDimension::CubeArray,
             TextureViewDimension::D3 => wgpu::TextureViewDimension::D3,
+        }
+    }
+}
+
+/// IntoWgpu for bind_group's TextureViewDimension (used in BindingType::Texture).
+impl IntoWgpu<wgpu::TextureViewDimension>
+    for khora_core::renderer::api::command::TextureViewDimension
+{
+    fn into_wgpu(self) -> wgpu::TextureViewDimension {
+        use khora_core::renderer::api::command::TextureViewDimension as CmdTVD;
+        match self {
+            CmdTVD::D1 => wgpu::TextureViewDimension::D1,
+            CmdTVD::D2 => wgpu::TextureViewDimension::D2,
+            CmdTVD::D2Array => wgpu::TextureViewDimension::D2Array,
+            CmdTVD::Cube => wgpu::TextureViewDimension::Cube,
+            CmdTVD::CubeArray => wgpu::TextureViewDimension::CubeArray,
+            CmdTVD::D3 => wgpu::TextureViewDimension::D3,
+        }
+    }
+}
+
+impl IntoWgpu<wgpu::TextureSampleType> for TextureSampleType {
+    fn into_wgpu(self) -> wgpu::TextureSampleType {
+        match self {
+            TextureSampleType::Float { filterable } => {
+                wgpu::TextureSampleType::Float { filterable }
+            }
+            TextureSampleType::Depth => wgpu::TextureSampleType::Depth,
+            TextureSampleType::Uint => wgpu::TextureSampleType::Uint,
+            TextureSampleType::Sint => wgpu::TextureSampleType::Sint,
+        }
+    }
+}
+
+impl IntoWgpu<wgpu::SamplerBindingType> for SamplerBindingType {
+    fn into_wgpu(self) -> wgpu::SamplerBindingType {
+        match self {
+            SamplerBindingType::Filtering => wgpu::SamplerBindingType::Filtering,
+            SamplerBindingType::NonFiltering => wgpu::SamplerBindingType::NonFiltering,
+            SamplerBindingType::Comparison => wgpu::SamplerBindingType::Comparison,
         }
     }
 }

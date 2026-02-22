@@ -18,7 +18,6 @@ struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
-    @location(3) color: vec3<f32>,
 };
 
 struct VertexOutput {
@@ -26,7 +25,6 @@ struct VertexOutput {
     @location(0) world_position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
-    @location(3) color: vec3<f32>,
 };
 
 struct ModelUniforms {
@@ -45,7 +43,6 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.clip_position = camera.view_projection * world_pos;
     out.normal = normalize((model.normal_matrix * vec4<f32>(input.normal, 0.0)).xyz);
     out.uv = input.uv;
-    out.color = input.color;
     return out;
 }
 
@@ -183,7 +180,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Prepare surface data
     let N = normalize(input.normal);
     let V = normalize(camera.camera_position.xyz - input.world_position);
-    let diffuse_color = material.base_color.rgb * input.color;
+    let diffuse_color = material.base_color.rgb;
     
     // Calculate tile index from clip position
     let tile_x = u32(input.clip_position.x) / tile_info.tile_size;

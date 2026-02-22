@@ -17,9 +17,10 @@
 use crate::scene_lane::strategies::{
     DeserializationError, SerializationError, SerializationStrategy,
 };
+use khora_core::lane::Lane;
 use khora_data::ecs::World;
 
-// --- The Lane (Placeholder) ---
+// --- The Lane ---
 
 /// A serialization lane that uses the "Archetype" strategy.
 #[derive(Default)]
@@ -32,9 +33,27 @@ impl ArchetypeSerializationLane {
     }
 }
 
+impl khora_core::lane::Lane for ArchetypeSerializationLane {
+    fn strategy_name(&self) -> &'static str {
+        "KH_ARCHETYPE_V1"
+    }
+
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Scene
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
 impl SerializationStrategy for ArchetypeSerializationLane {
     fn get_strategy_id(&self) -> &'static str {
-        "KH_ARCHETYPE_V1"
+        self.strategy_name()
     }
 
     /// Serializes the world by calling its internal, unsafe `serialize_archetype` method.

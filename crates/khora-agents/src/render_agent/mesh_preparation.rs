@@ -18,8 +18,12 @@ use khora_core::{
     asset::AssetHandle,
     ecs::entity::EntityId,
     renderer::{
-        api::{BufferDescriptor, BufferUsage, GpuMesh, IndexFormat},
-        GraphicsDevice, Mesh,
+        api::{
+            resource::{BufferDescriptor, BufferUsage},
+            scene::{GpuMesh, Mesh},
+            util::IndexFormat,
+        },
+        GraphicsDevice,
     },
 };
 use khora_data::{
@@ -66,12 +70,7 @@ impl MeshPreparationSystem {
     /// * `world`: A mutable reference to the main ECS `World`.
     /// * `cpu_meshes`: An immutable reference to the storage for loaded CPU `Mesh` assets.
     /// * `graphics_device`: A trait object for the active graphics device, used for buffer creation.
-    pub fn run(
-        &self,
-        world: &mut World,
-        cpu_meshes: &Assets<Mesh>,
-        graphics_device: &dyn GraphicsDevice,
-    ) {
+    pub fn run(&self, world: &mut World, graphics_device: &dyn GraphicsDevice) {
         // A temporary map to store the components that need to be added to entities.
         // We collect these first and add them later to avoid borrowing `world` mutably
         // while iterating over its query results.
@@ -94,14 +93,12 @@ impl MeshPreparationSystem {
             if !self.gpu_meshes.read().unwrap().contains(&mesh_uuid) {
                 // Cache Miss: This is the first time we've seen this mesh asset.
                 // We need to upload its data to the GPU.
-                if let Some(cpu_mesh) = cpu_meshes.get(&mesh_uuid) {
-                    let gpu_mesh = self.upload_mesh(cpu_mesh, graphics_device);
-                    // Lock the cache for writing and insert the new GpuMesh.
-                    self.gpu_meshes
-                        .write()
-                        .unwrap()
-                        .insert(mesh_uuid, AssetHandle::new(gpu_mesh));
-                }
+                let gpu_mesh = self.upload_mesh(mesh_handle_comp, graphics_device);
+                // Lock the cache for writing and insert the new GpuMesh.
+                self.gpu_meshes
+                    .write()
+                    .unwrap()
+                    .insert(mesh_uuid, AssetHandle::new(gpu_mesh));
             }
 
             // We schedule the addition of the corresponding handle component to the entity.

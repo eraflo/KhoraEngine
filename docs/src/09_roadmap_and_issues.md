@@ -25,34 +25,9 @@ This document outlines the phased development plan for Khora. It integrates all 
 ## Phase 3: The Adaptive Core
 **Goal:** Implement the "magic" of Khora: the DCC, ISAs, and GORNA, proving the SAA concept.
 
-#### [Dynamic Context Core (DCC) v1 - Awareness]
-- #71 [Feature] Design DCC Architecture
-- #72 [Feature] Implement DCC Core Service
-- #73 [Feature] Integrate Performance/Resource Metrics Collection into DCC
-- #74 [Feature] Implement Game State Monitoring Hook into DCC
-- #75 [Feature] Design Initial ISA Interface Contract v0.1
-- #76 [Task] Refactor one Subsystem to partially implement ISA v0.1
-- #116 [Research/Refactor] Evaluate Abstraction for Windowing/Platform System
-- #128 [Feature] DCC v1 Integration with Core Metrics System
-- #163 [Feature] Make CRPECS Garbage Collector an ISA
-
 #### [Intelligent Subsystem Agents (ISA) v1 & Basic Adaptation]
 - #176 [Feature] Evolve AssetAgent into a full ISA (Depends on #174)
-- #78 [Feature] Implement Multiple Strategies for one key ISA
-- #79 [Feature] Refine ISA Interface Contract
-- #80 [Feature] Implement DCC Heuristics Engine v1
-- #81 [Feature] Implement DCC Command System to trigger ISA Strategy Switches
-- #82 [Task] Demonstrate Automatic Renderer Strategy Switching
-- #224 [Feature] Implement RenderLane Resource Ownership (Shaders, Pipelines, BindGroups) (Depends on #79)
-- #225 [Feature] Implement Light Uniform Buffer System in LitForwardLane (Depends on #224)
 - #83 [Task] Refactor a Second Subsystem as ISA v0.1
-
-#### [Goal-Oriented Resource Negotiation (GORNA) v1]
-- #84 [Research] Design GORNA Protocol
-- #85 [Feature] Implement Resource Budgeting in DCC
-- #86 [Feature] Enhance ISAs to Estimate Resource Needs per Strategy
-- #87 [Feature] Implement Basic GORNA between DCC and 2-3 ISAs
-- #88 [Task] Demonstrate Dynamic Resource Re-allocation under Load
 
 ---
 
@@ -173,7 +148,7 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #1 [Feature] Setup Project Structure & Cargo Workspace
 - #2 [Feature] Implement Core Math Library (Vec3, Mat4, Quat) - Design for DOD/Potential ADF
 - #3 [Feature] Choose and Integrate Windowing Library
-- #4 [Feature] Implement Basic Input System (Feed events into core)    
+- #4 [Feature] Implement Basic Input System (Feed events into core)
 - #5 [Feature] Create Main Application Loop Structure
 - #6 [Task] Display Empty Window & Basic Stats (FPS, Mem)
 - #7 [Task] Setup Basic Logging & Event System
@@ -195,7 +170,7 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #30 [Task] Display Empty Window & Basic Stats (FPS, Mem)
 
 ### [Rendering Primitives & ISA Scaffolding]
-- #31 [Feature] Choose & Integrate Graphics API Wrapper        
+- #31 [Feature] Choose & Integrate Graphics API Wrapper
 - #32 [Feature] Design Rendering Interface as potential ISA (Clear inputs, outputs, potential strategies)
 - #33 [Feature] Implement Graphics Device Abstraction
 - #34 [Feature] Implement Swapchain Management
@@ -203,7 +178,7 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #36 [Feature] Implement Basic Buffer/Texture Management (Track VRAM usage)
 - #37 [Feature] Implement GPU Performance Monitoring Hooks (Timestamps)
 - #110 [Feature] Implement Robust Graphics Backend Selection (Vulkan/DX12/GL Fallback)
-- #118 [Feature] Implement Basic Render Pipeline System        
+- #118 [Feature] Implement Basic Rendering Pipeline System
 - #121 [Feature] Develop Custom Bitflags Macro for Internal Engine Use
 - #123 [Feature] Implement Core Metrics System Backend v1 (In-Memory)
 - #124 [Task] Integrate VRAM Tracking into Core Metrics System 
@@ -238,3 +213,29 @@ This document outlines the phased development plan for Khora. It integrates all 
 - #158 [Feature] Implement Transversal Queries (CRPECS v1)
 - #100 [Feature] Implement Basic Physics System (Integration & Collision Detection) (Depends on #40)
 - #161 [Feature] Define and Implement Core PhysicsLanes (Broadphase, Solver)
+
+#### [Intelligent Subsystem Agents (ISA) v1 & Basic Adaptation]
+- #75 [Feature] Design Initial ISA Interface Contract v0.1
+- #76 [Task] Refactor one Subsystem to partially implement ISA v0.1 (RenderAgent Base)
+- #78 [Feature] Implement Multiple Strategies for one key ISA (RenderAgent: Unlit, LitForward, ForwardPlus, Auto)
+- #79 [Feature] Refine ISA Interface Contract (Agent trait: negotiate, apply_budget, report_status)
+- #80 [Feature] Implement DCC Heuristics Engine v1 (9 heuristics in khora-control)
+- #81 [Feature] Implement DCC Command System to trigger ISA Strategy Switches (GornaArbitrator → apply_budget flow)
+- #82 [Task] Demonstrate Automatic Renderer Strategy Switching (Auto mode + GORNA negotiation, 16 tests)
+- #224 [Feature] Implement RenderLane Resource Ownership (Pipelines, buffers, bind groups; proper on_shutdown)
+- #225 [Feature] Implement Light Uniform Buffer System (UniformRingBuffer in khora-core, persistent GPU ring buffers for camera/lighting uniforms)
+
+#### [Goal-Oriented Resource Negotiation (GORNA) v1]
+- #84 [Research] Design GORNA Protocol
+- #85 [Feature] Implement Resource Budgeting in DCC
+- #86 [Feature] Enhance ISAs to Estimate Resource Needs per Strategy (estimate_cost + VRAM-aware negotiate)
+- #88 [Task] Demonstrate Dynamic Resource Re-allocation under Load
+
+#### [Dynamic Context Core (DCC) v1 - Awareness]
+- #71 [Feature] Design DCC Architecture
+- #72 [Feature] Implement DCC Core Service
+- #73 [Feature] Integrate Performance/Resource Metrics Collection into DCC
+- #74 [Feature] Implement Game State Monitoring Hook into DCC
+- #128 [Feature] DCC v1 Integration with Core Metrics System (MetricStore, RingBuffer, GpuReport ingestion)
+- #163 [Feature] Make CRPECS Garbage Collector an ISA
+- #116 [Research/Refactor] Evaluate Abstraction for Windowing/Platform System

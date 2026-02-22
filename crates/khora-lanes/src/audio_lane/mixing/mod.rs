@@ -17,19 +17,3 @@
 mod spatial_mixing_lane;
 
 pub use spatial_mixing_lane::*;
-
-/// A trait defining the behavior of an audio mixing lane.
-pub trait AudioMixingLane: Send + Sync {
-    /// Mixes audio into the provided output buffer based on the current state of the ECS `World`.
-    ///
-    /// # Arguments
-    /// * `world`: A reference to the ECS `World` containing audio sources and their states.
-    /// * `output_buffer`: The buffer to write mixed audio samples into.
-    /// * `stream_info`: Information about the audio stream (e.g., sample rate, channels).
-    fn mix(
-        &self,
-        world: &mut khora_data::ecs::World,
-        output_buffer: &mut [f32],
-        stream_info: &khora_core::audio::device::StreamInfo,
-    );
-}

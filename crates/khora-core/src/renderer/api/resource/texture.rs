@@ -16,7 +16,8 @@
 
 use crate::khora_bitflags;
 use crate::math::Extent3D;
-use crate::renderer::{CompareFunction, SampleCount, TextureFormat};
+use crate::renderer::api::pipeline::CompareFunction;
+use crate::renderer::api::util::enums::{SampleCount, TextureFormat};
 use std::borrow::Cow;
 
 /// The dimensionality of a texture.

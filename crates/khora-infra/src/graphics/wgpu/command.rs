@@ -13,12 +13,12 @@
 // limitations under the License.
 
 use khora_core::renderer::api::command::{
-    CommandBufferId, ComputePassDescriptor, RenderPassDescriptor,
+    BindGroupId, CommandBufferId, ComputePassDescriptor, ComputePipelineId, RenderPassDescriptor,
 };
+use khora_core::renderer::api::pipeline::RenderPipelineId;
+use khora_core::renderer::api::resource::buffer as api_buf;
+use khora_core::renderer::api::util::IndexFormat;
 use khora_core::renderer::traits::{CommandEncoder, ComputePass, GpuProfiler, RenderPass};
-use khora_core::renderer::{
-    api::buffer as api_buf, ComputePipelineId, IndexFormat, RenderPipelineId,
-};
 use std::any::Any;
 use std::ops::Range;
 
@@ -49,10 +49,12 @@ impl<'pass> RenderPass<'pass> for WgpuRenderPass<'pass> {
     fn set_bind_group(
         &mut self,
         index: u32,
-        bind_group_id: &'pass khora_core::renderer::BindGroupId,
+        bind_group_id: &'pass BindGroupId,
+        dynamic_offsets: &[u32],
     ) {
         if let Some(bind_group) = self.device.get_wgpu_bind_group(*bind_group_id) {
-            self.pass.set_bind_group(index, bind_group.as_ref(), &[]);
+            self.pass
+                .set_bind_group(index, bind_group.as_ref(), dynamic_offsets);
         } else {
             log::warn!("WgpuRenderPass: BindGroupId {:?} not found.", bind_group_id);
         }
@@ -87,6 +89,23 @@ impl<'pass> RenderPass<'pass> for WgpuRenderPass<'pass> {
     fn draw_indexed(&mut self, indices: Range<u32>, base_vertex: i32, instances: Range<u32>) {
         self.pass.draw_indexed(indices, base_vertex, instances);
     }
+
+    fn set_viewport(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        min_depth: f32,
+        max_depth: f32,
+    ) {
+        self.pass
+            .set_viewport(x, y, width, height, min_depth, max_depth);
+    }
+
+    fn set_scissor_rect(&mut self, x: u32, y: u32, width: u32, height: u32) {
+        self.pass.set_scissor_rect(x, y, width, height);
+    }
 }
 
 pub struct WgpuComputePass<'a> {
@@ -109,10 +128,12 @@ impl<'pass> ComputePass<'pass> for WgpuComputePass<'pass> {
     fn set_bind_group(
         &mut self,
         index: u32,
-        bind_group_id: &'pass khora_core::renderer::BindGroupId,
+        bind_group_id: &'pass BindGroupId,
+        dynamic_offsets: &[u32],
     ) {
         if let Some(bind_group) = self.device.get_wgpu_bind_group(*bind_group_id) {
-            self.pass.set_bind_group(index, bind_group.as_ref(), &[]);
+            self.pass
+                .set_bind_group(index, bind_group.as_ref(), dynamic_offsets);
         } else {
             log::warn!(
                 "WgpuComputePass: BindGroupId {:?} not found.",
@@ -151,11 +172,26 @@ impl CommandEncoder for WgpuCommandEncoder {
         let mut resolve_targets: Vec<Option<wgpu::TextureView>> = Vec::new();
 
         for att in descriptor.color_attachments.iter() {
-            if let Some(view) = self.device.get_wgpu_texture_view(att.view) {
-                views.push((*view).clone());
+            if let Some(view_entry) = self.device.get_wgpu_texture_view_entry(*att.view) {
+                // For array textures, create a single-layer 2D view for the render pass.
+                // Render passes require a 2D view, not a 2DArray view.
+                if let Some(tex_id) = view_entry.source_texture_id {
+                    if let Some(tex) = self.device.get_wgpu_texture(tex_id) {
+                        let temp_view = tex.create_view(&wgpu::TextureViewDescriptor {
+                            label: Some("Temp Layer View (Color)"),
+                            base_array_layer: att.base_array_layer,
+                            array_layer_count: Some(1),
+                            dimension: Some(wgpu::TextureViewDimension::D2),
+                            ..Default::default()
+                        });
+                        views.push(temp_view);
+                    } else {
+                        views.push((*view_entry.wgpu_view).clone());
+                    }
+                } else {
+                    views.push((*view_entry.wgpu_view).clone());
+                }
             } else {
-                // Push a dummy view if not found (should handle error properly)
-                // For now, skip this attachment
                 continue;
             }
             if let Some(rt_id) = att.resolve_target {
@@ -190,8 +226,24 @@ impl CommandEncoder for WgpuCommandEncoder {
         let depth_view: Option<wgpu::TextureView> =
             descriptor.depth_stencil_attachment.as_ref().and_then(|ds| {
                 self.device
-                    .get_wgpu_texture_view(ds.view)
-                    .map(|arc_view| (*arc_view).clone())
+                    .get_wgpu_texture_view_entry(*ds.view)
+                    .map(|view_entry| {
+                        // For array textures (e.g. shadow atlas), create a single-layer
+                        // 2D view for this specific layer. Render passes require 2D views,
+                        // not 2DArray views — this applies to ALL layers including layer 0.
+                        if let Some(tex_id) = view_entry.source_texture_id {
+                            if let Some(tex) = self.device.get_wgpu_texture(tex_id) {
+                                return tex.create_view(&wgpu::TextureViewDescriptor {
+                                    label: Some("Temp Layer View (Depth)"),
+                                    base_array_layer: ds.base_array_layer,
+                                    array_layer_count: Some(1),
+                                    dimension: Some(wgpu::TextureViewDimension::D2),
+                                    ..Default::default()
+                                });
+                            }
+                        }
+                        (*view_entry.wgpu_view).clone()
+                    })
             });
 
         let depth_stencil_attachment = match (&descriptor.depth_stencil_attachment, &depth_view) {

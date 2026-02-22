@@ -18,9 +18,9 @@ use super::AssetLoaderLane;
 use anyhow::{Context, Result};
 use khora_core::{
     math::Extent3D,
-    renderer::{
-        api::{SampleCount, TextureDimension, TextureFormat, TextureUsage},
-        CpuTexture,
+    renderer::api::{
+        resource::{CpuTexture, TextureDimension, TextureUsage},
+        util::{SampleCount, TextureFormat},
     },
 };
 
@@ -53,5 +53,23 @@ impl AssetLoaderLane<CpuTexture> for TextureLoaderLane {
             dimension: TextureDimension::D2,
             usage: TextureUsage::COPY_DST | TextureUsage::TEXTURE_BINDING,
         })
+    }
+}
+
+impl khora_core::lane::Lane for TextureLoaderLane {
+    fn strategy_name(&self) -> &'static str {
+        "TextureLoader"
+    }
+
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Asset
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }

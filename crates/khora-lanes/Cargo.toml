@@ -7,9 +7,11 @@ description = "Hot-path execution pipelines for performance-critical operations"
 [dependencies]
 khora-core = { path = "../khora-core" }
 khora-data = { path = "../khora-data" }
+log = "0.4"
 
 ahash = "0.8"
 base64 = "0.22.1" # For data URI decoding
+bytemuck = { version = "1.16", features = ["derive"] }
 bincode = "2.0.1"
 
 # Error handling

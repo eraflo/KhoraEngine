@@ -172,7 +172,15 @@ impl Default for StandardMaterial {
 }
 
 impl Asset for StandardMaterial {}
-impl Material for StandardMaterial {}
+impl Material for StandardMaterial {
+    fn base_color(&self) -> crate::math::LinearRgba {
+        self.base_color
+    }
+
+    fn emissive_color(&self) -> crate::math::LinearRgba {
+        self.emissive
+    }
+}
 
 #[cfg(test)]
 mod tests {

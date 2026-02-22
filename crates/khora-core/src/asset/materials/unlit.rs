@@ -103,7 +103,11 @@ impl Default for UnlitMaterial {
 impl Asset for UnlitMaterial {}
 
 // Mark `UnlitMaterial` as a valid material.
-impl Material for UnlitMaterial {}
+impl Material for UnlitMaterial {
+    fn base_color(&self) -> crate::math::LinearRgba {
+        self.base_color
+    }
+}
 
 #[cfg(test)]
 mod tests {
