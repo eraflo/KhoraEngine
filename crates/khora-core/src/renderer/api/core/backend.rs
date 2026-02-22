@@ -14,7 +14,8 @@
 
 //! Defines data structures for graphics backend selection and introspection.
 
-use super::common::{GraphicsAdapterInfo, GraphicsBackendType};
+use super::adapter::GraphicsAdapterInfo;
+use crate::renderer::api::util::enums::GraphicsBackendType;
 use std::time::Duration;
 
 /// Configuration for the graphics backend selection process.

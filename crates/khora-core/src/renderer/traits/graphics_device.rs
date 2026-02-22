@@ -13,7 +13,21 @@
 // limitations under the License.
 
 use crate::math::dimension;
-use crate::renderer::api::*;
+use crate::renderer::api::{
+    command::{
+        BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutId,
+        CommandBufferId, ComputePipelineDescriptor, ComputePipelineId,
+    },
+    core::{GraphicsAdapterInfo, ShaderModuleDescriptor, ShaderModuleId},
+    pipeline::{
+        PipelineLayoutDescriptor, PipelineLayoutId, RenderPipelineDescriptor, RenderPipelineId,
+    },
+    resource::{
+        BufferDescriptor, BufferId, SamplerDescriptor, SamplerId, TextureDescriptor, TextureId,
+        TextureViewDescriptor, TextureViewId,
+    },
+    util::TextureFormat,
+};
 use crate::renderer::error::ResourceError;
 use crate::renderer::traits::CommandEncoder;
 use std::fmt::Debug;
@@ -212,7 +226,7 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     fn get_surface_format(&self) -> Option<TextureFormat>;
 
     /// Gets information about the active graphics adapter (GPU).
-    fn get_adapter_info(&self) -> RendererAdapterInfo;
+    fn get_adapter_info(&self) -> GraphicsAdapterInfo;
 
     /// Checks if a specific, optional rendering feature is supported by the backend.
     fn supports_feature(&self, feature_name: &str) -> bool;

@@ -124,6 +124,39 @@ impl NativeBroadphaseLane {
     }
 }
 
+impl khora_core::lane::Lane for NativeBroadphaseLane {
+    fn strategy_name(&self) -> &'static str {
+        "NativeBroadphase"
+    }
+
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Physics
+    }
+
+    fn execute(
+        &self,
+        ctx: &mut khora_core::lane::LaneContext,
+    ) -> Result<(), khora_core::lane::LaneError> {
+        use khora_core::lane::{LaneError, Slot};
+
+        let world = ctx
+            .get::<Slot<World>>()
+            .ok_or(LaneError::missing("Slot<World>"))?
+            .get();
+
+        self.step(world);
+        Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
 /// The Solver Lane resolves collisions and updates velocities/positions.
 /// It uses the Sequential Impulse method for stable constraint resolution.
 pub struct NativeSolverLane {
@@ -186,6 +219,43 @@ impl NativeSolverLane {
                 }
             }
         }
+    }
+}
+
+impl khora_core::lane::Lane for NativeSolverLane {
+    fn strategy_name(&self) -> &'static str {
+        "NativeSolver"
+    }
+
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Physics
+    }
+
+    fn execute(
+        &self,
+        ctx: &mut khora_core::lane::LaneContext,
+    ) -> Result<(), khora_core::lane::LaneError> {
+        use khora_core::lane::{LaneError, Slot};
+
+        let dt = ctx
+            .get::<khora_core::lane::PhysicsDeltaTime>()
+            .ok_or(LaneError::missing("PhysicsDeltaTime"))?
+            .0;
+        let world = ctx
+            .get::<Slot<World>>()
+            .ok_or(LaneError::missing("Slot<World>"))?
+            .get();
+
+        self.step(world, dt);
+        Ok(())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 

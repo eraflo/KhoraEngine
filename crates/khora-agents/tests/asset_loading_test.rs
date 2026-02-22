@@ -94,7 +94,7 @@ fn test_load_asset_from_pack() -> Result<()> {
 #[test]
 fn test_load_texture_from_pack() -> Result<()> {
     use image::ImageEncoder;
-    use khora_core::renderer::api::CpuTexture;
+    use khora_core::renderer::api::resource::CpuTexture;
     use khora_lanes::asset_lane::TextureLoaderLane;
 
     // --- 1. Setup: Create temporary packfiles with a real PNG ---
@@ -162,7 +162,7 @@ fn test_load_texture_from_pack() -> Result<()> {
     assert_eq!(texture_handle.size.height, 2);
     assert_eq!(
         texture_handle.format,
-        khora_core::renderer::api::TextureFormat::Rgba8UnormSrgb
+        khora_core::renderer::api::util::TextureFormat::Rgba8UnormSrgb
     );
 
     println!("Texture loading test passed: PNG texture loaded and decoded correctly");

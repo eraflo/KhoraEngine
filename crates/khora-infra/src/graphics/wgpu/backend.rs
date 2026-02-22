@@ -26,8 +26,9 @@ use std::time::Instant;
 use wgpu::{Adapter, Backend, DeviceType, Instance, RequestAdapterOptions};
 
 use khora_core::renderer::{
-    traits::GraphicsBackendSelector, BackendSelectionConfig, BackendSelectionResult,
-    GraphicsAdapterInfo, GraphicsBackendType, RendererDeviceType,
+    api::core::{BackendSelectionConfig, BackendSelectionResult, GraphicsAdapterInfo},
+    api::util::{GraphicsBackendType, RendererDeviceType},
+    traits::GraphicsBackendSelector,
 };
 
 /// Returns a human-readable name for a backend.

@@ -72,7 +72,7 @@ impl fmt::Display for DeserializationError {
 ///
 /// Each concrete implementation of this trait represents a different method
 /// of converting a `World` to and from a persistent format.
-pub trait SerializationStrategy: Send + Sync {
+pub trait SerializationStrategy: khora_core::lane::Lane {
     /// Returns the unique, versioned string identifier for this strategy.
     ///
     /// This ID is written to the `SceneHeader` and used by the `SerializationAgent`

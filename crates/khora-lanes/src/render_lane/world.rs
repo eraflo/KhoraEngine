@@ -19,9 +19,9 @@
 //! populated by an "extraction" phase that reads data from the main ECS `World`.
 
 use khora_core::{
-    asset::AssetUUID,
+    asset::{AssetHandle, AssetUUID, Material},
     math::{affine_transform::AffineTransform, Vec3},
-    renderer::light::LightType,
+    renderer::{api::scene::GpuMesh, light::LightType},
 };
 
 /// A flat, GPU-friendly representation of a single mesh to be rendered.
@@ -31,11 +31,13 @@ use khora_core::{
 pub struct ExtractedMesh {
     /// The world-space transformation matrix of the mesh, derived from `GlobalTransform`.
     pub transform: AffineTransform,
-    /// The unique identifier of the GpuMesh asset to be rendered.
-    pub gpu_mesh_uuid: AssetUUID,
-    /// The unique identifier of the material to be used for rendering.
+    /// The UUID of the loaded CPU Mesh. Used for debugging or mapping.
+    pub cpu_mesh_uuid: AssetUUID,
+    /// A handle to the uploaded GPU mesh data.
+    pub gpu_mesh: AssetHandle<GpuMesh>,
+    /// A handle to the material to be used for rendering.
     /// If `None`, a default material should be used.
-    pub material_uuid: Option<AssetUUID>,
+    pub material: Option<AssetHandle<Box<dyn Material>>>,
 }
 
 /// A flat, GPU-friendly representation of a light source for rendering.
@@ -55,6 +57,19 @@ pub struct ExtractedLight {
     /// For point lights, this is typically ignored.
     /// For directional and spot lights, this is the direction the light is pointing.
     pub direction: Vec3,
+    /// View-projection matrix for the shadow map.
+    pub shadow_view_proj: khora_core::math::Mat4,
+    /// Index into the shadow atlas, or None if no shadow.
+    pub shadow_atlas_index: Option<i32>,
+}
+
+/// A flat representation of a camera view for rendering.
+#[derive(Debug, Clone)]
+pub struct ExtractedView {
+    /// The view-projection matrix for this camera.
+    pub view_proj: khora_core::math::Mat4,
+    /// The world-space position of the camera.
+    pub position: Vec3,
 }
 
 /// A collection of all data extracted from the main `World` needed for rendering a single frame.
@@ -68,6 +83,8 @@ pub struct RenderWorld {
     pub meshes: Vec<ExtractedMesh>,
     /// A list of all active lights affecting the current frame.
     pub lights: Vec<ExtractedLight>,
+    /// A list of all active camera views for the current frame.
+    pub views: Vec<ExtractedView>,
 }
 
 impl RenderWorld {
@@ -80,6 +97,7 @@ impl RenderWorld {
     pub fn clear(&mut self) {
         self.meshes.clear();
         self.lights.clear();
+        self.views.clear();
     }
 
     /// Returns the number of directional lights in the render world.
@@ -126,6 +144,8 @@ mod tests {
             light_type: LightType::Directional(DirectionalLight::default()),
             position: Vec3::ZERO,
             direction: Vec3::new(0.0, -1.0, 0.0),
+            shadow_view_proj: khora_core::math::Mat4::IDENTITY,
+            shadow_atlas_index: None,
         });
         assert_eq!(world.lights.len(), 1);
 
@@ -143,21 +163,29 @@ mod tests {
             light_type: LightType::Directional(DirectionalLight::default()),
             position: Vec3::ZERO,
             direction: Vec3::new(0.0, -1.0, 0.0),
+            shadow_view_proj: khora_core::math::Mat4::IDENTITY,
+            shadow_atlas_index: None,
         });
         world.lights.push(ExtractedLight {
             light_type: LightType::Point(PointLight::default()),
             position: Vec3::new(1.0, 2.0, 3.0),
             direction: Vec3::ZERO,
+            shadow_view_proj: khora_core::math::Mat4::IDENTITY,
+            shadow_atlas_index: None,
         });
         world.lights.push(ExtractedLight {
             light_type: LightType::Point(PointLight::default()),
             position: Vec3::new(-1.0, 2.0, 3.0),
             direction: Vec3::ZERO,
+            shadow_view_proj: khora_core::math::Mat4::IDENTITY,
+            shadow_atlas_index: None,
         });
         world.lights.push(ExtractedLight {
             light_type: LightType::Spot(SpotLight::default()),
             position: Vec3::ZERO,
             direction: Vec3::new(0.0, -1.0, 0.0),
+            shadow_view_proj: khora_core::math::Mat4::IDENTITY,
+            shadow_atlas_index: None,
         });
 
         assert_eq!(world.directional_light_count(), 1);

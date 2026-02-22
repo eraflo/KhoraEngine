@@ -18,6 +18,7 @@ use crate::scene_lane::strategies::{
     DeserializationError, SerializationError, SerializationStrategy,
 };
 use khora_core::ecs::entity::EntityId;
+use khora_core::lane::Lane;
 use khora_data::{
     ecs::{GlobalTransform, Parent, SerializableParent, SerializableTransform, Transform, World},
     scene::{ComponentDefinition, EntityDefinition, SceneDefinition},
@@ -39,12 +40,28 @@ impl DefinitionSerializationLane {
     }
 }
 
+impl khora_core::lane::Lane for DefinitionSerializationLane {
+    fn strategy_name(&self) -> &'static str {
+        "KH_DEFINITION_RON_V1"
+    }
+
+    fn lane_kind(&self) -> khora_core::lane::LaneKind {
+        khora_core::lane::LaneKind::Scene
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
 impl SerializationStrategy for DefinitionSerializationLane {
     /// Returns a unique identifier for this serialization strategy.
     fn get_strategy_id(&self) -> &'static str {
-        // We will have two variants: one for RON (debug) and one for Bincode (stable).
-        // For now, we implement the human-readable one.
-        "KH_DEFINITION_RON_V1"
+        self.strategy_name()
     }
 
     /// Serializes the given world into a byte vector using the stable intermediate representation.

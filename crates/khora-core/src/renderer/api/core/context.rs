@@ -14,7 +14,10 @@
 
 //! Rendering context structures for grouping related rendering parameters.
 
-use crate::{math::LinearRgba, renderer::api::TextureViewId};
+use crate::{
+    math::LinearRgba,
+    renderer::api::resource::{SamplerId, TextureViewId},
+};
 
 /// Groups rendering parameters that are commonly passed together.
 pub struct RenderContext<'a> {
@@ -24,6 +27,10 @@ pub struct RenderContext<'a> {
     pub depth_target: Option<&'a TextureViewId>,
     /// The color to clear the framebuffer with.
     pub clear_color: LinearRgba,
+    /// The shadow atlas texture view (array texture).
+    pub shadow_atlas: Option<&'a TextureViewId>,
+    /// The comparison sampler for shadows.
+    pub shadow_sampler: Option<&'a SamplerId>,
 }
 
 impl<'a> RenderContext<'a> {
@@ -43,6 +50,8 @@ impl<'a> RenderContext<'a> {
             color_target,
             depth_target,
             clear_color,
+            shadow_atlas: None,
+            shadow_sampler: None,
         }
     }
 }

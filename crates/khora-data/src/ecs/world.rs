@@ -22,7 +22,7 @@ use std::{
 use bincode::config;
 use khora_core::{
     ecs::entity::EntityId,
-    renderer::{GpuMesh, Mesh},
+    renderer::api::scene::{GpuMesh, Mesh},
 };
 
 use crate::ecs::{

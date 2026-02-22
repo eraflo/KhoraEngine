@@ -17,7 +17,6 @@ struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
-    @location(3) color: vec3<f32>,
 };
 
 // Output from vertex shader to fragment shader
@@ -26,13 +25,13 @@ struct VertexOutput {
     @location(0) world_position: vec3<f32>,
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
-    @location(3) color: vec3<f32>,
 };
 
 // Model transform uniform
 struct ModelUniforms {
     model_matrix: mat4x4<f32>,
-    normal_matrix: mat4x4<f32>,  // For transforming normals
+    normal_matrix: mat4x4<f32>,
+    tint_color: vec4<f32>,
 };
 
 @group(1) @binding(0)
@@ -52,9 +51,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     // Transform normal to world space (using normal matrix to handle non-uniform scales)
     out.normal = normalize((model.normal_matrix * vec4<f32>(input.normal, 0.0)).xyz);
     
-    // Pass through UV and color
+    // Pass through UV
     out.uv = input.uv;
-    out.color = input.color;
     
     return out;
 }
@@ -130,8 +128,8 @@ fn geometry_smith(N: vec3<f32>, V: vec3<f32>, L: vec3<f32>, roughness: f32) -> f
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Base color from material and vertex color
-    let albedo = material.base_color.rgb * in.color;
+    // Base color from material
+    let albedo = material.base_color.rgb;
     
     // Normal (already in world space from vertex shader)
     let N = normalize(in.normal);

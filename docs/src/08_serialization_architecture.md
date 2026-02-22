@@ -28,7 +28,10 @@ Whenever a `SerializationGoal` prioritizes debuggability or readability, RON wil
 
 ### Built-in Serialization Strategies (Lanes)
 
-Khora Engine ships with a core set of distinct serialization strategies. The `SerializationAgent` chooses from these `Lanes` based on the `SerializationGoal` specified by the developer.
+Khora Engine ships with a core set of distinct serialization strategies. The `SerializationAgent` selects from these `Lanes` based on the `SerializationGoal` specified by the developer.
+
+> [!NOTE]
+> **Current Status**: The `SerializationAgent` uses its own internal `HashMap<String, Box<dyn SerializationStrategy>>` registry rather than the standard `LaneRegistry` + `LaneContext` pattern. It does not yet implement the `Agent` trait and does not participate in GORNA negotiation. Migrating it to full CLAD compliance is planned.
 
 #### 1. The Definition Strategy (The Stable Lane)
 
@@ -57,7 +60,7 @@ Khora Engine ships with a core set of distinct serialization strategies. The `Se
     *   **Con:** Extremely fragile. The file is tightly coupled to the exact component memory layout, engine version, compiler, and target architecture. The slightest change will invalidate it. This is **only** suitable for final, "cooked" game builds for a specific platform.
     *   **Con:** The format is an opaque binary blob, impossible to read or debug.
 
-#### 4. The Delta Strategy (The Efficiency Lane)
+#### 4. The Delta Strategy (The Efficiency Lane) — *Planned*
 
 *   **Primary Goal:** `SerializationGoal::SmallestFileSize`.
 *   **Principle:** This strategy only saves the differences ("deltas") between the current `World` state and a reference `World` state (e.g., the base level scene).

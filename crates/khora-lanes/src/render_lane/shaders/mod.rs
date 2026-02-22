@@ -96,6 +96,9 @@ pub const LIGHT_CULLING_WGSL: &str = include_str!("light_culling.wgsl");
 /// O(lights_per_tile) complexity instead of O(all_lights).
 pub const FORWARD_PLUS_WGSL: &str = include_str!("forward_plus.wgsl");
 
+/// Minimal depth-only shader for shadow map generation.
+pub const SHADOW_PASS_WGSL: &str = include_str!("shadow_pass.wgsl");
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,5 +144,11 @@ mod tests {
         assert!(FORWARD_PLUS_WGSL.contains("@vertex"));
         assert!(FORWARD_PLUS_WGSL.contains("@fragment"));
         assert!(FORWARD_PLUS_WGSL.contains("light_grid"));
+    }
+
+    #[test]
+    fn test_shadow_pass_shader_valid() {
+        assert!(SHADOW_PASS_WGSL.contains("@vertex"));
+        assert!(SHADOW_PASS_WGSL.contains("view_projection"));
     }
 }

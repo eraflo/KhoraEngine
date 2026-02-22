@@ -26,14 +26,52 @@ pub use standard::*;
 pub use unlit::*;
 pub use wireframe::*;
 
+use std::any::Any;
+
 use super::Asset;
+
+/// Helper trait to allow downcasting `dyn Material` trait objects to their concrete types.
+pub trait AsAny {
+    /// Returns a reference to the inner value as `&dyn Any`.
+    fn as_any(&self) -> &dyn Any;
+}
+
+impl<T: Any> AsAny for T {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
 
 /// A trait for types that can be used as a material.
 ///
 /// A material defines the surface properties of an object being rendered,
 /// influencing how it interacts with light and determining which shader
-// (`RenderPipeline`) is used to draw it.
-pub trait Material: Asset {}
+/// (`RenderPipeline`) is used to draw it.
+pub trait Material: Asset + AsAny {
+    /// Returns the base color (albedo or diffuse) of the material.
+    /// Default implementation is White.
+    fn base_color(&self) -> crate::math::LinearRgba {
+        crate::math::LinearRgba::WHITE
+    }
+
+    /// Returns the emissive color of the material.
+    /// Default implementation is Black.
+    fn emissive_color(&self) -> crate::math::LinearRgba {
+        crate::math::LinearRgba::BLACK
+    }
+
+    /// Returns the specular power or roughness conversion for the material.
+    /// Default implementation is 32.0.
+    fn specular_power(&self) -> f32 {
+        32.0
+    }
+
+    /// Returns the ambient color modifier for the material.
+    /// Default implementation is (0.1, 0.1, 0.1, 0.0).
+    fn ambient_color(&self) -> crate::math::LinearRgba {
+        crate::math::LinearRgba::new(0.1, 0.1, 0.1, 0.0)
+    }
+}
 
 /// This is the key to our type-erased material handle system.
 /// We explicitly tell the compiler that a boxed, dynamic Material trait

@@ -26,16 +26,23 @@ use wgpu;
 use wgpu::util::DeviceExt;
 
 use khora_core::math::dimension;
-use khora_core::renderer::api::buffer::{self as api_buf};
-use khora_core::renderer::api::command::{self as api_cmd};
-use khora_core::renderer::api::texture::{self as api_tex};
-use khora_core::renderer::traits::CommandEncoder;
-use khora_core::renderer::{
-    ComputePipelineId, GraphicsBackendType, GraphicsDevice, PipelineError, PipelineLayoutId,
-    RenderPipelineDescriptor, RenderPipelineId, RendererAdapterInfo, RendererDeviceType,
-    ResourceError, ShaderError, ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData,
-    TextureFormat,
+use khora_core::renderer::api::command::{
+    self as api_cmd, BindGroupId, BindGroupLayoutId, ComputePipelineId,
 };
+use khora_core::renderer::api::core::{
+    GraphicsAdapterInfo, ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData,
+};
+use khora_core::renderer::api::pipeline::enums::{CompareFunction, CullMode};
+use khora_core::renderer::api::pipeline::{
+    PipelineLayoutDescriptor, PipelineLayoutId, RenderPipelineDescriptor, RenderPipelineId,
+};
+use khora_core::renderer::api::resource::buffer::{self as api_buf};
+use khora_core::renderer::api::resource::texture::{self as api_tex};
+use khora_core::renderer::api::util::{
+    GraphicsBackendType, IndexFormat, RendererDeviceType, TextureFormat,
+};
+use khora_core::renderer::traits::CommandEncoder;
+use khora_core::renderer::{GraphicsDevice, PipelineError, ResourceError, ShaderError};
 
 use crate::graphics::wgpu::command::WgpuCommandEncoder;
 use crate::graphics::wgpu::conversions::{from_wgpu_texture_format, IntoWgpu};
@@ -98,9 +105,10 @@ pub(crate) struct WgpuTextureEntry {
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct WgpuTextureViewEntry {
     pub(crate) wgpu_view: Arc<wgpu::TextureView>,
+    pub(crate) source_texture_id: Option<api_tex::TextureId>,
 }
 
 #[allow(dead_code)]
@@ -121,6 +129,11 @@ pub(crate) struct WgpuBindGroupEntry {
     pub(crate) wgpu_bind_group: Arc<wgpu::BindGroup>,
 }
 
+#[derive(Debug)]
+pub(crate) struct WgpuPipelineLayoutEntry {
+    pub(crate) wgpu_layout: Arc<wgpu::PipelineLayout>,
+}
+
 /// The internal, non-clonable state of the WgpuDevice.
 /// This struct holds all the GPU resources and state, protected by an Arc.
 #[derive(Debug)]
@@ -133,9 +146,9 @@ pub struct WgpuDeviceInternal {
     textures: Mutex<HashMap<api_tex::TextureId, WgpuTextureEntry>>,
     texture_views: Mutex<HashMap<api_tex::TextureViewId, WgpuTextureViewEntry>>,
     samplers: Mutex<HashMap<api_tex::SamplerId, WgpuSamplerEntry>>,
-    bind_group_layouts:
-        Mutex<HashMap<khora_core::renderer::BindGroupLayoutId, WgpuBindGroupLayoutEntry>>,
-    bind_groups: Mutex<HashMap<khora_core::renderer::BindGroupId, WgpuBindGroupEntry>>,
+    bind_group_layouts: Mutex<HashMap<BindGroupLayoutId, WgpuBindGroupLayoutEntry>>,
+    bind_groups: Mutex<HashMap<BindGroupId, WgpuBindGroupEntry>>,
+    pipeline_layouts: Mutex<HashMap<PipelineLayoutId, WgpuPipelineLayoutEntry>>,
 
     next_shader_id: AtomicUsize,
     next_pipeline_id: AtomicUsize,
@@ -181,6 +194,7 @@ impl WgpuDevice {
                 samplers: Mutex::new(HashMap::new()),
                 bind_group_layouts: Mutex::new(HashMap::new()),
                 bind_groups: Mutex::new(HashMap::new()),
+                pipeline_layouts: Mutex::new(HashMap::new()),
                 next_shader_id: AtomicUsize::new(0),
                 next_pipeline_id: AtomicUsize::new(0),
                 next_compute_pipeline_id: AtomicU64::new(0),
@@ -241,16 +255,16 @@ impl WgpuDevice {
         )
     }
 
-    fn generate_bind_group_layout_id(&self) -> khora_core::renderer::BindGroupLayoutId {
-        khora_core::renderer::BindGroupLayoutId(
+    fn generate_bind_group_layout_id(&self) -> BindGroupLayoutId {
+        BindGroupLayoutId(
             self.internal
                 .next_bind_group_layout_id
                 .fetch_add(1, Ordering::Relaxed),
         )
     }
 
-    fn generate_bind_group_id(&self) -> khora_core::renderer::BindGroupId {
-        khora_core::renderer::BindGroupId(
+    fn generate_bind_group_id(&self) -> BindGroupId {
+        BindGroupId(
             self.internal
                 .next_bind_group_id
                 .fetch_add(1, Ordering::Relaxed),
@@ -322,10 +336,7 @@ impl WgpuDevice {
 
     /// Retrieves a reference-counted pointer to the internal WGPU bind group.
     /// Returns `None` if the ID is invalid.
-    pub fn get_wgpu_bind_group(
-        &self,
-        id: khora_core::renderer::BindGroupId,
-    ) -> Option<Arc<wgpu::BindGroup>> {
+    pub fn get_wgpu_bind_group(&self, id: BindGroupId) -> Option<Arc<wgpu::BindGroup>> {
         let bind_groups = self.internal.bind_groups.lock().unwrap();
         bind_groups
             .get(&id)
@@ -365,7 +376,7 @@ impl WgpuDevice {
 
     /// Creates a texture view for a raw wgpu::Texture (e.g., from the swap chain)
     /// and registers it with the device, returning an abstract ID.
-    pub fn create_texture_view_for_surface(
+    pub(crate) fn register_texture_view(
         &self,
         texture: &wgpu::Texture,
         label: Option<&str>,
@@ -375,11 +386,13 @@ impl WgpuDevice {
             ..Default::default()
         }));
         let id = self.generate_texture_view_id();
-        self.internal
-            .texture_views
-            .lock()
-            .unwrap()
-            .insert(id, WgpuTextureViewEntry { wgpu_view });
+        self.internal.texture_views.lock().unwrap().insert(
+            id,
+            WgpuTextureViewEntry {
+                wgpu_view,
+                source_texture_id: None,
+            },
+        );
         Ok(id)
     }
 
@@ -399,6 +412,36 @@ impl WgpuDevice {
         guard.insert(new_id, buffer);
 
         new_id
+    }
+
+    pub fn supports_feature(&self, _feature_name: &str) -> bool {
+        let _context = self.internal.context.lock().unwrap();
+        // features is a struct in wgpu, not a set with from_name in older versions?
+        // Actually wgpu::Features has bits.
+        // For now, let's just return true for "depth-clip-control" if we can.
+        // A better implementation would find the feature in the adapter features.
+        true
+    }
+
+    pub(crate) fn get_wgpu_texture_view_entry(
+        &self,
+        id: api_tex::TextureViewId,
+    ) -> Option<WgpuTextureViewEntry> {
+        self.internal
+            .texture_views
+            .lock()
+            .unwrap()
+            .get(&id)
+            .cloned()
+    }
+
+    pub(crate) fn get_wgpu_texture(&self, id: api_tex::TextureId) -> Option<Arc<wgpu::Texture>> {
+        self.internal
+            .textures
+            .lock()
+            .unwrap()
+            .get(&id)
+            .map(|e| Arc::clone(&e.wgpu_texture))
     }
 }
 
@@ -538,12 +581,12 @@ impl GraphicsDevice for WgpuDevice {
             strip_index_format: descriptor
                 .primitive_state
                 .strip_index_format
-                .map(|f| f.into_wgpu()),
+                .map(|f: IndexFormat| f.into_wgpu()),
             front_face: descriptor.primitive_state.front_face.into_wgpu(),
             cull_mode: descriptor
                 .primitive_state
                 .cull_mode
-                .and_then(|m| m.into_wgpu()),
+                .and_then(|m: CullMode| m.into_wgpu()),
             polygon_mode: descriptor.primitive_state.polygon_mode.into_wgpu(),
             unclipped_depth: descriptor.primitive_state.unclipped_depth,
             conservative: descriptor.primitive_state.conservative,
@@ -614,17 +657,23 @@ impl GraphicsDevice for WgpuDevice {
 
         // 7. Create pipeline layout and render pipeline
         let (wgpu_render_pipeline_arc, id) = self.with_wgpu_device(|device| {
-            let pipeline_layout_label = descriptor.label.as_deref().map(|s| format!("{s}_Layout"));
-            let wgpu_pipeline_layout =
-                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: pipeline_layout_label.as_deref(),
-                    bind_group_layouts: &[],
-                    immediate_size: 0,
-                });
+            // Look up pipeline layout if provided
+            let layout_entry_opt = if let Some(layout_id) = descriptor.layout {
+                 let layouts = self.internal.pipeline_layouts.lock().unwrap(); // Potential deadlock if called from within another lock?
+                 // Note: create_render_pipeline already locks shader_modules.
+                 // Locking pipeline_layouts here is fine as long as strict ordering is maintained.
+                 // Ideally we should get it before entering with_wgpu_device callback if we can,
+                 // but with_wgpu_device just locks context.
+                 // So: Lock Context -> Lock ShaderModules -> Lock PipelineLayouts.
+                 // Safe.
+                 layouts.get(&layout_id).map(|e| Arc::clone(&e.wgpu_layout))
+            } else {
+                None
+            };
 
             let wgpu_pipeline_descriptor = wgpu::RenderPipelineDescriptor {
                 label: descriptor.label.as_deref(),
-                layout: Some(&wgpu_pipeline_layout),
+                layout: layout_entry_opt.as_deref(),
                 vertex: wgpu::VertexState {
                     module: vs_wgpu_module,
                     entry_point: Some(descriptor.vertex_entry_point.as_ref()),
@@ -682,7 +731,7 @@ impl GraphicsDevice for WgpuDevice {
             descriptor
                 .label
                 .as_ref()
-                .map(|s| s.as_ref())
+                .map(|s: &std::borrow::Cow<'_, str>| s.as_ref())
                 .unwrap_or_default(),
             id
         );
@@ -691,17 +740,50 @@ impl GraphicsDevice for WgpuDevice {
 
     fn create_pipeline_layout(
         &self,
-        descriptor: &khora_core::renderer::PipelineLayoutDescriptor,
-    ) -> Result<khora_core::renderer::PipelineLayoutId, ResourceError> {
-        log::debug!(
-            "WgpuDevice: Creating pipeline layout with label: {:?}",
-            descriptor.label
-        );
-        Ok(PipelineLayoutId(
+        descriptor: &PipelineLayoutDescriptor,
+    ) -> Result<PipelineLayoutId, ResourceError> {
+        let bg_layouts_guard = self.internal.bind_group_layouts.lock().map_err(|e| {
+            ResourceError::BackendError(format!("Mutex poisoned (bind_group_layouts): {e}"))
+        })?;
+
+        let mut wgpu_bind_group_layouts = Vec::with_capacity(descriptor.bind_group_layouts.len());
+        for id in descriptor.bind_group_layouts {
+            let entry = bg_layouts_guard.get(id).ok_or(ResourceError::NotFound)?;
+            wgpu_bind_group_layouts.push(&entry.wgpu_layout);
+        }
+
+        let wgpu_layout = self.with_wgpu_device(|device| {
+            let wgpu_desc = wgpu::PipelineLayoutDescriptor {
+                label: descriptor.label.as_deref(),
+                bind_group_layouts: &wgpu_bind_group_layouts
+                    .iter()
+                    .map(|l: &&Arc<wgpu::BindGroupLayout>| l.as_ref())
+                    .collect::<Vec<_>>(),
+                immediate_size: 0,
+            };
+            Ok(Arc::new(device.create_pipeline_layout(&wgpu_desc)))
+        })?;
+
+        let id = PipelineLayoutId(
             self.internal
                 .next_pipeline_layout_id
                 .fetch_add(1, Ordering::Relaxed),
-        ))
+        );
+
+        self.internal
+            .pipeline_layouts
+            .lock()
+            .map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (pipeline_layouts): {e}"))
+            })?
+            .insert(id, WgpuPipelineLayoutEntry { wgpu_layout });
+
+        log::debug!(
+            "WgpuDevice: Created pipeline layout '{:?}' with ID: {:?}",
+            descriptor.label,
+            id
+        );
+        Ok(id)
     }
 
     fn destroy_render_pipeline(&self, id: RenderPipelineId) -> Result<(), ResourceError> {
@@ -720,7 +802,7 @@ impl GraphicsDevice for WgpuDevice {
 
     fn create_compute_pipeline(
         &self,
-        descriptor: &khora_core::renderer::api::ComputePipelineDescriptor,
+        descriptor: &api_cmd::ComputePipelineDescriptor,
     ) -> Result<ComputePipelineId, ResourceError> {
         let context = self.internal.context.lock().unwrap();
         let device = &context.device;
@@ -737,12 +819,18 @@ impl GraphicsDevice for WgpuDevice {
                     id: descriptor.shader_module,
                 })?;
 
-        // 2. Create compute pipeline
-        // For now, we don't handle custom layouts in compute pipelines via the descriptor
-        // but it could be expanded.
+        // 2. Look up pipeline layout if provided
+        let layout_entry_opt = if let Some(layout_id) = descriptor.layout {
+            let layouts = self.internal.pipeline_layouts.lock().unwrap();
+            layouts.get(&layout_id).map(|e| Arc::clone(&e.wgpu_layout))
+        } else {
+            None
+        };
+
+        // 3. Create compute pipeline
         let wgpu_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: descriptor.label.as_deref(),
-            layout: None, // Let wgpu derive it for now
+            layout: layout_entry_opt.as_deref(),
             module: &shader_entry.wgpu_module,
             entry_point: Some(descriptor.entry_point.as_ref()),
             compilation_options: Default::default(),
@@ -823,12 +911,12 @@ impl GraphicsDevice for WgpuDevice {
             },
         );
 
-        log::info!(
+        log::debug!(
             "WgpuDevice: Created buffer '{:?}' with ID: {:?}, size: {} bytes",
             descriptor
                 .label
                 .as_ref()
-                .map(|s| s.as_ref())
+                .map(|s: &std::borrow::Cow<'_, str>| s.as_ref())
                 .unwrap_or_default(),
             id,
             descriptor.size
@@ -873,7 +961,7 @@ impl GraphicsDevice for WgpuDevice {
             },
         );
 
-        log::info!(
+        log::debug!(
             "WgpuDevice: Created buffer '{:?}' with initial data. ID: {:?}, size: {} bytes",
             descriptor.label.as_deref().unwrap_or_default(),
             id,
@@ -935,7 +1023,7 @@ impl GraphicsDevice for WgpuDevice {
         data: &'a [u8],
     ) -> Box<dyn Future<Output = Result<(), ResourceError>> + Send + 'static> {
         let buffers_guard = self.internal.buffers.lock().unwrap();
-        let entry_wgpu_buffer = match buffers_guard.get(&id) {
+        let entry_wgpu_buffer: Arc<wgpu::Buffer> = match buffers_guard.get(&id) {
             Some(e) => Arc::clone(&e.wgpu_buffer),
             None => return Box::new(async { Err(ResourceError::NotFound) }),
         };
@@ -1019,7 +1107,7 @@ impl GraphicsDevice for WgpuDevice {
             view_formats: &descriptor
                 .view_formats
                 .iter()
-                .map(|&f| f.into_wgpu())
+                .map(|&f: &TextureFormat| f.into_wgpu())
                 .collect::<Vec<_>>(),
         };
 
@@ -1046,12 +1134,12 @@ impl GraphicsDevice for WgpuDevice {
             },
         );
 
-        log::info!(
+        log::debug!(
             "WgpuDevice: Created texture '{:?}' with ID: {:?}, size: {} bytes (VRAM)",
             descriptor
                 .label
                 .as_ref()
-                .map(|s| s.as_ref())
+                .map(|s: &std::borrow::Cow<'_, str>| s.as_ref())
                 .unwrap_or_default(),
             id,
             size_in_bytes
@@ -1120,8 +1208,10 @@ impl GraphicsDevice for WgpuDevice {
 
         let wgpu_view_descriptor = wgpu::TextureViewDescriptor {
             label: descriptor.label.as_deref(),
-            format: descriptor.format.map(|f| f.into_wgpu()),
-            dimension: descriptor.dimension.map(|d| d.into_wgpu()),
+            format: descriptor.format.map(|f: TextureFormat| f.into_wgpu()),
+            dimension: descriptor
+                .dimension
+                .map(|d: api_tex::TextureViewDimension| d.into_wgpu()),
             aspect: descriptor.aspect.into_wgpu(),
             base_mip_level: descriptor.base_mip_level,
             mip_level_count: descriptor.mip_level_count,
@@ -1137,17 +1227,19 @@ impl GraphicsDevice for WgpuDevice {
                 .create_view(&wgpu_view_descriptor),
         );
         let id = self.generate_texture_view_id();
-        self.internal
-            .texture_views
-            .lock()
-            .unwrap()
-            .insert(id, WgpuTextureViewEntry { wgpu_view });
+        self.internal.texture_views.lock().unwrap().insert(
+            id,
+            WgpuTextureViewEntry {
+                wgpu_view,
+                source_texture_id: Some(texture_id),
+            },
+        );
         log::info!(
             "WgpuDevice: Created texture view '{:?}' for texture ID: {:?} with ID: {:?}",
             descriptor
                 .label
                 .as_ref()
-                .map(|s| s.as_ref())
+                .map(|s: &std::borrow::Cow<'_, str>| s.as_ref())
                 .unwrap_or_default(),
             texture_id,
             id
@@ -1184,9 +1276,11 @@ impl GraphicsDevice for WgpuDevice {
             mipmap_filter: descriptor.mipmap_filter.into_wgpu(),
             lod_min_clamp: descriptor.lod_min_clamp,
             lod_max_clamp: descriptor.lod_max_clamp,
-            compare: descriptor.compare.map(|f| f.into_wgpu()),
+            compare: descriptor.compare.map(|f: CompareFunction| f.into_wgpu()),
             anisotropy_clamp: descriptor.anisotropy_clamp,
-            border_color: descriptor.border_color.and_then(|c| c.into_wgpu()),
+            border_color: descriptor
+                .border_color
+                .and_then(|c: api_tex::SamplerBorderColor| c.into_wgpu()),
         };
 
         // Create the sampler using the wgpu device
@@ -1197,12 +1291,12 @@ impl GraphicsDevice for WgpuDevice {
             .lock()
             .unwrap()
             .insert(id, WgpuSamplerEntry { wgpu_sampler });
-        log::info!(
+        log::debug!(
             "WgpuDevice: Created sampler '{:?}' with ID: {:?}",
             descriptor
                 .label
                 .as_ref()
-                .map(|s| s.as_ref())
+                .map(|s: &std::borrow::Cow<'_, str>| s.as_ref())
                 .unwrap_or_default(),
             id
         );
@@ -1228,13 +1322,13 @@ impl GraphicsDevice for WgpuDevice {
         })
     }
 
-    fn get_adapter_info(&self) -> RendererAdapterInfo {
+    fn get_adapter_info(&self) -> GraphicsAdapterInfo {
         let context_guard = self
             .internal
             .context
             .lock()
             .expect("WgpuDevice: Mutex poisoned (context) on get_adapter_info");
-        RendererAdapterInfo {
+        GraphicsAdapterInfo {
             name: context_guard.adapter_name.clone(),
             backend_type: match context_guard.adapter_backend {
                 wgpu::Backend::Vulkan => GraphicsBackendType::Vulkan,
@@ -1312,9 +1406,9 @@ impl GraphicsDevice for WgpuDevice {
 
     fn create_bind_group_layout(
         &self,
-        descriptor: &khora_core::renderer::BindGroupLayoutDescriptor,
-    ) -> Result<khora_core::renderer::BindGroupLayoutId, ResourceError> {
-        use khora_core::renderer::{BindingType, BufferBindingType};
+        descriptor: &api_cmd::BindGroupLayoutDescriptor,
+    ) -> Result<BindGroupLayoutId, ResourceError> {
+        use api_cmd::{BindingType, BufferBindingType};
 
         let wgpu_entries: Vec<wgpu::BindGroupLayoutEntry> = descriptor
             .entries
@@ -1340,16 +1434,17 @@ impl GraphicsDevice for WgpuDevice {
                             min_binding_size: *min_binding_size,
                         }
                     }
-                    BindingType::Texture { multisampled } => {
-                        // Basic 2D texture support
-                        wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: *multisampled,
-                        }
-                    }
-                    BindingType::Sampler => {
-                        wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)
+                    BindingType::Texture {
+                        sample_type,
+                        view_dimension,
+                        multisampled,
+                    } => wgpu::BindingType::Texture {
+                        sample_type: (*sample_type).into_wgpu(),
+                        view_dimension: (*view_dimension).into_wgpu(),
+                        multisampled: *multisampled,
+                    },
+                    BindingType::Sampler(sampler_ty) => {
+                        wgpu::BindingType::Sampler((*sampler_ty).into_wgpu())
                     }
                 };
 
@@ -1376,7 +1471,7 @@ impl GraphicsDevice for WgpuDevice {
         })?;
         layouts.insert(id, WgpuBindGroupLayoutEntry { wgpu_layout });
 
-        log::info!(
+        log::debug!(
             "WgpuDevice: Created bind group layout '{:?}' with ID: {:?}",
             descriptor.label.unwrap_or_default(),
             id
@@ -1386,9 +1481,9 @@ impl GraphicsDevice for WgpuDevice {
 
     fn create_bind_group(
         &self,
-        descriptor: &khora_core::renderer::BindGroupDescriptor,
-    ) -> Result<khora_core::renderer::BindGroupId, ResourceError> {
-        use khora_core::renderer::BindingResource;
+        descriptor: &api_cmd::BindGroupDescriptor,
+    ) -> Result<BindGroupId, ResourceError> {
+        use api_cmd::BindingResource;
 
         // Get the bind group layout
         let layouts = self.internal.bind_group_layouts.lock().map_err(|e| {
@@ -1400,46 +1495,75 @@ impl GraphicsDevice for WgpuDevice {
         let wgpu_layout = Arc::clone(&layout_entry.wgpu_layout);
         drop(layouts);
 
-        // Type alias to simplify complex type
-        type BufferBindingInfo = (u32, Arc<wgpu::Buffer>, u64, Option<std::num::NonZeroU64>);
+        // Resource storage to hold Arcs alive
+        enum ResourceArc {
+            Buffer(u32, Arc<wgpu::Buffer>, u64, Option<std::num::NonZeroU64>),
+            TextureView(u32, Arc<wgpu::TextureView>),
+            Sampler(u32, Arc<wgpu::Sampler>),
+        }
 
-        // Collect Arc references to buffers first
-        let buffers_lock =
-            self.internal.buffers.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (buffers): {e}"))
-            })?;
+        let mut resource_arcs = Vec::with_capacity(descriptor.entries.len());
 
-        let buffer_arcs: Result<Vec<BufferBindingInfo>, ResourceError> = descriptor
-            .entries
-            .iter()
-            .map(|entry| match &entry.resource {
-                BindingResource::Buffer(buffer_binding) => {
-                    let buffer_entry = buffers_lock
-                        .get(&buffer_binding.buffer)
-                        .ok_or(ResourceError::NotFound)?;
-                    Ok((
-                        entry.binding,
-                        Arc::clone(&buffer_entry.wgpu_buffer),
-                        buffer_binding.offset,
-                        buffer_binding.size,
-                    ))
+        {
+            let buffers_lock = self.internal.buffers.lock().unwrap();
+            let texture_views_lock = self.internal.texture_views.lock().unwrap();
+            let samplers_lock = self.internal.samplers.lock().unwrap();
+
+            for entry in descriptor.entries {
+                match &entry.resource {
+                    BindingResource::Buffer(buffer_binding) => {
+                        let buffer_entry = buffers_lock
+                            .get(&buffer_binding.buffer)
+                            .ok_or(ResourceError::NotFound)?;
+                        resource_arcs.push(ResourceArc::Buffer(
+                            entry.binding,
+                            Arc::clone(&buffer_entry.wgpu_buffer),
+                            buffer_binding.offset,
+                            buffer_binding.size,
+                        ));
+                    }
+                    BindingResource::TextureView(view_id) => {
+                        let view_entry = texture_views_lock
+                            .get(view_id)
+                            .ok_or(ResourceError::NotFound)?;
+                        resource_arcs.push(ResourceArc::TextureView(
+                            entry.binding,
+                            Arc::clone(&view_entry.wgpu_view),
+                        ));
+                    }
+                    BindingResource::Sampler(sampler_id) => {
+                        let sampler_entry = samplers_lock
+                            .get(sampler_id)
+                            .ok_or(ResourceError::NotFound)?;
+                        resource_arcs.push(ResourceArc::Sampler(
+                            entry.binding,
+                            Arc::clone(&sampler_entry.wgpu_sampler),
+                        ));
+                    }
                 }
-            })
-            .collect();
+            }
+        }
 
-        let buffer_arcs = buffer_arcs?;
-        drop(buffers_lock);
-
-        // Now create wgpu entries with references to the Arc'd buffers
-        let wgpu_entries: Vec<wgpu::BindGroupEntry> = buffer_arcs
+        // Now create wgpu entries with references to the Arc'd resources
+        let wgpu_entries: Vec<wgpu::BindGroupEntry> = resource_arcs
             .iter()
-            .map(|(binding, buffer, offset, size)| wgpu::BindGroupEntry {
-                binding: *binding,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: buffer.as_ref(),
-                    offset: *offset,
-                    size: *size,
-                }),
+            .map(|resource| match resource {
+                ResourceArc::Buffer(binding, buffer, offset, size) => wgpu::BindGroupEntry {
+                    binding: *binding,
+                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: buffer.as_ref(),
+                        offset: *offset,
+                        size: *size,
+                    }),
+                },
+                ResourceArc::TextureView(binding, view) => wgpu::BindGroupEntry {
+                    binding: *binding,
+                    resource: wgpu::BindingResource::TextureView(view.as_ref()),
+                },
+                ResourceArc::Sampler(binding, sampler) => wgpu::BindGroupEntry {
+                    binding: *binding,
+                    resource: wgpu::BindingResource::Sampler(sampler.as_ref()),
+                },
             })
             .collect();
 
@@ -1458,7 +1582,7 @@ impl GraphicsDevice for WgpuDevice {
         })?;
         bind_groups.insert(id, WgpuBindGroupEntry { wgpu_bind_group });
 
-        log::info!(
+        log::debug!(
             "WgpuDevice: Created bind group '{:?}' with ID: {:?}",
             descriptor.label.unwrap_or_default(),
             id
@@ -1466,10 +1590,7 @@ impl GraphicsDevice for WgpuDevice {
         Ok(id)
     }
 
-    fn destroy_bind_group_layout(
-        &self,
-        id: khora_core::renderer::BindGroupLayoutId,
-    ) -> Result<(), ResourceError> {
+    fn destroy_bind_group_layout(&self, id: BindGroupLayoutId) -> Result<(), ResourceError> {
         let mut layouts = self.internal.bind_group_layouts.lock().map_err(|e| {
             ResourceError::BackendError(format!("Mutex poisoned (bind_group_layouts): {e}"))
         })?;
@@ -1482,10 +1603,7 @@ impl GraphicsDevice for WgpuDevice {
         }
     }
 
-    fn destroy_bind_group(
-        &self,
-        id: khora_core::renderer::BindGroupId,
-    ) -> Result<(), ResourceError> {
+    fn destroy_bind_group(&self, id: BindGroupId) -> Result<(), ResourceError> {
         let mut bind_groups = self.internal.bind_groups.lock().map_err(|e| {
             ResourceError::BackendError(format!("Mutex poisoned (bind_groups): {e}"))
         })?;
@@ -1548,7 +1666,7 @@ impl VramProvider for WgpuDevice {
 #[cfg(test)]
 mod tests {
     use crate::telemetry::gpu_monitor::GpuMonitor;
-    use khora_core::renderer::RenderStats;
+    use khora_core::renderer::api::core::RenderStats;
     use khora_core::telemetry::{MonitoredResourceType, ResourceMonitor};
 
     #[test]

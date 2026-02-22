@@ -2,7 +2,7 @@
 name = "sandbox"
 version = "0.2.0"
 edition = "2021"
-description = "Sandbox example for testing and demos"
+description = "Sandbox example demonstrating high-level game logic"
 
 [[bin]]
 name = "sandbox"
