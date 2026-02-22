@@ -3105,6 +3105,7 @@ name = "sandbox"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "env_logger",
  "khora-sdk",
  "log",
