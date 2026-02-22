@@ -22,13 +22,7 @@ pub struct RapierDebugBackend {
 }
 
 impl DebugRenderBackend for RapierDebugBackend {
-    fn draw_line(
-        &mut self,
-        _: DebugRenderObject,
-        a: Point<Real>,
-        b: Point<Real>,
-        _color: [f32; 4],
-    ) {
+    fn draw_line(&mut self, _: DebugRenderObject, a: Vector, b: Vector, _color: [f32; 4]) {
         let start = Vec3::new(a.x, a.y, a.z);
         let end = Vec3::new(b.x, b.y, b.z);
         let base_idx = self.vertices.len() as u32;
