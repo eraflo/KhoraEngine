@@ -74,3 +74,11 @@ impl<T: Asset> Deref for AssetHandle<T> {
         &self.0
     }
 }
+
+impl<T: Asset> PartialEq for AssetHandle<T> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl<T: Asset> Eq for AssetHandle<T> {}

@@ -119,6 +119,23 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     /// graphics resources like buffers and textures on the correct GPU device.
     fn graphics_device(&self) -> Arc<dyn GraphicsDevice>;
 
+    /// Begins a new visual frame by acquiring the swapchain texture.
+    ///
+    /// Must be called exactly once per frame, **before** any
+    /// [`render_with_encoder`](Self::render_with_encoder) calls.
+    /// The matching [`end_frame`](Self::end_frame) presents the result.
+    fn begin_frame(&mut self) -> Result<(), RenderError> {
+        Ok(())
+    }
+
+    /// Ends the current visual frame by presenting the swapchain texture.
+    ///
+    /// Must be called exactly once per frame, **after** all
+    /// [`render_with_encoder`](Self::render_with_encoder) calls have completed.
+    fn end_frame(&mut self) -> Result<RenderStats, RenderError> {
+        Ok(RenderStats::default())
+    }
+
     /// Cleans up and releases all graphics resources.
     /// This should be called once at application shutdown.
     fn shutdown(&mut self);

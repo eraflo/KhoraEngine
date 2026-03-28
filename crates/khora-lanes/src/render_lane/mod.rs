@@ -20,6 +20,8 @@ mod lit_forward_lane;
 pub mod shaders;
 mod shadow_pass_lane;
 mod simple_unlit_lane;
+mod ui_render_lane;
+pub mod ui_scene;
 mod world;
 
 pub use extract_lane::*;
@@ -27,6 +29,8 @@ pub use forward_plus_lane::*;
 pub use lit_forward_lane::*;
 pub use shadow_pass_lane::*;
 pub use simple_unlit_lane::*;
+pub use ui_render_lane::*;
+pub use ui_scene::*;
 pub use world::*;
 
 /// Shadow result for a single light: view-projection matrix + atlas layer index.

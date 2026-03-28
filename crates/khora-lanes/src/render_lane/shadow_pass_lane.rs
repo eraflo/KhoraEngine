@@ -136,7 +136,17 @@ impl ShadowPassLane {
                     max.z = max.z.max(p_ls.z);
                 }
 
-                // 4. Create Ortho Projection
+                // 4. Texel snapping: round bounds to whole-texel increments
+                //    to prevent shadow shimmer when the camera moves.
+                let shadow_map_size = 2048.0_f32;
+                let units_per_texel_x = (max.x - min.x) / shadow_map_size;
+                let units_per_texel_y = (max.y - min.y) / shadow_map_size;
+                min.x = (min.x / units_per_texel_x).floor() * units_per_texel_x;
+                max.x = (max.x / units_per_texel_x).floor() * units_per_texel_x;
+                min.y = (min.y / units_per_texel_y).floor() * units_per_texel_y;
+                max.y = (max.y / units_per_texel_y).floor() * units_per_texel_y;
+
+                // 5. Create Ortho Projection
                 // Z-range should be large enough to encapsulate casters outside view
                 let z_padding = 100.0;
                 let light_proj = Mat4::orthographic_rh_zo(

@@ -27,11 +27,13 @@
 //! such as an asset database or a virtual file system (VFS), are built in other
 //! crates.
 
+pub mod font;
 mod handle;
 mod materials;
 mod metadata;
 mod uuid;
 
+pub use handle::AssetHandle as Handle;
 pub use handle::*;
 pub use materials::*;
 pub use metadata::*;

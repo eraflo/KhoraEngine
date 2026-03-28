@@ -26,7 +26,7 @@
 
 mod bitset;
 mod bundle;
-mod component;
+pub mod component;
 mod components;
 mod entity;
 mod entity_store;

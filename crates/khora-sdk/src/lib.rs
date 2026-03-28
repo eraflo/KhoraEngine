@@ -26,20 +26,24 @@ pub use game_world::GameWorld;
 pub use vessel::{spawn_cube_at, spawn_plane, spawn_sphere, Vessel};
 
 use anyhow::Result;
+use khora_agents::ui_agent::UiAgent;
 use khora_control::{DccConfig, DccService};
+use khora_core::asset::font::Font;
 use khora_core::platform::KhoraWindow;
 use khora_core::renderer::api::core::RenderSettings;
 use khora_core::renderer::api::scene::RenderObject;
 use khora_core::renderer::traits::RenderSystem;
 use khora_core::telemetry::MonitoredResourceType;
 use khora_core::ServiceRegistry;
+use khora_data::assets::Assets;
 use khora_infra::platform::input::translate_winit_input;
 use khora_infra::platform::window::{WinitWindow, WinitWindowBuilder};
 use khora_infra::telemetry::memory_monitor::MemoryMonitor;
-use khora_infra::{GpuMonitor, WgpuRenderSystem};
+use khora_infra::{GpuMonitor, StandardTextRenderer, TaffyLayoutSystem, WgpuRenderSystem};
 use khora_telemetry::TelemetryService;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::RwLock;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use winit::application::ApplicationHandler;
@@ -218,6 +222,21 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
         // Build a minimal EngineContext for Application::new().
         let mut services = ServiceRegistry::new();
         services.insert(graphics_device.clone());
+
+        // Register UI and Text services
+        let text_renderer = Arc::new(StandardTextRenderer::new(
+            khora_lanes::render_lane::shaders::TEXT_WGSL.to_string(),
+        ));
+        services.insert(text_renderer as Arc<dyn khora_core::renderer::api::text::TextRenderer>);
+
+        let layout_system = Arc::new(Mutex::new(
+            Box::new(TaffyLayoutSystem::new()) as Box<dyn khora_core::ui::LayoutSystem>
+        ));
+        services.insert(layout_system);
+
+        let font_assets = Arc::new(RwLock::new(Assets::<Font>::new()));
+        services.insert(font_assets);
+
         let context = EngineContext {
             world: None,
             services,
@@ -307,6 +326,9 @@ impl<A: Application> EngineState<A> {
             .with_dcc_sender(dcc.event_sender());
         dcc.register_agent(Arc::new(Mutex::new(gc_agent)), 0.8);
 
+        let ui_agent = UiAgent::new();
+        dcc.register_agent(Arc::new(Mutex::new(ui_agent)), 1.1); // UI is high priority for responsiveness
+
         log::info!("Engine: Registered {} default agents", dcc.agent_count());
     }
 
@@ -349,11 +371,25 @@ impl<A: Application> EngineState<A> {
         services.insert(Arc::clone(renderer));
 
         // Update all agents in priority order (handled by DCC).
-        // The RenderAgent will extract scene data, prepare the frame,
-        // and render — all within its update() method.
         if let (Some(dcc), Some(gw)) = (&self.dcc, self.game_world.as_mut()) {
+            // Acquire the swapchain texture once for all agents this frame.
+            if let Ok(mut rs) = renderer.lock() {
+                if let Err(e) = rs.begin_frame() {
+                    log::error!("begin_frame failed: {e:?}");
+                    return;
+                }
+            }
+
             let mut context = gw.as_engine_context(services);
             dcc.update_agents(&mut context);
+            dcc.execute_agents();
+
+            // Present the single swapchain texture after all agents have encoded.
+            if let Ok(mut rs) = renderer.lock() {
+                if let Err(e) = rs.end_frame() {
+                    log::error!("end_frame failed: {e:?}");
+                }
+            }
         }
 
         if should_log_summary {

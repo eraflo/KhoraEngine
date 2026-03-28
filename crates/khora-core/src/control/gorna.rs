@@ -29,6 +29,8 @@ pub enum AgentId {
     Physics,
     /// The ECS/Logic coordination agent.
     Ecs,
+    /// The UI layout and interaction agent.
+    Ui,
     /// The audio processing agent.
     Audio,
     /// The asset management agent (highest priority in Boot).

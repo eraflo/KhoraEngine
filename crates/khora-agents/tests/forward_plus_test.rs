@@ -234,6 +234,10 @@ impl GraphicsDevice for MockGraphicsDevice {
         None
     }
 
+    fn get_surface_size(&self) -> (u32, u32) {
+        (1024, 1024)
+    }
+
     fn get_adapter_info(&self) -> GraphicsAdapterInfo {
         GraphicsAdapterInfo {
             name: "Mock".to_string(),

@@ -15,10 +15,12 @@
 //! Asset loading utilities.
 
 mod audio_loader_lane;
+mod font_loader_lane;
 mod mesh_loader_lane;
 mod texture_loader_lane;
 
 pub use audio_loader_lane::*;
+pub use font_loader_lane::*;
 pub use mesh_loader_lane::*;
 pub use texture_loader_lane::*;
 

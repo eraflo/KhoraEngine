@@ -37,6 +37,7 @@ pub mod renderer;
 pub mod scene;
 pub mod service_registry;
 pub mod telemetry;
+pub mod ui;
 pub mod utils;
 pub mod vfs;
 

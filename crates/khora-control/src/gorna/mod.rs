@@ -412,6 +412,7 @@ impl GornaArbitrator {
             },
             ExecutionPhase::Menu => match id {
                 AgentId::Renderer => 0.6,
+                AgentId::Ui => 0.9,
                 AgentId::Asset => 1.0,
                 AgentId::Audio => 0.8,
                 _ => 0.3,
@@ -420,6 +421,7 @@ impl GornaArbitrator {
                 AgentId::Renderer => 1.0,
                 AgentId::Physics => 1.0,
                 AgentId::Ecs => 0.8,
+                AgentId::Ui => 0.7,
                 AgentId::Audio => 0.6,
                 AgentId::Asset => 0.5,
             },
@@ -432,9 +434,12 @@ impl GornaArbitrator {
     fn is_critical_agent(&self, id: AgentId, phase: ExecutionPhase) -> bool {
         match phase {
             ExecutionPhase::Boot => matches!(id, AgentId::Asset),
-            ExecutionPhase::Menu => matches!(id, AgentId::Renderer),
+            ExecutionPhase::Menu => matches!(id, AgentId::Renderer | AgentId::Ui),
             ExecutionPhase::Simulation => {
-                matches!(id, AgentId::Renderer | AgentId::Physics | AgentId::Ecs)
+                matches!(
+                    id,
+                    AgentId::Renderer | AgentId::Physics | AgentId::Ecs | AgentId::Ui
+                )
             }
             ExecutionPhase::Background => false,
         }

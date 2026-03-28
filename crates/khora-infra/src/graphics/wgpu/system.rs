@@ -72,6 +72,10 @@ pub struct WgpuRenderSystem {
     depth_texture: Option<TextureId>,
     depth_texture_view: Option<TextureViewId>,
 
+    // --- Frame lifecycle ---
+    /// Surface texture acquired by `begin_frame()`, consumed by `end_frame()`.
+    active_frame_texture: Option<wgpu::SurfaceTexture>,
+
     // --- Resize Heuristics State ---
     last_resize_event: Option<Instant>,
     pending_resize: bool,
@@ -142,6 +146,7 @@ impl WgpuRenderSystem {
             camera_bind_group_layout: None,
             depth_texture: None,
             depth_texture_view: None,
+            active_frame_texture: None,
             last_resize_event: None,
             pending_resize: false,
             last_surface_config: None,
@@ -569,6 +574,7 @@ impl RenderSystem for WgpuRenderSystem {
         }
 
         // --- 1. Acquire Frame from Swap Chain ---
+        device.wait_for_last_submission();
         let output_surface_texture = loop {
             let mut gc_guard = gc.lock().unwrap();
             match gc_guard.get_current_texture() {
@@ -752,27 +758,17 @@ impl RenderSystem for WgpuRenderSystem {
         Ok(self.last_frame_stats.clone())
     }
 
-    fn render_with_encoder(
-        &mut self,
-        clear_color: khora_core::math::LinearRgba,
-        encoder_fn: Box<
-            dyn FnOnce(
-                    &mut dyn khora_core::renderer::traits::CommandEncoder,
-                    &khora_core::renderer::api::core::RenderContext,
-                ) + Send
-                + '_,
-        >,
-    ) -> Result<RenderStats, RenderError> {
-        use khora_core::renderer::api::core::RenderContext;
-
-        let full_frame_timer = Stopwatch::new();
-
+    fn begin_frame(&mut self) -> Result<(), RenderError> {
         let device = self
             .wgpu_device
             .clone()
             .ok_or(RenderError::NotInitialized)?;
 
+        // Process any pending GPU-to-CPU callbacks (profiler map_async, etc.).
         device.poll_device_non_blocking();
+        // Block until the previous submission is consumed so the acquire
+        // semaphore is guaranteed to be unsignaled.
+        device.wait_for_last_submission();
 
         let gc = self
             .graphics_context_shared
@@ -806,9 +802,6 @@ impl RenderSystem for WgpuRenderSystem {
                     }
                 }
             }
-            if self.pending_resize && !resized_this_frame {
-                return Ok(self.last_frame_stats.clone());
-            }
         }
 
         if resized_this_frame {
@@ -817,7 +810,7 @@ impl RenderSystem for WgpuRenderSystem {
             }
         }
 
-        // --- Acquire Frame ---
+        // --- Acquire swapchain texture ---
         let output_surface_texture = loop {
             let mut gc_guard = gc.lock().unwrap();
             match gc_guard.get_current_texture() {
@@ -832,9 +825,7 @@ impl RenderSystem for WgpuRenderSystem {
             }
         };
 
-        let command_recording_timer = Stopwatch::new();
-
-        // --- Create texture view ---
+        // --- Create texture view for the frame ---
         if let Some(old_id) = self.current_frame_view_id.take() {
             device.destroy_texture_view(old_id)?;
         }
@@ -844,10 +835,57 @@ impl RenderSystem for WgpuRenderSystem {
         )?;
         self.current_frame_view_id = Some(target_view_id);
 
-        // --- Create encoder ---
-        let mut command_encoder = device.create_command_encoder(Some("Khora Main Command Encoder"));
+        self.active_frame_texture = Some(output_surface_texture);
+        Ok(())
+    }
 
-        // --- Build RenderContext with actual target ---
+    fn end_frame(&mut self) -> Result<RenderStats, RenderError> {
+        if let Some(texture) = self.active_frame_texture.take() {
+            texture.present();
+        }
+
+        self.frame_count += 1;
+        self.last_frame_stats.frame_number = self.frame_count;
+
+        if let Some(monitor) = &self.gpu_monitor {
+            monitor.update_from_frame_stats(&self.last_frame_stats);
+        }
+
+        Ok(self.last_frame_stats.clone())
+    }
+
+    fn render_with_encoder(
+        &mut self,
+        clear_color: khora_core::math::LinearRgba,
+        encoder_fn: Box<
+            dyn FnOnce(
+                    &mut dyn khora_core::renderer::traits::CommandEncoder,
+                    &khora_core::renderer::api::core::RenderContext,
+                ) + Send
+                + '_,
+        >,
+    ) -> Result<RenderStats, RenderError> {
+        use khora_core::renderer::api::core::RenderContext;
+
+        let device = self
+            .wgpu_device
+            .clone()
+            .ok_or(RenderError::NotInitialized)?;
+
+        // If the caller did not call begin_frame() first, do it automatically
+        // so the standalone render() / legacy code paths still work.
+        if self.active_frame_texture.is_none() {
+            self.begin_frame()?;
+        }
+
+        let target_view_id = self
+            .current_frame_view_id
+            .ok_or(RenderError::NotInitialized)?;
+
+        // --- Create encoder ---
+        let mut command_encoder = device.create_command_encoder(Some("Khora Command Encoder"));
+
+        // --- Build RenderContext with the already-acquired target ---
         let render_ctx = RenderContext {
             color_target: &target_view_id,
             depth_target: self.depth_texture_view.as_ref(),
@@ -860,25 +898,8 @@ impl RenderSystem for WgpuRenderSystem {
         encoder_fn(command_encoder.as_mut(), &render_ctx);
 
         // --- Submit ---
-        let submission_timer = Stopwatch::new();
         let command_buffer = command_encoder.finish();
         device.submit_command_buffer(command_buffer);
-        let submission_ms = submission_timer.elapsed_ms().unwrap_or(0);
-
-        // --- Present ---
-        output_surface_texture.present();
-
-        // --- Update stats ---
-        self.frame_count += 1;
-        let full_frame_ms = full_frame_timer.elapsed_ms().unwrap_or(0);
-        self.last_frame_stats.frame_number = self.frame_count;
-        self.last_frame_stats.cpu_preparation_time_ms =
-            (full_frame_ms - command_recording_timer.elapsed_ms().unwrap_or(0)) as f32;
-        self.last_frame_stats.cpu_render_submission_time_ms = submission_ms as f32;
-
-        if let Some(monitor) = &self.gpu_monitor {
-            monitor.update_from_frame_stats(&self.last_frame_stats);
-        }
 
         Ok(self.last_frame_stats.clone())
     }

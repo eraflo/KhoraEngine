@@ -22,3 +22,7 @@ pub mod allocators;
 pub mod assets;
 pub mod ecs;
 pub mod scene;
+pub mod ui;
+
+pub use ui::components::*;
+// pub use ui::layout_view::*; // Temporarily commented out if unused or fix path

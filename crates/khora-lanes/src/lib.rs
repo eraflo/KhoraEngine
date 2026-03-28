@@ -24,3 +24,4 @@ pub mod ecs_lane;
 pub mod physics_lane;
 pub mod render_lane;
 pub mod scene_lane;
+pub mod ui_lane;

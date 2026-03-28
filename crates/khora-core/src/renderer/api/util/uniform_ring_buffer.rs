@@ -477,6 +477,9 @@ mod tests {
         fn get_surface_format(&self) -> Option<TextureFormat> {
             Some(TextureFormat::Rgba8UnormSrgb)
         }
+        fn get_surface_size(&self) -> (u32, u32) {
+            (1024, 1024)
+        }
         fn get_adapter_info(&self) -> GraphicsAdapterInfo {
             GraphicsAdapterInfo {
                 name: "MockDevice".to_string(),

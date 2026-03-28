@@ -143,6 +143,8 @@ pub enum LaneKind {
     Scene,
     /// ECS maintenance (compaction, garbage collection)
     Ecs,
+    /// User interface layout and interaction
+    Ui,
 }
 
 impl std::fmt::Display for LaneKind {
@@ -155,6 +157,7 @@ impl std::fmt::Display for LaneKind {
             LaneKind::Asset => write!(f, "Asset"),
             LaneKind::Scene => write!(f, "Scene"),
             LaneKind::Ecs => write!(f, "ECS"),
+            LaneKind::Ui => write!(f, "UI"),
         }
     }
 }
