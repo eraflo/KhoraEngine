@@ -1,0 +1,18 @@
+hooks:
+  on_session_start:
+    - description: Load project context and verify build state
+      inline: |
+        Verify the workspace builds cleanly with `cargo build`.
+        Load the current branch name and recent git log.
+        Check for any uncommitted changes.
+  pre_tool_use:
+    - description: Validate tool arguments before execution
+      inline: |
+        For cargo commands, ensure the working directory is the workspace root.
+        For file edits, verify the target file exists and is within the workspace.
+  on_error:
+    - description: Capture error context for debugging
+      inline: |
+        On compilation error, capture the full error message with file paths.
+        On test failure, note the specific test name and assertion.
+        Suggest a debugging approach based on the error type.
