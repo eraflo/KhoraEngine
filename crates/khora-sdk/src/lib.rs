@@ -34,6 +34,10 @@ use khora_core::renderer::api::core::RenderSettings;
 use khora_core::renderer::api::scene::RenderObject;
 use khora_core::renderer::traits::RenderSystem;
 use khora_core::telemetry::MonitoredResourceType;
+use khora_core::ui::editor_overlay::{EditorOverlay, OverlayScreenDescriptor};
+use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
+use khora_core::ui::editor::EditorCamera;
+use khora_core::ui::EditorShell;
 use khora_core::ServiceRegistry;
 use khora_data::assets::Assets;
 use khora_infra::platform::input::translate_winit_input;
@@ -67,18 +71,30 @@ pub mod prelude {
         scene::RenderObject,
         util::{IndexFormat, SampleCount, ShaderStageFlags as ShaderStage, TextureFormat},
     };
+    pub use khora_core::ui::editor::{
+        AssetEntry, AudioSourceSnapshot, CameraSnapshot, ColliderSnapshot, CommandHistory,
+        EditorCamera, EditorCommand, EditorLogCapture, EditorPanel, EditorShell, EditorState,
+        EditorTheme, EntityIcon, GizmoMode, InspectedEntity, LightSnapshot, LogEntry, LogLevel,
+        PanelLocation, PropertyEdit, RigidBodySnapshot, SceneNode, StatusBarData,
+        TransformSnapshot, UiBuilder, ViewportTextureHandle,
+    };
     pub use khora_core::EngineContext;
     pub use khora_data::allocators::SaaTrackingAllocator;
     pub use khora_data::ecs::HandleComponent;
     pub use khora_infra::platform::input::MouseButton;
+    pub use crate::PRIMARY_VIEWPORT;
 
     pub mod ecs {
         //! ECS types exposed through the SDK.
         pub use khora_core::ecs::entity::EntityId;
-        pub use khora_core::renderer::light::{DirectionalLight, LightType, PointLight, SpotLight};
+        pub use khora_core::math::LinearRgba;
+        pub use khora_core::physics::{BodyType, ColliderShape};
+        pub use khora_core::renderer::light::{
+            DirectionalLight, LightType, PointLight, SpotLight,
+        };
         pub use khora_data::ecs::{
-            Camera, Component, ComponentBundle, GlobalTransform, Light, MaterialComponent,
-            Transform,
+            AudioSource, Camera, Children, Collider, Component, ComponentBundle, GlobalTransform,
+            Light, MaterialComponent, Name, Parent, ProjectionType, RigidBody, Transform, Without,
         };
     }
 
@@ -102,6 +118,9 @@ pub mod prelude {
 
 pub use khora_core::EngineContext;
 pub use khora_infra::platform::input::InputEvent;
+
+/// Well-known viewport handle for the primary editor 3D viewport.
+pub const PRIMARY_VIEWPORT: ViewportTextureHandle = ViewportTextureHandle(0);
 
 /// Application trait for user-defined game logic.
 ///
@@ -138,6 +157,12 @@ struct EngineState<A: Application> {
     running: Arc<AtomicBool>,
     /// Accumulated input events for the current frame.
     input_events: VecDeque<InputEvent>,
+    /// Editor overlay (egui), if present.
+    editor_overlay: Option<Box<dyn EditorOverlay>>,
+    /// Editor shell (dock layout, menu, toolbar).
+    editor_shell: Option<Arc<Mutex<Box<dyn EditorShell>>>>,
+    /// Editor camera for the 3D viewport.
+    editor_camera: Arc<Mutex<EditorCamera>>,
 }
 
 impl<A: Application> EngineState<A> {
@@ -219,6 +244,37 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
 
         let graphics_device = renderer.graphics_device();
 
+        // Create the editor overlay + shell (egui) if the backend supports it.
+        let (editor_overlay, editor_shell): (
+            Option<Box<dyn EditorOverlay>>,
+            Option<Arc<Mutex<Box<dyn EditorShell>>>>,
+        ) = if let Some(wgpu_rs) = renderer.as_any_mut().downcast_mut::<WgpuRenderSystem>() {
+            let theme = khora_core::ui::editor::EditorTheme::default();
+            match wgpu_rs.create_editor_overlay_and_shell(
+                event_loop,
+                khora_lanes::render_lane::shaders::EGUI_WGSL,
+                khora_lanes::render_lane::shaders::GRID_WGSL,
+                theme,
+                PRIMARY_VIEWPORT,
+            ) {
+                Ok((overlay, shell)) => {
+                    log::info!("Editor overlay + shell created successfully.");
+                    (
+                        Some(Box::new(overlay) as Box<dyn EditorOverlay>),
+                        Some(Arc::new(Mutex::new(
+                            Box::new(shell) as Box<dyn EditorShell>,
+                        ))),
+                    )
+                }
+                Err(e) => {
+                    log::warn!("Failed to create editor overlay: {e}. Continuing without it.");
+                    (None, None)
+                }
+            }
+        } else {
+            (None, None)
+        };
+
         // Build a minimal EngineContext for Application::new().
         let mut services = ServiceRegistry::new();
         services.insert(graphics_device.clone());
@@ -236,6 +292,17 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
 
         let font_assets = Arc::new(RwLock::new(Assets::<Font>::new()));
         services.insert(font_assets);
+
+        // Register the editor shell if overlay+shell are available.
+        if let Some(shell) = &editor_shell {
+            services.insert(Arc::clone(shell));
+        }
+
+        // Register the editor camera (shared) and viewport handle.
+        let editor_camera_shared: Arc<Mutex<EditorCamera>> =
+            Arc::new(Mutex::new(EditorCamera::default()));
+        services.insert(editor_camera_shared.clone());
+        services.insert(PRIMARY_VIEWPORT);
 
         let context = EngineContext {
             world: None,
@@ -268,9 +335,24 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
         self.render_settings = RenderSettings::default();
         self.simulation_started = false;
         self.app = Some(app);
+        self.editor_overlay = editor_overlay;
+        self.editor_shell = editor_shell;
+        self.editor_camera = editor_camera_shared;
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        // Forward event to the editor overlay first. If consumed, skip game input.
+        let _overlay_consumed = if let (Some(overlay), Some(window)) =
+            (&mut self.editor_overlay, &self.window)
+        {
+            overlay.handle_window_event(
+                window.winit_window() as &dyn std::any::Any,
+                &event as &dyn std::any::Any,
+            )
+        } else {
+            false
+        };
+
         match event {
             WindowEvent::CloseRequested => {
                 log::info!("Shutdown requested");
@@ -288,12 +370,13 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
                 self.handle_frame(event_loop);
             }
             _ => {
-                // Log raw events to debug
-                if !matches!(event, WindowEvent::CursorMoved { .. }) {
-                    log::info!("Raw event: {:?}", event);
-                }
+                // Always forward input events to the Application so the
+                // editor camera and other handlers can process them.
+                // The Application decides whether to act based on
+                // viewport hover state (overlay_consumed is true whenever
+                // the pointer is over any egui panel, which covers the
+                // entire window including the 3D viewport).
                 if let Some(input_event) = translate_winit_input(&event) {
-                    log::info!("Input: {:?}", input_event);
                     self.input_events.push_back(input_event);
                 }
             }
@@ -358,6 +441,28 @@ impl<A: Application> EngineState<A> {
         // Collect inputs for this frame
         let inputs: Vec<InputEvent> = self.input_events.drain(..).collect();
 
+        // Build the overlay screen descriptor from the window.
+        let screen = self.window.as_ref().map(|w| {
+            let (w_px, h_px) = w.inner_size();
+            OverlayScreenDescriptor {
+                width_px: w_px,
+                height_px: h_px,
+                scale_factor: w.scale_factor() as f32,
+            }
+        });
+
+        // Begin the egui frame (overlay collects input and starts a UI pass).
+        if let (Some(overlay), Some(window), Some(s)) =
+            (&mut self.editor_overlay, &self.window, &screen)
+        {
+            overlay.begin_frame(window.winit_window() as &dyn std::any::Any, s.clone());
+        }
+        // Render the editor shell (menu bar, toolbar, docked panels).
+        if let Some(shell) = &self.editor_shell {
+            if let Ok(mut s) = shell.lock() {
+                s.show_frame();
+            }
+        }
         // User update with inputs (logic first - move camera, etc.)
         if let Some(gw) = self.game_world.as_mut() {
             app.update(gw, &inputs);
@@ -378,11 +483,34 @@ impl<A: Application> EngineState<A> {
                     log::error!("begin_frame failed: {e:?}");
                     return;
                 }
+
+                // Render the offscreen viewport (clear + grid).
+                if let Some(wgpu_rs) = rs.as_any_mut().downcast_mut::<WgpuRenderSystem>() {
+                    let clear = khora_core::math::LinearRgba::new(0.15, 0.15, 0.18, 1.0);
+                    let (vw, vh) = wgpu_rs.viewport_size();
+                    let vi = if let Ok(cam) = self.editor_camera.lock() {
+                        cam.view_info(vw as f32, vh as f32)
+                    } else {
+                        khora_core::renderer::api::resource::ViewInfo::default()
+                    };
+                    if let Err(e) = wgpu_rs.render_viewport(clear, &vi) {
+                        log::error!("viewport render failed: {e:?}");
+                    }
+                }
             }
 
             let mut context = gw.as_engine_context(services);
             dcc.update_agents(&mut context);
             dcc.execute_agents();
+
+            // Render the editor overlay on top of the 3D scene.
+            if let (Some(overlay), Some(s)) = (&mut self.editor_overlay, screen) {
+                if let Ok(mut rs) = renderer.lock() {
+                    if let Err(e) = rs.render_overlay(overlay.as_mut(), s) {
+                        log::error!("render_overlay failed: {e:?}");
+                    }
+                }
+            }
 
             // Present the single swapchain texture after all agents have encoded.
             if let Ok(mut rs) = renderer.lock() {
@@ -422,6 +550,9 @@ impl Engine {
             simulation_started: false,
             running: Arc::new(AtomicBool::new(true)),
             input_events: VecDeque::new(),
+            editor_overlay: None,
+            editor_shell: None,
+            editor_camera: Arc::new(Mutex::new(EditorCamera::default())),
         };
 
         event_loop.run_app(&mut app_state)?;

@@ -12,25 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! # Khora Infra
+//! Egui backend for the Khora Engine editor overlay.
 //!
-//! Concrete implementations of external dependencies.
+//! This module provides:
+//! - [`EguiOverlay`] — the concrete [`EditorOverlay`](khora_core::ui::EditorOverlay)
+//!   implementation backed by egui + a custom wgpu renderer.
+//! - [`EguiWgpuRenderer`] — low-level wgpu rendering of egui primitives.
+//! - [`EguiFrameRenderState`] — per-frame GPU state passed to the overlay.
 
-#![warn(missing_docs)]
-
-pub mod audio;
-pub mod graphics;
-pub mod physics;
-pub mod platform;
+pub mod overlay;
 pub mod renderer;
-pub mod telemetry;
-pub mod ui;
+pub mod shell;
+pub mod theme;
+pub mod ui_builder;
 
-pub use graphics::wgpu::WgpuRenderSystem;
-pub use platform::window::{WinitWindow, WinitWindowBuilder};
-pub use renderer::StandardTextRenderer;
-pub use telemetry::{
-    gpu_monitor::GpuMonitor, memory_monitor::MemoryMonitor, vram_monitor::VramMonitor,
-};
-pub use ui::egui::{EguiEditorShell, EguiFrameRenderState, EguiOverlay, EguiUiBuilder};
-pub use ui::taffy::taffy_layout::TaffyLayoutSystem;
+pub use overlay::{EguiFrameRenderState, EguiOverlay};
+pub use renderer::EguiWgpuRenderer;
+pub use shell::EguiEditorShell;
+pub use ui_builder::EguiUiBuilder;

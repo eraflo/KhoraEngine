@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Core interfaces for the UI system.
+//! Abstract viewport texture handle for displaying engine-rendered images in
+//! editor panels.
 
-pub mod editor;
-pub mod editor_overlay;
-pub mod layout;
-pub mod types;
-
-pub use editor::{EditorCamera, EditorPanel, EditorShell, EditorTheme, PanelLocation, UiBuilder, ViewportTextureHandle};
-pub use editor_overlay::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
-pub use layout::{LayoutSystem, UiLayoutView};
+/// An opaque handle referencing a texture that the UI backend knows how to
+/// display.
+///
+/// Concrete backends (egui, etc.) map this to their own texture identifier.
+/// The handle is created by the render system when setting up an offscreen
+/// render target for the viewport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ViewportTextureHandle(pub u64);

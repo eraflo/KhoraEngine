@@ -14,6 +14,8 @@
 
 //! Concrete implementations for UI systems.
 
+pub mod egui;
 pub mod taffy;
 
+pub use self::egui::{EguiEditorShell, EguiFrameRenderState, EguiOverlay, EguiUiBuilder};
 pub use taffy::TaffyLayoutSystem;

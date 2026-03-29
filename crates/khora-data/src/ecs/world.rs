@@ -35,8 +35,8 @@ use crate::ecs::{
     serialization::SceneMemoryLayout,
     storage::StorageManager,
     AudioListener, AudioSource, Camera, Children, Collider, Component, ComponentBundle,
-    DomainBitset, GlobalTransform, MaterialComponent, Parent, QueryMut, QueryPlan, RigidBody,
-    SemanticDomain, SerializedPage, Transform, TypeRegistry,
+    DomainBitset, GlobalTransform, MaterialComponent, Name, Parent, QueryMut, QueryPlan,
+    RigidBody, SemanticDomain, SerializedPage, Transform, TypeRegistry,
 };
 
 /// Errors that can occur when adding a component to an entity.
@@ -134,6 +134,7 @@ impl World {
         world.register_component::<GlobalTransform>(SemanticDomain::Spatial);
         world.register_component::<Parent>(SemanticDomain::Spatial);
         world.register_component::<Children>(SemanticDomain::Spatial);
+        world.register_component::<Name>(SemanticDomain::Spatial);
 
         // Registration of render components
         world.register_component::<HandleComponent<Mesh>>(SemanticDomain::Render);

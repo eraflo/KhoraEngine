@@ -136,10 +136,27 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
         Ok(RenderStats::default())
     }
 
+    /// Renders an editor overlay on top of the current frame.
+    ///
+    /// Called after all agents have rendered and before [`end_frame`](Self::end_frame).
+    /// The overlay's `begin_frame()` should have been called earlier in the frame.
+    ///
+    /// The default implementation is a no-op (no overlay).
+    fn render_overlay(
+        &mut self,
+        _overlay: &mut dyn crate::ui::EditorOverlay,
+        _screen: crate::ui::OverlayScreenDescriptor,
+    ) -> Result<(), RenderError> {
+        Ok(())
+    }
+
     /// Cleans up and releases all graphics resources.
     /// This should be called once at application shutdown.
     fn shutdown(&mut self);
 
     /// Allows downcasting to a concrete `RenderSystem` type.
     fn as_any(&self) -> &dyn std::any::Any;
+
+    /// Allows mutable downcasting to a concrete `RenderSystem` type.
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }

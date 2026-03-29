@@ -67,4 +67,17 @@ impl VirtualFileSystem {
     pub fn get_metadata(&self, uuid: &AssetUUID) -> Option<&AssetMetadata> {
         self.index.get(uuid)
     }
+
+    /// Returns an iterator over all asset metadata entries in the VFS.
+    ///
+    /// Useful for editor tooling (asset browser) that needs to display all
+    /// available assets.
+    pub fn iter_all(&self) -> impl Iterator<Item = &AssetMetadata> {
+        self.index.values()
+    }
+
+    /// Returns the total number of indexed assets.
+    pub fn asset_count(&self) -> usize {
+        self.index.len()
+    }
 }

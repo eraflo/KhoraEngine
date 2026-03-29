@@ -31,6 +31,13 @@ pub struct WinitWindow {
     inner: Arc<Window>,
 }
 
+impl WinitWindow {
+    /// Returns a reference to the raw `winit::window::Window`.
+    pub fn winit_window(&self) -> &Window {
+        &self.inner
+    }
+}
+
 /// A builder for creating `WinitWindow` instances.
 ///
 /// This follows the builder pattern to provide an ergonomic API for window creation.
