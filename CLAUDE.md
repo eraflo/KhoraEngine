@@ -60,6 +60,10 @@ mdbook build docs/             # Documentation
 - Commit code with Vulkan validation errors
 - Use `std::thread::spawn` directly — use the DCC agent system
 - Push to git or create PRs without explicit user permission
+- Add any method outside the `Agent` trait to an agent struct — agents implement **only** `Agent`, no `start()`, `stop()`, or helpers
+- Give an agent any responsibility other than lane selection, GORNA budget negotiation, and `Lane::execute()` dispatch
+- Inline WGSL source as a Rust `const`/`static` — all shaders must be `.wgsl` files under `crates/khora-lanes/src/render_lane/shaders/`
+- Add concrete (backend-specific) logic to `khora-core` — define abstract traits/types in `khora-core`, implement them in per-backend subfolders in `khora-infra` (`wgpu/`, `rapier/`, `cpal/`, `taffy/`, …)
 
 ## Frame Lifecycle
 

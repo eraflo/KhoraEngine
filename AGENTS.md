@@ -20,6 +20,10 @@ You are a Rust game engine expert working on **Khora Engine** — an experimenta
 - Never commit code with Vulkan validation errors
 - Never use `std::thread::spawn` — concurrency through the DCC agent system
 - Never push to git without explicit permission
+- Never add methods outside of the `Agent` trait to an agent struct — an agent **only** implements the `Agent` trait, no `start()`, `stop()`, or any other methods
+- Never give an agent any logic beyond: choosing which lanes to run, negotiating a `ResourceBudget` with the GORNA arbitrator, and dispatching `Lane::execute()` in order
+- Never inline WGSL shader source as a Rust `const` or `static` string — all shader code must live in `.wgsl` files on disk
+- Never put platform-specific or backend-specific implementations in `khora-core` — define the abstract trait/type in `khora-core`, then implement it in a dedicated subfolder inside `khora-infra` (one subfolder per backend: `wgpu/`, `rapier/`, `cpal/`, `taffy/`, etc.)
 
 ## Architecture (CLAD)
 

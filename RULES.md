@@ -29,6 +29,10 @@
 - Modify the `khora-core` trait interfaces without updating all downstream implementations
 - Use `Box<dyn Any>` downcasting as a substitute for proper trait design
 - Store mutable global state — use `LaneContext` slots or ECS components
+- Add methods outside of the `Agent` trait to an agent struct — agents only implement `Agent`, nothing more
+- Give an agent any responsibility beyond lane selection, GORNA negotiation, and lane execution dispatch
+- Inline WGSL shader source as Rust string constants — all shaders must live in `.wgsl` files under `crates/khora-lanes/src/render_lane/shaders/`
+- Add platform-specific or backend-specific logic to `khora-core` — abstractions (traits/types) belong in `khora-core`, concrete implementations belong in per-backend subfolders inside `khora-infra` (e.g. `khora-infra/src/graphics/wgpu/`, `khora-infra/src/physics/rapier/`, `khora-infra/src/audio/cpal/`)
 
 ## Output Constraints
 
