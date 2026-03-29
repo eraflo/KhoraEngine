@@ -29,6 +29,8 @@ agents:
     description: Mathematics for game engines — linear algebra, geometry, numerical methods
   api-ux-expert:
     description: Fluent API and developer experience — builder patterns, type-state, SDK ergonomics
+  documentation-expert:
+    description: Documentation creation and maintenance — mdBook, rustdoc, API docs, tutorials, architecture guides
 
 delegation:
   mode: explicit

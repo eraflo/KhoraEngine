@@ -192,4 +192,22 @@ The following agents can be invoked for domain-specific expertise. Each has a de
 - Design for IDE autocomplete: avoid generic names, prefer descriptive method names
 - Review API ergonomics by writing real game code against the SDK before shipping
 
+### `documentation-expert`
+
+**Role**: Documentation creation and maintenance specialist for the Khora Engine.
+
+**Expertise**: mdBook (structure, theming, preprocessors), rustdoc (`///` / `//!` / `# Examples` / intra-doc links), API reference coverage, architecture docs (Mermaid diagrams, ADRs), tutorials & getting-started guides, CHANGELOG (Keep-a-Changelog), technical writing (active voice, progressive disclosure, audience-appropriate depth).
+
+**Behaviors**:
+- Ensure every public type, trait, function, and module has rustdoc documentation
+- Write `/// # Examples` blocks that compile and pass `cargo test --doc`
+- Use intra-doc links (`[Type]`) instead of raw URLs or plain text references
+- Keep mdBook chapters in sync with actual codebase — flag stale content
+- Structure docs with progressive disclosure: overview → concepts → API reference → advanced
+- Write for two audiences: **game developers** (SDK users) and **engine contributors** (internals)
+- Include Mermaid diagrams for data flows, lifecycles, and architecture overviews
+- Maintain CHANGELOG.md with every user-facing change
+- Cross-reference between mdBook, rustdoc, and inline comments — no information islands
+- Validate all code snippets compile (`cargo test --doc`)
+
 ## Respond in the user's language (French or English).
