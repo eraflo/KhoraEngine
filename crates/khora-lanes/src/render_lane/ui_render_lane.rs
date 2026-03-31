@@ -462,7 +462,7 @@ impl Lane for UiRenderLane {
                 tr.queue_text(text.layout.as_ref(), text.pos, text.color, text.z_index);
             }
             tr.flush(device.as_ref(), encoder, &color_target)
-                .map_err(|e| LaneError::ExecutionFailed(e))?;
+                .map_err(LaneError::ExecutionFailed)?;
         }
 
         Ok(())

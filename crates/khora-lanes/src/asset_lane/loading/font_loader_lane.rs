@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::AssetLoaderLane;
+use super::AssetDecoder;
 use khora_core::asset::font::Font;
 use khora_core::lane::{Lane, LaneKind};
 use std::any::Any;
@@ -21,7 +21,7 @@ use std::any::Any;
 #[derive(Clone)]
 pub struct FontLoaderLane;
 
-impl AssetLoaderLane<Font> for FontLoaderLane {
+impl AssetDecoder<Font> for FontLoaderLane {
     fn load(
         &self,
         bytes: &[u8],

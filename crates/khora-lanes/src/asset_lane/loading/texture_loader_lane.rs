@@ -14,7 +14,7 @@
 
 //! Texture loading and management.
 
-use super::AssetLoaderLane;
+use super::AssetDecoder;
 use anyhow::{Context, Result};
 use khora_core::{
     math::Extent3D,
@@ -28,7 +28,7 @@ use khora_core::{
 #[derive(Clone)]
 pub struct TextureLoaderLane;
 
-impl AssetLoaderLane<CpuTexture> for TextureLoaderLane {
+impl AssetDecoder<CpuTexture> for TextureLoaderLane {
     fn load(
         &self,
         bytes: &[u8],

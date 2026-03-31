@@ -26,7 +26,7 @@
 use anyhow::Result;
 use khora_sdk::prelude::math::{Quaternion, Vec3};
 use khora_sdk::prelude::*;
-use khora_sdk::{Application, Engine, EngineContext, GameWorld, InputEvent};
+use khora_sdk::{AppContext, Application, Engine, GameWorld, InputEvent};
 
 #[global_allocator]
 static GLOBAL: SaaTrackingAllocator = SaaTrackingAllocator::new(std::alloc::System);
@@ -198,7 +198,7 @@ struct SandboxGame {
 }
 
 impl Application for SandboxGame {
-    fn new(_context: EngineContext) -> Self {
+    fn new() -> Self {
         log::info!("SandboxGame: Initializing...");
         Self {
             frame_count: 0,
@@ -207,7 +207,7 @@ impl Application for SandboxGame {
         }
     }
 
-    fn setup(&mut self, world: &mut GameWorld) {
+    fn setup(&mut self, world: &mut GameWorld, _ctx: &mut AppContext) {
         // Create player - a Vessel with camera
         let camera = khora_sdk::prelude::ecs::Camera::new_perspective(
             std::f32::consts::FRAC_PI_4,

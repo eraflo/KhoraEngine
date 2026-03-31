@@ -15,6 +15,9 @@ jobs:
   release:
     name: Semantic Release
     runs-on: ubuntu-latest
+    outputs:
+      new_release_published: ${{ steps.semantic.outputs.new_release_published }}
+      new_release_version: ${{ steps.semantic.outputs.new_release_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,6 +25,7 @@ jobs:
           fetch-depth: 0 # required for semantic-release to analyze history
 
       - name: Semantic Release
+        id: semantic
         uses: cycjimmy/semantic-release-action@v4
         with:
           semantic_version: 23
@@ -39,3 +43,67 @@ jobs:
           title: 'Release: Update Changelog'
           body: 'Automated release PR with CHANGELOG.md updates.'
           base: main
+
+  build:
+    name: Build Binaries (${{ matrix.os }})
+    needs: release
+    if: needs.release.outputs.new_release_published == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: khora-windows-x86_64.zip
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: khora-linux-x86_64.tar.gz
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: khora-macos-aarch64.tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libssl-dev \
+            pkg-config
+
+      - name: Build release binaries
+        run: cargo build --release -p khora-hub -p khora-editor
+
+      - name: Package binaries (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          Compress-Archive `
+            -Path target/release/khora-hub.exe, target/release/khora-editor.exe `
+            -DestinationPath ${{ matrix.archive }}
+
+      - name: Package binaries (Linux / macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          tar czf ${{ matrix.archive }} \
+            -C target/release \
+            khora-hub \
+            khora-editor
+
+      - name: Upload binaries to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.release.outputs.new_release_version }}
+          files: ${{ matrix.archive }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -93,45 +93,19 @@ impl Agent for UiAgent {
     }
 
     fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
-        let mut strategies = Vec::new();
-
-        strategies.push(StrategyOption {
+        let strategies = vec![StrategyOption {
             id: StrategyId::Balanced,
             estimated_time: Duration::from_micros(500),
             estimated_vram: 1024 * 1024,
-        });
+        }];
 
         NegotiationResponse { strategies }
     }
 
     fn apply_budget(&mut self, _budget: ResourceBudget) {}
 
-    fn update(&mut self, context: &mut EngineContext<'_>) {
-        // 1. Initialize lanes and cache services
-        if self.layout_lane.is_none() {
-            if let Some(layout_system_svc) =
-                context.services.get::<Arc<Mutex<Box<dyn LayoutSystem>>>>()
-            {
-                self.layout_lane = Some(Box::new(StandardUiLane::new(layout_system_svc.clone())));
-            }
-        }
-        if self.render_lane.is_none() {
-            self.render_lane = Some(Box::new(UiRenderLane::new()));
-            // Initialize render lane
-            if let Some(device) = context.services.get::<Arc<dyn GraphicsDevice>>() {
-                let mut init_ctx = LaneContext::new();
-                init_ctx.insert(device.clone());
-                if let Err(e) = self
-                    .render_lane
-                    .as_ref()
-                    .unwrap()
-                    .on_initialize(&mut init_ctx)
-                {
-                    log::error!("UiAgent: Failed to initialize RenderLane: {}", e);
-                }
-            }
-        }
-
+    fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
+        // Cache services from the engine context.
         if self.device.is_none() {
             self.device = context.services.get::<Arc<dyn GraphicsDevice>>().cloned();
         }
@@ -154,7 +128,33 @@ impl Agent for UiAgent {
                 .cloned();
         }
 
-        // Initialize Image Atlas if device is available
+        // Initialize layout lane if layout system is available.
+        if self.layout_lane.is_none() {
+            if let Some(layout_system_svc) =
+                context.services.get::<Arc<Mutex<Box<dyn LayoutSystem>>>>()
+            {
+                self.layout_lane = Some(Box::new(StandardUiLane::new(layout_system_svc.clone())));
+            }
+        }
+
+        // Initialize render lane.
+        if self.render_lane.is_none() {
+            self.render_lane = Some(Box::new(UiRenderLane::new()));
+            if let Some(device) = &self.device {
+                let mut init_ctx = LaneContext::new();
+                init_ctx.insert(device.clone());
+                if let Err(e) = self
+                    .render_lane
+                    .as_ref()
+                    .unwrap()
+                    .on_initialize(&mut init_ctx)
+                {
+                    log::error!("UiAgent: Failed to initialize RenderLane: {}", e);
+                }
+            }
+        }
+
+        // Initialize Image Atlas if device is available.
         if self.image_atlas.is_none() {
             if let Some(device) = &self.device {
                 if let Ok(atlas) = TextureAtlas::new(
@@ -167,8 +167,18 @@ impl Agent for UiAgent {
                 }
             }
         }
+    }
 
-        // 2. Extract UI data from ECS into UiScene
+    fn execute(&mut self, context: &mut EngineContext<'_>) {
+        // Lazily cache render_system if not yet available.
+        if self.render_system.is_none() {
+            self.render_system = context
+                .services
+                .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+                .cloned();
+        }
+
+        // 1. Extract UI data from ECS into UiScene.
         if let Some(world_any) = context.world.as_deref_mut() {
             if let Some(world) = world_any.downcast_mut::<World>() {
                 self.ui_scene.clear();
@@ -211,15 +221,15 @@ impl Agent for UiAgent {
                     self.ui_scene.nodes.push(ExtractedUiNode {
                         pos: transform.pos,
                         size: transform.size,
-                        color: color.map(|c| *c),
-                        border: border.map(|b| *b),
-                        image: image.map(|i| *i),
+                        color: color.copied(),
+                        border: border.copied(),
+                        image: image.copied(),
                         atlas_rect,
                         z_index: transform.z_index,
                     });
                 }
 
-                // 3. Extract Text from ECS
+                // 2. Extract Text from ECS.
                 if let (Some(tr), Some(fonts_lock)) = (&self.text_renderer, &self.fonts) {
                     if let Ok(fonts) = fonts_lock.read() {
                         let text_query = world.query::<(&UiTransform, &UiText)>();
@@ -243,38 +253,13 @@ impl Agent for UiAgent {
                     }
                 }
 
-                // Sort by z-index to ensure correct rendering order
+                // Sort by z-index to ensure correct rendering order.
                 self.ui_scene.nodes.sort_by_key(|n| n.z_index);
                 self.ui_scene.texts.sort_by_key(|t| t.z_index);
             }
         }
-    }
 
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id(),
-            health_score: 1.0,
-            current_strategy: StrategyId::Balanced,
-            is_stalled: false,
-            message: format!(
-                "UI Nodes: {}, Texts: {}",
-                self.ui_scene.nodes.len(),
-                self.ui_scene.texts.len()
-            ),
-        }
-    }
-
-    fn execute(&mut self) {
-        // 1. Run Layout Lane (computes positions in the layout system)
-        // Note: Layout lane currently needs the World to update components.
-        // This is a bit of a deadlock in the decoupled architecture if we want
-        // the layout system to write back to the ESC.
-        // For now, we assume the layout was already processed during update or
-        // we skip it in execute if we want pure decoupling.
-        // Actually, StandardUiLane::execute uses World. If we don't have it, we can't run it here.
-        // However, the user asked to move RENDER lane execution here.
-
-        // 2. Run Render Lane
+        // 3. Run Render Lane.
         if let (Some(lane), Some(device), Some(rs_arc)) =
             (&self.render_lane, &self.device, &self.render_system)
         {
@@ -311,6 +296,20 @@ impl Agent for UiAgent {
                     }
                 }),
             );
+        }
+    }
+
+    fn report_status(&self) -> AgentStatus {
+        AgentStatus {
+            agent_id: self.id(),
+            health_score: 1.0,
+            current_strategy: StrategyId::Balanced,
+            is_stalled: false,
+            message: format!(
+                "UI Nodes: {}, Texts: {}",
+                self.ui_scene.nodes.len(),
+                self.ui_scene.texts.len()
+            ),
         }
     }
 

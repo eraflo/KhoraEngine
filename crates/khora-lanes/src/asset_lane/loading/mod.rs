@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Asset loading utilities.
+//! Asset decoding utilities.
 
 mod audio_loader_lane;
 mod font_loader_lane;
@@ -27,21 +27,14 @@ pub use texture_loader_lane::*;
 use khora_core::asset::Asset;
 use std::error::Error;
 
-/// A trait for types that can load a specific kind of asset from a byte slice.
+/// A trait for types that can decode a specific kind of asset from raw bytes.
 ///
 /// This represents the "Data Plane" part of asset loading. Implementors of this
 /// trait are responsible for the potentially CPU-intensive work of parsing and
 /// decoding raw file data into a usable, engine-ready asset type.
 ///
-/// Each `AssetLoaderLane` is specialized for a single asset type `A`.
-pub trait AssetLoaderLane<A: Asset> {
+/// Each `AssetDecoder` is specialized for a single asset type `A`.
+pub trait AssetDecoder<A: Asset> {
     /// Parses a byte slice and converts it into an instance of the asset `A`.
-    ///
-    /// # Parameters
-    /// - `bytes`: The raw byte data read from an asset file.
-    ///
-    /// # Returns
-    /// A `Result` containing the loaded asset on success, or a boxed dynamic
-    /// error on failure. The error must be thread-safe.
     fn load(&self, bytes: &[u8]) -> Result<A, Box<dyn Error + Send + Sync>>;
 }

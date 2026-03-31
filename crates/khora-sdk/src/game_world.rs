@@ -24,8 +24,8 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::renderer::api::scene::Mesh;
 use khora_core::EngineContext;
 use khora_data::ecs::{
-    Camera, Component, ComponentBundle, GlobalTransform, HandleComponent, Query, QueryMut,
-    Transform, World, WorldQuery,
+    Camera, Component, ComponentBundle, EcsMaintenance, GlobalTransform, HandleComponent, Query,
+    QueryMut, Transform, World, WorldQuery,
 };
 use std::any::Any;
 
@@ -51,6 +51,8 @@ use std::any::Any;
 pub struct GameWorld {
     /// The internal ECS world.
     world: World,
+    /// ECS maintenance service (garbage collection, compaction).
+    maintenance: EcsMaintenance,
 }
 
 impl GameWorld {
@@ -58,7 +60,18 @@ impl GameWorld {
     pub(crate) fn new() -> Self {
         Self {
             world: World::new(),
+            maintenance: EcsMaintenance::new(),
         }
+    }
+
+    /// Runs one frame of ECS maintenance (garbage collection, page compaction).
+    ///
+    /// This should be called each frame between user logic and agent execution
+    /// to ensure agents see a clean world without orphaned data or fragmented pages.
+    ///
+    /// Internally drains up to N pending cleanup/vacuum requests per frame.
+    pub fn tick_maintenance(&mut self) {
+        self.maintenance.tick(&mut self.world);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -296,6 +309,22 @@ impl GameWorld {
     // ─────────────────────────────────────────────────────────────────────
     // Internal — used by the SDK, not exposed to users
     // ─────────────────────────────────────────────────────────────────────
+
+    /// Returns a shared reference to the underlying ECS [`World`].
+    ///
+    /// Useful for serialization and other low-level operations that need
+    /// direct access to the world outside the `GameWorld` API surface.
+    pub fn inner_world(&self) -> &World {
+        &self.world
+    }
+
+    /// Returns an exclusive reference to the underlying ECS [`World`].
+    ///
+    /// Useful for serialization and other low-level operations that need
+    /// direct access to the world outside the `GameWorld` API surface.
+    pub fn inner_world_mut(&mut self) -> &mut World {
+        &mut self.world
+    }
 
     /// Builds an [`EngineContext`] for the DCC agent update cycle.
     ///

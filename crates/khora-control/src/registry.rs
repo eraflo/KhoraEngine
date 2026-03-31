@@ -74,24 +74,28 @@ impl AgentRegistry {
         self.entries.iter().map(|e| &e.agent)
     }
 
-    /// Updates all agents in priority order.
-    pub fn update_all(&self, context: &mut khora_core::EngineContext<'_>) {
+    /// Initializes all agents once after registration.
+    ///
+    /// Calls `on_initialize()` on each agent in priority order, giving them
+    /// access to the engine services for caching and lane setup.
+    pub fn initialize_all(&self, context: &mut khora_core::EngineContext<'_>) {
         for entry in &self.entries {
             if let Ok(mut agent) = entry.agent.lock() {
-                agent.update(context);
+                let id = agent.id();
+                agent.on_initialize(context);
+                log::info!("AgentRegistry: Initialized {:?}", id);
             }
         }
     }
 
     /// Executes all agents in priority order.
     ///
-    /// Called after [`update_all`](Self::update_all) each frame. Each agent
-    /// performs its primary work (e.g., the `RenderAgent` renders,
-    /// the `PhysicsAgent` simulates).
-    pub fn execute_all(&self) {
+    /// Called each frame. Each agent selects the appropriate lanes and
+    /// dispatches their execution.
+    pub fn execute_all(&self, context: &mut khora_core::EngineContext<'_>) {
         for entry in &self.entries {
             if let Ok(mut agent) = entry.agent.lock() {
-                agent.execute();
+                agent.execute(context);
             }
         }
     }

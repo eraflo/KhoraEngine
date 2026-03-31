@@ -19,20 +19,15 @@ use crate::math::{Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 
 /// Length units for UI elements
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum UiVal {
     /// Fixed pixel length
     Px(f32),
     /// Percentage relative to parent
     Percent(f32),
     /// Automatically defined size
+    #[default]
     Auto,
-}
-
-impl Default for UiVal {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 /// A layout dimension structure

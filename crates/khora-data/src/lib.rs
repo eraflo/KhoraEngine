@@ -14,11 +14,10 @@
 
 //! # Khora Data
 //!
-//! Data management systems including layouts, allocators, and streaming.
+//! Data management systems including layouts, assets, and streaming.
 
 #![warn(missing_docs)]
 
-pub mod allocators;
 pub mod assets;
 pub mod ecs;
 pub mod scene;

@@ -14,7 +14,7 @@
 
 //! An implementation of `GlobalAlloc` that tracks memory usage.
 
-use khora_core::memory::*;
+use super::*;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::Ordering;
 
@@ -39,7 +39,7 @@ const SMALL_ALLOCATION_THRESHOLD: usize = 1024; // 1KB
 /// # Usage
 ///
 /// ```rust,ignore
-/// use khora_data::allocators::SaaTrackingAllocator;
+/// use khora_core::memory::SaaTrackingAllocator;
 ///
 /// #[global_allocator]
 /// static GLOBAL: SaaTrackingAllocator = SaaTrackingAllocator::new(std::alloc::System);

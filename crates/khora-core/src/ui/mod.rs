@@ -19,6 +19,9 @@ pub mod editor_overlay;
 pub mod layout;
 pub mod types;
 
-pub use editor::{EditorCamera, EditorPanel, EditorShell, EditorTheme, PanelLocation, UiBuilder, ViewportTextureHandle};
+pub use editor::{
+    EditorCamera, EditorPanel, EditorShell, EditorTheme, PanelLocation, UiBuilder,
+    ViewportTextureHandle,
+};
 pub use editor_overlay::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
 pub use layout::{LayoutSystem, UiLayoutView};

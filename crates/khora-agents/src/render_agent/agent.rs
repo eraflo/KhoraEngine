@@ -209,7 +209,7 @@ impl Agent for RenderAgent {
         self.time_budget = budget.time_limit;
     }
 
-    fn update(&mut self, context: &mut EngineContext<'_>) {
+    fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
         // Cache the graphics device from the service registry.
         if self.device.is_none() {
             if let Some(device_arc) = context.services.get::<Arc<dyn GraphicsDevice>>() {
@@ -232,6 +232,15 @@ impl Agent for RenderAgent {
                 self.render_system = Some(rs.clone());
             }
         }
+    }
+
+    fn execute(&mut self, context: &mut EngineContext<'_>) {
+        // Lazily cache the render system if not yet available (may be registered later).
+        if self.render_system.is_none() {
+            if let Some(rs) = context.services.get::<Arc<Mutex<Box<dyn RenderSystem>>>>() {
+                self.render_system = Some(rs.clone());
+            }
+        }
 
         let Some(device) = self.device.clone() else {
             return;
@@ -243,11 +252,14 @@ impl Agent for RenderAgent {
                 // Access the CPU mesh assets and material assets.
                 self.prepare_frame(world, device.as_ref());
 
-                // Step 2: Extract camera view and push to RenderSystem.
-                let view_info = self.extract_camera_view(world);
-                if let Some(rs) = &self.render_system {
-                    if let Ok(mut rs) = rs.lock() {
-                        rs.prepare_frame(&view_info);
+                // Step 2: Extract active scene camera view and push to RenderSystem.
+                // If there is no active scene camera (e.g. editor editing mode),
+                // keep the view set earlier by the host application.
+                if let Some(view_info) = self.try_extract_camera_view(world) {
+                    if let Some(rs) = &self.render_system {
+                        if let Ok(mut rs) = rs.lock() {
+                            rs.prepare_frame(&view_info);
+                        }
                     }
                 }
             }
@@ -360,11 +372,6 @@ impl Agent for RenderAgent {
                 total_lights,
             ),
         }
-    }
-
-    fn execute(&mut self) {
-        // RenderAgent doesn't do anything in generic execute()
-        // Use render() method for actual rendering with encoder
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -597,7 +604,7 @@ impl RenderAgent {
         render_objects
     }
 
-    /// Extracts the active camera from the ECS world and generates a `ViewInfo`.
+    /// Tries to extract an active scene camera from ECS and build a `ViewInfo`.
     ///
     /// This method queries the ECS for entities with both a `Camera` and `GlobalTransform`
     /// component, finds the first active camera, and constructs a ViewInfo containing
@@ -609,9 +616,8 @@ impl RenderAgent {
     ///
     /// # Returns
     ///
-    /// A `ViewInfo` containing the camera's matrices and position. If no active camera
-    /// is found, returns a default ViewInfo with identity matrices.
-    pub fn extract_camera_view(&self, world: &World) -> ViewInfo {
+    /// `Some(ViewInfo)` for the first active camera found, otherwise `None`.
+    pub fn try_extract_camera_view(&self, world: &World) -> Option<ViewInfo> {
         // Query for entities with Camera and GlobalTransform components
         let query = world.query::<(&Camera, &GlobalTransform)>();
         let cameras: Vec<_> = query.collect();
@@ -637,13 +643,27 @@ impl RenderAgent {
                 let projection_matrix = camera.projection_matrix();
 
                 log::trace!("Camera extracted at position: {:?}", camera_position);
-                return ViewInfo::new(view_matrix, projection_matrix, camera_position);
+                return Some(ViewInfo::new(
+                    view_matrix,
+                    projection_matrix,
+                    camera_position,
+                ));
             }
         }
 
-        // No active camera found, return default
-        log::warn!("No active camera found in scene, using default ViewInfo");
-        ViewInfo::default()
+        None
+    }
+
+    /// Extracts the active camera from the ECS world and generates a `ViewInfo`.
+    ///
+    /// If no active camera is found, returns a default `ViewInfo`.
+    pub fn extract_camera_view(&self, world: &World) -> ViewInfo {
+        if let Some(view_info) = self.try_extract_camera_view(world) {
+            view_info
+        } else {
+            log::warn!("No active camera found in scene, using default ViewInfo");
+            ViewInfo::default()
+        }
     }
 
     /// Emits a `GpuReport` telemetry event to the DCC with current frame metrics.

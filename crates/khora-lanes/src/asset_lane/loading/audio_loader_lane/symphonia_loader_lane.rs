@@ -14,7 +14,7 @@
 
 //! Implements a universal asset loader for audio formats using the `symphonia` library.
 
-use crate::asset_lane::loading::AssetLoaderLane;
+use crate::asset_lane::loading::AssetDecoder;
 use anyhow::{anyhow, Result};
 use khora_data::assets::SoundData;
 use std::{error::Error, io::Cursor};
@@ -23,7 +23,7 @@ use symphonia::core::{
     meta::MetadataOptions, probe::Hint,
 };
 
-/// An `AssetLoaderLane` that uses `symphonia` to decode multiple audio formats.
+/// An `AssetDecoder` that uses `symphonia` to decode multiple audio formats.
 #[derive(Default)]
 pub struct SymphoniaLoaderLane;
 
@@ -34,7 +34,7 @@ impl SymphoniaLoaderLane {
     }
 }
 
-impl AssetLoaderLane<SoundData> for SymphoniaLoaderLane {
+impl AssetDecoder<SoundData> for SymphoniaLoaderLane {
     fn load(&self, bytes: &[u8]) -> Result<SoundData, Box<dyn Error + Send + Sync>> {
         // 1. Create a media source stream from the in-memory byte slice.
         let mss = MediaSourceStream::new(Box::new(Cursor::new(bytes.to_vec())), Default::default());

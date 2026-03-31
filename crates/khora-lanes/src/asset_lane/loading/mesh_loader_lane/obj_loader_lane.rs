@@ -14,7 +14,7 @@
 
 //! Defines a lane for loading OBJ mesh assets.
 
-use super::AssetLoaderLane;
+use super::AssetDecoder;
 use ahash::AHashMap;
 use anyhow::{Context, Result};
 use khora_core::{
@@ -31,7 +31,7 @@ use std::error::Error;
 #[derive(Clone)]
 pub struct ObjLoaderLane;
 
-impl AssetLoaderLane<Mesh> for ObjLoaderLane {
+impl AssetDecoder<Mesh> for ObjLoaderLane {
     fn load(&self, bytes: &[u8]) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
         let obj_text = std::str::from_utf8(bytes).context("OBJ file is not valid UTF-8")?;
 

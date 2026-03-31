@@ -401,23 +401,20 @@ impl TextRenderer for StandardTextRenderer {
                 let mut cache = self.glyph_cache.lock().unwrap();
                 let glyph = if let Some(g) = cache.get(&cache_key) {
                     *g
-                } else {
-                    if let Some((w, h, pixels)) = self.rasterize_glyph(c) {
-                        if let Some(rect) = res.atlas.allocate_and_upload(device, w, h, &pixels, 1)
-                        {
-                            let g = GlyphData {
-                                uv_min: rect.min,
-                                uv_max: rect.max,
-                                size: Vec2::new(w as f32, h as f32),
-                            };
-                            cache.insert(cache_key, g);
-                            g
-                        } else {
-                            continue; // Atlas full
-                        }
+                } else if let Some((w, h, pixels)) = self.rasterize_glyph(c) {
+                    if let Some(rect) = res.atlas.allocate_and_upload(device, w, h, &pixels, 1) {
+                        let g = GlyphData {
+                            uv_min: rect.min,
+                            uv_max: rect.max,
+                            size: Vec2::new(w as f32, h as f32),
+                        };
+                        cache.insert(cache_key, g);
+                        g
                     } else {
-                        continue; // Raster fail
+                        continue; // Atlas full
                     }
+                } else {
+                    continue; // Raster fail
                 };
 
                 let p = item.pos + *g_pos;

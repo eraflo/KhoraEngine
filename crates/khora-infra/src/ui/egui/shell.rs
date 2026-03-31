@@ -28,11 +28,12 @@
 //! └──────────────────────────────────────────────────────┘
 //! ```
 
+use super::palette as pal;
 use super::theme::apply_theme;
 use super::ui_builder::EguiUiBuilder;
 use khora_core::ui::editor::panel::{EditorPanel, PanelLocation};
 use khora_core::ui::editor::shell::EditorShell;
-use khora_core::ui::editor::state::{EditorState, GizmoMode, StatusBarData};
+use khora_core::ui::editor::state::{EditorState, GizmoMode, PlayMode, StatusBarData};
 use khora_core::ui::editor::theme::EditorTheme;
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
 use std::collections::HashMap;
@@ -87,7 +88,10 @@ impl EguiEditorShell {
     }
 
     /// Returns the egui texture ID for a given viewport handle, if registered.
-    pub fn resolve_viewport_texture(&self, handle: ViewportTextureHandle) -> Option<egui::TextureId> {
+    pub fn resolve_viewport_texture(
+        &self,
+        handle: ViewportTextureHandle,
+    ) -> Option<egui::TextureId> {
         self.viewport_textures.get(&handle).copied()
     }
 
@@ -103,16 +107,28 @@ impl EguiEditorShell {
                     ui.close();
                 }
                 if ui.button("Open…").clicked() {
-                    log::info!("Menu: Open (not yet implemented)");
+                    if let Some(s) = state {
+                        if let Ok(mut s) = s.lock() {
+                            s.pending_menu_action = Some("open".to_owned());
+                        }
+                    }
                     ui.close();
                 }
                 ui.separator();
                 if ui.button("Save").clicked() {
-                    log::info!("Menu: Save (not yet implemented)");
+                    if let Some(s) = state {
+                        if let Ok(mut s) = s.lock() {
+                            s.pending_menu_action = Some("save".to_owned());
+                        }
+                    }
                     ui.close();
                 }
                 if ui.button("Save As…").clicked() {
-                    log::info!("Menu: Save As (not yet implemented)");
+                    if let Some(s) = state {
+                        if let Ok(mut s) = s.lock() {
+                            s.pending_menu_action = Some("save_as".to_owned());
+                        }
+                    }
                     ui.close();
                 }
                 ui.separator();
@@ -154,32 +170,41 @@ impl EguiEditorShell {
                 }
                 ui.separator();
                 if ui.button("Preferences…").clicked() {
-                    log::info!("Menu: Preferences (not yet implemented)");
+                    if let Some(s) = state {
+                        if let Ok(mut s) = s.lock() {
+                            s.pending_menu_action = Some("preferences".to_owned());
+                        }
+                    }
                     ui.close();
                 }
             });
 
             ui.menu_button("View", |ui| {
                 if ui.button("Reset Layout").clicked() {
-                    log::info!("Menu: Reset Layout (not yet implemented)");
-                    ui.close();
-                }
-            });
-
-            ui.menu_button("Build", |ui| {
-                if ui.button("Build & Run").clicked() {
-                    log::info!("Menu: Build & Run (not yet implemented)");
+                    if let Some(s) = state {
+                        if let Ok(mut s) = s.lock() {
+                            s.pending_menu_action = Some("reset_layout".to_owned());
+                        }
+                    }
                     ui.close();
                 }
             });
 
             ui.menu_button("Help", |ui| {
                 if ui.button("Documentation").clicked() {
-                    log::info!("Menu: Documentation (not yet implemented)");
+                    if let Some(s) = state {
+                        if let Ok(mut s) = s.lock() {
+                            s.pending_menu_action = Some("documentation".to_owned());
+                        }
+                    }
                     ui.close();
                 }
                 if ui.button("About Khora Engine").clicked() {
-                    log::info!("Menu: About Khora Engine v0.1");
+                    if let Some(s) = state {
+                        if let Ok(mut s) = s.lock() {
+                            s.pending_menu_action = Some("about".to_owned());
+                        }
+                    }
                     ui.close();
                 }
             });
@@ -187,9 +212,38 @@ impl EguiEditorShell {
     }
 
     fn render_toolbar(ui: &mut egui::Ui, state: &Option<Arc<Mutex<EditorState>>>) {
+        // Toolbar background — slightly lighter than panel fill
+        let rect = ui.max_rect();
+        ui.painter().rect_filled(rect, 0.0, pal::TAB_BAR_BG);
+        // Bottom border
+        ui.painter().line_segment(
+            [rect.left_bottom(), rect.right_bottom()],
+            egui::Stroke::new(1.0, pal::BORDER),
+        );
+
         ui.horizontal(|ui| {
-            ui.label("🔧");
-            ui.separator();
+            ui.add_space(10.0);
+
+            // Khora 4-point star logo
+            let (logo_rect, _) =
+                ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+            paint_star(ui.painter(), logo_rect.center(), 9.0, pal::PRIMARY);
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new("Khora")
+                    .strong()
+                    .size(12.5)
+                    .color(pal::TEXT),
+            );
+            ui.add_space(12.0);
+
+            // Vertical separator
+            let vr = egui::Rect::from_center_size(
+                ui.next_widget_position() + egui::vec2(0.0, 0.0),
+                egui::vec2(1.0, 18.0),
+            );
+            ui.painter().rect_filled(vr, 0.0, pal::BORDER);
+            ui.add_space(12.0);
 
             let current_mode = state
                 .as_ref()
@@ -205,42 +259,193 @@ impl EguiEditorShell {
                 }
             };
 
-            if ui
-                .selectable_label(current_mode == GizmoMode::Select, "⬚ Select")
-                .on_hover_text("Select tool (Q)")
-                .clicked()
+            let btn_size = egui::vec2(68.0, 22.0);
+
             {
-                set_mode(GizmoMode::Select);
+                let active = current_mode == GizmoMode::Select;
+                if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("Select")
+                                .size(11.5)
+                                .color(if active { pal::PRIMARY } else { pal::TEXT_DIM }),
+                        )
+                        .fill(if active { pal::PRIMARY_DIM } else { egui::Color32::TRANSPARENT })
+                        .stroke(egui::Stroke::NONE)
+                        .min_size(btn_size),
+                    )
+                    .on_hover_text("Select  [Q]")
+                    .clicked()
+                {
+                    set_mode(GizmoMode::Select);
+                }
             }
-            if ui
-                .selectable_label(current_mode == GizmoMode::Move, "✥ Move")
-                .on_hover_text("Move tool (W)")
-                .clicked()
+            ui.add_space(2.0);
             {
-                set_mode(GizmoMode::Move);
+                let active = current_mode == GizmoMode::Move;
+                if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("Move")
+                                .size(11.5)
+                                .color(if active { pal::PRIMARY } else { pal::TEXT_DIM }),
+                        )
+                        .fill(if active { pal::PRIMARY_DIM } else { egui::Color32::TRANSPARENT })
+                        .stroke(egui::Stroke::NONE)
+                        .min_size(btn_size),
+                    )
+                    .on_hover_text("Move  [W]")
+                    .clicked()
+                {
+                    set_mode(GizmoMode::Move);
+                }
             }
-            if ui
-                .selectable_label(current_mode == GizmoMode::Rotate, "↻ Rotate")
-                .on_hover_text("Rotate tool (E)")
-                .clicked()
+            ui.add_space(2.0);
             {
-                set_mode(GizmoMode::Rotate);
+                let active = current_mode == GizmoMode::Rotate;
+                if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("Rotate")
+                                .size(11.5)
+                                .color(if active { pal::PRIMARY } else { pal::TEXT_DIM }),
+                        )
+                        .fill(if active { pal::PRIMARY_DIM } else { egui::Color32::TRANSPARENT })
+                        .stroke(egui::Stroke::NONE)
+                        .min_size(btn_size),
+                    )
+                    .on_hover_text("Rotate  [E]")
+                    .clicked()
+                {
+                    set_mode(GizmoMode::Rotate);
+                }
             }
-            if ui
-                .selectable_label(current_mode == GizmoMode::Scale, "⤡ Scale")
-                .on_hover_text("Scale tool (R)")
-                .clicked()
+            ui.add_space(2.0);
             {
-                set_mode(GizmoMode::Scale);
+                let active = current_mode == GizmoMode::Scale;
+                if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("Scale")
+                                .size(11.5)
+                                .color(if active { pal::PRIMARY } else { pal::TEXT_DIM }),
+                        )
+                        .fill(if active { pal::PRIMARY_DIM } else { egui::Color32::TRANSPARENT })
+                        .stroke(egui::Stroke::NONE)
+                        .min_size(btn_size),
+                    )
+                    .on_hover_text("Scale  [R]")
+                    .clicked()
+                {
+                    set_mode(GizmoMode::Scale);
+                }
             }
 
-            ui.separator();
-            ui.add_space(ui.available_width() - 120.0);
-            ui.add_enabled(false, egui::Button::new("▶ Play"));
-            ui.add_enabled(false, egui::Button::new("⏸"));
-            ui.add_enabled(false, egui::Button::new("⏹"));
+            ui.add_space(12.0);
+            // Vertical separator
+            let vr2 = egui::Rect::from_center_size(
+                ui.next_widget_position() + egui::vec2(0.0, 0.0),
+                egui::vec2(1.0, 18.0),
+            );
+            ui.painter().rect_filled(vr2, 0.0, pal::BORDER);
+            ui.add_space(12.0);
+
+            // Push transport controls to the right for a cleaner toolbar rhythm.
+            ui.add_space((ui.available_width() - 170.0).max(8.0));
+
+            // Play / Pause / Stop
+            let play_mode = state
+                .as_ref()
+                .and_then(|s| s.lock().ok())
+                .map(|s| s.play_mode)
+                .unwrap_or(PlayMode::Editing);
+
+            let is_editing = play_mode == PlayMode::Editing;
+            let is_playing = play_mode == PlayMode::Playing;
+            let is_paused = play_mode == PlayMode::Paused;
+
+            // Play button — active when editing or paused
+            let play_label = if is_paused { "▶ Resume" } else { "▶ Play" };
+            let play_btn = ui.add_enabled(
+                is_editing || is_paused,
+                egui::Button::new(egui::RichText::new(play_label).size(11.5).color(
+                    if is_editing || is_paused {
+                        pal::PLAY_GREEN
+                    } else {
+                        pal::DISABLED
+                    },
+                ))
+                .min_size(egui::vec2(82.0, 22.0)),
+            );
+            if play_btn.clicked() {
+                if let Some(s) = state {
+                    if let Ok(mut s) = s.lock() {
+                        s.pending_menu_action = Some("play".to_owned());
+                    }
+                }
+            }
+            ui.add_space(2.0);
+
+            // Pause button — active when playing
+            let pause_btn = ui.add_enabled(
+                is_playing,
+                egui::Button::new(egui::RichText::new("⏸").size(11.5))
+                    .min_size(egui::vec2(28.0, 22.0)),
+            );
+            if pause_btn.clicked() {
+                if let Some(s) = state {
+                    if let Ok(mut s) = s.lock() {
+                        s.pending_menu_action = Some("pause".to_owned());
+                    }
+                }
+            }
+            ui.add_space(2.0);
+
+            // Stop button — active when playing or paused
+            let stop_btn = ui.add_enabled(
+                is_playing || is_paused,
+                egui::Button::new(egui::RichText::new("⏹").size(11.5).color(
+                    if is_playing || is_paused {
+                        pal::STOP_RED
+                    } else {
+                        pal::DISABLED
+                    },
+                ))
+                .min_size(egui::vec2(28.0, 22.0)),
+            );
+            if stop_btn.clicked() {
+                if let Some(s) = state {
+                    if let Ok(mut s) = s.lock() {
+                        s.pending_menu_action = Some("stop".to_owned());
+                    }
+                }
+            }
         });
     }
+}
+
+/// Draws a 4-pointed diamond/star shape (Khora brand icon) on a painter.
+fn paint_star(painter: &egui::Painter, center: egui::Pos2, size: f32, color: egui::Color32) {
+    use egui::epaint::{PathShape, PathStroke};
+    use egui::Pos2;
+    let s = size;
+    let t = s * 0.28;
+    let points = vec![
+        Pos2::new(center.x, center.y - s),
+        Pos2::new(center.x + t, center.y - t),
+        Pos2::new(center.x + s, center.y),
+        Pos2::new(center.x + t, center.y + t),
+        Pos2::new(center.x, center.y + s),
+        Pos2::new(center.x - t, center.y + t),
+        Pos2::new(center.x - s, center.y),
+        Pos2::new(center.x - t, center.y - t),
+    ];
+    painter.add(egui::Shape::Path(PathShape {
+        points,
+        closed: true,
+        fill: color,
+        stroke: PathStroke::NONE,
+    }));
 }
 
 impl EditorShell for EguiEditorShell {
@@ -299,34 +504,107 @@ impl EditorShell for EguiEditorShell {
 
         // ── Menu Bar ───────────────────────────────────
         let es = &self.editor_state;
-        egui::TopBottomPanel::top("editor_menu_bar").show(&ctx, |ui| {
-            Self::render_menu_bar(ui, es);
-        });
+        egui::TopBottomPanel::top("editor_menu_bar")
+            .exact_height(26.0)
+            .show(&ctx, |ui| {
+                // Dark top-bar background
+                let r = ui.max_rect();
+                ui.painter().rect_filled(r, 0.0, pal::TOOLBAR_BG);
+                ui.painter().line_segment(
+                    [r.left_bottom(), r.right_bottom()],
+                    egui::Stroke::new(1.0, pal::BORDER),
+                );
+                Self::render_menu_bar(ui, es);
+            });
 
         // ── Toolbar ────────────────────────────────────
         let es = &self.editor_state;
-        egui::TopBottomPanel::top("editor_toolbar").show(&ctx, |ui| {
-            Self::render_toolbar(ui, es);
-        });
+        egui::TopBottomPanel::top("editor_toolbar")
+            .exact_height(32.0)
+            .show(&ctx, |ui| {
+                Self::render_toolbar(ui, es);
+            });
 
         // ── Status Bar (thin bottom strip) ─────────────
         {
             let status = &self.status;
+            let (gizmo_mode, project_label) = self
+                .editor_state
+                .as_ref()
+                .and_then(|s| s.lock().ok())
+                .map(|s| {
+                    let label = s
+                        .project_name
+                        .as_deref()
+                        .map(|n| format!("{} — Khora v0.1", n))
+                        .unwrap_or_else(|| "Khora v0.1".to_owned());
+                    (s.gizmo_mode, label)
+                })
+                .unwrap_or((GizmoMode::Select, "Khora v0.1".to_owned()));
+
+            let gizmo_label = match gizmo_mode {
+                GizmoMode::Select => "⬚ Select",
+                GizmoMode::Move => "✥ Move",
+                GizmoMode::Rotate => "↻ Rotate",
+                GizmoMode::Scale => "⤡ Scale",
+            };
+
             egui::TopBottomPanel::bottom("editor_status_bar")
                 .exact_height(22.0)
                 .show(&ctx, |ui| {
-                    ui.horizontal_centered(|ui| {
-                        ui.spacing_mut().item_spacing.x = 16.0;
-                        ui.small(format!("FPS: {:.0}", status.fps));
+                    let r = ui.max_rect();
+                    ui.painter().rect_filled(r, 0.0, pal::STATUS_BAR_BG);
+                    ui.painter().line_segment(
+                        [r.left_top(), r.right_top()],
+                        egui::Stroke::new(1.0, pal::BORDER),
+                    );
+                    ui.horizontal(|ui| {
+                        ui.add_space(8.0);
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        ui.small(
+                            egui::RichText::new(format!("{:.0} fps", status.fps))
+                                .color(pal::FPS_GREEN),
+                        );
                         ui.separator();
-                        ui.small(format!("{:.1} ms", status.frame_time_ms));
+                        ui.small(
+                            egui::RichText::new(format!("{:.1} ms", status.frame_time_ms))
+                                .color(pal::TEXT_DIM),
+                        );
                         ui.separator();
-                        ui.small(format!("Entities: {}", status.entity_count));
+                        ui.small(
+                            egui::RichText::new(format!("{} entities", status.entity_count))
+                                .color(pal::TEXT_DIM),
+                        );
                         ui.separator();
-                        ui.small(format!("Mem: {:.1} MB", status.memory_used_mb));
-                        // Push remaining to the right.
+                        ui.small(
+                            egui::RichText::new(format!("{:.0} MB", status.memory_used_mb))
+                                .color(pal::TEXT_DIM),
+                        );
+
+                        ui.add_space(6.0);
+
+                        // Gizmo mode badge
+                        let mode_color = pal::PRIMARY;
+                        let mode_bg = pal::MODE_BG;
+                        egui::Frame::NONE
+                            .fill(mode_bg)
+                            .corner_radius(egui::CornerRadius::same(3))
+                            .inner_margin(egui::Margin::symmetric(5, 1))
+                            .show(ui, |ui| {
+                                ui.small(
+                                    egui::RichText::new(gizmo_label)
+                                        .color(mode_color)
+                                        .size(10.0),
+                                );
+                            });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.small("Khora Engine v0.1");
+                            ui.add_space(8.0);
+                            ui.small(egui::RichText::new(&project_label).color(pal::TEXT_MUTED));
+                            ui.add_space(8.0);
+                            ui.small(
+                                egui::RichText::new("Orbit: MMB  Pan: RMB  Zoom: Scroll")
+                                    .color(pal::HINT_TEXT),
+                            );
                         });
                     });
                 });
@@ -334,6 +612,67 @@ impl EditorShell for EguiEditorShell {
 
         // Shared reference for viewport texture mapping (disjoint borrow).
         let vt = &self.viewport_textures;
+
+        // ── Bottom strip (tabbed) ──────────────────────
+        //
+        // MUST be declared before SidePanel::left/right so egui allocates
+        // vertical space correctly and the resize handle is reachable.
+        if !self.bottom_panels.is_empty() {
+            let active_tab = &mut self.active_bottom_tab;
+            let panels = &mut self.bottom_panels;
+
+            egui::TopBottomPanel::bottom("editor_bottom")
+                .default_height(200.0)
+                .min_height(80.0)
+                .max_height(600.0)
+                .resizable(true)
+                .show(&ctx, |ui| {
+                    // Top resize grip — faint line
+                    let grip_rect = {
+                        let r = ui.available_rect_before_wrap();
+                        egui::Rect::from_min_size(r.min, egui::vec2(r.width(), 3.0))
+                    };
+                    ui.painter().rect_filled(grip_rect, 0.0, pal::BORDER);
+
+                    // Tab bar — pill-style
+                    ui.horizontal(|ui| {
+                        ui.add_space(8.0);
+                        for (i, panel) in panels.iter().enumerate() {
+                            let active = *active_tab == i;
+                            let tab_bg = if active {
+                                pal::PRIMARY_DIM
+                            } else {
+                                egui::Color32::TRANSPARENT
+                            };
+                            let tab_text = if active { pal::PRIMARY } else { pal::TEXT_DIM };
+                            let tab_btn = ui.add(
+                                egui::Button::new(
+                                    egui::RichText::new(panel.title())
+                                        .size(11.5)
+                                        .color(tab_text),
+                                )
+                                .fill(tab_bg)
+                                .stroke(if active {
+                                    egui::Stroke::new(1.0, pal::PRIMARY_BORDER)
+                                } else {
+                                    egui::Stroke::NONE
+                                }),
+                            );
+                            if tab_btn.clicked() {
+                                *active_tab = i;
+                            }
+                            ui.add_space(2.0);
+                        }
+                    });
+                    ui.add(egui::Separator::default().spacing(2.0));
+
+                    // Active tab content
+                    if let Some(panel) = panels.get_mut(*active_tab) {
+                        let mut builder = EguiUiBuilder::new(ui, vt);
+                        panel.ui(&mut builder);
+                    }
+                });
+        }
 
         // ── Left sidebar ───────────────────────────────
         if !self.left_panels.is_empty() {
@@ -343,8 +682,27 @@ impl EditorShell for EguiEditorShell {
                 .resizable(true)
                 .show(&ctx, |ui| {
                     for panel in &mut self.left_panels {
-                        ui.heading(panel.title());
-                        ui.separator();
+                        ui.add_space(6.0);
+                        // Panel header row with accent line
+                        ui.horizontal(|ui| {
+                            // Blue accent bar
+                            let bar_h = 14.0;
+                            let (bar_rect, _) = ui
+                                .allocate_exact_size(egui::vec2(2.0, bar_h), egui::Sense::hover());
+                            ui.painter().rect_filled(
+                                bar_rect,
+                                egui::CornerRadius::same(1),
+                                pal::PRIMARY,
+                            );
+                            ui.add_space(6.0);
+                            ui.label(
+                                egui::RichText::new(panel.title())
+                                    .strong()
+                                    .size(11.0)
+                                    .color(pal::TEXT_BRIGHT),
+                            );
+                        });
+                        ui.add(egui::Separator::default().spacing(3.0));
                         let mut builder = EguiUiBuilder::new(ui, vt);
                         panel.ui(&mut builder);
                     }
@@ -359,36 +717,25 @@ impl EditorShell for EguiEditorShell {
                 .resizable(true)
                 .show(&ctx, |ui| {
                     for panel in &mut self.right_panels {
-                        ui.heading(panel.title());
-                        ui.separator();
-                        let mut builder = EguiUiBuilder::new(ui, vt);
-                        panel.ui(&mut builder);
-                    }
-                });
-        }
-
-        // ── Bottom strip (tabbed) ──────────────────────
-        if !self.bottom_panels.is_empty() {
-            let active_tab = &mut self.active_bottom_tab;
-            let panels = &mut self.bottom_panels;
-
-            egui::TopBottomPanel::bottom("editor_bottom")
-                .default_height(200.0)
-                .height_range(80.0..=500.0)
-                .resizable(true)
-                .show(&ctx, |ui| {
-                    // Tab bar
-                    ui.horizontal(|ui| {
-                        for (i, panel) in panels.iter().enumerate() {
-                            if ui.selectable_label(*active_tab == i, panel.title()).clicked() {
-                                *active_tab = i;
-                            }
-                        }
-                    });
-                    ui.separator();
-
-                    // Active tab content
-                    if let Some(panel) = panels.get_mut(*active_tab) {
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            let bar_h = 14.0;
+                            let (bar_rect, _) = ui
+                                .allocate_exact_size(egui::vec2(2.0, bar_h), egui::Sense::hover());
+                            ui.painter().rect_filled(
+                                bar_rect,
+                                egui::CornerRadius::same(1),
+                                pal::ACCENT,
+                            );
+                            ui.add_space(6.0);
+                            ui.label(
+                                egui::RichText::new(panel.title())
+                                    .strong()
+                                    .size(11.0)
+                                    .color(pal::TEXT_BRIGHT),
+                            );
+                        });
+                        ui.add(egui::Separator::default().spacing(3.0));
                         let mut builder = EguiUiBuilder::new(ui, vt);
                         panel.ui(&mut builder);
                     }

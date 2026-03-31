@@ -37,6 +37,18 @@ pub enum GizmoMode {
     Scale,
 }
 
+/// The play-mode state of the editor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PlayMode {
+    /// Normal editing mode — scene is static.
+    #[default]
+    Editing,
+    /// Game simulation is running.
+    Playing,
+    /// Game simulation is paused (can resume or stop).
+    Paused,
+}
+
 /// A lightweight description of an entity in the scene tree.
 ///
 /// This is a UI-oriented DTO extracted from the ECS world each frame.
@@ -99,14 +111,12 @@ pub struct EditorState {
     pub pending_rename: Option<(EntityId, String)>,
 
     // ── Phase 4: Properties Inspector ──────────────────
-
     /// Snapshot of the single-selected entity's components (if any).
     pub inspected: Option<InspectedEntity>,
     /// Pending property edits to apply back to the ECS world.
     pub pending_edits: Vec<PropertyEdit>,
 
     // ── Phase 5: Console / Status Bar ──────────────────
-
     /// Log entries captured by the editor log sink.
     pub log_entries: Vec<LogEntry>,
     /// Status bar data (FPS, entity count, memory).
@@ -115,7 +125,6 @@ pub struct EditorState {
     pub asset_entries: Vec<AssetEntry>,
 
     // ── Phase 6: Viewport interaction + Gizmo ──────────
-
     /// Whether the 3D viewport is currently hovered (for camera controls).
     pub viewport_hovered: bool,
     /// The active gizmo tool.
@@ -124,6 +133,23 @@ pub struct EditorState {
     pub selected_asset: Option<usize>,
     /// Pending menu action (e.g. "new_scene", "save", "quit").
     pub pending_menu_action: Option<String>,
+    /// Currently set project folder (used for asset scanning).
+    pub project_folder: Option<String>,
+    /// Human-readable project name (read from `project.json`).
+    pub project_name: Option<String>,
+    /// Whether the asset browser should open a folder picker next frame.
+    pub pending_browse_project_folder: bool,
+
+    // ── Phase 7: Play Mode ─────────────────────────────
+    /// Current play mode (Editing / Playing / Paused).
+    pub play_mode: PlayMode,
+    /// Serialised snapshot of the scene taken when entering play mode.
+    /// Restored when the user presses Stop.
+    pub scene_snapshot: Option<Vec<u8>>,
+
+    // ── Scene file path ──────────────────────────────
+    /// Path to the currently open scene file (for Save).
+    pub current_scene_path: Option<String>,
 }
 
 impl EditorState {
@@ -176,6 +202,7 @@ impl EditorState {
 
 /// Snapshot of all inspectable component data for one entity.
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct InspectedEntity {
     pub entity: EntityId,
     pub name: String,
@@ -189,6 +216,7 @@ pub struct InspectedEntity {
 
 /// Copy of `Transform` fields for inspector display.
 #[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
 pub struct TransformSnapshot {
     pub translation: Vec3,
     pub rotation: Quaternion,
@@ -197,6 +225,7 @@ pub struct TransformSnapshot {
 
 /// Copy of `Camera` fields.
 #[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
 pub struct CameraSnapshot {
     pub projection_index: usize, // 0 = Perspective, 1 = Orthographic
     pub fov_y_radians: f32,
@@ -210,6 +239,7 @@ pub struct CameraSnapshot {
 
 /// Copy of `Light` fields, flattened for inspector editing.
 #[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
 pub struct LightSnapshot {
     pub light_kind: usize, // 0 = Directional, 1 = Point, 2 = Spot
     pub direction: Vec3,
@@ -226,6 +256,7 @@ pub struct LightSnapshot {
 
 /// Copy of `RigidBody` fields.
 #[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
 pub struct RigidBodySnapshot {
     pub body_type_index: usize, // 0 = Dynamic, 1 = Static, 2 = Kinematic
     pub mass: f32,
@@ -236,6 +267,7 @@ pub struct RigidBodySnapshot {
 
 /// Copy of `Collider` fields.
 #[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
 pub struct ColliderSnapshot {
     pub shape_index: usize, // 0 = Box, 1 = Sphere, 2 = Capsule
     pub box_half_extents: Vec3,
@@ -249,6 +281,7 @@ pub struct ColliderSnapshot {
 
 /// Copy of `AudioSource` fields.
 #[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
 pub struct AudioSourceSnapshot {
     pub volume: f32,
     pub looping: bool,
@@ -257,6 +290,7 @@ pub struct AudioSourceSnapshot {
 
 /// A property edit to apply back to the ECS world.
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub enum PropertyEdit {
     SetName(EntityId, String),
     SetTransform(EntityId, TransformSnapshot),
@@ -273,6 +307,7 @@ pub enum PropertyEdit {
 
 /// A captured log entry for the console panel.
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct LogEntry {
     pub level: LogLevel,
     pub message: String,
@@ -281,6 +316,7 @@ pub struct LogEntry {
 
 /// Log severity matching `log::Level`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(missing_docs)]
 pub enum LogLevel {
     Error,
     Warn,
@@ -291,6 +327,7 @@ pub enum LogLevel {
 
 /// Status bar data displayed at the bottom of the editor.
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct StatusBarData {
     pub fps: f32,
     pub frame_time_ms: f32,

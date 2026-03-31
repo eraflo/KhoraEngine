@@ -27,6 +27,7 @@
 //! such as an asset database or a virtual file system (VFS), are built in other
 //! crates.
 
+/// Font asset definitions and metadata.
 pub mod font;
 mod handle;
 mod materials;

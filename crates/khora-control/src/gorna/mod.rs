@@ -518,8 +518,6 @@ mod tests {
             self.applied_budget = Some(budget);
         }
 
-        fn update(&mut self, _context: &mut EngineContext<'_>) {}
-
         fn report_status(&self) -> AgentStatus {
             AgentStatus {
                 agent_id: self.id,
@@ -534,7 +532,7 @@ mod tests {
             }
         }
 
-        fn execute(&mut self) {}
+        fn execute(&mut self, _context: &mut EngineContext<'_>) {}
 
         fn as_any(&self) -> &dyn std::any::Any {
             self

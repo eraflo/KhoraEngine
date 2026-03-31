@@ -232,7 +232,10 @@ impl EguiWgpuRenderer {
         self.texture_bind_group_layout = Some(texture_bgl);
         self.sampler = Some(sampler);
 
-        log::info!("EguiWgpuRenderer: Initialized with format {:?}", self.surface_format);
+        log::info!(
+            "EguiWgpuRenderer: Initialized with format {:?}",
+            self.surface_format
+        );
     }
 
     /// Updates textures from egui's [`TexturesDelta`].
@@ -289,7 +292,11 @@ impl EguiWgpuRenderer {
         // external textures. Create a 1×1 placeholder.
         let placeholder = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("egui_ext_placeholder"),
-            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+            size: wgpu::Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -357,7 +364,9 @@ impl EguiWgpuRenderer {
 
         // Update screen size uniform
         let screen_size = [state.width_px as f32, state.height_px as f32];
-        state.queue.write_buffer(screen_buf, 0, bytemuck::cast_slice(&screen_size));
+        state
+            .queue
+            .write_buffer(screen_buf, 0, bytemuck::cast_slice(&screen_size));
 
         // Collect all vertex/index data and build draw calls
         let mut vertices: Vec<u8> = Vec::new();
@@ -387,8 +396,12 @@ impl EguiWgpuRenderer {
                     let clip = primitive.clip_rect;
                     let x = (clip.min.x * pixels_per_point).round().max(0.0) as u32;
                     let y = (clip.min.y * pixels_per_point).round().max(0.0) as u32;
-                    let w = ((clip.max.x - clip.min.x) * pixels_per_point).round().max(1.0) as u32;
-                    let h = ((clip.max.y - clip.min.y) * pixels_per_point).round().max(1.0) as u32;
+                    let w = ((clip.max.x - clip.min.x) * pixels_per_point)
+                        .round()
+                        .max(1.0) as u32;
+                    let h = ((clip.max.y - clip.min.y) * pixels_per_point)
+                        .round()
+                        .max(1.0) as u32;
 
                     // Clamp to render target
                     let x = x.min(state.width_px.saturating_sub(1));
@@ -418,35 +431,41 @@ impl EguiWgpuRenderer {
         }
 
         // Create GPU buffers
-        let vertex_buffer = state.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("egui_vertex_buffer"),
-            contents: &vertices,
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        let vertex_buffer = state
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("egui_vertex_buffer"),
+                contents: &vertices,
+                usage: wgpu::BufferUsages::VERTEX,
+            });
 
-        let index_buffer = state.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("egui_index_buffer"),
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let index_buffer = state
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("egui_index_buffer"),
+                contents: bytemuck::cast_slice(&indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
 
         // Render pass — LOAD (not clear) to preserve the 3D scene underneath
-        let mut render_pass = state.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("egui_render_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: state.target_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: wgpu::StoreOp::Store,
-                },
-                depth_slice: None,
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
+        let mut render_pass = state
+            .encoder
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("egui_render_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: state.target_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
 
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, Some(screen_bg), &[]);
@@ -485,13 +504,11 @@ impl EguiWgpuRenderer {
         let (width, height) = (delta.image.width() as u32, delta.image.height() as u32);
 
         let data: Vec<u8> = match &delta.image {
-            ImageData::Color(color_image) => {
-                color_image
-                    .pixels
-                    .iter()
-                    .flat_map(|c| c.to_array())
-                    .collect()
-            }
+            ImageData::Color(color_image) => color_image
+                .pixels
+                .iter()
+                .flat_map(|c| c.to_array())
+                .collect(),
         };
 
         if delta.pos.is_some() {
@@ -563,10 +580,11 @@ impl EguiWgpuRenderer {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let texture_bgl = self.texture_bind_group_layout.as_ref()
+        let texture_bgl = self
+            .texture_bind_group_layout
+            .as_ref()
             .expect("Renderer not initialized");
-        let sampler = self.sampler.as_ref()
-            .expect("Renderer not initialized");
+        let sampler = self.sampler.as_ref().expect("Renderer not initialized");
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some(&format!("egui_texture_bg_{id:?}")),

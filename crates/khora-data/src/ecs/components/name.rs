@@ -18,7 +18,7 @@ use khora_macros::Component;
 ///
 /// Used by the editor scene tree and debug utilities to display entities
 /// with meaningful identifiers instead of raw `EntityId` values.
-#[derive(Debug, Clone, PartialEq, Eq, Component)]
+#[derive(Debug, Clone, PartialEq, Eq, Component, Default)]
 pub struct Name(pub String);
 
 impl Name {
@@ -30,12 +30,6 @@ impl Name {
     /// Returns the name as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl Default for Name {
-    fn default() -> Self {
-        Self(String::new())
     }
 }
 

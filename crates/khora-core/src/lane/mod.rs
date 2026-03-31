@@ -34,7 +34,7 @@
 //!    - `ShadowLane: Lane` — Shadow map generation strategies
 //!    - `PhysicsLane: Lane` — Physics simulation strategies
 //!    - `AudioMixingLane: Lane` — Audio mixing strategies
-//!    - `AssetLoaderLane<A>: Lane` — Asset loading strategies
+//!    - `AssetDecoder<A>` — Asset decoding (bytes → typed asset)
 //!    - `SerializationStrategy: Lane` — Scene serialization strategies
 //!
 //! ## Usage

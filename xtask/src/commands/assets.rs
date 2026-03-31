@@ -16,7 +16,7 @@ use crate::commands::assets_config::AssetManifest;
 use crate::helpers::*;
 use anyhow::{Context, Result};
 use bincode;
-use khora_sdk::prelude::{AssetMetadata, AssetSource, AssetUUID};
+use khora_core::asset::{AssetMetadata, AssetSource, AssetUUID};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;

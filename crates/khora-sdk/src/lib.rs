@@ -34,9 +34,9 @@ use khora_core::renderer::api::core::RenderSettings;
 use khora_core::renderer::api::scene::RenderObject;
 use khora_core::renderer::traits::RenderSystem;
 use khora_core::telemetry::MonitoredResourceType;
-use khora_core::ui::editor_overlay::{EditorOverlay, OverlayScreenDescriptor};
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
 use khora_core::ui::editor::EditorCamera;
+use khora_core::ui::editor_overlay::{EditorOverlay, OverlayScreenDescriptor};
 use khora_core::ui::EditorShell;
 use khora_core::ServiceRegistry;
 use khora_data::assets::Assets;
@@ -56,48 +56,37 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::WindowId;
 
 pub mod prelude {
-    //! Common imports for convenience.
-    pub use khora_core::asset::{AssetHandle, AssetMetadata, AssetSource, AssetUUID};
-    pub use khora_core::renderer::api::{
-        core::{ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData},
-        pipeline::state::{DepthBiasState, StencilFaceState},
-        pipeline::{
-            ColorTargetStateDescriptor, ColorWrites, CompareFunction, DepthStencilStateDescriptor,
-            MultisampleStateDescriptor, PipelineLayoutDescriptor, RenderPipelineDescriptor,
-            RenderPipelineId, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
-            VertexFormat, VertexStepMode,
-        },
-        resource::{BufferDescriptor, BufferId, BufferUsage},
-        scene::RenderObject,
-        util::{IndexFormat, SampleCount, ShaderStageFlags as ShaderStage, TextureFormat},
-    };
-    pub use khora_core::ui::editor::{
-        AssetEntry, AudioSourceSnapshot, CameraSnapshot, ColliderSnapshot, CommandHistory,
-        EditorCamera, EditorCommand, EditorLogCapture, EditorPanel, EditorShell, EditorState,
-        EditorTheme, EntityIcon, GizmoMode, InspectedEntity, LightSnapshot, LogEntry, LogLevel,
-        PanelLocation, PropertyEdit, RigidBodySnapshot, SceneNode, StatusBarData,
-        TransformSnapshot, UiBuilder, ViewportTextureHandle,
-    };
-    pub use khora_core::EngineContext;
-    pub use khora_data::allocators::SaaTrackingAllocator;
-    pub use khora_data::ecs::HandleComponent;
-    pub use khora_infra::platform::input::MouseButton;
-    pub use crate::PRIMARY_VIEWPORT;
+    //! Common imports for game development.
+    //!
+    //! This prelude contains the types most game developers need.
+    //! For advanced rendering, use `khora_sdk::rendering`.
+    //! For editor integration, use `khora_sdk::editor`.
 
+    // SDK types
+    pub use crate::{WindowConfig, WindowIcon, PRIMARY_VIEWPORT};
+
+    // Assets
+    pub use khora_core::asset::{AssetHandle, AssetUUID};
+
+    // Memory tracking (for `#[global_allocator]`)
+    pub use khora_core::memory::SaaTrackingAllocator;
+
+    // Input
+    pub use khora_infra::platform::input::{InputEvent, MouseButton};
+
+    // ECS types
     pub mod ecs {
-        //! ECS types exposed through the SDK.
+        //! Core ECS types for game logic.
         pub use khora_core::ecs::entity::EntityId;
-        pub use khora_core::math::LinearRgba;
         pub use khora_core::physics::{BodyType, ColliderShape};
-        pub use khora_core::renderer::light::{
-            DirectionalLight, LightType, PointLight, SpotLight,
-        };
+        pub use khora_core::renderer::light::{DirectionalLight, LightType, PointLight, SpotLight};
         pub use khora_data::ecs::{
             AudioSource, Camera, Children, Collider, Component, ComponentBundle, GlobalTransform,
             Light, MaterialComponent, Name, Parent, ProjectionType, RigidBody, Transform, Without,
         };
     }
 
+    // Materials
     pub mod materials {
         //! Built-in material types.
         pub use khora_core::asset::{
@@ -105,33 +94,80 @@ pub mod prelude {
         };
     }
 
-    pub mod shaders {
-        //! Built-in engine shaders.
-        pub use khora_lanes::render_lane::shaders::*;
-    }
-
+    // Math
     pub mod math {
         //! Math types and utilities.
         pub use khora_core::math::*;
     }
 }
 
-pub use khora_core::EngineContext;
 pub use khora_infra::platform::input::InputEvent;
 
 /// Well-known viewport handle for the primary editor 3D viewport.
 pub const PRIMARY_VIEWPORT: ViewportTextureHandle = ViewportTextureHandle(0);
+
+/// Raw window icon data for native window creation.
+#[derive(Clone, Debug)]
+pub struct WindowIcon {
+    /// RGBA8 pixel buffer stored row-major.
+    pub rgba: Vec<u8>,
+    /// Icon width in pixels.
+    pub width: u32,
+    /// Icon height in pixels.
+    pub height: u32,
+}
+
+/// Window configuration for applications.
+#[derive(Clone, Debug)]
+pub struct WindowConfig {
+    /// Window title shown by the platform window manager.
+    pub title: String,
+    /// Initial window width in pixels.
+    pub width: u32,
+    /// Initial window height in pixels.
+    pub height: u32,
+    /// Optional custom window icon.
+    pub icon: Option<WindowIcon>,
+}
+
+impl Default for WindowConfig {
+    fn default() -> Self {
+        Self {
+            title: "Khora Engine".to_owned(),
+            width: 1024,
+            height: 768,
+            icon: None,
+        }
+    }
+}
+
+/// Application context provided during setup.
+///
+/// Gives game developers access to engine services (graphics, audio, etc.)
+/// without exposing internal engine types like `EngineContext`.
+pub struct AppContext {
+    /// The engine service registry.
+    pub services: ServiceRegistry,
+}
 
 /// Application trait for user-defined game logic.
 ///
 /// The engine manages the internal state. Users interact through
 /// `&mut GameWorld` - no direct access to internal engine types.
 pub trait Application: Sized + 'static {
-    /// Called once at initialization with the graphics context.
-    fn new(context: EngineContext) -> Self;
+    /// Returns the default window configuration for this application.
+    fn window_config() -> WindowConfig {
+        WindowConfig::default()
+    }
+
+    /// Called once at initialization. Create your application struct here.
+    fn new() -> Self;
 
     /// Called once after construction for scene setup.
-    fn setup(&mut self, _world: &mut GameWorld) {}
+    ///
+    /// Use `ctx.services` to access engine services (graphics device, etc.)
+    /// and cache them in your application struct.
+    fn setup(&mut self, _world: &mut GameWorld, _ctx: &mut AppContext) {}
 
     /// Called every frame for game logic.
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
@@ -225,7 +261,22 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
 
         log::info!("Engine: Initializing...");
 
-        let window = WinitWindowBuilder::new().build(event_loop).unwrap();
+        let window_config = A::window_config();
+        let mut window_builder = WinitWindowBuilder::new()
+            .with_title(window_config.title)
+            .with_dimensions(window_config.width, window_config.height);
+
+        if let Some(icon) = window_config.icon {
+            window_builder = window_builder.with_icon_rgba(icon.rgba, icon.width, icon.height);
+        }
+
+        let window = match window_builder.build(event_loop) {
+            Ok(window) => window,
+            Err(e) => {
+                log::error!("Failed to create window: {e}");
+                return;
+            }
+        };
         let mut renderer: Box<dyn RenderSystem> = Box::new(WgpuRenderSystem::new());
         let renderer_monitors = renderer.init(&window).unwrap();
 
@@ -245,37 +296,35 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
         let graphics_device = renderer.graphics_device();
 
         // Create the editor overlay + shell (egui) if the backend supports it.
-        let (editor_overlay, editor_shell): (
-            Option<Box<dyn EditorOverlay>>,
-            Option<Arc<Mutex<Box<dyn EditorShell>>>>,
-        ) = if let Some(wgpu_rs) = renderer.as_any_mut().downcast_mut::<WgpuRenderSystem>() {
-            let theme = khora_core::ui::editor::EditorTheme::default();
-            match wgpu_rs.create_editor_overlay_and_shell(
-                event_loop,
-                khora_lanes::render_lane::shaders::EGUI_WGSL,
-                khora_lanes::render_lane::shaders::GRID_WGSL,
-                theme,
-                PRIMARY_VIEWPORT,
-            ) {
-                Ok((overlay, shell)) => {
-                    log::info!("Editor overlay + shell created successfully.");
-                    (
-                        Some(Box::new(overlay) as Box<dyn EditorOverlay>),
-                        Some(Arc::new(Mutex::new(
-                            Box::new(shell) as Box<dyn EditorShell>,
-                        ))),
-                    )
+        let (editor_overlay, editor_shell) =
+            if let Some(wgpu_rs) = renderer.as_any_mut().downcast_mut::<WgpuRenderSystem>() {
+                let theme = khora_core::ui::editor::EditorTheme::default();
+                match wgpu_rs.create_editor_overlay_and_shell(
+                    event_loop,
+                    khora_lanes::render_lane::shaders::EGUI_WGSL,
+                    khora_lanes::render_lane::shaders::GRID_WGSL,
+                    theme,
+                    PRIMARY_VIEWPORT,
+                ) {
+                    Ok((overlay, shell)) => {
+                        log::info!("Editor overlay + shell created successfully.");
+                        (
+                            Some(Box::new(overlay) as Box<dyn EditorOverlay>),
+                            Some(Arc::new(
+                                Mutex::new(Box::new(shell) as Box<dyn EditorShell>),
+                            )),
+                        )
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to create editor overlay: {e}. Continuing without it.");
+                        (None, None)
+                    }
                 }
-                Err(e) => {
-                    log::warn!("Failed to create editor overlay: {e}. Continuing without it.");
-                    (None, None)
-                }
-            }
-        } else {
-            (None, None)
-        };
+            } else {
+                (None, None)
+            };
 
-        // Build a minimal EngineContext for Application::new().
+        // Build an AppContext for Application::setup() with the core engine services.
         let mut services = ServiceRegistry::new();
         services.insert(graphics_device.clone());
 
@@ -304,18 +353,45 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
         services.insert(editor_camera_shared.clone());
         services.insert(PRIMARY_VIEWPORT);
 
-        let context = EngineContext {
-            world: None,
-            services,
-        };
-
-        let mut app = A::new(context);
+        let mut app_ctx = AppContext { services };
+        let mut app = A::new();
         let mut game_world = GameWorld::new();
-        app.setup(&mut game_world);
+        app.setup(&mut game_world, &mut app_ctx);
 
-        // Register default agents with their execution priorities
+        // Register and initialize default agents with their execution priorities.
         // Higher priority = executed first in the update loop
         Self::register_default_agents(&dcc, graphics_device.clone());
+
+        // Initialize all agents once with the core engine services.
+        // This gives agents a chance to cache services and set up lanes
+        // before the first frame, rather than lazy-initializing in execute().
+        {
+            let mut init_services = ServiceRegistry::new();
+            init_services.insert(graphics_device.clone());
+
+            // Re-register UI services for agent initialization.
+            let text_renderer_init: Arc<dyn khora_core::renderer::api::text::TextRenderer> =
+                Arc::new(StandardTextRenderer::new(
+                    khora_lanes::render_lane::shaders::TEXT_WGSL.to_string(),
+                ));
+            init_services.insert(text_renderer_init);
+
+            let layout_system_init: Arc<Mutex<Box<dyn khora_core::ui::LayoutSystem>>> =
+                Arc::new(Mutex::new(
+                    Box::new(TaffyLayoutSystem::new()) as Box<dyn khora_core::ui::LayoutSystem>
+                ));
+            init_services.insert(layout_system_init);
+
+            let font_assets_init: Arc<RwLock<Assets<Font>>> =
+                Arc::new(RwLock::new(Assets::<Font>::new()));
+            init_services.insert(font_assets_init);
+
+            let mut init_ctx = khora_core::EngineContext {
+                world: None,
+                services: init_services,
+            };
+            dcc.initialize_agents(&mut init_ctx);
+        }
 
         let _ = dcc
             .event_sender()
@@ -342,16 +418,15 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         // Forward event to the editor overlay first. If consumed, skip game input.
-        let _overlay_consumed = if let (Some(overlay), Some(window)) =
-            (&mut self.editor_overlay, &self.window)
-        {
-            overlay.handle_window_event(
-                window.winit_window() as &dyn std::any::Any,
-                &event as &dyn std::any::Any,
-            )
-        } else {
-            false
-        };
+        let _overlay_consumed =
+            if let (Some(overlay), Some(window)) = (&mut self.editor_overlay, &self.window) {
+                overlay.handle_window_event(
+                    window.winit_window() as &dyn std::any::Any,
+                    &event as &dyn std::any::Any,
+                )
+            } else {
+                false
+            };
 
         match event {
             WindowEvent::CloseRequested => {
@@ -398,19 +473,19 @@ impl<A: Application> EngineState<A> {
         // Priorities: higher = executed first
         // Renderer: 1.0 (critical for visual feedback)
         // Physics: 0.9 (critical for gameplay)
-        // Ecs: 0.8 (garbage collection, less critical)
-        // Asset: 0.5 (background loading)
+        // UI: 1.1 (high priority for responsiveness)
 
         let render_agent = khora_agents::render_agent::RenderAgent::new()
             .with_telemetry_sender(dcc.event_sender());
         dcc.register_agent(Arc::new(Mutex::new(render_agent)), 1.0);
 
-        let gc_agent = khora_agents::ecs_agent::GarbageCollectorAgent::new()
-            .with_dcc_sender(dcc.event_sender());
-        dcc.register_agent(Arc::new(Mutex::new(gc_agent)), 0.8);
-
         let ui_agent = UiAgent::new();
-        dcc.register_agent(Arc::new(Mutex::new(ui_agent)), 1.1); // UI is high priority for responsiveness
+        dcc.register_agent(Arc::new(Mutex::new(ui_agent)), 1.1);
+
+        let physics_provider =
+            Box::new(khora_infra::physics::rapier::RapierPhysicsWorld::default());
+        let physics_agent = khora_agents::physics_agent::PhysicsAgent::new(physics_provider);
+        dcc.register_agent(Arc::new(Mutex::new(physics_agent)), 0.9);
 
         log::info!("Engine: Registered {} default agents", dcc.agent_count());
     }
@@ -455,7 +530,7 @@ impl<A: Application> EngineState<A> {
         if let (Some(overlay), Some(window), Some(s)) =
             (&mut self.editor_overlay, &self.window, &screen)
         {
-            overlay.begin_frame(window.winit_window() as &dyn std::any::Any, s.clone());
+            overlay.begin_frame(window.winit_window() as &dyn std::any::Any, *s);
         }
         // Render the editor shell (menu bar, toolbar, docked panels).
         if let Some(shell) = &self.editor_shell {
@@ -484,6 +559,8 @@ impl<A: Application> EngineState<A> {
                     return;
                 }
 
+                let mut editor_view_info = None;
+
                 // Render the offscreen viewport (clear + grid).
                 if let Some(wgpu_rs) = rs.as_any_mut().downcast_mut::<WgpuRenderSystem>() {
                     let clear = khora_core::math::LinearRgba::new(0.15, 0.15, 0.18, 1.0);
@@ -496,16 +573,30 @@ impl<A: Application> EngineState<A> {
                     if let Err(e) = wgpu_rs.render_viewport(clear, &vi) {
                         log::error!("viewport render failed: {e:?}");
                     }
+
+                    editor_view_info = Some(vi);
                 }
+
+                // Seed the main render view with the editor camera.
+                // The RenderAgent may override this only when an active scene
+                // camera exists (e.g. play mode).
+                if let Some(vi) = editor_view_info.as_ref() {
+                    rs.prepare_frame(vi);
+                }
+
+                // Redirect agent rendering to the offscreen viewport texture.
+                rs.set_render_to_viewport(true);
             }
 
+            gw.tick_maintenance();
             let mut context = gw.as_engine_context(services);
-            dcc.update_agents(&mut context);
-            dcc.execute_agents();
+            dcc.execute_agents(&mut context);
 
             // Render the editor overlay on top of the 3D scene.
             if let (Some(overlay), Some(s)) = (&mut self.editor_overlay, screen) {
                 if let Ok(mut rs) = renderer.lock() {
+                    // Switch back to swapchain for the overlay pass.
+                    rs.set_render_to_viewport(false);
                     if let Err(e) = rs.render_overlay(overlay.as_mut(), s) {
                         log::error!("render_overlay failed: {e:?}");
                     }

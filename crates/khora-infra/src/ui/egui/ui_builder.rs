@@ -33,7 +33,11 @@ impl<'a> EguiUiBuilder<'a> {
         ui: &'a mut egui::Ui,
         viewport_textures: &'a HashMap<ViewportTextureHandle, egui::TextureId>,
     ) -> Self {
-        Self { ui, viewport_textures, last_response: None }
+        Self {
+            ui,
+            viewport_textures,
+            last_response: None,
+        }
     }
 }
 
@@ -119,9 +123,27 @@ impl UiBuilder for EguiUiBuilder<'_> {
         self.ui
             .horizontal(|ui| {
                 ui.label(label);
-                let x = ui.add(egui::DragValue::new(&mut value[0]).speed(speed).prefix("X: ")).changed();
-                let y = ui.add(egui::DragValue::new(&mut value[1]).speed(speed).prefix("Y: ")).changed();
-                let z = ui.add(egui::DragValue::new(&mut value[2]).speed(speed).prefix("Z: ")).changed();
+                let x = ui
+                    .add(
+                        egui::DragValue::new(&mut value[0])
+                            .speed(speed)
+                            .prefix("X: "),
+                    )
+                    .changed();
+                let y = ui
+                    .add(
+                        egui::DragValue::new(&mut value[1])
+                            .speed(speed)
+                            .prefix("Y: "),
+                    )
+                    .changed();
+                let z = ui
+                    .add(
+                        egui::DragValue::new(&mut value[2])
+                            .speed(speed)
+                            .prefix("Z: "),
+                    )
+                    .changed();
                 x || y || z
             })
             .inner
@@ -235,13 +257,11 @@ impl UiBuilder for EguiUiBuilder<'_> {
     fn is_last_item_double_clicked(&self) -> bool {
         self.last_response
             .as_ref()
-            .map_or(false, |r| r.double_clicked())
+            .is_some_and(|r| r.double_clicked())
     }
 
     fn is_last_item_hovered(&self) -> bool {
-        self.last_response
-            .as_ref()
-            .map_or(false, |r| r.hovered())
+        self.last_response.as_ref().is_some_and(|r| r.hovered())
     }
 
     fn context_menu_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
@@ -252,6 +272,62 @@ impl UiBuilder for EguiUiBuilder<'_> {
                 f(&mut nested);
             });
         }
+    }
+
+    fn context_menu_panel(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        // Allocate remaining space at the bottom of the scroll area so the
+        // context-menu target does not overlap earlier interactive widgets
+        // (which would steal left-clicks from selectable_labels above).
+        let remaining = self.ui.available_size();
+        // Ensure the context-menu area covers at least some space so
+        // right-clicking on any empty part of the panel works.
+        let min_h = remaining.y.max(40.0);
+        let (id, rect) = self.ui.allocate_space(egui::vec2(remaining.x, min_h));
+        let response = self.ui.interact(rect, id, egui::Sense::click());
+        let vt = self.viewport_textures;
+        response.context_menu(|ui| {
+            let mut nested = EguiUiBuilder::new(ui, vt);
+            f(&mut nested);
+        });
+    }
+
+    fn close_menu(&mut self) {
+        self.ui.close();
+    }
+
+    fn paint_line(
+        &mut self,
+        from: [f32; 2],
+        to: [f32; 2],
+        color: [f32; 4],
+        thickness: f32,
+    ) {
+        self.ui.painter().line_segment(
+            [egui::pos2(from[0], from[1]), egui::pos2(to[0], to[1])],
+            egui::Stroke::new(thickness, color_to_egui(color)),
+        );
+    }
+
+    fn paint_rect_filled(
+        &mut self,
+        min: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        rounding: f32,
+    ) {
+        let rect = egui::Rect::from_min_size(egui::pos2(min[0], min[1]), egui::vec2(size[0], size[1]));
+        let corner = egui::CornerRadius::same(rounding.clamp(0.0, 255.0) as u8);
+        self.ui.painter().rect_filled(rect, corner, color_to_egui(color));
+    }
+
+    fn paint_text(&mut self, pos: [f32; 2], color: [f32; 4], text: &str) {
+        self.ui.painter().text(
+            egui::pos2(pos[0], pos[1]),
+            egui::Align2::LEFT_TOP,
+            text,
+            egui::FontId::proportional(12.0),
+            color_to_egui(color),
+        );
     }
 
     // ── Queries ────────────────────────────────────────

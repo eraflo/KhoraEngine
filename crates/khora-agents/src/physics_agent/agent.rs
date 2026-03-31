@@ -155,7 +155,7 @@ impl Agent for PhysicsAgent {
         self.time_budget = budget.time_limit;
     }
 
-    fn update(&mut self, context: &mut khora_core::EngineContext<'_>) {
+    fn execute(&mut self, context: &mut khora_core::EngineContext<'_>) {
         if let Some(world_any) = context.world.as_deref_mut() {
             if let Some(world) = world_any.downcast_mut::<World>() {
                 self.step(world, self.fixed_timestep);
@@ -188,10 +188,6 @@ impl Agent for PhysicsAgent {
                 collider_count,
             ),
         }
-    }
-
-    fn execute(&mut self) {
-        // Physics step is performed in update() via the tactical coordination.
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

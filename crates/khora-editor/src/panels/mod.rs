@@ -12,15 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Provides concrete memory allocator implementations for the engine.
-//!
-//! This module is part of the **[D]ata** layer and contains allocators that can be
-//! registered as the global memory handler for the application.
-//!
-//! A primary use case is to provide an allocator that updates the global memory
-//! tracking counters defined in `khora_core::memory`, enabling the SAA's memory
-//! monitoring capabilities.
+//! Editor panels — split from the monolithic main.rs.
 
-mod tracking_allocator;
+pub mod asset_browser;
+pub mod console;
+pub mod properties;
+pub mod scene_tree;
+pub mod viewport;
 
-pub use self::tracking_allocator::SaaTrackingAllocator;
+pub use asset_browser::AssetBrowserPanel;
+pub use console::ConsolePanel;
+pub use properties::PropertiesPanel;
+pub use scene_tree::SceneTreePanel;
+pub use viewport::ViewportPanel;

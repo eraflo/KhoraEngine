@@ -4,26 +4,31 @@
 
 - **Branch**: `dev`
 - **Build**: Clean (all crates compile)
-- **Tests**: ~473 passing, 0 failures
-- **Last major work**: Editor Phase 5+ — Theme, Status Bar, Asset Browser, Context Menus, Rename, Duplicate
-  - Phase 0: egui overlay infrastructure (custom wgpu 28.0 renderer) ✅
-  - Phase 1: Abstract editor framework (CLAD-compliant dock layout) ✅
-  - Phase 2: Offscreen 3D viewport, EditorCamera (orbit/pan/zoom), infinite grid shader ✅
-  - Phase 3: Scene Tree panel, Name component, EditorState, entity spawn/delete, selection ✅
-  - Phase 4: Properties Inspector (Transform, Camera, Light, RigidBody, Collider, AudioSource), undo/redo, PropertyEdit apply-back ✅
-  - Phase 5: Console (log capture + filtering), Asset Browser (structural), Status Bar (FPS/entities/memory) ✅
-  - Phase 5+: Modern blue/silver/black theme, real Asset Browser (VFS-backed, categorized), right-click context menus, double-click rename, entity duplicate, status bar in shell ✅
-- **Agent personas**: 8 specialized agents defined
+- **Tests**: ~439 passing, 0 failures
+- **Last major work**: SAA Architecture Refactoring (3 phases)
+  - **Phase 1 — Agent trait cleanup**: Removed `update()`, added `on_initialize()`, `execute()` now receives `&mut EngineContext`. All 7 agents refactored (Render, UI, Physics, GC, Asset, Audio, Serialization). Agent lifecycle: `on_initialize` (once) → `execute` (per frame) → `negotiate`/`apply_budget` (GORNA) ✅
+  - **Phase 2 — Data layer cleanup**: 
+    - `SaaTrackingAllocator` moved from `khora-data::allocators` → `khora-core::memory` ✅
+    - `EcsMaintenance` added to `khora-data/src/ecs/maintenance.rs`. `GameWorld.tick_maintenance()` replaces GarbageCollectorAgent ✅
+    - `AssetService` replaces `AssetAgent` (on-demand service, not an Agent) ✅
+    - `SerializationService` replaces `SerializationAgent` (on-demand service) ✅
+    - `AssetLoaderLane` trait renamed to `AssetDecoder` ✅
+    - `GarbageCollectorAgent` and `ecs_agent` module removed ✅
+    - `asset_agent` and `serialization_agent` modules removed ✅
+  - **Phase 3 — SDK cleanup**:
+    - `AppContext` replaces `EngineContext` in SDK public API ✅
+    - `Application::new()` takes nothing, `setup()` receives `&mut AppContext` ✅
+    - SDK prelude cleaned: removed ~30 renderer types, editor types, `shaders::*` glob. Only game dev types remain ✅
+    - `EngineContext` returns to internal-only (agents only) ✅
+- **Previous work**: Editor cleanup & feature completion (8 phases) ✅
 
 ## Known Issues
 
 - Vulkan semaphore validation errors (`VUID-vkAcquireNextImageKHR-semaphore-01286`) still present at runtime
 - Object jittering when moving camera — may be camera matrix precision or shadow-related
-- `AudioAgent` violates SAA — does pipeline work directly instead of using `SpatialMixingLane`
-- `SerializationAgent` bypasses Lane abstraction
-- `GarbageCollectorAgent` does moderate direct work (should be Lane-based)
 - egui-wgpu crate incompatible with wgpu 28.0 (0.33 needs wgpu ^27, 0.34 needs wgpu ^29) — custom renderer in khora-infra
 - `egui_winit::State` is `!Send` on some platforms — `unsafe impl Send/Sync` on `EguiOverlay` requires desktop-only
+- Editor unused import warnings after prelude cleanup (cosmetic, not errors)
 
 ## Architecture Decisions
 
@@ -32,7 +37,9 @@
 - Lane trait is the universal pipeline interface — all hot-path work goes through `Lane::execute()`
 - CRPECS uses archetype-based SoA storage for cache-friendly iteration
 - GORNA protocol for dynamic agent budget negotiation with thermal/battery multipliers
-- Asset pipeline: VFS (UUID → metadata O(1)) → AssetAgent → typed loader lanes → Assets<T> registry
-- Serialization: 3 strategies (Definition/Recipe/Archetype) selected by SerializationGoal
+- **Agent vs Service rule**: Only 4 agents (Render, Physics, UI, Audio) — subsystems without GORNA strategy use direct services
+- Asset pipeline: VFS (UUID → metadata O(1)) → `AssetService` → `AssetDecoder<A>` → `Assets<T>` registry
+- Serialization: 3 strategies (Definition/Recipe/Archetype) selected by `SerializationGoal`, via `SerializationService`
+- ECS maintenance: `EcsMaintenance` in `GameWorld.tick_maintenance()` — direct, not an Agent
 - UI: Taffy layout → StandardUiLane → UiScene → UiRenderLane
-- **Editor overlay**: `EditorOverlay` trait in khora-core (type-erased via `&dyn Any`), `EguiOverlay` impl in khora-infra, `EguiFrameRenderState` passed through `&mut dyn Any` with owned types (`Arc<Mutex<WgpuGraphicsContext>>`) for `'static` compatibility. `render_overlay()` on `RenderSystem` trait creates encoder, overlay renders, encoder submitted.
+- Editor overlay: `EditorOverlay` trait in khora-core (type-erased via `&dyn Any`), `EguiOverlay` impl in khora-infra

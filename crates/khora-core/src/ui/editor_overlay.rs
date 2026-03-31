@@ -96,10 +96,7 @@ pub trait EditorOverlay: Send + Sync {
     /// `render_state` is a type-erased struct containing the GPU resources
     /// needed for rendering (device, queue, encoder, target view, etc.).
     /// The concrete type depends on the backend.
-    fn end_frame_and_render(
-        &mut self,
-        render_state: &mut dyn Any,
-    ) -> Result<(), OverlayError>;
+    fn end_frame_and_render(&mut self, render_state: &mut dyn Any) -> Result<(), OverlayError>;
 
     /// Returns `true` if the overlay wants exclusive pointer input this frame.
     ///

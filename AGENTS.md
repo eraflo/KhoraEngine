@@ -22,51 +22,56 @@ You are a Rust game engine expert working on **Khora Engine** — an experimenta
 - Never push to git without explicit permission
 - Never add methods outside of the `Agent` trait to an agent struct — an agent **only** implements the `Agent` trait, no `start()`, `stop()`, or any other methods
 - Never give an agent any logic beyond: choosing which lanes to run, negotiating a `ResourceBudget` with the GORNA arbitrator, and dispatching `Lane::execute()` in order
+- Never use an Agent for subsystems without GORNA strategy negotiation — use a direct service instead (AssetService, SerializationService, EcsMaintenance)
 - Never inline WGSL shader source as a Rust `const` or `static` string — all shader code must live in `.wgsl` files on disk
 - Never put platform-specific or backend-specific implementations in `khora-core` — define the abstract trait/type in `khora-core`, then implement it in a dedicated subfolder inside `khora-infra` (one subfolder per backend: `wgpu/`, `rapier/`, `cpal/`, `taffy/`, etc.)
 
 ## Architecture (CLAD)
 
 ```
-khora-sdk        → Public API (Engine, GameWorld, Application trait, Vessel primitives)
-khora-agents     → Intelligent subsystem managers (RenderAgent, UiAgent, PhysicsAgent, AudioAgent, AssetAgent, SerializationAgent, GC)
-khora-lanes      → Hot-path pipelines: render (Unlit, LitForward, Forward+, Shadow, UI), physics, audio (spatial mixing), asset (glTF, OBJ, WAV, Ogg, textures, fonts, pack), ECS (compaction), scene (serialization, transform propagation)
+khora-sdk        → Public API (Engine, GameWorld, Application trait, AppContext, Vessel primitives)
+khora-agents     → Intelligent subsystem managers (RenderAgent, UiAgent, PhysicsAgent, AudioAgent) + services (AssetService, SerializationService)
+khora-lanes      → Hot-path pipelines: render (Unlit, LitForward, Forward+, Shadow, UI), physics, audio (spatial mixing), asset decoders (glTF, OBJ, WAV, Ogg, textures, fonts, pack), scene (serialization, transform propagation)
 khora-control    → DCC orchestration, GORNA protocol, context-aware budgeting (thermal/battery/load)
-khora-data       → CRPECS ECS (archetype SoA, parallel queries, semantic domains), SaaTrackingAllocator, asset storage, UI components, scene definitions
-khora-core       → Trait definitions (Lane, Agent, RenderSystem, PhysicsProvider, AudioDevice, LayoutSystem, Asset, VFS), math (Vec2/3/4, Mat3/4, Quat, Aabb, LinearRgba), GORNA types, error hierarchy, ServiceRegistry, EngineContext
+khora-data       → CRPECS ECS (archetype SoA, parallel queries, semantic domains), EcsMaintenance, asset storage, UI components, scene definitions
+khora-core       → Trait definitions (Lane, Agent, RenderSystem, PhysicsProvider, AudioDevice, LayoutSystem, Asset, VFS), math (Vec2/3/4, Mat3/4, Quat, Aabb, LinearRgba), GORNA types, error hierarchy, ServiceRegistry, EngineContext, SaaTrackingAllocator, memory counters
 khora-infra      → wgpu 28.0 backend, winit window, input translation, Rapier3D physics, CPAL audio, Taffy layout, GPU/memory/VRAM monitors
 khora-telemetry  → TelemetryService, MetricsRegistry, MonitorRegistry, resource monitors
 khora-macros     → #[derive(Component)] proc macro
 khora-plugins    → Plugin loading and registration
-khora-editor     → Future editor (stub)
+khora-editor     → Editor application (uses khora-sdk)
 ```
 
 ## Engine Lifecycle
 
 ```
-begin_frame()                 ← Single swapchain acquire
-  dcc.update_agents()         ← Agents extract/prepare (ECS → render world)
-  dcc.execute_agents()        ← Agents encode/render to shared target
-end_frame()                   ← Single present
+App::new()                          ← Simple constructor
+App::setup(world, AppContext)       ← Cache services here
+  dcc.initialize_agents(ctx)        ← Agents cache services once
+
+Per frame:
+  app.update(world, inputs)         ← User game logic
+  world.tick_maintenance()          ← ECS GC (direct, not an Agent)
+  dcc.execute_agents(&mut ctx)      ← Agents dispatch lanes
 ```
 
 ## Key Subsystems
 
-- **ECS (CRPECS)**: Archetype-based SoA storage, parallel queries, semantic domains (Render, Physics, UI), component bundles, page compaction
-- **DCC / GORNA**: Cold-path agent scheduling by priority, resource budget negotiation, thermal/battery multipliers, death spiral detection
+- **ECS (CRPECS)**: Archetype-based SoA storage, parallel queries, semantic domains (Render, Physics, UI), component bundles, page compaction via `EcsMaintenance` (in `GameWorld.tick_maintenance()`)
+- **DCC / GORNA**: Cold-path agent scheduling by priority, resource budget negotiation, thermal/battery multipliers, death spiral detection. Only 4 agents (Render, Physics, UI, Audio)
 - **Rendering**: Forward/Forward+/Unlit strategies, shadow atlas (2048² × 4 layers, PCF 3×3), PBR shaders (WGSL), per-frame strategy switching
 - **Physics**: `PhysicsProvider` trait, Rapier3D backend, RigidBody/Collider sync with ECS, CCD support
 - **Audio**: `AudioDevice` trait, `SpatialMixingLane` for 3D positional audio, CPAL backend
-- **Assets/VFS**: `VirtualFileSystem` (UUID → metadata O(1)), `AssetHandle<T>`, loaders (glTF, OBJ, WAV, Ogg/MP3/FLAC, textures, fonts), `.pack` archives
+- **Assets/VFS**: `VirtualFileSystem` (UUID → metadata O(1)), `AssetHandle<T>`, decoders (`AssetDecoder<A>` trait: glTF, OBJ, WAV, Ogg/MP3/FLAC, textures, fonts), `.pack` archives, `AssetService` (on-demand)
 - **UI**: Taffy layout engine, `UiTransform`/`UiColor`/`UiText`/`UiImage`/`UiBorder` components, `StandardUiLane` → `UiRenderLane`
-- **Serialization**: 3 strategies (Definition/human-readable, Recipe/compact, Archetype/binary), `SerializationGoal` enum
+- **Serialization**: 3 strategies (Definition/human-readable, Recipe/compact, Archetype/binary), `SerializationService` (on-demand)
 - **Input**: winit → `InputEvent` translation (keyboard, mouse buttons, scroll, movement)
-- **Telemetry**: `GpuMonitor`, `MemoryMonitor`, `VramMonitor`, `SaaTrackingAllocator` for heap tracking
+- **Telemetry**: `GpuMonitor`, `MemoryMonitor`, `VramMonitor`, `SaaTrackingAllocator` (in `khora-core::memory`) for heap tracking
 
 ## Tools Available
 
 - `cargo-build` — Build the workspace
-- `cargo-test` — Run ~470 workspace tests
+- `cargo-test` — Run ~439 workspace tests
 - `cargo-clippy` — Lint check
 - `mdbook-build` — Build documentation
 

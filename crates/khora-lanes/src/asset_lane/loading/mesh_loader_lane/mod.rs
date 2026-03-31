@@ -22,11 +22,11 @@ pub use gltf_loader_lane::*;
 pub use obj_loader_lane::*;
 pub use resource_resolver::*;
 
-use super::AssetLoaderLane;
+use super::AssetDecoder;
 use khora_core::renderer::api::scene::Mesh;
 
 /// Common trait for all mesh loaders
-pub trait MeshLoaderLane: AssetLoaderLane<Mesh> + Send + Sync + 'static {}
+pub trait MeshLoaderLane: AssetDecoder<Mesh> + Send + Sync + 'static {}
 
-// Implement the trait for all types that implement AssetLoaderLane<Mesh>
-impl<T> MeshLoaderLane for T where T: AssetLoaderLane<Mesh> + Send + Sync + 'static {}
+// Implement the trait for all types that implement AssetDecoder<Mesh>
+impl<T> MeshLoaderLane for T where T: AssetDecoder<Mesh> + Send + Sync + 'static {}

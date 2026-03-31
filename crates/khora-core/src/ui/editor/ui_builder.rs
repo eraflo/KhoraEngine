@@ -62,13 +62,7 @@ pub trait UiBuilder {
     fn drag_value_f32(&mut self, label: &str, value: &mut f32, speed: f32) -> bool;
 
     /// Slider for `f32`. Returns `true` when changed.
-    fn slider_f32(
-        &mut self,
-        label: &str,
-        value: &mut f32,
-        min: f32,
-        max: f32,
-    ) -> bool;
+    fn slider_f32(&mut self, label: &str, value: &mut f32, min: f32, max: f32) -> bool;
 
     /// Single-line text input. Returns `true` when changed.
     fn text_edit_singleline(&mut self, text: &mut String) -> bool;
@@ -126,6 +120,52 @@ pub trait UiBuilder {
     /// The closure is called to build menu content when the menu is open.
     fn context_menu_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder));
 
+    /// Shows a right-click context menu when the user right-clicks anywhere on
+    /// the current panel background (not on a specific widget).
+    ///
+    /// Allocates an invisible full-width/height region to detect right-clicks.
+    fn context_menu_panel(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        // Default no-op. Backends that support it override this method.
+        let _ = f;
+    }
+
+    /// Close the currently open context menu (if any).
+    ///
+    /// Call this after a menu action has been executed so the popup dismisses
+    /// and the action takes effect on the same frame.
+    fn close_menu(&mut self) {
+        // Default no-op.
+    }
+
+    // ── Painting / Overlays ───────────────────────────
+
+    /// Paints a line in window-space coordinates.
+    fn paint_line(
+        &mut self,
+        from: [f32; 2],
+        to: [f32; 2],
+        color: [f32; 4],
+        thickness: f32,
+    ) {
+        let _ = (from, to, color, thickness);
+    }
+
+    /// Paints a filled rectangle in window-space coordinates.
+    fn paint_rect_filled(
+        &mut self,
+        min: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        rounding: f32,
+    ) {
+        let _ = (min, size, color, rounding);
+    }
+
+    /// Paints text at a window-space position.
+    fn paint_text(&mut self, pos: [f32; 2], color: [f32; 4], text: &str) {
+        let _ = (pos, color, text);
+    }
+
     // ── Queries ────────────────────────────────────────
 
     /// Available width in the current layout region.
@@ -141,9 +181,6 @@ pub trait UiBuilder {
     /// Returns the top-left position `[x, y]` of the rendered image in
     /// window-space pixels (useful for hit-testing / picking).
     /// Returns `None` if the backend cannot display this handle.
-    fn viewport_image(
-        &mut self,
-        handle: ViewportTextureHandle,
-        size: [f32; 2],
-    ) -> Option<[f32; 2]>;
+    fn viewport_image(&mut self, handle: ViewportTextureHandle, size: [f32; 2])
+        -> Option<[f32; 2]>;
 }

@@ -19,7 +19,12 @@ use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
 use std::sync::Arc;
-use winit::{dpi::LogicalSize, error::OsError, event_loop::ActiveEventLoop, window::Window};
+use winit::{
+    dpi::LogicalSize,
+    error::OsError,
+    event_loop::ActiveEventLoop,
+    window::{Icon, Window},
+};
 
 /// A wrapper around a `winit::window::Window` that implements the `KhoraWindow` trait.
 ///
@@ -45,6 +50,7 @@ pub struct WinitWindowBuilder {
     title: String,
     width: u32,
     height: u32,
+    icon: Option<Icon>,
 }
 
 impl WinitWindowBuilder {
@@ -54,6 +60,7 @@ impl WinitWindowBuilder {
             title: "Khora Engine".to_string(),
             width: 1024,
             height: 768,
+            icon: None,
         }
     }
 
@@ -67,6 +74,15 @@ impl WinitWindowBuilder {
     pub fn with_dimensions(mut self, width: u32, height: u32) -> Self {
         self.width = width;
         self.height = height;
+        self
+    }
+
+    /// Sets the window icon from raw RGBA data.
+    pub fn with_icon_rgba(mut self, rgba: Vec<u8>, width: u32, height: u32) -> Self {
+        match Icon::from_rgba(rgba, width, height) {
+            Ok(icon) => self.icon = Some(icon),
+            Err(e) => log::warn!("Failed to build window icon: {e}"),
+        }
         self
     }
 
@@ -85,6 +101,7 @@ impl WinitWindowBuilder {
         let window_attributes = Window::default_attributes()
             .with_title(self.title)
             .with_inner_size(LogicalSize::new(self.width, self.height))
+            .with_window_icon(self.icon)
             .with_visible(true);
 
         let window = event_loop.create_window(window_attributes)?;

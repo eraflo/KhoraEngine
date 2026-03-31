@@ -15,7 +15,7 @@
 
 //! GLTF mesh format loader lane with support for both embedded and external resources.
 
-use super::{AssetLoaderLane, GltfResourceResolver};
+use super::{AssetDecoder, GltfResourceResolver};
 use anyhow::Result;
 use base64::Engine;
 use gltf::{mesh::Reader, Buffer};
@@ -42,7 +42,7 @@ impl GltfLoaderLane {
     }
 }
 
-impl AssetLoaderLane<Mesh> for GltfLoaderLane {
+impl AssetDecoder<Mesh> for GltfLoaderLane {
     /// Loads a mesh from GLTF byte data.
     fn load(&self, bytes: &[u8]) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
         let gltf = gltf::Gltf::from_slice(bytes)

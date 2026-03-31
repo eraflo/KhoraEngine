@@ -34,7 +34,7 @@ pub use panel::{EditorPanel, PanelLocation};
 pub use shell::EditorShell;
 pub use state::{
     AssetEntry, AudioSourceSnapshot, CameraSnapshot, ColliderSnapshot, EditorState, EntityIcon,
-    GizmoMode, InspectedEntity, LightSnapshot, LogEntry, LogLevel, PropertyEdit,
+    GizmoMode, InspectedEntity, LightSnapshot, LogEntry, LogLevel, PlayMode, PropertyEdit,
     RigidBodySnapshot, SceneNode, StatusBarData, TransformSnapshot,
 };
 pub use theme::EditorTheme;

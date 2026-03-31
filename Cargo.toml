@@ -17,6 +17,7 @@ members = [
     # Examples and tools
     "examples/sandbox",
     "xtask",
+    "hub",
 ]
 
 

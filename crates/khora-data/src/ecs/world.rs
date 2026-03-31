@@ -35,8 +35,8 @@ use crate::ecs::{
     serialization::SceneMemoryLayout,
     storage::StorageManager,
     AudioListener, AudioSource, Camera, Children, Collider, Component, ComponentBundle,
-    DomainBitset, GlobalTransform, MaterialComponent, Name, Parent, QueryMut, QueryPlan,
-    RigidBody, SemanticDomain, SerializedPage, Transform, TypeRegistry,
+    DomainBitset, GlobalTransform, MaterialComponent, Name, Parent, QueryMut, QueryPlan, RigidBody,
+    SemanticDomain, SerializedPage, Transform, TypeRegistry,
 };
 
 /// Errors that can occur when adding a component to an entity.

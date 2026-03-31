@@ -75,8 +75,8 @@ impl EguiOverlay {
             ViewportId::ROOT,
             event_loop,
             Some(1.0), // default pixels_per_point
-            None,       // theme
-            None,       // max_texture_side
+            None,      // theme
+            None,      // max_texture_side
         );
 
         let mut renderer = EguiWgpuRenderer::new(surface_format);
@@ -152,10 +152,7 @@ impl EditorOverlay for EguiOverlay {
         &self.ctx
     }
 
-    fn end_frame_and_render(
-        &mut self,
-        render_state: &mut dyn Any,
-    ) -> Result<(), OverlayError> {
+    fn end_frame_and_render(&mut self, render_state: &mut dyn Any) -> Result<(), OverlayError> {
         let output = self.ctx.end_pass();
 
         // Tessellate
@@ -169,7 +166,9 @@ impl EditorOverlay for EguiOverlay {
             .ok_or_else(|| OverlayError("Expected EguiFrameRenderState".to_string()))?;
 
         // Lock the graphics context for device/queue access
-        let gc = state.graphics_context.lock()
+        let gc = state
+            .graphics_context
+            .lock()
             .map_err(|_| OverlayError("Failed to lock graphics context".to_string()))?;
 
         // Update textures
@@ -177,7 +176,9 @@ impl EditorOverlay for EguiOverlay {
             .update_textures(&gc.device, &gc.queue, &textures_delta);
 
         // Get a mutable reference to the encoder
-        let encoder = state.encoder.as_mut()
+        let encoder = state
+            .encoder
+            .as_mut()
             .ok_or_else(|| OverlayError("No command encoder available".to_string()))?;
 
         // Render

@@ -14,12 +14,12 @@
 
 //! Implements an asset loader for `.wav` audio files.
 
-use crate::asset_lane::loading::AssetLoaderLane;
+use crate::asset_lane::loading::AssetDecoder;
 use anyhow::{anyhow, Result};
 use khora_data::assets::SoundData;
 use std::{error::Error, io::Cursor};
 
-/// An `AssetLoaderLane` that decodes audio data from the WAV format.
+/// An `AssetDecoder` that decodes audio data from the WAV format.
 #[derive(Default)]
 pub struct WavLoaderLane;
 
@@ -30,7 +30,7 @@ impl WavLoaderLane {
     }
 }
 
-impl AssetLoaderLane<SoundData> for WavLoaderLane {
+impl AssetDecoder<SoundData> for WavLoaderLane {
     /// Parses a byte slice representing a `.wav` file into a `SoundData` asset.
     fn load(&self, bytes: &[u8]) -> Result<SoundData, Box<dyn Error + Send + Sync>> {
         let cursor = Cursor::new(bytes);

@@ -73,11 +73,11 @@ impl TextureAtlas {
         )?;
 
         // Initialize with black/transparent
-        let clear_data = vec![0u8; (size * size * format.bytes_per_pixel() as u32) as usize];
+        let clear_data = vec![0u8; (size * size * format.bytes_per_pixel()) as usize];
         device.write_texture(
             texture,
             &clear_data,
-            Some(format.bytes_per_pixel() as u32 * size),
+            Some(format.bytes_per_pixel() * size),
             Origin3D::default(),
             Extent3D {
                 width: size,
@@ -147,12 +147,17 @@ impl TextureAtlas {
         })
     }
 
+    /// Returns the texture handle that stores the atlas pixels.
     pub fn texture(&self) -> TextureId {
         self.texture
     }
+
+    /// Returns the texture view used to sample the atlas.
     pub fn view(&self) -> TextureViewId {
         self.view
     }
+
+    /// Returns the atlas side length in pixels.
     pub fn size(&self) -> u32 {
         self.size
     }

@@ -91,6 +91,11 @@ pub struct WgpuRenderSystem {
     viewport_depth_view: Option<wgpu::TextureView>,
     viewport_width: u32,
     viewport_height: u32,
+    /// Registered abstract view IDs for the viewport (used by render_with_encoder).
+    viewport_color_view_id: Option<khora_core::renderer::api::resource::TextureViewId>,
+    viewport_depth_view_id: Option<khora_core::renderer::api::resource::TextureViewId>,
+    /// When true, render_with_encoder targets the viewport texture instead of the swapchain.
+    render_to_viewport: bool,
 
     // --- Grid Pipeline ---
     grid_pipeline: Option<wgpu::RenderPipeline>,
@@ -173,6 +178,9 @@ impl WgpuRenderSystem {
             viewport_depth_view: None,
             viewport_width: 0,
             viewport_height: 0,
+            viewport_color_view_id: None,
+            viewport_depth_view_id: None,
+            render_to_viewport: false,
             grid_pipeline: None,
             grid_camera_bind_group_layout: None,
             grid_camera_bind_group: None,
@@ -461,7 +469,8 @@ impl WgpuRenderSystem {
             .lock()
             .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
 
-        let format = gc.surface_config.format;
+        // Use RGBA8 so the viewport texture is always bindable in shaders.
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
 
         // --- Color texture ---
         let color_tex = gc.device.create_texture(&wgpu::TextureDescriptor {
@@ -500,16 +509,27 @@ impl WgpuRenderSystem {
         // Register with the egui overlay renderer.
         let egui_id = overlay.register_viewport_texture(&gc.device, &color_view);
 
+        let device = self
+            .wgpu_device
+            .clone()
+            .ok_or(RenderError::NotInitialized)?;
+        let viewport_color_vid = device
+            .register_texture_view(&color_tex, Some("viewport_color_view"))
+            .map_err(|e| RenderError::Internal(format!("register viewport color view: {e}")))?;
+        let viewport_depth_vid = device
+            .register_texture_view(&depth_tex, Some("viewport_depth_view"))
+            .map_err(|e| RenderError::Internal(format!("register viewport depth view: {e}")))?;
+
         self.viewport_texture = Some(color_tex);
         self.viewport_view = Some(color_view);
         self.viewport_depth_texture = Some(depth_tex);
         self.viewport_depth_view = Some(depth_view);
         self.viewport_width = width;
         self.viewport_height = height;
+        self.viewport_color_view_id = Some(viewport_color_vid);
+        self.viewport_depth_view_id = Some(viewport_depth_vid);
 
-        log::info!(
-            "Viewport target created: {width}x{height} ({format:?})"
-        );
+        log::info!("Viewport target created: {width}x{height} ({format:?})");
 
         Ok(egui_id)
     }
@@ -582,10 +602,7 @@ impl WgpuRenderSystem {
     ///
     /// Must be called after `create_viewport_target` so the surface
     /// format is known.
-    pub fn init_grid_pipeline(
-        &mut self,
-        shader_source: &str,
-    ) -> Result<(), RenderError> {
+    pub fn init_grid_pipeline(&mut self, shader_source: &str) -> Result<(), RenderError> {
         let gc = self
             .graphics_context_shared
             .as_ref()
@@ -593,7 +610,8 @@ impl WgpuRenderSystem {
             .lock()
             .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
 
-        let format = gc.surface_config.format;
+        // Must match the viewport texture format from create_viewport_target.
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
         let device = &gc.device;
 
         // Camera uniform buffer (mat4 + vec4 = 80 bytes).
@@ -604,20 +622,19 @@ impl WgpuRenderSystem {
             mapped_at_creation: false,
         });
 
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("grid_camera_bgl"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("grid_camera_bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("grid_camera_bg"),
@@ -763,8 +780,7 @@ impl WgpuRenderSystem {
             });
 
             // Draw the infinite grid.
-            if let (Some(pipeline), Some(bg)) =
-                (&self.grid_pipeline, &self.grid_camera_bind_group)
+            if let (Some(pipeline), Some(bg)) = (&self.grid_pipeline, &self.grid_camera_bind_group)
             {
                 pass.set_pipeline(pipeline);
                 pass.set_bind_group(0, bg, &[]);
@@ -828,8 +844,7 @@ impl WgpuRenderSystem {
         // Initialise the infinite grid pipeline.
         self.init_grid_pipeline(grid_shader_source)?;
 
-        let mut shell =
-            crate::ui::egui::shell::EguiEditorShell::new(overlay.context(), theme);
+        let mut shell = crate::ui::egui::shell::EguiEditorShell::new(overlay.context(), theme);
         shell.register_viewport_texture(viewport_handle, egui_id);
 
         Ok((overlay, shell))
@@ -1296,11 +1311,11 @@ impl RenderSystem for WgpuRenderSystem {
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
 
-            let encoder =
-                gc.device
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("egui_overlay_encoder"),
-                    });
+            let encoder = gc
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("egui_overlay_encoder"),
+                });
 
             (encoder, target_view)
         }; // gc lock released — overlay will re-acquire it
@@ -1358,13 +1373,23 @@ impl RenderSystem for WgpuRenderSystem {
             .current_frame_view_id
             .ok_or(RenderError::NotInitialized)?;
 
+        // Choose render target: offscreen viewport or swapchain.
+        let (color_target, depth_target) = if self.render_to_viewport {
+            let c = self
+                .viewport_color_view_id
+                .ok_or_else(|| RenderError::Internal("viewport color view not created".into()))?;
+            (c, self.viewport_depth_view_id)
+        } else {
+            (target_view_id, self.depth_texture_view)
+        };
+
         // --- Create encoder ---
         let mut command_encoder = device.create_command_encoder(Some("Khora Command Encoder"));
 
-        // --- Build RenderContext with the already-acquired target ---
+        // --- Build RenderContext with the chosen target ---
         let render_ctx = RenderContext {
-            color_target: &target_view_id,
-            depth_target: self.depth_texture_view.as_ref(),
+            color_target: &color_target,
+            depth_target: depth_target.as_ref(),
             clear_color,
             shadow_atlas: None,
             shadow_sampler: None,
@@ -1418,6 +1443,10 @@ impl RenderSystem for WgpuRenderSystem {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn set_render_to_viewport(&mut self, enabled: bool) {
+        self.render_to_viewport = enabled;
     }
 
     fn get_adapter_info(&self) -> Option<GraphicsAdapterInfo> {

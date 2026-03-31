@@ -246,22 +246,23 @@ impl DccService {
         self.context.read().unwrap().clone()
     }
 
-    /// Updates all registered agents in priority order.
+    /// Initializes all registered agents once after registration.
     ///
-    /// This is called each frame by the engine loop.
-    pub fn update_agents(&self, context: &mut khora_core::EngineContext<'_>) {
+    /// Should be called once after all agents are registered, giving them
+    /// access to engine services for caching and lane setup.
+    pub fn initialize_agents(&self, context: &mut khora_core::EngineContext<'_>) {
         if let Ok(registry) = self.registry.lock() {
-            registry.update_all(context);
+            registry.initialize_all(context);
         }
     }
 
     /// Executes all registered agents in priority order.
     ///
-    /// Called each frame after [`update_agents`](Self::update_agents).
-    /// Each agent performs its primary work (e.g., the `RenderAgent` renders).
-    pub fn execute_agents(&self) {
+    /// Called each frame. Each agent selects the appropriate lanes and
+    /// dispatches their execution.
+    pub fn execute_agents(&self, context: &mut khora_core::EngineContext<'_>) {
         if let Ok(registry) = self.registry.lock() {
-            registry.execute_all();
+            registry.execute_all(context);
         }
     }
 
@@ -311,7 +312,6 @@ mod tests {
         fn apply_budget(&mut self, _: ResourceBudget) {
             self.budget_applied = true;
         }
-        fn update(&mut self, _: &mut khora_core::EngineContext<'_>) {}
         fn report_status(&self) -> AgentStatus {
             AgentStatus {
                 agent_id: AgentId::Renderer,
@@ -321,7 +321,7 @@ mod tests {
                 message: String::new(),
             }
         }
-        fn execute(&mut self) {}
+        fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
         fn as_any(&self) -> &dyn std::any::Any {
             self
         }

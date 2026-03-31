@@ -57,10 +57,10 @@ impl Default for EditorCamera {
     fn default() -> Self {
         Self {
             target: Vec3::ZERO,
-            yaw: 0.4,            // ~23° from front
-            pitch: -0.4,         // ~23° looking down
+            yaw: 0.4,    // ~23° from front
+            pitch: -0.4, // ~23° looking down
             distance: 10.0,
-            fov_y: FRAC_PI_4,    // 45°
+            fov_y: FRAC_PI_4, // 45°
             near: 0.1,
             far: 1000.0,
             orbit_speed: 0.005,
@@ -127,8 +127,7 @@ impl EditorCamera {
     /// Builds a [`ViewInfo`] for the given viewport dimensions.
     pub fn view_info(&self, width: f32, height: f32) -> ViewInfo {
         let pos = self.position();
-        let view_matrix = Mat4::look_at_rh(pos, self.target, Vec3::Y)
-            .unwrap_or(Mat4::IDENTITY);
+        let view_matrix = Mat4::look_at_rh(pos, self.target, Vec3::Y).unwrap_or(Mat4::IDENTITY);
         let aspect = if height > 0.0 { width / height } else { 1.0 };
         let projection_matrix = Mat4::perspective_rh_zo(self.fov_y, aspect, self.near, self.far);
 

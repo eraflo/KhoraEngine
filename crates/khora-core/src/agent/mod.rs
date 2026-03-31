@@ -23,6 +23,19 @@ use std::any::Any;
 ///
 /// Each major subsystem (Rendering, Physics, etc.) implements this trait to
 /// participate in the engine's dynamic resource negotiation (GORNA).
+///
+/// # Lifecycle
+///
+/// 1. `on_initialize(ctx)` — called **once** after registration. The agent
+///    caches required services and initializes its lanes.
+/// 2. `execute(ctx)` — called **every frame**. The agent selects the appropriate
+///    lanes based on the current GORNA budget and dispatches their `Lane::execute()`.
+/// 3. `negotiate(request)` / `apply_budget(budget)` — called by the GORNA
+///    arbitrator on the DCC background thread when the system re-evaluates strategy.
+/// 4. `report_status()` — polled by GORNA for health monitoring.
+///
+/// An agent must contain **no business logic** beyond lane selection, budget
+/// negotiation, and lane dispatch. All real work belongs in [`Lane`] implementations.
 pub trait Agent: Send + Sync {
     /// Returns the unique identifier for this agent.
     fn id(&self) -> AgentId;
@@ -36,15 +49,22 @@ pub trait Agent: Send + Sync {
     /// to stay within the allocated limits.
     fn apply_budget(&mut self, budget: ResourceBudget);
 
-    /// Periodically updates the agent's internal state.
-    fn update(&mut self, context: &mut EngineContext<'_>);
-
     /// Reports the current status and health of the agent.
     fn report_status(&self) -> AgentStatus;
 
-    /// Executes the agent's primary function for this frame.
-    /// Called after update(), this is where the agent performs its main work.
-    fn execute(&mut self);
+    /// Called **once** after the agent is registered with the DCC.
+    ///
+    /// The agent should cache services from `context.services`, initialize
+    /// its lane registry, and prepare any persistent state.
+    /// Default implementation is a no-op.
+    fn on_initialize(&mut self, _context: &mut EngineContext<'_>) {}
+
+    /// Called **every frame** by the engine loop.
+    ///
+    /// The agent selects the appropriate lanes based on the current GORNA
+    /// strategy, builds a [`LaneContext`](crate::lane::LaneContext), and dispatches
+    /// [`Lane::execute()`](crate::lane::Lane::execute) for each lane that should run.
+    fn execute(&mut self, context: &mut EngineContext<'_>);
 
     /// Allows downcasting to concrete agent types.
     fn as_any(&self) -> &dyn Any;

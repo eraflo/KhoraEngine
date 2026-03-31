@@ -159,4 +159,11 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
 
     /// Allows mutable downcasting to a concrete `RenderSystem` type.
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+
+    /// When enabled, [`render_with_encoder`](Self::render_with_encoder) targets the
+    /// offscreen viewport texture instead of the swapchain.
+    ///
+    /// Call with `true` before agent rendering and `false` before the overlay pass.
+    /// The default implementation is a no-op.
+    fn set_render_to_viewport(&mut self, _enabled: bool) {}
 }
