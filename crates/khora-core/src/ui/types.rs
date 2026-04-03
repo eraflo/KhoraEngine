@@ -14,12 +14,14 @@
 
 //! Core UI data types used for layout and rendering.
 
+use bincode::{Decode, Encode};
+
 use crate::asset::AssetUUID;
 use crate::math::{Vec2, Vec4};
 use serde::{Deserialize, Serialize};
 
 /// Length units for UI elements
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode, Default)]
 pub enum UiVal {
     /// Fixed pixel length
     Px(f32),
@@ -31,7 +33,7 @@ pub enum UiVal {
 }
 
 /// A layout dimension structure
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize, Encode, Decode)]
 pub struct UiRect<T> {
     /// Left value
     pub left: T,
@@ -56,7 +58,7 @@ impl<T: Copy> UiRect<T> {
 }
 
 /// Flex direction for child nodes
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Encode, Decode)]
 pub enum UiFlexDirection {
     #[default]
     /// Children are stacked vertically
@@ -66,7 +68,7 @@ pub enum UiFlexDirection {
 }
 
 /// Represents the layout definition of a UI element.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, Encode, Decode)]
 pub struct UiNode {
     /// Requested width
     pub width: UiVal,
@@ -93,7 +95,7 @@ pub struct UiNode {
 }
 
 /// The computed screen-space transform of a UI element.
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize, Encode, Decode)]
 pub struct UiTransform {
     /// Absolute position of the top-left corner in screen coordinates
     pub pos: Vec2,
@@ -104,7 +106,7 @@ pub struct UiTransform {
 }
 
 /// Visual color of a UI element.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct UiColor(pub Vec4);
 
 impl Default for UiColor {
@@ -114,14 +116,14 @@ impl Default for UiColor {
 }
 
 /// Visual image of a UI element.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct UiImage {
     /// The ID of the image asset.
     pub texture: AssetUUID,
 }
 
 /// Border specification for a UI element.
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize, Encode, Decode)]
 pub struct UiBorder {
     /// Width of the border for each side.
     pub width: UiRect<f32>,
@@ -132,7 +134,7 @@ pub struct UiBorder {
 }
 
 /// Typography settings for a text element.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct UiText {
     /// The string to display.
     pub content: String,

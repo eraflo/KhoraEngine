@@ -46,7 +46,17 @@ impl SceneTreePanel {
             ui.horizontal(&mut |ui| {
                 ui.label(icon);
                 if ui.text_edit_singleline(&mut state.rename_buffer) {
-                    // Text changed — will confirm on Enter/focus loss.
+                    // Text changed.
+                }
+                // Enter to confirm, Escape to cancel
+                if ui.is_last_item_enter_pressed() {
+                    let name = state.rename_buffer.clone();
+                    state.pending_rename = Some((node.entity, name));
+                    state.renaming_entity = None;
+                }
+                if ui.is_last_item_escape_pressed() {
+                    state.renaming_entity = None;
+                    state.rename_buffer.clear();
                 }
             });
         } else {
@@ -160,7 +170,7 @@ impl EditorPanel for SceneTreePanel {
                     pending = Some("Empty".to_owned());
                     ui.close_menu();
                 }
-                ui.collapsing("\u{25A1} Geometry", false, &mut |ui| {
+                ui.menu_button("\u{25A1} Geometry", &mut |ui| {
                     if ui.button("Cube") {
                         pending = Some("Cube".to_owned());
                         ui.close_menu();
@@ -174,7 +184,7 @@ impl EditorPanel for SceneTreePanel {
                         ui.close_menu();
                     }
                 });
-                ui.collapsing("\u{1F4A1} Light", false, &mut |ui| {
+                ui.menu_button("\u{1F4A1} Light", &mut |ui| {
                     if ui.button("Directional Light") {
                         pending = Some("Light".to_owned());
                         ui.close_menu();

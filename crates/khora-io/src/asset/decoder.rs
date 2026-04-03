@@ -12,10 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines stable, data-only representations of components for serialization.
+//! Asset decoder trait — raw bytes to typed asset.
 
-mod parent;
-mod transform;
+use khora_core::asset::Asset;
+use std::error::Error;
 
-pub use parent::*;
-pub use transform::*;
+/// A trait for types that can decode a specific kind of asset from raw bytes.
+///
+/// Each implementation handles one asset type (e.g., `CpuTexture`, `Mesh`, `SoundData`).
+/// Concrete decoders live in `khora-lanes` (they also implement `Lane` for identity).
+pub trait AssetDecoder<A: Asset> {
+    /// Parses a byte slice and converts it into an instance of the asset `A`.
+    fn load(&self, bytes: &[u8]) -> Result<A, Box<dyn Error + Send + Sync>>;
+}

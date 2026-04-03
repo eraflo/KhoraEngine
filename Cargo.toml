@@ -3,8 +3,9 @@ resolver = "2" # Recommended for modern Rust
 members = [
     # New modular architecture
     "crates/khora-core",
-    "crates/khora-control", 
+    "crates/khora-control",
     "crates/khora-data",
+    "crates/khora-io",
     "crates/khora-lanes",
     "crates/khora-agents",
     "crates/khora-infra",

@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::AssetDecoder;
 use khora_core::asset::font::Font;
 use khora_core::lane::{Lane, LaneKind};
+use khora_io::asset::AssetDecoder;
 use std::any::Any;
 
 /// A lane dedicated to loading and decoding font files (TTF, OTF).

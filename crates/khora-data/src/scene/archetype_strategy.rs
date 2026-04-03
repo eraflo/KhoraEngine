@@ -14,46 +14,26 @@
 
 //! Implements the "Archetype" serialization strategy for scenes.
 
-use crate::scene_lane::strategies::{
-    DeserializationError, SerializationError, SerializationStrategy,
-};
-use khora_core::lane::Lane;
-use khora_data::ecs::World;
+use super::{DeserializationError, SerializationError, SerializationStrategy};
+use crate::ecs::World;
 
-// --- The Lane ---
-
-/// A serialization lane that uses the "Archetype" strategy.
+/// A serialization strategy that uses the "Archetype" strategy.
+///
+/// This strategy leverages the ECS archetype storage directly for maximum
+/// performance, producing the smallest and fastest-to-load format.
 #[derive(Default)]
-pub struct ArchetypeSerializationLane;
+pub struct ArchetypeSerializationStrategy;
 
-impl ArchetypeSerializationLane {
-    /// Creates a new `ArchetypeSerializationLane`.
+impl ArchetypeSerializationStrategy {
+    /// Creates a new `ArchetypeSerializationStrategy`.
     pub fn new() -> Self {
         Self
     }
 }
 
-impl khora_core::lane::Lane for ArchetypeSerializationLane {
-    fn strategy_name(&self) -> &'static str {
-        "KH_ARCHETYPE_V1"
-    }
-
-    fn lane_kind(&self) -> khora_core::lane::LaneKind {
-        khora_core::lane::LaneKind::Scene
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-impl SerializationStrategy for ArchetypeSerializationLane {
+impl SerializationStrategy for ArchetypeSerializationStrategy {
     fn get_strategy_id(&self) -> &'static str {
-        self.strategy_name()
+        "KH_ARCHETYPE_V1"
     }
 
     /// Serializes the world by calling its internal, unsafe `serialize_archetype` method.

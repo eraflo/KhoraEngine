@@ -14,7 +14,6 @@
 
 //! Texture loading and management.
 
-use super::AssetDecoder;
 use anyhow::{Context, Result};
 use khora_core::{
     math::Extent3D,
@@ -23,6 +22,7 @@ use khora_core::{
         util::{SampleCount, TextureFormat},
     },
 };
+use khora_io::asset::AssetDecoder;
 
 /// A lane dedicated to loading and decoding texture files on the CPU
 #[derive(Clone)]

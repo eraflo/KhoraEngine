@@ -12,21 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines lanes for loading mesh assets.
+//! # Khora I/O
+//!
+//! I/O services for asset loading, VFS, and scene serialization.
+//! These are on-demand services, not agents — they don't participate
+//! in GORNA strategy negotiation.
 
-mod gltf_loader_lane;
-mod obj_loader_lane;
-mod resource_resolver;
-
-pub use gltf_loader_lane::*;
-pub use obj_loader_lane::*;
-pub use resource_resolver::*;
-
-use khora_core::renderer::api::scene::Mesh;
-use khora_io::asset::AssetDecoder;
-
-/// Common trait for all mesh loaders
-pub trait MeshLoaderLane: AssetDecoder<Mesh> + Send + Sync + 'static {}
-
-// Implement the trait for all types that implement AssetDecoder<Mesh>
-impl<T> MeshLoaderLane for T where T: AssetDecoder<Mesh> + Send + Sync + 'static {}
+pub mod asset;
+pub mod serialization;
+pub mod vfs;

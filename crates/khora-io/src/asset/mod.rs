@@ -12,12 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Serializable representation of Parent component.
+//! Asset I/O and decoding services.
 
-use bincode::{Decode, Encode};
-use khora_core::ecs::entity::EntityId;
-use serde::{Deserialize, Serialize};
+mod decoder;
+mod file;
+mod io;
+mod pack;
+mod registry;
+mod service;
 
-/// Serializable representation of a `Parent` component.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
-pub struct SerializableParent(pub EntityId);
+pub use decoder::*;
+pub use file::*;
+pub use io::*;
+pub use pack::*;
+pub use registry::*;
+pub use service::*;

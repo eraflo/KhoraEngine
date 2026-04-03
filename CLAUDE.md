@@ -19,11 +19,12 @@ You are the Khora Engine development agent — an expert Rust systems programmer
 
 ```
 khora-sdk        → Public API (Engine, GameWorld, Application trait, AppContext, Vessel primitives)
-khora-agents     → Intelligent subsystem managers (RenderAgent, UiAgent, PhysicsAgent, AudioAgent) + services (AssetService, SerializationService)
-khora-lanes      → Hot-path pipelines: render (Unlit, LitForward, Forward+, Shadow, UI), physics, audio (spatial mixing), asset decoders (glTF, OBJ, WAV, Ogg, textures, fonts, pack), scene (serialization, transform propagation)
+khora-agents     → Intelligent subsystem managers (RenderAgent, UiAgent, PhysicsAgent, AudioAgent)
+khora-io         → I/O services (AssetService, SerializationService, VFS, AssetIo, PackLoader, FileLoader)
+khora-lanes      → Hot-path pipelines: render (Unlit, LitForward, Forward+, Shadow, UI), physics, audio (spatial mixing), asset decoders (Texture, Mesh, Audio, Font loaders), scene (transform propagation)
 khora-control    → DCC orchestration, GORNA protocol, context-aware budgeting (thermal/battery/load)
-khora-data       → CRPECS ECS (archetype SoA, parallel queries, semantic domains), EcsMaintenance, asset storage, UI components, scene definitions
-khora-core       → Trait definitions (Lane, Agent, RenderSystem, PhysicsProvider, AudioDevice, LayoutSystem, Asset, VFS), math (Vec2/3/4, Mat3/4, Quat, Aabb, LinearRgba), GORNA types, error hierarchy, ServiceRegistry, EngineContext, SaaTrackingAllocator, memory counters
+khora-data       → CRPECS ECS (archetype SoA, parallel queries, semantic domains), EcsMaintenance, Assets<T> storage, UI components, scene definitions, transform propagation
+khora-core       → Trait definitions (Lane, Agent, RenderSystem, PhysicsProvider, AudioDevice, LayoutSystem, Asset), math (Vec2/3/4, Mat3/4, Quat, Aabb, LinearRgba), GORNA types, error hierarchy, ServiceRegistry, EngineContext, SaaTrackingAllocator, memory counters
 khora-infra      → wgpu 28.0 backend, winit window, input translation, Rapier3D physics, CPAL audio, Taffy layout, GPU/memory/VRAM monitors
 khora-telemetry  → TelemetryService, MetricsRegistry, MonitorRegistry, resource monitors
 khora-macros     → #[derive(Component)] proc macro
@@ -52,6 +53,14 @@ mdbook build docs/             # Documentation
 - Use `log::info/warn/error` — never `println!`
 - Add `// SAFETY:` comments on every `unsafe` block
 - Follow the Lane trait for all hot-path pipelines
+- Use `#[derive(Component)]` for all ECS components — it auto-generates `SerializableX` + `From` conversions
+
+### Component Serialization
+- `#[derive(Component)]` generates `SerializableX` struct with `Encode, Decode` + `From` conversions
+- `#[component(skip)]` on fields that shouldn't be serialized (GPU handles, runtime state)
+- `#[component(no_serializable)]` for components that need manual `SerializableX` (unit structs, trait objects)
+- Register components via `inventory::submit!` in `khora-data/src/ecs/components/registrations.rs`
+- Use the `register_components!` macro for DRY registration
 
 ### Must Never
 - Introduce circular crate dependencies

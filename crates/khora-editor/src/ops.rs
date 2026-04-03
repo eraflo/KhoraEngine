@@ -14,9 +14,10 @@
 
 //! Pure ECS operations used by the editor application.
 
+use khora_core::renderer::api::scene::mesh::Mesh;
 use khora_core::ui::editor::*;
+use khora_data::ecs::HandleComponent;
 use khora_sdk::prelude::ecs::*;
-use khora_sdk::prelude::*;
 use khora_sdk::GameWorld;
 
 /// Extracts a scene tree snapshot from the ECS world into editor state.
@@ -134,6 +135,9 @@ pub fn duplicate_entity(world: &mut GameWorld, entity: EntityId, state: &mut Edi
     let rigid_body = world.get_component::<RigidBody>(entity).cloned();
     let collider = world.get_component::<Collider>(entity).cloned();
     let audio_source = world.get_component::<AudioSource>(entity).cloned();
+    let mesh_handle = world
+        .get_component::<HandleComponent<Mesh>>(entity)
+        .cloned();
 
     let new_entity = world.spawn((
         transform.unwrap_or_else(Transform::identity),
@@ -155,6 +159,9 @@ pub fn duplicate_entity(world: &mut GameWorld, entity: EntityId, state: &mut Edi
     }
     if let Some(audio) = audio_source {
         world.add_component(new_entity, audio);
+    }
+    if let Some(mesh) = mesh_handle {
+        world.add_component(new_entity, mesh.clone());
     }
 
     state.select(new_entity);
@@ -339,6 +346,14 @@ pub fn extract_inspected(world: &GameWorld, state: &mut EditorState) {
             autoplay: a.autoplay,
         });
 
+    // Collect present component types from inventory registrations.
+    let mut present_component_types = Vec::new();
+    for reg in inventory::iter::<khora_data::scene::ComponentRegistration> {
+        if (reg.serialize_recipe)(world.inner_world(), entity).is_some() {
+            present_component_types.push(reg.type_name.to_string());
+        }
+    }
+
     state.inspected = Some(InspectedEntity {
         entity,
         name,
@@ -348,6 +363,14 @@ pub fn extract_inspected(world: &GameWorld, state: &mut EditorState) {
         rigid_body,
         collider,
         audio_source,
+        physics_material: None,
+        kinematic_character_controller: None,
+        audio_listener: false,
+        ui_node: false,
+        ui_text: false,
+        ui_image: false,
+        ui_border: false,
+        present_component_types,
     });
 }
 
@@ -453,4 +476,19 @@ pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
             }
         }
     }
+}
+
+/// Adds a new component to an existing entity by dispatching through the inventory registry.
+pub fn add_component_to_entity(world: &mut GameWorld, entity: EntityId, type_name: &str) {
+    for reg in inventory::iter::<khora_data::scene::ComponentRegistration> {
+        if reg.type_name == type_name {
+            if let Err(e) = (reg.create_default)(world.inner_world_mut(), entity) {
+                log::error!("Failed to add component {}: {}", type_name, e);
+            } else {
+                log::info!("Added {} component to entity {:?}", type_name, entity);
+            }
+            return;
+        }
+    }
+    log::warn!("No component registration found for type '{}'", type_name);
 }

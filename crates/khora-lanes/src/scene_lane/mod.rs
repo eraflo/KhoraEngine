@@ -13,9 +13,10 @@
 // limitations under the License.
 
 //! Scene management
+//!
+//! Contains transform propagation and scene-related ECS systems.
+//! Serialization strategies live in khora-io.
 
-mod strategies;
 mod transform_propagation;
 
-pub use strategies::*;
 pub use transform_propagation::transform_propagation_system;

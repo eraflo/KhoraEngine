@@ -14,10 +14,12 @@
 
 //! UI components for the Khora Engine.
 
+use bincode::{Decode, Encode};
 use khora_core::asset::AssetUUID;
 use khora_core::math::{Vec2, Vec4};
 pub use khora_core::ui::types::{UiFlexDirection, UiRect, UiVal};
 use khora_macros::Component;
+use serde::{Deserialize, Serialize};
 
 /// Represents the layout definition of a UI element.
 /// Fully Send/Sync ECS component that is later translated to a layout engine (like taffy) internally.
@@ -154,7 +156,9 @@ impl Default for UiStyle {
 }
 
 /// Visual color of a UI element.
-#[derive(Debug, Clone, Copy, PartialEq, Component, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Component, Default, Serialize, Deserialize, Encode, Decode,
+)]
 pub struct UiColor(pub Vec4);
 
 impl UiColor {
@@ -171,6 +175,14 @@ pub struct UiImage {
     pub texture: AssetUUID,
 }
 
+impl Default for UiImage {
+    fn default() -> Self {
+        Self {
+            texture: AssetUUID::default(),
+        }
+    }
+}
+
 impl UiImage {
     /// Convert to core UI image type.
     pub fn to_core(&self) -> khora_core::ui::types::UiImage {
@@ -181,7 +193,9 @@ impl UiImage {
 }
 
 /// Border specification for a UI element.
-#[derive(Debug, Clone, Copy, PartialEq, Component, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Component, Default, Serialize, Deserialize, Encode, Decode,
+)]
 pub struct UiBorder {
     /// Width of the border for each side.
     pub width: UiRect<f32>,
@@ -203,7 +217,7 @@ impl UiBorder {
 }
 
 /// Represents the interaction state of a UI element.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, Encode, Decode)]
 pub enum UiInteractionState {
     #[default]
     /// The element is not being interacted with.

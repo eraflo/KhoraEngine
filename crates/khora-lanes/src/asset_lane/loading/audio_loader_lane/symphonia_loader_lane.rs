@@ -14,9 +14,9 @@
 
 //! Implements a universal asset loader for audio formats using the `symphonia` library.
 
-use crate::asset_lane::loading::AssetDecoder;
 use anyhow::{anyhow, Result};
 use khora_data::assets::SoundData;
+use khora_io::asset::AssetDecoder;
 use std::{error::Error, io::Cursor};
 use symphonia::core::{
     audio::SampleBuffer, codecs::DecoderOptions, formats::FormatOptions, io::MediaSourceStream,

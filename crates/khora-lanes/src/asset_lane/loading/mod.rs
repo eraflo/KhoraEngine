@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Asset decoding utilities.
+//! Concrete asset decoders (Texture, Mesh, Audio, Font).
+//!
+//! These implement the `AssetDecoder` trait from khora-io.
 
 mod audio_loader_lane;
 mod font_loader_lane;
@@ -23,18 +25,3 @@ pub use audio_loader_lane::*;
 pub use font_loader_lane::*;
 pub use mesh_loader_lane::*;
 pub use texture_loader_lane::*;
-
-use khora_core::asset::Asset;
-use std::error::Error;
-
-/// A trait for types that can decode a specific kind of asset from raw bytes.
-///
-/// This represents the "Data Plane" part of asset loading. Implementors of this
-/// trait are responsible for the potentially CPU-intensive work of parsing and
-/// decoding raw file data into a usable, engine-ready asset type.
-///
-/// Each `AssetDecoder` is specialized for a single asset type `A`.
-pub trait AssetDecoder<A: Asset> {
-    /// Parses a byte slice and converts it into an instance of the asset `A`.
-    fn load(&self, bytes: &[u8]) -> Result<A, Box<dyn Error + Send + Sync>>;
-}

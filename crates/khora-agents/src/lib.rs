@@ -18,9 +18,7 @@
 
 #![warn(missing_docs)]
 
-pub mod asset_service;
 pub mod audio_agent;
 pub mod physics_agent;
 pub mod render_agent;
-pub mod serialization_service;
 pub mod ui_agent;

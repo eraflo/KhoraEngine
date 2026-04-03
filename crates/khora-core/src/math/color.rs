@@ -14,6 +14,9 @@
 
 //! Defines the `LinearRgba` color type and associated operations.
 
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+
 use crate::math::vector::Vec4;
 use std::ops::{Add, Div, Mul, Sub};
 
@@ -26,7 +29,18 @@ use std::ops::{Add, Div, Mul, Sub};
 ///
 /// `#[repr(C)]` ensures a consistent memory layout, which is important when passing
 /// color data to graphics APIs.
-#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+)]
 #[repr(C)]
 pub struct LinearRgba {
     /// The red component in linear space.

@@ -15,12 +15,14 @@
 //! Scene serialization and project-asset scanning helpers.
 
 use crate::util::{bytemuck_transform, unbytemuck_transform};
-use khora_agents::serialization_service::SerializationService;
+use khora_core::math::LinearRgba;
 use khora_core::scene::{SceneFile, SerializationGoal};
 use khora_core::ui::editor::*;
+use khora_io::serialization::SerializationService;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::*;
 use khora_sdk::GameWorld;
+use std::path::{Path, PathBuf};
 
 /// Serializes all entity transforms into a binary snapshot for play-mode restore.
 pub fn snapshot_scene(world: &GameWorld) -> Vec<u8> {
@@ -113,12 +115,12 @@ pub fn save_scene_to(world: &GameWorld, path: &str) {
 }
 
 /// Loads a KHORASCN file from disk and replaces the current scene.
-pub fn load_scene_from(world: &mut GameWorld, path: &str) {
+pub fn load_scene_from(world: &mut GameWorld, path: &str) -> bool {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) => {
             log::error!("Failed to read scene file '{}': {}", path, e);
-            return;
+            return false;
         }
     };
 
@@ -126,7 +128,7 @@ pub fn load_scene_from(world: &mut GameWorld, path: &str) {
         Ok(file) => file,
         Err(e) => {
             log::error!("Invalid scene file '{}': {:?}", path, e);
-            return;
+            return false;
         }
     };
 
@@ -137,8 +139,90 @@ pub fn load_scene_from(world: &mut GameWorld, path: &str) {
 
     let agent = SerializationService::new();
     match agent.load_world(&scene_file, world.inner_world_mut()) {
-        Ok(()) => log::info!("Scene loaded from '{}' ({} bytes)", path, bytes.len()),
-        Err(e) => log::error!("Failed to deserialize scene '{}': {:?}", path, e),
+        Ok(()) => {
+            log::info!("Scene loaded from '{}' ({} bytes)", path, bytes.len());
+            true
+        }
+        Err(e) => {
+            log::error!("Failed to deserialize scene '{}': {:?}", path, e);
+            false
+        }
+    }
+}
+
+/// Returns the path to `assets/scenes/default.kscene` for the given project root.
+pub fn default_scene_path(project_root: &Path) -> PathBuf {
+    project_root
+        .join("assets")
+        .join("scenes")
+        .join("default.kscene")
+}
+
+/// Auto-loads the default scene for a project, or creates one if it doesn't exist.
+///
+/// Called once during editor setup when a project is opened.
+pub fn auto_load_or_create_default_scene(world: &mut GameWorld, project_root: &Path) {
+    let scene_path = default_scene_path(project_root);
+
+    if scene_path.exists() {
+        let path_str = scene_path.to_string_lossy().to_string();
+        load_scene_from(world, &path_str);
+    } else {
+        create_default_scene(world, &scene_path);
+    }
+}
+
+/// Creates a default scene (Camera + Light) and saves it to disk.
+fn create_default_scene(world: &mut GameWorld, path: &Path) {
+    // Spawn default entities
+    let camera_transform = Transform {
+        translation: khora_core::math::Vec3::new(0.0, 5.0, 10.0),
+        ..Default::default()
+    };
+    world.spawn((
+        camera_transform,
+        GlobalTransform::identity(),
+        Camera::default(),
+        Name("Main Camera".to_string()),
+    ));
+
+    let light_transform = Transform {
+        translation: khora_core::math::Vec3::new(0.0, 10.0, 0.0),
+        ..Default::default()
+    };
+    world.spawn((
+        light_transform,
+        GlobalTransform::identity(),
+        Light::new(LightType::Directional(DirectionalLight {
+            direction: khora_core::math::Vec3::new(0.0, -1.0, 0.0),
+            color: LinearRgba::WHITE,
+            intensity: 1.0,
+            ..Default::default()
+        })),
+        Name("Directional Light".to_string()),
+    ));
+
+    // Save to disk
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let service = SerializationService::new();
+    match service.save_world(world.inner_world(), SerializationGoal::EditorInterchange) {
+        Ok(scene_file) => {
+            let bytes = scene_file.to_bytes();
+            match std::fs::write(path, &bytes) {
+                Ok(()) => {
+                    log::info!(
+                        "Default scene created at '{}' ({} bytes)",
+                        path.display(),
+                        bytes.len()
+                    );
+                }
+                Err(e) => log::error!("Failed to write default scene: {}", e),
+            }
+        }
+        Err(e) => log::error!("Failed to serialize default scene: {:?}", e),
     }
 }
 

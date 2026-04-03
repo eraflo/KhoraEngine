@@ -16,6 +16,18 @@
 
 mod definition;
 mod recipe;
+pub mod registry;
+
+mod archetype_strategy;
+mod definition_strategy;
+mod recipe_strategy;
+mod strategy;
 
 pub use definition::*;
 pub use recipe::*;
+pub use registry::*;
+
+pub use archetype_strategy::*;
+pub use definition_strategy::*;
+pub use recipe_strategy::*;
+pub use strategy::*;

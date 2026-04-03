@@ -55,6 +55,9 @@ pub trait UiBuilder {
     /// Returns `true` when clicked.
     fn selectable_label(&mut self, active: bool, text: &str) -> bool;
 
+    /// Selectable label that returns `true` when double-clicked.
+    fn selectable_label_double_clicked(&mut self, active: bool, text: &str) -> bool;
+
     /// Boolean checkbox. Returns `true` when toggled.
     fn checkbox(&mut self, checked: &mut bool, text: &str) -> bool;
 
@@ -116,6 +119,12 @@ pub trait UiBuilder {
     /// Returns `true` if the last widget is currently hovered by the pointer.
     fn is_last_item_hovered(&self) -> bool;
 
+    /// Returns `true` if Enter was pressed while the last widget had focus.
+    fn is_last_item_enter_pressed(&self) -> bool;
+
+    /// Returns `true` if Escape was pressed while the last widget had focus.
+    fn is_last_item_escape_pressed(&self) -> bool;
+
     /// Shows a right-click context menu on the last widget.
     /// The closure is called to build menu content when the menu is open.
     fn context_menu_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder));
@@ -137,27 +146,22 @@ pub trait UiBuilder {
         // Default no-op.
     }
 
+    /// Shows a sub-menu button inside a context menu.
+    /// Unlike `collapsing`, this creates a proper egui sub-menu that doesn't
+    /// steal focus from the parent context menu.
+    fn menu_button(&mut self, label: &str, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let _ = (label, f);
+    }
+
     // ── Painting / Overlays ───────────────────────────
 
     /// Paints a line in window-space coordinates.
-    fn paint_line(
-        &mut self,
-        from: [f32; 2],
-        to: [f32; 2],
-        color: [f32; 4],
-        thickness: f32,
-    ) {
+    fn paint_line(&mut self, from: [f32; 2], to: [f32; 2], color: [f32; 4], thickness: f32) {
         let _ = (from, to, color, thickness);
     }
 
     /// Paints a filled rectangle in window-space coordinates.
-    fn paint_rect_filled(
-        &mut self,
-        min: [f32; 2],
-        size: [f32; 2],
-        color: [f32; 4],
-        rounding: f32,
-    ) {
+    fn paint_rect_filled(&mut self, min: [f32; 2], size: [f32; 2], color: [f32; 4], rounding: f32) {
         let _ = (min, size, color, rounding);
     }
 

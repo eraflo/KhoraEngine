@@ -13,20 +13,8 @@
 // limitations under the License.
 
 //! Defines the abstract contract for serialization strategies and their associated types.
-//!
-//! The core of this module is the [`SerializationStrategy`] trait, which provides
-//! a unified interface for all serialization `Lanes`. This allows the `SerializationAgent`
-//! to manage and dispatch tasks to different strategies polymorphically.
 
-mod archetype_lane;
-mod definition_lane;
-mod recipe_lane;
-
-pub use archetype_lane::*;
-pub use definition_lane::*;
-pub use recipe_lane::*;
-
-use khora_data::ecs::World;
+use crate::ecs::World;
 use std::fmt;
 
 /// An error that can occur during the serialization process.
@@ -68,14 +56,14 @@ impl fmt::Display for DeserializationError {
     }
 }
 
-/// The abstract contract for a scene serialization strategy `Lane`.
+/// The abstract contract for a scene serialization strategy.
 ///
 /// Each concrete implementation of this trait represents a different method
 /// of converting a `World` to and from a persistent format.
-pub trait SerializationStrategy: khora_core::lane::Lane {
+pub trait SerializationStrategy {
     /// Returns the unique, versioned string identifier for this strategy.
     ///
-    /// This ID is written to the `SceneHeader` and used by the `SerializationAgent`
+    /// This ID is written to the `SceneHeader` and used by the `SerializationService`
     /// to look up the correct strategy from its registry during deserialization.
     /// Example: `"KH_RECIPE_V1"`.
     fn get_strategy_id(&self) -> &'static str;

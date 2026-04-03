@@ -14,25 +14,21 @@
 
 //! Asset management service — on-demand loading, not an Agent.
 //!
-//! This service replaces the former `AssetAgent`. It provides a simple
-//! `load()` API backed by a VFS + IO layer + decoder registry.
+//! This service provides a `load()` API backed by a VFS + IO layer + decoder registry.
 //! No GORNA negotiation, no per-frame budget — assets are loaded on-demand.
-
-pub mod decoder;
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::fs::File;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use khora_core::asset::{Asset, AssetHandle, AssetUUID};
-use khora_core::vfs::VirtualFileSystem;
 use khora_data::assets::Assets;
-use khora_lanes::asset_lane::PackLoadingLane;
 use khora_telemetry::MetricsRegistry;
 
-use decoder::DecoderRegistry;
+use super::io::AssetIo;
+use super::registry::DecoderRegistry;
+use crate::vfs::VirtualFileSystem;
 
 /// The asset management service.
 ///
@@ -40,7 +36,7 @@ use decoder::DecoderRegistry;
 /// Registered in `ServiceRegistry` and accessed by game code via `AppContext`.
 pub struct AssetService {
     vfs: VirtualFileSystem,
-    io: PackLoadingLane,
+    io: Box<dyn AssetIo>,
     decoders: DecoderRegistry,
     storages: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
     load_count: usize,
@@ -50,13 +46,11 @@ impl AssetService {
     /// Creates a new `AssetService`.
     pub fn new(
         index_bytes: &[u8],
-        data_file: File,
+        io: Box<dyn AssetIo>,
         metrics_registry: Arc<MetricsRegistry>,
     ) -> Result<Self> {
         let vfs = VirtualFileSystem::new(index_bytes)
             .context("Failed to initialize VirtualFileSystem from index bytes")?;
-
-        let io = PackLoadingLane::new(data_file);
 
         Ok(Self {
             vfs,
@@ -71,7 +65,7 @@ impl AssetService {
     pub fn register_decoder<A: Asset>(
         &mut self,
         type_name: &str,
-        decoder: impl khora_lanes::asset_lane::AssetDecoder<A> + Send + Sync + 'static,
+        decoder: impl super::decoder::AssetDecoder<A> + Send + Sync + 'static,
     ) {
         self.decoders.register::<A>(type_name, decoder);
     }
@@ -106,7 +100,7 @@ impl AssetService {
             .get("default")
             .ok_or_else(|| anyhow!("Asset {:?} has no 'default' variant", uuid))?;
 
-        let bytes = self.io.load_asset_bytes(source)?;
+        let bytes = self.io.load_bytes(source)?;
         let asset: A = self
             .decoders
             .decode::<A>(&metadata.asset_type_name, &bytes)?;

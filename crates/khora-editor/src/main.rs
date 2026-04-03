@@ -316,6 +316,9 @@ impl Application for EditorApp {
         } else {
             log::warn!("EditorApp: no EditorShell found in ServiceRegistry.");
         }
+
+        // Register EditorState in services so the SDK can access it for gizmo rendering.
+        ctx.services.insert(self.editor_state.clone());
         if let Some(Some(project_path)) = PROJECT_PATH.get() {
             let path = std::path::PathBuf::from(project_path);
             if path.exists() {
@@ -342,28 +345,29 @@ impl Application for EditorApp {
             }
         }
 
-        let has_entities = world.iter_entities().next().is_some();
-        if !has_entities {
-            let cam = Camera::new_perspective(std::f32::consts::FRAC_PI_4, 16.0 / 9.0, 0.1, 1000.0);
-            world.spawn((
-                Transform::new(Vec3::new(0.0, 5.0, 10.0), Quaternion::IDENTITY, Vec3::ONE),
-                GlobalTransform::identity(),
-                Name::new("Main Camera"),
-                cam,
-            ));
-
-            world.spawn((
-                Transform::new(Vec3::new(0.0, 10.0, 0.0), Quaternion::IDENTITY, Vec3::ONE),
-                GlobalTransform::identity(),
-                Name::new("Directional Light"),
-                Light::directional(),
-            ));
-
-            log::info!("Default scene created: Camera + Directional Light");
+        // Auto-load the default scene, or create one if it doesn't exist.
+        if let Some(project_path) = PROJECT_PATH.get().and_then(|p| p.as_ref()) {
+            let project_root = std::path::Path::new(project_path);
+            if project_root.exists() {
+                scene_io::auto_load_or_create_default_scene(world, project_root);
+            }
         }
     }
 
     fn update(&mut self, world: &mut GameWorld, inputs: &[InputEvent]) {
+        // Consume pending scene load (from asset browser double-click).
+        let pending_load = self
+            .editor_state
+            .lock()
+            .ok()
+            .and_then(|mut s| s.pending_scene_load.take());
+        if let Some(path) = pending_load {
+            scene_io::load_scene_from(world, &path);
+            if let Ok(mut state) = self.editor_state.lock() {
+                state.current_scene_path = Some(path);
+            }
+        }
+
         let viewport_hovered = self
             .editor_state
             .lock()
@@ -505,6 +509,10 @@ impl Application for EditorApp {
 
             if let Some(entity) = state.pending_duplicate.take() {
                 ops::duplicate_entity(world, entity, &mut state);
+            }
+
+            if let Some((entity, type_name)) = state.pending_add_component.take() {
+                ops::add_component_to_entity(world, entity, &type_name);
             }
 
             ops::extract_scene_tree(world, &mut state);

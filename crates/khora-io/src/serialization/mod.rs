@@ -12,19 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Serializable representation of Transform component.
+//! Scene serialization — on-demand service backed by strategies from khora-data.
+//!
+//! The `SerializationStrategy` trait and concrete implementations live in
+//! `khora_data::scene`. This module provides the `SerializationService` that
+//! orchestrates them for file I/O.
 
-use bincode::{Decode, Encode};
-use khora_core::math::{Quaternion, Vec3};
-use serde::{Deserialize, Serialize};
+mod service;
 
-/// Serializable representation of a `Transform` component.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
-pub struct SerializableTransform {
-    /// Position of the entity in 3D space.
-    pub translation: Vec3,
-    /// Rotation of the entity in 3D space.
-    pub rotation: Quaternion,
-    /// Scale of the entity in 3D space.
-    pub scale: Vec3,
-}
+// Re-export strategies from khora-data for convenience.
+pub use khora_data::scene::{
+    ArchetypeSerializationStrategy, DefinitionSerializationStrategy, DeserializationError,
+    RecipeSerializationStrategy, SerializationError, SerializationStrategy,
+};
+pub use service::*;

@@ -7,6 +7,7 @@ description = "Hot-path execution pipelines for performance-critical operations"
 [dependencies]
 khora-core = { path = "../khora-core" }
 khora-data = { path = "../khora-data" }
+khora-io = { path = "../khora-io" }
 log = "0.4"
 
 ahash = "0.8"

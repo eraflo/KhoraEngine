@@ -102,6 +102,14 @@ pub struct WgpuRenderSystem {
     grid_camera_bind_group_layout: Option<wgpu::BindGroupLayout>,
     grid_camera_bind_group: Option<wgpu::BindGroup>,
     grid_camera_buffer: Option<wgpu::Buffer>,
+
+    // --- Gizmo Pipeline ---
+    gizmo_pipeline: Option<wgpu::RenderPipeline>,
+    gizmo_camera_bind_group_layout: Option<wgpu::BindGroupLayout>,
+    gizmo_storage_bind_group_layout: Option<wgpu::BindGroupLayout>,
+    gizmo_camera_buffer: Option<wgpu::Buffer>,
+    gizmo_storage_buffer: Option<wgpu::Buffer>,
+    gizmo_line_capacity: usize,
 }
 
 impl fmt::Debug for WgpuRenderSystem {
@@ -185,6 +193,12 @@ impl WgpuRenderSystem {
             grid_camera_bind_group_layout: None,
             grid_camera_bind_group: None,
             grid_camera_buffer: None,
+            gizmo_pipeline: None,
+            gizmo_camera_bind_group_layout: None,
+            gizmo_storage_bind_group_layout: None,
+            gizmo_camera_buffer: None,
+            gizmo_storage_buffer: None,
+            gizmo_line_capacity: 2048,
         }
     }
 
@@ -792,6 +806,242 @@ impl WgpuRenderSystem {
         Ok(())
     }
 
+    /// Renders editor gizmos (selection overlays) to the viewport texture.
+    ///
+    /// Called after agent rendering, using `LoadOp::Load` to overlay on top
+    /// of the existing scene content. Gizmos are rendered as wireframe lines
+    /// with alpha blending.
+    pub fn render_gizmos(
+        &mut self,
+        view_info: &ViewInfo,
+        lines: &[khora_core::ui::editor::GizmoLineInstance],
+    ) -> Result<usize, RenderError> {
+        if lines.is_empty() {
+            return Ok(0);
+        }
+
+        let (Some(pipeline), Some(cam_bgl), Some(storage_bgl), Some(cam_buf), Some(storage_buf)) = (
+            &self.gizmo_pipeline,
+            &self.gizmo_camera_bind_group_layout,
+            &self.gizmo_storage_bind_group_layout,
+            &self.gizmo_camera_buffer,
+            &self.gizmo_storage_buffer,
+        ) else {
+            return Ok(0);
+        };
+
+        let color_view = self
+            .viewport_view
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?;
+        let depth_view = self
+            .viewport_depth_view
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?;
+
+        let gc = self
+            .graphics_context_shared
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?
+            .lock()
+            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
+
+        let lines_to_render = lines.len().min(self.gizmo_line_capacity);
+
+        // Upload camera uniforms (same layout as grid: mat4 + vec4 = 80 bytes).
+        let vp = view_info.view_projection_matrix();
+        let cam_pos = view_info.camera_position;
+        let mut cam_data = [0u8; 80];
+        cam_data[..64].copy_from_slice(bytemuck::bytes_of(&vp));
+        let pos_arr = [cam_pos.x, cam_pos.y, cam_pos.z, 1.0f32];
+        cam_data[64..80].copy_from_slice(bytemuck::cast_slice(&pos_arr));
+        gc.queue.write_buffer(cam_buf, 0, &cam_data);
+
+        // Upload gizmo line data.
+        let gizmo_bytes = bytemuck::cast_slice(&lines[..lines_to_render]);
+        gc.queue.write_buffer(storage_buf, 0, gizmo_bytes);
+
+        // Create bind groups.
+        let camera_bind_group = gc.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("gizmo_camera_bg"),
+            layout: cam_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: cam_buf.as_entire_binding(),
+            }],
+        });
+
+        let gizmo_bind_group = gc.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("gizmo_data_bg"),
+            layout: storage_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: storage_buf.as_entire_binding(),
+            }],
+        });
+
+        let mut encoder = gc
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("gizmo_encoder"),
+            });
+
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("gizmo_render_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, &camera_bind_group, &[]);
+            pass.set_bind_group(1, &gizmo_bind_group, &[]);
+            pass.draw(0..(lines_to_render as u32 * 2), 0..1);
+        }
+
+        gc.queue.submit(std::iter::once(encoder.finish()));
+        Ok(lines_to_render)
+    }
+
+    /// Initializes the gizmo render pipeline.
+    ///
+    /// Must be called after `create_viewport_target` so the surface format is known.
+    pub fn init_gizmo_pipeline(&mut self, shader_source: &str) -> Result<(), RenderError> {
+        let gc = self
+            .graphics_context_shared
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?
+            .lock()
+            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
+
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        let device = &gc.device;
+
+        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("gizmo_camera_ubo"),
+            size: 80,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("gizmo_storage_buffer"),
+            size: (self.gizmo_line_capacity
+                * std::mem::size_of::<khora_core::ui::editor::GizmoLineInstance>())
+                as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("gizmo_camera_bgl"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let storage_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("gizmo_storage_bgl"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("gizmo_pipeline_layout"),
+            bind_group_layouts: &[&camera_bind_group_layout, &storage_bind_group_layout],
+            immediate_size: 0,
+        });
+
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("gizmo_shader"),
+            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(shader_source)),
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("gizmo_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader_module,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_module,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        self.gizmo_pipeline = Some(pipeline);
+        self.gizmo_camera_bind_group_layout = Some(camera_bind_group_layout);
+        self.gizmo_storage_bind_group_layout = Some(storage_bind_group_layout);
+        self.gizmo_camera_buffer = Some(camera_buffer);
+        self.gizmo_storage_buffer = Some(storage_buffer);
+
+        log::info!(
+            "Gizmo pipeline initialised (capacity: {} lines).",
+            self.gizmo_line_capacity
+        );
+        Ok(())
+    }
+
     /// Creates an [`EguiOverlay`] backed by the current wgpu graphics context.
     ///
     /// Must be called after [`RenderSystem::init`].
@@ -843,6 +1093,16 @@ impl WgpuRenderSystem {
 
         // Initialise the infinite grid pipeline.
         self.init_grid_pipeline(grid_shader_source)?;
+
+        // Initialise the gizmo rendering pipeline.
+        if let Ok(gizmo_source) = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../khora-lanes/src/render_lane/shaders/gizmo.wgsl"),
+        ) {
+            let _ = self.init_gizmo_pipeline(&gizmo_source);
+        } else {
+            log::warn!("Gizmo shader not found; gizmo rendering disabled.");
+        }
 
         let mut shell = crate::ui::egui::shell::EguiEditorShell::new(overlay.context(), theme);
         shell.register_viewport_texture(viewport_handle, egui_id);

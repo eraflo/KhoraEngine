@@ -14,7 +14,6 @@
 
 //! Defines a lane for loading OBJ mesh assets.
 
-use super::AssetDecoder;
 use ahash::AHashMap;
 use anyhow::{Context, Result};
 use khora_core::{
@@ -25,6 +24,7 @@ use khora_core::{
         scene::Mesh,
     },
 };
+use khora_io::asset::AssetDecoder;
 use std::error::Error;
 
 /// Lane for loading OBJ mesh assets

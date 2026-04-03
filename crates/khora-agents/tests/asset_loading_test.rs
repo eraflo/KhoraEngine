@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use anyhow::Result;
-use khora_agents::asset_service::AssetService;
 use khora_core::asset::{Asset, AssetMetadata, AssetSource, AssetUUID};
-use khora_lanes::asset_lane::AssetDecoder;
+use khora_io::asset::{AssetDecoder, AssetService, PackLoader};
+
 use khora_telemetry::MetricsRegistry;
 use std::sync::Arc;
 use std::{collections::HashMap, error::Error, fs::File};
@@ -76,7 +76,11 @@ fn test_load_asset_from_pack() -> Result<()> {
     // --- 2. Initialize the AssetService with REAL files ---
     let data_file = File::open(&data_path)?;
     let metrics_registry = Arc::new(MetricsRegistry::new());
-    let mut asset_service = AssetService::new(&index_bytes, data_file, metrics_registry)?;
+    let mut asset_service = AssetService::new(
+        &index_bytes,
+        Box::new(PackLoader::new(data_file)),
+        metrics_registry,
+    )?;
 
     // --- 3. Register the loader ---
     asset_service.register_decoder("texture", TestTextureLoader);
@@ -148,7 +152,11 @@ fn test_load_texture_from_pack() -> Result<()> {
     // --- 2. Initialize the AssetService with REAL files ---
     let data_file = File::open(&data_path)?;
     let metrics_registry = Arc::new(MetricsRegistry::new());
-    let mut asset_service = AssetService::new(&index_bytes, data_file, metrics_registry)?;
+    let mut asset_service = AssetService::new(
+        &index_bytes,
+        Box::new(PackLoader::new(data_file)),
+        metrics_registry,
+    )?;
 
     // --- 3. Register the texture loader ---
     asset_service.register_decoder("texture", TextureLoaderLane);
@@ -202,7 +210,11 @@ fn test_asset_caching_and_shared_ownership() -> Result<()> {
 
     let data_file = File::open(&data_path)?;
     let metrics_registry = Arc::new(MetricsRegistry::new());
-    let mut asset_service = AssetService::new(&index_bytes, data_file, metrics_registry)?;
+    let mut asset_service = AssetService::new(
+        &index_bytes,
+        Box::new(PackLoader::new(data_file)),
+        metrics_registry,
+    )?;
     asset_service.register_decoder("texture", TestTextureLoader);
 
     // --- 2. Load the asset for the first time (Cache Miss) ---

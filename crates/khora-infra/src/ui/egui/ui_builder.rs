@@ -96,6 +96,13 @@ impl UiBuilder for EguiUiBuilder<'_> {
         clicked
     }
 
+    fn selectable_label_double_clicked(&mut self, active: bool, text: &str) -> bool {
+        let r = self.ui.selectable_label(active, text);
+        let double_clicked = r.double_clicked();
+        self.last_response = Some(r);
+        double_clicked
+    }
+
     fn checkbox(&mut self, checked: &mut bool, text: &str) -> bool {
         self.ui.checkbox(checked, text).changed()
     }
@@ -264,6 +271,18 @@ impl UiBuilder for EguiUiBuilder<'_> {
         self.last_response.as_ref().is_some_and(|r| r.hovered())
     }
 
+    fn is_last_item_enter_pressed(&self) -> bool {
+        self.last_response
+            .as_ref()
+            .is_some_and(|r| r.lost_focus() && self.ui.input(|i| i.key_pressed(egui::Key::Enter)))
+    }
+
+    fn is_last_item_escape_pressed(&self) -> bool {
+        self.last_response
+            .as_ref()
+            .is_some_and(|r| self.ui.input(|i| i.key_pressed(egui::Key::Escape)))
+    }
+
     fn context_menu_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         if let Some(response) = self.last_response.take() {
             let vt = self.viewport_textures;
@@ -295,29 +314,28 @@ impl UiBuilder for EguiUiBuilder<'_> {
         self.ui.close();
     }
 
-    fn paint_line(
-        &mut self,
-        from: [f32; 2],
-        to: [f32; 2],
-        color: [f32; 4],
-        thickness: f32,
-    ) {
+    fn menu_button(&mut self, label: &str, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let vt = self.viewport_textures;
+        self.ui.menu_button(label, |ui| {
+            let mut nested = EguiUiBuilder::new(ui, vt);
+            f(&mut nested);
+        });
+    }
+
+    fn paint_line(&mut self, from: [f32; 2], to: [f32; 2], color: [f32; 4], thickness: f32) {
         self.ui.painter().line_segment(
             [egui::pos2(from[0], from[1]), egui::pos2(to[0], to[1])],
             egui::Stroke::new(thickness, color_to_egui(color)),
         );
     }
 
-    fn paint_rect_filled(
-        &mut self,
-        min: [f32; 2],
-        size: [f32; 2],
-        color: [f32; 4],
-        rounding: f32,
-    ) {
-        let rect = egui::Rect::from_min_size(egui::pos2(min[0], min[1]), egui::vec2(size[0], size[1]));
+    fn paint_rect_filled(&mut self, min: [f32; 2], size: [f32; 2], color: [f32; 4], rounding: f32) {
+        let rect =
+            egui::Rect::from_min_size(egui::pos2(min[0], min[1]), egui::vec2(size[0], size[1]));
         let corner = egui::CornerRadius::same(rounding.clamp(0.0, 255.0) as u8);
-        self.ui.painter().rect_filled(rect, corner, color_to_egui(color));
+        self.ui
+            .painter()
+            .rect_filled(rect, corner, color_to_egui(color));
     }
 
     fn paint_text(&mut self, pos: [f32; 2], color: [f32; 4], text: &str) {

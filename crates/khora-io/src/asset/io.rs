@@ -12,21 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines lanes for loading mesh assets.
+//! Abstraction over asset I/O backends.
 
-mod gltf_loader_lane;
-mod obj_loader_lane;
-mod resource_resolver;
+use anyhow::Result;
+use khora_core::asset::AssetSource;
 
-pub use gltf_loader_lane::*;
-pub use obj_loader_lane::*;
-pub use resource_resolver::*;
-
-use khora_core::renderer::api::scene::Mesh;
-use khora_io::asset::AssetDecoder;
-
-/// Common trait for all mesh loaders
-pub trait MeshLoaderLane: AssetDecoder<Mesh> + Send + Sync + 'static {}
-
-// Implement the trait for all types that implement AssetDecoder<Mesh>
-impl<T> MeshLoaderLane for T where T: AssetDecoder<Mesh> + Send + Sync + 'static {}
+/// Trait for asset I/O backends (file system or pack archive).
+///
+/// Implementations handle the low-level reading of raw bytes from storage.
+/// The `AssetService` dispatches to this trait based on the `AssetSource` variant.
+pub trait AssetIo: Send + Sync {
+    /// Loads raw bytes from the given asset source.
+    fn load_bytes(&mut self, source: &AssetSource) -> Result<Vec<u8>>;
+}

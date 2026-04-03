@@ -13,9 +13,10 @@
 // limitations under the License.
 
 //! Lanes related to asset loading and management.
+//!
+//! Contains concrete AssetDecoder implementations (Texture, Mesh, Audio, Font loaders).
+//! The AssetDecoder trait itself lives in khora-io.
 
 mod loading;
-mod pack_loader;
 
 pub use loading::*;
-pub use pack_loader::*;

@@ -19,6 +19,7 @@
 
 pub mod camera;
 pub mod command;
+pub mod gizmo;
 pub mod log_capture;
 pub mod panel;
 pub mod shell;
@@ -29,6 +30,7 @@ pub mod viewport_texture;
 
 pub use camera::EditorCamera;
 pub use command::{CommandHistory, EditorCommand};
+pub use gizmo::{generate_selection_gizmos, GizmoKind, GizmoLineInstance};
 pub use log_capture::EditorLogCapture;
 pub use panel::{EditorPanel, PanelLocation};
 pub use shell::EditorShell;

@@ -15,7 +15,7 @@
 
 //! GLTF mesh format loader lane with support for both embedded and external resources.
 
-use super::{AssetDecoder, GltfResourceResolver};
+use super::GltfResourceResolver;
 use anyhow::Result;
 use base64::Engine;
 use gltf::{mesh::Reader, Buffer};
@@ -27,6 +27,7 @@ use khora_core::{
         scene::Mesh,
     },
 };
+use khora_io::asset::AssetDecoder;
 use std::{error::Error, sync::Arc};
 
 /// Lane for loading GLTF meshes, configured with a resource resolver.

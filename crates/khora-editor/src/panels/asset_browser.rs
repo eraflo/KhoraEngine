@@ -148,7 +148,12 @@ impl AssetBrowserPanel {
         }
     }
 
-    fn render_tree_node(ui: &mut dyn UiBuilder, node: &AssetNode, filter: &str) {
+    fn render_tree_node(
+        ui: &mut dyn UiBuilder,
+        node: &AssetNode,
+        filter: &str,
+        pending_scene_load: &mut Option<String>,
+    ) {
         if !filter.is_empty() && !node.matches_filter(filter) {
             return;
         }
@@ -157,7 +162,7 @@ impl AssetBrowserPanel {
             let header = format!("\u{1F4C1} {} ({})", node.name, node.file_count());
             ui.collapsing(&header, false, &mut |ui| {
                 for child in &node.children {
-                    Self::render_tree_node(ui, child, filter);
+                    Self::render_tree_node(ui, child, filter, pending_scene_load);
                 }
             });
         } else {
@@ -165,6 +170,12 @@ impl AssetBrowserPanel {
             let label = format!("{} {}", icon, node.name);
             ui.horizontal(&mut |ui| {
                 ui.selectable_label(false, &label);
+
+                // Double-click on a scene file → queue load
+                if ui.is_last_item_double_clicked() && node.asset_type.as_deref() == Some("Scene") {
+                    *pending_scene_load = Some(node.path.to_string_lossy().to_string());
+                }
+
                 if let Some(ref ty) = node.asset_type {
                     ui.small_label(&format!("({})", ty));
                 }
@@ -234,11 +245,12 @@ impl EditorPanel for AssetBrowserPanel {
         ui.separator();
 
         let filter = self.search_filter.clone();
+        let mut pending_scene_load: Option<String> = None;
 
         ui.scroll_area("asset_browser_scroll", &mut |ui| match &self.asset_tree {
             Some(tree) if !tree.children.is_empty() => {
                 for child in &tree.children {
-                    Self::render_tree_node(ui, child, &filter);
+                    Self::render_tree_node(ui, child, &filter, &mut pending_scene_load);
                 }
             }
             Some(_) => {
@@ -248,5 +260,12 @@ impl EditorPanel for AssetBrowserPanel {
                 ui.colored_label([0.5, 0.5, 0.5, 1.0], "No assets found.");
             }
         });
+
+        // Consume double-clicked scene → queue load for update()
+        if let Some(path) = pending_scene_load {
+            if let Ok(mut state) = self.state.lock() {
+                state.pending_scene_load = Some(path);
+            }
+        }
     }
 }

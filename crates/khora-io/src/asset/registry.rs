@@ -14,9 +14,9 @@
 
 //! Decoder registry — type-erased dispatch for asset decoding.
 
+use super::AssetDecoder;
 use anyhow::{anyhow, Result};
 use khora_core::asset::Asset;
-use khora_lanes::asset_lane::AssetDecoder;
 use khora_telemetry::{
     metrics::registry::{CounterHandle, HistogramHandle},
     MetricsRegistry, ScopedMetricTimer,

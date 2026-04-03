@@ -14,9 +14,9 @@
 
 //! Implements an asset loader for `.wav` audio files.
 
-use crate::asset_lane::loading::AssetDecoder;
 use anyhow::{anyhow, Result};
 use khora_data::assets::SoundData;
+use khora_io::asset::AssetDecoder;
 use std::{error::Error, io::Cursor};
 
 /// An `AssetDecoder` that decodes audio data from the WAV format.

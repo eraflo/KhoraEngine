@@ -150,6 +150,13 @@ pub struct EditorState {
     // ── Scene file path ──────────────────────────────
     /// Path to the currently open scene file (for Save).
     pub current_scene_path: Option<String>,
+    /// Pending scene load path (set by asset browser double-click, consumed by update).
+    pub pending_scene_load: Option<String>,
+
+    // ── Component addition ─────────────────────────────
+    /// Pending component addition (set by properties panel or scene tree context menu, consumed by update).
+    /// The String is the component type name (e.g., "Camera", "RigidBody").
+    pub pending_add_component: Option<(EntityId, String)>,
 }
 
 impl EditorState {
@@ -212,6 +219,37 @@ pub struct InspectedEntity {
     pub rigid_body: Option<RigidBodySnapshot>,
     pub collider: Option<ColliderSnapshot>,
     pub audio_source: Option<AudioSourceSnapshot>,
+    pub physics_material: Option<PhysicsMaterialSnapshot>,
+    pub kinematic_character_controller: Option<KinematicCharacterControllerSnapshot>,
+    pub audio_listener: bool,
+    pub ui_node: bool,
+    pub ui_text: bool,
+    pub ui_image: bool,
+    pub ui_border: bool,
+    /// Component type names present on this entity (from inventory registration check).
+    pub present_component_types: Vec<String>,
+}
+
+/// Copy of `PhysicsMaterial` fields.
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub struct PhysicsMaterialSnapshot {
+    pub friction: f32,
+    pub restitution: f32,
+}
+
+/// Copy of `KinematicCharacterController` fields.
+#[derive(Debug, Clone, Copy)]
+#[allow(missing_docs)]
+pub struct KinematicCharacterControllerSnapshot {
+    pub desired_translation: Vec3,
+    pub offset: f32,
+    pub max_slope_climb_angle: f32,
+    pub min_slope_slide_angle: f32,
+    pub autostep_height: f32,
+    pub autostep_min_width: f32,
+    pub autostep_enabled: bool,
+    pub is_grounded: bool,
 }
 
 /// Copy of `Transform` fields for inspector display.

@@ -20,8 +20,8 @@
 //! using asset UUIDs. The VFS is typically initialized from a packed binary index
 //! file and serves as the primary source of truth for asset metadata in the engine.
 
-use crate::asset::{AssetMetadata, AssetUUID};
 use bincode;
+use khora_core::asset::{AssetMetadata, AssetUUID};
 use std::collections::HashMap;
 
 /// The runtime representation of the asset index (`index.bin`).

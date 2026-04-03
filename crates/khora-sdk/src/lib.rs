@@ -35,7 +35,7 @@ use khora_core::renderer::api::scene::RenderObject;
 use khora_core::renderer::traits::RenderSystem;
 use khora_core::telemetry::MonitoredResourceType;
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
-use khora_core::ui::editor::EditorCamera;
+use khora_core::ui::editor::{EditorCamera, EditorState, GizmoKind, GizmoLineInstance, GizmoMode};
 use khora_core::ui::editor_overlay::{EditorOverlay, OverlayScreenDescriptor};
 use khora_core::ui::EditorShell;
 use khora_core::ServiceRegistry;
@@ -199,9 +199,59 @@ struct EngineState<A: Application> {
     editor_shell: Option<Arc<Mutex<Box<dyn EditorShell>>>>,
     /// Editor camera for the 3D viewport.
     editor_camera: Arc<Mutex<EditorCamera>>,
+    /// Editor state (selection, inspection, pending actions).
+    editor_state: Option<Arc<Mutex<EditorState>>>,
 }
 
 impl<A: Application> EngineState<A> {
+    /// Collects gizmo line instances for all selected entities.
+    fn collect_gizmo_lines(
+        world: &GameWorld,
+        state: &EditorState,
+        _view_info: &khora_core::renderer::api::resource::ViewInfo,
+        editor_camera: &Arc<Mutex<EditorCamera>>,
+    ) -> Vec<GizmoLineInstance> {
+        let mut entries: Vec<(khora_core::math::Mat4, GizmoKind)> = Vec::new();
+
+        for &entity_id in &state.selection {
+            let Some(transform) = world.get_component::<khora_data::ecs::Transform>(entity_id)
+            else {
+                continue;
+            };
+            let global_transform = khora_core::math::Mat4::from_translation(transform.translation)
+                * khora_core::math::Mat4::from_quat(transform.rotation)
+                * khora_core::math::Mat4::from_scale(transform.scale);
+
+            let kind = if world.get_component::<khora_data::ecs::Camera>(entity_id).is_some() {
+                GizmoKind::Camera {
+                    fov_y: std::f32::consts::FRAC_PI_4,
+                    aspect: 16.0 / 9.0,
+                    near: 0.1,
+                    far: 1000.0,
+                }
+            } else if let Some(light) = world.get_component::<khora_data::ecs::Light>(entity_id) {
+                match &light.light_type {
+                    khora_core::renderer::light::LightType::Directional(_) => GizmoKind::DirectionalLight,
+                    khora_core::renderer::light::LightType::Point(p) => GizmoKind::PointLight { radius: p.range },
+                    khora_core::renderer::light::LightType::Spot(s) => GizmoKind::PointLight { radius: s.range },
+                }
+            } else if world.get_component::<khora_data::ecs::AudioSource>(entity_id).is_some() {
+                GizmoKind::Audio
+            } else if world
+                .get_component::<khora_data::ecs::HandleComponent<khora_core::renderer::api::scene::Mesh>>(entity_id)
+                .is_some()
+            {
+                GizmoKind::Mesh
+            } else {
+                GizmoKind::Empty
+            };
+
+            entries.push((global_transform, kind));
+        }
+
+        khora_core::ui::editor::generate_selection_gizmos(&entries, state.gizmo_mode)
+    }
+
     fn log_telemetry_summary(&self) {
         if let Some(telemetry) = &self.telemetry {
             log::info!("--- Telemetry Summary ---");
@@ -348,15 +398,17 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
         }
 
         // Register the editor camera (shared) and viewport handle.
-        let editor_camera_shared: Arc<Mutex<EditorCamera>> =
-            Arc::new(Mutex::new(EditorCamera::default()));
-        services.insert(editor_camera_shared.clone());
+        let editor_camera = Arc::new(Mutex::new(EditorCamera::default()));
+        services.insert(editor_camera.clone());
         services.insert(PRIMARY_VIEWPORT);
 
         let mut app_ctx = AppContext { services };
         let mut app = A::new();
         let mut game_world = GameWorld::new();
         app.setup(&mut game_world, &mut app_ctx);
+
+        // Capture EditorState if the application registered it during setup.
+        let editor_state = app_ctx.services.get::<Arc<Mutex<EditorState>>>().cloned();
 
         // Register and initialize default agents with their execution priorities.
         // Higher priority = executed first in the update loop
@@ -413,7 +465,8 @@ impl<A: Application> ApplicationHandler for EngineState<A> {
         self.app = Some(app);
         self.editor_overlay = editor_overlay;
         self.editor_shell = editor_shell;
-        self.editor_camera = editor_camera_shared;
+        self.editor_camera = editor_camera;
+        self.editor_state = editor_state;
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -490,6 +543,11 @@ impl<A: Application> EngineState<A> {
         log::info!("Engine: Registered {} default agents", dcc.agent_count());
     }
 
+    /// Sets the editor state for gizmo rendering and editor UI.
+    pub fn set_editor_state(&mut self, state: Arc<Mutex<EditorState>>) {
+        self.editor_state = Some(state);
+    }
+
     fn handle_frame(&mut self, _event_loop: &ActiveEventLoop) {
         let Some(renderer) = self.renderer.as_ref() else {
             return;
@@ -549,17 +607,19 @@ impl<A: Application> EngineState<A> {
             services.insert(device.clone());
         }
         services.insert(Arc::clone(renderer));
+        if let Some(es) = &self.editor_state {
+            services.insert(es.clone());
+        }
 
         // Update all agents in priority order (handled by DCC).
         if let (Some(dcc), Some(gw)) = (&self.dcc, self.game_world.as_mut()) {
             // Acquire the swapchain texture once for all agents this frame.
+            let mut editor_view_info = None;
             if let Ok(mut rs) = renderer.lock() {
                 if let Err(e) = rs.begin_frame() {
                     log::error!("begin_frame failed: {e:?}");
                     return;
                 }
-
-                let mut editor_view_info = None;
 
                 // Render the offscreen viewport (clear + grid).
                 if let Some(wgpu_rs) = rs.as_any_mut().downcast_mut::<WgpuRenderSystem>() {
@@ -591,6 +651,32 @@ impl<A: Application> EngineState<A> {
             gw.tick_maintenance();
             let mut context = gw.as_engine_context(services);
             dcc.execute_agents(&mut context);
+
+            // Render editor gizmos on top of the 3D scene.
+            if let Some(wgpu_rs) = renderer
+                .lock()
+                .ok()
+                .as_deref_mut()
+                .and_then(|rs| rs.as_any_mut().downcast_mut::<WgpuRenderSystem>())
+            {
+                if let Some(vi) = editor_view_info.as_ref() {
+                    if let Some(editor_state) = context.services.get::<Arc<Mutex<EditorState>>>() {
+                        if let Ok(state) = editor_state.lock() {
+                            if !state.selection.is_empty() {
+                                let gizmo_lines = EngineState::<A>::collect_gizmo_lines(
+                                    &*gw,
+                                    &state,
+                                    vi,
+                                    &self.editor_camera,
+                                );
+                                if let Err(e) = wgpu_rs.render_gizmos(vi, &gizmo_lines) {
+                                    log::warn!("gizmo render failed: {e:?}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             // Render the editor overlay on top of the 3D scene.
             if let (Some(overlay), Some(s)) = (&mut self.editor_overlay, screen) {
@@ -644,6 +730,7 @@ impl Engine {
             editor_overlay: None,
             editor_shell: None,
             editor_camera: Arc::new(Mutex::new(EditorCamera::default())),
+            editor_state: None,
         };
 
         event_loop.run_app(&mut app_state)?;

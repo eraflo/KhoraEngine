@@ -39,7 +39,6 @@ pub mod service_registry;
 pub mod telemetry;
 pub mod ui;
 pub mod utils;
-pub mod vfs;
 
 pub use context::EngineContext;
 pub use service_registry::ServiceRegistry;

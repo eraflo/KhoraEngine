@@ -84,31 +84,8 @@ pub fn create_project(name: &str, parent: &Path, engine_version: &str) -> Result
 
     std::fs::write(root.join("project.json"), json).context("Failed to write project.json")?;
 
-    // Write a default scene descriptor so the editor starts with Camera + Light.
-    let default_scene = serde_json::json!({
-        "name": "Default Scene",
-        "entities": [
-            {
-                "name": "Main Camera",
-                "type": "Camera",
-                "position": [0.0, 5.0, 10.0]
-            },
-            {
-                "name": "Directional Light",
-                "type": "Light",
-                "position": [0.0, 10.0, 0.0]
-            }
-        ]
-    });
-    let scene_json = serde_json::to_string_pretty(&default_scene)
-        .context("Failed to serialize default scene")?;
-    std::fs::write(
-        root.join("assets")
-            .join("scenes")
-            .join("default.scene.json"),
-        scene_json,
-    )
-    .context("Failed to write default scene")?;
+    // Note: The editor creates the default scene (assets/scenes/default.kscene)
+    // on first open if it doesn't exist. No need to create it here.
 
     Ok(root)
 }

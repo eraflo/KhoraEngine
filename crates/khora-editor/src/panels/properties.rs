@@ -411,6 +411,82 @@ impl EditorPanel for PropertiesPanel {
             });
         }
 
+        // ── Add Component ──────────────────────────────
+        ui.separator();
+        ui.heading("Add Component");
+
+        // Categorize available components
+        let mut core_components = Vec::new();
+        let mut physics_components = Vec::new();
+        let mut audio_components = Vec::new();
+        let mut ui_components = Vec::new();
+
+        for reg in inventory::iter::<khora_data::scene::ComponentRegistration> {
+            let already_present = inspected
+                .present_component_types
+                .contains(&reg.type_name.to_string());
+            if already_present {
+                continue;
+            }
+            let name = reg.type_name;
+            let category = match name {
+                "RigidBody"
+                | "Collider"
+                | "PhysicsMaterial"
+                | "KinematicCharacterController"
+                | "ActiveEvents"
+                | "CollisionPairs"
+                | "CollisionEvents"
+                | "PhysicsDebugData" => &mut physics_components,
+                "AudioSource" | "AudioListener" => &mut audio_components,
+                "UiNode" | "UiTransform" | "UiStyle" | "UiColor" | "UiImage" | "UiBorder"
+                | "UiInteraction" | "UiText" => &mut ui_components,
+                _ => &mut core_components,
+            };
+            category.push(name.to_string());
+        }
+
+        if !core_components.is_empty() {
+            ui.menu_button("\u{2B50} Core", &mut |ui| {
+                for comp_name in &core_components {
+                    if ui.button(comp_name.as_str()) {
+                        state.pending_add_component = Some((entity, comp_name.clone()));
+                        ui.close_menu();
+                    }
+                }
+            });
+        }
+        if !physics_components.is_empty() {
+            ui.menu_button("\u{1F533} Physics", &mut |ui| {
+                for comp_name in &physics_components {
+                    if ui.button(comp_name.as_str()) {
+                        state.pending_add_component = Some((entity, comp_name.clone()));
+                        ui.close_menu();
+                    }
+                }
+            });
+        }
+        if !audio_components.is_empty() {
+            ui.menu_button("\u{1F50A} Audio", &mut |ui| {
+                for comp_name in &audio_components {
+                    if ui.button(comp_name.as_str()) {
+                        state.pending_add_component = Some((entity, comp_name.clone()));
+                        ui.close_menu();
+                    }
+                }
+            });
+        }
+        if !ui_components.is_empty() {
+            ui.menu_button("\u{1F4CB} UI", &mut |ui| {
+                for comp_name in &ui_components {
+                    if ui.button(comp_name.as_str()) {
+                        state.pending_add_component = Some((entity, comp_name.clone()));
+                        ui.close_menu();
+                    }
+                }
+            });
+        }
+
         for edit in edits {
             state.push_edit(edit);
         }

@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Pack-based asset loader for release mode.
+//!
+//! Reads assets from a `.pack` archive file by seeking to the recorded offset.
+
 use anyhow::{bail, Context, Result};
 use khora_core::asset::AssetSource;
 use std::{
@@ -19,23 +23,25 @@ use std::{
     io::{Read, Seek, SeekFrom},
 };
 
-/// A "Lane" responsible for the I/O task of reading raw asset data from a `data.pack` file.
+use super::AssetIo;
+
+/// Pack-based asset loader for release mode.
 ///
-/// This struct encapsulates the low-level logic of seeking to a specific
-/// location in the pack file and reading the correct number of bytes.
-pub struct PackLoadingLane {
-    /// An open file handle to the `data.pack` file.
+/// Reads assets from a `.pack` archive file by seeking to the recorded offset
+/// and reading the specified number of bytes.
+pub struct PackLoader {
     pack_file: File,
 }
 
-impl PackLoadingLane {
-    /// Creates a new lane with a handle to the pack file.
+impl PackLoader {
+    /// Creates a new `PackLoader` with the given pack file handle.
     pub fn new(pack_file: File) -> Self {
         Self { pack_file }
     }
+}
 
-    /// Reads the raw bytes of an asset from the pack file based on its location.
-    pub fn load_asset_bytes(&mut self, source: &AssetSource) -> Result<Vec<u8>> {
+impl AssetIo for PackLoader {
+    fn load_bytes(&mut self, source: &AssetSource) -> Result<Vec<u8>> {
         match source {
             AssetSource::Packed { offset, size } => {
                 let mut buffer = vec![0; *size as usize];
@@ -48,7 +54,7 @@ impl PackLoadingLane {
                 Ok(buffer)
             }
             AssetSource::Path(_) => {
-                bail!("PackLoadingLane cannot load assets from a Path source.")
+                bail!("PackLoader does not support Path sources")
             }
         }
     }
