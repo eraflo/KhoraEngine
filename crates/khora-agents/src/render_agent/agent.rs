@@ -17,7 +17,7 @@
 use super::mesh_preparation::MeshPreparationSystem;
 use khora_core::lane::{ClearColor, ColorTarget, DepthTarget};
 use khora_core::{
-    agent::Agent,
+    agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming},
     control::gorna::{
         AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyOption,
     },
@@ -45,10 +45,13 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::Sender;
 use khora_core::control::gorna::{AgentId, StrategyId};
+use khora_core::renderer::api::core::StageHandle;
 use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::telemetry::event::TelemetryEvent;
 use khora_core::telemetry::monitoring::GpuReport;
+
+use crate::shadow_agent::ShadowDone;
 
 /// Threshold for switching to Forward+ rendering.
 /// When the scene has more than this many lights, Forward+ is preferred.
@@ -172,7 +175,10 @@ impl Agent for RenderAgent {
             });
         }
 
-        NegotiationResponse { strategies }
+        NegotiationResponse {
+            strategies,
+            timing_adjustment: None,
+        }
     }
 
     fn apply_budget(&mut self, budget: ResourceBudget) {
@@ -281,6 +287,24 @@ impl Agent for RenderAgent {
 
                 let frame_start = Instant::now();
 
+                // Wait for shadow pass completion if FrameContext is available.
+                // ShadowAgent signals StageHandle<ShadowDone> after its shadow pass.
+                // We need the shadow atlas populated before the main render pass.
+                if let Some(fctx) = context
+                    .services
+                    .get::<Arc<khora_core::renderer::api::core::FrameContext>>()
+                {
+                    if let Some(shadow_stage) =
+                        fctx.get::<StageHandle<ShadowDone>>()
+                    {
+                        let shadow_stage = shadow_stage.clone();
+                        let rt = fctx.tokio_handle().clone();
+                        rt.block_on(async move {
+                            shadow_stage.wait().await;
+                        });
+                    }
+                }
+
                 match rs.render_with_encoder(
                     clear_color,
                     Box::new(|encoder, render_ctx| {
@@ -380,6 +404,17 @@ impl Agent for RenderAgent {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn execution_timing(&self) -> ExecutionTiming {
+        ExecutionTiming {
+            allowed_phases: vec![ExecutionPhase::OBSERVE, ExecutionPhase::OUTPUT],
+            default_phase: ExecutionPhase::OUTPUT,
+            priority: 1.0,
+            importance: AgentImportance::Critical,
+            fixed_timestep: None,
+            dependencies: Vec::new(),
+        }
     }
 }
 
@@ -738,6 +773,7 @@ impl Default for RenderAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use khora_core::agent::{EngineMode, ExecutionTiming};
     use khora_core::control::gorna::{NegotiationRequest, ResourceConstraints, StrategyId};
     use khora_core::math::{Mat4, Vec3};
     use khora_core::renderer::light::{LightType, PointLight};
@@ -787,6 +823,8 @@ mod tests {
             target_latency: Duration::from_millis(16),
             priority_weight: 1.0,
             constraints: ResourceConstraints::default(),
+            current_mode: EngineMode::Playing,
+            agent_timing: ExecutionTiming::default(),
         };
         let res = agent.negotiate(req_unconstrained);
         assert_eq!(res.strategies.len(), 3);
@@ -799,6 +837,8 @@ mod tests {
                 max_vram_bytes: Some(10),
                 ..Default::default()
             },
+            current_mode: EngineMode::Playing,
+            agent_timing: ExecutionTiming::default(),
         };
         let res2 = agent.negotiate(req_constrained);
         assert_eq!(res2.strategies.len(), 1);

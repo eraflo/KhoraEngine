@@ -21,4 +21,5 @@
 pub mod audio_agent;
 pub mod physics_agent;
 pub mod render_agent;
+pub mod shadow_agent;
 pub mod ui_agent;

@@ -19,7 +19,7 @@
 
 use khora_agents::render_agent::{RenderAgent, RenderingStrategy};
 use khora_core::{
-    agent::Agent,
+    agent::{Agent, EngineMode, ExecutionTiming},
     control::gorna::{
         AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId,
     },
@@ -33,6 +33,8 @@ fn default_request() -> NegotiationRequest {
         target_latency: Duration::from_millis(16),
         priority_weight: 1.0,
         constraints: ResourceConstraints::default(),
+        current_mode: EngineMode::Playing,
+        agent_timing: ExecutionTiming::default(),
     }
 }
 
@@ -127,6 +129,8 @@ fn test_negotiate_respects_vram_constraint() {
             max_memory_bytes: None,
             must_run: false,
         },
+        current_mode: EngineMode::Playing,
+        agent_timing: ExecutionTiming::default(),
     };
 
     let response = agent.negotiate(request);

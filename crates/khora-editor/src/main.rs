@@ -14,6 +14,10 @@
 
 //! Khora Engine Editor application entry point.
 
+mod mod_agents;
+mod mod_gizmo;
+mod mod_mode;
+mod mod_telemetry;
 mod ops;
 mod panels;
 mod scene_io;
@@ -22,11 +26,17 @@ mod util;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use khora_core::ui::editor::*;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::math::{Quaternion, Vec3};
 use khora_sdk::prelude::*;
-use khora_sdk::{AppContext, Application, Engine, GameWorld, InputEvent, PRIMARY_VIEWPORT};
+use khora_sdk::WgpuRenderSystem;
+use khora_sdk::RenderSystem;
+use khora_sdk::run_winit;
+use khora_sdk::winit_adapters::WinitWindowProvider;
+use khora_sdk::{AgentProvider, EngineApp, GameWorld, InputEvent, ServiceRegistry};
+use khora_sdk::{CommandHistory, DccService, PlayMode};
+use khora_sdk::{EditorState, EditorCamera, EditorLogCapture, LogEntry, EditorShell, GizmoMode, PanelLocation};
+use khora_sdk::editor_ui::viewport_texture::ViewportTextureHandle;
 
 use panels::{AssetBrowserPanel, ConsolePanel, PropertiesPanel, SceneTreePanel, ViewportPanel};
 
@@ -231,7 +241,11 @@ impl EditorApp {
     }
 }
 
-impl Application for EditorApp {
+// ─────────────────────────────────────────────────────────────────────
+// EngineApp implementation
+// ─────────────────────────────────────────────────────────────────────
+
+impl EngineApp for EditorApp {
     fn window_config() -> WindowConfig {
         WindowConfig {
             title: "Khora Engine Editor".to_owned(),
@@ -263,21 +277,19 @@ impl Application for EditorApp {
         }
     }
 
-    fn setup(&mut self, world: &mut GameWorld, ctx: &mut AppContext) {
-        // Cache services from the AppContext.
-        if let Some(camera) = ctx.services.get::<Arc<Mutex<EditorCamera>>>().cloned() {
+    fn setup(&mut self, world: &mut GameWorld, services: &ServiceRegistry) {
+        // Cache services.
+        if let Some(camera) = services.get::<std::sync::Arc<std::sync::Mutex<EditorCamera>>>().cloned() {
             self.camera = camera;
         }
 
-        let viewport_handle = ctx
-            .services
+        let viewport_handle = services
             .get::<ViewportTextureHandle>()
             .copied()
-            .unwrap_or(PRIMARY_VIEWPORT);
+            .unwrap_or(khora_sdk::PRIMARY_VIEWPORT);
 
-        if let Some(shell_ref) = ctx
-            .services
-            .get::<Arc<Mutex<Box<dyn EditorShell>>>>()
+        if let Some(shell_ref) = services
+            .get::<std::sync::Arc<std::sync::Mutex<Box<dyn EditorShell>>>>()
             .cloned()
         {
             if let Ok(mut shell) = shell_ref.lock() {
@@ -316,9 +328,6 @@ impl Application for EditorApp {
         } else {
             log::warn!("EditorApp: no EditorShell found in ServiceRegistry.");
         }
-
-        // Register EditorState in services so the SDK can access it for gizmo rendering.
-        ctx.services.insert(self.editor_state.clone());
         if let Some(Some(project_path)) = PROJECT_PATH.get() {
             let path = std::path::PathBuf::from(project_path);
             if path.exists() {
@@ -539,6 +548,35 @@ impl Application for EditorApp {
             }
         }
     }
+
+    fn on_shutdown(&mut self) {
+        log::info!("EditorApp: Shutting down");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// AgentProvider implementation
+// ─────────────────────────────────────────────────────────────────────
+
+impl AgentProvider for EditorApp {
+    fn register_agents(&self, dcc: &DccService, services: &mut ServiceRegistry) {
+        // Insert EditorState and EditorCamera into services so agents can access them.
+        services.insert(self.editor_state.clone());
+        services.insert(self.camera.clone());
+
+        // Register editor-specific agents with mode filtering
+        mod_agents::register_editor_agents(dcc);
+    }
+}
+
+impl khora_sdk::PhaseProvider for EditorApp {
+    fn custom_phases(&self) -> Vec<khora_sdk::ExecutionPhase> {
+        Vec::new()
+    }
+
+    fn removed_phases(&self) -> Vec<khora_sdk::ExecutionPhase> {
+        Vec::new()
+    }
 }
 
 fn load_logo_icon() -> WindowIcon {
@@ -572,6 +610,11 @@ fn main() -> anyhow::Result<()> {
         .map(|w| w[1].clone());
     let _ = PROJECT_PATH.set(project);
 
-    Engine::run::<EditorApp>()?;
+    run_winit::<WinitWindowProvider, EditorApp>(|window, services| {
+        let mut rs = WgpuRenderSystem::new();
+        rs.init(window).expect("renderer init failed");
+        let rs: Box<dyn RenderSystem> = Box::new(rs);
+        services.insert(Arc::new(Mutex::new(rs)));
+    })?;
     Ok(())
 }

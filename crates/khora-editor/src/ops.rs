@@ -14,11 +14,10 @@
 
 //! Pure ECS operations used by the editor application.
 
-use khora_core::renderer::api::scene::mesh::Mesh;
-use khora_core::ui::editor::*;
-use khora_data::ecs::HandleComponent;
+use khora_sdk::editor_ui::*;
+use khora_sdk::khora_data::ecs::HandleComponent;
 use khora_sdk::prelude::ecs::*;
-use khora_sdk::GameWorld;
+use khora_sdk::{GameWorld, Mesh};
 
 /// Extracts a scene tree snapshot from the ECS world into editor state.
 pub fn extract_scene_tree(world: &GameWorld, state: &mut EditorState) {
@@ -348,7 +347,7 @@ pub fn extract_inspected(world: &GameWorld, state: &mut EditorState) {
 
     // Collect present component types from inventory registrations.
     let mut present_component_types = Vec::new();
-    for reg in inventory::iter::<khora_data::scene::ComponentRegistration> {
+    for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
         if (reg.serialize_recipe)(world.inner_world(), entity).is_some() {
             present_component_types.push(reg.type_name.to_string());
         }
@@ -480,7 +479,7 @@ pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
 
 /// Adds a new component to an existing entity by dispatching through the inventory registry.
 pub fn add_component_to_entity(world: &mut GameWorld, entity: EntityId, type_name: &str) {
-    for reg in inventory::iter::<khora_data::scene::ComponentRegistration> {
+    for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
         if reg.type_name == type_name {
             if let Err(e) = (reg.create_default)(world.inner_world_mut(), entity) {
                 log::error!("Failed to add component {}: {}", type_name, e);

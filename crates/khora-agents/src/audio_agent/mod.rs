@@ -14,15 +14,17 @@
 
 //! The Intelligent Subsystem Agent responsible for managing the audio system.
 
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_core::agent::Agent;
+use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
 use khora_core::audio::device::AudioDevice;
 use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
 };
 use khora_core::lane::{LaneContext, LaneRegistry};
+use khora_core::EngineContext;
 use khora_lanes::audio_lane::SpatialMixingLane;
 
 /// The ISA that orchestrates the audio subsystem.
@@ -30,8 +32,8 @@ use khora_lanes::audio_lane::SpatialMixingLane;
 /// Chooses audio lanes, negotiates resource budgets with GORNA, and dispatches
 /// `Lane::execute()` for spatial mixing each frame.
 pub struct AudioAgent {
-    /// The audio device backend.
-    device: Option<Box<dyn AudioDevice>>,
+    /// The audio device backend, obtained from the service registry.
+    device: Option<Arc<Mutex<Box<dyn AudioDevice>>>>,
     /// Audio processing lanes.
     lanes: LaneRegistry,
     /// Current GORNA strategy.
@@ -43,13 +45,14 @@ pub struct AudioAgent {
 }
 
 impl AudioAgent {
-    /// Creates a new `AudioAgent` with a given audio device.
-    pub fn new(device: Box<dyn AudioDevice>) -> Self {
+    /// Creates a new `AudioAgent`. The audio device must be inserted into the
+    /// service registry as `Arc<Mutex<Box<dyn AudioDevice>>>` before bootstrap.
+    pub fn new() -> Self {
         let mut lanes = LaneRegistry::new();
         lanes.register(Box::new(SpatialMixingLane::new()));
 
         Self {
-            device: Some(device),
+            device: None,
             lanes,
             current_strategy: StrategyId::Balanced,
             max_sources_per_frame: 32,
@@ -82,6 +85,7 @@ impl Agent for AudioAgent {
                     estimated_vram: 0,
                 },
             ],
+            timing_adjustment: None,
         }
     }
 
@@ -97,7 +101,15 @@ impl Agent for AudioAgent {
         };
     }
 
-    fn on_initialize(&mut self, _context: &mut khora_core::EngineContext<'_>) {
+    fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
+        // Fetch the audio device from the service registry.
+        if self.device.is_none() {
+            self.device = context
+                .services
+                .get::<Arc<Mutex<Box<dyn AudioDevice>>>>()
+                .cloned();
+        }
+
         // Initialize audio lanes. The SpatialMixingLane doesn't need
         // GPU resources — it runs on the audio callback thread.
         let mut init_ctx = LaneContext::new();
@@ -114,7 +126,15 @@ impl Agent for AudioAgent {
         log::info!("AudioAgent: Initialized with {} lanes", self.lanes.len());
     }
 
-    fn execute(&mut self, _context: &mut khora_core::EngineContext<'_>) {
+    fn execute(&mut self, context: &mut EngineContext<'_>) {
+        // Lazily fetch device from services if not yet available.
+        if self.device.is_none() {
+            self.device = context
+                .services
+                .get::<Arc<Mutex<Box<dyn AudioDevice>>>>()
+                .cloned();
+        }
+
         // Audio mixing happens in real-time on the audio callback thread.
         // The SpatialMixingLane::execute() is called directly from the
         // audio callback with AudioStreamInfo + AudioOutputSlot.
@@ -142,5 +162,16 @@ impl Agent for AudioAgent {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn execution_timing(&self) -> ExecutionTiming {
+        ExecutionTiming {
+            allowed_phases: vec![ExecutionPhase::TRANSFORM],
+            default_phase: ExecutionPhase::TRANSFORM,
+            priority: 0.5,
+            importance: AgentImportance::Important,
+            fixed_timestep: None,
+            dependencies: Vec::new(),
+        }
     }
 }

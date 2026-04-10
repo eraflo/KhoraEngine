@@ -10,11 +10,6 @@ path = "src/main.rs"
 
 [dependencies]
 khora-sdk = { path = "../khora-sdk" }
-khora-core = { path = "../khora-core" }
-khora-data = { path = "../khora-data" }
-khora-lanes = { path = "../khora-lanes" }
-khora-agents = { path = "../khora-agents" }
-khora-io = { path = "../khora-io" }
 inventory = "0.3"
 log = "0.4"
 env_logger = "0.11"

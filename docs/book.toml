@@ -9,11 +9,13 @@ site-url = "/KhoraEngine/"
 default-theme = "ayu"
 preferred-dark-theme = "ayu"
 additional-css = ["theme/custom.css"]
+git-repository-url = "https://github.com/eraflo/KhoraEngine"
 
 [output.html.fold]
 enable = true
 level = 0
 
-[preprocessor.mermaid]
-command = "mdbook-mermaid"
-  
+# Mermaid diagrams render as code blocks. Install mdbook-mermaid for SVG rendering:
+# cargo install mdbook-mermaid && uncomment below
+# [preprocessor.mermaid]
+# command = "mdbook-mermaid"

@@ -14,10 +14,20 @@
 
 //! Traits for autonomous engine subsystems (Agents).
 
+pub mod dependency;
+pub mod execution_phase;
+pub mod mode;
+pub mod timing;
+
 use crate::control::gorna::AgentId;
 use crate::control::gorna::{AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget};
 use crate::EngineContext;
 use std::any::Any;
+
+pub use dependency::{AgentDependency, DependencyCondition, DependencyKind};
+pub use execution_phase::ExecutionPhase;
+pub use mode::EngineMode;
+pub use timing::{AgentImportance, ExecutionTiming};
 
 /// The foundational interface for an Intelligent Subsystem Agent (ISA).
 ///
@@ -65,6 +75,17 @@ pub trait Agent: Send + Sync {
     /// strategy, builds a [`LaneContext`](crate::lane::LaneContext), and dispatches
     /// [`Lane::execute()`](crate::lane::Lane::execute) for each lane that should run.
     fn execute(&mut self, context: &mut EngineContext<'_>);
+
+    /// Declares WHEN and HOW this agent should execute within the frame pipeline.
+    ///
+    /// The Scheduler uses this information to filter agents by phase, order them
+    /// by priority, and skip optional agents under budget pressure.
+    ///
+    /// Default implementation returns a timing that allows execution in all phases
+    /// with `Important` priority.
+    fn execution_timing(&self) -> ExecutionTiming {
+        ExecutionTiming::default()
+    }
 
     /// Allows downcasting to concrete agent types.
     fn as_any(&self) -> &dyn Any;

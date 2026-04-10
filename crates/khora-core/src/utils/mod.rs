@@ -18,5 +18,6 @@
 //! widely used across different engine crates but are not specific to any single
 //! domain like mathematics or rendering.
 
+pub mod any_map;
 pub mod bitflags;
 pub mod timer;

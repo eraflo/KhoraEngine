@@ -13,16 +13,31 @@
 // limitations under the License.
 
 use khora_agents::physics_agent::PhysicsAgent;
+use khora_core::agent::Agent;
 use khora_core::math::Vec3;
 use khora_core::physics::BodyType;
+use khora_core::service_registry::ServiceRegistry;
+use khora_core::context::EngineContext;
 use khora_data::ecs::{RigidBody, Transform, World};
 use khora_infra::physics::rapier::RapierPhysicsWorld;
+use std::sync::{Arc, Mutex};
 
 #[test]
 fn test_physics_gravity_influence() {
     let mut world = World::new();
-    let provider = Box::new(RapierPhysicsWorld::default());
-    let mut agent = PhysicsAgent::new(provider);
+    let provider: Arc<Mutex<Box<dyn khora_core::physics::PhysicsProvider>>> =
+        Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
+
+    let mut services = ServiceRegistry::new();
+    services.insert(Arc::clone(&provider));
+    let services_arc = Arc::new(services);
+    let mut ctx = EngineContext {
+        world: Some(&mut world as &mut dyn std::any::Any),
+        services: Arc::clone(&services_arc),
+    };
+
+    let mut agent = PhysicsAgent::new();
+    agent.on_initialize(&mut ctx);
 
     // Spawn a dynamic body at (0, 10, 0)
     let entity = world.spawn((
@@ -51,8 +66,19 @@ fn test_physics_gravity_influence() {
 #[test]
 fn test_physics_raycast() {
     let mut world = World::new();
-    let provider = Box::new(RapierPhysicsWorld::default());
-    let mut agent = PhysicsAgent::new(provider);
+    let provider: Arc<Mutex<Box<dyn khora_core::physics::PhysicsProvider>>> =
+        Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
+
+    let mut services = ServiceRegistry::new();
+    services.insert(Arc::clone(&provider));
+    let services_arc = Arc::new(services);
+    let mut ctx = EngineContext {
+        world: Some(&mut world as &mut dyn std::any::Any),
+        services: Arc::clone(&services_arc),
+    };
+
+    let mut agent = PhysicsAgent::new();
+    agent.on_initialize(&mut ctx);
 
     // Add a static box at (0, 0, 0)
     world.spawn((
@@ -81,8 +107,19 @@ fn test_physics_raycast() {
 #[test]
 fn test_physics_kcc_grounding() {
     let mut world = World::new();
-    let provider = Box::new(RapierPhysicsWorld::default());
-    let mut agent = PhysicsAgent::new(provider);
+    let provider: Arc<Mutex<Box<dyn khora_core::physics::PhysicsProvider>>> =
+        Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
+
+    let mut services = ServiceRegistry::new();
+    services.insert(Arc::clone(&provider));
+    let services_arc = Arc::new(services);
+    let mut ctx = EngineContext {
+        world: Some(&mut world as &mut dyn std::any::Any),
+        services: Arc::clone(&services_arc),
+    };
+
+    let mut agent = PhysicsAgent::new();
+    agent.on_initialize(&mut ctx);
 
     // 1. Static ground
     world.spawn((

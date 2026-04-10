@@ -19,6 +19,7 @@ anyhow = "1.0"
 
 # Async support
 async-trait = "0.1"
+tokio.workspace = true
 
 # Serialization
 bincode = { version = "2.0.1", features = ["serde"] }

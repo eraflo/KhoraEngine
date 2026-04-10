@@ -28,6 +28,7 @@ use khora_data::ecs::{
     QueryMut, Transform, World, WorldQuery,
 };
 use std::any::Any;
+use std::sync::Arc;
 
 /// A high-level facade over the internal ECS `World` and `Assets` registry.
 ///
@@ -57,9 +58,18 @@ pub struct GameWorld {
 
 impl GameWorld {
     /// Creates a new `GameWorld` with an empty world and asset registry.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             world: World::new(),
+            maintenance: EcsMaintenance::new(),
+        }
+    }
+
+    /// Creates a `GameWorld` from an existing ECS `World`.
+    /// Used for restoring a snapshot in play mode.
+    pub fn from_world(world: World) -> Self {
+        Self {
+            world,
             maintenance: EcsMaintenance::new(),
         }
     }
@@ -332,7 +342,7 @@ impl GameWorld {
     /// which agents downcast internally. Users never call this.
     pub(crate) fn as_engine_context(
         &mut self,
-        services: khora_core::ServiceRegistry,
+        services: Arc<khora_core::ServiceRegistry>,
     ) -> EngineContext<'_> {
         EngineContext {
             world: Some(&mut self.world as &mut dyn Any),

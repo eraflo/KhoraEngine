@@ -14,7 +14,7 @@
 
 //! Utility helpers for the editor application.
 
-use khora_core::ui::editor::*;
+use khora_sdk::editor_ui::*;
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::prelude::math::{Quaternion, Vec3};
 

@@ -16,7 +16,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_core::ui::editor::*;
+use khora_sdk::editor_ui::*;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::math::{LinearRgba, Quaternion};
 use khora_sdk::prelude::*;
@@ -421,7 +421,7 @@ impl EditorPanel for PropertiesPanel {
         let mut audio_components = Vec::new();
         let mut ui_components = Vec::new();
 
-        for reg in inventory::iter::<khora_data::scene::ComponentRegistration> {
+        for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
             let already_present = inspected
                 .present_component_types
                 .contains(&reg.type_name.to_string());

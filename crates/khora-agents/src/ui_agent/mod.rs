@@ -14,7 +14,7 @@
 
 //! Managing UI Layouts and Interactions using Taffy.
 
-use khora_core::agent::Agent;
+use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
 use khora_core::asset::font::Font;
 use khora_core::asset::AssetUUID;
 use khora_core::context::EngineContext;
@@ -99,7 +99,10 @@ impl Agent for UiAgent {
             estimated_vram: 1024 * 1024,
         }];
 
-        NegotiationResponse { strategies }
+        NegotiationResponse {
+            strategies,
+            timing_adjustment: None,
+        }
     }
 
     fn apply_budget(&mut self, _budget: ResourceBudget) {}
@@ -319,5 +322,16 @@ impl Agent for UiAgent {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+
+    fn execution_timing(&self) -> ExecutionTiming {
+        ExecutionTiming {
+            allowed_phases: vec![ExecutionPhase::OBSERVE, ExecutionPhase::OUTPUT],
+            default_phase: ExecutionPhase::OUTPUT,
+            priority: 0.8,
+            importance: AgentImportance::Important,
+            fixed_timestep: None,
+            dependencies: Vec::new(),
+        }
     }
 }

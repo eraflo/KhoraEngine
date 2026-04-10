@@ -1,24 +1,24 @@
 # Summary
 
-[Introduction](./01_project_presentation.md)
+- [Introduction](./01_introduction.md)
 
-# I. Core Vision
-- [Core Concepts (SAA)](./02_core_concepts.md)
-- [The SAA-CLAD Symbiosis](./03_saa_clad_symbiosis.md)
+# 🏗️ Architecture
+- [SAA — Philosophy](./02_saa_philosophy.md)
+- [CLAD — Organization](./03_clad_organization.md)
+- [Lifecycle](./04_lifecycle.md)
+- [Crate Map](./05_crate_map.md)
 
-# II. Architecture
-- [Technical Architecture (CLAD)](./04_technical_architecture.md)
-- [Project and Crate Structure](./05_project_structure.md)
-- [ECS Architecture (CRPECS)](./06_ecs_architecture.md)
-- [Asset Architecture: The Strategic System](./07_asset_architecture_vfs.md)
-- [Serialization Architecture: SAA-Serialize](./08_serialization_architecture.md)
-- [DCC Architecture](./11_dcc_architecture.md)
-- [GORNA Protocol Specification](./12_gorna_protocol.md)
+# ⚙️ Systems
+- [ECS — CRPECS](./06_ecs.md)
+- [Agents & Scheduler](./07_agents_scheduler.md)
+- [Lanes — Pipelines](./08_lanes.md)
+- [GORNA — Negotiation](./09_gorna.md)
+- [I/O — Assets & Serialization](./10_io.md)
 
-# III. Development
-- [Roadmap & Issue Tracker](./09_roadmap_and_issues.md)
-- [Rendering Architecture](./10_rendering_strategies_research.md)
-- [The Khora SDK Engine API](./13_khora_sdk.md)
+# 🎮 SDK
+- [Developer Guide](./11_sdk_guide.md)
+- [Play Mode](./12_play_mode.md)
 
-# IV. API Reference
-- [Complete Crate Reference](./API_REFERENCE.md)
+# 📚 Reference
+- [API Reference](./api_reference.md)
+- [Roadmap](./roadmap.md)

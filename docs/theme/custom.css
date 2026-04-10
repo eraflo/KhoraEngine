@@ -1,135 +1,300 @@
 /* ============================================================
    Khora Engine — Custom mdBook Theme
+   Modern, dark, branded documentation style
    ============================================================ */
 
-/* ---------- Root Variables (Ayu Dark overrides) ---------- */
+/* ---------- Root Variables ---------- */
 :root {
     --khora-accent: #e0a526;
-    --khora-accent-dim: #c48d1a;
-    --khora-bg-dark: #0d1117;
-    --khora-bg-sidebar: #0c0e13;
-    --khora-bg-code: #161b22;
+    --khora-accent-glow: #f5c842;
+    --khora-accent-dim: #a07a1a;
+    --khora-purple: #7c3aed;
+    --khora-cyan: #06b6d4;
+    --khora-green: #10b981;
+    --khora-red: #ef4444;
+    --khora-orange: #f97316;
+
+    --khora-bg-deep: #06080d;
+    --khora-bg-dark: #0a0e17;
+    --khora-bg-sidebar: #080c14;
+    --khora-bg-card: #0f1525;
+    --khora-bg-code: #111827;
+    --khora-bg-hover: rgba(224, 165, 38, 0.06);
+
     --khora-text: #c9d1d9;
-    --khora-text-dim: #8b949e;
-    --khora-border: #21262d;
-    --khora-link: #58a6ff;
+    --khora-text-dim: #6b7280;
+    --khora-text-bright: #f0f6fc;
     --khora-heading: #f0f6fc;
+
+    --khora-border: #1e293b;
+    --khora-border-accent: rgba(224, 165, 38, 0.3);
+    --khora-link: #38bdf8;
 }
 
-/* ---------- Global Overrides ---------- */
-.ayu .content main {
-    max-width: 900px;
-}
-
+/* ---------- Global ---------- */
 .ayu {
-    --bg: var(--khora-bg-dark);
+    --bg: var(--khora-bg-deep);
     --fg: var(--khora-text);
     --sidebar-bg: var(--khora-bg-sidebar);
     --sidebar-fg: var(--khora-text-dim);
     --sidebar-active: var(--khora-accent);
     --links: var(--khora-link);
+    --searchbar-shadow: none;
+    --searchbar-bg: var(--khora-bg-card);
+    --searchbar-fg: var(--khora-text);
+    --searchbar-border: var(--khora-border);
+    --table-header-bg: var(--khora-bg-card);
+    --table-alternate-bg: rgba(255, 255, 255, 0.01);
+    --blockquote-border: var(--khora-accent);
+    --blockquote-bg: rgba(224, 165, 38, 0.04);
+    --theme-popup-bg: var(--khora-bg-card);
+    --theme-popup-border: var(--khora-border);
+    --theme-hover: var(--khora-bg-hover);
+    --theme-active: var(--khora-accent-dim);
 }
 
-/* ---------- Sidebar ---------- */
-.sidebar .sidebar-scrollbox {
-    padding-top: 16px;
+.content main {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 24px;
 }
 
-.sidebar .sidebar-scrollbox::before {
-    content: "";
+.content {
+    background: var(--khora-bg-deep);
+}
+
+/* ---------- Hero Section (Introduction page) ---------- */
+.hero-banner {
+    text-align: center;
+    padding: 3rem 1rem 2rem;
+    margin-bottom: 2rem;
+    background: linear-gradient(180deg, rgba(224, 165, 38, 0.06) 0%, transparent 100%);
+    border-radius: 16px;
+    border: 1px solid var(--khora-border-accent);
+}
+
+.hero-banner h1 {
+    font-size: 2.8em;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--khora-accent) 0%, var(--khora-accent-glow) 50%, var(--khora-purple) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    border-bottom: none;
+    margin-bottom: 0.5rem;
+}
+
+.hero-banner .subtitle {
+    font-size: 1.2em;
+    color: var(--khora-text-dim);
+    font-weight: 400;
+}
+
+/* ---------- Section Cards ---------- */
+.section-card {
+    background: var(--khora-bg-card);
+    border: 1px solid var(--khora-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.section-card:hover {
+    border-color: var(--khora-border-accent);
+    box-shadow: 0 0 20px rgba(224, 165, 38, 0.05);
+}
+
+/* ---------- Status Badges ---------- */
+.badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 9999px;
+    font-size: 0.75em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    vertical-align: middle;
+    margin-left: 8px;
+}
+
+.badge-stable {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--khora-green);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.badge-wip {
+    background: rgba(224, 165, 38, 0.15);
+    color: var(--khora-accent);
+    border: 1px solid rgba(224, 165, 38, 0.3);
+}
+
+.badge-experimental {
+    background: rgba(124, 58, 237, 0.15);
+    color: var(--khora-purple);
+    border: 1px solid rgba(124, 58, 237, 0.3);
+}
+
+/* ---------- Callouts / Admonitions ---------- */
+.callout {
+    padding: 14px 18px;
+    margin: 1.2em 0;
+    border-radius: 8px;
+    border-left: 4px solid;
+    font-size: 0.95em;
+}
+
+.callout-info {
+    background: rgba(56, 189, 248, 0.06);
+    border-color: var(--khora-cyan);
+}
+
+.callout-info::before {
+    content: "ℹ️ Info";
     display: block;
-    width: 64px;
-    height: 64px;
-    margin: 0 auto 12px auto;
-    background-image: url("../logos/logo_round.png");
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
+    font-weight: 700;
+    color: var(--khora-cyan);
+    margin-bottom: 4px;
 }
 
-.sidebar .sidebar-scrollbox .chapter li a {
-    transition: color 0.15s ease, border-left-color 0.15s ease;
+.callout-warning {
+    background: rgba(249, 115, 22, 0.06);
+    border-color: var(--khora-orange);
 }
 
-.sidebar .sidebar-scrollbox .chapter li a:hover,
-.sidebar .sidebar-scrollbox .chapter li a.active {
-    color: var(--khora-accent) !important;
+.callout-warning::before {
+    content: "⚠️ Warning";
+    display: block;
+    font-weight: 700;
+    color: var(--khora-orange);
+    margin-bottom: 4px;
+}
+
+.callout-tip {
+    background: rgba(16, 185, 129, 0.06);
+    border-color: var(--khora-green);
+}
+
+.callout-tip::before {
+    content: "💡 Tip";
+    display: block;
+    font-weight: 700;
+    color: var(--khora-green);
+    margin-bottom: 4px;
+}
+
+.callout-danger {
+    background: rgba(239, 68, 68, 0.06);
+    border-color: var(--khora-red);
+}
+
+.callout-danger::before {
+    content: "🚨 Danger";
+    display: block;
+    font-weight: 700;
+    color: var(--khora-red);
+    margin-bottom: 4px;
 }
 
 /* ---------- Headings ---------- */
-.content main h1,
-.content main h2,
-.content main h3,
-.content main h4 {
-    color: var(--khora-heading);
-    border-bottom: none;
-}
-
 .content main h1 {
+    color: var(--khora-heading);
     font-size: 2em;
+    font-weight: 800;
     margin-top: 0;
-    padding-bottom: 0.3em;
+    padding-bottom: 0.4em;
     border-bottom: 2px solid var(--khora-accent);
 }
 
 .content main h2 {
+    color: var(--khora-heading);
     font-size: 1.5em;
-    margin-top: 2em;
-    padding-bottom: 0.25em;
+    font-weight: 700;
+    margin-top: 2.5em;
+    padding-bottom: 0.3em;
     border-bottom: 1px solid var(--khora-border);
 }
 
 .content main h3 {
-    font-size: 1.2em;
-    margin-top: 1.6em;
+    color: var(--khora-heading);
+    font-size: 1.25em;
+    font-weight: 600;
+    margin-top: 2em;
 }
 
-/* ---------- Code blocks ---------- */
+.content main h4 {
+    color: var(--khora-text);
+    font-size: 1.1em;
+    font-weight: 600;
+    margin-top: 1.5em;
+}
+
+/* ---------- Code ---------- */
 .content main pre {
     background-color: var(--khora-bg-code) !important;
     border: 1px solid var(--khora-border);
-    border-radius: 8px;
-    padding: 16px;
+    border-radius: 10px;
+    padding: 18px 20px;
+    overflow-x: auto;
+    transition: border-color 0.2s ease;
+}
+
+.content main pre:hover {
+    border-color: var(--khora-border-accent);
 }
 
 .content main code {
-    border-radius: 4px;
-    padding: 0.15em 0.35em;
-    font-size: 0.9em;
+    border-radius: 5px;
+    padding: 0.15em 0.4em;
+    font-size: 0.88em;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 }
 
 /* ---------- Tables ---------- */
 .content main table {
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0;
     width: 100%;
-    margin: 1em 0;
+    margin: 1.5em 0;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--khora-border);
 }
 
 .content main table th {
-    background-color: rgba(224, 165, 38, 0.08);
+    background: linear-gradient(180deg, rgba(224, 165, 38, 0.1) 0%, rgba(224, 165, 38, 0.04) 100%);
     color: var(--khora-accent);
-    font-weight: 600;
+    font-weight: 700;
     text-align: left;
-    padding: 10px 14px;
+    padding: 12px 16px;
     border-bottom: 2px solid var(--khora-accent-dim);
+    font-size: 0.9em;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 
 .content main table td {
-    padding: 8px 14px;
+    padding: 10px 16px;
     border-bottom: 1px solid var(--khora-border);
+    font-size: 0.92em;
+}
+
+.content main table tr:last-child td {
+    border-bottom: none;
 }
 
 .content main table tr:hover td {
-    background-color: rgba(255, 255, 255, 0.02);
+    background: var(--khora-bg-hover);
 }
 
-/* ---------- Blockquotes / Admonitions ---------- */
+/* ---------- Blockquotes ---------- */
 .content main blockquote {
     border-left: 4px solid var(--khora-accent);
-    background-color: rgba(224, 165, 38, 0.04);
-    padding: 12px 16px;
+    background: rgba(224, 165, 38, 0.04);
+    padding: 14px 18px;
     margin: 1.2em 0;
-    border-radius: 0 6px 6px 0;
+    border-radius: 0 8px 8px 0;
 }
 
 /* ---------- Links ---------- */
@@ -137,38 +302,97 @@
     color: var(--khora-link);
     text-decoration: none;
     border-bottom: 1px solid transparent;
-    transition: border-bottom-color 0.15s ease;
+    transition: color 0.15s ease, border-bottom-color 0.15s ease;
 }
 
 .content main a:hover {
-    border-bottom-color: var(--khora-link);
+    color: var(--khora-accent-glow);
+    border-bottom-color: var(--khora-accent-glow);
 }
 
-/* ---------- Checkbox lists ---------- */
-.content main li input[type="checkbox"] {
-    accent-color: var(--khora-accent);
-    margin-right: 6px;
+/* ---------- Sidebar ---------- */
+.sidebar {
+    background: var(--khora-bg-sidebar);
+    border-right: 1px solid var(--khora-border);
 }
 
-/* ---------- Horizontal rules ---------- */
-.content main hr {
-    border: none;
+.sidebar .sidebar-scrollbox {
+    padding: 20px 0;
+}
+
+.sidebar .sidebar-scrollbox::before {
+    content: "";
+    display: block;
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 16px auto;
+    background-image: url("../logos/logo_round.png");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    border-radius: 50%;
+    box-shadow: 0 0 20px rgba(224, 165, 38, 0.15);
+}
+
+.sidebar .sidebar-scrollbox .chapter {
+    padding: 0 12px;
+}
+
+.sidebar .sidebar-scrollbox .chapter li a {
+    padding: 6px 12px;
+    border-radius: 6px;
+    border-left: 3px solid transparent;
+    transition: all 0.15s ease;
+    font-size: 0.92em;
+}
+
+.sidebar .sidebar-scrollbox .chapter li a:hover {
+    background: var(--khora-bg-hover);
+    color: var(--khora-accent) !important;
+    border-left-color: var(--khora-accent-dim);
+}
+
+.sidebar .sidebar-scrollbox .chapter li a.active {
+    background: rgba(224, 165, 38, 0.1);
+    color: var(--khora-accent) !important;
+    border-left-color: var(--khora-accent);
+    font-weight: 600;
+}
+
+.sidebar .sidebar-scrollbox .chapter li.chapter-item::before {
+    display: none;
+}
+
+/* Section headers in sidebar */
+.sidebar .sidebar-scrollbox .chapter li.affix {
+    color: var(--khora-accent-dim);
+    font-weight: 700;
+    font-size: 0.8em;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 16px 12px 6px;
     border-top: 1px solid var(--khora-border);
-    margin: 2em 0;
+    margin-top: 8px;
 }
 
 /* ---------- Navigation buttons ---------- */
+.nav-chapters {
+    color: var(--khora-text-dim);
+    transition: color 0.15s ease;
+}
+
 .nav-chapters:hover {
     color: var(--khora-accent) !important;
 }
 
-/* ---------- Scrollbar (Webkit) ---------- */
+/* ---------- Scrollbar ---------- */
 ::-webkit-scrollbar {
     width: 8px;
+    height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--khora-bg-dark);
+    background: var(--khora-bg-deep);
 }
 
 ::-webkit-scrollbar-thumb {
@@ -180,19 +404,44 @@
     background: var(--khora-text-dim);
 }
 
-/* ---------- Mermaid diagram styling ---------- */
+/* ---------- Mermaid ---------- */
+.mermaid {
+    text-align: center;
+    margin: 2em 0;
+    padding: 1em;
+    background: var(--khora-bg-card);
+    border-radius: 10px;
+    border: 1px solid var(--khora-border);
+}
+
 .mermaid svg {
     max-width: 100%;
 }
 
-/* ---------- Print cleanup ---------- */
-@media print {
-    .sidebar,
-    .nav-chapters {
-        display: none !important;
-    }
+/* ---------- HR ---------- */
+.content main hr {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--khora-border-accent), transparent);
+    margin: 2.5em 0;
+}
 
-    .content main {
-        max-width: 100%;
-    }
+/* ---------- Checkbox lists ---------- */
+.content main li input[type="checkbox"] {
+    accent-color: var(--khora-accent);
+    margin-right: 8px;
+}
+
+/* ---------- Print ---------- */
+@media print {
+    .sidebar, .nav-chapters { display: none !important; }
+    .content main { max-width: 100%; }
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 768px) {
+    .content main { padding: 0 16px; }
+    .content main h1 { font-size: 1.6em; }
+    .content main h2 { font-size: 1.3em; }
+    .hero-banner h1 { font-size: 2em; }
 }

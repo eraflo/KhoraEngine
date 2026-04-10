@@ -16,7 +16,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_core::ui::editor::*;
+use khora_sdk::editor_ui::*;
 use khora_sdk::prelude::*;
 
 /// Displays the entity hierarchy extracted from the ECS World.

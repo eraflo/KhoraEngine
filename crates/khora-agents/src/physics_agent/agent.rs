@@ -17,10 +17,11 @@
 //! This agent implements the full GORNA protocol to negotiate resource budgets
 //! with the DCC and adapt physics simulation quality based on system constraints.
 
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::Sender;
-use khora_core::agent::Agent;
+use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
 use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
@@ -30,6 +31,7 @@ use khora_core::lane::{Lane, LaneContext, LaneKind, LaneRegistry, Slot};
 use khora_core::physics::PhysicsProvider;
 use khora_core::telemetry::event::TelemetryEvent;
 use khora_core::telemetry::monitoring::GpuReport;
+use khora_core::EngineContext;
 use khora_data::ecs::World;
 use khora_lanes::physics_lane::StandardPhysicsLane;
 use khora_telemetry::metrics::registry::{GaugeHandle, MetricsRegistry};
@@ -64,8 +66,8 @@ struct PhysicsMetrics {
 /// It acts as the Control Plane (ISA) for the physics subsystem,
 /// deciding which strategies (lanes) to deploy and managing the physics world.
 pub struct PhysicsAgent {
-    /// The concrete physics solver provider.
-    provider: Box<dyn PhysicsProvider>,
+    /// The concrete physics solver provider, obtained from the service registry.
+    provider: Option<Arc<Mutex<Box<dyn PhysicsProvider>>>>,
     /// All physics lanes stored generically.
     lanes: LaneRegistry,
     /// Current selected strategy.
@@ -92,7 +94,11 @@ impl Agent for PhysicsAgent {
     }
 
     fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
-        let body_count = self.provider.get_all_bodies().len() as u64;
+        let body_count = self
+            .provider
+            .as_ref()
+            .map(|p| p.lock().map(|g| g.get_all_bodies().len()).unwrap_or(0))
+            .unwrap_or(0) as u64;
         let complexity_factor = 1.0 + (body_count as f32 / 100.0).min(5.0);
 
         NegotiationResponse {
@@ -119,6 +125,7 @@ impl Agent for PhysicsAgent {
                     estimated_vram: 0,
                 },
             ],
+            timing_adjustment: None,
         }
     }
 
@@ -155,7 +162,27 @@ impl Agent for PhysicsAgent {
         self.time_budget = budget.time_limit;
     }
 
+    fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
+        if self.provider.is_none() {
+            self.provider = context
+                .services
+                .get::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()
+                .cloned();
+        }
+
+        // Physics lanes don't need special initialization — they operate
+        // on data passed via LaneContext during execute().
+    }
+
     fn execute(&mut self, context: &mut khora_core::EngineContext<'_>) {
+        // Lazily fetch provider from services if not yet available.
+        if self.provider.is_none() {
+            self.provider = context
+                .services
+                .get::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()
+                .cloned();
+        }
+
         if let Some(world_any) = context.world.as_deref_mut() {
             if let Some(world) = world_any.downcast_mut::<World>() {
                 self.step(world, self.fixed_timestep);
@@ -173,8 +200,16 @@ impl Agent for PhysicsAgent {
             ratio.min(1.0)
         };
 
-        let body_count = self.provider.get_all_bodies().len();
-        let collider_count = self.provider.get_all_colliders().len();
+        let body_count = self
+            .provider
+            .as_ref()
+            .map(|p| p.lock().map(|g| g.get_all_bodies().len()).unwrap_or(0))
+            .unwrap_or(0);
+        let collider_count = self
+            .provider
+            .as_ref()
+            .map(|p| p.lock().map(|g| g.get_all_colliders().len()).unwrap_or(0))
+            .unwrap_or(0);
 
         AgentStatus {
             agent_id: self.id(),
@@ -197,17 +232,30 @@ impl Agent for PhysicsAgent {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
+
+    fn execution_timing(&self) -> ExecutionTiming {
+        ExecutionTiming {
+            allowed_phases: vec![ExecutionPhase::TRANSFORM],
+            default_phase: ExecutionPhase::TRANSFORM,
+            priority: 0.9,
+            importance: AgentImportance::Critical,
+            fixed_timestep: Some(Duration::from_secs_f32(self.fixed_timestep)),
+            dependencies: Vec::new(),
+        }
+    }
 }
 
 impl PhysicsAgent {
-    /// Creates a new `PhysicsAgent` with a given provider.
-    pub fn new(provider: Box<dyn PhysicsProvider>) -> Self {
+    /// Creates a new `PhysicsAgent`. The physics provider must be inserted
+    /// into the service registry as `Arc<Mutex<Box<dyn PhysicsProvider>>>`
+    /// before the engine bootstrap.
+    pub fn new() -> Self {
         let mut lanes = LaneRegistry::new();
         lanes.register(Box::new(StandardPhysicsLane::new()));
         lanes.register(Box::new(khora_lanes::physics_lane::PhysicsDebugLane::new()));
 
         Self {
-            provider,
+            provider: None,
             lanes,
             strategy: PhysicsStrategy::Standard,
             current_strategy: StrategyId::Balanced,
@@ -262,11 +310,24 @@ impl PhysicsAgent {
     pub fn step(&mut self, world: &mut World, dt: f32) {
         let start = Instant::now();
 
+        let Some(provider_arc) = self.provider.clone() else {
+            log::warn!("PhysicsAgent: no physics provider registered, skipping step");
+            return;
+        };
+
+        let mut provider_guard = match provider_arc.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                log::error!("PhysicsAgent: provider mutex poisoned: {}", e);
+                return;
+            }
+        };
+
         // Build LaneContext with all required data.
         let mut ctx = LaneContext::new();
         ctx.insert(PhysicsDeltaTime(dt));
         ctx.insert(Slot::new(world));
-        ctx.insert(Slot::new(self.provider.as_mut()));
+        ctx.insert(Slot::new(provider_guard.as_mut()));
 
         // Select and execute the appropriate lane.
         let lane_name = self.select_lane_name();
@@ -280,12 +341,10 @@ impl PhysicsAgent {
         self.frame_count += 1;
 
         if let Some(metrics) = &self.metrics {
-            let _ = metrics
-                .body_count
-                .set(self.provider.get_all_bodies().len() as f64);
-            let _ = metrics
-                .collider_count
-                .set(self.provider.get_all_colliders().len() as f64);
+            let body_count = provider_guard.get_all_bodies().len();
+            let collider_count = provider_guard.get_all_colliders().len();
+            let _ = metrics.body_count.set(body_count as f64);
+            let _ = metrics.collider_count.set(collider_count as f64);
             let _ = metrics
                 .step_time_ms
                 .set(self.last_step_time.as_secs_f64() * 1000.0);
@@ -331,12 +390,18 @@ impl PhysicsAgent {
         max_toi: f32,
         solid: bool,
     ) -> Option<khora_core::physics::RaycastHit> {
-        self.provider.cast_ray(ray, max_toi, solid)
+        self.provider
+            .as_ref()
+            .and_then(|p| p.lock().ok().map(|g| g.cast_ray(ray, max_toi, solid)))
+            .flatten()
     }
 
     /// Returns debug rendering data from the provider.
     pub fn get_debug_render_data(&self) -> (Vec<khora_core::math::Vec3>, Vec<[u32; 2]>) {
-        self.provider.get_debug_render_data()
+        self.provider
+            .as_ref()
+            .and_then(|p| p.lock().ok().map(|g| g.get_debug_render_data()))
+            .unwrap_or_default()
     }
 
     /// Returns the duration of the last step.

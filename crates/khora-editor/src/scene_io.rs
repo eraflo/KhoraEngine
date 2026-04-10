@@ -15,13 +15,11 @@
 //! Scene serialization and project-asset scanning helpers.
 
 use crate::util::{bytemuck_transform, unbytemuck_transform};
-use khora_core::math::LinearRgba;
-use khora_core::scene::{SceneFile, SerializationGoal};
-use khora_core::ui::editor::*;
-use khora_io::serialization::SerializationService;
+use khora_sdk::editor_ui::AssetEntry;
 use khora_sdk::prelude::ecs::*;
+use khora_sdk::prelude::math::{LinearRgba, Vec3};
 use khora_sdk::prelude::*;
-use khora_sdk::GameWorld;
+use khora_sdk::{EcsWorld, GameWorld, SceneFile, SerializationGoal, SerializationService};
 use std::path::{Path, PathBuf};
 
 /// Serializes all entity transforms into a binary snapshot for play-mode restore.
@@ -176,7 +174,7 @@ pub fn auto_load_or_create_default_scene(world: &mut GameWorld, project_root: &P
 fn create_default_scene(world: &mut GameWorld, path: &Path) {
     // Spawn default entities
     let camera_transform = Transform {
-        translation: khora_core::math::Vec3::new(0.0, 5.0, 10.0),
+        translation: Vec3::new(0.0, 5.0, 10.0),
         ..Default::default()
     };
     world.spawn((
@@ -187,14 +185,14 @@ fn create_default_scene(world: &mut GameWorld, path: &Path) {
     ));
 
     let light_transform = Transform {
-        translation: khora_core::math::Vec3::new(0.0, 10.0, 0.0),
+        translation: Vec3::new(0.0, 10.0, 0.0),
         ..Default::default()
     };
     world.spawn((
         light_transform,
         GlobalTransform::identity(),
         Light::new(LightType::Directional(DirectionalLight {
-            direction: khora_core::math::Vec3::new(0.0, -1.0, 0.0),
+            direction: Vec3::new(0.0, -1.0, 0.0),
             color: LinearRgba::WHITE,
             intensity: 1.0,
             ..Default::default()
