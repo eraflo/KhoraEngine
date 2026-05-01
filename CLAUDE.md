@@ -19,7 +19,7 @@ You are the Khora Engine development agent — an expert Rust systems programmer
 
 ```
 khora-sdk        → Public API (Engine, GameWorld, Application trait, AppContext, Vessel primitives)
-khora-agents     → Intelligent subsystem managers (RenderAgent, UiAgent, PhysicsAgent, AudioAgent)
+khora-agents     → Intelligent subsystem managers — one agent per `LaneKind` (RenderAgent, ShadowAgent, PhysicsAgent, UiAgent, AudioAgent), plus `PhysicsQueryService`
 khora-io         → I/O services (AssetService, SerializationService, VFS, AssetIo, PackLoader, FileLoader)
 khora-lanes      → Hot-path pipelines: render (Unlit, LitForward, Forward+, Shadow, UI), physics, audio (spatial mixing), asset decoders (Texture, Mesh, Audio, Font loaders), scene (transform propagation)
 khora-control    → DCC orchestration, GORNA protocol, context-aware budgeting (thermal/battery/load)
@@ -69,7 +69,8 @@ mdbook build docs/             # Documentation
 - Commit code with Vulkan validation errors
 - Use `std::thread::spawn` directly — use the DCC agent system
 - Push to git or create PRs without explicit user permission
-- Add any method outside the `Agent` trait to an agent struct — agents implement **only** `Agent`, no `start()`, `stop()`, or helpers
+- Add any method outside the `Agent` trait to an agent struct — agents implement **only** `Agent` + `Default`, no `start()`, `stop()`, builder methods, or accessor helpers. Construction goes through `Default::default()`; private free functions in the same module file are acceptable for internal helpers.
+- Give an agent responsibility for more than one `LaneKind` (e.g. Render + Shadow). Lanes do one thing; one agent per `LaneKind`.
 - Give an agent any responsibility other than lane selection, GORNA budget negotiation, and `Lane::execute()` dispatch
 - Inline WGSL source as a Rust `const`/`static` — all shaders must be `.wgsl` files under `crates/khora-lanes/src/render_lane/shaders/`
 - Add concrete (backend-specific) logic to `khora-core` — define abstract traits/types in `khora-core`, implement them in per-backend subfolders in `khora-infra` (`wgpu/`, `rapier/`, `cpal/`, `taffy/`, …)
@@ -77,16 +78,25 @@ mdbook build docs/             # Documentation
 
 ## Agent vs Service Rule
 
-An **Agent** is for subsystems with multiple execution strategies negotiable via GORNA:
-- `RenderAgent`: Unlit / LitForward / Forward+
-- `PhysicsAgent`: Standard / Simplified
-- `AudioAgent`: Source count / quality
-- `UiAgent`: Layout + Render
+An **Agent** owns exactly **one `LaneKind`** and exposes its strategies to GORNA. The split between agents follows the lane kinds — a Lane does one thing, so an agent in charge of one lane kind cannot also drive another.
+
+| Agent          | `LaneKind` | Strategies                  |
+|----------------|------------|-----------------------------|
+| `RenderAgent`  | `Render`   | Unlit / LitForward / Forward+ |
+| `ShadowAgent`  | `Shadow`   | ShadowPassLane (atlas)      |
+| `PhysicsAgent` | `Physics`  | Standard / Simplified       |
+| `UiAgent`      | `Ui`       | Layout + Render             |
+| `AudioAgent`   | `Audio`    | Source count / quality      |
+
+`ShadowAgent` runs in `OBSERVE`, encodes the shadow atlas off-swapchain, and publishes `ShadowAtlasView` + `ShadowComparisonSampler` into the per-frame `FrameContext`. `RenderAgent` declares `AgentDependency::Hard(AgentId::ShadowRenderer)` in `execution_timing()`; the scheduler enforces ordering via the per-frame `AgentCompletionMap`. `RenderAgent` then reads the atlas values from the `FrameContext` and re-injects them into its own `LaneContext` for the main pass.
 
 A **Service** is for on-demand or fixed-behavior subsystems (no GORNA):
 - `AssetService`: On-demand asset loading
 - `SerializationService`: On-demand scene save/load
 - `EcsMaintenance`: Fixed per-frame garbage collection (in `GameWorld`)
+- `PhysicsQueryService`: On-demand raycasts / debug geometry (wraps the shared `PhysicsProvider`)
+- `GpuCache`: Engine-wide `Assets<GpuMesh>` store
+- `ProjectionRegistry`: CPU→GPU mesh upload, called once per frame **before** agents run
 
 ## Agent Lifecycle
 
@@ -146,7 +156,7 @@ Per frame:
 ## Key Subsystems
 
 - **ECS (CRPECS)**: Archetype-based SoA storage, parallel queries, semantic domains (Render, Physics, UI), component bundles, page compaction via `EcsMaintenance` (in `GameWorld.tick_maintenance()`)
-- **DCC / GORNA**: Cold-path agent scheduling by priority, `NegotiationRequest`/`NegotiationResponse`, `ResourceBudget`, thermal/battery multipliers, death spiral detection. Only 4 agents (Render, Physics, UI, Audio)
+- **DCC / GORNA**: Cold-path agent scheduling by priority, `NegotiationRequest`/`NegotiationResponse`, `ResourceBudget`, thermal/battery multipliers, death spiral detection. **5 agents** — one per `LaneKind` (Render, Shadow, Physics, UI, Audio)
 - **Rendering**: Forward/Forward+/Unlit strategies, shadow atlas (2048² × 4 layers, PCF 3×3), PBR shaders (WGSL), per-frame strategy switching via GORNA
 - **Physics**: `PhysicsProvider` trait, Rapier3D backend, `RigidBody`/`Collider` sync with ECS, CCD, fixed timestep
 - **Audio**: `AudioDevice` trait, `SpatialMixingLane` for 3D positional audio, CPAL backend, `AudioSource`/`AudioListener` components

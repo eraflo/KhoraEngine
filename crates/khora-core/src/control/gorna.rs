@@ -27,6 +27,8 @@ use std::time::Duration;
 pub enum AgentId {
     /// The primary rendering agent (highest priority in Simulation).
     Renderer,
+    /// The shadow map rendering agent (runs in OBSERVE phase before Renderer).
+    ShadowRenderer,
     /// The physics simulation agent.
     Physics,
     /// The ECS/Logic coordination agent.

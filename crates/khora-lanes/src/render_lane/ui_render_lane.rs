@@ -19,7 +19,7 @@ use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
 
 use crate::render_lane::shaders::UI_WGSL;
-use crate::render_lane::ui_scene::UiScene;
+use khora_data::ui::UiScene;
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, Slot};
 use khora_core::math::{Mat4, Vec4};
 use khora_core::renderer::api::command::{

@@ -17,6 +17,8 @@ use std::collections::{HashMap, VecDeque};
 use khora_core::{ecs::entity::EntityId, math::Mat4};
 use khora_data::ecs::{GlobalTransform, Parent, Transform, Without, World};
 
+//TODO: need to move this to a more appropriate place
+
 /// A system that propagates local `Transform` changes through the scene hierarchy
 /// to compute the final `GlobalTransform` for each entity.
 ///

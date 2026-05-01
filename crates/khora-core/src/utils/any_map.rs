@@ -35,8 +35,7 @@ impl AnyMap {
 
     /// Inserts a value, replacing any existing value of the same type.
     pub fn insert<T: Send + Sync + 'static>(&mut self, value: T) {
-        self.data
-            .insert(TypeId::of::<T>(), Arc::new(value));
+        self.data.insert(TypeId::of::<T>(), Arc::new(value));
     }
 
     /// Returns a cloned Arc reference to the value of the given type, if present.

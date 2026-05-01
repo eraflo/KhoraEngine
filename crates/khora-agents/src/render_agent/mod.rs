@@ -27,6 +27,5 @@
 //!   and the current performance goals (e.g., prioritizing framerate vs. visual quality).
 
 mod agent;
-pub mod mesh_preparation;
 
 pub use agent::*;

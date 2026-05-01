@@ -30,19 +30,24 @@
 //!
 //! # Example
 //!
+//! Cross-agent ordering between registered subsystems is normally enforced by
+//! the scheduler's `AgentCompletionMap`. `StageHandle` remains available as an
+//! ad-hoc primitive for plugins or sub-tasks that need their own sync without
+//! going through agent registration.
+//!
 //! ```ignore
-//! // ShadowAgent
-//! fctx.insert_stage::<ShadowDone>();
+//! // Producer
+//! let stage = fctx.insert_stage::<MyStage>();
 //! fctx.spawn(async move {
-//!     // ... encode shadow passes ...
-//!     fctx.get::<StageHandle<ShadowDone>>().mark_done();
+//!     // ... do work ...
+//!     stage.mark_done();
 //! });
 //!
-//! // RenderAgent
-//! let shadow = fctx.get::<StageHandle<ShadowDone>>().cloned();
+//! // Consumer
+//! let stage = fctx.get::<StageHandle<MyStage>>().unwrap();
 //! fctx.spawn(async move {
-//!     shadow.unwrap().wait().await;
-//!     // ... encode main pass with shadow data ...
+//!     stage.wait().await;
+//!     // ... consume produced data ...
 //! });
 //! ```
 
@@ -64,40 +69,59 @@ use crate::utils::any_map::AnyMap;
 /// and retrieved by type: `ctx.get::<StageHandle<MyStage>>()`.
 ///
 /// The marker type `T` ensures compile-time safety — no strings needed.
+///
+/// Backed by `tokio::sync::watch` so the signal is **level-triggered**:
+/// `wait()` returns immediately if `mark_done()` already fired, and a
+/// `mark_done()` racing against a fresh `wait()` is observed correctly.
 pub struct StageHandle<T: 'static> {
-    notify: Arc<tokio::sync::Notify>,
+    tx: Arc<tokio::sync::watch::Sender<bool>>,
+    rx: tokio::sync::watch::Receiver<bool>,
     _marker: PhantomData<fn() -> T>,
 }
 
-// Safety: StageHandle only contains Arc and PhantomData.
-unsafe impl<T: 'static> Send for StageHandle<T> {}
-unsafe impl<T: 'static> Sync for StageHandle<T> {}
-
 impl<T: 'static> StageHandle<T> {
     fn new() -> Self {
+        let (tx, rx) = tokio::sync::watch::channel(false);
         Self {
-            notify: Arc::new(tokio::sync::Notify::new()),
+            tx: Arc::new(tx),
+            rx,
             _marker: PhantomData,
         }
     }
 
-    /// Signals that this stage is complete. Wakes all waiters.
+    /// Signals that this stage is complete. Wakes all current and future waiters.
     pub fn mark_done(&self) {
-        self.notify.notify_waiters();
+        let _ = self.tx.send(true);
+    }
+
+    /// Returns `true` if `mark_done` has been called.
+    pub fn is_done(&self) -> bool {
+        *self.rx.borrow()
     }
 
     /// Awaits stage completion. Returns immediately if already done.
     pub async fn wait(&self) {
-        self.notify.notified().await;
+        let mut rx = self.rx.clone();
+        if *rx.borrow() {
+            return;
+        }
+        let _ = rx.changed().await;
     }
 }
 
 impl<T: 'static> Clone for StageHandle<T> {
     fn clone(&self) -> Self {
         Self {
-            notify: Arc::clone(&self.notify),
+            tx: Arc::clone(&self.tx),
+            rx: self.rx.clone(),
             _marker: PhantomData,
         }
+    }
+}
+
+impl<T: 'static> Default for StageHandle<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

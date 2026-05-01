@@ -41,6 +41,13 @@ impl WinitWindow {
     pub fn winit_window(&self) -> &Window {
         &self.inner
     }
+
+    /// Returns a clone of the inner `Arc<Window>` so the window can be
+    /// shared with subsystems that need a long-lived handle (e.g., an egui
+    /// overlay that calls `begin_frame` each tick).
+    pub fn clone_winit_arc(&self) -> Arc<Window> {
+        Arc::clone(&self.inner)
+    }
 }
 
 /// A builder for creating `WinitWindow` instances.

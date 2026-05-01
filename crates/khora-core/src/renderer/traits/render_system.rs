@@ -14,19 +14,28 @@
 
 use std::sync::Arc;
 
-use super::CommandEncoder;
 use crate::platform::window::KhoraWindow;
 use crate::renderer::api::{
-    core::{GraphicsAdapterInfo, RenderContext, RenderSettings, RenderStats},
-    resource::ViewInfo,
+    core::{GraphicsAdapterInfo, RenderSettings, RenderStats},
+    resource::{TextureViewId, ViewInfo},
     scene::RenderObject,
 };
 use crate::renderer::error::RenderError;
 use crate::renderer::GraphicsDevice;
 use crate::telemetry::ResourceMonitor;
 
-/// Type alias for the render encoder closure.
-pub type RenderEncoderFn<'a> = Box<dyn FnOnce(&mut dyn CommandEncoder, &RenderContext) + Send + 'a>;
+/// Targets acquired by [`RenderSystem::begin_frame`] for the current frame.
+///
+/// The engine inserts these into the per-frame `FrameContext` (as
+/// `ColorTarget` / `DepthTarget`) so agents can read them when recording
+/// passes into the frame graph.
+#[derive(Debug, Clone, Copy)]
+pub struct FrameTargets {
+    /// Color attachment: swapchain texture or offscreen viewport.
+    pub color: TextureViewId,
+    /// Depth attachment, when depth buffering is enabled.
+    pub depth: Option<TextureViewId>,
+}
 
 /// A high-level trait representing the entire rendering subsystem.
 ///
@@ -34,8 +43,6 @@ pub type RenderEncoderFn<'a> = Box<dyn FnOnce(&mut dyn CommandEncoder, &RenderCo
 /// A concrete implementation of `RenderSystem` (likely in `khora-infra`) encapsulates
 /// all the state and logic needed to render a frame, including device management,
 /// swapchain handling, and the execution of render pipelines.
-///
-/// This can be considered the main "contract" for a `RenderAgent` to manage.
 pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     /// Initializes the rendering system with a given window.
     ///
@@ -52,51 +59,18 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     ) -> Result<Vec<Arc<dyn ResourceMonitor>>, RenderError>;
 
     /// Notifies the rendering system that the output window has been resized.
-    ///
-    /// The implementation should handle recreating the swapchain and any other
-    /// size-dependent resources (like depth textures).
     fn resize(&mut self, new_width: u32, new_height: u32);
 
     /// Prepares for a new frame.
     ///
-    /// This is typically called once per frame before `render`. It can be used
-    /// to update internal resources, like uniform buffers, based on the camera's
-    /// `ViewInfo`.
+    /// Updates per-frame uniforms (camera view-projection, etc.) before any
+    /// pass is recorded.
     fn prepare_frame(&mut self, view_info: &ViewInfo);
 
-    /// Renders a single frame using agent-driven encoding.
+    /// Renders a single frame from a flat list of render objects.
     ///
-    /// This method acquires the frame, creates an encoder, calls the provided
-    /// closure to encode commands (typically from RenderAgent), and submits.
-    ///
-    /// # Arguments
-    ///
-    /// * `clear_color`: The color to clear the framebuffer with
-    /// * `encoder_fn`: A boxed closure that encodes GPU commands
-    ///
-    /// # Returns
-    ///
-    /// On success, it returns `RenderStats` with performance metrics for the frame.
-    fn render_with_encoder(
-        &mut self,
-        clear_color: crate::math::LinearRgba,
-        encoder_fn: RenderEncoderFn<'_>,
-    ) -> Result<RenderStats, RenderError>;
-
-    /// Renders a single frame.
-    ///
-    /// This is the main workload function, responsible for executing all necessary
-    /// render passes to draw the provided `renderables` to the screen.
-    ///
-    /// # Arguments
-    ///
-    /// * `renderables`: A slice of `RenderObject`s representing the scene to be drawn.
-    /// * `view_info`: Contains camera and projection information for the frame.
-    /// * `settings`: Contains global rendering settings for the frame.
-    ///
-    /// # Returns
-    ///
-    /// On success, it returns `RenderStats` with performance metrics for the frame.
+    /// Legacy entry point retained for non-agent code paths (tests, demos).
+    /// Production rendering goes through the frame graph.
     fn render(
         &mut self,
         renderables: &[RenderObject],
@@ -114,33 +88,25 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     fn get_adapter_info(&self) -> Option<GraphicsAdapterInfo>;
 
     /// Returns a shared, thread-safe reference to the underlying `GraphicsDevice`.
-    ///
-    /// This allows other parts of the engine (e.g., the asset system) to create
-    /// graphics resources like buffers and textures on the correct GPU device.
     fn graphics_device(&self) -> Arc<dyn GraphicsDevice>;
 
-    /// Begins a new visual frame by acquiring the swapchain texture.
+    /// Begins a new visual frame by acquiring the swapchain (or viewport) texture.
     ///
-    /// Must be called exactly once per frame, **before** any
-    /// [`render_with_encoder`](Self::render_with_encoder) calls.
+    /// Called exactly once per frame by the engine, **before** any agent runs.
+    /// The returned [`FrameTargets`] are inserted into the per-frame
+    /// `FrameContext` so agents can address the same color/depth attachments.
     /// The matching [`end_frame`](Self::end_frame) presents the result.
-    fn begin_frame(&mut self) -> Result<(), RenderError> {
-        Ok(())
-    }
+    fn begin_frame(&mut self) -> Result<FrameTargets, RenderError>;
 
     /// Ends the current visual frame by presenting the swapchain texture.
     ///
-    /// Must be called exactly once per frame, **after** all
-    /// [`render_with_encoder`](Self::render_with_encoder) calls have completed.
-    fn end_frame(&mut self) -> Result<RenderStats, RenderError> {
-        Ok(RenderStats::default())
-    }
+    /// Called exactly once per frame by the engine, **after** the frame graph
+    /// has been compiled and submitted.
+    fn end_frame(&mut self) -> Result<RenderStats, RenderError>;
 
     /// Renders an editor overlay on top of the current frame.
     ///
-    /// Called after all agents have rendered and before [`end_frame`](Self::end_frame).
-    /// The overlay's `begin_frame()` should have been called earlier in the frame.
-    ///
+    /// Called between the frame graph submission and [`end_frame`](Self::end_frame).
     /// The default implementation is a no-op (no overlay).
     fn render_overlay(
         &mut self,
@@ -151,7 +117,6 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     }
 
     /// Cleans up and releases all graphics resources.
-    /// This should be called once at application shutdown.
     fn shutdown(&mut self);
 
     /// Allows downcasting to a concrete `RenderSystem` type.
@@ -160,10 +125,16 @@ pub trait RenderSystem: std::fmt::Debug + Send + Sync {
     /// Allows mutable downcasting to a concrete `RenderSystem` type.
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 
-    /// When enabled, [`render_with_encoder`](Self::render_with_encoder) targets the
-    /// offscreen viewport texture instead of the swapchain.
+    /// Whether [`begin_frame`](Self::begin_frame) targets an offscreen viewport
+    /// instead of the swapchain.
     ///
-    /// Call with `true` before agent rendering and `false` before the overlay pass.
-    /// The default implementation is a no-op.
+    /// When `true`, the engine skips its own [`end_frame`](Self::end_frame) call
+    /// — the caller managing the viewport is responsible for presenting.
+    fn render_to_viewport(&self) -> bool {
+        false
+    }
+
+    /// Toggles whether [`begin_frame`](Self::begin_frame) targets the offscreen
+    /// viewport texture instead of the swapchain.
     fn set_render_to_viewport(&mut self, _enabled: bool) {}
 }

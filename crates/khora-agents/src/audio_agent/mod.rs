@@ -44,10 +44,8 @@ pub struct AudioAgent {
     frame_count: u64,
 }
 
-impl AudioAgent {
-    /// Creates a new `AudioAgent`. The audio device must be inserted into the
-    /// service registry as `Arc<Mutex<Box<dyn AudioDevice>>>` before bootstrap.
-    pub fn new() -> Self {
+impl Default for AudioAgent {
+    fn default() -> Self {
         let mut lanes = LaneRegistry::new();
         lanes.register(Box::new(SpatialMixingLane::new()));
 

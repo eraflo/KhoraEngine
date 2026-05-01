@@ -20,8 +20,11 @@
 
 pub mod assets;
 pub mod ecs;
+pub mod gpu;
+pub mod render;
 pub mod scene;
 pub mod ui;
 
+pub use gpu::{GpuCache, ProjectionRegistry};
 pub use ui::components::*;
 // pub use ui::layout_view::*; // Temporarily commented out if unused or fix path

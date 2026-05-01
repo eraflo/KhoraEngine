@@ -36,7 +36,7 @@ use khora_core::renderer::api::resource::{
 use khora_core::renderer::api::scene::RenderObject;
 use khora_core::renderer::api::util::ShaderStageFlags;
 use khora_core::renderer::api::util::{IndexFormat, SampleCount, TextureFormat};
-use khora_core::renderer::traits::{GpuProfiler, GraphicsBackendSelector, RenderSystem};
+use khora_core::renderer::traits::{FrameTargets, GpuProfiler, GraphicsBackendSelector, RenderSystem};
 use khora_core::renderer::{GraphicsDevice, RenderError};
 use khora_core::telemetry::ResourceMonitor;
 use khora_core::Stopwatch;
@@ -91,10 +91,12 @@ pub struct WgpuRenderSystem {
     viewport_depth_view: Option<wgpu::TextureView>,
     viewport_width: u32,
     viewport_height: u32,
-    /// Registered abstract view IDs for the viewport (used by render_with_encoder).
+    /// Registered abstract view IDs for the viewport (returned by `begin_frame` when
+    /// `render_to_viewport == true`).
     viewport_color_view_id: Option<khora_core::renderer::api::resource::TextureViewId>,
     viewport_depth_view_id: Option<khora_core::renderer::api::resource::TextureViewId>,
-    /// When true, render_with_encoder targets the viewport texture instead of the swapchain.
+    /// When true, `begin_frame` returns viewport targets instead of the swapchain
+    /// and the engine skips its own present (caller manages the viewport).
     render_to_viewport: bool,
 
     // --- Grid Pipeline ---
@@ -1449,7 +1451,7 @@ impl RenderSystem for WgpuRenderSystem {
         Ok(self.last_frame_stats.clone())
     }
 
-    fn begin_frame(&mut self) -> Result<(), RenderError> {
+    fn begin_frame(&mut self) -> Result<FrameTargets, RenderError> {
         let device = self
             .wgpu_device
             .clone()
@@ -1527,7 +1529,18 @@ impl RenderSystem for WgpuRenderSystem {
         self.current_frame_view_id = Some(target_view_id);
 
         self.active_frame_texture = Some(output_surface_texture);
-        Ok(())
+
+        // Compute targets for the engine: choose between swapchain and viewport.
+        let (color, depth) = if self.render_to_viewport {
+            let c = self
+                .viewport_color_view_id
+                .ok_or_else(|| RenderError::Internal("viewport color view not created".into()))?;
+            (c, self.viewport_depth_view_id)
+        } else {
+            (target_view_id, self.depth_texture_view)
+        };
+
+        Ok(FrameTargets { color, depth })
     }
 
     fn end_frame(&mut self) -> Result<RenderStats, RenderError> {
@@ -1605,66 +1618,6 @@ impl RenderSystem for WgpuRenderSystem {
         Ok(())
     }
 
-    fn render_with_encoder(
-        &mut self,
-        clear_color: khora_core::math::LinearRgba,
-        encoder_fn: Box<
-            dyn FnOnce(
-                    &mut dyn khora_core::renderer::traits::CommandEncoder,
-                    &khora_core::renderer::api::core::RenderContext,
-                ) + Send
-                + '_,
-        >,
-    ) -> Result<RenderStats, RenderError> {
-        use khora_core::renderer::api::core::RenderContext;
-
-        let device = self
-            .wgpu_device
-            .clone()
-            .ok_or(RenderError::NotInitialized)?;
-
-        // If the caller did not call begin_frame() first, do it automatically
-        // so the standalone render() / legacy code paths still work.
-        if self.active_frame_texture.is_none() {
-            self.begin_frame()?;
-        }
-
-        let target_view_id = self
-            .current_frame_view_id
-            .ok_or(RenderError::NotInitialized)?;
-
-        // Choose render target: offscreen viewport or swapchain.
-        let (color_target, depth_target) = if self.render_to_viewport {
-            let c = self
-                .viewport_color_view_id
-                .ok_or_else(|| RenderError::Internal("viewport color view not created".into()))?;
-            (c, self.viewport_depth_view_id)
-        } else {
-            (target_view_id, self.depth_texture_view)
-        };
-
-        // --- Create encoder ---
-        let mut command_encoder = device.create_command_encoder(Some("Khora Command Encoder"));
-
-        // --- Build RenderContext with the chosen target ---
-        let render_ctx = RenderContext {
-            color_target: &color_target,
-            depth_target: depth_target.as_ref(),
-            clear_color,
-            shadow_atlas: None,
-            shadow_sampler: None,
-        };
-
-        // --- Call the encoder function (agents do their rendering here) ---
-        encoder_fn(command_encoder.as_mut(), &render_ctx);
-
-        // --- Submit ---
-        let command_buffer = command_encoder.finish();
-        device.submit_command_buffer(command_buffer);
-
-        Ok(self.last_frame_stats.clone())
-    }
-
     fn get_last_frame_stats(&self) -> &RenderStats {
         &self.last_frame_stats
     }
@@ -1703,6 +1656,10 @@ impl RenderSystem for WgpuRenderSystem {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+
+    fn render_to_viewport(&self) -> bool {
+        self.render_to_viewport
     }
 
     fn set_render_to_viewport(&mut self, enabled: bool) {

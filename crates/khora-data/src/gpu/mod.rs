@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! User interface subsystem.
+//! GPU resource management — shared cache and CPU→GPU projection.
 //!
-//! Provides UI components and layout management for the Khora Engine.
+//! This module provides:
+//! - [`GpuCache`]: the engine-wide, shared GPU mesh cache.
+//! - [`ProjectionRegistry`]: drives CPU→GPU mesh upload before agents run.
+//!
+//! Both are registered into the [`ServiceRegistry`] during bootstrap and
+//! must not be held as local fields inside agents.
 
-pub mod components;
-mod extract;
-pub mod layout_view;
-mod scene;
-mod store;
+pub mod cache;
+pub mod projection;
 
-pub use components::*;
-pub use extract::{extract_ui_scene, layout_ui_text};
-pub use scene::{ExtractedUiNode, ExtractedUiText, UiScene};
-pub use store::UiSceneStore;
+pub use cache::GpuCache;
+pub use projection::ProjectionRegistry;

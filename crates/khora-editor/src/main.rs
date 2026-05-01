@@ -37,6 +37,10 @@ use khora_sdk::{AgentProvider, EngineApp, GameWorld, InputEvent, ServiceRegistry
 use khora_sdk::{CommandHistory, DccService, PlayMode};
 use khora_sdk::{EditorState, EditorCamera, EditorLogCapture, LogEntry, EditorShell, GizmoMode, PanelLocation};
 use khora_sdk::editor_ui::viewport_texture::ViewportTextureHandle;
+use khora_sdk::khora_core::ui::{EditorOverlay, OverlayScreenDescriptor};
+use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
+use khora_sdk::khora_core::platform::KhoraWindow;
+use khora_sdk::winit;
 
 use panels::{AssetBrowserPanel, ConsolePanel, PropertiesPanel, SceneTreePanel, ViewportPanel};
 
@@ -49,6 +53,14 @@ struct EditorApp {
     command_history: Arc<Mutex<CommandHistory>>,
     log_handle: Arc<Mutex<Vec<LogEntry>>>,
     shell: Option<Arc<Mutex<Box<dyn EditorShell>>>>,
+    overlay: Option<Arc<Mutex<Box<dyn EditorOverlay>>>>,
+    /// Cached `Arc<winit::window::Window>` retrieved from services in
+    /// `setup()`. Needed because the overlay's `begin_frame` and
+    /// `handle_window_event` both expect a winit window reference.
+    raw_window: Option<Arc<winit::window::Window>>,
+    /// View info computed in `before_agents` and re-used by `after_agents`
+    /// for gizmo rendering.
+    last_view_info: Option<ViewInfo>,
     middle_down: bool,
     right_down: bool,
     shift_held: bool,
@@ -268,6 +280,9 @@ impl EngineApp for EditorApp {
             command_history,
             log_handle,
             shell: None,
+            overlay: None,
+            raw_window: None,
+            last_view_info: None,
             middle_down: false,
             right_down: false,
             shift_held: false,
@@ -282,6 +297,16 @@ impl EngineApp for EditorApp {
         if let Some(camera) = services.get::<std::sync::Arc<std::sync::Mutex<EditorCamera>>>().cloned() {
             self.camera = camera;
         }
+
+        // Cache the editor overlay (created by the bootstrap closure).
+        self.overlay = services
+            .get::<Arc<Mutex<Box<dyn EditorOverlay>>>>()
+            .cloned();
+
+        // Cache the raw winit window so overlay calls can hand it back to egui.
+        self.raw_window = services
+            .get::<Arc<winit::window::Window>>()
+            .cloned();
 
         let viewport_handle = services
             .get::<ViewportTextureHandle>()
@@ -552,6 +577,148 @@ impl EngineApp for EditorApp {
     fn on_shutdown(&mut self) {
         log::info!("EditorApp: Shutting down");
     }
+
+    fn intercept_window_event(
+        &mut self,
+        event: &dyn std::any::Any,
+        _window: &dyn KhoraWindow,
+    ) -> bool {
+        let Some(overlay_arc) = self.overlay.as_ref() else {
+            return false;
+        };
+        let Some(raw_window) = self.raw_window.as_ref() else {
+            return false;
+        };
+        let Ok(mut overlay) = overlay_arc.lock() else {
+            return false;
+        };
+        overlay.handle_window_event((&**raw_window) as &dyn std::any::Any, event)
+    }
+
+    fn before_frame(
+        &mut self,
+        _world: &mut GameWorld,
+        services: &ServiceRegistry,
+        window: &dyn KhoraWindow,
+    ) {
+        // Switch the renderer to offscreen-viewport mode BEFORE
+        // `begin_render_frame` runs, so the per-frame `FrameContext` receives
+        // the viewport color/depth targets (instead of the swapchain) and
+        // agents paint into the texture displayed by the egui viewport panel.
+        if let Some(rs_arc) = services.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() {
+            if let Ok(mut rs) = rs_arc.lock() {
+                rs.set_render_to_viewport(true);
+            }
+        }
+
+        let Some(overlay_arc) = self.overlay.as_ref() else { return };
+        let Some(raw_window) = self.raw_window.as_ref() else { return };
+
+        let (w_px, h_px) = window.inner_size();
+        let screen = OverlayScreenDescriptor {
+            width_px: w_px,
+            height_px: h_px,
+            scale_factor: window.scale_factor() as f32,
+        };
+
+        if let Ok(mut overlay) = overlay_arc.lock() {
+            overlay.begin_frame((&**raw_window) as &dyn std::any::Any, screen);
+        }
+
+        if let Some(shell) = self.shell.as_ref() {
+            if let Ok(mut shell) = shell.lock() {
+                shell.show_frame();
+            }
+        }
+    }
+
+    fn before_agents(&mut self, _world: &mut GameWorld, services: &ServiceRegistry) {
+        // Compute the editor camera's `ViewInfo` and clear the offscreen
+        // viewport (background + infinite grid). Cached for `after_agents`
+        // so gizmos use the same projection.
+        self.last_view_info = None;
+
+        let Some(rs_arc) = services.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() else {
+            return;
+        };
+        let Ok(mut rs) = rs_arc.lock() else { return };
+        let Some(wgpu_rs) = rs.as_any_mut().downcast_mut::<WgpuRenderSystem>() else {
+            return;
+        };
+
+        let (vw, vh) = wgpu_rs.viewport_size();
+        let view_info = match self.camera.lock() {
+            Ok(cam) => cam.view_info(vw as f32, vh as f32),
+            Err(_) => ViewInfo::default(),
+        };
+
+        let clear = khora_sdk::prelude::math::LinearRgba::new(0.15, 0.15, 0.18, 1.0);
+        if let Err(e) = wgpu_rs.render_viewport(clear, &view_info) {
+            log::error!("editor: render_viewport failed: {e:?}");
+        }
+        wgpu_rs.prepare_frame(&view_info);
+        self.last_view_info = Some(view_info);
+    }
+
+    fn after_agents(&mut self, world: &mut GameWorld, services: &ServiceRegistry) {
+        let Some(rs_arc) = services.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() else {
+            return;
+        };
+
+        // Render gizmos for the current selection on top of the 3D scene.
+        if let Some(view_info) = self.last_view_info.as_ref() {
+            let gizmo_lines = if let Ok(state) = self.editor_state.lock() {
+                if state.selection.is_empty() {
+                    Vec::new()
+                } else {
+                    crate::mod_gizmo::collect_gizmo_lines(world, &state, view_info)
+                }
+            } else {
+                Vec::new()
+            };
+
+            if !gizmo_lines.is_empty() {
+                if let Ok(mut rs) = rs_arc.lock() {
+                    if let Some(wgpu_rs) = rs.as_any_mut().downcast_mut::<WgpuRenderSystem>() {
+                        if let Err(e) = wgpu_rs.render_gizmos(view_info, &gizmo_lines) {
+                            log::warn!("editor: render_gizmos failed: {e:?}");
+                        }
+                    }
+                }
+            }
+        }
+
+        // Present the egui overlay last so the dock + panels paint over the
+        // 3D scene encoded by the agents.
+        let Some(overlay_arc) = self.overlay.as_ref() else { return };
+        let Some(raw_window) = self.raw_window.as_ref() else { return };
+
+        let inner = (**raw_window).inner_size();
+        let screen = OverlayScreenDescriptor {
+            width_px: inner.width,
+            height_px: inner.height,
+            scale_factor: (**raw_window).scale_factor() as f32,
+        };
+
+        {
+            let mut rs = match rs_arc.lock() {
+                Ok(g) => g,
+                Err(_) => return,
+            };
+            // Switch back to swapchain so the egui overlay (dock + panels +
+            // viewport panel that displays the offscreen texture) paints onto
+            // the presented surface.
+            rs.set_render_to_viewport(false);
+            let mut overlay = match overlay_arc.lock() {
+                Ok(g) => g,
+                Err(_) => return,
+            };
+            let overlay_ref: &mut dyn EditorOverlay = &mut **overlay;
+            if let Err(e) = rs.render_overlay(overlay_ref, screen) {
+                log::error!("editor: render_overlay failed: {e:?}");
+            }
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -610,9 +777,36 @@ fn main() -> anyhow::Result<()> {
         .map(|w| w[1].clone());
     let _ = PROJECT_PATH.set(project);
 
-    run_winit::<WinitWindowProvider, EditorApp>(|window, services| {
+    run_winit::<WinitWindowProvider, EditorApp>(|window, services, event_loop_any| {
         let mut rs = WgpuRenderSystem::new();
         rs.init(window).expect("renderer init failed");
+        services.insert(rs.graphics_device());
+
+        // Build the editor overlay (egui) + shell (dock + panels) so the
+        // editor UI renders on top of the 3D scene each frame.
+        let event_loop = event_loop_any
+            .downcast_ref::<winit::event_loop::ActiveEventLoop>()
+            .expect("editor: bootstrap expects a winit ActiveEventLoop");
+        let theme = khora_sdk::khora_core::ui::editor::EditorTheme::default();
+        match rs.create_editor_overlay_and_shell(
+            event_loop,
+            khora_sdk::khora_lanes::render_lane::shaders::EGUI_WGSL,
+            khora_sdk::khora_lanes::render_lane::shaders::GRID_WGSL,
+            theme,
+            khora_sdk::PRIMARY_VIEWPORT,
+        ) {
+            Ok((overlay, shell)) => {
+                let overlay: Box<dyn EditorOverlay> = Box::new(overlay);
+                let shell: Box<dyn EditorShell> = Box::new(shell);
+                services.insert(Arc::new(Mutex::new(overlay)));
+                services.insert(Arc::new(Mutex::new(shell)));
+                log::info!("editor: overlay + shell created");
+            }
+            Err(e) => {
+                log::error!("editor: failed to create overlay+shell: {e:?}");
+            }
+        }
+
         let rs: Box<dyn RenderSystem> = Box::new(rs);
         services.insert(Arc::new(Mutex::new(rs)));
     })?;

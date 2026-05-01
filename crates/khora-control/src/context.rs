@@ -39,7 +39,7 @@ pub struct HardwareState {
 pub struct Context {
     /// Observed hardware state.
     pub hardware: HardwareState,
-    /// Current engine mode (Editor vs Playing).
+    /// Current engine mode.
     pub mode: EngineMode,
     /// Global budget multiplier derived from thermal and battery state.
     ///

@@ -2800,6 +2800,7 @@ name = "khora-data"
 version = "0.1.1"
 dependencies = [
  "bincode",
+ "bytemuck",
  "criterion",
  "inventory",
  "khora-core",

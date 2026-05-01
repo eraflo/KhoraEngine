@@ -14,6 +14,7 @@
 
 //! Traits for autonomous engine subsystems (Agents).
 
+pub mod completion;
 pub mod dependency;
 pub mod execution_phase;
 pub mod mode;
@@ -24,6 +25,7 @@ use crate::control::gorna::{AgentStatus, NegotiationRequest, NegotiationResponse
 use crate::EngineContext;
 use std::any::Any;
 
+pub use completion::{AgentCompletionMap, AgentDone, CompletionOutcome};
 pub use dependency::{AgentDependency, DependencyCondition, DependencyKind};
 pub use execution_phase::ExecutionPhase;
 pub use mode::EngineMode;

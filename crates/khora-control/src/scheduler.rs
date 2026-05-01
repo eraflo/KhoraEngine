@@ -18,15 +18,23 @@ use crate::budget_channel::BudgetChannel;
 use crate::context::Context;
 use crate::plugin::EnginePlugin;
 use crate::registry::AgentRegistry;
+use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::timing::AgentImportance;
-use khora_core::agent::{EngineMode, ExecutionPhase};
+use khora_core::agent::{AgentDependency, EngineMode, ExecutionPhase};
 use khora_core::control::gorna::AgentId;
-use khora_core::EngineContext;
+use khora_core::graph::topological_sort;
+use khora_core::{EngineContext, ServiceRegistry};
 use khora_data::ecs::World;
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+type AgentSlot = (
+    Arc<Mutex<dyn khora_core::agent::Agent>>,
+    AgentImportance,
+    f32,
+    Vec<AgentDependency>,
+);
 
 /// The hot-path execution scheduler.
 pub struct ExecutionScheduler {
@@ -35,7 +43,6 @@ pub struct ExecutionScheduler {
     plugins: Vec<EnginePlugin>,
     phase_order: Vec<ExecutionPhase>,
     context: Arc<std::sync::RwLock<Context>>,
-    executed_agents_this_frame: HashSet<AgentId>,
     frame_start: Instant,
     frame_budget: Duration,
 }
@@ -53,7 +60,6 @@ impl ExecutionScheduler {
             plugins: Vec::new(),
             phase_order: ExecutionPhase::DEFAULT_ORDER.to_vec(),
             context,
-            executed_agents_this_frame: HashSet::new(),
             frame_start: Instant::now(),
             frame_budget: Duration::from_millis(16),
         }
@@ -97,22 +103,32 @@ impl ExecutionScheduler {
     /// Executes the complete frame cycle.
     ///
     /// This is called every frame by the engine loop.
-    pub fn run_frame(&mut self, world: &mut World, services: Arc<khora_core::ServiceRegistry>) {
+    pub fn run_frame(&mut self, world: &mut World, services: Arc<ServiceRegistry>) {
         // 1. Sync budgets from cold thread
         self.budget_channel.sync();
-        self.executed_agents_this_frame.clear();
         self.frame_start = Instant::now();
 
-        // 2. Read current mode
+        // 2. Build the per-frame completion map and overlay registry.
+        //    The map carries one handle per known agent; the overlay shadows
+        //    the engine-level registry so agents can fetch the map by type
+        //    without changing the EngineContext shape.
+        let agent_ids = self.registry.lock().unwrap().all_ids();
+        let completion_map = Arc::new(AgentCompletionMap::new(&agent_ids));
+
+        let mut frame_overlay = ServiceRegistry::with_parent(services);
+        frame_overlay.insert(Arc::clone(&completion_map));
+        let overlay_arc = Arc::new(frame_overlay);
+
+        // 3. Read current mode
         let mode = {
             let ctx = self.context.read().unwrap();
             ctx.mode.clone()
         };
 
-        // 3. Clone phase order to avoid borrow conflicts
+        // 4. Clone phase order to avoid borrow conflicts
         let phases: Vec<ExecutionPhase> = self.phase_order.clone();
 
-        // 4. Execute each phase
+        // 5. Execute each phase
         for phase in phases {
             // Plugins
             for plugin in &mut self.plugins {
@@ -122,7 +138,7 @@ impl ExecutionScheduler {
             }
 
             // Agents
-            self.execute_agents_in_phase(phase, world, &services, &mode);
+            self.execute_agents_in_phase(phase, world, &overlay_arc, &mode, &completion_map);
         }
     }
 
@@ -130,8 +146,9 @@ impl ExecutionScheduler {
         &mut self,
         phase: ExecutionPhase,
         world: &mut World,
-        services: &Arc<khora_core::ServiceRegistry>,
+        services: &Arc<ServiceRegistry>,
         mode: &EngineMode,
+        completion_map: &Arc<AgentCompletionMap>,
     ) {
         // Collect agents for this phase and mode
         let agents = {
@@ -143,25 +160,32 @@ impl ExecutionScheduler {
             return;
         }
 
-        // Sort by importance (Critical > Important > Optional) then priority (desc)
-        let mut sorted: Vec<_> = agents.into_iter().collect();
-        sorted.sort_by(|a, b| {
-            let imp_ord = a.1.cmp(&b.1);
-            if imp_ord != std::cmp::Ordering::Equal {
-                return imp_ord;
-            }
-            b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        let sorted = sort_agents(agents);
+        self.execute_agents_sequential(sorted, world, services, completion_map);
+    }
 
-        // Execute
-        for (agent, importance, _priority, dependencies) in sorted {
+    fn execute_agents_sequential(
+        &self,
+        agents: Vec<AgentSlot>,
+        world: &mut World,
+        services: &Arc<ServiceRegistry>,
+        completion_map: &Arc<AgentCompletionMap>,
+    ) {
+        for (agent, importance, _priority, dependencies) in agents {
+            let agent_id = match agent.lock().ok().map(|a| a.id()) {
+                Some(id) => id,
+                None => continue,
+            };
+
             // Skip optional if under budget pressure
             if importance == AgentImportance::Optional && self.is_under_budget_pressure() {
+                completion_map.mark(agent_id, CompletionOutcome::Skipped);
                 continue;
             }
 
-            // Skip if hard dependencies not met
-            if !self.are_hard_dependencies_satisfied(&dependencies) {
+            // Skip if hard dependencies were skipped or are unmarked
+            if !are_hard_dependencies_completed(&dependencies, completion_map) {
+                completion_map.mark(agent_id, CompletionOutcome::Skipped);
                 continue;
             }
 
@@ -172,37 +196,125 @@ impl ExecutionScheduler {
             };
 
             if let Ok(mut a) = agent.lock() {
-                let id = a.id();
                 a.execute(&mut engine_ctx);
-                self.executed_agents_this_frame.insert(id);
             }
+            completion_map.mark(agent_id, CompletionOutcome::Completed);
         }
+    }
+
+    /// Parallel execution path — Phase 4 stub.
+    ///
+    /// The intended structure (once enabled):
+    /// ```ignore
+    /// for (agent, _, _, deps) in agents {
+    ///     let map = Arc::clone(completion_map);
+    ///     tokio::spawn(async move {
+    ///         for dep in deps.iter().filter(|d| d.kind == DependencyKind::Hard) {
+    ///             match map.wait(dep.target).await {
+    ///                 Some(CompletionOutcome::Completed) => {}
+    ///                 _ => { map.mark(agent.id(), Skipped); return; }
+    ///             }
+    ///         }
+    ///         agent.lock().execute(&mut ctx);
+    ///         map.mark(agent.id(), Completed);
+    ///     });
+    /// }
+    /// // join_all spawned handles before returning.
+    /// ```
+    #[allow(dead_code)]
+    fn execute_agents_parallel(
+        &self,
+        _agents: Vec<AgentSlot>,
+        _world: &mut World,
+        _services: &Arc<ServiceRegistry>,
+        _completion_map: &Arc<AgentCompletionMap>,
+    ) {
+        unimplemented!("parallel agent execution — not yet implemented");
     }
 
     fn is_under_budget_pressure(&self) -> bool {
         self.frame_start.elapsed() > self.frame_budget
     }
+}
 
-    fn are_hard_dependencies_satisfied(
-        &self,
-        dependencies: &[khora_core::agent::AgentDependency],
-    ) -> bool {
-        for dep in dependencies {
-            if matches!(dep.kind, DependencyKind::Hard) {
-                if let Some(condition) = &dep.condition {
-                    if !self.is_condition_met(condition) {
-                        continue;
-                    }
-                }
-                if !self.executed_agents_this_frame.contains(&dep.target) {
-                    return false;
-                }
+/// Orders the agents within a phase: Hard-dependency edges first (topological),
+/// then importance + priority as a tiebreaker among ready-equal nodes.
+///
+/// On a cycle the topo sort fails; we log and fall back to the
+/// importance/priority ordering — execution still happens, just not in DAG
+/// order. Validating cycles at registration time is a future improvement.
+fn sort_agents(mut agents: Vec<AgentSlot>) -> Vec<AgentSlot> {
+    // Importance + priority tiebreaker.
+    agents.sort_by(|a, b| {
+        let imp_ord = a.1.cmp(&b.1);
+        if imp_ord != std::cmp::Ordering::Equal {
+            return imp_ord;
+        }
+        b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    // Build (id -> index) map after the importance sort so the topo result
+    // can be reassembled cheaply.
+    let id_to_index: std::collections::HashMap<AgentId, usize> = agents
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, slot)| slot.0.lock().ok().map(|a| (a.id(), idx)))
+        .collect();
+
+    let nodes: Vec<AgentId> = id_to_index.keys().copied().collect();
+
+    // Build hard-dep edges (parent = dep target, child = dependent agent)
+    // — the dep target must run first.
+    let mut edges: Vec<(AgentId, AgentId)> = Vec::new();
+    for slot in &agents {
+        let agent_id = match slot.0.lock().ok().map(|a| a.id()) {
+            Some(id) => id,
+            None => continue,
+        };
+        for dep in &slot.3 {
+            if matches!(dep.kind, DependencyKind::Hard) && id_to_index.contains_key(&dep.target) {
+                edges.push((dep.target, agent_id));
             }
         }
-        true
     }
 
-    fn is_condition_met(&self, _condition: &khora_core::agent::DependencyCondition) -> bool {
-        true // TODO: implement condition checking
+    match topological_sort(nodes, edges) {
+        Ok(order) => {
+            // Reassemble agents in topo order. Equal-priority nodes inherit
+            // the importance+priority ordering already applied above.
+            let mut taken: Vec<Option<AgentSlot>> = agents.into_iter().map(Some).collect();
+            order
+                .into_iter()
+                .filter_map(|id| {
+                    id_to_index
+                        .get(&id)
+                        .copied()
+                        .and_then(|idx| taken[idx].take())
+                })
+                .collect()
+        }
+        Err(_) => {
+            log::error!(
+                "Scheduler: cycle detected in Hard agent dependencies — falling back to importance/priority order"
+            );
+            agents
+        }
     }
+}
+
+fn are_hard_dependencies_completed(
+    dependencies: &[AgentDependency],
+    completion_map: &AgentCompletionMap,
+) -> bool {
+    for dep in dependencies {
+        if matches!(dep.kind, DependencyKind::Hard) {
+            // Conditions are not yet evaluated in the scheduler — preserved
+            // from the previous behaviour. Treat conditional deps as active.
+            match completion_map.outcome(dep.target) {
+                Some(CompletionOutcome::Completed) => {}
+                Some(CompletionOutcome::Skipped) | None => return false,
+            }
+        }
+    }
+    true
 }

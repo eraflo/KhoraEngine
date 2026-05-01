@@ -49,6 +49,13 @@ pub trait WindowProvider: 'static {
     fn scale_factor(&self) -> f64;
     fn as_khora_window(&self) -> &dyn KhoraWindow;
     fn translate_event(&self, raw_event: &dyn std::any::Any) -> Option<InputEvent>;
+
+    /// Clones a long-lived handle to the raw native window as an opaque
+    /// `Arc<dyn Any>`. Used by the winit runner to insert the underlying
+    /// `Arc<winit::window::Window>` into the service registry so that
+    /// editor hooks (e.g., overlay `begin_frame`) can retrieve it without
+    /// the SDK leaking winit types into application code.
+    fn clone_raw_window_arc(&self) -> std::sync::Arc<dyn std::any::Any + Send + Sync>;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -127,4 +134,49 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync {
 
     /// Called during shutdown to clean up application resources.
     fn on_shutdown(&mut self) {}
+
+    /// Optional: intercept a raw window event before the engine translates it into
+    /// an [`InputEvent`]. Return `true` if the event was consumed (e.g., by an
+    /// egui overlay) and should NOT be forwarded to game logic.
+    ///
+    /// Default: do not intercept.
+    fn intercept_window_event(
+        &mut self,
+        _event: &dyn std::any::Any,
+        _window: &dyn KhoraWindow,
+    ) -> bool {
+        false
+    }
+
+    /// Optional: called once per frame BEFORE [`update`](Self::update).
+    /// Use to begin a UI overlay frame (e.g., `egui::Context::begin_frame`) and
+    /// render shell chrome (menus, docks, panels) that produces UI commands.
+    fn before_frame(
+        &mut self,
+        _world: &mut GameWorld,
+        _services: &khora_core::ServiceRegistry,
+        _window: &dyn KhoraWindow,
+    ) {
+    }
+
+    /// Optional: called after the renderer's `begin_frame` and before the
+    /// scheduler dispatches agents. Use to switch the renderer to an offscreen
+    /// viewport target (e.g., `set_render_to_viewport(true)`).
+    fn before_agents(
+        &mut self,
+        _world: &mut GameWorld,
+        _services: &khora_core::ServiceRegistry,
+    ) {
+    }
+
+    /// Optional: called after agent execution and `submit_frame_graph`, but
+    /// BEFORE the renderer's `end_frame`. Use to render gizmos to the offscreen
+    /// viewport, switch back to the swapchain (`set_render_to_viewport(false)`),
+    /// and present a UI overlay (`render_overlay`).
+    fn after_agents(
+        &mut self,
+        _world: &mut GameWorld,
+        _services: &khora_core::ServiceRegistry,
+    ) {
+    }
 }

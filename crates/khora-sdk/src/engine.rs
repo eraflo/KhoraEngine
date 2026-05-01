@@ -21,7 +21,11 @@
 //! The app owns: window, renderer, agents, phases, game logic.
 
 use khora_control::{DccConfig, DccService, EngineMode};
+use khora_core::lane::{ClearColor, ColorTarget, DepthTarget};
+use khora_core::renderer::traits::RenderSystem;
+use khora_core::renderer::GraphicsDevice;
 use khora_core::ServiceRegistry;
+use khora_data::render::{submit_frame_graph, FrameGraph, SharedFrameGraph};
 use khora_telemetry::TelemetryService;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, RwLock};
@@ -78,70 +82,121 @@ impl<A: EngineApp> EngineCore<A> {
     /// Bootstraps the engine: creates DCC, telemetry, scheduler,
     /// registers agents, calls `app.setup()`, and initializes agents.
     ///
-    /// This method consumes the provided `services` Arc which was
-    /// populated by the windowing driver's bootstrap closure.
+    /// This method takes ownership of the `services` registry populated
+    /// by the windowing driver's bootstrap closure.  It wraps the registry
+    /// in an `Arc` internally once all built-in services have been inserted.
     pub fn bootstrap(
         &mut self,
         mut app: A,
-        services: Arc<ServiceRegistry>,
+        mut services: ServiceRegistry,
     ) {
         // Create DCC + telemetry
         let (mut dcc, dcc_rx) = DccService::new(DccConfig::default());
         let telemetry =
             TelemetryService::new(Duration::from_secs(1)).with_dcc_sender(dcc.event_sender());
-        dcc.start(dcc_rx);
 
         // Create the game world
         let mut game_world = GameWorld::new();
 
-        // Call app setup
-        app.setup(&mut game_world, &services);
+        // Call app setup — pass a temporary Arc view so the API is unchanged.
+        // We own `services` exclusively here; no other Arc clone exists yet.
+        {
+            let services_ref = Arc::new(std::mem::take(&mut services));
+            app.setup(&mut game_world, &services_ref);
+            services = Arc::try_unwrap(services_ref)
+                .unwrap_or_else(|_| panic!(
+                    "app.setup() stored a clone of the ServiceRegistry Arc. \
+                     Services must not be cloned inside setup() — cache individual \
+                     services via Arc<T>, not the whole registry."
+                ));
+        }
 
-        // Register agents via the app's AgentProvider trait
-        // Unwrap the Arc to get mutable access to the services
-        let mut services = Arc::try_unwrap(services)
-            .unwrap_or_else(|_| panic!("services still referenced after setup"));
+        // Register agents via the app's AgentProvider trait.
         app.register_agents(&dcc, &mut services);
+
+        // ── Data-layer GPU services ──────────────────────────────────────────
+        // GpuCache: engine-wide shared GPU mesh store. All agents read from it.
+        // ProjectionRegistry: runs sync_all() once per frame in tick_with_services()
+        // before the scheduler dispatches agents.
+        let gpu_cache = khora_data::GpuCache::new();
+        let proj_registry = khora_data::ProjectionRegistry::new(gpu_cache.clone());
+        services.insert(gpu_cache);
+        services.insert(proj_registry);
+
+        // ── Frame graph ──────────────────────────────────────────────────────
+        // Per-frame collection of render passes recorded by agents during the
+        // OUTPUT phase. `tick_with_services()` drains it after the scheduler
+        // completes and submits the recorded command buffers.
+        let frame_graph: SharedFrameGraph = Arc::new(Mutex::new(FrameGraph::new()));
+        services.insert(frame_graph);
+
+        // ── Scene-extraction data containers ─────────────────────────────────
+        // RenderWorldStore: shared Arc<RwLock<RenderWorld>>, populated each
+        // frame via `khora_data::render::extract_scene`.
+        // UiSceneStore: shared Arc<RwLock<UiScene>>, populated each frame via
+        // `khora_data::ui::extract_ui_scene` (+ optionally `layout_ui_text`).
+        // Both are *data containers*, not services with logic.  The engine
+        // calls the extraction free functions in `tick_with_services()`
+        // before any agent runs.
+        services.insert(khora_data::render::RenderWorldStore::new());
+        services.insert(khora_data::ui::UiSceneStore::new());
+
+        // PhysicsQueryService: on-demand raycast/debug queries, no GORNA required.
+        if let Some(provider) = services.get::<std::sync::Arc<std::sync::Mutex<Box<dyn khora_core::physics::PhysicsProvider>>>>() {
+            services.insert(khora_agents::PhysicsQueryService::new(provider.clone()));
+        }
+
         let services_arc = Arc::new(services);
 
-        // Register built-in agents (always present)
+        // Register built-in agents (always present). Agents implement only the
+        // `Agent` trait + `Default`, so construction goes through `Default::default()`.
         dcc.register_agent(
-            Arc::new(Mutex::new(khora_agents::render_agent::RenderAgent::new())),
+            Arc::new(Mutex::new(
+                khora_agents::render_agent::RenderAgent::default(),
+            )),
             1.0,
         );
         dcc.register_agent(
-            Arc::new(Mutex::new(khora_agents::shadow_agent::ShadowAgent::new())),
+            Arc::new(Mutex::new(
+                khora_agents::shadow_agent::ShadowAgent::default(),
+            )),
             1.0,
         );
         dcc.register_agent(
-            Arc::new(Mutex::new(khora_agents::physics_agent::PhysicsAgent::new())),
+            Arc::new(Mutex::new(
+                khora_agents::physics_agent::PhysicsAgent::default(),
+            )),
             1.0,
         );
         dcc.register_agent(
-            Arc::new(Mutex::new(khora_agents::ui_agent::UiAgent::new())),
+            Arc::new(Mutex::new(khora_agents::ui_agent::UiAgent::default())),
             1.0,
         );
         dcc.register_agent(
-            Arc::new(Mutex::new(khora_agents::audio_agent::AudioAgent::new())),
+            Arc::new(Mutex::new(khora_agents::audio_agent::AudioAgent::default())),
             1.0,
         );
 
-        // Initialize agents with a minimal context
+        // Initialize agents with the full service registry so on_initialize()
+        // can find Arc<dyn GraphicsDevice>, Arc<Mutex<Box<dyn RenderSystem>>>,
+        // GpuCache, etc. via a flat TypeId lookup.
+        // ServiceRegistry has no nested delegation — agents must receive the
+        // real registry directly, not a wrapper that only contains Arc<ServiceRegistry>.
         {
-            let mut init_services = ServiceRegistry::new();
-            // Forward services that agents may need during init
-            init_services.insert(Arc::clone(&services_arc));
-
             let mut init_ctx = khora_core::EngineContext {
                 world: None,
-                services: Arc::new(init_services),
+                services: Arc::clone(&services_arc),
             };
             dcc.initialize_agents(&mut init_ctx);
         }
+        // Start the DCC background thread AFTER agents are initialized
+        // so GORNA does not run health-checks before agents are ready.
+        dcc.start(dcc_rx);
 
         // Build scheduler
         let agent_ids = vec![
             khora_core::control::gorna::AgentId::Renderer,
+            khora_core::control::gorna::AgentId::ShadowRenderer,
             khora_core::control::gorna::AgentId::Physics,
             khora_core::control::gorna::AgentId::Ui,
             khora_core::control::gorna::AgentId::Audio,
@@ -198,12 +253,23 @@ impl<A: EngineApp> EngineCore<A> {
     ///
     /// Used by the winit runner to inject a `FrameContext` into the
     /// frame services for cross-agent synchronization.
+    ///
+    /// This is a convenience wrapper that calls the staged methods in order
+    /// without invoking any [`EngineApp`] lifecycle hooks. Drivers that need
+    /// to interleave hooks (e.g., the editor's overlay/shell) should call the
+    /// staged methods directly via the winit runner.
     pub fn tick_with_services(&mut self, frame_services_arc: Arc<ServiceRegistry>) {
-        let Some(telemetry) = self.telemetry.as_mut() else {
-            return;
-        };
+        let inputs = self.drain_inputs();
+        self.run_app_update(&inputs);
+        let presents = self.begin_render_frame(&frame_services_arc);
+        self.run_scheduler(&frame_services_arc);
+        self.end_render_frame(presents);
+    }
 
-        // Start simulation event if first frame
+    /// Stage 1 — drain queued input events. Also marks simulation started
+    /// (emits the `"simulation"` phase change on the first call) and ticks
+    /// the telemetry service.
+    pub fn drain_inputs(&mut self) -> Vec<InputEvent> {
         if !self.simulation_started {
             if let Some(dcc) = &self.dcc {
                 let _ = dcc
@@ -214,24 +280,202 @@ impl<A: EngineApp> EngineCore<A> {
             }
             self.simulation_started = true;
         }
+        if let Some(telemetry) = self.telemetry.as_mut() {
+            let _ = telemetry.tick();
+        }
+        self.input_events.drain(..).collect()
+    }
 
-        let _should_log = telemetry.tick();
+    /// Stage 2 — run `app.update`, ECS maintenance, mesh sync, and scene/UI
+    /// extractions. Called between [`drain_inputs`](Self::drain_inputs) and
+    /// [`begin_render_frame`](Self::begin_render_frame).
+    pub fn run_app_update(&mut self, inputs: &[InputEvent]) {
+        let (Some(app), Some(gw)) = (self.app.as_mut(), self.game_world.as_mut()) else {
+            return;
+        };
 
-        let Some(app) = self.app.as_mut() else { return };
+        app.update(gw, inputs);
+        gw.tick_maintenance();
 
-        // Drain input events
-        let inputs: Vec<InputEvent> = self.input_events.drain(..).collect();
+        // CPU→GPU mesh sync.
+        if let (Some(proj), Some(device)) = (
+            self.services.get::<khora_data::ProjectionRegistry>(),
+            self.services
+                .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>(),
+        ) {
+            proj.sync_all(gw.inner_world_mut(), device.as_ref());
+        }
 
-        // Application update (game logic)
-        if let Some(gw) = self.game_world.as_mut() {
-            app.update(gw, &inputs);
+        // Render-world extraction.
+        if let Some(rws) = self.services.get::<khora_data::render::RenderWorldStore>() {
+            let mut rw = rws.shared().write().unwrap();
+            khora_data::render::extract_scene(gw.inner_world_mut(), &mut rw);
+        }
 
-            // ECS maintenance + agent execution
-            gw.tick_maintenance();
+        // UI extraction + text layout.
+        if let Some(uis) = self.services.get::<khora_data::ui::UiSceneStore>() {
+            let surface_size = self
+                .services
+                .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
+                .map(|d| d.get_surface_size())
+                .unwrap_or((0, 0));
 
-            self.scheduler.as_mut().map(|s| {
-                s.run_frame(gw.inner_world_mut(), frame_services_arc);
-            });
+            let mut ui_scene = uis.shared().write().unwrap();
+            khora_data::ui::extract_ui_scene(gw.inner_world_mut(), surface_size, &mut ui_scene);
+
+            if let (Some(tr), Some(fonts_lock)) = (
+                self.services
+                    .get::<std::sync::Arc<dyn khora_core::renderer::api::text::TextRenderer>>(),
+                self.services
+                    .get::<std::sync::Arc<std::sync::RwLock<khora_data::assets::Assets<khora_core::asset::font::Font>>>>(),
+            ) {
+                if let Ok(fonts) = fonts_lock.read() {
+                    khora_data::ui::layout_ui_text(
+                        gw.inner_world_mut(),
+                        tr.as_ref(),
+                        &fonts,
+                        &mut ui_scene,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Stage 3 — acquire the swapchain via `RenderSystem::begin_frame` and
+    /// populate the per-frame [`FrameContext`] with `ColorTarget`,
+    /// `DepthTarget`, and `ClearColor`.
+    ///
+    /// Returns `true` when a renderer is present and `begin_frame` succeeded
+    /// (driver should later call [`present_frame`](Self::present_frame)).
+    /// Returns `false` only when no renderer is registered or the swapchain
+    /// could not be acquired.
+    ///
+    /// Note: the `RenderSystem::render_to_viewport` flag still controls
+    /// **where** color/depth targets point (offscreen viewport vs swapchain),
+    /// but `begin_frame` is always invoked so that the swapchain texture is
+    /// available for editor overlay passes that paint on top of an
+    /// offscreen-rendered scene.
+    pub fn begin_render_frame(&mut self, frame_services_arc: &Arc<ServiceRegistry>) -> bool {
+        let render_system = self
+            .services
+            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+            .map(|arc| (*arc).clone());
+        let fctx = frame_services_arc
+            .get::<Arc<khora_core::renderer::api::core::FrameContext>>()
+            .map(|arc| (*arc).clone());
+
+        let Some(rs) = &render_system else {
+            return false;
+        };
+        let Ok(mut guard) = rs.lock() else {
+            return false;
+        };
+        match guard.begin_frame() {
+            Ok(targets) => {
+                if let Some(fctx) = &fctx {
+                    fctx.insert(ColorTarget(targets.color));
+                    if let Some(d) = targets.depth {
+                        fctx.insert(DepthTarget(d));
+                    }
+                    fctx.insert(ClearColor(
+                        khora_core::math::LinearRgba::new(0.1, 0.1, 0.15, 1.0),
+                    ));
+                }
+                true
+            }
+            Err(e) => {
+                log::error!("EngineCore: begin_frame failed: {}", e);
+                false
+            }
+        }
+    }
+
+    /// Stage 4 — dispatch the scheduler so all registered agents execute
+    /// their phases for this frame.
+    pub fn run_scheduler(&mut self, frame_services_arc: &Arc<ServiceRegistry>) {
+        let Some(gw) = self.game_world.as_mut() else {
+            return;
+        };
+        if let Some(s) = self.scheduler.as_mut() {
+            s.run_frame(gw.inner_world_mut(), frame_services_arc.clone());
+        }
+    }
+
+    /// Stage 5a — submit recorded passes from the [`FrameGraph`] to the GPU.
+    /// When `presents` is `false` (render-to-viewport mode), the frame graph
+    /// is discarded instead.
+    ///
+    /// Drivers that need to interleave their own rendering between agent
+    /// submission and the final present (e.g., the editor's `render_overlay`
+    /// pass that must paint on top of the 3D scene) should call this method
+    /// between [`run_scheduler`](Self::run_scheduler) and
+    /// [`present_frame`](Self::present_frame).
+    pub fn submit_passes(&mut self, presents: bool) {
+        let device = self
+            .services
+            .get::<Arc<dyn GraphicsDevice>>()
+            .map(|arc| (*arc).clone());
+        let frame_graph = self
+            .services
+            .get::<SharedFrameGraph>()
+            .map(|arc| (*arc).clone());
+
+        if presents {
+            if let (Some(graph), Some(device)) = (&frame_graph, &device) {
+                submit_frame_graph(graph, device.as_ref());
+            }
+        } else if let Some(graph) = &frame_graph {
+            graph.lock().expect("FrameGraph mutex poisoned").clear();
+        }
+    }
+
+    /// Stage 5b — call `RenderSystem::end_frame` to present the swapchain.
+    /// No-op when `presents` is `false`.
+    pub fn present_frame(&mut self, presents: bool) {
+        if !presents {
+            return;
+        }
+        let render_system = self
+            .services
+            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+            .map(|arc| (*arc).clone());
+        if let Some(rs) = &render_system {
+            if let Ok(mut guard) = rs.lock() {
+                if let Err(e) = guard.end_frame() {
+                    log::error!("EngineCore: end_frame failed: {}", e);
+                }
+            }
+        }
+    }
+
+    /// Convenience: runs both [`submit_passes`](Self::submit_passes) and
+    /// [`present_frame`](Self::present_frame) in order. Used by the default
+    /// `tick` path; drivers that need to interleave hooks should call the
+    /// staged methods directly.
+    pub fn end_render_frame(&mut self, presents: bool) {
+        self.submit_passes(presents);
+        self.present_frame(presents);
+    }
+
+    /// Mutable accessor for the application instance. Used by the winit
+    /// runner to invoke [`EngineApp`] lifecycle hooks between staged frame
+    /// methods.
+    pub fn app_mut(&mut self) -> Option<&mut A> {
+        self.app.as_mut()
+    }
+
+    /// Invokes a closure with mutable access to BOTH the application and the
+    /// game world simultaneously. Used by the winit runner to call lifecycle
+    /// hooks that need to read/write components (e.g., gizmo collection)
+    /// without re-borrowing `EngineCore` twice.
+    ///
+    /// The closure is skipped silently if either is uninitialized.
+    pub fn with_app_and_world<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut A, &mut GameWorld),
+    {
+        if let (Some(app), Some(world)) = (self.app.as_mut(), self.game_world.as_mut()) {
+            f(app, world);
         }
     }
 

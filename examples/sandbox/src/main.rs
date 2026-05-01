@@ -28,7 +28,10 @@ use khora_sdk::prelude::math::{Quaternion, Vec3};
 use khora_sdk::prelude::*;
 use khora_sdk::run_winit;
 use khora_sdk::winit_adapters::WinitWindowProvider;
-use khora_sdk::{AgentProvider, DccService, EngineApp, GameWorld, InputEvent, PhaseProvider, ServiceRegistry, WindowConfig, WgpuRenderSystem, RenderSystem};
+use khora_sdk::{
+    AgentProvider, DccService, EngineApp, GameWorld, InputEvent, PhaseProvider, RenderSystem,
+    ServiceRegistry, WgpuRenderSystem, WindowConfig,
+};
 use std::sync::{Arc, Mutex};
 
 #[global_allocator]
@@ -296,12 +299,16 @@ fn main() -> Result<()> {
     use env_logger::{Builder, Env};
 
     Builder::from_env(Env::default().default_filter_or("info"))
-        .filter_module("wgpu_hal", log::LevelFilter::Error)
+        // Suppress Epic Games / EOS overlay Vulkan loader JSON-not-found noise.
+        // These are harmless OS-level loader warnings, not engine errors.
+        .filter_module("wgpu_hal::vulkan::instance", log::LevelFilter::Off)
         .init();
 
-    run_winit::<WinitWindowProvider, SandboxGame>(|window, services| {
+    run_winit::<WinitWindowProvider, SandboxGame>(|window, services, _event_loop| {
         let mut rs = WgpuRenderSystem::new();
         rs.init(window).expect("renderer init failed");
+        // Register the graphics device before boxing — required by RenderAgent.
+        services.insert(rs.graphics_device());
         let rs: Box<dyn RenderSystem> = Box::new(rs);
         services.insert(Arc::new(Mutex::new(rs)));
     })?;

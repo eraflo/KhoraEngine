@@ -12,195 +12,197 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! Defines the ShadowAgent — owns `LaneKind::Shadow` lanes only.
+//!
+//! Per CLAD, an Agent owns exactly one `LaneKind` and stores **only** its
+//! own GORNA/strategy state.  The graphics device, the GPU mesh cache,
+//! the per-frame `RenderWorld`, and the `FrameContext` are all looked up
+//! from the [`ServiceRegistry`] each frame — agents are not the owners.
+
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
 use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
+    StrategyOption,
 };
-use khora_core::lane::{Lane, LaneContext, LaneKind, Slot};
-use khora_core::renderer::{GraphicsDevice, RenderSystem};
+use khora_core::lane::{
+    LaneContext, LaneKind, LaneRegistry, ShadowAtlasView, ShadowComparisonSampler, Slot,
+};
+use khora_core::renderer::api::core::FrameContext;
+use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
-use khora_data::{
-    assets::Assets,
-    ecs::World,
-};
-use khora_lanes::render_lane::{ExtractRenderablesLane, RenderWorld, ShadowPassLane};
-use crate::render_agent::mesh_preparation::MeshPreparationSystem;
-use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
+use khora_data::render::{RenderWorld, RenderWorldStore};
+use khora_data::GpuCache;
+use khora_lanes::render_lane::ShadowPassLane;
 
-/// Marker type for shadow completion stage.
-pub struct ShadowDone;
+const COST_TO_MS_SCALE: f32 = 5.0;
 
-/// The agent responsible for shadow map rendering.
+/// The agent responsible for shadow map rendering (`LaneKind::Shadow`).
+///
+/// Holds **only** its own strategy state — every other dependency
+/// (`GraphicsDevice`, `GpuCache`, `RenderWorldStore`, `FrameContext`)
+/// is fetched from `EngineContext::services` per frame.
 pub struct ShadowAgent {
-    /// Intermediate data structure populated by the extraction phase.
-    render_world: RenderWorld,
-    /// Cache for GPU-side mesh assets.
-    gpu_meshes: Arc<RwLock<Assets<khora_core::renderer::api::scene::GpuMesh>>>,
-    /// System that handles uploading CPU meshes to the GPU.
-    mesh_preparation_system: MeshPreparationSystem,
-    /// Lane that extracts data from the ECS into the RenderWorld.
-    extract_lane: ExtractRenderablesLane,
-    /// Shadow processing lanes.
-    shadow_lanes: Vec<Box<dyn Lane>>,
-    /// Cached reference to the graphics device.
-    device: Option<Arc<dyn GraphicsDevice>>,
-    /// Cached reference to the render system.
-    render_system: Option<Arc<Mutex<Box<dyn RenderSystem>>>>,
-    /// Performance metrics.
-    last_frame_time: Duration,
+    /// Shadow lanes — the agent's strategies.
+    lanes: LaneRegistry,
+    /// Time budget assigned by GORNA via `apply_budget`.
     time_budget: Duration,
+    /// Duration of the last shadow pass.
+    last_frame_time: Duration,
+    /// Total number of shadow frames rendered.
     frame_count: u64,
-}
-
-impl ShadowAgent {
-    /// Creates a new ShadowAgent with initialized shadow lanes.
-    pub fn new() -> Self {
-        let shadow_lanes: Vec<Box<dyn Lane>> =
-            vec![Box::new(ShadowPassLane::default())];
-
-        Self {
-            render_world: RenderWorld::new(),
-            gpu_meshes: Arc::new(RwLock::new(Assets::new())),
-            mesh_preparation_system: MeshPreparationSystem::new(Arc::new(RwLock::new(Assets::new()))),
-            extract_lane: ExtractRenderablesLane::new(),
-            shadow_lanes,
-            device: None,
-            render_system: None,
-            last_frame_time: Duration::ZERO,
-            time_budget: Duration::from_millis(5),
-            frame_count: 0,
-        }
-    }
+    /// Current GORNA strategy ID applied via `apply_budget`.
+    current_strategy: StrategyId,
+    /// Number of `execute` invocations attempted.
+    execute_attempts: u64,
 }
 
 impl Agent for ShadowAgent {
     fn id(&self) -> AgentId {
-        AgentId::Renderer
+        AgentId::ShadowRenderer
     }
 
-    fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
+    fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
+        // Estimate cost from a stub LaneContext.  The real RenderWorld is
+        // fetched from services at execute time; negotiation runs on the
+        // DCC thread without access to the live scene.
+        let mut stub_world = RenderWorld::new();
+        let mut ctx = LaneContext::new();
+        ctx.insert(Slot::new(&mut stub_world));
+
+        let cost = self
+            .lanes
+            .find_by_kind(LaneKind::Shadow)
+            .first()
+            .map(|lane| lane.estimate_cost(&ctx))
+            .unwrap_or(1.0);
+        let estimated_time = Duration::from_secs_f32((cost * COST_TO_MS_SCALE).max(0.1) / 1000.0);
+
+        // 2048×2048×4 layers @ Depth32Float = 64 MB for the atlas.
+        let estimated_vram = 64u64 * 1024 * 1024;
+
+        let mut strategies = Vec::new();
+        let fits_constraint = request
+            .constraints
+            .max_vram_bytes
+            .map(|max| estimated_vram <= max)
+            .unwrap_or(true);
+        if fits_constraint {
+            strategies.push(StrategyOption {
+                id: StrategyId::HighPerformance,
+                estimated_time,
+                estimated_vram,
+            });
+        }
+
+        if strategies.is_empty() {
+            strategies.push(StrategyOption {
+                id: StrategyId::LowPower,
+                estimated_time: Duration::from_millis(1),
+                estimated_vram: 0,
+            });
+        }
+
         NegotiationResponse {
-            strategies: vec![],
+            strategies,
             timing_adjustment: None,
         }
     }
 
-    fn apply_budget(&mut self, _budget: ResourceBudget) {}
+    fn apply_budget(&mut self, budget: ResourceBudget) {
+        self.time_budget = budget.time_limit;
+        self.current_strategy = budget.strategy_id;
+    }
 
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
-        if let Some(device) = context
-            .services
-            .get::<Arc<dyn GraphicsDevice>>()
-            .cloned()
-        {
-            self.device = Some(device.clone());
+        // One-shot lane GPU initialization.  Fetch the device, drive
+        // lane.on_initialize() once, then drop — the agent does not store it.
+        let Some(device_arc) = context.services.get::<Arc<dyn GraphicsDevice>>().cloned() else {
+            log::warn!("ShadowAgent: graphics device unavailable in on_initialize");
+            return;
+        };
 
-            let device_arc = device.clone();
-            let mut init_ctx = LaneContext::new();
-            init_ctx.insert(device_arc);
-            for lane in &self.shadow_lanes {
-                if let Err(e) = lane.on_initialize(&mut init_ctx) {
-                    log::error!(
-                        "ShadowAgent: Failed to initialize lane {}: {}",
-                        lane.strategy_name(),
-                        e
-                    );
-                }
-            }
-        }
-
-        if self.render_system.is_none() {
-            if let Some(rs) = context
-                .services
-                .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
-            {
-                self.render_system = Some(rs.clone());
+        let mut init_ctx = LaneContext::new();
+        init_ctx.insert(device_arc);
+        for lane in self.lanes.all() {
+            if let Err(e) = lane.on_initialize(&mut init_ctx) {
+                log::error!(
+                    "ShadowAgent: Failed to initialize lane {}: {}",
+                    lane.strategy_name(),
+                    e
+                );
             }
         }
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
-        if self.render_system.is_none() {
-            if let Some(rs) = context
-                .services
-                .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
-            {
-                self.render_system = Some(rs.clone());
+        self.execute_attempts += 1;
+        let frame_start = Instant::now();
+
+        // Look up everything from services — the agent owns none of it.
+        let Some(device_arc) = context.services.get::<Arc<dyn GraphicsDevice>>() else {
+            return;
+        };
+        let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
+
+        let Some(gpu_cache) = context.services.get::<GpuCache>() else {
+            return;
+        };
+        let gpu_meshes = gpu_cache.inner().clone();
+
+        let Some(rws) = context.services.get::<RenderWorldStore>() else {
+            return;
+        };
+        let render_world_arc = rws.shared().clone();
+
+        let frame_ctx = context.services.get::<Arc<FrameContext>>().cloned();
+
+        // Encode shadow passes into a standalone command buffer.
+        let mut encoder = device.create_command_encoder(Some("Shadow Command Encoder"));
+        {
+            let mut rw_guard = render_world_arc.write().unwrap();
+            let mut ctx = LaneContext::new();
+            ctx.insert(device.clone());
+            ctx.insert(gpu_meshes);
+            // SAFETY: encoder lives for the entire scope of this block; ctx
+            // is dropped before encoder.finish().
+            let encoder_slot = Slot::new(encoder.as_mut());
+            ctx.insert(unsafe {
+                std::mem::transmute::<
+                    Slot<dyn khora_core::renderer::traits::CommandEncoder>,
+                    Slot<dyn khora_core::renderer::traits::CommandEncoder>,
+                >(encoder_slot)
+            });
+            ctx.insert(Slot::new(&mut *rw_guard));
+
+            for lane in self.lanes.find_by_kind(LaneKind::Shadow) {
+                if let Err(e) = lane.execute(&mut ctx) {
+                    log::error!(
+                        "ShadowAgent: shadow lane {} failed: {}",
+                        lane.strategy_name(),
+                        e
+                    );
+                }
             }
-        }
 
-        let Some(device) = self.device.clone() else {
-            return;
-        };
-
-        let Some(rs) = &self.render_system else {
-            return;
-        };
-
-        // Prepare mesh assets and extract render world.
-        if let Some(world_any) = context.world.as_deref_mut() {
-            if let Some(world) = world_any.downcast_mut::<World>() {
-                self.render_world.clear();
-                self.mesh_preparation_system
-                    .run(world, device.as_ref());
-
-                let world_ptr: *mut World = world;
-                let render_world_ptr: *mut RenderWorld = &mut self.render_world;
-                let gpu_meshes_ptr: *const Arc<RwLock<Assets<khora_core::renderer::api::scene::GpuMesh>>> = &self.gpu_meshes;
-
-                let mut ctx = LaneContext::new();
-                ctx.insert(Slot::new(unsafe { &mut *render_world_ptr }));
-                ctx.insert(unsafe { (*gpu_meshes_ptr).clone() });
-                ctx.insert(unsafe { &mut *world_ptr });
-                if let Err(e) = self.extract_lane.execute(&mut ctx) {
-                    log::warn!("ShadowAgent: extract lane failed: {}", e);
+            // Hoist atlas view + comparison sampler from the lane's local
+            // ctx into the FrameContext so RenderAgent can read them.
+            // Cross-agent ordering is now enforced by the scheduler's
+            // AgentCompletionMap (RenderAgent declares Hard(ShadowRenderer)).
+            if let Some(fctx) = &frame_ctx {
+                if let Some(view) = ctx.get::<ShadowAtlasView>().cloned() {
+                    fctx.insert(view);
+                }
+                if let Some(sampler) = ctx.get::<ShadowComparisonSampler>().cloned() {
+                    fctx.insert(sampler);
                 }
             }
         }
+        device.submit_command_buffer(encoder.finish());
 
-        // Render shadow maps synchronously.
-        if let Ok(mut rs) = rs.lock() {
-            if let Err(e) = rs.render_with_encoder(
-                khora_core::math::LinearRgba::new(0.0, 0.0, 0.0, 0.0),
-                Box::new(|encoder, _render_ctx| {
-                    let mut ctx = LaneContext::new();
-                    ctx.insert(device.clone());
-                    let encoder_slot = Slot::new(encoder);
-                    ctx.insert(unsafe {
-                        std::mem::transmute::<
-                            Slot<dyn khora_core::renderer::traits::CommandEncoder>,
-                            Slot<dyn khora_core::renderer::traits::CommandEncoder>,
-                        >(encoder_slot)
-                    });
-                    ctx.insert(Slot::new(&mut self.render_world));
-
-                    for shadow_lane in &self.shadow_lanes {
-                        if shadow_lane.lane_kind() == LaneKind::Shadow {
-                            if let Err(e) = shadow_lane.execute(&mut ctx) {
-                                log::error!(
-                                    "ShadowAgent: Shadow lane {} failed: {}",
-                                    shadow_lane.strategy_name(),
-                                    e
-                                );
-                            }
-                        }
-                    }
-                }),
-            ) {
-                log::error!("ShadowAgent: Shadow render error: {}", e);
-            }
-        }
-
-        // Signal shadow completion via StageHandle for other agents.
-        if let Some(fctx) = context
-            .services
-            .get::<Arc<khora_core::renderer::api::core::FrameContext>>()
-        {
-            let stage = fctx.insert_stage::<ShadowDone>();
-            stage.mark_done();
-        }
-
+        self.last_frame_time = frame_start.elapsed();
         self.frame_count += 1;
     }
 
@@ -216,8 +218,8 @@ impl Agent for ShadowAgent {
         AgentStatus {
             agent_id: self.id(),
             health_score,
-            current_strategy: StrategyId::LowPower,
-            is_stalled: self.frame_count == 0 && self.device.is_some(),
+            current_strategy: self.current_strategy,
+            is_stalled: self.execute_attempts > 0 && self.frame_count == 0,
             message: format!(
                 "shadow_time={:.2}ms",
                 self.last_frame_time.as_secs_f32() * 1000.0,
@@ -242,5 +244,21 @@ impl Agent for ShadowAgent {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+}
+
+impl Default for ShadowAgent {
+    fn default() -> Self {
+        let mut lanes = LaneRegistry::new();
+        lanes.register(Box::new(ShadowPassLane::default()));
+
+        Self {
+            lanes,
+            time_budget: Duration::ZERO,
+            last_frame_time: Duration::ZERO,
+            frame_count: 0,
+            current_strategy: StrategyId::HighPerformance,
+            execute_attempts: 0,
+        }
     }
 }

@@ -261,10 +261,9 @@ impl eframe::App for HubApp {
             // Clean up receiver once download is done.
             if self.engine_manager.download_progress.is_none()
                 && self.engine_manager.download_rx.is_some()
+                && rx.try_recv().is_err()
             {
-                if rx.try_recv().is_err() {
-                    self.engine_manager.download_rx = None;
-                }
+                self.engine_manager.download_rx = None;
             }
             ctx.request_repaint();
         }

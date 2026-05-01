@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the intermediate `RenderWorld` and its associated data structures.
+//! The intermediate `RenderWorld` and its associated extracted-data types.
 //!
-//! The `RenderWorld` is a temporary, frame-by-frame representation of the scene,
-//! optimized for consumption by the rendering pipelines (`RenderLane`s). It is
-//! populated by an "extraction" phase that reads data from the main ECS `World`.
+//! `RenderWorld` is a per-frame, GPU-friendly snapshot of the scene used by
+//! the rendering lanes.  It is populated by [`extract_scene`](super::extract_scene)
+//! once per frame in the engine's hot loop.
 
 use khora_core::{
     asset::{AssetHandle, AssetUUID, Material},
@@ -24,66 +24,53 @@ use khora_core::{
     renderer::{api::scene::GpuMesh, light::LightType},
 };
 
-/// A flat, GPU-friendly representation of a single mesh to be rendered.
-///
-/// This struct contains all the necessary information, copied from various ECS
-/// components, required to issue a draw call for a mesh.
+/// Flat, GPU-friendly representation of a single mesh to render.
 pub struct ExtractedMesh {
-    /// The world-space transformation matrix of the mesh, derived from `GlobalTransform`.
+    /// World-space transform derived from `GlobalTransform`.
     pub transform: AffineTransform,
-    /// The UUID of the loaded CPU Mesh. Used for debugging or mapping.
+    /// UUID of the loaded CPU mesh — useful for debugging or mapping.
     pub cpu_mesh_uuid: AssetUUID,
-    /// A handle to the uploaded GPU mesh data.
+    /// Handle to the uploaded GPU mesh data.
     pub gpu_mesh: AssetHandle<GpuMesh>,
-    /// A handle to the material to be used for rendering.
-    /// If `None`, a default material should be used.
+    /// Optional material handle.  `None` means use a default material.
     pub material: Option<AssetHandle<Box<dyn Material>>>,
 }
 
-/// A flat, GPU-friendly representation of a light source for rendering.
-///
-/// This struct contains the light's properties along with its world-space
-/// position and direction, extracted from the ECS.
+/// Flat, GPU-friendly representation of a light source.
 #[derive(Debug, Clone)]
 pub struct ExtractedLight {
-    /// The type and properties of the light source.
+    /// Light type and its parameters.
     pub light_type: LightType,
-    /// The world-space position of the light (from `GlobalTransform`).
-    ///
-    /// For directional lights, this is typically ignored.
+    /// World-space position (ignored for purely directional lights).
     pub position: Vec3,
-    /// The world-space direction of the light.
-    ///
-    /// For point lights, this is typically ignored.
-    /// For directional and spot lights, this is the direction the light is pointing.
+    /// World-space direction (ignored for point lights).
     pub direction: Vec3,
-    /// View-projection matrix for the shadow map.
+    /// View-projection matrix used for shadow mapping.
     pub shadow_view_proj: khora_core::math::Mat4,
-    /// Index into the shadow atlas, or None if no shadow.
+    /// Index into the shadow atlas, or `None` if the light casts no shadow.
     pub shadow_atlas_index: Option<i32>,
 }
 
-/// A flat representation of a camera view for rendering.
+/// Flat representation of a camera view.
 #[derive(Debug, Clone)]
 pub struct ExtractedView {
-    /// The view-projection matrix for this camera.
+    /// View-projection matrix.
     pub view_proj: khora_core::math::Mat4,
-    /// The world-space position of the camera.
+    /// World-space camera position.
     pub position: Vec3,
 }
 
-/// A collection of all data extracted from the main `World` needed for rendering a single frame.
+/// All scene data needed to render one frame.
 ///
-/// This acts as the primary input to the entire rendering system. By decoupling
-/// from the main ECS, the render thread can work on this data without contention
-/// while the simulation thread advances the next frame.
+/// Populated by [`extract_scene`](super::extract_scene).  Consumed by the
+/// render lanes through the shared [`RenderWorldStore`](super::RenderWorldStore).
 #[derive(Default)]
 pub struct RenderWorld {
-    /// A list of all meshes to be rendered in the current frame.
+    /// Meshes to draw this frame.
     pub meshes: Vec<ExtractedMesh>,
-    /// A list of all active lights affecting the current frame.
+    /// Active lights affecting the frame.
     pub lights: Vec<ExtractedLight>,
-    /// A list of all active camera views for the current frame.
+    /// Active camera views.
     pub views: Vec<ExtractedView>,
 }
 
@@ -93,14 +80,14 @@ impl RenderWorld {
         Self::default()
     }
 
-    /// Clears all the data in the `RenderWorld`, preparing it for the next frame's extraction.
+    /// Clears all extracted data.  Called at the start of each frame's extraction.
     pub fn clear(&mut self) {
         self.meshes.clear();
         self.lights.clear();
         self.views.clear();
     }
 
-    /// Returns the number of directional lights in the render world.
+    /// Returns the number of directional lights.
     pub fn directional_light_count(&self) -> usize {
         self.lights
             .iter()
@@ -108,7 +95,7 @@ impl RenderWorld {
             .count()
     }
 
-    /// Returns the number of point lights in the render world.
+    /// Returns the number of point lights.
     pub fn point_light_count(&self) -> usize {
         self.lights
             .iter()
@@ -116,7 +103,7 @@ impl RenderWorld {
             .count()
     }
 
-    /// Returns the number of spot lights in the render world.
+    /// Returns the number of spot lights.
     pub fn spot_light_count(&self) -> usize {
         self.lights
             .iter()
@@ -131,14 +118,15 @@ mod tests {
     use khora_core::renderer::light::{DirectionalLight, PointLight, SpotLight};
 
     #[test]
-    fn test_render_world_default() {
+    fn render_world_default_is_empty() {
         let world = RenderWorld::default();
         assert!(world.meshes.is_empty());
         assert!(world.lights.is_empty());
+        assert!(world.views.is_empty());
     }
 
     #[test]
-    fn test_render_world_clear() {
+    fn render_world_clear_drains_collections() {
         let mut world = RenderWorld::new();
         world.lights.push(ExtractedLight {
             light_type: LightType::Directional(DirectionalLight::default()),
@@ -155,10 +143,8 @@ mod tests {
     }
 
     #[test]
-    fn test_light_count_methods() {
+    fn light_count_methods_filter_by_type() {
         let mut world = RenderWorld::new();
-
-        // Add lights
         world.lights.push(ExtractedLight {
             light_type: LightType::Directional(DirectionalLight::default()),
             position: Vec3::ZERO,

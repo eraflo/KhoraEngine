@@ -12,17 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the intermediate `UiScene` and its associated data structures.
+//! Per-frame intermediate UI scene types.
 //!
-//! The `UiScene` is a temporary, frame-by-frame representation of the UI,
-//! populated by an "extraction" phase from the ECS `World`. This allows the
-//! UI rendering lane to work on a decoupled snapshot of the UI state.
+//! `UiScene` is populated each frame by [`extract_ui_scene`](super::extract_ui_scene)
+//! (and optionally [`layout_ui_text`](super::layout_ui_text)).  The UI render
+//! lane consumes it through the shared [`UiSceneStore`](super::UiSceneStore).
 
 use khora_core::math::{Vec2, Vec4};
+use khora_core::renderer::api::text::TextLayout;
 use khora_core::renderer::api::util::AtlasRect;
-use khora_data::ui::components::{UiBorder, UiColor, UiImage};
 
-/// A flat, GPU-friendly representation of a single UI node to be rendered.
+use crate::ui::components::{UiBorder, UiColor, UiImage};
+
+/// A flat, GPU-friendly representation of a single UI node.
 #[derive(Debug, Clone)]
 pub struct ExtractedUiNode {
     /// Screen-space position.
@@ -35,19 +37,17 @@ pub struct ExtractedUiNode {
     pub border: Option<UiBorder>,
     /// Optional image asset reference.
     pub image: Option<UiImage>,
-    /// Optional UV coordinates if the image is atlased.
+    /// Optional UV rect once the image is allocated in the UI texture atlas.
     pub atlas_rect: Option<AtlasRect>,
-    /// Z-index for sorting (not currently used in batching but useful for future depth sorting).
+    /// Z-index for sorting.
     pub z_index: i32,
 }
-
-use khora_core::renderer::api::text::TextLayout;
 
 /// Extracted text data for rendering.
 pub struct ExtractedUiText {
     /// Screen-space position.
     pub pos: Vec2,
-    /// The pre-computed text layout.
+    /// Pre-computed text layout.
     pub layout: Box<dyn TextLayout>,
     /// Text color RGBA.
     pub color: Vec4,
@@ -55,14 +55,14 @@ pub struct ExtractedUiText {
     pub z_index: i32,
 }
 
-/// A collection of all UI data extracted from the main `World` for a single frame.
+/// All UI data extracted from the main `World` for a single frame.
 #[derive(Default)]
 pub struct UiScene {
-    /// List of UI nodes to render.
+    /// UI nodes to render.
     pub nodes: Vec<ExtractedUiNode>,
-    /// List of UI text elements to render.
+    /// UI text elements to render.
     pub texts: Vec<ExtractedUiText>,
-    /// The surface size at the time of extraction.
+    /// Surface size at the time of extraction.
     pub surface_size: (u32, u32),
 }
 
@@ -72,7 +72,7 @@ impl UiScene {
         Self::default()
     }
 
-    /// Clears the scene for the next frame.
+    /// Clears all UI data — called at the start of each frame's extraction.
     pub fn clear(&mut self) {
         self.nodes.clear();
         self.texts.clear();

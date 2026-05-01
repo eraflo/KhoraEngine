@@ -12,17 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! User interface subsystem.
-//!
-//! Provides UI components and layout management for the Khora Engine.
+//! Shared, engine-wide container for the per-frame [`UiScene`].
 
-pub mod components;
-mod extract;
-pub mod layout_view;
-mod scene;
-mod store;
+use std::sync::{Arc, RwLock};
 
-pub use components::*;
-pub use extract::{extract_ui_scene, layout_ui_text};
-pub use scene::{ExtractedUiNode, ExtractedUiText, UiScene};
-pub use store::UiSceneStore;
+use super::UiScene;
+
+/// Shared, engine-wide container for the per-frame [`UiScene`].
+#[derive(Clone, Default)]
+pub struct UiSceneStore(Arc<RwLock<UiScene>>);
+
+impl UiSceneStore {
+    /// Creates a new, empty store.
+    pub fn new() -> Self {
+        Self(Arc::new(RwLock::new(UiScene::new())))
+    }
+
+    /// Returns the shared `Arc<RwLock<UiScene>>`.
+    pub fn shared(&self) -> &Arc<RwLock<UiScene>> {
+        &self.0
+    }
+}

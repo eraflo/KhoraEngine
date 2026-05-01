@@ -14,14 +14,13 @@
 
 //! Shadow pass lane implementation - handles depth rendering for shadows.
 
-use super::RenderWorld;
+use khora_data::render::{ExtractedLight, ExtractedView, RenderWorld};
 use khora_core::renderer::{
     api::{
         command::{
             BindGroupLayoutId, LoadOp, Operations, RenderPassDepthStencilAttachment,
             RenderPassDescriptor, StoreOp,
         },
-        core::RenderContext,
         pipeline::RenderPipelineId,
         resource::{CameraUniformData, SamplerId, TextureId, TextureViewId},
         scene::{GpuMesh, ModelUniforms},
@@ -85,8 +84,8 @@ impl ShadowPassLane {
     /// Calculates the view-projection matrix for a given light's shadow map.
     fn calculate_shadow_view_proj(
         &self,
-        light: &super::ExtractedLight,
-        view: &super::ExtractedView,
+        light: &ExtractedLight,
+        view: &ExtractedView,
     ) -> khora_core::math::Mat4 {
         use khora_core::math::{Mat4, Vec3, Vec4};
 
@@ -192,7 +191,7 @@ impl khora_core::lane::Lane for ShadowPassLane {
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
         let render_world =
-            match ctx.get::<khora_core::lane::Slot<crate::render_lane::RenderWorld>>() {
+            match ctx.get::<khora_core::lane::Slot<khora_data::render::RenderWorld>>() {
                 Some(slot) => slot.get_ref(),
                 None => return 1.0,
             };
@@ -245,33 +244,14 @@ impl khora_core::lane::Lane for ShadowPassLane {
                 .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?
                 .get();
             let render_world = ctx
-                .get::<Slot<crate::render_lane::RenderWorld>>()
+                .get::<Slot<khora_data::render::RenderWorld>>()
                 .ok_or(LaneError::missing("Slot<RenderWorld>"))?
                 .get_ref();
-            let color_target = ctx
-                .get::<khora_core::lane::ColorTarget>()
-                .ok_or(LaneError::missing("ColorTarget"))?
-                .0;
-            let depth_target = ctx
-                .get::<khora_core::lane::DepthTarget>()
-                .ok_or(LaneError::missing("DepthTarget"))?
-                .0;
-            let clear_color = ctx
-                .get::<khora_core::lane::ClearColor>()
-                .ok_or(LaneError::missing("ClearColor"))?
-                .0;
-
-            let render_ctx = khora_core::renderer::api::core::RenderContext::new(
-                &color_target,
-                Some(&depth_target),
-                clear_color,
-            );
 
             self.render_shadows(
                 render_world,
                 device.as_ref(),
                 encoder,
-                &render_ctx,
                 &gpu_meshes,
             );
         }
@@ -279,7 +259,7 @@ impl khora_core::lane::Lane for ShadowPassLane {
         // Phase 2: Patch lights with shadow data
         {
             let render_world = ctx
-                .get::<Slot<crate::render_lane::RenderWorld>>()
+                .get::<Slot<khora_data::render::RenderWorld>>()
                 .ok_or(LaneError::missing("Slot<RenderWorld>"))?
                 .get();
             let shadow_results = self.get_shadow_results();
@@ -324,7 +304,6 @@ impl ShadowPassLane {
         render_world: &RenderWorld,
         device: &dyn GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
-        _render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) {
         use khora_core::renderer::api::{

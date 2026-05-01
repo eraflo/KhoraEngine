@@ -98,6 +98,16 @@ impl AgentRegistry {
         self.entries.iter().map(|e| &e.agent)
     }
 
+    /// Returns the [`AgentId`]s of every registered agent in priority order.
+    ///
+    /// Used by the scheduler to seed a fresh `AgentCompletionMap` per frame.
+    pub fn all_ids(&self) -> Vec<AgentId> {
+        self.entries
+            .iter()
+            .filter_map(|entry| entry.agent.lock().ok().map(|a| a.id()))
+            .collect()
+    }
+
     /// Initializes all agents once after registration.
     ///
     /// Calls `on_initialize()` on each agent in priority order, giving them

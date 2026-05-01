@@ -410,6 +410,7 @@ impl GornaArbitrator {
     fn get_agent_priority(&self, id: AgentId) -> f32 {
         match id {
             AgentId::Renderer => 1.0,
+            AgentId::ShadowRenderer => 1.0,
             AgentId::Physics => 1.0,
             AgentId::Ecs => 0.8,
             AgentId::Ui => 0.7,

@@ -80,6 +80,10 @@ impl WindowProvider for WinitWindowProvider {
         &self.window
     }
 
+    fn clone_raw_window_arc(&self) -> Arc<dyn Any + Send + Sync> {
+        self.window.clone_winit_arc()
+    }
+
     fn translate_event(&self, raw_event: &dyn Any) -> Option<InputEvent> {
         if let Some(winit_event) = raw_event.downcast_ref::<WindowEvent>() {
             khora_infra::platform::input::translate_winit_input(winit_event)
@@ -98,7 +102,11 @@ pub struct WinitAppRunner<W: WindowProvider, A: EngineApp> {
     window: Option<W>,
     engine: EngineCore<A>,
     renderer: Option<Arc<Mutex<Box<dyn RenderSystem>>>>,
-    bootstrap: Option<Box<dyn FnOnce(&dyn KhoraWindow, &mut khora_core::ServiceRegistry) + Send>>,
+    bootstrap: Option<
+        Box<
+            dyn FnOnce(&dyn KhoraWindow, &mut khora_core::ServiceRegistry, &dyn Any) + Send,
+        >,
+    >,
     tokio_runtime: Option<tokio::runtime::Runtime>,
     /// Per-frame context, recreated each frame.
     frame_context: Option<Arc<FrameContext>>,
@@ -107,7 +115,9 @@ pub struct WinitAppRunner<W: WindowProvider, A: EngineApp> {
 impl<W: WindowProvider, A: EngineApp> WinitAppRunner<W, A> {
     /// Creates a new winit app runner with the given bootstrap closure.
     pub fn new(
-        bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::ServiceRegistry) + Send + 'static,
+        bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::ServiceRegistry, &dyn Any)
+        + Send
+        + 'static,
     ) -> Self {
         Self {
             window: None,
@@ -116,6 +126,77 @@ impl<W: WindowProvider, A: EngineApp> WinitAppRunner<W, A> {
             bootstrap: Some(Box::new(bootstrap)),
             tokio_runtime: None,
             frame_context: None,
+        }
+    }
+
+    /// Runs one frame, interleaving the staged engine methods with the
+    /// `EngineApp` lifecycle hooks. Sandbox-style apps (no overrides) get
+    /// the same behavior as the legacy monolithic `tick`.
+    fn run_frame(&mut self) {
+        // Build the per-frame service registry inheriting all engine services.
+        let frame_services_arc = if let Some(rt) = &self.tokio_runtime {
+            let fctx = FrameContext::new(rt.handle().clone());
+            let mut frame_services =
+                khora_core::ServiceRegistry::with_parent(Arc::clone(self.engine.services()));
+            frame_services.insert(PRIMARY_VIEWPORT);
+            let fctx_arc = Arc::new(fctx);
+            frame_services.insert(Arc::clone(&fctx_arc));
+            self.frame_context = Some(fctx_arc);
+            Arc::new(frame_services)
+        } else {
+            // No tokio runtime — minimal frame services.
+            let mut frame_services =
+                khora_core::ServiceRegistry::with_parent(Arc::clone(self.engine.services()));
+            frame_services.insert(PRIMARY_VIEWPORT);
+            Arc::new(frame_services)
+        };
+
+        let services_arc = Arc::clone(self.engine.services());
+
+        // Stage 1: drain inputs (also marks simulation started + ticks telemetry).
+        let inputs = self.engine.drain_inputs();
+
+        // Hook: before_frame — overlay.begin_frame + shell.show_frame.
+        if let Some(window) = self.window.as_ref() {
+            let kwin = window.as_khora_window();
+            self.engine.with_app_and_world(|app, world| {
+                app.before_frame(world, &services_arc, kwin);
+            });
+        }
+
+        // Stage 2: app.update + maintenance + extractions.
+        self.engine.run_app_update(&inputs);
+
+        // Stage 3: begin_frame on the renderer.
+        let presents = self.engine.begin_render_frame(&frame_services_arc);
+
+        // Hook: before_agents — render offscreen viewport, set_render_to_viewport(true).
+        self.engine.with_app_and_world(|app, world| {
+            app.before_agents(world, &services_arc);
+        });
+
+        // Stage 4: scheduler dispatch.
+        self.engine.run_scheduler(&frame_services_arc);
+
+        // Stage 5a: submit recorded agent passes. Done BEFORE `after_agents`
+        // so editor overlay rendering (in `after_agents`) paints on top of
+        // the 3D scene rather than getting overwritten by the agent submit.
+        self.engine.submit_passes(presents);
+
+        // Hook: after_agents — gizmos, set false, render_overlay.
+        self.engine.with_app_and_world(|app, world| {
+            app.after_agents(world, &services_arc);
+        });
+
+        // Stage 5b: present.
+        self.engine.present_frame(presents);
+
+        // Wait for hot-path tasks before returning so the next frame sees a
+        // settled GPU state.
+        if let Some(rt) = &self.tokio_runtime {
+            if let Some(fctx) = &self.frame_context {
+                rt.block_on(fctx.wait_for_all());
+            }
         }
     }
 }
@@ -134,17 +215,33 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
         // Build service registry
         let mut services = khora_core::ServiceRegistry::new();
 
-        // Call bootstrap closure
+        // Insert a long-lived clone of the raw window handle so editor hooks
+        // (e.g., overlay `begin_frame`) can retrieve `Arc<winit::window::Window>`
+        // from services and pass it to the overlay each frame.
+        let raw_window_arc = window.clone_raw_window_arc();
+        if let Ok(winit_arc) =
+            raw_window_arc.downcast::<winit::window::Window>()
+        {
+            services.insert(winit_arc);
+        }
+
+        // Call bootstrap closure — pass the active event loop opaquely so the
+        // app may construct windowing-aware resources (e.g., an egui overlay
+        // backed by `egui_winit::State`) without the SDK needing to know.
         let bootstrap = self.bootstrap.take().expect("bootstrap not set");
-        bootstrap(window.as_khora_window(), &mut services);
+        bootstrap(
+            window.as_khora_window(),
+            &mut services,
+            event_loop as &dyn Any,
+        );
 
-        // Create and bootstrap the engine
-        let services_arc = Arc::new(services);
+        // Bootstrap the engine, transferring ownership of services.
+        // bootstrap() inserts built-in services (GpuCache, etc.), wraps in Arc,
+        // and stores the final registry in self.engine.services.
         let app = A::new();
-        self.engine.bootstrap(app, Arc::clone(&services_arc));
-        self.engine.set_services(Arc::clone(&services_arc));
+        self.engine.bootstrap(app, services);
 
-        // Cache renderer for resize handling
+        // Cache renderer for resize handling (reads from the Arc stored by bootstrap).
         if let Some(rs) = self.engine.services().get::<Arc<Mutex<Box<dyn RenderSystem>>>>() {
             self.renderer = Some(rs.clone());
         }
@@ -173,6 +270,17 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
         _id: WindowId,
         event: WindowEvent,
     ) {
+        // Give the app a chance to intercept raw events (e.g., forward to an
+        // egui overlay). If consumed, do not forward to game input nor act on
+        // the event further (close / resize / redraw still proceed below).
+        let consumed_by_app = if let (Some(app), Some(window)) =
+            (self.engine.app_mut(), &self.window)
+        {
+            app.intercept_window_event(&event as &dyn Any, window.as_khora_window())
+        } else {
+            false
+        };
+
         match event {
             WindowEvent::CloseRequested => {
                 log::info!("Shutdown requested");
@@ -187,34 +295,12 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
                 }
             }
             WindowEvent::RedrawRequested => {
-                // Create the per-frame context if tokio is available.
-                if let Some(rt) = &self.tokio_runtime {
-                    let fctx = FrameContext::new(rt.handle().clone());
-
-                    // Build frame services with the FrameContext.
-                    let mut frame_services = khora_core::ServiceRegistry::new();
-                    frame_services.insert(Arc::clone(self.engine.services()));
-                    frame_services.insert(PRIMARY_VIEWPORT);
-                    let fctx_arc = Arc::new(fctx);
-                    frame_services.insert(Arc::clone(&fctx_arc));
-
-                    // Store for the renderer to access after tick.
-                    self.frame_context = Some(fctx_arc);
-
-                    // Run the engine tick with frame services.
-                    let frame_services_arc = Arc::new(frame_services);
-                    self.engine.tick_with_services(frame_services_arc);
-
-                    // Wait for all hot-path tasks to complete before presenting.
-                    if let Some(fctx) = &self.frame_context {
-                        rt.block_on(fctx.wait_for_all());
-                    }
-                } else {
-                    // Fallback: no tokio runtime, just tick normally.
-                    self.engine.tick();
-                }
+                self.run_frame();
             }
             _ => {
+                if consumed_by_app {
+                    return;
+                }
                 if let Some(window) = &self.window {
                     if let Some(input_event) = window.translate_event(&event) {
                         self.engine.feed_input(input_event);
@@ -249,11 +335,14 @@ impl<W: WindowProvider, A: EngineApp> Drop for WinitAppRunner<W, A> {
 ///   - `&dyn KhoraWindow` — the created window for renderer initialization
 ///   - `&mut ServiceRegistry` — the service registry to populate with
 ///     renderer, text renderer, layout system, monitors, etc.
+///   - `&dyn Any` — the active winit event loop, opaque so the SDK does not
+///     leak the winit type. Apps that need it (e.g., egui) downcast to
+///     `&winit::event_loop::ActiveEventLoop`.
 ///
 /// # Example
 ///
 /// ```ignore
-/// run_winit::<WinitWindowProvider, MyGame>(|window, services| {
+/// run_winit::<WinitWindowProvider, MyGame>(|window, services, _event_loop| {
 ///     let mut rs = WgpuRenderSystem::new();
 ///     rs.init(window)?;
 ///     services.insert(Arc::new(Mutex::new(rs as Box<dyn RenderSystem>)));
@@ -261,7 +350,9 @@ impl<W: WindowProvider, A: EngineApp> Drop for WinitAppRunner<W, A> {
 /// });
 /// ```
 pub fn run_winit<W: WindowProvider, A: EngineApp>(
-    bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::ServiceRegistry) + Send + 'static,
+    bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::ServiceRegistry, &dyn Any)
+    + Send
+    + 'static,
 ) -> Result<()> {
     log::info!("Khora Engine: Starting...");
 

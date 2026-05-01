@@ -110,6 +110,14 @@ pub use khora_data::scene::ComponentRegistration;
 // Agents (for when apps need to create their own)
 pub use khora_agents;
 
+// Lanes — re-exported so the editor can reach built-in shaders without
+// taking a direct dependency on khora-lanes.
+pub use khora_lanes;
+
+// Winit — re-exported so the editor can downcast the opaque `&dyn Any`
+// `event_loop` argument passed to the `run_winit` bootstrap closure.
+pub use winit;
+
 // Re-export inventory for editor
 pub extern crate inventory;
 

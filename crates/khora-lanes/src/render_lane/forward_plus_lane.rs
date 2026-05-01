@@ -44,7 +44,7 @@
 //! - Configurable tile size and max lights per tile
 //! - Runtime-adjustable configuration via `ForwardPlusTileConfig`
 
-use super::RenderWorld;
+use khora_data::render::RenderWorld;
 use crate::render_lane::ShaderComplexity;
 
 use khora_core::renderer::api::{
@@ -294,7 +294,7 @@ impl khora_core::lane::Lane for ForwardPlusLane {
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
         let render_world =
-            match ctx.get::<khora_core::lane::Slot<crate::render_lane::RenderWorld>>() {
+            match ctx.get::<khora_core::lane::Slot<khora_data::render::RenderWorld>>() {
                 Some(slot) => slot.get_ref(),
                 None => return 1.0,
             };
@@ -344,7 +344,7 @@ impl khora_core::lane::Lane for ForwardPlusLane {
             .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?
             .get();
         let render_world = ctx
-            .get::<Slot<crate::render_lane::RenderWorld>>()
+            .get::<Slot<khora_data::render::RenderWorld>>()
             .ok_or(LaneError::missing("Slot<RenderWorld>"))?
             .get_ref();
         let color_target = ctx
@@ -422,11 +422,37 @@ impl ForwardPlusLane {
     ) {
         let mut resources = self.gpu_resources.lock().unwrap();
 
-        // 1. Get Active Camera View
-        let view = if let Some(first_view) = render_world.views.first() {
-            first_view
-        } else {
-            return; // No camera, nothing to render
+        // 1. Get Active Camera View.
+        //
+        // When no camera is present (e.g. editor viewport before any in-scene
+        // camera is added), a clear render pass must still be submitted
+        let Some(view) = render_world.views.first() else {
+            let color_attachment = khora_core::renderer::api::command::RenderPassColorAttachment {
+                view: render_ctx.color_target,
+                resolve_target: None,
+                ops: khora_core::renderer::api::command::Operations {
+                    load: khora_core::renderer::api::command::LoadOp::Clear(render_ctx.clear_color),
+                    store: khora_core::renderer::api::command::StoreOp::Store,
+                },
+                base_array_layer: 0,
+            };
+            let clear_desc = khora_core::renderer::api::command::RenderPassDescriptor {
+                label: Some("ForwardPlus Clear-Only Pass"),
+                color_attachments: &[color_attachment],
+                depth_stencil_attachment: render_ctx.depth_target.map(|depth_view| {
+                    khora_core::renderer::api::command::RenderPassDepthStencilAttachment {
+                        view: depth_view,
+                        depth_ops: Some(khora_core::renderer::api::command::Operations {
+                            load: khora_core::renderer::api::command::LoadOp::Clear(1.0),
+                            store: khora_core::renderer::api::command::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                        base_array_layer: 0,
+                    }
+                }),
+            };
+            let _ = encoder.begin_render_pass(&clear_desc);
+            return;
         };
 
         // 2. Prepare Camera Uniforms (Group 0)
