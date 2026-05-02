@@ -13,6 +13,7 @@
 
 mod config;
 pub mod download;
+mod fonts;
 mod github;
 mod project;
 mod screens;
@@ -114,7 +115,11 @@ pub struct HubApp {
 }
 
 impl HubApp {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // Install brand fonts (Geist / Geist Mono) if available next to the
+        // binary or in the crate's assets/fonts/. No-op when missing.
+        cc.egui_ctx.set_fonts(fonts::build_definitions());
+
         let config = HubConfig::load();
         let local_repo = config.local_engine_repo.clone().unwrap_or_default();
 

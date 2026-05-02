@@ -13,14 +13,16 @@
 // limitations under the License.
 
 //! Console panel — displays captured log entries with level filtering.
+//!
+//! Phase 3: themed log levels, monospaced rows, branded filter chips.
 
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
-use khora_sdk::prelude::*;
 
 pub struct ConsolePanel {
     state: Arc<Mutex<EditorState>>,
+    theme: EditorTheme,
     show_info: bool,
     show_warn: bool,
     show_error: bool,
@@ -29,15 +31,26 @@ pub struct ConsolePanel {
 }
 
 impl ConsolePanel {
-    pub fn new(state: Arc<Mutex<EditorState>>) -> Self {
+    pub fn new(state: Arc<Mutex<EditorState>>, theme: EditorTheme) -> Self {
         Self {
             state,
+            theme,
             show_info: true,
             show_warn: true,
             show_error: true,
             show_debug: false,
             filter_text: String::new(),
         }
+    }
+}
+
+/// Renders a labelled "filter pill" toggle. Free function so callers can use
+/// it inside a closure that already mutably borrows `self`.
+fn filter_pill(ui: &mut dyn UiBuilder, label: &str, active: &mut bool) {
+    let glyph = if *active { "●" } else { "○" };
+    let text = format!("{} {}", glyph, label);
+    if ui.selectable_label(*active, &text) {
+        *active = !*active;
     }
 }
 
@@ -49,15 +62,24 @@ impl EditorPanel for ConsolePanel {
         "Console"
     }
     fn ui(&mut self, ui: &mut dyn UiBuilder) {
+        let theme = self.theme.clone();
+
+        // ── Filter pills + search ─────────────────────
+        let show_info_ref = &mut self.show_info;
+        let show_warn_ref = &mut self.show_warn;
+        let show_error_ref = &mut self.show_error;
+        let show_debug_ref = &mut self.show_debug;
+        let filter_text_ref = &mut self.filter_text;
+        let theme_ref = &theme;
+
         ui.horizontal(&mut |ui| {
-            ui.checkbox(&mut self.show_error, "\u{274C} Error");
-            ui.checkbox(&mut self.show_warn, "\u{26A0} Warn");
-            ui.checkbox(&mut self.show_info, "\u{2139} Info");
-            ui.checkbox(&mut self.show_debug, "\u{1F41B} Debug");
-        });
-        ui.horizontal(&mut |ui| {
-            ui.label("\u{1F50D}");
-            ui.text_edit_singleline(&mut self.filter_text);
+            filter_pill(ui, "Errors", show_error_ref);
+            filter_pill(ui, "Warnings", show_warn_ref);
+            filter_pill(ui, "Info", show_info_ref);
+            filter_pill(ui, "Debug", show_debug_ref);
+            ui.spacing(12.0);
+            ui.colored_label(theme_ref.text_dim, "🔍");
+            ui.text_edit_singleline(filter_text_ref);
         });
         ui.separator();
 
@@ -77,7 +99,7 @@ impl EditorPanel for ConsolePanel {
 
         ui.scroll_area("console_scroll", &mut |ui| {
             if entries.is_empty() {
-                ui.colored_label([0.5, 0.5, 0.5, 1.0], "No log entries.");
+                ui.colored_label(theme.text_muted, "No log entries.");
                 return;
             }
 
@@ -100,15 +122,18 @@ impl EditorPanel for ConsolePanel {
                 }
 
                 let (color, prefix) = match entry.level {
-                    LogLevel::Error => ([1.0, 0.3, 0.3, 1.0], "[ERROR]"),
-                    LogLevel::Warn => ([1.0, 0.8, 0.2, 1.0], "[WARN] "),
-                    LogLevel::Info => ([0.8, 0.8, 0.8, 1.0], "[INFO] "),
-                    LogLevel::Debug => ([0.5, 0.7, 1.0, 1.0], "[DEBUG]"),
-                    LogLevel::Trace => ([0.5, 0.5, 0.5, 1.0], "[TRACE]"),
+                    LogLevel::Error => (theme.error, "[ERROR]"),
+                    LogLevel::Warn => (theme.warning, "[WARN] "),
+                    LogLevel::Info => (theme.accent_b, "[INFO] "),
+                    LogLevel::Debug => (theme.text_dim, "[DEBUG]"),
+                    LogLevel::Trace => (theme.text_muted, "[TRACE]"),
                 };
 
-                let line = format!("{} {}: {}", prefix, entry.target, entry.message);
-                ui.colored_label(color, &line);
+                ui.horizontal(&mut |ui| {
+                    ui.colored_label(color, prefix);
+                    ui.colored_label(theme.primary, &format!("[{}]", entry.target));
+                    ui.colored_label(theme.text, &entry.message);
+                });
             }
         });
     }

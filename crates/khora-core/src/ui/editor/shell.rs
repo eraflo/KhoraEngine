@@ -12,13 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Abstract editor shell — owns the dock layout, menu bar, and toolbar.
+//! Abstract editor shell — generic host for dock-based panel layouts.
+//!
+//! The shell owns no application logic and no branding. It only knows how to:
+//! - apply a theme to the underlying UI backend,
+//! - lay out panels in a small set of fixed slots ([`PanelLocation`]),
+//! - render those panels each frame via the [`UiBuilder`] abstraction.
+//!
+//! Concrete implementations (e.g. egui) live in `khora-infra`. Editor-specific
+//! chrome (menu bars, toolbars, status bars, brand logos) is implemented as
+//! ordinary panels in the application crate (`khora-editor`) — never in the
+//! shell or the backend.
 
+use super::fonts::FontPack;
 use super::panel::{EditorPanel, PanelLocation};
 use super::state::{EditorState, StatusBarData};
 use super::theme::EditorTheme;
 
-/// The top-level editor shell (menu bar + toolbar + docked panels).
+/// The top-level editor shell — a generic host for docked panels.
 ///
 /// Concrete implementations live in `khora-infra`. The engine calls
 /// [`show_frame()`](Self::show_frame) once per frame between
@@ -33,17 +44,28 @@ pub trait EditorShell: Send + Sync {
     /// Applies a theme to the underlying UI backend.
     fn set_theme(&mut self, theme: EditorTheme);
 
-    /// Updates the status bar data displayed at the bottom of the editor.
+    /// Installs a custom font pack. If [`FontPack::is_empty`] is true, the
+    /// backend keeps its built-in defaults. Default no-op so backends that
+    /// don't support custom fonts compile without changes.
+    fn set_fonts(&mut self, fonts: FontPack) {
+        let _ = fonts;
+    }
+
+    /// Updates the status bar data shared with panels.
+    ///
+    /// Most editors will route this into a dedicated status-bar panel (the
+    /// shell does not draw a status bar itself).
     fn set_status(&mut self, data: StatusBarData);
 
-    /// Sets a shared `EditorState` reference so the shell can read/write
-    /// gizmo mode, menu actions, etc.
+    /// Sets a shared [`EditorState`] reference. Panels typically grab this
+    /// at construction; this method exists for shells that want to surface
+    /// state to internal helpers (debug overlays, etc.).
     fn set_editor_state(&mut self, state: std::sync::Arc<std::sync::Mutex<EditorState>>);
 
-    /// Renders the full editor frame (menu bar, toolbar, dock panels).
+    /// Renders the full editor frame.
     ///
-    /// Called by the engine each frame. Panels registered via
-    /// [`register_panel`](Self::register_panel) will have their
-    /// [`EditorPanel::ui`] method invoked.
+    /// Iterates every registered slot and invokes
+    /// [`EditorPanel::ui`] for each panel. The shell decides slot geometry;
+    /// the panel decides slot content.
     fn show_frame(&mut self);
 }

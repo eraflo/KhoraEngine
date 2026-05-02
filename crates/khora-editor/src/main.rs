@@ -14,6 +14,9 @@
 
 //! Khora Engine Editor application entry point.
 
+mod chrome;
+mod cmd_palette;
+mod fonts;
 mod mod_agents;
 mod mod_gizmo;
 mod mod_mode;
@@ -21,6 +24,7 @@ mod mod_telemetry;
 mod ops;
 mod panels;
 mod scene_io;
+mod theme;
 mod util;
 
 use std::sync::{Arc, Mutex};
@@ -42,7 +46,12 @@ use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
 use khora_sdk::khora_core::platform::KhoraWindow;
 use khora_sdk::winit;
 
-use panels::{AssetBrowserPanel, ConsolePanel, PropertiesPanel, SceneTreePanel, ViewportPanel};
+use chrome::{SpinePanel, StatusBarPanel, TitleBarPanel, ToolbarPanel};
+use cmd_palette::CommandPalettePanel;
+use panels::{
+    AssetBrowserPanel, ConsolePanel, ControlPlanePanel, PropertiesPanel, SceneTreePanel,
+    ViewportPanel,
+};
 
 /// CLI project path passed via --project <path>.
 static PROJECT_PATH: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
@@ -320,6 +329,39 @@ impl EngineApp for EditorApp {
             if let Ok(mut shell) = shell_ref.lock() {
                 shell.set_editor_state(self.editor_state.clone());
 
+                // ── Brand identity (theme + typefaces) ─────────
+                let brand_theme = theme::khora_dark();
+                shell.set_theme(brand_theme.clone());
+                shell.set_fonts(fonts::load_pack());
+
+                // ── Chrome (top, spine, status bar) ────────────
+                shell.register_panel(
+                    PanelLocation::TopBar,
+                    Box::new(TitleBarPanel::new(
+                        self.editor_state.clone(),
+                        brand_theme.clone(),
+                    )),
+                );
+                shell.register_panel(
+                    PanelLocation::TopBar,
+                    Box::new(ToolbarPanel::new(self.editor_state.clone())),
+                );
+                shell.register_panel(
+                    PanelLocation::Spine,
+                    Box::new(SpinePanel::new(
+                        self.editor_state.clone(),
+                        brand_theme.clone(),
+                    )),
+                );
+                shell.register_panel(
+                    PanelLocation::StatusBar,
+                    Box::new(StatusBarPanel::new(
+                        self.editor_state.clone(),
+                        brand_theme.clone(),
+                    )),
+                );
+
+                // ── Functional panels (dock body) ──────────────
                 shell.register_panel(
                     PanelLocation::Left,
                     Box::new(SceneTreePanel::new(self.editor_state.clone())),
@@ -337,7 +379,10 @@ impl EngineApp for EditorApp {
                 );
                 shell.register_panel(
                     PanelLocation::Bottom,
-                    Box::new(ConsolePanel::new(self.editor_state.clone())),
+                    Box::new(ConsolePanel::new(
+                        self.editor_state.clone(),
+                        brand_theme.clone(),
+                    )),
                 );
                 shell.register_panel(
                     PanelLocation::Center,
@@ -345,6 +390,22 @@ impl EngineApp for EditorApp {
                         viewport_handle,
                         self.editor_state.clone(),
                         self.camera.clone(),
+                    )),
+                );
+                shell.register_panel(
+                    PanelLocation::Center,
+                    Box::new(ControlPlanePanel::new(
+                        self.editor_state.clone(),
+                        brand_theme.clone(),
+                    )),
+                );
+
+                // ── Floating overlays ──────────────────────────
+                shell.register_panel(
+                    PanelLocation::Floating(100),
+                    Box::new(CommandPalettePanel::new(
+                        self.editor_state.clone(),
+                        brand_theme.clone(),
                     )),
                 );
                 log::info!("EditorApp: panels registered with shell.");
@@ -449,6 +510,12 @@ impl EngineApp for EditorApp {
                     if key_code == "Delete" {
                         if let Ok(mut state) = self.editor_state.lock() {
                             ops::delete_selection(world, &mut state);
+                        }
+                    }
+
+                    if key_code == "KeyK" && self.ctrl_held {
+                        if let Ok(mut state) = self.editor_state.lock() {
+                            state.command_palette_open = !state.command_palette_open;
                         }
                     }
 

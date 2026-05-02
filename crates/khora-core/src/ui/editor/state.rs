@@ -49,6 +49,28 @@ pub enum PlayMode {
     Paused,
 }
 
+/// The active editing workspace, switched via the left "spine" mode bar.
+///
+/// Most modes are placeholders for now — the working ones in Phase 2 are
+/// `Scene` (the default 3D dock) and `ControlPlane` (the DCC / agents
+/// inspector, when implemented).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EditorMode {
+    /// Default 3D viewport workspace.
+    #[default]
+    Scene,
+    /// 2D canvas / UI authoring (placeholder).
+    Canvas2D,
+    /// Visual node-graph editor (placeholder).
+    NodeGraph,
+    /// Animation / timeline editor (placeholder).
+    Animation,
+    /// Shader graph editor (placeholder).
+    Shader,
+    /// Dynamic Context Core / agents control workspace.
+    ControlPlane,
+}
+
 /// A lightweight description of an entity in the scene tree.
 ///
 /// This is a UI-oriented DTO extracted from the ECS world each frame.
@@ -157,6 +179,12 @@ pub struct EditorState {
     /// Pending component addition (set by properties panel or scene tree context menu, consumed by update).
     /// The String is the component type name (e.g., "Camera", "RigidBody").
     pub pending_add_component: Option<(EntityId, String)>,
+
+    // ── Editor workspace ───────────────────────────────
+    /// Currently active editing workspace (scene / control plane / …).
+    pub active_mode: EditorMode,
+    /// Whether the command palette modal is open.
+    pub command_palette_open: bool,
 }
 
 impl EditorState {

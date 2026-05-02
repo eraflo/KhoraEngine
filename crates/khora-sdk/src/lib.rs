@@ -57,7 +57,7 @@ pub use khora_core::control::gorna::{AgentId, StrategyId};
 pub use khora_core::ServiceRegistry;
 pub use khora_core::telemetry::{TelemetryEvent, MonitoredResourceType};
 pub use khora_core::ui::editor::{
-    EditorCamera, EditorShell, EditorState, EditorTheme, PlayMode, PanelLocation,
+    EditorCamera, EditorMode, EditorShell, EditorState, EditorTheme, PlayMode, PanelLocation,
     GizmoMode, EditorLogCapture, LogEntry,
     CommandHistory, EntityIcon, AssetEntry, LogLevel,
     EditorPanel, UiBuilder, SceneNode,
@@ -79,6 +79,8 @@ pub use khora_infra::telemetry::memory_monitor::MemoryMonitor;
 
 // I/O
 pub use khora_io::serialization::SerializationService;
+pub use khora_io::asset::{AssetIo, FileLoader};
+pub use khora_core::asset::AssetSource;
 pub use khora_core::scene::{SceneFile, SerializationGoal};
 
 // Mesh type (used by editor ops)

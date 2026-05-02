@@ -357,4 +357,14 @@ impl UiBuilder for EguiUiBuilder<'_> {
     fn available_height(&self) -> f32 {
         self.ui.available_height()
     }
+
+    fn panel_rect(&self) -> [f32; 4] {
+        let r = self.ui.max_rect();
+        [r.min.x, r.min.y, r.width(), r.height()]
+    }
+
+    fn screen_rect(&self) -> [f32; 4] {
+        let r = self.ui.ctx().screen_rect();
+        [r.min.x, r.min.y, r.width(), r.height()]
+    }
 }

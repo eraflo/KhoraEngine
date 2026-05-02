@@ -16,12 +16,14 @@
 
 pub mod asset_browser;
 pub mod console;
+pub mod control_plane;
 pub mod properties;
 pub mod scene_tree;
 pub mod viewport;
 
 pub use asset_browser::AssetBrowserPanel;
 pub use console::ConsolePanel;
+pub use control_plane::ControlPlanePanel;
 pub use properties::PropertiesPanel;
 pub use scene_tree::SceneTreePanel;
 pub use viewport::ViewportPanel;

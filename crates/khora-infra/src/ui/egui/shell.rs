@@ -14,47 +14,92 @@
 
 //! Concrete [`EditorShell`] backed by egui native panels.
 //!
-//! Layout:
+//! Generic host: the shell knows nothing about Khora branding, menus, toolbars
+//! or status-bar contents. It just applies a theme, lays out the slots
+//! defined by [`PanelLocation`], and forwards each slot's `egui::Ui` to the
+//! application-supplied [`EditorPanel`]s.
+//!
+//! Slot layout (all registered panels are routed here):
 //! ```text
 //! ┌──────────────────────────────────────────────────────┐
-//! │  Menu Bar (File | Edit | View | Build | Help)        │
-//! ├──────────────────────────────────────────────────────┤
-//! │  Toolbar  [Select] [Move] [Rotate] [Scale]  ▶ ⏸ ⏹   │
-//! ├────────┬──────────────────────────┬──────────────────┤
-//! │ Left   │       Center             │     Right        │
-//! │ panels │       panels             │     panels       │
-//! ├────────┴──────────────────────────┴──────────────────┤
-//! │  Bottom panels (tabbed)                              │
-//! └──────────────────────────────────────────────────────┘
+//! │  TopBar (stack, fixed height)                        │
+//! ├────────┬───────────────────────────┬─────────────────┤
+//! │ Spine  │                           │                 │
+//! │ (fixed │     Center                │   Right         │
+//! │ width) │                           │   (resizable)   │
+//! │        ├───────────────────────────┴─────────────────┤
+//! │   +    │     Bottom (resizable, tabbed)              │
+//! │  Left  ├──────────────────────────────────────────────┤
+//! │        │     StatusBar (stack, fixed height)         │
+//! └────────┴──────────────────────────────────────────────┘
 //! ```
 
-use super::palette as pal;
 use super::theme::apply_theme;
 use super::ui_builder::EguiUiBuilder;
+use khora_core::ui::editor::fonts::{FontHandle, FontPack, NamedFont};
 use khora_core::ui::editor::panel::{EditorPanel, PanelLocation};
 use khora_core::ui::editor::shell::EditorShell;
-use khora_core::ui::editor::state::{EditorState, GizmoMode, PlayMode, StatusBarData};
+use khora_core::ui::editor::state::{EditorState, StatusBarData};
 use khora_core::ui::editor::theme::EditorTheme;
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+/// Installs each [`NamedFont`] into `definitions`, registering it as the
+/// primary face for `family` (or as a fallback at the front of the list).
+fn install_named(
+    defs: &mut egui::FontDefinitions,
+    family: egui::FontFamily,
+    list: Vec<NamedFont>,
+) {
+    for named in list.into_iter() {
+        let key = named.name.clone();
+        let bytes = match named.data {
+            FontHandle::Static(s) => egui::FontData::from_static(s),
+            FontHandle::Owned(v) => egui::FontData::from_owned(v),
+        };
+        defs.font_data.insert(key.clone(), std::sync::Arc::new(bytes));
+        defs.families
+            .entry(family.clone())
+            .or_default()
+            .insert(0, key);
+    }
+}
+
+/// Default sizes used when a panel does not specify a [`preferred_size`].
+const DEFAULT_TOPBAR_HEIGHT: f32 = 32.0;
+const DEFAULT_SPINE_WIDTH: f32 = 56.0;
+const DEFAULT_STATUSBAR_HEIGHT: f32 = 24.0;
+const DEFAULT_LEFT_WIDTH: f32 = 280.0;
+const DEFAULT_RIGHT_WIDTH: f32 = 320.0;
+const DEFAULT_BOTTOM_HEIGHT: f32 = 240.0;
+
+/// A floating panel keeps its z-order so the shell can paint them top-down.
+struct FloatingEntry {
+    z: i32,
+    panel: Box<dyn EditorPanel>,
+}
+
 /// Egui-backed editor shell using native `SidePanel`, `TopBottomPanel`, and
 /// `CentralPanel` for the dock layout.
 pub struct EguiEditorShell {
     ctx: egui::Context,
+    top_panels: Vec<Box<dyn EditorPanel>>,
+    spine_panels: Vec<Box<dyn EditorPanel>>,
     left_panels: Vec<Box<dyn EditorPanel>>,
     right_panels: Vec<Box<dyn EditorPanel>>,
     bottom_panels: Vec<Box<dyn EditorPanel>>,
+    status_panels: Vec<Box<dyn EditorPanel>>,
     center_panels: Vec<Box<dyn EditorPanel>>,
+    floating_panels: Vec<FloatingEntry>,
     theme: EditorTheme,
     theme_applied: bool,
     active_bottom_tab: usize,
     /// Maps abstract viewport handles to egui texture IDs.
     viewport_textures: HashMap<ViewportTextureHandle, egui::TextureId>,
-    /// Status bar data (FPS, frame time, entity count, memory).
+    /// Status-bar snapshot. Kept here so shells that want to surface it to a
+    /// debug overlay can; the actual status-bar UI lives in editor-side panels.
     status: StatusBarData,
-    /// Shared editor state for toolbar/menu interactions.
     editor_state: Option<Arc<Mutex<EditorState>>>,
 }
 
@@ -63,10 +108,14 @@ impl EguiEditorShell {
     pub fn new(ctx: egui::Context, theme: EditorTheme) -> Self {
         Self {
             ctx,
+            top_panels: Vec::new(),
+            spine_panels: Vec::new(),
             left_panels: Vec::new(),
             right_panels: Vec::new(),
             bottom_panels: Vec::new(),
+            status_panels: Vec::new(),
             center_panels: Vec::new(),
+            floating_panels: Vec::new(),
             theme,
             theme_applied: false,
             active_bottom_tab: 0,
@@ -95,357 +144,12 @@ impl EguiEditorShell {
         self.viewport_textures.get(&handle).copied()
     }
 
-    fn render_menu_bar(ui: &mut egui::Ui, state: &Option<Arc<Mutex<EditorState>>>) {
-        egui::MenuBar::new().ui(ui, |ui| {
-            ui.menu_button("File", |ui| {
-                if ui.button("New Scene").clicked() {
-                    if let Some(s) = state {
-                        if let Ok(mut s) = s.lock() {
-                            s.pending_menu_action = Some("new_scene".to_owned());
-                        }
-                    }
-                    ui.close();
-                }
-                if ui.button("Open…").clicked() {
-                    if let Some(s) = state {
-                        if let Ok(mut s) = s.lock() {
-                            s.pending_menu_action = Some("open".to_owned());
-                        }
-                    }
-                    ui.close();
-                }
-                ui.separator();
-                if ui.button("Save").clicked() {
-                    if let Some(s) = state {
-                        if let Ok(mut s) = s.lock() {
-                            s.pending_menu_action = Some("save".to_owned());
-                        }
-                    }
-                    ui.close();
-                }
-                if ui.button("Save As…").clicked() {
-                    if let Some(s) = state {
-                        if let Ok(mut s) = s.lock() {
-                            s.pending_menu_action = Some("save_as".to_owned());
-                        }
-                    }
-                    ui.close();
-                }
-                ui.separator();
-                if ui.button("Quit").clicked() {
-                    if let Some(s) = state {
-                        if let Ok(mut s) = s.lock() {
-                            s.pending_menu_action = Some("quit".to_owned());
-                        }
-                    }
-                    ui.close();
-                }
-            });
-
-            ui.menu_button("Edit", |ui| {
-                if ui.button("Undo  (Ctrl+Z)").clicked() {
-                    if let Some(s) = state {
-                        if let Ok(mut s) = s.lock() {
-                            s.pending_menu_action = Some("undo".to_owned());
-                        }
-                    }
-                    ui.close();
-                }
-                if ui.button("Redo  (Ctrl+Y)").clicked() {
-                    if let Some(s) = state {
-                        if let Ok(mut s) = s.lock() {
-                            s.pending_menu_action = Some("redo".to_owned());
-                        }
-                    }
-                    ui.close();
-                }
-                ui.separator();
-                if ui.button("Delete  (Del)").clicked() {
-                    if let Some(s) = state {
-                        if let Ok(mut s) = s.lock() {
-                            s.pending_menu_action = Some("delete".to_owned());
-                        }
-                    }
-                    ui.close();
-                }
-                ui.separator();
-                if ui.button("Preferences…").clicked() {
-                    if let Some(s) = state {
-                        if let Ok(mut s) = s.lock() {
-                            s.pending_menu_action = Some("preferences".to_owned());
-                        }
-                    }
-                    ui.close();
-                }
-            });
-
-            ui.menu_button("View", |ui| {
-                if ui.button("Reset Layout").clicked() {
-                    if let Some(s) = state {
-                        if let Ok(mut s) = s.lock() {
-                            s.pending_menu_action = Some("reset_layout".to_owned());
-                        }
-                    }
-                    ui.close();
-                }
-            });
-
-            ui.menu_button("Help", |ui| {
-                if ui.button("Documentation").clicked() {
-                    if let Some(s) = state {
-                        if let Ok(mut s) = s.lock() {
-                            s.pending_menu_action = Some("documentation".to_owned());
-                        }
-                    }
-                    ui.close();
-                }
-                if ui.button("About Khora Engine").clicked() {
-                    if let Some(s) = state {
-                        if let Ok(mut s) = s.lock() {
-                            s.pending_menu_action = Some("about".to_owned());
-                        }
-                    }
-                    ui.close();
-                }
-            });
-        });
+    /// Returns the most recent [`StatusBarData`] passed via [`set_status`].
+    /// Editor-side status-bar panels read this through their own state, but
+    /// debug shells / tests can introspect it here.
+    pub fn last_status(&self) -> &StatusBarData {
+        &self.status
     }
-
-    fn render_toolbar(ui: &mut egui::Ui, state: &Option<Arc<Mutex<EditorState>>>) {
-        // Toolbar background — slightly lighter than panel fill
-        let rect = ui.max_rect();
-        ui.painter().rect_filled(rect, 0.0, pal::TAB_BAR_BG);
-        // Bottom border
-        ui.painter().line_segment(
-            [rect.left_bottom(), rect.right_bottom()],
-            egui::Stroke::new(1.0, pal::BORDER),
-        );
-
-        ui.horizontal(|ui| {
-            ui.add_space(10.0);
-
-            // Khora 4-point star logo
-            let (logo_rect, _) =
-                ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
-            paint_star(ui.painter(), logo_rect.center(), 9.0, pal::PRIMARY);
-            ui.add_space(6.0);
-            ui.label(
-                egui::RichText::new("Khora")
-                    .strong()
-                    .size(12.5)
-                    .color(pal::TEXT),
-            );
-            ui.add_space(12.0);
-
-            // Vertical separator
-            let vr = egui::Rect::from_center_size(
-                ui.next_widget_position() + egui::vec2(0.0, 0.0),
-                egui::vec2(1.0, 18.0),
-            );
-            ui.painter().rect_filled(vr, 0.0, pal::BORDER);
-            ui.add_space(12.0);
-
-            let current_mode = state
-                .as_ref()
-                .and_then(|s| s.lock().ok())
-                .map(|s| s.gizmo_mode)
-                .unwrap_or(GizmoMode::Select);
-
-            let set_mode = |mode: GizmoMode| {
-                if let Some(s) = state {
-                    if let Ok(mut s) = s.lock() {
-                        s.gizmo_mode = mode;
-                    }
-                }
-            };
-
-            let btn_size = egui::vec2(68.0, 22.0);
-
-            {
-                let active = current_mode == GizmoMode::Select;
-                if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("Select")
-                                .size(11.5)
-                                .color(if active { pal::PRIMARY } else { pal::TEXT_DIM }),
-                        )
-                        .fill(if active { pal::PRIMARY_DIM } else { egui::Color32::TRANSPARENT })
-                        .stroke(egui::Stroke::NONE)
-                        .min_size(btn_size),
-                    )
-                    .on_hover_text("Select  [Q]")
-                    .clicked()
-                {
-                    set_mode(GizmoMode::Select);
-                }
-            }
-            ui.add_space(2.0);
-            {
-                let active = current_mode == GizmoMode::Move;
-                if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("Move")
-                                .size(11.5)
-                                .color(if active { pal::PRIMARY } else { pal::TEXT_DIM }),
-                        )
-                        .fill(if active { pal::PRIMARY_DIM } else { egui::Color32::TRANSPARENT })
-                        .stroke(egui::Stroke::NONE)
-                        .min_size(btn_size),
-                    )
-                    .on_hover_text("Move  [W]")
-                    .clicked()
-                {
-                    set_mode(GizmoMode::Move);
-                }
-            }
-            ui.add_space(2.0);
-            {
-                let active = current_mode == GizmoMode::Rotate;
-                if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("Rotate")
-                                .size(11.5)
-                                .color(if active { pal::PRIMARY } else { pal::TEXT_DIM }),
-                        )
-                        .fill(if active { pal::PRIMARY_DIM } else { egui::Color32::TRANSPARENT })
-                        .stroke(egui::Stroke::NONE)
-                        .min_size(btn_size),
-                    )
-                    .on_hover_text("Rotate  [E]")
-                    .clicked()
-                {
-                    set_mode(GizmoMode::Rotate);
-                }
-            }
-            ui.add_space(2.0);
-            {
-                let active = current_mode == GizmoMode::Scale;
-                if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("Scale")
-                                .size(11.5)
-                                .color(if active { pal::PRIMARY } else { pal::TEXT_DIM }),
-                        )
-                        .fill(if active { pal::PRIMARY_DIM } else { egui::Color32::TRANSPARENT })
-                        .stroke(egui::Stroke::NONE)
-                        .min_size(btn_size),
-                    )
-                    .on_hover_text("Scale  [R]")
-                    .clicked()
-                {
-                    set_mode(GizmoMode::Scale);
-                }
-            }
-
-            ui.add_space(12.0);
-            // Vertical separator
-            let vr2 = egui::Rect::from_center_size(
-                ui.next_widget_position() + egui::vec2(0.0, 0.0),
-                egui::vec2(1.0, 18.0),
-            );
-            ui.painter().rect_filled(vr2, 0.0, pal::BORDER);
-            ui.add_space(12.0);
-
-            // Push transport controls to the right for a cleaner toolbar rhythm.
-            ui.add_space((ui.available_width() - 170.0).max(8.0));
-
-            // Play / Pause / Stop
-            let play_mode = state
-                .as_ref()
-                .and_then(|s| s.lock().ok())
-                .map(|s| s.play_mode)
-                .unwrap_or(PlayMode::Editing);
-
-            let is_editing = play_mode == PlayMode::Editing;
-            let is_playing = play_mode == PlayMode::Playing;
-            let is_paused = play_mode == PlayMode::Paused;
-
-            // Play button — active when editing or paused
-            let play_label = if is_paused { "▶ Resume" } else { "▶ Play" };
-            let play_btn = ui.add_enabled(
-                is_editing || is_paused,
-                egui::Button::new(egui::RichText::new(play_label).size(11.5).color(
-                    if is_editing || is_paused {
-                        pal::PLAY_GREEN
-                    } else {
-                        pal::DISABLED
-                    },
-                ))
-                .min_size(egui::vec2(82.0, 22.0)),
-            );
-            if play_btn.clicked() {
-                if let Some(s) = state {
-                    if let Ok(mut s) = s.lock() {
-                        s.pending_menu_action = Some("play".to_owned());
-                    }
-                }
-            }
-            ui.add_space(2.0);
-
-            // Pause button — active when playing
-            let pause_btn = ui.add_enabled(
-                is_playing,
-                egui::Button::new(egui::RichText::new("⏸").size(11.5))
-                    .min_size(egui::vec2(28.0, 22.0)),
-            );
-            if pause_btn.clicked() {
-                if let Some(s) = state {
-                    if let Ok(mut s) = s.lock() {
-                        s.pending_menu_action = Some("pause".to_owned());
-                    }
-                }
-            }
-            ui.add_space(2.0);
-
-            // Stop button — active when playing or paused
-            let stop_btn = ui.add_enabled(
-                is_playing || is_paused,
-                egui::Button::new(egui::RichText::new("⏹").size(11.5).color(
-                    if is_playing || is_paused {
-                        pal::STOP_RED
-                    } else {
-                        pal::DISABLED
-                    },
-                ))
-                .min_size(egui::vec2(28.0, 22.0)),
-            );
-            if stop_btn.clicked() {
-                if let Some(s) = state {
-                    if let Ok(mut s) = s.lock() {
-                        s.pending_menu_action = Some("stop".to_owned());
-                    }
-                }
-            }
-        });
-    }
-}
-
-/// Draws a 4-pointed diamond/star shape (Khora brand icon) on a painter.
-fn paint_star(painter: &egui::Painter, center: egui::Pos2, size: f32, color: egui::Color32) {
-    use egui::epaint::{PathShape, PathStroke};
-    use egui::Pos2;
-    let s = size;
-    let t = s * 0.28;
-    let points = vec![
-        Pos2::new(center.x, center.y - s),
-        Pos2::new(center.x + t, center.y - t),
-        Pos2::new(center.x + s, center.y),
-        Pos2::new(center.x + t, center.y + t),
-        Pos2::new(center.x, center.y + s),
-        Pos2::new(center.x - t, center.y + t),
-        Pos2::new(center.x - s, center.y),
-        Pos2::new(center.x - t, center.y - t),
-    ];
-    painter.add(egui::Shape::Path(PathShape {
-        points,
-        closed: true,
-        fill: color,
-        stroke: PathStroke::NONE,
-    }));
 }
 
 impl EditorShell for EguiEditorShell {
@@ -456,10 +160,18 @@ impl EditorShell for EguiEditorShell {
             location
         );
         match location {
+            PanelLocation::TopBar => self.top_panels.push(panel),
+            PanelLocation::Spine => self.spine_panels.push(panel),
             PanelLocation::Left => self.left_panels.push(panel),
             PanelLocation::Right => self.right_panels.push(panel),
             PanelLocation::Bottom => self.bottom_panels.push(panel),
+            PanelLocation::StatusBar => self.status_panels.push(panel),
             PanelLocation::Center => self.center_panels.push(panel),
+            PanelLocation::Floating(z) => self.floating_panels.push(FloatingEntry { z, panel }),
+        }
+        // Keep floating panels sorted bottom-to-top so painting respects z-order.
+        if !self.floating_panels.is_empty() {
+            self.floating_panels.sort_by_key(|e| e.z);
         }
     }
 
@@ -472,15 +184,45 @@ impl EditorShell for EguiEditorShell {
                 false
             }
         };
-        remove_from(&mut self.left_panels)
+        if remove_from(&mut self.top_panels)
+            || remove_from(&mut self.spine_panels)
+            || remove_from(&mut self.left_panels)
             || remove_from(&mut self.right_panels)
             || remove_from(&mut self.bottom_panels)
+            || remove_from(&mut self.status_panels)
             || remove_from(&mut self.center_panels)
+        {
+            return true;
+        }
+        if let Some(pos) = self.floating_panels.iter().position(|e| e.panel.id() == id) {
+            self.floating_panels.remove(pos);
+            return true;
+        }
+        false
     }
 
     fn set_theme(&mut self, theme: EditorTheme) {
         self.theme = theme;
         self.theme_applied = false;
+    }
+
+    fn set_fonts(&mut self, fonts: FontPack) {
+        if fonts.is_empty() {
+            return;
+        }
+
+        let mut definitions = egui::FontDefinitions::default();
+        install_named(
+            &mut definitions,
+            egui::FontFamily::Proportional,
+            fonts.proportional,
+        );
+        install_named(
+            &mut definitions,
+            egui::FontFamily::Monospace,
+            fonts.monospace,
+        );
+        self.ctx.set_fonts(definitions);
     }
 
     fn set_status(&mut self, data: StatusBarData) {
@@ -498,175 +240,88 @@ impl EditorShell for EguiEditorShell {
             self.theme_applied = true;
         }
 
-        // Clone the context (cheap Arc clone) to avoid borrow conflicts
-        // between `ctx.show()` calls and `&mut self` field accesses.
+        // Cheap Arc clone — avoids borrow conflicts between `ctx.show()` and
+        // `&mut self` field accesses.
         let ctx = self.ctx.clone();
+        let vt = &self.viewport_textures;
 
-        // ── Menu Bar ───────────────────────────────────
-        let es = &self.editor_state;
-        egui::TopBottomPanel::top("editor_menu_bar")
-            .exact_height(26.0)
-            .show(&ctx, |ui| {
-                // Dark top-bar background
-                let r = ui.max_rect();
-                ui.painter().rect_filled(r, 0.0, pal::TOOLBAR_BG);
-                ui.painter().line_segment(
-                    [r.left_bottom(), r.right_bottom()],
-                    egui::Stroke::new(1.0, pal::BORDER),
-                );
-                Self::render_menu_bar(ui, es);
-            });
-
-        // ── Toolbar ────────────────────────────────────
-        let es = &self.editor_state;
-        egui::TopBottomPanel::top("editor_toolbar")
-            .exact_height(32.0)
-            .show(&ctx, |ui| {
-                Self::render_toolbar(ui, es);
-            });
-
-        // ── Status Bar (thin bottom strip) ─────────────
-        {
-            let status = &self.status;
-            let (gizmo_mode, project_label) = self
-                .editor_state
-                .as_ref()
-                .and_then(|s| s.lock().ok())
-                .map(|s| {
-                    let label = s
-                        .project_name
-                        .as_deref()
-                        .map(|n| format!("{} — Khora v0.1", n))
-                        .unwrap_or_else(|| "Khora v0.1".to_owned());
-                    (s.gizmo_mode, label)
-                })
-                .unwrap_or((GizmoMode::Select, "Khora v0.1".to_owned()));
-
-            let gizmo_label = match gizmo_mode {
-                GizmoMode::Select => "⬚ Select",
-                GizmoMode::Move => "✥ Move",
-                GizmoMode::Rotate => "↻ Rotate",
-                GizmoMode::Scale => "⤡ Scale",
-            };
-
-            egui::TopBottomPanel::bottom("editor_status_bar")
-                .exact_height(22.0)
+        // ── Top bar(s) ─────────────────────────────────
+        // Each TopBar panel becomes its own fixed-height TopBottomPanel,
+        // stacked in registration order from the top down.
+        for (idx, panel) in self.top_panels.iter_mut().enumerate() {
+            let height = panel.preferred_size().unwrap_or(DEFAULT_TOPBAR_HEIGHT);
+            let panel_id = format!("editor_topbar_{}_{}", idx, panel.id());
+            egui::TopBottomPanel::top(panel_id)
+                .exact_height(height)
+                .resizable(false)
                 .show(&ctx, |ui| {
-                    let r = ui.max_rect();
-                    ui.painter().rect_filled(r, 0.0, pal::STATUS_BAR_BG);
-                    ui.painter().line_segment(
-                        [r.left_top(), r.right_top()],
-                        egui::Stroke::new(1.0, pal::BORDER),
-                    );
-                    ui.horizontal(|ui| {
-                        ui.add_space(8.0);
-                        ui.spacing_mut().item_spacing.x = 8.0;
-                        ui.small(
-                            egui::RichText::new(format!("{:.0} fps", status.fps))
-                                .color(pal::FPS_GREEN),
-                        );
-                        ui.separator();
-                        ui.small(
-                            egui::RichText::new(format!("{:.1} ms", status.frame_time_ms))
-                                .color(pal::TEXT_DIM),
-                        );
-                        ui.separator();
-                        ui.small(
-                            egui::RichText::new(format!("{} entities", status.entity_count))
-                                .color(pal::TEXT_DIM),
-                        );
-                        ui.separator();
-                        ui.small(
-                            egui::RichText::new(format!("{:.0} MB", status.memory_used_mb))
-                                .color(pal::TEXT_DIM),
-                        );
-
-                        ui.add_space(6.0);
-
-                        // Gizmo mode badge
-                        let mode_color = pal::PRIMARY;
-                        let mode_bg = pal::MODE_BG;
-                        egui::Frame::NONE
-                            .fill(mode_bg)
-                            .corner_radius(egui::CornerRadius::same(3))
-                            .inner_margin(egui::Margin::symmetric(5, 1))
-                            .show(ui, |ui| {
-                                ui.small(
-                                    egui::RichText::new(gizmo_label)
-                                        .color(mode_color)
-                                        .size(10.0),
-                                );
-                            });
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.add_space(8.0);
-                            ui.small(egui::RichText::new(&project_label).color(pal::TEXT_MUTED));
-                            ui.add_space(8.0);
-                            ui.small(
-                                egui::RichText::new("Orbit: MMB  Pan: RMB  Zoom: Scroll")
-                                    .color(pal::HINT_TEXT),
-                            );
-                        });
-                    });
+                    let mut builder = EguiUiBuilder::new(ui, vt);
+                    panel.ui(&mut builder);
                 });
         }
 
-        // Shared reference for viewport texture mapping (disjoint borrow).
-        let vt = &self.viewport_textures;
+        // ── Status bar(s) ──────────────────────────────
+        // Stacked from the bottom up. Declared BEFORE the resizable Bottom so
+        // egui reserves vertical space for it correctly.
+        for (idx, panel) in self.status_panels.iter_mut().enumerate() {
+            let height = panel.preferred_size().unwrap_or(DEFAULT_STATUSBAR_HEIGHT);
+            let panel_id = format!("editor_statusbar_{}_{}", idx, panel.id());
+            egui::TopBottomPanel::bottom(panel_id)
+                .exact_height(height)
+                .resizable(false)
+                .show(&ctx, |ui| {
+                    let mut builder = EguiUiBuilder::new(ui, vt);
+                    panel.ui(&mut builder);
+                });
+        }
 
-        // ── Bottom strip (tabbed) ──────────────────────
-        //
-        // MUST be declared before SidePanel::left/right so egui allocates
-        // vertical space correctly and the resize handle is reachable.
+        // ── Spine (fixed left strip) ──────────────────
+        // First spine panel wins (the layout assumes one spine). Additional
+        // spine panels are rendered as a vertical stack inside the same panel
+        // for now — easy to revisit if real apps need more.
+        if !self.spine_panels.is_empty() {
+            let width = self.spine_panels[0]
+                .preferred_size()
+                .unwrap_or(DEFAULT_SPINE_WIDTH);
+            egui::SidePanel::left("editor_spine")
+                .exact_width(width)
+                .resizable(false)
+                .show(&ctx, |ui| {
+                    for panel in &mut self.spine_panels {
+                        let mut builder = EguiUiBuilder::new(ui, vt);
+                        panel.ui(&mut builder);
+                    }
+                });
+        }
+
+        // ── Bottom (resizable, tabbed) ─────────────────
         if !self.bottom_panels.is_empty() {
             let active_tab = &mut self.active_bottom_tab;
             let panels = &mut self.bottom_panels;
+            let default_h = panels[0]
+                .preferred_size()
+                .unwrap_or(DEFAULT_BOTTOM_HEIGHT);
 
             egui::TopBottomPanel::bottom("editor_bottom")
-                .default_height(200.0)
+                .default_height(default_h)
                 .min_height(80.0)
-                .max_height(600.0)
+                .max_height(800.0)
                 .resizable(true)
                 .show(&ctx, |ui| {
-                    // Top resize grip — faint line
-                    let grip_rect = {
-                        let r = ui.available_rect_before_wrap();
-                        egui::Rect::from_min_size(r.min, egui::vec2(r.width(), 3.0))
-                    };
-                    ui.painter().rect_filled(grip_rect, 0.0, pal::BORDER);
-
-                    // Tab bar — pill-style
-                    ui.horizontal(|ui| {
-                        ui.add_space(8.0);
-                        for (i, panel) in panels.iter().enumerate() {
-                            let active = *active_tab == i;
-                            let tab_bg = if active {
-                                pal::PRIMARY_DIM
-                            } else {
-                                egui::Color32::TRANSPARENT
-                            };
-                            let tab_text = if active { pal::PRIMARY } else { pal::TEXT_DIM };
-                            let tab_btn = ui.add(
-                                egui::Button::new(
-                                    egui::RichText::new(panel.title())
-                                        .size(11.5)
-                                        .color(tab_text),
-                                )
-                                .fill(tab_bg)
-                                .stroke(if active {
-                                    egui::Stroke::new(1.0, pal::PRIMARY_BORDER)
-                                } else {
-                                    egui::Stroke::NONE
-                                }),
-                            );
-                            if tab_btn.clicked() {
-                                *active_tab = i;
+                    if panels.len() > 1 {
+                        ui.horizontal(|ui| {
+                            ui.add_space(8.0);
+                            for (i, panel) in panels.iter().enumerate() {
+                                let active = *active_tab == i;
+                                if ui.selectable_label(active, panel.title()).clicked() {
+                                    *active_tab = i;
+                                }
+                                ui.add_space(2.0);
                             }
-                            ui.add_space(2.0);
-                        }
-                    });
-                    ui.add(egui::Separator::default().spacing(2.0));
+                        });
+                        ui.add(egui::Separator::default().spacing(2.0));
+                    }
 
-                    // Active tab content
                     if let Some(panel) = panels.get_mut(*active_tab) {
                         let mut builder = EguiUiBuilder::new(ui, vt);
                         panel.ui(&mut builder);
@@ -674,79 +329,47 @@ impl EditorShell for EguiEditorShell {
                 });
         }
 
-        // ── Left sidebar ───────────────────────────────
+        // ── Left sidebar (resizable) ──────────────────
         if !self.left_panels.is_empty() {
+            let default_w = self.left_panels[0]
+                .preferred_size()
+                .unwrap_or(DEFAULT_LEFT_WIDTH);
+            let panels = &mut self.left_panels;
             egui::SidePanel::left("editor_left")
-                .default_width(250.0)
-                .width_range(120.0..=500.0)
+                .default_width(default_w)
+                .width_range(120.0..=600.0)
                 .resizable(true)
                 .show(&ctx, |ui| {
-                    for panel in &mut self.left_panels {
-                        ui.add_space(6.0);
-                        // Panel header row with accent line
-                        ui.horizontal(|ui| {
-                            // Blue accent bar
-                            let bar_h = 14.0;
-                            let (bar_rect, _) = ui
-                                .allocate_exact_size(egui::vec2(2.0, bar_h), egui::Sense::hover());
-                            ui.painter().rect_filled(
-                                bar_rect,
-                                egui::CornerRadius::same(1),
-                                pal::PRIMARY,
-                            );
-                            ui.add_space(6.0);
-                            ui.label(
-                                egui::RichText::new(panel.title())
-                                    .strong()
-                                    .size(11.0)
-                                    .color(pal::TEXT_BRIGHT),
-                            );
-                        });
-                        ui.add(egui::Separator::default().spacing(3.0));
+                    for panel in panels.iter_mut() {
                         let mut builder = EguiUiBuilder::new(ui, vt);
                         panel.ui(&mut builder);
                     }
                 });
         }
 
-        // ── Right sidebar ──────────────────────────────
+        // ── Right sidebar (resizable) ─────────────────
         if !self.right_panels.is_empty() {
+            let default_w = self.right_panels[0]
+                .preferred_size()
+                .unwrap_or(DEFAULT_RIGHT_WIDTH);
+            let panels = &mut self.right_panels;
             egui::SidePanel::right("editor_right")
-                .default_width(300.0)
-                .width_range(150.0..=600.0)
+                .default_width(default_w)
+                .width_range(150.0..=700.0)
                 .resizable(true)
                 .show(&ctx, |ui| {
-                    for panel in &mut self.right_panels {
-                        ui.add_space(6.0);
-                        ui.horizontal(|ui| {
-                            let bar_h = 14.0;
-                            let (bar_rect, _) = ui
-                                .allocate_exact_size(egui::vec2(2.0, bar_h), egui::Sense::hover());
-                            ui.painter().rect_filled(
-                                bar_rect,
-                                egui::CornerRadius::same(1),
-                                pal::ACCENT,
-                            );
-                            ui.add_space(6.0);
-                            ui.label(
-                                egui::RichText::new(panel.title())
-                                    .strong()
-                                    .size(11.0)
-                                    .color(pal::TEXT_BRIGHT),
-                            );
-                        });
-                        ui.add(egui::Separator::default().spacing(3.0));
+                    for panel in panels.iter_mut() {
                         let mut builder = EguiUiBuilder::new(ui, vt);
                         panel.ui(&mut builder);
                     }
                 });
         }
 
-        // ── Central viewport ───────────────────────────
+        // ── Central area ──────────────────────────────
         egui::CentralPanel::default().show(&ctx, |ui| {
             if self.center_panels.is_empty() {
                 ui.centered_and_justified(|ui| {
-                    ui.label("3D Viewport");
+                    ui.label("");
                 });
             } else {
                 for panel in &mut self.center_panels {
@@ -755,5 +378,19 @@ impl EditorShell for EguiEditorShell {
                 }
             }
         });
+
+        // ── Floating overlays (z-ordered) ─────────────
+        // egui::Area lets us render free-floating UI on top of the rest. The
+        // panel is responsible for all its own positioning / sizing.
+        for entry in &mut self.floating_panels {
+            let area_id = egui::Id::new(("editor_floating", entry.panel.id()));
+            egui::Area::new(area_id)
+                .order(egui::Order::Foreground)
+                .interactable(true)
+                .show(&ctx, |ui| {
+                    let mut builder = EguiUiBuilder::new(ui, vt);
+                    entry.panel.ui(&mut builder);
+                });
+        }
     }
 }

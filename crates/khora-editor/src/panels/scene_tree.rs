@@ -152,7 +152,7 @@ impl EditorPanel for SceneTreePanel {
 
         ui.scroll_area("scene_tree_scroll", &mut |ui| {
             if roots.is_empty() {
-                ui.colored_label([0.5, 0.5, 0.5, 1.0], "Scene is empty");
+                ui.colored_label(EditorTheme::default().text_muted, "Scene is empty");
             } else {
                 for node in &roots {
                     if !filter.is_empty() && !Self::matches_filter(node, &filter) {

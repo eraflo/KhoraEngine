@@ -178,6 +178,31 @@ pub trait UiBuilder {
     /// Available height in the current layout region.
     fn available_height(&self) -> f32;
 
+    /// Returns the current paint region in *screen-space* coordinates as
+    /// `[min_x, min_y, width, height]`.
+    ///
+    /// Useful for panels that need to draw custom chrome (rounded backgrounds,
+    /// gradients, branded pills) on top of their content. The returned
+    /// rectangle matches the area covered by the current layout, including
+    /// space already consumed by widgets.
+    ///
+    /// Default implementation falls back to a `(0, 0)` origin and the
+    /// available size — backends should override it to return their real
+    /// region.
+    fn panel_rect(&self) -> [f32; 4] {
+        [0.0, 0.0, self.available_width(), self.available_height()]
+    }
+
+    /// Returns the full screen size (top-left = `(0, 0)`) as
+    /// `[min_x, min_y, width, height]`.
+    ///
+    /// Used by floating overlays / modals that need to cover or center
+    /// themselves on the entire viewport. Default implementation falls back
+    /// to [`panel_rect`](Self::panel_rect).
+    fn screen_rect(&self) -> [f32; 4] {
+        self.panel_rect()
+    }
+
     // ── Viewport / Images ──────────────────────────────
 
     /// Display a viewport texture at the given size.
