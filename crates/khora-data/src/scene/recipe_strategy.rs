@@ -58,17 +58,6 @@ impl SerializationStrategy for RecipeSerializationStrategy {
         let nodes: Vec<EntityId> = world.iter_entities().collect();
         let mut edges: Vec<(EntityId, EntityId)> = Vec::new();
 
-        // Build edges from Parent → Child relationships.
-        for reg in inventory::iter::<ComponentRegistration> {
-            if reg.type_name == "Parent" {
-                for &entity_id in &nodes {
-                    // Use the registration's serialize function to check for Parent
-                    // but we need the actual Parent to get the edge.
-                    // Fall back to direct access for Parent specifically.
-                }
-            }
-        }
-
         // Direct Parent access for topological sort (Parent is always registered).
         for &entity_id in &nodes {
             if let Some(parent) = world.get::<crate::ecs::Parent>(entity_id) {

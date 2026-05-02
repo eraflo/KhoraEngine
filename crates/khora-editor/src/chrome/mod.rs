@@ -21,13 +21,15 @@
 //! implementations that the editor registers at startup at the appropriate
 //! [`PanelLocation`] slots (`TopBar`, `Spine`, `StatusBar`, …).
 //!
-//! ## Phase 2 layout
+//! ## Layout
 //!
 //! - [`TitleBarPanel`] — branded top strip with menus + Cmd+K search (44px).
-//! - [`ToolbarPanel`] — legacy gizmo + transport strip (32px). Phased out
-//!   when Phase 4 introduces in-viewport tool/transport overlays.
 //! - [`SpinePanel`] — vertical mode switcher on the far-left edge (56px).
 //! - [`StatusBarPanel`] — bottom metrics strip (24px).
+//!
+//! Gizmo tool selection and Play/Stop transport controls live as overlays
+//! inside the 3D viewport (see `panels::viewport::paint_tool_pill` /
+//! `paint_transport_pill`), not as a top toolbar.
 //!
 //! [`EditorPanel`]: khora_sdk::EditorPanel
 //! [`PanelLocation`]: khora_sdk::PanelLocation
@@ -35,10 +37,7 @@
 pub mod spine;
 pub mod status_bar;
 pub mod title_bar;
-pub mod toolbar;
-pub mod widgets;
 
 pub use spine::SpinePanel;
 pub use status_bar::StatusBarPanel;
 pub use title_bar::TitleBarPanel;
-pub use toolbar::ToolbarPanel;

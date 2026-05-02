@@ -26,13 +26,19 @@ struct ProjectDescriptor<'a> {
 /// ```text
 /// <parent>/<name>/
 ///   project.json           ← project descriptor
-///   assets/                ← asset root
+///   src/                   ← native Rust extensions (compiled)
+///   assets/                ← asset root (loaded at runtime)
 ///   assets/scenes/         ← default scene folder
 ///   assets/textures/
 ///   assets/meshes/
 ///   assets/audio/
 ///   assets/shaders/
+///   assets/scripts/        ← gameplay scripts (data, hot-reloadable)
 /// ```
+///
+/// `src/` is for native Rust extensions and custom components compiled into
+/// the game binary. `assets/scripts/` is for gameplay scripts treated as
+/// runtime data — eventually a custom scripting language for live editing.
 ///
 /// Returns the absolute path to the project root directory.
 pub fn create_project(name: &str, parent: &Path, engine_version: &str) -> Result<PathBuf> {
@@ -55,7 +61,7 @@ pub fn create_project(name: &str, parent: &Path, engine_version: &str) -> Result
     std::fs::create_dir_all(&root)
         .with_context(|| format!("Failed to create project directory '{}'", root.display()))?;
 
-    for sub in &["scenes", "textures", "meshes", "audio", "shaders"] {
+    for sub in &["scenes", "textures", "meshes", "audio", "shaders", "scripts"] {
         std::fs::create_dir_all(root.join("assets").join(sub))
             .with_context(|| format!("Failed to create assets/{} directory", sub))?;
     }

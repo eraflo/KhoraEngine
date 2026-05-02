@@ -39,7 +39,7 @@ use super::ui_builder::EguiUiBuilder;
 use khora_core::ui::editor::fonts::{FontHandle, FontPack, NamedFont};
 use khora_core::ui::editor::panel::{EditorPanel, PanelLocation};
 use khora_core::ui::editor::shell::EditorShell;
-use khora_core::ui::editor::state::{EditorState, StatusBarData};
+use khora_core::ui::editor::state::{EditorMode, EditorState, StatusBarData};
 use khora_core::ui::editor::theme::EditorTheme;
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
 use std::collections::HashMap;
@@ -66,18 +66,44 @@ fn install_named(
     }
 }
 
-/// Default sizes used when a panel does not specify a [`preferred_size`].
+/// Fixed-height/width slots — same on every screen.
 const DEFAULT_TOPBAR_HEIGHT: f32 = 32.0;
 const DEFAULT_SPINE_WIDTH: f32 = 56.0;
 const DEFAULT_STATUSBAR_HEIGHT: f32 = 24.0;
-const DEFAULT_LEFT_WIDTH: f32 = 280.0;
-const DEFAULT_RIGHT_WIDTH: f32 = 320.0;
-const DEFAULT_BOTTOM_HEIGHT: f32 = 240.0;
+
+/// Proportional defaults relative to screen size. The [`EditorPanel`]'s own
+/// `preferred_size` is treated as a fallback for very small screens — the
+/// proportional rule wins above the per-panel minimum so the dock looks the
+/// same on a 1080p laptop and a 4K display.
+const LEFT_FRAC: f32 = 0.16;
+const RIGHT_FRAC: f32 = 0.20;
+const BOTTOM_FRAC: f32 = 0.26;
+
+/// Hard minimums — below these widths panel content begins to collide. The
+/// resize handles still let the user shrink to these limits.
+const LEFT_MIN: f32 = 240.0;
+const LEFT_MAX_FRAC: f32 = 0.35;
+const RIGHT_MIN: f32 = 260.0;
+const RIGHT_MAX_FRAC: f32 = 0.40;
+const BOTTOM_MIN: f32 = 140.0;
+const BOTTOM_MAX_FRAC: f32 = 0.55;
 
 /// A floating panel keeps its z-order so the shell can paint them top-down.
 struct FloatingEntry {
     z: i32,
     panel: Box<dyn EditorPanel>,
+}
+
+/// Cached, one-shot proportional defaults — computed the first frame the
+/// shell sees a non-zero screen rect and never recomputed. egui persists
+/// the user's resize between frames; recomputing the default each frame
+/// would risk overriding it (and was the source of the "panels snap back"
+/// bug users reported earlier).
+#[derive(Default, Clone, Copy)]
+struct CachedDefaults {
+    left_w: Option<f32>,
+    right_w: Option<f32>,
+    bottom_h: Option<f32>,
 }
 
 /// Egui-backed editor shell using native `SidePanel`, `TopBottomPanel`, and
@@ -101,6 +127,7 @@ pub struct EguiEditorShell {
     /// debug overlay can; the actual status-bar UI lives in editor-side panels.
     status: StatusBarData,
     editor_state: Option<Arc<Mutex<EditorState>>>,
+    defaults: CachedDefaults,
 }
 
 impl EguiEditorShell {
@@ -122,6 +149,7 @@ impl EguiEditorShell {
             viewport_textures: HashMap::new(),
             status: StatusBarData::default(),
             editor_state: None,
+            defaults: CachedDefaults::default(),
         }
     }
 
@@ -222,6 +250,11 @@ impl EditorShell for EguiEditorShell {
             egui::FontFamily::Monospace,
             fonts.monospace,
         );
+        install_named(
+            &mut definitions,
+            egui::FontFamily::Name("icons".into()),
+            fonts.icons,
+        );
         self.ctx.set_fonts(definitions);
     }
 
@@ -244,6 +277,40 @@ impl EditorShell for EguiEditorShell {
         // `&mut self` field accesses.
         let ctx = self.ctx.clone();
         let vt = &self.viewport_textures;
+
+        // The Control Plane workspace ships its own dedicated inspector,
+        // so the Scene-mode right SidePanel would create a visible doublon
+        // when the user switches modes. Read active_mode from editor state
+        // and skip the right side accordingly. (Shell already depends on
+        // EditorState, so this doesn't add a new layer dependency.)
+        let hide_right_panel = self
+            .editor_state
+            .as_ref()
+            .and_then(|s| s.lock().ok().map(|g| g.active_mode == EditorMode::ControlPlane))
+            .unwrap_or(false);
+
+        // Compute proportional defaults the FIRST frame we see a real
+        // screen rect, then cache them. Recomputing each frame would risk
+        // overwriting the user's resize — egui persists `PanelState` and
+        // checks our `default_width` only when no state exists, but feeding
+        // it shifting values frame-to-frame is brittle and was reported as
+        // panels "snapping back" after a resize.
+        let screen = ctx.screen_rect();
+        let screen_w = screen.width();
+        let screen_h = screen.height();
+        if self.defaults.left_w.is_none() && screen_w > 200.0 && screen_h > 200.0 {
+            self.defaults.left_w = Some((screen_w * LEFT_FRAC).max(LEFT_MIN));
+            self.defaults.right_w = Some((screen_w * RIGHT_FRAC).max(RIGHT_MIN));
+            self.defaults.bottom_h = Some((screen_h * BOTTOM_FRAC).max(BOTTOM_MIN));
+        }
+        let left_default = self.defaults.left_w.unwrap_or(LEFT_MIN);
+        let right_default = self.defaults.right_w.unwrap_or(RIGHT_MIN);
+        let bottom_default = self.defaults.bottom_h.unwrap_or(BOTTOM_MIN);
+        // Max widths stay proportional to the current screen so giant
+        // monitors aren't artificially capped.
+        let left_max = (screen_w * LEFT_MAX_FRAC).max(LEFT_MIN + 60.0);
+        let right_max = (screen_w * RIGHT_MAX_FRAC).max(RIGHT_MIN + 60.0);
+        let bottom_max = (screen_h * BOTTOM_MAX_FRAC).max(BOTTOM_MIN + 80.0);
 
         // ── Top bar(s) ─────────────────────────────────
         // Each TopBar panel becomes its own fixed-height TopBottomPanel,
@@ -298,16 +365,25 @@ impl EditorShell for EguiEditorShell {
         if !self.bottom_panels.is_empty() {
             let active_tab = &mut self.active_bottom_tab;
             let panels = &mut self.bottom_panels;
-            let default_h = panels[0]
-                .preferred_size()
-                .unwrap_or(DEFAULT_BOTTOM_HEIGHT);
+            // Panel-supplied preferred size is treated as an *additional*
+            // floor — useful for panels that need more than the global
+            // minimum. Proportional default still wins on big screens.
+            let panel_min = panels[0].preferred_size().unwrap_or(0.0);
+            let default_h = bottom_default.max(panel_min);
 
             egui::TopBottomPanel::bottom("editor_bottom")
                 .default_height(default_h)
-                .min_height(80.0)
-                .max_height(800.0)
+                .min_height(BOTTOM_MIN)
+                .max_height(bottom_max.max(default_h + 1.0))
                 .resizable(true)
                 .show(&ctx, |ui| {
+                    // Force the inner UI to span the full panel rect —
+                    // otherwise our paint-only panels (no cursor allocation)
+                    // make `inner_response.response.rect` shrink to
+                    // `width_range.min`, and egui stores THAT in PanelState,
+                    // so the panel snaps back to the minimum on every drag
+                    // release.
+                    ui.set_min_size(ui.max_rect().size());
                     if panels.len() > 1 {
                         ui.horizontal(|ui| {
                             ui.add_space(8.0);
@@ -323,7 +399,19 @@ impl EditorShell for EguiEditorShell {
                     }
 
                     if let Some(panel) = panels.get_mut(*active_tab) {
-                        let mut builder = EguiUiBuilder::new(ui, vt);
+                        // Hand the panel ONLY the area below the tab bar
+                        // — without this, the panel's `panel_rect()` is
+                        // still the full bottom-panel rect, so its header
+                        // strip paints over the tab bar and the content
+                        // (logs / asset grid) ends up clipped or hidden.
+                        let remaining = ui.available_rect_before_wrap();
+                        let mut child = ui.new_child(
+                            egui::UiBuilder::new()
+                                .max_rect(remaining)
+                                .layout(egui::Layout::top_down(egui::Align::Min)),
+                        );
+                        child.set_min_size(remaining.size());
+                        let mut builder = EguiUiBuilder::new(&mut child, vt);
                         panel.ui(&mut builder);
                     }
                 });
@@ -331,15 +419,20 @@ impl EditorShell for EguiEditorShell {
 
         // ── Left sidebar (resizable) ──────────────────
         if !self.left_panels.is_empty() {
-            let default_w = self.left_panels[0]
-                .preferred_size()
-                .unwrap_or(DEFAULT_LEFT_WIDTH);
+            let panel_min = self.left_panels[0].preferred_size().unwrap_or(0.0);
+            let default_w = left_default.max(panel_min);
             let panels = &mut self.left_panels;
             egui::SidePanel::left("editor_left")
                 .default_width(default_w)
-                .width_range(120.0..=600.0)
+                .min_width(LEFT_MIN)
+                .max_width(left_max.max(default_w + 1.0))
                 .resizable(true)
                 .show(&ctx, |ui| {
+                    // See the bottom panel above for the rationale —
+                    // without `set_min_size` the resize drag is reverted on
+                    // mouse release because PanelState stores the painted
+                    // content rect (small) instead of the panel rect.
+                    ui.set_min_size(ui.max_rect().size());
                     for panel in panels.iter_mut() {
                         let mut builder = EguiUiBuilder::new(ui, vt);
                         panel.ui(&mut builder);
@@ -348,16 +441,18 @@ impl EditorShell for EguiEditorShell {
         }
 
         // ── Right sidebar (resizable) ─────────────────
-        if !self.right_panels.is_empty() {
-            let default_w = self.right_panels[0]
-                .preferred_size()
-                .unwrap_or(DEFAULT_RIGHT_WIDTH);
+        if !self.right_panels.is_empty() && !hide_right_panel {
+            let panel_min = self.right_panels[0].preferred_size().unwrap_or(0.0);
+            let default_w = right_default.max(panel_min);
             let panels = &mut self.right_panels;
             egui::SidePanel::right("editor_right")
                 .default_width(default_w)
-                .width_range(150.0..=700.0)
+                .min_width(RIGHT_MIN)
+                .max_width(right_max.max(default_w + 1.0))
                 .resizable(true)
                 .show(&ctx, |ui| {
+                    // Same rationale as the left panel above.
+                    ui.set_min_size(ui.max_rect().size());
                     for panel in panels.iter_mut() {
                         let mut builder = EguiUiBuilder::new(ui, vt);
                         panel.ui(&mut builder);

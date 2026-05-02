@@ -20,6 +20,42 @@
 
 use super::viewport_texture::ViewportTextureHandle;
 
+/// Result of an [`UiBuilder::interact_rect`] call.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Interaction {
+    /// Pointer is inside the rect this frame.
+    pub hovered: bool,
+    /// Primary button was pressed inside the rect this frame.
+    pub clicked: bool,
+    /// Primary button is currently held inside the rect.
+    pub pressed: bool,
+    /// Pointer double-clicked inside the rect this frame.
+    pub double_clicked: bool,
+}
+
+/// Font family hint passed to [`UiBuilder::paint_text_styled`]. Backends map
+/// each variant to whichever face was registered for that family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontFamilyHint {
+    /// Default proportional / sans-serif (Geist if installed).
+    Proportional,
+    /// Monospaced (Geist Mono if installed).
+    Monospace,
+    /// Icon font (Lucide if installed). Pass single-char codepoints.
+    Icons,
+}
+
+/// Horizontal alignment for [`UiBuilder::paint_text_styled`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextAlign {
+    /// Anchor at the left edge.
+    Left,
+    /// Anchor at the centre.
+    Center,
+    /// Anchor at the right edge.
+    Right,
+}
+
 /// A backend-agnostic, immediate-mode widget builder.
 ///
 /// Panels receive a `&mut dyn UiBuilder` and use it to draw headings, labels,
@@ -168,6 +204,100 @@ pub trait UiBuilder {
     /// Paints text at a window-space position.
     fn paint_text(&mut self, pos: [f32; 2], color: [f32; 4], text: &str) {
         let _ = (pos, color, text);
+    }
+
+    /// Paints a stroked (outlined) rectangle in window-space.
+    fn paint_rect_stroke(
+        &mut self,
+        min: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        rounding: f32,
+        thickness: f32,
+    ) {
+        let _ = (min, size, color, rounding, thickness);
+    }
+
+    /// Paints a filled circle.
+    fn paint_circle_filled(&mut self, center: [f32; 2], radius: f32, color: [f32; 4]) {
+        let _ = (center, radius, color);
+    }
+
+    /// Paints a circle outline.
+    fn paint_circle_stroke(
+        &mut self,
+        center: [f32; 2],
+        radius: f32,
+        color: [f32; 4],
+        thickness: f32,
+    ) {
+        let _ = (center, radius, color, thickness);
+    }
+
+    /// Paints text with explicit size, font family and alignment.
+    fn paint_text_styled(
+        &mut self,
+        pos: [f32; 2],
+        text: &str,
+        size: f32,
+        color: [f32; 4],
+        family: FontFamilyHint,
+        align: TextAlign,
+    ) {
+        let _ = (pos, text, size, color, family, align);
+    }
+
+    /// Paints a closed polygon path (for diamonds, triangles, custom shapes).
+    /// `points` is a list of `[x, y]` window-space coordinates.
+    fn paint_path_filled(&mut self, points: &[[f32; 2]], color: [f32; 4]) {
+        let _ = (points, color);
+    }
+
+    /// Allocates a clickable region at the given absolute window-space rect
+    /// and reports interaction this frame. The `id_salt` disambiguates
+    /// overlapping or repeatedly-painted hot regions.
+    fn interact_rect(&mut self, id_salt: &str, rect: [f32; 4]) -> Interaction {
+        let _ = (id_salt, rect);
+        Interaction::default()
+    }
+
+    /// Attaches a tooltip to the most recently created widget / interaction.
+    fn tooltip_for_last(&mut self, text: &str) {
+        let _ = text;
+    }
+
+    /// Pushes a child layout region at the given absolute screen-space rect.
+    /// Inside the closure, `&mut dyn UiBuilder` reflects the constrained
+    /// region — egui-native widgets (`button`, `text_edit_singleline`,
+    /// `vec3_editor`, …) lay out within it instead of the parent panel.
+    /// Used by composite widgets (inspector cards) that paint their frame
+    /// absolutely but want native egui controls inside.
+    fn region_at(&mut self, rect: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        // Default fallback for backends that don't support sub-regions:
+        // do nothing. Concrete backends (egui) MUST override this — calling
+        // it on a backend without an override silently no-ops the body.
+        let _ = (rect, f);
+    }
+
+    /// Returns the current layout cursor in screen-space `(x, y)`. Useful for
+    /// composites that need to know where to place an absolutely-painted
+    /// frame before advancing egui's natural layout.
+    fn cursor_pos(&self) -> [f32; 2] {
+        let r = self.panel_rect();
+        [r[0], r[1]]
+    }
+
+    /// Measures the rendered size of `text` at `size` points using `family`.
+    /// Returns `[width, height]` in logical points.
+    ///
+    /// Backends without a real text shaper fall back to a heuristic
+    /// (~0.55 × size per character, height = size). The egui backend uses
+    /// the actual font metrics — call this rather than guessing widths.
+    fn measure_text(&self, text: &str, size: f32, family: FontFamilyHint) -> [f32; 2] {
+        let _ = family;
+        // Default heuristic: ~0.55 average glyph aspect ratio.
+        let w = text.chars().count() as f32 * size * 0.55;
+        [w, size]
     }
 
     // ── Queries ────────────────────────────────────────

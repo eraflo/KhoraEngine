@@ -25,7 +25,6 @@
 //! `Without<HandleComponent<GpuMesh>>` query filter.
 
 use crate::{
-    assets::Assets,
     ecs::{HandleComponent, Without, World},
     gpu::GpuCache,
 };
@@ -42,7 +41,6 @@ use khora_core::{
     },
 };
 use std::collections::HashMap;
-use std::sync::Arc;
 
 /// Engine-wide CPU→GPU mesh upload service.
 ///

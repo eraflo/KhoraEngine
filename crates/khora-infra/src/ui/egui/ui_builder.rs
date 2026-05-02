@@ -14,6 +14,7 @@
 
 //! Concrete [`UiBuilder`] backed by `egui::Ui`.
 
+use khora_core::ui::editor::ui_builder::{FontFamilyHint, Interaction, TextAlign};
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
 use khora_core::ui::editor::UiBuilder;
 use std::collections::HashMap;
@@ -127,29 +128,41 @@ impl UiBuilder for EguiUiBuilder<'_> {
     }
 
     fn vec3_editor(&mut self, label: &str, value: &mut [f32; 3], speed: f32) -> bool {
+        // Unity-style: filled colored X/Y/Z badges before each drag value.
+        // Red = X, green = Y, blue = Z.
+        const X_COLOR: egui::Color32 = egui::Color32::from_rgb(214, 75, 64);
+        const Y_COLOR: egui::Color32 = egui::Color32::from_rgb(96, 178, 81);
+        const Z_COLOR: egui::Color32 = egui::Color32::from_rgb(78, 132, 222);
+
+        let axis_badge = |ui: &mut egui::Ui, ch: &str, color: egui::Color32| {
+            egui::Frame::new()
+                .fill(color)
+                .corner_radius(egui::CornerRadius::same(3))
+                .inner_margin(egui::Margin::symmetric(5, 1))
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new(ch)
+                            .color(egui::Color32::WHITE)
+                            .strong()
+                            .monospace(),
+                    );
+                });
+        };
+
         self.ui
             .horizontal(|ui| {
                 ui.label(label);
+                axis_badge(ui, "X", X_COLOR);
                 let x = ui
-                    .add(
-                        egui::DragValue::new(&mut value[0])
-                            .speed(speed)
-                            .prefix("X: "),
-                    )
+                    .add(egui::DragValue::new(&mut value[0]).speed(speed))
                     .changed();
+                axis_badge(ui, "Y", Y_COLOR);
                 let y = ui
-                    .add(
-                        egui::DragValue::new(&mut value[1])
-                            .speed(speed)
-                            .prefix("Y: "),
-                    )
+                    .add(egui::DragValue::new(&mut value[1]).speed(speed))
                     .changed();
+                axis_badge(ui, "Z", Z_COLOR);
                 let z = ui
-                    .add(
-                        egui::DragValue::new(&mut value[2])
-                            .speed(speed)
-                            .prefix("Z: "),
-                    )
+                    .add(egui::DragValue::new(&mut value[2]).speed(speed))
                     .changed();
                 x || y || z
             })
@@ -238,11 +251,18 @@ impl UiBuilder for EguiUiBuilder<'_> {
         size: [f32; 2],
     ) -> Option<[f32; 2]> {
         let egui_id = self.viewport_textures.get(&handle)?;
+        // IMPORTANT: use `Sense::hover()` rather than click_and_drag here.
+        // egui-winit's `consumed = wants_pointer_input()` short-circuits
+        // every mouse press while the cursor is over a click-sensing
+        // widget — which previously meant clicks/drags on the 3D viewport
+        // were swallowed before the engine's input handler could orbit /
+        // pan the camera. Hover sense still drives `Response::hovered()`,
+        // which is all `viewport_hovered` needs.
         let image = egui::Image::new(egui::load::SizedTexture::new(
             *egui_id,
             egui::vec2(size[0], size[1]),
         ))
-        .sense(egui::Sense::click_and_drag());
+        .sense(egui::Sense::hover());
         let response = self.ui.add(image);
         let min = response.rect.min;
         self.last_response = Some(response);
@@ -280,11 +300,16 @@ impl UiBuilder for EguiUiBuilder<'_> {
     fn is_last_item_escape_pressed(&self) -> bool {
         self.last_response
             .as_ref()
-            .is_some_and(|r| self.ui.input(|i| i.key_pressed(egui::Key::Escape)))
+            .is_some_and(|_| self.ui.input(|i| i.key_pressed(egui::Key::Escape)))
     }
 
     fn context_menu_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
-        if let Some(response) = self.last_response.take() {
+        // Borrow rather than take — the egui `Response::context_menu` API
+        // takes `&self`, and removing the response from `last_response`
+        // would prevent any follow-up call (`tooltip_for_last`, etc.) from
+        // working in the same widget's lifecycle. Cloning is cheap (it's
+        // mostly Arc-internal in egui).
+        if let Some(response) = self.last_response.clone() {
             let vt = self.viewport_textures;
             response.context_menu(|ui| {
                 let mut nested = EguiUiBuilder::new(ui, vt);
@@ -366,5 +391,156 @@ impl UiBuilder for EguiUiBuilder<'_> {
     fn screen_rect(&self) -> [f32; 4] {
         let r = self.ui.ctx().screen_rect();
         [r.min.x, r.min.y, r.width(), r.height()]
+    }
+
+    fn paint_rect_stroke(
+        &mut self,
+        min: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        rounding: f32,
+        thickness: f32,
+    ) {
+        let rect =
+            egui::Rect::from_min_size(egui::pos2(min[0], min[1]), egui::vec2(size[0], size[1]));
+        let corner = egui::CornerRadius::same(rounding.clamp(0.0, 255.0) as u8);
+        self.ui.painter().rect_stroke(
+            rect,
+            corner,
+            egui::Stroke::new(thickness, color_to_egui(color)),
+            egui::epaint::StrokeKind::Inside,
+        );
+    }
+
+    fn paint_circle_filled(&mut self, center: [f32; 2], radius: f32, color: [f32; 4]) {
+        self.ui.painter().circle_filled(
+            egui::pos2(center[0], center[1]),
+            radius,
+            color_to_egui(color),
+        );
+    }
+
+    fn paint_circle_stroke(
+        &mut self,
+        center: [f32; 2],
+        radius: f32,
+        color: [f32; 4],
+        thickness: f32,
+    ) {
+        self.ui.painter().circle_stroke(
+            egui::pos2(center[0], center[1]),
+            radius,
+            egui::Stroke::new(thickness, color_to_egui(color)),
+        );
+    }
+
+    fn paint_text_styled(
+        &mut self,
+        pos: [f32; 2],
+        text: &str,
+        size: f32,
+        color: [f32; 4],
+        family: FontFamilyHint,
+        align: TextAlign,
+    ) {
+        let egui_align = match align {
+            TextAlign::Left => egui::Align2::LEFT_TOP,
+            TextAlign::Center => egui::Align2::CENTER_TOP,
+            TextAlign::Right => egui::Align2::RIGHT_TOP,
+        };
+        let font_id = match family {
+            FontFamilyHint::Proportional => egui::FontId::proportional(size),
+            FontFamilyHint::Monospace => egui::FontId::monospace(size),
+            FontFamilyHint::Icons => {
+                egui::FontId::new(size, egui::FontFamily::Name("icons".into()))
+            }
+        };
+        self.ui.painter().text(
+            egui::pos2(pos[0], pos[1]),
+            egui_align,
+            text,
+            font_id,
+            color_to_egui(color),
+        );
+    }
+
+    fn paint_path_filled(&mut self, points: &[[f32; 2]], color: [f32; 4]) {
+        if points.len() < 3 {
+            return;
+        }
+        use egui::epaint::{PathShape, PathStroke};
+        let pts: Vec<egui::Pos2> = points
+            .iter()
+            .map(|p| egui::pos2(p[0], p[1]))
+            .collect();
+        self.ui.painter().add(egui::Shape::Path(PathShape {
+            points: pts,
+            closed: true,
+            fill: color_to_egui(color),
+            stroke: PathStroke::NONE,
+        }));
+    }
+
+    fn interact_rect(&mut self, id_salt: &str, rect: [f32; 4]) -> Interaction {
+        let r = egui::Rect::from_min_size(
+            egui::pos2(rect[0], rect[1]),
+            egui::vec2(rect[2], rect[3]),
+        );
+        let id = self.ui.id().with(("khora_hot", id_salt));
+        let response = self.ui.interact(r, id, egui::Sense::click_and_drag());
+        let interaction = Interaction {
+            hovered: response.hovered(),
+            clicked: response.clicked(),
+            pressed: response.is_pointer_button_down_on(),
+            double_clicked: response.double_clicked(),
+        };
+        self.last_response = Some(response);
+        interaction
+    }
+
+    fn tooltip_for_last(&mut self, text: &str) {
+        if let Some(response) = self.last_response.as_ref() {
+            response.clone().on_hover_text(text);
+        }
+    }
+
+    fn region_at(&mut self, rect: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let r = egui::Rect::from_min_size(
+            egui::pos2(rect[0], rect[1]),
+            egui::vec2(rect[2], rect[3]),
+        );
+        let vt = self.viewport_textures;
+        let id_salt = ("khora_region", rect[0] as i32, rect[1] as i32);
+        let mut child = self.ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(r)
+                .id_salt(id_salt)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        let mut nested = EguiUiBuilder::new(&mut child, vt);
+        f(&mut nested);
+    }
+
+    fn cursor_pos(&self) -> [f32; 2] {
+        let p = self.ui.next_widget_position();
+        [p.x, p.y]
+    }
+
+    fn measure_text(&self, text: &str, size: f32, family: FontFamilyHint) -> [f32; 2] {
+        let font_id = match family {
+            FontFamilyHint::Proportional => egui::FontId::proportional(size),
+            FontFamilyHint::Monospace => egui::FontId::monospace(size),
+            FontFamilyHint::Icons => {
+                egui::FontId::new(size, egui::FontFamily::Name("icons".into()))
+            }
+        };
+        // Use the painter's helper to lay out text — handles fonts atlas
+        // mutability internally in egui 0.33.
+        let galley =
+            self.ui
+                .painter()
+                .layout_no_wrap(text.to_owned(), font_id, egui::Color32::WHITE);
+        let r = galley.rect;
+        [r.width(), r.height()]
     }
 }

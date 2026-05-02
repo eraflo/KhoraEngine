@@ -29,7 +29,9 @@ use khora_core::renderer::api::{
 use crate::ecs::HandleComponent;
 
 /// Identifies a known procedural mesh primitive.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, serde::Serialize, serde::Deserialize,
+)]
 pub enum ProceduralMeshKind {
     Cube,
     Sphere,
@@ -37,7 +39,7 @@ pub enum ProceduralMeshKind {
 }
 
 /// Serializable reference to a mesh, either as procedural parameters or an asset UUID.
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, serde::Serialize, serde::Deserialize)]
 pub enum SerializableMeshRef {
     /// Procedural mesh — regenerate from parameters on load.
     Procedural {
@@ -412,10 +414,22 @@ inventory::submit! {
         type_name: "HandleComponent<Mesh>",
         serialize_recipe: serialize_mesh_handle,
         deserialize_recipe: deserialize_mesh_handle,
-        create_default: |world, entity| {
+        create_default: |_world, _entity| {
             // Mesh handles can't be created with defaults — they need a specific asset.
             // This registration is for serialization only, not for "Add Component".
             Err("Mesh handles cannot be created with defaults".to_string())
+        },
+        to_json: |world, entity| {
+            world.get::<HandleComponent<Mesh>>(entity).and_then(|comp| {
+                let mesh_ref = SerializableMeshRef::from_handle(comp);
+                serde_json::to_value(mesh_ref).ok()
+            })
+        },
+        from_json: |_world, _entity, _value| {
+            // Editing a mesh handle from the inspector is not yet wired —
+            // it would require resolving the asset back from VFS, which the
+            // editor's serde-JSON path doesn't do today.
+            Err("Mesh handle editing from inspector not implemented".to_string())
         },
     }
 }

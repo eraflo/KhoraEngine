@@ -21,6 +21,7 @@ pub mod camera;
 pub mod command;
 pub mod fonts;
 pub mod gizmo;
+pub mod icons;
 pub mod log_capture;
 pub mod panel;
 pub mod shell;
@@ -33,14 +34,14 @@ pub use camera::EditorCamera;
 pub use command::{CommandHistory, EditorCommand};
 pub use fonts::{FontHandle, FontPack, NamedFont};
 pub use gizmo::{generate_selection_gizmos, GizmoKind, GizmoLineInstance};
+pub use icons::Icon;
 pub use log_capture::EditorLogCapture;
 pub use panel::{EditorPanel, PanelLocation};
 pub use shell::EditorShell;
 pub use state::{
-    AssetEntry, AudioSourceSnapshot, CameraSnapshot, ColliderSnapshot, EditorMode, EditorState,
-    EntityIcon, GizmoMode, InspectedEntity, LightSnapshot, LogEntry, LogLevel, PlayMode,
-    PropertyEdit, RigidBodySnapshot, SceneNode, StatusBarData, TransformSnapshot,
+    AssetEntry, ComponentJson, EditorMode, EditorState, EntityIcon, GizmoMode, InspectedEntity,
+    LogEntry, LogLevel, PlayMode, PropertyEdit, SceneNode, StatusBarData,
 };
 pub use theme::EditorTheme;
-pub use ui_builder::UiBuilder;
+pub use ui_builder::{FontFamilyHint, Interaction, TextAlign, UiBuilder};
 pub use viewport_texture::ViewportTextureHandle;

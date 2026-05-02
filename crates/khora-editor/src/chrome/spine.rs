@@ -12,19 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Spine — vertical mode switcher on the far-left edge of the editor.
+//! Spine — vertical mode switcher on the far-left edge.
 //!
-//! Six modes, mirrored from the design mockup:
-//! Scene, 2D Canvas, Node Graph, Animation, Shader Graph, Control Plane.
-//! Currently only `Scene` and `ControlPlane` have dedicated workspaces — the
-//! others are placeholders that flip the active mode but still render the
-//! Scene workspace under the hood (Phase 5 will hide other modes' content).
+//! Phase C: real Lucide icons, silver bar + glow on the active button,
+//! tooltips on hover. Six modes mirroring the design mockup.
 
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
 
-use super::widgets::{paint_diamond_outline, paint_hairline_h};
+use crate::widgets::brand::paint_diamond_filled;
+use crate::widgets::paint::{paint_hairline_h, paint_icon, with_alpha};
+
+const SPINE_WIDTH: f32 = 56.0;
+const BTN_SIZE: f32 = 40.0;
+
+/// Modes that have a real workspace wired up. The other variants of
+/// `EditorMode` (Canvas2D / NodeGraph / Animation / Shader) exist in the
+/// state enum for future use but are NOT exposed here — adding them back
+/// is a follow-up once each workspace is implemented.
+const MODES: &[(EditorMode, Icon, &str)] = &[
+    (EditorMode::Scene, Icon::Cube, "Scene"),
+    (EditorMode::ControlPlane, Icon::Cpu, "Control Plane · DCC"),
+];
+
+/// Bottom items are also pruned — Plugins and Preferences had no handler.
+/// Re-add them when there's actually something to open.
+const BOTTOM_ITEMS: &[(Icon, &str)] = &[];
 
 /// Vertical mode-switcher strip — 56px wide.
 pub struct SpinePanel {
@@ -53,15 +67,6 @@ impl SpinePanel {
     }
 }
 
-const MODES: &[(EditorMode, &str, &str)] = &[
-    (EditorMode::Scene, "▣", "Scene"),
-    (EditorMode::Canvas2D, "▤", "2D Canvas"),
-    (EditorMode::NodeGraph, "▥", "Node Graph"),
-    (EditorMode::Animation, "▦", "Animation"),
-    (EditorMode::Shader, "✦", "Shader"),
-    (EditorMode::ControlPlane, "◉", "Control Plane"),
-];
-
 impl EditorPanel for SpinePanel {
     fn id(&self) -> &str {
         "khora.editor.spine"
@@ -72,61 +77,140 @@ impl EditorPanel for SpinePanel {
     }
 
     fn preferred_size(&self) -> Option<f32> {
-        Some(56.0)
+        Some(SPINE_WIDTH)
     }
 
     fn ui(&mut self, ui: &mut dyn UiBuilder) {
-        // ── Background ──────────────────────────────
+        let theme = &self.theme;
         let rect = ui.panel_rect();
         let [px, py, pw, ph] = rect;
-        ui.paint_rect_filled([px, py], [pw, ph], self.theme.background, 0.0);
-        // Right hairline separator
+
+        ui.paint_rect_filled([px, py], [pw, ph], theme.background, 0.0);
         ui.paint_line(
             [px + pw, py],
             [px + pw, py + ph],
-            self.theme.separator,
+            with_alpha(theme.separator, 0.55),
             1.0,
         );
 
-        // ── Brand block (top diamond) ───────────────
+        // ── Brand block ────────────────────────────────
         let brand_cy = py + 26.0;
         let brand_cx = px + pw * 0.5;
         ui.paint_rect_filled(
-            [brand_cx - 14.0, brand_cy - 14.0],
-            [28.0, 28.0],
-            self.theme.surface_active,
-            6.0,
+            [brand_cx - 20.0, brand_cy - 20.0],
+            [40.0, 40.0],
+            theme.surface_active,
+            theme.radius_md,
         );
-        paint_diamond_outline(ui, brand_cx, brand_cy, 9.0, self.theme.primary, 1.5);
-
-        // Hairline divider under brand
-        paint_hairline_h(
-            ui,
-            px + 14.0,
-            py + 50.0,
-            pw - 28.0,
-            self.theme.separator,
+        ui.paint_rect_stroke(
+            [brand_cx - 20.0, brand_cy - 20.0],
+            [40.0, 40.0],
+            theme.border,
+            theme.radius_md,
+            1.0,
         );
+        paint_diamond_filled(ui, brand_cx, brand_cy, 10.0, theme.primary);
 
-        // ── Mode buttons ────────────────────────────
+        paint_hairline_h(ui, px + 14.0, py + 56.0, pw - 28.0, theme.separator);
+
+        // ── Mode buttons ───────────────────────────────
         let current = self.current_mode();
-        ui.spacing(56.0); // push past the brand block
+        let mut cy = py + 70.0;
 
-        ui.vertical(&mut |ui| {
-            for (mode, glyph, label) in MODES {
-                let active = current == *mode;
-                ui.horizontal(&mut |ui| {
-                    let label_text = format!(" {} ", glyph);
-                    if ui.selectable_label(active, &label_text) {
+        for (mode, icon, tooltip) in MODES {
+            paint_spine_button(
+                ui,
+                px,
+                cy,
+                pw,
+                *icon,
+                *mode == current,
+                tooltip,
+                &format!("spine-{}", tooltip),
+                theme,
+                |selected| {
+                    if selected {
                         self.set_mode(*mode);
                     }
-                    // Tooltip via hover
-                    if ui.is_last_item_hovered() {
-                        ui.colored_label(self.theme.text_dim, label);
-                    }
-                });
-                ui.spacing(2.0);
-            }
-        });
+                },
+            );
+            cy += BTN_SIZE + 4.0;
+        }
+
+        // ── Bottom items ───────────────────────────────
+        let mut by = py + ph - 6.0 - BTN_SIZE * BOTTOM_ITEMS.len() as f32 - 4.0;
+        for (icon, tooltip) in BOTTOM_ITEMS {
+            paint_spine_button(
+                ui,
+                px,
+                by,
+                pw,
+                *icon,
+                false,
+                tooltip,
+                &format!("spine-{}", tooltip),
+                theme,
+                |_| {},
+            );
+            by += BTN_SIZE + 4.0;
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_spine_button(
+    ui: &mut dyn UiBuilder,
+    px: f32,
+    cy: f32,
+    pw: f32,
+    icon: Icon,
+    active: bool,
+    tooltip: &str,
+    id_salt: &str,
+    theme: &EditorTheme,
+    on_click: impl FnOnce(bool),
+) {
+    let bx = px + (pw - BTN_SIZE) * 0.5;
+    let interaction = ui.interact_rect(id_salt, [bx, cy, BTN_SIZE, BTN_SIZE]);
+
+    if active || interaction.hovered {
+        ui.paint_rect_filled(
+            [bx, cy],
+            [BTN_SIZE, BTN_SIZE],
+            theme.surface_elevated,
+            theme.radius_md,
+        );
+    }
+
+    if active {
+        // Vertical accent bar on the left + soft glow
+        ui.paint_rect_filled(
+            [bx - 1.0, cy + 8.0],
+            [2.0, BTN_SIZE - 16.0],
+            theme.primary,
+            1.0,
+        );
+        ui.paint_rect_filled(
+            [bx - 4.0, cy + 6.0],
+            [4.0, BTN_SIZE - 12.0],
+            with_alpha(theme.primary, 0.25),
+            2.0,
+        );
+    }
+
+    let icon_color = if active {
+        theme.primary
+    } else if interaction.hovered {
+        theme.text
+    } else {
+        theme.text_dim
+    };
+    paint_icon(ui, [bx + 12.0, cy + 12.0], icon, 16.0, icon_color);
+
+    if interaction.hovered {
+        ui.tooltip_for_last(tooltip);
+    }
+    if interaction.clicked {
+        on_click(true);
     }
 }

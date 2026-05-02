@@ -22,13 +22,10 @@
 use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::ecs::entity::EntityId;
 use khora_core::renderer::api::scene::Mesh;
-use khora_core::EngineContext;
 use khora_data::ecs::{
     Camera, Component, ComponentBundle, EcsMaintenance, GlobalTransform, HandleComponent, Query,
     QueryMut, Transform, World, WorldQuery,
 };
-use std::any::Any;
-use std::sync::Arc;
 
 /// A high-level facade over the internal ECS `World` and `Assets` registry.
 ///
@@ -336,17 +333,4 @@ impl GameWorld {
         &mut self.world
     }
 
-    /// Builds an [`EngineContext`] for the DCC agent update cycle.
-    ///
-    /// This type-erases `World` and `Assets` into `dyn Any` pointers,
-    /// which agents downcast internally. Users never call this.
-    pub(crate) fn as_engine_context(
-        &mut self,
-        services: Arc<khora_core::ServiceRegistry>,
-    ) -> EngineContext<'_> {
-        EngineContext {
-            world: Some(&mut self.world as &mut dyn Any),
-            services,
-        }
-    }
 }

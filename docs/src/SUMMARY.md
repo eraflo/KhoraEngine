@@ -29,6 +29,9 @@
 - [Editor](./18_editor.md)
 - [Extending Khora](./19_extending.md)
 
+# Projects
+- [Project structure](./projects/structure.md)
+
 # Design
 - [Editor design system](./design/editor.md)
 

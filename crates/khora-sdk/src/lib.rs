@@ -48,12 +48,16 @@ pub mod editor_ui {
 
 // Control / DCC
 pub use khora_control::{DccConfig, DccService, EngineMode, Context as EngineContext};
+// Re-export the same Context as `DccContext` so editor code can use the
+// more descriptive name without a separate `use` line. (Same type — both
+// re-exports point at `khora_control::Context`.)
+pub use khora_control::Context as DccContext;
 pub use khora_control::registry::AgentRegistry;
 pub use khora_control::scheduler::ExecutionScheduler;
 
 // Core types
-pub use khora_core::agent::ExecutionPhase;
-pub use khora_core::control::gorna::{AgentId, StrategyId};
+pub use khora_core::control::gorna::{AgentId, AgentStatus, StrategyId};
+pub use khora_core::agent::{AgentImportance, ExecutionPhase, ExecutionTiming};
 pub use khora_core::ServiceRegistry;
 pub use khora_core::telemetry::{TelemetryEvent, MonitoredResourceType};
 pub use khora_core::ui::editor::{
@@ -62,8 +66,8 @@ pub use khora_core::ui::editor::{
     CommandHistory, EntityIcon, AssetEntry, LogLevel,
     EditorPanel, UiBuilder, SceneNode,
     PropertyEdit, InspectedEntity, EditorCommand,
-    CameraSnapshot, LightSnapshot, TransformSnapshot, RigidBodySnapshot,
-    ColliderSnapshot, AudioSourceSnapshot, StatusBarData,
+    ComponentJson, StatusBarData,
+    Icon, FontFamilyHint, Interaction, TextAlign,
 };
 pub use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
 pub use khora_core::ui::editor::gizmo::GizmoKind;
@@ -72,6 +76,9 @@ pub use khora_core::ui::editor::generate_selection_gizmos;
 
 // Telemetry service
 pub use khora_telemetry::TelemetryService;
+pub use khora_telemetry::MonitorRegistry;
+// AgentRegistry is already re-exported above (line 51) via
+// `pub use khora_control::registry::AgentRegistry`.
 
 // Infra / monitors
 pub use khora_infra::GpuMonitor;

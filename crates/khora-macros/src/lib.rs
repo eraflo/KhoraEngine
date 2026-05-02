@@ -257,7 +257,11 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         #from_original_to_serializable
         #from_serializable_to_original
 
-        // Auto-register this component for scene serialization.
+        // Auto-register this component for scene serialization AND for the
+        // editor's generic inspector (the latter via the `*_json` pair,
+        // which goes through serde on the same Serializable mirror as
+        // bincode does — so anything tagged `#[component(skip)]` is
+        // omitted from both paths automatically).
         inventory::submit! {
             crate::scene::ComponentRegistration {
                 type_id: std::any::TypeId::of::<#name>(),
@@ -277,6 +281,17 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                 },
                 create_default: |world, entity| {
                     world.add_component(entity, <#name>::default()).ok();
+                    Ok(())
+                },
+                to_json: |world, entity| {
+                    world.get::<#name>(entity).and_then(|c| {
+                        serde_json::to_value(<#serializable_name>::from(c.clone())).ok()
+                    })
+                },
+                from_json: |world, entity, value| {
+                    let s: #serializable_name = serde_json::from_value(value.clone())
+                        .map_err(|e| e.to_string())?;
+                    world.add_component(entity, <#name>::from(s)).ok();
                     Ok(())
                 },
             }

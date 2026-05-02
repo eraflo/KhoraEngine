@@ -19,19 +19,17 @@ mod cmd_palette;
 mod fonts;
 mod mod_agents;
 mod mod_gizmo;
-mod mod_mode;
-mod mod_telemetry;
 mod ops;
 mod panels;
 mod scene_io;
 mod theme;
 mod util;
+mod widgets;
 
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use khora_sdk::prelude::ecs::*;
-use khora_sdk::prelude::math::{Quaternion, Vec3};
 use khora_sdk::prelude::*;
 use khora_sdk::WgpuRenderSystem;
 use khora_sdk::RenderSystem;
@@ -46,7 +44,7 @@ use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
 use khora_sdk::khora_core::platform::KhoraWindow;
 use khora_sdk::winit;
 
-use chrome::{SpinePanel, StatusBarPanel, TitleBarPanel, ToolbarPanel};
+use chrome::{SpinePanel, StatusBarPanel, TitleBarPanel};
 use cmd_palette::CommandPalettePanel;
 use panels::{
     AssetBrowserPanel, ConsolePanel, ControlPlanePanel, PropertiesPanel, SceneTreePanel,
@@ -67,6 +65,16 @@ struct EditorApp {
     /// `setup()`. Needed because the overlay's `begin_frame` and
     /// `handle_window_event` both expect a winit window reference.
     raw_window: Option<Arc<winit::window::Window>>,
+    /// Live monitor handle exposed by the engine (Phase 2.1). Cloned in
+    /// `setup` from the ServiceRegistry; queried each frame to push CPU/GPU
+    /// load, VRAM, draw calls and triangles into `EditorState::status`.
+    monitors: Option<khora_sdk::MonitorRegistry>,
+    /// Live agent registry (Phase 2.3). Used by the Control Plane workspace
+    /// to enumerate agents instead of the previous mock list.
+    agent_registry: Option<Arc<Mutex<khora_sdk::AgentRegistry>>>,
+    /// DCC context handle (Phase 2.2). Locked each frame for the Control
+    /// Plane summary bar — exposes mode, budget multiplier, hardware load.
+    dcc_context: Option<Arc<std::sync::RwLock<khora_sdk::DccContext>>>,
     /// View info computed in `before_agents` and re-used by `after_agents`
     /// for gizmo rendering.
     last_view_info: Option<ViewInfo>,
@@ -75,6 +83,11 @@ struct EditorApp {
     shift_held: bool,
     ctrl_held: bool,
     prev_cursor: Option<(f32, f32)>,
+    /// Last known cursor position in physical screen pixels — kept in sync
+    /// with every `WindowEvent::CursorMoved` egui-winit reports. Used by
+    /// `intercept_window_event` to test whether a `MouseInput` event (which
+    /// has no position of its own) lands inside the 3D viewport rect.
+    last_cursor_pos: Option<(f32, f32)>,
     last_frame_time: Instant,
 }
 
@@ -242,6 +255,12 @@ impl EditorApp {
                     }
                 }
 
+                "spawn_empty" => {
+                    if let Ok(mut state) = self.editor_state.lock() {
+                        state.pending_spawn = Some("Empty".to_owned());
+                    }
+                }
+
                 "documentation" => {
                     let _ = open::that("https://github.com/eraflo/KhoraEngine");
                     log::info!("Opening documentation in browser");
@@ -291,12 +310,16 @@ impl EngineApp for EditorApp {
             shell: None,
             overlay: None,
             raw_window: None,
+            monitors: None,
+            agent_registry: None,
+            dcc_context: None,
             last_view_info: None,
             middle_down: false,
             right_down: false,
             shift_held: false,
             ctrl_held: false,
             prev_cursor: None,
+            last_cursor_pos: None,
             last_frame_time: Instant::now(),
         }
     }
@@ -310,6 +333,16 @@ impl EngineApp for EditorApp {
         // Cache the editor overlay (created by the bootstrap closure).
         self.overlay = services
             .get::<Arc<Mutex<Box<dyn EditorOverlay>>>>()
+            .cloned();
+
+        // Cache live engine handles (Phase 2 wiring) — both are cheap clones
+        // of internal Arc-shared structures.
+        self.monitors = services.get::<khora_sdk::MonitorRegistry>().cloned();
+        self.agent_registry = services
+            .get::<Arc<Mutex<khora_sdk::AgentRegistry>>>()
+            .cloned();
+        self.dcc_context = services
+            .get::<Arc<std::sync::RwLock<khora_sdk::DccContext>>>()
             .cloned();
 
         // Cache the raw winit window so overlay calls can hand it back to egui.
@@ -343,10 +376,6 @@ impl EngineApp for EditorApp {
                     )),
                 );
                 shell.register_panel(
-                    PanelLocation::TopBar,
-                    Box::new(ToolbarPanel::new(self.editor_state.clone())),
-                );
-                shell.register_panel(
                     PanelLocation::Spine,
                     Box::new(SpinePanel::new(
                         self.editor_state.clone(),
@@ -364,18 +393,25 @@ impl EngineApp for EditorApp {
                 // ── Functional panels (dock body) ──────────────
                 shell.register_panel(
                     PanelLocation::Left,
-                    Box::new(SceneTreePanel::new(self.editor_state.clone())),
+                    Box::new(SceneTreePanel::new(
+                        self.editor_state.clone(),
+                        brand_theme.clone(),
+                    )),
                 );
                 shell.register_panel(
                     PanelLocation::Right,
                     Box::new(PropertiesPanel::new(
                         self.editor_state.clone(),
                         self.command_history.clone(),
+                        brand_theme.clone(),
                     )),
                 );
                 shell.register_panel(
                     PanelLocation::Bottom,
-                    Box::new(AssetBrowserPanel::new(self.editor_state.clone())),
+                    Box::new(AssetBrowserPanel::new(
+                        self.editor_state.clone(),
+                        brand_theme.clone(),
+                    )),
                 );
                 shell.register_panel(
                     PanelLocation::Bottom,
@@ -390,6 +426,7 @@ impl EngineApp for EditorApp {
                         viewport_handle,
                         self.editor_state.clone(),
                         self.camera.clone(),
+                        brand_theme.clone(),
                     )),
                 );
                 shell.register_panel(
@@ -397,6 +434,8 @@ impl EngineApp for EditorApp {
                     Box::new(ControlPlanePanel::new(
                         self.editor_state.clone(),
                         brand_theme.clone(),
+                        self.agent_registry.clone(),
+                        self.dcc_context.clone(),
                     )),
                 );
 
@@ -419,20 +458,36 @@ impl EngineApp for EditorApp {
             if path.exists() {
                 let entries = scene_io::scan_project_folder(&path);
 
-                let project_name = std::fs::read_to_string(path.join("project.json"))
-                    .ok()
-                    .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+                let project_json: Option<serde_json::Value> =
+                    std::fs::read_to_string(path.join("project.json"))
+                        .ok()
+                        .and_then(|json| serde_json::from_str(&json).ok());
+                let project_name = project_json
+                    .as_ref()
                     .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from));
+                let project_engine_version = project_json
+                    .as_ref()
+                    .and_then(|v| {
+                        v.get("engine_version")
+                            .and_then(|n| n.as_str())
+                            .map(String::from)
+                    });
+
+                let git_branch = util::read_git_branch(&path);
 
                 if let Ok(mut state) = self.editor_state.lock() {
                     state.project_folder = Some(path.to_string_lossy().to_string());
                     state.project_name = project_name.clone();
+                    state.project_engine_version = project_engine_version.clone();
                     state.asset_entries = entries;
+                    state.current_git_branch = git_branch.clone();
                     log::info!(
-                        "Opened project '{}' from CLI: '{}' ({} assets)",
+                        "Opened project '{}' from CLI: '{}' ({} assets, git: {}, engine: {})",
                         project_name.as_deref().unwrap_or("<unknown>"),
                         path.display(),
-                        state.asset_entries.len()
+                        state.asset_entries.len(),
+                        git_branch.as_deref().unwrap_or("none"),
+                        project_engine_version.as_deref().unwrap_or("<unknown>")
                     );
                 }
             } else {
@@ -463,11 +518,27 @@ impl EngineApp for EditorApp {
             }
         }
 
-        let viewport_hovered = self
+        // Read the live viewport rect once per frame; navigation tests
+        // cursor positions against it instead of relying on the
+        // `viewport_hovered` flag (which can be a frame stale and was
+        // unreliable when switching modes).
+        let (viewport_rect, play_mode) = self
             .editor_state
             .lock()
-            .map(|s| s.viewport_hovered)
-            .unwrap_or(false);
+            .ok()
+            .map(|s| (s.viewport_screen_rect, s.play_mode))
+            .unwrap_or((None, PlayMode::Editing));
+        let cursor_in_viewport = |x: f32, y: f32| {
+            viewport_rect
+                .map(|[rx, ry, rw, rh]| x >= rx && x < rx + rw && y >= ry && y < ry + rh)
+                .unwrap_or(false)
+        };
+        // The editor camera is only navigable in Editing mode. In Play /
+        // Paused, mouse motion over the viewport must NOT move the editor
+        // camera — otherwise users see no visible difference between the
+        // two modes (and the active scene camera is the one that should
+        // render).
+        let editor_cam_navigable = play_mode == PlayMode::Editing;
 
         for input in inputs {
             match input {
@@ -548,7 +619,7 @@ impl EngineApp for EditorApp {
                     }
                 }
                 InputEvent::MouseMoved { x, y } => {
-                    if viewport_hovered {
+                    if editor_cam_navigable && cursor_in_viewport(*x, *y) {
                         if let Some((px, py)) = self.prev_cursor {
                             let dx = x - px;
                             let dy = y - py;
@@ -565,7 +636,11 @@ impl EngineApp for EditorApp {
                     self.prev_cursor = Some((*x, *y));
                 }
                 InputEvent::MouseWheelScrolled { delta_y, .. } => {
-                    if viewport_hovered {
+                    let in_view = self
+                        .last_cursor_pos
+                        .map(|(x, y)| cursor_in_viewport(x, y))
+                        .unwrap_or(false);
+                    if editor_cam_navigable && in_view {
                         if let Ok(mut cam) = self.camera.lock() {
                             cam.zoom(*delta_y);
                         }
@@ -630,6 +705,43 @@ impl EngineApp for EditorApp {
             state.status.fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
             state.status.entity_count = state.entity_count;
 
+            // Phase 2.1 — pull live telemetry into status. Only the fields
+            // actually reported are updated; missing reports leave the
+            // previous value untouched (status fields default to 0).
+            if let Some(ref monitors) = self.monitors {
+                use khora_sdk::MonitoredResourceType;
+                for monitor in monitors.get_all_monitors() {
+                    match monitor.resource_type() {
+                        MonitoredResourceType::Vram => {
+                            let r = monitor.get_usage_report();
+                            state.status.vram_mb = r.current_bytes as f32 / (1024.0 * 1024.0);
+                        }
+                        MonitoredResourceType::Gpu => {
+                            if let Some(g) = monitor.get_gpu_report() {
+                                state.status.draw_calls = g.draw_calls;
+                                state.status.triangles = g.triangles_rendered as u64;
+                            }
+                            if let Some(hw) = monitor.get_hardware_report() {
+                                state.status.gpu_load = hw.gpu_load.unwrap_or(0.0);
+                            }
+                        }
+                        MonitoredResourceType::Hardware => {
+                            if let Some(hw) = monitor.get_hardware_report() {
+                                state.status.cpu_load = hw.cpu_load;
+                                if let Some(g) = hw.gpu_load {
+                                    state.status.gpu_load = g;
+                                }
+                            }
+                        }
+                        MonitoredResourceType::SystemRam => {
+                            let r = monitor.get_usage_report();
+                            state.status.memory_used_mb =
+                                r.current_bytes as f32 / (1024.0 * 1024.0);
+                        }
+                    }
+                }
+            }
+
             let status_copy = state.status.clone();
             drop(state);
 
@@ -659,7 +771,55 @@ impl EngineApp for EditorApp {
         let Ok(mut overlay) = overlay_arc.lock() else {
             return false;
         };
-        overlay.handle_window_event((&**raw_window) as &dyn std::any::Any, event)
+        // egui *always* sees the event so it can keep its hover state in
+        // sync; the override below only changes the "consumed" verdict so
+        // the engine can ALSO process pointer events that land inside the
+        // viewport rect (without the override, egui's CentralPanel swallows
+        // every press/drag via `wants_pointer_input()`).
+        let consumed_by_egui = overlay
+            .handle_window_event((&**raw_window) as &dyn std::any::Any, event);
+
+        let we = event.downcast_ref::<winit::event::WindowEvent>();
+        let Some(we) = we else { return consumed_by_egui };
+        use winit::event::WindowEvent;
+
+        // Track the cursor position so MouseInput events (which carry no
+        // position of their own) can be tested against the viewport rect.
+        if let WindowEvent::CursorMoved { position, .. } = we {
+            self.last_cursor_pos = Some((position.x as f32, position.y as f32));
+        }
+
+        let is_pointer_event = matches!(
+            we,
+            WindowEvent::MouseInput { .. }
+                | WindowEvent::CursorMoved { .. }
+                | WindowEvent::MouseWheel { .. }
+        );
+        if !is_pointer_event {
+            return consumed_by_egui;
+        }
+
+        // Pull the current viewport rect (set every frame by viewport.rs::ui)
+        // and the cursor position the event refers to.
+        let viewport_rect = self
+            .editor_state
+            .lock()
+            .ok()
+            .and_then(|s| s.viewport_screen_rect);
+        let pos = match we {
+            WindowEvent::CursorMoved { position, .. } => {
+                Some((position.x as f32, position.y as f32))
+            }
+            _ => self.last_cursor_pos,
+        };
+
+        if let (Some([rx, ry, rw, rh]), Some((cx, cy))) = (viewport_rect, pos) {
+            let in_viewport = cx >= rx && cx < rx + rw && cy >= ry && cy < ry + rh;
+            if in_viewport {
+                return false;
+            }
+        }
+        consumed_by_egui
     }
 
     fn before_frame(
@@ -699,10 +859,15 @@ impl EngineApp for EditorApp {
         }
     }
 
-    fn before_agents(&mut self, _world: &mut GameWorld, services: &ServiceRegistry) {
-        // Compute the editor camera's `ViewInfo` and clear the offscreen
-        // viewport (background + infinite grid). Cached for `after_agents`
-        // so gizmos use the same projection.
+    fn before_agents(&mut self, world: &mut GameWorld, services: &ServiceRegistry) {
+        // Compute the active `ViewInfo` and clear the offscreen viewport
+        // (background + infinite grid). Cached for `after_agents` so gizmos
+        // use the same projection.
+        //
+        // Camera selection:
+        //  - Editing mode → editor camera (free orbit/pan/zoom).
+        //  - Play / Paused → first active scene Camera (so the viewport
+        //    actually shows the game's view, not the editor's).
         self.last_view_info = None;
 
         let Some(rs_arc) = services.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() else {
@@ -714,10 +879,57 @@ impl EngineApp for EditorApp {
         };
 
         let (vw, vh) = wgpu_rs.viewport_size();
-        let view_info = match self.camera.lock() {
-            Ok(cam) => cam.view_info(vw as f32, vh as f32),
-            Err(_) => ViewInfo::default(),
+        let play_mode = self
+            .editor_state
+            .lock()
+            .ok()
+            .map(|s| s.play_mode)
+            .unwrap_or(PlayMode::Editing);
+
+        let view_info = match play_mode {
+            PlayMode::Editing => match self.camera.lock() {
+                Ok(cam) => cam.view_info(vw as f32, vh as f32),
+                Err(_) => ViewInfo::default(),
+            },
+            PlayMode::Playing | PlayMode::Paused => {
+                use khora_sdk::khora_data::render::extract_active_camera_view;
+                extract_active_camera_view(world.inner_world())
+                    .or_else(|| {
+                        // No active scene camera (shouldn't happen because
+                        // sync_scene_cameras_for_mode promotes one) — fall
+                        // back to the editor cam so the user still sees
+                        // something instead of a blank screen.
+                        self.camera
+                            .lock()
+                            .ok()
+                            .map(|cam| cam.view_info(vw as f32, vh as f32))
+                    })
+                    .unwrap_or_default()
+            }
         };
+
+        // ── Donate the active view to RenderWorld.views ────────
+        // The render lanes (SimpleUnlit / LitForward / ForwardPlus) all
+        // bail to a clear-only pass when `RenderWorld.views.first()` is
+        // None — and `extract_views` (run once per frame in
+        // `EngineCore::run_app_update`) only emits views for ECS Cameras
+        // with `is_active == true`. In Editing mode every scene Camera is
+        // forced inactive so the editor camera owns the view, which left
+        // `views` empty and made meshes invisible. We patch that here:
+        // if the field is still empty after extract_scene, push the
+        // ViewInfo we just computed (editor cam in Editing, scene cam in
+        // Play, fallback otherwise).
+        if let Some(rws) = services.get::<khora_sdk::khora_data::render::RenderWorldStore>() {
+            if let Ok(mut rw) = rws.shared().write() {
+                if rw.views.is_empty() {
+                    rw.views
+                        .push(khora_sdk::khora_data::render::ExtractedView {
+                            view_proj: view_info.view_projection_matrix(),
+                            position: view_info.camera_position,
+                        });
+                }
+            }
+        }
 
         let clear = khora_sdk::prelude::math::LinearRgba::new(0.15, 0.15, 0.18, 1.0);
         if let Err(e) = wgpu_rs.render_viewport(clear, &view_info) {

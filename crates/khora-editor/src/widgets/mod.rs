@@ -12,20 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Scene module containing the Scene struct and related functionality.
+//! Editor widget library — composite widgets used by panels.
+//!
+//! Each widget is a free function that takes `&mut dyn UiBuilder` plus
+//! whatever parameters it needs (theme, data, callbacks). Widgets paint to
+//! absolute screen coordinates via the new [`UiBuilder`] primitives —
+//! `paint_*`, `interact_rect`, etc. — so they compose cleanly without
+//! relying on egui's auto-layout.
 
-mod recipe;
-pub mod registry;
-
-mod archetype_strategy;
-mod definition_strategy;
-mod recipe_strategy;
-mod strategy;
-
-pub use recipe::*;
-pub use registry::*;
-
-pub use archetype_strategy::*;
-pub use definition_strategy::*;
-pub use recipe_strategy::*;
-pub use strategy::*;
+pub mod brand;
+pub mod chrome;
+pub mod controls;
+pub mod inspector;
+pub mod paint;
+pub mod tile;

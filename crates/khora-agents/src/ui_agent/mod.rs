@@ -42,7 +42,7 @@ use khora_core::lane::{ColorTarget, Lane, LaneContext, Slot};
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::api::text::TextRenderer;
 use khora_core::renderer::api::util::{AtlasRect, TextureAtlas};
-use khora_core::renderer::{GraphicsDevice, RenderSystem};
+use khora_core::renderer::GraphicsDevice;
 use khora_core::ui::LayoutSystem;
 use khora_data::assets::Assets;
 use khora_data::render::{PassDescriptor, ResourceId, SharedFrameGraph};

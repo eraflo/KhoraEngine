@@ -290,6 +290,15 @@ impl DccService {
         self.context.read().unwrap().clone()
     }
 
+    /// Returns a shared handle to the live context.
+    ///
+    /// Used by observers (e.g. the editor's Control Plane workspace) that
+    /// want to read up-to-date hardware state, mode, and budget multiplier
+    /// each frame without going through `get_context()`'s clone.
+    pub fn context_handle(&self) -> Arc<std::sync::RwLock<Context>> {
+        Arc::clone(&self.context)
+    }
+
     /// Initializes all registered agents once after registration.
     ///
     /// Should be called once after all agents are registered, giving them

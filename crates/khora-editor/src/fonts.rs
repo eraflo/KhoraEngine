@@ -55,6 +55,8 @@ const MONOSPACE_FILES: &[(&str, &str)] = &[
     ("geist-mono-medium", "fonts/GeistMono-Medium.ttf"),
 ];
 
+const ICON_FILES: &[(&str, &str)] = &[("lucide", "fonts/Lucide.ttf")];
+
 /// Attempts to load the Khora brand font pack via the asset I/O layer.
 ///
 /// Tries every candidate root in order (next to the binary, then the crate's
@@ -68,17 +70,20 @@ pub fn load_pack() -> FontPack {
         let mut loader = FileLoader::new(root);
         let proportional = collect(&mut loader, PROPORTIONAL_FILES);
         let monospace = collect(&mut loader, MONOSPACE_FILES);
+        let icons = collect(&mut loader, ICON_FILES);
 
-        if !proportional.is_empty() || !monospace.is_empty() {
+        if !proportional.is_empty() || !monospace.is_empty() || !icons.is_empty() {
             log::info!(
-                "Editor fonts: loaded {} proportional + {} monospace face(s) from '{}'.",
+                "Editor fonts: loaded {} proportional + {} monospace + {} icon face(s) from '{}'.",
                 proportional.len(),
                 monospace.len(),
+                icons.len(),
                 root.display()
             );
             return FontPack {
                 proportional,
                 monospace,
+                icons,
             };
         }
     }

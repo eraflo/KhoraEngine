@@ -14,7 +14,6 @@
 
 //! Utility helpers for the editor application.
 
-use khora_sdk::editor_ui::*;
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::prelude::math::{Quaternion, Vec3};
 
@@ -32,6 +31,20 @@ pub fn bytemuck_transform(t: &Transform) -> [u8; 40] {
     buf[32..36].copy_from_slice(&t.scale.y.to_le_bytes());
     buf[36..40].copy_from_slice(&t.scale.z.to_le_bytes());
     buf
+}
+
+/// Read the current git branch name from a project's `.git/HEAD`.
+///
+/// Returns `Some(branch_name)` if the project is a git repository on a
+/// regular branch, `None` if the project isn't tracked or HEAD is detached.
+/// Cheap (single fs read of a small file) — safe to call once at startup.
+pub fn read_git_branch(project_root: &std::path::Path) -> Option<String> {
+    let head_path = project_root.join(".git").join("HEAD");
+    let head = std::fs::read_to_string(head_path).ok()?;
+    let line = head.lines().next()?;
+    // Format: `ref: refs/heads/<branch>` or a raw SHA when detached.
+    line.strip_prefix("ref: refs/heads/")
+        .map(|s| s.to_owned())
 }
 
 /// Deserialize a Transform from 40 bytes.

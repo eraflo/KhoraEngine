@@ -107,6 +107,11 @@ pub fn apply_theme(ctx: &egui::Context, theme: &EditorTheme) {
     style.spacing.scroll.bar_width = 8.0;
     style.spacing.window_margin = egui::Margin::same(8);
     style.spacing.menu_margin = egui::Margin::symmetric(8, 6);
+    // Make panel resize handles much easier to grab. The default 4px hot
+    // zone is hard to hit and our panel content paints right up to the
+    // edge, so users were reporting the resize "didn't work".
+    style.interaction.resize_grab_radius_side = 8.0;
+    style.interaction.resize_grab_radius_corner = 10.0;
 
     // Default font sizes per text style — drives any RichText that does not
     // override its size manually.

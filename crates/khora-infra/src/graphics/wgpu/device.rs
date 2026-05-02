@@ -38,6 +38,39 @@ use khora_core::renderer::api::pipeline::{
 };
 use khora_core::renderer::api::resource::buffer::{self as api_buf};
 use khora_core::renderer::api::resource::texture::{self as api_tex};
+
+/// Translate Khora's [`TextureUsage`] flag set into wgpu's `TextureUsages`.
+///
+/// Khora exposes a separate `DEPTH_STENCIL_ATTACHMENT` flag (bit 5) for API
+/// clarity, but wgpu folds depth and color attachments under a single
+/// `RENDER_ATTACHMENT` (bit 4). Doing a naive `from_bits_truncate` therefore
+/// **silently drops** the depth-attachment intent — the texture loses
+/// `RENDER_ATTACHMENT`, becomes sample-only, and any subsequent
+/// `RenderPass` that targets it as the depth view fails validation with
+/// `TextureViewIsNotRenderable`.
+///
+/// This mapping fans both Khora flags onto wgpu's `RENDER_ATTACHMENT`.
+fn convert_texture_usage(usage: api_tex::TextureUsage) -> wgpu::TextureUsages {
+    let mut out = wgpu::TextureUsages::empty();
+    if usage.contains(api_tex::TextureUsage::COPY_SRC) {
+        out |= wgpu::TextureUsages::COPY_SRC;
+    }
+    if usage.contains(api_tex::TextureUsage::COPY_DST) {
+        out |= wgpu::TextureUsages::COPY_DST;
+    }
+    if usage.contains(api_tex::TextureUsage::TEXTURE_BINDING) {
+        out |= wgpu::TextureUsages::TEXTURE_BINDING;
+    }
+    if usage.contains(api_tex::TextureUsage::STORAGE_BINDING) {
+        out |= wgpu::TextureUsages::STORAGE_BINDING;
+    }
+    if usage.contains(api_tex::TextureUsage::RENDER_ATTACHMENT)
+        || usage.contains(api_tex::TextureUsage::DEPTH_STENCIL_ATTACHMENT)
+    {
+        out |= wgpu::TextureUsages::RENDER_ATTACHMENT;
+    }
+    out
+}
 use khora_core::renderer::api::util::{
     GraphicsBackendType, IndexFormat, RendererDeviceType, TextureFormat,
 };
@@ -1122,7 +1155,7 @@ impl GraphicsDevice for WgpuDevice {
             sample_count: descriptor.sample_count.into_wgpu(),
             dimension: descriptor.dimension.into_wgpu(),
             format: descriptor.format.into_wgpu(),
-            usage: wgpu::TextureUsages::from_bits_truncate(descriptor.usage.bits()),
+            usage: convert_texture_usage(descriptor.usage),
             view_formats: &descriptor
                 .view_formats
                 .iter()

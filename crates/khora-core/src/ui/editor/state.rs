@@ -148,7 +148,18 @@ pub struct EditorState {
 
     // ── Phase 6: Viewport interaction + Gizmo ──────────
     /// Whether the 3D viewport is currently hovered (for camera controls).
+    /// Updated each frame from `is_last_item_hovered()` after the viewport
+    /// image is laid out — only meaningful for the current paint pass; UI
+    /// code that reads input handlers should prefer `viewport_screen_rect`
+    /// + the live cursor position.
     pub viewport_hovered: bool,
+    /// Screen-space rect of the 3D viewport image (`[x, y, w, h]` in pixels)
+    /// for the current frame. `None` when the editor isn't in Scene mode or
+    /// the viewport hasn't been laid out yet. Used by the input pipeline to
+    /// decide if a mouse event lives over the viewport — checked against
+    /// the live cursor position so it doesn't suffer from the
+    /// frame-of-latency `viewport_hovered` had.
+    pub viewport_screen_rect: Option<[f32; 4]>,
     /// The active gizmo tool.
     pub gizmo_mode: GizmoMode,
     /// Index of the currently selected asset in the asset browser (if any).
@@ -159,6 +170,11 @@ pub struct EditorState {
     pub project_folder: Option<String>,
     /// Human-readable project name (read from `project.json`).
     pub project_name: Option<String>,
+    /// Engine version string read from `project.json::engine_version` (set
+    /// by the hub at project creation time). The status bar and command
+    /// palette display this so users see the engine they targeted, not the
+    /// editor binary's own crate version.
+    pub project_engine_version: Option<String>,
     /// Whether the asset browser should open a folder picker next frame.
     pub pending_browse_project_folder: bool,
 
@@ -180,11 +196,33 @@ pub struct EditorState {
     /// The String is the component type name (e.g., "Camera", "RigidBody").
     pub pending_add_component: Option<(EntityId, String)>,
 
+    /// Registry mapping `type_name` → domain tag for every component the
+    /// engine currently knows about. Populated by `extract_inspected` once
+    /// per frame from the live `World`. Used by the inspector to bucket
+    /// the "+ Add Component" menu by domain without re-querying the world.
+    pub component_domain_registry: std::collections::HashMap<String, u8>,
+
     // ── Editor workspace ───────────────────────────────
     /// Currently active editing workspace (scene / control plane / …).
     pub active_mode: EditorMode,
     /// Whether the command palette modal is open.
     pub command_palette_open: bool,
+    /// Inspector card expand/collapse state, keyed by stable card id
+    /// (typically `"<entity_index>::<title>"` to avoid cross-entity bleed).
+    pub inspector_card_open: std::collections::HashMap<String, bool>,
+    /// Inspector card on/off toggle state. UI-only for now (no engine wiring).
+    pub inspector_card_enabled: std::collections::HashMap<String, bool>,
+    /// Current git branch name read from `.git/HEAD` of the project folder.
+    /// `None` if the project isn't a git repository or we couldn't read it.
+    pub current_git_branch: Option<String>,
+    /// Entities the user has hidden via the eye icon in the scene tree.
+    /// UI-only state today — see `pending_visibility_toggle` for the engine
+    /// hook the editor consumes each frame.
+    pub hidden_entities: HashSet<EntityId>,
+    /// Pending visibility toggle from the scene tree eye icon. The editor
+    /// pops this each frame and applies it to the engine (when an engine
+    /// `Visible` component lands; for now it just flips `hidden_entities`).
+    pub pending_visibility_toggle: Option<EntityId>,
 }
 
 impl EditorState {
@@ -235,136 +273,65 @@ impl EditorState {
 //  Properties Inspector types
 // ════════════════════════════════════════════════════════
 
-/// Snapshot of all inspectable component data for one entity.
+/// Snapshot of one component on an inspected entity, captured generically
+/// as JSON via the macro-generated `to_json` on `ComponentRegistration`.
+///
+/// This is the path adding a new component costs **zero** editor code: any
+/// type that derives `Component` is auto-registered and shows up here.
+/// Components with a hard-coded inspector card (Transform, Camera, etc.)
+/// are skipped from the generic list to avoid double-rendering.
+#[derive(Debug, Clone)]
+pub struct ComponentJson {
+    /// `ComponentRegistration::type_name` — card title and lookup key.
+    pub type_name: String,
+    /// Domain bucket, mirrored from `SemanticDomain` (Spatial=0, Render=1,
+    /// Audio=2, Physics=3, Ui=4). `None` means the type isn't registered
+    /// on a CRPECS page (e.g. types registered via inventory only).
+    pub domain: Option<u8>,
+    /// Live JSON value. The shape mirrors the component's
+    /// `Serializable<Type>` form.
+    pub value: serde_json::Value,
+}
+
+/// Snapshot of an inspected entity.
+///
+/// Components are captured generically as JSON via the macro-generated
+/// `ComponentRegistration::to_json`. The inspector iterates `components_json`
+/// and renders every entry through a single field-typed walker — there is
+/// no per-component code path. The entity's `Name` lives in the inspector
+/// header rather than as a component card.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub struct InspectedEntity {
     pub entity: EntityId,
     pub name: String,
-    pub transform: Option<TransformSnapshot>,
-    pub camera: Option<CameraSnapshot>,
-    pub light: Option<LightSnapshot>,
-    pub rigid_body: Option<RigidBodySnapshot>,
-    pub collider: Option<ColliderSnapshot>,
-    pub audio_source: Option<AudioSourceSnapshot>,
-    pub physics_material: Option<PhysicsMaterialSnapshot>,
-    pub kinematic_character_controller: Option<KinematicCharacterControllerSnapshot>,
-    pub audio_listener: bool,
-    pub ui_node: bool,
-    pub ui_text: bool,
-    pub ui_image: bool,
-    pub ui_border: bool,
-    /// Component type names present on this entity (from inventory registration check).
-    pub present_component_types: Vec<String>,
-}
-
-/// Copy of `PhysicsMaterial` fields.
-#[derive(Debug, Clone, Copy)]
-#[allow(missing_docs)]
-pub struct PhysicsMaterialSnapshot {
-    pub friction: f32,
-    pub restitution: f32,
-}
-
-/// Copy of `KinematicCharacterController` fields.
-#[derive(Debug, Clone, Copy)]
-#[allow(missing_docs)]
-pub struct KinematicCharacterControllerSnapshot {
-    pub desired_translation: Vec3,
-    pub offset: f32,
-    pub max_slope_climb_angle: f32,
-    pub min_slope_slide_angle: f32,
-    pub autostep_height: f32,
-    pub autostep_min_width: f32,
-    pub autostep_enabled: bool,
-    pub is_grounded: bool,
-}
-
-/// Copy of `Transform` fields for inspector display.
-#[derive(Debug, Clone, Copy)]
-#[allow(missing_docs)]
-pub struct TransformSnapshot {
-    pub translation: Vec3,
-    pub rotation: Quaternion,
-    pub scale: Vec3,
-}
-
-/// Copy of `Camera` fields.
-#[derive(Debug, Clone, Copy)]
-#[allow(missing_docs)]
-pub struct CameraSnapshot {
-    pub projection_index: usize, // 0 = Perspective, 1 = Orthographic
-    pub fov_y_radians: f32,
-    pub ortho_width: f32,
-    pub ortho_height: f32,
-    pub aspect_ratio: f32,
-    pub z_near: f32,
-    pub z_far: f32,
-    pub is_active: bool,
-}
-
-/// Copy of `Light` fields, flattened for inspector editing.
-#[derive(Debug, Clone, Copy)]
-#[allow(missing_docs)]
-pub struct LightSnapshot {
-    pub light_kind: usize, // 0 = Directional, 1 = Point, 2 = Spot
-    pub direction: Vec3,
-    pub color: LinearRgba,
-    pub intensity: f32,
-    pub range: f32,
-    pub inner_cone_angle: f32,
-    pub outer_cone_angle: f32,
-    pub shadow_enabled: bool,
-    pub shadow_bias: f32,
-    pub shadow_normal_bias: f32,
-    pub enabled: bool,
-}
-
-/// Copy of `RigidBody` fields.
-#[derive(Debug, Clone, Copy)]
-#[allow(missing_docs)]
-pub struct RigidBodySnapshot {
-    pub body_type_index: usize, // 0 = Dynamic, 1 = Static, 2 = Kinematic
-    pub mass: f32,
-    pub ccd_enabled: bool,
-    pub linear_velocity: Vec3,
-    pub angular_velocity: Vec3,
-}
-
-/// Copy of `Collider` fields.
-#[derive(Debug, Clone, Copy)]
-#[allow(missing_docs)]
-pub struct ColliderSnapshot {
-    pub shape_index: usize, // 0 = Box, 1 = Sphere, 2 = Capsule
-    pub box_half_extents: Vec3,
-    pub sphere_radius: f32,
-    pub capsule_radius: f32,
-    pub capsule_half_height: f32,
-    pub friction: f32,
-    pub restitution: f32,
-    pub is_sensor: bool,
-}
-
-/// Copy of `AudioSource` fields.
-#[derive(Debug, Clone, Copy)]
-#[allow(missing_docs)]
-pub struct AudioSourceSnapshot {
-    pub volume: f32,
-    pub looping: bool,
-    pub autoplay: bool,
+    /// Every component on this entity, captured as JSON. The inspector
+    /// renders this list directly — no per-component hard-coding.
+    pub components_json: Vec<ComponentJson>,
 }
 
 /// A property edit to apply back to the ECS world.
+///
+/// Components are mutated through a single generic round-trip via
+/// `ComponentRegistration::from_json`: the inspector walks each field of
+/// the component's JSON shape, lets the user edit it, and ships the whole
+/// patched `serde_json::Value` back through `SetComponentJson`. There is
+/// no per-component editor variant — adding a new component costs zero
+/// editor code.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub enum PropertyEdit {
+    /// Rename the entity (`Name` component is special — it shows up in the
+    /// inspector header rather than as a component card).
     SetName(EntityId, String),
-    SetTransform(EntityId, TransformSnapshot),
-    SetCamera(EntityId, CameraSnapshot),
-    SetLight(EntityId, LightSnapshot),
-    SetRigidBody(EntityId, RigidBodySnapshot),
-    SetCollider(EntityId, ColliderSnapshot),
-    SetAudioSource(EntityId, AudioSourceSnapshot),
+    /// Replace the entire JSON value of one component on `entity`. The
+    /// editor looks up the registration by `type_name` and calls
+    /// `from_json` to commit.
+    SetComponentJson {
+        entity: EntityId,
+        type_name: String,
+        value: serde_json::Value,
+    },
 }
 
 // ════════════════════════════════════════════════════════
@@ -392,6 +359,9 @@ pub enum LogLevel {
 }
 
 /// Status bar data displayed at the bottom of the editor.
+///
+/// Populated each frame by `EditorApp::update`; the GPU-related fields are
+/// pulled from `TelemetryService` when available, otherwise stay at 0.
 #[derive(Debug, Clone)]
 #[allow(missing_docs)]
 pub struct StatusBarData {
@@ -399,6 +369,17 @@ pub struct StatusBarData {
     pub frame_time_ms: f32,
     pub entity_count: usize,
     pub memory_used_mb: f32,
+    /// GPU draw calls last frame (from `GpuReport`). 0 when telemetry has no
+    /// reading yet.
+    pub draw_calls: u32,
+    /// GPU triangles rendered last frame.
+    pub triangles: u64,
+    /// Approximate VRAM use in MB. 0 if not reported.
+    pub vram_mb: f32,
+    /// CPU load (0.0–1.0) as reported by `HardwareReport`.
+    pub cpu_load: f32,
+    /// GPU load (0.0–1.0) as reported by `HardwareReport`.
+    pub gpu_load: f32,
 }
 
 impl Default for StatusBarData {
@@ -408,6 +389,11 @@ impl Default for StatusBarData {
             frame_time_ms: 0.0,
             entity_count: 0,
             memory_used_mb: 0.0,
+            draw_calls: 0,
+            triangles: 0,
+            vram_mb: 0.0,
+            cpu_load: 0.0,
+            gpu_load: 0.0,
         }
     }
 }

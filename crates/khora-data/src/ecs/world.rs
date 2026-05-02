@@ -141,6 +141,7 @@ impl World {
         world.register_component::<HandleComponent<GpuMesh>>(SemanticDomain::Render);
         world.register_component::<MaterialComponent>(SemanticDomain::Render);
         world.register_component::<Camera>(SemanticDomain::Render);
+        world.register_component::<crate::ecs::Light>(SemanticDomain::Render);
 
         // Registration of audio components
         world.register_component::<AudioSource>(SemanticDomain::Audio);
@@ -149,11 +150,34 @@ impl World {
         // Registration of physics components
         world.register_component::<RigidBody>(SemanticDomain::Physics);
         world.register_component::<Collider>(SemanticDomain::Physics);
+        world.register_component::<crate::ecs::PhysicsMaterial>(SemanticDomain::Physics);
         world.register_component::<crate::ecs::KinematicCharacterController>(
             SemanticDomain::Physics,
         );
+        world.register_component::<crate::ecs::ActiveEvents>(SemanticDomain::Physics);
+        world.register_component::<crate::ecs::CollisionPairs>(SemanticDomain::Physics);
+        world.register_component::<crate::ecs::CollisionEvents>(SemanticDomain::Physics);
+        world.register_component::<crate::ecs::PhysicsDebugData>(SemanticDomain::Physics);
+
+        // Registration of UI components
+        world.register_component::<crate::ui::components::UiNode>(SemanticDomain::Ui);
+        world.register_component::<crate::ui::components::UiTransform>(SemanticDomain::Ui);
+        world.register_component::<crate::ui::components::UiStyle>(SemanticDomain::Ui);
+        world.register_component::<crate::ui::components::UiColor>(SemanticDomain::Ui);
+        world.register_component::<crate::ui::components::UiImage>(SemanticDomain::Ui);
+        world.register_component::<crate::ui::components::UiBorder>(SemanticDomain::Ui);
+        world.register_component::<crate::ui::components::UiInteraction>(SemanticDomain::Ui);
+        world.register_component::<crate::ui::components::UiText>(SemanticDomain::Ui);
 
         world
+    }
+
+    /// Returns the [`SemanticDomain`] a component type was registered with,
+    /// or `None` if it isn't registered (yet) on this world. Used by the
+    /// editor to categorise components in the "Add Component" menu and the
+    /// inspector without hard-coding a per-type table.
+    pub fn component_domain(&self, type_id: TypeId) -> Option<SemanticDomain> {
+        self.storage.registry.get_domain(type_id)
     }
 
     /// Spawns a new entity with the given bundle of components.

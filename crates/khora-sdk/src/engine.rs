@@ -95,6 +95,17 @@ impl<A: EngineApp> EngineCore<A> {
         let telemetry =
             TelemetryService::new(Duration::from_secs(1)).with_dcc_sender(dcc.event_sender());
 
+        // ── Expose observable handles via ServiceRegistry ────────────────
+        // Apps (e.g. the editor) read live engine state (monitors, agent
+        // list, DCC context) through these handles. They're cheap clones of
+        // internal Arc-shared structures, so doing so before `app.setup` is
+        // safe.
+        services.insert(telemetry.monitor_registry().clone());
+        services.insert(dcc.agent_registry().clone());
+        // Live DCC context: shared `Arc<RwLock<Context>>` updated by the
+        // DCC cold thread, read by observers each frame.
+        services.insert(dcc.context_handle());
+
         // Create the game world
         let mut game_world = GameWorld::new();
 

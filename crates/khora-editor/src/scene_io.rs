@@ -18,8 +18,7 @@ use crate::util::{bytemuck_transform, unbytemuck_transform};
 use khora_sdk::editor_ui::AssetEntry;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::math::{LinearRgba, Vec3};
-use khora_sdk::prelude::*;
-use khora_sdk::{EcsWorld, GameWorld, SceneFile, SerializationGoal, SerializationService};
+use khora_sdk::{GameWorld, SceneFile, SerializationGoal, SerializationService};
 use std::path::{Path, PathBuf};
 
 /// Serializes all entity transforms into a binary snapshot for play-mode restore.
@@ -192,7 +191,7 @@ fn create_default_scene(world: &mut GameWorld, path: &Path) {
         light_transform,
         GlobalTransform::identity(),
         Light::new(LightType::Directional(DirectionalLight {
-            direction: Vec3::new(0.0, -1.0, 0.0),
+            direction: Vec3::new(-0.4, -0.8, -0.45),
             color: LinearRgba::WHITE,
             intensity: 1.0,
             ..Default::default()

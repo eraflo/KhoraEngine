@@ -15,9 +15,23 @@
 //! Pure ECS operations used by the editor application.
 
 use khora_sdk::editor_ui::*;
-use khora_sdk::khora_data::ecs::HandleComponent;
+use khora_sdk::khora_data::ecs::{HandleComponent, SemanticDomain};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::{GameWorld, Mesh};
+
+/// Maps [`SemanticDomain`] to the small integer tag the editor side uses
+/// in [`ComponentJson::domain`]. Kept here so `khora-core` doesn't have to
+/// know about `khora-data`'s domain enum — the inspector reads the tag and
+/// dispatches to category labels.
+fn domain_tag(d: SemanticDomain) -> u8 {
+    match d {
+        SemanticDomain::Spatial => 0,
+        SemanticDomain::Render => 1,
+        SemanticDomain::Audio => 2,
+        SemanticDomain::Physics => 3,
+        SemanticDomain::Ui => 4,
+    }
+}
 
 /// Extracts a scene tree snapshot from the ECS world into editor state.
 pub fn extract_scene_tree(world: &GameWorld, state: &mut EditorState) {
@@ -230,150 +244,51 @@ pub fn extract_inspected(world: &GameWorld, state: &mut EditorState) {
         .map(|n: &Name| n.as_str().to_owned())
         .unwrap_or_else(|| format!("Entity {}", entity.index));
 
-    let transform = world
-        .get_component::<Transform>(entity)
-        .map(|t| TransformSnapshot {
-            translation: t.translation,
-            rotation: t.rotation,
-            scale: t.scale,
-        });
-
-    let camera = world.get_component::<Camera>(entity).map(|c| {
-        let (projection_index, fov_y_radians, ortho_width, ortho_height) = match c.projection {
-            ProjectionType::Perspective { fov_y_radians } => (0, fov_y_radians, 10.0, 10.0),
-            ProjectionType::Orthographic { width, height } => {
-                (1, std::f32::consts::FRAC_PI_4, width, height)
-            }
-        };
-        CameraSnapshot {
-            projection_index,
-            fov_y_radians,
-            ortho_width,
-            ortho_height,
-            aspect_ratio: c.aspect_ratio,
-            z_near: c.z_near,
-            z_far: c.z_far,
-            is_active: c.is_active,
-        }
-    });
-
-    let light = world
-        .get_component::<Light>(entity)
-        .map(|l| match &l.light_type {
-            LightType::Directional(d) => LightSnapshot {
-                light_kind: 0,
-                direction: d.direction,
-                color: d.color,
-                intensity: d.intensity,
-                range: 0.0,
-                inner_cone_angle: 0.0,
-                outer_cone_angle: 0.0,
-                shadow_enabled: d.shadow_enabled,
-                shadow_bias: d.shadow_bias,
-                shadow_normal_bias: d.shadow_normal_bias,
-                enabled: l.enabled,
-            },
-            LightType::Point(p) => LightSnapshot {
-                light_kind: 1,
-                direction: khora_sdk::prelude::math::Vec3::ZERO,
-                color: p.color,
-                intensity: p.intensity,
-                range: p.range,
-                inner_cone_angle: 0.0,
-                outer_cone_angle: 0.0,
-                shadow_enabled: p.shadow_enabled,
-                shadow_bias: p.shadow_bias,
-                shadow_normal_bias: p.shadow_normal_bias,
-                enabled: l.enabled,
-            },
-            LightType::Spot(s) => LightSnapshot {
-                light_kind: 2,
-                direction: s.direction,
-                color: s.color,
-                intensity: s.intensity,
-                range: s.range,
-                inner_cone_angle: s.inner_cone_angle,
-                outer_cone_angle: s.outer_cone_angle,
-                shadow_enabled: s.shadow_enabled,
-                shadow_bias: s.shadow_bias,
-                shadow_normal_bias: s.shadow_normal_bias,
-                enabled: l.enabled,
-            },
-        });
-
-    let rigid_body = world.get_component::<RigidBody>(entity).map(|rb| {
-        let body_type_index = match rb.body_type {
-            BodyType::Dynamic => 0,
-            BodyType::Static => 1,
-            BodyType::Kinematic => 2,
-        };
-        RigidBodySnapshot {
-            body_type_index,
-            mass: rb.mass,
-            ccd_enabled: rb.ccd_enabled,
-            linear_velocity: rb.linear_velocity,
-            angular_velocity: rb.angular_velocity,
-        }
-    });
-
-    let collider = world.get_component::<Collider>(entity).map(|col| {
-        let (shape_index, box_half_extents, sphere_radius, capsule_radius, capsule_half_height) =
-            match col.shape {
-                ColliderShape::Box(he) => (0, he, 0.5, 0.5, 0.5),
-                ColliderShape::Sphere(r) => (1, khora_sdk::prelude::math::Vec3::ONE, r, 0.5, 0.5),
-                ColliderShape::Capsule(half_h, r) => {
-                    (2, khora_sdk::prelude::math::Vec3::ONE, 0.5, r, half_h)
-                }
-            };
-        ColliderSnapshot {
-            shape_index,
-            box_half_extents,
-            sphere_radius,
-            capsule_radius,
-            capsule_half_height,
-            friction: col.friction,
-            restitution: col.restitution,
-            is_sensor: col.is_sensor,
-        }
-    });
-
-    let audio_source = world
-        .get_component::<AudioSource>(entity)
-        .map(|a| AudioSourceSnapshot {
-            volume: a.volume,
-            looping: a.looping,
-            autoplay: a.autoplay,
-        });
-
-    // Collect present component types from inventory registrations.
-    let mut present_component_types = Vec::new();
+    // Collect every component on this entity, captured generically as
+    // JSON via the macro-generated `to_json`. The inspector walks this
+    // list and renders every entry through a single field-typed walker
+    // — adding a new ECS component costs zero editor code.
+    //
+    // We also populate the global `component_domain_registry` with the
+    // domain of every registered type (regardless of whether this entity
+    // has it) so the "+ Add Component" menu can categorise candidates
+    // without re-querying the world.
+    let inner_world = world.inner_world();
+    let mut components_json = Vec::new();
+    state.component_domain_registry.clear();
     for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
-        if (reg.serialize_recipe)(world.inner_world(), entity).is_some() {
-            present_component_types.push(reg.type_name.to_string());
+        let domain = inner_world
+            .component_domain(reg.type_id)
+            .map(domain_tag);
+        if let Some(tag) = domain {
+            state
+                .component_domain_registry
+                .insert(reg.type_name.to_string(), tag);
         }
+
+        let Some(value) = (reg.to_json)(inner_world, entity) else {
+            continue;
+        };
+        components_json.push(ComponentJson {
+            type_name: reg.type_name.to_string(),
+            domain,
+            value,
+        });
     }
 
     state.inspected = Some(InspectedEntity {
         entity,
         name,
-        transform,
-        camera,
-        light,
-        rigid_body,
-        collider,
-        audio_source,
-        physics_material: None,
-        kinematic_character_controller: None,
-        audio_listener: false,
-        ui_node: false,
-        ui_text: false,
-        ui_image: false,
-        ui_border: false,
-        present_component_types,
+        components_json,
     });
 }
 
 /// Applies queued property edits back into ECS components.
+///
+/// All component edits go through one path: the inspector ships a JSON
+/// patch and we look up the component's `from_json` from the inventory
+/// registration. The single special case is `Name`, which lives in the
+/// inspector header (not as a component card) and so has its own variant.
 pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
     let edits = state.drain_edits();
     for edit in edits {
@@ -383,94 +298,27 @@ pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
                     *name = Name::new(new_name);
                 }
             }
-            PropertyEdit::SetTransform(entity, snap) => {
-                if let Some(t) = world.get_component_mut::<Transform>(entity) {
-                    t.translation = snap.translation;
-                    t.rotation = snap.rotation;
-                    t.scale = snap.scale;
+            PropertyEdit::SetComponentJson {
+                entity,
+                type_name,
+                value,
+            } => {
+                let inner = world.inner_world_mut();
+                let mut applied = false;
+                for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
+                    if reg.type_name == type_name {
+                        match (reg.from_json)(inner, entity, &value) {
+                            Ok(()) => applied = true,
+                            Err(e) => log::warn!(
+                                "Failed to apply JSON edit to {}: {}",
+                                type_name, e
+                            ),
+                        }
+                        break;
+                    }
                 }
-            }
-            PropertyEdit::SetCamera(entity, snap) => {
-                if let Some(c) = world.get_component_mut::<Camera>(entity) {
-                    c.projection = match snap.projection_index {
-                        0 => ProjectionType::Perspective {
-                            fov_y_radians: snap.fov_y_radians,
-                        },
-                        _ => ProjectionType::Orthographic {
-                            width: snap.ortho_width,
-                            height: snap.ortho_height,
-                        },
-                    };
-                    c.aspect_ratio = snap.aspect_ratio;
-                    c.z_near = snap.z_near;
-                    c.z_far = snap.z_far;
-                    c.is_active = snap.is_active;
-                }
-            }
-            PropertyEdit::SetLight(entity, snap) => {
-                if let Some(l) = world.get_component_mut::<Light>(entity) {
-                    l.enabled = snap.enabled;
-                    l.light_type = match snap.light_kind {
-                        0 => LightType::Directional(DirectionalLight {
-                            direction: snap.direction,
-                            color: snap.color,
-                            intensity: snap.intensity,
-                            shadow_enabled: snap.shadow_enabled,
-                            shadow_bias: snap.shadow_bias,
-                            shadow_normal_bias: snap.shadow_normal_bias,
-                        }),
-                        1 => LightType::Point(PointLight {
-                            color: snap.color,
-                            intensity: snap.intensity,
-                            range: snap.range,
-                            shadow_enabled: snap.shadow_enabled,
-                            shadow_bias: snap.shadow_bias,
-                            shadow_normal_bias: snap.shadow_normal_bias,
-                        }),
-                        _ => LightType::Spot(SpotLight {
-                            direction: snap.direction,
-                            color: snap.color,
-                            intensity: snap.intensity,
-                            range: snap.range,
-                            inner_cone_angle: snap.inner_cone_angle,
-                            outer_cone_angle: snap.outer_cone_angle,
-                            shadow_enabled: snap.shadow_enabled,
-                            shadow_bias: snap.shadow_bias,
-                            shadow_normal_bias: snap.shadow_normal_bias,
-                        }),
-                    };
-                }
-            }
-            PropertyEdit::SetRigidBody(entity, snap) => {
-                if let Some(rb) = world.get_component_mut::<RigidBody>(entity) {
-                    rb.body_type = match snap.body_type_index {
-                        0 => BodyType::Dynamic,
-                        1 => BodyType::Static,
-                        _ => BodyType::Kinematic,
-                    };
-                    rb.mass = snap.mass;
-                    rb.ccd_enabled = snap.ccd_enabled;
-                    rb.linear_velocity = snap.linear_velocity;
-                    rb.angular_velocity = snap.angular_velocity;
-                }
-            }
-            PropertyEdit::SetCollider(entity, snap) => {
-                if let Some(col) = world.get_component_mut::<Collider>(entity) {
-                    col.shape = match snap.shape_index {
-                        0 => ColliderShape::Box(snap.box_half_extents),
-                        1 => ColliderShape::Sphere(snap.sphere_radius),
-                        _ => ColliderShape::Capsule(snap.capsule_half_height, snap.capsule_radius),
-                    };
-                    col.friction = snap.friction;
-                    col.restitution = snap.restitution;
-                    col.is_sensor = snap.is_sensor;
-                }
-            }
-            PropertyEdit::SetAudioSource(entity, snap) => {
-                if let Some(a) = world.get_component_mut::<AudioSource>(entity) {
-                    a.volume = snap.volume;
-                    a.looping = snap.looping;
-                    a.autoplay = snap.autoplay;
+                if !applied {
+                    log::warn!("No registration found for component '{}'", type_name);
                 }
             }
         }
