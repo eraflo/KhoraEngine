@@ -15,7 +15,15 @@ git-repository-url = "https://github.com/eraflo/KhoraEngine"
 enable = true
 level = 0
 
-# Mermaid diagrams render as code blocks. Install mdbook-mermaid for SVG rendering:
-# cargo install mdbook-mermaid && uncomment below
+# Mermaid diagrams render client-side via mermaid-init.js.
+#
+# We do NOT use mdbook-mermaid 0.17 as a preprocessor — its stdin/JSON
+# handling is broken on this Windows + mdbook 0.4.52 setup
+# (panics with "Unable to parse the input").
+# The customized mermaid-init.js scans for ``` mermaid``` code blocks
+# (rendered by mdBook as <code class="language-mermaid">) and replaces
+# them with mermaid SVGs at page load.
+#
+# To re-enable the preprocessor (e.g. after upgrading mdbook-mermaid):
 # [preprocessor.mermaid]
 # command = "mdbook-mermaid"

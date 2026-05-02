@@ -1,24 +1,39 @@
 # Summary
 
-- [Introduction](./01_introduction.md)
+[Introduction](./00_introduction.md)
 
-# 🏗️ Architecture
-- [SAA — Philosophy](./02_saa_philosophy.md)
-- [CLAD — Organization](./03_clad_organization.md)
-- [Lifecycle](./04_lifecycle.md)
-- [Crate Map](./05_crate_map.md)
+# Foundations
+- [Principles](./01_principles.md)
+- [Architecture](./02_architecture.md)
+- [Lifecycle](./03_lifecycle.md)
+- [Crate map](./04_crates.md)
 
-# ⚙️ Systems
-- [ECS — CRPECS](./06_ecs.md)
-- [Agents & Scheduler](./07_agents_scheduler.md)
-- [Lanes — Pipelines](./08_lanes.md)
-- [GORNA — Negotiation](./09_gorna.md)
-- [I/O — Assets & Serialization](./10_io.md)
+# Core systems
+- [ECS — CRPECS](./05_ecs.md)
+- [Agents](./06_agents.md)
+- [Lanes](./07_lanes.md)
+- [GORNA](./08_gorna.md)
 
-# 🎮 SDK
-- [Developer Guide](./11_sdk_guide.md)
-- [Play Mode](./12_play_mode.md)
+# Subsystems
+- [Rendering](./09_rendering.md)
+- [Physics](./10_physics.md)
+- [Audio](./11_audio.md)
+- [Assets and VFS](./12_assets.md)
+- [UI](./13_ui.md)
+- [Serialization](./14_serialization.md)
+- [Telemetry](./15_telemetry.md)
 
-# 📚 Reference
-- [API Reference](./api_reference.md)
+# SDK and editor
+- [SDK quickstart](./16_sdk_quickstart.md)
+- [SDK reference](./17_sdk_reference.md)
+- [Editor](./18_editor.md)
+- [Extending Khora](./19_extending.md)
+
+# Design
+- [Editor design system](./design/editor.md)
+
+# Reference
+- [API reference](./api_reference.md)
+- [Decisions](./decisions.md)
+- [Open questions](./open_questions.md)
 - [Roadmap](./roadmap.md)

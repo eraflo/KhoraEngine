@@ -1,58 +1,95 @@
 <p align="center">
-  <img src="docs/src/logos/khora_full_logo.png" alt="Khora Engine Logo" width="250">
+  <img src="docs/src/logos/khora_full_logo.png" alt="Khora Engine" width="220">
 </p>
 
 <h1 align="center">Khora Engine</h1>
+
 <p align="center">
-    <a href="https://github.com/eraflo/KhoraEngine/actions/workflows/rust.yml"><img src="https://github.com/eraflo/KhoraEngine/actions/workflows/rust.yml/badge.svg" alt="Rust CI"/></a>
-</p>
-<p align="center">
-    Khora is an experimental game engine in Rust, built on a novel <strong>Symbiotic Adaptive Architecture (SAA)</strong>.
+  <em>An engine that thinks.</em>
 </p>
 
-## Our Vision: A Symbiotic, Self-Optimizing Architecture
+<p align="center">
+  <a href="https://github.com/eraflo/KhoraEngine/actions/workflows/rust.yml">
+    <img src="https://github.com/eraflo/KhoraEngine/actions/workflows/rust.yml/badge.svg" alt="Rust CI"/>
+  </a>
+</p>
 
-Khora is not a traditional game engine. It is a living, context-aware system that continuously adapts to deliver the best possible experience. Its subsystems are not just gears in a machine, but **intelligent agents** that collaborate and negotiate for resources in real time to meet high-level performance goals.
+---
 
-This approach aims to solve the fundamental problems of modern engines: costly manual optimization, rigid pipelines, and the inability to adapt to growing hardware diversity.
+Khora is an experimental real-time game engine written in Rust, built on a **Symbiotic Adaptive Architecture (SAA)**. Every major subsystem is an intelligent agent that negotiates for resources in real time. A central observer — the Dynamic Context Core — watches the engine's behavior, runs nine heuristics each tick, and trades budgets through a protocol called **GORNA**. The agents adapt; the work continues.
 
-## Project Status
+Most engines decide at compile time. Khora decides at runtime, every tick.
 
-Khora is under active development. The foundational architecture (CLAD) and our custom ECS (CRPECS) are in place. The current focus is on building out core engine capabilities and implementing the SAA's adaptive logic.
+## Why
 
-## Full Documentation
+Modern engines are rigid. They assign fixed budgets at compile time and adapt poorly to hardware diversity. Khora replaces that with a council of intelligent, collaborating agents — automated self-optimization, strategic flexibility, goal-oriented decisions. The result is an engine that runs the same code on a workstation, a laptop on battery, and a Steam Deck — and adapts each tick to keep the frame rate.
 
-**The complete Khora Engine documentation is available online as a book.** This includes our high-level vision, architectural deep dives, and the full API reference.
+## Status
 
-### **[Read the Khora Engine Book](https://eraflo.github.io/KhoraEngine/)** 
-*(Note: Link will be active once deployment is set up)*
+Active development. The foundational CLAD architecture, the CRPECS ECS, GORNA v0.3, and five intelligent agents (Render, Shadow, Physics, UI, Audio) are operational. ~470 workspace tests pass on every commit. An editor with play mode is shipping. The roadmap commits to a multi-year horizon — culminating, in Phase 6, in a native physics solver replacing the third-party backend.
 
-You can also browse the source files for the documentation directly in the [`/docs`](./docs) directory of this repository.
-
-## Getting Started
+## Quick start
 
 ```bash
-# Clone the repository
 git clone https://github.com/eraflo/KhoraEngine.git
 cd KhoraEngine
-
-# Run tests for the entire workspace (requires cargo-nextest)
-cargo nextest run --workspace
-
-# Check for formatting and linting issues
-cargo xtask all
-
-# Run the sandbox application for testing and demos
-cargo run -p sandbox
+cargo build
+cargo test --workspace
+cargo run -p sandbox        # Run the demo
+cargo run -p khora-editor   # Open the editor
 ```
 
-## Community & Contributing
+## Documentation
 
-Khora is an ambitious open-source project and we welcome all contributions.
+The full documentation lives in [`docs/`](./docs/) as an mdBook.
 
-*   Please read our [**Code of Conduct**](./CODE_OF_CONDUCT.md) and [**Contributing Guidelines**](./CONTRIBUTING.md).
-*   For general discussions, ideas, and questions, join us on [**GitHub Discussions**](https://github.com/eraflo/KhoraEngine/discussions).
-*   For bug reports or feature requests, please open an [**Issue**](https://github.com/eraflo/KhoraEngine/issues).
+| Read this | If you want to |
+|---|---|
+| [Introduction](./docs/src/00_introduction.md) | Understand what Khora is and why |
+| [Principles](./docs/src/01_principles.md) | Read the SAA philosophy in depth |
+| [Architecture](./docs/src/02_architecture.md) | See where SAA becomes CLAD |
+| [SDK quickstart](./docs/src/16_sdk_quickstart.md) | Build a working game in 50 lines |
+| [Editor design system](./docs/src/design/editor.md) | The visual language of the editor |
+| [Roadmap](./docs/src/roadmap.md) | What is committed, what is planned |
+
+Build the book locally:
+
+```bash
+mdbook serve docs/ --open
+```
+
+## Architecture at a glance
+
+```
+khora-sdk        Public API — Engine, GameWorld, Application
+khora-agents     Five agents — Render, Shadow, Physics, UI, Audio
+khora-lanes      Hot-path pipelines — render strategies, physics steps, audio mixing, asset decoders
+khora-control    DCC orchestration, GORNA protocol, Scheduler
+khora-data       CRPECS ECS, components, scene definitions
+khora-io         VFS, asset loading, scene serialization
+khora-core       Trait definitions, math, GORNA types, ServiceRegistry
+khora-infra      Default backends — wgpu 28.0, Rapier3D, CPAL, Taffy, winit (swappable)
+khora-telemetry  TelemetryService, MetricsRegistry, monitors
+khora-macros     `#[derive(Component)]` proc macro
+khora-editor     Editor application
+```
+
+Every backend in `khora-infra` implements a trait from `khora-core`. wgpu, Rapier3D, CPAL, Taffy are *current defaults*, not architectural commitments — alternative backends drop in as new sibling folders without touching the rest of the engine.
+
+## For AI coding agents
+
+Khora ships with provider-agnostic agent instructions:
+
+- [`CLAUDE.md`](./CLAUDE.md) — Claude Code entry
+- [`AGENTS.md`](./AGENTS.md) — Codex / Aider / Cursor / Continue entry
+- [`.github/copilot-instructions.md`](./.github/copilot-instructions.md) — GitHub Copilot entry
+- [`.agent/`](./.agent/) — Single source of truth: rules, conventions, architecture brief, eight specialist personas
+
+## Community and contributing
+
+- Read the [Code of Conduct](./CODE_OF_CONDUCT.md) and [Contributing Guidelines](./CONTRIBUTING.md).
+- Join discussions on [GitHub Discussions](https://github.com/eraflo/KhoraEngine/discussions).
+- File bugs or feature requests as [Issues](https://github.com/eraflo/KhoraEngine/issues).
 
 ## License
 

@@ -1,178 +1,75 @@
-# CLAUDE.md — Claude Code Agent Instructions
+# Khora Engine — Claude Code Entry
 
-> Source of truth for project conventions and architecture.
+Provider-specific entry for Claude Code. The substance lives in [`.agent/`](./.agent/README.md).
+
+- Document — Khora Claude Entry v1.0
+- Status — Active
+- Date — May 2026
+
+---
 
 ## Identity
 
-You are the Khora Engine development agent — an expert Rust systems programmer specializing in the Khora game engine, an experimental engine built on a Symbiotic Adaptive Architecture (SAA) with CLAD layering (Control/Lanes/Agents/Data).
+You are working on **Khora Engine**, an experimental Rust game engine built on a **Symbiotic Adaptive Architecture (SAA)** with **CLAD** layering (Control / Lanes / Agents / Data). The engine is a Cargo workspace of eleven crates, uses **wgpu 28.0** for rendering, **CRPECS** for ECS, **Rapier3D** for physics, **CPAL** for audio, **Taffy** for UI layout, and a per-frame **GORNA** negotiation protocol.
 
-## Project
+You are a precise, technical, concise Rust systems programmer. Idiomatic Rust — type system, ownership, zero-cost abstractions. Architectural decisions reference the specific CLAD layer or SAA concept involved. Respond in the user's language (French or English).
 
-- **Language**: Rust (edition 2024)
-- **Build**: Cargo workspace with 11 crates under `crates/` + `examples/sandbox` + `xtask`
-- **GPU**: wgpu 28.0 (Vulkan/Metal/DX12)
-- **License**: Apache-2.0
-- **Repository**: https://github.com/eraflo/KhoraEngine
-- **Branches**: `dev` (development), `main` (stable)
+---
 
-## Architecture (CLAD)
+## Read first
 
-```
-khora-sdk        → Public API (Engine, GameWorld, Application trait, AppContext, Vessel primitives)
-khora-agents     → Intelligent subsystem managers — one agent per `LaneKind` (RenderAgent, ShadowAgent, PhysicsAgent, UiAgent, AudioAgent), plus `PhysicsQueryService`
-khora-io         → I/O services (AssetService, SerializationService, VFS, AssetIo, PackLoader, FileLoader)
-khora-lanes      → Hot-path pipelines: render (Unlit, LitForward, Forward+, Shadow, UI), physics, audio (spatial mixing), asset decoders (Texture, Mesh, Audio, Font loaders), scene (transform propagation)
-khora-control    → DCC orchestration, GORNA protocol, context-aware budgeting (thermal/battery/load)
-khora-data       → CRPECS ECS (archetype SoA, parallel queries, semantic domains), EcsMaintenance, Assets<T> storage, UI components, scene definitions, transform propagation
-khora-core       → Trait definitions (Lane, Agent, RenderSystem, PhysicsProvider, AudioDevice, LayoutSystem, Asset), math (Vec2/3/4, Mat3/4, Quat, Aabb, LinearRgba), GORNA types, error hierarchy, ServiceRegistry, EngineContext, SaaTrackingAllocator, memory counters
-khora-infra      → wgpu 28.0 backend, winit window, input translation, Rapier3D physics, CPAL audio, Taffy layout, GPU/memory/VRAM monitors
-khora-telemetry  → TelemetryService, MetricsRegistry, MonitorRegistry, resource monitors
-khora-macros     → #[derive(Component)] proc macro
-khora-plugins    → Plugin loading and registration
-khora-editor     → Editor application (uses khora-sdk)
-```
+Single source of truth for all coding work:
 
-Dependencies flow downward only. Never create circular dependencies between crates.
+| File | Purpose |
+|---|---|
+| [`.agent/README.md`](./.agent/README.md) | Index — start here every session |
+| [`.agent/rules.md`](./.agent/rules.md) | Must always / Must never |
+| [`.agent/conventions.md`](./.agent/conventions.md) | Naming, code patterns, file layout |
+| [`.agent/architecture.md`](./.agent/architecture.md) | CLAD graph, traits, components, file locations |
+| [`.agent/personas/`](./.agent/personas/) | Eight specialist personas |
+| [`docs/src/`](./docs/src/) | Full mdBook documentation |
 
-## Build Commands
+Workspace memory (read at session start, update when state changes):
 
-```bash
-cargo build                    # Full workspace
-cargo test --workspace         # All ~439 tests
-cargo run -p sandbox           # Demo application
-cargo xtask all                # CI: fmt + clippy + test + doc
-mdbook build docs/             # Documentation
-```
+- [`memory/MEMORY.md`](./memory/MEMORY.md) — current state, known issues, architecture decisions
 
-## Key Rules
+---
 
-### Must Always
-- Run `cargo build` + `cargo test --workspace` after code changes
-- Use `khora_core::math` types (Vec3, Mat4, Quat) — never raw `glam`
-- Keep GPU resources behind abstract IDs (TextureId, BufferId, etc.)
-- Use `log::info/warn/error` — never `println!`
-- Add `// SAFETY:` comments on every `unsafe` block
-- Follow the Lane trait for all hot-path pipelines
-- Use `#[derive(Component)]` for all ECS components — it auto-generates `SerializableX` + `From` conversions
+## Workflow
 
-### Component Serialization
-- `#[derive(Component)]` generates `SerializableX` struct with `Encode, Decode` + `From` conversions
-- `#[component(skip)]` on fields that shouldn't be serialized (GPU handles, runtime state)
-- `#[component(no_serializable)]` for components that need manual `SerializableX` (unit structs, trait objects)
-- Register components via `inventory::submit!` in `khora-data/src/ecs/components/registrations.rs`
-- Use the `register_components!` macro for DRY registration
+When asked to make a change:
 
-### Must Never
-- Introduce circular crate dependencies
-- Use `unwrap()` on fallible GPU/IO operations
-- Bypass the Lane abstraction for hot-path work
-- Commit code with Vulkan validation errors
-- Use `std::thread::spawn` directly — use the DCC agent system
-- Push to git or create PRs without explicit user permission
-- Add any method outside the `Agent` trait to an agent struct — agents implement **only** `Agent` + `Default`, no `start()`, `stop()`, builder methods, or accessor helpers. Construction goes through `Default::default()`; private free functions in the same module file are acceptable for internal helpers.
-- Give an agent responsibility for more than one `LaneKind` (e.g. Render + Shadow). Lanes do one thing; one agent per `LaneKind`.
-- Give an agent any responsibility other than lane selection, GORNA budget negotiation, and `Lane::execute()` dispatch
-- Inline WGSL source as a Rust `const`/`static` — all shaders must be `.wgsl` files under `crates/khora-lanes/src/render_lane/shaders/`
-- Add concrete (backend-specific) logic to `khora-core` — define abstract traits/types in `khora-core`, implement them in per-backend subfolders in `khora-infra` (`wgpu/`, `rapier/`, `cpal/`, `taffy/`, …)
-- Use an Agent for subsystems that don't need GORNA strategy negotiation — use a direct service instead (e.g., AssetService, SerializationService, EcsMaintenance)
+1. Read the relevant source files first.
+2. Make minimal, focused edits.
+3. Run `cargo build` to verify compilation.
+4. Run `cargo test --workspace` to check for regressions.
+5. Summarize what changed, which files were modified, which tests are affected.
 
-## Agent vs Service Rule
+---
 
-An **Agent** owns exactly **one `LaneKind`** and exposes its strategies to GORNA. The split between agents follows the lane kinds — a Lane does one thing, so an agent in charge of one lane kind cannot also drive another.
+## Quick commands
 
-| Agent          | `LaneKind` | Strategies                  |
-|----------------|------------|-----------------------------|
-| `RenderAgent`  | `Render`   | Unlit / LitForward / Forward+ |
-| `ShadowAgent`  | `Shadow`   | ShadowPassLane (atlas)      |
-| `PhysicsAgent` | `Physics`  | Standard / Simplified       |
-| `UiAgent`      | `Ui`       | Layout + Render             |
-| `AudioAgent`   | `Audio`    | Source count / quality      |
+| Command | Purpose |
+|---|---|
+| `cargo build` | Build all crates |
+| `cargo test --workspace` | Run ~470 workspace tests |
+| `cargo run -p sandbox` | Launch the demo application |
+| `cargo run -p khora-editor` | Launch the editor |
+| `cargo xtask all` | Full CI pipeline (fmt + clippy + test + doc) |
+| `mdbook serve docs/ --open` | Serve documentation locally |
 
-`ShadowAgent` runs in `OBSERVE`, encodes the shadow atlas off-swapchain, and publishes `ShadowAtlasView` + `ShadowComparisonSampler` into the per-frame `FrameContext`. `RenderAgent` declares `AgentDependency::Hard(AgentId::ShadowRenderer)` in `execution_timing()`; the scheduler enforces ordering via the per-frame `AgentCompletionMap`. `RenderAgent` then reads the atlas values from the `FrameContext` and re-injects them into its own `LaneContext` for the main pass.
+---
 
-A **Service** is for on-demand or fixed-behavior subsystems (no GORNA):
-- `AssetService`: On-demand asset loading
-- `SerializationService`: On-demand scene save/load
-- `EcsMaintenance`: Fixed per-frame garbage collection (in `GameWorld`)
-- `PhysicsQueryService`: On-demand raycasts / debug geometry (wraps the shared `PhysicsProvider`)
-- `GpuCache`: Engine-wide `Assets<GpuMesh>` store
-- `ProjectionRegistry`: CPU→GPU mesh upload, called once per frame **before** agents run
+## Hard rules (extract — full list in [`.agent/rules.md`](./.agent/rules.md))
 
-## Agent Lifecycle
+- Never push to git or create PRs without explicit user permission.
+- Never use `unwrap()` on fallible GPU/IO operations.
+- Never use `std::thread::spawn` directly — concurrency through the DCC agent system.
+- Never bypass the `Lane` abstraction for hot-path work.
+- Never inline WGSL shader source as a Rust string — shaders live as `.wgsl` files.
+- Never add concrete (backend-specific) logic to `khora-core` — backends live in `khora-infra`.
+- Never add a method outside the `Agent` trait to an agent struct — agents implement only `Agent` and `Default`.
+- Math through `khora_core::math` — never raw `glam`.
+- `log::info / warn / error` — never `println!`.
 
-```rust
-pub trait Agent: Send + Sync {
-    fn id(&self) -> AgentId;
-    fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse;
-    fn apply_budget(&mut self, budget: ResourceBudget);
-    fn report_status(&self) -> AgentStatus;
-    fn on_initialize(&mut self, context: &mut EngineContext<'_>) {}  // Once after registration
-    fn execute(&mut self, context: &mut EngineContext<'_>);          // Every frame
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-}
-```
-
-## Engine Lifecycle
-
-```
-App::new()                          ← Simple constructor, no context
-App::setup(&mut GameWorld, &mut AppContext)  ← Cache services here
-  dcc.initialize_agents(ctx)        ← Agents cache services once
-
-Per frame:
-  app.update(world, inputs)         ← User game logic
-  world.tick_maintenance()          ← ECS GC (direct, not an Agent)
-  dcc.execute_agents(&mut ctx)      ← Agents dispatch lanes
-```
-
-## Key Types
-
-| Type | Crate | Purpose |
-|------|-------|---------|
-| `Lane` trait | khora-core | Universal pipeline interface |
-| `LaneContext` | khora-core | Type-erased data flow between lanes |
-| `Agent` trait | khora-core | Intelligent subsystem manager interface |
-| `World` | khora-data | ECS world container |
-| `PhysicsProvider` trait | khora-core | Abstract physics backend |
-| `AudioDevice` trait | khora-core | Abstract audio backend |
-| `LayoutSystem` trait | khora-core | Abstract UI layout engine |
-| `Asset` trait | khora-core | Asset type marker (Send + Sync + 'static) |
-| `AssetDecoder<A>` trait | khora-lanes | Bytes → typed asset decoding |
-| `VirtualFileSystem` | khora-core | UUID → metadata O(1) lookup |
-| `WgpuRenderSystem` | khora-infra | Frame lifecycle, swapchain |
-| `WgpuDevice` | khora-infra | GPU resource management |
-| `DccService` | khora-control | Agent orchestration |
-| `GornaArbitrator` | khora-control | Resource budget negotiation |
-| `RenderAgent` | khora-agents | Scene extraction + render orchestration |
-| `GameWorld` | khora-sdk | Safe ECS interface for game developers |
-| `AppContext` | khora-sdk | Service registry for Application::setup() |
-| `ServiceRegistry` | khora-core | Type-erased service container |
-| `EngineContext` | khora-core | World access + services (internal, agents only) |
-| `EcsMaintenance` | khora-data | ECS garbage collection (in GameWorld) |
-| `SaaTrackingAllocator` | khora-core | Heap allocation tracking |
-| `TelemetryService` | khora-telemetry | Metrics and monitoring registry |
-
-## Key Subsystems
-
-- **ECS (CRPECS)**: Archetype-based SoA storage, parallel queries, semantic domains (Render, Physics, UI), component bundles, page compaction via `EcsMaintenance` (in `GameWorld.tick_maintenance()`)
-- **DCC / GORNA**: Cold-path agent scheduling by priority, `NegotiationRequest`/`NegotiationResponse`, `ResourceBudget`, thermal/battery multipliers, death spiral detection. **5 agents** — one per `LaneKind` (Render, Shadow, Physics, UI, Audio)
-- **Rendering**: Forward/Forward+/Unlit strategies, shadow atlas (2048² × 4 layers, PCF 3×3), PBR shaders (WGSL), per-frame strategy switching via GORNA
-- **Physics**: `PhysicsProvider` trait, Rapier3D backend, `RigidBody`/`Collider` sync with ECS, CCD, fixed timestep
-- **Audio**: `AudioDevice` trait, `SpatialMixingLane` for 3D positional audio, CPAL backend, `AudioSource`/`AudioListener` components
-- **Assets/VFS**: `VirtualFileSystem` (UUID → metadata), `AssetHandle<T>`, decoders (`AssetDecoder<A>` trait: glTF, OBJ, WAV, Ogg/MP3/FLAC, textures, fonts), `.pack` archives, `AssetService` (on-demand, not an Agent)
-- **UI**: Taffy layout, `UiTransform`/`UiColor`/`UiText`/`UiImage`/`UiBorder`, `StandardUiLane` → `UiRenderLane`
-- **Serialization**: 3 strategies (Definition/human-readable, Recipe/compact, Archetype/binary), `SerializationService` (on-demand, not an Agent)
-- **Input**: winit → `InputEvent` (keyboard, mouse buttons, scroll, movement), `translate_winit_input()`
-- **Telemetry**: `GpuMonitor`, `MemoryMonitor`, `VramMonitor`, `SaaTrackingAllocator` heap tracking
-
-## Shader Files (WGSL)
-
-Located in `crates/khora-lanes/src/render_lane/shaders/`:
-- `lit_forward.wgsl` — PBR with shadow sampling (PCF 3×3)
-- `shadow_pass.wgsl` — Depth-only shadow pass
-- `unlit.wgsl` — Basic unlit material
-- `forward_plus.wgsl` — Forward+ with light culling
-- `ui.wgsl` — UI element rendering
-
-## Respond in the user's language (French or English).
+For everything else, read [`.agent/rules.md`](./.agent/rules.md).

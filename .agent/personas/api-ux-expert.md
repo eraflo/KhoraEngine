@@ -47,11 +47,11 @@ Fluent API and developer experience specialist for the Khora SDK.
 
 ## Architecture Integration
 
-- SDK crate: `khora-sdk` — public API surface (`Engine`, `GameWorld`, `Application` trait, Vessel primitives)
-- Prelude: `khora_sdk::prelude` — re-exports of all commonly needed types
-- ECS API: `GameWorld` wrapping `World` with safe, ergonomic methods (spawn, query, resources)
-- Application trait: `Application` lifecycle (init, update, render, shutdown)
-- Vessel primitives: `cube()`, `sphere()`, `plane()` — builder-style geometry constructors
+- SDK crate: `khora-sdk` — public API surface (`EngineCore`, `GameWorld`, `EngineApp`/`AgentProvider`/`PhaseProvider` traits, `run_winit` entry, Vessel + spawn helpers)
+- Prelude: `khora_sdk::prelude` — re-exports of all commonly needed types (`prelude::ecs`, `prelude::math`, `prelude::materials`)
+- ECS API: `GameWorld` wrapping `World` with safe, ergonomic methods (spawn, query, query_mut, get/get_mut, sync_global_transform, update_transform, add_mesh, add_material)
+- Lifecycle: `EngineApp` trait — `window_config`, `new`, `setup(world, services)`, `update(world, inputs)`, `on_shutdown`; optional per-frame hooks for editor overlay
+- Vessel: `Vessel::at(world, pos)` builder + `spawn_plane`, `spawn_cube_at`, `spawn_sphere` top-level helpers — builder-style geometry constructors
 - Error hierarchy: `khora-core` error types, unified `KhoraError` at SDK boundary
 
 ## Key Files

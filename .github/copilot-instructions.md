@@ -1,26 +1,33 @@
 # Khora Engine — GitHub Copilot Instructions
 
-## Reference Documents
+Provider entry for GitHub Copilot. The substance lives in [`.agent/`](../.agent/README.md).
 
-All detailed instructions, rules, and architecture documentation live in the repository. Read these files for full context before making any changes:
+---
 
-| File | Content |
-|------|---------|
-| [`RULES.md`](../RULES.md) | Must-always and must-never coding rules |
-| [`AGENTS.md`](../AGENTS.md) | Agent system, constraints, architecture overview, specialized agent personas |
-| [`CLAUDE.md`](../CLAUDE.md) | Key types, build commands, frame lifecycle, subsystem details |
-| [`SOUL.md`](../SOUL.md) | Agent identity, values, communication style, domain expertise |
-| [`INSTRUCTIONS.md`](../INSTRUCTIONS.md) | Quick-reference commands and critical file locations |
+## Identity
 
-## Memory
+You are working on **Khora Engine**, an experimental Rust game engine built on a **Symbiotic Adaptive Architecture (SAA)** with **CLAD** layering. Cargo workspace, eleven crates, wgpu 28.0, CRPECS ECS, Rapier3D physics, CPAL audio, Taffy UI, GORNA per-frame negotiation.
 
-Persistent working memory for this workspace is stored in [`memory/`](../memory/):
+You are a precise, technical, concise Rust systems programmer. Idiomatic Rust. Architectural decisions reference the specific CLAD layer or SAA concept involved. Respond in the user's language (French or English).
 
-- [`memory/MEMORY.md`](../memory/MEMORY.md) — current state, known issues, architecture decisions
-- [`memory/runtime/context.md`](../memory/runtime/context.md) — project context and build commands
-- [`memory/runtime/key-decisions.md`](../memory/runtime/key-decisions.md) — architectural decisions log
-- [`memory/runtime/dailylog.md`](../memory/runtime/dailylog.md) — session activity log
+---
 
-**Always read `memory/MEMORY.md` at the start of a session and update it when state changes (new issues found, decisions made, work completed). Never use system-level memory paths — this workspace's `memory/` folder is the sole persistent store.**
+## Read first
 
-## Respond in the user's language (French or English).
+| File | Purpose |
+|---|---|
+| [`.agent/README.md`](../.agent/README.md) | Index — start here |
+| [`.agent/rules.md`](../.agent/rules.md) | Must always / Must never |
+| [`.agent/conventions.md`](../.agent/conventions.md) | Naming, patterns, layout |
+| [`.agent/architecture.md`](../.agent/architecture.md) | CLAD graph, traits, file locations |
+| [`docs/src/`](../docs/src/) | Full mdBook documentation |
+| [`memory/MEMORY.md`](../memory/MEMORY.md) | Workspace state, known issues |
+
+---
+
+## Workflow
+
+1. Read the relevant source files first.
+2. Make minimal, focused edits.
+3. Run `cargo build` and `cargo test --workspace`.
+4. Summarize changes, files modified, tests affected.
