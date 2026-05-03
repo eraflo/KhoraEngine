@@ -104,13 +104,8 @@ fn layout_texts(
 ) {
     for (transform, text) in world.query::<(&UiTransform, &UiText)>() {
         if let Some(font_handle) = fonts.get(&text.font) {
-            let layout = text_renderer.layout_text(
-                &text.content,
-                font_handle,
-                text.font,
-                text.size,
-                None,
-            );
+            let layout =
+                text_renderer.layout_text(&text.content, font_handle, text.font, text.size, None);
             scene.texts.push(ExtractedUiText {
                 pos: transform.pos,
                 layout,

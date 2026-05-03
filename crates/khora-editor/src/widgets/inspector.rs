@@ -50,7 +50,13 @@ pub fn paint_inspector_header(
     let tile_y = origin[1] + 14.0;
     ui.paint_rect_filled([tile_x, tile_y], [36.0, 36.0], theme.surface_active, 8.0);
     ui.paint_rect_stroke([tile_x, tile_y], [36.0, 36.0], theme.border, 8.0, 1.0);
-    paint_icon(ui, [tile_x + 10.0, tile_y + 10.0], icon, 16.0, theme.primary);
+    paint_icon(
+        ui,
+        [tile_x + 10.0, tile_y + 10.0],
+        icon,
+        16.0,
+        theme.primary,
+    );
 
     // Name
     let name_x = tile_x + 48.0;
@@ -72,8 +78,7 @@ pub fn paint_inspector_header(
 
     // Status pill
     let pill_x = name_x + tag_w + 8.0;
-    let label_w =
-        ui.measure_text(status_label, 10.5, FontFamilyHint::Proportional)[0] + 22.0;
+    let label_w = ui.measure_text(status_label, 10.5, FontFamilyHint::Proportional)[0] + 22.0;
     ui.paint_rect_filled(
         [pill_x, meta_y],
         [label_w, 16.0],
@@ -81,7 +86,13 @@ pub fn paint_inspector_header(
         999.0,
     );
     ui.paint_circle_filled([pill_x + 8.0, meta_y + 8.0], 2.5, status_color);
-    paint_text_size(ui, [pill_x + 14.0, meta_y + 3.0], status_label, 10.5, status_color);
+    paint_text_size(
+        ui,
+        [pill_x + 14.0, meta_y + 3.0],
+        status_label,
+        10.5,
+        status_color,
+    );
 
     // Id
     if let Some(id) = id_label {

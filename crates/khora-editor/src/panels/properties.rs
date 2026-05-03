@@ -115,10 +115,8 @@ impl EditorPanel for PropertiesPanel {
         paint_panel_header(ui, panel_rect, HEADER_HEIGHT, &theme);
         let tab_y = py + (HEADER_HEIGHT - 22.0) * 0.5;
 
-        let action_icons: &[(Icon, &str)] = &[
-            (Icon::More, "p-act-more"),
-            (Icon::Lock, "p-act-lock"),
-        ];
+        let action_icons: &[(Icon, &str)] =
+            &[(Icon::More, "p-act-more"), (Icon::Lock, "p-act-lock")];
         let icons_total_w = action_icons.len() as f32 * 22.0 + 8.0;
         let icons_left = px + pw - icons_total_w;
         let _ = icons_left;
@@ -213,10 +211,7 @@ impl EditorPanel for PropertiesPanel {
             1.0,
         );
         let segment_w = (subtab_w - 4.0) / 2.0;
-        let segments = [
-            (SubTab::Properties, "Properties"),
-            (SubTab::Debug, "Debug"),
-        ];
+        let segments = [(SubTab::Properties, "Properties"), (SubTab::Debug, "Debug")];
         for (i, (tab, label)) in segments.iter().enumerate() {
             let sx = px + 8.0 + i as f32 * segment_w;
             let active = self.sub_tab == *tab;
@@ -353,7 +348,10 @@ fn render_card(
     body: &mut dyn FnMut(&mut dyn UiBuilder),
 ) {
     let card_id = format!("{}::{}", entity.index, title);
-    let open = *state.inspector_card_open.entry(card_id.clone()).or_insert(true);
+    let open = *state
+        .inspector_card_open
+        .entry(card_id.clone())
+        .or_insert(true);
 
     let cursor_y = ui.cursor_pos()[1];
     let header_rect = [card_x, cursor_y, card_w, CARD_HEADER_H];
@@ -372,9 +370,25 @@ fn render_card(
         1.0,
     );
 
-    let chev = if open { Icon::ChevronDown } else { Icon::ChevronRight };
-    paint_icon(ui, [card_x + 8.0, cursor_y + 9.0], chev, 12.0, theme.text_muted);
-    paint_icon(ui, [card_x + 26.0, cursor_y + 8.0], icon, 14.0, theme.primary_dim);
+    let chev = if open {
+        Icon::ChevronDown
+    } else {
+        Icon::ChevronRight
+    };
+    paint_icon(
+        ui,
+        [card_x + 8.0, cursor_y + 9.0],
+        chev,
+        12.0,
+        theme.text_muted,
+    );
+    paint_icon(
+        ui,
+        [card_x + 26.0, cursor_y + 8.0],
+        icon,
+        14.0,
+        theme.primary_dim,
+    );
     crate::widgets::paint::paint_text_size(
         ui,
         [card_x + 46.0, cursor_y + 9.0],
@@ -391,7 +405,11 @@ fn render_card(
         let toggle_h = 14.0;
         let tx = right_edge - toggle_w;
         let ty = cursor_y + (CARD_HEADER_H - toggle_h) * 0.5;
-        let track_color = if en { theme.primary } else { theme.surface_active };
+        let track_color = if en {
+            theme.primary
+        } else {
+            theme.surface_active
+        };
         ui.paint_rect_filled([tx, ty], [toggle_w, toggle_h], track_color, 999.0);
         let knob_x = if en { tx + 13.0 } else { tx + 1.0 };
         ui.paint_circle_filled([knob_x + 6.0, ty + toggle_h * 0.5], 5.5, theme.text);
@@ -403,7 +421,8 @@ fn render_card(
         let trash_h = 22.0;
         let tx = right_edge - trash_w;
         let ty = cursor_y + (CARD_HEADER_H - trash_h) * 0.5;
-        let trash_int = ui.interact_rect(&format!("card-rm-{}", card_id), [tx, ty, trash_w, trash_h]);
+        let trash_int =
+            ui.interact_rect(&format!("card-rm-{}", card_id), [tx, ty, trash_w, trash_h]);
         let trash_color = if trash_int.hovered {
             theme.error
         } else {
@@ -449,7 +468,11 @@ fn render_card(
 
 /// Renders a top-level component value. Returns true if the user mutated
 /// any leaf — the caller queues a `SetComponentJson` edit in that case.
-fn render_value(ui: &mut dyn UiBuilder, value: &mut serde_json::Value, theme: &EditorTheme) -> bool {
+fn render_value(
+    ui: &mut dyn UiBuilder,
+    value: &mut serde_json::Value,
+    theme: &EditorTheme,
+) -> bool {
     use serde_json::Value;
     match value {
         Value::Object(map) => render_object(ui, map, theme),
@@ -710,11 +733,7 @@ fn render_color(
     changed
 }
 
-fn render_number_row(
-    ui: &mut dyn UiBuilder,
-    label: &str,
-    value: &mut serde_json::Value,
-) -> bool {
+fn render_number_row(ui: &mut dyn UiBuilder, label: &str, value: &mut serde_json::Value) -> bool {
     let mut local = json_to_f32(Some(&*value));
     let changed = ui.drag_value_f32(label, &mut local, 0.05);
     if changed {
@@ -786,9 +805,7 @@ fn render_numeric_quad(
 // ─── numeric bridge ─────────────────────────────────────────────────
 
 fn json_to_f32(v: Option<&serde_json::Value>) -> f32 {
-    v.and_then(|v| v.as_f64())
-        .map(|f| f as f32)
-        .unwrap_or(0.0)
+    v.and_then(|v| v.as_f64()).map(|f| f as f32).unwrap_or(0.0)
 }
 
 fn f32_to_json(f: f32) -> serde_json::Value {
@@ -823,8 +840,11 @@ fn humanise(field: &str) -> String {
 fn pick_icon(i: &InspectedEntity) -> Icon {
     // Icon hint based on which "interesting" component the entity has.
     // Generic enough to not bias toward any specific subset.
-    let names: std::collections::HashSet<&str> =
-        i.components_json.iter().map(|c| c.type_name.as_str()).collect();
+    let names: std::collections::HashSet<&str> = i
+        .components_json
+        .iter()
+        .map(|c| c.type_name.as_str())
+        .collect();
     if names.contains("Camera") {
         Icon::Camera
     } else if names.contains("Light") {
@@ -837,8 +857,11 @@ fn pick_icon(i: &InspectedEntity) -> Icon {
 }
 
 fn pick_type_tag(i: &InspectedEntity) -> &'static str {
-    let names: std::collections::HashSet<&str> =
-        i.components_json.iter().map(|c| c.type_name.as_str()).collect();
+    let names: std::collections::HashSet<&str> = i
+        .components_json
+        .iter()
+        .map(|c| c.type_name.as_str())
+        .collect();
     if names.contains("Camera") {
         "Camera"
     } else if names.contains("Light") {
@@ -852,11 +875,11 @@ fn pick_type_tag(i: &InspectedEntity) -> &'static str {
 
 fn icon_for_domain_tag(tag: Option<u8>) -> Icon {
     match tag {
-        Some(0) => Icon::Axes,    // Spatial
-        Some(1) => Icon::Image,   // Render
-        Some(2) => Icon::Music,   // Audio
-        Some(3) => Icon::Zap,     // Physics
-        Some(4) => Icon::Layers,  // UI
+        Some(0) => Icon::Axes,   // Spatial
+        Some(1) => Icon::Image,  // Render
+        Some(2) => Icon::Music,  // Audio
+        Some(3) => Icon::Zap,    // Physics
+        Some(4) => Icon::Layers, // UI
         _ => Icon::More,
     }
 }
@@ -899,10 +922,7 @@ fn render_add_component(
         if already_present.contains(reg.type_name) {
             continue;
         }
-        let domain_tag = state
-            .component_domain_registry
-            .get(reg.type_name)
-            .copied();
+        let domain_tag = state.component_domain_registry.get(reg.type_name).copied();
 
         if let Some(tag) = domain_tag {
             buckets

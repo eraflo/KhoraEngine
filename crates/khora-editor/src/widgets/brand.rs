@@ -38,13 +38,7 @@ pub fn paint_diamond_outline(
 }
 
 /// Paints a filled 4-point diamond using a closed polygon path.
-pub fn paint_diamond_filled(
-    ui: &mut dyn UiBuilder,
-    cx: f32,
-    cy: f32,
-    size: f32,
-    color: [f32; 4],
-) {
+pub fn paint_diamond_filled(ui: &mut dyn UiBuilder, cx: f32, cy: f32, size: f32, color: [f32; 4]) {
     let pts = [
         [cx, cy - size],
         [cx + size, cy],
@@ -69,9 +63,16 @@ pub fn paint_brand_pill(
 ) -> f32 {
     // Real font measurement (Phase 3 — replaces the previous 7px-per-char
     // guess that broke at large font sizes / non-ASCII names).
-    let engine_w = ui.measure_text(engine_name, theme.font_size_body, FontFamilyHint::Proportional)[0];
-    let project_w =
-        ui.measure_text(project_name, theme.font_size_body - 1.0, FontFamilyHint::Proportional)[0];
+    let engine_w = ui.measure_text(
+        engine_name,
+        theme.font_size_body,
+        FontFamilyHint::Proportional,
+    )[0];
+    let project_w = ui.measure_text(
+        project_name,
+        theme.font_size_body - 1.0,
+        FontFamilyHint::Proportional,
+    )[0];
     let total_w = 18.0 /* diamond */ + 12.0 + engine_w + 14.0 /* sep */ + project_w + 24.0;
 
     let pad_y = (height - 24.0).max(0.0) * 0.5;

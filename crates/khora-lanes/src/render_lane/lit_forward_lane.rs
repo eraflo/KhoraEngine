@@ -29,7 +29,6 @@ use khora_core::math::{Extent2D, Extent3D, LinearRgba, Mat4, Origin3D};
 #[allow(unused_imports)]
 use khora_core::renderer::api::command::BindGroupLayoutId;
 
-use khora_data::render::RenderWorld;
 use khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer;
 use khora_core::{
     asset::Material,
@@ -52,6 +51,7 @@ use khora_core::{
     },
 };
 use khora_data::assets::Assets;
+use khora_data::render::RenderWorld;
 use std::sync::RwLock;
 
 /// Constants for cost estimation.
@@ -218,11 +218,11 @@ impl khora_core::lane::Lane for LitForwardLane {
     }
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
-        let render_world =
-            match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>() {
-                Some(slot) => slot.get(),
-                None => return 1.0,
-            };
+        let render_world = match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>()
+        {
+            Some(slot) => slot.get(),
+            None => return 1.0,
+        };
         let gpu_meshes = match ctx.get::<std::sync::Arc<
             std::sync::RwLock<
                 khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,

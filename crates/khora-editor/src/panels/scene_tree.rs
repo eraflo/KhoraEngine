@@ -68,12 +68,7 @@ impl EditorPanel for SceneTreePanel {
         // ── Header strip ──────────────────────────────
         paint_panel_header(ui, panel_rect, HEADER_HEIGHT, &theme);
 
-        let count = self
-            .state
-            .lock()
-            .ok()
-            .map(|s| s.entity_count)
-            .unwrap_or(0);
+        let count = self.state.lock().ok().map(|s| s.entity_count).unwrap_or(0);
         let badge = format!("{}", count);
 
         // Action icons live on the right; we always keep them visible because
@@ -207,22 +202,12 @@ impl EditorPanel for SceneTreePanel {
         let roots: Vec<SceneNode> = state_guard.scene_roots.clone();
         let selected = state_guard.selection.clone();
         let hidden = state_guard.hidden_entities.clone();
-        let pending: std::cell::Cell<Option<EditorAction>> =
-            std::cell::Cell::new(None);
+        let pending: std::cell::Cell<Option<EditorAction>> = std::cell::Cell::new(None);
 
         let mut row_y = section_y + 18.0;
         for node in &roots {
             row_y = render_node(
-                ui,
-                node,
-                0,
-                px,
-                pw,
-                row_y,
-                &selected,
-                &hidden,
-                &theme,
-                &pending,
+                ui, node, 0, px, pw, row_y, &selected, &hidden, &theme, &pending,
             );
         }
 
@@ -234,10 +219,7 @@ impl EditorPanel for SceneTreePanel {
         let panel_bottom = panel_rect[1] + panel_rect[3];
         let empty_h = (panel_bottom - row_y).max(0.0);
         if empty_h > 4.0 {
-            let _empty_int = ui.interact_rect(
-                "scene-tree-empty",
-                [px, row_y, pw, empty_h],
-            );
+            let _empty_int = ui.interact_rect("scene-tree-empty", [px, row_y, pw, empty_h]);
             if let Some(packed) = ui.dnd_take_drop_payload() {
                 pending.set(Some(EditorAction::Reparent {
                     child: unpack_entity(packed),
@@ -418,13 +400,7 @@ fn render_node(
 
     // Chevron (or empty space for leaves)
     if !node.children.is_empty() {
-        paint_icon(
-            ui,
-            [cx, y + 7.0],
-            Icon::ChevronDown,
-            11.0,
-            theme.text_muted,
-        );
+        paint_icon(ui, [cx, y + 7.0], Icon::ChevronDown, 11.0, theme.text_muted);
     }
     cx += 14.0;
 
@@ -444,7 +420,11 @@ fn render_node(
     cx += 18.0;
 
     // Label
-    let base_label_color = if is_selected { theme.text } else { theme.text_dim };
+    let base_label_color = if is_selected {
+        theme.text
+    } else {
+        theme.text_dim
+    };
     let label_color = if is_hidden {
         with_alpha(base_label_color, 0.45)
     } else {
@@ -472,7 +452,11 @@ fn render_node(
     let eye_color = if is_hidden {
         theme.text_muted
     } else if eye_int.hovered || interaction.hovered || is_selected {
-        if is_selected { theme.primary } else { theme.text }
+        if is_selected {
+            theme.primary
+        } else {
+            theme.text
+        }
     } else {
         with_alpha(theme.text_muted, 0.5)
     };
@@ -481,8 +465,18 @@ fn render_node(
 
     let mut next_y = y + ROW_HEIGHT;
     for child in &node.children {
-        next_y =
-            render_node(ui, child, depth + 1, px, pw, next_y, selection, hidden, theme, pending);
+        next_y = render_node(
+            ui,
+            child,
+            depth + 1,
+            px,
+            pw,
+            next_y,
+            selection,
+            hidden,
+            theme,
+            pending,
+        );
     }
     next_y
 }

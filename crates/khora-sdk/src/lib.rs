@@ -47,48 +47,45 @@ pub mod editor_ui {
 // ─────────────────────────────────────────────────────────────────────
 
 // Control / DCC
-pub use khora_control::{DccConfig, DccService, EngineMode, Context as EngineContext};
+pub use khora_control::{Context as EngineContext, DccConfig, DccService, EngineMode};
 // Re-export the same Context as `DccContext` so editor code can use the
 // more descriptive name without a separate `use` line. (Same type — both
 // re-exports point at `khora_control::Context`.)
-pub use khora_control::Context as DccContext;
 pub use khora_control::registry::AgentRegistry;
 pub use khora_control::scheduler::ExecutionScheduler;
+pub use khora_control::Context as DccContext;
 
 // Core types
-pub use khora_core::control::gorna::{AgentId, AgentStatus, StrategyId};
 pub use khora_core::agent::{AgentImportance, ExecutionPhase, ExecutionTiming};
-pub use khora_core::ServiceRegistry;
-pub use khora_core::telemetry::{TelemetryEvent, MonitoredResourceType};
-pub use khora_core::ui::editor::{
-    EditorCamera, EditorMode, EditorShell, EditorState, EditorTheme, PlayMode, PanelLocation,
-    GizmoMode, EditorLogCapture, LogEntry,
-    CommandHistory, EntityIcon, AssetEntry, LogLevel,
-    EditorPanel, UiBuilder, SceneNode,
-    PropertyEdit, InspectedEntity, EditorCommand,
-    ComponentJson, StatusBarData,
-    Icon, FontFamilyHint, Interaction, TextAlign,
-};
-pub use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
+pub use khora_core::control::gorna::{AgentId, AgentStatus, StrategyId};
+pub use khora_core::telemetry::{MonitoredResourceType, TelemetryEvent};
+pub use khora_core::ui::editor::generate_selection_gizmos;
 pub use khora_core::ui::editor::gizmo::GizmoKind;
 pub use khora_core::ui::editor::gizmo::GizmoLineInstance;
-pub use khora_core::ui::editor::generate_selection_gizmos;
+pub use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
+pub use khora_core::ui::editor::{
+    AssetEntry, CommandHistory, ComponentJson, EditorCamera, EditorCommand, EditorLogCapture,
+    EditorMode, EditorPanel, EditorShell, EditorState, EditorTheme, EntityIcon, FontFamilyHint,
+    GizmoMode, Icon, InspectedEntity, Interaction, LogEntry, LogLevel, PanelLocation, PlayMode,
+    PropertyEdit, SceneNode, StatusBarData, TextAlign, UiBuilder,
+};
+pub use khora_core::ServiceRegistry;
 
 // Telemetry service
-pub use khora_telemetry::TelemetryService;
 pub use khora_telemetry::MonitorRegistry;
+pub use khora_telemetry::TelemetryService;
 // AgentRegistry is already re-exported above (line 51) via
 // `pub use khora_control::registry::AgentRegistry`.
 
 // Infra / monitors
-pub use khora_infra::GpuMonitor;
 pub use khora_infra::telemetry::memory_monitor::MemoryMonitor;
+pub use khora_infra::GpuMonitor;
 
 // I/O
-pub use khora_io::serialization::SerializationService;
-pub use khora_io::asset::{AssetIo, FileLoader};
 pub use khora_core::asset::AssetSource;
 pub use khora_core::scene::{SceneFile, SerializationGoal};
+pub use khora_io::asset::{AssetIo, FileLoader};
+pub use khora_io::serialization::SerializationService;
 
 // Mesh type (used by editor ops)
 pub use khora_core::renderer::api::scene::mesh::Mesh;
@@ -168,8 +165,8 @@ pub mod prelude {
     // Math
     pub mod math {
         //! Math types and utilities.
-        pub use khora_core::math::*;
         pub use khora_core::math::LinearRgba;
+        pub use khora_core::math::*;
     }
 }
 

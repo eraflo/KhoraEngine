@@ -86,11 +86,7 @@ impl<A: EngineApp> EngineCore<A> {
     /// This method takes ownership of the `services` registry populated
     /// by the windowing driver's bootstrap closure.  It wraps the registry
     /// in an `Arc` internally once all built-in services have been inserted.
-    pub fn bootstrap(
-        &mut self,
-        mut app: A,
-        mut services: ServiceRegistry,
-    ) {
+    pub fn bootstrap(&mut self, mut app: A, mut services: ServiceRegistry) {
         // Create DCC + telemetry
         let (mut dcc, dcc_rx) = DccService::new(DccConfig::default());
         let telemetry =
@@ -115,12 +111,13 @@ impl<A: EngineApp> EngineCore<A> {
         {
             let services_ref = Arc::new(std::mem::take(&mut services));
             app.setup(&mut game_world, &services_ref);
-            services = Arc::try_unwrap(services_ref)
-                .unwrap_or_else(|_| panic!(
+            services = Arc::try_unwrap(services_ref).unwrap_or_else(|_| {
+                panic!(
                     "app.setup() stored a clone of the ServiceRegistry Arc. \
                      Services must not be cloned inside setup() — cache individual \
                      services via Arc<T>, not the whole registry."
-                ));
+                )
+            });
         }
 
         // Register agents via the app's AgentProvider trait.
@@ -151,7 +148,10 @@ impl<A: EngineApp> EngineCore<A> {
         services.insert(Arc::new(Mutex::new(khora_data::ecs::EcsMaintenance::new())));
 
         // PhysicsQueryService: on-demand raycast/debug queries, no GORNA required.
-        if let Some(provider) = services.get::<std::sync::Arc<std::sync::Mutex<Box<dyn khora_core::physics::PhysicsProvider>>>>() {
+        if let Some(provider) = services
+            .get::<std::sync::Arc<std::sync::Mutex<Box<dyn khora_core::physics::PhysicsProvider>>>>(
+            )
+        {
             services.insert(khora_agents::PhysicsQueryService::new(provider.clone()));
         }
 
@@ -222,10 +222,7 @@ impl<A: EngineApp> EngineCore<A> {
         // Inject custom phases from the app
         let custom_phases = app.custom_phases();
         for phase in custom_phases {
-            scheduler.insert_after(
-                khora_core::agent::ExecutionPhase::OUTPUT,
-                phase,
-            );
+            scheduler.insert_after(khora_core::agent::ExecutionPhase::OUTPUT, phase);
         }
 
         let budget_channel = scheduler.budget_channel().clone();
@@ -233,7 +230,9 @@ impl<A: EngineApp> EngineCore<A> {
 
         let _ = dcc
             .event_sender()
-            .send(khora_core::telemetry::TelemetryEvent::PhaseChange("boot".to_string()));
+            .send(khora_core::telemetry::TelemetryEvent::PhaseChange(
+                "boot".to_string(),
+            ));
 
         // Store everything
         self.app = Some(app);
@@ -296,11 +295,11 @@ impl<A: EngineApp> EngineCore<A> {
     pub fn drain_inputs(&mut self) -> Vec<InputEvent> {
         if !self.simulation_started {
             if let Some(dcc) = &self.dcc {
-                let _ = dcc
-                    .event_sender()
-                    .send(khora_core::telemetry::TelemetryEvent::PhaseChange(
-                        "simulation".to_string(),
-                    ));
+                let _ =
+                    dcc.event_sender()
+                        .send(khora_core::telemetry::TelemetryEvent::PhaseChange(
+                            "simulation".to_string(),
+                        ));
             }
             self.simulation_started = true;
         }
@@ -374,9 +373,9 @@ impl<A: EngineApp> EngineCore<A> {
                     if let Some(d) = targets.depth {
                         fctx.insert(DepthTarget(d));
                     }
-                    fctx.insert(ClearColor(
-                        khora_core::math::LinearRgba::new(0.1, 0.1, 0.15, 1.0),
-                    ));
+                    fctx.insert(ClearColor(khora_core::math::LinearRgba::new(
+                        0.1, 0.1, 0.15, 1.0,
+                    )));
                 }
                 true
             }

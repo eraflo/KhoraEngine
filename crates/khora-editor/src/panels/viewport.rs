@@ -164,17 +164,8 @@ impl ViewportPanel {
 
         // Round backplate so the gizmo reads as a "navigation puck" (mockup
         // calls for a circular widget with X/Y/Z labels around the rim).
-        ui.paint_circle_filled(
-            center,
-            plate_half,
-            [0.04, 0.06, 0.10, 0.78],
-        );
-        ui.paint_circle_stroke(
-            center,
-            plate_half,
-            [0.32, 0.38, 0.52, 0.55],
-            1.0,
-        );
+        ui.paint_circle_filled(center, plate_half, [0.04, 0.06, 0.10, 0.78]);
+        ui.paint_circle_stroke(center, plate_half, [0.32, 0.38, 0.52, 0.55], 1.0);
 
         let (right, up) = if let Ok(cam) = self.camera.lock() {
             (cam.right(), cam.up())
@@ -371,12 +362,7 @@ impl ViewportPanel {
             let r = [cx, pill_y + 3.0, btn_w - 4.0, pill_h - 6.0];
             let int = ui.interact_rect(salt, r);
             if active {
-                ui.paint_rect_filled(
-                    [r[0], r[1]],
-                    [r[2], r[3]],
-                    theme.surface_active,
-                    999.0,
-                );
+                ui.paint_rect_filled([r[0], r[1]], [r[2], r[3]], theme.surface_active, 999.0);
             }
             let icon_color = if active {
                 theme.text
@@ -581,12 +567,20 @@ impl ViewportPanel {
                     theme.error
                 },
             ),
-            ("FRAME", format!("{:.2}ms", snapshot.frame_time_ms), theme.text),
+            (
+                "FRAME",
+                format!("{:.2}ms", snapshot.frame_time_ms),
+                theme.text,
+            ),
             ("ENTITIES", format!("{}", snapshot.entity_count), theme.text),
             ("DRAWS", format!("{}", snapshot.draw_calls), theme.text),
             ("TRIS", tris_str, theme.text),
             (
-                if snapshot.vram_mb > 0.0 { "VRAM" } else { "MEM" },
+                if snapshot.vram_mb > 0.0 {
+                    "VRAM"
+                } else {
+                    "MEM"
+                },
                 if snapshot.vram_mb > 0.0 {
                     format!("{:.1}GB", snapshot.vram_mb / 1024.0)
                 } else {
@@ -658,11 +652,7 @@ impl ViewportPanel {
             crate::widgets::paint::with_alpha(color, 0.85),
             999.0,
         );
-        ui.paint_circle_filled(
-            [lx + 10.0, ly + label_h * 0.5],
-            3.0,
-            theme.background,
-        );
+        ui.paint_circle_filled([lx + 10.0, ly + label_h * 0.5], 3.0, theme.background);
         ui.paint_text_styled(
             [lx + label_w * 0.5 + 6.0, ly + 4.5],
             mode_label,

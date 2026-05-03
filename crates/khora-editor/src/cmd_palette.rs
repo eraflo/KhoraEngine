@@ -171,12 +171,7 @@ impl EditorPanel for CommandPalettePanel {
         let [sx, sy, sw, sh] = ui.screen_rect();
 
         // ── Backdrop (full screen, semi-opaque) ───────
-        ui.paint_rect_filled(
-            [sx, sy],
-            [sw, sh],
-            with_alpha(theme.background, 0.65),
-            0.0,
-        );
+        ui.paint_rect_filled([sx, sy], [sw, sh], with_alpha(theme.background, 0.65), 0.0);
 
         // ── Modal box ────────────────────────────────
         let modal_w = 640.0_f32.min(sw - 64.0);
@@ -187,10 +182,7 @@ impl EditorPanel for CommandPalettePanel {
         // Detect click on backdrop EXCLUDING the modal area, so clicking
         // inside the modal doesn't close the palette (Bug C.5 in v3 plan).
         let backdrop_int = ui.interact_rect("cmdk-backdrop", [sx, sy, sw, sh]);
-        let modal_int = ui.interact_rect(
-            "cmdk-modal-eat",
-            [modal_x, modal_y, modal_w, modal_h],
-        );
+        let modal_int = ui.interact_rect("cmdk-modal-eat", [modal_x, modal_y, modal_w, modal_h]);
         if backdrop_int.clicked && !modal_int.hovered {
             if let Ok(mut s) = self.state.lock() {
                 s.command_palette_open = false;
@@ -253,8 +245,11 @@ impl EditorPanel for CommandPalettePanel {
         let q_lower = self.query.to_lowercase();
         let mut visible: Vec<(&Section, Vec<&Command>)> = Vec::new();
         for section in SECTIONS {
-            let items: Vec<&Command> =
-                section.items.iter().filter(|c| matches(c, &q_lower)).collect();
+            let items: Vec<&Command> = section
+                .items
+                .iter()
+                .filter(|c| matches(c, &q_lower))
+                .collect();
             if !items.is_empty() {
                 visible.push((section, items));
             }
@@ -361,13 +356,7 @@ impl EditorPanel for CommandPalettePanel {
                 );
 
                 // Label + desc
-                paint_text_size(
-                    ui,
-                    [row_x + 44.0, row_y + 8.0],
-                    cmd.label,
-                    13.0,
-                    theme.text,
-                );
+                paint_text_size(ui, [row_x + 44.0, row_y + 8.0], cmd.label, 13.0, theme.text);
                 ui.paint_text_styled(
                     [row_x + row_w - 8.0, row_y + 11.0],
                     cmd.description,
@@ -412,11 +401,7 @@ impl EditorPanel for CommandPalettePanel {
             1.0,
         );
         let mut fx = modal_x + pad;
-        for (chip, text) in [
-            ("↑↓", " Navigate"),
-            ("↵", " Select"),
-            ("esc", " Close"),
-        ] {
+        for (chip, text) in [("↑↓", " Navigate"), ("↵", " Select"), ("esc", " Close")] {
             let after = paint_kbd_chip(ui, [fx, footer_y + 14.0], chip, &theme);
             paint_text_size(
                 ui,

@@ -121,16 +121,31 @@ mod tests {
     #[test]
     fn test_map_mouse_button_standard() {
         assert_eq!(map_mouse_button(WinitMouseButton::Left), MouseButton::Left);
-        assert_eq!(map_mouse_button(WinitMouseButton::Right), MouseButton::Right);
-        assert_eq!(map_mouse_button(WinitMouseButton::Middle), MouseButton::Middle);
+        assert_eq!(
+            map_mouse_button(WinitMouseButton::Right),
+            MouseButton::Right
+        );
+        assert_eq!(
+            map_mouse_button(WinitMouseButton::Middle),
+            MouseButton::Middle
+        );
         assert_eq!(map_mouse_button(WinitMouseButton::Back), MouseButton::Back);
-        assert_eq!(map_mouse_button(WinitMouseButton::Forward), MouseButton::Forward);
+        assert_eq!(
+            map_mouse_button(WinitMouseButton::Forward),
+            MouseButton::Forward
+        );
     }
 
     #[test]
     fn test_map_mouse_button_other() {
-        assert_eq!(map_mouse_button(WinitMouseButton::Other(8)), MouseButton::Other(8));
-        assert_eq!(map_mouse_button(WinitMouseButton::Other(15)), MouseButton::Other(15));
+        assert_eq!(
+            map_mouse_button(WinitMouseButton::Other(8)),
+            MouseButton::Other(8)
+        );
+        assert_eq!(
+            map_mouse_button(WinitMouseButton::Other(15)),
+            MouseButton::Other(15)
+        );
     }
 
     #[test]

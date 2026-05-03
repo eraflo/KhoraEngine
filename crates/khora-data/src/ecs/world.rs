@@ -707,7 +707,10 @@ impl World {
             let all_pages_ptr = self.storage.pages.as_mut_ptr();
             let dest_page = &mut *all_pages_ptr.add(dest_page_id as usize);
             let src_page = &*all_pages_ptr.add(loc.page_id as usize);
-            assert_ne!(loc.page_id, dest_page_id, "remove_component: src/dest aliased");
+            assert_ne!(
+                loc.page_id, dest_page_id,
+                "remove_component: src/dest aliased"
+            );
 
             dest_row_index = dest_page.entities.len() as u32;
             let src_row = loc.row_index as usize;

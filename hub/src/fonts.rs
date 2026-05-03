@@ -41,8 +41,18 @@ pub fn build_definitions() -> egui::FontDefinitions {
         ("geist-mono-medium", "GeistMono-Medium.ttf"),
     ];
 
-    let prop_count = install_into(&mut defs, &candidates, proportional, egui::FontFamily::Proportional);
-    let mono_count = install_into(&mut defs, &candidates, monospace, egui::FontFamily::Monospace);
+    let prop_count = install_into(
+        &mut defs,
+        &candidates,
+        proportional,
+        egui::FontFamily::Proportional,
+    );
+    let mono_count = install_into(
+        &mut defs,
+        &candidates,
+        monospace,
+        egui::FontFamily::Monospace,
+    );
 
     if prop_count + mono_count == 0 {
         log::info!(
@@ -56,7 +66,8 @@ pub fn build_definitions() -> egui::FontDefinitions {
     } else {
         log::info!(
             "Hub fonts: loaded {} proportional + {} monospace face(s).",
-            prop_count, mono_count
+            prop_count,
+            mono_count
         );
     }
 
@@ -85,11 +96,7 @@ fn install_into(
                     .insert(0, key);
                 installed += 1;
             }
-            Err(e) => log::warn!(
-                "Hub fonts: failed to read {}: {}",
-                found.display(),
-                e
-            ),
+            Err(e) => log::warn!("Hub fonts: failed to read {}: {}", found.display(), e),
         }
     }
     installed
@@ -107,10 +114,10 @@ fn find_in_roots(roots: &[PathBuf], filename: &str) -> Option<PathBuf> {
 
 fn candidate_roots() -> Vec<PathBuf> {
     let mut out = Vec::new();
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
-            out.push(parent.join("assets/fonts"));
-        }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(parent) = exe.parent()
+    {
+        out.push(parent.join("assets/fonts"));
     }
     out.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/fonts"));
     out

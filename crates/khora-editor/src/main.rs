@@ -29,20 +29,22 @@ mod widgets;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use khora_sdk::editor_ui::viewport_texture::ViewportTextureHandle;
+use khora_sdk::khora_core::platform::KhoraWindow;
+use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
+use khora_sdk::khora_core::ui::{EditorOverlay, OverlayScreenDescriptor};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::*;
-use khora_sdk::WgpuRenderSystem;
-use khora_sdk::RenderSystem;
 use khora_sdk::run_winit;
+use khora_sdk::winit;
 use khora_sdk::winit_adapters::WinitWindowProvider;
+use khora_sdk::RenderSystem;
+use khora_sdk::WgpuRenderSystem;
 use khora_sdk::{AgentProvider, EngineApp, GameWorld, InputEvent, ServiceRegistry};
 use khora_sdk::{CommandHistory, DccService, PlayMode};
-use khora_sdk::{EditorState, EditorCamera, EditorLogCapture, LogEntry, EditorShell, GizmoMode, PanelLocation};
-use khora_sdk::editor_ui::viewport_texture::ViewportTextureHandle;
-use khora_sdk::khora_core::ui::{EditorOverlay, OverlayScreenDescriptor};
-use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
-use khora_sdk::khora_core::platform::KhoraWindow;
-use khora_sdk::winit;
+use khora_sdk::{
+    EditorCamera, EditorLogCapture, EditorShell, EditorState, GizmoMode, LogEntry, PanelLocation,
+};
 
 use chrome::{SpinePanel, StatusBarPanel, TitleBarPanel};
 use cmd_palette::CommandPalettePanel;
@@ -331,7 +333,10 @@ impl EngineApp for EditorApp {
 
     fn setup(&mut self, world: &mut GameWorld, services: &ServiceRegistry) {
         // Cache services.
-        if let Some(camera) = services.get::<std::sync::Arc<std::sync::Mutex<EditorCamera>>>().cloned() {
+        if let Some(camera) = services
+            .get::<std::sync::Arc<std::sync::Mutex<EditorCamera>>>()
+            .cloned()
+        {
             self.camera = camera;
         }
 
@@ -351,9 +356,7 @@ impl EngineApp for EditorApp {
             .cloned();
 
         // Cache the raw winit window so overlay calls can hand it back to egui.
-        self.raw_window = services
-            .get::<Arc<winit::window::Window>>()
-            .cloned();
+        self.raw_window = services.get::<Arc<winit::window::Window>>().cloned();
 
         let viewport_handle = services
             .get::<ViewportTextureHandle>()
@@ -470,13 +473,11 @@ impl EngineApp for EditorApp {
                 let project_name = project_json
                     .as_ref()
                     .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from));
-                let project_engine_version = project_json
-                    .as_ref()
-                    .and_then(|v| {
-                        v.get("engine_version")
-                            .and_then(|n| n.as_str())
-                            .map(String::from)
-                    });
+                let project_engine_version = project_json.as_ref().and_then(|v| {
+                    v.get("engine_version")
+                        .and_then(|n| n.as_str())
+                        .map(String::from)
+                });
 
                 let git_branch = util::read_git_branch(&path);
 
@@ -782,11 +783,13 @@ impl EngineApp for EditorApp {
         // the engine can ALSO process pointer events that land inside the
         // viewport rect (without the override, egui's CentralPanel swallows
         // every press/drag via `wants_pointer_input()`).
-        let consumed_by_egui = overlay
-            .handle_window_event((&**raw_window) as &dyn std::any::Any, event);
+        let consumed_by_egui =
+            overlay.handle_window_event((&**raw_window) as &dyn std::any::Any, event);
 
         let we = event.downcast_ref::<winit::event::WindowEvent>();
-        let Some(we) = we else { return consumed_by_egui };
+        let Some(we) = we else {
+            return consumed_by_egui;
+        };
         use winit::event::WindowEvent;
 
         // Track the cursor position so MouseInput events (which carry no
@@ -844,8 +847,12 @@ impl EngineApp for EditorApp {
             }
         }
 
-        let Some(overlay_arc) = self.overlay.as_ref() else { return };
-        let Some(raw_window) = self.raw_window.as_ref() else { return };
+        let Some(overlay_arc) = self.overlay.as_ref() else {
+            return;
+        };
+        let Some(raw_window) = self.raw_window.as_ref() else {
+            return;
+        };
 
         let (w_px, h_px) = window.inner_size();
         let screen = OverlayScreenDescriptor {
@@ -923,12 +930,11 @@ impl EngineApp for EditorApp {
         // (Editing mode forces every scene camera inactive). RenderFlow
         // appends the override to RenderWorld.views during its `project`
         // step on the next scheduler tick.
-        self.viewport_override.set(Some(
-            khora_sdk::khora_data::render::ExtractedView {
+        self.viewport_override
+            .set(Some(khora_sdk::khora_data::render::ExtractedView {
                 view_proj: view_info.view_projection_matrix(),
                 position: view_info.camera_position,
-            },
-        ));
+            }));
 
         let clear = khora_sdk::prelude::math::LinearRgba::new(0.15, 0.15, 0.18, 1.0);
         if let Err(e) = wgpu_rs.render_viewport(clear, &view_info) {
@@ -968,8 +974,12 @@ impl EngineApp for EditorApp {
 
         // Present the egui overlay last so the dock + panels paint over the
         // 3D scene encoded by the agents.
-        let Some(overlay_arc) = self.overlay.as_ref() else { return };
-        let Some(raw_window) = self.raw_window.as_ref() else { return };
+        let Some(overlay_arc) = self.overlay.as_ref() else {
+            return;
+        };
+        let Some(raw_window) = self.raw_window.as_ref() else {
+            return;
+        };
 
         let inner = (**raw_window).inner_size();
         let screen = OverlayScreenDescriptor {

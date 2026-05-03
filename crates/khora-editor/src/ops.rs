@@ -147,7 +147,9 @@ pub fn process_reparents(world: &mut GameWorld, state: &mut EditorState) {
         log::info!(
             "Reparented {:?} → {:?}",
             child,
-            new_parent.map(|p| format!("{:?}", p)).unwrap_or_else(|| "<root>".to_owned())
+            new_parent
+                .map(|p| format!("{:?}", p))
+                .unwrap_or_else(|| "<root>".to_owned())
         );
     }
 }
@@ -272,9 +274,7 @@ pub fn extract_inspected(world: &GameWorld, state: &mut EditorState) {
     let mut components_json = Vec::new();
     state.component_domain_registry.clear();
     for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
-        let domain = inner_world
-            .component_domain(reg.type_id)
-            .map(domain_tag);
+        let domain = inner_world.component_domain(reg.type_id).map(domain_tag);
         if let Some(tag) = domain {
             state
                 .component_domain_registry
@@ -324,10 +324,9 @@ pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
                     if reg.type_name == type_name {
                         match (reg.from_json)(inner, entity, &value) {
                             Ok(()) => applied = true,
-                            Err(e) => log::warn!(
-                                "Failed to apply JSON edit to {}: {}",
-                                type_name, e
-                            ),
+                            Err(e) => {
+                                log::warn!("Failed to apply JSON edit to {}: {}", type_name, e)
+                            }
                         }
                         break;
                     }
@@ -343,10 +342,7 @@ pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
                     if reg.type_name == type_name {
                         match (reg.remove)(inner, entity) {
                             Ok(()) => applied = true,
-                            Err(e) => log::warn!(
-                                "Failed to remove component {}: {}",
-                                type_name, e
-                            ),
+                            Err(e) => log::warn!("Failed to remove component {}: {}", type_name, e),
                         }
                         break;
                     }

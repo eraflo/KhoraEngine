@@ -23,8 +23,8 @@ use khora_core::agent::ExecutionPhase;
 use khora_core::platform::KhoraWindow;
 
 use crate::GameWorld;
-use crate::WindowConfig;
 use crate::InputEvent;
+use crate::WindowConfig;
 
 // ─────────────────────────────────────────────────────────────────────
 // WindowProvider — abstracts the platform window backend
@@ -162,21 +162,11 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync {
     /// Optional: called after the renderer's `begin_frame` and before the
     /// scheduler dispatches agents. Use to switch the renderer to an offscreen
     /// viewport target (e.g., `set_render_to_viewport(true)`).
-    fn before_agents(
-        &mut self,
-        _world: &mut GameWorld,
-        _services: &khora_core::ServiceRegistry,
-    ) {
-    }
+    fn before_agents(&mut self, _world: &mut GameWorld, _services: &khora_core::ServiceRegistry) {}
 
     /// Optional: called after agent execution and `submit_frame_graph`, but
     /// BEFORE the renderer's `end_frame`. Use to render gizmos to the offscreen
     /// viewport, switch back to the swapchain (`set_render_to_viewport(false)`),
     /// and present a UI overlay (`render_overlay`).
-    fn after_agents(
-        &mut self,
-        _world: &mut GameWorld,
-        _services: &khora_core::ServiceRegistry,
-    ) {
-    }
+    fn after_agents(&mut self, _world: &mut GameWorld, _services: &khora_core::ServiceRegistry) {}
 }

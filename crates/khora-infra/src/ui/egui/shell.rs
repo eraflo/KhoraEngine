@@ -47,18 +47,15 @@ use std::sync::{Arc, Mutex};
 
 /// Installs each [`NamedFont`] into `definitions`, registering it as the
 /// primary face for `family` (or as a fallback at the front of the list).
-fn install_named(
-    defs: &mut egui::FontDefinitions,
-    family: egui::FontFamily,
-    list: Vec<NamedFont>,
-) {
+fn install_named(defs: &mut egui::FontDefinitions, family: egui::FontFamily, list: Vec<NamedFont>) {
     for named in list.into_iter() {
         let key = named.name.clone();
         let bytes = match named.data {
             FontHandle::Static(s) => egui::FontData::from_static(s),
             FontHandle::Owned(v) => egui::FontData::from_owned(v),
         };
-        defs.font_data.insert(key.clone(), std::sync::Arc::new(bytes));
+        defs.font_data
+            .insert(key.clone(), std::sync::Arc::new(bytes));
         defs.families
             .entry(family.clone())
             .or_default()
@@ -270,6 +267,16 @@ impl EditorShell for EguiEditorShell {
         // Apply theme once (or when changed).
         if !self.theme_applied {
             apply_theme(&self.ctx, &self.theme);
+            // Snap pixels_per_point to the nearest 0.5 multiple. Fractional
+            // DPI scales (e.g. 1.25) cause Geist glyphs to render at sub-pixel
+            // positions and look soft. Snapping keeps integer scale on most
+            // monitors and a clean half-pixel offset on the rest.
+            let raw = self
+                .ctx
+                .input(|i| i.viewport().native_pixels_per_point)
+                .unwrap_or(1.0);
+            let snapped = ((raw * 2.0).round() / 2.0).max(1.0);
+            self.ctx.set_pixels_per_point(snapped);
             self.theme_applied = true;
         }
 
@@ -286,7 +293,11 @@ impl EditorShell for EguiEditorShell {
         let hide_right_panel = self
             .editor_state
             .as_ref()
-            .and_then(|s| s.lock().ok().map(|g| g.active_mode == EditorMode::ControlPlane))
+            .and_then(|s| {
+                s.lock()
+                    .ok()
+                    .map(|g| g.active_mode == EditorMode::ControlPlane)
+            })
             .unwrap_or(false);
 
         // Compute proportional defaults the FIRST frame we see a real

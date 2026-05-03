@@ -469,10 +469,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
             return;
         }
         use egui::epaint::{PathShape, PathStroke};
-        let pts: Vec<egui::Pos2> = points
-            .iter()
-            .map(|p| egui::pos2(p[0], p[1]))
-            .collect();
+        let pts: Vec<egui::Pos2> = points.iter().map(|p| egui::pos2(p[0], p[1])).collect();
         self.ui.painter().add(egui::Shape::Path(PathShape {
             points: pts,
             closed: true,
@@ -482,10 +479,8 @@ impl UiBuilder for EguiUiBuilder<'_> {
     }
 
     fn interact_rect(&mut self, id_salt: &str, rect: [f32; 4]) -> Interaction {
-        let r = egui::Rect::from_min_size(
-            egui::pos2(rect[0], rect[1]),
-            egui::vec2(rect[2], rect[3]),
-        );
+        let r =
+            egui::Rect::from_min_size(egui::pos2(rect[0], rect[1]), egui::vec2(rect[2], rect[3]));
         let id = self.ui.id().with(("khora_hot", id_salt));
         let response = self.ui.interact(r, id, egui::Sense::click_and_drag());
         let interaction = Interaction {
@@ -523,10 +518,8 @@ impl UiBuilder for EguiUiBuilder<'_> {
     }
 
     fn region_at(&mut self, rect: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
-        let r = egui::Rect::from_min_size(
-            egui::pos2(rect[0], rect[1]),
-            egui::vec2(rect[2], rect[3]),
-        );
+        let r =
+            egui::Rect::from_min_size(egui::pos2(rect[0], rect[1]), egui::vec2(rect[2], rect[3]));
         let vt = self.viewport_textures;
         let id_salt = ("khora_region", rect[0] as i32, rect[1] as i32);
         let mut child = self.ui.new_child(

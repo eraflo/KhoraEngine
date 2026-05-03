@@ -90,7 +90,9 @@ fn extract_lights(world: &World, render_world: &mut RenderWorld) {
 
         let position = global_transform.0.translation();
         let direction = match &light_comp.light_type {
-            LightType::Directional(dir_light) => global_transform.0.rotation() * dir_light.direction,
+            LightType::Directional(dir_light) => {
+                global_transform.0.rotation() * dir_light.direction
+            }
             LightType::Spot(spot_light) => global_transform.0.rotation() * spot_light.direction,
             LightType::Point(_) => Vec3::ZERO,
         };
@@ -121,6 +123,9 @@ fn extract_views(world: &World, render_world: &mut RenderWorld) {
         let proj_matrix = camera.projection_matrix();
         let view_proj = proj_matrix * view_matrix;
 
-        render_world.views.push(ExtractedView { view_proj, position });
+        render_world.views.push(ExtractedView {
+            view_proj,
+            position,
+        });
     }
 }

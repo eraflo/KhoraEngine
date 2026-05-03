@@ -118,7 +118,7 @@ impl Icon {
             Self::ArrowRight => "\u{e04d}",
 
             // 3D / scene
-            Self::Cube => "\u{e065}", // box
+            Self::Cube => "\u{e065}",  // box
             Self::Light => "\u{e1c1}", // lightbulb
             Self::Camera => "\u{e068}",
             Self::Folder => "\u{e0dc}",
@@ -171,7 +171,7 @@ impl Icon {
 
             // Status / log levels
             Self::Info => "\u{e0fe}",
-            Self::Warn => "\u{e192}", // triangle-alert
+            Self::Warn => "\u{e192}",  // triangle-alert
             Self::Error => "\u{e088}", // circle-x
 
             // Brand / accents

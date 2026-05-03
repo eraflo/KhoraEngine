@@ -11,7 +11,9 @@
 mod engine_manager;
 mod home;
 mod new_project;
+mod settings;
 
 pub use engine_manager::show_engine_manager;
 pub use home::show_home;
 pub use new_project::show_new_project;
+pub use settings::show_settings;

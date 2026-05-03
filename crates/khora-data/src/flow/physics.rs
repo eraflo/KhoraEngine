@@ -86,16 +86,17 @@ impl Flow for PhysicsFlow {
         //          Physics-domain components in a second pass (we cannot
         //          mutate while holding the query iterator).
         let mut to_detach: Vec<(EntityId, RigidBody)> = Vec::new();
-        for (entity, transform, rb) in
-            world.query::<(EntityId, &GlobalTransform, &RigidBody)>()
-        {
+        for (entity, transform, rb) in world.query::<(EntityId, &GlobalTransform, &RigidBody)>() {
             if (transform.0.translation() - anchor).length() > DETACH_RADIUS {
                 to_detach.push((entity, rb.clone()));
             }
         }
         for (entity, snapshot) in to_detach {
             self.stash.insert(entity, snapshot);
-            world.remove_component_domain::<RigidBody>(entity);
+            // Surgical single-component removal — keeps Transform /
+            // GlobalTransform / Name etc. intact. Was previously a domain
+            // wipe (data loss) before `World::remove_component` existed.
+            let _ = world.remove_component::<RigidBody>(entity);
         }
 
         // Pass 2 — reattach: any stashed entity that drifted back inside
@@ -115,7 +116,11 @@ impl Flow for PhysicsFlow {
             if let Some(rb) = self.stash.remove(&entity) {
                 let snapshot = rb.clone();
                 if let Err(e) = world.add_component(entity, rb) {
-                    log::warn!("PhysicsFlow: failed to reattach RigidBody to {:?}: {:?}", entity, e);
+                    log::warn!(
+                        "PhysicsFlow: failed to reattach RigidBody to {:?}: {:?}",
+                        entity,
+                        e
+                    );
                     // Re-stash so we don't lose the snapshot.
                     self.stash.insert(entity, snapshot);
                 }

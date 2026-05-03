@@ -7,12 +7,29 @@
 //     http://www.apache.org/licenses/LICENSE-2.0
 
 //! Reusable UI widgets for the Khora Hub.
+//!
+//! Visual language is intentionally aligned with the editor (`khora-editor`):
+//! diamond brand mark, brand pill in the title bar, slim tabs with primary-
+//! tinted active state, vertical gradients on headers, KBD chips for
+//! shortcuts, and a 24 px status bar at the bottom.
 
 use crate::theme::pal;
 use eframe::egui;
 
-/// Draws a 4-pointed compass/diamond star (Khora logo shape) using the painter.
-pub fn paint_khora_star(
+// ── Color helpers ───────────────────────────────────────────────────
+
+/// Returns `c` with its alpha multiplied. egui has its own `gamma_multiply` —
+/// this one is for clarity at the call site when we want a translucent tint.
+#[inline]
+pub fn tint(c: egui::Color32, alpha: f32) -> egui::Color32 {
+    let a = (alpha.clamp(0.0, 1.0) * 255.0) as u8;
+    egui::Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), a)
+}
+
+// ── Brand mark (diamond, mirrors `crates/khora-editor/src/widgets/brand.rs`) ──
+
+/// Paints a filled 4-point diamond (rotated square) — the Khora brand mark.
+pub fn paint_diamond_filled(
     painter: &egui::Painter,
     center: egui::Pos2,
     size: f32,
@@ -20,24 +37,85 @@ pub fn paint_khora_star(
 ) {
     use egui::Pos2;
     use egui::epaint::{PathShape, PathStroke};
-    let s = size;
-    let t = s * 0.28;
-    let points = vec![
-        Pos2::new(center.x, center.y - s),
-        Pos2::new(center.x + t, center.y - t),
-        Pos2::new(center.x + s, center.y),
-        Pos2::new(center.x + t, center.y + t),
-        Pos2::new(center.x, center.y + s),
-        Pos2::new(center.x - t, center.y + t),
-        Pos2::new(center.x - s, center.y),
-        Pos2::new(center.x - t, center.y - t),
+    let pts = vec![
+        Pos2::new(center.x, center.y - size),
+        Pos2::new(center.x + size, center.y),
+        Pos2::new(center.x, center.y + size),
+        Pos2::new(center.x - size, center.y),
     ];
     painter.add(egui::Shape::Path(PathShape {
-        points,
+        points: pts,
         closed: true,
         fill: color,
         stroke: PathStroke::NONE,
     }));
+}
+
+/// Paints the outline of the brand diamond (used as a glyph in disabled
+/// states and empty-state illustrations).
+pub fn paint_diamond_outline(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    size: f32,
+    color: egui::Color32,
+    thickness: f32,
+) {
+    let stroke = egui::Stroke::new(thickness, color);
+    let top = egui::pos2(center.x, center.y - size);
+    let right = egui::pos2(center.x + size, center.y);
+    let bottom = egui::pos2(center.x, center.y + size);
+    let left = egui::pos2(center.x - size, center.y);
+    painter.line_segment([top, right], stroke);
+    painter.line_segment([right, bottom], stroke);
+    painter.line_segment([bottom, left], stroke);
+    painter.line_segment([left, top], stroke);
+}
+
+/// Legacy alias: kept as a thin wrapper around `paint_diamond_filled` so any
+/// external call site that referenced the old 8-point compass star still
+/// compiles. New code should call `paint_diamond_filled` directly.
+#[inline]
+pub fn paint_khora_star(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    size: f32,
+    color: egui::Color32,
+) {
+    paint_diamond_filled(painter, center, size, color);
+}
+
+// ── Background fills ────────────────────────────────────────────────
+
+/// Approximates a vertical gradient by stacking horizontal strips. egui has
+/// no native gradient support — same trick the editor uses for panel headers.
+pub fn paint_vertical_gradient(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    top: egui::Color32,
+    bottom: egui::Color32,
+    steps: u32,
+) {
+    let steps = steps.max(2);
+    let strip_h = rect.height() / steps as f32;
+    for i in 0..steps {
+        let t = i as f32 / (steps - 1) as f32;
+        let r = lerp_u8(top.r(), bottom.r(), t);
+        let g = lerp_u8(top.g(), bottom.g(), t);
+        let b = lerp_u8(top.b(), bottom.b(), t);
+        let a = lerp_u8(top.a(), bottom.a(), t);
+        let color = egui::Color32::from_rgba_unmultiplied(r, g, b, a);
+        let y = rect.top() + strip_h * i as f32;
+        let strip = egui::Rect::from_min_size(
+            egui::pos2(rect.left(), y),
+            egui::vec2(rect.width(), strip_h.ceil() + 0.6),
+        );
+        painter.rect_filled(strip, 0.0, color);
+    }
+}
+
+#[inline]
+fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
+    (a as f32 * (1.0 - t) + b as f32 * t).round().clamp(0.0, 255.0) as u8
 }
 
 /// Draws a thin horizontal separator line.
@@ -47,7 +125,18 @@ pub fn paint_separator(ui: &mut egui::Ui, color: egui::Color32) {
     ui.painter().rect_filled(rect, 0.0, color);
 }
 
-/// A small colored badge/chip (e.g. version tag).
+/// Draws a vertical hairline at `x`, between `y` ±`half_height` from the
+/// strip's vertical center.
+pub fn paint_v_hairline(painter: &egui::Painter, x: f32, top: f32, bottom: f32, color: egui::Color32) {
+    painter.line_segment(
+        [egui::pos2(x, top), egui::pos2(x, bottom)],
+        egui::Stroke::new(1.0, color),
+    );
+}
+
+// ── Chips & dots ────────────────────────────────────────────────────
+
+/// A small colored badge (e.g. version tag).
 pub fn badge(ui: &mut egui::Ui, text: &str, bg: egui::Color32, fg: egui::Color32) {
     egui::Frame::none()
         .fill(bg)
@@ -59,15 +148,20 @@ pub fn badge(ui: &mut egui::Ui, text: &str, bg: egui::Color32, fg: egui::Color32
             bottom: 2.0,
         })
         .show(ui, |ui| {
-            ui.label(egui::RichText::new(text).size(10.5).color(fg));
+            ui.label(
+                egui::RichText::new(text)
+                    .size(11.0)
+                    .monospace()
+                    .color(fg),
+            );
         });
 }
 
 /// A status chip with icon-like coloring.
 pub fn status_chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
     egui::Frame::none()
-        .fill(color.gamma_multiply(0.15))
-        .stroke(egui::Stroke::new(1.0, color.gamma_multiply(0.4)))
+        .fill(tint(color, 0.15))
+        .stroke(egui::Stroke::new(1.0, tint(color, 0.4)))
         .rounding(egui::Rounding::same(4_f32))
         .inner_margin(egui::Margin {
             left: 8.0,
@@ -76,11 +170,42 @@ pub fn status_chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
             bottom: 4.0,
         })
         .show(ui, |ui| {
-            ui.label(egui::RichText::new(text).size(11.0).color(color));
+            // ● dot + label, mirroring the editor status bar.
+            ui.horizontal(|ui| {
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                ui.painter().circle_filled(rect.center(), 3.5, color);
+                ui.painter()
+                    .circle_filled(rect.center(), 5.5, tint(color, 0.18));
+                ui.label(egui::RichText::new(text).size(11.0).color(color));
+            });
         });
 }
 
-/// A section header label styled like Linear/Vercel section titles.
+/// A keyboard shortcut chip, e.g. ⌘ K. Mirrors the editor's `paint_kbd_chip`
+/// (small monospace + double-line bottom for "depth").
+pub fn kbd_chip(ui: &mut egui::Ui, label: &str) {
+    egui::Frame::none()
+        .fill(pal::SURFACE_ACTIVE)
+        .stroke(egui::Stroke::new(1.0, pal::BORDER))
+        .rounding(egui::Rounding::same(3_f32))
+        .inner_margin(egui::Margin {
+            left: 5.0,
+            right: 5.0,
+            top: 1.0,
+            bottom: 1.0,
+        })
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new(label)
+                    .monospace()
+                    .size(11.0)
+                    .color(pal::TEXT_DIM),
+            );
+        });
+}
+
+/// Section header label styled like the editor's panel headers.
 pub fn section_header(ui: &mut egui::Ui, text: &str) {
     ui.label(
         egui::RichText::new(text)
@@ -95,36 +220,91 @@ pub fn field_label(ui: &mut egui::Ui, text: &str) {
     ui.label(egui::RichText::new(text).size(12.0).color(pal::TEXT_DIM));
 }
 
-/// A sidebar nav button.
-pub fn sidebar_nav_btn(ui: &mut egui::Ui, label: &str, active: bool) {
+// ── Tabs & nav ──────────────────────────────────────────────────────
+
+/// Sidebar nav button — full-width row, primary-tinted bg when active.
+pub fn sidebar_nav_btn(ui: &mut egui::Ui, label: &str, active: bool) -> egui::Response {
     let fill = if active {
-        pal::PRIMARY_DIM
+        tint(pal::PRIMARY, 0.18)
     } else {
         egui::Color32::TRANSPARENT
     };
     let text_color = if active { pal::PRIMARY } else { pal::TEXT_DIM };
+    let stroke = if active {
+        egui::Stroke::new(1.0, tint(pal::PRIMARY, 0.35))
+    } else {
+        egui::Stroke::NONE
+    };
     ui.add_sized(
         [180.0, 30.0],
-        egui::Button::new(egui::RichText::new(label).size(12.5).color(text_color))
+        egui::Button::new(egui::RichText::new(label).size(12.0).color(text_color))
             .fill(fill)
-            .stroke(egui::Stroke::NONE),
-    );
+            .stroke(stroke),
+    )
 }
 
-/// A top-bar tab pill.
-pub fn tab_pill(ui: &mut egui::Ui, label: &str, active: bool) {
+/// Top-bar pill tab. Slim, with a primary-tinted background only when active.
+pub fn tab_pill(ui: &mut egui::Ui, label: &str, active: bool) -> egui::Response {
     let fill = if active {
-        pal::PRIMARY_DIM
+        tint(pal::PRIMARY, 0.16)
     } else {
         egui::Color32::TRANSPARENT
     };
-    let text_color = if active { pal::PRIMARY } else { pal::TEXT_DIM };
+    let text_color = if active { pal::TEXT } else { pal::TEXT_DIM };
     ui.add(
-        egui::Button::new(egui::RichText::new(label).size(12.5).color(text_color))
+        egui::Button::new(egui::RichText::new(label).size(12.0).color(text_color))
             .fill(fill)
-            .stroke(egui::Stroke::NONE),
-    );
+            .stroke(egui::Stroke::NONE)
+            .min_size(egui::vec2(0.0, 24.0)),
+    )
 }
+
+// ── Buttons ─────────────────────────────────────────────────────────
+
+/// Primary call-to-action button (filled primary silver, light text).
+pub fn primary_button(ui: &mut egui::Ui, label: &str, size: [f32; 2]) -> egui::Response {
+    ui.add_sized(
+        size,
+        egui::Button::new(
+            egui::RichText::new(label)
+                .size(12.0)
+                .strong()
+                .color(pal::BG),
+        )
+        .fill(pal::PRIMARY)
+        .stroke(egui::Stroke::NONE)
+        .rounding(egui::Rounding::same(5_f32)),
+    )
+}
+
+/// Destructive confirmation button (filled with `pal::ERROR`).
+pub fn danger_button(ui: &mut egui::Ui, label: &str, size: [f32; 2]) -> egui::Response {
+    ui.add_sized(
+        size,
+        egui::Button::new(
+            egui::RichText::new(label)
+                .size(12.0)
+                .strong()
+                .color(egui::Color32::WHITE),
+        )
+        .fill(pal::ERROR)
+        .stroke(egui::Stroke::NONE)
+        .rounding(egui::Rounding::same(5_f32)),
+    )
+}
+
+/// Subdued button used for secondary actions / cancels.
+pub fn ghost_button(ui: &mut egui::Ui, label: &str, size: [f32; 2]) -> egui::Response {
+    ui.add_sized(
+        size,
+        egui::Button::new(egui::RichText::new(label).size(12.0).color(pal::TEXT_DIM))
+            .fill(pal::SURFACE3)
+            .stroke(egui::Stroke::new(1.0, pal::BORDER))
+            .rounding(egui::Rounding::same(5_f32)),
+    )
+}
+
+// ── Time formatting (kept here for proximity with badge use) ────────
 
 /// Format a unix timestamp into a human-readable relative string.
 pub fn format_ts(ts: u64) -> String {

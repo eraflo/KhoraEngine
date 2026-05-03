@@ -305,10 +305,7 @@ impl ControlPlanePanel {
             .unwrap_or_else(|| "—".to_owned());
         let mult = dcc.map(|c| c.global_budget_multiplier).unwrap_or(1.0);
         // Sub-text on two compact lines so it doesn't run into the stats grid.
-        let sub_line1 = format!(
-            "khora-control · {} · budget×{:.2}",
-            mode_str, mult,
-        );
+        let sub_line1 = format!("khora-control · {} · budget×{:.2}", mode_str, mult,);
         let sub_line2 = format!(
             "{} agent{} · {:.0} fps · {:.2}/{:.2}ms",
             agent_count,
@@ -335,12 +332,11 @@ impl ControlPlanePanel {
         );
 
         // Compute brand block width (longest of the two lines + diamond gutter).
-        let brand_title_w = ui
-            .measure_text("Dynamic Context Core", 14.0, FontFamilyHint::Proportional)[0];
+        let brand_title_w =
+            ui.measure_text("Dynamic Context Core", 14.0, FontFamilyHint::Proportional)[0];
         let sub1_w = ui.measure_text(&sub_line1, 10.5, FontFamilyHint::Monospace)[0];
         let sub2_w = ui.measure_text(&sub_line2, 10.5, FontFamilyHint::Monospace)[0];
-        let brand_w =
-            40.0 + brand_title_w.max(sub1_w).max(sub2_w) + 24.0; // diamond + text + breathing
+        let brand_w = 40.0 + brand_title_w.max(sub1_w).max(sub2_w) + 24.0; // diamond + text + breathing
 
         // 5 stats cells (right) — all real values now.
         let stats_x = x + brand_w.max(220.0);
@@ -367,13 +363,21 @@ impl ControlPlanePanel {
                 "CPU",
                 format!("{:.0}%", cpu_pct),
                 snap.3.clamp(0.0, 1.0),
-                if cpu_pct > 70.0 { theme.warning } else { theme.accent_b },
+                if cpu_pct > 70.0 {
+                    theme.warning
+                } else {
+                    theme.accent_b
+                },
             ),
             (
                 "GPU",
                 format!("{:.0}%", gpu_pct),
                 snap.4.clamp(0.0, 1.0),
-                if gpu_pct > 70.0 { theme.warning } else { theme.success },
+                if gpu_pct > 70.0 {
+                    theme.warning
+                } else {
+                    theme.success
+                },
             ),
             (
                 "VRAM",
@@ -382,7 +386,11 @@ impl ControlPlanePanel {
                 } else {
                     "—".to_owned()
                 },
-                if snap.5 > 0.0 { (snap.5 / 12_288.0).clamp(0.0, 1.0) } else { 0.0 },
+                if snap.5 > 0.0 {
+                    (snap.5 / 12_288.0).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                },
                 theme.primary,
             ),
             (
@@ -487,10 +495,8 @@ impl ControlPlanePanel {
         theme: &EditorTheme,
     ) {
         let active = self.selected_idx == idx;
-        let interaction = ui.interact_rect(
-            &format!("cp-agent-{}", idx),
-            [x, y, w, AGENT_ROW_HEIGHT],
-        );
+        let interaction =
+            ui.interact_rect(&format!("cp-agent-{}", idx), [x, y, w, AGENT_ROW_HEIGHT]);
         if active {
             ui.paint_rect_filled(
                 [x, y],
@@ -518,12 +524,7 @@ impl ControlPlanePanel {
         }
 
         // Icon box
-        ui.paint_rect_filled(
-            [x + 8.0, y + 8.0],
-            [22.0, 22.0],
-            theme.surface_active,
-            4.0,
-        );
+        ui.paint_rect_filled([x + 8.0, y + 8.0], [22.0, 22.0], theme.surface_active, 4.0);
         paint_icon(ui, [x + 12.0, y + 12.0], Icon::Cpu, 14.0, theme.primary);
 
         // Top row: name + importance badge + status dot
@@ -631,8 +632,10 @@ impl ControlPlanePanel {
         let mut row_y = y + 46.0;
         for phase in ExecutionPhase::DEFAULT_ORDER {
             let phase_color = phase_color_for(*phase, theme);
-            let in_phase: Vec<&AgentSnapshot> =
-                agents.iter().filter(|a| a.default_phase == *phase).collect();
+            let in_phase: Vec<&AgentSnapshot> = agents
+                .iter()
+                .filter(|a| a.default_phase == *phase)
+                .collect();
 
             // Phase header
             ui.paint_circle_filled([x + 16.0, row_y + 8.0], 3.5, phase_color);
@@ -646,7 +649,11 @@ impl ControlPlanePanel {
             );
             ui.paint_text_styled(
                 [x + w - 14.0, row_y + 4.0],
-                &format!("{} agent{}", in_phase.len(), if in_phase.len() == 1 { "" } else { "s" }),
+                &format!(
+                    "{} agent{}",
+                    in_phase.len(),
+                    if in_phase.len() == 1 { "" } else { "s" }
+                ),
                 10.0,
                 theme.text_muted,
                 FontFamilyHint::Monospace,
@@ -695,7 +702,13 @@ impl ControlPlanePanel {
                 }
             }
 
-            paint_hairline_h(ui, x + 14.0, row_y + 2.0, w - 28.0, with_alpha(theme.separator, 0.30));
+            paint_hairline_h(
+                ui,
+                x + 14.0,
+                row_y + 2.0,
+                w - 28.0,
+                with_alpha(theme.separator, 0.30),
+            );
             row_y += 6.0;
             if row_y > y + h - 24.0 {
                 break;
@@ -781,7 +794,8 @@ impl ControlPlanePanel {
             ("healthy", theme.success)
         };
         let pill_x = x + 58.0 + tag_w + 8.0;
-        let pill_label_w = ui.measure_text(status_label, 10.5, FontFamilyHint::Proportional)[0] + 22.0;
+        let pill_label_w =
+            ui.measure_text(status_label, 10.5, FontFamilyHint::Proportional)[0] + 22.0;
         ui.paint_rect_filled(
             [pill_x, y + 68.0],
             [pill_label_w, 16.0],
@@ -789,23 +803,75 @@ impl ControlPlanePanel {
             999.0,
         );
         paint_status_dot(ui, [pill_x + 8.0, y + 76.0], status_color);
-        paint_text_size(ui, [pill_x + 14.0, y + 70.0], status_label, 10.5, status_color);
+        paint_text_size(
+            ui,
+            [pill_x + 14.0, y + 70.0],
+            status_label,
+            10.5,
+            status_color,
+        );
 
         // Section divider
-        paint_hairline_h(ui, x + 8.0, y + 100.0, w - 16.0, with_alpha(theme.separator, 0.55));
+        paint_hairline_h(
+            ui,
+            x + 8.0,
+            y + 100.0,
+            w - 16.0,
+            with_alpha(theme.separator, 0.55),
+        );
 
         // Cards — each shows real fields from AgentStatus + ExecutionTiming.
         let mut cy = y + 108.0;
-        cy = paint_card_box(ui, x + 8.0, cy, w - 16.0, "Execution Timing", Icon::Settings, theme);
-        kv(ui, x + 18.0, cy + 6.0, w - 36.0, "Default phase", &format!("{}", agent.default_phase), theme);
+        cy = paint_card_box(
+            ui,
+            x + 8.0,
+            cy,
+            w - 16.0,
+            "Execution Timing",
+            Icon::Settings,
+            theme,
+        );
+        kv(
+            ui,
+            x + 18.0,
+            cy + 6.0,
+            w - 36.0,
+            "Default phase",
+            &format!("{}", agent.default_phase),
+            theme,
+        );
         cy += 22.0;
-        kv(ui, x + 18.0, cy + 6.0, w - 36.0, "Importance", agent.importance_letter_label(), theme);
+        kv(
+            ui,
+            x + 18.0,
+            cy + 6.0,
+            w - 36.0,
+            "Importance",
+            agent.importance_letter_label(),
+            theme,
+        );
         cy += 22.0;
-        kv(ui, x + 18.0, cy + 6.0, w - 36.0, "Priority", &format!("{:.2}", agent.priority), theme);
+        kv(
+            ui,
+            x + 18.0,
+            cy + 6.0,
+            w - 36.0,
+            "Priority",
+            &format!("{:.2}", agent.priority),
+            theme,
+        );
         cy += 28.0;
 
         cy = paint_card_box(ui, x + 8.0, cy, w - 16.0, "Health", Icon::Zap, theme);
-        kv(ui, x + 18.0, cy + 6.0, w - 36.0, "Score", &format!("{:.2}", agent.status.health_score), theme);
+        kv(
+            ui,
+            x + 18.0,
+            cy + 6.0,
+            w - 36.0,
+            "Score",
+            &format!("{:.2}", agent.status.health_score),
+            theme,
+        );
         cy += 22.0;
         kv(
             ui,
@@ -834,7 +900,15 @@ impl ControlPlanePanel {
         );
         cy += 18.0;
 
-        cy = paint_card_box(ui, x + 8.0, cy, w - 16.0, "Active Strategy", Icon::Branch, theme);
+        cy = paint_card_box(
+            ui,
+            x + 8.0,
+            cy,
+            w - 16.0,
+            "Active Strategy",
+            Icon::Branch,
+            theme,
+        );
         ui.paint_rect_filled(
             [x + 18.0, cy],
             [w - 36.0, 22.0],
@@ -849,7 +923,13 @@ impl ControlPlanePanel {
             1.0,
         );
         paint_status_dot(ui, [x + 24.0, cy + 11.0], theme.success);
-        paint_text_size(ui, [x + 36.0, cy + 5.0], agent.strategy_label(), 11.5, theme.text);
+        paint_text_size(
+            ui,
+            [x + 36.0, cy + 5.0],
+            agent.strategy_label(),
+            11.5,
+            theme.text,
+        );
         cy += 30.0;
 
         if !agent.status.message.is_empty() {
@@ -904,7 +984,12 @@ fn paint_card_box(
     theme: &EditorTheme,
 ) -> f32 {
     let header_h = 26.0;
-    ui.paint_rect_filled([x, y], [w, header_h], theme.surface_elevated, theme.radius_md);
+    ui.paint_rect_filled(
+        [x, y],
+        [w, header_h],
+        theme.surface_elevated,
+        theme.radius_md,
+    );
     paint_icon(ui, [x + 8.0, y + 7.0], icon, 12.0, theme.primary_dim);
     paint_text_size(ui, [x + 26.0, y + 7.0], title, 12.0, theme.text);
     y + header_h + 4.0
@@ -912,15 +997,7 @@ fn paint_card_box(
 
 /// Render a key/value row with the key left-aligned and the value
 /// right-aligned within `[x, x+w]`.
-fn kv(
-    ui: &mut dyn UiBuilder,
-    x: f32,
-    y: f32,
-    w: f32,
-    key: &str,
-    value: &str,
-    theme: &EditorTheme,
-) {
+fn kv(ui: &mut dyn UiBuilder, x: f32, y: f32, w: f32, key: &str, value: &str, theme: &EditorTheme) {
     paint_text_size(ui, [x, y], key, 11.0, theme.text_dim);
     ui.paint_text_styled(
         [x + w - 4.0, y],

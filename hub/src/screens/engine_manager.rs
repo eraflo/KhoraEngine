@@ -18,6 +18,23 @@ use eframe::egui;
 use std::path::PathBuf;
 
 pub fn show_engine_manager(app: &mut HubApp, ctx: &egui::Context) {
+    // Auto-fetch on first visit so the Releases section is populated without
+    // requiring a manual click.
+    if !app.engine_manager.has_fetched_once
+        && !app.engine_manager.fetching
+        && app.engine_manager.fetch_rx.is_none()
+    {
+        app.engine_manager.has_fetched_once = true;
+        app.engine_manager.fetching = true;
+        app.engine_manager.fetch_error = None;
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.engine_manager.fetch_rx = Some(rx);
+        std::thread::spawn(move || {
+            let result = github::fetch_releases().map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        });
+    }
+
     egui::CentralPanel::default()
         .frame(egui::Frame::none().inner_margin(egui::Margin {
             left: 32.0,
@@ -89,22 +106,19 @@ pub fn show_engine_manager(app: &mut HubApp, ctx: &egui::Context) {
                         field_label(ui, "Repository Path");
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            let edit = egui::TextEdit::singleline(&mut app.engine_manager.local_repo)
-                                .hint_text("e.g. C:/Dev/KhoraEngine")
-                                .desired_width(380.0);
-                            ui.add(edit);
-                            ui.add_space(4.0);
-                            let browse = ui.add(
-                                egui::Button::new(
-                                    egui::RichText::new("Browse").size(12.0).color(pal::TEXT),
-                                )
-                                .fill(pal::SURFACE3)
-                                .stroke(egui::Stroke::new(1.0, pal::BORDER_LIGHT)),
+                            ui.add(
+                                egui::TextEdit::singleline(&mut app.engine_manager.local_repo)
+                                    .hint_text("e.g. C:/Dev/KhoraEngine")
+                                    .desired_width(380.0)
+                                    .font(egui::TextStyle::Monospace),
                             );
-                            if browse.clicked()
-                                && let Some(path) = rfd::FileDialog::new().pick_folder() {
-                                    app.engine_manager.local_repo = path.to_string_lossy().to_string();
-                                }
+                            ui.add_space(4.0);
+                            if ghost_button(ui, "Browse", [80.0, 28.0]).clicked()
+                                && let Some(path) = rfd::FileDialog::new().pick_folder()
+                            {
+                                app.engine_manager.local_repo =
+                                    path.to_string_lossy().to_string();
+                            }
                         });
                         ui.add_space(8.0);
 
@@ -132,26 +146,14 @@ pub fn show_engine_manager(app: &mut HubApp, ctx: &egui::Context) {
                         }
 
                         ui.add_space(12.0);
-                        let save_btn = ui.add(
-                            egui::Button::new(
-                                egui::RichText::new("Save Path")
-                                    .size(12.0)
-                                    .color(egui::Color32::WHITE),
-                            )
-                            .fill(pal::PRIMARY)
-                            .stroke(egui::Stroke::NONE),
-                        );
-                        if save_btn.clicked() {
+                        if primary_button(ui, "Save Path", [120.0, 30.0]).clicked() {
                             if app.engine_manager.local_repo.is_empty() {
                                 app.config.local_engine_repo = None;
                             } else {
                                 app.config.local_engine_repo = Some(app.engine_manager.local_repo.clone());
                             }
                             let _ = app.config.save();
-                            app.banner = Some(crate::Banner {
-                                message: "Local engine path saved.".to_owned(),
-                                is_error: false,
-                            });
+                            app.banner = Some(crate::Banner::info("Local engine path saved."));
                         }
                     });
 
@@ -197,20 +199,38 @@ pub fn show_engine_manager(app: &mut HubApp, ctx: &egui::Context) {
                             .show(ui, |ui| {
                                 ui.set_min_width(520.0);
                                 ui.horizontal(|ui| {
-                                    badge(ui, &engine.version, pal::PRIMARY_DIM, pal::PRIMARY);
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(16.0, 22.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    paint_diamond_filled(
+                                        ui.painter(),
+                                        rect.center(),
+                                        5.0,
+                                        pal::PRIMARY_DIM,
+                                    );
+                                    ui.add_space(2.0);
+                                    badge(
+                                        ui,
+                                        &engine.version,
+                                        tint(pal::PRIMARY, 0.18),
+                                        pal::PRIMARY,
+                                    );
                                     ui.add_space(8.0);
                                     ui.label(
                                         egui::RichText::new(&engine.source)
                                             .size(11.0)
-                                            .color(pal::TEXT_DIM),
+                                            .color(pal::TEXT_DIM)
+                                            .monospace(),
                                     );
                                     ui.with_layout(
                                         egui::Layout::right_to_left(egui::Align::Center),
                                         |ui| {
                                             ui.label(
                                                 egui::RichText::new(&engine.editor_binary)
-                                                    .size(10.0)
-                                                    .color(pal::TEXT_MUTED),
+                                                    .size(11.0)
+                                                    .color(pal::TEXT_MUTED)
+                                                    .monospace(),
                                             );
                                         },
                                     );
@@ -228,30 +248,26 @@ pub fn show_engine_manager(app: &mut HubApp, ctx: &egui::Context) {
 
                 ui.horizontal(|ui| {
                     let fetch_label = if app.engine_manager.fetching {
-                        "Fetching..."
+                        "Fetching…"
                     } else {
                         "Check for Updates"
                     };
-                    let fetch_btn = ui.add_enabled(
-                        !app.engine_manager.fetching,
-                        egui::Button::new(
-                            egui::RichText::new(fetch_label)
-                                .size(12.0)
-                                .color(egui::Color32::WHITE),
-                        )
-                        .fill(pal::ACCENT)
-                        .stroke(egui::Stroke::NONE),
-                    );
-                    if fetch_btn.clicked() {
-                        app.engine_manager.fetching = true;
-                        app.engine_manager.fetch_error = None;
-                        let (tx, rx) = std::sync::mpsc::channel();
-                        app.engine_manager.fetch_rx = Some(rx);
-                        std::thread::spawn(move || {
-                            let result = github::fetch_releases()
-                                .map_err(|e| e.to_string());
-                            let _ = tx.send(result);
-                        });
+                    ui.add_enabled_ui(!app.engine_manager.fetching, |ui| {
+                        if primary_button(ui, fetch_label, [180.0, 30.0]).clicked() {
+                            app.engine_manager.fetching = true;
+                            app.engine_manager.fetch_error = None;
+                            let (tx, rx) = std::sync::mpsc::channel();
+                            app.engine_manager.fetch_rx = Some(rx);
+                            std::thread::spawn(move || {
+                                let result =
+                                    github::fetch_releases().map_err(|e| e.to_string());
+                                let _ = tx.send(result);
+                            });
+                        }
+                    });
+                    if app.engine_manager.fetching {
+                        ui.add_space(8.0);
+                        ui.add(egui::Spinner::new().size(14.0));
                     }
                 });
 
@@ -298,10 +314,21 @@ pub fn show_engine_manager(app: &mut HubApp, ctx: &egui::Context) {
                             .show(ui, |ui| {
                                 ui.set_min_width(520.0);
                                 ui.horizontal(|ui| {
+                                    let (rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(16.0, 22.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    paint_diamond_filled(
+                                        ui.painter(),
+                                        rect.center(),
+                                        5.0,
+                                        pal::PRIMARY,
+                                    );
+                                    ui.add_space(2.0);
                                     badge(
                                         ui,
                                         &release.tag_name,
-                                        pal::PRIMARY_DIM,
+                                        tint(pal::PRIMARY, 0.18),
                                         pal::PRIMARY,
                                     );
                                     ui.add_space(8.0);
@@ -320,43 +347,37 @@ pub fn show_engine_manager(app: &mut HubApp, ctx: &egui::Context) {
                                                 .engines
                                                 .iter()
                                                 .any(|e| e.version == release.tag_name);
-                                            let is_downloading = app.engine_manager.download_progress.is_some();
+                                            let is_downloading =
+                                                app.engine_manager.download_progress.is_some();
 
                                             if already_installed {
-                                                ui.label(
-                                                    egui::RichText::new("Installed")
-                                                        .size(11.0)
-                                                        .color(pal::SUCCESS),
-                                                );
+                                                status_chip(ui, "Installed", pal::SUCCESS);
                                             } else if release.editor_asset().is_none() {
                                                 ui.label(
-                                                    egui::RichText::new("No binary for this platform")
-                                                        .size(11.0)
-                                                        .color(pal::TEXT_MUTED),
+                                                    egui::RichText::new(
+                                                        "No binary for this platform",
+                                                    )
+                                                    .size(11.0)
+                                                    .color(pal::TEXT_MUTED),
                                                 );
                                             } else {
                                                 ui.add_enabled_ui(!is_downloading, |ui| {
-                                                    if ui
-                                                        .add(
-                                                            egui::Button::new(
-                                                                egui::RichText::new("Download")
-                                                                    .size(11.0)
-                                                                    .color(egui::Color32::WHITE),
-                                                            )
-                                                            .fill(pal::PRIMARY)
-                                                            .stroke(egui::Stroke::NONE),
-                                                        )
-                                                        .clicked()
+                                                    if primary_button(
+                                                        ui,
+                                                        "Download",
+                                                        [110.0, 26.0],
+                                                    )
+                                                    .clicked()
                                                         && let Some(asset) =
                                                             release.editor_asset()
-                                                        {
-                                                            app.engine_manager.download_rx = Some(
-                                                                download::start_download(
-                                                                    asset,
-                                                                    &release.tag_name,
-                                                                ),
-                                                            );
-                                                        }
+                                                    {
+                                                        app.engine_manager.download_rx = Some(
+                                                            download::start_download(
+                                                                asset,
+                                                                &release.tag_name,
+                                                            ),
+                                                        );
+                                                    }
                                                 });
                                             }
                                         },

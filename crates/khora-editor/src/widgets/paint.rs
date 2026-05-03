@@ -66,13 +66,7 @@ pub fn paint_hairline_h(ui: &mut dyn UiBuilder, x: f32, y: f32, w: f32, color: [
 /// Paints a single Lucide icon glyph at the given position. The icon is
 /// rendered with the bundled `"icons"` font family — falls back to a single
 /// dot if that family isn't installed.
-pub fn paint_icon(
-    ui: &mut dyn UiBuilder,
-    pos: [f32; 2],
-    icon: Icon,
-    size: f32,
-    color: [f32; 4],
-) {
+pub fn paint_icon(ui: &mut dyn UiBuilder, pos: [f32; 2], icon: Icon, size: f32, color: [f32; 4]) {
     ui.paint_text_styled(
         pos,
         icon.glyph(),

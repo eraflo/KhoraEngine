@@ -43,8 +43,7 @@ pub fn read_git_branch(project_root: &std::path::Path) -> Option<String> {
     let head = std::fs::read_to_string(head_path).ok()?;
     let line = head.lines().next()?;
     // Format: `ref: refs/heads/<branch>` or a raw SHA when detached.
-    line.strip_prefix("ref: refs/heads/")
-        .map(|s| s.to_owned())
+    line.strip_prefix("ref: refs/heads/").map(|s| s.to_owned())
 }
 
 /// Deserialize a Transform from 40 bytes.

@@ -26,7 +26,6 @@
 //! and deterministic execution. It contains minimal branching logic and is designed to
 //! be driven by a higher-level `RenderAgent`.
 
-use khora_data::render::RenderWorld;
 use khora_core::{
     asset::Material,
     renderer::{
@@ -44,6 +43,7 @@ use khora_core::{
     },
 };
 use khora_data::assets::Assets;
+use khora_data::render::RenderWorld;
 use std::sync::RwLock;
 
 /// A lane that implements a simple, unlit forward rendering strategy.
@@ -105,11 +105,11 @@ impl khora_core::lane::Lane for SimpleUnlitLane {
     }
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
-        let render_world =
-            match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>() {
-                Some(slot) => slot.get(),
-                None => return 1.0,
-            };
+        let render_world = match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>()
+        {
+            Some(slot) => slot.get(),
+            None => return 1.0,
+        };
         let gpu_meshes = match ctx.get::<std::sync::Arc<
             std::sync::RwLock<
                 khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,

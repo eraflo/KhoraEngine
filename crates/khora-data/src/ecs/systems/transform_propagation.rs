@@ -82,10 +82,7 @@ pub fn transform_propagation_system(world: &mut World) {
 /// Wrapper to match the `DataSystemRegistration::run` signature
 /// `fn(&mut World, &ServiceRegistry)`. Transform propagation needs no
 /// services, so the second arg is unused.
-fn transform_propagation_entry(
-    world: &mut World,
-    _services: &khora_core::ServiceRegistry,
-) {
+fn transform_propagation_entry(world: &mut World, _services: &khora_core::ServiceRegistry) {
     transform_propagation_system(world);
 }
 
@@ -102,8 +99,8 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::math::{Mat4, Vec3, EPSILON};
     use crate::ecs::{Children, GlobalTransform, Parent, SemanticDomain, Transform, World};
+    use khora_core::math::{Mat4, Vec3, EPSILON};
 
     fn assert_matrix_approx_eq(a: Mat4, b: Mat4) {
         for i in 0..4 {

@@ -69,12 +69,7 @@ impl EditorPanel for StatusBarPanel {
         let rect = ui.panel_rect();
         let [x, y, w, h] = rect;
         ui.paint_rect_filled([x, y], [w, h], theme.surface, 0.0);
-        ui.paint_line(
-            [x, y],
-            [x + w, y],
-            with_alpha(theme.separator, 0.55),
-            1.0,
-        );
+        ui.paint_line([x, y], [x + w, y], with_alpha(theme.separator, 0.55), 1.0);
 
         let cy = y + h * 0.5;
         let text_y = y + (h - 11.5) * 0.5;
@@ -170,7 +165,13 @@ impl EditorPanel for StatusBarPanel {
                 TextAlign::Right,
             );
             rx -= vram_w + 4.0;
-            paint_icon(ui, [rx - 14.0, text_y - 1.0], Icon::Image, 12.0, label_color);
+            paint_icon(
+                ui,
+                [rx - 14.0, text_y - 1.0],
+                Icon::Image,
+                12.0,
+                label_color,
+            );
             rx -= 26.0;
             rx = vsep_right(ui, rx, y, h, theme);
         }
@@ -187,7 +188,13 @@ impl EditorPanel for StatusBarPanel {
             TextAlign::Right,
         );
         rx -= mem_w + 4.0;
-        paint_icon(ui, [rx - 14.0, text_y - 1.0], Icon::Memory, 12.0, label_color);
+        paint_icon(
+            ui,
+            [rx - 14.0, text_y - 1.0],
+            Icon::Memory,
+            12.0,
+            label_color,
+        );
         rx -= 26.0;
         rx = vsep_right(ui, rx, y, h, theme);
 

@@ -103,9 +103,7 @@ pub struct WinitAppRunner<W: WindowProvider, A: EngineApp> {
     engine: EngineCore<A>,
     renderer: Option<Arc<Mutex<Box<dyn RenderSystem>>>>,
     bootstrap: Option<
-        Box<
-            dyn FnOnce(&dyn KhoraWindow, &mut khora_core::ServiceRegistry, &dyn Any) + Send,
-        >,
+        Box<dyn FnOnce(&dyn KhoraWindow, &mut khora_core::ServiceRegistry, &dyn Any) + Send>,
     >,
     tokio_runtime: Option<tokio::runtime::Runtime>,
     /// Per-frame context, recreated each frame.
@@ -116,8 +114,8 @@ impl<W: WindowProvider, A: EngineApp> WinitAppRunner<W, A> {
     /// Creates a new winit app runner with the given bootstrap closure.
     pub fn new(
         bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::ServiceRegistry, &dyn Any)
-        + Send
-        + 'static,
+            + Send
+            + 'static,
     ) -> Self {
         Self {
             window: None,
@@ -219,9 +217,7 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
         // (e.g., overlay `begin_frame`) can retrieve `Arc<winit::window::Window>`
         // from services and pass it to the overlay each frame.
         let raw_window_arc = window.clone_raw_window_arc();
-        if let Ok(winit_arc) =
-            raw_window_arc.downcast::<winit::window::Window>()
-        {
+        if let Ok(winit_arc) = raw_window_arc.downcast::<winit::window::Window>() {
             services.insert(winit_arc);
         }
 
@@ -242,7 +238,11 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
         self.engine.bootstrap(app, services);
 
         // Cache renderer for resize handling (reads from the Arc stored by bootstrap).
-        if let Some(rs) = self.engine.services().get::<Arc<Mutex<Box<dyn RenderSystem>>>>() {
+        if let Some(rs) = self
+            .engine
+            .services()
+            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+        {
             self.renderer = Some(rs.clone());
         }
 
@@ -264,22 +264,16 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
         }
     }
 
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _id: WindowId,
-        event: WindowEvent,
-    ) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         // Give the app a chance to intercept raw events (e.g., forward to an
         // egui overlay). If consumed, do not forward to game input nor act on
         // the event further (close / resize / redraw still proceed below).
-        let consumed_by_app = if let (Some(app), Some(window)) =
-            (self.engine.app_mut(), &self.window)
-        {
-            app.intercept_window_event(&event as &dyn Any, window.as_khora_window())
-        } else {
-            false
-        };
+        let consumed_by_app =
+            if let (Some(app), Some(window)) = (self.engine.app_mut(), &self.window) {
+                app.intercept_window_event(&event as &dyn Any, window.as_khora_window())
+            } else {
+                false
+            };
 
         match event {
             WindowEvent::CloseRequested => {
@@ -351,8 +345,8 @@ impl<W: WindowProvider, A: EngineApp> Drop for WinitAppRunner<W, A> {
 /// ```
 pub fn run_winit<W: WindowProvider, A: EngineApp>(
     bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::ServiceRegistry, &dyn Any)
-    + Send
-    + 'static,
+        + Send
+        + 'static,
 ) -> Result<()> {
     log::info!("Khora Engine: Starting...");
 

@@ -397,5 +397,4 @@ impl GameWorld {
     pub fn inner_world_mut(&mut self) -> &mut World {
         &mut self.world
     }
-
 }

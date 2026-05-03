@@ -69,9 +69,7 @@ macro_rules! register_flow {
                     .lock()
                     .expect("Flow mutex poisoned");
                 let sel = <$flow_ty as $crate::flow::Flow>::select(&mut flow, world, services);
-                <$flow_ty as $crate::flow::Flow>::adapt(
-                    &mut flow, world, &sel, budget, services,
-                );
+                <$flow_ty as $crate::flow::Flow>::adapt(&mut flow, world, &sel, budget, services);
                 let view = <$flow_ty as $crate::flow::Flow>::project(&flow, world, &sel, services);
                 bus.publish(view);
             }

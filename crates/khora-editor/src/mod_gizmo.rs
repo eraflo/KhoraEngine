@@ -20,8 +20,8 @@ use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
 use khora_sdk::khora_core::renderer::api::scene::mesh::Mesh;
 use khora_sdk::khora_core::renderer::light::LightType;
 use khora_sdk::prelude::ecs::{AudioSource, Camera, Light, Transform};
-use khora_sdk::HandleComponent;
 use khora_sdk::GameWorld;
+use khora_sdk::HandleComponent;
 
 /// Collects gizmo line instances for all selected entities.
 pub fn collect_gizmo_lines(
@@ -54,7 +54,10 @@ pub fn collect_gizmo_lines(
             }
         } else if world.get_component::<AudioSource>(entity_id).is_some() {
             GizmoKind::Audio
-        } else if world.get_component::<HandleComponent<Mesh>>(entity_id).is_some() {
+        } else if world
+            .get_component::<HandleComponent<Mesh>>(entity_id)
+            .is_some()
+        {
             GizmoKind::Mesh
         } else {
             GizmoKind::Empty

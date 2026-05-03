@@ -16,9 +16,7 @@
 //! headers. Everything below paints to absolute screen-space coordinates and
 //! tracks its own click hit-test via [`UiBuilder::interact_rect`].
 
-use khora_sdk::editor_ui::{
-    EditorTheme, FontFamilyHint, Icon, Interaction, TextAlign, UiBuilder,
-};
+use khora_sdk::editor_ui::{EditorTheme, FontFamilyHint, Icon, Interaction, TextAlign, UiBuilder};
 // `Icon` is consumed inside `paint_search_pill` via `Icon::Search`.
 // `Interaction` is the return type of `paint_search_pill` and `panel_tab` (for
 // the click + width tuple). Kept explicit to make the public surface readable.
@@ -36,19 +34,8 @@ pub fn paint_kbd_chip(
     let measured = ui.measure_text(label, 10.5, FontFamilyHint::Monospace)[0];
     let w = measured.max(14.0) + 10.0;
     let h = 16.0;
-    ui.paint_rect_filled(
-        origin,
-        [w, h],
-        theme.surface_active,
-        3.0,
-    );
-    ui.paint_rect_stroke(
-        origin,
-        [w, h],
-        theme.border,
-        3.0,
-        1.0,
-    );
+    ui.paint_rect_filled(origin, [w, h], theme.surface_active, 3.0);
+    ui.paint_rect_stroke(origin, [w, h], theme.border, 3.0, 1.0);
     // Bottom shadow line for the "depth"
     ui.paint_line(
         [origin[0] + 1.0, origin[1] + h - 0.5],
@@ -104,7 +91,10 @@ pub fn paint_search_pill(
 
     paint_text_size(
         ui,
-        [origin[0] + 30.0, origin[1] + (height - theme.font_size_body) * 0.5],
+        [
+            origin[0] + 30.0,
+            origin[1] + (height - theme.font_size_body) * 0.5,
+        ],
         placeholder,
         theme.font_size_body - 0.5,
         theme.text_muted,
@@ -134,8 +124,11 @@ pub fn panel_tab(
     active: bool,
     theme: &EditorTheme,
 ) -> (bool, f32) {
-    let label_w =
-        ui.measure_text(label, theme.font_size_body - 1.0, FontFamilyHint::Proportional)[0];
+    let label_w = ui.measure_text(
+        label,
+        theme.font_size_body - 1.0,
+        FontFamilyHint::Proportional,
+    )[0];
     let badge_w = badge
         .map(|b| ui.measure_text(b, 9.5, FontFamilyHint::Monospace)[0] + 10.0)
         .unwrap_or(0.0);
@@ -143,7 +136,11 @@ pub fn panel_tab(
     let w = pad_x * 2.0 + label_w + if badge.is_some() { badge_w + 6.0 } else { 0.0 };
     let h = 22.0;
 
-    let bg = if active { theme.surface_active } else { theme.surface };
+    let bg = if active {
+        theme.surface_active
+    } else {
+        theme.surface
+    };
     if active {
         ui.paint_rect_filled(origin, [w, h], bg, 4.0);
     }
@@ -151,7 +148,10 @@ pub fn panel_tab(
     let text_color = if active { theme.text } else { theme.text_dim };
     paint_text_size(
         ui,
-        [origin[0] + pad_x, origin[1] + (h - theme.font_size_body) * 0.5],
+        [
+            origin[0] + pad_x,
+            origin[1] + (h - theme.font_size_body) * 0.5,
+        ],
         label,
         theme.font_size_body - 1.0,
         text_color,
@@ -170,7 +170,11 @@ pub fn panel_tab(
             },
             999.0,
         );
-        let badge_text_color = if active { theme.primary } else { theme.text_dim };
+        let badge_text_color = if active {
+            theme.primary
+        } else {
+            theme.text_dim
+        };
         ui.paint_text_styled(
             [badge_x + (badge_w - 4.0) * 0.5, badge_y + 1.0],
             badge,

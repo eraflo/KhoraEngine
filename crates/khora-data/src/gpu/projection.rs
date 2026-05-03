@@ -99,7 +99,13 @@ impl ProjectionRegistry {
 
                 // Schedule the ECS component addition.
                 if let Some(handle) = self.cache.0.read().unwrap().get(&uuid) {
-                    pending.insert(entity_id, HandleComponent { handle: handle.clone(), uuid });
+                    pending.insert(
+                        entity_id,
+                        HandleComponent {
+                            handle: handle.clone(),
+                            uuid,
+                        },
+                    );
                 }
             }
         }

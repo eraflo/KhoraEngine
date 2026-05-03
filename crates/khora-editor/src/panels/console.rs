@@ -67,19 +67,8 @@ fn filter_chip(
     let h = 22.0;
 
     if active {
-        ui.paint_rect_filled(
-            origin,
-            [w, h],
-            theme.surface_active,
-            999.0,
-        );
-        ui.paint_rect_stroke(
-            origin,
-            [w, h],
-            with_alpha(theme.separator, 0.6),
-            999.0,
-            1.0,
-        );
+        ui.paint_rect_filled(origin, [w, h], theme.surface_active, 999.0);
+        ui.paint_rect_stroke(origin, [w, h], with_alpha(theme.separator, 0.6), 999.0, 1.0);
     }
     paint_status_dot(ui, [origin[0] + 10.0, origin[1] + h * 0.5], color);
     paint_text_size(
@@ -126,7 +115,10 @@ impl EditorPanel for ConsolePanel {
         let count_total = entries.len();
         let count_info = entries.iter().filter(|e| e.level == LogLevel::Info).count();
         let count_warn = entries.iter().filter(|e| e.level == LogLevel::Warn).count();
-        let count_err = entries.iter().filter(|e| e.level == LogLevel::Error).count();
+        let count_err = entries
+            .iter()
+            .filter(|e| e.level == LogLevel::Error)
+            .count();
 
         let _ = panel_tab(
             ui,
@@ -142,17 +134,50 @@ impl EditorPanel for ConsolePanel {
         let chip_y = py + HEADER_HEIGHT + 4.0;
         let mut cx = px + 8.0;
         let chip_specs: [(&str, usize, [f32; 4], bool, &str); 4] = [
-            ("Errors", count_err, theme.error, self.show_error, "c-chip-err"),
-            ("Warnings", count_warn, theme.warning, self.show_warn, "c-chip-warn"),
-            ("Info", count_info, theme.accent_b, self.show_info, "c-chip-info"),
-            ("Debug", 0, theme.text_muted, self.show_debug, "c-chip-debug"),
+            (
+                "Errors",
+                count_err,
+                theme.error,
+                self.show_error,
+                "c-chip-err",
+            ),
+            (
+                "Warnings",
+                count_warn,
+                theme.warning,
+                self.show_warn,
+                "c-chip-warn",
+            ),
+            (
+                "Info",
+                count_info,
+                theme.accent_b,
+                self.show_info,
+                "c-chip-info",
+            ),
+            (
+                "Debug",
+                0,
+                theme.text_muted,
+                self.show_debug,
+                "c-chip-debug",
+            ),
         ];
         let mut new_show_err = self.show_error;
         let mut new_show_warn = self.show_warn;
         let mut new_show_info = self.show_info;
         let mut new_show_debug = self.show_debug;
         for (i, (label, count, color, active, salt)) in chip_specs.iter().enumerate() {
-            let (clicked, w) = filter_chip(ui, [cx, chip_y], label, *count, *color, *active, &theme, salt);
+            let (clicked, w) = filter_chip(
+                ui,
+                [cx, chip_y],
+                label,
+                *count,
+                *color,
+                *active,
+                &theme,
+                salt,
+            );
             if clicked {
                 match i {
                     0 => new_show_err = !new_show_err,

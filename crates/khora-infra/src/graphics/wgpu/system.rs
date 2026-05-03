@@ -36,7 +36,9 @@ use khora_core::renderer::api::resource::{
 use khora_core::renderer::api::scene::RenderObject;
 use khora_core::renderer::api::util::ShaderStageFlags;
 use khora_core::renderer::api::util::{IndexFormat, SampleCount, TextureFormat};
-use khora_core::renderer::traits::{FrameTargets, GpuProfiler, GraphicsBackendSelector, RenderSystem};
+use khora_core::renderer::traits::{
+    FrameTargets, GpuProfiler, GraphicsBackendSelector, RenderSystem,
+};
 use khora_core::renderer::{GraphicsDevice, RenderError};
 use khora_core::telemetry::ResourceMonitor;
 use khora_core::Stopwatch;

@@ -338,10 +338,7 @@ pub enum PropertyEdit {
     },
     /// Remove a component from `entity`. The editor looks up the
     /// registration by `type_name` and calls `remove` to commit.
-    RemoveComponent {
-        entity: EntityId,
-        type_name: String,
-    },
+    RemoveComponent { entity: EntityId, type_name: String },
 }
 
 // ════════════════════════════════════════════════════════

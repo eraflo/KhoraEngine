@@ -91,8 +91,8 @@ pub fn apply_hub_visuals(ctx: &egui::Context) {
         color: egui::Color32::from_black_alpha(110),
     };
 
-    // ── Widget radii ─────────────────────────────────
-    let cr = egui::Rounding::same(6_f32);
+    // ── Widget radii (matches editor `radius_md = 6.0`) ──
+    let cr = egui::Rounding::same(5_f32);
 
     visuals.widgets.noninteractive.bg_fill = pal::SURFACE;
     visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, pal::TEXT_DIM);
@@ -124,13 +124,20 @@ pub fn apply_hub_visuals(ctx: &egui::Context) {
 
     ctx.set_visuals(visuals);
 
-    // ── Spacing & sizing ─────────────────────────────
+    // ── Spacing & sizing (tracks editor `pad_row = 8`, `pad_card = 14`) ──
     let mut style = (*ctx.style()).clone();
-    style.spacing.item_spacing = egui::vec2(6.0, 5.0);
-    style.spacing.button_padding = egui::vec2(10.0, 5.0);
+    style.spacing.item_spacing = egui::vec2(6.0, 6.0);
+    style.spacing.button_padding = egui::vec2(10.0, 6.0);
     style.spacing.indent = 14.0;
     style.spacing.scroll.bar_width = 8.0;
     style.spacing.window_margin = egui::Margin::same(8.0);
     style.spacing.menu_margin = egui::Margin::symmetric(8.0, 6.0);
+
+    // Force every text style to an integer size — fractional sizes (e.g.
+    // 12.5 px) sample glyphs at non-pixel-aligned positions on most DPI
+    // scales and look soft / "smudged" on Geist.
+    for (_, font) in style.text_styles.iter_mut() {
+        font.size = font.size.round().max(12.0);
+    }
     ctx.set_style(style);
 }

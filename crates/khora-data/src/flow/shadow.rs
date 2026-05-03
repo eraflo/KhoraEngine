@@ -93,11 +93,15 @@ impl Flow for ShadowFlow {
                 LightType::Point(_) => Vec3::ZERO,
             };
 
-            let view_proj = compute_shadow_view_proj(&light.light_type, position, direction, camera);
+            let view_proj =
+                compute_shadow_view_proj(&light.light_type, position, direction, camera);
             matrices.insert(light_index, view_proj);
         }
 
-        ShadowView { light_count, matrices }
+        ShadowView {
+            light_count,
+            matrices,
+        }
     }
 }
 
@@ -119,7 +123,8 @@ fn compute_shadow_view_proj(
             } else {
                 Vec3::Y
             };
-            let view = Mat4::look_at_rh(position, position + direction, up).unwrap_or(Mat4::IDENTITY);
+            let view =
+                Mat4::look_at_rh(position, position + direction, up).unwrap_or(Mat4::IDENTITY);
             let proj = Mat4::perspective_rh_zo(sl.outer_cone_angle * 2.0, 1.0, 0.1, sl.range);
             proj * view
         }
@@ -157,8 +162,7 @@ fn directional_shadow_view_proj(direction: Vec3, camera: &ExtractedView) -> Mat4
     }
     center = center / 8.0;
 
-    let light_view =
-        Mat4::look_at_rh(center, center + light_dir, up).unwrap_or(Mat4::IDENTITY);
+    let light_view = Mat4::look_at_rh(center, center + light_dir, up).unwrap_or(Mat4::IDENTITY);
 
     // 3. Frustum AABB in light space.
     let mut min = Vec3::new(f32::MAX, f32::MAX, f32::MAX);

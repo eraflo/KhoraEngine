@@ -30,9 +30,7 @@
 //! macro itself (emit `enum_variants_for(field_path)` per field whose type
 //! is an enum). For now, the registry is the smallest honest fix.
 
-use khora_sdk::khora_core::renderer::light::{
-    DirectionalLight, LightType, PointLight, SpotLight,
-};
+use khora_sdk::khora_core::renderer::light::{DirectionalLight, LightType, PointLight, SpotLight};
 use serde_json::Value;
 use std::sync::OnceLock;
 

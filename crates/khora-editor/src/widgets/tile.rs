@@ -96,19 +96,9 @@ pub fn paint_asset_tile(
     let interaction = ui.interact_rect(id_salt, outer);
 
     if selected {
-        ui.paint_rect_filled(
-            origin,
-            [w, h],
-            with_alpha(theme.primary, 0.18),
-            6.0,
-        );
+        ui.paint_rect_filled(origin, [w, h], with_alpha(theme.primary, 0.18), 6.0);
     } else if interaction.hovered {
-        ui.paint_rect_filled(
-            origin,
-            [w, h],
-            with_alpha(theme.surface_elevated, 0.4),
-            6.0,
-        );
+        ui.paint_rect_filled(origin, [w, h], with_alpha(theme.surface_elevated, 0.4), 6.0);
     }
 
     // Thumbnail
@@ -126,13 +116,7 @@ pub fn paint_asset_tile(
         1.0,
     );
     if selected {
-        ui.paint_rect_stroke(
-            [thumb_x, thumb_y],
-            [tw, th],
-            theme.primary,
-            4.0,
-            1.5,
-        );
+        ui.paint_rect_stroke([thumb_x, thumb_y], [tw, th], theme.primary, 4.0, 1.5);
     }
 
     // Centered icon

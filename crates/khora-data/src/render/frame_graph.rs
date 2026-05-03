@@ -95,9 +95,7 @@ pub struct FrameGraph {
 impl FrameGraph {
     /// Creates an empty frame graph.
     pub fn new() -> Self {
-        Self {
-            passes: Vec::new(),
-        }
+        Self { passes: Vec::new() }
     }
 
     /// Records a pass: descriptor + the command buffer the agent already produced.

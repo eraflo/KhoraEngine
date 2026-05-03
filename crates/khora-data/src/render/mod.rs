@@ -70,7 +70,11 @@ pub fn extract_active_camera_view(world: &World) -> Option<ViewInfo> {
         let view_matrix = world_matrix.inverse().unwrap_or(Mat4::IDENTITY);
         let projection_matrix = camera.projection_matrix();
 
-        return Some(ViewInfo::new(view_matrix, projection_matrix, camera_position));
+        return Some(ViewInfo::new(
+            view_matrix,
+            projection_matrix,
+            camera_position,
+        ));
     }
     None
 }
@@ -92,7 +96,12 @@ pub fn primary_view(world: &World, services: &ServiceRegistry) -> Option<Extract
         let rotation = global_transform.0.rotation();
         let view_matrix = Mat4::from_quat(rotation.inverse()) * Mat4::from_translation(-position);
         let view_proj = camera.projection_matrix() * view_matrix;
-        return Some(ExtractedView { view_proj, position });
+        return Some(ExtractedView {
+            view_proj,
+            position,
+        });
     }
-    services.get::<EditorViewportOverride>().and_then(|o| o.get())
+    services
+        .get::<EditorViewportOverride>()
+        .and_then(|o| o.get())
 }

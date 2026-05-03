@@ -41,8 +41,7 @@ use khora_core::EngineContext;
 use khora_data::assets::Assets;
 use khora_data::ecs::World;
 use khora_data::render::{
-    extract_active_camera_view, PassDescriptor, RenderWorld, ResourceId,
-    SharedFrameGraph,
+    extract_active_camera_view, PassDescriptor, RenderWorld, ResourceId, SharedFrameGraph,
 };
 use khora_data::GpuCache;
 use khora_lanes::render_lane::{ForwardPlusLane, LitForwardLane, SimpleUnlitLane};
@@ -251,9 +250,10 @@ impl Agent for RenderAgent {
             return;
         };
         let depth_target = fctx.get::<DepthTarget>().map(|a| *a);
-        let clear_color = fctx.get::<ClearColor>().map(|a| *a).unwrap_or_else(|| {
-            ClearColor(khora_core::math::LinearRgba::new(0.1, 0.1, 0.15, 1.0))
-        });
+        let clear_color = fctx
+            .get::<ClearColor>()
+            .map(|a| *a)
+            .unwrap_or_else(|| ClearColor(khora_core::math::LinearRgba::new(0.1, 0.1, 0.15, 1.0)));
         let shadow_atlas = fctx.get::<ShadowAtlasView>().map(|a| *a);
         let shadow_sampler = fctx.get::<ShadowComparisonSampler>().map(|a| *a);
 

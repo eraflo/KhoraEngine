@@ -222,19 +222,14 @@ impl EditorPanel for AssetBrowserPanel {
             let count = if *kind == AssetTileKind::Unknown {
                 self.flat.len()
             } else {
-                self.flat
-                    .iter()
-                    .filter(|a| a.asset_type == *kind)
-                    .count()
+                self.flat.iter().filter(|a| a.asset_type == *kind).count()
             };
             let active = self.selected_filter == Some(*kind)
                 || (self.selected_filter.is_none() && *kind == AssetTileKind::Unknown);
             let row_x = px + 4.0;
             let row_w = sidebar_w - 8.0;
-            let interaction = ui.interact_rect(
-                &format!("ab-side-{}", label),
-                [row_x, row_y, row_w, row_h],
-            );
+            let interaction =
+                ui.interact_rect(&format!("ab-side-{}", label), [row_x, row_y, row_w, row_h]);
             if active {
                 ui.paint_rect_filled(
                     [row_x, row_y],
@@ -255,7 +250,11 @@ impl EditorPanel for AssetBrowserPanel {
                 [row_x + 8.0, row_y + 7.0],
                 *icon,
                 13.0,
-                if active { theme.primary } else { theme.text_dim },
+                if active {
+                    theme.primary
+                } else {
+                    theme.text_dim
+                },
             );
             paint_text_size(
                 ui,
@@ -353,9 +352,7 @@ impl EditorPanel for AssetBrowserPanel {
                 Some(k) => a.asset_type == k,
                 None => true,
             })
-            .filter(|(_, a)| {
-                filter_text.is_empty() || a.name.to_lowercase().contains(&filter_text)
-            })
+            .filter(|(_, a)| filter_text.is_empty() || a.name.to_lowercase().contains(&filter_text))
             .collect();
 
         let tile_h = TILE_SIZE + 22.0;
@@ -385,8 +382,7 @@ impl EditorPanel for AssetBrowserPanel {
             if let Some(asset) = self.flat.get(i) {
                 if asset.asset_type == AssetTileKind::Scene {
                     if let Ok(mut state) = self.state.lock() {
-                        state.pending_scene_load =
-                            Some(asset.path.to_string_lossy().to_string());
+                        state.pending_scene_load = Some(asset.path.to_string_lossy().to_string());
                     }
                 }
             }

@@ -44,11 +44,11 @@ use std::collections::HashMap;
 /// the `(order_hint, name)` ordering — execution still happens, just not in
 /// DAG order. Validating cycles at registration time is a future improvement.
 pub fn run_data_systems(world: &mut World, services: &ServiceRegistry, phase: TickPhase) {
-    let mut systems: Vec<&'static DataSystemRegistration> = inventory::iter
-        ::<DataSystemRegistration>
-        .into_iter()
-        .filter(|s| s.phase == phase)
-        .collect();
+    let mut systems: Vec<&'static DataSystemRegistration> =
+        inventory::iter::<DataSystemRegistration>
+            .into_iter()
+            .filter(|s| s.phase == phase)
+            .collect();
 
     if systems.is_empty() {
         return;
@@ -71,7 +71,11 @@ fn sort_systems(systems: &mut Vec<&'static DataSystemRegistration>) {
     // Lift `(order_hint, name)` as the deterministic baseline. Kahn's
     // ready queue is a FIFO, so this baseline ordering carries through to
     // the topological output as the tie-breaker.
-    systems.sort_by(|a, b| a.order_hint.cmp(&b.order_hint).then_with(|| a.name.cmp(b.name)));
+    systems.sort_by(|a, b| {
+        a.order_hint
+            .cmp(&b.order_hint)
+            .then_with(|| a.name.cmp(b.name))
+    });
 
     let by_name: HashMap<&'static str, &'static DataSystemRegistration> =
         systems.iter().map(|s| (s.name, *s)).collect();
@@ -165,12 +169,20 @@ mod tests {
         // Hard guarantee: c must come after a (declared `runs_after: ["test_a"]`).
         let pos_a = log.iter().position(|n| *n == "a").unwrap();
         let pos_c = log.iter().position(|n| *n == "c").unwrap();
-        assert!(pos_a < pos_c, "topo order violated: a should run before c (got {:?})", *log);
+        assert!(
+            pos_a < pos_c,
+            "topo order violated: a should run before c (got {:?})",
+            *log
+        );
 
         // Soft guarantee: among nodes ready at the same time, lower order_hint
         // wins as a tie-breaker. a (hint=0) and b (hint=10) are both ready
         // initially; a must come before b.
         let pos_b = log.iter().position(|n| *n == "b").unwrap();
-        assert!(pos_a < pos_b, "tie-breaker violated: a should run before b (got {:?})", *log);
+        assert!(
+            pos_a < pos_b,
+            "tie-breaker violated: a should run before b (got {:?})",
+            *log
+        );
     }
 }

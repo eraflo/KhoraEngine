@@ -44,8 +44,8 @@
 //! - Configurable tile size and max lights per tile
 //! - Runtime-adjustable configuration via `ForwardPlusTileConfig`
 
-use khora_data::render::RenderWorld;
 use crate::render_lane::ShaderComplexity;
+use khora_data::render::RenderWorld;
 
 use khora_core::renderer::api::{
     command::BindGroupLayoutId,
@@ -293,11 +293,11 @@ impl khora_core::lane::Lane for ForwardPlusLane {
     }
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
-        let render_world =
-            match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>() {
-                Some(slot) => slot.get(),
-                None => return 1.0,
-            };
+        let render_world = match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>()
+        {
+            Some(slot) => slot.get(),
+            None => return 1.0,
+        };
         let gpu_meshes = match ctx.get::<std::sync::Arc<
             std::sync::RwLock<
                 khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,

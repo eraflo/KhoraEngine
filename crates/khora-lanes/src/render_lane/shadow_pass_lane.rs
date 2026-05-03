@@ -14,7 +14,6 @@
 
 //! Shadow pass lane implementation - handles depth rendering for shadows.
 
-use khora_data::render::RenderWorld;
 use khora_core::renderer::{
     api::{
         command::{
@@ -30,6 +29,7 @@ use khora_core::renderer::{
     GraphicsDevice,
 };
 use khora_data::assets::Assets;
+use khora_data::render::RenderWorld;
 use std::sync::RwLock;
 
 /// A rendering lane dedicated to producing shadow maps.
@@ -92,11 +92,11 @@ impl khora_core::lane::Lane for ShadowPassLane {
     }
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
-        let render_world =
-            match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>() {
-                Some(slot) => slot.get(),
-                None => return 1.0,
-            };
+        let render_world = match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>()
+        {
+            Some(slot) => slot.get(),
+            None => return 1.0,
+        };
         let gpu_meshes = match ctx.get::<std::sync::Arc<
             std::sync::RwLock<
                 khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
@@ -172,9 +172,7 @@ impl khora_core::lane::Lane for ShadowPassLane {
         // View in the LaneBus. Lit render lanes (lit_forward, forward_plus)
         // read this `ShadowEntries` map from the deck and look up shadow
         // data per light index when building their lighting uniforms.
-        if let Some(deck_slot) =
-            ctx.get::<Slot<khora_core::lane::OutputDeck>>()
-        {
+        if let Some(deck_slot) = ctx.get::<Slot<khora_core::lane::OutputDeck>>() {
             let deck = deck_slot.get();
             let entries = deck.slot::<khora_data::render::ShadowEntries>();
             for (i, (matrix, atlas_index)) in self.get_shadow_results().iter() {
