@@ -647,8 +647,7 @@ impl HubApp {
         // Reserve the pill area inline.
         let total_w = 220.0;
         let height = 26.0;
-        let (rect, _) =
-            ui.allocate_exact_size(egui::vec2(total_w, height), egui::Sense::hover());
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(total_w, height), egui::Sense::hover());
 
         // Pill background.
         ui.painter().rect_filled(
@@ -719,7 +718,8 @@ impl HubApp {
                 x += 14.0;
 
                 // Ready dot + label.
-                ui.painter().circle_filled(egui::pos2(x, cy), 3.5, pal::SUCCESS);
+                ui.painter()
+                    .circle_filled(egui::pos2(x, cy), 3.5, pal::SUCCESS);
                 ui.painter()
                     .circle_filled(egui::pos2(x, cy), 5.5, tint(pal::SUCCESS, 0.18));
                 x += 12.0;
@@ -797,9 +797,7 @@ impl HubApp {
                     AuthState::Connected { login, .. } => {
                         (format!("GitHub @{login}"), pal::SUCCESS)
                     }
-                    AuthState::Connecting { .. } => {
-                        ("GitHub: connecting".to_owned(), pal::WARNING)
-                    }
+                    AuthState::Connecting { .. } => ("GitHub: connecting".to_owned(), pal::WARNING),
                     AuthState::Disconnected => ("GitHub: offline".to_owned(), pal::TEXT_MUTED),
                 };
                 ui.painter().text(

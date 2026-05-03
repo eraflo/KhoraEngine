@@ -115,7 +115,9 @@ pub fn paint_vertical_gradient(
 
 #[inline]
 fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
-    (a as f32 * (1.0 - t) + b as f32 * t).round().clamp(0.0, 255.0) as u8
+    (a as f32 * (1.0 - t) + b as f32 * t)
+        .round()
+        .clamp(0.0, 255.0) as u8
 }
 
 /// Draws a thin horizontal separator line.
@@ -127,7 +129,13 @@ pub fn paint_separator(ui: &mut egui::Ui, color: egui::Color32) {
 
 /// Draws a vertical hairline at `x`, between `y` ±`half_height` from the
 /// strip's vertical center.
-pub fn paint_v_hairline(painter: &egui::Painter, x: f32, top: f32, bottom: f32, color: egui::Color32) {
+pub fn paint_v_hairline(
+    painter: &egui::Painter,
+    x: f32,
+    top: f32,
+    bottom: f32,
+    color: egui::Color32,
+) {
     painter.line_segment(
         [egui::pos2(x, top), egui::pos2(x, bottom)],
         egui::Stroke::new(1.0, color),
@@ -148,12 +156,7 @@ pub fn badge(ui: &mut egui::Ui, text: &str, bg: egui::Color32, fg: egui::Color32
             bottom: 2.0,
         })
         .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(text)
-                    .size(11.0)
-                    .monospace()
-                    .color(fg),
-            );
+            ui.label(egui::RichText::new(text).size(11.0).monospace().color(fg));
         });
 }
 
@@ -172,8 +175,7 @@ pub fn status_chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
         .show(ui, |ui| {
             // ● dot + label, mirroring the editor status bar.
             ui.horizontal(|ui| {
-                let (rect, _) =
-                    ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                 ui.painter().circle_filled(rect.center(), 3.5, color);
                 ui.painter()
                     .circle_filled(rect.center(), 5.5, tint(color, 0.18));

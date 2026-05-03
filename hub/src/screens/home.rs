@@ -98,12 +98,8 @@ fn show_sidebar(app: &mut HubApp, ctx: &egui::Context) {
                     if sidebar_nav_btn(ui, "Projects", app.screen == Screen::Home).clicked() {
                         app.screen = Screen::Home;
                     }
-                    if sidebar_nav_btn(
-                        ui,
-                        "Engine Manager",
-                        app.screen == Screen::EngineManager,
-                    )
-                    .clicked()
+                    if sidebar_nav_btn(ui, "Engine Manager", app.screen == Screen::EngineManager)
+                        .clicked()
                     {
                         app.screen = Screen::EngineManager;
                     }
@@ -145,7 +141,11 @@ fn show_main(app: &mut HubApp, ctx: &egui::Context) {
         // Banner — slim, with side accent stripe (mirrors editor logger lines).
         if let Some(banner) = app.banner.as_ref() {
             let mut dismiss_banner = false;
-            let fg = if banner.is_error { pal::ERROR } else { pal::SUCCESS };
+            let fg = if banner.is_error {
+                pal::ERROR
+            } else {
+                pal::SUCCESS
+            };
             egui::Frame::none()
                 .fill(tint(fg, 0.12))
                 .stroke(egui::Stroke::new(1.0, tint(fg, 0.45)))
@@ -161,7 +161,8 @@ fn show_main(app: &mut HubApp, ctx: &egui::Context) {
                         let (dot, _) =
                             ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                         ui.painter().circle_filled(dot.center(), 3.5, fg);
-                        ui.painter().circle_filled(dot.center(), 5.5, tint(fg, 0.18));
+                        ui.painter()
+                            .circle_filled(dot.center(), 5.5, tint(fg, 0.18));
                         ui.label(egui::RichText::new(&banner.message).size(12.0).color(fg));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
@@ -311,28 +312,16 @@ fn show_main(app: &mut HubApp, ctx: &egui::Context) {
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             // Left accent stripe (3 px) — full card height.
-                            let (stripe, _) = ui.allocate_exact_size(
-                                egui::vec2(3.0, 56.0),
-                                egui::Sense::hover(),
-                            );
-                            ui.painter().rect_filled(
-                                stripe,
-                                egui::Rounding::same(2.0),
-                                accent,
-                            );
+                            let (stripe, _) =
+                                ui.allocate_exact_size(egui::vec2(3.0, 56.0), egui::Sense::hover());
+                            ui.painter()
+                                .rect_filled(stripe, egui::Rounding::same(2.0), accent);
                             ui.add_space(14.0);
 
                             // Diamond mark, vertically centered against the row.
-                            let (icon_rect, _) = ui.allocate_exact_size(
-                                egui::vec2(22.0, 56.0),
-                                egui::Sense::hover(),
-                            );
-                            paint_diamond_filled(
-                                ui.painter(),
-                                icon_rect.center(),
-                                8.0,
-                                accent,
-                            );
+                            let (icon_rect, _) = ui
+                                .allocate_exact_size(egui::vec2(22.0, 56.0), egui::Sense::hover());
+                            paint_diamond_filled(ui.painter(), icon_rect.center(), 8.0, accent);
                             ui.add_space(10.0);
 
                             ui.vertical(|ui| {
