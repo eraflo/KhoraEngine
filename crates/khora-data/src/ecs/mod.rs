@@ -38,6 +38,8 @@ mod query_plan;
 mod registry;
 mod serialization;
 mod storage;
+pub mod system;
+pub mod systems;
 mod world;
 
 pub use bitset::DomainBitset;
@@ -50,6 +52,7 @@ pub use page::*;
 pub use query::*;
 pub use query_plan::{QueryMode, QueryPlan};
 pub use registry::*;
+pub use system::{DataSystemRegistration, TickPhase};
 pub use world::*;
 
 #[cfg(test)]

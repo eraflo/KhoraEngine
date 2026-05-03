@@ -2,7 +2,6 @@
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
-// You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
@@ -13,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the abstraction for resolving external resources for complex asset formats like GLTF.
+//! External-resource resolution for complex asset formats like GLTF.
 
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
-/// A trait for resolving external resources (like buffers or images) referenced by a URI
-/// within an asset file.
+/// Resolves external resources (buffers, images) referenced by a URI within
+/// an asset file.
 pub trait GltfResourceResolver: Send + Sync {
     /// Resolves an external buffer URI to its binary data.
     fn resolve_buffer(&self, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>>;
@@ -28,8 +27,7 @@ pub trait GltfResourceResolver: Send + Sync {
     fn resolve_image(&self, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>>;
 }
 
-/// A default implementation of `GltfResourceResolver` that resolves resources
-/// from the local filesystem relative to a given base path.
+/// Resolves resources from the local filesystem relative to a base path.
 pub struct FileSystemResolver {
     base_path: PathBuf,
 }

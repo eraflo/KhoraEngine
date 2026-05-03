@@ -11,10 +11,24 @@ khora-telemetry = { path = "../khora-telemetry" }
 
 log = "0.4"
 anyhow = "1.0"
+thiserror = "2.0.18"
 serde = { version = "1.0", features = ["derive"] }
 bincode = { version = "2.0.1", features = ["serde"] }
 ron = "0.12.0"
 ahash = "0.8"
+base64 = "0.22.1"
+bytemuck = { version = "1.16", features = ["derive"] }
+
+# Image handling
+image = "0.25.9"
+
+# Mesh handling
+tobj = "4.0"
+gltf = { version = "1.0", features = ["import"] }
+
+# Audio
+hound = "3.5"
+symphonia = { version = "0.5", features = ["all-formats", "all-codecs"] }
 
 [dev-dependencies]
 tempfile = "3.25.0"

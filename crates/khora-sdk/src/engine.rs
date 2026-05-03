@@ -20,11 +20,12 @@
 //! The engine owns: DCC, scheduler, telemetry, service registry, frame loop.
 //! The app owns: window, renderer, agents, phases, game logic.
 
-use khora_control::{DccConfig, DccService, EngineMode};
+use khora_control::{substrate, DccConfig, DccService, EngineMode};
 use khora_core::lane::{ClearColor, ColorTarget, DepthTarget};
 use khora_core::renderer::traits::RenderSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::ServiceRegistry;
+use khora_data::ecs::TickPhase;
 use khora_data::render::{submit_frame_graph, FrameGraph, SharedFrameGraph};
 use khora_telemetry::TelemetryService;
 use std::collections::VecDeque;
@@ -142,15 +143,12 @@ impl<A: EngineApp> EngineCore<A> {
         services.insert(frame_graph);
 
         // ── Scene-extraction data containers ─────────────────────────────────
-        // RenderWorldStore: shared Arc<RwLock<RenderWorld>>, populated each
-        // frame via `khora_data::render::extract_scene`.
-        // UiSceneStore: shared Arc<RwLock<UiScene>>, populated each frame via
-        // `khora_data::ui::extract_ui_scene` (+ optionally `layout_ui_text`).
-        // Both are *data containers*, not services with logic.  The engine
-        // calls the extraction free functions in `tick_with_services()`
-        // before any agent runs.
-        services.insert(khora_data::render::RenderWorldStore::new());
-        services.insert(khora_data::ui::UiSceneStore::new());
+        // RenderFlow + UiFlow publish their per-frame views directly into
+        // the LaneBus during the Substrate Pass — no shared service needed.
+
+        // EcsMaintenance — owned by ServiceRegistry so the `ecs_maintenance`
+        // DataSystem (Maintenance phase) can fetch and tick it each frame.
+        services.insert(Arc::new(Mutex::new(khora_data::ecs::EcsMaintenance::new())));
 
         // PhysicsQueryService: on-demand raycast/debug queries, no GORNA required.
         if let Some(provider) = services.get::<std::sync::Arc<std::sync::Mutex<Box<dyn khora_core::physics::PhysicsProvider>>>>() {
@@ -194,9 +192,13 @@ impl<A: EngineApp> EngineCore<A> {
         // ServiceRegistry has no nested delegation — agents must receive the
         // real registry directly, not a wrapper that only contains Arc<ServiceRegistry>.
         {
+            let init_bus = khora_core::lane::LaneBus::new();
+            let mut init_deck = khora_core::lane::OutputDeck::new();
             let mut init_ctx = khora_core::EngineContext {
                 world: None,
                 services: Arc::clone(&services_arc),
+                bus: &init_bus,
+                deck: &mut init_deck,
             };
             dcc.initialize_agents(&mut init_ctx);
         }
@@ -275,6 +277,17 @@ impl<A: EngineApp> EngineCore<A> {
         let presents = self.begin_render_frame(&frame_services_arc);
         self.run_scheduler(&frame_services_arc);
         self.end_render_frame(presents);
+
+        // Substrate Pass — end-of-tick maintenance (compaction, deferred
+        // cleanup, idempotent best-effort work). Runs after every agent and
+        // after the I/O boundary so the world is in its final post-frame state.
+        if let Some(gw) = self.game_world.as_mut() {
+            substrate::run_data_systems(
+                gw.inner_world_mut(),
+                &self.services,
+                TickPhase::Maintenance,
+            );
+        }
     }
 
     /// Stage 1 — drain queued input events. Also marks simulation started
@@ -304,52 +317,25 @@ impl<A: EngineApp> EngineCore<A> {
         let (Some(app), Some(gw)) = (self.app.as_mut(), self.game_world.as_mut()) else {
             return;
         };
+        let services = &self.services;
+
+        // Substrate Pass — pre-simulation invariants (input-driven mutations,
+        // scene events that must be visible to agents).
+        substrate::run_data_systems(gw.inner_world_mut(), services, TickPhase::PreSimulation);
 
         app.update(gw, inputs);
-        gw.tick_maintenance();
 
-        // CPU→GPU mesh sync.
-        if let (Some(proj), Some(device)) = (
-            self.services.get::<khora_data::ProjectionRegistry>(),
-            self.services
-                .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>(),
-        ) {
-            proj.sync_all(gw.inner_world_mut(), device.as_ref());
-        }
+        // Substrate Pass — post-simulation invariants (hierarchy fix-ups
+        // such as transform_propagation, run after app.update mutates Transforms
+        // but before extraction reads GlobalTransform).
+        substrate::run_data_systems(gw.inner_world_mut(), services, TickPhase::PostSimulation);
 
-        // Render-world extraction.
-        if let Some(rws) = self.services.get::<khora_data::render::RenderWorldStore>() {
-            let mut rw = rws.shared().write().unwrap();
-            khora_data::render::extract_scene(gw.inner_world_mut(), &mut rw);
-        }
-
-        // UI extraction + text layout.
-        if let Some(uis) = self.services.get::<khora_data::ui::UiSceneStore>() {
-            let surface_size = self
-                .services
-                .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
-                .map(|d| d.get_surface_size())
-                .unwrap_or((0, 0));
-
-            let mut ui_scene = uis.shared().write().unwrap();
-            khora_data::ui::extract_ui_scene(gw.inner_world_mut(), surface_size, &mut ui_scene);
-
-            if let (Some(tr), Some(fonts_lock)) = (
-                self.services
-                    .get::<std::sync::Arc<dyn khora_core::renderer::api::text::TextRenderer>>(),
-                self.services
-                    .get::<std::sync::Arc<std::sync::RwLock<khora_data::assets::Assets<khora_core::asset::font::Font>>>>(),
-            ) {
-                if let Ok(fonts) = fonts_lock.read() {
-                    khora_data::ui::layout_ui_text(
-                        gw.inner_world_mut(),
-                        tr.as_ref(),
-                        &fonts,
-                        &mut ui_scene,
-                    );
-                }
-            }
-        }
+        // Substrate Pass — pre-extract. Runs:
+        //  - `gpu_mesh_sync` (CPU→GPU mesh upload, replaces former proj.sync_all)
+        //  - any other PreExtract DataSystem registered by users.
+        // RenderFlow + UiFlow then run inside the scheduler's Substrate Pass
+        // and publish their views into the LaneBus.
+        substrate::run_data_systems(gw.inner_world_mut(), &self.services, TickPhase::PreExtract);
     }
 
     /// Stage 3 — acquire the swapchain via `RenderSystem::begin_frame` and

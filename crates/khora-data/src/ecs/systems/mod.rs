@@ -12,24 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Shared, engine-wide container for the per-frame [`UiScene`].
+//! Invariant systems of the Data layer (Substrate Pass).
+//!
+//! Each module here defines one [`crate::ecs::DataSystemRegistration`] that
+//! gets dispatched by the engine in its declared [`crate::ecs::TickPhase`].
+//! The dispatcher in `khora-control` discovers them automatically through
+//! `inventory`; nothing else needs to know about a new system except its
+//! own file.
 
-use std::sync::{Arc, RwLock};
+pub mod ecs_maintenance;
+pub mod gpu_mesh_sync;
+pub mod transform_propagation;
 
-use super::UiScene;
-
-/// Shared, engine-wide container for the per-frame [`UiScene`].
-#[derive(Clone, Default)]
-pub struct UiSceneStore(Arc<RwLock<UiScene>>);
-
-impl UiSceneStore {
-    /// Creates a new, empty store.
-    pub fn new() -> Self {
-        Self(Arc::new(RwLock::new(UiScene::new())))
-    }
-
-    /// Returns the shared `Arc<RwLock<UiScene>>`.
-    pub fn shared(&self) -> &Arc<RwLock<UiScene>> {
-        &self.0
-    }
-}
+pub use transform_propagation::transform_propagation_system;

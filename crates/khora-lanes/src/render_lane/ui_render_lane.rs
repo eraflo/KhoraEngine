@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::render_lane::shaders::UI_WGSL;
 use khora_data::ui::UiScene;
-use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, Slot};
+use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, Ref, Slot};
 use khora_core::math::{Mat4, Vec4};
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutDescriptor,
@@ -319,8 +319,12 @@ impl Lane for UiRenderLane {
             .get::<Arc<dyn GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?;
         let ui_scene = ctx
-            .get::<Slot<UiScene>>()
-            .ok_or(LaneError::missing("Slot<UiScene>"))?
+            .get::<Ref<UiScene>>()
+            .ok_or(LaneError::missing("Ref<UiScene>"))?
+            .get();
+        let atlas_map = ctx
+            .get::<Ref<khora_data::ui::UiAtlasMap>>()
+            .ok_or(LaneError::missing("Ref<UiAtlasMap>"))?
             .get();
         let encoder = ctx
             .get::<Slot<dyn khora_core::renderer::traits::CommandEncoder>>()
@@ -363,11 +367,11 @@ impl Lane for UiRenderLane {
                 .unwrap_or(0.0);
             let has_texture = if node.image.is_some() { 1.0 } else { 0.0 };
 
-            let (uv_min, uv_max) = if let Some(rect) = node.atlas_rect {
-                (rect.min.into(), rect.max.into())
-            } else {
-                ([0.0, 0.0], [1.0, 1.0])
-            };
+            let (uv_min, uv_max) = node
+                .image
+                .and_then(|img| atlas_map.get(&img.texture))
+                .map(|rect| (rect.min.into(), rect.max.into()))
+                .unwrap_or(([0.0, 0.0], [1.0, 1.0]));
 
             instances.push(UiInstanceData {
                 pos: node.pos.into(),

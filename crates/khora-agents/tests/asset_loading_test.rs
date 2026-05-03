@@ -99,7 +99,7 @@ fn test_load_asset_from_pack() -> Result<()> {
 fn test_load_texture_from_pack() -> Result<()> {
     use image::ImageEncoder;
     use khora_core::renderer::api::resource::CpuTexture;
-    use khora_lanes::asset_lane::TextureLoaderLane;
+    use khora_io::asset::decoders::TextureDecoder;
 
     // --- 1. Setup: Create temporary packfiles with a real PNG ---
     let dir = tempdir()?;
@@ -159,7 +159,7 @@ fn test_load_texture_from_pack() -> Result<()> {
     )?;
 
     // --- 3. Register the texture loader ---
-    asset_service.register_decoder("texture", TextureLoaderLane);
+    asset_service.register_decoder("texture", TextureDecoder);
 
     // --- 4. Load the texture ---
     let texture_handle = asset_service.load::<CpuTexture>(&texture_uuid)?;

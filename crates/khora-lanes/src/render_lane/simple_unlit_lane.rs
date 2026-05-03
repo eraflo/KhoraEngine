@@ -106,8 +106,8 @@ impl khora_core::lane::Lane for SimpleUnlitLane {
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
         let render_world =
-            match ctx.get::<khora_core::lane::Slot<khora_data::render::RenderWorld>>() {
-                Some(slot) => slot.get_ref(),
+            match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>() {
+                Some(slot) => slot.get(),
                 None => return 1.0,
             };
         let gpu_meshes = match ctx.get::<std::sync::Arc<
@@ -138,7 +138,7 @@ impl khora_core::lane::Lane for SimpleUnlitLane {
         &self,
         ctx: &mut khora_core::lane::LaneContext,
     ) -> Result<(), khora_core::lane::LaneError> {
-        use khora_core::lane::{LaneError, Slot};
+        use khora_core::lane::{LaneError, Ref, Slot};
         let device = ctx
             .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
@@ -156,9 +156,9 @@ impl khora_core::lane::Lane for SimpleUnlitLane {
             .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?
             .get();
         let render_world = ctx
-            .get::<Slot<khora_data::render::RenderWorld>>()
-            .ok_or(LaneError::missing("Slot<RenderWorld>"))?
-            .get_ref();
+            .get::<Ref<khora_data::render::RenderWorld>>()
+            .ok_or(LaneError::missing("Ref<RenderWorld>"))?
+            .get();
         let color_target = ctx
             .get::<khora_core::lane::ColorTarget>()
             .ok_or(LaneError::missing("ColorTarget"))?

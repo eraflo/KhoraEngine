@@ -12,8 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Lanes related to the maintenance and operation of the Entity-Component-System.
+//! Concrete [`AssetDecoder`] implementations: bytes → typed asset.
+//!
+//! Decoders are pure CPU work; they have no GPU/IO state. They are
+//! registered with the [`AssetService`] via `register_decoder` and dispatched
+//! by asset type name during `load`.
+//!
+//! [`AssetDecoder`]: super::AssetDecoder
+//! [`AssetService`]: super::AssetService
 
-mod compaction_lane;
+pub mod audio;
+pub mod font;
+pub mod mesh;
+pub mod texture;
 
-pub use compaction_lane::*;
+pub use audio::*;
+pub use font::*;
+pub use mesh::*;
+pub use texture::*;

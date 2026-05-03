@@ -261,6 +261,23 @@ pub trait UiBuilder {
         Interaction::default()
     }
 
+    /// Attaches a drag payload (typically an entity ID packed into a
+    /// `u64`) to the **last interacted region** (the most recent
+    /// [`interact_rect`](Self::interact_rect) call). Should be called
+    /// immediately after `interact_rect`. Avoids creating a competing
+    /// hit-target on the same rect, which would steal pointer events.
+    /// Default: no-op.
+    fn dnd_attach_drag_payload(&mut self, payload: u64) {
+        let _ = payload;
+    }
+
+    /// If a drag-and-drop just released on the **last interacted region**,
+    /// returns its `u64` payload. Should be called after
+    /// [`interact_rect`](Self::interact_rect). Default: no-op.
+    fn dnd_take_drop_payload(&mut self) -> Option<u64> {
+        None
+    }
+
     /// Attaches a tooltip to the most recently created widget / interaction.
     fn tooltip_for_last(&mut self, text: &str) {
         let _ = text;

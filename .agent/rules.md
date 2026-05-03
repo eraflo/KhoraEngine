@@ -48,6 +48,10 @@ Hard constraints for all code changes. Read before editing.
 - Abstract traits live in `khora-core`. Concrete backends live in per-backend subfolders inside `khora-infra` (`graphics/wgpu/`, `physics/rapier/`, `audio/cpal/`, `ui/taffy/`, etc.).
 - Modify `khora-core` trait interfaces only when you also update every downstream implementation.
 - Keep GPU resources behind abstract IDs (`TextureId`, `BufferId`, `PipelineId`). Never expose raw wgpu handles in public APIs.
+- **Lanes MUST consume Views from the [`LaneBus`](../crates/khora-core/src/lane/bus.rs)**, not query the World directly. The Flow for a domain ([`khora-data/src/flow/`](../crates/khora-data/src/flow/)) is the only legitimate producer of those Views.
+- **Structural mutations** (attach/detach components via CRPECS) belong inside `Flow::adapt`, `DataSystem` invariants, or explicit user actions (editor, scripted gameplay events). They are forbidden inside Lanes.
+- **Agents MUST stay strategists** — choose a Lane given a budget, report status. They MUST NOT hold per-frame state, own a Flow, or buffer outputs. The CLAD descent is `Control → Agent → Lane → Data`; the agent invokes its own lane.
+- **Engine-tick wiring is data-driven** — to add an invariant, register a [`DataSystemRegistration`](../crates/khora-data/src/ecs/system.rs); to add a Flow, register a [`FlowRegistration`](../crates/khora-data/src/flow/registration.rs); to add an asset decoder, register an [`AssetDecoderRegistration`](../crates/khora-io/src/asset/registry.rs). Never wire a system manually in `engine.rs`.
 
 ## 04 — Code quality
 

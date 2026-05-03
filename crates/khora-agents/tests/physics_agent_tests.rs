@@ -39,12 +39,32 @@ fn make_services(
 
 /// Runs `agent.execute()` N times with the given world and services.
 fn step_n(agent: &mut PhysicsAgent, world: &mut World, services: &Arc<ServiceRegistry>, n: usize) {
+    let bus = khora_core::lane::LaneBus::new();
+    let mut deck = khora_core::lane::OutputDeck::new();
     for _ in 0..n {
         let mut ctx = EngineContext {
             world: Some(world as &mut dyn std::any::Any),
             services: Arc::clone(services),
+            bus: &bus,
+            deck: &mut deck,
         };
         agent.execute(&mut ctx);
+    }
+}
+
+/// Helper to build a fresh `EngineContext` for `on_initialize` calls in tests.
+/// Bus and deck are owned by the caller's stack frame.
+fn make_init_ctx<'a>(
+    world: &'a mut World,
+    services: &Arc<ServiceRegistry>,
+    bus: &'a khora_core::lane::LaneBus,
+    deck: &'a mut khora_core::lane::OutputDeck,
+) -> EngineContext<'a> {
+    EngineContext {
+        world: Some(world as &mut dyn std::any::Any),
+        services: Arc::clone(services),
+        bus,
+        deck,
     }
 }
 
@@ -58,10 +78,9 @@ fn test_physics_gravity_influence() {
     let mut agent = PhysicsAgent::default();
 
     {
-        let mut ctx = EngineContext {
-            world: Some(&mut world as &mut dyn std::any::Any),
-            services: Arc::clone(&services),
-        };
+        let bus = khora_core::lane::LaneBus::new();
+        let mut deck = khora_core::lane::OutputDeck::new();
+        let mut ctx = make_init_ctx(&mut world, &services, &bus, &mut deck);
         agent.on_initialize(&mut ctx);
     }
 
@@ -96,10 +115,9 @@ fn test_physics_raycast() {
     let mut agent = PhysicsAgent::default();
 
     {
-        let mut ctx = EngineContext {
-            world: Some(&mut world as &mut dyn std::any::Any),
-            services: Arc::clone(&services),
-        };
+        let bus = khora_core::lane::LaneBus::new();
+        let mut deck = khora_core::lane::OutputDeck::new();
+        let mut ctx = make_init_ctx(&mut world, &services, &bus, &mut deck);
         agent.on_initialize(&mut ctx);
     }
 
@@ -143,10 +161,9 @@ fn test_physics_kcc_grounding() {
     let mut agent = PhysicsAgent::default();
 
     {
-        let mut ctx = EngineContext {
-            world: Some(&mut world as &mut dyn std::any::Any),
-            services: Arc::clone(&services),
-        };
+        let bus = khora_core::lane::LaneBus::new();
+        let mut deck = khora_core::lane::OutputDeck::new();
+        let mut ctx = make_init_ctx(&mut world, &services, &bus, &mut deck);
         agent.on_initialize(&mut ctx);
     }
 

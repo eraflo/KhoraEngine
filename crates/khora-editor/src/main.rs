@@ -89,6 +89,10 @@ struct EditorApp {
     /// has no position of its own) lands inside the 3D viewport rect.
     last_cursor_pos: Option<(f32, f32)>,
     last_frame_time: Instant,
+    /// Editor viewport override — read by `RenderFlow` as fallback when no
+    /// active scene `Camera` exists (i.e. Editing mode). Updated each frame
+    /// in `before_agents` from the editor's free camera.
+    viewport_override: khora_sdk::khora_data::render::EditorViewportOverride,
 }
 
 impl EditorApp {
@@ -321,6 +325,7 @@ impl EngineApp for EditorApp {
             prev_cursor: None,
             last_cursor_pos: None,
             last_frame_time: Instant::now(),
+            viewport_override: khora_sdk::khora_data::render::EditorViewportOverride::new(),
         }
     }
 
@@ -666,6 +671,7 @@ impl EngineApp for EditorApp {
             state.ctrl_held = self.ctrl_held;
 
             ops::process_spawns(world, &mut state);
+            ops::process_reparents(world, &mut state);
 
             if let Some((entity, new_name)) = state.pending_rename.take() {
                 if let Some(name) = world.get_component_mut::<Name>(entity) {
@@ -912,24 +918,17 @@ impl EngineApp for EditorApp {
         // The render lanes (SimpleUnlit / LitForward / ForwardPlus) all
         // bail to a clear-only pass when `RenderWorld.views.first()` is
         // None — and `extract_views` (run once per frame in
-        // `EngineCore::run_app_update`) only emits views for ECS Cameras
-        // with `is_active == true`. In Editing mode every scene Camera is
-        // forced inactive so the editor camera owns the view, which left
-        // `views` empty and made meshes invisible. We patch that here:
-        // if the field is still empty after extract_scene, push the
-        // ViewInfo we just computed (editor cam in Editing, scene cam in
-        // Play, fallback otherwise).
-        if let Some(rws) = services.get::<khora_sdk::khora_data::render::RenderWorldStore>() {
-            if let Ok(mut rw) = rws.shared().write() {
-                if rw.views.is_empty() {
-                    rw.views
-                        .push(khora_sdk::khora_data::render::ExtractedView {
-                            view_proj: view_info.view_projection_matrix(),
-                            position: view_info.camera_position,
-                        });
-                }
-            }
-        }
+        // Publish the active view into the EditorViewportOverride so
+        // RenderFlow can fall back to it when no scene Camera is active
+        // (Editing mode forces every scene camera inactive). RenderFlow
+        // appends the override to RenderWorld.views during its `project`
+        // step on the next scheduler tick.
+        self.viewport_override.set(Some(
+            khora_sdk::khora_data::render::ExtractedView {
+                view_proj: view_info.view_projection_matrix(),
+                position: view_info.camera_position,
+            },
+        ));
 
         let clear = khora_sdk::prelude::math::LinearRgba::new(0.15, 0.15, 0.18, 1.0);
         if let Err(e) = wgpu_rs.render_viewport(clear, &view_info) {
@@ -1009,6 +1008,10 @@ impl AgentProvider for EditorApp {
         // Insert EditorState and EditorCamera into services so agents can access them.
         services.insert(self.editor_state.clone());
         services.insert(self.camera.clone());
+
+        // Editor viewport override — RenderFlow reads it as fallback when no
+        // scene Camera is active (Editing mode).
+        services.insert(self.viewport_override.clone());
 
         // Register editor-specific agents with mode filtering
         mod_agents::register_editor_agents(dcc);

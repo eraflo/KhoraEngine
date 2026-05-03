@@ -15,6 +15,7 @@
 //! Asset I/O and decoding services.
 
 mod decoder;
+pub mod decoders;
 mod file;
 mod io;
 mod pack;
@@ -22,6 +23,7 @@ mod registry;
 mod service;
 
 pub use decoder::*;
+pub use decoders::*;
 pub use file::*;
 pub use io::*;
 pub use pack::*;

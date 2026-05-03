@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Texture loading and management.
+//! Texture decoder: image bytes → `CpuTexture` (via the `image` crate).
 
 use anyhow::{Context, Result};
 use khora_core::{
@@ -22,21 +22,20 @@ use khora_core::{
         util::{SampleCount, TextureFormat},
     },
 };
-use khora_io::asset::AssetDecoder;
 
-/// A lane dedicated to loading and decoding texture files on the CPU
-#[derive(Clone)]
-pub struct TextureLoaderLane;
+use crate::asset::AssetDecoder;
 
-impl AssetDecoder<CpuTexture> for TextureLoaderLane {
+/// Decodes common image formats (PNG, JPEG, etc.) into a `CpuTexture`.
+#[derive(Clone, Default)]
+pub struct TextureDecoder;
+
+impl AssetDecoder<CpuTexture> for TextureDecoder {
     fn load(
         &self,
         bytes: &[u8],
     ) -> Result<CpuTexture, Box<dyn std::error::Error + Send + Sync + 'static>> {
-        // Decode the image using the `image` crate
         let img = image::load_from_memory(bytes).context("Failed to decode image from memory")?;
 
-        // Convert to RGBA8 (keep in sRGB space)
         let rgba_img = img.to_rgba8();
         let (width, height) = rgba_img.dimensions();
 
@@ -53,23 +52,5 @@ impl AssetDecoder<CpuTexture> for TextureLoaderLane {
             dimension: TextureDimension::D2,
             usage: TextureUsage::COPY_DST | TextureUsage::TEXTURE_BINDING,
         })
-    }
-}
-
-impl khora_core::lane::Lane for TextureLoaderLane {
-    fn strategy_name(&self) -> &'static str {
-        "TextureLoader"
-    }
-
-    fn lane_kind(&self) -> khora_core::lane::LaneKind {
-        khora_core::lane::LaneKind::Asset
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }

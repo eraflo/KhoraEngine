@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines a lane for loading OBJ mesh assets.
+//! OBJ mesh decoder.
 
 use ahash::AHashMap;
 use anyhow::{Context, Result};
@@ -24,14 +24,15 @@ use khora_core::{
         scene::Mesh,
     },
 };
-use khora_io::asset::AssetDecoder;
 use std::error::Error;
 
-/// Lane for loading OBJ mesh assets
-#[derive(Clone)]
-pub struct ObjLoaderLane;
+use crate::asset::AssetDecoder;
 
-impl AssetDecoder<Mesh> for ObjLoaderLane {
+/// Decoder for OBJ mesh assets.
+#[derive(Clone, Default)]
+pub struct ObjDecoder;
+
+impl AssetDecoder<Mesh> for ObjDecoder {
     fn load(&self, bytes: &[u8]) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
         let obj_text = std::str::from_utf8(bytes).context("OBJ file is not valid UTF-8")?;
 
@@ -52,18 +53,15 @@ impl AssetDecoder<Mesh> for ObjLoaderLane {
             return Err("No models found in OBJ file".into());
         }
 
-        // For now, just use the first model
         let model = &models[0];
         let mesh = &model.mesh;
 
-        // Extract positions
         let positions = mesh
             .positions
             .chunks(3)
             .map(|v| Vec3::new(v[0], v[1], v[2]))
             .collect();
 
-        // Extract normals if available
         let normals = if !mesh.normals.is_empty() {
             Some(
                 mesh.normals
@@ -75,7 +73,6 @@ impl AssetDecoder<Mesh> for ObjLoaderLane {
             None
         };
 
-        // Extract texture coordinates if available
         let tex_coords = if !mesh.texcoords.is_empty() {
             Some(
                 mesh.texcoords
@@ -87,7 +84,6 @@ impl AssetDecoder<Mesh> for ObjLoaderLane {
             None
         };
 
-        // Calculate bounding box
         let bounding_box = Aabb::from_points(
             &mesh
                 .positions
@@ -97,7 +93,6 @@ impl AssetDecoder<Mesh> for ObjLoaderLane {
         )
         .unwrap_or(Aabb::INVALID);
 
-        // Create vertex layout
         let mut vertex_layout = vec![VertexAttributeDescriptor {
             shader_location: 0,
             format: VertexFormat::Float32x3,
@@ -134,23 +129,5 @@ impl AssetDecoder<Mesh> for ObjLoaderLane {
             bounding_box,
             vertex_layout,
         })
-    }
-}
-
-impl khora_core::lane::Lane for ObjLoaderLane {
-    fn strategy_name(&self) -> &'static str {
-        "ObjLoader"
-    }
-
-    fn lane_kind(&self) -> khora_core::lane::LaneKind {
-        khora_core::lane::LaneKind::Asset
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }

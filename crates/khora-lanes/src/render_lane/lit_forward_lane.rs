@@ -219,8 +219,8 @@ impl khora_core::lane::Lane for LitForwardLane {
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
         let render_world =
-            match ctx.get::<khora_core::lane::Slot<khora_data::render::RenderWorld>>() {
-                Some(slot) => slot.get_ref(),
+            match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>() {
+                Some(slot) => slot.get(),
                 None => return 1.0,
             };
         let gpu_meshes = match ctx.get::<std::sync::Arc<
@@ -251,7 +251,7 @@ impl khora_core::lane::Lane for LitForwardLane {
         &self,
         ctx: &mut khora_core::lane::LaneContext,
     ) -> Result<(), khora_core::lane::LaneError> {
-        use khora_core::lane::{LaneError, Slot};
+        use khora_core::lane::{LaneError, Ref, Slot};
         let device = ctx
             .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
@@ -269,9 +269,9 @@ impl khora_core::lane::Lane for LitForwardLane {
             .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?
             .get();
         let render_world = ctx
-            .get::<Slot<khora_data::render::RenderWorld>>()
-            .ok_or(LaneError::missing("Slot<RenderWorld>"))?
-            .get_ref();
+            .get::<Ref<khora_data::render::RenderWorld>>()
+            .ok_or(LaneError::missing("Ref<RenderWorld>"))?
+            .get();
         let color_target = ctx
             .get::<khora_core::lane::ColorTarget>()
             .ok_or(LaneError::missing("ColorTarget"))?
@@ -297,8 +297,16 @@ impl khora_core::lane::Lane for LitForwardLane {
         render_ctx.shadow_atlas = shadow_atlas.as_ref();
         render_ctx.shadow_sampler = shadow_sampler.as_ref();
 
+        // Per-light shadow data published by `shadow_pass_lane` into the
+        // per-frame OutputDeck. Cloned out so the borrow on `ctx` is short.
+        let shadow_entries = ctx
+            .get::<Slot<khora_core::lane::OutputDeck>>()
+            .map(|s| s.get().slot::<khora_data::render::ShadowEntries>().clone())
+            .unwrap_or_default();
+
         self.render(
             render_world,
+            &shadow_entries,
             device.as_ref(),
             encoder,
             &render_ctx,
@@ -336,6 +344,7 @@ impl LitForwardLane {
     fn render(
         &self,
         render_world: &RenderWorld,
+        shadow_entries: &khora_data::render::ShadowEntries,
         device: &dyn khora_core::renderer::GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
         render_ctx: &RenderContext,
@@ -433,13 +442,18 @@ impl LitForwardLane {
             _padding: 0,
         };
 
-        for light in &render_world.lights {
+        for (light_index, light) in render_world.lights.iter().enumerate() {
+            let shadow = shadow_entries.get(light_index);
+            let shadow_view_proj = shadow
+                .map(|e| e.view_proj)
+                .unwrap_or(khora_core::math::Mat4::IDENTITY);
+            let shadow_index = shadow.map(|e| e.atlas_index as f32).unwrap_or(-1.0);
+
             match light.light_type {
                 khora_core::renderer::light::LightType::Directional(ref d) => {
                     if (lighting_uniforms.num_directional_lights as usize) < MAX_DIRECTIONAL_LIGHTS
                     {
                         let idx = lighting_uniforms.num_directional_lights as usize;
-                        let shadow_index = light.shadow_atlas_index.unwrap_or(-1) as f32;
                         lighting_uniforms.directional_lights[idx] = DirectionalLightUniform {
                             direction: [
                                 light.direction.x,
@@ -448,7 +462,7 @@ impl LitForwardLane {
                                 0.0,
                             ],
                             color: d.color.with_alpha(d.intensity),
-                            shadow_view_proj: light.shadow_view_proj.to_cols_array_2d(),
+                            shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
                             shadow_params: [shadow_index, d.shadow_bias, d.shadow_normal_bias, 0.0],
                         };
                         lighting_uniforms.num_directional_lights += 1;
@@ -457,7 +471,6 @@ impl LitForwardLane {
                 khora_core::renderer::light::LightType::Point(ref p) => {
                     if (lighting_uniforms.num_point_lights as usize) < MAX_POINT_LIGHTS {
                         let idx = lighting_uniforms.num_point_lights as usize;
-                        let shadow_index = light.shadow_atlas_index.unwrap_or(-1) as f32;
                         lighting_uniforms.point_lights[idx] = PointLightUniform {
                             position: [
                                 light.position.x,
@@ -474,7 +487,6 @@ impl LitForwardLane {
                 khora_core::renderer::light::LightType::Spot(ref s) => {
                     if (lighting_uniforms.num_spot_lights as usize) < MAX_SPOT_LIGHTS {
                         let idx = lighting_uniforms.num_spot_lights as usize;
-                        let shadow_index = light.shadow_atlas_index.unwrap_or(-1) as f32;
                         lighting_uniforms.spot_lights[idx] = SpotLightUniform {
                             position: [
                                 light.position.x,
@@ -490,7 +502,7 @@ impl LitForwardLane {
                             ],
                             color: s.color.with_alpha(s.intensity),
                             params: [s.outer_cone_angle.cos(), 0.0, 0.0, 0.0],
-                            shadow_view_proj: light.shadow_view_proj.to_cols_array_2d(),
+                            shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
                             shadow_params: [shadow_index, s.shadow_bias, s.shadow_normal_bias, 0.0],
                         };
                         lighting_uniforms.num_spot_lights += 1;

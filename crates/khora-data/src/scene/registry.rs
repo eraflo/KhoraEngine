@@ -65,6 +65,11 @@ pub struct ComponentRegistration {
     /// Implementations should be tolerant of partial updates by deserialising
     /// against the full mirror struct first.
     pub from_json: fn(&mut World, EntityId, &serde_json::Value) -> Result<(), String>,
+
+    /// Removes the component (and any siblings in the same `SemanticDomain`)
+    /// from `entity`. Used by the editor inspector's per-card delete button
+    /// to drop a component by `type_name` lookup.
+    pub remove: fn(&mut World, EntityId) -> Result<(), String>,
 }
 
 inventory::collect!(ComponentRegistration);

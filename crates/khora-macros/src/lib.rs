@@ -291,8 +291,22 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                 from_json: |world, entity, value| {
                     let s: #serializable_name = serde_json::from_value(value.clone())
                         .map_err(|e| e.to_string())?;
-                    world.add_component(entity, <#name>::from(s)).ok();
+                    let new_value = <#name>::from(s);
+                    if let Some(existing) = world.get_mut::<#name>(entity) {
+                        *existing = new_value;
+                    } else {
+                        world.add_component(entity, new_value)
+                            .map_err(|e| format!("{:?}", e))?;
+                    }
                     Ok(())
+                },
+                remove: |world, entity| {
+                    // Surgical single-component remove — preserves every
+                    // other component on the entity (any domain).
+                    match world.remove_component::<#name>(entity) {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(format!("{:?}", e)),
+                    }
                 },
             }
         }

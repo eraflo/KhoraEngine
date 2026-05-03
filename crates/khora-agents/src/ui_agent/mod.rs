@@ -46,7 +46,8 @@ use khora_core::renderer::GraphicsDevice;
 use khora_core::ui::LayoutSystem;
 use khora_data::assets::Assets;
 use khora_data::render::{PassDescriptor, ResourceId, SharedFrameGraph};
-use khora_data::ui::UiSceneStore;
+use khora_core::lane::Ref;
+use khora_data::ui::{UiAtlasMap, UiScene};
 use khora_lanes::render_lane::UiRenderLane;
 use khora_lanes::ui_lane::StandardUiLane;
 
@@ -147,10 +148,11 @@ impl Agent for UiAgent {
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
 
-        let Some(scene_store) = context.services.get::<UiSceneStore>() else {
+        // Read the per-frame UiScene from the LaneBus (UiFlow).
+        let Some(ui_scene): Option<&UiScene> = context.bus.get() else {
+            log::warn!("UiAgent: no UiScene in LaneBus (UiFlow not run?)");
             return;
         };
-        let ui_scene_arc = scene_store.shared().clone();
 
         let Some(frame_graph) = context.services.get::<SharedFrameGraph>().cloned() else {
             log::warn!("UiAgent: no FrameGraph in services");
@@ -177,19 +179,16 @@ impl Agent for UiAgent {
             .get::<Arc<dyn TextRenderer>>()
             .map(|arc| (*arc).clone());
 
-        let _fonts: Option<Arc<RwLock<Assets<Font>>>> = context
-            .services
-            .get::<Arc<RwLock<Assets<Font>>>>()
-            .map(|arc| (*arc).clone());
-
         // Resolve per-frame atlas rects for any UI images that aren't yet
-        // in the cache.  This is GPU work that mutates the populated UiScene.
+        // in the cache. Builds an immutable per-frame `UiAtlasMap` exposed
+        // to the lane through `LaneContext` (no in-place mutation of the
+        // bus-published `UiScene`).
+        let mut atlas_map = UiAtlasMap::new();
         if let (Some(atlas), Some(textures)) = (&mut self.image_atlas, textures.as_ref()) {
-            let mut scene = ui_scene_arc.write().unwrap();
-            for node in scene.nodes.iter_mut() {
+            for node in ui_scene.nodes.iter() {
                 let Some(image) = node.image else { continue };
                 if let Some(rect) = self.image_cache.get(&image.texture) {
-                    node.atlas_rect = Some(*rect);
+                    atlas_map.insert(image.texture, *rect);
                     continue;
                 }
                 if let Ok(assets) = textures.read() {
@@ -202,7 +201,7 @@ impl Agent for UiAgent {
                             cpu_tex.format.bytes_per_pixel(),
                         ) {
                             self.image_cache.insert(image.texture, rect);
-                            node.atlas_rect = Some(rect);
+                            atlas_map.insert(image.texture, rect);
                         }
                     }
                 }
@@ -217,7 +216,6 @@ impl Agent for UiAgent {
 
         let mut encoder = device.create_command_encoder(Some("Khora UI Encoder"));
         {
-            let mut scene_guard = ui_scene_arc.write().unwrap();
             let mut ctx = LaneContext::new();
             ctx.insert(device.clone());
             if let Some(tr) = &text_renderer {
@@ -226,7 +224,10 @@ impl Agent for UiAgent {
             if let Some(atlas) = self.image_atlas.as_mut() {
                 ctx.insert(Slot::new(atlas));
             }
-            ctx.insert(Slot::new(&mut *scene_guard));
+            // SAFETY: ui_scene is borrowed from the LaneBus, alive for the
+            // full frame; ctx (which holds the Ref) is dropped well before.
+            ctx.insert(Ref::new(ui_scene));
+            ctx.insert(Ref::new(&atlas_map));
 
             // SAFETY: encoder is alive for this block; ctx is dropped before
             // encoder.finish() consumes it.

@@ -131,6 +131,10 @@ pub struct EditorState {
     pub rename_buffer: String,
     /// Pending rename to apply: (entity, new_name).
     pub pending_rename: Option<(EntityId, String)>,
+    /// Pending reparent to apply: (child, new_parent_or_None_for_root).
+    /// Set by the scene tree drag-and-drop handler, drained by
+    /// `process_reparents` in the editor's tick.
+    pub pending_reparent: Option<(EntityId, Option<EntityId>)>,
 
     // ── Phase 4: Properties Inspector ──────────────────
     /// Snapshot of the single-selected entity's components (if any).
@@ -331,6 +335,12 @@ pub enum PropertyEdit {
         entity: EntityId,
         type_name: String,
         value: serde_json::Value,
+    },
+    /// Remove a component from `entity`. The editor looks up the
+    /// registration by `type_name` and calls `remove` to commit.
+    RemoveComponent {
+        entity: EntityId,
+        type_name: String,
     },
 }
 

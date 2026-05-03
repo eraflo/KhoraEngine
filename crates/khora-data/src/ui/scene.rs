@@ -14,13 +14,17 @@
 
 //! Per-frame intermediate UI scene types.
 //!
-//! `UiScene` is populated each frame by [`extract_ui_scene`](super::extract_ui_scene)
-//! (and optionally [`layout_ui_text`](super::layout_ui_text)).  The UI render
-//! lane consumes it through the shared [`UiSceneStore`](super::UiSceneStore).
+//! `UiScene` is published into the [`LaneBus`](khora_core::lane::LaneBus)
+//! each frame by [`UiFlow`](crate::flow::UiFlow). Atlas allocation is **not**
+//! part of the View — the UI agent maintains a per-texture
+//! [`UiAtlasMap`](super::UiAtlasMap) and passes it to the lane separately
+//! so the immutable bus invariant is preserved.
 
+use khora_core::asset::AssetUUID;
 use khora_core::math::{Vec2, Vec4};
 use khora_core::renderer::api::text::TextLayout;
 use khora_core::renderer::api::util::AtlasRect;
+use std::collections::HashMap;
 
 use crate::ui::components::{UiBorder, UiColor, UiImage};
 
@@ -37,8 +41,6 @@ pub struct ExtractedUiNode {
     pub border: Option<UiBorder>,
     /// Optional image asset reference.
     pub image: Option<UiImage>,
-    /// Optional UV rect once the image is allocated in the UI texture atlas.
-    pub atlas_rect: Option<AtlasRect>,
     /// Z-index for sorting.
     pub z_index: i32,
 }
@@ -71,10 +73,30 @@ impl UiScene {
     pub fn new() -> Self {
         Self::default()
     }
+}
 
-    /// Clears all UI data — called at the start of each frame's extraction.
-    pub fn clear(&mut self) {
-        self.nodes.clear();
-        self.texts.clear();
+/// Per-frame UI atlas lookup: texture UUID → allocated `AtlasRect`.
+///
+/// Maintained by the UI agent (which owns the atlas allocator) and passed
+/// to the UI render lane through `LaneContext`. Replaces the old in-place
+/// `ExtractedUiNode.atlas_rect` mutation, which violated the immutable
+/// `LaneBus` invariant once the bus replaced `UiSceneStore`.
+#[derive(Debug, Default, Clone)]
+pub struct UiAtlasMap(pub HashMap<AssetUUID, AtlasRect>);
+
+impl UiAtlasMap {
+    /// Creates an empty atlas map.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Looks up the rect for a texture UUID, if allocated this frame.
+    pub fn get(&self, uuid: &AssetUUID) -> Option<AtlasRect> {
+        self.0.get(uuid).copied()
+    }
+
+    /// Inserts or replaces the rect for a texture UUID.
+    pub fn insert(&mut self, uuid: AssetUUID, rect: AtlasRect) {
+        self.0.insert(uuid, rect);
     }
 }

@@ -12,10 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Groups asset loaders for various audio file formats.
+//! Mesh decoders for various formats (GLTF, OBJ).
 
-mod symphonia_loader_lane;
-mod wav_loader_lane;
+mod gltf;
+mod obj;
+mod resource_resolver;
 
-pub use symphonia_loader_lane::*;
-pub use wav_loader_lane::*;
+pub use gltf::GltfDecoder;
+pub use obj::ObjDecoder;
+pub use resource_resolver::*;
+
+use khora_core::renderer::api::scene::Mesh;
+
+use crate::asset::AssetDecoder;
+
+/// Marker trait for decoders producing `Mesh` assets.
+pub trait MeshDecoder: AssetDecoder<Mesh> + Send + Sync + 'static {}
+
+impl<T> MeshDecoder for T where T: AssetDecoder<Mesh> + Send + Sync + 'static {}

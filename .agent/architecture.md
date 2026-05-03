@@ -29,7 +29,7 @@ SAA (the why)                       CLAD (the how)
 Dynamic Context Core (DCC)          khora-control
 GORNA Protocol                      khora-control
 Intelligent Subsystem Agents        khora-agents
-Adaptive Game Data Flows            khora-data
+Adaptive Game Data Flows            khora-data (CRPECS + Flows)
 Semantic Interfaces & Contracts     khora-core
 I/O Services                        khora-io
 Observability & Telemetry           khora-telemetry
@@ -37,6 +37,37 @@ Hardware & OS Interaction           khora-infra
 ```
 
 The split is the architecture. Read the full mapping in [`docs/src/02_architecture.md`](../docs/src/02_architecture.md).
+
+### CLAD descent and Substrate Pass
+
+CLAD describes the **command path** of a frame:
+
+```
+Control ──► Agent ──► Lane ──► Data (via typed Views)
+       budget   selects   reads bus / writes deck
+```
+
+This descent is the engine's hot path and remains the organizing principle.
+
+Around it, the Scheduler runs a **Substrate Pass** that executes the Data layer's self-maintenance — invariants (`DataSystem`s) and presentation (`Flow`s) — and provides Lanes with their typed input ([`LaneBus`](../crates/khora-core/src/lane/bus.rs)) and output ([`OutputDeck`](../crates/khora-core/src/lane/deck.rs)) substrate. The Substrate Pass is *not* a descent: it is Data maintaining and projecting itself, called by Scheduler because Scheduler owns the tick.
+
+```
+Pass A — Substrate (Scheduler)
+  • DataSystem invariants (transform_propagation, ...)        — Pre/Post/Maintenance phases
+  • Flows (RenderFlow, PhysicsFlow, ShadowFlow, AudioFlow)    — publish Views into LaneBus
+
+Pass B — CLAD descent (Agents pilot)
+  • For each Agent: choose lane based on budget → Lane.execute(LaneContext{bus, deck, budget})
+  • Lanes consume Views from LaneBus, write outputs into OutputDeck
+
+Pass C — I/O boundary (Engine drains OutputDeck for submit/present)
+```
+
+### AGDF realisation
+
+**AGDF** (Adaptive Game Data Flows) is realised in `Flow::adapt`. Each domain's Flow performs its own structural mutations (attach / detach components via CRPECS) calibrated by the budget the agent transmits to its flow. No central context, no SPF — each Flow queries the World for what its domain considers relevant.
+
+The first concrete realisation is [`PhysicsFlow`](../crates/khora-data/src/flow/physics.rs) — entities outside the active camera's "physics scope" have their `RigidBody` detached; entities that come back inside have it restored from a stash, with hysteresis to prevent thrashing.
 
 ## 02 — Crate dependency graph
 

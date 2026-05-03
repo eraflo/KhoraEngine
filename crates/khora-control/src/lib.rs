@@ -46,6 +46,7 @@ pub mod plugin;
 pub mod registry;
 pub mod scheduler;
 pub mod service;
+pub mod substrate;
 
 pub use analysis::AnalysisReport;
 pub use context::{BatteryLevel, Context, EngineMode, HardwareState, ThermalStatus};

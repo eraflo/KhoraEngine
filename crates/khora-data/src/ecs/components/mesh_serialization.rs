@@ -431,5 +431,13 @@ inventory::submit! {
             // editor's serde-JSON path doesn't do today.
             Err("Mesh handle editing from inspector not implemented".to_string())
         },
+        remove: |world, entity| {
+            // Surgical single-component remove — preserves every other
+            // component on the entity (any domain).
+            match world.remove_component::<HandleComponent<Mesh>>(entity) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("{:?}", e)),
+            }
+        },
     }
 }

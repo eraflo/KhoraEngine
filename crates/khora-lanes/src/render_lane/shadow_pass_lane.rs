@@ -14,7 +14,7 @@
 
 //! Shadow pass lane implementation - handles depth rendering for shadows.
 
-use khora_data::render::{ExtractedLight, ExtractedView, RenderWorld};
+use khora_data::render::RenderWorld;
 use khora_core::renderer::{
     api::{
         command::{
@@ -80,104 +80,6 @@ impl ShadowPassLane {
     pub fn new() -> Self {
         Self::default()
     }
-
-    /// Calculates the view-projection matrix for a given light's shadow map.
-    fn calculate_shadow_view_proj(
-        &self,
-        light: &ExtractedLight,
-        view: &ExtractedView,
-    ) -> khora_core::math::Mat4 {
-        use khora_core::math::{Mat4, Vec3, Vec4};
-
-        match &light.light_type {
-            khora_core::renderer::light::LightType::Directional(_) => {
-                // --- CSM logic ---
-                // 1. Calculate Frustum Corners in World Space
-                let inv_view_proj = view.view_proj.inverse().unwrap_or(Mat4::IDENTITY);
-                let mut corners = Vec::with_capacity(8);
-                for x in &[-1.0, 1.0] {
-                    for y in &[-1.0, 1.0] {
-                        for z in &[0.0, 1.0] {
-                            let pt = inv_view_proj * Vec4::new(*x, *y, *z, 1.0);
-                            corners.push(pt.truncate() / pt.w);
-                        }
-                    }
-                }
-
-                // 2. Light View Matrix
-                let light_dir = light.direction.normalize();
-                let up = if light_dir.y.abs() > 0.99 {
-                    Vec3::Z
-                } else {
-                    Vec3::Y
-                };
-
-                // Center light view on frustum center
-                let mut center = Vec3::ZERO;
-                for p in &corners {
-                    center = center + *p;
-                }
-                center = center / 8.0;
-
-                let light_view =
-                    Mat4::look_at_rh(center, center + light_dir, up).unwrap_or(Mat4::IDENTITY);
-
-                // 3. Find Frustum AABB in Light Space
-                let mut min = Vec3::new(f32::MAX, f32::MAX, f32::MAX);
-                let mut max = Vec3::new(f32::MIN, f32::MIN, f32::MIN);
-                for p in corners {
-                    let p_ls = light_view * Vec4::from_vec3(p, 1.0);
-                    min.x = min.x.min(p_ls.x);
-                    max.x = max.x.max(p_ls.x);
-                    min.y = min.y.min(p_ls.y);
-                    max.y = max.y.max(p_ls.y);
-                    min.z = min.z.min(p_ls.z);
-                    max.z = max.z.max(p_ls.z);
-                }
-
-                // 4. Texel snapping: round bounds to whole-texel increments
-                //    to prevent shadow shimmer when the camera moves.
-                let shadow_map_size = 2048.0_f32;
-                let units_per_texel_x = (max.x - min.x) / shadow_map_size;
-                let units_per_texel_y = (max.y - min.y) / shadow_map_size;
-                min.x = (min.x / units_per_texel_x).floor() * units_per_texel_x;
-                max.x = (max.x / units_per_texel_x).floor() * units_per_texel_x;
-                min.y = (min.y / units_per_texel_y).floor() * units_per_texel_y;
-                max.y = (max.y / units_per_texel_y).floor() * units_per_texel_y;
-
-                // 5. Create Ortho Projection
-                // Z-range should be large enough to encapsulate casters outside view
-                let z_padding = 100.0;
-                let light_proj = Mat4::orthographic_rh_zo(
-                    min.x,
-                    max.x,
-                    min.y,
-                    max.y,
-                    min.z - z_padding,
-                    max.z + z_padding,
-                );
-
-                light_proj * light_view
-            }
-            khora_core::renderer::light::LightType::Spot(sl) => {
-                let light_dir = light.direction.normalize();
-                let up = if light_dir.y.abs() > 0.99 {
-                    Vec3::Z
-                } else {
-                    Vec3::Y
-                };
-                let view = Mat4::look_at_rh(light.position, light.position + light_dir, up)
-                    .unwrap_or(Mat4::IDENTITY);
-
-                let proj = Mat4::perspective_rh_zo(sl.outer_cone_angle * 2.0, 1.0, 0.1, sl.range);
-                proj * view
-            }
-            khora_core::renderer::light::LightType::Point(_) => {
-                // Point lights need 6 passes (cubemap)
-                Mat4::IDENTITY
-            }
-        }
-    }
 }
 
 impl khora_core::lane::Lane for ShadowPassLane {
@@ -191,8 +93,8 @@ impl khora_core::lane::Lane for ShadowPassLane {
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
         let render_world =
-            match ctx.get::<khora_core::lane::Slot<khora_data::render::RenderWorld>>() {
-                Some(slot) => slot.get_ref(),
+            match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>() {
+                Some(slot) => slot.get(),
                 None => return 1.0,
             };
         let gpu_meshes = match ctx.get::<std::sync::Arc<
@@ -223,7 +125,7 @@ impl khora_core::lane::Lane for ShadowPassLane {
         &self,
         ctx: &mut khora_core::lane::LaneContext,
     ) -> Result<(), khora_core::lane::LaneError> {
-        use khora_core::lane::{LaneError, Slot};
+        use khora_core::lane::{LaneError, Ref, Slot};
 
         // Phase 1: Render shadow maps
         {
@@ -244,30 +146,45 @@ impl khora_core::lane::Lane for ShadowPassLane {
                 .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?
                 .get();
             let render_world = ctx
-                .get::<Slot<khora_data::render::RenderWorld>>()
-                .ok_or(LaneError::missing("Slot<RenderWorld>"))?
-                .get_ref();
+                .get::<Ref<khora_data::render::RenderWorld>>()
+                .ok_or(LaneError::missing("Ref<RenderWorld>"))?
+                .get();
+            // Pre-computed by ShadowFlow in the Substrate Pass; absent here
+            // means no shadow-casting light this frame, in which case the
+            // lane bails to identity matrices (no visible shadows).
+            let shadow_view = ctx
+                .get::<Ref<khora_data::flow::ShadowView>>()
+                .map(|r| r.get());
 
             self.render_shadows(
                 render_world,
+                shadow_view,
                 device.as_ref(),
                 encoder,
                 &gpu_meshes,
             );
         }
 
-        // Phase 2: Patch lights with shadow data
+        // Phase 2: Publish shadow results into the per-frame OutputDeck.
+        //
+        // The previous pipeline mutated `RenderWorld.lights[i]` in place,
+        // which is no longer possible now that `RenderWorld` is a read-only
+        // View in the LaneBus. Lit render lanes (lit_forward, forward_plus)
+        // read this `ShadowEntries` map from the deck and look up shadow
+        // data per light index when building their lighting uniforms.
+        if let Some(deck_slot) =
+            ctx.get::<Slot<khora_core::lane::OutputDeck>>()
         {
-            let render_world = ctx
-                .get::<Slot<khora_data::render::RenderWorld>>()
-                .ok_or(LaneError::missing("Slot<RenderWorld>"))?
-                .get();
-            let shadow_results = self.get_shadow_results();
-            for (i, (matrix, index)) in shadow_results.iter() {
-                if let Some(light) = render_world.lights.get_mut(*i) {
-                    light.shadow_view_proj = *matrix;
-                    light.shadow_atlas_index = Some(*index);
-                }
+            let deck = deck_slot.get();
+            let entries = deck.slot::<khora_data::render::ShadowEntries>();
+            for (i, (matrix, atlas_index)) in self.get_shadow_results().iter() {
+                entries.insert(
+                    *i,
+                    khora_data::render::ShadowEntry {
+                        view_proj: *matrix,
+                        atlas_index: *atlas_index,
+                    },
+                );
             }
         }
 
@@ -302,6 +219,7 @@ impl ShadowPassLane {
     fn render_shadows(
         &self,
         render_world: &RenderWorld,
+        shadow_view: Option<&khora_data::flow::ShadowView>,
         device: &dyn GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
@@ -381,12 +299,13 @@ impl ShadowPassLane {
                 continue;
             }
 
-            // 1. Calculate Shadow View-Projection
-            let shadow_view_proj = if let Some(view) = render_world.views.first() {
-                self.calculate_shadow_view_proj(light, view)
-            } else {
-                khora_core::math::Mat4::IDENTITY
-            };
+            // 1. Look up shadow view-projection from the ShadowFlow view in
+            //    the LaneBus. The math has moved to `khora-data`'s
+            //    `ShadowFlow::project`; the lane only does GPU work + atlas
+            //    allocation.
+            let shadow_view_proj = shadow_view
+                .and_then(|sv| sv.matrices.get(&i).copied())
+                .unwrap_or(khora_core::math::Mat4::IDENTITY);
 
             // Store result for main pass consumption
             let atlas_index = next_atlas_index;

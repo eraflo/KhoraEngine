@@ -230,6 +230,7 @@ impl EditorPanel for SceneTreePanel {
         // The remaining empty space below the last row is its own hit
         // target with an "Add …" context menu — letting the user spawn
         // new entities without having to right-click an existing row.
+        // It's also a drop target: dragging an entity here unparents it.
         let panel_bottom = panel_rect[1] + panel_rect[3];
         let empty_h = (panel_bottom - row_y).max(0.0);
         if empty_h > 4.0 {
@@ -237,6 +238,12 @@ impl EditorPanel for SceneTreePanel {
                 "scene-tree-empty",
                 [px, row_y, pw, empty_h],
             );
+            if let Some(packed) = ui.dnd_take_drop_payload() {
+                pending.set(Some(EditorAction::Reparent {
+                    child: unpack_entity(packed),
+                    new_parent: None,
+                }));
+            }
             ui.context_menu_last(&mut |menu| {
                 menu.menu_button("Add", &mut |sub| {
                     if sub.button("Empty") {
@@ -298,6 +305,11 @@ impl EditorPanel for SceneTreePanel {
                 EditorAction::Spawn(kind) => {
                     state_guard.pending_spawn = Some(kind);
                 }
+                EditorAction::Reparent { child, new_parent } => {
+                    if Some(child) != new_parent {
+                        state_guard.pending_reparent = Some((child, new_parent));
+                    }
+                }
             }
         }
     }
@@ -334,6 +346,23 @@ fn render_node(
         &format!("hier-row-{}", node.entity.index),
         [row_x, y, row_click_w, ROW_HEIGHT],
     );
+
+    // Drag-and-drop wiring — both source and target attach to the SAME
+    // interact_rect response above, so a single hit-target serves clicks,
+    // drags, and drops without stealing each other's pointer events.
+    // Payload is the row's `EntityId` packed into u64 (high 32 = generation,
+    // low 32 = index) so reparent addresses the exact live entity, not a
+    // stale slot. Cycle prevention happens in `GameWorld::set_parent`.
+    ui.dnd_attach_drag_payload(pack_entity(node.entity));
+    if let Some(packed) = ui.dnd_take_drop_payload() {
+        let dropped = unpack_entity(packed);
+        if dropped != node.entity {
+            pending.set(Some(EditorAction::Reparent {
+                child: dropped,
+                new_parent: Some(node.entity),
+            }));
+        }
+    }
 
     if is_selected {
         ui.paint_rect_filled(
@@ -458,6 +487,20 @@ fn render_node(
     next_y
 }
 
+/// Packs an `EntityId` into a `u64` for drag-and-drop payloads. Layout:
+/// high 32 = generation, low 32 = index.
+fn pack_entity(e: khora_sdk::prelude::ecs::EntityId) -> u64 {
+    ((e.generation as u64) << 32) | (e.index as u64)
+}
+
+/// Inverse of [`pack_entity`].
+fn unpack_entity(payload: u64) -> khora_sdk::prelude::ecs::EntityId {
+    khora_sdk::prelude::ecs::EntityId {
+        index: payload as u32,
+        generation: (payload >> 32) as u32,
+    }
+}
+
 enum EditorAction {
     Select(khora_sdk::prelude::ecs::EntityId),
     ToggleVisibility(khora_sdk::prelude::ecs::EntityId),
@@ -465,4 +508,11 @@ enum EditorAction {
     Duplicate(khora_sdk::prelude::ecs::EntityId),
     Delete(khora_sdk::prelude::ecs::EntityId),
     Spawn(String),
+    /// Reparent `child` under `new_parent`, or detach it (root) when
+    /// `new_parent` is `None`. Emitted by the scene tree drag-and-drop
+    /// handler.
+    Reparent {
+        child: khora_sdk::prelude::ecs::EntityId,
+        new_parent: Option<khora_sdk::prelude::ecs::EntityId>,
+    },
 }

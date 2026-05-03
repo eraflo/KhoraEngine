@@ -498,6 +498,24 @@ impl UiBuilder for EguiUiBuilder<'_> {
         interaction
     }
 
+    fn dnd_attach_drag_payload(&mut self, payload: u64) {
+        // Attach to the response left by the last `interact_rect` call.
+        // That response was created with `Sense::click_and_drag()`, so
+        // egui already detects drags — we just need to publish the payload.
+        if let Some(response) = self.last_response.as_ref() {
+            if response.dragged() {
+                response.dnd_set_drag_payload::<u64>(payload);
+            }
+        }
+    }
+
+    fn dnd_take_drop_payload(&mut self) -> Option<u64> {
+        self.last_response
+            .as_ref()
+            .and_then(|r| r.dnd_release_payload::<u64>())
+            .map(|payload| *payload)
+    }
+
     fn tooltip_for_last(&mut self, text: &str) {
         if let Some(response) = self.last_response.as_ref() {
             response.clone().on_hover_text(text);

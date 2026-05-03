@@ -137,6 +137,21 @@ pub fn process_spawns(world: &mut GameWorld, state: &mut EditorState) {
     }
 }
 
+/// Drains `state.pending_reparent` and applies it to the ECS hierarchy.
+///
+/// Set by `scene_tree`'s drag-and-drop handler. The actual cycle check and
+/// `Parent`/`Children` bookkeeping live in `GameWorld::set_parent`.
+pub fn process_reparents(world: &mut GameWorld, state: &mut EditorState) {
+    if let Some((child, new_parent)) = state.pending_reparent.take() {
+        world.set_parent(child, new_parent);
+        log::info!(
+            "Reparented {:?} → {:?}",
+            child,
+            new_parent.map(|p| format!("{:?}", p)).unwrap_or_else(|| "<root>".to_owned())
+        );
+    }
+}
+
 /// Duplicates one entity by cloning known components.
 pub fn duplicate_entity(world: &mut GameWorld, entity: EntityId, state: &mut EditorState) {
     let name = world
@@ -311,6 +326,25 @@ pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
                             Ok(()) => applied = true,
                             Err(e) => log::warn!(
                                 "Failed to apply JSON edit to {}: {}",
+                                type_name, e
+                            ),
+                        }
+                        break;
+                    }
+                }
+                if !applied {
+                    log::warn!("No registration found for component '{}'", type_name);
+                }
+            }
+            PropertyEdit::RemoveComponent { entity, type_name } => {
+                let inner = world.inner_world_mut();
+                let mut applied = false;
+                for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
+                    if reg.type_name == type_name {
+                        match (reg.remove)(inner, entity) {
+                            Ok(()) => applied = true,
+                            Err(e) => log::warn!(
+                                "Failed to remove component {}: {}",
                                 type_name, e
                             ),
                         }

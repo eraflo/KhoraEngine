@@ -18,14 +18,17 @@ use crate::budget_channel::BudgetChannel;
 use crate::context::Context;
 use crate::plugin::EnginePlugin;
 use crate::registry::AgentRegistry;
+use crate::substrate;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::timing::AgentImportance;
 use khora_core::agent::{AgentDependency, EngineMode, ExecutionPhase};
-use khora_core::control::gorna::AgentId;
+use khora_core::control::gorna::{AgentId, ResourceBudget};
 use khora_core::graph::topological_sort;
+use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::{EngineContext, ServiceRegistry};
 use khora_data::ecs::World;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -45,6 +48,10 @@ pub struct ExecutionScheduler {
     context: Arc<std::sync::RwLock<Context>>,
     frame_start: Instant,
     frame_budget: Duration,
+    /// Output deck retained across the tick boundary so the engine I/O
+    /// layer can drain typed lane outputs (recorded GPU commands, draw
+    /// lists, etc.) after the scheduler has finished.
+    last_deck: OutputDeck,
 }
 
 impl ExecutionScheduler {
@@ -62,7 +69,14 @@ impl ExecutionScheduler {
             context,
             frame_start: Instant::now(),
             frame_budget: Duration::from_millis(16),
+            last_deck: OutputDeck::new(),
         }
+    }
+
+    /// Mutable access to the last frame's [`OutputDeck`] — drained by the
+    /// engine at the I/O boundary (e.g. GPU submit / present).
+    pub fn deck_mut(&mut self) -> &mut OutputDeck {
+        &mut self.last_deck
     }
 
     /// Returns a reference to the budget channel for the DCC to send budgets.
@@ -125,23 +139,55 @@ impl ExecutionScheduler {
             ctx.mode.clone()
         };
 
-        // 4. Clone phase order to avoid borrow conflicts
+        // 4. Build the per-frame substrate: typed input bus and output deck.
+        //    The deck is moved into the scheduler's `last_deck` slot at the
+        //    end of the frame so the engine I/O layer can drain it.
+        let mut bus = LaneBus::new();
+        let mut deck = OutputDeck::new();
+
+        // 5. Snapshot agent budgets for this frame and run the Substrate
+        //    Pass: every registered Flow projects its View into the bus,
+        //    receiving the budget of its corresponding agent and access to
+        //    the service registry.
+        let budgets = self.snapshot_budgets(&agent_ids);
+        substrate::run_flows(world, &mut bus, &budgets, &overlay_arc);
+
+        // 6. Clone phase order to avoid borrow conflicts
         let phases: Vec<ExecutionPhase> = self.phase_order.clone();
 
-        // 5. Execute each phase
+        // 7. Execute each phase: plugins then agents (CLAD descent —
+        //    agents invoke their lanes themselves through `Agent::execute`).
         for phase in phases {
-            // Plugins
             for plugin in &mut self.plugins {
                 if plugin.wants_phase(phase) {
                     plugin.execute(phase, world);
                 }
             }
 
-            // Agents
-            self.execute_agents_in_phase(phase, world, &overlay_arc, &mode, &completion_map);
+            self.execute_agents_in_phase(
+                phase,
+                world,
+                &overlay_arc,
+                &mode,
+                &completion_map,
+                &bus,
+                &mut deck,
+            );
         }
+
+        // 8. Hand the populated deck off to the engine for the I/O boundary.
+        self.last_deck = deck;
     }
 
+    /// Drains all currently buffered budgets into a per-agent snapshot.
+    fn snapshot_budgets(&self, agent_ids: &[AgentId]) -> HashMap<AgentId, ResourceBudget> {
+        agent_ids
+            .iter()
+            .filter_map(|id| self.budget_channel.get(*id).map(|b| (*id, b)))
+            .collect()
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn execute_agents_in_phase(
         &mut self,
         phase: ExecutionPhase,
@@ -149,6 +195,8 @@ impl ExecutionScheduler {
         services: &Arc<ServiceRegistry>,
         mode: &EngineMode,
         completion_map: &Arc<AgentCompletionMap>,
+        bus: &LaneBus,
+        deck: &mut OutputDeck,
     ) {
         // Collect agents for this phase and mode
         let agents = {
@@ -161,7 +209,7 @@ impl ExecutionScheduler {
         }
 
         let sorted = sort_agents(agents);
-        self.execute_agents_sequential(sorted, world, services, completion_map);
+        self.execute_agents_sequential(sorted, world, services, completion_map, bus, deck);
     }
 
     fn execute_agents_sequential(
@@ -170,6 +218,8 @@ impl ExecutionScheduler {
         world: &mut World,
         services: &Arc<ServiceRegistry>,
         completion_map: &Arc<AgentCompletionMap>,
+        bus: &LaneBus,
+        deck: &mut OutputDeck,
     ) {
         for (agent, importance, _priority, dependencies) in agents {
             let agent_id = match agent.lock().ok().map(|a| a.id()) {
@@ -189,10 +239,13 @@ impl ExecutionScheduler {
                 continue;
             }
 
-            // Build EngineContext and execute
+            // Build EngineContext and execute (CLAD descent: the agent
+            // chooses and invokes its lane internally).
             let mut engine_ctx = EngineContext {
                 world: Some(world as &mut dyn std::any::Any),
                 services: Arc::clone(services),
+                bus,
+                deck,
             };
 
             if let Ok(mut a) = agent.lock() {

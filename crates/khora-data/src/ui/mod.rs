@@ -17,12 +17,8 @@
 //! Provides UI components and layout management for the Khora Engine.
 
 pub mod components;
-mod extract;
 pub mod layout_view;
 mod scene;
-mod store;
 
 pub use components::*;
-pub use extract::{extract_ui_scene, layout_ui_text};
-pub use scene::{ExtractedUiNode, ExtractedUiText, UiScene};
-pub use store::UiSceneStore;
+pub use scene::{ExtractedUiNode, ExtractedUiText, UiAtlasMap, UiScene};

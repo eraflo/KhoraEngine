@@ -2,7 +2,6 @@
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
-// You may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
@@ -13,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! GLTF mesh format loader lane with support for both embedded and external resources.
+//! GLTF mesh decoder with support for both embedded and external resources.
 
 use super::GltfResourceResolver;
 use anyhow::Result;
@@ -27,24 +26,24 @@ use khora_core::{
         scene::Mesh,
     },
 };
-use khora_io::asset::AssetDecoder;
 use std::{error::Error, sync::Arc};
 
-/// Lane for loading GLTF meshes, configured with a resource resolver.
+use crate::asset::AssetDecoder;
+
+/// Decoder for GLTF meshes, configured with a resource resolver.
 #[derive(Clone)]
-pub struct GltfLoaderLane {
+pub struct GltfDecoder {
     resolver: Arc<dyn GltfResourceResolver>,
 }
 
-impl GltfLoaderLane {
-    /// Creates a new GLTF loader lane with the given resource resolver.
+impl GltfDecoder {
+    /// Creates a new GLTF decoder with the given resource resolver.
     pub fn new(resolver: Arc<dyn GltfResourceResolver>) -> Self {
         Self { resolver }
     }
 }
 
-impl AssetDecoder<Mesh> for GltfLoaderLane {
-    /// Loads a mesh from GLTF byte data.
+impl AssetDecoder<Mesh> for GltfDecoder {
     fn load(&self, bytes: &[u8]) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
         let gltf = gltf::Gltf::from_slice(bytes)
             .map_err(|e| format!("Failed to parse GLTF file: {}", e))?;
@@ -63,11 +62,9 @@ impl AssetDecoder<Mesh> for GltfLoaderLane {
             .next()
             .ok_or("No primitives found in mesh")?;
 
-        // This closure has a unique, unnamable type `F`
         let get_buffer_data = |buffer: Buffer<'_>| Some(buffer_data[buffer.index()].as_slice());
         let reader = primitive.reader(get_buffer_data);
 
-        // The compiler will infer the generic types for `F` when we call the helpers
         let positions = self.extract_positions(&reader)?;
         let normals = self.extract_normals(&reader);
         let tex_coords = self.extract_tex_coords(&reader);
@@ -103,7 +100,7 @@ impl AssetDecoder<Mesh> for GltfLoaderLane {
     }
 }
 
-impl GltfLoaderLane {
+impl GltfDecoder {
     fn load_buffer_data(
         &self,
         gltf: &gltf::Gltf,
@@ -146,7 +143,6 @@ impl GltfLoaderLane {
         }
     }
 
-    // The helper functions are now generic over the closure type `F`.
     fn extract_positions<'a, 's, F>(
         &self,
         reader: &Reader<'a, 's, F>,
@@ -270,23 +266,5 @@ impl GltfLoaderLane {
             gltf::mesh::Mode::Points => PrimitiveTopology::PointList,
             _ => PrimitiveTopology::TriangleList,
         }
-    }
-}
-
-impl khora_core::lane::Lane for GltfLoaderLane {
-    fn strategy_name(&self) -> &'static str {
-        "GltfLoader"
-    }
-
-    fn lane_kind(&self) -> khora_core::lane::LaneKind {
-        khora_core::lane::LaneKind::Asset
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }

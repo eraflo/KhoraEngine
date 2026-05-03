@@ -12,26 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Implements an asset loader for `.wav` audio files.
+//! `.wav` audio decoder.
 
 use anyhow::{anyhow, Result};
 use khora_data::assets::SoundData;
-use khora_io::asset::AssetDecoder;
 use std::{error::Error, io::Cursor};
 
-/// An `AssetDecoder` that decodes audio data from the WAV format.
-#[derive(Default)]
-pub struct WavLoaderLane;
+use crate::asset::AssetDecoder;
 
-impl WavLoaderLane {
-    /// Creates a new instance of `WavLoaderLane`.
+/// Decodes audio from the WAV format using `hound`.
+#[derive(Default)]
+pub struct WavDecoder;
+
+impl WavDecoder {
+    /// Creates a new instance of `WavDecoder`.
     pub fn new() -> Self {
         Self
     }
 }
 
-impl AssetDecoder<SoundData> for WavLoaderLane {
-    /// Parses a byte slice representing a `.wav` file into a `SoundData` asset.
+impl AssetDecoder<SoundData> for WavDecoder {
     fn load(&self, bytes: &[u8]) -> Result<SoundData, Box<dyn Error + Send + Sync>> {
         let cursor = Cursor::new(bytes);
         let mut reader = hound::WavReader::new(cursor)?;
@@ -59,29 +59,11 @@ impl AssetDecoder<SoundData> for WavLoaderLane {
     }
 }
 
-impl khora_core::lane::Lane for WavLoaderLane {
-    fn strategy_name(&self) -> &'static str {
-        "WavLoader"
-    }
-
-    fn lane_kind(&self) -> khora_core::lane::LaneKind {
-        khora_core::lane::LaneKind::Asset
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // A WAV file 16-bit, mono, 44100Hz, containing 4 samples (0.1, -0.1, 0.2, -0.2).
+    // 16-bit, mono, 44100Hz, 4 samples (0.1, -0.1, 0.2, -0.2).
     const TEST_WAV_BYTES: &[u8] = &[
         82, 73, 70, 70, 52, 0, 0, 0, 87, 65, 86, 69, 102, 109, 116, 32, 16, 0, 0, 0, 1, 0, 1, 0,
         68, 172, 0, 0, 136, 88, 1, 0, 2, 0, 16, 0, 100, 97, 116, 97, 8, 0, 0, 0, 0, 12, 204, 251,
@@ -89,30 +71,20 @@ mod tests {
     ];
 
     #[test]
-    fn test_wav_loader_success() {
-        let loader = WavLoaderLane::new();
+    fn wav_loader_success() {
+        let loader = WavDecoder::new();
         let result = loader.load(TEST_WAV_BYTES);
-
-        assert!(result.is_ok(), "The WAV loading should not fail");
+        assert!(result.is_ok());
         let sound_data = result.unwrap();
-
-        assert_eq!(
-            sound_data.sample_rate, 44100,
-            "The sample rate is incorrect"
-        );
-        assert_eq!(
-            sound_data.channels, 1,
-            "The number of channels is incorrect"
-        );
-        assert!(!sound_data.samples.is_empty(), "No samples were loaded");
+        assert_eq!(sound_data.sample_rate, 44100);
+        assert_eq!(sound_data.channels, 1);
+        assert!(!sound_data.samples.is_empty());
     }
 
     #[test]
-    fn test_wav_loader_invalid_bytes() {
-        let loader = WavLoaderLane::new();
+    fn wav_loader_invalid_bytes() {
+        let loader = WavDecoder::new();
         let invalid_bytes = &[0, 1, 2, 3, 4];
-        let result = loader.load(invalid_bytes);
-
-        assert!(result.is_err(), "The loading of invalid bytes should fail");
+        assert!(loader.load(invalid_bytes).is_err());
     }
 }

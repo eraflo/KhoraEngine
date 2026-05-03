@@ -2772,6 +2772,7 @@ name = "khora-control"
 version = "0.1.0"
 dependencies = [
  "crossbeam-channel",
+ "inventory",
  "khora-core",
  "khora-data",
  "log",
@@ -2874,22 +2875,6 @@ version = "0.1.0"
 dependencies = [
  "ahash",
  "anyhow",
- "bincode",
- "khora-core",
- "khora-data",
- "khora-telemetry",
- "log",
- "ron",
- "serde",
- "tempfile",
-]
-
-[[package]]
-name = "khora-lanes"
-version = "0.1.2"
-dependencies = [
- "ahash",
- "anyhow",
  "base64 0.22.1",
  "bincode",
  "bytemuck",
@@ -2898,13 +2883,31 @@ dependencies = [
  "image",
  "khora-core",
  "khora-data",
- "khora-io",
+ "khora-telemetry",
  "log",
  "ron",
  "serde",
  "symphonia",
+ "tempfile",
  "thiserror 2.0.18",
  "tobj",
+]
+
+[[package]]
+name = "khora-lanes"
+version = "0.1.2"
+dependencies = [
+ "ahash",
+ "anyhow",
+ "bincode",
+ "bytemuck",
+ "khora-core",
+ "khora-data",
+ "khora-io",
+ "log",
+ "ron",
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -4814,6 +4817,7 @@ version = "1.0.149"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "serde",

@@ -28,12 +28,12 @@ use khora_core::control::gorna::{
     StrategyOption,
 };
 use khora_core::lane::{
-    LaneContext, LaneKind, LaneRegistry, ShadowAtlasView, ShadowComparisonSampler, Slot,
+    LaneContext, LaneKind, LaneRegistry, Ref, ShadowAtlasView, ShadowComparisonSampler, Slot,
 };
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
-use khora_data::render::{RenderWorld, RenderWorldStore};
+use khora_data::render::RenderWorld;
 use khora_data::GpuCache;
 use khora_lanes::render_lane::ShadowPassLane;
 
@@ -65,12 +65,13 @@ impl Agent for ShadowAgent {
     }
 
     fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
-        // Estimate cost from a stub LaneContext.  The real RenderWorld is
-        // fetched from services at execute time; negotiation runs on the
-        // DCC thread without access to the live scene.
-        let mut stub_world = RenderWorld::new();
+        // Estimate cost from a stub LaneContext. The real RenderWorld lives
+        // in the LaneBus at execute time; negotiation runs on the DCC thread
+        // without access to the live scene, so we feed the cost estimator a
+        // borrowed empty stub.
+        let stub_world = RenderWorld::new();
         let mut ctx = LaneContext::new();
-        ctx.insert(Slot::new(&mut stub_world));
+        ctx.insert(Ref::new(&stub_world));
 
         let cost = self
             .lanes
@@ -152,17 +153,17 @@ impl Agent for ShadowAgent {
         };
         let gpu_meshes = gpu_cache.inner().clone();
 
-        let Some(rws) = context.services.get::<RenderWorldStore>() else {
+        // Read the per-frame RenderWorld from the LaneBus (RenderFlow).
+        let Some(render_world): Option<&RenderWorld> = context.bus.get() else {
+            log::warn!("ShadowAgent: no RenderWorld in LaneBus (RenderFlow not run?)");
             return;
         };
-        let render_world_arc = rws.shared().clone();
 
         let frame_ctx = context.services.get::<Arc<FrameContext>>().cloned();
 
         // Encode shadow passes into a standalone command buffer.
         let mut encoder = device.create_command_encoder(Some("Shadow Command Encoder"));
         {
-            let mut rw_guard = render_world_arc.write().unwrap();
             let mut ctx = LaneContext::new();
             ctx.insert(device.clone());
             ctx.insert(gpu_meshes);
@@ -175,7 +176,18 @@ impl Agent for ShadowAgent {
                     Slot<dyn khora_core::renderer::traits::CommandEncoder>,
                 >(encoder_slot)
             });
-            ctx.insert(Slot::new(&mut *rw_guard));
+            // SAFETY: render_world is borrowed from LaneBus, alive for this
+            // entire frame and read-only.
+            ctx.insert(Ref::new(render_world));
+            // ShadowFlow's pre-computed view-projection matrices, indexed
+            // by light position in `RenderWorld.lights`.
+            if let Some(shadow_view) = context.bus.get::<khora_data::flow::ShadowView>() {
+                ctx.insert(Ref::new(shadow_view));
+            }
+            // SAFETY: deck is borrowed from EngineContext for the duration
+            // of this agent.execute() call; the lane runs synchronously
+            // before the slot is dropped.
+            ctx.insert(Slot::new(&mut *context.deck));
 
             for lane in self.lanes.find_by_kind(LaneKind::Shadow) {
                 if let Err(e) = lane.execute(&mut ctx) {

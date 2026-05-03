@@ -46,6 +46,7 @@ use khora_sdk::editor_ui::*;
 use khora_sdk::prelude::ecs::*;
 
 use crate::widgets::chrome::{paint_panel_header, panel_tab};
+use crate::widgets::enum_variants::editable_variants;
 use crate::widgets::inspector::paint_inspector_header;
 use crate::widgets::paint::{paint_icon, with_alpha};
 
@@ -283,6 +284,7 @@ impl EditorPanel for PropertiesPanel {
                             &title,
                             icon,
                             None,
+                            true, // removable — INHERENT_COMPONENTS already filtered above
                             card_x,
                             card_w,
                             &theme_for_closure,
@@ -343,6 +345,7 @@ fn render_card(
     title: &str,
     icon: Icon,
     enabled: Option<bool>,
+    removable: bool,
     card_x: f32,
     card_w: f32,
     theme: &EditorTheme,
@@ -380,15 +383,47 @@ fn render_card(
         theme.text,
     );
 
+    // Trailing edge: optional toggle, then optional trash button.
+    let mut right_edge = card_x + card_w - 10.0;
+
     if let Some(en) = enabled {
         let toggle_w = 26.0;
         let toggle_h = 14.0;
-        let tx = card_x + card_w - toggle_w - 10.0;
+        let tx = right_edge - toggle_w;
         let ty = cursor_y + (CARD_HEADER_H - toggle_h) * 0.5;
         let track_color = if en { theme.primary } else { theme.surface_active };
         ui.paint_rect_filled([tx, ty], [toggle_w, toggle_h], track_color, 999.0);
         let knob_x = if en { tx + 13.0 } else { tx + 1.0 };
         ui.paint_circle_filled([knob_x + 6.0, ty + toggle_h * 0.5], 5.5, theme.text);
+        right_edge = tx - 6.0;
+    }
+
+    if removable {
+        let trash_w = 22.0;
+        let trash_h = 22.0;
+        let tx = right_edge - trash_w;
+        let ty = cursor_y + (CARD_HEADER_H - trash_h) * 0.5;
+        let trash_int = ui.interact_rect(&format!("card-rm-{}", card_id), [tx, ty, trash_w, trash_h]);
+        let trash_color = if trash_int.hovered {
+            theme.error
+        } else {
+            theme.text_muted
+        };
+        if trash_int.hovered {
+            ui.paint_rect_filled(
+                [tx, ty],
+                [trash_w, trash_h],
+                with_alpha(theme.error, 0.12),
+                4.0,
+            );
+        }
+        paint_icon(ui, [tx + 5.0, ty + 5.0], Icon::Trash, 12.0, trash_color);
+        if trash_int.clicked {
+            state.pending_edits.push(PropertyEdit::RemoveComponent {
+                entity,
+                type_name: title.to_string(),
+            });
+        }
     }
 
     let header_int = ui.interact_rect(&format!("card-hdr-{}", card_id), header_rect);
@@ -436,6 +471,39 @@ fn render_object(
     // 1. Single-key objects are serde-tagged enum variants.
     if map.len() == 1 {
         let key = map.keys().next().cloned().unwrap();
+
+        // If this enum is registered as editor-switchable, render a combo
+        // box and replace the payload with the new variant's defaults on
+        // selection.
+        if let Some(variants) = editable_variants(&key) {
+            let names: Vec<&str> = variants.iter().map(|(n, _)| *n).collect();
+            let mut current = variants
+                .iter()
+                .position(|(n, _)| *n == key.as_str())
+                .unwrap_or(0);
+            let combo_changed = ui.combo_box("Variant", &mut current, &names);
+            if combo_changed {
+                if let Some((_, default_full)) = variants.get(current) {
+                    if let Value::Object(new_map) = default_full {
+                        map.clear();
+                        for (k, v) in new_map.iter() {
+                            map.insert(k.clone(), v.clone());
+                        }
+                        return true;
+                    }
+                }
+            }
+            // Fall through to recurse into the (possibly newly-typed) inner.
+            let inner_key = map.keys().next().cloned().unwrap();
+            let inner = map.get_mut(&inner_key).unwrap();
+            return match inner {
+                Value::Object(m) => render_object(ui, m, theme),
+                Value::Null => false,
+                _ => render_scalar_inline(ui, "value", inner, theme),
+            };
+        }
+
+        // Unknown enum — read-only label fallback.
         let inner = map.get_mut(&key).unwrap();
         ui.colored_label(theme.text_dim, &format!("Variant: {}", key));
         return match inner {

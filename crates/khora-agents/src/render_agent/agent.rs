@@ -41,7 +41,7 @@ use khora_core::EngineContext;
 use khora_data::assets::Assets;
 use khora_data::ecs::World;
 use khora_data::render::{
-    extract_active_camera_view, PassDescriptor, RenderWorld, RenderWorldStore, ResourceId,
+    extract_active_camera_view, PassDescriptor, RenderWorld, ResourceId,
     SharedFrameGraph,
 };
 use khora_data::GpuCache;
@@ -226,10 +226,12 @@ impl Agent for RenderAgent {
         };
         let gpu_meshes: Arc<RwLock<Assets<GpuMesh>>> = gpu_cache.inner().clone();
 
-        let Some(rws) = context.services.get::<RenderWorldStore>() else {
+        // Render lanes consume the per-frame `RenderWorld` from the LaneBus,
+        // populated by `RenderFlow` during the Substrate Pass.
+        let Some(render_world): Option<&RenderWorld> = context.bus.get() else {
+            log::warn!("RenderAgent: no RenderWorld in LaneBus (RenderFlow not run?)");
             return;
         };
-        let render_world_arc: Arc<RwLock<RenderWorld>> = rws.shared().clone();
 
         let Some(frame_graph) = context.services.get::<SharedFrameGraph>().cloned() else {
             log::warn!("RenderAgent: no FrameGraph in services");
@@ -268,16 +270,12 @@ impl Agent for RenderAgent {
 
         let frame_start = Instant::now();
         let strategy = self.strategy;
-        let select_name = {
-            let rw = render_world_arc.read().unwrap();
-            lane_name_for_strategy(strategy, &rw)
-        };
+        let select_name = lane_name_for_strategy(strategy, render_world);
 
         // Encode the scene pass into a fresh command buffer; the FrameGraph
         // submits it once all agents have finished recording.
         let mut encoder = device.create_command_encoder(Some("Khora Scene Encoder"));
         {
-            let mut rw_guard = render_world_arc.write().unwrap();
             let mut ctx = LaneContext::new();
             ctx.insert(device.clone());
             ctx.insert(gpu_meshes.clone());
@@ -290,7 +288,15 @@ impl Agent for RenderAgent {
                     Slot<dyn khora_core::renderer::traits::CommandEncoder>,
                 >(encoder_slot)
             });
-            ctx.insert(Slot::new(&mut *rw_guard));
+            // SAFETY: render_world is borrowed from the LaneBus, which lives
+            // for the entire frame and is read-only — the Ref's pointer
+            // outlives its only consumer (this lane).
+            ctx.insert(khora_core::lane::Ref::new(render_world));
+            // SAFETY: deck is borrowed from EngineContext for the duration
+            // of this agent.execute() call. Lit lanes read `ShadowEntries`
+            // (written by shadow_pass_lane in OBSERVE) from the deck to
+            // build per-light shadow uniforms.
+            ctx.insert(Slot::new(&mut *context.deck));
             ctx.insert(color_target);
             if let Some(dt) = depth_target {
                 ctx.insert(dt);
@@ -324,14 +330,12 @@ impl Agent for RenderAgent {
 
         self.last_frame_time = frame_start.elapsed();
 
-        // Refresh per-frame metrics from the populated RenderWorld.
-        let rw_guard = render_world_arc.read().unwrap();
-        self.draw_call_count = rw_guard.meshes.len() as u32;
-        self.triangle_count = count_triangles(&rw_guard, &gpu_meshes);
-        self.last_light_count = rw_guard.directional_light_count()
-            + rw_guard.point_light_count()
-            + rw_guard.spot_light_count();
-        drop(rw_guard);
+        // Refresh per-frame metrics from the LaneBus's RenderWorld view.
+        self.draw_call_count = render_world.meshes.len() as u32;
+        self.triangle_count = count_triangles(render_world, &gpu_meshes);
+        self.last_light_count = render_world.directional_light_count()
+            + render_world.point_light_count()
+            + render_world.spot_light_count();
 
         self.frame_count += 1;
     }

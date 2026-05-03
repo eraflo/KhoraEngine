@@ -67,8 +67,12 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::fmt;
 
+pub mod bus;
 pub mod context_keys;
+pub mod deck;
+pub use bus::LaneBus;
 pub use context_keys::*;
+pub use deck::OutputDeck;
 
 /// Error type for lane operations.
 #[derive(Debug)]

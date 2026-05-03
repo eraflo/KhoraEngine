@@ -50,6 +50,17 @@ pub enum AddComponentError {
     ComponentAlreadyExists,
 }
 
+/// Errors that can occur when removing a single component from an entity.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RemoveComponentError {
+    /// The specified entity does not exist or is not alive.
+    EntityNotFound,
+    /// The specified component type is not registered in the ECS.
+    ComponentNotRegistered,
+    /// The entity does not currently have a component of the specified type.
+    ComponentNotPresent,
+}
+
 /// Simple statistics for a semantic domain.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DomainStats {
@@ -601,6 +612,129 @@ impl World {
 
         // 6. Return the old location for cleanup, without performing swap_remove
         Ok(old_location_opt)
+    }
+
+    /// Removes a **single** component `C` from `entity`, preserving every
+    /// other component the entity carries (in any domain).
+    ///
+    /// Mirrors [`add_component`](Self::add_component) in reverse: rebuilds
+    /// the entity's domain page signature without `C`, finds-or-creates a
+    /// page matching the new signature, and copies the surviving
+    /// same-domain components there. The old slot is orphaned and reported
+    /// for the GC, exactly like an add migration.
+    ///
+    /// Use this — not [`remove_component_domain`](Self::remove_component_domain) —
+    /// for surgical component removal (editor "delete component" button,
+    /// `set_parent` unparenting, AGDF demotion). `remove_component_domain`
+    /// is a low-level primitive that drops the entire domain bucket and
+    /// should be reserved for entity teardown / GC paths.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Some(PageIndex))` — old location to send to the GC.
+    /// - `Ok(None)` — should not happen in practice (kept for symmetry with
+    ///   `add_component`).
+    /// - `Err(RemoveComponentError::EntityNotFound)` — entity dead or stale.
+    /// - `Err(RemoveComponentError::ComponentNotRegistered)` — type unknown.
+    /// - `Err(RemoveComponentError::ComponentNotPresent)` — entity didn't
+    ///   carry this component to begin with.
+    pub fn remove_component<C: Component>(
+        &mut self,
+        entity_id: EntityId,
+    ) -> Result<Option<PageIndex>, RemoveComponentError> {
+        // 1. Validate the entity.
+        let Some((id_in_world, Some(_))) = self.entities.get(entity_id.index as usize) else {
+            return Err(RemoveComponentError::EntityNotFound);
+        };
+        if id_in_world.generation != entity_id.generation {
+            return Err(RemoveComponentError::EntityNotFound);
+        }
+
+        // 2. Resolve the component's domain.
+        let Some(domain) = self.storage.registry.get_domain(TypeId::of::<C>()) else {
+            return Err(RemoveComponentError::ComponentNotRegistered);
+        };
+
+        // Take metadata out so we can mutate `self.storage` freely.
+        let mut metadata = self
+            .entities
+            .get_mut(entity_id.index as usize)
+            .unwrap()
+            .1
+            .take()
+            .unwrap();
+
+        let Some(loc) = metadata.locations.get(&domain).copied() else {
+            // Entity isn't in this domain at all.
+            self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
+            return Err(RemoveComponentError::ComponentNotPresent);
+        };
+
+        let target_type = TypeId::of::<C>();
+        let old_type_ids = self.storage.pages[loc.page_id as usize].type_ids.clone();
+        if !old_type_ids.contains(&target_type) {
+            // Entity is in this domain but doesn't have C specifically.
+            self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
+            return Err(RemoveComponentError::ComponentNotPresent);
+        }
+
+        // 3. Build the new domain signature (sans C).
+        let new_type_ids: Vec<TypeId> = old_type_ids
+            .iter()
+            .copied()
+            .filter(|t| *t != target_type)
+            .collect();
+
+        // 4. If C was the last component in this domain, just drop the
+        //    domain location and bitset bit. No page migration needed.
+        if new_type_ids.is_empty() {
+            metadata.locations.remove(&domain);
+            if let Some(bitset) = self.storage.domain_bitsets.get_mut(&domain) {
+                bitset.clear(entity_id.index);
+            }
+            self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
+            return Ok(Some(loc));
+        }
+
+        // 5. Find or create the destination page for the reduced signature.
+        let dest_page_id = self.find_or_create_page_for_signature(&new_type_ids);
+
+        // 6. Migrate every surviving same-domain component from src → dest.
+        let dest_row_index;
+        unsafe {
+            // SAFETY: src and dest are different pages (signatures differ),
+            // so we can borrow them disjointly through raw pointers.
+            let all_pages_ptr = self.storage.pages.as_mut_ptr();
+            let dest_page = &mut *all_pages_ptr.add(dest_page_id as usize);
+            let src_page = &*all_pages_ptr.add(loc.page_id as usize);
+            assert_ne!(loc.page_id, dest_page_id, "remove_component: src/dest aliased");
+
+            dest_row_index = dest_page.entities.len() as u32;
+            let src_row = loc.row_index as usize;
+
+            for type_id in &new_type_ids {
+                let copier = self.storage.registry.get_row_copier(type_id).unwrap();
+                let src_col = src_page.columns.get(type_id).unwrap();
+                let dest_col = dest_page.columns.get_mut(type_id).unwrap();
+                copier(src_col.as_ref(), src_row, dest_col.as_mut());
+            }
+
+            dest_page.add_entity(entity_id);
+        }
+
+        // 7. Update entity metadata to point at the new (page, row).
+        metadata.locations.insert(
+            domain,
+            PageIndex {
+                page_id: dest_page_id,
+                row_index: dest_row_index,
+            },
+        );
+        // The bitset stays set — other components remain in this domain.
+        self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
+
+        // 8. Hand the old location off to the GC.
+        Ok(Some(loc))
     }
 
     /// Logically removes all components belonging to a specific `SemanticDomain` from an entity.

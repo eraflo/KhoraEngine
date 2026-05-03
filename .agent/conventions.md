@@ -35,6 +35,9 @@ Code style and project conventions. Pair with [`rules.md`](./rules.md).
 | Lanes | `…Lane` suffix | `LitForwardLane`, `ShadowPassLane` |
 | Agents | `…Agent` suffix | `RenderAgent`, `UiAgent` |
 | Services | `…Service` suffix | `AssetService`, `TelemetryService` |
+| Flows | `…Flow` suffix | `RenderFlow`, `PhysicsFlow`, `ShadowFlow` |
+| Flow Views | `…View` suffix | `RenderWorld`, `PhysicsView`, `AudioView` |
+| Asset decoders | `…Decoder` suffix | `TextureDecoder`, `GltfDecoder` |
 
 ## 02 — Code patterns
 
@@ -57,6 +60,16 @@ Code style and project conventions. Pair with [`rules.md`](./rules.md).
   - `audio/cpal/`
   - `ui/taffy/`
 - Shaders under `crates/khora-lanes/src/render_lane/shaders/`, one `.wgsl` file per pass.
+- **Invariant `DataSystem`s**: one file per system in `crates/khora-data/src/ecs/systems/`. Discovered by the engine via `inventory::submit!{ DataSystemRegistration { ... } }`. Zero wiring elsewhere.
+- **Domain `Flow`s**: one file per flow in `crates/khora-data/src/flow/`. Same `inventory` pattern (use the `register_flow!` macro). The Scheduler's Substrate Pass runs them automatically.
+- **Asset decoders**: one file per decoder in `crates/khora-io/src/asset/decoders/`. Registered with the `AssetService` at startup; the file should drop the `…Lane` legacy suffix.
+
+### 03.1 — Adding a new domain
+
+1. Author the **`Flow`** in `khora-data/src/flow/<domain>.rs` — implement `Flow`, define a typed `View`, optionally use `Flow::adapt` for AGDF mutations. Register with `register_flow!(MyFlow)`.
+2. Author the **`Agent`** in `khora-agents/src/<domain>_agent/` — strict strategist, no per-frame state, invokes its lane with `(bus, deck, budget)` from `EngineContext`.
+3. Author the **`Lane`s** in `khora-lanes/src/<domain>_lane/` — read the `View` from `LaneContext::bus`, write outputs into `LaneContext::deck`. Never call `world.query*`.
+4. The engine drains the relevant typed slot of the `OutputDeck` at the I/O boundary if the domain produces side-effects (GPU submit, audio buffer flush, etc.).
 
 ## 04 — Components
 

@@ -23,7 +23,7 @@ use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::ecs::entity::EntityId;
 use khora_core::renderer::api::scene::Mesh;
 use khora_data::ecs::{
-    Camera, Component, ComponentBundle, EcsMaintenance, GlobalTransform, HandleComponent, Query,
+    Camera, Children, Component, ComponentBundle, GlobalTransform, HandleComponent, Parent, Query,
     QueryMut, Transform, World, WorldQuery,
 };
 
@@ -49,8 +49,6 @@ use khora_data::ecs::{
 pub struct GameWorld {
     /// The internal ECS world.
     world: World,
-    /// ECS maintenance service (garbage collection, compaction).
-    maintenance: EcsMaintenance,
 }
 
 impl GameWorld {
@@ -58,27 +56,13 @@ impl GameWorld {
     pub fn new() -> Self {
         Self {
             world: World::new(),
-            maintenance: EcsMaintenance::new(),
         }
     }
 
     /// Creates a `GameWorld` from an existing ECS `World`.
     /// Used for restoring a snapshot in play mode.
     pub fn from_world(world: World) -> Self {
-        Self {
-            world,
-            maintenance: EcsMaintenance::new(),
-        }
-    }
-
-    /// Runs one frame of ECS maintenance (garbage collection, page compaction).
-    ///
-    /// This should be called each frame between user logic and agent execution
-    /// to ensure agents see a clean world without orphaned data or fragmented pages.
-    ///
-    /// Internally drains up to N pending cleanup/vacuum requests per frame.
-    pub fn tick_maintenance(&mut self) {
-        self.maintenance.tick(&mut self.world);
+        Self { world }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -162,12 +146,20 @@ impl GameWorld {
         let _ = self.world.add_component(entity, component);
     }
 
-    /// Removes a component (and its semantic domain) from an entity.
+    /// Removes a single component `C` from `entity`. Other components on
+    /// the same entity (in any domain) are preserved — this is a surgical
+    /// removal, not a domain wipe. Backed by [`World::remove_component`].
     ///
-    /// This is an O(1) operation — the data is orphaned and cleaned up
-    /// later by the garbage collector agent.
+    /// No-op (silently logged) if the entity is dead or doesn't carry `C`.
     pub fn remove_component<C: Component>(&mut self, entity: EntityId) {
-        self.world.remove_component_domain::<C>(entity);
+        if let Err(e) = self.world.remove_component::<C>(entity) {
+            log::trace!(
+                "GameWorld::remove_component<{}>({:?}) skipped: {:?}",
+                std::any::type_name::<C>(),
+                entity,
+                e
+            );
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -292,6 +284,79 @@ impl GameWorld {
             f(transform);
         }
         self.sync_global_transform(entity);
+    }
+
+    /// Reparents `child` under `new_parent`, or detaches it (root) when
+    /// `new_parent` is `None`.
+    ///
+    /// Maintains both the `Parent` component on `child` and the `Children`
+    /// list on the involved parents. Refuses cycles silently (a no-op).
+    pub fn set_parent(&mut self, child: EntityId, new_parent: Option<EntityId>) {
+        // Refuse cycles: new_parent must not be a descendant of child.
+        if let Some(np) = new_parent {
+            if np == child || self.is_descendant_of(np, child) {
+                log::warn!(
+                    "set_parent: refused cycle (child={:?}, new_parent={:?})",
+                    child,
+                    np
+                );
+                return;
+            }
+        }
+
+        // 1. Remove `child` from its previous parent's `Children`, if any.
+        let old_parent = self.world.get::<Parent>(child).map(|p| p.0);
+        if let Some(old) = old_parent {
+            if let Some(children) = self.world.get_mut::<Children>(old) {
+                children.0.retain(|c| *c != child);
+            }
+        }
+
+        // 2. Update `Parent` on `child` (set or remove).
+        match new_parent {
+            Some(np) => {
+                if let Some(existing) = self.world.get_mut::<Parent>(child) {
+                    existing.0 = np;
+                } else {
+                    let _ = self.world.add_component(child, Parent(np));
+                }
+            }
+            None => {
+                // Surgical: drop only the `Parent` component, keep the
+                // entity's other Spatial components (Transform,
+                // GlobalTransform, Name, …) intact.
+                let _ = self.world.remove_component::<Parent>(child);
+            }
+        }
+
+        // 3. Add `child` to the new parent's `Children` (creating it if needed).
+        if let Some(np) = new_parent {
+            if let Some(children) = self.world.get_mut::<Children>(np) {
+                if !children.0.contains(&child) {
+                    children.0.push(child);
+                }
+            } else {
+                let _ = self.world.add_component(np, Children(vec![child]));
+            }
+        }
+    }
+
+    /// Returns whether `candidate` is a descendant of `ancestor` in the
+    /// scene hierarchy. Used by `set_parent` to refuse cycle-creating reparents.
+    fn is_descendant_of(&self, candidate: EntityId, ancestor: EntityId) -> bool {
+        let mut current = candidate;
+        // Bound the traversal to avoid infinite loops on a malformed hierarchy.
+        for _ in 0..1024 {
+            let Some(parent) = self.world.get::<Parent>(current) else {
+                return false;
+            };
+            if parent.0 == ancestor {
+                return true;
+            }
+            current = parent.0;
+        }
+        log::warn!("is_descendant_of: hierarchy traversal exceeded depth bound");
+        false
     }
 
     /// Adds a material to the asset registry and returns a handle component.
