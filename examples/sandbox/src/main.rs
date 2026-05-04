@@ -72,15 +72,11 @@ impl PlayerController {
 
         for event in inputs {
             match event {
-                InputEvent::MouseButtonPressed { button } => {
-                    if *button == MouseButton::Right {
-                        self.mouse_captured = true;
-                    }
+                InputEvent::MouseButtonPressed { button } if *button == MouseButton::Right => {
+                    self.mouse_captured = true;
                 }
-                InputEvent::MouseButtonReleased { button } => {
-                    if *button == MouseButton::Right {
-                        self.mouse_captured = false;
-                    }
+                InputEvent::MouseButtonReleased { button } if *button == MouseButton::Right => {
+                    self.mouse_captured = false;
                 }
                 InputEvent::MouseMoved { x, y } => {
                     if self.mouse_captured {
