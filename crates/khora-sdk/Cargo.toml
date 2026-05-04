@@ -15,7 +15,9 @@ khora-telemetry = { path = "../khora-telemetry" }
 khora-io = { path = "../khora-io" }
 
 anyhow = "1.0"
-winit = "0.30"
+# See khora-infra/Cargo.toml for the rationale on listing the Linux platform
+# backends explicitly.
+winit = { version = "0.30", features = ["x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita"] }
 log = "0.4"
 crossbeam-channel = "0.5"
 inventory = "0.3"

@@ -91,19 +91,29 @@ jobs:
       - name: Build hub binary
         run: cargo build --release -p khora-hub
 
-      # ── Stage engine payload ───────────────────────────────────────
+      # ── Stage engine payload (binary + bundled assets) ─────────────
+      # The editor looks up runtime assets (Geist + Lucide fonts, etc.) under
+      # `<exe-dir>/assets/` first; we MUST ship that directory next to the
+      # binary or the editor panics on first paint when a downloaded build
+      # tries to resolve `FontFamily::Name("icons")`.
       - name: Stage engine payload (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path stage/engine | Out-Null
           Copy-Item target/release/khora-editor.exe stage/engine/
+          if (Test-Path crates/khora-editor/assets) {
+            Copy-Item crates/khora-editor/assets stage/engine/assets -Recurse
+          }
 
       - name: Stage engine payload (Unix)
         if: matrix.os != 'windows-latest'
         run: |
           mkdir -p stage/engine
           cp target/release/khora-editor stage/engine/
+          if [ -d crates/khora-editor/assets ]; then
+            cp -R crates/khora-editor/assets stage/engine/assets
+          fi
 
       # ── Stage hub payload (binary + assets) ────────────────────────
       - name: Stage hub payload (Windows)
