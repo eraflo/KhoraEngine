@@ -511,10 +511,10 @@ impl EguiWgpuRenderer {
                 .collect(),
         };
 
-        if delta.pos.is_some() {
+        if let Some(pos) = delta.pos {
             // Partial update — write to existing texture
             if let Some((texture, _)) = self.textures.get(&id) {
-                let [x, y] = delta.pos.unwrap();
+                let [x, y] = pos;
                 queue.write_texture(
                     wgpu::TexelCopyTextureInfo {
                         texture,
