@@ -4,6 +4,10 @@ version = "0.2.2"
 edition = "2021"
 description = "Foundational crate with traits, core types, and interface contracts"
 
+[features]
+default = []
+serde = []
+
 [dependencies]
 bytemuck = { version = "1.25.0", features = ["derive"] }
 
@@ -15,6 +19,7 @@ anyhow = "1.0"
 
 # Async support
 async-trait = "0.1"
+tokio.workspace = true
 
 # Serialization
 bincode = { version = "2.0.1", features = ["serde"] }

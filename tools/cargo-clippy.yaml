@@ -1,0 +1,30 @@
+name: cargo-clippy
+description: Run Clippy lints on the workspace
+version: 1.0.0
+input_schema:
+  type: object
+  properties:
+    package:
+      type: string
+      description: "Specific package to lint. Omit for --workspace."
+    fix:
+      type: boolean
+      description: "Auto-apply suggested fixes"
+      default: false
+  required: []
+output_schema:
+  type: object
+  properties:
+    warnings:
+      type: integer
+    errors:
+      type: integer
+implementation:
+  type: script
+  path: cargo-clippy.sh
+  runtime: bash
+  timeout: 300
+annotations:
+  requires_confirmation: false
+  read_only: true
+  cost: low

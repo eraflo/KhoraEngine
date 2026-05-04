@@ -8,6 +8,7 @@ name = "xtask"
 path = "src/main.rs"
 
 [dependencies]
+khora-core = { path = "../crates/khora-core" }
 khora-sdk = { path = "../crates/khora-sdk" }
 
 clap = { version = "4.5.57", features = ["derive", "cargo"] }

@@ -1,0 +1,32 @@
+name: cargo-build
+description: Build the entire KhoraEngine workspace
+version: 1.0.0
+input_schema:
+  type: object
+  properties:
+    package:
+      type: string
+      description: "Specific package to build (e.g., khora-core, sandbox). Omit for full workspace."
+    release:
+      type: boolean
+      description: "Build in release mode"
+      default: false
+  required: []
+output_schema:
+  type: object
+  properties:
+    success:
+      type: boolean
+    warnings:
+      type: integer
+    errors:
+      type: integer
+implementation:
+  type: script
+  path: cargo-build.sh
+  runtime: bash
+  timeout: 300
+annotations:
+  requires_confirmation: false
+  read_only: false
+  cost: low

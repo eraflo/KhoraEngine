@@ -12,22 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Rendering lane - hot path for graphics operations
+//! Render-domain lanes (the hot-path strategies for the rendering subsystem).
+//!
+//! The per-frame `RenderWorld` and the extraction logic live in
+//! [`khora_data::render`].  This module exposes the lanes that consume that
+//! data and the UI-scene types specific to the UI render pipeline.
 
-mod extract_lane;
 mod forward_plus_lane;
 mod lit_forward_lane;
 pub mod shaders;
 mod shadow_pass_lane;
 mod simple_unlit_lane;
-mod world;
+mod ui_render_lane;
 
-pub use extract_lane::*;
 pub use forward_plus_lane::*;
 pub use lit_forward_lane::*;
 pub use shadow_pass_lane::*;
 pub use simple_unlit_lane::*;
-pub use world::*;
-
-/// Shadow result for a single light: view-projection matrix + atlas layer index.
-pub type ShadowResult = (khora_core::math::Mat4, i32);
+pub use ui_render_lane::*;

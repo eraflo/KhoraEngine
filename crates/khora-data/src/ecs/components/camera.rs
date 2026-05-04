@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use bincode::{Decode, Encode};
 use khora_core::math::Mat4;
 use khora_macros::Component;
+use serde::{Deserialize, Serialize};
 
 /// Defines the type of camera projection.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub enum ProjectionType {
     /// Perspective projection with field of view.
     Perspective {

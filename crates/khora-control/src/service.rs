@@ -14,10 +14,13 @@
 
 //! Central service for the Dynamic Context Core.
 
-use crate::context::{Context, ExecutionPhase};
+use crate::budget_channel::BudgetChannel;
+use crate::context::Context;
 use crate::metrics::MetricStore;
+use crate::EngineMode;
 use crossbeam_channel::{Receiver, Sender};
 use khora_core::agent::Agent;
+use khora_core::control::gorna::ResourceBudget;
 use khora_core::telemetry::TelemetryEvent;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -60,6 +63,7 @@ pub struct DccService {
     config: DccConfig,
     context: Arc<std::sync::RwLock<Context>>,
     registry: Arc<std::sync::Mutex<AgentRegistry>>,
+    budget_channel: Option<BudgetChannel>,
     running: Arc<AtomicBool>,
     handle: Option<thread::JoinHandle<()>>,
     event_tx: Sender<TelemetryEvent>,
@@ -73,6 +77,7 @@ impl DccService {
             config,
             context: Arc::new(std::sync::RwLock::new(Context::default())),
             registry: Arc::new(std::sync::Mutex::new(AgentRegistry::new())),
+            budget_channel: None,
             running: Arc::new(AtomicBool::new(false)),
             handle: None,
             event_tx: tx,
@@ -80,12 +85,33 @@ impl DccService {
         (service, rx)
     }
 
+    /// Connects the DCC to the Scheduler's budget channel.
+    /// After GORNA arbitration, budgets are sent through this channel.
+    pub fn connect_budget_channel(&mut self, channel: BudgetChannel) {
+        self.budget_channel = Some(channel);
+    }
+
     /// Registers an agent with a priority value.
     ///
     /// Higher priority values mean the agent is updated first in each frame.
+    /// The agent is active in all engine modes.
     pub fn register_agent(&self, agent: Arc<std::sync::Mutex<dyn Agent>>, priority: f32) {
         let mut registry = self.registry.lock().unwrap();
         registry.register(agent, priority);
+    }
+
+    /// Registers an agent with a priority value, active only in the specified modes.
+    ///
+    /// Higher priority values mean the agent is updated first in each frame.
+    /// If `modes` is empty, the agent is active in all modes.
+    pub fn register_agent_for_mode(
+        &self,
+        agent: Arc<std::sync::Mutex<dyn Agent>>,
+        priority: f32,
+        modes: Vec<EngineMode>,
+    ) {
+        let mut registry = self.registry.lock().unwrap();
+        registry.register_for_mode(agent, priority, modes);
     }
 
     /// Starts the DCC background thread.
@@ -98,6 +124,7 @@ impl DccService {
         let running = Arc::clone(&self.running);
         let context = Arc::clone(&self.context);
         let registry = Arc::clone(&self.registry);
+        let budget_channel = self.budget_channel.clone();
         let tick_duration = Duration::from_secs_f32(1.0 / self.config.tick_rate as f32);
         let agent_lock_timeout = Duration::from_millis(self.config.agent_lock_timeout_ms);
 
@@ -151,19 +178,11 @@ impl DccService {
                         }
                         TelemetryEvent::PhaseChange(phase_name) => {
                             let mut ctx = context.write().unwrap();
-                            if let Some(new_phase) = ExecutionPhase::from_name(&phase_name) {
-                                if ctx.phase.can_transition_to(new_phase) {
-                                    log::debug!("DCC Phase: {:?} → {:?}", ctx.phase, new_phase);
-                                    ctx.phase = new_phase;
-                                } else {
-                                    log::warn!(
-                                        "DCC: Invalid transition {:?} → {:?}",
-                                        ctx.phase,
-                                        new_phase
-                                    );
-                                }
+                            if let Some(new_mode) = EngineMode::from_name(&phase_name) {
+                                log::debug!("DCC Mode: {:?} → {:?}", ctx.mode, new_mode);
+                                ctx.mode = new_mode;
                             } else {
-                                log::warn!("DCC: Unknown phase '{}'", phase_name);
+                                log::warn!("DCC: Unknown mode '{}'", phase_name);
                             }
                         }
                         TelemetryEvent::GpuReport(report) => {
@@ -213,6 +232,26 @@ impl DccService {
                         let mut agents_slice: Vec<Arc<std::sync::Mutex<dyn Agent>>> = agents;
                         arbitrator.arbitrate(&ctx_copy, &report, &mut agents_slice);
                         initial_negotiation_done = true;
+
+                        // Send budgets through the budget channel to the Scheduler.
+                        if let Some(ref budget_channel) = budget_channel {
+                            for agent_arc in &agents_slice {
+                                if let Ok(agent) = agent_arc.lock() {
+                                    // The agent's current budget was set by apply_budget() during arbitration.
+                                    // We need to reconstruct the budget from the agent's status.
+                                    let status = agent.report_status();
+                                    let budget = ResourceBudget {
+                                        strategy_id: status.current_strategy,
+                                        time_limit: Duration::from_secs_f32(
+                                            report.suggested_latency_ms / 1000.0,
+                                        ),
+                                        memory_limit: None,
+                                        extra_params: std::collections::HashMap::new(),
+                                    };
+                                    budget_channel.send(agent.id(), budget);
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -236,6 +275,11 @@ impl DccService {
         }
     }
 
+    /// Returns the agent registry for use by the Scheduler.
+    pub fn agent_registry(&self) -> &Arc<Mutex<AgentRegistry>> {
+        &self.registry
+    }
+
     /// Returns a sender handle to submit events to the DCC.
     pub fn event_sender(&self) -> Sender<TelemetryEvent> {
         self.event_tx.clone()
@@ -246,22 +290,32 @@ impl DccService {
         self.context.read().unwrap().clone()
     }
 
-    /// Updates all registered agents in priority order.
+    /// Returns a shared handle to the live context.
     ///
-    /// This is called each frame by the engine loop.
-    pub fn update_agents(&self, context: &mut khora_core::EngineContext<'_>) {
+    /// Used by observers (e.g. the editor's Control Plane workspace) that
+    /// want to read up-to-date hardware state, mode, and budget multiplier
+    /// each frame without going through `get_context()`'s clone.
+    pub fn context_handle(&self) -> Arc<std::sync::RwLock<Context>> {
+        Arc::clone(&self.context)
+    }
+
+    /// Initializes all registered agents once after registration.
+    ///
+    /// Should be called once after all agents are registered, giving them
+    /// access to engine services for caching and lane setup.
+    pub fn initialize_agents(&self, context: &mut khora_core::EngineContext<'_>) {
         if let Ok(registry) = self.registry.lock() {
-            registry.update_all(context);
+            registry.initialize_all(context);
         }
     }
 
     /// Executes all registered agents in priority order.
     ///
-    /// Called each frame after [`update_agents`](Self::update_agents).
-    /// Each agent performs its primary work (e.g., the `RenderAgent` renders).
-    pub fn execute_agents(&self) {
+    /// Called each frame. Each agent selects the appropriate lanes and
+    /// dispatches their execution.
+    pub fn execute_agents(&self, context: &mut khora_core::EngineContext<'_>) {
         if let Ok(registry) = self.registry.lock() {
-            registry.execute_all();
+            registry.execute_all(context);
         }
     }
 
@@ -285,6 +339,7 @@ impl Drop for DccService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::EngineMode;
     use khora_core::control::gorna::{
         AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
         StrategyOption,
@@ -306,12 +361,12 @@ mod tests {
                     estimated_time: Duration::from_millis(8),
                     estimated_vram: 1024,
                 }],
+                timing_adjustment: None,
             }
         }
         fn apply_budget(&mut self, _: ResourceBudget) {
             self.budget_applied = true;
         }
-        fn update(&mut self, _: &mut khora_core::EngineContext<'_>) {}
         fn report_status(&self) -> AgentStatus {
             AgentStatus {
                 agent_id: AgentId::Renderer,
@@ -321,7 +376,7 @@ mod tests {
                 message: String::new(),
             }
         }
-        fn execute(&mut self) {}
+        fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
         fn as_any(&self) -> &dyn std::any::Any {
             self
         }
@@ -351,7 +406,7 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
 
         let ctx = dcc.get_context();
-        assert_eq!(ctx.phase, ExecutionPhase::Simulation);
+        assert_eq!(ctx.mode, EngineMode::Playing);
 
         dcc.stop();
     }

@@ -23,4 +23,5 @@ use khora_macros::Component;
 /// will be used by the audio system to calculate 3D audio spatialization effects
 /// like panning and attenuation.
 #[derive(Debug, Default, Clone, Copy, Component)]
+#[component(no_serializable)]
 pub struct AudioListener;

@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use khora_agents::ecs_agent::garbage_collector_agent::GarbageCollectorAgent;
-use khora_data::ecs::{Component, SemanticDomain, World};
+use khora_data::ecs::{Component, EcsMaintenance, SemanticDomain, World};
 
 // --- DUMMY COMPONENTS FOR THIS TEST ---
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,12 +20,11 @@ struct Position(i32);
 impl Component for Position {}
 
 #[test]
-fn test_garbage_collector_agent_cleans_up_orphans() {
+fn test_ecs_maintenance_cleans_up_orphans() {
     // --- 1. ARRANGE ---
-    // Setup the World and the Agent
     let mut world = World::default();
     world.register_component::<Position>(SemanticDomain::Spatial);
-    let mut gc_agent = GarbageCollectorAgent::new();
+    let mut maintenance = EcsMaintenance::new();
 
     // Create an orphan by spawning an entity and immediately removing its component domain.
     let entity_to_remove = world.spawn(Position(10));
@@ -37,7 +35,7 @@ fn test_garbage_collector_agent_cleans_up_orphans() {
     // Create a "witness" entity that shared the page with the orphaned data.
     let witness_entity = world.spawn(Position(20));
 
-    // Pre-action state verification using public API
+    // Pre-action state verification
     assert!(
         world.get::<Position>(entity_to_remove).is_none(),
         "Component should be logically removed"
@@ -48,17 +46,13 @@ fn test_garbage_collector_agent_cleans_up_orphans() {
         "Witness data should be correct before GC"
     );
 
-    // Queue the cleanup task for the agent.
-    gc_agent.queue_cleanup(orphan_location, SemanticDomain::Spatial);
+    // Queue the cleanup task.
+    maintenance.queue_cleanup(orphan_location, SemanticDomain::Spatial);
 
     // --- 2. ACT ---
-    // Run the garbage collector agent.
-    gc_agent.run(&mut world);
+    maintenance.tick(&mut world);
 
     // --- 3. ASSERT ---
-    // The most important assertion: verify that the witness entity was not corrupted
-    // by the swap_remove operation and is still perfectly accessible.
-    // This indirectly proves that its metadata was correctly updated.
     let witness_pos = world.get::<Position>(witness_entity);
     assert!(
         witness_pos.is_some(),
@@ -70,7 +64,6 @@ fn test_garbage_collector_agent_cleans_up_orphans() {
         "Witness data should be unchanged after GC"
     );
 
-    // We can also verify that querying for all positions only returns the witness.
     let mut positions = Vec::new();
     for pos in world.query::<&Position>() {
         positions.push(*pos);

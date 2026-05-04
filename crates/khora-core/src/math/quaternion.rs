@@ -227,6 +227,53 @@ impl Quaternion {
             (start * scale_start) + (end_adjusted * scale_end)
         }
     }
+
+    /// Converts this quaternion to Euler angles in XYZ (pitch, yaw, roll) order.
+    ///
+    /// Returns `(x, y, z)` angles in radians.
+    /// - `x` = pitch (rotation around X axis)
+    /// - `y` = yaw   (rotation around Y axis)
+    /// - `z` = roll  (rotation around Z axis)
+    pub fn to_euler_xyz(&self) -> (f32, f32, f32) {
+        // Roll (X-axis rotation)
+        let sinr_cosp = 2.0 * (self.w * self.x + self.y * self.z);
+        let cosr_cosp = 1.0 - 2.0 * (self.x * self.x + self.y * self.y);
+        let x = sinr_cosp.atan2(cosr_cosp);
+
+        // Pitch (Y-axis rotation)
+        let sinp = 2.0 * (self.w * self.y - self.z * self.x);
+        let y = if sinp.abs() >= 1.0 {
+            std::f32::consts::FRAC_PI_2.copysign(sinp)
+        } else {
+            sinp.asin()
+        };
+
+        // Yaw (Z-axis rotation)
+        let siny_cosp = 2.0 * (self.w * self.z + self.x * self.y);
+        let cosy_cosp = 1.0 - 2.0 * (self.y * self.y + self.z * self.z);
+        let z = siny_cosp.atan2(cosy_cosp);
+
+        (x, y, z)
+    }
+
+    /// Creates a quaternion from Euler angles in XYZ order.
+    ///
+    /// # Arguments
+    /// - `x` — pitch in radians (rotation around X axis)
+    /// - `y` — yaw in radians   (rotation around Y axis)
+    /// - `z` — roll in radians  (rotation around Z axis)
+    pub fn from_euler_xyz(x: f32, y: f32, z: f32) -> Self {
+        let (sx, cx) = (x * 0.5).sin_cos();
+        let (sy, cy) = (y * 0.5).sin_cos();
+        let (sz, cz) = (z * 0.5).sin_cos();
+
+        Self {
+            x: sx * cy * cz + cx * sy * sz,
+            y: cx * sy * cz - sx * cy * sz,
+            z: cx * cy * sz + sx * sy * cz,
+            w: cx * cy * cz - sx * sy * sz,
+        }
+    }
 }
 
 // --- Operator Overloads ---
