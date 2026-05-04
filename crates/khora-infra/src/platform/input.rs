@@ -12,72 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Provides translation from a concrete windowing backend (`winit`) to the engine's abstract input events.
+//! Adapter layer: translates winit window events into Khora's abstract input events.
 //!
-//! This module acts as an adapter layer, decoupling the rest of the engine from the
-//! specific input event format of the `winit` crate.
+//! The abstract types (`InputEvent`, `MouseButton`) live in `khora_core::platform::input`.
+//! This module only provides the `winit`-specific translation function.
 
 use winit::event::{ElementState, MouseButton as WinitMouseButton, MouseScrollDelta, WindowEvent};
 use winit::keyboard::{KeyCode, PhysicalKey};
 
-/// An engine-internal representation of a user input event.
-///
-/// This enum is backend-agnostic and represents the high-level input actions
-/// that the engine's systems can respond to.
-#[derive(Debug, Clone, PartialEq)]
-pub enum InputEvent {
-    /// A keyboard key was pressed.
-    KeyPressed {
-        /// A string representation of the physical key code.
-        key_code: String,
-    },
-    /// A keyboard key was released.
-    KeyReleased {
-        /// A string representation of the physical key code.
-        key_code: String,
-    },
-    /// A mouse button was pressed.
-    MouseButtonPressed {
-        /// The mouse button that was pressed.
-        button: MouseButton,
-    },
-    /// A mouse button was released.
-    MouseButtonReleased {
-        /// The mouse button that was released.
-        button: MouseButton,
-    },
-    /// The mouse cursor moved.
-    MouseMoved {
-        /// The new x-coordinate of the cursor.
-        x: f32,
-        /// The new y-coordinate of the cursor.
-        y: f32,
-    },
-    /// The mouse wheel was scrolled.
-    MouseWheelScrolled {
-        /// The horizontal scroll delta.
-        delta_x: f32,
-        /// The vertical scroll delta.
-        delta_y: f32,
-    },
-}
-
-/// An engine-internal representation of a mouse button.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum MouseButton {
-    /// The left mouse button.
-    Left,
-    /// The right mouse button.
-    Right,
-    /// The middle mouse button.
-    Middle,
-    /// The back mouse button (typically on the side).
-    Back,
-    /// The forward mouse button (typically on the side).
-    Forward,
-    /// Another mouse button, identified by a numeric code.
-    Other(u16),
-}
+use khora_core::platform::{InputEvent, MouseButton};
 
 /// Translates a `winit::event::WindowEvent` into Khora's `InputEvent` format.
 ///
@@ -147,12 +90,10 @@ pub fn translate_winit_input(event: &WindowEvent) -> Option<InputEvent> {
 
 // --- Private Helper Functions ---
 
-/// (Internal) Maps a `winit::keyboard::KeyCode` to a string representation.
 fn map_keycode_to_string(keycode: KeyCode) -> String {
     format!("{keycode:?}")
 }
 
-/// (Internal) Maps a `winit::event::MouseButton` to the engine's `MouseButton` enum.
 fn map_mouse_button(button: WinitMouseButton) -> MouseButton {
     match button {
         WinitMouseButton::Left => MouseButton::Left,
@@ -164,13 +105,12 @@ fn map_mouse_button(button: WinitMouseButton) -> MouseButton {
     }
 }
 
-// --- Unit Tests for Input Translation ---
+// --- Unit Tests ---
 #[cfg(test)]
 mod tests {
     use super::*;
     use winit::{dpi::PhysicalPosition, event::WindowEvent, keyboard::KeyCode};
 
-    /// Test cases for translating keycodes to strings
     #[test]
     fn test_map_keycode_simple() {
         assert_eq!(map_keycode_to_string(KeyCode::KeyA), "KeyA");
@@ -178,7 +118,6 @@ mod tests {
         assert_eq!(map_keycode_to_string(KeyCode::Space), "Space");
     }
 
-    /// Test cases for translating mouse buttons to the engine's internal representation
     #[test]
     fn test_map_mouse_button_standard() {
         assert_eq!(map_mouse_button(WinitMouseButton::Left), MouseButton::Left);
@@ -197,7 +136,6 @@ mod tests {
         );
     }
 
-    /// Test cases for translating other mouse buttons to the engine's internal representation
     #[test]
     fn test_map_mouse_button_other() {
         assert_eq!(
@@ -210,7 +148,6 @@ mod tests {
         );
     }
 
-    /// Test cases for translating winit mouse press to engine's internal representation
     #[test]
     fn test_translate_mouse_button_pressed() {
         let winit_event = WindowEvent::MouseInput {
@@ -224,7 +161,6 @@ mod tests {
         assert_eq!(translate_winit_input(&winit_event), expected);
     }
 
-    /// Test cases for translating winit mouse release to engine's internal representation
     #[test]
     fn test_translate_mouse_button_released() {
         let winit_event = WindowEvent::MouseInput {
@@ -238,7 +174,6 @@ mod tests {
         assert_eq!(translate_winit_input(&winit_event), expected);
     }
 
-    /// Test cases for translating winit cursor movement to engine's internal representation
     #[test]
     fn test_translate_cursor_moved() {
         let winit_event = WindowEvent::CursorMoved {
@@ -252,7 +187,6 @@ mod tests {
         assert_eq!(translate_winit_input(&winit_event), expected);
     }
 
-    /// Test cases for translating winit mouse wheel scroll to engine's internal representation
     #[test]
     fn test_translate_mouse_wheel_line() {
         let winit_event = WindowEvent::MouseWheel {
@@ -267,7 +201,6 @@ mod tests {
         assert_eq!(translate_winit_input(&winit_event), expected);
     }
 
-    /// Test cases for translating winit mouse wheel scroll in pixels to engine's internal representation
     #[test]
     fn test_translate_mouse_wheel_pixel() {
         let winit_event = WindowEvent::MouseWheel {
@@ -282,7 +215,6 @@ mod tests {
         assert_eq!(translate_winit_input(&winit_event), expected);
     }
 
-    /// Test cases for translating winit specific window events to engine's internal representation
     #[test]
     fn test_translate_non_input_returns_none() {
         let winit_event_resize = WindowEvent::Resized(winit::dpi::PhysicalSize::new(100, 100));

@@ -1,0 +1,71 @@
+spec_version: "0.1.0"
+name: khora-engine-agent
+version: 0.2.0
+description: AI development agent for the Khora game engine — a Rust ECS engine built on Symbiotic Adaptive Architecture (SAA)
+author: eraflo
+license: Apache-2.0
+
+model:
+  preferred: claude-sonnet-4-6
+  fallback:
+    - claude-opus-4-6
+    - gpt-4o
+  constraints:
+    temperature: 0.15
+    max_tokens: 8192
+
+agents:
+  security-auditor:
+    description: Security expert for Rust systems code — unsafe auditing, OWASP, supply chain
+  deprecation-cleaner:
+    description: Code modernization — detect and remove deprecated patterns, zero backward compat
+  editor-ui-ux:
+    description: UI/UX expert for the Khora Editor — dock panels, accessibility, Taffy layout
+  graphics-rendering-expert:
+    description: Cutting-edge graphics rendering — PBR, GI, RT, GPU-driven pipelines, WGSL
+  physics-expert:
+    description: Real-time physics — rigid/soft body, collision, fluids, XPBD, GPU physics
+  math-expert:
+    description: Mathematics for game engines — linear algebra, geometry, numerical methods
+  api-ux-expert:
+    description: Fluent API and developer experience — builder patterns, type-state, SDK ergonomics
+  documentation-expert:
+    description: Documentation creation and maintenance — mdBook, rustdoc, API docs, tutorials, architecture guides
+
+delegation:
+  mode: explicit
+
+skills:
+  - rust-engine-dev
+  - ecs-architecture
+  - wgpu-rendering
+  - lane-pipeline
+  - saa-clad-architecture
+
+tools:
+  - cargo-build
+  - cargo-test
+  - cargo-clippy
+  - mdbook-build
+
+runtime:
+  max_turns: 50
+  timeout: 300
+
+tags:
+  - game-engine
+  - rust
+  - ecs
+  - wgpu
+  - rendering
+  - physics
+  - audio
+  - ui
+  - security
+  - open-source
+
+metadata:
+  repository: "https://github.com/eraflo/KhoraEngine"
+  documentation: "https://eraflo.github.io/KhoraEngine/"
+  rust_edition: "2024"
+  wgpu_version: "28.0"

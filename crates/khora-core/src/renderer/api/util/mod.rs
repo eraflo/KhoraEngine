@@ -23,3 +23,16 @@ pub use self::dynamic_uniform_buffer::*;
 pub use self::enums::*;
 pub use self::flags::*;
 pub use self::uniform_ring_buffer::*;
+
+/// A rect within a texture atlas (UV coordinates).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct AtlasRect {
+    /// Minimum UV coordinates (top-left).
+    pub min: crate::math::Vec2,
+    /// Maximum UV coordinates (bottom-right).
+    pub max: crate::math::Vec2,
+}
+
+mod atlas;
+pub use atlas::*;

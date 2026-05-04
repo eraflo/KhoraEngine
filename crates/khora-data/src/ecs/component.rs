@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! # Component
+//!
+//! Components are data structures that are attached to entities in the ECS.
+//! They are used to store data that is associated with an entity.
+
 /// A marker trait for types that can be used as components in the ECS.
 ///
 /// This trait must be implemented for any struct you wish to attach to an entity.

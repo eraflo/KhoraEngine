@@ -92,23 +92,6 @@ impl IntoWgpu<wgpu::TextureViewDimension> for TextureViewDimension {
     }
 }
 
-/// IntoWgpu for bind_group's TextureViewDimension (used in BindingType::Texture).
-impl IntoWgpu<wgpu::TextureViewDimension>
-    for khora_core::renderer::api::command::TextureViewDimension
-{
-    fn into_wgpu(self) -> wgpu::TextureViewDimension {
-        use khora_core::renderer::api::command::TextureViewDimension as CmdTVD;
-        match self {
-            CmdTVD::D1 => wgpu::TextureViewDimension::D1,
-            CmdTVD::D2 => wgpu::TextureViewDimension::D2,
-            CmdTVD::D2Array => wgpu::TextureViewDimension::D2Array,
-            CmdTVD::Cube => wgpu::TextureViewDimension::Cube,
-            CmdTVD::CubeArray => wgpu::TextureViewDimension::CubeArray,
-            CmdTVD::D3 => wgpu::TextureViewDimension::D3,
-        }
-    }
-}
-
 impl IntoWgpu<wgpu::TextureSampleType> for TextureSampleType {
     fn into_wgpu(self) -> wgpu::TextureSampleType {
         match self {

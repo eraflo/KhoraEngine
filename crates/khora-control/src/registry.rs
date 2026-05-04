@@ -14,14 +14,29 @@
 
 //! Agent registry for automatic registration and ordered iteration.
 
-use khora_core::agent::Agent;
+use khora_core::agent::dependency::AgentDependency;
+use khora_core::agent::timing::AgentImportance;
+use khora_core::agent::{Agent, EngineMode, ExecutionPhase};
 use khora_core::control::gorna::AgentId;
 use std::sync::{Arc, Mutex};
+
+/// Tuple returned by [`AgentRegistry::collect_for_phase`] for each agent
+/// matching the requested phase and mode: `(agent, importance, priority,
+/// dependencies)`.
+pub type PhaseAgentEntry = (
+    Arc<Mutex<dyn Agent>>,
+    AgentImportance,
+    f32,
+    Vec<AgentDependency>,
+);
 
 /// Entry in the agent registry containing the agent and its priority.
 struct AgentEntry {
     agent: Arc<Mutex<dyn Agent>>,
     priority: f32,
+    /// Modes in which this agent is active.
+    /// Empty = active in all modes.
+    active_modes: Vec<EngineMode>,
 }
 
 /// Registry that manages all registered agents with automatic priority ordering.
@@ -43,15 +58,34 @@ impl AgentRegistry {
     /// Registers an agent with the given priority.
     ///
     /// Higher priority values mean the agent is updated first.
+    /// The agent is active in all engine modes.
     pub fn register(&mut self, agent: Arc<Mutex<dyn Agent>>, priority: f32) {
+        self.register_for_mode(agent, priority, vec![]);
+    }
+
+    /// Registers an agent with the given priority, active only in the specified modes.
+    ///
+    /// Higher priority values mean the agent is updated first.
+    /// If `modes` is empty, the agent is active in all modes.
+    pub fn register_for_mode(
+        &mut self,
+        agent: Arc<Mutex<dyn Agent>>,
+        priority: f32,
+        modes: Vec<EngineMode>,
+    ) {
         let id = agent.lock().map(|a| a.id()).unwrap_or(AgentId::Asset);
         log::info!(
-            "AgentRegistry: Registered {:?} (priority={:.2})",
+            "AgentRegistry: Registered {:?} (priority={:.2}, modes={:?})",
             id,
-            priority
+            priority,
+            modes
         );
 
-        self.entries.push(AgentEntry { agent, priority });
+        self.entries.push(AgentEntry {
+            agent,
+            priority,
+            active_modes: modes,
+        });
         self.entries.sort_by(|a, b| {
             b.priority
                 .partial_cmp(&a.priority)
@@ -74,24 +108,38 @@ impl AgentRegistry {
         self.entries.iter().map(|e| &e.agent)
     }
 
-    /// Updates all agents in priority order.
-    pub fn update_all(&self, context: &mut khora_core::EngineContext<'_>) {
+    /// Returns the [`AgentId`]s of every registered agent in priority order.
+    ///
+    /// Used by the scheduler to seed a fresh `AgentCompletionMap` per frame.
+    pub fn all_ids(&self) -> Vec<AgentId> {
+        self.entries
+            .iter()
+            .filter_map(|entry| entry.agent.lock().ok().map(|a| a.id()))
+            .collect()
+    }
+
+    /// Initializes all agents once after registration.
+    ///
+    /// Calls `on_initialize()` on each agent in priority order, giving them
+    /// access to the engine services for caching and lane setup.
+    pub fn initialize_all(&self, context: &mut khora_core::EngineContext<'_>) {
         for entry in &self.entries {
             if let Ok(mut agent) = entry.agent.lock() {
-                agent.update(context);
+                let id = agent.id();
+                agent.on_initialize(context);
+                log::info!("AgentRegistry: Initialized {:?}", id);
             }
         }
     }
 
     /// Executes all agents in priority order.
     ///
-    /// Called after [`update_all`](Self::update_all) each frame. Each agent
-    /// performs its primary work (e.g., the `RenderAgent` renders,
-    /// the `PhysicsAgent` simulates).
-    pub fn execute_all(&self) {
+    /// Called each frame. Each agent selects the appropriate lanes and
+    /// dispatches their execution.
+    pub fn execute_all(&self, context: &mut khora_core::EngineContext<'_>) {
         for entry in &self.entries {
             if let Ok(mut agent) = entry.agent.lock() {
-                agent.execute();
+                agent.execute(context);
             }
         }
     }
@@ -106,6 +154,50 @@ impl AgentRegistry {
             }
         }
         None
+    }
+
+    /// Collects agents that are allowed to run in the given phase and mode.
+    /// Returns a list of (agent, importance, priority, dependencies).
+    pub fn collect_for_phase(
+        &self,
+        phase: ExecutionPhase,
+        mode: &EngineMode,
+    ) -> Vec<PhaseAgentEntry> {
+        self.entries
+            .iter()
+            .filter_map(|entry| {
+                let agent = entry.agent.lock().ok()?;
+                let timing = agent.execution_timing();
+
+                // Filter by phase
+                if !timing.allowed_phases.contains(&phase) {
+                    return None;
+                }
+
+                // Filter by mode (empty = all modes)
+                if !entry.active_modes.is_empty() && !entry.active_modes.contains(mode) {
+                    return None;
+                }
+
+                Some((
+                    entry.agent.clone(),
+                    timing.importance,
+                    timing.priority,
+                    timing.dependencies,
+                ))
+            })
+            .collect()
+    }
+
+    /// Executes a specific agent by ID.
+    pub fn execute_agent(&self, id: AgentId, context: &mut khora_core::EngineContext<'_>) -> bool {
+        if let Some(agent) = self.get_by_id(id) {
+            if let Ok(mut a) = agent.lock() {
+                a.execute(context);
+                return true;
+            }
+        }
+        false
     }
 }
 

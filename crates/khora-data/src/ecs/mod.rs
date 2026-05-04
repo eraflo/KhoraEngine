@@ -26,10 +26,11 @@
 
 mod bitset;
 mod bundle;
-mod component;
+pub mod component;
 mod components;
 mod entity;
 mod entity_store;
+pub mod maintenance;
 mod page;
 mod planner;
 mod query;
@@ -37,6 +38,8 @@ mod query_plan;
 mod registry;
 mod serialization;
 mod storage;
+pub mod system;
+pub mod systems;
 mod world;
 
 pub use bitset::DomainBitset;
@@ -44,10 +47,12 @@ pub use bundle::ComponentBundle;
 pub use component::Component;
 pub use components::*;
 pub use entity::*;
+pub use maintenance::EcsMaintenance;
 pub use page::*;
 pub use query::*;
 pub use query_plan::{QueryMode, QueryPlan};
 pub use registry::*;
+pub use system::{DataSystemRegistration, TickPhase};
 pub use world::*;
 
 #[cfg(test)]

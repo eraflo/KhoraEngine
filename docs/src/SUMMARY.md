@@ -1,24 +1,42 @@
 # Summary
 
-[Introduction](./01_project_presentation.md)
+[Introduction](./00_introduction.md)
 
-# I. Core Vision
-- [Core Concepts (SAA)](./02_core_concepts.md)
-- [The SAA-CLAD Symbiosis](./03_saa_clad_symbiosis.md)
+# Foundations
+- [Principles](./01_principles.md)
+- [Architecture](./02_architecture.md)
+- [Lifecycle](./03_lifecycle.md)
+- [Crate map](./04_crates.md)
 
-# II. Architecture
-- [Technical Architecture (CLAD)](./04_technical_architecture.md)
-- [Project and Crate Structure](./05_project_structure.md)
-- [ECS Architecture (CRPECS)](./06_ecs_architecture.md)
-- [Asset Architecture: The Strategic System](./07_asset_architecture_vfs.md)
-- [Serialization Architecture: SAA-Serialize](./08_serialization_architecture.md)
-- [DCC Architecture](./11_dcc_architecture.md)
-- [GORNA Protocol Specification](./12_gorna_protocol.md)
+# Core systems
+- [ECS — CRPECS](./05_ecs.md)
+- [Agents](./06_agents.md)
+- [Lanes](./07_lanes.md)
+- [GORNA](./08_gorna.md)
 
-# III. Development
-- [Roadmap & Issue Tracker](./09_roadmap_and_issues.md)
-- [Rendering Architecture](./10_rendering_strategies_research.md)
-- [The Khora SDK Engine API](./13_khora_sdk.md)
+# Subsystems
+- [Rendering](./09_rendering.md)
+- [Physics](./10_physics.md)
+- [Audio](./11_audio.md)
+- [Assets and VFS](./12_assets.md)
+- [UI](./13_ui.md)
+- [Serialization](./14_serialization.md)
+- [Telemetry](./15_telemetry.md)
 
-# IV. API Reference
-- [Complete Crate Reference](./API_REFERENCE.md)
+# SDK and editor
+- [SDK quickstart](./16_sdk_quickstart.md)
+- [SDK reference](./17_sdk_reference.md)
+- [Editor](./18_editor.md)
+- [Extending Khora](./19_extending.md)
+
+# Projects
+- [Project structure](./projects/structure.md)
+
+# Design
+- [Editor design system](./design/editor.md)
+
+# Reference
+- [API reference](./api_reference.md)
+- [Decisions](./decisions.md)
+- [Open questions](./open_questions.md)
+- [Roadmap](./roadmap.md)
