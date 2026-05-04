@@ -31,7 +31,7 @@ log = "0.4"
 env_logger = "0.11"
 
 # Open file/directory pickers and process spawning
-rfd = "0.15"
+rfd = "0.17"
 open = "5"
 
 # Zip extraction for engine downloads
