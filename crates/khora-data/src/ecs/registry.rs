@@ -40,6 +40,8 @@ pub enum SemanticDomain {
     Audio,
     /// For components related to physics simulation.
     Physics,
+    /// For components driving the in-world UI subsystem (UiNode, UiText, etc).
+    Ui,
 }
 
 /// Stores the set of type-erased functions for a registered component.

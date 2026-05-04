@@ -1,0 +1,41 @@
+[package]
+name = "khora-hub"
+version = "0.1.0"
+edition = "2024"
+description = "Khora Engine Hub — project manager and engine launcher"
+
+[[bin]]
+name = "khora-hub"
+path = "src/main.rs"
+
+[dependencies]
+# UI framework (standalone egui app — completely independent of the engine)
+eframe = { version = "0.30", default-features = false, features = ["default_fonts", "wgpu"] }
+egui = "0.30"
+
+# HTTP client for GitHub releases API
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+
+# JSON + serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# File system + paths
+dirs = "5"
+
+# Error handling
+anyhow = "1"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Open file/directory pickers and process spawning
+rfd = "0.15"
+open = "5"
+
+# Zip extraction for engine downloads
+zip = "2"
+
+# Image decoding (for window icon from PNG)
+image = { version = "0.25", default-features = false, features = ["png"] }

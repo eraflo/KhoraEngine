@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Component, Serialize, Deserialize)]
 pub struct Collider {
     /// Opaque handle used by the physics provider.
+    #[component(skip)]
     pub handle: Option<ColliderHandle>,
     /// Shape of the collider.
     pub shape: ColliderShape,

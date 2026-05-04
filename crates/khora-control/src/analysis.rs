@@ -19,7 +19,7 @@
 //! decide whether a GORNA renegotiation is necessary and what the global
 //! performance target should be.
 
-use crate::context::{Context, ExecutionPhase};
+use crate::context::Context;
 use crate::metrics::MetricStore;
 use khora_core::platform::{BatteryLevel, ThermalStatus};
 use khora_core::telemetry::MetricId;
@@ -83,22 +83,8 @@ impl HeuristicEngine {
         let mut report = AnalysisReport::default();
         let mut pressure_count: u32 = 0;
 
-        // ── 1. Phase-Based Target ────────────────────────────────────────
-        report.suggested_latency_ms = match context.phase {
-            ExecutionPhase::Boot => 33.33, // Loading — no frame budget needed
-            ExecutionPhase::Menu => 33.33, // 30 FPS in menus is sufficient
-            ExecutionPhase::Simulation => 16.66, // 60 FPS target
-            ExecutionPhase::Background => 200.0, // 5 FPS — absolute minimum
-        };
-
-        // Background phase always triggers negotiation so agents can throttle down.
-        if context.phase == ExecutionPhase::Background {
-            report.needs_negotiation = true;
-            report
-                .alerts
-                .push("Phase: Background — reducing all agents to minimum.".into());
-            return report;
-        }
+        // ── 1. Target latency (60 FPS baseline) ──────────────────────────
+        report.suggested_latency_ms = 16.66;
 
         // ── 2. Thermal Analysis ──────────────────────────────────────────
         match context.hardware.thermal {
@@ -269,6 +255,7 @@ impl HeuristicEngine {
 mod tests {
     use super::*;
     use crate::metrics::MetricStore;
+    use khora_core::agent::EngineMode;
 
     fn default_context() -> Context {
         Context::default()
@@ -276,7 +263,7 @@ mod tests {
 
     fn simulation_context() -> Context {
         Context {
-            phase: ExecutionPhase::Simulation,
+            mode: EngineMode::Playing,
             ..Default::default()
         }
     }
@@ -296,26 +283,13 @@ mod tests {
     }
 
     #[test]
-    fn test_background_phase_triggers_negotiation() {
+    fn test_default_latency_target() {
         let engine = HeuristicEngine;
-        let mut ctx = default_context();
-        ctx.phase = ExecutionPhase::Background;
+        let ctx = default_context();
         let store = MetricStore::new();
 
         let report = engine.analyze(&ctx, &store);
-        assert!(report.needs_negotiation);
-        assert!(report.suggested_latency_ms >= 200.0);
-    }
-
-    #[test]
-    fn test_menu_phase_targets_30fps() {
-        let engine = HeuristicEngine;
-        let mut ctx = default_context();
-        ctx.phase = ExecutionPhase::Menu;
-        let store = MetricStore::new();
-
-        let report = engine.analyze(&ctx, &store);
-        assert!((report.suggested_latency_ms - 33.33).abs() < 0.1);
+        assert!((report.suggested_latency_ms - 16.66).abs() < 0.1);
     }
 
     // ── Thermal Heuristics ───────────────────────────────────────────

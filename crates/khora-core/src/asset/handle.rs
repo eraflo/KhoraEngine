@@ -57,6 +57,16 @@ impl<T: Asset> AssetHandle<T> {
     pub fn new(asset: T) -> Self {
         Self(Arc::new(asset))
     }
+
+    /// Creates a dangling handle backed by `T::default()`.
+    ///
+    /// This is useful as a placeholder until a real asset is loaded.
+    pub fn dangling() -> Self
+    where
+        T: Default,
+    {
+        Self(Arc::new(T::default()))
+    }
 }
 
 impl<T: Asset> Clone for AssetHandle<T> {
@@ -72,5 +82,19 @@ impl<T: Asset> Deref for AssetHandle<T> {
     /// Provides transparent, immutable access to the underlying asset data.
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl<T: Asset> PartialEq for AssetHandle<T> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl<T: Asset> Eq for AssetHandle<T> {}
+
+impl<T: Asset + Default> Default for AssetHandle<T> {
+    fn default() -> Self {
+        Self::dangling()
     }
 }

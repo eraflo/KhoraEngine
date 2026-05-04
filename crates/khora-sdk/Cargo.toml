@@ -1,18 +1,22 @@
 [package]
 name = "khora-sdk"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
-description = "The stable, public-facing API for game developers"
+description = "The stable, public-facing API and engine frameworks for game developers"
 
 [dependencies]
 khora-core = { path = "../khora-core" }
+khora-data = { path = "../khora-data" }
+khora-infra = { path = "../khora-infra" }
 khora-agents = { path = "../khora-agents" }
 khora-control = { path = "../khora-control" }
-khora-infra = { path = "../khora-infra" }
 khora-lanes = { path = "../khora-lanes" }
 khora-telemetry = { path = "../khora-telemetry" }
-khora-data = { path = "../khora-data" }
+khora-io = { path = "../khora-io" }
 
+anyhow = "1.0"
 winit = "0.30"
 log = "0.4"
-anyhow = "1.0"
+crossbeam-channel = "0.5"
+inventory = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "sync"] }

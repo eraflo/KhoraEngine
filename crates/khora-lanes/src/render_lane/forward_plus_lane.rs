@@ -44,8 +44,8 @@
 //! - Configurable tile size and max lights per tile
 //! - Runtime-adjustable configuration via `ForwardPlusTileConfig`
 
-use super::RenderWorld;
 use crate::render_lane::ShaderComplexity;
+use khora_data::render::RenderWorld;
 
 use khora_core::renderer::api::{
     command::BindGroupLayoutId,
@@ -293,11 +293,11 @@ impl khora_core::lane::Lane for ForwardPlusLane {
     }
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
-        let render_world =
-            match ctx.get::<khora_core::lane::Slot<crate::render_lane::RenderWorld>>() {
-                Some(slot) => slot.get_ref(),
-                None => return 1.0,
-            };
+        let render_world = match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>()
+        {
+            Some(slot) => slot.get(),
+            None => return 1.0,
+        };
         let gpu_meshes = match ctx.get::<std::sync::Arc<
             std::sync::RwLock<
                 khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
@@ -326,7 +326,7 @@ impl khora_core::lane::Lane for ForwardPlusLane {
         &self,
         ctx: &mut khora_core::lane::LaneContext,
     ) -> Result<(), khora_core::lane::LaneError> {
-        use khora_core::lane::{LaneError, Slot};
+        use khora_core::lane::{LaneError, Ref, Slot};
         let device = ctx
             .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
@@ -344,9 +344,9 @@ impl khora_core::lane::Lane for ForwardPlusLane {
             .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?
             .get();
         let render_world = ctx
-            .get::<Slot<crate::render_lane::RenderWorld>>()
-            .ok_or(LaneError::missing("Slot<RenderWorld>"))?
-            .get_ref();
+            .get::<Ref<khora_data::render::RenderWorld>>()
+            .ok_or(LaneError::missing("Ref<RenderWorld>"))?
+            .get();
         let color_target = ctx
             .get::<khora_core::lane::ColorTarget>()
             .ok_or(LaneError::missing("ColorTarget"))?
@@ -422,11 +422,37 @@ impl ForwardPlusLane {
     ) {
         let mut resources = self.gpu_resources.lock().unwrap();
 
-        // 1. Get Active Camera View
-        let view = if let Some(first_view) = render_world.views.first() {
-            first_view
-        } else {
-            return; // No camera, nothing to render
+        // 1. Get Active Camera View.
+        //
+        // When no camera is present (e.g. editor viewport before any in-scene
+        // camera is added), a clear render pass must still be submitted
+        let Some(view) = render_world.views.first() else {
+            let color_attachment = khora_core::renderer::api::command::RenderPassColorAttachment {
+                view: render_ctx.color_target,
+                resolve_target: None,
+                ops: khora_core::renderer::api::command::Operations {
+                    load: khora_core::renderer::api::command::LoadOp::Clear(render_ctx.clear_color),
+                    store: khora_core::renderer::api::command::StoreOp::Store,
+                },
+                base_array_layer: 0,
+            };
+            let clear_desc = khora_core::renderer::api::command::RenderPassDescriptor {
+                label: Some("ForwardPlus Clear-Only Pass"),
+                color_attachments: &[color_attachment],
+                depth_stencil_attachment: render_ctx.depth_target.map(|depth_view| {
+                    khora_core::renderer::api::command::RenderPassDepthStencilAttachment {
+                        view: depth_view,
+                        depth_ops: Some(khora_core::renderer::api::command::Operations {
+                            load: khora_core::renderer::api::command::LoadOp::Clear(1.0),
+                            store: khora_core::renderer::api::command::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                        base_array_layer: 0,
+                    }
+                }),
+            };
+            let _ = encoder.begin_render_pass(&clear_desc);
+            return;
         };
 
         // 2. Prepare Camera Uniforms (Group 0)

@@ -38,6 +38,39 @@ use khora_core::renderer::api::pipeline::{
 };
 use khora_core::renderer::api::resource::buffer::{self as api_buf};
 use khora_core::renderer::api::resource::texture::{self as api_tex};
+
+/// Translate Khora's [`TextureUsage`] flag set into wgpu's `TextureUsages`.
+///
+/// Khora exposes a separate `DEPTH_STENCIL_ATTACHMENT` flag (bit 5) for API
+/// clarity, but wgpu folds depth and color attachments under a single
+/// `RENDER_ATTACHMENT` (bit 4). Doing a naive `from_bits_truncate` therefore
+/// **silently drops** the depth-attachment intent — the texture loses
+/// `RENDER_ATTACHMENT`, becomes sample-only, and any subsequent
+/// `RenderPass` that targets it as the depth view fails validation with
+/// `TextureViewIsNotRenderable`.
+///
+/// This mapping fans both Khora flags onto wgpu's `RENDER_ATTACHMENT`.
+fn convert_texture_usage(usage: api_tex::TextureUsage) -> wgpu::TextureUsages {
+    let mut out = wgpu::TextureUsages::empty();
+    if usage.contains(api_tex::TextureUsage::COPY_SRC) {
+        out |= wgpu::TextureUsages::COPY_SRC;
+    }
+    if usage.contains(api_tex::TextureUsage::COPY_DST) {
+        out |= wgpu::TextureUsages::COPY_DST;
+    }
+    if usage.contains(api_tex::TextureUsage::TEXTURE_BINDING) {
+        out |= wgpu::TextureUsages::TEXTURE_BINDING;
+    }
+    if usage.contains(api_tex::TextureUsage::STORAGE_BINDING) {
+        out |= wgpu::TextureUsages::STORAGE_BINDING;
+    }
+    if usage.contains(api_tex::TextureUsage::RENDER_ATTACHMENT)
+        || usage.contains(api_tex::TextureUsage::DEPTH_STENCIL_ATTACHMENT)
+    {
+        out |= wgpu::TextureUsages::RENDER_ATTACHMENT;
+    }
+    out
+}
 use khora_core::renderer::api::util::{
     GraphicsBackendType, IndexFormat, RendererDeviceType, TextureFormat,
 };
@@ -170,6 +203,9 @@ pub struct WgpuDeviceInternal {
     pending_command_buffers: Mutex<HashMap<api_cmd::CommandBufferId, wgpu::CommandBuffer>>,
     /// A thread-safe counter to generate unique command buffer IDs.
     command_buffer_id_counter: AtomicU64,
+    /// The submission index returned by the most recent `queue.submit()` call.
+    /// Used to synchronize frame acquisition with GPU completion.
+    last_submission_index: Mutex<Option<wgpu::SubmissionIndex>>,
 }
 
 /// A clonable, thread-safe handle to the WGPU graphics device.
@@ -209,6 +245,7 @@ impl WgpuDevice {
                 vram_peak_bytes: AtomicU64::new(0),
                 pending_command_buffers: Mutex::new(HashMap::new()),
                 command_buffer_id_counter: AtomicU64::new(0),
+                last_submission_index: Mutex::new(None),
             }),
         }
     }
@@ -370,6 +407,21 @@ impl WgpuDevice {
             // but returns immediately if there is none.
             if let Err(e) = context_guard.device.poll(wgpu::PollType::Poll) {
                 log::warn!("Failed to poll device (non-blocking): {:?}", e);
+            }
+        }
+    }
+
+    /// Waits for the most recent `queue.submit()` to be processed by the GPU.
+    /// Must be called before `get_current_texture()` to avoid Vulkan semaphore
+    /// validation errors (VUID-vkAcquireNextImageKHR-semaphore-01286).
+    pub fn wait_for_last_submission(&self) {
+        let idx = self.internal.last_submission_index.lock().unwrap().take();
+        if let Some(submission_index) = idx {
+            if let Ok(context_guard) = self.internal.context.lock() {
+                let _ = context_guard.device.poll(wgpu::PollType::Wait {
+                    submission_index: Some(submission_index),
+                    timeout: None,
+                });
             }
         }
     }
@@ -1103,7 +1155,7 @@ impl GraphicsDevice for WgpuDevice {
             sample_count: descriptor.sample_count.into_wgpu(),
             dimension: descriptor.dimension.into_wgpu(),
             format: descriptor.format.into_wgpu(),
-            usage: wgpu::TextureUsages::from_bits_truncate(descriptor.usage.bits()),
+            usage: convert_texture_usage(descriptor.usage),
             view_formats: &descriptor
                 .view_formats
                 .iter()
@@ -1316,10 +1368,13 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn get_surface_format(&self) -> Option<TextureFormat> {
-        self.internal.context.lock().ok().map(|gc_guard| {
-            let wgpu_format = gc_guard.surface_config.format;
-            from_wgpu_texture_format(wgpu_format)
-        })
+        let context = self.internal.context.lock().unwrap();
+        Some(from_wgpu_texture_format(context.surface_config.format))
+    }
+
+    fn get_surface_size(&self) -> (u32, u32) {
+        let context = self.internal.context.lock().unwrap();
+        (context.surface_config.width, context.surface_config.height)
     }
 
     fn get_adapter_info(&self) -> GraphicsAdapterInfo {
@@ -1393,7 +1448,9 @@ impl GraphicsDevice for WgpuDevice {
         // Remove the command buffer from the map. If it doesn't exist, it's a logic error.
         if let Some(buffer) = guard.remove(&command_buffer_id) {
             let context_guard = self.internal.context.lock().unwrap();
-            context_guard.queue.submit(std::iter::once(buffer));
+            let idx = context_guard.queue.submit(std::iter::once(buffer));
+            // Store the submission index so we can wait on it before the next acquire.
+            *self.internal.last_submission_index.lock().unwrap() = Some(idx);
         } else {
             log::error!(
                 "Attempted to submit a CommandBufferId ({:?}) that does not exist.",

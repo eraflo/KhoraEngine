@@ -1,0 +1,47 @@
+// Copyright 2025 eraflo
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Abstract editor framework: panel system, dock layout, UI builder, and theme.
+//!
+//! All types here are backend-agnostic. Concrete implementations (egui, etc.)
+//! live in `khora-infra`.
+
+pub mod camera;
+pub mod command;
+pub mod fonts;
+pub mod gizmo;
+pub mod icons;
+pub mod log_capture;
+pub mod panel;
+pub mod shell;
+pub mod state;
+pub mod theme;
+pub mod ui_builder;
+pub mod viewport_texture;
+
+pub use camera::EditorCamera;
+pub use command::{CommandHistory, EditorCommand};
+pub use fonts::{FontHandle, FontPack, NamedFont};
+pub use gizmo::{generate_selection_gizmos, GizmoKind, GizmoLineInstance};
+pub use icons::Icon;
+pub use log_capture::EditorLogCapture;
+pub use panel::{EditorPanel, PanelLocation};
+pub use shell::EditorShell;
+pub use state::{
+    AssetEntry, ComponentJson, EditorMode, EditorState, EntityIcon, GizmoMode, InspectedEntity,
+    LogEntry, LogLevel, PlayMode, PropertyEdit, SceneNode, StatusBarData,
+};
+pub use theme::EditorTheme;
+pub use ui_builder::{FontFamilyHint, Interaction, TextAlign, UiBuilder};
+pub use viewport_texture::ViewportTextureHandle;

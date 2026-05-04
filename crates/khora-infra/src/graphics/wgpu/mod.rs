@@ -16,7 +16,7 @@
 
 mod backend;
 mod command;
-mod context;
+pub(crate) mod context;
 mod conversions;
 mod device;
 mod profiler;

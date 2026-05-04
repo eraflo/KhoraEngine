@@ -15,6 +15,8 @@
 //! Defines the `Mat3` and `Mat4` types and associated operations.
 
 use super::{Quaternion, Vec2, Vec3, Vec4, EPSILON};
+use bincode::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use std::ops::{Index, IndexMut, Mul};
 
 // --- Mat3 ---
@@ -312,7 +314,18 @@ impl IndexMut<usize> for Mat3 {
 /// scale) in 3D space. It is also used for camera view and projection matrices.
 /// The memory layout is column-major, which is compatible with modern graphics APIs
 /// like Vulkan, Metal, and DirectX.
-#[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    bytemuck::Pod,
+    bytemuck::Zeroable,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+)]
 #[repr(C)]
 pub struct Mat4 {
     /// The columns of the matrix. `cols[0]` is the first column, and so on.
@@ -764,6 +777,23 @@ impl Mat4 {
             Vec4::new(inv02, inv12, inv22, 0.0),
             Vec4::new(inv_tx, inv_ty, inv_tz, 1.0),
         ))
+    }
+
+    /// Transforms a 3D point by this matrix (treating it as a homogeneous point with w=1).
+    ///
+    /// This applies the full affine transformation including translation, rotation, and scale.
+    #[inline]
+    pub fn transform_point(&self, p: Vec3) -> Vec3 {
+        (*self * Vec4::from_vec3(p, 1.0)).truncate()
+    }
+
+    /// Transforms a 3D direction vector by this matrix (treating it as w=0).
+    ///
+    /// This applies rotation and scale but **not** translation. Use this for
+    /// normals, axes, and other direction vectors.
+    #[inline]
+    pub fn transform_vector(&self, v: Vec3) -> Vec3 {
+        (*self * Vec4::from_vec3(v, 0.0)).truncate()
     }
 }
 

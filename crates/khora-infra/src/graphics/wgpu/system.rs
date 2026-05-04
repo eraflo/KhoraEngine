@@ -36,7 +36,9 @@ use khora_core::renderer::api::resource::{
 use khora_core::renderer::api::scene::RenderObject;
 use khora_core::renderer::api::util::ShaderStageFlags;
 use khora_core::renderer::api::util::{IndexFormat, SampleCount, TextureFormat};
-use khora_core::renderer::traits::{GpuProfiler, GraphicsBackendSelector, RenderSystem};
+use khora_core::renderer::traits::{
+    FrameTargets, GpuProfiler, GraphicsBackendSelector, RenderSystem,
+};
 use khora_core::renderer::{GraphicsDevice, RenderError};
 use khora_core::telemetry::ResourceMonitor;
 use khora_core::Stopwatch;
@@ -72,6 +74,10 @@ pub struct WgpuRenderSystem {
     depth_texture: Option<TextureId>,
     depth_texture_view: Option<TextureViewId>,
 
+    // --- Frame lifecycle ---
+    /// Surface texture acquired by `begin_frame()`, consumed by `end_frame()`.
+    active_frame_texture: Option<wgpu::SurfaceTexture>,
+
     // --- Resize Heuristics State ---
     last_resize_event: Option<Instant>,
     pending_resize: bool,
@@ -79,6 +85,35 @@ pub struct WgpuRenderSystem {
     pending_resize_frames: u32,
     last_pending_size: Option<(u32, u32)>,
     stable_size_frame_count: u32,
+
+    // --- Offscreen Viewport ---
+    viewport_texture: Option<wgpu::Texture>,
+    viewport_view: Option<wgpu::TextureView>,
+    viewport_depth_texture: Option<wgpu::Texture>,
+    viewport_depth_view: Option<wgpu::TextureView>,
+    viewport_width: u32,
+    viewport_height: u32,
+    /// Registered abstract view IDs for the viewport (returned by `begin_frame` when
+    /// `render_to_viewport == true`).
+    viewport_color_view_id: Option<khora_core::renderer::api::resource::TextureViewId>,
+    viewport_depth_view_id: Option<khora_core::renderer::api::resource::TextureViewId>,
+    /// When true, `begin_frame` returns viewport targets instead of the swapchain
+    /// and the engine skips its own present (caller manages the viewport).
+    render_to_viewport: bool,
+
+    // --- Grid Pipeline ---
+    grid_pipeline: Option<wgpu::RenderPipeline>,
+    grid_camera_bind_group_layout: Option<wgpu::BindGroupLayout>,
+    grid_camera_bind_group: Option<wgpu::BindGroup>,
+    grid_camera_buffer: Option<wgpu::Buffer>,
+
+    // --- Gizmo Pipeline ---
+    gizmo_pipeline: Option<wgpu::RenderPipeline>,
+    gizmo_camera_bind_group_layout: Option<wgpu::BindGroupLayout>,
+    gizmo_storage_bind_group_layout: Option<wgpu::BindGroupLayout>,
+    gizmo_camera_buffer: Option<wgpu::Buffer>,
+    gizmo_storage_buffer: Option<wgpu::Buffer>,
+    gizmo_line_capacity: usize,
 }
 
 impl fmt::Debug for WgpuRenderSystem {
@@ -142,12 +177,32 @@ impl WgpuRenderSystem {
             camera_bind_group_layout: None,
             depth_texture: None,
             depth_texture_view: None,
+            active_frame_texture: None,
             last_resize_event: None,
             pending_resize: false,
             last_surface_config: None,
             pending_resize_frames: 0,
             last_pending_size: None,
             stable_size_frame_count: 0,
+            viewport_texture: None,
+            viewport_view: None,
+            viewport_depth_texture: None,
+            viewport_depth_view: None,
+            viewport_width: 0,
+            viewport_height: 0,
+            viewport_color_view_id: None,
+            viewport_depth_view_id: None,
+            render_to_viewport: false,
+            grid_pipeline: None,
+            grid_camera_bind_group_layout: None,
+            grid_camera_bind_group: None,
+            grid_camera_buffer: None,
+            gizmo_pipeline: None,
+            gizmo_camera_bind_group_layout: None,
+            gizmo_storage_bind_group_layout: None,
+            gizmo_camera_buffer: None,
+            gizmo_storage_buffer: None,
+            gizmo_line_capacity: 2048,
         }
     }
 
@@ -413,6 +468,651 @@ impl WgpuRenderSystem {
 
         Ok(())
     }
+
+    /// Creates an offscreen render target for the editor viewport and
+    /// registers it as an egui texture.
+    ///
+    /// Returns the `egui::TextureId` that can be displayed via
+    /// [`UiBuilder::viewport_image`].
+    pub fn create_viewport_target(
+        &mut self,
+        width: u32,
+        height: u32,
+        overlay: &mut crate::ui::egui::overlay::EguiOverlay,
+    ) -> Result<egui::TextureId, RenderError> {
+        let gc = self
+            .graphics_context_shared
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?
+            .lock()
+            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
+
+        // Use RGBA8 so the viewport texture is always bindable in shaders.
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+
+        // --- Color texture ---
+        let color_tex = gc.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("viewport_color"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let color_view = color_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // --- Depth texture ---
+        let depth_tex = gc.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("viewport_depth"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let depth_view = depth_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // Register with the egui overlay renderer.
+        let egui_id = overlay.register_viewport_texture(&gc.device, &color_view);
+
+        let device = self
+            .wgpu_device
+            .clone()
+            .ok_or(RenderError::NotInitialized)?;
+        let viewport_color_vid = device
+            .register_texture_view(&color_tex, Some("viewport_color_view"))
+            .map_err(|e| RenderError::Internal(format!("register viewport color view: {e}")))?;
+        let viewport_depth_vid = device
+            .register_texture_view(&depth_tex, Some("viewport_depth_view"))
+            .map_err(|e| RenderError::Internal(format!("register viewport depth view: {e}")))?;
+
+        self.viewport_texture = Some(color_tex);
+        self.viewport_view = Some(color_view);
+        self.viewport_depth_texture = Some(depth_tex);
+        self.viewport_depth_view = Some(depth_view);
+        self.viewport_width = width;
+        self.viewport_height = height;
+        self.viewport_color_view_id = Some(viewport_color_vid);
+        self.viewport_depth_view_id = Some(viewport_depth_vid);
+
+        log::info!("Viewport target created: {width}x{height} ({format:?})");
+
+        Ok(egui_id)
+    }
+
+    /// Renders a clear pass to the offscreen viewport target.
+    ///
+    /// Call this once per frame (after `begin_frame()`, before
+    /// `render_overlay()`). The cleared image will be visible in the
+    /// egui viewport panel.
+    pub fn render_viewport_clear(&mut self, clear_color: LinearRgba) -> Result<(), RenderError> {
+        let color_view = self
+            .viewport_view
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?;
+        let depth_view = self
+            .viewport_depth_view
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?;
+
+        let gc = self
+            .graphics_context_shared
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?
+            .lock()
+            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
+
+        let mut encoder = gc
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("viewport_clear_encoder"),
+            });
+
+        {
+            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("viewport_clear_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: clear_color.r as f64,
+                            g: clear_color.g as f64,
+                            b: clear_color.b as f64,
+                            a: clear_color.a as f64,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            // Pass drops here — the clear is all we need for now.
+        }
+
+        gc.queue.submit(std::iter::once(encoder.finish()));
+        Ok(())
+    }
+
+    /// Initialises the grid render pipeline.
+    ///
+    /// Must be called after `create_viewport_target` so the surface
+    /// format is known.
+    pub fn init_grid_pipeline(&mut self, shader_source: &str) -> Result<(), RenderError> {
+        let gc = self
+            .graphics_context_shared
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?
+            .lock()
+            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
+
+        // Must match the viewport texture format from create_viewport_target.
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        let device = &gc.device;
+
+        // Camera uniform buffer (mat4 + vec4 = 80 bytes).
+        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("grid_camera_ubo"),
+            size: 80,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("grid_camera_bgl"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("grid_camera_bg"),
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("grid_pipeline_layout"),
+            bind_group_layouts: &[&bind_group_layout],
+            immediate_size: 0,
+        });
+
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("grid_shader"),
+            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(shader_source)),
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("grid_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader_module,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_module,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None, // fullscreen, no culling
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        self.grid_pipeline = Some(pipeline);
+        self.grid_camera_bind_group_layout = Some(bind_group_layout);
+        self.grid_camera_bind_group = Some(bind_group);
+        self.grid_camera_buffer = Some(camera_buffer);
+
+        log::info!("Grid pipeline initialised.");
+        Ok(())
+    }
+
+    /// Returns the current viewport dimensions `(width, height)` in pixels.
+    pub fn viewport_size(&self) -> (u32, u32) {
+        (self.viewport_width, self.viewport_height)
+    }
+
+    /// Renders the viewport: clear + grid + (future) 3D content.
+    ///
+    /// `view_info` supplies the camera matrices for grid rendering.
+    pub fn render_viewport(
+        &mut self,
+        clear_color: LinearRgba,
+        view_info: &ViewInfo,
+    ) -> Result<(), RenderError> {
+        let color_view = self
+            .viewport_view
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?;
+        let depth_view = self
+            .viewport_depth_view
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?;
+
+        let gc = self
+            .graphics_context_shared
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?
+            .lock()
+            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
+
+        // Upload camera uniforms for the grid (VP matrix + camera pos).
+        if let Some(buf) = &self.grid_camera_buffer {
+            let vp = view_info.view_projection_matrix();
+            let cam_pos = view_info.camera_position;
+            // Layout: mat4x4<f32>(64 bytes) + vec4<f32>(16 bytes) = 80 bytes
+            let mut data = [0u8; 80];
+            data[..64].copy_from_slice(bytemuck::bytes_of(&vp));
+            let pos_arr = [cam_pos.x, cam_pos.y, cam_pos.z, 1.0f32];
+            data[64..80].copy_from_slice(bytemuck::cast_slice(&pos_arr));
+            gc.queue.write_buffer(buf, 0, &data);
+        }
+
+        let mut encoder = gc
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("viewport_encoder"),
+            });
+
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("viewport_render_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: clear_color.r as f64,
+                            g: clear_color.g as f64,
+                            b: clear_color.b as f64,
+                            a: clear_color.a as f64,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+
+            // Draw the infinite grid.
+            if let (Some(pipeline), Some(bg)) = (&self.grid_pipeline, &self.grid_camera_bind_group)
+            {
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, bg, &[]);
+                pass.draw(0..6, 0..1);
+            }
+        }
+
+        gc.queue.submit(std::iter::once(encoder.finish()));
+        Ok(())
+    }
+
+    /// Renders editor gizmos (selection overlays) to the viewport texture.
+    ///
+    /// Called after agent rendering, using `LoadOp::Load` to overlay on top
+    /// of the existing scene content. Gizmos are rendered as wireframe lines
+    /// with alpha blending.
+    pub fn render_gizmos(
+        &mut self,
+        view_info: &ViewInfo,
+        lines: &[khora_core::ui::editor::GizmoLineInstance],
+    ) -> Result<usize, RenderError> {
+        if lines.is_empty() {
+            return Ok(0);
+        }
+
+        let (Some(pipeline), Some(cam_bgl), Some(storage_bgl), Some(cam_buf), Some(storage_buf)) = (
+            &self.gizmo_pipeline,
+            &self.gizmo_camera_bind_group_layout,
+            &self.gizmo_storage_bind_group_layout,
+            &self.gizmo_camera_buffer,
+            &self.gizmo_storage_buffer,
+        ) else {
+            return Ok(0);
+        };
+
+        let color_view = self
+            .viewport_view
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?;
+        let depth_view = self
+            .viewport_depth_view
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?;
+
+        let gc = self
+            .graphics_context_shared
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?
+            .lock()
+            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
+
+        let lines_to_render = lines.len().min(self.gizmo_line_capacity);
+
+        // Upload camera uniforms (same layout as grid: mat4 + vec4 = 80 bytes).
+        let vp = view_info.view_projection_matrix();
+        let cam_pos = view_info.camera_position;
+        let mut cam_data = [0u8; 80];
+        cam_data[..64].copy_from_slice(bytemuck::bytes_of(&vp));
+        let pos_arr = [cam_pos.x, cam_pos.y, cam_pos.z, 1.0f32];
+        cam_data[64..80].copy_from_slice(bytemuck::cast_slice(&pos_arr));
+        gc.queue.write_buffer(cam_buf, 0, &cam_data);
+
+        // Upload gizmo line data.
+        let gizmo_bytes = bytemuck::cast_slice(&lines[..lines_to_render]);
+        gc.queue.write_buffer(storage_buf, 0, gizmo_bytes);
+
+        // Create bind groups.
+        let camera_bind_group = gc.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("gizmo_camera_bg"),
+            layout: cam_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: cam_buf.as_entire_binding(),
+            }],
+        });
+
+        let gizmo_bind_group = gc.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("gizmo_data_bg"),
+            layout: storage_bgl,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: storage_buf.as_entire_binding(),
+            }],
+        });
+
+        let mut encoder = gc
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("gizmo_encoder"),
+            });
+
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("gizmo_render_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, &camera_bind_group, &[]);
+            pass.set_bind_group(1, &gizmo_bind_group, &[]);
+            pass.draw(0..(lines_to_render as u32 * 2), 0..1);
+        }
+
+        gc.queue.submit(std::iter::once(encoder.finish()));
+        Ok(lines_to_render)
+    }
+
+    /// Initializes the gizmo render pipeline.
+    ///
+    /// Must be called after `create_viewport_target` so the surface format is known.
+    pub fn init_gizmo_pipeline(&mut self, shader_source: &str) -> Result<(), RenderError> {
+        let gc = self
+            .graphics_context_shared
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?
+            .lock()
+            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
+
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        let device = &gc.device;
+
+        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("gizmo_camera_ubo"),
+            size: 80,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("gizmo_storage_buffer"),
+            size: (self.gizmo_line_capacity
+                * std::mem::size_of::<khora_core::ui::editor::GizmoLineInstance>())
+                as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("gizmo_camera_bgl"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let storage_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("gizmo_storage_bgl"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("gizmo_pipeline_layout"),
+            bind_group_layouts: &[&camera_bind_group_layout, &storage_bind_group_layout],
+            immediate_size: 0,
+        });
+
+        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("gizmo_shader"),
+            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(shader_source)),
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("gizmo_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader_module,
+                entry_point: Some("vs_main"),
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader_module,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        self.gizmo_pipeline = Some(pipeline);
+        self.gizmo_camera_bind_group_layout = Some(camera_bind_group_layout);
+        self.gizmo_storage_bind_group_layout = Some(storage_bind_group_layout);
+        self.gizmo_camera_buffer = Some(camera_buffer);
+        self.gizmo_storage_buffer = Some(storage_buffer);
+
+        log::info!(
+            "Gizmo pipeline initialised (capacity: {} lines).",
+            self.gizmo_line_capacity
+        );
+        Ok(())
+    }
+
+    /// Creates an [`EguiOverlay`] backed by the current wgpu graphics context.
+    ///
+    /// Must be called after [`RenderSystem::init`].
+    pub fn create_editor_overlay(
+        &self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        shader_source: &str,
+    ) -> Result<crate::ui::egui::overlay::EguiOverlay, RenderError> {
+        let gc = self
+            .graphics_context_shared
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?
+            .lock()
+            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
+
+        Ok(crate::ui::egui::overlay::EguiOverlay::new(
+            event_loop,
+            gc.surface_config.format,
+            &gc.device,
+            shader_source,
+        ))
+    }
+
+    /// Creates an [`EguiOverlay`] **and** an [`EguiEditorShell`] that share
+    /// the same `egui::Context`, plus an offscreen viewport target.
+    ///
+    /// The overlay handles input / rendering while the shell manages the
+    /// dock layout, menu bar, toolbar, and panel dispatch. The viewport
+    /// target is an offscreen texture used to display the 3D scene inside
+    /// an egui panel.
+    pub fn create_editor_overlay_and_shell(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        shader_source: &str,
+        grid_shader_source: &str,
+        theme: khora_core::ui::editor::EditorTheme,
+        viewport_handle: khora_core::ui::editor::viewport_texture::ViewportTextureHandle,
+    ) -> Result<
+        (
+            crate::ui::egui::overlay::EguiOverlay,
+            crate::ui::egui::shell::EguiEditorShell,
+        ),
+        RenderError,
+    > {
+        let mut overlay = self.create_editor_overlay(event_loop, shader_source)?;
+
+        // Create an offscreen viewport target (initial 800×600).
+        let egui_id = self.create_viewport_target(800, 600, &mut overlay)?;
+
+        // Initialise the infinite grid pipeline.
+        self.init_grid_pipeline(grid_shader_source)?;
+
+        // Initialise the gizmo rendering pipeline.
+        if let Ok(gizmo_source) = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../khora-lanes/src/render_lane/shaders/gizmo.wgsl"),
+        ) {
+            let _ = self.init_gizmo_pipeline(&gizmo_source);
+        } else {
+            log::warn!("Gizmo shader not found; gizmo rendering disabled.");
+        }
+
+        let mut shell = crate::ui::egui::shell::EguiEditorShell::new(overlay.context(), theme);
+        shell.register_viewport_texture(viewport_handle, egui_id);
+
+        Ok((overlay, shell))
+    }
 }
 
 impl RenderSystem for WgpuRenderSystem {
@@ -569,6 +1269,7 @@ impl RenderSystem for WgpuRenderSystem {
         }
 
         // --- 1. Acquire Frame from Swap Chain ---
+        device.wait_for_last_submission();
         let output_surface_texture = loop {
             let mut gc_guard = gc.lock().unwrap();
             match gc_guard.get_current_texture() {
@@ -752,27 +1453,17 @@ impl RenderSystem for WgpuRenderSystem {
         Ok(self.last_frame_stats.clone())
     }
 
-    fn render_with_encoder(
-        &mut self,
-        clear_color: khora_core::math::LinearRgba,
-        encoder_fn: Box<
-            dyn FnOnce(
-                    &mut dyn khora_core::renderer::traits::CommandEncoder,
-                    &khora_core::renderer::api::core::RenderContext,
-                ) + Send
-                + '_,
-        >,
-    ) -> Result<RenderStats, RenderError> {
-        use khora_core::renderer::api::core::RenderContext;
-
-        let full_frame_timer = Stopwatch::new();
-
+    fn begin_frame(&mut self) -> Result<FrameTargets, RenderError> {
         let device = self
             .wgpu_device
             .clone()
             .ok_or(RenderError::NotInitialized)?;
 
+        // Process any pending GPU-to-CPU callbacks (profiler map_async, etc.).
         device.poll_device_non_blocking();
+        // Block until the previous submission is consumed so the acquire
+        // semaphore is guaranteed to be unsignaled.
+        device.wait_for_last_submission();
 
         let gc = self
             .graphics_context_shared
@@ -806,9 +1497,6 @@ impl RenderSystem for WgpuRenderSystem {
                     }
                 }
             }
-            if self.pending_resize && !resized_this_frame {
-                return Ok(self.last_frame_stats.clone());
-            }
         }
 
         if resized_this_frame {
@@ -817,7 +1505,7 @@ impl RenderSystem for WgpuRenderSystem {
             }
         }
 
-        // --- Acquire Frame ---
+        // --- Acquire swapchain texture ---
         let output_surface_texture = loop {
             let mut gc_guard = gc.lock().unwrap();
             match gc_guard.get_current_texture() {
@@ -832,9 +1520,7 @@ impl RenderSystem for WgpuRenderSystem {
             }
         };
 
-        let command_recording_timer = Stopwatch::new();
-
-        // --- Create texture view ---
+        // --- Create texture view for the frame ---
         if let Some(old_id) = self.current_frame_view_id.take() {
             device.destroy_texture_view(old_id)?;
         }
@@ -844,43 +1530,94 @@ impl RenderSystem for WgpuRenderSystem {
         )?;
         self.current_frame_view_id = Some(target_view_id);
 
-        // --- Create encoder ---
-        let mut command_encoder = device.create_command_encoder(Some("Khora Main Command Encoder"));
+        self.active_frame_texture = Some(output_surface_texture);
 
-        // --- Build RenderContext with actual target ---
-        let render_ctx = RenderContext {
-            color_target: &target_view_id,
-            depth_target: self.depth_texture_view.as_ref(),
-            clear_color,
-            shadow_atlas: None,
-            shadow_sampler: None,
+        // Compute targets for the engine: choose between swapchain and viewport.
+        let (color, depth) = if self.render_to_viewport {
+            let c = self
+                .viewport_color_view_id
+                .ok_or_else(|| RenderError::Internal("viewport color view not created".into()))?;
+            (c, self.viewport_depth_view_id)
+        } else {
+            (target_view_id, self.depth_texture_view)
         };
 
-        // --- Call the encoder function (agents do their rendering here) ---
-        encoder_fn(command_encoder.as_mut(), &render_ctx);
+        Ok(FrameTargets { color, depth })
+    }
 
-        // --- Submit ---
-        let submission_timer = Stopwatch::new();
-        let command_buffer = command_encoder.finish();
-        device.submit_command_buffer(command_buffer);
-        let submission_ms = submission_timer.elapsed_ms().unwrap_or(0);
+    fn end_frame(&mut self) -> Result<RenderStats, RenderError> {
+        if let Some(texture) = self.active_frame_texture.take() {
+            texture.present();
+        }
 
-        // --- Present ---
-        output_surface_texture.present();
-
-        // --- Update stats ---
         self.frame_count += 1;
-        let full_frame_ms = full_frame_timer.elapsed_ms().unwrap_or(0);
         self.last_frame_stats.frame_number = self.frame_count;
-        self.last_frame_stats.cpu_preparation_time_ms =
-            (full_frame_ms - command_recording_timer.elapsed_ms().unwrap_or(0)) as f32;
-        self.last_frame_stats.cpu_render_submission_time_ms = submission_ms as f32;
 
         if let Some(monitor) = &self.gpu_monitor {
             monitor.update_from_frame_stats(&self.last_frame_stats);
         }
 
         Ok(self.last_frame_stats.clone())
+    }
+
+    fn render_overlay(
+        &mut self,
+        overlay: &mut dyn khora_core::ui::EditorOverlay,
+        screen: khora_core::ui::OverlayScreenDescriptor,
+    ) -> Result<(), RenderError> {
+        let gc_arc = self
+            .graphics_context_shared
+            .as_ref()
+            .ok_or(RenderError::NotInitialized)?
+            .clone();
+
+        // Create encoder and target view while holding the lock, then release.
+        let (encoder, target_view) = {
+            let gc = gc_arc
+                .lock()
+                .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
+
+            let surface_tex = self
+                .active_frame_texture
+                .as_ref()
+                .ok_or(RenderError::NotInitialized)?;
+
+            let target_view = surface_tex
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+
+            let encoder = gc
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("egui_overlay_encoder"),
+                });
+
+            (encoder, target_view)
+        }; // gc lock released — overlay will re-acquire it
+
+        let mut render_state = crate::ui::egui::overlay::EguiFrameRenderState {
+            graphics_context: gc_arc.clone(),
+            encoder: Some(encoder),
+            target_view,
+            width_px: screen.width_px,
+            height_px: screen.height_px,
+        };
+
+        overlay
+            .end_frame_and_render(&mut render_state as &mut dyn std::any::Any)
+            .map_err(|e| RenderError::RenderingFailed(e.to_string()))?;
+
+        // Submit the encoder
+        let encoder = render_state.encoder.take().ok_or_else(|| {
+            RenderError::RenderingFailed("Encoder consumed during overlay render".into())
+        })?;
+
+        let gc = gc_arc
+            .lock()
+            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
+        gc.queue.submit(std::iter::once(encoder.finish()));
+
+        Ok(())
     }
 
     fn get_last_frame_stats(&self) -> &RenderStats {
@@ -917,6 +1654,18 @@ impl RenderSystem for WgpuRenderSystem {
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn render_to_viewport(&self) -> bool {
+        self.render_to_viewport
+    }
+
+    fn set_render_to_viewport(&mut self, enabled: bool) {
+        self.render_to_viewport = enabled;
     }
 
     fn get_adapter_info(&self) -> Option<GraphicsAdapterInfo> {

@@ -26,30 +26,28 @@
 use anyhow::Result;
 use khora_sdk::prelude::math::{Quaternion, Vec3};
 use khora_sdk::prelude::*;
-use khora_sdk::{Application, Engine, EngineContext, GameWorld, InputEvent};
+use khora_sdk::run_winit;
+use khora_sdk::winit_adapters::WinitWindowProvider;
+use khora_sdk::{
+    AgentProvider, DccService, EngineApp, GameWorld, InputEvent, PhaseProvider, RenderSystem,
+    ServiceRegistry, WgpuRenderSystem, WindowConfig,
+};
+use std::sync::{Arc, Mutex};
 
 #[global_allocator]
 static GLOBAL: SaaTrackingAllocator = SaaTrackingAllocator::new(std::alloc::System);
 
 /// Simple camera controller for the player.
 struct PlayerController {
-    /// Movement speed in units per second.
     speed: f32,
-    /// Mouse sensitivity.
     sensitivity: f32,
-    /// Current yaw angle (rotation around Y axis).
     yaw: f32,
-    /// Current pitch angle (rotation around X axis).
     pitch: f32,
-    /// Current movement input.
     move_forward: f32,
     move_right: f32,
     move_up: f32,
-    /// Whether mouse is captured.
     mouse_captured: bool,
-    /// Last mouse position.
     last_mouse: (f32, f32),
-    /// Track which keys are currently held to prevent release-before-use bugs
     keys_held: std::collections::HashSet<String>,
 }
 
@@ -58,7 +56,7 @@ impl PlayerController {
         Self {
             speed: 5.0,
             sensitivity: 0.003,
-            yaw: std::f32::consts::PI, // Look towards -Z (same as camera)
+            yaw: std::f32::consts::PI,
             pitch: 0.0,
             move_forward: 0.0,
             move_right: 0.0,
@@ -72,34 +70,21 @@ impl PlayerController {
     fn process_input(&mut self, inputs: &[InputEvent]) {
         use khora_sdk::prelude::MouseButton;
 
-        if !inputs.is_empty() {
-            log::debug!("process_input called with {} inputs", inputs.len());
-        }
-
         for event in inputs {
             match event {
-                InputEvent::MouseButtonPressed { button } => {
-                    log::debug!("Mouse pressed: {:?}", button);
-                    if *button == MouseButton::Right {
-                        self.mouse_captured = true;
-                    }
+                InputEvent::MouseButtonPressed { button } if *button == MouseButton::Right => {
+                    self.mouse_captured = true;
                 }
-                InputEvent::MouseButtonReleased { button } => {
-                    log::debug!("Mouse released: {:?}", button);
-                    if *button == MouseButton::Right {
-                        self.mouse_captured = false;
-                    }
+                InputEvent::MouseButtonReleased { button } if *button == MouseButton::Right => {
+                    self.mouse_captured = false;
                 }
                 InputEvent::MouseMoved { x, y } => {
                     if self.mouse_captured {
                         let dx = x - self.last_mouse.0;
                         let dy = y - self.last_mouse.1;
-                        log::trace!("Mouse moved: ({}, {}) delta: ({}, {})", x, y, dx, dy);
 
                         self.yaw -= dx * self.sensitivity;
                         self.pitch -= dy * self.sensitivity;
-
-                        // Clamp pitch
                         self.pitch = self.pitch.clamp(
                             -std::f32::consts::FRAC_PI_2 + 0.01,
                             std::f32::consts::FRAC_PI_2 - 0.01,
@@ -108,19 +93,15 @@ impl PlayerController {
                     self.last_mouse = (*x, *y);
                 }
                 InputEvent::KeyPressed { key_code } => {
-                    log::debug!("Key pressed: {}", key_code);
                     self.handle_key(key_code, true);
                 }
                 InputEvent::KeyReleased { key_code } => {
-                    log::debug!("Key released: {}", key_code);
                     self.handle_key(key_code, false);
                 }
                 _ => {}
             }
         }
 
-        // Recalculate movement after processing all events
-        // This ensures keys held during the frame contribute to movement
         self.recalculate_movement();
     }
 
@@ -130,21 +111,13 @@ impl PlayerController {
         } else {
             self.keys_held.remove(key);
         }
-        log::trace!(
-            "handle_key: {} pressed={} keys_held={:?}",
-            key,
-            pressed,
-            self.keys_held
-        );
     }
 
     fn recalculate_movement(&mut self) {
-        // Reset movement
         self.move_forward = 0.0;
         self.move_right = 0.0;
         self.move_up = 0.0;
 
-        // Recalculate from held keys
         for key in &self.keys_held {
             match key.as_str() {
                 "KeyW" => self.move_forward -= 1.0,
@@ -156,31 +129,21 @@ impl PlayerController {
                 _ => {}
             }
         }
-
-        log::trace!(
-            "recalculate_movement: move_forward={} move_right={} move_up={}",
-            self.move_forward,
-            self.move_right,
-            self.move_up
-        );
     }
 
     fn update(&self, transform: &mut khora_sdk::prelude::ecs::Transform, delta_time: f32) {
-        // Calculate directions
         let (sin_yaw, cos_yaw) = self.yaw.sin_cos();
         let (sin_pitch, cos_pitch) = self.pitch.sin_cos();
 
         let forward = Vec3::new(sin_yaw * cos_pitch, sin_pitch, cos_yaw * cos_pitch);
         let right = Vec3::new(cos_yaw, 0.0, -sin_yaw);
 
-        // Apply movement
         let velocity = self.speed * delta_time;
         transform.translation = transform.translation
             + forward * (-self.move_forward) * velocity
             + right * self.move_right * velocity
             + Vec3::Y * self.move_up * velocity;
 
-        // Update rotation
         let yaw_quat = Quaternion::from_axis_angle(Vec3::Y, self.yaw);
         let pitch_quat = Quaternion::from_axis_angle(Vec3::X, self.pitch);
         transform.rotation = yaw_quat * pitch_quat;
@@ -189,16 +152,20 @@ impl PlayerController {
 
 /// A simple game demonstrating the Khora SDK.
 struct SandboxGame {
-    /// Number of frames rendered.
     frame_count: u64,
-    /// The player entity (Vessel with camera).
     player: Option<khora_sdk::prelude::ecs::EntityId>,
-    /// Player controller.
     controller: PlayerController,
 }
 
-impl Application for SandboxGame {
-    fn new(_context: EngineContext) -> Self {
+impl EngineApp for SandboxGame {
+    fn window_config() -> WindowConfig {
+        WindowConfig {
+            title: "Khora Sandbox".to_owned(),
+            ..WindowConfig::default()
+        }
+    }
+
+    fn new() -> Self {
         log::info!("SandboxGame: Initializing...");
         Self {
             frame_count: 0,
@@ -207,8 +174,7 @@ impl Application for SandboxGame {
         }
     }
 
-    fn setup(&mut self, world: &mut GameWorld) {
-        // Create player - a Vessel with camera
+    fn setup(&mut self, world: &mut GameWorld, _services: &ServiceRegistry) {
         let camera = khora_sdk::prelude::ecs::Camera::new_perspective(
             std::f32::consts::FRAC_PI_4,
             16.0 / 9.0,
@@ -221,17 +187,13 @@ impl Application for SandboxGame {
                 .with_rotation(Quaternion::from_axis_angle(Vec3::Y, std::f32::consts::PI))
                 .build(),
         );
-        log::info!("SandboxGame: Player spawned with camera");
 
-        // Create floor
         khora_sdk::spawn_plane(world, 20.0, 0.0).build();
-        log::info!("SandboxGame: Floor spawned");
 
-        // Create global light (sun) pointing towards -Z and heavily downwards
         let sun_rotation = Quaternion::from_axis_angle(Vec3::X, -std::f32::consts::FRAC_PI_2 * 0.8);
         let mut sun_light = khora_sdk::prelude::ecs::Light::directional();
         if let khora_sdk::prelude::ecs::LightType::Directional(ref mut d) = sun_light.light_type {
-            d.intensity = 2.5; // Bump intensity to see diffuse clearly
+            d.intensity = 2.5;
             d.shadow_enabled = true;
             d.shadow_bias = 0.005;
             d.shadow_normal_bias = 0.02;
@@ -241,9 +203,7 @@ impl Application for SandboxGame {
             .with_component(sun_light)
             .with_rotation(sun_rotation)
             .build();
-        log::info!("SandboxGame: Global light spawned");
 
-        // Create cubes
         let positions = [
             Vec3::new(0.0, 0.5, -5.0),
             Vec3::new(-3.0, 0.5, -8.0),
@@ -259,7 +219,6 @@ impl Application for SandboxGame {
             khora_sdk::prelude::math::LinearRgba::CYAN,
         ];
 
-        // Let's also add a moving point light to show dynamic gradients
         let mut point_light = khora_sdk::prelude::ecs::Light::point();
         if let khora_sdk::prelude::ecs::LightType::Point(ref mut p) = point_light.light_type {
             p.intensity = 500.0;
@@ -272,12 +231,10 @@ impl Application for SandboxGame {
             point_light,
         ));
 
-        // Create spheres instead of cubes! Spheres have smooth normals, so they will
-        // clearly show the beautiful Blinn-Phong shading gradients and specular highlights!
         for (i, pos) in positions.iter().enumerate() {
             let mat = khora_sdk::prelude::materials::StandardMaterial {
                 base_color: colors[i],
-                roughness: 0.2, // nice glossy highlight
+                roughness: 0.2,
                 ..Default::default()
             };
             let mat_handle = world.add_material(*Box::new(mat));
@@ -286,55 +243,21 @@ impl Application for SandboxGame {
                 .at_position(*pos)
                 .with_component(mat_handle)
                 .build();
-
-            log::info!(
-                "SandboxGame: Sphere {} spawned at {:?} with color {:?}",
-                i,
-                pos,
-                colors[i]
-            );
         }
     }
 
     fn update(&mut self, world: &mut GameWorld, inputs: &[InputEvent]) {
         self.frame_count += 1;
 
-        // Process input
         self.controller.process_input(inputs);
 
-        log::trace!(
-            "After process_input: move_forward={}, move_right={}",
-            self.controller.move_forward,
-            self.controller.move_right
-        );
-
-        // Update player
         if let Some(player) = self.player {
             if let Some(transform) = world.get_transform_mut(player) {
-                let old_pos = transform.translation;
-                log::debug!(
-                    "Before update: pos={:?}, yaw={}, pitch={}, move_forward={}, move_right={}",
-                    old_pos,
-                    self.controller.yaw,
-                    self.controller.pitch,
-                    self.controller.move_forward,
-                    self.controller.move_right
-                );
-
                 self.controller.update(transform, 0.016);
-
-                let new_pos = transform.translation;
-                log::debug!("After update: pos={:?}", new_pos);
-
-                if (old_pos - new_pos).length() > 0.001 {
-                    log::debug!("Player moved: {:?} -> {:?}", old_pos, new_pos);
-                }
             }
-            // Sync to GlobalTransform
             world.sync_global_transform(player);
         }
 
-        // Status log
         if self.frame_count.is_multiple_of(300) {
             let entity_count = world.iter_entities().count();
             let mouse = if self.controller.mouse_captured {
@@ -352,13 +275,38 @@ impl Application for SandboxGame {
     }
 }
 
+impl AgentProvider for SandboxGame {
+    fn register_agents(&self, _dcc: &DccService, _services: &mut ServiceRegistry) {
+        // Sandbox doesn't register custom agents
+    }
+}
+
+impl PhaseProvider for SandboxGame {
+    fn custom_phases(&self) -> Vec<khora_sdk::ExecutionPhase> {
+        Vec::new()
+    }
+
+    fn removed_phases(&self) -> Vec<khora_sdk::ExecutionPhase> {
+        Vec::new()
+    }
+}
+
 fn main() -> Result<()> {
     use env_logger::{Builder, Env};
 
     Builder::from_env(Env::default().default_filter_or("info"))
-        .filter_module("wgpu_hal", log::LevelFilter::Error)
+        // Suppress Epic Games / EOS overlay Vulkan loader JSON-not-found noise.
+        // These are harmless OS-level loader warnings, not engine errors.
+        .filter_module("wgpu_hal::vulkan::instance", log::LevelFilter::Off)
         .init();
 
-    Engine::run::<SandboxGame>()?;
+    run_winit::<WinitWindowProvider, SandboxGame>(|window, services, _event_loop| {
+        let mut rs = WgpuRenderSystem::new();
+        rs.init(window).expect("renderer init failed");
+        // Register the graphics device before boxing — required by RenderAgent.
+        services.insert(rs.graphics_device());
+        let rs: Box<dyn RenderSystem> = Box::new(rs);
+        services.insert(Arc::new(Mutex::new(rs)));
+    })?;
     Ok(())
 }

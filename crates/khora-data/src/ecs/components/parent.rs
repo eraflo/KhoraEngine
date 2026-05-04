@@ -22,3 +22,12 @@ use khora_macros::Component;
 /// This is the foundational component for building scene hierarchies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Component)]
 pub struct Parent(pub EntityId);
+
+impl Default for Parent {
+    fn default() -> Self {
+        Self(EntityId {
+            index: 0,
+            generation: 0,
+        })
+    }
+}

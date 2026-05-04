@@ -14,6 +14,7 @@
 
 //! Context for the Dynamic Context Core.
 
+pub use khora_core::agent::EngineMode;
 pub use khora_core::platform::{BatteryLevel, ThermalStatus};
 
 /// Hardware context observed by the DCC.
@@ -33,75 +34,13 @@ pub struct HardwareState {
     pub total_vram: Option<u64>,
 }
 
-/// The high-level workload state of the engine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ExecutionPhase {
-    /// Engine is starting up and loading assets.
-    #[default]
-    Boot,
-    /// User is in an interactive menu.
-    Menu,
-    /// Full simulation is running (gameplay).
-    Simulation,
-    /// Application is minimized or lost focus.
-    Background,
-}
-
-impl ExecutionPhase {
-    /// Returns true if the transition from `self` to `target` is valid.
-    ///
-    /// Valid transitions:
-    /// - Boot → Menu, Simulation
-    /// - Menu → Simulation, Background
-    /// - Simulation → Menu, Background
-    /// - Background → Menu, Simulation
-    pub fn can_transition_to(&self, target: ExecutionPhase) -> bool {
-        match self {
-            ExecutionPhase::Boot => {
-                matches!(target, ExecutionPhase::Menu | ExecutionPhase::Simulation)
-            }
-            ExecutionPhase::Menu => matches!(
-                target,
-                ExecutionPhase::Simulation | ExecutionPhase::Background
-            ),
-            ExecutionPhase::Simulation => {
-                matches!(target, ExecutionPhase::Menu | ExecutionPhase::Background)
-            }
-            ExecutionPhase::Background => {
-                matches!(target, ExecutionPhase::Menu | ExecutionPhase::Simulation)
-            }
-        }
-    }
-
-    /// Returns a human-readable name for this phase.
-    pub fn name(&self) -> &'static str {
-        match self {
-            ExecutionPhase::Boot => "boot",
-            ExecutionPhase::Menu => "menu",
-            ExecutionPhase::Simulation => "simulation",
-            ExecutionPhase::Background => "background",
-        }
-    }
-
-    /// Parses a phase from a string (case-insensitive).
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name.to_lowercase().as_str() {
-            "boot" => Some(ExecutionPhase::Boot),
-            "menu" => Some(ExecutionPhase::Menu),
-            "simulation" => Some(ExecutionPhase::Simulation),
-            "background" => Some(ExecutionPhase::Background),
-            _ => None,
-        }
-    }
-}
-
 /// The complete context model used for strategic decision making.
 #[derive(Debug, Clone)]
 pub struct Context {
     /// Observed hardware state.
     pub hardware: HardwareState,
-    /// Current engine execution phase.
-    pub phase: ExecutionPhase,
+    /// Current engine mode.
+    pub mode: EngineMode,
     /// Global budget multiplier derived from thermal and battery state.
     ///
     /// Applied to all frame budgets to implement graceful performance degradation.
@@ -121,7 +60,7 @@ impl Default for Context {
     fn default() -> Self {
         Self {
             hardware: HardwareState::default(),
-            phase: ExecutionPhase::default(),
+            mode: EngineMode::Playing,
             global_budget_multiplier: 1.0,
         }
     }
@@ -159,7 +98,7 @@ mod tests {
     fn test_default_context_full_budget() {
         let ctx = Context::default();
         assert_eq!(ctx.global_budget_multiplier, 1.0);
-        assert_eq!(ctx.phase, ExecutionPhase::Boot);
+        assert_eq!(ctx.mode, EngineMode::Playing);
     }
 
     #[test]

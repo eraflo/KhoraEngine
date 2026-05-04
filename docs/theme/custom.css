@@ -1,198 +1,676 @@
 /* ============================================================
-   Khora Engine — Custom mdBook Theme
+   Khora Engine — Documentation Theme
+   Direct port of the editor's "Document" design language.
+   Tokens & treatments match docs/src/design/editor.md and the
+   Khora Editor Design Document HTML reference.
+
+   Brand voice: instrumental. Silver is the brand. Gold is reserved
+   for active selection only. Color is a load-bearing element.
    ============================================================ */
 
-/* ---------- Root Variables (Ayu Dark overrides) ---------- */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Fraunces:opsz,wght,ital@9..144,300..700,0;9..144,300..700,1&display=swap');
+
+/* ---------- Tokens — OKLCH, navy spectrum ----------
+   Surfaces are deeper navy with cool silver foreground (hue 250 / 240).
+   Pure black is never used; bg-0 is a deliberate blue-black. */
 :root {
-    --khora-accent: #e0a526;
-    --khora-accent-dim: #c48d1a;
-    --khora-bg-dark: #0d1117;
-    --khora-bg-sidebar: #0c0e13;
-    --khora-bg-code: #161b22;
-    --khora-text: #c9d1d9;
-    --khora-text-dim: #8b949e;
-    --khora-border: #21262d;
-    --khora-link: #58a6ff;
-    --khora-heading: #f0f6fc;
+    /* Surfaces */
+    --k-bg-0: oklch(0.16 0.022 265);    /* deepest — page background */
+    --k-bg-1: oklch(0.20 0.025 265);    /* panel base — code blocks, sidebar */
+    --k-bg-2: oklch(0.235 0.028 265);   /* card / elevated — th, tooltips */
+    --k-bg-3: oklch(0.27 0.032 265);    /* hover / input */
+
+    /* Lines */
+    --k-line:      oklch(0.36 0.02 265);
+    --k-line-soft: oklch(1 0 0 / 0.06);
+
+    /* Foreground — cool silver, hue 250 */
+    --k-fg-0: oklch(0.96 0.005 250);    /* primary — h1, strong */
+    --k-fg-1: oklch(0.82 0.01 250);     /* secondary — body */
+    --k-fg-2: oklch(0.65 0.012 250);    /* tertiary — labels, ledes */
+    --k-fg-3: oklch(0.50 0.015 250);    /* quaternary — meta, units */
+
+    /* Brand — silver at hue 240 */
+    --k-silver:     oklch(0.84 0.04 240);
+    --k-silver-dim: oklch(0.68 0.045 240);
+    --k-silver-soft: oklch(0.84 0.04 240 / 0.08);
+    --k-silver-line: oklch(0.84 0.04 240 / 0.20);
+
+    /* Accents — three signals only.
+       Silver = brand and primary affordance.
+       Gold = active selection.
+       Green = healthy. Amber = warning. Red = error. */
+    --k-gold:   oklch(0.80 0.12 82);
+    --k-green:  oklch(0.78 0.13 150);
+    --k-amber:  oklch(0.78 0.14 70);
+    --k-red:    oklch(0.68 0.18 25);
+
+    /* Type */
+    --k-font-sans:    'Geist', 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --k-font-mono:    'Geist Mono', 'JetBrains Mono', 'SFMono-Regular', Consolas, ui-monospace, monospace;
+    --k-font-display: 'Fraunces', 'Iowan Old Style', Georgia, serif;
+
+    /* Motion — fast first frame, 150 ms default, no bounce */
+    --k-ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
-/* ---------- Global Overrides ---------- */
-.ayu .content main {
-    max-width: 900px;
-}
-
+/* ---------- mdBook ayu theme overrides ---------- */
 .ayu {
-    --bg: var(--khora-bg-dark);
-    --fg: var(--khora-text);
-    --sidebar-bg: var(--khora-bg-sidebar);
-    --sidebar-fg: var(--khora-text-dim);
-    --sidebar-active: var(--khora-accent);
-    --links: var(--khora-link);
+    --bg: var(--k-bg-0);
+    --fg: var(--k-fg-1);
+    --sidebar-bg: var(--k-bg-1);
+    --sidebar-fg: var(--k-fg-2);
+    --sidebar-non-existant: var(--k-fg-3);
+    --sidebar-active: var(--k-silver);
+    --sidebar-spacer: var(--k-line-soft);
+    --scrollbar: var(--k-line);
+    --icons: var(--k-fg-2);
+    --icons-hover: var(--k-silver);
+    --links: var(--k-silver);
+    --inline-code-color: var(--k-silver);
+    --searchbar-shadow: none;
+    --searchbar-bg: var(--k-bg-2);
+    --searchbar-fg: var(--k-fg-0);
+    --searchbar-border: var(--k-line-soft);
+    --table-header-bg: var(--k-bg-2);
+    --table-alternate-bg: oklch(0.21 0.025 265);
+    --blockquote-border: var(--k-silver);
+    --blockquote-bg: oklch(0.84 0.04 240 / 0.04);
+    --theme-popup-bg: var(--k-bg-2);
+    --theme-popup-border: var(--k-line);
+    --theme-hover: var(--k-bg-3);
+    --theme-active: var(--k-silver);
+    --quote-bg: oklch(0.84 0.04 240 / 0.04);
+    --quote-border: var(--k-silver);
+    --warning-border: var(--k-amber);
+}
+
+/* ---------- Base typography ---------- */
+html {
+    font-feature-settings: "ss01", "ss02", "cv11";  /* Geist stylistic sets */
+}
+
+body {
+    font-family: var(--k-font-sans);
+    font-size: 15px;
+    line-height: 1.65;
+    letter-spacing: -0.005em;
+    color: var(--k-fg-1);
+    background: var(--k-bg-0);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+.content {
+    background: var(--k-bg-0);
+}
+
+.content main {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 0 40px;
+}
+
+/* ---------- Headings ----------
+   Fraunces for display (h1/h2) with proper opsz axis values.
+   h3 is sans 600. h4 is mono uppercase mini-caps — used as section labels. */
+.content main h1,
+.content main h2 {
+    font-family: var(--k-font-display);
+    color: var(--k-fg-0);
+    font-weight: 400;
+    border-bottom: none;
+}
+
+.content main h1 {
+    font-size: 2.6em;
+    font-variation-settings: 'opsz' 144;
+    line-height: 1.05;
+    letter-spacing: -0.025em;
+    margin-top: 0;
+    margin-bottom: 0.5em;
+    padding-bottom: 0;
+}
+
+.content main h1 em,
+.content main h2 em {
+    font-style: italic;
+    color: var(--k-silver-dim);
+    font-weight: 300;
+}
+
+.content main h2 {
+    font-size: 2em;
+    font-variation-settings: 'opsz' 96;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin-top: 3em;
+    margin-bottom: 0.7em;
+    padding-bottom: 0;
+}
+
+.content main h3 {
+    font-family: var(--k-font-sans);
+    font-size: 1.13em;
+    font-weight: 600;
+    color: var(--k-fg-0);
+    letter-spacing: -0.01em;
+    margin-top: 2.4em;
+    margin-bottom: 0.5em;
+}
+
+.content main h4 {
+    font-family: var(--k-font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--k-silver);
+    margin-top: 2em;
+    margin-bottom: 0.6em;
+}
+
+/* ---------- Lede paragraph ----------
+   The italic line right after each chapter's h1 acts as a lede. */
+.content main h1 + p {
+    font-size: 1.18em;
+    line-height: 1.55;
+    color: var(--k-fg-1);
+    letter-spacing: -0.012em;
+    margin-bottom: 1.4em;
+    max-width: 64ch;
+}
+
+.content main h1 + p strong:only-child,
+.content main h1 + p em:only-child {
+    font-family: var(--k-font-display);
+    font-style: italic;
+    font-weight: 300;
+    font-variation-settings: 'opsz' 144;
+    color: var(--k-silver);
+    font-size: 1.05em;
+}
+
+/* ---------- Paragraphs & inline ---------- */
+.content main p {
+    color: var(--k-fg-1);
+    margin: 0 0 1.1em;
+    max-width: 68ch;
+}
+
+.content main strong {
+    color: var(--k-fg-0);
+    font-weight: 600;
+}
+
+.content main em {
+    color: var(--k-fg-0);
+    font-style: italic;
+}
+
+/* ---------- Links ----------
+   Silver. Not gold. Gold is reserved for active selection. */
+.content main a {
+    color: var(--k-silver);
+    text-decoration: none;
+    border-bottom: 1px solid var(--k-silver-line);
+    transition: border-bottom-color 150ms var(--k-ease), color 150ms var(--k-ease);
+}
+
+.content main a:hover {
+    color: var(--k-fg-0);
+    border-bottom-color: var(--k-silver);
+}
+
+.content main a code {
+    color: var(--k-silver);
+    background: var(--k-silver-soft);
+    border-color: var(--k-silver-line);
+}
+
+/* ---------- Inline code ----------
+   Per design doc: code is silver, not body color. */
+.content main code {
+    font-family: var(--k-font-mono);
+    font-size: 0.88em;
+    background: var(--k-bg-2);
+    color: var(--k-silver);
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--k-line-soft);
+}
+
+/* ---------- Code blocks ---------- */
+.content main pre {
+    background-color: var(--k-bg-1) !important;
+    border: 1px solid var(--k-line-soft);
+    border-radius: 8px;
+    padding: 16px 20px;
+    overflow-x: auto;
+    margin: 1.4em 0;
+    line-height: 1.55;
+    font-size: 13.5px;
+}
+
+.content main pre code {
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-size: 1em;
+    color: var(--k-fg-1);
+}
+
+/* ---------- Lists ----------
+   Horizontal silver-dim bar (8px) instead of bullet — signature treatment
+   from the design doc. Each item has a thin underline for scannability. */
+.content main ul {
+    padding-left: 0;
+    list-style: none;
+    margin: 0 0 1.4em;
+}
+
+.content main ul li {
+    position: relative;
+    padding: 6px 0 6px 22px;
+    border-bottom: 1px solid oklch(1 0 0 / 0.04);
+}
+
+.content main ul li:last-child {
+    border-bottom: none;
+}
+
+.content main ul li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 17px;
+    width: 8px;
+    height: 1px;
+    background: var(--k-silver-dim);
+}
+
+/* Nested lists tighter, no double underlines */
+.content main ul ul,
+.content main ul ol,
+.content main ol ul {
+    margin: 0.4em 0 0.2em;
+}
+
+.content main ul ul li {
+    border-bottom: none;
+    padding: 3px 0 3px 22px;
+}
+
+.content main ol {
+    padding-left: 1.6em;
+    margin: 0 0 1.4em;
+}
+
+.content main ol li {
+    margin: 0.3em 0;
+    padding-left: 4px;
+}
+
+.content main ol li::marker {
+    color: var(--k-silver-dim);
+    font-family: var(--k-font-mono);
+    font-size: 0.92em;
+}
+
+.content main li > p {
+    margin: 0.4em 0;
+}
+
+/* ---------- Tables ----------
+   Quiet, dense. TH is mono mini-caps; rows hairline-divided. */
+.content main table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    margin: 1.6em 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--k-line-soft);
+    font-size: 0.94em;
+}
+
+.content main table thead {
+    background: var(--k-bg-2);
+}
+
+.content main table th {
+    background: var(--k-bg-2);
+    color: var(--k-fg-2);
+    font-family: var(--k-font-mono);
+    font-weight: 500;
+    text-align: left;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--k-line-soft);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.content main table td {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--k-line-soft);
+    vertical-align: top;
+    color: var(--k-fg-1);
+}
+
+.content main table tr:last-child td {
+    border-bottom: none;
+}
+
+.content main table tr:hover td {
+    background: oklch(0.21 0.025 265);
+}
+
+.content main table code {
+    font-size: 0.92em;
+}
+
+.content main table strong {
+    color: var(--k-fg-0);
+}
+
+/* ---------- Blockquotes / pull quotes ----------
+   Silver left bar (2px), faint silver tint, italic Fraunces — the editor's
+   "pull quote" treatment from §07–§09 of the design doc. */
+.content main blockquote {
+    border-left: 2px solid var(--k-silver);
+    background: linear-gradient(90deg, oklch(0.84 0.04 240 / 0.04), transparent);
+    padding: 18px 22px 18px 26px;
+    margin: 1.6em 0;
+    border-radius: 0 6px 6px 0;
+    font-family: var(--k-font-display);
+    font-size: 1.15em;
+    line-height: 1.45;
+    font-weight: 300;
+    font-style: italic;
+    font-variation-settings: 'opsz' 96;
+    color: var(--k-fg-0);
+    letter-spacing: -0.012em;
+}
+
+.content main blockquote p {
+    color: var(--k-fg-0);
+    margin: 0;
+    max-width: none;
+}
+
+.content main blockquote p + p {
+    margin-top: 0.6em;
+}
+
+.content main blockquote strong {
+    color: var(--k-fg-0);
+    font-style: normal;
+    font-weight: 500;
+    font-family: var(--k-font-sans);
+}
+
+.content main blockquote code {
+    font-style: normal;
+    font-size: 0.78em;
+}
+
+/* ---------- Horizontal rule ----------
+   Quiet section divider. */
+.content main hr {
+    border: none;
+    height: 1px;
+    background: var(--k-line-soft);
+    margin: 3em 0;
+}
+
+/* ---------- Keyboard ---------- */
+.content main kbd {
+    font-family: var(--k-font-mono);
+    font-size: 0.82em;
+    background: var(--k-bg-3);
+    border: 1px solid var(--k-line);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 1px 6px;
+    color: var(--k-fg-1);
 }
 
 /* ---------- Sidebar ---------- */
+.sidebar {
+    background: var(--k-bg-1);
+    border-right: 1px solid var(--k-line-soft);
+    font-size: 14px;
+}
+
 .sidebar .sidebar-scrollbox {
-    padding-top: 16px;
+    padding: 28px 0 32px;
 }
 
 .sidebar .sidebar-scrollbox::before {
     content: "";
     display: block;
-    width: 64px;
-    height: 64px;
-    margin: 0 auto 12px auto;
+    width: 40px;
+    height: 40px;
+    margin: 0 auto 32px;
     background-image: url("../logos/logo_round.png");
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
+    opacity: 0.92;
 }
 
-.sidebar .sidebar-scrollbox .chapter li a {
-    transition: color 0.15s ease, border-left-color 0.15s ease;
+.sidebar .chapter {
+    padding: 0 14px;
+    list-style: none;
 }
 
-.sidebar .sidebar-scrollbox .chapter li a:hover,
-.sidebar .sidebar-scrollbox .chapter li a.active {
-    color: var(--khora-accent) !important;
+.sidebar .chapter li {
+    margin: 1px 0;
 }
 
-/* ---------- Headings ---------- */
-.content main h1,
-.content main h2,
-.content main h3,
-.content main h4 {
-    color: var(--khora-heading);
-    border-bottom: none;
+.sidebar .chapter li a {
+    display: block;
+    padding: 6px 12px;
+    border-radius: 5px;
+    border-left: 2px solid transparent;
+    color: var(--k-fg-2);
+    font-size: 13.5px;
+    line-height: 1.4;
+    transition: background-color 150ms var(--k-ease), color 150ms var(--k-ease), border-color 150ms var(--k-ease);
 }
 
-.content main h1 {
-    font-size: 2em;
-    margin-top: 0;
-    padding-bottom: 0.3em;
-    border-bottom: 2px solid var(--khora-accent);
-}
-
-.content main h2 {
-    font-size: 1.5em;
-    margin-top: 2em;
-    padding-bottom: 0.25em;
-    border-bottom: 1px solid var(--khora-border);
-}
-
-.content main h3 {
-    font-size: 1.2em;
-    margin-top: 1.6em;
-}
-
-/* ---------- Code blocks ---------- */
-.content main pre {
-    background-color: var(--khora-bg-code) !important;
-    border: 1px solid var(--khora-border);
-    border-radius: 8px;
-    padding: 16px;
-}
-
-.content main code {
-    border-radius: 4px;
-    padding: 0.15em 0.35em;
-    font-size: 0.9em;
-}
-
-/* ---------- Tables ---------- */
-.content main table {
-    border-collapse: collapse;
-    width: 100%;
-    margin: 1em 0;
-}
-
-.content main table th {
-    background-color: rgba(224, 165, 38, 0.08);
-    color: var(--khora-accent);
-    font-weight: 600;
-    text-align: left;
-    padding: 10px 14px;
-    border-bottom: 2px solid var(--khora-accent-dim);
-}
-
-.content main table td {
-    padding: 8px 14px;
-    border-bottom: 1px solid var(--khora-border);
-}
-
-.content main table tr:hover td {
-    background-color: rgba(255, 255, 255, 0.02);
-}
-
-/* ---------- Blockquotes / Admonitions ---------- */
-.content main blockquote {
-    border-left: 4px solid var(--khora-accent);
-    background-color: rgba(224, 165, 38, 0.04);
-    padding: 12px 16px;
-    margin: 1.2em 0;
-    border-radius: 0 6px 6px 0;
-}
-
-/* ---------- Links ---------- */
-.content main a {
-    color: var(--khora-link);
+.sidebar .chapter li a:hover {
+    background: var(--k-bg-2);
+    color: var(--k-fg-0);
     text-decoration: none;
-    border-bottom: 1px solid transparent;
-    transition: border-bottom-color 0.15s ease;
 }
 
-.content main a:hover {
-    border-bottom-color: var(--khora-link);
+/* Active chapter — silver, with a glowing inset bar like the editor's spine */
+.sidebar .chapter li a.active {
+    color: var(--k-silver) !important;
+    border-left-color: var(--k-silver);
+    background: var(--k-silver-soft);
+    font-weight: 500;
 }
 
-/* ---------- Checkbox lists ---------- */
-.content main li input[type="checkbox"] {
-    accent-color: var(--khora-accent);
-    margin-right: 6px;
+.sidebar .chapter li.chapter-item::before {
+    display: none;
 }
 
-/* ---------- Horizontal rules ---------- */
-.content main hr {
-    border: none;
-    border-top: 1px solid var(--khora-border);
-    margin: 2em 0;
+/* Section headings in sidebar (the "# Foundations" / "# Core systems" lines).
+   Render as <li class="part-title">. Style as mono mini-caps with a leading
+   silver dash — same treatment as the design doc's .section-num. */
+.sidebar .chapter li.part-title {
+    color: var(--k-fg-3);
+    font-family: var(--k-font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    padding: 24px 14px 8px 30px;
+    margin-top: 16px;
+    border-top: 1px solid var(--k-line-soft);
+    position: relative;
 }
 
-/* ---------- Navigation buttons ---------- */
+.sidebar .chapter li.part-title::before {
+    content: '';
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    margin-top: 8px;
+    width: 12px;
+    height: 1px;
+    background: var(--k-silver-dim);
+}
+
+.sidebar .chapter li.part-title:first-child {
+    border-top: none;
+    margin-top: 0;
+    padding-top: 4px;
+}
+
+.sidebar .chapter li.part-title:first-child::before {
+    margin-top: -4px;
+}
+
+/* ---------- Top menu / icon bar ---------- */
+.menu-title {
+    font-family: var(--k-font-display);
+    font-variation-settings: 'opsz' 24;
+    font-weight: 400;
+    color: var(--k-fg-0);
+    letter-spacing: -0.01em;
+}
+
+.icon-button,
+.nav-chapters {
+    color: var(--k-fg-2);
+    transition: color 150ms var(--k-ease);
+}
+
+.icon-button:hover,
 .nav-chapters:hover {
-    color: var(--khora-accent) !important;
+    color: var(--k-silver) !important;
 }
 
-/* ---------- Scrollbar (Webkit) ---------- */
+.menu-bar {
+    border-bottom: 1px solid var(--k-line-soft);
+    background: var(--k-bg-0);
+}
+
+/* ---------- Search ---------- */
+#searchbar {
+    background: var(--k-bg-2);
+    color: var(--k-fg-0);
+    border: 1px solid var(--k-line-soft);
+    border-radius: 6px;
+    font-family: var(--k-font-sans);
+    transition: border-color 150ms var(--k-ease), box-shadow 150ms var(--k-ease);
+}
+
+#searchbar:focus {
+    border-color: var(--k-silver);
+    box-shadow: 0 0 0 2px oklch(0.84 0.04 240 / 0.15);
+    outline: none;
+}
+
+#searchresults {
+    background: var(--k-bg-1);
+    border: 1px solid var(--k-line-soft);
+    border-radius: 8px;
+}
+
+mark {
+    background: oklch(0.80 0.12 82 / 0.20);  /* gold = active selection */
+    color: var(--k-fg-0);
+    border-radius: 2px;
+    padding: 1px 2px;
+}
+
+/* ---------- Selection ---------- */
+::selection {
+    background: oklch(0.80 0.12 82 / 0.30);  /* gold = active selection */
+    color: var(--k-fg-0);
+}
+
+/* ---------- Scrollbar ---------- */
 ::-webkit-scrollbar {
-    width: 8px;
+    width: 10px;
+    height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-    background: var(--khora-bg-dark);
+    background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: var(--khora-border);
-    border-radius: 4px;
+    background: oklch(0.4 0.02 265 / 0.5);
+    border-radius: 10px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: var(--khora-text-dim);
+    background: oklch(0.5 0.025 265 / 0.7);
+    background-clip: padding-box;
+    border: 2px solid transparent;
 }
 
-/* ---------- Mermaid diagram styling ---------- */
+/* ---------- Mermaid diagrams ----------
+   Match the panel surface so they read as part of the page, not a popup. */
+.mermaid {
+    text-align: center;
+    margin: 1.8em 0;
+    padding: 24px;
+    background: var(--k-bg-1);
+    border: 1px solid var(--k-line-soft);
+    border-radius: 10px;
+}
+
 .mermaid svg {
     max-width: 100%;
 }
 
-/* ---------- Print cleanup ---------- */
-@media print {
-    .sidebar,
-    .nav-chapters {
-        display: none !important;
-    }
+/* ---------- Footnotes ---------- */
+.footnote-definition {
+    color: var(--k-fg-2);
+    font-size: 0.92em;
+    border-left: 1px solid var(--k-line-soft);
+    padding-left: 14px;
+    margin: 1em 0;
+}
 
-    .content main {
-        max-width: 100%;
+.footnote-definition-label {
+    color: var(--k-silver);
+    font-family: var(--k-font-mono);
+}
+
+/* ---------- Print ---------- */
+@media print {
+    .sidebar, .nav-chapters, .menu-bar { display: none !important; }
+    .content main { max-width: 100%; padding: 0; }
+    .content main pre, .content main code {
+        background: transparent !important;
+        border: 1px solid #ccc;
+        color: #111;
+    }
+    body { background: white; color: #111; }
+    .content main h1, .content main h2 { color: #111; }
+}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 768px) {
+    .content main { padding: 0 20px; }
+    .content main h1 { font-size: 2em; }
+    .content main h2 { font-size: 1.6em; }
+    .content main blockquote { font-size: 1.05em; padding: 14px 18px; }
+    .content main table { font-size: 0.88em; }
+    .content main pre { font-size: 12.5px; }
+    .sidebar .sidebar-scrollbox::before {
+        width: 32px;
+        height: 32px;
     }
 }
