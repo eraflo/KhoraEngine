@@ -106,6 +106,26 @@ impl Vec2 {
     pub fn lerp(start: Self, end: Self, t: f32) -> Self {
         start + (end - start) * t.clamp(0.0, 1.0)
     }
+
+    /// Converts the vector to a `[f32; 2]` array.
+    #[inline]
+    pub fn to_array(self) -> [f32; 2] {
+        [self.x, self.y]
+    }
+}
+
+impl From<Vec2> for [f32; 2] {
+    #[inline]
+    fn from(v: Vec2) -> Self {
+        [v.x, v.y]
+    }
+}
+
+impl From<[f32; 2]> for Vec2 {
+    #[inline]
+    fn from(v: [f32; 2]) -> Self {
+        Self::new(v[0], v[1])
+    }
 }
 
 // --- Operator Overloads ---
@@ -629,6 +649,26 @@ impl Vec4 {
             3 => self.w,
             _ => panic!("Index out of bounds for Vec4"),
         }
+    }
+
+    /// Converts the vector to a `[f32; 4]` array.
+    #[inline]
+    pub fn to_array(self) -> [f32; 4] {
+        [self.x, self.y, self.z, self.w]
+    }
+}
+
+impl From<Vec4> for [f32; 4] {
+    #[inline]
+    fn from(v: Vec4) -> Self {
+        [v.x, v.y, v.z, v.w]
+    }
+}
+
+impl From<[f32; 4]> for Vec4 {
+    #[inline]
+    fn from(v: [f32; 4]) -> Self {
+        Self::new(v[0], v[1], v[2], v[3])
     }
 }
 

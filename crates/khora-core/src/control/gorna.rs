@@ -14,6 +14,8 @@
 
 //! Types and traits for the Goal-Oriented Resource Negotiation & Allocation (GORNA) protocol.
 
+use crate::agent::mode::EngineMode;
+use crate::agent::timing::{AgentImportance, ExecutionTiming};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
@@ -25,10 +27,14 @@ use std::time::Duration;
 pub enum AgentId {
     /// The primary rendering agent (highest priority in Simulation).
     Renderer,
+    /// The shadow map rendering agent (runs in OBSERVE phase before Renderer).
+    ShadowRenderer,
     /// The physics simulation agent.
     Physics,
     /// The ECS/Logic coordination agent.
     Ecs,
+    /// The UI layout and interaction agent.
+    Ui,
     /// The audio processing agent.
     Audio,
     /// The asset management agent (highest priority in Boot).
@@ -77,6 +83,10 @@ pub struct NegotiationRequest {
     pub priority_weight: f32,
     /// Hard resource constraints that any proposed strategy must respect.
     pub constraints: ResourceConstraints,
+    /// The current engine mode.
+    pub current_mode: EngineMode,
+    /// The timing declared by the agent. GORNA can read this for decisions.
+    pub agent_timing: ExecutionTiming,
 }
 
 /// A response from an Agent offering various execution strategies.
@@ -84,6 +94,16 @@ pub struct NegotiationRequest {
 pub struct NegotiationResponse {
     /// List of available strategies and their estimated costs.
     pub strategies: Vec<StrategyOption>,
+    /// GORNA can suggest an importance change (NEVER a forced phase).
+    pub timing_adjustment: Option<TimingAdjustment>,
+}
+
+/// Suggested timing adjustment from GORNA to an agent.
+/// GORNA can NEVER force a phase — only suggest importance changes.
+#[derive(Debug, Clone)]
+pub struct TimingAdjustment {
+    /// Suggested importance override for the agent on this frame.
+    pub importance_override: Option<AgentImportance>,
 }
 
 /// A specific execution strategy offered by an Agent.

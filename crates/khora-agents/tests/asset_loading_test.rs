@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use anyhow::Result;
-use khora_agents::asset_agent::agent::AssetAgent;
 use khora_core::asset::{Asset, AssetMetadata, AssetSource, AssetUUID};
-use khora_lanes::asset_lane::AssetLoaderLane;
+use khora_io::asset::{AssetDecoder, AssetService, PackLoader};
+
 use khora_telemetry::MetricsRegistry;
 use std::sync::Arc;
 use std::{collections::HashMap, error::Error, fs::File};
@@ -29,7 +29,7 @@ struct TestTexture {
 impl Asset for TestTexture {}
 
 struct TestTextureLoader;
-impl AssetLoaderLane<TestTexture> for TestTextureLoader {
+impl AssetDecoder<TestTexture> for TestTextureLoader {
     fn load(&self, bytes: &[u8]) -> Result<TestTexture, Box<dyn Error + Send + Sync>> {
         let id = u32::from_le_bytes(bytes.try_into().unwrap());
         Ok(TestTexture { id })
@@ -73,16 +73,20 @@ fn test_load_asset_from_pack() -> Result<()> {
     std::fs::write(&index_path, &index_bytes)?;
     std::fs::write(&data_path, &data_bytes)?;
 
-    // --- 2. Initialize the AssetAgent with REAL files ---
+    // --- 2. Initialize the AssetService with REAL files ---
     let data_file = File::open(&data_path)?;
     let metrics_registry = Arc::new(MetricsRegistry::new());
-    let mut asset_agent = AssetAgent::new(&index_bytes, data_file, metrics_registry)?;
+    let mut asset_service = AssetService::new(
+        &index_bytes,
+        Box::new(PackLoader::new(data_file)),
+        metrics_registry,
+    )?;
 
     // --- 3. Register the loader ---
-    asset_agent.register_loader("texture", TestTextureLoader);
+    asset_service.register_decoder("texture", TestTextureLoader);
 
     // --- 4. Load the asset ---
-    let texture_handle = asset_agent.load::<TestTexture>(&texture_uuid)?;
+    let texture_handle = asset_service.load::<TestTexture>(&texture_uuid)?;
 
     // --- 5. Assert: Verify the result ---
     assert_eq!(texture_handle.id, 1234);
@@ -95,7 +99,7 @@ fn test_load_asset_from_pack() -> Result<()> {
 fn test_load_texture_from_pack() -> Result<()> {
     use image::ImageEncoder;
     use khora_core::renderer::api::resource::CpuTexture;
-    use khora_lanes::asset_lane::TextureLoaderLane;
+    use khora_io::asset::decoders::TextureDecoder;
 
     // --- 1. Setup: Create temporary packfiles with a real PNG ---
     let dir = tempdir()?;
@@ -145,16 +149,20 @@ fn test_load_texture_from_pack() -> Result<()> {
     std::fs::write(&index_path, &index_bytes)?;
     std::fs::write(&data_path, &png_data)?;
 
-    // --- 2. Initialize the AssetAgent with REAL files ---
+    // --- 2. Initialize the AssetService with REAL files ---
     let data_file = File::open(&data_path)?;
     let metrics_registry = Arc::new(MetricsRegistry::new());
-    let mut asset_agent = AssetAgent::new(&index_bytes, data_file, metrics_registry)?;
+    let mut asset_service = AssetService::new(
+        &index_bytes,
+        Box::new(PackLoader::new(data_file)),
+        metrics_registry,
+    )?;
 
     // --- 3. Register the texture loader ---
-    asset_agent.register_loader("texture", TextureLoaderLane);
+    asset_service.register_decoder("texture", TextureDecoder);
 
     // --- 4. Load the texture ---
-    let texture_handle = asset_agent.load::<CpuTexture>(&texture_uuid)?;
+    let texture_handle = asset_service.load::<CpuTexture>(&texture_uuid)?;
 
     // --- 5. Assert: Verify the texture was loaded correctly ---
     assert_eq!(texture_handle.pixels.len(), 16); // 2x2 RGBA = 16 bytes
@@ -202,15 +210,19 @@ fn test_asset_caching_and_shared_ownership() -> Result<()> {
 
     let data_file = File::open(&data_path)?;
     let metrics_registry = Arc::new(MetricsRegistry::new());
-    let mut asset_agent = AssetAgent::new(&index_bytes, data_file, metrics_registry)?;
-    asset_agent.register_loader("texture", TestTextureLoader);
+    let mut asset_service = AssetService::new(
+        &index_bytes,
+        Box::new(PackLoader::new(data_file)),
+        metrics_registry,
+    )?;
+    asset_service.register_decoder("texture", TestTextureLoader);
 
     // --- 2. Load the asset for the first time (Cache Miss) ---
-    let handle1 = asset_agent.load::<TestTexture>(&texture_uuid)?;
+    let handle1 = asset_service.load::<TestTexture>(&texture_uuid)?;
     println!("First load (cache miss) successful.");
 
     // --- 3. Load the EXACT SAME asset a second time (Cache Hit) ---
-    let handle2 = asset_agent.load::<TestTexture>(&texture_uuid)?;
+    let handle2 = asset_service.load::<TestTexture>(&texture_uuid)?;
     println!("Second load (cache hit) successful.");
 
     // --- 4. Assert: Verify correctness and shared ownership ---

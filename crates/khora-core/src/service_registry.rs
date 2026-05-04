@@ -27,11 +27,17 @@
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// A generic service registry keyed by [`TypeId`].
 ///
 /// Services are stored as `Arc<dyn Any + Send + Sync>` and can be retrieved
 /// by their concrete type via [`get`](ServiceRegistry::get).
+///
+/// An optional `parent` registry enables per-frame overlays: a frame-level
+/// registry can hold only frame-specific services (`FrameContext`, viewport
+/// target, …) while delegating every other lookup to the engine-level
+/// registry via the parent chain.
 ///
 /// # Example
 ///
@@ -49,6 +55,9 @@ use std::collections::HashMap;
 #[derive(Default)]
 pub struct ServiceRegistry {
     services: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
+    /// Optional parent registry.  Lookups fall through to the parent when
+    /// a service is not found in the local map.
+    parent: Option<Arc<ServiceRegistry>>,
 }
 
 impl ServiceRegistry {
@@ -57,6 +66,17 @@ impl ServiceRegistry {
     pub fn new() -> Self {
         Self {
             services: HashMap::new(),
+            parent: None,
+        }
+    }
+
+    /// Creates a frame-level registry that delegates unknown lookups to
+    /// `parent`.  Local inserts shadow parent entries of the same type.
+    #[must_use]
+    pub fn with_parent(parent: Arc<ServiceRegistry>) -> Self {
+        Self {
+            services: HashMap::new(),
+            parent: Some(parent),
         }
     }
 
@@ -69,18 +89,26 @@ impl ServiceRegistry {
 
     /// Retrieves a shared reference to a previously registered service.
     ///
-    /// Returns `None` if no service of type `T` has been registered.
+    /// Checks the local registry first, then walks up the parent chain.
+    /// Returns `None` if the service is absent from the entire chain.
     #[must_use]
     pub fn get<T: Send + Sync + 'static>(&self) -> Option<&T> {
         self.services
             .get(&TypeId::of::<T>())
             .and_then(|boxed| boxed.downcast_ref::<T>())
+            .or_else(|| self.parent.as_deref()?.get::<T>())
     }
 
-    /// Returns `true` if a service of type `T` is registered.
+    /// Returns `true` if a service of type `T` is registered in this
+    /// registry or any ancestor.
     #[must_use]
     pub fn contains<T: Send + Sync + 'static>(&self) -> bool {
         self.services.contains_key(&TypeId::of::<T>())
+            || self
+                .parent
+                .as_deref()
+                .map(|p| p.contains::<T>())
+                .unwrap_or(false)
     }
 
     /// Returns the number of registered services.

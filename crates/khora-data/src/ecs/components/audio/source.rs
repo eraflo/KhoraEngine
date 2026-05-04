@@ -15,12 +15,14 @@
 //! Defines the `AudioSource` component for emitting sound.
 
 use crate::assets::SoundData;
+use bincode::{Decode, Encode};
 use khora_core::asset::AssetHandle;
 use khora_macros::Component;
+use serde::{Deserialize, Serialize};
 
 /// The internal playback state of an active sound.
 /// This will be managed by the `AudioMixingLane`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub struct PlaybackState {
     /// The current position in the sample data, in samples.
     pub cursor: f32,
@@ -30,6 +32,7 @@ pub struct PlaybackState {
 #[derive(Debug, Clone, Component)]
 pub struct AudioSource {
     /// A handle to the sound data to be played.
+    #[component(skip)]
     pub handle: AssetHandle<SoundData>,
     /// The volume of the sound, where 1.0 is normal volume.
     pub volume: f32,
@@ -39,7 +42,20 @@ pub struct AudioSource {
     pub autoplay: bool,
     /// The internal playback state. This should be treated as read-only
     /// by most systems outside of the audio engine itself.
+    #[component(skip)]
     pub state: Option<PlaybackState>,
+}
+
+impl Default for AudioSource {
+    fn default() -> Self {
+        Self {
+            handle: AssetHandle::dangling(),
+            volume: 1.0,
+            looping: false,
+            autoplay: false,
+            state: None,
+        }
+    }
 }
 
 impl AudioSource {
