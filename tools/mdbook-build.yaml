@@ -1,0 +1,27 @@
+name: mdbook-build
+description: Build the Khora Engine documentation book
+version: 1.0.0
+input_schema:
+  type: object
+  properties:
+    serve:
+      type: boolean
+      description: "Start a local server for previewing"
+      default: false
+  required: []
+output_schema:
+  type: object
+  properties:
+    success:
+      type: boolean
+    output_path:
+      type: string
+implementation:
+  type: script
+  path: mdbook-build.sh
+  runtime: bash
+  timeout: 60
+annotations:
+  requires_confirmation: false
+  read_only: true
+  cost: none

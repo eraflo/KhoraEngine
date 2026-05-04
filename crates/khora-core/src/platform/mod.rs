@@ -18,8 +18,10 @@
 //! for interacting with the underlying operating system and its features, such as
 //! windowing, input, and filesystem access.
 
+pub mod input;
 pub mod window;
 
+pub use input::{InputEvent, MouseButton};
 pub use window::{KhoraWindow, KhoraWindowHandle, WindowHandle};
 
 /// Represents the thermal state of the device.

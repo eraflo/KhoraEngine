@@ -18,6 +18,7 @@
 //! to shaders in a graphics pipeline. They provide an abstraction over the different
 //! binding models of various graphics APIs (descriptor sets in Vulkan, bind groups in WebGPU).
 
+pub use crate::renderer::api::resource::TextureViewDimension;
 use crate::renderer::api::{
     resource::{BufferId, SamplerId, TextureViewId},
     util::flags::ShaderStageFlags,
@@ -79,23 +80,6 @@ pub enum BufferBindingType {
         /// Whether the buffer is read-only in the shader.
         read_only: bool,
     },
-}
-
-/// The type of texture view dimension.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TextureViewDimension {
-    /// A 1D texture view.
-    D1,
-    /// A 2D texture view.
-    D2,
-    /// A 2D array texture view.
-    D2Array,
-    /// A cube texture view.
-    Cube,
-    /// A cube array texture view.
-    CubeArray,
-    /// A 3D texture view.
-    D3,
 }
 
 /// The type of texture sample.

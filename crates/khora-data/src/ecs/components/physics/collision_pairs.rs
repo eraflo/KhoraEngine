@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use bincode::{Decode, Encode};
 use khora_core::ecs::entity::EntityId;
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
 /// A pair of entities that are potentially colliding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
 pub struct CollisionPair {
     /// The first entity in the pair.
     pub entity_a: EntityId,

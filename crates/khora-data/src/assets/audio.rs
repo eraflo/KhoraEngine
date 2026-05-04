@@ -21,7 +21,7 @@ use khora_core::asset::Asset;
 /// This struct holds audio data in a normalized, interleaved `f32` format,
 /// which is the standard for high-quality audio processing pipelines.
 /// The `AssetAgent` will manage instances of this type in its cache.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SoundData {
     /// The raw, interleaved audio samples.
     /// For stereo, samples are ordered `[L, R, L, R, ...]`.

@@ -24,6 +24,9 @@
 
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
+mod tracking_allocator;
+pub use tracking_allocator::SaaTrackingAllocator;
+
 // --- Global Memory Counters ---
 
 /// Tracks the total number of bytes currently allocated by the registered global allocator.

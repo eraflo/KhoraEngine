@@ -14,58 +14,162 @@
 
 //! The Intelligent Subsystem Agent responsible for managing the audio system.
 
-use anyhow::Result;
-use khora_core::audio::device::AudioDevice;
-use khora_data::ecs::World;
-use khora_lanes::audio_lane::SpatialMixingLane;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-/// The ISA that orchestrates the entire audio system.
+use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
+use khora_core::audio::device::AudioDevice;
+use khora_core::control::gorna::{
+    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
+    StrategyOption,
+};
+use khora_core::lane::{LaneContext, LaneRegistry};
+use khora_core::EngineContext;
+use khora_lanes::audio_lane::SpatialMixingLane;
+
+/// The ISA that orchestrates the audio subsystem.
+///
+/// Chooses audio lanes, negotiates resource budgets with GORNA, and dispatches
+/// `Lane::execute()` for spatial mixing each frame.
 pub struct AudioAgent {
-    /// The audio device used for playback.
-    device: Option<Box<dyn AudioDevice>>,
-    /// The audio mixing lane responsible for mixing audio sources.
-    mixing_lane: Arc<SpatialMixingLane>,
-    /// A thread-safe, shareable reference to the ECS `World`.
-    world: Arc<RwLock<World>>,
+    /// The audio device backend, obtained from the service registry.
+    device: Option<Arc<Mutex<Box<dyn AudioDevice>>>>,
+    /// Audio processing lanes.
+    lanes: LaneRegistry,
+    /// Current GORNA strategy.
+    current_strategy: StrategyId,
+    /// Max audio sources to process per frame (from budget).
+    max_sources_per_frame: usize,
+    /// Frame counter.
+    frame_count: u64,
 }
 
-impl AudioAgent {
-    /// Creates a new `AudioAgent`.
-    ///
-    /// # Arguments
-    /// * `world`: A thread-safe, shareable reference to the ECS `World`.
-    /// * `device`: A boxed, concrete implementation of the `AudioDevice` trait.
-    pub fn new(world: Arc<RwLock<World>>, device: Box<dyn AudioDevice>) -> Self {
+impl Default for AudioAgent {
+    fn default() -> Self {
+        let mut lanes = LaneRegistry::new();
+        lanes.register(Box::new(SpatialMixingLane::new()));
+
         Self {
-            device: Some(device),
-            mixing_lane: Arc::new(SpatialMixingLane::new()),
-            world,
+            device: None,
+            lanes,
+            current_strategy: StrategyId::Balanced,
+            max_sources_per_frame: 32,
+            frame_count: 0,
+        }
+    }
+}
+
+impl Agent for AudioAgent {
+    fn id(&self) -> AgentId {
+        AgentId::Audio
+    }
+
+    fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
+        NegotiationResponse {
+            strategies: vec![
+                StrategyOption {
+                    id: StrategyId::LowPower,
+                    estimated_time: Duration::from_micros(100),
+                    estimated_vram: 0,
+                },
+                StrategyOption {
+                    id: StrategyId::Balanced,
+                    estimated_time: Duration::from_micros(500),
+                    estimated_vram: 0,
+                },
+                StrategyOption {
+                    id: StrategyId::HighPerformance,
+                    estimated_time: Duration::from_micros(2000),
+                    estimated_vram: 0,
+                },
+            ],
+            timing_adjustment: None,
         }
     }
 
-    /// Initializes the audio backend and starts the audio stream.
-    /// This method consumes the device, so it can only be called once.
-    pub fn start(&mut self) -> Result<()> {
-        // Take ownership of the device. This ensures `start` can't be called twice.
-        if let Some(device_boxed) = self.device.take() {
-            let mixing_lane = self.mixing_lane.clone();
-            let world = self.world.clone();
+    fn apply_budget(&mut self, budget: ResourceBudget) {
+        log::info!("AudioAgent: Strategy update to {:?}", budget.strategy_id);
 
-            let on_mix_needed = Box::new(
-                move |output_buffer: &mut [f32],
-                      stream_info: &khora_core::audio::device::StreamInfo| {
-                    if let Ok(mut world) = world.write() {
-                        mixing_lane.mix(&mut world, output_buffer, stream_info);
-                    }
-                },
-            );
+        self.current_strategy = budget.strategy_id;
+        self.max_sources_per_frame = match budget.strategy_id {
+            StrategyId::LowPower => 8,
+            StrategyId::Balanced => 32,
+            StrategyId::HighPerformance => 128,
+            StrategyId::Custom(n) => n as usize,
+        };
+    }
 
-            // Start the device stream.
-            device_boxed.start(on_mix_needed)
-        } else {
-            // The device has already been started or was never provided.
-            Ok(())
+    fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
+        // Fetch the audio device from the service registry.
+        if self.device.is_none() {
+            self.device = context
+                .services
+                .get::<Arc<Mutex<Box<dyn AudioDevice>>>>()
+                .cloned();
+        }
+
+        // Initialize audio lanes. The SpatialMixingLane doesn't need
+        // GPU resources — it runs on the audio callback thread.
+        let mut init_ctx = LaneContext::new();
+        for lane in self.lanes.all() {
+            if let Err(e) = lane.on_initialize(&mut init_ctx) {
+                log::error!(
+                    "AudioAgent: Failed to initialize lane {}: {}",
+                    lane.strategy_name(),
+                    e
+                );
+            }
+        }
+
+        log::info!("AudioAgent: Initialized with {} lanes", self.lanes.len());
+    }
+
+    fn execute(&mut self, context: &mut EngineContext<'_>) {
+        // Lazily fetch device from services if not yet available.
+        if self.device.is_none() {
+            self.device = context
+                .services
+                .get::<Arc<Mutex<Box<dyn AudioDevice>>>>()
+                .cloned();
+        }
+
+        // Audio mixing happens in real-time on the audio callback thread.
+        // The SpatialMixingLane::execute() is called directly from the
+        // audio callback with AudioStreamInfo + AudioOutputSlot.
+        // This agent manages strategy negotiation and lane lifecycle,
+        // but does not drive the audio lane from the main thread.
+        self.frame_count += 1;
+    }
+
+    fn report_status(&self) -> AgentStatus {
+        AgentStatus {
+            agent_id: self.id(),
+            health_score: 1.0,
+            current_strategy: self.current_strategy,
+            is_stalled: false,
+            message: format!(
+                "max_sources={} frame={}",
+                self.max_sources_per_frame, self.frame_count
+            ),
+        }
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn execution_timing(&self) -> ExecutionTiming {
+        ExecutionTiming {
+            allowed_phases: vec![ExecutionPhase::TRANSFORM],
+            default_phase: ExecutionPhase::TRANSFORM,
+            priority: 0.5,
+            importance: AgentImportance::Important,
+            fixed_timestep: None,
+            dependencies: Vec::new(),
         }
     }
 }

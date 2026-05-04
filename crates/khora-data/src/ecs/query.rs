@@ -164,6 +164,76 @@ impl<T: Component> WorldQuery for &mut T {
     }
 }
 
+// Implementation for an optional immutable component reference.
+impl<T: Component> WorldQuery for Option<&T> {
+    type Item<'a> = Option<&'a T>;
+
+    fn type_ids() -> Vec<TypeId> {
+        // Optional components do NOT drive the query signature.
+        Vec::new()
+    }
+
+    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
+        let page = &*page_ptr;
+        let column = page.columns.get(&TypeId::of::<T>())?;
+        let vec = column.as_any().downcast_ref::<Vec<T>>()?;
+        vec.get(row_index)
+    }
+
+    unsafe fn fetch_from_world<'a>(
+        world: *const World,
+        entity_id: EntityId,
+    ) -> Option<Self::Item<'a>> {
+        let world = &*world;
+        let metadata = world.entities.get(entity_id.index as usize)?.1.as_ref()?;
+        let domain = world.storage.registry.get_domain(TypeId::of::<T>())?;
+        let location = metadata.locations.get(&domain)?;
+
+        let page = &world.storage.pages[location.page_id as usize];
+        let column = page.columns.get(&TypeId::of::<T>())?;
+        let vec = column.as_any().downcast_ref::<Vec<T>>()?;
+        // For optional in world, we return Some(Option).
+        // If the component is missing, we return Some(None).
+        Some(vec.get(location.row_index as usize))
+    }
+}
+
+// Implementation for an optional mutable component reference.
+impl<T: Component> WorldQuery for Option<&mut T> {
+    type Item<'a> = Option<&'a mut T>;
+
+    fn type_ids() -> Vec<TypeId> {
+        Vec::new()
+    }
+
+    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
+        let page = &mut *(page_ptr as *mut ComponentPage);
+        let column = page.columns.get_mut(&TypeId::of::<T>())?;
+        let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
+        vec.get_mut(row_index)
+    }
+
+    unsafe fn fetch_from_world<'a>(
+        world: *const World,
+        entity_id: EntityId,
+    ) -> Option<Self::Item<'a>> {
+        let world_mut = &mut *(world as *mut World);
+        let metadata = world_mut
+            .entities
+            .get_mut(entity_id.index as usize)?
+            .1
+            .as_mut()?;
+        let domain = world_mut.storage.registry.get_domain(TypeId::of::<T>())?;
+        let location = metadata.locations.get(&domain)?;
+
+        let page = &mut world_mut.storage.pages[location.page_id as usize];
+        let column = page.columns.get_mut(&TypeId::of::<T>())?;
+        let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
+        // Return Some(Option)
+        Some(vec.get_mut(location.row_index as usize))
+    }
+}
+
 // Implementation for tuples of WorldQuery types.
 // We use a macro to avoid "infinity" of manual implementations while maintaining
 // the same rigorous safety standards as the single-component cases.

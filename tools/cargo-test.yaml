@@ -1,0 +1,35 @@
+name: cargo-test
+description: Run the workspace test suite (cargo test or cargo nextest)
+version: 1.0.0
+input_schema:
+  type: object
+  properties:
+    package:
+      type: string
+      description: "Specific package to test. Omit for --workspace."
+    filter:
+      type: string
+      description: "Test name filter pattern"
+    nextest:
+      type: boolean
+      description: "Use cargo-nextest instead of cargo test"
+      default: false
+  required: []
+output_schema:
+  type: object
+  properties:
+    passed:
+      type: integer
+    failed:
+      type: integer
+    ignored:
+      type: integer
+implementation:
+  type: script
+  path: cargo-test.sh
+  runtime: bash
+  timeout: 600
+annotations:
+  requires_confirmation: false
+  read_only: true
+  cost: low

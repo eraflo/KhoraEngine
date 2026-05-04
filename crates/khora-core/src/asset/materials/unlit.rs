@@ -59,7 +59,7 @@ use super::AlphaMode;
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
 pub struct UnlitMaterial {
     /// The base color of the material.
     ///

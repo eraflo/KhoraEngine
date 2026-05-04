@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -29,6 +30,34 @@ const ASSET_NAMESPACE_UUID: Uuid = Uuid::from_u128(0x4a6a81e9_f0d1_4b8f_91a8_7e7
 /// data modified without breaking references to them in scenes or other assets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct AssetUUID(Uuid);
+
+impl Encode for AssetUUID {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        let bytes = self.0.as_bytes();
+        Encode::encode(bytes, encoder)
+    }
+}
+
+impl<Context> Decode<Context> for AssetUUID {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let bytes: [u8; 16] = Decode::decode(decoder)?;
+        Ok(Self(Uuid::from_bytes(bytes)))
+    }
+}
+
+impl<'de, Context> bincode::BorrowDecode<'de, Context> for AssetUUID {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let bytes: [u8; 16] = Decode::decode(decoder)?;
+        Ok(Self(Uuid::from_bytes(bytes)))
+    }
+}
 
 impl AssetUUID {
     /// Creates a new, random (version 4) `AssetUUID`.
