@@ -23,7 +23,7 @@ winit = { version = "0.30", features = ["x11", "wayland", "wayland-dlopen", "way
 
 # Audio
 cpal = "0.17.0"
-sysinfo = "0.33.0"
+sysinfo = "0.38.0"
 
 # Logging
 log = "0.4"
