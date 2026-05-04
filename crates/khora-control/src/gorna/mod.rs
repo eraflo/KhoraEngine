@@ -177,7 +177,7 @@ impl GornaArbitrator {
 
             // Sort strategies by estimated time (ascending = cheapest first).
             let mut strategies = response.strategies;
-            strategies.sort_by(|a, b| a.estimated_time.cmp(&b.estimated_time));
+            strategies.sort_by_key(|s| s.estimated_time);
 
             negotiations.push(AgentNegotiation {
                 agent_index: i,
