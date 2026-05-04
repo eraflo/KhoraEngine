@@ -26,7 +26,6 @@
 //! and deterministic execution. It contains minimal branching logic and is designed to
 //! be driven by a higher-level `RenderAgent`.
 
-use super::RenderWorld;
 use khora_core::{
     asset::Material,
     renderer::{
@@ -44,6 +43,7 @@ use khora_core::{
     },
 };
 use khora_data::assets::Assets;
+use khora_data::render::RenderWorld;
 use std::sync::RwLock;
 
 /// A lane that implements a simple, unlit forward rendering strategy.
@@ -105,11 +105,11 @@ impl khora_core::lane::Lane for SimpleUnlitLane {
     }
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
-        let render_world =
-            match ctx.get::<khora_core::lane::Slot<crate::render_lane::RenderWorld>>() {
-                Some(slot) => slot.get_ref(),
-                None => return 1.0,
-            };
+        let render_world = match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>()
+        {
+            Some(slot) => slot.get(),
+            None => return 1.0,
+        };
         let gpu_meshes = match ctx.get::<std::sync::Arc<
             std::sync::RwLock<
                 khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
@@ -138,7 +138,7 @@ impl khora_core::lane::Lane for SimpleUnlitLane {
         &self,
         ctx: &mut khora_core::lane::LaneContext,
     ) -> Result<(), khora_core::lane::LaneError> {
-        use khora_core::lane::{LaneError, Slot};
+        use khora_core::lane::{LaneError, Ref, Slot};
         let device = ctx
             .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
@@ -156,9 +156,9 @@ impl khora_core::lane::Lane for SimpleUnlitLane {
             .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?
             .get();
         let render_world = ctx
-            .get::<Slot<crate::render_lane::RenderWorld>>()
-            .ok_or(LaneError::missing("Slot<RenderWorld>"))?
-            .get_ref();
+            .get::<Ref<khora_data::render::RenderWorld>>()
+            .ok_or(LaneError::missing("Ref<RenderWorld>"))?
+            .get();
         let color_target = ctx
             .get::<khora_core::lane::ColorTarget>()
             .ok_or(LaneError::missing("ColorTarget"))?
@@ -230,11 +230,39 @@ impl SimpleUnlitLane {
     ) {
         use khora_core::renderer::api::{resource::CameraUniformData, scene::ModelUniforms};
 
-        // 1. Get Active Camera View
-        let view = if let Some(first_view) = render_world.views.first() {
-            first_view
-        } else {
-            return; // No camera, nothing to render
+        // 1. Get Active Camera View.
+        //
+        // When no camera is present (e.g. editor viewport before any in-scene
+        // camera is added), a clear render pass must still be submitted
+        let Some(view) = render_world.views.first() else {
+            let color_attachment = RenderPassColorAttachment {
+                view: render_ctx.color_target,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(render_ctx.clear_color),
+                    store: StoreOp::Store,
+                },
+                base_array_layer: 0,
+            };
+            let clear_desc = RenderPassDescriptor {
+                label: Some("Simple Unlit Clear-Only Pass"),
+                color_attachments: &[color_attachment],
+                depth_stencil_attachment: render_ctx.depth_target.map(|depth_view| {
+                    RenderPassDepthStencilAttachment {
+                        view: depth_view,
+                        depth_ops: Some(Operations {
+                            load: LoadOp::Clear(1.0),
+                            store: StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                        base_array_layer: 0,
+                    }
+                }),
+            };
+            // Dropping the render pass immediately ends it — the clear is
+            // recorded into the encoder without any draw calls.
+            let _ = encoder.begin_render_pass(&clear_desc);
+            return;
         };
 
         // 2. Prepare Camera Uniforms via Persistent Ring Buffer
@@ -683,6 +711,7 @@ mod tests {
             pipeline::enums::PrimitiveTopology, resource::BufferId, util::IndexFormat,
         },
     };
+    use khora_data::render::ExtractedMesh;
     use std::sync::Arc;
 
     #[test]
@@ -709,7 +738,6 @@ mod tests {
 
     #[test]
     fn test_cost_estimation_triangle_list() {
-        use crate::render_lane::world::ExtractedMesh;
         use khora_core::asset::AssetUUID;
 
         let lane = SimpleUnlitLane::new();
@@ -747,7 +775,6 @@ mod tests {
 
     #[test]
     fn test_cost_estimation_triangle_strip() {
-        use crate::render_lane::world::ExtractedMesh;
         use khora_core::asset::AssetUUID;
 
         let lane = SimpleUnlitLane::new();
@@ -785,7 +812,6 @@ mod tests {
 
     #[test]
     fn test_cost_estimation_lines_and_points() {
-        use crate::render_lane::world::ExtractedMesh;
         use khora_core::asset::AssetUUID;
 
         let lane = SimpleUnlitLane::new();
@@ -842,7 +868,6 @@ mod tests {
 
     #[test]
     fn test_cost_estimation_multiple_meshes() {
-        use crate::render_lane::world::ExtractedMesh;
         use khora_core::asset::AssetUUID;
 
         let lane = SimpleUnlitLane::new();
@@ -926,7 +951,6 @@ mod tests {
 
     #[test]
     fn test_cost_estimation_missing_mesh() {
-        use crate::render_lane::world::ExtractedMesh;
         use khora_core::asset::AssetUUID;
 
         let lane = SimpleUnlitLane::new();
@@ -949,7 +973,6 @@ mod tests {
 
     #[test]
     fn test_cost_estimation_degenerate_triangle_strip() {
-        use crate::render_lane::world::ExtractedMesh;
         use khora_core::asset::AssetUUID;
 
         let lane = SimpleUnlitLane::new();

@@ -34,7 +34,7 @@
 //!    - `ShadowLane: Lane` — Shadow map generation strategies
 //!    - `PhysicsLane: Lane` — Physics simulation strategies
 //!    - `AudioMixingLane: Lane` — Audio mixing strategies
-//!    - `AssetLoaderLane<A>: Lane` — Asset loading strategies
+//!    - `AssetDecoder<A>` — Asset decoding (bytes → typed asset)
 //!    - `SerializationStrategy: Lane` — Scene serialization strategies
 //!
 //! ## Usage
@@ -67,8 +67,12 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::fmt;
 
+pub mod bus;
 pub mod context_keys;
+pub mod deck;
+pub use bus::LaneBus;
 pub use context_keys::*;
+pub use deck::OutputDeck;
 
 /// Error type for lane operations.
 #[derive(Debug)]
@@ -143,6 +147,8 @@ pub enum LaneKind {
     Scene,
     /// ECS maintenance (compaction, garbage collection)
     Ecs,
+    /// User interface layout and interaction
+    Ui,
 }
 
 impl std::fmt::Display for LaneKind {
@@ -155,6 +161,7 @@ impl std::fmt::Display for LaneKind {
             LaneKind::Asset => write!(f, "Asset"),
             LaneKind::Scene => write!(f, "Scene"),
             LaneKind::Ecs => write!(f, "ECS"),
+            LaneKind::Ui => write!(f, "UI"),
         }
     }
 }

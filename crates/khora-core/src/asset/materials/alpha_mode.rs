@@ -38,7 +38,17 @@
 /// // Full blending (e.g., glass, water)
 /// let blended = AlphaMode::Blend;
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+    bincode::Encode,
+    bincode::Decode,
+)]
 pub enum AlphaMode {
     /// The material is fully opaque with no transparency.
     ///

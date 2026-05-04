@@ -22,10 +22,15 @@ pub mod audio;
 pub mod graphics;
 pub mod physics;
 pub mod platform;
+pub mod renderer;
 pub mod telemetry;
+pub mod ui;
 
 pub use graphics::wgpu::WgpuRenderSystem;
 pub use platform::window::{WinitWindow, WinitWindowBuilder};
+pub use renderer::StandardTextRenderer;
 pub use telemetry::{
     gpu_monitor::GpuMonitor, memory_monitor::MemoryMonitor, vram_monitor::VramMonitor,
 };
+pub use ui::egui::{EguiEditorShell, EguiFrameRenderState, EguiOverlay, EguiUiBuilder};
+pub use ui::taffy::taffy_layout::TaffyLayoutSystem;

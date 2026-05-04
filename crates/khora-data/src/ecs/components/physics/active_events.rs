@@ -19,4 +19,5 @@ use serde::{Deserialize, Serialize};
 /// By default, the physics engine does not report collisions for every entity
 /// to save on performance. Adding this component enables reporting for this entity.
 #[derive(Debug, Clone, Copy, Default, Component, Serialize, Deserialize)]
+#[component(no_serializable)]
 pub struct ActiveEvents;

@@ -25,7 +25,7 @@
 //! 6. Issuing `ResourceBudget` to each agent.
 
 use crate::analysis::AnalysisReport;
-use crate::context::{Context, ExecutionPhase};
+use crate::context::Context;
 use khora_core::agent::Agent;
 use khora_core::control::gorna::{
     AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId, StrategyOption,
@@ -109,7 +109,7 @@ impl GornaArbitrator {
         log::debug!(
             "GORNA: Starting arbitration for {} agents. Phase={:?}, Multiplier={:.2}",
             agents.len(),
-            context.phase,
+            context.mode,
             context.global_budget_multiplier
         );
 
@@ -151,15 +151,18 @@ impl GornaArbitrator {
                 continue;
             };
             let agent_id = agent.id();
-            let priority = self.get_agent_priority(agent_id, context.phase);
+            let priority = self.get_agent_priority(agent_id);
+            let timing = agent.execution_timing();
 
             let request = NegotiationRequest {
                 target_latency: Duration::from_secs_f64(effective_budget_ms as f64 / 1000.0),
                 priority_weight: priority,
                 constraints: ResourceConstraints {
-                    must_run: self.is_critical_agent(agent_id, context.phase),
+                    must_run: self.is_critical_agent(agent_id),
                     ..Default::default()
                 },
+                current_mode: context.mode.clone(),
+                agent_timing: timing,
             };
 
             let response = agent.negotiate(request);
@@ -174,7 +177,7 @@ impl GornaArbitrator {
 
             // Sort strategies by estimated time (ascending = cheapest first).
             let mut strategies = response.strategies;
-            strategies.sort_by(|a, b| a.estimated_time.cmp(&b.estimated_time));
+            strategies.sort_by_key(|s| s.estimated_time);
 
             negotiations.push(AgentNegotiation {
                 agent_index: i,
@@ -400,44 +403,29 @@ impl GornaArbitrator {
         allocations
     }
 
-    /// Returns the priority weight for an agent given the current execution phase.
+    /// Returns the priority weight for an agent.
     ///
     /// Higher values indicate greater importance. The DCC uses these weights to
     /// decide which agents get upgraded first when budget is available.
-    fn get_agent_priority(&self, id: AgentId, phase: ExecutionPhase) -> f32 {
-        match phase {
-            ExecutionPhase::Boot => match id {
-                AgentId::Asset => 1.0,
-                _ => 0.3,
-            },
-            ExecutionPhase::Menu => match id {
-                AgentId::Renderer => 0.6,
-                AgentId::Asset => 1.0,
-                AgentId::Audio => 0.8,
-                _ => 0.3,
-            },
-            ExecutionPhase::Simulation => match id {
-                AgentId::Renderer => 1.0,
-                AgentId::Physics => 1.0,
-                AgentId::Ecs => 0.8,
-                AgentId::Audio => 0.6,
-                AgentId::Asset => 0.5,
-            },
-            ExecutionPhase::Background => 0.1, // Everything minimal
+    fn get_agent_priority(&self, id: AgentId) -> f32 {
+        match id {
+            AgentId::Renderer => 1.0,
+            AgentId::ShadowRenderer => 1.0,
+            AgentId::Physics => 1.0,
+            AgentId::Ecs => 0.8,
+            AgentId::Ui => 0.7,
+            AgentId::Audio => 0.6,
+            AgentId::Asset => 0.5,
         }
     }
 
-    /// Returns `true` if the agent is considered critical for the current phase
+    /// Returns `true` if the agent is considered critical
     /// and must always receive at least its minimum strategy.
-    fn is_critical_agent(&self, id: AgentId, phase: ExecutionPhase) -> bool {
-        match phase {
-            ExecutionPhase::Boot => matches!(id, AgentId::Asset),
-            ExecutionPhase::Menu => matches!(id, AgentId::Renderer),
-            ExecutionPhase::Simulation => {
-                matches!(id, AgentId::Renderer | AgentId::Physics | AgentId::Ecs)
-            }
-            ExecutionPhase::Background => false,
-        }
+    fn is_critical_agent(&self, id: AgentId) -> bool {
+        matches!(
+            id,
+            AgentId::Renderer | AgentId::Physics | AgentId::Ecs | AgentId::Ui
+        )
     }
 }
 
@@ -446,6 +434,7 @@ mod tests {
     use super::*;
     use crate::analysis::AnalysisReport;
     use crate::context::Context;
+    use crate::EngineMode;
     use khora_core::agent::Agent;
     use khora_core::control::gorna::{
         AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
@@ -506,14 +495,13 @@ mod tests {
                         estimated_vram: 20 * 1024 * 1024,
                     },
                 ],
+                timing_adjustment: None,
             }
         }
 
         fn apply_budget(&mut self, budget: ResourceBudget) {
             self.applied_budget = Some(budget);
         }
-
-        fn update(&mut self, _context: &mut EngineContext<'_>) {}
 
         fn report_status(&self) -> AgentStatus {
             AgentStatus {
@@ -529,7 +517,7 @@ mod tests {
             }
         }
 
-        fn execute(&mut self) {}
+        fn execute(&mut self, _context: &mut EngineContext<'_>) {}
 
         fn as_any(&self) -> &dyn std::any::Any {
             self
@@ -551,7 +539,7 @@ mod tests {
 
     fn simulation_ctx() -> Context {
         Context {
-            phase: ExecutionPhase::Simulation,
+            mode: EngineMode::Playing,
             global_budget_multiplier: 1.0,
             ..Default::default()
         }
@@ -754,18 +742,21 @@ mod tests {
     }
 
     #[test]
-    fn test_background_phase_minimal_priority() {
+    fn test_agent_priorities() {
         let arbitrator = create_arbitrator();
-        assert!(arbitrator.get_agent_priority(AgentId::Renderer, ExecutionPhase::Background) < 0.2);
-        assert!(arbitrator.get_agent_priority(AgentId::Physics, ExecutionPhase::Background) < 0.2);
+        assert!(arbitrator.get_agent_priority(AgentId::Renderer) >= 0.9);
+        assert!(arbitrator.get_agent_priority(AgentId::Physics) >= 0.9);
+        assert!(arbitrator.get_agent_priority(AgentId::Ui) >= 0.5);
+        assert!(arbitrator.get_agent_priority(AgentId::Audio) >= 0.5);
     }
 
     #[test]
-    fn test_simulation_critical_agents() {
+    fn test_critical_agents() {
         let arbitrator = create_arbitrator();
-        assert!(arbitrator.is_critical_agent(AgentId::Renderer, ExecutionPhase::Simulation));
-        assert!(arbitrator.is_critical_agent(AgentId::Physics, ExecutionPhase::Simulation));
-        assert!(arbitrator.is_critical_agent(AgentId::Ecs, ExecutionPhase::Simulation));
-        assert!(!arbitrator.is_critical_agent(AgentId::Audio, ExecutionPhase::Simulation));
+        assert!(arbitrator.is_critical_agent(AgentId::Renderer));
+        assert!(arbitrator.is_critical_agent(AgentId::Physics));
+        assert!(arbitrator.is_critical_agent(AgentId::Ecs));
+        assert!(arbitrator.is_critical_agent(AgentId::Ui));
+        assert!(!arbitrator.is_critical_agent(AgentId::Audio));
     }
 }

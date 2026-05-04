@@ -14,8 +14,18 @@
 
 //! Scene module containing the Scene struct and related functionality.
 
-mod definition;
 mod recipe;
+pub mod registry;
 
-pub use definition::*;
+mod archetype_strategy;
+mod definition_strategy;
+mod recipe_strategy;
+mod strategy;
+
 pub use recipe::*;
+pub use registry::*;
+
+pub use archetype_strategy::*;
+pub use definition_strategy::*;
+pub use recipe_strategy::*;
+pub use strategy::*;

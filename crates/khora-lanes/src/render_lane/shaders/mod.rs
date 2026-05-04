@@ -99,6 +99,21 @@ pub const FORWARD_PLUS_WGSL: &str = include_str!("forward_plus.wgsl");
 /// Minimal depth-only shader for shadow map generation.
 pub const SHADOW_PASS_WGSL: &str = include_str!("shadow_pass.wgsl");
 
+/// Shader for UI elements (quads, text, icons).
+pub const UI_WGSL: &str = include_str!("ui.wgsl");
+
+/// Shader for text rendering.
+pub const TEXT_WGSL: &str = include_str!("text.wgsl");
+
+/// Shader for the egui editor overlay (textured + vertex-colored quads with scissor).
+pub const EGUI_WGSL: &str = include_str!("egui.wgsl");
+
+/// Infinite XZ ground grid with antialiased lines and colored axes.
+///
+/// Renders a fullscreen quad and intersects with Y=0 in the fragment
+/// shader. Provides two grid scales (1m, 10m) with distance fade-out.
+pub const GRID_WGSL: &str = include_str!("grid.wgsl");
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,5 +165,19 @@ mod tests {
     fn test_shadow_pass_shader_valid() {
         assert!(SHADOW_PASS_WGSL.contains("@vertex"));
         assert!(SHADOW_PASS_WGSL.contains("view_projection"));
+    }
+
+    #[test]
+    fn test_ui_shader_valid() {
+        assert!(UI_WGSL.contains("@vertex"));
+        assert!(UI_WGSL.contains("@fragment"));
+        assert!(UI_WGSL.contains("instances"));
+    }
+
+    #[test]
+    fn test_text_shader_valid() {
+        assert!(TEXT_WGSL.contains("@vertex"));
+        assert!(TEXT_WGSL.contains("@fragment"));
+        assert!(TEXT_WGSL.contains("globals"));
     }
 }

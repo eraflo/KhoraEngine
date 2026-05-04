@@ -225,6 +225,10 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// Gets the texture format of the primary render surface.
     fn get_surface_format(&self) -> Option<TextureFormat>;
 
+    /// Gets the dimensions of the primary render surface.
+    /// Returns (width, height).
+    fn get_surface_size(&self) -> (u32, u32);
+
     /// Gets information about the active graphics adapter (GPU).
     fn get_adapter_info(&self) -> GraphicsAdapterInfo;
 

@@ -87,7 +87,7 @@ pub struct ColliderDesc {
 }
 
 /// Supported collider shapes.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
 pub enum ColliderShape {
     /// Box with half-extents.
     Box(Vec3),
