@@ -1,3 +1,12 @@
+## [0.6.1](https://github.com/eraflo/KhoraEngine/compare/v0.6.0...v0.6.1) (2026-05-04)
+
+
+### Bug Fixes
+
+* assets upload ([2d3010a](https://github.com/eraflo/KhoraEngine/commit/2d3010a369d65a866786c6aaed2ca3b2e53ba528))
+* compatibility winit with linux ([dfd0af2](https://github.com/eraflo/KhoraEngine/commit/dfd0af29f64c4427e1165bf2f0ab9e3fd534b3f2))
+* lock cargo versions ([370331f](https://github.com/eraflo/KhoraEngine/commit/370331ffa45595b540a49f4a914fe8bc3e307a56))
+
 ## [0.5.1](https://github.com/eraflo/KhoraEngine/compare/v0.5.0...v0.5.1) (2026-02-22)
 
 
