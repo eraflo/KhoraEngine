@@ -389,7 +389,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
     }
 
     fn screen_rect(&self) -> [f32; 4] {
-        let r = self.ui.ctx().screen_rect();
+        let r = self.ui.ctx().content_rect();
         [r.min.x, r.min.y, r.width(), r.height()]
     }
 

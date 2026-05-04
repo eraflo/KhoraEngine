@@ -46,11 +46,11 @@ impl PhysicsQueryService {
     /// Casts a ray and returns the first hit, if any.
     ///
     /// # Arguments
-    /// * `ray`    – Ray origin + unit direction.
+    /// * `ray` – Ray origin + unit direction.
     /// * `max_toi` – Maximum time-of-impact (distance along the ray to test).
-    /// * `solid`  – If `true`, the ray starts inside a solid collider and
-    ///              returns that collider as the hit. If `false`, the ray
-    ///              must exit the solid to register a hit.
+    /// * `solid` – If `true`, the ray starts inside a solid collider and
+    ///   returns that collider as the hit. If `false`, the ray must exit
+    ///   the solid to register a hit.
     pub fn cast_ray(&self, ray: &Ray, max_toi: f32, solid: bool) -> Option<RaycastHit> {
         self.provider
             .lock()

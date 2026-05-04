@@ -364,9 +364,7 @@ impl ViewportPanel {
             if active {
                 ui.paint_rect_filled([r[0], r[1]], [r[2], r[3]], theme.surface_active, 999.0);
             }
-            let icon_color = if active {
-                theme.text
-            } else if int.hovered {
+            let icon_color = if active || int.hovered {
                 theme.text
             } else {
                 theme.text_dim

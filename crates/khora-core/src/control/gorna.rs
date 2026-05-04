@@ -102,6 +102,7 @@ pub struct NegotiationResponse {
 /// GORNA can NEVER force a phase — only suggest importance changes.
 #[derive(Debug, Clone)]
 pub struct TimingAdjustment {
+    /// Suggested importance override for the agent on this frame.
     pub importance_override: Option<AgentImportance>,
 }
 

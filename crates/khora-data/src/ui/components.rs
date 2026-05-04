@@ -169,18 +169,10 @@ impl UiColor {
 }
 
 /// Visual image of a UI element.
-#[derive(Debug, Clone, Copy, PartialEq, Component)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Component)]
 pub struct UiImage {
     /// The ID of the image asset.
     pub texture: AssetUUID,
-}
-
-impl Default for UiImage {
-    fn default() -> Self {
-        Self {
-            texture: AssetUUID::default(),
-        }
-    }
 }
 
 impl UiImage {

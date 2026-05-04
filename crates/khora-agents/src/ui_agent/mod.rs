@@ -31,7 +31,6 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
-use khora_core::asset::font::Font;
 use khora_core::asset::AssetUUID;
 use khora_core::context::EngineContext;
 use khora_core::control::gorna::{

@@ -18,10 +18,14 @@ use khora_core::agent::ExecutionPhase;
 use khora_data::ecs::World;
 use std::collections::HashMap;
 
+/// Boxed plugin hook executed against the world during a specific
+/// `ExecutionPhase`.
+type PluginHook = Box<dyn Fn(&mut World) + Send>;
+
 /// A plugin that injects callbacks into the frame pipeline.
 pub struct EnginePlugin {
     name: String,
-    hooks: HashMap<ExecutionPhase, Box<dyn Fn(&mut World) + Send>>,
+    hooks: HashMap<ExecutionPhase, PluginHook>,
 }
 
 impl EnginePlugin {

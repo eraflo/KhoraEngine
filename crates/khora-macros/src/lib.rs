@@ -167,18 +167,29 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         .chain(from_serializable_skipped)
         .collect();
 
-    // Determine struct kind for Serializable
+    // Determine struct kind for Serializable.
+    //
+    // The `Serializable<Name>` mirror is a generated implementation detail
+    // used by the scene serialization pipeline and the editor inspector.
+    // It is `pub` because callers of `#[derive(Component)]` can be public,
+    // but it is not part of the documented public API surface. We tag it
+    // with `#[allow(missing_docs)]` so that crates with `#![warn(missing_docs)]`
+    // do not require users to document every mirror field by hand.
     let serializable_struct = match fields {
         Fields::Named(_) if serializable_field_defs.is_empty() => {
             // All fields skipped → unit struct
             quote! {
                 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+                #[allow(missing_docs)]
+                #[doc(hidden)]
                 #vis struct #serializable_name;
             }
         }
         Fields::Named(_) => {
             quote! {
                 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+                #[allow(missing_docs)]
+                #[doc(hidden)]
                 #vis struct #serializable_name {
                     #(#serializable_field_defs),*
                 }
@@ -189,12 +200,16 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
             let field_vis: Vec<_> = included_fields.iter().map(|f| &f.vis).collect();
             quote! {
                 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+                #[allow(missing_docs)]
+                #[doc(hidden)]
                 #vis struct #serializable_name(#(#field_vis #field_types),*);
             }
         }
         Fields::Unit => {
             quote! {
                 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+                #[allow(missing_docs)]
+                #[doc(hidden)]
                 #vis struct #serializable_name;
             }
         }

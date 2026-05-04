@@ -29,9 +29,14 @@ use khora_core::math::LinearRgba;
 /// A serializable wrapper for a material that stores the type name and binary data.
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
 pub struct SerializableMaterialData {
+    /// Identifier used to look up the matching `MaterialRegistration` on decode.
     pub type_name: String,
+    /// Opaque payload produced by the registration's `serialize` function.
     pub data: Vec<u8>,
 }
+
+/// Function pointer that decodes binary data into a boxed `dyn Material`.
+pub type MaterialDeserializeFn = fn(&[u8]) -> Result<Box<dyn Material>, String>;
 
 /// Registration entry for a serializable material type.
 ///
@@ -43,7 +48,7 @@ pub struct MaterialRegistration {
     /// does not match this registration's concrete type.
     pub serialize: fn(&dyn Material) -> Option<Vec<u8>>,
     /// Deserializes binary data back into a `Box<dyn Material>`.
-    pub deserialize: fn(&[u8]) -> Result<Box<dyn Material>, String>,
+    pub deserialize: MaterialDeserializeFn,
     /// Creates a default instance of this material type (for placeholder handles).
     pub create_default: fn() -> Box<dyn Material>,
 }
@@ -62,7 +67,7 @@ pub fn serialize_material_component(
                 type_name: reg.type_name.to_string(),
                 data,
             };
-            return Some(bincode::encode_to_vec(&serializable, config::standard()).ok()?);
+            return bincode::encode_to_vec(&serializable, config::standard()).ok();
         }
     }
     // Fallback: no registration found, serialize just the base color as a StandardMaterial-like placeholder.
@@ -71,9 +76,9 @@ pub fn serialize_material_component(
     );
     let serializable = SerializableMaterialData {
         type_name: "__unknown__".to_string(),
-        data: bincode::encode_to_vec(&base_color, config::standard()).ok()?,
+        data: bincode::encode_to_vec(base_color, config::standard()).ok()?,
     };
-    Some(bincode::encode_to_vec(&serializable, config::standard()).ok()?)
+    bincode::encode_to_vec(&serializable, config::standard()).ok()
 }
 
 /// Deserializes a `MaterialComponent` from binary data.

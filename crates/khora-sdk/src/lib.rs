@@ -90,7 +90,7 @@ pub use khora_io::serialization::SerializationService;
 // Mesh type (used by editor ops)
 pub use khora_core::renderer::api::scene::mesh::Mesh;
 
-// Renderer sub-modules (used by editor gizmo)
+/// Renderer sub-modules (used by editor gizmo)
 pub mod renderer {
     pub use khora_core::renderer::api::resource;
     pub use khora_core::renderer::api::scene;

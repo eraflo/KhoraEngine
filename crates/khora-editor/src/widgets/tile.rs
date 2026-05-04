@@ -77,6 +77,7 @@ impl AssetTileKind {
 /// `origin` is the top-left in screen-space, `size` is the total tile box
 /// (thumbnail + name strip below). The tile self-measures so the caller only
 /// has to grid-place identical-size boxes.
+#[allow(clippy::too_many_arguments)] // UI paint helper — splitting hurts readability.
 pub fn paint_asset_tile(
     ui: &mut dyn UiBuilder,
     id_salt: &str,

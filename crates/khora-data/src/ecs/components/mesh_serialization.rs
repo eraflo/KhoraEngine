@@ -33,8 +33,11 @@ use crate::ecs::HandleComponent;
     Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, serde::Serialize, serde::Deserialize,
 )]
 pub enum ProceduralMeshKind {
+    /// Axis-aligned cube primitive.
     Cube,
+    /// UV sphere primitive.
     Sphere,
+    /// Flat XZ plane primitive.
     Plane,
 }
 
@@ -43,7 +46,9 @@ pub enum ProceduralMeshKind {
 pub enum SerializableMeshRef {
     /// Procedural mesh — regenerate from parameters on load.
     Procedural {
+        /// Which procedural primitive to regenerate.
         kind: ProceduralMeshKind,
+        /// Generator parameters (kind-specific layout, padded with zeros).
         params: [f32; 4],
     },
     /// Imported asset mesh — lookup by UUID in the VFS/asset registry.
@@ -164,9 +169,9 @@ fn extract_mesh_params(kind: &ProceduralMeshKind, mesh: &Mesh) -> [f32; 4] {
             let mut segments = 16u32;
             let mut rings = 16u32;
             for s in 4..=128 {
-                if vert_count % (s as usize + 1) == 0 {
+                if vert_count.is_multiple_of(s as usize + 1) {
                     let r = vert_count / (s as usize + 1) - 1;
-                    if r >= 4 && r <= 128 {
+                    if (4..=128).contains(&r) {
                         segments = s;
                         rings = r as u32;
                         break;

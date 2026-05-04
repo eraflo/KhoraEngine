@@ -506,14 +506,12 @@ fn render_object(
                 .unwrap_or(0);
             let combo_changed = ui.combo_box("Variant", &mut current, &names);
             if combo_changed {
-                if let Some((_, default_full)) = variants.get(current) {
-                    if let Value::Object(new_map) = default_full {
-                        map.clear();
-                        for (k, v) in new_map.iter() {
-                            map.insert(k.clone(), v.clone());
-                        }
-                        return true;
+                if let Some((_, Value::Object(new_map))) = variants.get(current) {
+                    map.clear();
+                    for (k, v) in new_map.iter() {
+                        map.insert(k.clone(), v.clone());
                     }
+                    return true;
                 }
             }
             // Fall through to recurse into the (possibly newly-typed) inner.

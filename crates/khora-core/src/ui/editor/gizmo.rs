@@ -313,15 +313,22 @@ pub enum GizmoKind {
     Empty,
     /// Camera entity — frustum wireframe.
     Camera {
+        /// Vertical field of view, in radians.
         fov_y: f32,
+        /// Width / height ratio of the projection.
         aspect: f32,
+        /// Distance to the near clip plane.
         near: f32,
+        /// Distance to the far clip plane.
         far: f32,
     },
     /// Directional light — arrow icon.
     DirectionalLight,
     /// Point light — wireframe sphere.
-    PointLight { radius: f32 },
+    PointLight {
+        /// Influence radius of the light.
+        radius: f32,
+    },
     /// Audio source — wireframe sphere.
     Audio,
     /// Entity with a mesh — highlighted cube.

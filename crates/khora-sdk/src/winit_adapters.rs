@@ -97,14 +97,17 @@ impl WindowProvider for WinitWindowProvider {
 // WinitAppRunner — bridges winit ApplicationHandler with EngineCore
 // ─────────────────────────────────────────────────────────────────────
 
+/// One-shot bootstrap closure used to wire engine services and an app handle
+/// into the [`khora_core::ServiceRegistry`] at window-creation time.
+type BootstrapFn =
+    Box<dyn FnOnce(&dyn KhoraWindow, &mut khora_core::ServiceRegistry, &dyn Any) + Send>;
+
 /// Winit-specific application runner.
 pub struct WinitAppRunner<W: WindowProvider, A: EngineApp> {
     window: Option<W>,
     engine: EngineCore<A>,
     renderer: Option<Arc<Mutex<Box<dyn RenderSystem>>>>,
-    bootstrap: Option<
-        Box<dyn FnOnce(&dyn KhoraWindow, &mut khora_core::ServiceRegistry, &dyn Any) + Send>,
-    >,
+    bootstrap: Option<BootstrapFn>,
     tokio_runtime: Option<tokio::runtime::Runtime>,
     /// Per-frame context, recreated each frame.
     frame_context: Option<Arc<FrameContext>>,

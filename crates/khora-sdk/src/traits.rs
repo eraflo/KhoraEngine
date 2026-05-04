@@ -44,10 +44,19 @@ pub trait WindowProvider: 'static {
     where
         Self: Sized;
 
+    /// Polls for window events and returns them as an iterator of raw event types.
     fn request_redraw(&self);
+
+    /// Returns the current inner size of the window in physical pixels.
     fn inner_size(&self) -> (u32, u32);
+
+    /// Returns the current DPI scaling factor for the window.
     fn scale_factor(&self) -> f64;
+
+    /// Returns a reference to the window as a `dyn KhoraWindow` for use by the engine and agents.
     fn as_khora_window(&self) -> &dyn KhoraWindow;
+
+    /// Translates a raw window event (e.g., winit::event::Event) into an engine-agnostic `InputEvent` that can be forwarded to game logic.
     fn translate_event(&self, raw_event: &dyn std::any::Any) -> Option<InputEvent>;
 
     /// Clones a long-lived handle to the raw native window as an opaque

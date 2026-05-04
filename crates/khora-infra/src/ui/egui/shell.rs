@@ -306,7 +306,7 @@ impl EditorShell for EguiEditorShell {
         // checks our `default_width` only when no state exists, but feeding
         // it shifting values frame-to-frame is brittle and was reported as
         // panels "snapping back" after a resize.
-        let screen = ctx.screen_rect();
+        let screen = ctx.content_rect();
         let screen_w = screen.width();
         let screen_h = screen.height();
         if self.defaults.left_w.is_none() && screen_w > 200.0 && screen_h > 200.0 {

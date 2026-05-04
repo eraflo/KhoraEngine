@@ -27,6 +27,7 @@ pub struct AnyMap {
 }
 
 impl AnyMap {
+    /// Creates a new empty `AnyMap`.
     pub fn new() -> Self {
         Self {
             data: HashMap::new(),

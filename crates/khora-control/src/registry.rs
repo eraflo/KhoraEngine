@@ -20,6 +20,16 @@ use khora_core::agent::{Agent, EngineMode, ExecutionPhase};
 use khora_core::control::gorna::AgentId;
 use std::sync::{Arc, Mutex};
 
+/// Tuple returned by [`AgentRegistry::collect_for_phase`] for each agent
+/// matching the requested phase and mode: `(agent, importance, priority,
+/// dependencies)`.
+pub type PhaseAgentEntry = (
+    Arc<Mutex<dyn Agent>>,
+    AgentImportance,
+    f32,
+    Vec<AgentDependency>,
+);
+
 /// Entry in the agent registry containing the agent and its priority.
 struct AgentEntry {
     agent: Arc<Mutex<dyn Agent>>,
@@ -152,12 +162,7 @@ impl AgentRegistry {
         &self,
         phase: ExecutionPhase,
         mode: &EngineMode,
-    ) -> Vec<(
-        Arc<Mutex<dyn Agent>>,
-        AgentImportance,
-        f32,
-        Vec<AgentDependency>,
-    )> {
+    ) -> Vec<PhaseAgentEntry> {
         self.entries
             .iter()
             .filter_map(|entry| {

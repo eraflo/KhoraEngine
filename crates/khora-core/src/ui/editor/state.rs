@@ -20,7 +20,6 @@
 //! `ServiceRegistry`.
 
 use crate::ecs::entity::EntityId;
-use crate::math::{LinearRgba, Quaternion, Vec3};
 use std::collections::HashSet;
 
 /// The active gizmo tool in the viewport toolbar.

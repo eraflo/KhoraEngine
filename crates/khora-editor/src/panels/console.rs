@@ -49,6 +49,7 @@ impl ConsolePanel {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // UI paint helper — splitting hurts readability.
 fn filter_chip(
     ui: &mut dyn UiBuilder,
     origin: [f32; 2],

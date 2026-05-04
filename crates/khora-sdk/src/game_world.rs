@@ -51,6 +51,12 @@ pub struct GameWorld {
     world: World,
 }
 
+impl Default for GameWorld {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GameWorld {
     /// Creates a new `GameWorld` with an empty world and asset registry.
     pub fn new() -> Self {

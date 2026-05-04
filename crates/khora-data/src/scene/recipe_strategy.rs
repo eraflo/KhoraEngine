@@ -42,7 +42,7 @@ impl Default for RecipeSerializationStrategy {
 impl RecipeSerializationStrategy {
     /// Creates a new instance of the `RecipeSerializationStrategy`.
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 }
 

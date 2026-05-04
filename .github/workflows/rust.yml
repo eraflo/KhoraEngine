@@ -13,6 +13,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege default for every job in this workflow:
+# all jobs only check out the repo and run cargo — no writes, no
+# release/comment/status posting beyond the default check-run mechanism.
+# Override per-job if a job ever needs more.
+permissions:
+  contents: read
+
 jobs:
   lint_and_format:
     name: Format & Lint Checks
