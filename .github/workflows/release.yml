@@ -88,7 +88,12 @@ jobs:
       - name: Build engine binary
         run: cargo build --release -p khora-editor
 
+      # The hub bakes its GitHub OAuth Client ID into the binary at compile
+      # time from KHORA_HUB_GITHUB_CLIENT_ID. The build fails (by design) if
+      # the secret is missing — never ship a release without it.
       - name: Build hub binary
+        env:
+          KHORA_HUB_GITHUB_CLIENT_ID: ${{ secrets.KHORA_HUB_GITHUB_CLIENT_ID }}
         run: cargo build --release -p khora-hub
 
       # ── Stage engine payload (binary + bundled assets) ─────────────
