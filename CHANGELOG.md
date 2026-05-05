@@ -1,3 +1,10 @@
+## [0.6.3](https://github.com/eraflo/KhoraEngine/compare/v0.6.2...v0.6.3) (2026-05-05)
+
+
+### Bug Fixes
+
+* eframe and engine downloaded not working ([51259ab](https://github.com/eraflo/KhoraEngine/commit/51259ab7382581b614fcd538cef5c1d3d39d2709))
+
 ## [0.6.2](https://github.com/eraflo/KhoraEngine/compare/v0.6.1...v0.6.2) (2026-05-05)
 
 
