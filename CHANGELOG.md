@@ -1,3 +1,10 @@
+## [0.6.4](https://github.com/eraflo/KhoraEngine/compare/v0.6.3...v0.6.4) (2026-05-05)
+
+
+### Bug Fixes
+
+* github button ([90c55d0](https://github.com/eraflo/KhoraEngine/commit/90c55d0925394207176c4b8e46815e000f24076e))
+
 ## [0.6.3](https://github.com/eraflo/KhoraEngine/compare/v0.6.2...v0.6.3) (2026-05-05)
 
 
