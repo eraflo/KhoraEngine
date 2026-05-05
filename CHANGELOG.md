@@ -1,3 +1,10 @@
+## [0.6.2](https://github.com/eraflo/KhoraEngine/compare/v0.6.1...v0.6.2) (2026-05-05)
+
+
+### Bug Fixes
+
+* wgpu new api ([d8d2ee0](https://github.com/eraflo/KhoraEngine/commit/d8d2ee0934b7b061776e8aed2f0daa4467d43bf3))
+
 ## [0.6.1](https://github.com/eraflo/KhoraEngine/compare/v0.6.0...v0.6.1) (2026-05-04)
 
 
