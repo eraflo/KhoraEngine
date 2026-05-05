@@ -113,7 +113,7 @@ impl EguiWgpuRenderer {
         // --- Pipeline layout ---
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("egui_pipeline_layout"),
-            bind_group_layouts: &[&screen_bgl, &texture_bgl],
+            bind_group_layouts: &[Some(&screen_bgl), Some(&texture_bgl)],
             immediate_size: 0,
         });
 

@@ -163,10 +163,9 @@ impl WgpuGraphicsContext {
     /// This is useful for obtaining the texture to render into.
     ///
     /// ## Returns
-    /// * `Result<wgpu::SurfaceTexture, wgpu::SurfaceError>` -
-    ///   - `Ok(wgpu::SurfaceTexture)`: The current surface texture for rendering.
-    ///  - `Err(wgpu::SurfaceError)`: An error occurred while acquiring the texture,
-    pub fn get_current_texture(&self) -> Result<wgpu::SurfaceTexture, wgpu::SurfaceError> {
+    /// * `wgpu::CurrentSurfaceTexture` - The result of acquiring the next swapchain frame.
+    ///   See [`wgpu::CurrentSurfaceTexture`] for how each variant should be handled.
+    pub fn get_current_texture(&self) -> wgpu::CurrentSurfaceTexture {
         self.surface.get_current_texture()
     }
 

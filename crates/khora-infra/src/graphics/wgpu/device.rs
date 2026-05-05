@@ -651,8 +651,8 @@ impl GraphicsDevice for WgpuDevice {
                 .as_ref()
                 .map(|ds| wgpu::DepthStencilState {
                     format: ds.format.into_wgpu(),
-                    depth_write_enabled: ds.depth_write_enabled,
-                    depth_compare: ds.depth_compare.into_wgpu(),
+                    depth_write_enabled: Some(ds.depth_write_enabled),
+                    depth_compare: Some(ds.depth_compare.into_wgpu()),
                     stencil: wgpu::StencilState {
                         front: wgpu::StencilFaceState {
                             compare: ds.stencil_front.compare.into_wgpu(),
@@ -809,7 +809,7 @@ impl GraphicsDevice for WgpuDevice {
                 label: descriptor.label.as_deref(),
                 bind_group_layouts: &wgpu_bind_group_layouts
                     .iter()
-                    .map(|l: &&Arc<wgpu::BindGroupLayout>| l.as_ref())
+                    .map(|l: &&Arc<wgpu::BindGroupLayout>| Some(l.as_ref()))
                     .collect::<Vec<_>>(),
                 immediate_size: 0,
             };

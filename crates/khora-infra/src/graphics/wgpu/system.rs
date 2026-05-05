@@ -218,7 +218,7 @@ impl WgpuRenderSystem {
         }
         log::info!("WgpuRenderSystem: Initializing...");
 
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let backend_selector = WgpuBackendSelector::new(instance.clone());
         let selection_config = BackendSelectionConfig::default();
 
@@ -665,7 +665,7 @@ impl WgpuRenderSystem {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("grid_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
+            bind_group_layouts: &[Some(&bind_group_layout)],
             immediate_size: 0,
         });
 
@@ -701,8 +701,8 @@ impl WgpuRenderSystem {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
@@ -987,7 +987,10 @@ impl WgpuRenderSystem {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("gizmo_pipeline_layout"),
-            bind_group_layouts: &[&camera_bind_group_layout, &storage_bind_group_layout],
+            bind_group_layouts: &[
+                Some(&camera_bind_group_layout),
+                Some(&storage_bind_group_layout),
+            ],
             immediate_size: 0,
         });
 
@@ -1023,8 +1026,8 @@ impl WgpuRenderSystem {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Always,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::Always),
                 stencil: Default::default(),
                 bias: Default::default(),
             }),
@@ -1273,12 +1276,19 @@ impl RenderSystem for WgpuRenderSystem {
         let output_surface_texture = loop {
             let mut gc_guard = gc.lock().unwrap();
             match gc_guard.get_current_texture() {
-                Ok(texture) => break texture,
-                Err(e @ wgpu::SurfaceError::Lost) | Err(e @ wgpu::SurfaceError::Outdated) => {
+                wgpu::CurrentSurfaceTexture::Success(texture) => break texture,
+                wgpu::CurrentSurfaceTexture::Suboptimal(texture) => {
+                    log::debug!(
+                        "WgpuRenderSystem: Acquired suboptimal swapchain frame; using it but a reconfigure may be needed soon."
+                    );
+                    break texture;
+                }
+                status @ (wgpu::CurrentSurfaceTexture::Lost
+                | wgpu::CurrentSurfaceTexture::Outdated) => {
                     if self.current_width > 0 && self.current_height > 0 {
                         log::warn!(
                             "WgpuRenderSystem: Swapchain surface lost or outdated ({:?}). Reconfiguring with current dimensions: W={}, H={}",
-                            e,
+                            status,
                             self.current_width,
                             self.current_height
                         );
@@ -1288,32 +1298,30 @@ impl RenderSystem for WgpuRenderSystem {
                     } else {
                         log::error!(
                             "WgpuRenderSystem: Swapchain lost/outdated ({:?}), but current stored size is zero ({},{}). Cannot reconfigure. Waiting for valid resize event.",
-                            e,
+                            status,
                             self.current_width,
                             self.current_height
                         );
                         return Err(RenderError::SurfaceAcquisitionFailed(format!(
-                            "Surface Lost/Outdated ({e:?}) and current size is zero",
+                            "Surface Lost/Outdated ({status:?}) and current size is zero",
                         )));
                     }
                 }
-                Err(e @ wgpu::SurfaceError::OutOfMemory) => {
-                    log::error!("WgpuRenderSystem: Swapchain OutOfMemory! ({e:?})");
-                    return Err(RenderError::SurfaceAcquisitionFailed(format!(
-                        "OutOfMemory: {e:?}"
-                    )));
+                wgpu::CurrentSurfaceTexture::Timeout => {
+                    log::warn!("WgpuRenderSystem: Swapchain Timeout acquiring frame.");
+                    return Err(RenderError::SurfaceAcquisitionFailed("Timeout".to_string()));
                 }
-                Err(e @ wgpu::SurfaceError::Timeout) => {
-                    log::warn!("WgpuRenderSystem: Swapchain Timeout acquiring frame. ({e:?})");
-                    return Err(RenderError::SurfaceAcquisitionFailed(format!(
-                        "Timeout: {e:?}"
-                    )));
+                wgpu::CurrentSurfaceTexture::Occluded => {
+                    log::debug!("WgpuRenderSystem: Surface occluded; skipping frame.");
+                    return Err(RenderError::SurfaceAcquisitionFailed(
+                        "Occluded".to_string(),
+                    ));
                 }
-                Err(e) => {
-                    log::error!("WgpuRenderSystem: Unexpected SurfaceError: {e:?}");
-                    return Err(RenderError::SurfaceAcquisitionFailed(format!(
-                        "Unexpected SurfaceError: {e:?}"
-                    )));
+                wgpu::CurrentSurfaceTexture::Validation => {
+                    log::error!("WgpuRenderSystem: Surface validation error during acquisition.");
+                    return Err(RenderError::SurfaceAcquisitionFailed(
+                        "Validation error".to_string(),
+                    ));
                 }
             }
         };
@@ -1509,13 +1517,18 @@ impl RenderSystem for WgpuRenderSystem {
         let output_surface_texture = loop {
             let mut gc_guard = gc.lock().unwrap();
             match gc_guard.get_current_texture() {
-                Ok(texture) => break texture,
-                Err(e) => {
+                wgpu::CurrentSurfaceTexture::Success(texture)
+                | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => break texture,
+                status @ (wgpu::CurrentSurfaceTexture::Lost
+                | wgpu::CurrentSurfaceTexture::Outdated) => {
                     if self.current_width > 0 && self.current_height > 0 {
                         gc_guard.resize(self.current_width, self.current_height);
                         continue;
                     }
-                    return Err(RenderError::SurfaceAcquisitionFailed(format!("{:?}", e)));
+                    return Err(RenderError::SurfaceAcquisitionFailed(format!("{status:?}")));
+                }
+                status => {
+                    return Err(RenderError::SurfaceAcquisitionFailed(format!("{status:?}")));
                 }
             }
         };
