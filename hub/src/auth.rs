@@ -10,8 +10,12 @@
 //!
 //! See https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow
 //!
-//! The Client ID below points to the public Khora Hub OAuth App. Replace it
-//! with your own in `KHORA_HUB_CLIENT_ID` if you fork the project.
+//! Single-tenant OAuth design: the Khora Hub OAuth App is owned by the project
+//! maintainer, and its Client ID is injected at build time from the
+//! `KHORA_HUB_GITHUB_CLIENT_ID` GitHub Actions secret only by the release
+//! pipeline. Contributor builds compile fine without the secret, but the
+//! "Connect GitHub" flow refuses to start with a clear message — only official
+//! release binaries can authenticate against the official OAuth App.
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -19,10 +23,14 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
 
-/// Public Client ID of the Khora Hub OAuth App. **You must register your own
-/// app at <https://github.com/settings/developers> and replace this value.**
-/// Until then, the device-flow request will fail with `incorrect_client_credentials`.
-pub const KHORA_HUB_CLIENT_ID: &str = "Iv1.replace_me_with_real_client_id";
+/// GitHub OAuth Client ID, baked into the binary at build time from
+/// `KHORA_HUB_GITHUB_CLIENT_ID`. `None` means this build was compiled without
+/// the secret (typical for contributor / CI builds); `Some(_)` means an
+/// official release.
+///
+/// There is intentionally no source-level fallback: the secret lives only in
+/// the project's GitHub Actions secrets, accessible to `release.yml` on `main`.
+pub const KHORA_HUB_CLIENT_ID: Option<&str> = option_env!("KHORA_HUB_GITHUB_CLIENT_ID");
 
 /// OAuth scope: full repo access (private + public) so the hub can create
 /// private repos for projects.
@@ -178,12 +186,28 @@ fn http_client() -> Result<reqwest::blocking::Client> {
         .context("Failed to build HTTP client")
 }
 
+/// Returns the build-time Client ID, or a clear error if this build was
+/// compiled without the `KHORA_HUB_GITHUB_CLIENT_ID` secret. Contributor /
+/// dev builds end up here and the message points users to the official
+/// release.
+fn require_client_id() -> Result<&'static str> {
+    KHORA_HUB_CLIENT_ID.ok_or_else(|| {
+        anyhow::anyhow!(
+            "This Khora Hub build was compiled without a GitHub OAuth Client ID, \
+             so GitHub login is disabled. Use an official release binary from \
+             https://github.com/eraflo/KhoraEngine/releases to sign in — only \
+             release builds embed the project's OAuth credentials."
+        )
+    })
+}
+
 fn request_device_code() -> Result<DeviceCode> {
+    let client_id = require_client_id()?;
     let client = http_client()?;
     let response = client
         .post("https://github.com/login/device/code")
         .header(reqwest::header::ACCEPT, "application/json")
-        .form(&[("client_id", KHORA_HUB_CLIENT_ID), ("scope", SCOPES)])
+        .form(&[("client_id", client_id), ("scope", SCOPES)])
         .send()
         .context("Failed to POST /login/device/code")?;
 
@@ -199,6 +223,7 @@ fn request_device_code() -> Result<DeviceCode> {
 }
 
 fn poll_token(device: &DeviceCode) -> Result<String> {
+    let client_id = require_client_id()?;
     let client = http_client()?;
     let mut interval = device.interval.max(1);
     let deadline = std::time::Instant::now() + Duration::from_secs(device.expires_in);
@@ -213,7 +238,7 @@ fn poll_token(device: &DeviceCode) -> Result<String> {
             .post("https://github.com/login/oauth/access_token")
             .header(reqwest::header::ACCEPT, "application/json")
             .form(&[
-                ("client_id", KHORA_HUB_CLIENT_ID),
+                ("client_id", client_id),
                 ("device_code", device.device_code.as_str()),
                 ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
             ])
