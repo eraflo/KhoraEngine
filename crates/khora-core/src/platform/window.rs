@@ -15,6 +15,7 @@
 //! Defines the `KhoraWindow` trait and related types for windowing abstraction.
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+use std::fmt::Debug;
 use std::sync::Arc;
 
 /// A marker trait that combines windowing handle requirements for use in trait objects.
@@ -23,11 +24,14 @@ use std::sync::Arc;
 /// object-safe. `HasWindowHandle` and `HasDisplayHandle` are, but creating a direct
 /// `dyn HasWindowHandle + HasDisplayHandle` is complex. This trait serves as a simple,
 /// unified supertrait to make creating the `KhoraWindowHandle` type alias possible.
-pub trait WindowHandle: HasWindowHandle + HasDisplayHandle {}
+///
+/// `Debug` is required so the handle can be stored inside `wgpu::InstanceDescriptor`
+/// (its `display` field requires `WgpuHasDisplayHandle: Debug`).
+pub trait WindowHandle: HasWindowHandle + HasDisplayHandle + Debug {}
 
 // A blanket implementation automatically implements `WindowHandle` for any type
 // that already satisfies its requirements.
-impl<T: HasWindowHandle + HasDisplayHandle> WindowHandle for T {}
+impl<T: HasWindowHandle + HasDisplayHandle + Debug> WindowHandle for T {}
 
 /// A thread-safe, reference-counted trait object representing a window.
 ///

@@ -146,14 +146,14 @@ pub fn paint_v_hairline(
 
 /// A small colored badge (e.g. version tag).
 pub fn badge(ui: &mut egui::Ui, text: &str, bg: egui::Color32, fg: egui::Color32) {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(bg)
-        .rounding(egui::Rounding::same(4_f32))
+        .corner_radius(egui::CornerRadius::same(4))
         .inner_margin(egui::Margin {
-            left: 6.0,
-            right: 6.0,
-            top: 2.0,
-            bottom: 2.0,
+            left: 6,
+            right: 6,
+            top: 2,
+            bottom: 2,
         })
         .show(ui, |ui| {
             ui.label(egui::RichText::new(text).size(11.0).monospace().color(fg));
@@ -162,15 +162,15 @@ pub fn badge(ui: &mut egui::Ui, text: &str, bg: egui::Color32, fg: egui::Color32
 
 /// A status chip with icon-like coloring.
 pub fn status_chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(tint(color, 0.15))
         .stroke(egui::Stroke::new(1.0, tint(color, 0.4)))
-        .rounding(egui::Rounding::same(4_f32))
+        .corner_radius(egui::CornerRadius::same(4))
         .inner_margin(egui::Margin {
-            left: 8.0,
-            right: 8.0,
-            top: 4.0,
-            bottom: 4.0,
+            left: 8,
+            right: 8,
+            top: 4,
+            bottom: 4,
         })
         .show(ui, |ui| {
             // ● dot + label, mirroring the editor status bar.
@@ -187,15 +187,15 @@ pub fn status_chip(ui: &mut egui::Ui, text: &str, color: egui::Color32) {
 /// A keyboard shortcut chip, e.g. ⌘ K. Mirrors the editor's `paint_kbd_chip`
 /// (small monospace + double-line bottom for "depth").
 pub fn kbd_chip(ui: &mut egui::Ui, label: &str) {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(pal::SURFACE_ACTIVE)
         .stroke(egui::Stroke::new(1.0, pal::BORDER))
-        .rounding(egui::Rounding::same(3_f32))
+        .corner_radius(egui::CornerRadius::same(3))
         .inner_margin(egui::Margin {
-            left: 5.0,
-            right: 5.0,
-            top: 1.0,
-            bottom: 1.0,
+            left: 5,
+            right: 5,
+            top: 1,
+            bottom: 1,
         })
         .show(ui, |ui| {
             ui.label(
@@ -275,7 +275,7 @@ pub fn primary_button(ui: &mut egui::Ui, label: &str, size: [f32; 2]) -> egui::R
         )
         .fill(pal::PRIMARY)
         .stroke(egui::Stroke::NONE)
-        .rounding(egui::Rounding::same(5_f32)),
+        .corner_radius(egui::CornerRadius::same(5)),
     )
 }
 
@@ -291,7 +291,7 @@ pub fn danger_button(ui: &mut egui::Ui, label: &str, size: [f32; 2]) -> egui::Re
         )
         .fill(pal::ERROR)
         .stroke(egui::Stroke::NONE)
-        .rounding(egui::Rounding::same(5_f32)),
+        .corner_radius(egui::CornerRadius::same(5)),
     )
 }
 
@@ -302,7 +302,7 @@ pub fn ghost_button(ui: &mut egui::Ui, label: &str, size: [f32; 2]) -> egui::Res
         egui::Button::new(egui::RichText::new(label).size(12.0).color(pal::TEXT_DIM))
             .fill(pal::SURFACE3)
             .stroke(egui::Stroke::new(1.0, pal::BORDER))
-            .rounding(egui::Rounding::same(5_f32)),
+            .corner_radius(egui::CornerRadius::same(5)),
     )
 }
 

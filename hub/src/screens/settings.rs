@@ -33,15 +33,15 @@ fn sub_section(ui: &mut egui::Ui, label: &str) {
     });
 }
 
-pub fn show_settings(app: &mut HubApp, ctx: &egui::Context) {
+pub fn show_settings(app: &mut HubApp, parent_ui: &mut egui::Ui) {
     egui::CentralPanel::default()
-        .frame(egui::Frame::none().inner_margin(egui::Margin {
-            left: 32.0,
-            right: 32.0,
-            top: 28.0,
-            bottom: 0.0,
+        .frame(egui::Frame::new().inner_margin(egui::Margin {
+            left: 32,
+            right: 32,
+            top: 28,
+            bottom: 0,
         }))
-        .show(ctx, |ui| {
+        .show_inside(parent_ui, |ui| {
             egui::ScrollArea::vertical()
                 .id_salt("settings_scroll")
                 .show(ui, |ui| {
@@ -88,15 +88,15 @@ pub fn show_settings(app: &mut HubApp, ctx: &egui::Context) {
 }
 
 fn show_github_card(app: &mut HubApp, ui: &mut egui::Ui) {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(pal::SURFACE2)
         .stroke(egui::Stroke::new(1.0, pal::BORDER))
-        .rounding(egui::Rounding::same(10_f32))
+        .corner_radius(egui::CornerRadius::same(10))
         .inner_margin(egui::Margin {
-            left: 18.0,
-            right: 18.0,
-            top: 14.0,
-            bottom: 14.0,
+            left: 18,
+            right: 18,
+            top: 14,
+            bottom: 14,
         })
         .show(ui, |ui| {
             ui.set_min_width(520.0);
@@ -194,15 +194,15 @@ fn show_github_card(app: &mut HubApp, ui: &mut egui::Ui) {
 }
 
 fn show_local_repo_card(app: &mut HubApp, ui: &mut egui::Ui) {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(pal::SURFACE2)
         .stroke(egui::Stroke::new(1.0, pal::BORDER))
-        .rounding(egui::Rounding::same(10_f32))
+        .corner_radius(egui::CornerRadius::same(10))
         .inner_margin(egui::Margin {
-            left: 18.0,
-            right: 18.0,
-            top: 14.0,
-            bottom: 14.0,
+            left: 18,
+            right: 18,
+            top: 14,
+            bottom: 14,
         })
         .show(ui, |ui| {
             ui.set_min_width(520.0);

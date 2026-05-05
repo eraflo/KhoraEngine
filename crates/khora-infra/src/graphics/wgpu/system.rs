@@ -218,7 +218,13 @@ impl WgpuRenderSystem {
         }
         log::info!("WgpuRenderSystem: Initializing...");
 
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        // wgpu 29 requires the display handle to be registered with the Instance up
+        // front — surfaces created later are validated against it. Hand the window's
+        // Arc directly; it implements `HasDisplayHandle + Debug + Send + Sync + 'static`,
+        // which satisfies `wgpu::WgpuHasDisplayHandle`.
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(
+            Box::new(window_handle.clone()),
+        ));
         let backend_selector = WgpuBackendSelector::new(instance.clone());
         let selection_config = BackendSelectionConfig::default();
 

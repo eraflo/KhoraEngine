@@ -405,7 +405,9 @@ impl HubApp {
 }
 
 impl eframe::App for HubApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        let ctx = &ctx;
         theme::apply_hub_visuals(ctx);
 
         // ── Poll Engine Manager async fetch ───────────────────────────
@@ -557,22 +559,22 @@ impl eframe::App for HubApp {
             ctx.request_repaint_after(Duration::from_millis(500));
         }
 
+        // Paint global BG behind all panels (must come before the panels reserve
+        // their own space, otherwise a CentralPanel here would swallow the room
+        // the screens need to draw into).
+        ui.painter().rect_filled(ui.max_rect(), 0.0, pal::BG);
+
         // ── Top bar (44 px, brand pill + slim tabs) ───────────────────
-        self.show_topbar(ctx);
+        self.show_topbar(ui);
 
         // ── Bottom status bar (24 px, mono metrics, mirrors editor) ───
-        self.show_status_bar(ctx);
-
-        // Paint global BG behind all panels.
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.painter().rect_filled(ui.max_rect(), 0.0, pal::BG);
-        });
+        self.show_status_bar(ui);
 
         match self.screen {
-            Screen::Home => screens::show_home(self, ctx),
-            Screen::NewProject => screens::show_new_project(self, ctx),
-            Screen::EngineManager => screens::show_engine_manager(self, ctx),
-            Screen::Settings => screens::show_settings(self, ctx),
+            Screen::Home => screens::show_home(self, ui),
+            Screen::NewProject => screens::show_new_project(self, ui),
+            Screen::EngineManager => screens::show_engine_manager(self, ui),
+            Screen::Settings => screens::show_settings(self, ui),
         }
     }
 }
@@ -589,11 +591,11 @@ impl HubApp {
         }
     }
 
-    fn show_topbar(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("hub_topbar")
-            .exact_height(44.0)
-            .frame(egui::Frame::none())
-            .show(ctx, |ui| {
+    fn show_topbar(&mut self, parent_ui: &mut egui::Ui) {
+        egui::Panel::top("hub_topbar")
+            .exact_size(44.0)
+            .frame(egui::Frame::new())
+            .show_inside(parent_ui, |ui| {
                 let r = ui.max_rect();
                 // Subtle vertical gradient mirrors the editor's panel headers.
                 paint_vertical_gradient(ui.painter(), r, pal::SURFACE, pal::BG, 6);
@@ -650,15 +652,14 @@ impl HubApp {
         let (rect, _) = ui.allocate_exact_size(egui::vec2(total_w, height), egui::Sense::hover());
 
         // Pill background.
-        ui.painter().rect_filled(
-            rect,
-            egui::Rounding::same(height * 0.5),
-            tint(pal::BG, 0.55),
-        );
+        let pill_radius = egui::CornerRadius::same((height * 0.5) as u8);
+        ui.painter()
+            .rect_filled(rect, pill_radius, tint(pal::BG, 0.55));
         ui.painter().rect_stroke(
             rect,
-            egui::Rounding::same(height * 0.5),
+            pill_radius,
             egui::Stroke::new(1.0, tint(pal::BORDER, 0.6)),
+            egui::StrokeKind::Inside,
         );
 
         // Diamond + engine name on the left.
@@ -697,11 +698,11 @@ impl HubApp {
         );
     }
 
-    fn show_status_bar(&self, ctx: &egui::Context) {
-        egui::TopBottomPanel::bottom("hub_status_bar")
-            .exact_height(24.0)
-            .frame(egui::Frame::none())
-            .show(ctx, |ui| {
+    fn show_status_bar(&self, parent_ui: &mut egui::Ui) {
+        egui::Panel::bottom("hub_status_bar")
+            .exact_size(24.0)
+            .frame(egui::Frame::new())
+            .show_inside(parent_ui, |ui| {
                 let r = ui.max_rect();
                 ui.painter().rect_filled(r, 0.0, pal::SURFACE);
                 ui.painter().line_segment(
@@ -782,7 +783,7 @@ impl HubApp {
                     egui::FontId::monospace(11.0),
                     pal::TEXT_MUTED,
                 );
-                rx -= measure_text_width(ctx, &version_label, 11.0, true) + 14.0;
+                rx -= measure_text_width(ui.ctx(), &version_label, 11.0, true) + 14.0;
 
                 // GitHub status.
                 paint_v_hairline(
@@ -912,7 +913,7 @@ fn measure_text_width(ctx: &egui::Context, text: &str, size: f32, monospace: boo
     } else {
         egui::FontId::proportional(size)
     };
-    ctx.fonts(|fonts| {
+    ctx.fonts_mut(|fonts| {
         let galley = fonts.layout_no_wrap(text.to_owned(), font_id, pal::TEXT);
         galley.size().x
     })

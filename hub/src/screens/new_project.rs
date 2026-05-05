@@ -25,7 +25,7 @@ use crate::widgets::*;
 use eframe::egui;
 use std::path::PathBuf;
 
-pub fn show_new_project(app: &mut HubApp, ctx: &egui::Context) {
+pub fn show_new_project(app: &mut HubApp, parent_ui: &mut egui::Ui) {
     // Kick off a release fetch on first visit so the combo is populated.
     if !app.new_project.has_fetched_once && app.new_project.fetch_rx.is_none() {
         let (tx, rx) = std::sync::mpsc::channel();
@@ -36,7 +36,7 @@ pub fn show_new_project(app: &mut HubApp, ctx: &egui::Context) {
         });
     }
 
-    egui::CentralPanel::default().show(ctx, |ui| {
+    egui::CentralPanel::default().show_inside(parent_ui, |ui| {
         ui.add_space(28.0);
         ui.horizontal(|ui| {
             ui.add_space(32.0);
@@ -73,15 +73,15 @@ pub fn show_new_project(app: &mut HubApp, ctx: &egui::Context) {
                 ui.add_space(20.0);
 
                 // ── Form card ──────────────────────────────────────
-                egui::Frame::none()
+                egui::Frame::new()
                     .fill(pal::SURFACE2)
                     .stroke(egui::Stroke::new(1.0, pal::BORDER))
-                    .rounding(egui::Rounding::same(10_f32))
+                    .corner_radius(egui::CornerRadius::same(10))
                     .inner_margin(egui::Margin {
-                        left: 20.0,
-                        right: 20.0,
-                        top: 18.0,
-                        bottom: 18.0,
+                        left: 20,
+                        right: 20,
+                        top: 18,
+                        bottom: 18,
                     })
                     .show(ui, |ui| {
                         ui.set_min_width(520.0);
@@ -117,15 +117,15 @@ pub fn show_new_project(app: &mut HubApp, ctx: &egui::Context) {
                             } else {
                                 (egui::Color32::from_rgb(60, 20, 18), pal::ERROR)
                             };
-                            egui::Frame::none()
+                            egui::Frame::new()
                                 .fill(bg)
                                 .stroke(egui::Stroke::new(1.0, fg.gamma_multiply(0.4)))
-                                .rounding(egui::Rounding::same(5_f32))
+                                .corner_radius(egui::CornerRadius::same(5))
                                 .inner_margin(egui::Margin {
-                                    left: 10.0,
-                                    right: 10.0,
-                                    top: 6.0,
-                                    bottom: 6.0,
+                                    left: 10,
+                                    right: 10,
+                                    top: 6,
+                                    bottom: 6,
                                 })
                                 .show(ui, |ui| {
                                     ui.label(egui::RichText::new(&status).size(11.0).color(fg));
@@ -286,15 +286,15 @@ fn engine_choice_label(c: &EngineChoice) -> String {
 }
 
 fn warning_inline(ui: &mut egui::Ui, text: &str) {
-    egui::Frame::none()
+    egui::Frame::new()
         .fill(egui::Color32::from_rgb(50, 38, 18))
         .stroke(egui::Stroke::new(1.0, pal::WARNING.gamma_multiply(0.4)))
-        .rounding(egui::Rounding::same(5_f32))
+        .corner_radius(egui::CornerRadius::same(5))
         .inner_margin(egui::Margin {
-            left: 10.0,
-            right: 10.0,
-            top: 6.0,
-            bottom: 6.0,
+            left: 10,
+            right: 10,
+            top: 6,
+            bottom: 6,
         })
         .show(ui, |ui| {
             ui.label(egui::RichText::new(text).size(11.0).color(pal::WARNING));

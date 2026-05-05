@@ -23,21 +23,22 @@ enum ProjectAction {
     AskRemove(usize),
 }
 
-pub fn show_home(app: &mut HubApp, ctx: &egui::Context) {
-    show_sidebar(app, ctx);
-    show_main(app, ctx);
+pub fn show_home(app: &mut HubApp, parent_ui: &mut egui::Ui) {
+    let ctx = parent_ui.ctx().clone();
+    show_sidebar(app, parent_ui);
+    show_main(app, parent_ui);
 
     if let Some(idx) = app.home.remove_confirm {
-        show_remove_confirm_modal(app, ctx, idx);
+        show_remove_confirm_modal(app, &ctx, idx);
     }
 }
 
-fn show_sidebar(app: &mut HubApp, ctx: &egui::Context) {
-    egui::SidePanel::left("hp_sidebar")
-        .exact_width(220.0)
+fn show_sidebar(app: &mut HubApp, parent_ui: &mut egui::Ui) {
+    egui::Panel::left("hp_sidebar")
+        .exact_size(220.0)
         .resizable(false)
-        .frame(egui::Frame::none())
-        .show(ctx, |ui| {
+        .frame(egui::Frame::new())
+        .show_inside(parent_ui, |ui| {
             // Subtle gradient backdrop, like the editor's panel headers.
             let r = ui.max_rect();
             paint_vertical_gradient(ui.painter(), r, pal::SURFACE, pal::BG, 8);
@@ -134,8 +135,8 @@ fn show_sidebar(app: &mut HubApp, ctx: &egui::Context) {
         });
 }
 
-fn show_main(app: &mut HubApp, ctx: &egui::Context) {
-    egui::CentralPanel::default().show(ctx, |ui| {
+fn show_main(app: &mut HubApp, parent_ui: &mut egui::Ui) {
+    egui::CentralPanel::default().show_inside(parent_ui, |ui| {
         ui.add_space(20.0);
 
         // Banner — slim, with side accent stripe (mirrors editor logger lines).
@@ -146,15 +147,15 @@ fn show_main(app: &mut HubApp, ctx: &egui::Context) {
             } else {
                 pal::SUCCESS
             };
-            egui::Frame::none()
+            egui::Frame::new()
                 .fill(tint(fg, 0.12))
                 .stroke(egui::Stroke::new(1.0, tint(fg, 0.45)))
-                .rounding(egui::Rounding::same(5_f32))
+                .corner_radius(egui::CornerRadius::same(5))
                 .inner_margin(egui::Margin {
-                    left: 12.0,
-                    right: 10.0,
-                    top: 7.0,
-                    bottom: 7.0,
+                    left: 12,
+                    right: 10,
+                    top: 7,
+                    bottom: 7,
                 })
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
@@ -299,15 +300,15 @@ fn show_main(app: &mut HubApp, ctx: &egui::Context) {
                     pal::PRIMARY_DIM
                 };
 
-                let frame_resp = egui::Frame::none()
+                let frame_resp = egui::Frame::new()
                     .fill(card_fill)
                     .stroke(egui::Stroke::new(1.0, card_border))
-                    .rounding(egui::Rounding::same(6_f32))
+                    .corner_radius(egui::CornerRadius::same(6))
                     .inner_margin(egui::Margin {
-                        left: 0.0,
-                        right: 12.0,
-                        top: 10.0,
-                        bottom: 10.0,
+                        left: 0,
+                        right: 12,
+                        top: 10,
+                        bottom: 10,
                     })
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
@@ -315,7 +316,7 @@ fn show_main(app: &mut HubApp, ctx: &egui::Context) {
                             let (stripe, _) =
                                 ui.allocate_exact_size(egui::vec2(3.0, 56.0), egui::Sense::hover());
                             ui.painter()
-                                .rect_filled(stripe, egui::Rounding::same(2.0), accent);
+                                .rect_filled(stripe, egui::CornerRadius::same(2), accent);
                             ui.add_space(14.0);
 
                             // Diamond mark, vertically centered against the row.
@@ -379,11 +380,11 @@ fn show_main(app: &mut HubApp, ctx: &egui::Context) {
                 if hovered_now {
                     if app.home.hovered != Some(*src_idx) {
                         app.home.hovered = Some(*src_idx);
-                        ctx.request_repaint();
+                        ui.ctx().request_repaint();
                     }
                 } else if app.home.hovered == Some(*src_idx) {
                     app.home.hovered = None;
-                    ctx.request_repaint();
+                    ui.ctx().request_repaint();
                 }
 
                 ui.add_space(8.0);
@@ -418,7 +419,7 @@ fn show_remove_confirm_modal(app: &mut HubApp, ctx: &egui::Context, idx: usize) 
         .resizable(false)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .frame(
-            egui::Frame::window(&ctx.style())
+            egui::Frame::window(&ctx.global_style())
                 .fill(pal::SURFACE2)
                 .stroke(egui::Stroke::new(1.0, pal::BORDER_LIGHT)),
         )

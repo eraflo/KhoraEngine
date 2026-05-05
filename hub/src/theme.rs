@@ -78,60 +78,60 @@ pub fn apply_hub_visuals(ctx: &egui::Context) {
 
     // ── Window chrome ────────────────────────────────
     visuals.window_shadow = egui::epaint::Shadow {
-        offset: egui::Vec2::new(0.0, 8.0),
-        blur: 24.0,
-        spread: 0.0,
+        offset: [0, 8],
+        blur: 24,
+        spread: 0,
         color: egui::Color32::from_black_alpha(140),
     };
     visuals.window_stroke = egui::Stroke::new(1.0, pal::BORDER);
     visuals.popup_shadow = egui::epaint::Shadow {
-        offset: egui::Vec2::new(0.0, 4.0),
-        blur: 12.0,
-        spread: 0.0,
+        offset: [0, 4],
+        blur: 12,
+        spread: 0,
         color: egui::Color32::from_black_alpha(110),
     };
 
     // ── Widget radii (matches editor `radius_md = 6.0`) ──
-    let cr = egui::Rounding::same(5_f32);
+    let cr = egui::CornerRadius::same(5);
 
     visuals.widgets.noninteractive.bg_fill = pal::SURFACE;
     visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, pal::TEXT_DIM);
-    visuals.widgets.noninteractive.rounding = cr;
+    visuals.widgets.noninteractive.corner_radius = cr;
     visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(0.5, pal::SEPARATOR);
 
     visuals.widgets.inactive.bg_fill = pal::SURFACE3;
     visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, pal::TEXT);
-    visuals.widgets.inactive.rounding = cr;
+    visuals.widgets.inactive.corner_radius = cr;
     visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, pal::BORDER);
 
     visuals.widgets.hovered.bg_fill = pal::SURFACE_ACTIVE;
     visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, pal::TEXT);
-    visuals.widgets.hovered.rounding = cr;
+    visuals.widgets.hovered.corner_radius = cr;
     visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, pal::BORDER_LIGHT);
 
     visuals.widgets.active.bg_fill = pal::PRIMARY.gamma_multiply(0.32);
     visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5, pal::TEXT);
-    visuals.widgets.active.rounding = cr;
+    visuals.widgets.active.corner_radius = cr;
     visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, pal::PRIMARY);
 
     visuals.widgets.open.bg_fill = pal::SURFACE2;
     visuals.widgets.open.fg_stroke = egui::Stroke::new(1.0, pal::TEXT);
-    visuals.widgets.open.rounding = cr;
+    visuals.widgets.open.corner_radius = cr;
 
-    visuals.menu_rounding = egui::Rounding::same(4_f32);
+    visuals.menu_corner_radius = egui::CornerRadius::same(4);
     visuals.striped = false;
     visuals.slider_trailing_fill = true;
 
     ctx.set_visuals(visuals);
 
     // ── Spacing & sizing (tracks editor `pad_row = 8`, `pad_card = 14`) ──
-    let mut style = (*ctx.style()).clone();
+    let mut style = (*ctx.global_style()).clone();
     style.spacing.item_spacing = egui::vec2(6.0, 6.0);
     style.spacing.button_padding = egui::vec2(10.0, 6.0);
     style.spacing.indent = 14.0;
     style.spacing.scroll.bar_width = 8.0;
-    style.spacing.window_margin = egui::Margin::same(8.0);
-    style.spacing.menu_margin = egui::Margin::symmetric(8.0, 6.0);
+    style.spacing.window_margin = egui::Margin::same(8);
+    style.spacing.menu_margin = egui::Margin::symmetric(8, 6);
 
     // Force every text style to an integer size — fractional sizes (e.g.
     // 12.5 px) sample glyphs at non-pixel-aligned positions on most DPI
@@ -139,5 +139,5 @@ pub fn apply_hub_visuals(ctx: &egui::Context) {
     for (_, font) in style.text_styles.iter_mut() {
         font.size = font.size.round().max(12.0);
     }
-    ctx.set_style(style);
+    ctx.set_global_style(style);
 }

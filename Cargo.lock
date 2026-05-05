@@ -2592,7 +2592,7 @@ dependencies = [
  "anyhow",
  "dirs",
  "eframe",
- "egui 0.33.3",
+ "egui 0.34.2",
  "env_logger",
  "image",
  "log",
