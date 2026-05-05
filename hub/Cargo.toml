@@ -11,7 +11,7 @@ path = "src/main.rs"
 [dependencies]
 # UI framework (standalone egui app — completely independent of the engine)
 eframe = { version = "0.30", default-features = false, features = ["default_fonts", "wgpu"] }
-egui = "0.30"
+egui = "0.33"
 
 # HTTP client for GitHub releases API
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
