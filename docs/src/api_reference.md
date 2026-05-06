@@ -59,13 +59,7 @@ The published reference at [eraflo.github.io/KhoraEngine/api](https://eraflo.git
 cargo doc --workspace --no-deps --open
 ```
 
-The output lands under `target/doc/`. To bundle the workspace docs alongside the mdBook output (the way CI does it), the project's `xtask` provides a single command:
-
-```bash
-cargo xtask docs
-```
-
-This builds the mdBook into `docs/book/` and the rustdoc into `docs/book/api/`, ready to publish as one site.
+The output lands under `target/doc/`. The combined site (mdBook + rustdoc mounted under `/api`) is assembled by `.github/workflows/docs.yml` on every push to `main` — there is no local one-shot command that mirrors it.
 
 ---
 
