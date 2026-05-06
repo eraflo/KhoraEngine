@@ -12,98 +12,246 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Scene serialization and project-asset scanning helpers.
+//! Scene serialization helpers.
+//!
+//! All scene I/O is **project-relative when possible** — saves and loads route
+//! through [`crate::project_vfs::ProjectVfs`] so the editor uses the same
+//! `AssetService` + `FileLoader` contract as a future runtime. The "Save As" /
+//! "Open" file-dialog flows still accept arbitrary paths (that's intentional —
+//! you might want to open a scene from outside the current project) and fall
+//! back to direct `std::fs` only in that case.
 
-use crate::util::{bytemuck_transform, unbytemuck_transform};
-use khora_sdk::editor_ui::AssetEntry;
+use crate::project_vfs::ProjectVfs;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::math::{LinearRgba, Vec3};
 use khora_sdk::{GameWorld, SceneFile, SerializationGoal, SerializationService};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-/// Serializes all entity transforms into a binary snapshot for play-mode restore.
+/// Canonical relative path of the auto-created default scene.
+pub const DEFAULT_SCENE_REL: &str = "scenes/default.kscene";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Play-mode snapshot — full-world capture via SerializationService.
+//
+// Routed through `SerializationService::FastestLoad` (the Archetype strategy)
+// because the snapshot is throw-away in-memory bytes: write/read latency
+// dominates, file size and human-readability don't matter. The previous
+// hand-rolled binary format only captured `Transform` and silently dropped
+// every other component during the play→stop cycle.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Serializes the entire world to an in-memory byte buffer for play-mode
+/// restore. Returns an empty `Vec` on failure (caller logs and proceeds —
+/// the worst case is "Stop button leaves the live state in place", which is
+/// preferable to a panic mid-play).
 pub fn snapshot_scene(world: &GameWorld) -> Vec<u8> {
-    let entities: Vec<EntityId> = world.iter_entities().collect();
-    let mut data: Vec<u8> = Vec::new();
-
-    let count = entities.len() as u32;
-    data.extend_from_slice(&count.to_le_bytes());
-
-    for &entity in &entities {
-        data.extend_from_slice(&entity.index.to_le_bytes());
-        data.extend_from_slice(&entity.generation.to_le_bytes());
-
-        if let Some(t) = world.get_component::<Transform>(entity) {
-            data.push(1);
-            data.extend_from_slice(&bytemuck_transform(t));
-        } else {
-            data.push(0);
+    let svc = SerializationService::new();
+    match svc.save_world(world.inner_world(), SerializationGoal::FastestLoad) {
+        Ok(scene) => scene.to_bytes(),
+        Err(e) => {
+            log::error!("Play-mode snapshot failed: {:?}", e);
+            Vec::new()
         }
     }
-
-    data
 }
 
-/// Restores entity transforms from a binary snapshot.
+/// Restores the world from a snapshot produced by [`snapshot_scene`].
+///
+/// Despawns every existing entity before deserializing — the live world after
+/// gameplay may have spawned new entities or destroyed old ones, so we
+/// rebuild from the snapshot rather than diff against it.
 pub fn restore_scene(world: &mut GameWorld, snapshot: &[u8]) {
-    if snapshot.len() < 4 {
+    if snapshot.is_empty() {
         return;
     }
-
-    let count = u32::from_le_bytes([snapshot[0], snapshot[1], snapshot[2], snapshot[3]]) as usize;
-    let mut offset = 4;
-
-    for _ in 0..count {
-        if offset + 8 > snapshot.len() {
-            break;
+    let scene = match SceneFile::from_bytes(snapshot) {
+        Ok(f) => f,
+        Err(e) => {
+            log::error!("Play-mode restore: invalid snapshot: {:?}", e);
+            return;
         }
+    };
 
-        let index = u32::from_le_bytes([
-            snapshot[offset],
-            snapshot[offset + 1],
-            snapshot[offset + 2],
-            snapshot[offset + 3],
-        ]);
-        let generation = u32::from_le_bytes([
-            snapshot[offset + 4],
-            snapshot[offset + 5],
-            snapshot[offset + 6],
-            snapshot[offset + 7],
-        ]);
-        offset += 8;
+    let all: Vec<_> = world.iter_entities().collect();
+    for e in all {
+        world.despawn(e);
+    }
 
-        let entity = EntityId { index, generation };
+    let svc = SerializationService::new();
+    if let Err(e) = svc.load_world(&scene, world.inner_world_mut()) {
+        log::error!("Play-mode restore failed: {:?}", e);
+    }
+}
 
-        if offset >= snapshot.len() {
-            break;
+// ─────────────────────────────────────────────────────────────────────────────
+// Project-relative saves and loads — primary path used by Save / Open / auto-load
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Serializes the current world to a `.kscene` file at `rel_path` (relative
+/// to the project's `assets/` root) via the project's `AssetService`. Re-
+/// indexes on success so the new scene is immediately resolvable by UUID.
+pub fn save_scene_in_project(pvfs: &mut ProjectVfs, world: &GameWorld, rel_path: &Path) -> bool {
+    let agent = SerializationService::new();
+    let scene_file =
+        match agent.save_world(world.inner_world(), SerializationGoal::EditorInterchange) {
+            Ok(f) => f,
+            Err(e) => {
+                log::error!("Failed to serialize scene: {:?}", e);
+                return false;
+            }
+        };
+    let bytes = scene_file.to_bytes();
+    if let Err(e) = pvfs.write_asset(rel_path, &bytes) {
+        log::error!("Failed to write scene to {:?}: {:#}", rel_path, e);
+        return false;
+    }
+    if let Err(e) = pvfs.rebuild_index() {
+        log::warn!("Scene saved but index rebuild failed: {:#}", e);
+    }
+    log::info!(
+        "Scene saved to '{}' ({} bytes) via ProjectVfs",
+        rel_path.display(),
+        bytes.len()
+    );
+    true
+}
+
+/// Loads a scene by its relative path under `<project>/assets/` via the
+/// project's `AssetService::load_raw`. Falls back to a fresh reindex + retry
+/// once if the path isn't yet known to the VFS (e.g. just-saved).
+pub fn load_scene_in_project(
+    pvfs: &mut ProjectVfs,
+    world: &mut GameWorld,
+    rel_path_fwd_slash: &str,
+) -> bool {
+    let uuid = ProjectVfs::uuid_for_rel_path(rel_path_fwd_slash);
+
+    // Try the existing index first; if absent, reindex once and retry.
+    let bytes = match pvfs.asset_service.load_raw(&uuid) {
+        Ok(b) => b,
+        Err(_) => {
+            if let Err(e) = pvfs.rebuild_index() {
+                log::error!(
+                    "Failed to rebuild index while resolving '{}': {:#}",
+                    rel_path_fwd_slash,
+                    e
+                );
+                return false;
+            }
+            match pvfs.asset_service.load_raw(&uuid) {
+                Ok(b) => b,
+                Err(e) => {
+                    log::error!(
+                        "Failed to load scene '{}' from ProjectVfs: {:#}",
+                        rel_path_fwd_slash,
+                        e
+                    );
+                    return false;
+                }
+            }
         }
+    };
 
-        let has_transform = snapshot[offset];
-        offset += 1;
+    let scene_file = match SceneFile::from_bytes(&bytes) {
+        Ok(f) => f,
+        Err(e) => {
+            log::error!("Invalid scene file '{}': {:?}", rel_path_fwd_slash, e);
+            return false;
+        }
+    };
 
-        if has_transform == 1 {
-            if offset + 40 > snapshot.len() {
-                break;
-            }
+    // Despawn current world before deserializing.
+    let all_entities: Vec<_> = world.iter_entities().collect();
+    for entity in all_entities {
+        world.despawn(entity);
+    }
 
-            let transform = unbytemuck_transform(&snapshot[offset..offset + 40]);
-            offset += 40;
-
-            if let Some(existing) = world.get_component_mut::<Transform>(entity) {
-                *existing = transform;
-            }
+    let agent = SerializationService::new();
+    match agent.load_world(&scene_file, world.inner_world_mut()) {
+        Ok(()) => {
+            log::info!(
+                "Scene loaded from '{}' ({} bytes) via ProjectVfs",
+                rel_path_fwd_slash,
+                bytes.len()
+            );
+            true
+        }
+        Err(e) => {
+            log::error!(
+                "Failed to deserialize scene '{}': {:?}",
+                rel_path_fwd_slash,
+                e
+            );
+            false
         }
     }
 }
 
-/// Serializes the current scene to a KHORASCN file at the given path.
-pub fn save_scene_to(world: &GameWorld, path: &str) {
+/// Auto-loads the project's default scene (`assets/scenes/default.kscene`),
+/// creating it from a Camera + Light template if it doesn't exist yet.
+pub fn auto_load_or_create_default_scene(pvfs: &mut ProjectVfs, world: &mut GameWorld) {
+    let rel = DEFAULT_SCENE_REL;
+    let abs = pvfs.assets_root.join(Path::new(rel));
+    if abs.exists() {
+        load_scene_in_project(pvfs, world, rel);
+    } else {
+        create_default_scene_in_project(pvfs, world, rel);
+    }
+}
+
+/// Spawns Main Camera + Directional Light entities, then saves the world to
+/// the relative path inside the project (default `scenes/default.kscene`).
+fn create_default_scene_in_project(pvfs: &mut ProjectVfs, world: &mut GameWorld, rel_path: &str) {
+    world.spawn((
+        Transform {
+            translation: Vec3::new(0.0, 5.0, 10.0),
+            ..Default::default()
+        },
+        GlobalTransform::identity(),
+        Camera::default(),
+        Name("Main Camera".to_string()),
+    ));
+
+    world.spawn((
+        Transform {
+            translation: Vec3::new(0.0, 10.0, 0.0),
+            ..Default::default()
+        },
+        GlobalTransform::identity(),
+        Light::new(LightType::Directional(DirectionalLight {
+            direction: Vec3::new(-0.4, -0.8, -0.45),
+            color: LinearRgba::WHITE,
+            intensity: 1.0,
+            ..Default::default()
+        })),
+        Name("Directional Light".to_string()),
+    ));
+
+    if !save_scene_in_project(pvfs, world, Path::new(rel_path)) {
+        log::error!("Failed to seed default scene at '{}'", rel_path);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Arbitrary-path fallback — for File→Save As / Open dialogs that target a
+// location outside the current project. Bypasses the VFS by design.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Serializes the world to a `.kscene` at an absolute path. Used by the
+/// "Save As..." dialog when the user picks a destination outside
+/// `<project>/assets/`. Logs a warning so the divergence from VFS-managed
+/// I/O is visible.
+pub fn save_scene_to_path(world: &GameWorld, path: &str) {
     let agent = SerializationService::new();
     match agent.save_world(world.inner_world(), SerializationGoal::EditorInterchange) {
         Ok(scene_file) => {
             let bytes = scene_file.to_bytes();
             match std::fs::write(path, &bytes) {
-                Ok(()) => log::info!("Scene saved to '{}' ({} bytes)", path, bytes.len()),
+                Ok(()) => log::warn!(
+                    "Scene saved to '{}' ({} bytes) — outside project, not VFS-managed.",
+                    path,
+                    bytes.len()
+                ),
                 Err(e) => log::error!("Failed to write scene file '{}': {}", path, e),
             }
         }
@@ -111,8 +259,9 @@ pub fn save_scene_to(world: &GameWorld, path: &str) {
     }
 }
 
-/// Loads a KHORASCN file from disk and replaces the current scene.
-pub fn load_scene_from(world: &mut GameWorld, path: &str) -> bool {
+/// Loads a scene from an absolute path. Used by the "Open..." dialog when
+/// the user picks a file outside `<project>/assets/`.
+pub fn load_scene_from_path(world: &mut GameWorld, path: &str) -> bool {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) => {
@@ -137,7 +286,11 @@ pub fn load_scene_from(world: &mut GameWorld, path: &str) -> bool {
     let agent = SerializationService::new();
     match agent.load_world(&scene_file, world.inner_world_mut()) {
         Ok(()) => {
-            log::info!("Scene loaded from '{}' ({} bytes)", path, bytes.len());
+            log::warn!(
+                "Scene loaded from '{}' ({} bytes) — outside project, not VFS-managed.",
+                path,
+                bytes.len()
+            );
             true
         }
         Err(e) => {
@@ -147,122 +300,19 @@ pub fn load_scene_from(world: &mut GameWorld, path: &str) -> bool {
     }
 }
 
-/// Returns the path to `assets/scenes/default.kscene` for the given project root.
-pub fn default_scene_path(project_root: &Path) -> PathBuf {
-    project_root
-        .join("assets")
-        .join("scenes")
-        .join("default.kscene")
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// Path utilities
+// ─────────────────────────────────────────────────────────────────────────────
 
-/// Auto-loads the default scene for a project, or creates one if it doesn't exist.
-///
-/// Called once during editor setup when a project is opened.
-pub fn auto_load_or_create_default_scene(world: &mut GameWorld, project_root: &Path) {
-    let scene_path = default_scene_path(project_root);
-
-    if scene_path.exists() {
-        let path_str = scene_path.to_string_lossy().to_string();
-        load_scene_from(world, &path_str);
-    } else {
-        create_default_scene(world, &scene_path);
-    }
-}
-
-/// Creates a default scene (Camera + Light) and saves it to disk.
-fn create_default_scene(world: &mut GameWorld, path: &Path) {
-    // Spawn default entities
-    let camera_transform = Transform {
-        translation: Vec3::new(0.0, 5.0, 10.0),
-        ..Default::default()
-    };
-    world.spawn((
-        camera_transform,
-        GlobalTransform::identity(),
-        Camera::default(),
-        Name("Main Camera".to_string()),
-    ));
-
-    let light_transform = Transform {
-        translation: Vec3::new(0.0, 10.0, 0.0),
-        ..Default::default()
-    };
-    world.spawn((
-        light_transform,
-        GlobalTransform::identity(),
-        Light::new(LightType::Directional(DirectionalLight {
-            direction: Vec3::new(-0.4, -0.8, -0.45),
-            color: LinearRgba::WHITE,
-            intensity: 1.0,
-            ..Default::default()
-        })),
-        Name("Directional Light".to_string()),
-    ));
-
-    // Save to disk
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-
-    let service = SerializationService::new();
-    match service.save_world(world.inner_world(), SerializationGoal::EditorInterchange) {
-        Ok(scene_file) => {
-            let bytes = scene_file.to_bytes();
-            match std::fs::write(path, &bytes) {
-                Ok(()) => {
-                    log::info!(
-                        "Default scene created at '{}' ({} bytes)",
-                        path.display(),
-                        bytes.len()
-                    );
-                }
-                Err(e) => log::error!("Failed to write default scene: {}", e),
-            }
-        }
-        Err(e) => log::error!("Failed to serialize default scene: {:?}", e),
-    }
-}
-
-/// Recursively scans a project folder and returns recognized asset entries.
-pub fn scan_project_folder(root: &std::path::Path) -> Vec<AssetEntry> {
-    let mut entries = Vec::new();
-    scan_dir(root, &mut entries);
-    entries.sort_by(|a, b| a.name.cmp(&b.name));
-    entries
-}
-
-fn scan_dir(dir: &std::path::Path, entries: &mut Vec<AssetEntry>) {
-    let read = match std::fs::read_dir(dir) {
-        Ok(read) => read,
-        Err(_) => return,
-    };
-
-    for entry in read.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            scan_dir(&path, entries);
-        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            let asset_type = match ext.to_lowercase().as_str() {
-                "gltf" | "glb" | "obj" | "fbx" => "Mesh",
-                "png" | "jpg" | "jpeg" | "tga" | "bmp" | "hdr" => "Texture",
-                "wav" | "ogg" | "mp3" | "flac" => "Audio",
-                "wgsl" | "hlsl" | "glsl" => "Shader",
-                "ttf" | "otf" => "Font",
-                "scene" | "kscene" => "Scene",
-                "mat" | "kmat" => "Material",
-                _ => continue,
-            };
-
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-
-            entries.push(AssetEntry {
-                name,
-                asset_type: asset_type.to_owned(),
-                source_path: path.to_string_lossy().to_string(),
-            });
-        }
-    }
+/// If `abs_path` lives under `<project>/assets/`, returns the relative path
+/// in forward-slash form ready for [`load_scene_in_project`]. Otherwise
+/// returns `None` — callers should fall back to [`load_scene_from_path`].
+pub fn rel_inside_project(abs_path: &Path, assets_root: &Path) -> Option<String> {
+    let rel = abs_path.strip_prefix(assets_root).ok()?;
+    Some(
+        rel.components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("/"),
+    )
 }

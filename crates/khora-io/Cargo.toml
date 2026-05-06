@@ -30,5 +30,15 @@ gltf = { version = "1.0", features = ["import"] }
 hound = "3.5"
 symphonia = { version = "0.5", features = ["all-formats", "all-codecs"] }
 
+# Asset auto-registration via inventory (mirrors MaterialRegistration in khora-data)
+inventory = "0.3"
+
+# Filesystem watching for hot-reload (cross-platform: inotify/FSEvents/RDCW)
+notify = "6"
+crossbeam-channel = "0.5"
+
+# Stable sorting / hashing helpers used by IndexBuilder (forward-slash rel paths)
+walkdir = "2.5"
+
 [dev-dependencies]
 tempfile = "3.25.0"

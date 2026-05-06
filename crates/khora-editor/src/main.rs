@@ -21,6 +21,7 @@ mod mod_agents;
 mod mod_gizmo;
 mod ops;
 mod panels;
+mod project_vfs;
 mod scene_io;
 mod theme;
 mod util;
@@ -29,7 +30,7 @@ mod widgets;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use khora_sdk::editor_ui::viewport_texture::ViewportTextureHandle;
+use khora_sdk::editor_ui::{viewport_texture::ViewportTextureHandle, AssetEntry};
 use khora_sdk::khora_core::platform::KhoraWindow;
 use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
 use khora_sdk::khora_core::ui::{EditorOverlay, OverlayScreenDescriptor};
@@ -95,9 +96,49 @@ struct EditorApp {
     /// active scene `Camera` exists (i.e. Editing mode). Updated each frame
     /// in `before_agents` from the editor's free camera.
     viewport_override: khora_sdk::khora_data::render::EditorViewportOverride,
+    /// Project-scoped VFS — instantiated in `setup` once the project path
+    /// resolves. All scene I/O, asset enumeration and hot-reload routes
+    /// through this. `None` when the editor was launched without a project
+    /// (rare; the hub always passes `--project`).
+    project_vfs: Option<Arc<Mutex<project_vfs::ProjectVfs>>>,
 }
 
 impl EditorApp {
+    /// Save dispatch: routes through the project VFS when the target path
+    /// lives under `<project>/assets/`, falls back to direct `std::fs` for
+    /// arbitrary out-of-project Save-As destinations.
+    fn save_scene_dispatch(&self, world: &GameWorld, path_str: &str) {
+        let abs = std::path::Path::new(path_str);
+        if let Some(pvfs_arc) = self.project_vfs.as_ref() {
+            if let Ok(mut pvfs) = pvfs_arc.lock() {
+                let assets_root = pvfs.assets_root.clone();
+                if let Some(rel_fwd) = scene_io::rel_inside_project(abs, &assets_root) {
+                    let _ = scene_io::save_scene_in_project(
+                        &mut pvfs,
+                        world,
+                        std::path::Path::new(&rel_fwd),
+                    );
+                    return;
+                }
+            }
+        }
+        scene_io::save_scene_to_path(world, path_str);
+    }
+
+    /// Load dispatch: same shape as `save_scene_dispatch`.
+    fn load_scene_dispatch(&self, world: &mut GameWorld, abs: &std::path::Path) {
+        if let Some(pvfs_arc) = self.project_vfs.as_ref() {
+            if let Ok(mut pvfs) = pvfs_arc.lock() {
+                let assets_root = pvfs.assets_root.clone();
+                if let Some(rel_fwd) = scene_io::rel_inside_project(abs, &assets_root) {
+                    scene_io::load_scene_in_project(&mut pvfs, world, &rel_fwd);
+                    return;
+                }
+            }
+        }
+        scene_io::load_scene_from_path(world, &abs.to_string_lossy());
+    }
+
     fn process_menu_actions(&mut self, world: &mut GameWorld) {
         let wants_browse = self
             .editor_state
@@ -108,7 +149,43 @@ impl EditorApp {
 
         if wants_browse {
             if let Some(path) = rfd::FileDialog::new().pick_folder() {
-                let entries = scene_io::scan_project_folder(&path);
+                // Browsing a project folder mid-session: rebuild the VFS
+                // pointed at the new location. This drops any in-flight
+                // hot-reload events for the previous root, which is fine —
+                // the new ProjectVfs::open re-scans from scratch.
+                let metrics = std::sync::Arc::new(khora_sdk::MetricsRegistry::new());
+                let entries = match project_vfs::ProjectVfs::open(path.clone(), metrics) {
+                    Ok(pvfs) => {
+                        let entries: Vec<AssetEntry> = pvfs
+                            .asset_service
+                            .vfs()
+                            .iter_all()
+                            .map(|m| {
+                                let rel_str = m.source_path.to_string_lossy().to_string();
+                                let name = m
+                                    .source_path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| rel_str.clone());
+                                AssetEntry {
+                                    name,
+                                    asset_type: m.asset_type_name.clone(),
+                                    source_path: rel_str,
+                                }
+                            })
+                            .collect();
+                        self.project_vfs = Some(Arc::new(Mutex::new(pvfs)));
+                        entries
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Failed to open ProjectVfs for '{}': {:#}",
+                            path.display(),
+                            e
+                        );
+                        Vec::new()
+                    }
+                };
                 if let Ok(mut state) = self.editor_state.lock() {
                     state.project_folder = Some(path.to_string_lossy().to_string());
                     state.asset_entries = entries;
@@ -222,13 +299,13 @@ impl EditorApp {
                         .ok()
                         .and_then(|s| s.current_scene_path.clone());
                     if let Some(path) = path {
-                        scene_io::save_scene_to(world, &path);
+                        self.save_scene_dispatch(world, &path);
                     } else if let Some(path) = rfd::FileDialog::new()
                         .add_filter("Khora Scene", &["kscene"])
                         .save_file()
                     {
                         let path = path.to_string_lossy().to_string();
-                        scene_io::save_scene_to(world, &path);
+                        self.save_scene_dispatch(world, &path);
                         if let Ok(mut state) = self.editor_state.lock() {
                             state.current_scene_path = Some(path);
                         }
@@ -240,7 +317,7 @@ impl EditorApp {
                         .save_file()
                     {
                         let path = path.to_string_lossy().to_string();
-                        scene_io::save_scene_to(world, &path);
+                        self.save_scene_dispatch(world, &path);
                         if let Ok(mut state) = self.editor_state.lock() {
                             state.current_scene_path = Some(path);
                         }
@@ -251,10 +328,10 @@ impl EditorApp {
                         .add_filter("Khora Scene", &["kscene"])
                         .pick_file()
                     {
-                        let path = path.to_string_lossy().to_string();
-                        scene_io::load_scene_from(world, &path);
+                        let path_str = path.to_string_lossy().to_string();
+                        self.load_scene_dispatch(world, &path);
                         if let Ok(mut state) = self.editor_state.lock() {
-                            state.current_scene_path = Some(path);
+                            state.current_scene_path = Some(path_str);
                             state.clear_selection();
                             state.inspected = None;
                         }
@@ -328,6 +405,7 @@ impl EngineApp for EditorApp {
             last_cursor_pos: None,
             last_frame_time: Instant::now(),
             viewport_override: khora_sdk::khora_data::render::EditorViewportOverride::new(),
+            project_vfs: None,
         }
     }
 
@@ -464,48 +542,103 @@ impl EngineApp for EditorApp {
         if let Some(Some(project_path)) = PROJECT_PATH.get() {
             let path = std::path::PathBuf::from(project_path);
             if path.exists() {
-                let entries = scene_io::scan_project_folder(&path);
+                // Build the project-scoped VFS. This recursively scans the
+                // assets directory, builds a stable in-memory UUID index,
+                // registers all decoders, and arms the filesystem watcher.
+                let metrics = std::sync::Arc::new(khora_sdk::MetricsRegistry::new());
+                match project_vfs::ProjectVfs::open(path.clone(), metrics) {
+                    Ok(mut pvfs) => {
+                        // Read project metadata via the VFS helper instead of
+                        // a raw `std::fs::read_to_string`.
+                        let project_json: Option<serde_json::Value> = pvfs.read_project_json().ok();
+                        let project_name = project_json
+                            .as_ref()
+                            .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from));
+                        let project_engine_version = project_json.as_ref().and_then(|v| {
+                            v.get("engine_version")
+                                .and_then(|n| n.as_str())
+                                .map(String::from)
+                        });
 
-                let project_json: Option<serde_json::Value> =
-                    std::fs::read_to_string(path.join("project.json"))
-                        .ok()
-                        .and_then(|json| serde_json::from_str(&json).ok());
-                let project_name = project_json
-                    .as_ref()
-                    .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from));
-                let project_engine_version = project_json.as_ref().and_then(|v| {
-                    v.get("engine_version")
-                        .and_then(|n| n.as_str())
-                        .map(String::from)
-                });
+                        // Build the asset browser cache from the VFS instead
+                        // of a parallel filesystem walk.
+                        let entries: Vec<AssetEntry> = pvfs
+                            .asset_service
+                            .vfs()
+                            .iter_all()
+                            .map(|m| {
+                                let rel_str = m.source_path.to_string_lossy().to_string();
+                                let name = m
+                                    .source_path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| rel_str.clone());
+                                AssetEntry {
+                                    name,
+                                    asset_type: m.asset_type_name.clone(),
+                                    source_path: rel_str,
+                                }
+                            })
+                            .collect();
 
-                let git_branch = util::read_git_branch(&path);
+                        let git_branch = util::read_git_branch(&path);
 
-                if let Ok(mut state) = self.editor_state.lock() {
-                    state.project_folder = Some(path.to_string_lossy().to_string());
-                    state.project_name = project_name.clone();
-                    state.project_engine_version = project_engine_version.clone();
-                    state.asset_entries = entries;
-                    state.current_git_branch = git_branch.clone();
-                    log::info!(
-                        "Opened project '{}' from CLI: '{}' ({} assets, git: {}, engine: {})",
-                        project_name.as_deref().unwrap_or("<unknown>"),
-                        path.display(),
-                        state.asset_entries.len(),
-                        git_branch.as_deref().unwrap_or("none"),
-                        project_engine_version.as_deref().unwrap_or("<unknown>")
-                    );
+                        if let Ok(mut state) = self.editor_state.lock() {
+                            state.project_folder = Some(path.to_string_lossy().to_string());
+                            state.project_name = project_name.clone();
+                            state.project_engine_version = project_engine_version.clone();
+                            state.asset_entries = entries;
+                            state.current_git_branch = git_branch.clone();
+                            log::info!(
+                                "Opened project '{}' from CLI: '{}' ({} assets, git: {}, engine: {})",
+                                project_name.as_deref().unwrap_or("<unknown>"),
+                                path.display(),
+                                state.asset_entries.len(),
+                                git_branch.as_deref().unwrap_or("none"),
+                                project_engine_version.as_deref().unwrap_or("<unknown>")
+                            );
+                        }
+
+                        // Auto-load (or create) the default scene through the
+                        // VFS so the new file shows up in the next index.
+                        scene_io::auto_load_or_create_default_scene(&mut pvfs, world);
+
+                        // Refresh the asset browser cache after the
+                        // potential default-scene seed.
+                        let entries: Vec<AssetEntry> = pvfs
+                            .asset_service
+                            .vfs()
+                            .iter_all()
+                            .map(|m| {
+                                let rel_str = m.source_path.to_string_lossy().to_string();
+                                let name = m
+                                    .source_path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| rel_str.clone());
+                                AssetEntry {
+                                    name,
+                                    asset_type: m.asset_type_name.clone(),
+                                    source_path: rel_str,
+                                }
+                            })
+                            .collect();
+                        if let Ok(mut state) = self.editor_state.lock() {
+                            state.asset_entries = entries;
+                        }
+
+                        self.project_vfs = Some(Arc::new(Mutex::new(pvfs)));
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Failed to open ProjectVfs for '{}': {:#}",
+                            path.display(),
+                            e
+                        );
+                    }
                 }
             } else {
                 log::warn!("--project path does not exist: {}", project_path);
-            }
-        }
-
-        // Auto-load the default scene, or create one if it doesn't exist.
-        if let Some(project_path) = PROJECT_PATH.get().and_then(|p| p.as_ref()) {
-            let project_root = std::path::Path::new(project_path);
-            if project_root.exists() {
-                scene_io::auto_load_or_create_default_scene(world, project_root);
             }
         }
     }
@@ -518,7 +651,8 @@ impl EngineApp for EditorApp {
             .ok()
             .and_then(|mut s| s.pending_scene_load.take());
         if let Some(path) = pending_load {
-            scene_io::load_scene_from(world, &path);
+            let abs = std::path::PathBuf::from(&path);
+            self.load_scene_dispatch(world, &abs);
             if let Ok(mut state) = self.editor_state.lock() {
                 state.current_scene_path = Some(path);
             }
@@ -873,6 +1007,87 @@ impl EngineApp for EditorApp {
     }
 
     fn before_agents(&mut self, world: &mut GameWorld, services: &ServiceRegistry) {
+        // ── Hot-reload pump ───────────────────────────────────────────────
+        // Drain pending filesystem-change events from the project watcher,
+        // invalidate the AssetService cache for modified UUIDs, and reindex
+        // when files were added or removed. The asset browser refreshes off
+        // a dirty flag; the renderer picks up the new assets on the next
+        // load. This block runs first in the frame so subsequent agents see
+        // a coherent VFS.
+        if let Some(pvfs_arc) = self.project_vfs.as_ref().cloned() {
+            if let Ok(mut pvfs) = pvfs_arc.lock() {
+                let events = pvfs.poll_changes();
+                if !events.is_empty() {
+                    use khora_sdk::AssetChangeKind;
+                    use std::collections::HashMap;
+
+                    // Coalesce per-uuid (last event wins) — saves often
+                    // produce flurries of Modified events that should
+                    // collapse to a single invalidation.
+                    let mut by_uuid: HashMap<_, _> = HashMap::new();
+                    for e in events {
+                        by_uuid.insert(e.uuid, e);
+                    }
+
+                    let mut needs_reindex = false;
+                    for (uuid, ev) in &by_uuid {
+                        match ev.kind {
+                            AssetChangeKind::Modified => {
+                                let dropped = pvfs.asset_service.invalidate(uuid);
+                                log::info!(
+                                    "Hot reload: {} '{}' (cache dropped: {})",
+                                    "Modified",
+                                    ev.rel_path,
+                                    dropped
+                                );
+                            }
+                            AssetChangeKind::Created | AssetChangeKind::Removed => {
+                                log::info!(
+                                    "Hot reload: {:?} '{}' — full reindex queued",
+                                    ev.kind,
+                                    ev.rel_path
+                                );
+                                needs_reindex = true;
+                            }
+                        }
+                    }
+                    if needs_reindex {
+                        if let Err(e) = pvfs.rebuild_index() {
+                            log::error!("Hot reload: failed to rebuild index: {:#}", e);
+                        } else {
+                            // Refresh the asset browser cache off the new VFS
+                            // contents.
+                            let entries: Vec<AssetEntry> = pvfs
+                                .asset_service
+                                .vfs()
+                                .iter_all()
+                                .map(|m| {
+                                    let rel_str = m.source_path.to_string_lossy().to_string();
+                                    let name = m
+                                        .source_path
+                                        .file_name()
+                                        .map(|n| n.to_string_lossy().to_string())
+                                        .unwrap_or_else(|| rel_str.clone());
+                                    AssetEntry {
+                                        name,
+                                        asset_type: m.asset_type_name.clone(),
+                                        source_path: rel_str,
+                                    }
+                                })
+                                .collect();
+                            if let Ok(mut state) = self.editor_state.lock() {
+                                state.asset_entries = entries;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Avoid unused warning for `world` when no other code in this method
+        // touches it (it's used below for camera extraction in Play mode).
+        let _ = world;
+
         // Compute the active `ViewInfo` and clear the offscreen viewport
         // (background + infinite grid). Cached for `after_agents` so gizmos
         // use the same projection.

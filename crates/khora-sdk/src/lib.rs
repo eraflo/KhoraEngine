@@ -84,8 +84,15 @@ pub use khora_infra::GpuMonitor;
 // I/O
 pub use khora_core::asset::AssetSource;
 pub use khora_core::scene::{SceneFile, SerializationGoal};
-pub use khora_io::asset::{AssetIo, FileLoader};
+pub use khora_data::assets::SoundData;
+pub use khora_io;
+pub use khora_io::asset::decoders::audio::SymphoniaDecoder;
+pub use khora_io::asset::{
+    AssetChangeEvent, AssetChangeKind, AssetIo, AssetService, AssetWatcher, AssetWriter,
+    FileLoader, FileSystemResolver, IndexBuilder, MeshDispatcher,
+};
 pub use khora_io::serialization::SerializationService;
+pub use khora_telemetry::MetricsRegistry;
 
 // Mesh type (used by editor ops)
 pub use khora_core::renderer::api::scene::mesh::Mesh;

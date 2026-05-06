@@ -13,6 +13,9 @@
 // limitations under the License.
 
 //! Texture decoder: image bytes → `CpuTexture` (via the `image` crate).
+//!
+//! Auto-registered via [`inventory::submit!`] under the canonical
+//! `"texture"` slot. Single canonical implementation — no swap needed.
 
 use anyhow::{Context, Result};
 use khora_core::{
@@ -23,7 +26,7 @@ use khora_core::{
     },
 };
 
-use crate::asset::AssetDecoder;
+use crate::asset::{AssetDecoder, DecoderRegistration};
 
 /// Decodes common image formats (PNG, JPEG, etc.) into a `CpuTexture`.
 #[derive(Clone, Default)]
@@ -52,5 +55,14 @@ impl AssetDecoder<CpuTexture> for TextureDecoder {
             dimension: TextureDimension::D2,
             usage: TextureUsage::COPY_DST | TextureUsage::TEXTURE_BINDING,
         })
+    }
+}
+
+inventory::submit! {
+    DecoderRegistration {
+        type_name: "texture",
+        register: |svc| {
+            svc.register_decoder::<CpuTexture>("texture", TextureDecoder);
+        },
     }
 }

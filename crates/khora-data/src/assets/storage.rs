@@ -64,4 +64,42 @@ impl<A: Asset> Assets<A> {
     pub fn contains(&self, uuid: &AssetUUID) -> bool {
         self.storage.contains_key(uuid)
     }
+
+    /// Drops the cached handle for `uuid`, returning it if present.
+    ///
+    /// Used by `AssetService::invalidate` (in `khora-io`) when a hot-reload
+    /// event invalidates a cached asset. Note that any outstanding clones of
+    /// the returned handle keep the *old* asset alive until they themselves
+    /// drop — that's by design: in-flight readers don't see a half-loaded
+    /// replacement. The next `AssetService::load` for the same UUID re-runs
+    /// the IO + decoder pipeline and produces a fresh handle.
+    pub fn remove(&mut self, uuid: &AssetUUID) -> Option<AssetHandle<A>> {
+        self.storage.remove(uuid)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::asset::AssetUUID;
+
+    /// Local newtype wrapper so the orphan rule lets us `impl Asset` for it.
+    /// `Asset` is just a marker trait (`Send + Sync + 'static`).
+    #[derive(Debug, PartialEq)]
+    struct TestAsset(String);
+    impl Asset for TestAsset {}
+
+    #[test]
+    fn remove_drops_cached_handle() {
+        let mut assets = Assets::<TestAsset>::new();
+        let uuid = AssetUUID::new_v5("textures/foo.png");
+        assets.insert(uuid, AssetHandle::new(TestAsset("hello".into())));
+
+        assert!(assets.contains(&uuid));
+        let popped = assets.remove(&uuid);
+        assert!(popped.is_some());
+        assert!(!assets.contains(&uuid));
+        // Removing again returns None (idempotent).
+        assert!(assets.remove(&uuid).is_none());
+    }
 }

@@ -17,15 +17,19 @@
 mod decoder;
 pub mod decoders;
 mod file;
+mod index_builder;
 mod io;
 mod pack;
 mod registry;
 mod service;
+mod watcher;
 
 pub use decoder::*;
 pub use decoders::*;
 pub use file::*;
+pub use index_builder::*;
 pub use io::*;
 pub use pack::*;
 pub use registry::*;
 pub use service::*;
+pub use watcher::*;

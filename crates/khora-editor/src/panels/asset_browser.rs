@@ -14,10 +14,12 @@
 
 //! Asset Browser — branded panel header + grid of gradient tiles per type.
 //!
-//! Phase G: replaces the tree-of-rows layout with the mockup's tile grid.
-//! Each asset is rendered as a square thumbnail with a type-coloured gradient
-//! plus a Lucide glyph. Folder navigation lives in a left column with
-//! tab-like rows showing per-type counts.
+//! As of Phase 1 of the VFS integration, the panel **derives its asset list
+//! from `EditorState::asset_entries`** instead of walking the disk itself.
+//! That field is populated by `EditorApp::setup` and the hot-reload pump in
+//! `EditorApp::before_agents` from `ProjectVfs::asset_service.vfs().iter_all()`,
+//! so what the user sees here is always the live VFS index — no parallel
+//! filesystem walk, no stale state.
 
 use std::sync::{Arc, Mutex};
 
@@ -35,8 +37,12 @@ const TILE_GAP: f32 = 10.0;
 
 #[derive(Debug, Clone)]
 struct FlatAsset {
+    /// Display name (file name component).
     name: String,
-    path: std::path::PathBuf,
+    /// Forward-slash relative path under `<project>/assets/`. Stable across
+    /// hot-reload and across editor / runtime — same string the VFS uses to
+    /// derive `AssetUUID::new_v5`.
+    rel_path: String,
     asset_type: AssetTileKind,
 }
 
@@ -45,7 +51,10 @@ pub struct AssetBrowserPanel {
     theme: EditorTheme,
     search_filter: String,
     flat: Vec<FlatAsset>,
-    last_scanned_folder: Option<String>,
+    /// Cache invalidation key. Combines project folder + the entry-list
+    /// length so reindex events from the hot-reload pump propagate as soon
+    /// as `EditorState::asset_entries` is updated.
+    last_snapshot_key: Option<(String, usize)>,
     selected_filter: Option<AssetTileKind>,
     selected_index: Option<usize>,
 }
@@ -57,89 +66,96 @@ impl AssetBrowserPanel {
             theme,
             search_filter: String::new(),
             flat: Vec::new(),
-            last_scanned_folder: None,
+            last_snapshot_key: None,
             selected_filter: None,
             selected_index: None,
         }
     }
 
-    fn classify_extension(path: &std::path::Path) -> (AssetTileKind, &'static str) {
-        // Only types the engine actually loads today are recognised.
-        // `Material`, `Script` and `Prefab` were removed — clicking those
-        // tiles was a no-op (no loader behind them).
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|s| s.to_lowercase())
-            .unwrap_or_default();
-        match ext.as_str() {
-            "gltf" | "glb" | "obj" | "fbx" => (AssetTileKind::Mesh, "Mesh"),
-            "png" | "jpg" | "jpeg" | "tga" | "bmp" | "hdr" => (AssetTileKind::Texture, "Texture"),
-            "wav" | "ogg" | "mp3" | "flac" => (AssetTileKind::Audio, "Audio"),
-            "wgsl" | "hlsl" | "glsl" => (AssetTileKind::Shader, "Shader"),
-            "kscene" | "scene" => (AssetTileKind::Scene, "Scene"),
-            _ => (AssetTileKind::Unknown, "Other"),
+    /// Maps the canonical lower-case `asset_type_name` produced by
+    /// `IndexBuilder` (and stored in `AssetMetadata.asset_type_name`) onto
+    /// the panel's tile-kind enum. Single source of truth lives in
+    /// `khora_io::asset::asset_type_for_extension`; this is just the
+    /// presentation-layer mapping.
+    fn tile_kind_from_type_name(name: &str) -> AssetTileKind {
+        match name {
+            "mesh" => AssetTileKind::Mesh,
+            "texture" => AssetTileKind::Texture,
+            "audio" => AssetTileKind::Audio,
+            "shader" => AssetTileKind::Shader,
+            "scene" => AssetTileKind::Scene,
+            // "font", "material", "script" and unknown types collapse onto
+            // the Unknown tile for now — the tile palette only has art for
+            // the five categories above.
+            _ => AssetTileKind::Unknown,
         }
     }
 
+    /// Re-pulls the asset list from `EditorState::asset_entries` whenever the
+    /// snapshot key (project folder + entry count) changes. The entries are
+    /// produced by the editor's hot-reload pump and `setup`, both of which
+    /// read straight from the VFS.
     fn rescan_if_needed(&mut self) {
-        let project_folder = self
-            .state
-            .lock()
-            .ok()
-            .and_then(|s| s.project_folder.clone());
+        let (project_folder, entries) = match self.state.lock() {
+            Ok(s) => (
+                s.project_folder.clone(),
+                s.asset_entries
+                    .iter()
+                    .map(|e| (e.name.clone(), e.asset_type.clone(), e.source_path.clone()))
+                    .collect::<Vec<_>>(),
+            ),
+            Err(_) => return,
+        };
 
         let folder = match project_folder {
             Some(f) => f,
             None => {
-                self.flat.clear();
-                self.last_scanned_folder = None;
+                if !self.flat.is_empty() {
+                    self.flat.clear();
+                    self.last_snapshot_key = None;
+                    self.selected_index = None;
+                }
                 return;
             }
         };
 
-        if self.last_scanned_folder.as_ref() == Some(&folder) {
+        let key = (folder, entries.len());
+        if self.last_snapshot_key.as_ref() == Some(&key) {
             return;
         }
-        self.last_scanned_folder = Some(folder.clone());
-        self.flat.clear();
+        self.last_snapshot_key = Some(key);
 
-        let assets_dir = std::path::Path::new(&folder).join("assets");
-        let scan_root = if assets_dir.is_dir() {
-            assets_dir
-        } else {
-            std::path::PathBuf::from(&folder)
-        };
-        walk_dir(&scan_root, &mut self.flat);
-        log::info!(
-            "Asset browser: scanned '{}' — {} files",
-            scan_root.display(),
-            self.flat.len()
-        );
-    }
-}
-
-fn walk_dir(dir: &std::path::Path, out: &mut Vec<FlatAsset>) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            walk_dir(&path, out);
-        } else {
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            let (kind, _type_str) = AssetBrowserPanel::classify_extension(&path);
-            out.push(FlatAsset {
-                name,
-                path: path.clone(),
-                asset_type: kind,
-            });
+        // Selection survives only if the entry list shrank below it.
+        if let Some(idx) = self.selected_index {
+            if idx >= entries.len() {
+                self.selected_index = None;
+            }
         }
+
+        self.flat = entries
+            .into_iter()
+            .map(|(name, asset_type_name, rel_path)| FlatAsset {
+                name,
+                rel_path,
+                asset_type: Self::tile_kind_from_type_name(&asset_type_name),
+            })
+            .collect();
+    }
+
+    /// Builds the absolute on-disk path for a `FlatAsset` from
+    /// `<project_folder>/assets/<rel_path>`. Used when feeding
+    /// `pending_scene_load` — the dispatcher in `main.rs::update` then
+    /// recognises the path as project-internal and routes through the VFS.
+    fn absolute_path_for(&self, asset: &FlatAsset) -> Option<String> {
+        let project_folder = self
+            .state
+            .lock()
+            .ok()
+            .and_then(|s| s.project_folder.clone())?;
+        let abs = std::path::Path::new(&project_folder)
+            .join("assets")
+            .join(asset.rel_path.replace('/', std::path::MAIN_SEPARATOR_STR));
+        Some(abs.to_string_lossy().to_string())
     }
 }
 
@@ -378,11 +394,16 @@ impl EditorPanel for AssetBrowserPanel {
         }
         if let Some(i) = to_select {
             self.selected_index = Some(i);
-            // Trigger scene load on selection of a scene.
-            if let Some(asset) = self.flat.get(i) {
+            // Trigger scene load when the selected asset is a scene. Build
+            // the absolute path so the editor's load dispatcher can spot
+            // that the path lives under the project's assets root and route
+            // through the VFS.
+            if let Some(asset) = self.flat.get(i).cloned() {
                 if asset.asset_type == AssetTileKind::Scene {
-                    if let Ok(mut state) = self.state.lock() {
-                        state.pending_scene_load = Some(asset.path.to_string_lossy().to_string());
+                    if let Some(abs) = self.absolute_path_for(&asset) {
+                        if let Ok(mut state) = self.state.lock() {
+                            state.pending_scene_load = Some(abs);
+                        }
                     }
                 }
             }
