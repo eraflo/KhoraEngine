@@ -2708,6 +2708,7 @@ dependencies = [
  "log",
  "open",
  "rfd",
+ "serde",
  "serde_json",
 ]
 
@@ -2815,6 +2816,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "khora-runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "khora-sdk",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "khora-sdk"
 version = "0.3.0"
 dependencies = [
@@ -2830,6 +2843,8 @@ dependencies = [
  "khora-lanes",
  "khora-telemetry",
  "log",
+ "serde",
+ "serde_json",
  "tokio",
  "winit",
 ]

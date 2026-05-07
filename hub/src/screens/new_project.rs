@@ -354,17 +354,32 @@ fn handle_create(app: &mut HubApp, choices: &[EngineChoice]) {
             version,
             download_url,
             size,
+            runtime_url,
+            runtime_size,
         } => {
             // Trigger an engine download; the project will be created in
             // `HubApp::finalize_new_project_creation` once the engine is ready.
-            let asset = github::GithubAsset {
+            let editor_asset = github::GithubAsset {
                 name: format!("khora-engine-{version}"),
                 browser_download_url: download_url,
                 size,
             };
+            let runtime_asset = match (runtime_url, runtime_size) {
+                (Some(url), Some(rs)) => Some(github::GithubAsset {
+                    name: format!("khora-runtime-{version}"),
+                    browser_download_url: url,
+                    size: rs,
+                }),
+                _ => None,
+            };
+            let total = size + runtime_asset.as_ref().map(|a| a.size).unwrap_or(0);
             app.new_project.creating_after_download = true;
-            app.new_project.download_progress = Some((0, size));
-            app.new_project.download_rx = Some(download::start_download(&asset, &version));
+            app.new_project.download_progress = Some((0, total));
+            app.new_project.download_rx = Some(download::start_download(
+                &editor_asset,
+                runtime_asset.as_ref(),
+                &version,
+            ));
             app.new_project.status = Some(format!("Downloading engine {version}…"));
             app.new_project.success = true;
         }

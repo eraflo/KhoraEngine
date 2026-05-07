@@ -14,6 +14,7 @@
 
 //! Khora Engine Editor application entry point.
 
+mod build_game;
 mod chrome;
 mod cmd_palette;
 mod fonts;
@@ -123,6 +124,58 @@ impl EditorApp {
             }
         }
         scene_io::save_scene_to_path(world, path_str);
+    }
+
+    /// Build Game dispatch: packs the project's assets, copies the
+    /// host-target `khora-runtime` binary into `<project>/dist/<target>/`,
+    /// and writes the runtime config so the staged binary auto-loads the
+    /// project's default scene. Reports progress + final path through the
+    /// editor's logger (visible in the console panel).
+    ///
+    /// v1 builds for the host OS only; cross-target builds land with the
+    /// hub Engine Manager's per-target runtime cache (P2.5).
+    fn run_build_game(&self) {
+        let pvfs_arc = match self.project_vfs.as_ref() {
+            Some(p) => p.clone(),
+            None => {
+                log::error!("Build Game: no project is open");
+                return;
+            }
+        };
+        let project_name = self
+            .editor_state
+            .lock()
+            .ok()
+            .and_then(|s| s.project_name.clone())
+            .unwrap_or_else(|| "Game".to_owned());
+
+        let pvfs = match pvfs_arc.lock() {
+            Ok(p) => p,
+            Err(_) => {
+                log::error!("Build Game: project_vfs lock poisoned");
+                return;
+            }
+        };
+
+        log::info!(
+            "Build Game: starting for project '{}' (host target: {:?})",
+            project_name,
+            build_game::BuildTarget::host()
+        );
+        match build_game::build_for_host(&pvfs, &project_name) {
+            Ok(out) => {
+                log::info!(
+                    "Build Game: success via {} — {} ({} assets, {} bytes packed)",
+                    out.strategy.label(),
+                    out.output_dir.display(),
+                    out.asset_count,
+                    out.pack_bytes
+                );
+            }
+            Err(e) => {
+                log::error!("Build Game: failed — {:#}", e);
+            }
+        }
     }
 
     /// Load dispatch: same shape as `save_scene_dispatch`.
@@ -342,6 +395,10 @@ impl EditorApp {
                     if let Ok(mut state) = self.editor_state.lock() {
                         state.pending_spawn = Some("Empty".to_owned());
                     }
+                }
+
+                "build_game" => {
+                    self.run_build_game();
                 }
 
                 "documentation" => {

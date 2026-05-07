@@ -21,12 +21,14 @@
 
 mod engine;
 mod game_world;
+mod run_default;
 mod traits;
 mod vessel;
 pub mod winit_adapters;
 
 pub use engine::EngineCore;
 pub use game_world::GameWorld;
+pub use run_default::run_default;
 pub use traits::{AgentProvider, EngineApp, PhaseProvider, WindowProvider};
 pub use vessel::{spawn_cube_at, spawn_plane, spawn_sphere, Vessel};
 pub use winit_adapters::{run_winit, WinitAppRunner};
@@ -89,7 +91,8 @@ pub use khora_io;
 pub use khora_io::asset::decoders::audio::SymphoniaDecoder;
 pub use khora_io::asset::{
     AssetChangeEvent, AssetChangeKind, AssetIo, AssetService, AssetWatcher, AssetWriter,
-    FileLoader, FileSystemResolver, IndexBuilder, MeshDispatcher,
+    FileLoader, FileSystemResolver, IndexBuilder, MeshDispatcher, PackBuilder, PackHeader,
+    PackLoader, PackOutput, PackProgress, PACK_FORMAT_VERSION, PACK_HEADER_SIZE, PACK_MAGIC,
 };
 pub use khora_io::serialization::SerializationService;
 pub use khora_telemetry::MetricsRegistry;

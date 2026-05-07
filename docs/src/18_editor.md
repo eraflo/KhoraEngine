@@ -16,11 +16,12 @@ The editor application — panels, gizmos, play mode, scene I/O.
 4. Play mode
 5. Scene I/O
 6. Gizmos and selection
-7. The Control Plane
-8. For game developers
-9. For engine contributors
-10. Decisions
-11. Open questions
+7. Build Game
+8. The Control Plane
+9. For game developers
+10. For engine contributors
+11. Decisions
+12. Open questions
 
 ---
 
@@ -119,17 +120,18 @@ The snapshot is fast — milliseconds for a 10 000-entity scene — because Arch
 
 ## 05 — Scene I/O
 
-The editor uses `SerializationService` for all scene operations:
+The editor uses `SerializationService` for all scene operations. As of v0.4 it goes through `ProjectVfs` (the editor's wrapper around `khora_io::AssetService` + `AssetWatcher`), so saves and loads inside the project use the same UUID identity that a release pack would:
 
 | Action | What happens |
 |---|---|
-| **Open project** | Editor scans the project folder, builds the asset browser, loads `default.kscene` if present |
+| **Open project** | `ProjectVfs::open` recursively scans `<project>/assets/`, builds the in-memory UUID index, registers all decoders, arms a filesystem watcher. The asset browser reads off the resulting VFS. |
 | **New scene** | Editor creates an empty world, ready for editing |
-| **Save scene** | Editor serializes the world with `SerializationGoal::HumanReadableDebug` (Definition / RON) |
-| **Save scene as** | Same, with a new path |
-| **Load scene** | Double-click a `.kscene` in the asset browser, or File → Open |
+| **Save scene** | Encoded with `SerializationGoal::EditorInterchange` (Recipe — compact, structured) and written via `AssetWriter` so the new file enters the VFS index immediately |
+| **Save scene as** | Same, with a new path. Out-of-project paths fall back to raw `std::fs` and log a warning. |
+| **Load scene** | Double-click a `.kscene` in the asset browser, or File → Open. Project-internal paths route through `AssetService::load_raw` (UUID-keyed). |
+| **Play / Stop** | World snapshot + restore via `SerializationService` with `FastestLoad` (Archetype — no human-readable round-trip needed for in-memory revert). |
 
-Scene files are RON in development — hand-editable, diff-friendly, useful in Git history. Release builds typically use Recipe or Archetype.
+Scene files are compact-binary in development today. RON dumps for diffing are available through `SerializationGoal::HumanReadableDebug` — not yet wired to a menu, but the strategy is registered in the service.
 
 ## 06 — Gizmos and selection
 
@@ -143,7 +145,48 @@ Selection is tracked in `EditorState.selected_entity`. Clicking an entity in the
 
 Numeric fields in the Inspector are draggable scrubbers — drag horizontally to change a value, modifier keys for precision. No spinner buttons.
 
-## 07 — The Control Plane
+## 07 — Build Game
+
+`Build → Build Game…` packages the open project for a target OS. The editor picks one of two **strategies** automatically, based on the presence of `<project>/Cargo.toml`:
+
+### Strategy A — Runtime stamp (default, data-only projects)
+
+Used when the project has no `Cargo.toml` — the typical state for a fresh project from the hub.
+
+1. **Pack** — `khora_io::asset::PackBuilder` walks `<project>/assets/` (sorted by forward-slash relative path), assigns `AssetUUID::new_v5(rel_path)` to each file, and writes the two-file release layout: `data.pack` (16-byte header + concatenated asset bytes) + `index.bin` (`Vec<AssetMetadata>` with each variant rewritten to `AssetSource::Packed { offset, size }`).
+2. **Stamp runtime** — the editor copies the pre-built `khora-runtime` for the chosen target into the output directory and renames it after the project. The runtime binary lives next to the editor (release-archive layout) or in the hub's `~/.khora/engines/<version>/runtime/` cache.
+3. **Write `runtime.json`** — read by the runtime at boot to learn which scene to auto-load.
+
+Cross-platform is trivial: the pre-built runtime exists for every target shipped by `release.yml`, so building Linux from a Windows host is just a file copy.
+
+### Strategy B — Cargo build (native-Rust projects)
+
+Used when the user has clicked **"Add Native Code"** on the project's hub card, which scaffolds `Cargo.toml` + `src/main.rs` (calling `khora_sdk::run_default()` by default — same as the runtime, but linked into a binary that *can* register custom components / agents / lanes when the user edits `main.rs`).
+
+1. Same `PackBuilder` step as Strategy A.
+2. `cargo build --release --manifest-path <project>/Cargo.toml` compiles the user's binary. stdout / stderr stream into the editor's console panel.
+3. The compiled binary is copied into the output directory under the project name.
+4. Same `runtime.json` companion is written.
+
+Host-only in v1 (Rust cross-compilation is fragile without per-target toolchains). The editor refuses non-host targets on this strategy with a clear error pointing the user to "run the editor on the target OS".
+
+### Output layout (identical between strategies)
+
+```
+<project>/dist/<target>/
+├── <project_name>{.exe}     # renamed khora-runtime OR compiled user binary
+├── data.pack
+├── index.bin
+└── runtime.json
+```
+
+Run the binary directly — both `khora-runtime` and any project compiled via `khora_sdk::run_default()` auto-detect PackLoader (when `data.pack` + `index.bin` are siblings) or FileLoader (when a loose `assets/` directory is a sibling instead, used by engine contributors who want to skip packing during iteration).
+
+### Why two strategies
+
+The choice is **deterministic** (presence of `Cargo.toml` is the contract) and **opt-in** (the user explicitly upgrades a project to native Rust by clicking the hub button). Most projects stay on Strategy A and benefit from trivial cross-platform export. Strategy B is the escape hatch when raw performance, compile-time safety, or new engine primitives are needed. Future scripting (`assets/scripts/`, hot-reloadable, see `12_assets.md`) plugs into both strategies transparently — scripts are just assets that get packed.
+
+## 08 — The Control Plane
 
 The sixth Spine mode is the **Control Plane** — a workspace dedicated to the engine's mind.
 

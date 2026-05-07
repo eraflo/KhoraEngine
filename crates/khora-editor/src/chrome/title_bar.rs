@@ -40,7 +40,7 @@ const SEARCH_PREFERRED_W: f32 = 320.0;
 const SEARCH_HEIGHT: f32 = 28.0;
 /// Below this width we collapse the pill into a single search icon.
 const SEARCH_COLLAPSE_THRESHOLD: f32 = 120.0;
-const MENU_REGION_WIDTH: f32 = 200.0;
+const MENU_REGION_WIDTH: f32 = 240.0;
 
 /// Top-bar branded strip.
 pub struct TitleBarPanel {
@@ -152,6 +152,12 @@ impl EditorPanel for TitleBarPanel {
                     m.separator();
                     if m.button("Delete  Del") {
                         dispatch("delete");
+                        m.close_menu();
+                    }
+                });
+                ui_inner.menu_button("Build", &mut |m| {
+                    if m.button("Build Game…") {
+                        dispatch("build_game");
                         m.close_menu();
                     }
                 });

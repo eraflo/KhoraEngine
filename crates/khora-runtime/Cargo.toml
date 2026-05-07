@@ -1,0 +1,18 @@
+[package]
+name = "khora-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Generic Khora game runtime — the binary the editor's Build feature stamps with packed project assets."
+
+[[bin]]
+name = "khora-runtime"
+path = "src/main.rs"
+
+[dependencies]
+khora-sdk = { path = "../khora-sdk" }
+
+anyhow = "1.0"
+log = "0.4"
+env_logger = "0.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"

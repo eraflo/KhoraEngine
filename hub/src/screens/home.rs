@@ -21,6 +21,11 @@ enum ProjectAction {
     Open(RecentProject),
     /// Open the confirmation modal for this index (in the source list).
     AskRemove(usize),
+    /// Scaffolds Cargo.toml + src/main.rs into the project at the given
+    /// source-list index, opting it into native-Rust mode. Build Game then
+    /// switches from "stamp khora-runtime" to "cargo build" for that
+    /// project.
+    AddNativeCode(usize),
 }
 
 pub fn show_home(app: &mut HubApp, parent_ui: &mut egui::Ui) {
@@ -367,6 +372,18 @@ fn show_main(app: &mut HubApp, parent_ui: &mut egui::Ui) {
                                     if primary_button(ui, "Open", [80.0, 28.0]).clicked() {
                                         action = Some(ProjectAction::Open(proj.clone()));
                                     }
+                                    ui.add_space(8.0);
+                                    // Native-code toggle: shown as a small
+                                    // status chip when already enabled, as
+                                    // a clickable ghost button otherwise.
+                                    let project_root = std::path::Path::new(&proj.path);
+                                    if crate::project::has_native_code(project_root) {
+                                        status_chip(ui, "Native ✓", pal::PRIMARY);
+                                    } else if ghost_button(ui, "Add Native Code", [130.0, 28.0])
+                                        .clicked()
+                                    {
+                                        action = Some(ProjectAction::AddNativeCode(*src_idx));
+                                    }
                                 },
                             );
                         });
@@ -394,6 +411,30 @@ fn show_main(app: &mut HubApp, parent_ui: &mut egui::Ui) {
                 Some(ProjectAction::Open(proj)) => app.launch_project(&proj),
                 Some(ProjectAction::AskRemove(src_idx)) => {
                     app.home.remove_confirm = Some(src_idx);
+                }
+                Some(ProjectAction::AddNativeCode(src_idx)) => {
+                    let proj = app.config.recent_projects.get(src_idx).cloned();
+                    if let Some(proj) = proj {
+                        let root = std::path::PathBuf::from(&proj.path);
+                        match crate::project::add_native_code(
+                            &root,
+                            &proj.name,
+                            &proj.engine_version,
+                        ) {
+                            Ok(()) => {
+                                app.banner = Some(crate::Banner::info(format!(
+                                    "Added native Rust scaffold to '{}'. Build Game will \
+                                     now use cargo build.",
+                                    proj.name
+                                )));
+                            }
+                            Err(e) => {
+                                app.banner = Some(crate::Banner::error(format!(
+                                    "Add Native Code failed: {e:#}"
+                                )));
+                            }
+                        }
+                    }
                 }
                 None => {}
             }

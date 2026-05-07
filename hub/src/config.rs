@@ -34,6 +34,12 @@ pub struct EngineInstall {
     pub version: String,
     /// Path to the editor binary.
     pub editor_binary: String,
+    /// Path to the host-target `khora-runtime` binary, when this version
+    /// shipped one (introduced in v0.4 alongside the editor's "Build Game"
+    /// feature). `None` for older releases — the editor falls back to
+    /// scanning the engine cache directory in that case.
+    #[serde(default)]
+    pub runtime_binary: Option<String>,
     /// "github" | "local"
     pub source: String,
 }
@@ -105,16 +111,29 @@ impl HubConfig {
     /// Returns the dev-mode engine install if the local repo is configured.
     pub fn dev_engine(&self) -> Option<EngineInstall> {
         let repo = self.local_engine_repo.as_deref()?;
-        // The editor binary is expected at <repo>/target/debug/khora-editor(.exe)
-        let exe = if cfg!(windows) {
-            "khora-editor.exe"
+        let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
+        // Editor binary at <repo>/target/debug/khora-editor(.exe)
+        let editor = PathBuf::from(repo)
+            .join("target")
+            .join("debug")
+            .join(format!("khora-editor{exe_suffix}"));
+        // Runtime binary at <repo>/target/debug/khora-runtime(.exe) — the
+        // editor's Build Game feature copies this into staged exports.
+        // Returned only if the file exists today; if the dev hasn't built
+        // it yet, the editor will surface an actionable error.
+        let runtime_path = PathBuf::from(repo)
+            .join("target")
+            .join("debug")
+            .join(format!("khora-runtime{exe_suffix}"));
+        let runtime_binary = if runtime_path.exists() {
+            Some(runtime_path.to_string_lossy().to_string())
         } else {
-            "khora-editor"
+            None
         };
-        let binary = PathBuf::from(repo).join("target").join("debug").join(exe);
         Some(EngineInstall {
             version: "dev".to_owned(),
-            editor_binary: binary.to_string_lossy().to_string(),
+            editor_binary: editor.to_string_lossy().to_string(),
+            runtime_binary,
             source: "local".to_owned(),
         })
     }

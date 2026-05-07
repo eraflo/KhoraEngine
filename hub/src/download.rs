@@ -35,50 +35,110 @@ fn engines_dir() -> PathBuf {
         .join("engines")
 }
 
-/// Starts a background download of the given GitHub asset.
+/// Starts a background download of the editor archive, optionally also
+/// fetching the matching `khora-runtime` archive into the same engine
+/// cache slot.
 ///
-/// Downloads to `~/.khora/engines/<version>/`, extracts if zip,
-/// and registers the engine install in the config.
+/// Layout produced under `~/.khora/engines/<version>/`:
+/// - `editor/` — extracted editor archive (contains `khora-editor{.exe}` + assets)
+/// - `runtime/` — extracted runtime archive (contains `khora-runtime{.exe}`),
+///   only when `runtime_asset` is `Some` and its download succeeds
+///
+/// `EngineInstall.runtime_binary` is populated when the runtime download
+/// works; it stays `None` for older releases that don't ship the runtime
+/// archive yet — the engine still installs and is usable for editing.
 ///
 /// Returns a `Receiver` that the caller should poll every frame.
-pub fn start_download(asset: &GithubAsset, version: &str) -> mpsc::Receiver<DownloadMessage> {
+pub fn start_download(
+    editor_asset: &GithubAsset,
+    runtime_asset: Option<&GithubAsset>,
+    version: &str,
+) -> mpsc::Receiver<DownloadMessage> {
     let (tx, rx) = mpsc::channel();
-    let url = asset.browser_download_url.clone();
-    let total_size = asset.size;
+    let editor_url = editor_asset.browser_download_url.clone();
+    let runtime_url = runtime_asset.map(|a| a.browser_download_url.clone());
+    let editor_size = editor_asset.size;
+    let runtime_size = runtime_asset.map(|a| a.size).unwrap_or(0);
+    let total_bytes = editor_size + runtime_size;
     let version = version.to_owned();
-    let dest_dir = engines_dir().join(&version);
+    let dest_root = engines_dir().join(&version);
 
-    let _ = tx.send(DownloadMessage::Progress(0, total_size));
+    let _ = tx.send(DownloadMessage::Progress(0, total_bytes));
 
-    std::thread::spawn(
-        move || match download_and_extract(&url, &dest_dir, total_size, &tx) {
-            Ok(editor_binary) => {
-                let install = EngineInstall {
-                    version: version.clone(),
-                    editor_binary: editor_binary.to_string_lossy().to_string(),
-                    source: "github".to_owned(),
-                };
-                let _ = tx.send(DownloadMessage::Completed { version, install });
-            }
+    std::thread::spawn(move || {
+        let editor_dir = dest_root.join("editor");
+        let runtime_dir = dest_root.join("runtime");
+
+        // ── Editor ──────────────────────────────────────────────
+        let editor_binary = match download_and_extract(
+            &editor_url,
+            &editor_dir,
+            "khora-editor",
+            editor_size,
+            total_bytes,
+            0,
+            &tx,
+        ) {
+            Ok(p) => p,
             Err(e) => {
-                let _ = tx.send(DownloadMessage::Error(format!("{}", e)));
+                let _ = tx.send(DownloadMessage::Error(format!("{e}")));
+                return;
             }
-        },
-    );
+        };
+
+        // ── Runtime (best-effort) ───────────────────────────────
+        let mut runtime_binary: Option<PathBuf> = None;
+        if let Some(url) = runtime_url {
+            match download_and_extract(
+                &url,
+                &runtime_dir,
+                "khora-runtime",
+                runtime_size,
+                total_bytes,
+                editor_size,
+                &tx,
+            ) {
+                Ok(p) => {
+                    runtime_binary = Some(p);
+                }
+                Err(e) => {
+                    log::warn!("Runtime artifact download failed (engine still installed): {e}");
+                }
+            }
+        }
+
+        let install = EngineInstall {
+            version: version.clone(),
+            editor_binary: editor_binary.to_string_lossy().to_string(),
+            runtime_binary: runtime_binary.map(|p| p.to_string_lossy().to_string()),
+            source: "github".to_owned(),
+        };
+        let _ = tx.send(DownloadMessage::Completed { version, install });
+    });
 
     rx
 }
 
 /// Downloads the file at `url` and extracts it (if zip) into `dest_dir`.
 ///
-/// Returns the path to the editor binary inside the extracted directory.
+/// `bin_base_name` is the binary stem to look up after extraction
+/// (`"khora-editor"`, `"khora-runtime"`, …) — `.exe` is appended on Windows.
+/// `archive_size` is the size of *this* archive; `total_size` and
+/// `progress_offset` let the caller report cumulative progress across
+/// multiple downloads (editor + runtime in the same install slot).
+///
+/// Returns the absolute path to the resolved binary on success.
 fn download_and_extract(
     url: &str,
     dest_dir: &std::path::Path,
+    bin_base_name: &str,
+    archive_size: u64,
     total_size: u64,
+    progress_offset: u64,
     tx: &mpsc::Sender<DownloadMessage>,
 ) -> anyhow::Result<PathBuf> {
     use anyhow::Context;
+    let _ = archive_size; // reserved for future fine-grained throttling
 
     // Build HTTP client
     let client = reqwest::blocking::Client::builder()
@@ -109,7 +169,10 @@ fn download_and_extract(
             break;
         }
         bytes.extend_from_slice(&buf[..n]);
-        let _ = tx.send(DownloadMessage::Progress(bytes.len() as u64, total_size));
+        let _ = tx.send(DownloadMessage::Progress(
+            progress_offset + bytes.len() as u64,
+            total_size,
+        ));
     }
 
     // Create destination directory
@@ -122,8 +185,8 @@ fn download_and_extract(
     if is_zip {
         extract_zip(&bytes, dest_dir)?;
     } else {
-        // Save the raw file
-        let filename = url.rsplit('/').next().unwrap_or("khora-editor");
+        // Save the raw file using a sensible default filename.
+        let filename = url.rsplit('/').next().unwrap_or(bin_base_name);
         let dest_file = dest_dir.join(filename);
         std::fs::write(&dest_file, &bytes)
             .with_context(|| format!("Failed to write {}", dest_file.display()))?;
@@ -138,14 +201,14 @@ fn download_and_extract(
         }
     }
 
-    // Find the editor binary in the extracted directory
+    // Find the requested binary inside the extracted tree.
     let exe_name = if cfg!(windows) {
-        "khora-editor.exe"
+        format!("{bin_base_name}.exe")
     } else {
-        "khora-editor"
+        bin_base_name.to_owned()
     };
 
-    find_file_recursive(dest_dir, exe_name)
+    find_file_recursive(dest_dir, &exe_name)
         .with_context(|| format!("Could not find {} in {}", exe_name, dest_dir.display()))
 }
 

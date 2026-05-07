@@ -12,6 +12,7 @@ members = [
     "crates/khora-telemetry",
     "crates/khora-editor",
     "crates/khora-plugins",
+    "crates/khora-runtime",
     "crates/khora-sdk",
     # Examples and tools
     "examples/sandbox",

@@ -24,16 +24,31 @@ The hub creates every folder in this tree, even when empty, so the editor's asse
 
 The first time the editor opens a project, it writes `assets/scenes/default.kscene` (a Main Camera + a Directional Light) so the user has a viable scene to start from. See [`scene_io.rs`](../../../crates/khora-editor/src/scene_io.rs).
 
-### `src/` vs `assets/scripts/`
+### Three tiers of "code"
 
-These are deliberately separate roles:
+A Khora project layers three sources of behaviour, each with a different lifecycle:
 
-| Location | What lives here | When it runs |
-|----------|-----------------|--------------|
-| `src/` | Native Rust code: custom components, agents, traits, anything that wants compile-time guarantees and access to internal Khora APIs. | Compiled into the game binary at build time. |
-| `assets/scripts/` | Gameplay scripts treated as **data**. Today these can be plain text/JSON used by your custom components; the engine roadmap includes a custom scripting language with hot-reload and live-edit. | Loaded at runtime by an asset loader, not compiled. |
+| Tier | Lives in | Compilation | Hot-reload | Cross-platform |
+|------|----------|-------------|------------|----------------|
+| 1. **Engine built-ins** | `khora-sdk` (linked into every binary) | n/a — engine is pre-compiled | no | ✅ pre-built per target |
+| 2. **Native Rust** | `src/` + `Cargo.toml` (opt-in) | `cargo build --release` | no, requires rebuild | ⚠️ host-only in v1 |
+| 3. **Scripts** | `assets/scripts/*.kscript` | none — they're data | ✅ via the project's asset watcher | ✅ universal |
 
-You can ship a game with one, the other, or both. There is no overlap.
+Tier 1 supplies the primitives (`Transform`, `Camera`, `Light`, `Mesh`, ECS plumbing). Tier 2 extends those primitives with custom Rust types when you need raw access to internal APIs or compile-time guarantees. Tier 3 sits on top: gameplay logic expressed as data, hot-reloadable at runtime — no recompile needed to iterate.
+
+You can ship a game with any subset. **Tier 2 is opt-in**: a fresh project from the hub doesn't have a `Cargo.toml` or `src/`. Most games start data-only (tiers 1 + 3) and stay there.
+
+### Adding native code to a project (tier 2)
+
+The hub's home page shows an **"Add Native Code"** button on the card of any project that doesn't yet have a `Cargo.toml`. Clicking it scaffolds:
+
+```text
+<project>/
+├── Cargo.toml      # depends on khora-sdk = "<engine_version>"
+└── src/main.rs     # `fn main() { khora_sdk::run_default() }`
+```
+
+The generated `main.rs` is functionally equivalent to the pre-built `khora-runtime` binary — your project still works the same after opt-in. To register custom components, agents, or lanes, edit `src/main.rs` (or split into your own modules) and replace the body with a custom `EngineApp` impl. See [`18_editor.md`](../18_editor.md#build-game) for how the editor's Build Game switches strategy when `Cargo.toml` is present.
 
 ## `project.json` schema
 
@@ -73,11 +88,20 @@ Files with unknown extensions are still scanned but classified as generic.
 
 ## Lifecycle
 
-1. **Creation** — the user picks a name + engine version + parent folder in the hub. The hub calls `project::create_project(...)` which writes the layout above.
-2. **Open** — `khora-editor --project <path>` reads `project.json`, scans `assets/`, optionally reads the git branch from `.git/HEAD`, and populates `EditorState`.
+1. **Creation** — the user picks a name + engine version + parent folder in the hub. The hub calls `project::create_project(...)` which writes the layout above. As of v0.4 the hub also seeds `assets/scripts/main.kscript` (a JSON stub for the future scripting language; safe to ignore today).
+2. **Open** — `khora-editor --project <path>` reads `project.json`, builds the project's VFS by scanning `assets/`, arms a filesystem watcher for hot reload, optionally reads the git branch from `.git/HEAD`, and populates `EditorState`.
 3. **First open** — the editor writes `assets/scenes/default.kscene` if it doesn't exist.
-4. **Edit** — every save mutates files under `assets/`. The editor doesn't touch `project.json` or `src/` after creation.
-5. **Build** — out of scope today; future work will compile `src/` into the game binary and bundle `assets/` next to it.
+4. **Edit** — every save mutates files under `assets/`. The editor doesn't touch `project.json` or `src/` after creation. Hot reload picks up disk changes within one frame.
+5. **Build** — `Build → Build Game…` in the editor menu runs the asset packer (`khora_io::asset::PackBuilder`) against `<project>/assets/` and stages a runnable output under `<project>/dist/<target>/`. The exact strategy depends on whether the project has opted into native Rust:
+
+    | Project state | Strategy | Result |
+    |---|---|---|
+    | No `Cargo.toml` (data-only) | **Runtime stamp** | Pre-built `khora-runtime` for the chosen target is copied + renamed |
+    | `Cargo.toml` present | **Cargo build** | `cargo build --release --manifest-path <project>/Cargo.toml` runs; the produced binary replaces the runtime stamp |
+
+    Either way, `data.pack` + `index.bin` + `runtime.json` are emitted alongside the binary, and the runtime auto-detects them at startup.
+
+   The runtime stamp path is **trivially cross-platform**: every target's pre-built `khora-runtime` lives in the hub's engine cache (`~/.khora/engines/<version>/runtime/`) and is just a file copy. The cargo path is **host-only in v1** because Rust cross-compilation needs per-target toolchains; running the editor on each target is the simplest workaround until `cross` integration lands.
 
 ## What the editor reads from `project.json` today
 

@@ -96,6 +96,13 @@ pub enum EngineChoice {
         version: String,
         download_url: String,
         size: u64,
+        /// Matching `khora-runtime-<host>` archive URL when the release ships
+        /// one (introduced alongside the editor's "Build Game" feature).
+        /// Older releases predate the runtime artifact; the engine downloads
+        /// without it and Build Game falls back to a clear error until the
+        /// user upgrades to a release that includes the runtime.
+        runtime_url: Option<String>,
+        runtime_size: Option<u64>,
     },
 }
 
@@ -320,10 +327,13 @@ impl HubApp {
                 continue;
             }
             if let Some(asset) = r.editor_asset() {
+                let runtime = r.runtime_asset();
                 out.push(EngineChoice::Remote {
                     version: r.tag_name.clone(),
                     download_url: asset.browser_download_url.clone(),
                     size: asset.size,
+                    runtime_url: runtime.map(|a| a.browser_download_url.clone()),
+                    runtime_size: runtime.map(|a| a.size),
                 });
             }
         }

@@ -14,12 +14,22 @@
 
 use anyhow::Result;
 use khora_core::asset::{Asset, AssetMetadata, AssetSource, AssetUUID};
-use khora_io::asset::{AssetDecoder, AssetService, PackLoader};
+use khora_io::asset::{AssetDecoder, AssetService, PackHeader, PackLoader};
 
 use khora_telemetry::MetricsRegistry;
 use std::sync::Arc;
 use std::{collections::HashMap, error::Error, fs::File};
 use tempfile::tempdir;
+
+/// Writes a v1 `data.pack` (16-byte header + raw asset bytes) to `path`.
+/// Tests use this so they don't have to know the header byte layout.
+fn write_test_pack(path: &std::path::Path, asset_count: u32, payload: &[u8]) -> Result<()> {
+    let mut bytes = Vec::with_capacity(16 + payload.len());
+    bytes.extend_from_slice(&PackHeader::v1(asset_count).to_bytes());
+    bytes.extend_from_slice(payload);
+    std::fs::write(path, &bytes)?;
+    Ok(())
+}
 
 // --- Test Setup: Dummy Asset and Loader (reste identique) ---
 #[derive(Debug, PartialEq)]
@@ -71,14 +81,14 @@ fn test_load_asset_from_pack() -> Result<()> {
 
     // Write the temporary files to disk.
     std::fs::write(&index_path, &index_bytes)?;
-    std::fs::write(&data_path, &data_bytes)?;
+    write_test_pack(&data_path, 1, &data_bytes)?;
 
     // --- 2. Initialize the AssetService with REAL files ---
     let data_file = File::open(&data_path)?;
     let metrics_registry = Arc::new(MetricsRegistry::new());
     let mut asset_service = AssetService::new(
         &index_bytes,
-        Box::new(PackLoader::new(data_file)),
+        Box::new(PackLoader::new(data_file)?),
         metrics_registry,
     )?;
 
@@ -147,14 +157,14 @@ fn test_load_texture_from_pack() -> Result<()> {
 
     // Write the temporary files to disk
     std::fs::write(&index_path, &index_bytes)?;
-    std::fs::write(&data_path, &png_data)?;
+    write_test_pack(&data_path, 1, &png_data)?;
 
     // --- 2. Initialize the AssetService with REAL files ---
     let data_file = File::open(&data_path)?;
     let metrics_registry = Arc::new(MetricsRegistry::new());
     let mut asset_service = AssetService::new(
         &index_bytes,
-        Box::new(PackLoader::new(data_file)),
+        Box::new(PackLoader::new(data_file)?),
         metrics_registry,
     )?;
 
@@ -206,13 +216,13 @@ fn test_asset_caching_and_shared_ownership() -> Result<()> {
 
     let index_bytes = bincode::serde::encode_to_vec(vec![metadata], bincode::config::standard())?;
     std::fs::write(&index_path, &index_bytes)?;
-    std::fs::write(&data_path, texture_data)?;
+    write_test_pack(&data_path, 1, &texture_data)?;
 
     let data_file = File::open(&data_path)?;
     let metrics_registry = Arc::new(MetricsRegistry::new());
     let mut asset_service = AssetService::new(
         &index_bytes,
-        Box::new(PackLoader::new(data_file)),
+        Box::new(PackLoader::new(data_file)?),
         metrics_registry,
     )?;
     asset_service.register_decoder("texture", TestTextureLoader);

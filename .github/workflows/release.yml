@@ -56,14 +56,17 @@ jobs:
             target: x86_64-pc-windows-msvc
             engine_archive: khora-engine-windows-x86_64.zip
             hub_archive: khora-hub-windows-x86_64.zip
+            runtime_archive: khora-runtime-windows-x86_64.zip
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             engine_archive: khora-engine-linux-x86_64.tar.gz
             hub_archive: khora-hub-linux-x86_64.tar.gz
+            runtime_archive: khora-runtime-linux-x86_64.tar.gz
           - os: macos-latest
             target: aarch64-apple-darwin
             engine_archive: khora-engine-macos-aarch64.tar.gz
             hub_archive: khora-hub-macos-aarch64.tar.gz
+            runtime_archive: khora-runtime-macos-aarch64.tar.gz
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -95,6 +98,13 @@ jobs:
         env:
           KHORA_HUB_GITHUB_CLIENT_ID: ${{ secrets.KHORA_HUB_GITHUB_CLIENT_ID }}
         run: cargo build --release -p khora-hub
+
+      # khora-runtime is the generic player binary the editor's "Build Game"
+      # feature stamps with each project's packed assets. It ships per
+      # target so the editor can produce cross-platform builds without
+      # cross-compiling the user's project locally.
+      - name: Build runtime binary
+        run: cargo build --release -p khora-runtime
 
       # ── Stage engine payload (binary + bundled assets) ─────────────
       # The editor looks up runtime assets (Geist + Lucide fonts, etc.) under
@@ -140,19 +150,38 @@ jobs:
             cp -R hub/assets stage/hub/assets
           fi
 
+      # ── Stage runtime payload (binary only) ───────────────────────
+      # Runtime ships as a single binary — its asset payload (index.bin +
+      # data.pack + runtime.json) is supplied by the editor's Build Game
+      # feature on a per-project basis, NOT by the engine release.
+      - name: Stage runtime payload (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path stage/runtime | Out-Null
+          Copy-Item target/release/khora-runtime.exe stage/runtime/
+
+      - name: Stage runtime payload (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p stage/runtime
+          cp target/release/khora-runtime stage/runtime/
+
       # ── Package archives ───────────────────────────────────────────
       - name: Package archives (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          Compress-Archive -Path stage/engine/* -DestinationPath ${{ matrix.engine_archive }}
-          Compress-Archive -Path stage/hub/*    -DestinationPath ${{ matrix.hub_archive }}
+          Compress-Archive -Path stage/engine/*  -DestinationPath ${{ matrix.engine_archive }}
+          Compress-Archive -Path stage/hub/*     -DestinationPath ${{ matrix.hub_archive }}
+          Compress-Archive -Path stage/runtime/* -DestinationPath ${{ matrix.runtime_archive }}
 
       - name: Package archives (Unix)
         if: matrix.os != 'windows-latest'
         run: |
-          tar czf ${{ matrix.engine_archive }} -C stage/engine .
-          tar czf ${{ matrix.hub_archive }}    -C stage/hub    .
+          tar czf ${{ matrix.engine_archive }}  -C stage/engine  .
+          tar czf ${{ matrix.hub_archive }}     -C stage/hub     .
+          tar czf ${{ matrix.runtime_archive }} -C stage/runtime .
 
       - name: Upload binaries to release
         uses: softprops/action-gh-release@v2
@@ -161,5 +190,6 @@ jobs:
           files: |
             ${{ matrix.engine_archive }}
             ${{ matrix.hub_archive }}
+            ${{ matrix.runtime_archive }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

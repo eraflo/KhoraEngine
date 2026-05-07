@@ -371,9 +371,11 @@ pub fn show_engine_manager(app: &mut HubApp, parent_ui: &mut egui::Ui) {
                                                         && let Some(asset) =
                                                             release.editor_asset()
                                                     {
+                                                        let runtime = release.runtime_asset();
                                                         app.engine_manager.download_rx = Some(
                                                             download::start_download(
                                                                 asset,
+                                                                runtime,
                                                                 &release.tag_name,
                                                             ),
                                                         );

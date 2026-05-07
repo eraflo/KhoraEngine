@@ -50,6 +50,23 @@ impl GithubRelease {
         };
         self.assets.iter().find(|a| a.name.starts_with(needle))
     }
+
+    /// Returns the runtime asset (containing `khora-runtime`) for the current
+    /// OS, if any. Same naming convention as [`Self::editor_asset`] —
+    /// `khora-runtime-{platform}.{ext}` produced by `release.yml`. Older
+    /// releases predate the runtime artifact and return `None`; the engine
+    /// stays usable for editing in that case (the editor's "Build Game"
+    /// feature is what needs the runtime).
+    pub fn runtime_asset(&self) -> Option<&GithubAsset> {
+        let needle = if cfg!(windows) {
+            "khora-runtime-windows"
+        } else if cfg!(target_os = "macos") {
+            "khora-runtime-macos"
+        } else {
+            "khora-runtime-linux"
+        };
+        self.assets.iter().find(|a| a.name.starts_with(needle))
+    }
 }
 
 /// Fetches all releases from the KhoraEngine GitHub repository.
