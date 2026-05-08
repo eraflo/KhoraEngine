@@ -149,6 +149,7 @@ pub use khora_data::ecs::HandleComponent;
 
 // PropertyEdit is in khora_core::ui::editor, already re-exported via editor_ui
 pub use khora_data::scene::ComponentRegistration;
+pub use khora_data::scene::{instantiate_subtree, serialize_subtree};
 
 // Agents (for when apps need to create their own)
 pub use khora_agents;

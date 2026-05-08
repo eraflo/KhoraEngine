@@ -292,6 +292,9 @@ impl EditorPanel for SceneTreePanel {
                         state_guard.pending_reparent = Some((child, new_parent));
                     }
                 }
+                EditorAction::SaveAsPrefab(eid) => {
+                    state_guard.pending_save_as_prefab = Some(eid);
+                }
             }
         }
     }
@@ -385,6 +388,10 @@ fn render_node(
         }
         if menu.button("Duplicate") {
             pending.set(Some(EditorAction::Duplicate(entity)));
+            menu.close_menu();
+        }
+        if menu.button("Save as Prefab…") {
+            pending.set(Some(EditorAction::SaveAsPrefab(entity)));
             menu.close_menu();
         }
         menu.separator();
@@ -482,17 +489,33 @@ fn render_node(
 }
 
 /// Packs an `EntityId` into a `u64` for drag-and-drop payloads. Layout:
-/// high 32 = generation, low 32 = index.
-fn pack_entity(e: khora_sdk::prelude::ecs::EntityId) -> u64 {
+/// high 32 = generation, low 32 = index. Also used by the asset
+/// browser's drop handler to ingest entity drags from the scene tree
+/// (drop = create prefab in the current folder).
+pub(crate) fn pack_entity(e: khora_sdk::prelude::ecs::EntityId) -> u64 {
     ((e.generation as u64) << 32) | (e.index as u64)
 }
 
 /// Inverse of [`pack_entity`].
-fn unpack_entity(payload: u64) -> khora_sdk::prelude::ecs::EntityId {
+pub(crate) fn unpack_entity(payload: u64) -> khora_sdk::prelude::ecs::EntityId {
     khora_sdk::prelude::ecs::EntityId {
         index: payload as u32,
         generation: (payload >> 32) as u32,
     }
+}
+
+/// `true` when `payload` is *not* one of the asset-browser's
+/// dedicated drag tags (today only [`PREFAB_DRAG_TAG`]). Lets receivers
+/// disambiguate scene-tree entity payloads from asset-tile payloads on
+/// the same `dnd_take_drop_payload` channel.
+///
+/// The check is conservative: any payload whose top 32 bits don't
+/// match a known tag is assumed to be a packed `EntityId`. Entity
+/// generations are tiny u32s (start at 1) so this can't collide with
+/// the ASCII-encoded tag constants in
+/// [`crate::panels::asset_browser`].
+pub(crate) fn payload_is_entity(payload: u64) -> bool {
+    crate::panels::asset_browser::unpack_prefab_drag(payload).is_none()
 }
 
 enum EditorAction {
@@ -509,4 +532,8 @@ enum EditorAction {
         child: khora_sdk::prelude::ecs::EntityId,
         new_parent: Option<khora_sdk::prelude::ecs::EntityId>,
     },
+    /// Save the entity's subtree (root + descendants) as a `.kprefab`
+    /// asset. The path is picked through `rfd::FileDialog` in the
+    /// command dispatcher.
+    SaveAsPrefab(khora_sdk::prelude::ecs::EntityId),
 }

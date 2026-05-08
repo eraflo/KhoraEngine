@@ -40,7 +40,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::index_builder::asset_type_for_extension;
+use super::index_builder::should_skip_file;
 
 /// What kind of change happened to an asset on disk.
 ///
@@ -175,10 +175,14 @@ fn translate_event(
         _ => return None,
     };
 
-    // Filter via canonical extension map — drops .tmp swap files, editor
-    // backups, and anything the VFS wouldn't index anyway.
-    let ext = abs.extension().and_then(|e| e.to_str())?;
-    let _ = asset_type_for_extension(ext)?;
+    // Drop OS scratch files / editor swap files. Anything else is a
+    // legitimate asset under `assets/` and should fire a hot-reload
+    // event — the VFS now tracks every extension so the previous
+    // canonical-allowlist filter no longer makes sense here.
+    let file_name = abs.file_name().and_then(|n| n.to_str())?;
+    if should_skip_file(file_name) {
+        return None;
+    }
 
     let rel = abs.strip_prefix(assets_root).ok()?;
     let rel_str = rel

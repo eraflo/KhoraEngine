@@ -44,6 +44,74 @@ use crate::widgets::tile::{paint_asset_tile, AssetTileKind};
 
 use handlers::{handler_for, tile_kind_for, ActivationKind};
 
+/// High 32 bits of a `u64` drag payload that identifies a prefab tile —
+/// the low 32 bits hold the asset index in `EditorState::asset_entries`.
+/// Picked so it can't collide with the `EntityId`-packed payload used by
+/// the scene-tree reparent flow (entity generations are u32 and start at
+/// 1, so any value with `0xKHPF` in the top half can only mean "prefab").
+pub(crate) const PREFAB_DRAG_TAG: u64 = 0x4B48_5046_0000_0000; // "KHPF" in ASCII
+
+/// Walks a `SceneNode` forest to find `entity`'s display name. Used by
+/// the asset browser's drop receiver to compose a default `.kprefab`
+/// filename without a round-trip through the live `World`.
+fn entity_display_name(
+    roots: &[khora_sdk::editor_ui::SceneNode],
+    entity: khora_sdk::prelude::ecs::EntityId,
+) -> Option<String> {
+    fn walk(
+        nodes: &[khora_sdk::editor_ui::SceneNode],
+        target: khora_sdk::prelude::ecs::EntityId,
+    ) -> Option<String> {
+        for node in nodes {
+            if node.entity == target {
+                return Some(node.name.clone());
+            }
+            if let Some(found) = walk(&node.children, target) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    walk(roots, entity)
+}
+
+/// Strips characters that aren't safe in cross-platform file names
+/// (path separators, shell-meta, control chars). Falls back to an
+/// underscore for runs of stripped chars so consecutive replacements
+/// don't collapse into nothing.
+fn sanitize_for_filename(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut last_was_replacement = false;
+    for ch in name.chars() {
+        let safe = ch.is_alphanumeric() || matches!(ch, '_' | '-' | '.' | ' ');
+        if safe {
+            out.push(ch);
+            last_was_replacement = false;
+        } else if !last_was_replacement {
+            out.push('_');
+            last_was_replacement = true;
+        }
+    }
+    let trimmed = out.trim_matches(&[' ', '.', '_'][..]).to_string();
+    if trimmed.is_empty() {
+        "prefab".to_string()
+    } else {
+        trimmed
+    }
+}
+
+pub(crate) fn pack_prefab_drag(index: u32) -> u64 {
+    PREFAB_DRAG_TAG | index as u64
+}
+
+pub(crate) fn unpack_prefab_drag(payload: u64) -> Option<u32> {
+    if payload & 0xFFFF_FFFF_0000_0000 == PREFAB_DRAG_TAG {
+        Some(payload as u32)
+    } else {
+        None
+    }
+}
+
 const HEADER_HEIGHT: f32 = 34.0;
 const TOOLBAR_HEIGHT: f32 = 32.0;
 const SIDEBAR_WIDTH: f32 = 220.0;
@@ -232,6 +300,12 @@ impl AssetBrowserPanel {
                 if let Ok(mut state) = self.state.lock() {
                     state.pending_scene_load = Some(abs_path);
                     log::info!("Asset browser: loading scene '{}'", asset.rel_path);
+                }
+            }
+            ActivationKind::SpawnPrefab { abs_path: _ } => {
+                if let Ok(mut state) = self.state.lock() {
+                    state.pending_prefab_spawn = Some(asset.rel_path.clone());
+                    log::info!("Asset browser: spawning prefab '{}'", asset.rel_path);
                 }
             }
             ActivationKind::OpenExternal { abs_path } => match open::that(&abs_path) {
@@ -683,6 +757,43 @@ impl EditorPanel for AssetBrowserPanel {
             })
             .collect();
 
+        // Drop target for entity drags from the scene tree. Registered
+        // *before* the tile loop so the per-tile `interact_rect` calls
+        // come later and take click priority — without this ordering
+        // the grid-wide rect overlays the tiles and absorbs single
+        // clicks (regression: tiles unselectable). The drop check
+        // happens immediately, while `last_response` still points at
+        // the grid rect; tiles registering after won't change the
+        // already-read drop status.
+        let drop_y = grid_inner_y;
+        let drop_h = (body_y + body_h - grid_inner_y).max(0.0);
+        let _drop_int = ui.interact_rect(
+            "ab-grid-drop",
+            [grid_inner_x, drop_y, grid_inner_w, drop_h],
+        );
+        if let Some(payload) = ui.dnd_take_drop_payload() {
+            if crate::panels::scene_tree::payload_is_entity(payload) {
+                let entity = crate::panels::scene_tree::unpack_entity(payload);
+                let folder = self.current_folder.clone().unwrap_or_default();
+                if let Ok(mut state) = self.state.lock() {
+                    let name = entity_display_name(&state.scene_roots, entity)
+                        .unwrap_or_else(|| format!("Entity_{}", entity.index));
+                    let stem = sanitize_for_filename(&name);
+                    let rel_path = if folder.is_empty() {
+                        format!("{}.kprefab", stem)
+                    } else {
+                        format!("{}/{}.kprefab", folder, stem)
+                    };
+                    state.pending_save_as_prefab_at = Some((entity, rel_path));
+                    log::info!(
+                        "Asset browser: entity '{}' dropped — creating prefab in '{}'",
+                        name,
+                        folder
+                    );
+                }
+            }
+        }
+
         let tile_h = TILE_SIZE + 22.0;
         let mut to_select: Option<usize> = None;
         let mut to_activate: Option<usize> = None;
@@ -702,6 +813,12 @@ impl EditorPanel for AssetBrowserPanel {
                 selected,
                 &theme,
             );
+            // Prefab tiles double as drag sources — the viewport's drop
+            // target reads the low 32 bits as the index into
+            // `EditorState::asset_entries` and queues a prefab spawn.
+            if asset.type_name == "prefab" {
+                ui.dnd_attach_drag_payload(pack_prefab_drag(*orig_idx as u32));
+            }
             if interaction.double_clicked {
                 to_activate = Some(*orig_idx);
             } else if interaction.clicked {

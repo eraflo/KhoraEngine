@@ -5,6 +5,12 @@
 // You may obtain a copy of the License at
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 //! Editor command dispatch — file I/O, build-game, menu actions.
 //!
@@ -15,7 +21,10 @@
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::prelude::ecs::*;
-use khora_sdk::{CommandHistory, EditorState, GameWorld, PlayMode, SerializationGoal};
+use khora_sdk::{
+    instantiate_subtree, serialize_subtree, CommandHistory, EditorState, GameWorld, PlayMode,
+    SerializationGoal,
+};
 
 use crate::build_game;
 use crate::hot_reload;
@@ -202,8 +211,12 @@ pub fn process_menu_actions(
         "pause" => apply_pause(editor_state),
         "stop" => apply_stop(world, editor_state),
         "save" => apply_save(project_vfs.as_ref(), world, editor_state),
+        // Save-As does NOT expose a strategy picker. The engine knows
+        // which `SerializationGoal` is right for each context — for
+        // editor saves that's `EditorInterchange` (Recipe / bincode).
+        // Code paths that need a different goal (build pipeline, RON
+        // export, etc.) call `save_scene_dispatch_with_goal` directly.
         "save_as" => apply_save_as(project_vfs.as_ref(), world, editor_state),
-        "export_ron" => apply_export_ron(project_vfs.as_ref(), world),
         "open" => apply_open(project_vfs.as_ref(), world, editor_state),
         "spawn_empty" => {
             if let Ok(mut state) = editor_state.lock() {
@@ -352,26 +365,162 @@ fn apply_save_as(
     }
 }
 
-/// Export the current scene through the `HumanReadableDebug` strategy
-/// (Definition / RON). Useful for diffing in version control or hand-
-/// editing — wires the strategy that doc 18_editor.md flagged as
-/// "registered but not yet wired to a menu".
-fn apply_export_ron(project_vfs: Option<&Arc<Mutex<ProjectVfs>>>, world: &mut GameWorld) {
+/// Drains [`EditorState::pending_save_as_prefab`] and
+/// [`EditorState::pending_save_as_prefab_at`], writing the entity's
+/// subtree as a `.kprefab` (Recipe-encoded).
+///
+/// - The `_at` variant carries a pre-chosen forward-slash relative
+///   path under `<project>/assets/`; the dispatcher writes directly
+///   without showing a dialog. Set by drag-drop (entity → asset
+///   browser folder).
+/// - The plain variant opens an `rfd::FileDialog`. Set by the scene
+///   tree's "Save as Prefab…" context entry.
+pub fn process_pending_save_as_prefab(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
+) {
+    // Drag-drop path: pre-chosen folder, no dialog.
+    let auto = match editor_state.lock() {
+        Ok(mut s) => s.pending_save_as_prefab_at.take(),
+        Err(_) => None,
+    };
+    if let Some((entity, rel_path)) = auto {
+        save_prefab_to_project_path(project_vfs, world, entity, &rel_path);
+    }
+
+    // Right-click path: file dialog.
+    let entity = match editor_state.lock() {
+        Ok(mut s) => s.pending_save_as_prefab.take(),
+        Err(_) => None,
+    };
+    let Some(entity) = entity else {
+        return;
+    };
+
+    let bytes = match serialize_subtree(world.inner_world(), entity) {
+        Ok(b) => b,
+        Err(e) => {
+            log::error!("Failed to serialize prefab subtree: {:?}", e);
+            return;
+        }
+    };
+
     let Some(path) = rfd::FileDialog::new()
-        .add_filter("Khora Scene (RON)", &["kscene"])
-        .set_file_name("scene_export.kscene")
+        .add_filter("Khora Prefab", &["kprefab"])
+        .set_file_name("prefab.kprefab")
         .save_file()
     else {
         return;
     };
-    let path = path.to_string_lossy().to_string();
-    save_scene_dispatch_with_goal(
-        project_vfs,
-        world,
-        &path,
-        SerializationGoal::HumanReadableDebug,
-    );
-    log::info!("Exported scene as RON: {}", path);
+    let abs = path.clone();
+    let path_str = path.to_string_lossy().to_string();
+
+    if let Some(pvfs_arc) = project_vfs {
+        if let Ok(mut pvfs) = pvfs_arc.lock() {
+            let assets_root = pvfs.assets_root.clone();
+            if let Some(rel_fwd) = scene_io::rel_inside_project(&abs, &assets_root) {
+                write_prefab_through_vfs(&mut pvfs, &rel_fwd, &bytes);
+                return;
+            }
+        }
+    }
+
+    match std::fs::write(&path_str, &bytes) {
+        Ok(()) => log::warn!(
+            "Prefab saved to '{}' ({} bytes) — outside project, not VFS-managed.",
+            path_str,
+            bytes.len()
+        ),
+        Err(e) => log::error!("Failed to write prefab '{}': {}", path_str, e),
+    }
+}
+
+fn save_prefab_to_project_path(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &GameWorld,
+    entity: EntityId,
+    rel_path: &str,
+) {
+    let Some(pvfs_arc) = project_vfs else {
+        log::warn!("Prefab drop ignored: no project is open");
+        return;
+    };
+    let bytes = match serialize_subtree(world.inner_world(), entity) {
+        Ok(b) => b,
+        Err(e) => {
+            log::error!("Failed to serialize prefab subtree: {:?}", e);
+            return;
+        }
+    };
+    let Ok(mut pvfs) = pvfs_arc.lock() else {
+        log::error!("Project VFS mutex poisoned");
+        return;
+    };
+    write_prefab_through_vfs(&mut pvfs, rel_path, &bytes);
+}
+
+fn write_prefab_through_vfs(pvfs: &mut ProjectVfs, rel_fwd: &str, bytes: &[u8]) {
+    if let Err(e) = pvfs.write_asset(std::path::Path::new(rel_fwd), bytes) {
+        log::error!("Failed to write prefab '{}': {:#}", rel_fwd, e);
+        return;
+    }
+    if let Err(e) = pvfs.rebuild_index() {
+        log::warn!("Prefab saved but index rebuild failed: {:#}", e);
+    }
+    log::info!("Prefab saved to '{}' ({} bytes)", rel_fwd, bytes.len());
+}
+
+/// Drains [`EditorState::pending_prefab_spawn`] and instantiates the
+/// referenced `.kprefab` into the live world via
+/// [`instantiate_subtree`]. The forward-slash relative path resolves
+/// through the project's VFS / `AssetService`.
+pub fn process_pending_prefab_spawn(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &mut GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
+) {
+    let rel = match editor_state.lock() {
+        Ok(mut s) => s.pending_prefab_spawn.take(),
+        Err(_) => None,
+    };
+    let Some(rel) = rel else {
+        return;
+    };
+
+    let Some(pvfs_arc) = project_vfs else {
+        log::warn!(
+            "Prefab spawn requested ('{}') but no project is open",
+            rel
+        );
+        return;
+    };
+
+    let bytes = {
+        let Ok(mut pvfs) = pvfs_arc.lock() else {
+            log::error!("Project VFS mutex poisoned");
+            return;
+        };
+        let uuid = ProjectVfs::uuid_for_rel_path(&rel);
+        match pvfs.asset_service.load_raw(&uuid) {
+            Ok(b) => b,
+            Err(e) => {
+                log::error!("Failed to read prefab '{}': {:#}", rel, e);
+                return;
+            }
+        }
+    };
+
+    match instantiate_subtree(world.inner_world_mut(), &bytes) {
+        Ok(new_root) => {
+            log::info!(
+                "Prefab '{}' instantiated (root entity index={})",
+                rel,
+                new_root.index
+            );
+        }
+        Err(e) => log::error!("Failed to instantiate prefab '{}': {:?}", rel, e),
+    }
 }
 
 fn apply_open(

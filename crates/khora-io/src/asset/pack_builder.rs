@@ -407,7 +407,8 @@ mod tests {
         let pack_loader = PackLoader::new(pack_file).expect("valid pack header");
         assert_eq!(pack_loader.header().asset_count, vfs.asset_count() as u32);
         let metrics = Arc::new(MetricsRegistry::new());
-        let mut svc = AssetService::new(&index_bytes, Box::new(pack_loader), metrics).unwrap();
+        let mut svc =
+            AssetService::new(&index_bytes, Box::new(pack_loader), metrics, None).unwrap();
 
         // Verify each asset by raw load_raw, since we don't register any
         // decoders here (binary blobs aren't real PNGs).

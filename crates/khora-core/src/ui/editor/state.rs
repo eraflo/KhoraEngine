@@ -231,6 +231,26 @@ pub struct EditorState {
     /// pops this each frame and applies it to the engine (when an engine
     /// `Visible` component lands; for now it just flips `hidden_entities`).
     pub pending_visibility_toggle: Option<EntityId>,
+
+    // ── Prefab workflow ────────────────────────────────
+    /// Set when the user picks "Save as Prefab" in the scene tree
+    /// context menu. The editor consumes this next frame, opens a
+    /// file dialog, calls `serialize_subtree`, and writes the resulting
+    /// `.kprefab` file.
+    pub pending_save_as_prefab: Option<EntityId>,
+    /// Same payload as `pending_save_as_prefab`, but with a pre-chosen
+    /// destination forward-slash relative path under `<project>/assets/`
+    /// — set by drag-and-drop (e.g. dragging an entity onto the asset
+    /// browser's current folder). The dispatcher writes directly with
+    /// no file dialog and reuses the entity name as the file stem when
+    /// the path ends in `/`.
+    pub pending_save_as_prefab_at: Option<(EntityId, String)>,
+    /// Set when the user drops a `.kprefab` tile onto the viewport (or
+    /// activates one from the asset browser). Stores the forward-slash
+    /// relative path under `<project>/assets/`. Consumed next frame to
+    /// load the recipe via the asset service and call
+    /// `instantiate_subtree`.
+    pub pending_prefab_spawn: Option<String>,
 }
 
 impl EditorState {

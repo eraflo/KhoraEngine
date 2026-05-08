@@ -42,10 +42,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Returns the canonical asset type name for a file extension, or `None` if
-/// the extension isn't recognized.
+/// Returns the canonical asset type name for a file extension.
 ///
-/// The mapping is the **single source of truth** shared by:
+/// The well-known set is the **single source of truth** shared by:
 /// - the editor's in-memory index (this module),
 /// - the asset browser's tile categorization,
 /// - the pack builder (Phase 2).
@@ -54,11 +53,14 @@ use std::{
 /// (`crates/khora-agents/tests/asset_loading_test.rs:162` registers
 /// `"texture"`).
 ///
-/// Files whose extension isn't in this list are skipped during the scan —
-/// they don't enter the VFS. The asset browser still surfaces them as
-/// "unknown" via a separate filesystem walk if needed (Phase 1 doesn't).
-pub fn asset_type_for_extension(ext: &str) -> Option<&'static str> {
-    match ext.to_ascii_lowercase().as_str() {
+/// Unknown extensions return `Some(<extension>)` rather than `None` —
+/// the engine tracks **everything** under `assets/` regardless of
+/// whether it has a dedicated decoder yet. New file kinds show up in
+/// the asset browser automatically; adding a decoder only changes how
+/// they're consumed at runtime, not whether they enter the VFS.
+pub fn asset_type_for_extension(ext: &str) -> Option<String> {
+    let lower = ext.to_ascii_lowercase();
+    let canonical: Option<&'static str> = match lower.as_str() {
         // Mesh formats
         "gltf" | "glb" | "obj" | "fbx" => Some("mesh"),
         // Texture formats
@@ -78,7 +80,45 @@ pub fn asset_type_for_extension(ext: &str) -> Option<&'static str> {
         // Prefab formats (Phase 5 — instanced via SerializationService)
         "kprefab" => Some("prefab"),
         _ => None,
+    };
+    Some(canonical.map(|s| s.to_string()).unwrap_or(lower))
+}
+
+/// Asset type assigned to files with no extension at all. These still
+/// enter the VFS so they're visible in the asset browser, but the
+/// engine has no way to dispatch a decoder until the user renames or
+/// re-classifies them.
+pub const EXTENSIONLESS_ASSET_TYPE: &str = "blob";
+
+/// File-name prefixes the scan ignores outright. These are OS / editor
+/// scratch files that should never be part of the project.
+const SCAN_IGNORE_PREFIXES: &[&str] = &[".", "~"];
+
+/// File-name suffixes the scan ignores outright. Editor swap files,
+/// build-tool temporaries, etc.
+const SCAN_IGNORE_SUFFIXES: &[&str] = &[".tmp", ".swp", ".bak", "~"];
+
+/// `true` if a file with the given name should be excluded from the
+/// VFS scan and from hot-reload events. Catches OS scratch files
+/// (`.DS_Store`, `.gitkeep`, …) and editor swap / backup files
+/// (`*.tmp`, `*.swp`, `*.bak`, `*~`).
+pub fn should_skip_file(name: &str) -> bool {
+    if name.is_empty() {
+        return true;
     }
+    if SCAN_IGNORE_PREFIXES
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+    {
+        return true;
+    }
+    if SCAN_IGNORE_SUFFIXES
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
+    {
+        return true;
+    }
+    false
 }
 
 /// Recursive scanner that turns a project's `assets/` directory into an
@@ -110,7 +150,7 @@ impl<'a> IndexBuilder<'a> {
             return Ok(Vec::new());
         }
 
-        let mut entries: Vec<(String, PathBuf, &'static str)> = Vec::new();
+        let mut entries: Vec<(String, PathBuf, String)> = Vec::new();
 
         for entry in walkdir::WalkDir::new(self.assets_root)
             .follow_links(false)
@@ -125,12 +165,14 @@ impl<'a> IndexBuilder<'a> {
                 Ok(r) => r.to_path_buf(),
                 Err(_) => continue,
             };
-            let ext = match rel.extension().and_then(|e| e.to_str()) {
-                Some(e) => e,
-                None => continue,
-            };
-            let Some(type_name) = asset_type_for_extension(ext) else {
+            let file_name = abs.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if should_skip_file(file_name) {
                 continue;
+            }
+            let type_name = match rel.extension().and_then(|e| e.to_str()) {
+                Some(ext) => asset_type_for_extension(ext)
+                    .unwrap_or_else(|| EXTENSIONLESS_ASSET_TYPE.to_string()),
+                None => EXTENSIONLESS_ASSET_TYPE.to_string(),
             };
             let rel_fwd = rel_to_forward_slash(&rel);
             entries.push((rel_fwd, rel, type_name));
@@ -147,7 +189,7 @@ impl<'a> IndexBuilder<'a> {
             metadata.push(AssetMetadata {
                 uuid,
                 source_path: rel_path,
-                asset_type_name: type_name.to_string(),
+                asset_type_name: type_name,
                 dependencies: Vec::new(),
                 variants,
                 tags: Vec::new(),
@@ -186,36 +228,61 @@ mod tests {
 
     #[test]
     fn ext_canonical_mapping() {
-        assert_eq!(asset_type_for_extension("png"), Some("texture"));
-        assert_eq!(asset_type_for_extension("PNG"), Some("texture"));
-        assert_eq!(asset_type_for_extension("gltf"), Some("mesh"));
-        assert_eq!(asset_type_for_extension("kscene"), Some("scene"));
-        assert_eq!(asset_type_for_extension("kscript"), Some("script"));
-        assert_eq!(asset_type_for_extension("xyz"), None);
+        assert_eq!(asset_type_for_extension("png").as_deref(), Some("texture"));
+        assert_eq!(asset_type_for_extension("PNG").as_deref(), Some("texture"));
+        assert_eq!(asset_type_for_extension("gltf").as_deref(), Some("mesh"));
+        assert_eq!(asset_type_for_extension("kscene").as_deref(), Some("scene"));
+        assert_eq!(
+            asset_type_for_extension("kscript").as_deref(),
+            Some("script")
+        );
+        // Unknown extensions fall back to a per-extension bucket so the
+        // file is still tracked (vs. silently dropped).
+        assert_eq!(asset_type_for_extension("xyz").as_deref(), Some("xyz"));
+        assert_eq!(asset_type_for_extension("MD").as_deref(), Some("md"));
     }
 
     #[test]
-    fn build_metadata_picks_up_known_files_and_skips_unknown() {
+    fn build_metadata_tracks_every_file_under_assets() {
         let dir = tempdir().unwrap();
         let root = dir.path();
         fs::create_dir_all(root.join("textures")).unwrap();
         fs::create_dir_all(root.join("scenes")).unwrap();
+        fs::create_dir_all(root.join("docs")).unwrap();
         fs::write(root.join("textures").join("foo.png"), b"PNG").unwrap();
         fs::write(root.join("scenes").join("default.kscene"), b"SCN").unwrap();
-        fs::write(root.join("README.md"), b"unknown").unwrap();
+        fs::write(root.join("docs").join("README.md"), b"hello").unwrap();
+        fs::write(root.join("notes"), b"raw").unwrap();
+        // Editor / OS scratch — these MUST still be skipped.
+        fs::write(root.join(".DS_Store"), b"junk").unwrap();
+        fs::write(root.join("textures").join("foo.png.tmp"), b"junk").unwrap();
+        fs::write(root.join("textures").join("foo.png~"), b"junk").unwrap();
 
         let metadata = IndexBuilder::new(root).build_metadata().unwrap();
-        let names: Vec<_> = metadata
+        let by_path: std::collections::HashMap<String, String> = metadata
             .iter()
-            .map(|m| m.asset_type_name.as_str())
+            .map(|m| {
+                (
+                    rel_to_forward_slash(&m.source_path),
+                    m.asset_type_name.clone(),
+                )
+            })
             .collect();
-        assert_eq!(names.len(), 2);
-        // Sorted by rel-path so "scenes/..." < "textures/...".
-        assert_eq!(metadata[0].asset_type_name, "scene");
-        assert_eq!(metadata[1].asset_type_name, "texture");
-        // UUIDs derived from forward-slash relative paths.
-        assert_eq!(metadata[0].uuid, AssetUUID::new_v5("scenes/default.kscene"));
-        assert_eq!(metadata[1].uuid, AssetUUID::new_v5("textures/foo.png"));
+
+        assert_eq!(by_path.get("textures/foo.png").map(String::as_str), Some("texture"));
+        assert_eq!(
+            by_path.get("scenes/default.kscene").map(String::as_str),
+            Some("scene")
+        );
+        // Unknown extension still flows into the index.
+        assert_eq!(by_path.get("docs/README.md").map(String::as_str), Some("md"));
+        // No-extension file too — bucketed as "blob".
+        assert_eq!(by_path.get("notes").map(String::as_str), Some("blob"));
+        // Scratch files dropped.
+        assert!(!by_path.contains_key(".DS_Store"));
+        assert!(!by_path.contains_key("textures/foo.png.tmp"));
+        assert!(!by_path.contains_key("textures/foo.png~"));
+        assert_eq!(metadata.len(), 4);
     }
 
     #[test]

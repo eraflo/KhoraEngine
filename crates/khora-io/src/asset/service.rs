@@ -27,6 +27,7 @@ use khora_data::assets::Assets;
 use khora_telemetry::MetricsRegistry;
 
 use super::io::AssetIo;
+use super::manifest::PackManifest;
 use super::registry::DecoderRegistry;
 use crate::vfs::VirtualFileSystem;
 
@@ -63,14 +64,24 @@ pub struct AssetService {
     decoders: DecoderRegistry,
     storages: HashMap<TypeId, Box<dyn AnyAssets>>,
     load_count: usize,
+    /// When `Some`, every byte slice produced by `io.load_bytes` is
+    /// re-hashed against the manifest before reaching the decoder.
+    /// Constructed by the runtime only when `RuntimeConfig::verify_integrity`
+    /// is set and `manifest.bin` is present next to `data.pack`.
+    manifest: Option<PackManifest>,
 }
 
 impl AssetService {
     /// Creates a new `AssetService`.
+    ///
+    /// When `manifest` is `Some`, both `load` and `load_raw` re-hash the
+    /// bytes returned by the underlying `AssetIo` against the recorded
+    /// BLAKE3 digest and refuse to proceed on mismatch.
     pub fn new(
         index_bytes: &[u8],
         io: Box<dyn AssetIo>,
         metrics_registry: Arc<MetricsRegistry>,
+        manifest: Option<PackManifest>,
     ) -> Result<Self> {
         let vfs = VirtualFileSystem::new(index_bytes)
             .context("Failed to initialize VirtualFileSystem from index bytes")?;
@@ -81,6 +92,7 @@ impl AssetService {
             decoders: DecoderRegistry::new(metrics_registry),
             storages: HashMap::new(),
             load_count: 0,
+            manifest,
         })
     }
 
@@ -143,6 +155,10 @@ impl AssetService {
             .ok_or_else(|| anyhow!("Asset {:?} has no 'default' variant", uuid))?;
 
         let bytes = self.io.load_bytes(source)?;
+        if let Some(m) = &self.manifest {
+            m.verify(uuid, &bytes)
+                .context("Asset integrity check failed")?;
+        }
         let asset: A = self
             .decoders
             .decode::<A>(&metadata.asset_type_name, &bytes)?;
@@ -166,7 +182,12 @@ impl AssetService {
             .variants
             .get("default")
             .ok_or_else(|| anyhow!("Asset {:?} has no 'default' variant", uuid))?;
-        self.io.load_bytes(source)
+        let bytes = self.io.load_bytes(source)?;
+        if let Some(m) = &self.manifest {
+            m.verify(uuid, &bytes)
+                .context("Asset integrity check failed")?;
+        }
+        Ok(bytes)
     }
 
     /// Drops the cached handle for `uuid` across every typed storage.
@@ -249,6 +270,7 @@ mod tests {
                 files: HashMap::new(),
             }),
             metrics,
+            None,
         )
         .unwrap();
         assert_eq!(svc.vfs().asset_count(), 1);
@@ -264,7 +286,8 @@ mod tests {
         let mut files = HashMap::new();
         files.insert(std::path::PathBuf::from("scenes/a.kscene"), b"SCN".to_vec());
         let metrics = Arc::new(MetricsRegistry::new());
-        let mut svc = AssetService::new(&bytes, Box::new(MockIo { files }), metrics).unwrap();
+        let mut svc =
+            AssetService::new(&bytes, Box::new(MockIo { files }), metrics, None).unwrap();
 
         let uuid = AssetUUID::new_v5("scenes/a.kscene");
         let raw = svc.load_raw(&uuid).unwrap();
@@ -284,6 +307,7 @@ mod tests {
                 files: HashMap::new(),
             }),
             metrics,
+            None,
         )
         .unwrap();
         assert_eq!(svc.vfs().asset_count(), 1);
@@ -309,8 +333,64 @@ mod tests {
                 files: HashMap::new(),
             }),
             metrics,
+            None,
         )
         .unwrap();
         assert!(!svc.invalidate(&AssetUUID::new_v5("missing")));
+    }
+
+    #[test]
+    fn load_raw_verifies_against_manifest_and_rejects_corruption() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("scenes")).unwrap();
+        let payload = b"SCENE-PAYLOAD";
+        fs::write(dir.path().join("scenes").join("a.kscene"), payload).unwrap();
+        let index_bytes = IndexBuilder::new(dir.path()).build_index_bytes().unwrap();
+
+        let uuid = AssetUUID::new_v5("scenes/a.kscene");
+
+        // Build a manifest matching the genuine payload.
+        let mut manifest = PackManifest::new();
+        manifest.insert(uuid, payload);
+
+        // Mock returns the genuine payload — verification should pass.
+        let mut files = HashMap::new();
+        files.insert(
+            std::path::PathBuf::from("scenes/a.kscene"),
+            payload.to_vec(),
+        );
+        let metrics = Arc::new(MetricsRegistry::new());
+        let mut svc = AssetService::new(
+            &index_bytes,
+            Box::new(MockIo { files }),
+            metrics,
+            Some(manifest.clone()),
+        )
+        .unwrap();
+        let raw = svc.load_raw(&uuid).unwrap();
+        assert_eq!(raw, payload);
+
+        // Now corrupt the bytes the mock returns. Same uuid, same manifest,
+        // different bytes => verification must fail.
+        let mut bad_files = HashMap::new();
+        bad_files.insert(
+            std::path::PathBuf::from("scenes/a.kscene"),
+            b"CORRUPTED-PAY".to_vec(),
+        );
+        let metrics2 = Arc::new(MetricsRegistry::new());
+        let mut svc_bad = AssetService::new(
+            &index_bytes,
+            Box::new(MockIo { files: bad_files }),
+            metrics2,
+            Some(manifest),
+        )
+        .unwrap();
+        let err = svc_bad.load_raw(&uuid).unwrap_err();
+        let msg = format!("{:#}", err);
+        assert!(
+            msg.contains("integrity") || msg.contains("BLAKE3") || msg.contains("size mismatch"),
+            "expected integrity error, got: {}",
+            msg
+        );
     }
 }

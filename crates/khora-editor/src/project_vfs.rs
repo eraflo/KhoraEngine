@@ -71,7 +71,7 @@ impl ProjectVfs {
         // `AssetWriter` for scene saves. They both read/write the same root,
         // so this is consistent.
         let io = Box::new(FileLoader::new(&assets_root));
-        let mut asset_service = AssetService::new(&index_bytes, io, metrics)
+        let mut asset_service = AssetService::new(&index_bytes, io, metrics, None)
             .context("Failed to construct AssetService")?;
 
         // texture + font auto-register via inventory.

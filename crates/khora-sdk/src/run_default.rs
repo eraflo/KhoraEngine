@@ -43,6 +43,7 @@ use crate::{
     PackLoader, PhaseProvider, RenderSystem, SceneFile, SerializationService, ServiceRegistry,
     SoundData, SymphoniaDecoder, WgpuRenderSystem, WindowConfig,
 };
+use khora_io::asset::PackManifest;
 use serde::Deserialize;
 
 /// Runtime config the launcher (editor's "Build Game") drops next to the
@@ -132,44 +133,108 @@ impl RuntimeConfig {
 
 /// Builds an [`AssetService`] by auto-detecting the loader. See module
 /// docs for the precedence rules.
-fn build_asset_service(exe_dir: &Path, metrics: Arc<MetricsRegistry>) -> Result<AssetService> {
+///
+/// When `verify_integrity` is `true` and a packed runtime is detected,
+/// `manifest.bin` is read alongside `data.pack` and threaded into the
+/// service so each load is hashed against its recorded BLAKE3 digest.
+/// A missing or malformed manifest logs a warning but never aborts
+/// startup — the runtime stays bootable on packs built before manifests
+/// were emitted.
+fn build_asset_service(
+    exe_dir: &Path,
+    metrics: Arc<MetricsRegistry>,
+    verify_integrity: bool,
+) -> Result<AssetService> {
     let pack = exe_dir.join("data.pack");
     let idx = exe_dir.join("index.bin");
     let assets = exe_dir.join("assets");
 
-    let (index_bytes, io, mode_label, gltf_root): (_, Box<dyn AssetIo>, &str, PathBuf) =
-        if pack.is_file() && idx.is_file() {
-            let bytes =
-                std::fs::read(&idx).with_context(|| format!("Failed to read {}", idx.display()))?;
-            let pack_file = std::fs::File::open(&pack)
-                .with_context(|| format!("Failed to open {}", pack.display()))?;
-            let loader = PackLoader::new(pack_file)
-                .context("Pack header validation failed — refusing to start")?;
-            (
-                bytes,
-                Box::new(loader) as Box<dyn AssetIo>,
-                "PackLoader",
-                exe_dir.to_path_buf(),
-            )
-        } else if assets.is_dir() {
-            let bytes = IndexBuilder::new(&assets)
-                .build_index_bytes()
-                .context("Failed to build dev-mode in-memory index")?;
-            (
-                bytes,
-                Box::new(FileLoader::new(&assets)),
-                "FileLoader",
-                assets.clone(),
-            )
-        } else {
-            return Err(anyhow!(
-                "khora-sdk run_default cannot start: no `data.pack`+`index.bin` and no \
-                 `assets/` next to the binary at {}",
-                exe_dir.display()
-            ));
-        };
+    let (index_bytes, io, mode_label, gltf_root, is_pack): (
+        _,
+        Box<dyn AssetIo>,
+        &str,
+        PathBuf,
+        bool,
+    ) = if pack.is_file() && idx.is_file() {
+        let bytes =
+            std::fs::read(&idx).with_context(|| format!("Failed to read {}", idx.display()))?;
+        let pack_file = std::fs::File::open(&pack)
+            .with_context(|| format!("Failed to open {}", pack.display()))?;
+        let loader = PackLoader::new(pack_file)
+            .context("Pack header validation failed — refusing to start")?;
+        (
+            bytes,
+            Box::new(loader) as Box<dyn AssetIo>,
+            "PackLoader",
+            exe_dir.to_path_buf(),
+            true,
+        )
+    } else if assets.is_dir() {
+        let bytes = IndexBuilder::new(&assets)
+            .build_index_bytes()
+            .context("Failed to build dev-mode in-memory index")?;
+        (
+            bytes,
+            Box::new(FileLoader::new(&assets)),
+            "FileLoader",
+            assets.clone(),
+            false,
+        )
+    } else {
+        return Err(anyhow!(
+            "khora-sdk run_default cannot start: no `data.pack`+`index.bin` and no \
+             `assets/` next to the binary at {}",
+            exe_dir.display()
+        ));
+    };
 
-    let mut svc = AssetService::new(&index_bytes, io, metrics)?;
+    // Manifest is a release-mode artifact emitted alongside `data.pack`.
+    // We only consult it when both the runtime explicitly asked for
+    // verification and we're booting against a real pack. In dev mode the
+    // flag is meaningless (bytes come straight off disk) — note it once
+    // and move on.
+    let manifest = if verify_integrity {
+        if is_pack {
+            let manifest_path = exe_dir.join("manifest.bin");
+            match std::fs::read(&manifest_path) {
+                Ok(bytes) => match PackManifest::decode(&bytes) {
+                    Ok(m) => {
+                        log::info!(
+                            "khora-sdk run_default: integrity verification enabled ({} entries)",
+                            m.len()
+                        );
+                        Some(m)
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "khora-sdk run_default: manifest.bin present but malformed ({}) — \
+                             integrity verification disabled",
+                            e
+                        );
+                        None
+                    }
+                },
+                Err(_) => {
+                    log::warn!(
+                        "khora-sdk run_default: verify_integrity=true but {} is missing — \
+                         integrity verification disabled",
+                        manifest_path.display()
+                    );
+                    None
+                }
+            }
+        } else {
+            log::info!(
+                "khora-sdk run_default: verify_integrity=true ignored in dev mode \
+                 (no pack to verify against)"
+            );
+            None
+        }
+    } else {
+        None
+    };
+
+    let mut svc = AssetService::new(&index_bytes, io, metrics, manifest)?;
     svc.register_inventory_decoders();
     svc.register_decoder::<SoundData>("audio", SymphoniaDecoder);
     let gltf_resolver = Arc::new(FileSystemResolver::new(&gltf_root));
@@ -299,6 +364,7 @@ pub fn run_default() -> Result<()> {
         cfg.verify_integrity,
     );
 
+    let verify_integrity = cfg.verify_integrity;
     run_winit::<WinitWindowProvider, DefaultRuntimeApp>(move |window, services, _event_loop| {
         let mut rs = WgpuRenderSystem::new();
         rs.init(window).expect("renderer init failed");
@@ -307,7 +373,7 @@ pub fn run_default() -> Result<()> {
         services.insert(Arc::new(Mutex::new(rs_dyn)));
 
         let metrics = Arc::new(MetricsRegistry::new());
-        match build_asset_service(&exe_dir, metrics) {
+        match build_asset_service(&exe_dir, metrics, verify_integrity) {
             Ok(svc) => {
                 services.insert(Arc::new(Mutex::new(svc)));
             }

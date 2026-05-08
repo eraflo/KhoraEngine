@@ -5,6 +5,12 @@
 // You may obtain a copy of the License at
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 //! `AssetTypeHandler` — extensibility seam for the Asset Browser.
 //!
@@ -30,6 +36,19 @@ pub enum ActivationKind {
     /// `commands::load_scene_dispatch` routes it through the project
     /// VFS when the path is internal.
     LoadScene { abs_path: String },
+    /// Spawn the prefab subtree into the active world. The dispatcher
+    /// queues `EditorState::pending_prefab_spawn` with the forward-slash
+    /// path under `<project>/assets/`; spawning happens next frame in
+    /// `commands::process_pending_prefab_spawn`.
+    ///
+    /// `abs_path` is carried for parity with the other variants (and for
+    /// future use when a prefab spawn could feed an OS-level "Reveal in
+    /// Finder" affordance), but the dispatcher reads `rel_path` from the
+    /// asset entry directly.
+    SpawnPrefab {
+        #[allow(dead_code)]
+        abs_path: String,
+    },
     /// Open externally with the OS-default app.
     OpenExternal { abs_path: String },
 }
@@ -164,6 +183,25 @@ pub mod builtins {
         }
     }
 
+    pub struct PrefabHandler;
+    impl AssetTypeHandler for PrefabHandler {
+        fn matches_type_name(&self, n: &str) -> bool {
+            n == "prefab"
+        }
+        fn tile_kind(&self) -> AssetTileKind {
+            AssetTileKind::Scene
+        }
+        fn icon(&self) -> Icon {
+            Icon::Cube
+        }
+        fn category_label(&self) -> &'static str {
+            "Prefabs"
+        }
+        fn activate(&self, abs_path: String) -> ActivationKind {
+            ActivationKind::SpawnPrefab { abs_path }
+        }
+    }
+
     pub struct ScriptHandler;
     impl AssetTypeHandler for ScriptHandler {
         fn matches_type_name(&self, n: &str) -> bool {
@@ -197,5 +235,8 @@ pub mod builtins {
     }
     inventory::submit! {
         super::AssetTypeHandlerRegistration { handler: &ScriptHandler }
+    }
+    inventory::submit! {
+        super::AssetTypeHandlerRegistration { handler: &PrefabHandler }
     }
 }

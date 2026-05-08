@@ -46,6 +46,129 @@ impl RecipeSerializationStrategy {
     }
 }
 
+/// Encodes the subtree rooted at `root` (root + all descendants reached
+/// via the `Children` component) as a stand-alone bincode-encoded
+/// `SceneRecipe`. Exists to back the editor's "Save as Prefab" flow:
+/// the resulting bytes round-trip through [`instantiate_subtree`].
+///
+/// Hierarchy edges are emitted only for parent/child pairs whose **both**
+/// endpoints live inside the subtree, so a `.kprefab` file is fully
+/// self-contained. The first `Spawn` command is the prefab root.
+pub fn serialize_subtree(
+    world: &crate::ecs::World,
+    root: EntityId,
+) -> Result<Vec<u8>, SerializationError> {
+    let mut order: Vec<EntityId> = Vec::new();
+    let mut included: std::collections::HashSet<EntityId> = std::collections::HashSet::new();
+    let mut queue: std::collections::VecDeque<EntityId> = std::collections::VecDeque::new();
+    queue.push_back(root);
+    included.insert(root);
+    order.push(root);
+    while let Some(parent) = queue.pop_front() {
+        if let Some(children) = world.get::<crate::ecs::Children>(parent) {
+            for &child in &children.0 {
+                if included.insert(child) {
+                    order.push(child);
+                    queue.push_back(child);
+                }
+            }
+        }
+    }
+
+    let mut commands = Vec::with_capacity(order.len() * 4);
+    for entity_id in &order {
+        commands.push(SceneCommand::Spawn { id: *entity_id });
+        for reg in inventory::iter::<ComponentRegistration> {
+            if let Some(data) = (reg.serialize_recipe)(world, *entity_id) {
+                commands.push(SceneCommand::AddComponent {
+                    entity_id: *entity_id,
+                    component_type: reg.type_name.to_string(),
+                    component_data: data,
+                });
+            }
+        }
+        if let Some(parent) = world.get::<crate::ecs::Parent>(*entity_id) {
+            // Drop the root's incoming parent edge — by definition it lives
+            // outside the subtree. Children whose parent IS in the subtree
+            // emit a normal SetParent.
+            if included.contains(&parent.0) {
+                commands.push(SceneCommand::SetParent {
+                    child_id: *entity_id,
+                    parent_id: parent.0,
+                });
+            }
+        }
+    }
+
+    let scene_recipe = SceneRecipe { commands };
+    bincode::encode_to_vec(&scene_recipe, config::standard())
+        .map_err(|e| SerializationError::ProcessingFailed(e.to_string()))
+}
+
+/// Inverse of [`serialize_subtree`]. Decodes the recipe bytes and spawns
+/// the subtree into `world`, returning the new root's `EntityId` so the
+/// caller can position it / reparent it / treat it as the drop target's
+/// child.
+///
+/// The root lands at world root (no `SetParent` is emitted for it,
+/// because the original parent edge was filtered out at serialize time).
+pub fn instantiate_subtree(
+    world: &mut crate::ecs::World,
+    recipe_bytes: &[u8],
+) -> Result<EntityId, DeserializationError> {
+    let (recipe, _): (SceneRecipe, _) = bincode::decode_from_slice(recipe_bytes, config::standard())
+        .map_err(|e| DeserializationError::InvalidFormat(e.to_string()))?;
+
+    let mut id_map = HashMap::<EntityId, EntityId>::new();
+    let mut new_root: Option<EntityId> = None;
+
+    for command in recipe.commands {
+        match command {
+            SceneCommand::Spawn { id } => {
+                let new_id = world.spawn(());
+                id_map.insert(id, new_id);
+                if new_root.is_none() {
+                    new_root = Some(new_id);
+                }
+            }
+            SceneCommand::AddComponent {
+                entity_id,
+                component_type,
+                component_data,
+            } => {
+                if let Some(new_id) = id_map.get(&entity_id) {
+                    for reg in inventory::iter::<ComponentRegistration> {
+                        if reg.type_name == component_type {
+                            if let Err(e) =
+                                (reg.deserialize_recipe)(world, *new_id, &component_data)
+                            {
+                                log::warn!("Failed to deserialize {}: {}", component_type, e);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            SceneCommand::SetParent {
+                child_id,
+                parent_id,
+            } => {
+                if let (Some(&new_child), Some(&new_parent)) =
+                    (id_map.get(&child_id), id_map.get(&parent_id))
+                {
+                    world
+                        .add_component(new_child, crate::ecs::Parent(new_parent))
+                        .ok();
+                }
+            }
+        }
+    }
+
+    new_root.ok_or_else(|| {
+        DeserializationError::InvalidFormat("Prefab recipe contained no Spawn commands".to_string())
+    })
+}
+
 impl SerializationStrategy for RecipeSerializationStrategy {
     fn get_strategy_id(&self) -> &'static str {
         "KH_RECIPE_V1"
@@ -145,5 +268,90 @@ impl SerializationStrategy for RecipeSerializationStrategy {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ecs::{Children, Parent, Transform, World};
+    use khora_core::math::Vec3;
+
+    /// Builds the parent's `Children` component manually since the
+    /// maintenance system that normally syncs it isn't running here.
+    fn link_parent_child(world: &mut World, parent: EntityId, child: EntityId) {
+        world.add_component(child, Parent(parent)).unwrap();
+        if let Some(existing) = world.get_mut::<Children>(parent) {
+            existing.0.push(child);
+        } else {
+            world.add_component(parent, Children(vec![child])).unwrap();
+        }
+    }
+
+    #[test]
+    fn subtree_round_trip_preserves_hierarchy_and_excludes_outsiders() {
+        let mut src = World::new();
+        let root = src.spawn(Transform {
+            translation: Vec3::new(1.0, 0.0, 0.0),
+            ..Default::default()
+        });
+        let child_a = src.spawn(Transform {
+            translation: Vec3::new(2.0, 0.0, 0.0),
+            ..Default::default()
+        });
+        let child_b = src.spawn(Transform {
+            translation: Vec3::new(3.0, 0.0, 0.0),
+            ..Default::default()
+        });
+        let grandchild = src.spawn(Transform {
+            translation: Vec3::new(4.0, 0.0, 0.0),
+            ..Default::default()
+        });
+        let outsider = src.spawn(Transform {
+            translation: Vec3::new(99.0, 0.0, 0.0),
+            ..Default::default()
+        });
+        link_parent_child(&mut src, root, child_a);
+        link_parent_child(&mut src, root, child_b);
+        link_parent_child(&mut src, child_a, grandchild);
+
+        let bytes = serialize_subtree(&src, root).expect("serialize_subtree");
+
+        let mut dst = World::new();
+        let new_root = instantiate_subtree(&mut dst, &bytes).expect("instantiate_subtree");
+
+        // Outsider must NOT be present in the destination.
+        let dst_count = dst.iter_entities().count();
+        assert_eq!(dst_count, 4, "outsider entity should not be instantiated");
+
+        // New root has no parent (root edge filtered at serialize time).
+        assert!(dst.get::<Parent>(new_root).is_none());
+
+        // Walk: new_root must have two children, one of which has one child.
+        let direct: Vec<EntityId> = dst
+            .iter_entities()
+            .filter(|e| dst.get::<Parent>(*e).map(|p| p.0) == Some(new_root))
+            .collect();
+        assert_eq!(direct.len(), 2, "expected 2 direct children of new root");
+
+        let grand: Vec<EntityId> = dst
+            .iter_entities()
+            .filter(|e| {
+                let parent = dst.get::<Parent>(*e).map(|p| p.0);
+                parent.is_some() && direct.contains(&parent.unwrap())
+            })
+            .collect();
+        assert_eq!(grand.len(), 1, "expected exactly one grandchild");
+
+        // Translation values survived bincode round-trip.
+        let mut xs: Vec<f32> = dst
+            .iter_entities()
+            .filter_map(|e| dst.get::<Transform>(e).map(|t| t.translation.x))
+            .collect();
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        assert_eq!(xs, vec![1.0, 2.0, 3.0, 4.0]);
+
+        // Sanity: source still untouched.
+        let _ = (child_a, child_b, grandchild, outsider);
     }
 }

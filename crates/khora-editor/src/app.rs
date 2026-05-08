@@ -5,6 +5,12 @@
 // You may obtain a copy of the License at
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 //! Editor application root.
 //!
@@ -152,6 +158,17 @@ impl EngineApp for EditorApp {
             &self.editor_state,
             &self.command_history,
             world,
+        );
+
+        commands::process_pending_save_as_prefab(
+            self.project_vfs.as_ref(),
+            world,
+            &self.editor_state,
+        );
+        commands::process_pending_prefab_spawn(
+            self.project_vfs.as_ref(),
+            world,
+            &self.editor_state,
         );
 
         if let Ok(mut state) = self.editor_state.lock() {

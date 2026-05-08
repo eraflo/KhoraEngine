@@ -92,6 +92,7 @@ fn test_load_asset_from_pack() -> Result<()> {
         &index_bytes,
         Box::new(PackLoader::new(data_file)?),
         metrics_registry,
+        None,
     )?;
 
     // --- 3. Register the loader ---
@@ -170,6 +171,7 @@ fn test_load_texture_from_pack() -> Result<()> {
         &index_bytes,
         Box::new(PackLoader::new(data_file)?),
         metrics_registry,
+        None,
     )?;
 
     // --- 3. Register the texture loader ---
@@ -230,6 +232,7 @@ fn test_asset_caching_and_shared_ownership() -> Result<()> {
         &index_bytes,
         Box::new(PackLoader::new(data_file)?),
         metrics_registry,
+        None,
     )?;
     asset_service.register_decoder("texture", TestTextureLoader);
 

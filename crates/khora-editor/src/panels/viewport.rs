@@ -288,6 +288,26 @@ impl EditorPanel for ViewportPanel {
         if w > 1.0 && h > 1.0 {
             if let Some(min) = ui.viewport_image(self.handle, [w, h]) {
                 let hovered = ui.is_last_item_hovered();
+                // Drop target: a `.kprefab` tile dragged onto the viewport
+                // queues a prefab spawn for the next frame. The asset
+                // browser tags its drag payload with `PREFAB_DRAG_TAG`
+                // (high 32 bits) so we can tell our drops apart from the
+                // scene-tree reparent flow's `EntityId`-packed payloads.
+                if let Some(payload) = ui.dnd_take_drop_payload() {
+                    if let Some(idx) =
+                        crate::panels::asset_browser::unpack_prefab_drag(payload)
+                    {
+                        if let Ok(mut state) = self.state.lock() {
+                            if let Some(entry) = state.asset_entries.get(idx as usize).cloned() {
+                                state.pending_prefab_spawn = Some(entry.source_path);
+                                log::info!(
+                                    "Viewport: prefab '{}' dropped — spawning",
+                                    entry.name
+                                );
+                            }
+                        }
+                    }
+                }
                 let mut show_camera_preview = false;
                 if let Ok(mut state) = self.state.lock() {
                     state.viewport_hovered = hovered;

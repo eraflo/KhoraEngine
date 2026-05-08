@@ -134,10 +134,6 @@ impl EditorPanel for TitleBarPanel {
                         dispatch("save_as");
                         m.close_menu();
                     }
-                    if m.button("Export Scene as RON…") {
-                        dispatch("export_ron");
-                        m.close_menu();
-                    }
                     m.separator();
                     if m.button("Quit") {
                         dispatch("quit");
