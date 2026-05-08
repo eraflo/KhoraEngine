@@ -25,6 +25,17 @@ pub trait App {
     /// Per-frame update — paint UI, react to input, dispatch async
     /// completions, etc.
     fn update(&mut self, ctx: &mut dyn AppContext);
+
+    /// Called once after the backend is up and before the first
+    /// `update`. Apps install their theme / fonts / DPI snapping
+    /// here. Default is a no-op.
+    fn on_start(&mut self, ctx: &mut dyn AppContext) {
+        let _ = ctx;
+    }
+
+    /// Called once when the window is closing. Persist state here.
+    /// Default is a no-op.
+    fn on_exit(&mut self) {}
 }
 
 /// Optional lifecycle hooks — implement on the same type as [`App`]

@@ -24,12 +24,21 @@ use super::EguiAppContext;
 /// trait so we can hand it to `eframe::run_native`.
 struct AppAdapter {
     inner: Box<dyn App>,
+    started: bool,
 }
 
 impl eframe::App for AppAdapter {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let mut adapter = EguiAppContext::new(ctx, frame);
+        if !self.started {
+            self.inner.on_start(&mut adapter);
+            self.started = true;
+        }
         self.inner.update(&mut adapter);
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.inner.on_exit();
     }
 }
 
@@ -61,7 +70,10 @@ where
         native_options,
         Box::new(move |_cc| {
             let app = factory();
-            Ok(Box::new(AppAdapter { inner: app }) as Box<dyn eframe::App>)
+            Ok(Box::new(AppAdapter {
+                inner: app,
+                started: false,
+            }) as Box<dyn eframe::App>)
         }),
     )
     .map_err(|e| anyhow!("eframe::run_native failed: {}", e))?;

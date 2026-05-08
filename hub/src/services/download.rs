@@ -35,6 +35,28 @@ fn engines_dir() -> PathBuf {
         .join("engines")
 }
 
+/// Returns the install directory for a specific engine version
+/// (`~/.khora/engines/<version>/`). Public so the uninstaller can
+/// locate the directory it needs to remove.
+pub fn engine_install_dir(version: &str) -> PathBuf {
+    engines_dir().join(version)
+}
+
+/// Removes a downloaded engine install from disk. Returns `Ok(())`
+/// when the directory was successfully deleted (or never existed).
+///
+/// `Err` only on filesystem failure mid-deletion. Caller should
+/// remove the matching entry from `HubConfig.engines` either way:
+/// the on-disk directory and the config registration are tracked
+/// separately, and a stale config entry is harmless.
+pub fn uninstall_engine(version: &str) -> std::io::Result<()> {
+    let dir = engine_install_dir(version);
+    if dir.is_dir() {
+        std::fs::remove_dir_all(&dir)?;
+    }
+    Ok(())
+}
+
 /// Starts a background download of the editor archive, optionally also
 /// fetching the matching `khora-runtime` archive into the same engine
 /// cache slot.

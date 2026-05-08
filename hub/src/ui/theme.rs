@@ -6,138 +6,138 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Khora Hub palette and theme application.
+//! Khora Hub palette — produces a [`UiTheme`] from OKLCH values that
+//! match the editor and the mdBook documentation.
 //!
-//! Mirrors the editor's "Deep Navy / Silver" brand language (`khora_dark()` in
-//! `crates/khora-editor/src/theme.rs`) but stays self-contained — the hub has
-//! no dependency on engine crates by design, so the values are duplicated
-//! intentionally. Keep them in sync when the brand evolves.
+//! Mirrors the editor's "Deep Navy / Silver" brand language but stays
+//! a pure value producer: the engine's `AppContext::set_theme` does
+//! the work of lifting it onto the egui backend.
 
-use eframe::egui;
+use khora_sdk::tool_ui::{LinearRgba, UiTheme};
 
-/// Linear-RGB dark palette, matching Khora brand.
+/// Linear-RGB dark palette, matching Khora brand. Each constant is
+/// computed from the same OKLCH coordinates that drive the editor's
+/// `khora_dark()` and the mdBook CSS — single source of truth.
 pub mod pal {
-    use eframe::egui::Color32;
+    use khora_sdk::tool_ui::LinearRgba;
 
-    // ── Surfaces (deep navy, oklch 0.16-0.32 hue 265) ──
-    pub const BG: Color32 = Color32::from_rgb(7, 8, 11); // oklch(0.16 0.022 265)
-    pub const SURFACE: Color32 = Color32::from_rgb(11, 13, 17); // oklch(0.20 0.025 265)
-    pub const SURFACE2: Color32 = Color32::from_rgb(16, 17, 23); // oklch(0.235 0.028 265)
-    pub const SURFACE3: Color32 = Color32::from_rgb(22, 23, 30); // oklch(0.27 0.032 265)
-    pub const SURFACE_ACTIVE: Color32 = Color32::from_rgb(28, 30, 38); // oklch(0.32 0.036 265)
+    // ── Surfaces (deep navy, oklch 0.16–0.32 hue 265) ──
+    /// Outermost background — what panels sit on.
+    pub const BG: LinearRgba = LinearRgba::new(0.0179, 0.0193, 0.0273, 1.0);
+    /// Default panel surface.
+    pub const SURFACE: LinearRgba = LinearRgba::new(0.0290, 0.0312, 0.0426, 1.0);
+    /// Slightly elevated surface (cards, tooltips, table headers).
+    pub const SURFACE2: LinearRgba = LinearRgba::new(0.0419, 0.0451, 0.0608, 1.0);
+    /// Hover / interactive surface.
+    pub const SURFACE3: LinearRgba = LinearRgba::new(0.0584, 0.0625, 0.0826, 1.0);
+    /// Selected / pressed surface.
+    pub const SURFACE_ACTIVE: LinearRgba = LinearRgba::new(0.0876, 0.0928, 0.1207, 1.0);
 
     // ── Borders / separators ──
-    pub const BORDER: Color32 = Color32::from_rgba_premultiplied(38, 41, 56, 178);
-    pub const BORDER_LIGHT: Color32 = Color32::from_rgb(52, 56, 78);
-    pub const SEPARATOR: Color32 = Color32::from_rgba_premultiplied(28, 30, 42, 140);
+    /// Default panel border (semi-transparent).
+    pub const BORDER: LinearRgba = LinearRgba::new(0.1071, 0.1149, 0.1496, 0.7);
+    /// Stronger / hover border.
+    pub const BORDER_LIGHT: LinearRgba = LinearRgba::new(0.1786, 0.1907, 0.2455, 1.0);
+    /// Inline separator inside a panel (more transparent).
+    pub const SEPARATOR: LinearRgba = LinearRgba::new(0.0701, 0.0760, 0.1010, 0.55);
 
-    // ── Brand silver (replaces the old blue PRIMARY) ──
-    pub const PRIMARY: Color32 = Color32::from_rgb(165, 173, 185); // oklch(0.84 0.04 240)
-    pub const PRIMARY_DIM: Color32 = Color32::from_rgb(98, 105, 117); // oklch(0.68 0.045 240)
+    // ── Brand silver — the slightly bluish hue 240 from mdBook ──
+    /// Primary brand silver (focus, links, active highlights).
+    pub const PRIMARY: LinearRgba = LinearRgba::new(0.6494, 0.6776, 0.7263, 1.0);
+    /// Dimmer silver (resting state of brand-coloured strokes).
+    pub const PRIMARY_DIM: LinearRgba = LinearRgba::new(0.3815, 0.4070, 0.4533, 1.0);
 
     // ── Accents ──
-    pub const ACCENT_VIOLET: Color32 = Color32::from_rgb(140, 96, 210); // oklch(0.72 0.14 290)
-    pub const ACCENT_CYAN: Color32 = Color32::from_rgb(100, 175, 218); // oklch(0.78 0.10 220)
-    pub const ACCENT_GOLD: Color32 = Color32::from_rgb(218, 168, 56); // oklch(0.80 0.12 82)
-    /// Legacy alias kept so the rest of the hub keeps compiling — points at
-    /// the new violet accent.
-    pub const ACCENT: Color32 = ACCENT_VIOLET;
+    /// Violet — extension / custom-mode signal.
+    pub const ACCENT_VIOLET: LinearRgba = LinearRgba::new(0.4795, 0.3370, 0.7029, 1.0);
+    /// Cyan — informational / hyperlink.
+    pub const ACCENT_CYAN: LinearRgba = LinearRgba::new(0.3796, 0.6242, 0.7619, 1.0);
+    /// Gold — selection, attention.
+    pub const ACCENT_GOLD: LinearRgba = LinearRgba::new(0.7351, 0.5410, 0.0945, 1.0);
+    /// Legacy alias for the violet accent.
+    pub const ACCENT: LinearRgba = ACCENT_VIOLET;
 
     // ── Status ──
-    pub const SUCCESS: Color32 = Color32::from_rgb(95, 192, 121); // oklch(0.78 0.13 150)
-    pub const WARNING: Color32 = Color32::from_rgb(218, 152, 56); // oklch(0.78 0.14 70)
-    pub const ERROR: Color32 = Color32::from_rgb(196, 56, 38); // oklch(0.68 0.18 25)
+    /// Green — success, healthy.
+    pub const SUCCESS: LinearRgba = LinearRgba::new(0.2912, 0.6726, 0.4233, 1.0);
+    /// Amber — warning, in-progress.
+    pub const WARNING: LinearRgba = LinearRgba::new(0.7351, 0.5197, 0.1156, 1.0);
+    /// Red — error.
+    pub const ERROR: LinearRgba = LinearRgba::new(0.5755, 0.0822, 0.0451, 1.0);
 
     // ── Text ──
-    pub const TEXT: Color32 = Color32::from_rgb(238, 240, 244); // oklch(0.96 0.005 250)
-    pub const TEXT_DIM: Color32 = Color32::from_rgb(190, 195, 202); // oklch(0.82 0.01 250)
-    pub const TEXT_MUTED: Color32 = Color32::from_rgb(140, 146, 156); // oklch(0.65 0.012 250)
-    pub const TEXT_DISABLED: Color32 = Color32::from_rgb(96, 102, 113); // oklch(0.50 0.015 250)
+    /// Primary text colour.
+    pub const TEXT: LinearRgba = LinearRgba::new(0.9091, 0.9123, 0.9162, 1.0);
+    /// Secondary text colour (labels, sub-titles).
+    pub const TEXT_DIM: LinearRgba = LinearRgba::new(0.6418, 0.6471, 0.6535, 1.0);
+    /// Tertiary text colour (hints, captions).
+    pub const TEXT_MUTED: LinearRgba = LinearRgba::new(0.3744, 0.3815, 0.3902, 1.0);
+    /// Disabled text colour.
+    pub const TEXT_DISABLED: LinearRgba = LinearRgba::new(0.2009, 0.2074, 0.2156, 1.0);
 }
 
-/// Apply the Khora dark theme to the egui context. Idempotent.
-pub fn apply_hub_visuals(ctx: &egui::Context) {
-    let mut visuals = egui::Visuals::dark();
-
-    // ── Surfaces ─────────────────────────────────────
-    visuals.panel_fill = pal::SURFACE;
-    visuals.window_fill = pal::SURFACE;
-    visuals.faint_bg_color = pal::SURFACE2;
-    visuals.extreme_bg_color = pal::BG;
-    visuals.code_bg_color = pal::SURFACE2;
-
-    // ── Text ─────────────────────────────────────────
-    visuals.override_text_color = Some(pal::TEXT);
-    visuals.warn_fg_color = pal::WARNING;
-    visuals.error_fg_color = pal::ERROR;
-
-    // ── Selection / hyperlinks ───────────────────────
-    visuals.selection.bg_fill = pal::PRIMARY.gamma_multiply(0.20);
-    visuals.selection.stroke = egui::Stroke::new(1.0, pal::PRIMARY);
-    visuals.hyperlink_color = pal::ACCENT_CYAN;
-
-    // ── Window chrome ────────────────────────────────
-    visuals.window_shadow = egui::epaint::Shadow {
-        offset: [0, 8],
-        blur: 24,
-        spread: 0,
-        color: egui::Color32::from_black_alpha(140),
-    };
-    visuals.window_stroke = egui::Stroke::new(1.0, pal::BORDER);
-    visuals.popup_shadow = egui::epaint::Shadow {
-        offset: [0, 4],
-        blur: 12,
-        spread: 0,
-        color: egui::Color32::from_black_alpha(110),
-    };
-
-    // ── Widget radii (matches editor `radius_md = 6.0`) ──
-    let cr = egui::CornerRadius::same(5);
-
-    visuals.widgets.noninteractive.bg_fill = pal::SURFACE;
-    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, pal::TEXT_DIM);
-    visuals.widgets.noninteractive.corner_radius = cr;
-    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(0.5, pal::SEPARATOR);
-
-    visuals.widgets.inactive.bg_fill = pal::SURFACE3;
-    visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, pal::TEXT);
-    visuals.widgets.inactive.corner_radius = cr;
-    visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, pal::BORDER);
-
-    visuals.widgets.hovered.bg_fill = pal::SURFACE_ACTIVE;
-    visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, pal::TEXT);
-    visuals.widgets.hovered.corner_radius = cr;
-    visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, pal::BORDER_LIGHT);
-
-    visuals.widgets.active.bg_fill = pal::PRIMARY.gamma_multiply(0.32);
-    visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5, pal::TEXT);
-    visuals.widgets.active.corner_radius = cr;
-    visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, pal::PRIMARY);
-
-    visuals.widgets.open.bg_fill = pal::SURFACE2;
-    visuals.widgets.open.fg_stroke = egui::Stroke::new(1.0, pal::TEXT);
-    visuals.widgets.open.corner_radius = cr;
-
-    visuals.menu_corner_radius = egui::CornerRadius::same(4);
-    visuals.striped = false;
-    visuals.slider_trailing_fill = true;
-
-    ctx.set_visuals(visuals);
-
-    // ── Spacing & sizing (tracks editor `pad_row = 8`, `pad_card = 14`) ──
-    let mut style = (*ctx.global_style()).clone();
-    style.spacing.item_spacing = egui::vec2(6.0, 6.0);
-    style.spacing.button_padding = egui::vec2(10.0, 6.0);
-    style.spacing.indent = 14.0;
-    style.spacing.scroll.bar_width = 8.0;
-    style.spacing.window_margin = egui::Margin::same(8);
-    style.spacing.menu_margin = egui::Margin::symmetric(8, 6);
-
-    // Force every text style to an integer size — fractional sizes (e.g.
-    // 12.5 px) sample glyphs at non-pixel-aligned positions on most DPI
-    // scales and look soft / "smudged" on Geist.
-    for (_, font) in style.text_styles.iter_mut() {
-        font.size = font.size.round().max(12.0);
+/// Returns the Khora Hub theme as a backend-neutral [`UiTheme`]. Hand
+/// it to `AppContext::set_theme` once at startup.
+pub fn khora_hub_dark() -> UiTheme {
+    UiTheme {
+        // ── Surfaces ──
+        background: as_array(pal::BG),
+        surface: as_array(pal::SURFACE),
+        surface_elevated: as_array(pal::SURFACE2),
+        surface_interactive: as_array(pal::SURFACE3),
+        surface_active: as_array(pal::SURFACE_ACTIVE),
+        // ── Lines ──
+        separator: as_array(pal::SEPARATOR),
+        border: as_array(pal::BORDER),
+        border_strong: as_array(pal::BORDER_LIGHT),
+        // ── Text ──
+        text: as_array(pal::TEXT),
+        text_dim: as_array(pal::TEXT_DIM),
+        text_muted: as_array(pal::TEXT_MUTED),
+        text_disabled: as_array(pal::TEXT_DISABLED),
+        // ── Brand ──
+        primary: as_array(pal::PRIMARY),
+        primary_dim: as_array(pal::PRIMARY_DIM),
+        accent_a: as_array(pal::ACCENT_VIOLET),
+        accent_b: as_array(pal::ACCENT_CYAN),
+        accent_c: as_array(pal::ACCENT_GOLD),
+        // ── Status ──
+        success: as_array(pal::SUCCESS),
+        warning: as_array(pal::WARNING),
+        error: as_array(pal::ERROR),
+        // ── 3D axes (unused by hub, but theme requires them) ──
+        axis_x: as_array(LinearRgba::new(0.6342, 0.0951, 0.0533, 1.0)),
+        axis_y: as_array(LinearRgba::new(0.4324, 0.6810, 0.2391, 1.0)),
+        axis_z: as_array(LinearRgba::new(0.2509, 0.4317, 0.7619, 1.0)),
+        // ── Sizing tokens ──
+        radius_sm: 4.0,
+        radius_md: 5.0,
+        radius_lg: 8.0,
+        radius_xl: 12.0,
+        // ── Type sizes ──
+        font_size_caption: 11.0,
+        font_size_body: 12.0,
+        font_size_title: 14.0,
+        font_size_display: 18.0,
+        // ── Spacing ──
+        pad_row: 6.0,
+        pad_card: 14.0,
     }
-    ctx.set_global_style(style);
+}
+
+#[inline]
+fn as_array(c: LinearRgba) -> [f32; 4] {
+    [c.r, c.g, c.b, c.a]
+}
+
+/// Converts a [`LinearRgba`] into the `[f32; 4]` form taken by
+/// [`UiBuilder`](khora_sdk::tool_ui::UiBuilder) paint methods.
+pub fn rgba(c: LinearRgba) -> [f32; 4] {
+    as_array(c)
+}
+
+/// Multiplies the alpha channel of `c` by `factor`. Equivalent to the
+/// old `tint()` helper but operates on linear-space colours.
+pub fn tint(c: LinearRgba, factor: f32) -> LinearRgba {
+    LinearRgba::new(c.r, c.g, c.b, c.a * factor.clamp(0.0, 1.0))
 }

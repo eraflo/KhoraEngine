@@ -93,6 +93,18 @@ pub fn fetch_releases() -> Result<Vec<GithubRelease>> {
     Ok(releases)
 }
 
+/// Spawns a background thread that calls [`fetch_releases`] once and
+/// reports the outcome on the returned channel. Used by hub screens
+/// that need to refresh in the background without blocking the UI.
+pub fn fetch_releases_async() -> std::sync::mpsc::Receiver<Result<Vec<GithubRelease>, String>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = fetch_releases().map_err(|e| e.to_string());
+        let _ = tx.send(result);
+    });
+    rx
+}
+
 /// The authenticated GitHub user — subset of `GET /user`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AuthenticatedUser {

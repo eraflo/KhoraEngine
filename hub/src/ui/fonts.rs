@@ -8,27 +8,25 @@
 
 //! Brand fonts loader — Geist / Geist Mono.
 //!
-//! Mirrors the editor's font loader (`crates/khora-editor/src/fonts.rs`) but
-//! stays self-contained: the hub has zero engine dependencies by design, so
-//! we hand-roll the same logic against `egui::FontDefinitions`.
+//! Produces a [`FontPack`] backend-neutrally. The engine's
+//! `AppContext::set_fonts` does the lifting onto egui.
 //!
-//! If the .ttf files are missing, this is a no-op — the hub falls back to
-//! egui's built-in fonts. Drop the files into `hub/assets/fonts/` to enable
-//! the brand typography (license: SIL OFL, see
-//! <https://github.com/vercel/geist-font>).
+//! If the .ttf files are missing the pack is empty — the backend
+//! falls back to its built-in fonts. Drop the files into
+//! `hub/assets/fonts/` to enable the brand typography (license: SIL
+//! OFL, see <https://github.com/vercel/geist-font>).
 
-use eframe::egui;
+use khora_sdk::tool_ui::{FontHandle, FontPack, NamedFont};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-/// Builds a [`FontDefinitions`] populated with Geist / Geist Mono if the
-/// files can be found, or returns the egui defaults otherwise.
+/// Builds a [`FontPack`] populated with Geist / Geist Mono if the
+/// files can be found, or returns an empty pack otherwise.
 ///
 /// The list is searched in order:
 /// 1. `<exe-dir>/assets/fonts/` (deployed layout)
 /// 2. `hub/assets/fonts/` (dev layout via `CARGO_MANIFEST_DIR`)
-pub fn build_definitions() -> egui::FontDefinitions {
-    let mut defs = egui::FontDefinitions::default();
+pub fn build_pack() -> FontPack {
+    let mut pack = FontPack::default();
     let candidates = candidate_roots();
 
     let proportional: &[(&str, &str)] = &[
@@ -41,18 +39,8 @@ pub fn build_definitions() -> egui::FontDefinitions {
         ("geist-mono-medium", "GeistMono-Medium.ttf"),
     ];
 
-    let prop_count = install_into(
-        &mut defs,
-        &candidates,
-        proportional,
-        egui::FontFamily::Proportional,
-    );
-    let mono_count = install_into(
-        &mut defs,
-        &candidates,
-        monospace,
-        egui::FontFamily::Monospace,
-    );
+    let prop_count = install_family(&mut pack.proportional, &candidates, proportional);
+    let mono_count = install_family(&mut pack.monospace, &candidates, monospace);
 
     if prop_count + mono_count == 0 {
         log::info!(
@@ -71,14 +59,13 @@ pub fn build_definitions() -> egui::FontDefinitions {
         );
     }
 
-    defs
+    pack
 }
 
-fn install_into(
-    defs: &mut egui::FontDefinitions,
+fn install_family(
+    family: &mut Vec<NamedFont>,
     roots: &[PathBuf],
     files: &[(&str, &str)],
-    family: egui::FontFamily,
 ) -> usize {
     let mut installed = 0;
     for (name, file) in files {
@@ -87,13 +74,10 @@ fn install_into(
         };
         match std::fs::read(&found) {
             Ok(bytes) => {
-                let key = (*name).to_owned();
-                defs.font_data
-                    .insert(key.clone(), Arc::new(egui::FontData::from_owned(bytes)));
-                defs.families
-                    .entry(family.clone())
-                    .or_default()
-                    .insert(0, key);
+                family.push(NamedFont {
+                    name: (*name).to_owned(),
+                    data: FontHandle::Owned(bytes),
+                });
                 installed += 1;
             }
             Err(e) => log::warn!("Hub fonts: failed to read {}: {}", found.display(), e),

@@ -217,6 +217,19 @@ pub trait UiBuilder {
         let _ = (margin, fill, stroke, radius, f);
     }
 
+    /// Open a modal dialog overlaid on top of the current screen.
+    ///
+    /// The dialog is centered, has the requested logical `size`, and
+    /// dims the rest of the screen with a semi-transparent backdrop
+    /// to convey focus. The closure receives a `UiBuilder` scoped to
+    /// the dialog's interior.
+    ///
+    /// Default impl is a no-op so the trait stays object-safe — the
+    /// egui backend overrides.
+    fn modal(&mut self, id: &str, size: [f32; 2], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let _ = (id, size, f);
+    }
+
     // ── Decoration ─────────────────────────────────────
 
     /// Horizontal separator line.
@@ -380,6 +393,26 @@ pub trait UiBuilder {
     fn cursor_pos(&self) -> [f32; 2] {
         let r = self.panel_rect();
         [r[0], r[1]]
+    }
+
+    /// Allocates `[width, height]` of space at the current cursor in
+    /// the active layout direction. Returns the resulting rect as
+    /// `[x, y, w, h]` — feed it to the paint primitives.
+    ///
+    /// Unlike [`interact_rect`](Self::interact_rect), this **reserves
+    /// space in the parent layout** so subsequent widgets don't paint
+    /// on top. Use this when a custom widget paints with
+    /// `paint_rect_filled` etc. so the layout flow stays correct (for
+    /// example inside a `horizontal()` row where the row's height
+    /// must reflect the tallest custom-painted widget).
+    ///
+    /// The returned rect's position matches what the cursor would have
+    /// been just before the call. Default impl falls back to the
+    /// current `cursor_pos()` + the requested size — backends that
+    /// support real layout allocation must override.
+    fn allocate_size(&mut self, size: [f32; 2]) -> [f32; 4] {
+        let p = self.cursor_pos();
+        [p[0], p[1], size[0], size[1]]
     }
 
     /// Measures the rendered size of `text` at `size` points using `family`.

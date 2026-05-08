@@ -537,6 +537,13 @@ impl UiBuilder for EguiUiBuilder<'_> {
         [p.x, p.y]
     }
 
+    fn allocate_size(&mut self, size: [f32; 2]) -> [f32; 4] {
+        let (rect, _) = self
+            .ui
+            .allocate_exact_size(egui::vec2(size[0], size[1]), egui::Sense::hover());
+        [rect.min.x, rect.min.y, rect.width(), rect.height()]
+    }
+
     fn measure_text(&self, text: &str, size: f32, family: FontFamilyHint) -> [f32; 2] {
         let font_id = match family {
             FontFamilyHint::Proportional => egui::FontId::proportional(size),
@@ -635,6 +642,10 @@ impl UiBuilder for EguiUiBuilder<'_> {
             });
     }
 
+    fn modal(&mut self, id: &str, size: [f32; 2], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        self.show_modal_dialog(id, size, f);
+    }
+
     fn frame_box(
         &mut self,
         margin: khora_core::ui::Margin,
@@ -672,4 +683,48 @@ impl UiBuilder for EguiUiBuilder<'_> {
 
 fn linear_to_color(c: khora_core::math::LinearRgba) -> egui::Color32 {
     color_to_egui([c.r, c.g, c.b, c.a])
+}
+
+impl EguiUiBuilder<'_> {
+    /// Modal implementation lives outside the `UiBuilder` impl block so
+    /// `Self::ui` can be re-borrowed across the egui `Window::show`
+    /// call without colliding with the trait method's generics.
+    fn show_modal_dialog(
+        &mut self,
+        id: &str,
+        size: [f32; 2],
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let ctx = self.ui.ctx().clone();
+        let vt_clone = self.viewport_textures.clone();
+
+        // Backdrop: dim the whole screen with a foreground-layer
+        // painter. The egui Window itself sits in `Order::Foreground`
+        // so the backdrop must be just *under* it; we use
+        // `Order::Middle` so other content sinks below.
+        let screen = ctx.input(|i| i.viewport().inner_rect.unwrap_or(egui::Rect::ZERO));
+        let layer = egui::LayerId::new(
+            egui::Order::Middle,
+            egui::Id::new(format!("{}_backdrop", id)),
+        );
+        let painter = egui::Painter::new(ctx.clone(), layer, screen);
+        painter.rect_filled(screen, 0.0, egui::Color32::from_black_alpha(140));
+
+        let window_id = egui::Id::new(format!("{}_modal", id));
+        egui::Window::new("")
+            .id(window_id)
+            .title_bar(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .fixed_size([size[0], size[1]])
+            .resizable(false)
+            .collapsible(false)
+            .frame(
+                egui::Frame::window(&ctx.style())
+                    .inner_margin(egui::Margin::same(0)),
+            )
+            .show(&ctx, |ui| {
+                let mut nested = EguiUiBuilder::new(ui, &vt_clone);
+                f(&mut nested);
+            });
+    }
 }

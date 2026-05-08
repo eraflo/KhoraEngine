@@ -42,9 +42,18 @@ egui-winit = "0.33"
 
 # eframe — used by `ui::egui::app::run_native` to boot standalone
 # tools (the hub) without them depending on eframe directly.
+#
+# We enable the `glow` (OpenGL) backend instead of `wgpu` because
+# (a) the hub has no 3D viewport so wgpu is overkill,
+# (b) `glow` is eframe's default and bundles platform backends
+#     automatically (dx*/vk*/gl*/x11/wayland), whereas the `wgpu`
+#     feature alone leaves the underlying `wgpu` dep without any
+#     backend selected — boot panics on Windows with
+#     "No wgpu backend feature that is implemented for the target
+#      platform was enabled".
 eframe = { version = "0.33", default-features = false, features = [
     "default_fonts",
-    "wgpu",
+    "glow",
     "wayland",
     "x11",
 ] }
