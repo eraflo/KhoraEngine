@@ -27,7 +27,7 @@ const FILTER_HEIGHT: f32 = 28.0;
 
 pub struct ConsolePanel {
     state: Arc<Mutex<EditorState>>,
-    theme: EditorTheme,
+    theme: UiTheme,
     show_info: bool,
     show_warn: bool,
     show_error: bool,
@@ -36,7 +36,7 @@ pub struct ConsolePanel {
 }
 
 impl ConsolePanel {
-    pub fn new(state: Arc<Mutex<EditorState>>, theme: EditorTheme) -> Self {
+    pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self {
             state,
             theme,
@@ -57,7 +57,7 @@ fn filter_chip(
     count: usize,
     color: [f32; 4],
     active: bool,
-    theme: &EditorTheme,
+    theme: &UiTheme,
     id_salt: &str,
 ) -> (bool, f32) {
     let label_w = ui.measure_text(label, 11.0, FontFamilyHint::Proportional)[0];

@@ -40,5 +40,9 @@ crossbeam-channel = "0.5"
 # Stable sorting / hashing helpers used by IndexBuilder (forward-slash rel paths)
 walkdir = "2.5"
 
+# Pack v2: per-entry LZ4 compression + BLAKE3 manifest hashes
+lz4_flex = { version = "0.11", default-features = false, features = ["safe-encode", "safe-decode", "std"] }
+blake3 = "1.5"
+
 [dev-dependencies]
 tempfile = "3.25.0"

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use anyhow::Result;
-use khora_core::asset::{Asset, AssetMetadata, AssetSource, AssetUUID};
+use khora_core::asset::{Asset, AssetMetadata, AssetSource, AssetUUID, CompressionKind};
 use khora_io::asset::{AssetDecoder, AssetService, PackHeader, PackLoader};
 
 use khora_telemetry::MetricsRegistry;
@@ -21,11 +21,11 @@ use std::sync::Arc;
 use std::{collections::HashMap, error::Error, fs::File};
 use tempfile::tempdir;
 
-/// Writes a v1 `data.pack` (16-byte header + raw asset bytes) to `path`.
+/// Writes a v2 `data.pack` (24-byte header + raw asset bytes) to `path`.
 /// Tests use this so they don't have to know the header byte layout.
 fn write_test_pack(path: &std::path::Path, asset_count: u32, payload: &[u8]) -> Result<()> {
-    let mut bytes = Vec::with_capacity(16 + payload.len());
-    bytes.extend_from_slice(&PackHeader::v1(asset_count).to_bytes());
+    let mut bytes = Vec::with_capacity(24 + payload.len());
+    bytes.extend_from_slice(&PackHeader::v2(asset_count, 0).to_bytes());
     bytes.extend_from_slice(payload);
     std::fs::write(path, &bytes)?;
     Ok(())
@@ -63,6 +63,8 @@ fn test_load_asset_from_pack() -> Result<()> {
         AssetSource::Packed {
             offset: 0,
             size: texture_data.len() as u64,
+            uncompressed_size: texture_data.len() as u64,
+            compression: CompressionKind::None,
         },
     );
     let metadata = AssetMetadata {
@@ -140,6 +142,8 @@ fn test_load_texture_from_pack() -> Result<()> {
         AssetSource::Packed {
             offset: 0,
             size: png_data.len() as u64,
+            uncompressed_size: png_data.len() as u64,
+            compression: CompressionKind::None,
         },
     );
     let metadata = AssetMetadata {
@@ -203,6 +207,8 @@ fn test_asset_caching_and_shared_ownership() -> Result<()> {
         AssetSource::Packed {
             offset: 0,
             size: texture_data.len() as u64,
+            uncompressed_size: texture_data.len() as u64,
+            compression: CompressionKind::None,
         },
     );
     let metadata = AssetMetadata {

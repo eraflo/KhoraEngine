@@ -12,16 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Editor theme — backend-agnostic palette + sizing tokens.
+//! Backend-agnostic UI theme — palette + sizing + type tokens.
 //!
 //! All slots are *semantic*: `primary`, `accent_a`, `success`, etc. The theme
 //! contains no brand-specific naming — apps configure the concrete values.
 //! All color slots are `[r, g, b, a]` in linear space (0.0–1.0). The concrete
 //! UI backend converts them to its native format.
+//!
+//! Same struct used by both the editor (`khora-editor`) and the hub
+//! (`hub`); each app defines its own `khora_dark()`-style constructor
+//! with its own values.
 
-/// Color palette and sizing tokens for the editor UI.
+/// Color palette and sizing tokens for any Khora UI surface.
 #[derive(Debug, Clone)]
-pub struct EditorTheme {
+pub struct UiTheme {
     // ── Surfaces ─────────────────────────────────────
     /// Outermost background (empty regions, behind everything).
     pub background: [f32; 4],
@@ -107,11 +111,11 @@ pub struct EditorTheme {
     pub pad_card: f32,
 }
 
-/// Default theme: a neutral dark palette suitable for any editor.
+/// Default theme: a neutral dark palette suitable for any app.
 ///
 /// Apps that want a branded look (e.g. the Khora "Deep Navy / Silver" palette)
-/// build their own [`EditorTheme`] and pass it via `EditorShell::set_theme`.
-impl Default for EditorTheme {
+/// build their own [`UiTheme`] and pass it where needed.
+impl Default for UiTheme {
     fn default() -> Self {
         Self {
             // Surfaces

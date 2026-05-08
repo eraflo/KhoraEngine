@@ -29,11 +29,11 @@ const ROW_PAD_X: f32 = 8.0;
 
 pub struct SceneTreePanel {
     state: Arc<Mutex<EditorState>>,
-    theme: EditorTheme,
+    theme: UiTheme,
 }
 
 impl SceneTreePanel {
-    pub fn new(state: Arc<Mutex<EditorState>>, theme: EditorTheme) -> Self {
+    pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self { state, theme }
     }
 }
@@ -307,7 +307,7 @@ fn render_node(
     y: f32,
     selection: &std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,
     hidden: &std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,
-    theme: &EditorTheme,
+    theme: &UiTheme,
     pending: &std::cell::Cell<Option<EditorAction>>,
 ) -> f32 {
     let row_x = px + 4.0;

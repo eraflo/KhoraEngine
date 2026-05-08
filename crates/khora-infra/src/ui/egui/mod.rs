@@ -20,12 +20,14 @@
 //! - [`EguiWgpuRenderer`] — low-level wgpu rendering of egui primitives.
 //! - [`EguiFrameRenderState`] — per-frame GPU state passed to the overlay.
 
+pub mod app;
 pub mod overlay;
 pub mod renderer;
 pub mod shell;
 pub mod theme;
 pub mod ui_builder;
 
+pub use app::{run_native, EguiAppContext};
 pub use overlay::{EguiFrameRenderState, EguiOverlay};
 pub use renderer::EguiWgpuRenderer;
 pub use shell::EguiEditorShell;

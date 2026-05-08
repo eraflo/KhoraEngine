@@ -14,7 +14,7 @@
 
 //! Brand-mark painters — the Khora "diamond" shape and its containing pills.
 
-use khora_sdk::editor_ui::{EditorTheme, FontFamilyHint, TextAlign, UiBuilder};
+use khora_sdk::editor_ui::{UiTheme, FontFamilyHint, TextAlign, UiBuilder};
 
 use super::paint::with_alpha;
 
@@ -59,7 +59,7 @@ pub fn paint_brand_pill(
     height: f32,
     engine_name: &str,
     project_name: &str,
-    theme: &EditorTheme,
+    theme: &UiTheme,
 ) -> f32 {
     // Real font measurement (Phase 3 — replaces the previous 7px-per-char
     // guess that broke at large font sizes / non-ASCII names).

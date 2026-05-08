@@ -19,6 +19,8 @@ pub mod registry;
 
 mod archetype_strategy;
 mod definition_strategy;
+mod messagepack_strategy;
+pub mod migrations;
 mod recipe_strategy;
 mod strategy;
 
@@ -27,5 +29,7 @@ pub use registry::*;
 
 pub use archetype_strategy::*;
 pub use definition_strategy::*;
+pub use messagepack_strategy::*;
+pub use migrations::*;
 pub use recipe_strategy::*;
 pub use strategy::*;

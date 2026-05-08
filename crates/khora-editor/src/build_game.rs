@@ -58,9 +58,66 @@
 
 use crate::project_vfs::ProjectVfs;
 use anyhow::{anyhow, Context, Result};
+use khora_sdk::khora_core::asset::CompressionKind;
 use khora_sdk::PackBuilder;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+
+/// Build profile selecting compression / manifest / runtime-validation
+/// trade-offs in one place. Callers pick the preset; the build pipeline
+/// reads the resolved settings off it.
+///
+/// `Debug` / `Shipping` are reserved for the upcoming "Build…" dialog
+/// (Phase 6) — `Release` is the default until that lands.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildPreset {
+    /// Fast iteration. No compression, no manifest, runtime validation
+    /// stays on so corruption is loud.
+    Debug,
+    /// Production-bound. LZ4 per-entry compression, manifest emitted,
+    /// runtime validation on (catches broken downloads before crashes).
+    Release,
+    /// Performance-critical shipping. Same on-disk format as Release but
+    /// the runtime *skips* integrity verification at load time — used
+    /// when QA has already validated the pack and you want maximum FPS.
+    Shipping,
+}
+
+impl BuildPreset {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Debug => "debug",
+            Self::Release => "release",
+            Self::Shipping => "shipping",
+        }
+    }
+
+    /// Compression scheme applied at pack time.
+    pub fn compression(self) -> CompressionKind {
+        match self {
+            Self::Debug => CompressionKind::None,
+            Self::Release | Self::Shipping => CompressionKind::Lz4,
+        }
+    }
+
+    /// Whether to emit a `manifest.bin` BLAKE3 sidecar.
+    pub fn emit_manifest(self) -> bool {
+        match self {
+            Self::Debug => false,
+            Self::Release | Self::Shipping => true,
+        }
+    }
+
+    /// Whether the staged runtime should hash assets on load and bail
+    /// on mismatch.
+    pub fn verify_integrity(self) -> bool {
+        match self {
+            Self::Debug | Self::Release => true,
+            Self::Shipping => false,
+        }
+    }
+}
 
 /// One of the platforms the editor knows how to stage a build for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -110,6 +167,13 @@ impl BuildTarget {
 struct RuntimeConfig<'a> {
     project_name: &'a str,
     default_scene: &'a str,
+    /// Build preset label (debug/release/shipping). Runtime uses it to
+    /// decide whether to verify pack integrity on load.
+    preset: &'a str,
+    /// Whether the runtime should re-hash assets against `manifest.bin`
+    /// on load. Independent of `preset` so runtimes shipped before the
+    /// preset concept existed can still toggle it.
+    verify_integrity: bool,
 }
 
 /// Which build strategy was used to produce a [`BuildOutcome`].
@@ -148,24 +212,22 @@ pub struct BuildOutcome {
     pub pack_bytes: u64,
 }
 
-/// Stages a build for the host OS, picking the strategy automatically
-/// based on whether the project has a `Cargo.toml` (added via the hub's
-/// "Add Native Code" button). Synchronous; the pack step is linear in
-/// asset bytes, and the cargo path inherits whatever incremental state
-/// `target/` already holds.
+/// Stages a build for the host OS using the **Release** preset by
+/// default. Convenience wrapper for the menu's "Build Game…" entry.
 pub fn build_for_host(pvfs: &ProjectVfs, project_name: &str) -> Result<BuildOutcome> {
     let target = BuildTarget::host();
-    build_for_target(pvfs, project_name, target)
+    build_for_target(pvfs, project_name, target, BuildPreset::Release)
 }
 
-/// Stages a build for any target. v1 only invokes this with the host;
-/// non-host targets fail at the runtime-binary lookup (or, for the cargo
-/// path, are explicitly refused — see [`stage_with_cargo_build`]) until
-/// cross-compile lands.
+/// Stages a build for any target with an explicit preset. v1 only
+/// invokes this with the host; non-host targets fail at the
+/// runtime-binary lookup (or, for the cargo path, are explicitly
+/// refused — see [`stage_with_cargo_build`]) until cross-compile lands.
 pub fn build_for_target(
     pvfs: &ProjectVfs,
     project_name: &str,
     target: BuildTarget,
+    preset: BuildPreset,
 ) -> Result<BuildOutcome> {
     if project_name.trim().is_empty() {
         anyhow::bail!("Build Game: project_name is empty");
@@ -187,15 +249,20 @@ pub fn build_for_target(
     };
 
     log::info!(
-        "Build Game: target={:?}, strategy={}, output={}",
+        "Build Game: target={:?}, preset={}, strategy={}, output={}",
         target,
+        preset.label(),
         strategy.label(),
         output_dir.display()
     );
 
     // Pack assets directly into the output dir — index.bin + data.pack
-    // sit alongside the staged binary regardless of strategy.
+    // (and optionally manifest.bin) sit alongside the staged binary
+    // regardless of strategy. Compression / manifest are driven by the
+    // build preset.
     let pack_out = PackBuilder::new(&pvfs.assets_root, &output_dir)
+        .with_compression(preset.compression())
+        .with_manifest(preset.emit_manifest())
         .build()
         .context("PackBuilder failed")?;
 
@@ -206,7 +273,7 @@ pub fn build_for_target(
         }
     };
 
-    write_runtime_config(&output_dir, project_name)?;
+    write_runtime_config(&output_dir, project_name, preset)?;
 
     log::info!(
         "Build Game: staged {} ({} assets, {} bytes packed) via {}",
@@ -380,10 +447,12 @@ fn find_compiled_binary(target_release: &Path, target: BuildTarget) -> Result<Pa
     ))
 }
 
-fn write_runtime_config(output_dir: &Path, project_name: &str) -> Result<()> {
+fn write_runtime_config(output_dir: &Path, project_name: &str, preset: BuildPreset) -> Result<()> {
     let cfg = RuntimeConfig {
         project_name,
         default_scene: crate::scene_io::DEFAULT_SCENE_REL,
+        preset: preset.label(),
+        verify_integrity: preset.verify_integrity(),
     };
     let cfg_text = serde_json::to_string_pretty(&cfg).context("serialize runtime.json")?;
     std::fs::write(output_dir.join("runtime.json"), cfg_text)
@@ -428,36 +497,56 @@ fn sanitize_binary_name(name: &str) -> String {
 /// 1. **Sibling of the editor binary** — the canonical layout once the
 ///    engine release archive is unpacked, and what `cargo build` produces
 ///    in `target/<profile>/`.
-/// 2. **Hub engine cache** — `~/.khora/engines/<version>/runtime/` is the
+/// 2. **Sibling profile fallback** — when the editor runs from
+///    `target/release/`, also check `target/debug/` (and vice-versa).
+///    Lets a contributor running `cargo run -p khora-hub --release` find
+///    a runtime that was built in debug by `cargo build` or `cargo
+///    hub-dev`.
+/// 3. **Hub engine cache** — `~/.khora/engines/<version>/runtime/` is the
 ///    layout produced by `hub::download::start_download` when the matching
-///    `khora-runtime-<host>` artifact is present in the GitHub release. We
-///    walk every cached version (newest first) and use the first match.
+///    `khora-runtime-<host>` artifact is present in the GitHub release.
 ///
 /// Non-host targets always fall through today: the hub only fetches its
-/// own host architecture from a release. Cross-target build-template
-/// caching (running the editor on Windows but exporting for Linux) is a
-/// future expansion that re-uses this same lookup once the hub fetches
-/// all three runtime archives.
+/// own host architecture from a release, and dev builds only produce the
+/// host runtime. Cross-target build-template caching is a future expansion
+/// that re-uses this same lookup once the hub fetches all three runtime
+/// archives.
 fn locate_runtime_binary(target: BuildTarget) -> Result<PathBuf> {
     let bin_name = format!("khora-runtime{}", target.exe_suffix());
 
     // (1) Sibling of the editor binary — release-archive layout, also what
     //     `cargo build -p khora-runtime` produces in `target/<profile>/`.
-    if target == BuildTarget::host() {
+    let sibling_dir = if target == BuildTarget::host() {
         let editor_exe =
             std::env::current_exe().context("locate_runtime_binary: current_exe failed")?;
-        if let Some(dir) = editor_exe.parent() {
-            let candidate = dir.join(&bin_name);
-            if candidate.is_file() {
-                return Ok(candidate);
+        editor_exe.parent().map(|p| p.to_path_buf())
+    } else {
+        None
+    };
+    if let Some(dir) = sibling_dir.as_ref() {
+        let candidate = dir.join(&bin_name);
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+
+    // (2) Sibling profile fallback — for the common dev workflow where the
+    //     hub launches an editor in `target/debug/` while the contributor
+    //     ran the hub itself in `--release`. Same layout, just the other
+    //     profile.
+    if let Some(dir) = sibling_dir.as_ref() {
+        if let Some(workspace_root) = workspace_root_from_target_dir(dir) {
+            for profile in ["release", "debug"] {
+                let candidate = workspace_root.join("target").join(profile).join(&bin_name);
+                if candidate.is_file() {
+                    return Ok(candidate);
+                }
             }
         }
     }
 
-    // (2) Hub engine cache — matches the layout produced by
+    // (3) Hub engine cache — matches the layout produced by
     //     `hub::download::start_download`: <cache>/<version>/runtime/<bin>.
-    //     Some older releases predate the runtime artifact; those slots
-    //     simply lack a `runtime/` subdir and the find walk keeps looking.
     if target == BuildTarget::host() {
         if let Some(cache) = engine_cache_dir() {
             if let Ok(entries) = std::fs::read_dir(&cache) {
@@ -468,14 +557,10 @@ fn locate_runtime_binary(target: BuildTarget) -> Result<PathBuf> {
                     .collect();
                 versions.sort();
                 for ver in versions.iter().rev() {
-                    // First try the canonical layout the hub produces.
                     let canonical = ver.join("runtime").join(&bin_name);
                     if canonical.is_file() {
                         return Ok(canonical);
                     }
-                    // Fall back to a recursive scan in case a future release
-                    // ships a different archive layout (e.g. cross-target
-                    // subfolders).
                     if let Some(found) = find_file_recursive(ver, &bin_name) {
                         return Ok(found);
                     }
@@ -484,16 +569,43 @@ fn locate_runtime_binary(target: BuildTarget) -> Result<PathBuf> {
         }
     }
 
+    // Pedagogical error: the contributor most likely just hasn't built
+    // the runtime yet. Point them at the exact command (cargo hub-dev
+    // does it transparently as part of the dev workflow).
+    let workspace_hint = sibling_dir
+        .as_ref()
+        .and_then(|d| workspace_root_from_target_dir(d))
+        .map(|w| {
+            format!(
+                " Run `cargo hub-dev` (or `cargo build -p khora-runtime`) from {}.",
+                w.display()
+            )
+        })
+        .unwrap_or_default();
     Err(anyhow!(
         "khora-runtime binary not found for {:?}. \
-         Expected '{}' next to the editor binary, or under \
-         '~/.khora/engines/<version>/runtime/'. \
-         For non-host targets, the hub's Engine Manager only caches the \
-         current OS today — run the editor on the desired target to build \
-         for it.",
+         Expected '{}' next to the editor binary or under \
+         '~/.khora/engines/<version>/runtime/'.{}",
         target,
-        bin_name
+        bin_name,
+        workspace_hint
     ))
+}
+
+/// Returns the workspace root if `target_dir` is a `target/<profile>/`
+/// subdirectory of one. Detection: parent must be named `target`, and
+/// the grandparent must contain a `Cargo.toml`.
+fn workspace_root_from_target_dir(target_dir: &Path) -> Option<PathBuf> {
+    let target_dir_name = target_dir.parent()?.file_name()?.to_str()?;
+    if target_dir_name != "target" {
+        return None;
+    }
+    let candidate = target_dir.parent()?.parent()?;
+    if candidate.join("Cargo.toml").is_file() {
+        Some(candidate.to_path_buf())
+    } else {
+        None
+    }
 }
 
 /// Returns `~/.khora/engines/` if accessible. The hub manages this

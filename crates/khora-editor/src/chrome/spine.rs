@@ -43,12 +43,12 @@ const BOTTOM_ITEMS: &[(Icon, &str)] = &[];
 /// Vertical mode-switcher strip — 56px wide.
 pub struct SpinePanel {
     state: Arc<Mutex<EditorState>>,
-    theme: EditorTheme,
+    theme: UiTheme,
 }
 
 impl SpinePanel {
     /// Creates a new spine.
-    pub fn new(state: Arc<Mutex<EditorState>>, theme: EditorTheme) -> Self {
+    pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self { state, theme }
     }
 
@@ -167,7 +167,7 @@ fn paint_spine_button(
     active: bool,
     tooltip: &str,
     id_salt: &str,
-    theme: &EditorTheme,
+    theme: &UiTheme,
     on_click: impl FnOnce(bool),
 ) {
     let bx = px + (pw - BTN_SIZE) * 0.5;

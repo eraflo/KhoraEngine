@@ -86,6 +86,18 @@ impl LinearRgba {
     pub const fn rgb(r: f32, g: f32, b: f32) -> Self {
         Self { r, g, b, a: 1.0 }
     }
+
+    /// Creates an opaque grayscale color where every channel equals
+    /// `value`. Equivalent to `LinearRgba::rgb(value, value, value)`.
+    #[inline]
+    pub const fn gray(value: f32) -> Self {
+        Self {
+            r: value,
+            g: value,
+            b: value,
+            a: 1.0,
+        }
+    }
 }
 
 // --- Helper functions for sRGB conversion ---
@@ -198,6 +210,88 @@ impl LinearRgba {
             r: linear_to_srgb(self.r),
             g: linear_to_srgb(self.g),
             b: linear_to_srgb(self.b),
+            a: self.a,
+        }
+    }
+
+    /// Creates a `LinearRgba` from OKLCH coordinates.
+    ///
+    /// - `l` — perceptual lightness in `[0, 1]`
+    /// - `c` — chroma (typically `[0, 0.4]`; values above ~0.37 may be
+    ///   out of sRGB gamut and get clamped)
+    /// - `h` — hue in degrees
+    ///
+    /// OKLCH is the perceptual cylindrical form of OKLab — same hue
+    /// reads the same brightness across the spectrum. This is the
+    /// space the Khora design system is authored in (see
+    /// `docs/src/design/editor.md` and the mdBook CSS).
+    ///
+    /// The output is an *opaque* color (`a = 1.0`); use [`Self::with_alpha`]
+    /// to layer transparency on top.
+    #[inline]
+    pub fn from_oklch(l: f32, c: f32, h: f32) -> Self {
+        let h_rad = h.to_radians();
+        let a_lab = c * h_rad.cos();
+        let b_lab = c * h_rad.sin();
+        Self::from_oklab(l, a_lab, b_lab)
+    }
+
+    /// Creates a `LinearRgba` from OKLab coordinates (`l`, `a`, `b`).
+    ///
+    /// Implements Björn Ottosson's reference transform
+    /// (<https://bottosson.github.io/posts/oklab/>): OKLab → linear LMS
+    /// (cube each axis) → linear sRGB (`M2` matrix). The result is the
+    /// same as the CSS `oklab()` function in linear-light space.
+    #[inline]
+    pub fn from_oklab(l: f32, a: f32, b: f32) -> Self {
+        // OKLab → linear LMS (cube root inverse).
+        let l_ = l + 0.396_337_78 * a + 0.215_803_76 * b;
+        let m_ = l - 0.105_561_346 * a - 0.063_854_17 * b;
+        let s_ = l - 0.089_484_18 * a - 1.291_485_5 * b;
+
+        let l_lms = l_ * l_ * l_;
+        let m_lms = m_ * m_ * m_;
+        let s_lms = s_ * s_ * s_;
+
+        // Linear LMS → linear sRGB (Ottosson M2 inverse).
+        let r = 4.076_741_7 * l_lms - 3.307_711_6 * m_lms + 0.230_969_94 * s_lms;
+        let g = -1.268_438 * l_lms + 2.609_757_4 * m_lms - 0.341_319_38 * s_lms;
+        let b_out = -0.0041960863 * l_lms - 0.703_418_6 * m_lms + 1.707_614_7 * s_lms;
+
+        Self {
+            r,
+            g,
+            b: b_out,
+            a: 1.0,
+        }
+    }
+
+    /// Returns the same color premultiplied by its alpha — every RGB
+    /// channel is scaled by `a`. Premultiplied alpha is what most
+    /// graphics APIs (and egui) expect at the blending stage.
+    #[inline]
+    pub fn premultiplied(self) -> Self {
+        Self {
+            r: self.r * self.a,
+            g: self.g * self.a,
+            b: self.b * self.a,
+            a: self.a,
+        }
+    }
+
+    /// Inverse of [`Self::premultiplied`] — divides each RGB channel
+    /// by `a` (no-op when `a == 0`). Use to recover unassociated alpha
+    /// from a premultiplied buffer.
+    #[inline]
+    pub fn unpremultiplied(self) -> Self {
+        if self.a <= f32::EPSILON {
+            return Self::TRANSPARENT;
+        }
+        let inv = 1.0 / self.a;
+        Self {
+            r: self.r * inv,
+            g: self.g * inv,
+            b: self.b * inv,
             a: self.a,
         }
     }
@@ -430,5 +524,57 @@ mod tests {
     fn test_default() {
         let c = LinearRgba::default();
         assert_eq!(c, LinearRgba::WHITE);
+    }
+
+    #[test]
+    fn test_gray() {
+        let c = LinearRgba::gray(0.5);
+        assert!(approx_eq(c.r, 0.5));
+        assert!(approx_eq(c.g, 0.5));
+        assert!(approx_eq(c.b, 0.5));
+        assert!(approx_eq(c.a, 1.0));
+    }
+
+    #[test]
+    fn test_premultiplied_round_trip() {
+        let c = LinearRgba::new(0.6, 0.4, 0.2, 0.5);
+        let pm = c.premultiplied();
+        assert!(approx_eq(pm.r, 0.3));
+        assert!(approx_eq(pm.g, 0.2));
+        assert!(approx_eq(pm.b, 0.1));
+        assert!(approx_eq(pm.a, 0.5));
+
+        let back = pm.unpremultiplied();
+        assert!(color_approx_eq(c, back));
+
+        // Zero alpha collapses to transparent.
+        let zero = LinearRgba::new(0.5, 0.5, 0.5, 0.0).unpremultiplied();
+        assert_eq!(zero, LinearRgba::TRANSPARENT);
+    }
+
+    #[test]
+    fn test_oklch_white() {
+        // OKLCH (1, 0, 0) is white in OKLab; round-trip through the
+        // transform should produce ~ (1, 1, 1) linear.
+        let white = LinearRgba::from_oklch(1.0, 0.0, 0.0);
+        assert!(approx_eq(white.r, 1.0));
+        assert!(approx_eq(white.g, 1.0));
+        assert!(approx_eq(white.b, 1.0));
+        assert!(approx_eq(white.a, 1.0));
+    }
+
+    #[test]
+    fn test_oklch_silver_brand() {
+        // Khora silver: oklch(0.84 0.04 240) — must produce a
+        // recognisably light bluish-silver in [0,1] linear space.
+        let silver = LinearRgba::from_oklch(0.84, 0.04, 240.0);
+        // Must stay within reasonable linear bounds (hub uses these
+        // values, and over-1.0 would be invalid for non-HDR display).
+        assert!(silver.r > 0.4 && silver.r < 0.9);
+        assert!(silver.g > 0.4 && silver.g < 0.9);
+        assert!(silver.b > 0.4 && silver.b < 1.0);
+        // The blue channel should be slightly higher than red — that's
+        // the hue 240 signature.
+        assert!(silver.b > silver.r);
     }
 }

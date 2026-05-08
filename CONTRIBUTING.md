@@ -23,6 +23,40 @@ Once installed, you can serve the book locally from the project root:
 mdbook serve docs --open
 ```
 
+## Dev workflow shortcuts
+
+The hub launches the editor, the editor stamps the runtime onto your project's pack — three binaries that have to be present on disk. A fresh clone has none of them built. Use the alias below instead of typing the chain manually:
+
+```bash
+# (1) Build editor + runtime in debug, (2) launch the hub in release.
+# Both editor and runtime must be in target/debug/ for the hub's
+# dev_engine() to find them.
+cargo hub-dev
+```
+
+Equivalent to:
+
+```bash
+cargo build -p khora-editor -p khora-runtime
+cargo run   -p khora-hub --release
+```
+
+Without `khora-runtime` on disk, the editor's "Build Game" feature can't stamp it onto your project's data-only export and fails with "khora-runtime binary not found". `cargo hub-dev` builds it as part of the loop so this never happens.
+
+### Keeping `target/` from exploding
+
+Two practical knobs:
+
+- **Already applied workspace-wide** in [`Cargo.toml`](./Cargo.toml): `[profile.dev] debug = "line-tables-only"` strips the bulk of debuginfo while keeping panics + `RUST_BACKTRACE=1` useful. Saves roughly 30–50% on every dev build.
+- **Periodic full clean** when target/ still grows out of hand: `cargo clean` wipes everything and forces a full rebuild on the next invocation. For a finer-grained cleanup, install `cargo-cache` (`cargo install cargo-cache`) and run `cargo cache --autoclean` to drop old incremental and registry artifacts without nuking the active build.
+
+If you need a real debugger session and `line-tables-only` isn't enough, override locally with a `Cargo.toml` patch outside of git:
+
+```toml
+[profile.dev]
+debug = 2  # full debuginfo, larger target/
+```
+
 ## How Can I Contribute?
 
 *   **Join the Discussion:** Share your thoughts, ideas, and feedback on our [GitHub Discussions page](https://github.com/eraflo/KhoraEngine/discussions).

@@ -408,7 +408,7 @@ The SDK is the single entry point. It re-exports types from internal crates so g
 | `RenderSystem` | khora-core | The render trait |
 | `SerializationService`, `SceneFile`, `SerializationGoal` | khora-io / khora-core | Scene I/O |
 | `Mesh` | khora-core | Mesh type |
-| `EditorState`, `EditorTheme`, `PlayMode`, `GizmoMode`, `ViewportTextureHandle`, etc. | khora-core | Editor UI types (used by the editor) |
+| `EditorState`, `UiTheme`, `PlayMode`, `GizmoMode`, `ViewportTextureHandle`, etc. | khora-core | Editor UI types (used by the editor) |
 
 The `khora_sdk::editor_ui` module is a convenience namespace for the editor UI types. The `khora_sdk::renderer` module re-exports the renderer API submodules used by editor gizmos.
 

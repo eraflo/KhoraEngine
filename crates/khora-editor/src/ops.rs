@@ -255,6 +255,9 @@ pub fn extract_inspected(world: &GameWorld, state: &mut EditorState) {
             return;
         }
     };
+    // An entity is selected — drop any prior asset selection so the
+    // Inspector switches out of asset-metadata mode.
+    state.inspected_asset_path = None;
 
     let name = world
         .get_component::<Name>(entity)

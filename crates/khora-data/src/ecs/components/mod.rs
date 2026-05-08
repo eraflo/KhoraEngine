@@ -24,6 +24,7 @@ mod mesh_serialization;
 mod name;
 mod parent;
 mod physics;
+mod prefab;
 mod transform;
 
 pub use audio::*;
@@ -38,4 +39,5 @@ pub use mesh_serialization::*;
 pub use name::*;
 pub use parent::*;
 pub use physics::*;
+pub use prefab::*;
 pub use transform::*;

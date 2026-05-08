@@ -11,16 +11,22 @@
 //! This crate has **no dependency** on any `khora-*` engine crates.
 //! It is a self-contained `eframe` application.
 
-pub mod auth;
-mod config;
-pub mod download;
-mod fonts;
-pub mod git;
-pub mod github;
-mod project;
 mod screens;
-pub mod theme;
-pub mod widgets;
+mod services;
+mod ui;
+
+// Re-exports keep the old `crate::xxx` paths working after the
+// services/ + ui/ regrouping. Internal call sites read more naturally
+// as `crate::auth::…` than `crate::services::github::auth::…`.
+pub use services::config;
+pub use services::download;
+pub use services::git;
+pub use services::github;
+pub use services::github::auth;
+pub use services::project;
+pub use ui::fonts;
+pub use ui::theme;
+pub use ui::widgets;
 
 use config::{EngineInstall, HubConfig, RecentProject};
 use eframe::egui;

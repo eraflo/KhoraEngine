@@ -554,4 +554,122 @@ impl UiBuilder for EguiUiBuilder<'_> {
         let r = galley.rect;
         [r.width(), r.height()]
     }
+
+    // ── Inset panels (Phase 7) ─────────────────────────
+
+    fn top_inset_panel(
+        &mut self,
+        id: &str,
+        height: f32,
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let vt = self.viewport_textures;
+        egui::TopBottomPanel::top(egui::Id::new(id.to_owned()))
+            .exact_height(height)
+            .resizable(false)
+            .frame(egui::Frame::new())
+            .show_inside(self.ui, |ui| {
+                let mut nested = EguiUiBuilder::new(ui, vt);
+                f(&mut nested);
+            });
+    }
+
+    fn bottom_inset_panel(
+        &mut self,
+        id: &str,
+        height: f32,
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let vt = self.viewport_textures;
+        egui::TopBottomPanel::bottom(egui::Id::new(id.to_owned()))
+            .exact_height(height)
+            .resizable(false)
+            .frame(egui::Frame::new())
+            .show_inside(self.ui, |ui| {
+                let mut nested = EguiUiBuilder::new(ui, vt);
+                f(&mut nested);
+            });
+    }
+
+    fn left_inset_panel(
+        &mut self,
+        id: &str,
+        width: f32,
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let vt = self.viewport_textures;
+        egui::SidePanel::left(egui::Id::new(id.to_owned()))
+            .exact_width(width)
+            .resizable(false)
+            .frame(egui::Frame::new())
+            .show_inside(self.ui, |ui| {
+                let mut nested = EguiUiBuilder::new(ui, vt);
+                f(&mut nested);
+            });
+    }
+
+    fn right_inset_panel(
+        &mut self,
+        id: &str,
+        width: f32,
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let vt = self.viewport_textures;
+        egui::SidePanel::right(egui::Id::new(id.to_owned()))
+            .exact_width(width)
+            .resizable(false)
+            .frame(egui::Frame::new())
+            .show_inside(self.ui, |ui| {
+                let mut nested = EguiUiBuilder::new(ui, vt);
+                f(&mut nested);
+            });
+    }
+
+    fn central_inset(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let vt = self.viewport_textures;
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new())
+            .show_inside(self.ui, |ui| {
+                let mut nested = EguiUiBuilder::new(ui, vt);
+                f(&mut nested);
+            });
+    }
+
+    fn frame_box(
+        &mut self,
+        margin: khora_core::ui::Margin,
+        fill: Option<khora_core::math::LinearRgba>,
+        stroke: khora_core::ui::Stroke,
+        radius: khora_core::ui::CornerRadius,
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let mut frame = egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: margin.left as i8,
+                right: margin.right as i8,
+                top: margin.top as i8,
+                bottom: margin.bottom as i8,
+            })
+            .corner_radius(egui::CornerRadius {
+                nw: radius.nw as u8,
+                ne: radius.ne as u8,
+                sw: radius.sw as u8,
+                se: radius.se as u8,
+            });
+        if let Some(fill_color) = fill {
+            frame = frame.fill(linear_to_color(fill_color));
+        }
+        if stroke.width > 0.0 {
+            frame = frame.stroke(egui::Stroke::new(stroke.width, linear_to_color(stroke.color)));
+        }
+        let vt = self.viewport_textures;
+        frame.show(self.ui, |ui| {
+            let mut nested = EguiUiBuilder::new(ui, vt);
+            f(&mut nested);
+        });
+    }
+}
+
+fn linear_to_color(c: khora_core::math::LinearRgba) -> egui::Color32 {
+    color_to_egui([c.r, c.g, c.b, c.a])
 }

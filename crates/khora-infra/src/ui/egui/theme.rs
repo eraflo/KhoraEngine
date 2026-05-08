@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Convert [`EditorTheme`] to egui [`Visuals`] and apply to an egui context.
+//! Convert [`UiTheme`] to egui [`Visuals`] and apply to an egui context.
 
-use khora_core::ui::editor::EditorTheme;
+use khora_core::ui::UiTheme;
 
 fn c(color: [f32; 4]) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(
@@ -25,8 +25,8 @@ fn c(color: [f32; 4]) -> egui::Color32 {
     )
 }
 
-/// Applies an [`EditorTheme`] to the given egui context.
-pub fn apply_theme(ctx: &egui::Context, theme: &EditorTheme) {
+/// Applies an [`UiTheme`] to the given egui context.
+pub fn apply_theme(ctx: &egui::Context, theme: &UiTheme) {
     let mut visuals = egui::Visuals::dark();
 
     // ── Surfaces ─────────────────────────────────────

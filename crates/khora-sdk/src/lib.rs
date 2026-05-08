@@ -41,7 +41,32 @@ pub use winit_adapters::WinitWindowProvider;
 // ─────────────────────────────────────────────────────────────────────
 pub mod editor_ui {
     //! Editor UI types re-exported from khora_core.
+    //!
+    //! Includes everything from `khora_core::ui::editor::*` plus the
+    //! shared `UiTheme` and font types that live one level up in
+    //! `khora_core::ui` (because the hub uses them too).
     pub use khora_core::ui::editor::*;
+    pub use khora_core::ui::fonts::{FontHandle, FontPack, NamedFont};
+    pub use khora_core::ui::theme::UiTheme;
+}
+
+pub mod tool_ui {
+    //! UI surface for standalone Khora tools (the hub, future asset
+    //! cookers, …).
+    //!
+    //! These tools depend on `khora-sdk` and reach the egui backend
+    //! exclusively through this module — never directly via `egui`
+    //! or `eframe`. The day the engine swaps backend, this re-export
+    //! list moves to whichever crate provides the new
+    //! [`run_native`] + [`AppContext`] implementation.
+
+    pub use khora_core::math::{LinearRgba, Rect2D, Vec2};
+    pub use khora_core::ui::editor::{FontFamilyHint, Icon, Interaction, TextAlign};
+    pub use khora_core::ui::{
+        Align, Align2, App, AppContext, AppLifecycle, CornerRadius, FontHandle, FontPack, Margin,
+        NamedFont, Stroke, UiBuilder, UiTheme,
+    };
+    pub use khora_infra::ui::egui::app::{run_native, WindowConfigInput, WindowIconInput};
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -67,10 +92,12 @@ pub use khora_core::ui::editor::gizmo::GizmoLineInstance;
 pub use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
 pub use khora_core::ui::editor::{
     AssetEntry, CommandHistory, ComponentJson, EditorCamera, EditorCommand, EditorLogCapture,
-    EditorMode, EditorPanel, EditorShell, EditorState, EditorTheme, EntityIcon, FontFamilyHint,
-    GizmoMode, Icon, InspectedEntity, Interaction, LogEntry, LogLevel, PanelLocation, PlayMode,
-    PropertyEdit, SceneNode, StatusBarData, TextAlign, UiBuilder,
+    EditorMode, EditorPanel, EditorShell, EditorState, EntityIcon, FontFamilyHint, GizmoMode, Icon,
+    InspectedEntity, Interaction, LogEntry, LogLevel, PanelLocation, PlayMode, PropertyEdit,
+    SceneNode, StatusBarData, TextAlign, UiBuilder,
 };
+pub use khora_core::ui::fonts::{FontHandle, FontPack, NamedFont};
+pub use khora_core::ui::theme::UiTheme;
 pub use khora_core::ServiceRegistry;
 
 // Telemetry service

@@ -90,16 +90,31 @@ pub fn restore_scene(world: &mut GameWorld, snapshot: &[u8]) {
 /// Serializes the current world to a `.kscene` file at `rel_path` (relative
 /// to the project's `assets/` root) via the project's `AssetService`. Re-
 /// indexes on success so the new scene is immediately resolvable by UUID.
+///
+/// Default callers should use [`save_scene_in_project`] which selects
+/// `EditorInterchange` (Recipe / bincode). Use
+/// [`save_scene_in_project_with_goal`] to pick a different strategy
+/// (`HumanReadableDebug` for RON export, `FastestLoad` for archetype).
+#[allow(dead_code)]
 pub fn save_scene_in_project(pvfs: &mut ProjectVfs, world: &GameWorld, rel_path: &Path) -> bool {
+    save_scene_in_project_with_goal(pvfs, world, rel_path, SerializationGoal::EditorInterchange)
+}
+
+/// Same as [`save_scene_in_project`] with an explicit serialization goal.
+pub fn save_scene_in_project_with_goal(
+    pvfs: &mut ProjectVfs,
+    world: &GameWorld,
+    rel_path: &Path,
+    goal: SerializationGoal,
+) -> bool {
     let agent = SerializationService::new();
-    let scene_file =
-        match agent.save_world(world.inner_world(), SerializationGoal::EditorInterchange) {
-            Ok(f) => f,
-            Err(e) => {
-                log::error!("Failed to serialize scene: {:?}", e);
-                return false;
-            }
-        };
+    let scene_file = match agent.save_world(world.inner_world(), goal) {
+        Ok(f) => f,
+        Err(e) => {
+            log::error!("Failed to serialize scene: {:?}", e);
+            return false;
+        }
+    };
     let bytes = scene_file.to_bytes();
     if let Err(e) = pvfs.write_asset(rel_path, &bytes) {
         log::error!("Failed to write scene to {:?}: {:#}", rel_path, e);
@@ -109,9 +124,10 @@ pub fn save_scene_in_project(pvfs: &mut ProjectVfs, world: &GameWorld, rel_path:
         log::warn!("Scene saved but index rebuild failed: {:#}", e);
     }
     log::info!(
-        "Scene saved to '{}' ({} bytes) via ProjectVfs",
+        "Scene saved to '{}' ({} bytes, goal={:?}) via ProjectVfs",
         rel_path.display(),
-        bytes.len()
+        bytes.len(),
+        goal,
     );
     true
 }
@@ -241,16 +257,23 @@ fn create_default_scene_in_project(pvfs: &mut ProjectVfs, world: &mut GameWorld,
 /// "Save As..." dialog when the user picks a destination outside
 /// `<project>/assets/`. Logs a warning so the divergence from VFS-managed
 /// I/O is visible.
+#[allow(dead_code)]
 pub fn save_scene_to_path(world: &GameWorld, path: &str) {
+    save_scene_to_path_with_goal(world, path, SerializationGoal::EditorInterchange)
+}
+
+/// Same as [`save_scene_to_path`] with an explicit serialization goal.
+pub fn save_scene_to_path_with_goal(world: &GameWorld, path: &str, goal: SerializationGoal) {
     let agent = SerializationService::new();
-    match agent.save_world(world.inner_world(), SerializationGoal::EditorInterchange) {
+    match agent.save_world(world.inner_world(), goal) {
         Ok(scene_file) => {
             let bytes = scene_file.to_bytes();
             match std::fs::write(path, &bytes) {
                 Ok(()) => log::warn!(
-                    "Scene saved to '{}' ({} bytes) — outside project, not VFS-managed.",
+                    "Scene saved to '{}' ({} bytes, goal={:?}) — outside project, not VFS-managed.",
                     path,
-                    bytes.len()
+                    bytes.len(),
+                    goal,
                 ),
                 Err(e) => log::error!("Failed to write scene file '{}': {}", path, e),
             }

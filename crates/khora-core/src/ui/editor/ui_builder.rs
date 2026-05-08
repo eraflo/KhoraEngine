@@ -139,6 +139,84 @@ pub trait UiBuilder {
     /// Scrollable area.
     fn scroll_area(&mut self, id: &str, f: &mut dyn FnMut(&mut dyn UiBuilder));
 
+    /// Inset panel along the top edge of the current region.
+    ///
+    /// Splits the layout vertically: the closure draws into the top
+    /// `height` pixels, then the rest of the region is left for
+    /// subsequent calls (typically a [`central_inset`](Self::central_inset)).
+    /// Used by tools that want a header bar nested inside a screen
+    /// (the hub does this for its title bar).
+    ///
+    /// Default implementation is a no-op so the trait stays
+    /// object-safe — the egui backend overrides it.
+    fn top_inset_panel(
+        &mut self,
+        id: &str,
+        height: f32,
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let _ = (id, height, f);
+    }
+
+    /// Inset panel along the bottom edge — counterpart of
+    /// [`top_inset_panel`](Self::top_inset_panel).
+    fn bottom_inset_panel(
+        &mut self,
+        id: &str,
+        height: f32,
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let _ = (id, height, f);
+    }
+
+    /// Inset sidebar on the left edge of the current region.
+    ///
+    /// Splits the layout horizontally: the closure draws into the
+    /// left `width` pixels.
+    fn left_inset_panel(
+        &mut self,
+        id: &str,
+        width: f32,
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let _ = (id, width, f);
+    }
+
+    /// Inset sidebar on the right edge — counterpart of
+    /// [`left_inset_panel`](Self::left_inset_panel).
+    fn right_inset_panel(
+        &mut self,
+        id: &str,
+        width: f32,
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let _ = (id, width, f);
+    }
+
+    /// Central region — fills whatever space remains after the inset
+    /// panels above were placed.
+    fn central_inset(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let _ = f;
+    }
+
+    /// Wraps `f` in a visual frame: paints the optional fill / stroke /
+    /// rounded background first, then runs `f` inside the inner
+    /// content rect (after applying `margin`).
+    ///
+    /// Replaces the old `egui::Frame::new().inner_margin(...).show(...)`
+    /// idiom for tool apps that want decorative frames without
+    /// importing a backend type.
+    fn frame_box(
+        &mut self,
+        margin: crate::ui::Margin,
+        fill: Option<crate::math::LinearRgba>,
+        stroke: crate::ui::Stroke,
+        radius: crate::ui::CornerRadius,
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let _ = (margin, fill, stroke, radius, f);
+    }
+
     // ── Decoration ─────────────────────────────────────
 
     /// Horizontal separator line.

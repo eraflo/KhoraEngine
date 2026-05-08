@@ -23,6 +23,18 @@ members = [
 
 [profile.dev]
 opt-level = 1 # Enable minimal optimization even in dev
+# Drop full debuginfo from dev builds. With `line-tables-only` we still get
+# stack traces (file + line numbers in panics, RUST_BACKTRACE=1, profiler
+# samples) but skip the per-symbol type tables that account for the bulk
+# of `target/` size on Windows MSVC and Linux gcc/clang. Saves ~30-50% on
+# disk per profile, with no observable effect on debugging unless you're
+# stepping through values in a debugger (in which case temporarily set
+# debug = 2 in your local Cargo.toml override).
+debug = "line-tables-only"
+# Strip debuginfo from dependencies so re-fetching crates doesn't re-bloat
+# target/. Workspace crates keep their `debug` setting from above.
+[profile.dev.package."*"]
+debug = "line-tables-only"
 
 [profile.release]
 lto = true      # Link-Time Optimization for release

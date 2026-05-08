@@ -14,7 +14,7 @@
 //
 //! Field-level controls used inside Inspector cards and panel toolbars.
 
-use khora_sdk::editor_ui::{EditorTheme, UiBuilder};
+use khora_sdk::editor_ui::{UiTheme, UiBuilder};
 
 use super::paint::with_alpha;
 
@@ -25,7 +25,7 @@ pub fn paint_meter_bar(
     width: f32,
     fraction: f32,
     fill_color: [f32; 4],
-    theme: &EditorTheme,
+    theme: &UiTheme,
 ) {
     let h = 3.0;
     ui.paint_rect_filled(origin, [width, h], theme.background, 999.0);

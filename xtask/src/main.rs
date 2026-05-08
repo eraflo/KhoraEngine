@@ -50,6 +50,11 @@ enum Commands {
     /// Run all CI tasks (build, test, check, format, clippy).
     All,
 
+    /// Pre-build editor + runtime in debug, then run the hub in release.
+    /// Convenience wrapper for the typical contributor dev loop — also
+    /// available via the `cargo hub-dev` alias from `.cargo/config.toml`.
+    HubDev,
+
     /// Commands for asset pipeline management.
     #[clap(subcommand)]
     Assets(AssetCommand),
@@ -72,6 +77,8 @@ fn main() -> Result<()> {
             Commands::Format => commands::ci::format()?,
             Commands::Clippy => commands::ci::clippy()?,
             Commands::All => commands::ci::all()?,
+
+            Commands::HubDev => commands::dev::hub_dev()?,
 
             Commands::Assets(command) => match command {
                 AssetCommand::Pack => commands::assets::pack()?,

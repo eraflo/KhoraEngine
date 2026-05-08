@@ -75,6 +75,8 @@ pub fn asset_type_for_extension(ext: &str) -> Option<&'static str> {
         "kmat" | "mat" => Some("material"),
         // Script formats — data, hot-reloadable, future custom language
         "kscript" => Some("script"),
+        // Prefab formats (Phase 5 — instanced via SerializationService)
+        "kprefab" => Some("prefab"),
         _ => None,
     }
 }

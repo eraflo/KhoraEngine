@@ -59,6 +59,16 @@ struct RuntimeConfig {
     default_scene: String,
     #[serde(default)]
     window_title: Option<String>,
+    /// Build preset label written by the editor (debug/release/shipping).
+    /// Optional for older runtime.json files. Used for diagnostics.
+    #[serde(default)]
+    #[allow(dead_code)]
+    preset: Option<String>,
+    /// When `true`, the runtime hashes each loaded asset against
+    /// `manifest.bin` and aborts on mismatch. Defaults to `false` so
+    /// older packs (without a manifest) keep booting.
+    #[serde(default)]
+    verify_integrity: bool,
 }
 
 fn default_project_name() -> String {
@@ -108,6 +118,8 @@ impl RuntimeConfig {
             project_name: default_project_name(),
             default_scene: default_scene_rel_path(),
             window_title: None,
+            preset: None,
+            verify_integrity: false,
         }
     }
 
@@ -280,9 +292,11 @@ pub fn run_default() -> Result<()> {
     let _ = RUNTIME_CONFIG.set(cfg.clone());
 
     log::info!(
-        "khora-sdk run_default: project='{}' from {}",
+        "khora-sdk run_default: project='{}' from {} (preset={}, verify_integrity={})",
         cfg.project_name,
-        exe_dir.display()
+        exe_dir.display(),
+        cfg.preset.as_deref().unwrap_or("unset"),
+        cfg.verify_integrity,
     );
 
     run_winit::<WinitWindowProvider, DefaultRuntimeApp>(move |window, services, _event_loop| {

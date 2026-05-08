@@ -21,7 +21,7 @@
 //! `crates/khora-io/src/asset/pack_builder.rs` for the writer side.
 
 use anyhow::{bail, Context, Result};
-use khora_core::asset::AssetSource;
+use khora_core::asset::{AssetSource, CompressionKind};
 use std::{
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
@@ -38,15 +38,29 @@ pub const PACK_MAGIC: &[u8; 8] = b"KHORAPK\0";
 /// Current pack format version. Bumped when the on-disk layout changes in
 /// a non-additive way; older runtimes refuse newer packs by reading the
 /// version from the header.
-pub const PACK_FORMAT_VERSION: u32 = 1;
+///
+/// **v2** — adds 8 bytes to the header (`flags` + reserved) and
+/// per-entry compression (`uncompressed_size`, `compression`) in
+/// `AssetSource::Packed`. Older runtimes refuse v2 packs.
+pub const PACK_FORMAT_VERSION: u32 = 2;
 
 /// Total size in bytes of the leading [`PackHeader`] in `data.pack`.
 /// Asset offsets recorded in `index.bin` are **relative to the start of
 /// the asset region**, not to byte 0 — `PackLoader` adds this constant
 /// when seeking.
-pub const PACK_HEADER_SIZE: u64 = 16;
+pub const PACK_HEADER_SIZE: u64 = 24;
 
-/// Decoded form of the 16-byte header at the start of `data.pack`.
+/// Bit flag — at least one entry in this pack uses LZ4 compression.
+/// Diagnostics-only: per-entry compression is decided by
+/// `AssetSource::Packed.compression`. The flag is set when the writer
+/// applied LZ4 to any entry, so a quick header scan can tell whether the
+/// pack as a whole is mostly compressed.
+pub const PACK_FLAG_LZ4: u32 = 1 << 0;
+/// Bit flag — a `manifest.bin` BLAKE3 sidecar accompanies this pack.
+/// (Set by `PackBuilder` when integrity manifest emission is enabled.)
+pub const PACK_FLAG_MANIFEST: u32 = 1 << 1;
+
+/// Decoded form of the 24-byte header at the start of `data.pack`.
 ///
 /// Byte layout (all little-endian):
 ///
@@ -56,6 +70,8 @@ pub const PACK_HEADER_SIZE: u64 = 16;
 ///      0     8  PACK_MAGIC (b"KHORAPK\0")
 ///      8     4  format_version: u32  — must equal PACK_FORMAT_VERSION
 ///     12     4  asset_count:    u32  — sanity check vs. index.bin
+///     16     4  flags:          u32  — bit 0 LZ4, bit 1 manifest
+///     20     4  reserved:       u32  — zero on writes, ignored on reads
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct PackHeader {
@@ -67,25 +83,31 @@ pub struct PackHeader {
     /// catch a mismatched pair (e.g. user shipped only one of the two
     /// files).
     pub asset_count: u32,
+    /// Pack-level feature flags (compression, manifest, …). See
+    /// `PACK_FLAG_*` constants.
+    pub flags: u32,
 }
 
 impl PackHeader {
-    /// Encodes the header into 16 raw bytes ready to be prepended to
+    /// Encodes the header into 24 raw bytes ready to be prepended to
     /// `data.pack`. Used by `PackBuilder`.
     pub fn to_bytes(&self) -> [u8; PACK_HEADER_SIZE as usize] {
         let mut out = [0u8; PACK_HEADER_SIZE as usize];
         out[0..8].copy_from_slice(PACK_MAGIC);
         out[8..12].copy_from_slice(&self.format_version.to_le_bytes());
         out[12..16].copy_from_slice(&self.asset_count.to_le_bytes());
+        out[16..20].copy_from_slice(&self.flags.to_le_bytes());
+        // Bytes 20..24 reserved — left zero.
         out
     }
 
-    /// Convenience for the writer: build the v1 header for a pack that
-    /// will contain `asset_count` blobs.
-    pub fn v1(asset_count: u32) -> Self {
+    /// Convenience for the writer: build the v2 header for a pack that
+    /// will contain `asset_count` blobs and optional feature flags.
+    pub fn v2(asset_count: u32, flags: u32) -> Self {
         Self {
             format_version: PACK_FORMAT_VERSION,
             asset_count,
+            flags,
         }
     }
 }
@@ -124,11 +146,11 @@ impl PackLoader {
         &self.header
     }
 
-    /// Writes a fresh 16-byte header at the start of `out`. Convenience
+    /// Writes a fresh 24-byte header at the start of `out`. Convenience
     /// helper for [`crate::asset::PackBuilder`] — keeps all the byte-
     /// layout knowledge in one module.
-    pub fn write_header(out: &mut impl Write, asset_count: u32) -> Result<()> {
-        let header = PackHeader::v1(asset_count);
+    pub fn write_header(out: &mut impl Write, asset_count: u32, flags: u32) -> Result<()> {
+        let header = PackHeader::v2(asset_count, flags);
         out.write_all(&header.to_bytes())
             .context("Failed to write pack header")
     }
@@ -139,7 +161,7 @@ fn read_and_validate_header(file: &mut File) -> Result<PackHeader> {
         .context("Failed to seek to pack file start")?;
     let mut buf = [0u8; PACK_HEADER_SIZE as usize];
     file.read_exact(&mut buf)
-        .context("Pack file is shorter than 16 bytes — not a Khora pack (or truncated)")?;
+        .context("Pack file is shorter than 24 bytes — not a Khora pack (or truncated)")?;
 
     if &buf[0..8] != PACK_MAGIC {
         bail!(
@@ -157,16 +179,23 @@ fn read_and_validate_header(file: &mut File) -> Result<PackHeader> {
         );
     }
     let asset_count = u32::from_le_bytes(buf[12..16].try_into().unwrap());
+    let flags = u32::from_le_bytes(buf[16..20].try_into().unwrap());
     Ok(PackHeader {
         format_version,
         asset_count,
+        flags,
     })
 }
 
 impl AssetIo for PackLoader {
     fn load_bytes(&mut self, source: &AssetSource) -> Result<Vec<u8>> {
         match source {
-            AssetSource::Packed { offset, size } => {
+            AssetSource::Packed {
+                offset,
+                size,
+                uncompressed_size,
+                compression,
+            } => {
                 let mut buffer = vec![0; *size as usize];
                 // Asset offsets in `index.bin` are relative to the start
                 // of the asset region (i.e. after the header). We add the
@@ -178,7 +207,25 @@ impl AssetIo for PackLoader {
                 self.pack_file
                     .read_exact(&mut buffer)
                     .context("Failed to read asset bytes from pack file")?;
-                Ok(buffer)
+
+                match compression {
+                    CompressionKind::None => Ok(buffer),
+                    CompressionKind::Lz4 => {
+                        let decompressed = lz4_flex::block::decompress(
+                            &buffer,
+                            *uncompressed_size as usize,
+                        )
+                        .map_err(|e| anyhow::anyhow!("LZ4 decompress failed: {}", e))?;
+                        if decompressed.len() != *uncompressed_size as usize {
+                            bail!(
+                                "Pack: LZ4-decompressed size {} != recorded uncompressed_size {}",
+                                decompressed.len(),
+                                uncompressed_size
+                            );
+                        }
+                        Ok(decompressed)
+                    }
+                }
             }
             AssetSource::Path(_) => {
                 bail!("PackLoader does not support Path sources")
@@ -201,14 +248,17 @@ mod tests {
         File::open(&path).unwrap()
     }
 
-    fn valid_header_bytes(asset_count: u32) -> [u8; 16] {
-        PackHeader::v1(asset_count).to_bytes()
+    fn valid_header_bytes(asset_count: u32) -> [u8; PACK_HEADER_SIZE as usize] {
+        PackHeader::v2(asset_count, 0).to_bytes()
     }
 
     #[test]
     fn rejects_file_with_wrong_magic() {
         let dir = tempdir().unwrap();
-        let f = write_pack(dir.path(), b"not_a_pack......\x00\x00\x00\x00");
+        let f = write_pack(
+            dir.path(),
+            b"not_a_pack......\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+        );
         let err = PackLoader::new(f).unwrap_err();
         let msg = format!("{err:#}");
         assert!(msg.contains("bad magic"), "got: {msg}");
@@ -217,10 +267,10 @@ mod tests {
     #[test]
     fn rejects_file_shorter_than_header() {
         let dir = tempdir().unwrap();
-        let f = write_pack(dir.path(), b"KHORAPK"); // 7 bytes, less than 16
+        let f = write_pack(dir.path(), b"KHORAPK"); // 7 bytes, less than header
         let err = PackLoader::new(f).unwrap_err();
         let msg = format!("{err:#}");
-        assert!(msg.contains("shorter than 16 bytes"), "got: {msg}");
+        assert!(msg.contains("shorter than 24 bytes"), "got: {msg}");
     }
 
     #[test]
@@ -230,6 +280,8 @@ mod tests {
         bytes.extend_from_slice(PACK_MAGIC); // 8
         bytes.extend_from_slice(&999u32.to_le_bytes()); // version
         bytes.extend_from_slice(&0u32.to_le_bytes()); // asset_count
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // flags
+        bytes.extend_from_slice(&0u32.to_le_bytes()); // reserved
         let f = write_pack(dir.path(), &bytes);
         let err = PackLoader::new(f).unwrap_err();
         let msg = format!("{err:#}");
@@ -258,8 +310,33 @@ mod tests {
         let f = write_pack(dir.path(), &bytes);
         let mut loader = PackLoader::new(f).unwrap();
         let got = loader
-            .load_bytes(&AssetSource::Packed { offset: 0, size: 7 })
+            .load_bytes(&AssetSource::Packed {
+                offset: 0,
+                size: 7,
+                uncompressed_size: 7,
+                compression: CompressionKind::None,
+            })
             .unwrap();
         assert_eq!(got, b"PAYLOAD");
+    }
+
+    #[test]
+    fn load_bytes_decompresses_lz4() {
+        let dir = tempdir().unwrap();
+        let payload = b"PAYLOAD-ALL-COMPRESSIBLE-PAYLOAD-ALL-COMPRESSIBLE";
+        let compressed = lz4_flex::block::compress(payload);
+        let mut bytes = valid_header_bytes(1).to_vec();
+        bytes.extend_from_slice(&compressed);
+        let f = write_pack(dir.path(), &bytes);
+        let mut loader = PackLoader::new(f).unwrap();
+        let got = loader
+            .load_bytes(&AssetSource::Packed {
+                offset: 0,
+                size: compressed.len() as u64,
+                uncompressed_size: payload.len() as u64,
+                compression: CompressionKind::Lz4,
+            })
+            .unwrap();
+        assert_eq!(got, payload);
     }
 }

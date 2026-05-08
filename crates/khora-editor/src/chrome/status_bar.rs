@@ -27,12 +27,12 @@ const STATUS_HEIGHT: f32 = 24.0;
 /// Branded status bar — 24px tall.
 pub struct StatusBarPanel {
     state: Arc<Mutex<EditorState>>,
-    theme: EditorTheme,
+    theme: UiTheme,
 }
 
 impl StatusBarPanel {
     /// Creates a new status bar.
-    pub fn new(state: Arc<Mutex<EditorState>>, theme: EditorTheme) -> Self {
+    pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self { state, theme }
     }
 }
@@ -233,7 +233,7 @@ impl EditorPanel for StatusBarPanel {
     }
 }
 
-fn vsep(ui: &mut dyn UiBuilder, x: f32, y: f32, h: f32, theme: &EditorTheme) -> f32 {
+fn vsep(ui: &mut dyn UiBuilder, x: f32, y: f32, h: f32, theme: &UiTheme) -> f32 {
     ui.paint_line(
         [x, y + 6.0],
         [x, y + h - 6.0],
@@ -243,7 +243,7 @@ fn vsep(ui: &mut dyn UiBuilder, x: f32, y: f32, h: f32, theme: &EditorTheme) -> 
     x + 14.0
 }
 
-fn vsep_right(ui: &mut dyn UiBuilder, x: f32, y: f32, h: f32, theme: &EditorTheme) -> f32 {
+fn vsep_right(ui: &mut dyn UiBuilder, x: f32, y: f32, h: f32, theme: &UiTheme) -> f32 {
     ui.paint_line(
         [x, y + 6.0],
         [x, y + h - 6.0],

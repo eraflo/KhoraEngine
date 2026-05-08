@@ -40,6 +40,15 @@ taffy = "0.9.2"
 egui = "0.33"
 egui-winit = "0.33"
 
+# eframe — used by `ui::egui::app::run_native` to boot standalone
+# tools (the hub) without them depending on eframe directly.
+eframe = { version = "0.33", default-features = false, features = [
+    "default_fonts",
+    "wgpu",
+    "wayland",
+    "x11",
+] }
+
 [features]
 default = ["graphics", "platform", "physics"]
 graphics = []

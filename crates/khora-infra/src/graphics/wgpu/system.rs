@@ -1090,7 +1090,7 @@ impl WgpuRenderSystem {
         event_loop: &winit::event_loop::ActiveEventLoop,
         shader_source: &str,
         grid_shader_source: &str,
-        theme: khora_core::ui::editor::EditorTheme,
+        theme: khora_core::ui::UiTheme,
         viewport_handle: khora_core::ui::editor::viewport_texture::ViewportTextureHandle,
     ) -> Result<
         (

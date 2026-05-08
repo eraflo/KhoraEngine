@@ -167,6 +167,11 @@ pub struct EditorState {
     pub gizmo_mode: GizmoMode,
     /// Index of the currently selected asset in the asset browser (if any).
     pub selected_asset: Option<usize>,
+    /// Forward-slash relative path (under `<project>/assets/`) of the
+    /// asset selected in the browser, or `None`. When set, the
+    /// Inspector switches to asset-metadata mode (Phase 5). Cleared
+    /// when an entity selection is made.
+    pub inspected_asset_path: Option<String>,
     /// Pending menu action (e.g. "new_scene", "save", "quit").
     pub pending_menu_action: Option<String>,
     /// Currently set project folder (used for asset scanning).

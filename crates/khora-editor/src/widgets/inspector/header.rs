@@ -5,18 +5,12 @@
 // You may obtain a copy of the License at
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 
 //! Inspector header — composite widget used by the Properties panel.
 
-use khora_sdk::editor_ui::{EditorTheme, FontFamilyHint, Icon, TextAlign, UiBuilder};
+use khora_sdk::editor_ui::{UiTheme, FontFamilyHint, Icon, TextAlign, UiBuilder};
 
-use super::paint::{paint_icon, paint_text_size, with_alpha};
+use crate::widgets::paint::{paint_icon, paint_text_size, with_alpha};
 
 /// Paints the Inspector's rich header — large icon tile + name + meta row
 /// (tag + status pill + id). Returns the bottom edge in screen-space.
@@ -31,7 +25,7 @@ pub fn paint_inspector_header(
     status_label: &str,
     status_color: [f32; 4],
     id_label: Option<&str>,
-    theme: &EditorTheme,
+    theme: &UiTheme,
 ) -> f32 {
     let h = 64.0;
     let pad = 12.0;

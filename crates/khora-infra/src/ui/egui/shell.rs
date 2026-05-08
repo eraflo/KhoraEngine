@@ -36,12 +36,12 @@
 
 use super::theme::apply_theme;
 use super::ui_builder::EguiUiBuilder;
-use khora_core::ui::editor::fonts::{FontHandle, FontPack, NamedFont};
 use khora_core::ui::editor::panel::{EditorPanel, PanelLocation};
 use khora_core::ui::editor::shell::EditorShell;
 use khora_core::ui::editor::state::{EditorMode, EditorState, StatusBarData};
-use khora_core::ui::editor::theme::EditorTheme;
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
+use khora_core::ui::UiTheme;
+use khora_core::ui::fonts::{FontHandle, FontPack, NamedFont};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -115,7 +115,7 @@ pub struct EguiEditorShell {
     status_panels: Vec<Box<dyn EditorPanel>>,
     center_panels: Vec<Box<dyn EditorPanel>>,
     floating_panels: Vec<FloatingEntry>,
-    theme: EditorTheme,
+    theme: UiTheme,
     theme_applied: bool,
     active_bottom_tab: usize,
     /// Maps abstract viewport handles to egui texture IDs.
@@ -129,7 +129,7 @@ pub struct EguiEditorShell {
 
 impl EguiEditorShell {
     /// Creates a new shell using the given egui context (shared with `EguiOverlay`).
-    pub fn new(ctx: egui::Context, theme: EditorTheme) -> Self {
+    pub fn new(ctx: egui::Context, theme: UiTheme) -> Self {
         Self {
             ctx,
             top_panels: Vec::new(),
@@ -226,7 +226,7 @@ impl EditorShell for EguiEditorShell {
         false
     }
 
-    fn set_theme(&mut self, theme: EditorTheme) {
+    fn set_theme(&mut self, theme: UiTheme) {
         self.theme = theme;
         self.theme_applied = false;
     }

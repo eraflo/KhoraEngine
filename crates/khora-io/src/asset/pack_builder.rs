@@ -43,14 +43,14 @@
 
 use anyhow::{anyhow, Context, Result};
 use crossbeam_channel::Sender;
-use khora_core::asset::AssetSource;
+use khora_core::asset::{AssetSource, CompressionKind};
 use std::{
     fs::File,
     io::Write,
     path::{Path, PathBuf},
 };
 
-use super::{IndexBuilder, PackLoader};
+use super::{IndexBuilder, PackLoader, PackManifest, PACK_FLAG_LZ4, PACK_FLAG_MANIFEST};
 
 /// One step of a pack build, suitable for driving a UI progress bar.
 #[derive(Debug, Clone)]
@@ -86,6 +86,9 @@ pub struct PackOutput {
     pub index_bin: PathBuf,
     /// Absolute path to the produced `data.pack`.
     pub data_pack: PathBuf,
+    /// Absolute path to the produced `manifest.bin` (BLAKE3 integrity
+    /// records). `None` when manifest emission was disabled.
+    pub manifest_bin: Option<PathBuf>,
     /// Number of assets indexed (mirrors `index.bin`'s entry count).
     pub asset_count: usize,
     /// Total size of `data.pack` in bytes.
@@ -117,6 +120,8 @@ pub struct PackBuilder<'a> {
     assets_root: &'a Path,
     dest_dir: &'a Path,
     progress: Option<Sender<PackProgress>>,
+    compression: CompressionKind,
+    write_manifest: bool,
 }
 
 impl<'a> PackBuilder<'a> {
@@ -129,6 +134,8 @@ impl<'a> PackBuilder<'a> {
             assets_root,
             dest_dir,
             progress: None,
+            compression: CompressionKind::None,
+            write_manifest: false,
         }
     }
 
@@ -136,6 +143,24 @@ impl<'a> PackBuilder<'a> {
     /// disable progress (the sends are best-effort and never block).
     pub fn with_progress(mut self, tx: Sender<PackProgress>) -> Self {
         self.progress = Some(tx);
+        self
+    }
+
+    /// Sets the per-entry compression scheme. Default is
+    /// [`CompressionKind::None`]. When set to LZ4, every asset is
+    /// compressed individually so the runtime can decompress on demand
+    /// (no global state, no streaming gzip).
+    pub fn with_compression(mut self, compression: CompressionKind) -> Self {
+        self.compression = compression;
+        self
+    }
+
+    /// Emits a `manifest.bin` sidecar with BLAKE3 hashes of every
+    /// uncompressed asset. The runtime opts in via
+    /// `RuntimeConfig::verify_integrity` to detect corruption /
+    /// tampering at load time.
+    pub fn with_manifest(mut self, enable: bool) -> Self {
+        self.write_manifest = enable;
         self
     }
 
@@ -164,12 +189,25 @@ impl<'a> PackBuilder<'a> {
         let mut data_file = File::create(&data_pack_path)
             .with_context(|| format!("Failed to create {}", data_pack_path.display()))?;
 
-        // Write the leading 16-byte header. Asset offsets recorded below
+        // Write the leading 24-byte header. Asset offsets recorded below
         // are relative to the start of the asset region (i.e. don't
         // include the header) — `PackLoader` adds `PACK_HEADER_SIZE` when
         // seeking. This keeps the index oblivious to the on-disk framing.
-        PackLoader::write_header(&mut data_file, total as u32)
+        let mut flags = 0u32;
+        if self.compression == CompressionKind::Lz4 {
+            flags |= PACK_FLAG_LZ4;
+        }
+        if self.write_manifest {
+            flags |= PACK_FLAG_MANIFEST;
+        }
+        PackLoader::write_header(&mut data_file, total as u32, flags)
             .context("Failed to write pack header")?;
+
+        let mut manifest = if self.write_manifest {
+            Some(PackManifest::new())
+        } else {
+            None
+        };
 
         let mut offset = 0u64;
         for (idx, meta) in metadata.iter_mut().enumerate() {
@@ -200,18 +238,47 @@ impl<'a> PackBuilder<'a> {
             });
 
             let abs = self.assets_root.join(&rel_path);
-            let bytes = std::fs::read(&abs)
+            let raw = std::fs::read(&abs)
                 .with_context(|| format!("Failed to read asset bytes: {}", abs.display()))?;
-            let size = bytes.len() as u64;
+            let uncompressed_size = raw.len() as u64;
+
+            // Manifest hashes uncompressed bytes — the runtime computes
+            // BLAKE3 after decompression so the check is independent of
+            // the compression algorithm.
+            if let Some(m) = manifest.as_mut() {
+                m.insert(meta.uuid, &raw);
+            }
+
+            let (bytes_to_write, compression) = match self.compression {
+                CompressionKind::None => (raw, CompressionKind::None),
+                CompressionKind::Lz4 => {
+                    let compressed = lz4_flex::block::compress(&raw);
+                    // Skip compression when it makes the entry larger
+                    // (already-compressed media: PNG, OGG, FBX).
+                    if compressed.len() < raw.len() {
+                        (compressed, CompressionKind::Lz4)
+                    } else {
+                        (raw, CompressionKind::None)
+                    }
+                }
+            };
+            let on_disk_size = bytes_to_write.len() as u64;
 
             data_file
-                .write_all(&bytes)
+                .write_all(&bytes_to_write)
                 .with_context(|| format!("Failed to append {} to data.pack", rel_str))?;
 
-            meta.variants
-                .insert("default".to_string(), AssetSource::Packed { offset, size });
+            meta.variants.insert(
+                "default".to_string(),
+                AssetSource::Packed {
+                    offset,
+                    size: on_disk_size,
+                    uncompressed_size,
+                    compression,
+                },
+            );
 
-            offset += size;
+            offset += on_disk_size;
         }
 
         // Flush before writing index — index references offsets into the
@@ -226,6 +293,16 @@ impl<'a> PackBuilder<'a> {
         std::fs::write(&index_bin_path, &encoded)
             .with_context(|| format!("Failed to write {}", index_bin_path.display()))?;
 
+        let manifest_bin = if let Some(m) = manifest {
+            let manifest_path = self.dest_dir.join("manifest.bin");
+            let manifest_bytes = m.encode().context("Failed to encode manifest")?;
+            std::fs::write(&manifest_path, &manifest_bytes)
+                .with_context(|| format!("Failed to write {}", manifest_path.display()))?;
+            Some(manifest_path)
+        } else {
+            None
+        };
+
         let pack_bytes = offset;
         self.send_progress(PackProgress::Finished {
             asset_count: total,
@@ -235,6 +312,7 @@ impl<'a> PackBuilder<'a> {
         Ok(PackOutput {
             index_bin: index_bin_path,
             data_pack: data_pack_path,
+            manifest_bin,
             asset_count: total,
             pack_bytes,
         })

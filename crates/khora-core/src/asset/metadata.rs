@@ -16,22 +16,46 @@ use super::uuid::AssetUUID;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 
+/// On-disk compression scheme for a packed asset.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CompressionKind {
+    /// Raw bytes — no compression applied. Fastest read path.
+    #[default]
+    None,
+    /// LZ4 block compression (`lz4_flex`). Cheap to decompress, modest
+    /// ratio. Good default for shipping builds.
+    Lz4,
+}
+
 /// Represents the physical source of an asset's data.
 ///
 /// This enum allows the asset system to transparently handle assets from two
 /// different contexts:
 /// - In editor/development mode, assets are loaded directly from loose files on disk (`Path`).
 /// - In release/standalone mode, assets are loaded from an optimized packfile (`Packed`).
+///
+/// **Pack format version:** v2 added per-entry compression (`compression`,
+/// `uncompressed_size`). v1 packs (without these fields) are no longer
+/// supported on the read side; the loader bails on the header version
+/// check before reaching this struct.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AssetSource {
     /// The asset is a loose file on disk. The `PathBuf` points to the file.
     Path(PathBuf),
     /// The asset is located within a packfile.
     Packed {
-        /// The byte offset from the beginning of the packfile where the data starts.
+        /// Byte offset from the start of the asset region (i.e. *after*
+        /// the 24-byte header) in `data.pack`.
         offset: u64,
-        /// The total size of the asset's data in bytes.
+        /// Number of bytes to read from the pack at `offset` — the
+        /// **on-disk size**, possibly compressed.
         size: u64,
+        /// Size of the asset after decompression. Equals `size` when
+        /// `compression == CompressionKind::None`.
+        uncompressed_size: u64,
+        /// Compression scheme applied to the bytes between `offset` and
+        /// `offset + size`.
+        compression: CompressionKind,
     },
 }
 

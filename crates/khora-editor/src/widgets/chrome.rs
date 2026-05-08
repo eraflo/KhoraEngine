@@ -16,7 +16,7 @@
 //! headers. Everything below paints to absolute screen-space coordinates and
 //! tracks its own click hit-test via [`UiBuilder::interact_rect`].
 
-use khora_sdk::editor_ui::{EditorTheme, FontFamilyHint, Icon, Interaction, TextAlign, UiBuilder};
+use khora_sdk::editor_ui::{UiTheme, FontFamilyHint, Icon, Interaction, TextAlign, UiBuilder};
 // `Icon` is consumed inside `paint_search_pill` via `Icon::Search`.
 // `Interaction` is the return type of `paint_search_pill` and `panel_tab` (for
 // the click + width tuple). Kept explicit to make the public surface readable.
@@ -29,7 +29,7 @@ pub fn paint_kbd_chip(
     ui: &mut dyn UiBuilder,
     origin: [f32; 2],
     label: &str,
-    theme: &EditorTheme,
+    theme: &UiTheme,
 ) -> f32 {
     let measured = ui.measure_text(label, 10.5, FontFamilyHint::Monospace)[0];
     let w = measured.max(14.0) + 10.0;
@@ -69,7 +69,7 @@ pub fn paint_search_pill(
     width: f32,
     height: f32,
     placeholder: &str,
-    theme: &EditorTheme,
+    theme: &UiTheme,
 ) -> (Interaction, f32) {
     ui.paint_rect_filled(origin, [width, height], theme.surface_elevated, 6.0);
     ui.paint_rect_stroke(
@@ -122,7 +122,7 @@ pub fn panel_tab(
     label: &str,
     badge: Option<&str>,
     active: bool,
-    theme: &EditorTheme,
+    theme: &UiTheme,
 ) -> (bool, f32) {
     let label_w = ui.measure_text(
         label,
@@ -196,7 +196,7 @@ pub fn paint_panel_header(
     ui: &mut dyn UiBuilder,
     panel_rect: [f32; 4],
     height: f32,
-    theme: &EditorTheme,
+    theme: &UiTheme,
 ) {
     let [x, y, w, _] = panel_rect;
     super::paint::paint_vertical_gradient(

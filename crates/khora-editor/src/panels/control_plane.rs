@@ -72,7 +72,7 @@ impl AgentSnapshot {
         }
     }
 
-    fn importance_color(&self, theme: &EditorTheme) -> [f32; 4] {
+    fn importance_color(&self, theme: &UiTheme) -> [f32; 4] {
         match self.importance {
             AgentImportance::Critical => theme.error,
             AgentImportance::Important => theme.warning,
@@ -108,7 +108,7 @@ fn crate_for_id(id: AgentId) -> &'static str {
 
 pub struct ControlPlanePanel {
     state: Arc<Mutex<EditorState>>,
-    theme: EditorTheme,
+    theme: UiTheme,
     registry: Option<Arc<Mutex<AgentRegistry>>>,
     dcc_context: Option<Arc<std::sync::RwLock<DccContext>>>,
     selected_idx: usize,
@@ -117,7 +117,7 @@ pub struct ControlPlanePanel {
 impl ControlPlanePanel {
     pub fn new(
         state: Arc<Mutex<EditorState>>,
-        theme: EditorTheme,
+        theme: UiTheme,
         registry: Option<Arc<Mutex<AgentRegistry>>>,
         dcc_context: Option<Arc<std::sync::RwLock<DccContext>>>,
     ) -> Self {
@@ -274,7 +274,7 @@ impl ControlPlanePanel {
         snap: (f32, f32, f32, f32, f32, f32),
         dcc: Option<&DccContext>,
         agent_count: usize,
-        theme: &EditorTheme,
+        theme: &UiTheme,
     ) {
         let [x, y, w, h] = rect;
         ui.paint_rect_filled([x, y], [w, h], theme.surface, theme.radius_lg);
@@ -427,7 +427,7 @@ impl ControlPlanePanel {
         ui: &mut dyn UiBuilder,
         rect: [f32; 4],
         agents: &[AgentSnapshot],
-        theme: &EditorTheme,
+        theme: &UiTheme,
     ) {
         let [x, y, w, h] = rect;
         ui.paint_rect_filled([x, y], [w, h], theme.surface, theme.radius_lg);
@@ -492,7 +492,7 @@ impl ControlPlanePanel {
         w: f32,
         agent: &AgentSnapshot,
         idx: usize,
-        theme: &EditorTheme,
+        theme: &UiTheme,
     ) {
         let active = self.selected_idx == idx;
         let interaction =
@@ -596,7 +596,7 @@ impl ControlPlanePanel {
         ui: &mut dyn UiBuilder,
         rect: [f32; 4],
         agents: &[AgentSnapshot],
-        theme: &EditorTheme,
+        theme: &UiTheme,
     ) {
         let [x, y, w, h] = rect;
         ui.paint_rect_filled([x, y], [w, h], theme.surface, theme.radius_lg);
@@ -721,7 +721,7 @@ impl ControlPlanePanel {
         ui: &mut dyn UiBuilder,
         rect: [f32; 4],
         agent: Option<&AgentSnapshot>,
-        theme: &EditorTheme,
+        theme: &UiTheme,
     ) {
         let [x, y, w, h] = rect;
         ui.paint_rect_filled([x, y], [w, h], theme.surface, theme.radius_lg);
@@ -956,7 +956,7 @@ impl AgentSnapshot {
     }
 }
 
-fn phase_color_for(phase: ExecutionPhase, theme: &EditorTheme) -> [f32; 4] {
+fn phase_color_for(phase: ExecutionPhase, theme: &UiTheme) -> [f32; 4] {
     if phase == ExecutionPhase::INIT {
         theme.text_muted
     } else if phase == ExecutionPhase::OBSERVE {
@@ -981,7 +981,7 @@ fn paint_card_box(
     w: f32,
     title: &str,
     icon: Icon,
-    theme: &EditorTheme,
+    theme: &UiTheme,
 ) -> f32 {
     let header_h = 26.0;
     ui.paint_rect_filled(
@@ -997,7 +997,7 @@ fn paint_card_box(
 
 /// Render a key/value row with the key left-aligned and the value
 /// right-aligned within `[x, x+w]`.
-fn kv(ui: &mut dyn UiBuilder, x: f32, y: f32, w: f32, key: &str, value: &str, theme: &EditorTheme) {
+fn kv(ui: &mut dyn UiBuilder, x: f32, y: f32, w: f32, key: &str, value: &str, theme: &UiTheme) {
     paint_text_size(ui, [x, y], key, 11.0, theme.text_dim);
     ui.paint_text_styled(
         [x + w - 4.0, y],

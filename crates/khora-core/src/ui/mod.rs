@@ -13,15 +13,27 @@
 // limitations under the License.
 
 //! Core interfaces for the UI system.
+//!
+//! `theme` and `fonts` are app-agnostic structures shared by every Khora
+//! UI surface (editor, hub, future tools). The `editor` submodule layers
+//! the editor-specific framework (panels, dock, viewport handle, paint
+//! `UiBuilder`) on top.
 
+pub mod app;
 pub mod editor;
 pub mod editor_overlay;
+pub mod fonts;
+pub mod geometry;
 pub mod layout;
+pub mod theme;
 pub mod types;
 
+pub use app::{App, AppContext, AppLifecycle};
 pub use editor::{
-    EditorCamera, EditorPanel, EditorShell, EditorTheme, PanelLocation, UiBuilder,
-    ViewportTextureHandle,
+    EditorCamera, EditorPanel, EditorShell, PanelLocation, UiBuilder, ViewportTextureHandle,
 };
 pub use editor_overlay::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
+pub use fonts::{FontHandle, FontPack, NamedFont};
+pub use geometry::{Align, Align2, CornerRadius, Margin, Stroke};
 pub use layout::{LayoutSystem, UiLayoutView};
+pub use theme::UiTheme;

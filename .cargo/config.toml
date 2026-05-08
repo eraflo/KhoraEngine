@@ -1,3 +1,8 @@
 [alias]
 xtask = "run --package xtask --"
 sandbox = "run -p sandbox"
+
+# `cargo hub-dev` — pre-build editor + runtime in debug, then run the hub
+# in release. The typical contributor's dev loop in one command. See
+# `xtask/src/commands/dev.rs` for what each step does.
+hub-dev = "xtask hub-dev"

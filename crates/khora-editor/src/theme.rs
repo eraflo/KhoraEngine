@@ -19,7 +19,7 @@
 //! linear RGB happens once, off-line, and is hardcoded here so the runtime
 //! never has to recompute it.
 //!
-//! The mapping to semantic [`EditorTheme`] slots is:
+//! The mapping to semantic [`UiTheme`] slots is:
 //!
 //! | Theme slot          | Mockup token            | Brand role                       |
 //! |---------------------|-------------------------|----------------------------------|
@@ -33,11 +33,11 @@
 //! | `error`             | `--accent-red`          | Errors                           |
 //! | `axis_x/y/z`        | OKLCH 25 / 145 / 240    | Standard 3D axis colors          |
 
-use khora_sdk::EditorTheme;
+use khora_sdk::UiTheme;
 
 /// Returns the Khora Engine editor "Deep Navy / Silver" theme.
-pub fn khora_dark() -> EditorTheme {
-    EditorTheme {
+pub fn khora_dark() -> UiTheme {
+    UiTheme {
         // ── Surfaces (oklch 0.16–0.32 chroma 0.022–0.036 hue 265) ──
         background: [0.0179, 0.0193, 0.0273, 1.0], // oklch(0.16 0.022 265)
         surface: [0.0290, 0.0312, 0.0426, 1.0],    // oklch(0.20 0.025 265)
@@ -102,7 +102,7 @@ mod tests {
     /// effect).
     #[test]
     fn khora_dark_overrides_default_palette() {
-        let dflt = EditorTheme::default();
+        let dflt = UiTheme::default();
         let khora = khora_dark();
         // Surfaces should be visibly darker (deep navy).
         assert!(

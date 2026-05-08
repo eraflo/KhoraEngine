@@ -23,7 +23,7 @@ pub struct ViewportPanel {
     handle: ViewportTextureHandle,
     state: Arc<Mutex<EditorState>>,
     camera: Arc<Mutex<EditorCamera>>,
-    theme: EditorTheme,
+    theme: UiTheme,
 }
 
 /// Snapshot of the few status fields the stats card paints, copied while
@@ -43,7 +43,7 @@ impl ViewportPanel {
         handle: ViewportTextureHandle,
         state: Arc<Mutex<EditorState>>,
         camera: Arc<Mutex<EditorCamera>>,
-        theme: EditorTheme,
+        theme: UiTheme,
     ) -> Self {
         Self {
             handle,

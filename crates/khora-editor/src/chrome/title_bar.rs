@@ -45,11 +45,11 @@ const MENU_REGION_WIDTH: f32 = 240.0;
 /// Top-bar branded strip.
 pub struct TitleBarPanel {
     state: Arc<Mutex<EditorState>>,
-    theme: EditorTheme,
+    theme: UiTheme,
 }
 
 impl TitleBarPanel {
-    pub fn new(state: Arc<Mutex<EditorState>>, theme: EditorTheme) -> Self {
+    pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self { state, theme }
     }
 
@@ -132,6 +132,10 @@ impl EditorPanel for TitleBarPanel {
                     }
                     if m.button("Save As…") {
                         dispatch("save_as");
+                        m.close_menu();
+                    }
+                    if m.button("Export Scene as RON…") {
+                        dispatch("export_ron");
                         m.close_menu();
                     }
                     m.separator();

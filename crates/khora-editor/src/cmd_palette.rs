@@ -122,13 +122,13 @@ const SECTIONS: &[Section] = &[
 /// Floating modal command palette.
 pub struct CommandPalettePanel {
     state: Arc<Mutex<EditorState>>,
-    theme: EditorTheme,
+    theme: UiTheme,
     query: String,
     active: usize,
 }
 
 impl CommandPalettePanel {
-    pub fn new(state: Arc<Mutex<EditorState>>, theme: EditorTheme) -> Self {
+    pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self {
             state,
             theme,

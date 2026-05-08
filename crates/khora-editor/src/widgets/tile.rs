@@ -14,15 +14,15 @@
 
 //! Asset-browser tile widget — type-coloured gradient thumbnails.
 
-use khora_sdk::editor_ui::{EditorTheme, FontFamilyHint, Icon, TextAlign, UiBuilder};
+use khora_sdk::editor_ui::{UiTheme, FontFamilyHint, Icon, TextAlign, UiBuilder};
 
 use super::paint::{paint_icon, paint_text_size, with_alpha};
 
 /// Visual category for an asset tile. Drives the gradient + icon + format
-/// glyph. Variants are limited to types the editor's asset browser
-/// actually knows how to surface — adding a new asset type is a single
-/// `match` arm in `AssetBrowserPanel::classify_extension` plus a variant
-/// here.
+/// glyph. Variants map onto the canonical type names produced by
+/// `khora_io::asset::IndexBuilder::asset_type_for_extension`. Add a new
+/// variant when a new asset *category* lands engine-side; per-extension
+/// distinctions belong in the IndexBuilder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetTileKind {
     Mesh,
@@ -30,6 +30,12 @@ pub enum AssetTileKind {
     Audio,
     Shader,
     Scene,
+    /// Gameplay scripts (`.kscript`) — data-driven, hot-reloadable. Tier
+    /// 3 of the project's three "code" tiers; the scripting language
+    /// runtime itself isn't implemented yet, but the asset browser
+    /// surfaces them so authors can see where they live and the watcher
+    /// can hot-reload them.
+    Script,
     Unknown,
 }
 
@@ -41,6 +47,7 @@ impl AssetTileKind {
             Self::Audio => Icon::Music,
             Self::Shader => Icon::Zap,
             Self::Scene => Icon::Globe,
+            Self::Script => Icon::Code,
             Self::Unknown => Icon::Box,
         }
     }
@@ -48,13 +55,14 @@ impl AssetTileKind {
     /// Returns the top accent colour for the tile gradient (the bottom
     /// always falls into `theme.surface` so the tile blends with the panel
     /// background regardless of category).
-    fn accent(self, theme: &EditorTheme) -> [f32; 4] {
+    fn accent(self, theme: &UiTheme) -> [f32; 4] {
         let raw = match self {
             Self::Mesh => theme.accent_a,
             Self::Texture => theme.accent_c,
             Self::Audio => theme.success,
             Self::Shader => theme.accent_a,
             Self::Scene => theme.accent_a,
+            Self::Script => theme.warning,
             Self::Unknown => theme.surface_active,
         };
         with_alpha(raw, 0.85)
@@ -67,9 +75,27 @@ impl AssetTileKind {
             Self::Audio => "OGG",
             Self::Shader => "GLSL",
             Self::Scene => "SCN",
+            Self::Script => "KSCR",
             Self::Unknown => "—",
         }
     }
+}
+
+/// What the user did to an asset tile this frame.
+///
+/// Tiles surface both single- and double-click distinctly: single click
+/// selects (asset browser shows metadata), double-click is the "primary
+/// action" (load a scene, open a script in OS-default editor, etc.).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AssetTileInteraction {
+    pub clicked: bool,
+    pub double_clicked: bool,
+    /// Pointer is over the tile — kept here for callers that want to
+    /// surface a tooltip or preview without re-running the rect
+    /// interaction. Currently unused by the asset browser, but the
+    /// future inspector preview will read it.
+    #[allow(dead_code)]
+    pub hovered: bool,
 }
 
 /// Paints an asset tile (thumbnail + name) and reports interaction.
@@ -86,8 +112,8 @@ pub fn paint_asset_tile(
     name: &str,
     kind: AssetTileKind,
     selected: bool,
-    theme: &EditorTheme,
-) -> bool {
+    theme: &UiTheme,
+) -> AssetTileInteraction {
     let [w, h] = size;
     let thumb_h = w; // square
     let name_y = origin[1] + thumb_h + 4.0;
@@ -159,5 +185,9 @@ pub fn paint_asset_tile(
         if selected { theme.text } else { theme.text_dim },
     );
 
-    interaction.clicked
+    AssetTileInteraction {
+        clicked: interaction.clicked,
+        double_clicked: interaction.double_clicked,
+        hovered: interaction.hovered,
+    }
 }
