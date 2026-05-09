@@ -81,8 +81,9 @@ pub trait AgentProvider {
     /// Use `dcc.register_agent(agent, priority)` for agents active in all modes.
     /// Use `dcc.register_agent_for_mode(agent, priority, modes)` for mode-specific agents.
     ///
-    /// The `services` registry provides access to engine services that agents may need.
-    fn register_agents(&self, dcc: &DccService, services: &mut khora_core::ServiceRegistry);
+    /// The `runtime` bundle provides access to engine services / backends /
+    /// resources that agents may need.
+    fn register_agents(&self, dcc: &DccService, runtime: &mut khora_core::Runtime);
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -136,7 +137,7 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync {
         Self: Sized;
 
     /// Called once during engine initialization to set up the game world.
-    fn setup(&mut self, world: &mut GameWorld, services: &khora_core::ServiceRegistry);
+    fn setup(&mut self, world: &mut GameWorld, runtime: &khora_core::Runtime);
 
     /// Called every frame to update game logic.
     fn update(&mut self, world: &mut GameWorld, inputs: &[InputEvent]);
@@ -163,7 +164,7 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync {
     fn before_frame(
         &mut self,
         _world: &mut GameWorld,
-        _services: &khora_core::ServiceRegistry,
+        _runtime: &khora_core::Runtime,
         _window: &dyn KhoraWindow,
     ) {
     }
@@ -171,11 +172,11 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync {
     /// Optional: called after the renderer's `begin_frame` and before the
     /// scheduler dispatches agents. Use to switch the renderer to an offscreen
     /// viewport target (e.g., `set_render_to_viewport(true)`).
-    fn before_agents(&mut self, _world: &mut GameWorld, _services: &khora_core::ServiceRegistry) {}
+    fn before_agents(&mut self, _world: &mut GameWorld, _runtime: &khora_core::Runtime) {}
 
     /// Optional: called after agent execution and `submit_frame_graph`, but
     /// BEFORE the renderer's `end_frame`. Use to render gizmos to the offscreen
     /// viewport, switch back to the swapchain (`set_render_to_viewport(false)`),
     /// and present a UI overlay (`render_overlay`).
-    fn after_agents(&mut self, _world: &mut GameWorld, _services: &khora_core::ServiceRegistry) {}
+    fn after_agents(&mut self, _world: &mut GameWorld, _runtime: &khora_core::Runtime) {}
 }

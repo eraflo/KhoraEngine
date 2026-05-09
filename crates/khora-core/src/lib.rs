@@ -34,12 +34,12 @@ pub mod memory;
 pub mod physics;
 pub mod platform;
 pub mod renderer;
+pub mod runtime;
 pub mod scene;
-pub mod service_registry;
 pub mod telemetry;
 pub mod ui;
 pub mod utils;
 
 pub use context::EngineContext;
-pub use service_registry::ServiceRegistry;
+pub use runtime::{Backends, Resources, Runtime, Services};
 pub use utils::timer::Stopwatch;

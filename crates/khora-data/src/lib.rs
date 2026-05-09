@@ -22,6 +22,7 @@ pub mod assets;
 pub mod ecs;
 pub mod flow;
 pub mod gpu;
+pub mod physics;
 pub mod render;
 pub mod scene;
 pub mod ui;

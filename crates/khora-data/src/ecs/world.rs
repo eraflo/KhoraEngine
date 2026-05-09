@@ -167,7 +167,9 @@ impl World {
             SemanticDomain::Physics,
         );
         world.register_component::<crate::ecs::ActiveEvents>(SemanticDomain::Physics);
-        world.register_component::<crate::ecs::CollisionPairs>(SemanticDomain::Physics);
+        // CollisionPairs is **not** an ECS component anymore — it lives
+        // in `Resources` as `Arc<Mutex<crate::physics::CollisionPairs>>`
+        // (broadphase scratch shared between lanes, no entity identity).
         world.register_component::<crate::ecs::CollisionEvents>(SemanticDomain::Physics);
         world.register_component::<crate::ecs::PhysicsDebugData>(SemanticDomain::Physics);
 
@@ -214,6 +216,11 @@ impl World {
         {
             let page = &mut self.storage.pages[page_id as usize];
             row_index = page.entities.len() as u32;
+            // SAFETY: `page` was just resolved by `find_or_create_page_for_bundle::<B>()`
+            // (line above), which guarantees its column layout matches `B::component_types()`.
+            // `bundle.add_to_page` requires that every column type in the bundle has a
+            // matching column on the page; that invariant is upheld by the page-discovery
+            // step. Exclusive access is held via `&mut page`.
             unsafe {
                 bundle.add_to_page(page);
             }

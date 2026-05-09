@@ -188,7 +188,7 @@ impl Agent for RenderAgent {
         // One-shot lane GPU initialization.  We fetch the device from the
         // service registry, drive lane.on_initialize() once, and drop the
         // device handle — the agent does not store it.
-        let Some(device_arc) = context.services.get::<Arc<dyn GraphicsDevice>>().cloned() else {
+        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>().cloned() else {
             log::warn!("RenderAgent: graphics device unavailable in on_initialize");
             return;
         };
@@ -210,17 +210,17 @@ impl Agent for RenderAgent {
         self.execute_attempts += 1;
 
         // Look up every dependency from services — the agent owns none of these.
-        let Some(device_arc) = context.services.get::<Arc<dyn GraphicsDevice>>() else {
+        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
             return;
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
 
-        let Some(rs_arc) = context.services.get::<Arc<Mutex<Box<dyn RenderSystem>>>>() else {
+        let Some(rs_arc) = context.runtime.backends.get::<Arc<Mutex<Box<dyn RenderSystem>>>>() else {
             return;
         };
         let render_system: Arc<Mutex<Box<dyn RenderSystem>>> = (*rs_arc).clone();
 
-        let Some(gpu_cache) = context.services.get::<GpuCache>() else {
+        let Some(gpu_cache) = context.runtime.resources.get::<GpuCache>() else {
             return;
         };
         let gpu_meshes: Arc<RwLock<Assets<GpuMesh>>> = gpu_cache.inner().clone();
@@ -232,7 +232,7 @@ impl Agent for RenderAgent {
             return;
         };
 
-        let Some(frame_graph) = context.services.get::<SharedFrameGraph>().cloned() else {
+        let Some(frame_graph) = context.runtime.resources.get::<SharedFrameGraph>().cloned() else {
             log::warn!("RenderAgent: no FrameGraph in services");
             return;
         };
@@ -241,7 +241,7 @@ impl Agent for RenderAgent {
         // atlas data into the per-frame FrameContext after `begin_frame()`.
         // ShadowAgent runs in OBSERVE (before OUTPUT) and publishes its atlas
         // there as well. We just read both.
-        let Some(fctx) = context.services.get::<Arc<FrameContext>>() else {
+        let Some(fctx) = context.runtime.resources.get::<Arc<FrameContext>>() else {
             log::warn!("RenderAgent: no FrameContext in services");
             return;
         };

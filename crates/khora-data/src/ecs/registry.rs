@@ -74,10 +74,21 @@ impl ComponentRegistry {
             ComponentVTable {
                 domain,
                 create_column: || Box::new(Vec::<T>::new()),
-                copy_row: |src_col, src_row, dest_col| unsafe {
-                    let src_vec = src_col.as_any().downcast_ref::<Vec<T>>().unwrap();
-                    let dest_vec = dest_col.as_any_mut().downcast_mut::<Vec<T>>().unwrap();
-                    dest_vec.push(src_vec.get_unchecked(src_row).clone());
+                copy_row: |src_col, src_row, dest_col| {
+                    // SAFETY: The registry keys this vtable by `TypeId::of::<T>()`. Callers
+                    // (the `World` migration / clone paths) only invoke `copy_row` when the
+                    // dynamic types of `src_col` and `dest_col` are both `Vec<T>` for the
+                    // same `T` this vtable was registered against — guaranteed by their
+                    // matching TypeId lookup. The two downcasts therefore always succeed.
+                    // `src_row` is required by the caller contract to satisfy
+                    // `src_row < src_vec.len()`; entity locations stored on the World only
+                    // ever point to valid rows in their registered pages, so
+                    // `get_unchecked` is sound here.
+                    unsafe {
+                        let src_vec = src_col.as_any().downcast_ref::<Vec<T>>().unwrap();
+                        let dest_vec = dest_col.as_any_mut().downcast_mut::<Vec<T>>().unwrap();
+                        dest_vec.push(src_vec.get_unchecked(src_row).clone());
+                    }
                 },
             },
         );

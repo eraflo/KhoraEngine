@@ -25,4 +25,5 @@ tempfile = "3.25.0"
 bincode = { version = "2.0.1", features = ["serde"] }
 
 [dev-dependencies]
+khora-control = { path = "../khora-control" }
 khora-infra = { path = "../khora-infra", features = ["physics"] }

@@ -22,7 +22,7 @@
 
 use khora_core::control::gorna::{AgentId, ResourceBudget, StrategyId};
 use khora_core::lane::LaneBus;
-use khora_core::ServiceRegistry;
+use khora_core::Runtime;
 use khora_data::ecs::{SemanticDomain, World};
 use khora_data::flow::FlowRegistration;
 use std::collections::HashMap;
@@ -47,14 +47,14 @@ pub fn run_flows(
     world: &mut World,
     bus: &mut LaneBus,
     budgets: &HashMap<AgentId, ResourceBudget>,
-    services: &ServiceRegistry,
+    runtime: &Runtime,
 ) {
     let ambient = ambient_budget();
     for reg in inventory::iter::<FlowRegistration> {
         let budget = domain_to_agent(reg.domain)
             .and_then(|id| budgets.get(&id))
             .unwrap_or(&ambient);
-        (reg.run)(world, bus, budget, services);
+        (reg.run)(world, bus, budget, runtime);
     }
 }
 

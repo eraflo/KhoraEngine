@@ -15,7 +15,7 @@
 //! Core engine context providing access to foundational subsystems.
 
 use crate::lane::{LaneBus, OutputDeck};
-use crate::service_registry::ServiceRegistry;
+use crate::runtime::Runtime;
 use std::any::Any;
 use std::sync::Arc;
 
@@ -25,13 +25,20 @@ use std::sync::Arc;
 /// `execute()`. The Agent forwards `bus` and `deck` to its `LaneContext`
 /// so that lanes can read [`Flow`] outputs and write their own outputs.
 ///
+/// The `runtime` bundle exposes the three runtime containers
+/// ([`Services`](crate::runtime::Services),
+/// [`Backends`](crate::runtime::Backends),
+/// [`Resources`](crate::runtime::Resources)) — agents pick the right one
+/// based on what they're looking for.
+///
 /// [`Flow`]: ../../../khora_data/flow/index.html
 pub struct EngineContext<'a> {
     /// A type-erased pointer to the main ECS World.
     pub world: Option<&'a mut dyn Any>,
 
-    /// Generic service registry — agents fetch typed services as needed.
-    pub services: Arc<ServiceRegistry>,
+    /// Runtime containers — services (business APIs), backends (trait
+    /// impls), resources (shared state).
+    pub runtime: Arc<Runtime>,
 
     /// Read-only typed bus of [`Flow`](../../../khora_data/flow/index.html)
     /// outputs produced this tick. Lanes consume Views from here.

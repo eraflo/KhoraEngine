@@ -16,22 +16,21 @@
 //!
 //! Per CLAD, an Agent owns exactly one `LaneKind` and stores **only** its
 //! own GORNA/strategy state.  All shared services (graphics device, render
-//! system, fonts, text renderer, texture assets, the per-frame `UiScene`)
-//! are looked up from the [`ServiceRegistry`] each frame.
+//! system, fonts, text renderer, texture assets, the per-frame `UiScene`,
+//! the UI image atlas) are looked up from the engine
+//! [`Runtime`](khora_core::Runtime) each frame.
 //!
-//! TODO: the UI image atlas and its per-frame image cache currently live on
-//! the agent because they are GPU resources tightly coupled to UI image
-//! upload.  A follow-up refactor should extract them into a dedicated
-//! `UiAtlasService` (likely in `khora-lanes`) so the agent owns no GPU
-//! state at all.
+//! The persistent `AssetUUID → AtlasRect` cache and the GPU
+//! [`TextureAtlas`](khora_core::renderer::api::util::TextureAtlas) used
+//! to live on this agent as `image_cache` and `image_atlas` fields. They
+//! now both live in [`UiImageAtlas`](khora_data::ui::UiImageAtlas) (a
+//! `Resource`). The agent owns **no** GPU state and no buffered output.
 
 use std::any::Any;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
-use khora_core::asset::AssetUUID;
 use khora_core::context::EngineContext;
 use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
@@ -41,26 +40,22 @@ use khora_core::lane::Ref;
 use khora_core::lane::{ColorTarget, Lane, LaneContext, Slot};
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::api::text::TextRenderer;
-use khora_core::renderer::api::util::{AtlasRect, TextureAtlas};
 use khora_core::renderer::GraphicsDevice;
 use khora_core::ui::LayoutSystem;
 use khora_data::assets::Assets;
 use khora_data::render::{PassDescriptor, ResourceId, SharedFrameGraph};
-use khora_data::ui::{UiAtlasMap, UiScene};
+use khora_data::ui::{UiAtlasMap, UiImageAtlas, UiScene};
 use khora_lanes::render_lane::UiRenderLane;
 use khora_lanes::ui_lane::StandardUiLane;
 
-//TODO refactor: the UiAgent currently owns the UI image atlas GPU resource and
-// its per-frame image cache because they are tightly coupled to the UI image
-//upload process in the render lane.  A cleaner design would extract them into a
-//dedicated `UiAtlasService` (likely in `khora-lanes`) so the agent owns no GPU state at all.
-// TODO: refacto -> manage 2 separate lanes: very bad
-
 /// The agent responsible for the UI subsystem (`LaneKind::Ui`).
 ///
-/// Holds **only** its own strategy state plus the UI image atlas (GPU
-/// resource, see TODO above).  Every other dependency is looked up from
-/// `EngineContext::services` per frame.
+/// Holds **only** its own GORNA / strategy state. The GPU texture atlas
+/// and the persistent `AssetUUID → AtlasRect` cache both live in the
+/// [`UiImageAtlas`](khora_data::ui::UiImageAtlas) Resource. Every other
+/// dependency (graphics device, render system, font cache, text renderer,
+/// per-frame `UiScene`) is looked up from `EngineContext::runtime` per
+/// frame.
 pub struct UiAgent {
     /// Layout strategy lane.
     layout_lane: Option<Box<dyn Lane>>,
@@ -70,11 +65,6 @@ pub struct UiAgent {
     time_budget: Duration,
     /// Current GORNA strategy ID applied via `apply_budget`.
     current_strategy: StrategyId,
-    /// UI texture atlas.  TODO: move into a `UiAtlasService` so the agent
-    /// owns no GPU state.
-    image_atlas: Option<TextureAtlas>,
-    /// Cache of `AssetUUID → AtlasRect` for already-uploaded UI images.
-    image_cache: HashMap<AssetUUID, AtlasRect>,
 }
 
 impl Agent for UiAgent {
@@ -104,7 +94,7 @@ impl Agent for UiAgent {
         // Build the layout lane if a layout system is registered.
         if self.layout_lane.is_none() {
             if let Some(layout_system_svc) =
-                context.services.get::<Arc<Mutex<Box<dyn LayoutSystem>>>>()
+                context.runtime.backends.get::<Arc<Mutex<Box<dyn LayoutSystem>>>>()
             {
                 self.layout_lane = Some(Box::new(StandardUiLane::new(layout_system_svc.clone())));
             }
@@ -116,7 +106,7 @@ impl Agent for UiAgent {
         }
         if let (Some(lane), Some(device)) = (
             self.render_lane.as_ref(),
-            context.services.get::<Arc<dyn GraphicsDevice>>().cloned(),
+            context.runtime.backends.get::<Arc<dyn GraphicsDevice>>().cloned(),
         ) {
             let mut init_ctx = LaneContext::new();
             init_ctx.insert(device);
@@ -125,24 +115,23 @@ impl Agent for UiAgent {
             }
         }
 
-        // Allocate the UI image atlas (one-shot GPU initialization).
-        if self.image_atlas.is_none() {
-            if let Some(device) = context.services.get::<Arc<dyn GraphicsDevice>>().cloned() {
-                if let Ok(atlas) = TextureAtlas::new(
-                    device.as_ref(),
-                    2048,
-                    khora_core::renderer::api::util::TextureFormat::Rgba8Unorm,
-                    "ui_image_atlas",
-                ) {
-                    self.image_atlas = Some(atlas);
-                }
-            }
+        // Lazily allocate the GPU texture atlas inside the UiImageAtlas
+        // resource (one-shot, idempotent).
+        if let (Some(atlas_res), Some(device)) = (
+            context.runtime.resources.get::<Arc<UiImageAtlas>>().cloned(),
+            context
+                .runtime
+                .backends
+                .get::<Arc<dyn GraphicsDevice>>()
+                .cloned(),
+        ) {
+            atlas_res.ensure_atlas(device.as_ref());
         }
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
         // Look up everything from services every frame.
-        let Some(device_arc) = context.services.get::<Arc<dyn GraphicsDevice>>() else {
+        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
             return;
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
@@ -153,12 +142,12 @@ impl Agent for UiAgent {
             return;
         };
 
-        let Some(frame_graph) = context.services.get::<SharedFrameGraph>().cloned() else {
+        let Some(frame_graph) = context.runtime.resources.get::<SharedFrameGraph>().cloned() else {
             log::warn!("UiAgent: no FrameGraph in services");
             return;
         };
 
-        let Some(fctx) = context.services.get::<Arc<FrameContext>>() else {
+        let Some(fctx) = context.runtime.resources.get::<Arc<FrameContext>>() else {
             log::warn!("UiAgent: no FrameContext in services");
             return;
         };
@@ -169,38 +158,59 @@ impl Agent for UiAgent {
 
         let textures: Option<Arc<RwLock<Assets<khora_core::renderer::api::resource::CpuTexture>>>> =
             context
-                .services
+                .runtime
+                .resources
                 .get::<Arc<RwLock<Assets<khora_core::renderer::api::resource::CpuTexture>>>>()
                 .map(|arc| (*arc).clone());
 
         let text_renderer: Option<Arc<dyn TextRenderer>> = context
-            .services
+            .runtime
+            .backends
             .get::<Arc<dyn TextRenderer>>()
             .map(|arc| (*arc).clone());
 
+        // The persistent `AssetUUID → AtlasRect` cache and the GPU
+        // texture atlas both live in the `UiImageAtlas` Resource. We
+        // lock the atlas mutex once for the duration of upload + render
+        // so the same `&mut TextureAtlas` is visible to both the
+        // per-image upload loop below and the render lane via
+        // `LaneContext`.
+        let atlas_resource: Option<Arc<UiImageAtlas>> = context
+            .runtime
+            .resources
+            .get::<Arc<UiImageAtlas>>()
+            .cloned();
+        let mut atlas_guard = atlas_resource.as_ref().and_then(|r| r.lock_atlas());
+
         // Resolve per-frame atlas rects for any UI images that aren't yet
-        // in the cache. Builds an immutable per-frame `UiAtlasMap` exposed
-        // to the lane through `LaneContext` (no in-place mutation of the
-        // bus-published `UiScene`).
+        // in the cache. Builds an immutable per-frame `UiAtlasMap`
+        // exposed to the lane through `LaneContext` (no in-place
+        // mutation of the bus-published `UiScene`).
         let mut atlas_map = UiAtlasMap::new();
-        if let (Some(atlas), Some(textures)) = (&mut self.image_atlas, textures.as_ref()) {
-            for node in ui_scene.nodes.iter() {
-                let Some(image) = node.image else { continue };
-                if let Some(rect) = self.image_cache.get(&image.texture) {
-                    atlas_map.insert(image.texture, *rect);
-                    continue;
-                }
-                if let Ok(assets) = textures.read() {
-                    if let Some(cpu_tex) = assets.get(&image.texture) {
-                        if let Some(rect) = atlas.allocate_and_upload(
-                            device.as_ref(),
-                            cpu_tex.size.width,
-                            cpu_tex.size.height,
-                            &cpu_tex.pixels,
-                            cpu_tex.format.bytes_per_pixel(),
-                        ) {
-                            self.image_cache.insert(image.texture, rect);
-                            atlas_map.insert(image.texture, rect);
+        if let (Some(guard), Some(textures), Some(res)) = (
+            atlas_guard.as_mut(),
+            textures.as_ref(),
+            atlas_resource.as_ref(),
+        ) {
+            if let Some(atlas) = guard.as_mut() {
+                for node in ui_scene.nodes.iter() {
+                    let Some(image) = node.image else { continue };
+                    if let Some(rect) = res.get_rect(&image.texture) {
+                        atlas_map.insert(image.texture, rect);
+                        continue;
+                    }
+                    if let Ok(assets) = textures.read() {
+                        if let Some(cpu_tex) = assets.get(&image.texture) {
+                            if let Some(rect) = atlas.allocate_and_upload(
+                                device.as_ref(),
+                                cpu_tex.size.width,
+                                cpu_tex.size.height,
+                                &cpu_tex.pixels,
+                                cpu_tex.format.bytes_per_pixel(),
+                            ) {
+                                res.insert_rect(image.texture, rect);
+                                atlas_map.insert(image.texture, rect);
+                            }
                         }
                     }
                 }
@@ -220,8 +230,13 @@ impl Agent for UiAgent {
             if let Some(tr) = &text_renderer {
                 ctx.insert(tr.clone());
             }
-            if let Some(atlas) = self.image_atlas.as_mut() {
-                ctx.insert(Slot::new(atlas));
+            // The atlas reference threaded into LaneContext is borrowed
+            // from `atlas_guard` (the MutexGuard locked above for the
+            // duration of this frame's UI work).
+            if let Some(guard) = atlas_guard.as_mut() {
+                if let Some(atlas) = guard.as_mut() {
+                    ctx.insert(Slot::new(atlas));
+                }
             }
             // SAFETY: ui_scene is borrowed from the LaneBus, alive for the
             // full frame; ctx (which holds the Ref) is dropped well before.
@@ -243,6 +258,9 @@ impl Agent for UiAgent {
                 log::error!("UiAgent: UiRenderLane execution failed: {}", e);
             }
         }
+        // Drop the LaneContext (with its Slot<TextureAtlas>) before
+        // releasing `atlas_guard` so the borrow chain unwinds cleanly.
+        drop(atlas_guard);
         let cmd_buf = encoder.finish();
 
         frame_graph
@@ -262,7 +280,7 @@ impl Agent for UiAgent {
             health_score: 1.0,
             current_strategy: self.current_strategy,
             is_stalled: false,
-            message: format!("ui_atlas={}", self.image_atlas.is_some()),
+            message: format!("strategy={:?}", self.current_strategy),
         }
     }
 
@@ -293,8 +311,6 @@ impl Default for UiAgent {
             render_lane: None,
             time_budget: Duration::ZERO,
             current_strategy: StrategyId::Balanced,
-            image_atlas: None,
-            image_cache: HashMap::new(),
         }
     }
 }

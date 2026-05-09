@@ -98,7 +98,7 @@ pub use khora_core::ui::editor::{
 };
 pub use khora_core::ui::fonts::{FontHandle, FontPack, NamedFont};
 pub use khora_core::ui::theme::UiTheme;
-pub use khora_core::ServiceRegistry;
+pub use khora_core::{Backends, Resources, Runtime, Services};
 
 // Telemetry service
 pub use khora_telemetry::MonitorRegistry;

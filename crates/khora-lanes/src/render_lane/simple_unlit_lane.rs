@@ -216,8 +216,12 @@ impl SimpleUnlitLane {
         &self,
         _material: Option<&khora_core::asset::AssetHandle<Box<dyn Material>>>,
     ) -> RenderPipelineId {
-        // Return the stored pipeline, or 0 if not initialized.
-        self.pipeline.lock().unwrap().unwrap_or(RenderPipelineId(0))
+        // Return the stored pipeline, or 0 if not initialized / lock poisoned.
+        self.pipeline
+            .lock()
+            .ok()
+            .and_then(|g| *g)
+            .unwrap_or(RenderPipelineId(0))
     }
 
     fn render(
@@ -272,7 +276,10 @@ impl SimpleUnlitLane {
         };
 
         let camera_bind_group = {
-            let mut lock = self.camera_ring.lock().unwrap();
+            let mut lock = crate::lock_or_log!(
+                self.camera_ring.lock(),
+                "SimpleUnlitLane::render camera_ring"
+            );
             let ring = match lock.as_mut() {
                 Some(r) => r,
                 None => {
@@ -289,7 +296,10 @@ impl SimpleUnlitLane {
         };
 
         // Lock the model ring buffer and advance it for this frame
-        let mut model_ring_lock = self.model_ring.lock().unwrap();
+        let mut model_ring_lock = crate::lock_or_log!(
+            self.model_ring.lock(),
+            "SimpleUnlitLane::render model_ring"
+        );
         let model_ring = match model_ring_lock.as_mut() {
             Some(mr) => {
                 mr.advance();
@@ -298,7 +308,10 @@ impl SimpleUnlitLane {
             None => return,
         };
 
-        let mut material_ring_lock = self.material_ring.lock().unwrap();
+        let mut material_ring_lock = crate::lock_or_log!(
+            self.material_ring.lock(),
+            "SimpleUnlitLane::render material_ring"
+        );
         let material_ring = match material_ring_lock.as_mut() {
             Some(mr) => {
                 mr.advance();
@@ -308,7 +321,8 @@ impl SimpleUnlitLane {
         };
 
         // Acquire read locks on the caches
-        let gpu_mesh_assets = gpu_meshes.read().unwrap();
+        let gpu_mesh_assets =
+            crate::lock_or_log!(gpu_meshes.read(), "SimpleUnlitLane::render gpu_meshes");
 
         // 3. Prepare Draw Commands
         let mut draw_commands = Vec::with_capacity(render_world.meshes.len());
@@ -432,7 +446,11 @@ impl SimpleUnlitLane {
         render_world: &RenderWorld,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) -> f32 {
-        let gpu_mesh_assets = gpu_meshes.read().unwrap();
+        let gpu_mesh_assets = crate::lock_or_log!(
+            gpu_meshes.read(),
+            "SimpleUnlitLane::estimate_render_cost",
+            0.0
+        );
 
         let mut total_triangles = 0u32;
         let mut draw_call_count = 0u32;
@@ -546,9 +564,18 @@ impl SimpleUnlitLane {
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *self.camera_layout.lock().unwrap() = Some(camera_layout);
-        *self.model_layout.lock().unwrap() = Some(model_layout);
-        *self.material_layout.lock().unwrap() = Some(material_layout);
+        *crate::render_lane::util::lock::mutex_lock_render(
+            &self.camera_layout,
+            "SimpleUnlit init.camera_layout",
+        )? = Some(camera_layout);
+        *crate::render_lane::util::lock::mutex_lock_render(
+            &self.model_layout,
+            "SimpleUnlit init.model_layout",
+        )? = Some(model_layout);
+        *crate::render_lane::util::lock::mutex_lock_render(
+            &self.material_layout,
+            "SimpleUnlit init.material_layout",
+        )? = Some(material_layout);
 
         // 2. Create Shader Module
         let shader_src = UNLIT_WGSL.to_string();
@@ -639,7 +666,8 @@ impl SimpleUnlitLane {
             .create_render_pipeline(&pipeline_desc)
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        let mut pipeline_lock = self.pipeline.lock().unwrap();
+        let mut pipeline_lock =
+            crate::render_lane::util::lock::mutex_lock_render(&self.pipeline, "SimpleUnlit init.pipeline")?;
         *pipeline_lock = Some(pipeline_id);
 
         let camera_ring = UniformRingBuffer::new(
@@ -651,7 +679,10 @@ impl SimpleUnlitLane {
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *self.camera_ring.lock().unwrap() = Some(camera_ring);
+        *crate::render_lane::util::lock::mutex_lock_render(
+            &self.camera_ring,
+            "SimpleUnlit init.camera_ring",
+        )? = Some(camera_ring);
 
         let model_ring =
             khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::new(
@@ -665,7 +696,10 @@ impl SimpleUnlitLane {
             )
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *self.model_ring.lock().unwrap() = Some(model_ring);
+        *crate::render_lane::util::lock::mutex_lock_render(
+            &self.model_ring,
+            "SimpleUnlit init.model_ring",
+        )? = Some(model_ring);
 
         let material_ring =
             khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::new(
@@ -679,23 +713,35 @@ impl SimpleUnlitLane {
             )
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *self.material_ring.lock().unwrap() = Some(material_ring);
+        *crate::render_lane::util::lock::mutex_lock_render(
+            &self.material_ring,
+            "SimpleUnlit init.material_ring",
+        )? = Some(material_ring);
 
         Ok(())
     }
 
     fn on_gpu_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
-        if let Some(ring) = self.camera_ring.lock().unwrap().take() {
+        if let Some(ring) = self
+            .camera_ring
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take())
+        {
             ring.destroy(device);
         }
-        if let Some(ring) = self.model_ring.lock().unwrap().take() {
+        if let Some(ring) = self.model_ring.lock().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
-        if let Some(ring) = self.material_ring.lock().unwrap().take() {
+        if let Some(ring) = self
+            .material_ring
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take())
+        {
             ring.destroy(device);
         }
-        let mut pipeline_lock = self.pipeline.lock().unwrap();
-        if let Some(id) = pipeline_lock.take() {
+        if let Some(id) = self.pipeline.lock().ok().and_then(|mut g| g.take()) {
             let _ = device.destroy_render_pipeline(id);
         }
     }

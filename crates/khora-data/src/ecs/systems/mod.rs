@@ -20,8 +20,11 @@
 //! `inventory`; nothing else needs to know about a new system except its
 //! own file.
 
+pub mod audio_playback_writeback;
 pub mod ecs_maintenance;
 pub mod gpu_mesh_sync;
+pub mod physics_debug_extraction;
+pub mod physics_world_writeback;
 pub mod transform_propagation;
 
 pub use transform_propagation::transform_propagation_system;

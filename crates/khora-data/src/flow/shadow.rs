@@ -32,7 +32,7 @@ use std::collections::HashMap;
 
 use khora_core::math::{Mat4, Vec3, Vec4};
 use khora_core::renderer::light::LightType;
-use khora_core::ServiceRegistry;
+use khora_core::Runtime;
 
 use crate::ecs::{GlobalTransform, Light, SemanticDomain, World};
 use crate::flow::{Flow, Selection};
@@ -60,8 +60,8 @@ impl Flow for ShadowFlow {
     const DOMAIN: SemanticDomain = SemanticDomain::Render;
     const NAME: &'static str = "shadow";
 
-    fn project(&self, world: &World, _sel: &Selection, services: &ServiceRegistry) -> Self::View {
-        let camera_view = primary_view(world, services);
+    fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
+        let camera_view = primary_view(world, runtime);
         let mut matrices = HashMap::new();
         let mut light_count = 0;
 

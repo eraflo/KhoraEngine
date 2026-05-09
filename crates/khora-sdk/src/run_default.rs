@@ -40,8 +40,8 @@ use crate::winit_adapters::WinitWindowProvider;
 use crate::{
     run_winit, AgentProvider, AssetIo, AssetService, DccService, EngineApp, FileLoader,
     FileSystemResolver, GameWorld, IndexBuilder, InputEvent, MeshDispatcher, MetricsRegistry,
-    PackLoader, PhaseProvider, RenderSystem, SceneFile, SerializationService, ServiceRegistry,
-    SoundData, SymphoniaDecoder, WgpuRenderSystem, WindowConfig,
+    PackLoader, PhaseProvider, RenderSystem, Runtime, SceneFile, SerializationService, SoundData,
+    SymphoniaDecoder, WgpuRenderSystem, WindowConfig,
 };
 use khora_io::asset::PackManifest;
 use serde::Deserialize;
@@ -270,15 +270,15 @@ impl EngineApp for DefaultRuntimeApp {
         Self { frame_count: 0 }
     }
 
-    fn setup(&mut self, world: &mut GameWorld, services: &ServiceRegistry) {
-        let svc = services.get::<Arc<Mutex<AssetService>>>().cloned();
+    fn setup(&mut self, world: &mut GameWorld, runtime: &Runtime) {
+        let svc = runtime.services.get::<Arc<Mutex<AssetService>>>().cloned();
         let cfg = RUNTIME_CONFIG
             .get()
             .cloned()
             .unwrap_or_else(RuntimeConfig::defaults);
 
         let Some(svc) = svc else {
-            log::error!("DefaultRuntimeApp: AssetService missing from ServiceRegistry");
+            log::error!("DefaultRuntimeApp: AssetService missing from runtime.services");
             return;
         };
 
@@ -326,7 +326,7 @@ impl EngineApp for DefaultRuntimeApp {
 }
 
 impl AgentProvider for DefaultRuntimeApp {
-    fn register_agents(&self, _dcc: &DccService, _services: &mut ServiceRegistry) {}
+    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
 }
 impl PhaseProvider for DefaultRuntimeApp {
     fn custom_phases(&self) -> Vec<crate::ExecutionPhase> {
@@ -365,17 +365,17 @@ pub fn run_default() -> Result<()> {
     );
 
     let verify_integrity = cfg.verify_integrity;
-    run_winit::<WinitWindowProvider, DefaultRuntimeApp>(move |window, services, _event_loop| {
+    run_winit::<WinitWindowProvider, DefaultRuntimeApp>(move |window, runtime, _event_loop| {
         let mut rs = WgpuRenderSystem::new();
         rs.init(window).expect("renderer init failed");
-        services.insert(rs.graphics_device());
+        runtime.backends.insert(rs.graphics_device());
         let rs_dyn: Box<dyn RenderSystem> = Box::new(rs);
-        services.insert(Arc::new(Mutex::new(rs_dyn)));
+        runtime.backends.insert(Arc::new(Mutex::new(rs_dyn)));
 
         let metrics = Arc::new(MetricsRegistry::new());
         match build_asset_service(&exe_dir, metrics, verify_integrity) {
             Ok(svc) => {
-                services.insert(Arc::new(Mutex::new(svc)));
+                runtime.services.insert(Arc::new(Mutex::new(svc)));
             }
             Err(e) => {
                 log::error!("khora-sdk run_default: AssetService init failed: {:#}", e);

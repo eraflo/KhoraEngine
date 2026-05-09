@@ -45,7 +45,9 @@ mod selection;
 pub mod shadow;
 pub mod ui;
 
-pub use audio::{AudioFlow, AudioView};
+pub use audio::{
+    AudioFlow, AudioPlaybackUpdate, AudioPlaybackWriteback, AudioSourceSnapshot, AudioView,
+};
 pub use physics::{PhysicsFlow, PhysicsView};
 pub use registration::*;
 pub use render::RenderFlow;
@@ -54,16 +56,16 @@ pub use shadow::{ShadowFlow, ShadowView};
 pub use ui::UiFlow;
 
 use khora_core::control::gorna::ResourceBudget;
-use khora_core::ServiceRegistry;
+use khora_core::Runtime;
 
 use crate::ecs::{SemanticDomain, World};
 
 /// The typed interface between the Data layer and Lanes.
 ///
-/// All three stages receive the engine's [`ServiceRegistry`] so a Flow can
-/// look up services its domain genuinely needs (text renderer, font cache,
-/// surface size, editor view overrides, …) without crossing the CLAD
-/// dependency graph in awkward ways.
+/// All three stages receive the engine's [`Runtime`] so a Flow can look up
+/// services, backends, or resources its domain genuinely needs (text
+/// renderer, font cache, surface size, editor view overrides, …) without
+/// crossing the CLAD dependency graph in awkward ways.
 pub trait Flow: Send + Sync {
     /// The typed view this Flow publishes into the LaneBus.
     type View: std::any::Any + Send + Sync + 'static;
@@ -75,8 +77,8 @@ pub trait Flow: Send + Sync {
     const NAME: &'static str;
 
     /// Stage 1 — read-only selection of relevant entities.
-    fn select(&mut self, world: &World, services: &ServiceRegistry) -> Selection {
-        let _ = (world, services);
+    fn select(&mut self, world: &World, runtime: &Runtime) -> Selection {
+        let _ = (world, runtime);
         Selection::new()
     }
 
@@ -90,11 +92,11 @@ pub trait Flow: Send + Sync {
         world: &mut World,
         sel: &Selection,
         budget: &ResourceBudget,
-        services: &ServiceRegistry,
+        runtime: &Runtime,
     ) {
-        let _ = (world, sel, budget, services);
+        let _ = (world, sel, budget, runtime);
     }
 
     /// Stage 3 — read-only projection of the (post-adapt) world into a View.
-    fn project(&self, world: &World, sel: &Selection, services: &ServiceRegistry) -> Self::View;
+    fn project(&self, world: &World, sel: &Selection, runtime: &Runtime) -> Self::View;
 }

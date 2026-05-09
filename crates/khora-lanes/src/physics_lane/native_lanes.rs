@@ -16,9 +16,16 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::physics::{
     ContactManifold, DynamicTree, ImpulseSolver, NarrowPhase, VelocityState,
 };
-use khora_data::ecs::{Collider, CollisionPair, CollisionPairs, GlobalTransform, RigidBody, World};
+use khora_data::ecs::{Collider, GlobalTransform, RigidBody, World};
+use khora_data::physics::{CollisionPair, CollisionPairs};
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, Mutex, RwLock};
+
+/// Shared sink for broadphase output. Lives in
+/// [`khora_core::Resources`]; the broadphase lane writes into it, the
+/// solver lane reads from it. Replaces the previous singleton ECS
+/// component which polluted the editor scene tree.
+pub type CollisionPairsResource = Arc<Mutex<CollisionPairs>>;
 
 /// The Broadphase Lane manages spatial partitioning and potential collision pair generation.
 /// It maintains a persistent Dynamic AABB Tree to minimize update costs.
@@ -46,12 +53,13 @@ impl NativeBroadphaseLane {
     }
 
     /// Executes the broad-phase step: updates the tree and generates collision pairs.
-    pub fn step(&self, world: &mut World) {
+    pub fn step(&self, world: &mut World, pairs_sink: &CollisionPairsResource) {
         // 1. Sync ECS components to the Dynamic Tree
         self.sync_tree(world);
 
-        // 2. Clear old pairs and generate new ones
-        self.generate_pairs(world);
+        // 2. Clear old pairs and generate new ones — written into the
+        //    shared resource (no ECS mutation).
+        self.generate_pairs(pairs_sink);
     }
 
     fn sync_tree(&self, world: &mut World) {
@@ -96,7 +104,7 @@ impl NativeBroadphaseLane {
         }
     }
 
-    fn generate_pairs(&self, world: &mut World) {
+    fn generate_pairs(&self, pairs_sink: &CollisionPairsResource) {
         let tree = self.tree.read().unwrap();
         let mut all_pairs = Vec::new();
 
@@ -107,19 +115,20 @@ impl NativeBroadphaseLane {
             });
         });
 
-        // Store pairs in a singleton CollisionPairs component
-        // We find the first entity with CollisionPairs or spawn one.
-        let mut found = false;
-        {
-            let mut query = world.query_mut::<&mut CollisionPairs>();
-            if let Some(pairs_comp) = query.next() {
-                pairs_comp.pairs = all_pairs.clone();
-                found = true;
+        // Write into the shared `Arc<Mutex<CollisionPairs>>` Resource.
+        // The solver lane reads the same Arc to drive narrow-phase
+        // resolution. No ECS mutation happens here — broadphase output
+        // is transient scratch, not entity data.
+        match pairs_sink.lock() {
+            Ok(mut sink) => {
+                sink.pairs = all_pairs;
             }
-        }
-
-        if !found {
-            world.spawn(CollisionPairs { pairs: all_pairs });
+            Err(e) => {
+                log::error!(
+                    "NativeBroadphaseLane: collision-pairs sink poisoned: {}",
+                    e
+                );
+            }
         }
     }
 }
@@ -143,8 +152,11 @@ impl khora_core::lane::Lane for NativeBroadphaseLane {
             .get::<Slot<World>>()
             .ok_or(LaneError::missing("Slot<World>"))?
             .get();
+        let pairs_sink = ctx
+            .get::<CollisionPairsResource>()
+            .ok_or(LaneError::missing("CollisionPairsResource"))?;
 
-        self.step(world);
+        self.step(world, pairs_sink);
         Ok(())
     }
 
@@ -177,13 +189,16 @@ impl NativeSolverLane {
         }
     }
 
-    /// Executes the solver step: integrates velocities, resolves collisions, and integrates positions.
-    pub fn step(&self, world: &mut World, dt: f32) {
+    /// Executes the solver step: integrates velocities, resolves
+    /// collisions (using the shared broadphase pairs sink), and
+    /// integrates positions.
+    pub fn step(&self, world: &mut World, dt: f32, pairs_sink: &CollisionPairsResource) {
         // 1. Integrate Forces (Gravity, etc.)
         self.integrate_velocities(world, dt);
 
-        // 2. Resolve Constraints (Collisions)
-        self.solver.solve_collisions(world);
+        // 2. Resolve Constraints (Collisions) — pulls pairs from the
+        //    shared resource written by `NativeBroadphaseLane`.
+        self.solver.solve_collisions(world, pairs_sink);
 
         // 3. Integrate Positions
         self.integrate_positions(world, dt);
@@ -245,8 +260,11 @@ impl khora_core::lane::Lane for NativeSolverLane {
             .get::<Slot<World>>()
             .ok_or(LaneError::missing("Slot<World>"))?
             .get();
+        let pairs_sink = ctx
+            .get::<CollisionPairsResource>()
+            .ok_or(LaneError::missing("CollisionPairsResource"))?;
 
-        self.step(world, dt);
+        self.step(world, dt, pairs_sink);
         Ok(())
     }
 
@@ -278,15 +296,19 @@ impl SequentialImpulseSolver {
 
     /// Iterates over all detected collision pairs and resolves them.
     /// This is the entry point for the collision resolution phase of the lane.
-    fn solve_collisions(&self, world: &mut World) {
-        // 1. Gather all potential collision pairs from the broad-phase output.
-        let candidates = {
-            let mut pairs = Vec::new();
-            let query = world.query::<&CollisionPairs>();
-            for p in query {
-                pairs.extend_from_slice(&p.pairs);
+    fn solve_collisions(&self, world: &mut World, pairs_sink: &CollisionPairsResource) {
+        // 1. Read potential collision pairs from the shared resource
+        //    populated by `NativeBroadphaseLane`. We clone out the
+        //    Vec so the lock is not held while we mutate the world.
+        let candidates: Vec<CollisionPair> = match pairs_sink.lock() {
+            Ok(g) => g.pairs.clone(),
+            Err(e) => {
+                log::error!(
+                    "NativeSolverLane: collision-pairs sink poisoned: {}",
+                    e
+                );
+                return;
             }
-            pairs
         };
 
         // 2. Process each pair sequentially.

@@ -2567,6 +2567,7 @@ dependencies = [
  "bytemuck",
  "crossbeam-channel",
  "image",
+ "khora-control",
  "khora-core",
  "khora-data",
  "khora-infra",

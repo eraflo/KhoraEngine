@@ -36,6 +36,14 @@ use khora_lanes::physics_lane::StandardPhysicsLane;
 const COST_TO_MS_SCALE: f32 = 3.0;
 
 /// Strategies for physics simulation.
+///
+/// Debug-overlay extraction was previously a third variant here, but it
+/// is not a *strategy* of the same mission ("step the simulation") — it
+/// is a side-channel projection of provider state into the `World`.
+/// That work now lives in the
+/// [`physics_debug_extraction`](khora_data::ecs::systems::physics_debug_extraction)
+/// `DataSystem` so the simulation continues to step regardless of whether
+/// the debug overlay is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PhysicsStrategy {
     /// Standard high-precision physics.
@@ -43,8 +51,6 @@ pub enum PhysicsStrategy {
     Standard,
     /// Simplified physics for low-power mode.
     Simplified,
-    /// Debug visualization mode.
-    Debug,
 }
 
 /// The agent responsible for managing the physics simulation.
@@ -148,7 +154,8 @@ impl Agent for PhysicsAgent {
 
         // Look up the physics provider from services every frame.
         let Some(provider_arc) = context
-            .services
+            .runtime
+            .backends
             .get::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()
         else {
             log::debug!("PhysicsAgent: no physics provider registered, skipping step");
@@ -178,10 +185,10 @@ impl Agent for PhysicsAgent {
         ctx.insert(Slot::new(world));
         ctx.insert(Slot::new(provider_guard.as_mut()));
 
-        let lane_name = match self.strategy {
-            PhysicsStrategy::Standard | PhysicsStrategy::Simplified => "StandardPhysics",
-            PhysicsStrategy::Debug => "PhysicsDebug",
-        };
+        // Both strategies dispatch the same lane today; LowPower simply
+        // tightens the fixed_timestep via apply_budget. A future
+        // `SimplifiedPhysicsLane` strategy could fork here.
+        let lane_name = "StandardPhysics";
 
         if let Some(lane) = self.lanes.get(lane_name) {
             if let Err(e) = lane.execute(&mut ctx) {
@@ -238,7 +245,10 @@ impl Default for PhysicsAgent {
     fn default() -> Self {
         let mut lanes = LaneRegistry::new();
         lanes.register(Box::new(StandardPhysicsLane::new()));
-        lanes.register(Box::new(khora_lanes::physics_lane::PhysicsDebugLane::new()));
+        // PhysicsDebugLane was previously registered here; debug overlay
+        // extraction now lives in the `physics_debug_extraction` DataSystem
+        // (PostSimulation phase), running alongside the sim instead of
+        // replacing it.
 
         Self {
             lanes,

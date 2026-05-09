@@ -62,10 +62,10 @@ pub fn run() -> anyhow::Result<()> {
         .map(|w| w[1].clone());
     let _ = PROJECT_PATH.set(project);
 
-    run_winit::<WinitWindowProvider, EditorApp>(|window, services, event_loop_any| {
+    run_winit::<WinitWindowProvider, EditorApp>(|window, runtime, event_loop_any| {
         let mut rs = WgpuRenderSystem::new();
         rs.init(window).expect("renderer init failed");
-        services.insert(rs.graphics_device());
+        runtime.backends.insert(rs.graphics_device());
 
         // Build the editor overlay (egui) + shell (dock + panels) so the
         // editor UI renders on top of the 3D scene each frame.
@@ -83,8 +83,8 @@ pub fn run() -> anyhow::Result<()> {
             Ok((overlay, shell)) => {
                 let overlay: Box<dyn EditorOverlay> = Box::new(overlay);
                 let shell: Box<dyn EditorShell> = Box::new(shell);
-                services.insert(Arc::new(Mutex::new(overlay)));
-                services.insert(Arc::new(Mutex::new(shell)));
+                runtime.backends.insert(Arc::new(Mutex::new(overlay)));
+                runtime.backends.insert(Arc::new(Mutex::new(shell)));
                 log::info!("editor: overlay + shell created");
             }
             Err(e) => {
@@ -93,7 +93,7 @@ pub fn run() -> anyhow::Result<()> {
         }
 
         let rs: Box<dyn RenderSystem> = Box::new(rs);
-        services.insert(Arc::new(Mutex::new(rs)));
+        runtime.backends.insert(Arc::new(Mutex::new(rs)));
     })?;
     Ok(())
 }

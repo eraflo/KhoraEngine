@@ -26,7 +26,5 @@
 //!   allocated by GORNA to maintain stability or performance.
 
 mod agent;
-pub mod query_service;
 
 pub use agent::*;
-pub use query_service::PhysicsQueryService;

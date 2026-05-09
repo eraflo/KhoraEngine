@@ -86,6 +86,26 @@ pub enum LaneError {
         /// Description of what was received.
         received: String,
     },
+    /// A `RwLock` / `Mutex` was poisoned by a prior panic.
+    LockPoisoned {
+        /// Which lock — used in the error message for diagnostics.
+        context: &'static str,
+    },
+    /// A required GPU resource (pipeline, buffer, texture, sampler) was
+    /// not present in the registry the lane consulted.
+    MissingResource {
+        /// What kind of resource (e.g. `"pipeline"`, `"buffer"`).
+        kind: &'static str,
+        /// Human-readable key the lane looked up.
+        key: String,
+    },
+    /// A required asset was not present in the registry / cache.
+    MissingAsset {
+        /// Asset kind (`"mesh"`, `"texture"`, …).
+        kind: &'static str,
+        /// Stringified asset id (UUID, name, …).
+        id: String,
+    },
     /// A domain-specific error occurred during execution.
     ExecutionFailed(Box<dyn std::error::Error + Send + Sync>),
     /// A domain-specific error occurred during initialization.
@@ -101,6 +121,15 @@ impl fmt::Display for LaneError {
                     f,
                     "Invalid lane context: expected {expected}, got {received}"
                 )
+            }
+            LaneError::LockPoisoned { context } => {
+                write!(f, "Lane lock poisoned: {context}")
+            }
+            LaneError::MissingResource { kind, key } => {
+                write!(f, "Missing {kind} resource: {key}")
+            }
+            LaneError::MissingAsset { kind, id } => {
+                write!(f, "Missing {kind} asset: {id}")
             }
             LaneError::ExecutionFailed(e) => write!(f, "Lane execution failed: {e}"),
             LaneError::InitializationFailed(e) => write!(f, "Lane initialization failed: {e}"),
@@ -123,6 +152,27 @@ impl LaneError {
         LaneError::InvalidContext {
             expected: type_name,
             received: "not found in LaneContext".into(),
+        }
+    }
+
+    /// Convenience constructor for a poisoned lock.
+    pub fn lock_poisoned(context: &'static str) -> Self {
+        LaneError::LockPoisoned { context }
+    }
+
+    /// Convenience constructor for a missing resource.
+    pub fn missing_resource(kind: &'static str, key: impl Into<String>) -> Self {
+        LaneError::MissingResource {
+            kind,
+            key: key.into(),
+        }
+    }
+
+    /// Convenience constructor for a missing asset.
+    pub fn missing_asset(kind: &'static str, id: impl std::fmt::Display) -> Self {
+        LaneError::MissingAsset {
+            kind,
+            id: id.to_string(),
         }
     }
 }

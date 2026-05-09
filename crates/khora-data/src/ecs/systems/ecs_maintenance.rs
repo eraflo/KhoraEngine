@@ -21,12 +21,12 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_core::ServiceRegistry;
+use khora_core::Runtime;
 
 use crate::ecs::{DataSystemRegistration, EcsMaintenance, TickPhase, World};
 
-fn ecs_maintenance_system(world: &mut World, services: &ServiceRegistry) {
-    let Some(maintenance) = services.get::<Arc<Mutex<EcsMaintenance>>>() else {
+fn ecs_maintenance_system(world: &mut World, runtime: &Runtime) {
+    let Some(maintenance) = runtime.resources.get::<Arc<Mutex<EcsMaintenance>>>() else {
         return;
     };
     if let Ok(mut guard) = maintenance.lock() {

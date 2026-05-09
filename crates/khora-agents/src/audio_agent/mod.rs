@@ -103,7 +103,8 @@ impl Agent for AudioAgent {
         // Fetch the audio device from the service registry.
         if self.device.is_none() {
             self.device = context
-                .services
+                .runtime
+                .backends
                 .get::<Arc<Mutex<Box<dyn AudioDevice>>>>()
                 .cloned();
         }
@@ -128,7 +129,8 @@ impl Agent for AudioAgent {
         // Lazily fetch device from services if not yet available.
         if self.device.is_none() {
             self.device = context
-                .services
+                .runtime
+                .backends
                 .get::<Arc<Mutex<Box<dyn AudioDevice>>>>()
                 .cloned();
         }

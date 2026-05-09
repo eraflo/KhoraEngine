@@ -24,6 +24,7 @@ pub mod shaders;
 mod shadow_pass_lane;
 mod simple_unlit_lane;
 mod ui_render_lane;
+pub mod util;
 
 pub use forward_plus_lane::*;
 pub use lit_forward_lane::*;

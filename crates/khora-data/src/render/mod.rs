@@ -38,7 +38,7 @@ pub use world::{ExtractedLight, ExtractedMesh, ExtractedView, RenderWorld};
 use khora_core::{
     math::{Mat4, Vec3},
     renderer::api::resource::ViewInfo,
-    ServiceRegistry,
+    Runtime,
 };
 
 use crate::ecs::{Camera, GlobalTransform, World};
@@ -87,7 +87,7 @@ pub fn extract_active_camera_view(world: &World) -> Option<ViewInfo> {
 /// [`ShadowFlow`](crate::flow::ShadowFlow) so both flows agree on which
 /// view their data is built around (CSM frustum slicing in particular
 /// needs the same camera the lit pass will sample shadows from).
-pub fn primary_view(world: &World, services: &ServiceRegistry) -> Option<ExtractedView> {
+pub fn primary_view(world: &World, runtime: &Runtime) -> Option<ExtractedView> {
     for (camera, global_transform) in world.query::<(&Camera, &GlobalTransform)>() {
         if !camera.is_active {
             continue;
@@ -101,7 +101,8 @@ pub fn primary_view(world: &World, services: &ServiceRegistry) -> Option<Extract
             position,
         });
     }
-    services
+    runtime
+        .resources
         .get::<EditorViewportOverride>()
         .and_then(|o| o.get())
 }

@@ -31,7 +31,7 @@ use khora_sdk::winit_adapters::WinitWindowProvider;
 use khora_sdk::khora_core::platform::{InputBinding, InputMap};
 use khora_sdk::{
     AgentProvider, DccService, EngineApp, GameWorld, InputEvent, KeyCode, PhaseProvider,
-    RenderSystem, ServiceRegistry, WgpuRenderSystem, WindowConfig,
+    RenderSystem, Runtime, WgpuRenderSystem, WindowConfig,
 };
 use std::sync::{Arc, Mutex};
 
@@ -206,9 +206,9 @@ impl EngineApp for SandboxGame {
         }
     }
 
-    fn setup(&mut self, world: &mut GameWorld, services: &ServiceRegistry) {
+    fn setup(&mut self, world: &mut GameWorld, runtime: &Runtime) {
         // Cache the InputMap handle and register the player movement bindings.
-        if let Some(map_arc) = services.get::<Arc<Mutex<InputMap>>>() {
+        if let Some(map_arc) = runtime.resources.get::<Arc<Mutex<InputMap>>>() {
             if let Ok(mut map) = map_arc.lock() {
                 PlayerController::bind_actions(&mut map);
             }
@@ -320,7 +320,7 @@ impl EngineApp for SandboxGame {
 }
 
 impl AgentProvider for SandboxGame {
-    fn register_agents(&self, _dcc: &DccService, _services: &mut ServiceRegistry) {
+    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {
         // Sandbox doesn't register custom agents
     }
 }
@@ -344,13 +344,13 @@ fn main() -> Result<()> {
         .filter_module("wgpu_hal::vulkan::instance", log::LevelFilter::Off)
         .init();
 
-    run_winit::<WinitWindowProvider, SandboxGame>(|window, services, _event_loop| {
+    run_winit::<WinitWindowProvider, SandboxGame>(|window, runtime, _event_loop| {
         let mut rs = WgpuRenderSystem::new();
         rs.init(window).expect("renderer init failed");
         // Register the graphics device before boxing — required by RenderAgent.
-        services.insert(rs.graphics_device());
+        runtime.backends.insert(rs.graphics_device());
         let rs: Box<dyn RenderSystem> = Box::new(rs);
-        services.insert(Arc::new(Mutex::new(rs)));
+        runtime.backends.insert(Arc::new(Mutex::new(rs)));
     })?;
     Ok(())
 }

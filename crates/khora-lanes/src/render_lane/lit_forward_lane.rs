@@ -337,8 +337,13 @@ impl LitForwardLane {
         &self,
         _material: Option<&khora_core::asset::AssetHandle<Box<dyn Material>>>,
     ) -> RenderPipelineId {
-        // Return the stored pipeline. Fallback to pipeline 0 if on_gpu_init hasn't run yet.
-        self.pipeline.lock().unwrap().unwrap_or(RenderPipelineId(0))
+        // Return the stored pipeline. Fallback to pipeline 0 if on_gpu_init hasn't run yet
+        // or if the lock is poisoned.
+        self.pipeline
+            .lock()
+            .ok()
+            .and_then(|g| *g)
+            .unwrap_or(RenderPipelineId(0))
     }
 
     fn render(
@@ -399,7 +404,10 @@ impl LitForwardLane {
         };
 
         let camera_bind_group = {
-            let mut lock = self.camera_ring.lock().unwrap();
+            let mut lock = crate::lock_or_log!(
+                self.camera_ring.lock(),
+                "LitForwardLane::render camera_ring"
+            );
             let ring = match lock.as_mut() {
                 Some(r) => r,
                 None => {
@@ -512,7 +520,10 @@ impl LitForwardLane {
         }
 
         let (_lighting_bind_group, lighting_ring_buffer_id) = {
-            let mut lock = self.lighting_ring.lock().unwrap();
+            let mut lock = crate::lock_or_log!(
+                self.lighting_ring.lock(),
+                "LitForwardLane::render lighting_ring"
+            );
             let ring = match lock.as_mut() {
                 Some(r) => r,
                 None => {
@@ -534,10 +545,16 @@ impl LitForwardLane {
         // comparison sampler are passed through the RenderContext.
 
         // Acquire locks
-        let gpu_mesh_assets = gpu_meshes.read().unwrap();
+        let gpu_mesh_assets =
+            crate::lock_or_log!(gpu_meshes.read(), "LitForwardLane::render gpu_meshes");
 
         // Pipeline binding logic moved before render pass to avoid issues
-        let pipeline_id = self.pipeline.lock().unwrap().unwrap_or(RenderPipelineId(0));
+        let pipeline_id = self
+            .pipeline
+            .lock()
+            .ok()
+            .and_then(|g| *g)
+            .unwrap_or(RenderPipelineId(0));
 
         // Prepare Draw Commands
         let mut draw_commands = Vec::with_capacity(render_world.meshes.len());
@@ -611,7 +628,10 @@ impl LitForwardLane {
 
                 // Create Bind Groups 1 & 2
                 let mut model_bg = None;
-                if let Some(layout) = *self.model_layout.lock().unwrap() {
+                if let Some(layout) = *crate::lock_or_log!(
+                    self.model_layout.lock(),
+                    "LitForwardLane::render model_layout"
+                ) {
                     if let Ok(bg) = device.create_bind_group(&BindGroupDescriptor {
                         label: None,
                         layout,
@@ -631,7 +651,10 @@ impl LitForwardLane {
                 }
 
                 let mut material_bg = None;
-                if let Some(layout) = *self.material_layout.lock().unwrap() {
+                if let Some(layout) = *crate::lock_or_log!(
+                    self.material_layout.lock(),
+                    "LitForwardLane::render material_layout"
+                ) {
                     if let Ok(bg) = device.create_bind_group(&BindGroupDescriptor {
                         label: None,
                         layout,
@@ -694,7 +717,10 @@ impl LitForwardLane {
         // Build Lighting Bind Group with Shadow Atlas
         // The pipeline's group 3 layout expects 3 bindings: uniform buffer + shadow atlas + shadow sampler.
         // All 3 must be present for the bind group to be valid.
-        let final_lighting_bind_group = if let Some(layout) = *self.light_layout.lock().unwrap() {
+        let final_lighting_bind_group = if let Some(layout) = *crate::lock_or_log!(
+            self.light_layout.lock(),
+            "LitForwardLane::render light_layout"
+        ) {
             match (render_ctx.shadow_atlas, render_ctx.shadow_sampler) {
                 (Some(atlas), Some(sampler)) => {
                     let entries = [
@@ -791,7 +817,11 @@ impl LitForwardLane {
         render_world: &RenderWorld,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) -> f32 {
-        let gpu_mesh_assets = gpu_meshes.read().unwrap();
+        let gpu_mesh_assets = crate::lock_or_log!(
+            gpu_meshes.read(),
+            "LitForwardLane::estimate_render_cost",
+            0.0
+        );
 
         let mut total_triangles = 0u32;
         let mut draw_call_count = 0u32;
@@ -974,10 +1004,15 @@ impl LitForwardLane {
 
         let pipeline_layout_ids = vec![camera_layout, model_layout, material_layout, light_layout];
         // Store bind group layouts for creating bind groups during rendering.
-        *self.camera_layout.lock().unwrap() = Some(camera_layout);
-        *self.model_layout.lock().unwrap() = Some(model_layout);
-        *self.material_layout.lock().unwrap() = Some(material_layout);
-        *self.light_layout.lock().unwrap() = Some(light_layout);
+        use crate::render_lane::util::lock::mutex_lock_render;
+        *mutex_lock_render(&self.camera_layout, "LitForward init.camera_layout")? =
+            Some(camera_layout);
+        *mutex_lock_render(&self.model_layout, "LitForward init.model_layout")? =
+            Some(model_layout);
+        *mutex_lock_render(&self.material_layout, "LitForward init.material_layout")? =
+            Some(material_layout);
+        *mutex_lock_render(&self.light_layout, "LitForward init.light_layout")? =
+            Some(light_layout);
 
         // Create the pipeline layout from our bind group layouts.
         let pipeline_layout_desc = khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
@@ -1029,7 +1064,7 @@ impl LitForwardLane {
             .create_render_pipeline(&pipeline_desc)
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        let mut pipeline_lock = self.pipeline.lock().unwrap();
+        let mut pipeline_lock = mutex_lock_render(&self.pipeline, "LitForward init.pipeline")?;
         *pipeline_lock = Some(pipeline_id);
 
         // 4. Create Persistent Ring Buffers for camera and lighting uniforms.
@@ -1062,7 +1097,10 @@ impl LitForwardLane {
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *self.lighting_buffer_layout.lock().unwrap() = Some(lighting_buffer_layout);
+        *mutex_lock_render(
+            &self.lighting_buffer_layout,
+            "LitForward init.lighting_buffer_layout",
+        )? = Some(lighting_buffer_layout);
 
         let lighting_ring = UniformRingBuffer::new(
             device,
@@ -1073,8 +1111,9 @@ impl LitForwardLane {
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *self.camera_ring.lock().unwrap() = Some(camera_ring);
-        *self.lighting_ring.lock().unwrap() = Some(lighting_ring);
+        *mutex_lock_render(&self.camera_ring, "LitForward init.camera_ring")? = Some(camera_ring);
+        *mutex_lock_render(&self.lighting_ring, "LitForward init.lighting_ring")? =
+            Some(lighting_ring);
 
         log::info!(
             "LitForwardLane: Persistent ring buffers created (camera: {} bytes, lighting: {} bytes, {} slots each)",
@@ -1087,31 +1126,37 @@ impl LitForwardLane {
     }
 
     fn on_gpu_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
-        // Destroy ring buffers first (they own buffers + bind groups)
-        if let Some(ring) = self.camera_ring.lock().unwrap().take() {
+        // Destroy ring buffers first (they own buffers + bind groups).
+        // `.lock().ok().and_then(|mut g| g.take())` gracefully degrades
+        // to a no-op on poisoning rather than panicking.
+        if let Some(ring) = self.camera_ring.lock().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
-        if let Some(ring) = self.lighting_ring.lock().unwrap().take() {
+        if let Some(ring) = self.lighting_ring.lock().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
 
-        let mut pipeline_lock = self.pipeline.lock().unwrap();
-        if let Some(id) = pipeline_lock.take() {
+        if let Some(id) = self.pipeline.lock().ok().and_then(|mut g| g.take()) {
             let _ = device.destroy_render_pipeline(id);
         }
-        if let Some(id) = self.camera_layout.lock().unwrap().take() {
+        if let Some(id) = self.camera_layout.lock().ok().and_then(|mut g| g.take()) {
             let _ = device.destroy_bind_group_layout(id);
         }
-        if let Some(id) = self.model_layout.lock().unwrap().take() {
+        if let Some(id) = self.model_layout.lock().ok().and_then(|mut g| g.take()) {
             let _ = device.destroy_bind_group_layout(id);
         }
-        if let Some(id) = self.material_layout.lock().unwrap().take() {
+        if let Some(id) = self.material_layout.lock().ok().and_then(|mut g| g.take()) {
             let _ = device.destroy_bind_group_layout(id);
         }
-        if let Some(id) = self.light_layout.lock().unwrap().take() {
+        if let Some(id) = self.light_layout.lock().ok().and_then(|mut g| g.take()) {
             let _ = device.destroy_bind_group_layout(id);
         }
-        if let Some(id) = self.lighting_buffer_layout.lock().unwrap().take() {
+        if let Some(id) = self
+            .lighting_buffer_layout
+            .lock()
+            .ok()
+            .and_then(|mut g| g.take())
+        {
             let _ = device.destroy_bind_group_layout(id);
         }
     }

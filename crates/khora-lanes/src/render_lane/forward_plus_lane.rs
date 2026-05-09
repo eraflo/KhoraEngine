@@ -420,7 +420,8 @@ impl ForwardPlusLane {
         render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) {
-        let mut resources = self.gpu_resources.lock().unwrap();
+        let mut resources =
+            crate::lock_or_log!(self.gpu_resources.lock(), "ForwardPlusLane::render");
 
         // 1. Get Active Camera View.
         //
@@ -554,7 +555,8 @@ impl ForwardPlusLane {
             ring.advance();
         }
 
-        let gpu_mesh_assets = gpu_meshes.read().unwrap();
+        let gpu_mesh_assets =
+            crate::lock_or_log!(gpu_meshes.read(), "ForwardPlusLane::render");
         for extracted_mesh in &render_world.meshes {
             if let Some(gpu_mesh_handle) = gpu_mesh_assets.get(&extracted_mesh.cpu_mesh_uuid) {
                 // Compute Matrices
@@ -683,7 +685,8 @@ impl ForwardPlusLane {
         render_world: &RenderWorld,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) -> f32 {
-        let gpu_mesh_assets = gpu_meshes.read().unwrap();
+        let gpu_mesh_assets =
+            crate::lock_or_log!(gpu_meshes.read(), "ForwardPlusLane::estimate_render_cost", 0.0);
 
         let mut total_triangles = 0u32;
         let mut draw_call_count = 0u32;
@@ -1126,7 +1129,13 @@ impl ForwardPlusLane {
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         // 5. Store all resources
-        let mut res = self.gpu_resources.lock().unwrap();
+        let mut res = self.gpu_resources.lock().map_err(|_| {
+            khora_core::renderer::error::RenderError::ResourceError(
+                khora_core::renderer::error::ResourceError::BackendError(
+                    "ForwardPlusLane gpu_resources mutex poisoned".into(),
+                ),
+            )
+        })?;
         res.light_buffer = Some(light_buffer);
         res.light_index_buffer = Some(light_index_buffer);
         res.light_grid_buffer = Some(light_grid_buffer);
@@ -1149,7 +1158,10 @@ impl ForwardPlusLane {
     }
 
     fn on_gpu_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
-        let mut resources = self.gpu_resources.lock().unwrap();
+        let mut resources = crate::lock_or_log!(
+            self.gpu_resources.lock(),
+            "ForwardPlusLane::on_gpu_shutdown"
+        );
 
         if let Some(ring) = resources.camera_ring.take() {
             ring.destroy(device);

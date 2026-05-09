@@ -31,7 +31,7 @@ use khora_sdk::prelude::*;
 use khora_sdk::winit;
 use khora_sdk::RenderSystem;
 use khora_sdk::WgpuRenderSystem;
-use khora_sdk::{AgentProvider, EngineApp, GameWorld, InputEvent, ServiceRegistry};
+use khora_sdk::{AgentProvider, EngineApp, GameWorld, InputEvent, Runtime};
 use khora_sdk::{CommandHistory, DccService, PlayMode};
 use khora_sdk::{
     EditorCamera, EditorLogCapture, EditorShell, EditorState, LogEntry, PanelLocation,
@@ -123,9 +123,9 @@ impl EngineApp for EditorApp {
         }
     }
 
-    fn setup(&mut self, world: &mut GameWorld, services: &ServiceRegistry) {
-        self.cache_services(services);
-        self.register_panels(services);
+    fn setup(&mut self, world: &mut GameWorld, runtime: &Runtime) {
+        self.cache_services(runtime);
+        self.register_panels(runtime);
         self.open_cli_project(world);
     }
 
@@ -257,7 +257,7 @@ impl EngineApp for EditorApp {
     fn before_frame(
         &mut self,
         _world: &mut GameWorld,
-        services: &ServiceRegistry,
+        runtime: &Runtime,
         window: &dyn KhoraWindow,
     ) {
         // Switch the renderer to offscreen-viewport mode BEFORE
@@ -265,7 +265,7 @@ impl EngineApp for EditorApp {
         // receives the viewport color/depth targets (instead of the
         // swapchain) and agents paint into the texture displayed by the
         // egui viewport panel.
-        if let Some(rs_arc) = services.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() {
+        if let Some(rs_arc) = runtime.backends.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() {
             if let Ok(mut rs) = rs_arc.lock() {
                 rs.set_render_to_viewport(true);
             }
@@ -296,14 +296,14 @@ impl EngineApp for EditorApp {
         }
     }
 
-    fn before_agents(&mut self, world: &mut GameWorld, services: &ServiceRegistry) {
+    fn before_agents(&mut self, world: &mut GameWorld, runtime: &Runtime) {
         if let Some(pvfs_arc) = self.project_vfs.as_ref() {
             hot_reload::pump(pvfs_arc, &self.editor_state);
         }
 
         self.last_view_info = None;
 
-        let Some(rs_arc) = services.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() else {
+        let Some(rs_arc) = runtime.backends.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() else {
             return;
         };
         let Ok(mut rs) = rs_arc.lock() else { return };
@@ -360,8 +360,8 @@ impl EngineApp for EditorApp {
         self.last_view_info = Some(view_info);
     }
 
-    fn after_agents(&mut self, world: &mut GameWorld, services: &ServiceRegistry) {
-        let Some(rs_arc) = services.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() else {
+    fn after_agents(&mut self, world: &mut GameWorld, runtime: &Runtime) {
+        let Some(rs_arc) = runtime.backends.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() else {
             return;
         };
 
@@ -429,37 +429,46 @@ impl EngineApp for EditorApp {
 }
 
 impl EditorApp {
-    fn cache_services(&mut self, services: &ServiceRegistry) {
-        if let Some(camera) = services
+    fn cache_services(&mut self, runtime: &Runtime) {
+        if let Some(camera) = runtime
+            .resources
             .get::<std::sync::Arc<std::sync::Mutex<EditorCamera>>>()
             .cloned()
         {
             self.camera = camera;
         }
-        self.overlay = services
+        self.overlay = runtime
+            .backends
             .get::<Arc<Mutex<Box<dyn EditorOverlay>>>>()
             .cloned();
-        self.monitors = services.get::<khora_sdk::MonitorRegistry>().cloned();
-        self.agent_registry = services
+        self.monitors = runtime.resources.get::<khora_sdk::MonitorRegistry>().cloned();
+        self.agent_registry = runtime
+            .resources
             .get::<Arc<Mutex<khora_sdk::AgentRegistry>>>()
             .cloned();
-        self.dcc_context = services
+        self.dcc_context = runtime
+            .resources
             .get::<Arc<std::sync::RwLock<khora_sdk::DccContext>>>()
             .cloned();
-        self.raw_window = services.get::<Arc<winit::window::Window>>().cloned();
+        self.raw_window = runtime
+            .resources
+            .get::<Arc<winit::window::Window>>()
+            .cloned();
     }
 
-    fn register_panels(&mut self, services: &ServiceRegistry) {
-        let viewport_handle = services
+    fn register_panels(&mut self, runtime: &Runtime) {
+        let viewport_handle = runtime
+            .resources
             .get::<ViewportTextureHandle>()
             .copied()
             .unwrap_or(khora_sdk::PRIMARY_VIEWPORT);
 
-        let Some(shell_ref) = services
+        let Some(shell_ref) = runtime
+            .backends
             .get::<std::sync::Arc<std::sync::Mutex<Box<dyn EditorShell>>>>()
             .cloned()
         else {
-            log::warn!("EditorApp: no EditorShell found in ServiceRegistry.");
+            log::warn!("EditorApp: no EditorShell found in runtime.backends.");
             return;
         };
 
@@ -719,12 +728,12 @@ impl EditorApp {
 }
 
 impl AgentProvider for EditorApp {
-    fn register_agents(&self, dcc: &DccService, services: &mut ServiceRegistry) {
-        services.insert(self.editor_state.clone());
-        services.insert(self.camera.clone());
+    fn register_agents(&self, dcc: &DccService, runtime: &mut Runtime) {
+        runtime.resources.insert(self.editor_state.clone());
+        runtime.resources.insert(self.camera.clone());
         // Editor viewport override — RenderFlow reads it as fallback
         // when no scene Camera is active (Editing mode).
-        services.insert(self.viewport_override.clone());
+        runtime.resources.insert(self.viewport_override.clone());
         mod_agents::register_editor_agents(dcc);
     }
 }

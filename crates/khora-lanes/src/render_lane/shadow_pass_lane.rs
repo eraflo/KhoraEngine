@@ -226,20 +226,24 @@ impl ShadowPassLane {
             command::BindGroupId, resource::BufferId, util::IndexFormat,
         };
 
-        let pipeline = if let Some(p) = *self.pipeline.read().unwrap() {
-            p
-        } else {
-            return;
-        };
+        let pipeline =
+            if let Some(p) = *crate::lock_or_log!(self.pipeline.read(), "ShadowPassLane.pipeline") {
+                p
+            } else {
+                return;
+            };
 
-        let atlas_view = if let Some(v) = *self.atlas_view.read().unwrap() {
+        let atlas_view = if let Some(v) =
+            *crate::lock_or_log!(self.atlas_view.read(), "ShadowPassLane.atlas_view")
+        {
             v
         } else {
             return;
         };
 
         // Acquire mutable access to ring buffers
-        let mut camera_lock = self.camera_ring.write().unwrap();
+        let mut camera_lock =
+            crate::lock_or_log!(self.camera_ring.write(), "ShadowPassLane.camera_ring");
         let camera_ring = match camera_lock.as_mut() {
             Some(r) => r,
             None => {
@@ -249,7 +253,8 @@ impl ShadowPassLane {
         };
         camera_ring.advance();
 
-        let mut model_lock = self.model_ring.write().unwrap();
+        let mut model_lock =
+            crate::lock_or_log!(self.model_ring.write(), "ShadowPassLane.model_ring");
         let model_ring = match model_lock.as_mut() {
             Some(r) => r,
             None => {
@@ -259,9 +264,10 @@ impl ShadowPassLane {
         };
         model_ring.advance();
 
-        let gpu_meshes_guard = gpu_meshes.read().unwrap();
+        let gpu_meshes_guard = crate::lock_or_log!(gpu_meshes.read(), "ShadowPassLane.gpu_meshes");
 
-        let mut shadow_results = self.shadow_results.write().unwrap();
+        let mut shadow_results =
+            crate::lock_or_log!(self.shadow_results.write(), "ShadowPassLane.shadow_results");
         shadow_results.clear();
 
         let mut next_atlas_index = 0;
@@ -427,15 +433,18 @@ impl ShadowPassLane {
     fn get_shadow_results(
         &self,
     ) -> std::collections::HashMap<usize, (khora_core::math::Mat4, i32)> {
-        self.shadow_results.read().unwrap().clone()
+        self.shadow_results
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_default()
     }
 
     fn get_atlas_view(&self) -> Option<khora_core::renderer::api::resource::TextureViewId> {
-        *self.atlas_view.read().unwrap()
+        self.atlas_view.read().ok().and_then(|g| *g)
     }
 
     fn get_shadow_sampler(&self) -> Option<khora_core::renderer::api::resource::SamplerId> {
-        *self.shadow_sampler.read().unwrap()
+        self.shadow_sampler.read().ok().and_then(|g| *g)
     }
 
     fn on_gpu_init(
@@ -553,9 +562,12 @@ impl ShadowPassLane {
             .create_render_pipeline(&pipeline_desc)
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *self.pipeline.write().unwrap() = Some(pipeline);
-        *self.camera_layout.write().unwrap() = Some(camera_layout);
-        *self.model_layout.write().unwrap() = Some(model_layout);
+        use crate::render_lane::util::lock::write_lock_render;
+        *write_lock_render(&self.pipeline, "ShadowPass init.pipeline")? = Some(pipeline);
+        *write_lock_render(&self.camera_layout, "ShadowPass init.camera_layout")? =
+            Some(camera_layout);
+        *write_lock_render(&self.model_layout, "ShadowPass init.model_layout")? =
+            Some(model_layout);
 
         // 3. Ring Buffers
         use khora_core::renderer::api::util::dynamic_uniform_buffer::{
@@ -584,8 +596,8 @@ impl ShadowPassLane {
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *self.camera_ring.write().unwrap() = Some(camera_ring);
-        *self.model_ring.write().unwrap() = Some(model_ring);
+        *write_lock_render(&self.camera_ring, "ShadowPass init.camera_ring")? = Some(camera_ring);
+        *write_lock_render(&self.model_ring, "ShadowPass init.model_ring")? = Some(model_ring);
 
         // 4. Shadow Atlas Allocation
         use khora_core::math::Extent3D;
@@ -648,53 +660,54 @@ impl ShadowPassLane {
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *self.atlas_texture.write().unwrap() = Some(atlas);
-        *self.atlas_view.write().unwrap() = Some(atlas_view);
-        *self.shadow_sampler.write().unwrap() = Some(sampler);
+        *write_lock_render(&self.atlas_texture, "ShadowPass init.atlas_texture")? = Some(atlas);
+        *write_lock_render(&self.atlas_view, "ShadowPass init.atlas_view")? = Some(atlas_view);
+        *write_lock_render(&self.shadow_sampler, "ShadowPass init.shadow_sampler")? = Some(sampler);
 
         Ok(())
     }
 
     fn on_gpu_shutdown(&self, device: &dyn GraphicsDevice) {
-        // Destroy ring buffers
-        if let Some(ring) = self.camera_ring.write().unwrap().take() {
+        // Destroy ring buffers — every `.write().ok().and_then(|mut g|
+        // g.take())` call gracefully degrades to a no-op on poisoning.
+        if let Some(ring) = self.camera_ring.write().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
-        if let Some(ring) = self.model_ring.write().unwrap().take() {
+        if let Some(ring) = self.model_ring.write().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
 
         // Destroy pipeline
-        if let Some(pipeline) = self.pipeline.write().unwrap().take() {
+        if let Some(pipeline) = self.pipeline.write().ok().and_then(|mut g| g.take()) {
             if let Err(e) = device.destroy_render_pipeline(pipeline) {
                 log::warn!("ShadowPassLane: Failed to destroy pipeline: {:?}", e);
             }
         }
 
         // Destroy bind group layouts
-        if let Some(layout) = self.camera_layout.write().unwrap().take() {
+        if let Some(layout) = self.camera_layout.write().ok().and_then(|mut g| g.take()) {
             if let Err(e) = device.destroy_bind_group_layout(layout) {
                 log::warn!("ShadowPassLane: Failed to destroy camera layout: {:?}", e);
             }
         }
-        if let Some(layout) = self.model_layout.write().unwrap().take() {
+        if let Some(layout) = self.model_layout.write().ok().and_then(|mut g| g.take()) {
             if let Err(e) = device.destroy_bind_group_layout(layout) {
                 log::warn!("ShadowPassLane: Failed to destroy model layout: {:?}", e);
             }
         }
 
         // Destroy atlas texture, view, and sampler
-        if let Some(view) = self.atlas_view.write().unwrap().take() {
+        if let Some(view) = self.atlas_view.write().ok().and_then(|mut g| g.take()) {
             if let Err(e) = device.destroy_texture_view(view) {
                 log::warn!("ShadowPassLane: Failed to destroy atlas view: {:?}", e);
             }
         }
-        if let Some(texture) = self.atlas_texture.write().unwrap().take() {
+        if let Some(texture) = self.atlas_texture.write().ok().and_then(|mut g| g.take()) {
             if let Err(e) = device.destroy_texture(texture) {
                 log::warn!("ShadowPassLane: Failed to destroy atlas texture: {:?}", e);
             }
         }
-        if let Some(sampler) = self.shadow_sampler.write().unwrap().take() {
+        if let Some(sampler) = self.shadow_sampler.write().ok().and_then(|mut g| g.take()) {
             if let Err(e) = device.destroy_sampler(sampler) {
                 log::warn!("ShadowPassLane: Failed to destroy shadow sampler: {:?}", e);
             }

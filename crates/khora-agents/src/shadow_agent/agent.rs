@@ -120,7 +120,7 @@ impl Agent for ShadowAgent {
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
         // One-shot lane GPU initialization.  Fetch the device, drive
         // lane.on_initialize() once, then drop — the agent does not store it.
-        let Some(device_arc) = context.services.get::<Arc<dyn GraphicsDevice>>().cloned() else {
+        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>().cloned() else {
             log::warn!("ShadowAgent: graphics device unavailable in on_initialize");
             return;
         };
@@ -143,12 +143,12 @@ impl Agent for ShadowAgent {
         let frame_start = Instant::now();
 
         // Look up everything from services — the agent owns none of it.
-        let Some(device_arc) = context.services.get::<Arc<dyn GraphicsDevice>>() else {
+        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
             return;
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
 
-        let Some(gpu_cache) = context.services.get::<GpuCache>() else {
+        let Some(gpu_cache) = context.runtime.resources.get::<GpuCache>() else {
             return;
         };
         let gpu_meshes = gpu_cache.inner().clone();
@@ -159,7 +159,7 @@ impl Agent for ShadowAgent {
             return;
         };
 
-        let frame_ctx = context.services.get::<Arc<FrameContext>>().cloned();
+        let frame_ctx = context.runtime.resources.get::<Arc<FrameContext>>().cloned();
 
         // Encode shadow passes into a standalone command buffer.
         let mut encoder = device.create_command_encoder(Some("Shadow Command Encoder"));

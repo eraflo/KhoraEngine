@@ -26,7 +26,7 @@ use khora_core::agent::{AgentDependency, EngineMode, ExecutionPhase};
 use khora_core::control::gorna::{AgentId, ResourceBudget};
 use khora_core::graph::topological_sort;
 use khora_core::lane::{LaneBus, OutputDeck};
-use khora_core::{EngineContext, ServiceRegistry};
+use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -117,21 +117,16 @@ impl ExecutionScheduler {
     /// Executes the complete frame cycle.
     ///
     /// This is called every frame by the engine loop.
-    pub fn run_frame(&mut self, world: &mut World, services: Arc<ServiceRegistry>) {
+    pub fn run_frame(&mut self, world: &mut World, runtime: Arc<Runtime>) {
         // 1. Sync budgets from cold thread
         self.budget_channel.sync();
         self.frame_start = Instant::now();
 
-        // 2. Build the per-frame completion map and overlay registry.
-        //    The map carries one handle per known agent; the overlay shadows
-        //    the engine-level registry so agents can fetch the map by type
-        //    without changing the EngineContext shape.
+        // 2. Build the per-frame completion map. The scheduler tracks
+        //    completion internally — agents do not read it through the
+        //    runtime containers.
         let agent_ids = self.registry.lock().unwrap().all_ids();
         let completion_map = Arc::new(AgentCompletionMap::new(&agent_ids));
-
-        let mut frame_overlay = ServiceRegistry::with_parent(services);
-        frame_overlay.insert(Arc::clone(&completion_map));
-        let overlay_arc = Arc::new(frame_overlay);
 
         // 3. Read current mode
         let mode = {
@@ -148,9 +143,9 @@ impl ExecutionScheduler {
         // 5. Snapshot agent budgets for this frame and run the Substrate
         //    Pass: every registered Flow projects its View into the bus,
         //    receiving the budget of its corresponding agent and access to
-        //    the service registry.
+        //    the runtime containers.
         let budgets = self.snapshot_budgets(&agent_ids);
-        substrate::run_flows(world, &mut bus, &budgets, &overlay_arc);
+        substrate::run_flows(world, &mut bus, &budgets, &runtime);
 
         // 6. Clone phase order to avoid borrow conflicts
         let phases: Vec<ExecutionPhase> = self.phase_order.clone();
@@ -167,7 +162,7 @@ impl ExecutionScheduler {
             self.execute_agents_in_phase(
                 phase,
                 world,
-                &overlay_arc,
+                &runtime,
                 &mode,
                 &completion_map,
                 &bus,
@@ -192,7 +187,7 @@ impl ExecutionScheduler {
         &mut self,
         phase: ExecutionPhase,
         world: &mut World,
-        services: &Arc<ServiceRegistry>,
+        runtime: &Arc<Runtime>,
         mode: &EngineMode,
         completion_map: &Arc<AgentCompletionMap>,
         bus: &LaneBus,
@@ -209,14 +204,14 @@ impl ExecutionScheduler {
         }
 
         let sorted = sort_agents(agents);
-        self.execute_agents_sequential(sorted, world, services, completion_map, bus, deck);
+        self.execute_agents_sequential(sorted, world, runtime, completion_map, bus, deck);
     }
 
     fn execute_agents_sequential(
         &self,
         agents: Vec<AgentSlot>,
         world: &mut World,
-        services: &Arc<ServiceRegistry>,
+        runtime: &Arc<Runtime>,
         completion_map: &Arc<AgentCompletionMap>,
         bus: &LaneBus,
         deck: &mut OutputDeck,
@@ -243,7 +238,7 @@ impl ExecutionScheduler {
             // chooses and invokes its lane internally).
             let mut engine_ctx = EngineContext {
                 world: Some(world as &mut dyn std::any::Any),
-                services: Arc::clone(services),
+                runtime: Arc::clone(runtime),
                 bus,
                 deck,
             };
@@ -279,7 +274,7 @@ impl ExecutionScheduler {
         &self,
         _agents: Vec<AgentSlot>,
         _world: &mut World,
-        _services: &Arc<ServiceRegistry>,
+        _runtime: &Arc<Runtime>,
         _completion_map: &Arc<AgentCompletionMap>,
     ) {
         unimplemented!("parallel agent execution — not yet implemented");

@@ -23,5 +23,3 @@ pub mod physics_agent;
 pub mod render_agent;
 pub mod shadow_agent;
 pub mod ui_agent;
-
-pub use physics_agent::PhysicsQueryService;

@@ -261,15 +261,21 @@ impl UiRenderLane {
             })
             .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
 
-        // Store resources
-        *self.pipeline.lock().unwrap() = Some(pipeline_id);
-        *self.global_layout.lock().unwrap() = Some(global_layout);
-        *self.instance_layout.lock().unwrap() = Some(instance_layout);
-        *self.projection_buffer.lock().unwrap() = Some(projection_buffer);
-        *self.instance_buffer.lock().unwrap() = Some(instance_buffer);
-        *self.global_bind_group.lock().unwrap() = Some(global_bind_group);
-        *self.instance_bind_group.lock().unwrap() = Some(instance_bind_group);
-        *self.atlas_layout.lock().unwrap() = Some(atlas_layout);
+        // Store resources.
+        use crate::render_lane::util::lock::mutex_lock;
+        *mutex_lock(&self.pipeline, "UiRenderLane init.pipeline")? = Some(pipeline_id);
+        *mutex_lock(&self.global_layout, "UiRenderLane init.global_layout")? = Some(global_layout);
+        *mutex_lock(&self.instance_layout, "UiRenderLane init.instance_layout")? =
+            Some(instance_layout);
+        *mutex_lock(&self.projection_buffer, "UiRenderLane init.projection_buffer")? =
+            Some(projection_buffer);
+        *mutex_lock(&self.instance_buffer, "UiRenderLane init.instance_buffer")? =
+            Some(instance_buffer);
+        *mutex_lock(&self.global_bind_group, "UiRenderLane init.global_bind_group")? =
+            Some(global_bind_group);
+        *mutex_lock(&self.instance_bind_group, "UiRenderLane init.instance_bind_group")? =
+            Some(instance_bind_group);
+        *mutex_lock(&self.atlas_layout, "UiRenderLane init.atlas_layout")? = Some(atlas_layout);
 
         let sampler = device
             .create_sampler(&khora_core::renderer::api::resource::SamplerDescriptor {
@@ -287,7 +293,7 @@ impl UiRenderLane {
                 border_color: None,
             })
             .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-        *self.sampler.lock().unwrap() = Some(sampler);
+        *mutex_lock(&self.sampler, "UiRenderLane init.sampler")? = Some(sampler);
 
         Ok(())
     }
@@ -315,6 +321,7 @@ impl Lane for UiRenderLane {
     }
 
     fn execute(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
+        use crate::render_lane::util::lock::mutex_lock;
         let device = ctx
             .get::<Arc<dyn GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?;
@@ -339,7 +346,7 @@ impl Lane for UiRenderLane {
         let (width, height) = ui_scene.surface_size;
         let projection = Mat4::orthographic_rh_zo(0.0, width as f32, height as f32, 0.0, 0.0, 1.0);
 
-        if let Some(buffer_id) = *self.projection_buffer.lock().unwrap() {
+        if let Some(buffer_id) = *mutex_lock(&self.projection_buffer, "UiRenderLane.projection_buffer")? {
             device
                 .write_buffer(buffer_id, 0, bytemuck::bytes_of(&projection))
                 .map_err(|e| LaneError::ExecutionFailed(Box::new(e)))?;
@@ -388,7 +395,7 @@ impl Lane for UiRenderLane {
         }
 
         // 3. Upload Instance Data
-        if let Some(buffer_id) = *self.instance_buffer.lock().unwrap() {
+        if let Some(buffer_id) = *mutex_lock(&self.instance_buffer, "UiRenderLane.instance_buffer")? {
             device
                 .write_buffer(buffer_id, 0, bytemuck::cast_slice(&instances))
                 .map_err(|e| LaneError::ExecutionFailed(Box::new(e)))?;
@@ -399,8 +406,8 @@ impl Lane for UiRenderLane {
         if let Some(atlas_slot) = ctx.get::<Slot<khora_core::renderer::api::util::TextureAtlas>>() {
             let atlas = atlas_slot.get();
             if let (Some(layout), Some(sampler)) = (
-                *self.atlas_layout.lock().unwrap(),
-                *self.sampler.lock().unwrap(),
+                *mutex_lock(&self.atlas_layout, "UiRenderLane.atlas_layout")?,
+                *mutex_lock(&self.sampler, "UiRenderLane.sampler")?,
             ) {
                 let bg = device
                     .create_bind_group(&BindGroupDescriptor {
@@ -425,9 +432,9 @@ impl Lane for UiRenderLane {
         }
 
         // 5. Render Pass
-        let pipeline = self.pipeline.lock().unwrap();
-        let global_bg = self.global_bind_group.lock().unwrap();
-        let instance_bg = self.instance_bind_group.lock().unwrap();
+        let pipeline = mutex_lock(&self.pipeline, "UiRenderLane.pipeline")?;
+        let global_bg = mutex_lock(&self.global_bind_group, "UiRenderLane.global_bg")?;
+        let instance_bg = mutex_lock(&self.instance_bind_group, "UiRenderLane.instance_bg")?;
 
         if let (Some(pipeline_id), Some(g_bg), Some(i_bg)) = (*pipeline, *global_bg, *instance_bg) {
             let color_attachment = RenderPassColorAttachment {

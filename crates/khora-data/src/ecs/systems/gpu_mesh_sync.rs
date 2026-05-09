@@ -22,16 +22,16 @@
 use std::sync::Arc;
 
 use khora_core::renderer::GraphicsDevice;
-use khora_core::ServiceRegistry;
+use khora_core::Runtime;
 
 use crate::ecs::{DataSystemRegistration, TickPhase, World};
 use crate::ProjectionRegistry;
 
-fn gpu_mesh_sync_system(world: &mut World, services: &ServiceRegistry) {
-    let Some(proj) = services.get::<ProjectionRegistry>() else {
+fn gpu_mesh_sync_system(world: &mut World, runtime: &Runtime) {
+    let Some(proj) = runtime.resources.get::<ProjectionRegistry>() else {
         return;
     };
-    let Some(device) = services.get::<Arc<dyn GraphicsDevice>>() else {
+    let Some(device) = runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
         return;
     };
     proj.sync_all(world, device.as_ref());

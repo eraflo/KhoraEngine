@@ -12,18 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod active_events;
-mod collider;
-mod collision_events;
-mod kinematic_character_controller;
-mod physics_debug_data;
-mod physics_material;
-mod rigid_body;
+//! Physics-domain data types that are **not** ECS components.
+//!
+//! ECS components live in [`crate::ecs::components::physics`]. This
+//! module hosts physics-domain types that flow through `Resources` or
+//! lane outputs — values the engine shares between systems but that
+//! have no per-entity identity.
 
-pub use active_events::*;
-pub use collider::*;
-pub use collision_events::*;
-pub use kinematic_character_controller::*;
-pub use physics_debug_data::*;
-pub use physics_material::*;
-pub use rigid_body::*;
+pub mod collision;
+
+pub use collision::{CollisionPair, CollisionPairs};

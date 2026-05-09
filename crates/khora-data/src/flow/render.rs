@@ -23,7 +23,7 @@
 use khora_core::{
     math::{Mat4, Vec3},
     renderer::{api::scene::GpuMesh, light::LightType},
-    ServiceRegistry,
+    Runtime,
 };
 
 use crate::ecs::{
@@ -44,7 +44,7 @@ impl Flow for RenderFlow {
     const DOMAIN: SemanticDomain = SemanticDomain::Render;
     const NAME: &'static str = "render";
 
-    fn project(&self, world: &World, _sel: &Selection, services: &ServiceRegistry) -> Self::View {
+    fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
         let mut rw = RenderWorld::new();
         extract_meshes(world, &mut rw);
         extract_lights(world, &mut rw);
@@ -54,7 +54,7 @@ impl Flow for RenderFlow {
         // scene Camera is forced inactive)? Fall back to the shared
         // primary-view resolver, which consults `EditorViewportOverride`.
         if rw.views.is_empty() {
-            if let Some(view) = crate::render::primary_view(world, services) {
+            if let Some(view) = crate::render::primary_view(world, runtime) {
                 rw.views.push(view);
             }
         }
