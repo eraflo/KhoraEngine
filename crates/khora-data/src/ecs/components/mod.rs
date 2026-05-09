@@ -25,6 +25,7 @@ mod name;
 mod parent;
 mod physics;
 mod prefab;
+mod tag;
 mod transform;
 
 pub use audio::*;
@@ -40,4 +41,5 @@ pub use name::*;
 pub use parent::*;
 pub use physics::*;
 pub use prefab::*;
+pub use tag::*;
 pub use transform::*;

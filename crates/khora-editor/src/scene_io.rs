@@ -33,11 +33,13 @@ pub const DEFAULT_SCENE_REL: &str = "scenes/default.kscene";
 // ─────────────────────────────────────────────────────────────────────────────
 // Play-mode snapshot — full-world capture via SerializationService.
 //
-// Routed through `SerializationService::FastestLoad` (the Archetype strategy)
-// because the snapshot is throw-away in-memory bytes: write/read latency
-// dominates, file size and human-readability don't matter. The previous
-// hand-rolled binary format only captured `Transform` and silently dropped
-// every other component during the play→stop cycle.
+// Routed through `SerializationGoal::EditorInterchange` (the Recipe / bincode
+// strategy) because it's the only strategy guaranteed to round-trip every
+// registered component lossless-ly. `FastestLoad` (Archetype) was tried first
+// but lost the `Name` component on restore (entities ended up showing
+// "Entity N" in the scene tree after Stop) and triggered heap corruption in
+// some edge cases. The snapshot is throw-away in-memory bytes so the marginal
+// cost of Recipe over Archetype is irrelevant.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Serializes the entire world to an in-memory byte buffer for play-mode
@@ -46,7 +48,7 @@ pub const DEFAULT_SCENE_REL: &str = "scenes/default.kscene";
 /// preferable to a panic mid-play).
 pub fn snapshot_scene(world: &GameWorld) -> Vec<u8> {
     let svc = SerializationService::new();
-    match svc.save_world(world.inner_world(), SerializationGoal::FastestLoad) {
+    match svc.save_world(world.inner_world(), SerializationGoal::EditorInterchange) {
         Ok(scene) => scene.to_bytes(),
         Err(e) => {
             log::error!("Play-mode snapshot failed: {:?}", e);
@@ -338,4 +340,48 @@ pub fn rel_inside_project(abs_path: &Path, assets_root: &Path) -> Option<String>
             .collect::<Vec<_>>()
             .join("/"),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: snapshot/restore must round-trip the `Name` component.
+    /// Symptom of a broken implementation: entities show "Entity N" in the
+    /// scene tree after Stop because the fallback in `extract_scene_tree`
+    /// kicks in.
+    #[test]
+    fn snapshot_restore_preserves_name() {
+        let mut world = GameWorld::new();
+        world.spawn((
+            Transform {
+                translation: Vec3::new(1.0, 2.0, 3.0),
+                ..Default::default()
+            },
+            GlobalTransform::identity(),
+            Name::new("TestCube"),
+        ));
+
+        let snap = snapshot_scene(&world);
+        assert!(!snap.is_empty(), "snapshot should not be empty");
+
+        // Despawn everything to simulate gameplay.
+        let all: Vec<_> = world.iter_entities().collect();
+        for e in all {
+            world.despawn(e);
+        }
+        assert_eq!(world.iter_entities().count(), 0);
+
+        restore_scene(&mut world, &snap);
+
+        let names: Vec<String> = world
+            .iter_entities()
+            .filter_map(|e| world.get_component::<Name>(e).map(|n| n.as_str().to_owned()))
+            .collect();
+        assert!(
+            names.contains(&"TestCube".to_string()),
+            "expected 'TestCube' Name to survive restore, got {:?}",
+            names
+        );
+    }
 }

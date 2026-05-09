@@ -178,7 +178,7 @@ pub mod prelude {
     pub use khora_core::memory::SaaTrackingAllocator;
 
     // Input
-    pub use khora_core::platform::{InputEvent, MouseButton};
+    pub use khora_core::platform::{InputEvent, KeyCode, MouseButton};
 
     // ECS types
     pub mod ecs {
@@ -188,7 +188,8 @@ pub mod prelude {
         pub use khora_core::renderer::light::{DirectionalLight, LightType, PointLight, SpotLight};
         pub use khora_data::ecs::{
             AudioSource, Camera, Children, Collider, Component, ComponentBundle, GlobalTransform,
-            Light, MaterialComponent, Name, Parent, ProjectionType, RigidBody, Transform, Without,
+            Light, MaterialComponent, Name, Parent, ProjectionType, RigidBody, Tag, Transform,
+            Without,
         };
     }
 
@@ -209,7 +210,7 @@ pub mod prelude {
 }
 
 // Re-export InputEvent at crate level for trait usage
-pub use khora_core::platform::{InputEvent, MouseButton};
+pub use khora_core::platform::{InputEvent, KeyCode, MouseButton};
 
 /// Well-known viewport handle for the primary 3D viewport.
 pub const PRIMARY_VIEWPORT: ViewportTextureHandle = ViewportTextureHandle(0);

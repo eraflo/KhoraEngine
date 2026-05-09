@@ -366,9 +366,12 @@ impl EngineApp for EditorApp {
         };
 
         // Render gizmos for the current selection on top of the 3D scene.
+        // Gated on PlayMode::Editing — gizmos are an editor-only overlay
+        // and must not bleed into Play / Paused (those modes show the
+        // shipping experience).
         if let Some(view_info) = self.last_view_info.as_ref() {
             let gizmo_lines = if let Ok(state) = self.editor_state.lock() {
-                if state.selection.is_empty() {
+                if state.play_mode != PlayMode::Editing || state.selection.is_empty() {
                     Vec::new()
                 } else {
                     mod_gizmo::collect_gizmo_lines(world, &state, view_info)

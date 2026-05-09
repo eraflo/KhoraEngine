@@ -22,6 +22,37 @@ use khora_sdk::editor_ui::*;
 use crate::widgets::chrome::{paint_panel_header, panel_tab};
 use crate::widgets::paint::{paint_hairline_h, paint_icon, paint_text_size, with_alpha};
 
+/// Filters a `SceneNode` against a lowercase needle. Returns `Some(node)`
+/// when the node's own name contains the needle (subtree kept intact) or
+/// when any descendant matches (only matching descendants kept). Returns
+/// `None` when neither the node nor any descendant matches.
+fn filter_scene_node(node: &SceneNode, needle: &str) -> Option<SceneNode> {
+    if node.name.to_lowercase().contains(needle) {
+        return Some(node.clone());
+    }
+    let kept: Vec<SceneNode> = node
+        .children
+        .iter()
+        .filter_map(|c| filter_scene_node(c, needle))
+        .collect();
+    if kept.is_empty() {
+        None
+    } else {
+        Some(SceneNode {
+            children: kept,
+            ..node.clone()
+        })
+    }
+}
+
+/// Recursively counts every visible node in a subtree (self + children).
+fn count_scene_nodes(nodes: &[SceneNode]) -> usize {
+    nodes
+        .iter()
+        .map(|n| 1 + count_scene_nodes(&n.children))
+        .sum()
+}
+
 const ROW_HEIGHT: f32 = 26.0;
 const HEADER_HEIGHT: f32 = 34.0;
 const TOOLBAR_HEIGHT: f32 = 32.0;
@@ -68,8 +99,16 @@ impl EditorPanel for SceneTreePanel {
         // ── Header strip ──────────────────────────────
         paint_panel_header(ui, panel_rect, HEADER_HEIGHT, &theme);
 
-        let count = self.state.lock().ok().map(|s| s.entity_count).unwrap_or(0);
-        let badge = format!("{}", count);
+        // Lock the editor state once and hold it through the whole panel.
+        // The search field needs `&mut state.search_filter` for `text_edit_singleline`,
+        // so the lock must outlive that closure — and it's cheaper to just
+        // hold it for the full body than to reacquire it three times.
+        let mut state_guard = match self.state.lock() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+
+        let total_count = state_guard.entity_count;
 
         // Action icons live on the right; we always keep them visible because
         // they hold the only entry point for "+" / filter. Tabs adapt around
@@ -87,6 +126,30 @@ impl EditorPanel for SceneTreePanel {
         // Single tab today — Layers and Tags were decorative and removed
         // until they're actually wired (filtered scene views per layer,
         // tag-based selection, etc.).
+        // Filter — applied to scene_roots before rendering.
+        let filter_lower = state_guard.search_filter.to_lowercase();
+        let filter_active = !filter_lower.is_empty();
+        let filtered_roots: Vec<SceneNode> = if filter_active {
+            state_guard
+                .scene_roots
+                .iter()
+                .filter_map(|n| filter_scene_node(n, &filter_lower))
+                .collect()
+        } else {
+            state_guard.scene_roots.clone()
+        };
+        let visible_count = if filter_active {
+            count_scene_nodes(&filtered_roots)
+        } else {
+            total_count
+        };
+
+        let badge = if filter_active {
+            format!("{}/{}", visible_count, total_count)
+        } else {
+            format!("{}", total_count)
+        };
+
         let _ = panel_tab(
             ui,
             "h-tab-hierarchy",
@@ -136,33 +199,14 @@ impl EditorPanel for SceneTreePanel {
             12.0,
             theme.text_muted,
         );
-        let search_text = self
-            .state
-            .lock()
-            .ok()
-            .map(|s| s.search_filter.clone())
-            .unwrap_or_default();
-        let placeholder = if search_text.is_empty() {
-            "Filter entities…"
-        } else {
-            search_text.as_str()
-        };
-        let placeholder_color = if search_text.is_empty() {
-            theme.text_muted
-        } else {
-            theme.text
-        };
-        paint_text_size(
-            ui,
-            [search_x + 26.0, toolbar_y + 11.0],
-            placeholder,
-            11.5,
-            placeholder_color,
-        );
-        // Only paint the "n / n" count when the pill is wide enough that it
-        // can't visually collide with the placeholder text.
-        if search_w >= 200.0 {
-            let count_text = format!("{} / {}", count, count);
+        // Optional "n / n" count on the right edge of the search pill —
+        // only painted when there's room without overlapping the input.
+        let count_w = if search_w >= 200.0 {
+            let count_text = if filter_active {
+                format!("{} / {}", visible_count, total_count)
+            } else {
+                format!("{}", total_count)
+            };
             ui.paint_text_styled(
                 [search_x + search_w - 8.0, toolbar_y + 11.0],
                 &count_text,
@@ -171,10 +215,20 @@ impl EditorPanel for SceneTreePanel {
                 FontFamilyHint::Monospace,
                 TextAlign::Right,
             );
-        }
-        // Click on search → focus a hidden text input. We approximate by
-        // letting the user type via Cmd+K (better UX) and relying on a real
-        // egui text field below the painted region for now (kept invisible).
+            56.0
+        } else {
+            0.0
+        };
+
+        // Real text input — bound directly to `state.search_filter`.
+        let input_w = (search_w - 32.0 - count_w).max(40.0);
+        let search_filter_ref = &mut state_guard.search_filter;
+        ui.region_at(
+            [search_x + 24.0, toolbar_y + 6.0, input_w, 20.0],
+            &mut |ui_inner| {
+                ui_inner.text_edit_singleline(search_filter_ref);
+            },
+        );
 
         // ── Section header ────────────────────────────
         let section_y = toolbar_y + TOOLBAR_HEIGHT + 4.0;
@@ -195,17 +249,12 @@ impl EditorPanel for SceneTreePanel {
         );
 
         // ── Rows ──────────────────────────────────────
-        let mut state_guard = match self.state.lock() {
-            Ok(s) => s,
-            Err(_) => return,
-        };
-        let roots: Vec<SceneNode> = state_guard.scene_roots.clone();
         let selected = state_guard.selection.clone();
         let hidden = state_guard.hidden_entities.clone();
         let pending: std::cell::Cell<Option<EditorAction>> = std::cell::Cell::new(None);
 
         let mut row_y = section_y + 18.0;
-        for node in &roots {
+        for node in &filtered_roots {
             row_y = render_node(
                 ui, node, 0, px, pw, row_y, &selected, &hidden, &theme, &pending,
             );
@@ -425,6 +474,15 @@ fn render_node(
     let icon = entity_icon(node.icon);
     paint_icon(ui, [cx, y + 6.0], icon, 13.0, icon_color);
     cx += 18.0;
+
+    // Tag indicator — small glyph next to the type icon when the entity
+    // carries any `Tag` component entries. Tooltip would show the actual
+    // tag set; for now the glyph alone tells the user "this entity has
+    // tags, look at the inspector for details".
+    if node.tag_count > 0 {
+        paint_icon(ui, [cx, y + 6.0], Icon::Tag, 12.0, icon_color);
+        cx += 16.0;
+    }
 
     // Label
     let base_label_color = if is_selected {

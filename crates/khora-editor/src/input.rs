@@ -16,6 +16,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::prelude::*;
+use khora_sdk::KeyCode;
 use khora_sdk::{CommandHistory, EditorCamera, EditorState, GizmoMode, PlayMode};
 
 use crate::ops;
@@ -82,38 +83,38 @@ pub fn process_events(
                 _ => {}
             },
             InputEvent::KeyPressed { key_code } => {
-                if key_code == "ShiftLeft" || key_code == "ShiftRight" {
+                if matches!(key_code, KeyCode::ShiftLeft | KeyCode::ShiftRight) {
                     state.shift_held = true;
                 }
-                if key_code == "ControlLeft" || key_code == "ControlRight" {
+                if matches!(key_code, KeyCode::ControlLeft | KeyCode::ControlRight) {
                     state.ctrl_held = true;
                 }
 
                 if !state.ctrl_held {
                     if let Ok(mut s) = editor_state.lock() {
-                        match key_code.as_str() {
-                            "KeyQ" => s.gizmo_mode = GizmoMode::Select,
-                            "KeyW" => s.gizmo_mode = GizmoMode::Move,
-                            "KeyE" => s.gizmo_mode = GizmoMode::Rotate,
-                            "KeyR" => s.gizmo_mode = GizmoMode::Scale,
+                        match key_code {
+                            KeyCode::KeyQ => s.gizmo_mode = GizmoMode::Select,
+                            KeyCode::KeyW => s.gizmo_mode = GizmoMode::Move,
+                            KeyCode::KeyE => s.gizmo_mode = GizmoMode::Rotate,
+                            KeyCode::KeyR => s.gizmo_mode = GizmoMode::Scale,
                             _ => {}
                         }
                     }
                 }
 
-                if key_code == "Delete" {
+                if *key_code == KeyCode::Delete {
                     if let Ok(mut s) = editor_state.lock() {
                         ops::delete_selection(world, &mut s);
                     }
                 }
 
-                if key_code == "KeyK" && state.ctrl_held {
+                if *key_code == KeyCode::KeyK && state.ctrl_held {
                     if let Ok(mut s) = editor_state.lock() {
                         s.command_palette_open = !s.command_palette_open;
                     }
                 }
 
-                if key_code == "KeyZ" && state.ctrl_held {
+                if *key_code == KeyCode::KeyZ && state.ctrl_held {
                     if let Ok(mut history) = command_history.lock() {
                         if let Some(edit) = history.undo() {
                             if let Ok(mut s) = editor_state.lock() {
@@ -123,7 +124,7 @@ pub fn process_events(
                     }
                 }
 
-                if key_code == "KeyY" && state.ctrl_held {
+                if *key_code == KeyCode::KeyY && state.ctrl_held {
                     if let Ok(mut history) = command_history.lock() {
                         if let Some(edit) = history.redo() {
                             if let Ok(mut s) = editor_state.lock() {
@@ -134,10 +135,10 @@ pub fn process_events(
                 }
             }
             InputEvent::KeyReleased { key_code } => {
-                if key_code == "ShiftLeft" || key_code == "ShiftRight" {
+                if matches!(key_code, KeyCode::ShiftLeft | KeyCode::ShiftRight) {
                     state.shift_held = false;
                 }
-                if key_code == "ControlLeft" || key_code == "ControlRight" {
+                if matches!(key_code, KeyCode::ControlLeft | KeyCode::ControlRight) {
                     state.ctrl_held = false;
                 }
             }

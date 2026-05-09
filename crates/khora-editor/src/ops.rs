@@ -15,7 +15,7 @@
 //! Pure ECS operations used by the editor application.
 
 use khora_sdk::editor_ui::*;
-use khora_sdk::khora_data::ecs::{HandleComponent, SemanticDomain};
+use khora_sdk::khora_data::ecs::{HandleComponent, SemanticDomain, Tag};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::{GameWorld, Mesh};
 
@@ -65,6 +65,11 @@ pub fn extract_scene_tree(world: &GameWorld, state: &mut EditorState) {
             parent_map.insert(entity, parent.0);
         }
 
+        let tag_count = world
+            .get_component::<Tag>(entity)
+            .map(|t| t.len())
+            .unwrap_or(0);
+
         nodes.insert(
             entity,
             SceneNode {
@@ -72,6 +77,7 @@ pub fn extract_scene_tree(world: &GameWorld, state: &mut EditorState) {
                 name,
                 icon,
                 children: Vec::new(),
+                tag_count,
             },
         );
     }

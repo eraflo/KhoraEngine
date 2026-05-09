@@ -146,6 +146,7 @@ impl World {
         world.register_component::<Parent>(SemanticDomain::Spatial);
         world.register_component::<Children>(SemanticDomain::Spatial);
         world.register_component::<Name>(SemanticDomain::Spatial);
+        world.register_component::<crate::ecs::Tag>(SemanticDomain::Spatial);
 
         // Registration of render components
         world.register_component::<HandleComponent<Mesh>>(SemanticDomain::Render);

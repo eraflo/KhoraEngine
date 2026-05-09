@@ -24,5 +24,6 @@ pub mod display;
 pub mod header;
 pub mod renderers;
 pub mod tabs;
+pub mod tag_chips;
 pub mod walker;
 

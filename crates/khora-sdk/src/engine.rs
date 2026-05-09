@@ -147,6 +147,13 @@ impl<A: EngineApp> EngineCore<A> {
         // DataSystem (Maintenance phase) can fetch and tick it each frame.
         services.insert(Arc::new(Mutex::new(khora_data::ecs::EcsMaintenance::new())));
 
+        // InputMap — engine-wide action / binding map. The engine ticks it
+        // each frame from `drain_inputs`; app code reads it via
+        // `services.get::<Arc<Mutex<InputMap>>>()`.
+        services.insert(Arc::new(Mutex::new(
+            khora_core::platform::InputMap::new(),
+        )));
+
         // PhysicsQueryService: on-demand raycast/debug queries, no GORNA required.
         if let Some(provider) = services
             .get::<std::sync::Arc<std::sync::Mutex<Box<dyn khora_core::physics::PhysicsProvider>>>>(
@@ -290,8 +297,10 @@ impl<A: EngineApp> EngineCore<A> {
     }
 
     /// Stage 1 — drain queued input events. Also marks simulation started
-    /// (emits the `"simulation"` phase change on the first call) and ticks
-    /// the telemetry service.
+    /// (emits the `"simulation"` phase change on the first call), ticks
+    /// the telemetry service, and feeds the events into the engine-wide
+    /// [`khora_core::platform::InputMap`] so app code can query actions
+    /// (`is_pressed`, `just_pressed`) from the same frame's inputs.
     pub fn drain_inputs(&mut self) -> Vec<InputEvent> {
         if !self.simulation_started {
             if let Some(dcc) = &self.dcc {
@@ -306,7 +315,22 @@ impl<A: EngineApp> EngineCore<A> {
         if let Some(telemetry) = self.telemetry.as_mut() {
             let _ = telemetry.tick();
         }
-        self.input_events.drain(..).collect()
+        let drained: Vec<InputEvent> = self.input_events.drain(..).collect();
+
+        // Tick the InputMap with this frame's events. Lock is short — only
+        // held for the duration of `update`. App code that needs the map
+        // (e.g. `services.get::<Arc<Mutex<InputMap>>>()`) sees the updated
+        // state on its next lock.
+        if let Some(map_arc) = self
+            .services
+            .get::<Arc<Mutex<khora_core::platform::InputMap>>>()
+        {
+            if let Ok(mut map) = map_arc.lock() {
+                map.update(&drained);
+            }
+        }
+
+        drained
     }
 
     /// Stage 2 — run `app.update`, ECS maintenance, mesh sync, and scene/UI

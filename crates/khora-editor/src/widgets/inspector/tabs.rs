@@ -22,6 +22,7 @@ use khora_sdk::CommandHistory;
 use super::add_component::{render_add_component, INHERENT_COMPONENTS};
 use super::card::render_card;
 use super::display::icon_for_domain_tag;
+use super::tag_chips::render_tag_chips;
 use super::walker::render_value;
 
 /// Per-tab context handed to [`InspectorTab::render`]. Locked once by the
@@ -95,7 +96,13 @@ impl InspectorTab for PropertiesTab {
                     &theme,
                     &mut state_guard,
                     &mut |ui_b| {
-                        changed = render_value(ui_b, &mut value, &theme);
+                        // Tag has a custom chip renderer — the generic JSON
+                        // walker would render it as `[0] = "alpha", …` rows.
+                        if cj.type_name == "Tag" {
+                            changed = render_tag_chips(ui_b, entity, &mut value);
+                        } else {
+                            changed = render_value(ui_b, &mut value, &theme);
+                        }
                     },
                 );
                 if changed {

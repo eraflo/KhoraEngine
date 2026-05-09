@@ -84,6 +84,9 @@ pub struct SceneNode {
     pub icon: EntityIcon,
     /// Direct children in the scene hierarchy (from the `Children` component).
     pub children: Vec<SceneNode>,
+    /// Number of tags carried by the entity (`Tag` component). The scene
+    /// tree paints a small tag glyph next to the row when this is non-zero.
+    pub tag_count: usize,
 }
 
 /// Icon hint for the scene tree.

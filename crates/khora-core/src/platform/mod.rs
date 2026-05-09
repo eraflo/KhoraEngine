@@ -19,9 +19,11 @@
 //! windowing, input, and filesystem access.
 
 pub mod input;
+pub mod input_map;
 pub mod window;
 
-pub use input::{InputEvent, MouseButton};
+pub use input::{InputEvent, KeyCode, MouseButton};
+pub use input_map::{Action, InputBinding, InputMap};
 pub use window::{KhoraWindow, KhoraWindowHandle, WindowHandle};
 
 /// Represents the thermal state of the device.
