@@ -212,7 +212,13 @@ impl Agent for ShadowAgent {
                 }
             }
         }
-        device.submit_command_buffer(encoder.finish());
+        if let Some(cmd_buf) = encoder.finish() {
+            device.submit_command_buffer(cmd_buf);
+        } else {
+            log::error!(
+                "ShadowAgent: encoder.finish() returned None — skipping shadow submission"
+            );
+        }
 
         self.last_frame_time = frame_start.elapsed();
         self.frame_count += 1;

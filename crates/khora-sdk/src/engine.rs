@@ -157,18 +157,6 @@ impl<A: EngineApp> EngineCore<A> {
             .resources
             .insert(Arc::new(khora_data::ui::UiImageAtlas::new()));
 
-        // AudioPlaybackSink — thread-safe sink for playback-state
-        // updates emitted by `SpatialMixingLane`. The audio callback
-        // thread (when wired) pushes per-source updates into this sink;
-        // the `audio_playback_writeback` DataSystem drains them on the
-        // main thread during `Maintenance` and patches `AudioSource`
-        // components.
-        let audio_sink: khora_data::ecs::systems::audio_playback_writeback::AudioPlaybackSink =
-            Arc::new(Mutex::new(
-                khora_data::flow::AudioPlaybackWriteback::default(),
-            ));
-        runtime.resources.insert(audio_sink);
-
         // CollisionPairs — broadphase scratch shared between the
         // (currently unused) `NativeBroadphaseLane` and `NativeSolverLane`.
         // Registered eagerly so any dev wiring those lanes finds the
@@ -302,14 +290,38 @@ impl<A: EngineApp> EngineCore<A> {
         let presents = self.begin_render_frame(&frame_runtime_arc);
         self.run_scheduler(&frame_runtime_arc);
         self.end_render_frame(presents);
+        self.run_maintenance();
+    }
 
-        // Substrate Pass — end-of-tick maintenance (compaction, deferred
-        // cleanup, idempotent best-effort work). Runs after every agent and
-        // after the I/O boundary so the world is in its final post-frame state.
-        if let Some(gw) = self.game_world.as_mut() {
+    /// Stage 6 — runs the end-of-tick `Maintenance`-phase `DataSystem`s
+    /// against the scheduler's per-frame [`OutputDeck`].
+    ///
+    /// The engine is subsystem-agnostic here: it threads the deck through
+    /// the substrate dispatcher and lets each `DataSystem` drain whatever
+    /// typed slot belongs to its domain (audio writeback, physics
+    /// writeback, future subsystems …). No subsystem-specific code lives
+    /// in this method.
+    pub fn run_maintenance(&mut self) {
+        let Some(gw) = self.game_world.as_mut() else {
+            return;
+        };
+        let world = gw.inner_world_mut();
+
+        if let Some(scheduler) = self.scheduler.as_mut() {
             substrate::run_data_systems(
-                gw.inner_world_mut(),
+                world,
                 &self.runtime,
+                scheduler.deck_mut(),
+                TickPhase::Maintenance,
+            );
+        } else {
+            // No scheduler installed — pass a transient empty deck so
+            // `DataSystem`s that read it harmlessly observe an empty slot.
+            let mut deck = khora_core::lane::OutputDeck::new();
+            substrate::run_data_systems(
+                world,
+                &self.runtime,
+                &mut deck,
                 TickPhase::Maintenance,
             );
         }
@@ -362,23 +374,43 @@ impl<A: EngineApp> EngineCore<A> {
         };
         let runtime = &self.runtime;
 
+        // Pre-scheduler phases run before the per-frame `OutputDeck` is
+        // built. We pass a transient empty deck so `DataSystem`s that
+        // happen to read it observe an empty slot — they simply no-op.
+        let mut deck = khora_core::lane::OutputDeck::new();
+
         // Substrate Pass — pre-simulation invariants (input-driven mutations,
         // scene events that must be visible to agents).
-        substrate::run_data_systems(gw.inner_world_mut(), runtime, TickPhase::PreSimulation);
+        substrate::run_data_systems(
+            gw.inner_world_mut(),
+            runtime,
+            &mut deck,
+            TickPhase::PreSimulation,
+        );
 
         app.update(gw, inputs);
 
         // Substrate Pass — post-simulation invariants (hierarchy fix-ups
         // such as transform_propagation, run after app.update mutates Transforms
         // but before extraction reads GlobalTransform).
-        substrate::run_data_systems(gw.inner_world_mut(), runtime, TickPhase::PostSimulation);
+        substrate::run_data_systems(
+            gw.inner_world_mut(),
+            runtime,
+            &mut deck,
+            TickPhase::PostSimulation,
+        );
 
         // Substrate Pass — pre-extract. Runs:
         //  - `gpu_mesh_sync` (CPU→GPU mesh upload, replaces former proj.sync_all)
         //  - any other PreExtract DataSystem registered by users.
         // RenderFlow + UiFlow then run inside the scheduler's Substrate Pass
         // and publish their views into the LaneBus.
-        substrate::run_data_systems(gw.inner_world_mut(), &self.runtime, TickPhase::PreExtract);
+        substrate::run_data_systems(
+            gw.inner_world_mut(),
+            &self.runtime,
+            &mut deck,
+            TickPhase::PreExtract,
+        );
     }
 
     /// Stage 3 — acquire the swapchain via `RenderSystem::begin_frame` and

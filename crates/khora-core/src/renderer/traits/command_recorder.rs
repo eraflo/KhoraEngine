@@ -163,7 +163,12 @@ pub trait CommandEncoder {
     ///
     /// This method consumes the encoder. The returned [`CommandBufferId`] can then
     /// be submitted to the [`GraphicsDevice`]'s command queue.
-    fn finish(self: Box<Self>) -> CommandBufferId;
+    ///
+    /// Returns `None` when the underlying backend's pending-buffer registry
+    /// is unrecoverable (e.g. a poisoned mutex from a prior panic). Callers
+    /// MUST treat `None` as a backend failure and skip the corresponding
+    /// submission rather than crashing the frame loop.
+    fn finish(self: Box<Self>) -> Option<CommandBufferId>;
 
     /// Returns a mutable reference to the underlying trait object as `Any`.
     fn as_any_mut(&mut self) -> &mut dyn Any;

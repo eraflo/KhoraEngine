@@ -21,13 +21,14 @@
 
 use std::sync::Arc;
 
+use khora_core::lane::OutputDeck;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 
 use crate::ecs::{DataSystemRegistration, TickPhase, World};
 use crate::ProjectionRegistry;
 
-fn gpu_mesh_sync_system(world: &mut World, runtime: &Runtime) {
+fn gpu_mesh_sync_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
     let Some(proj) = runtime.resources.get::<ProjectionRegistry>() else {
         return;
     };

@@ -32,6 +32,7 @@ pub mod flow_runner;
 pub use flow_runner::run_flows;
 
 use khora_core::graph::topological_sort;
+use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 use std::collections::HashMap;
@@ -40,10 +41,20 @@ use std::collections::HashMap;
 /// stable order: topological by `runs_after`, then by `order_hint`, then by
 /// `name` for full determinism.
 ///
+/// `deck` is the per-tick typed [`OutputDeck`] the lanes wrote into during
+/// the CLAD descent. `Maintenance`-phase systems drain typed writeback
+/// slots from it (`deck.take::<MyWriteback>()`) and apply the results to
+/// ECS components. Pre-scheduler phases pass a transient empty deck.
+///
 /// On a cycle in `runs_after` the function logs an error and falls back to
 /// the `(order_hint, name)` ordering — execution still happens, just not in
 /// DAG order. Validating cycles at registration time is a future improvement.
-pub fn run_data_systems(world: &mut World, runtime: &Runtime, phase: TickPhase) {
+pub fn run_data_systems(
+    world: &mut World,
+    runtime: &Runtime,
+    deck: &mut OutputDeck,
+    phase: TickPhase,
+) {
     let mut systems: Vec<&'static DataSystemRegistration> =
         inventory::iter::<DataSystemRegistration>
             .into_iter()
@@ -57,7 +68,7 @@ pub fn run_data_systems(world: &mut World, runtime: &Runtime, phase: TickPhase) 
     sort_systems(&mut systems);
 
     for sys in systems {
-        (sys.run)(world, runtime);
+        (sys.run)(world, runtime, deck);
     }
 }
 
@@ -119,13 +130,13 @@ mod tests {
         ORDER_LOG.lock().unwrap().push(name);
     }
 
-    fn sys_a(_: &mut World, _: &Runtime) {
+    fn sys_a(_: &mut World, _: &Runtime, _: &mut OutputDeck) {
         record("a");
     }
-    fn sys_b(_: &mut World, _: &Runtime) {
+    fn sys_b(_: &mut World, _: &Runtime, _: &mut OutputDeck) {
         record("b");
     }
-    fn sys_c(_: &mut World, _: &Runtime) {
+    fn sys_c(_: &mut World, _: &Runtime, _: &mut OutputDeck) {
         record("c");
     }
 
@@ -163,7 +174,8 @@ mod tests {
 
         let mut world = World::new();
         let runtime = Runtime::new();
-        run_data_systems(&mut world, &runtime, TickPhase::PreSimulation);
+        let mut deck = OutputDeck::new();
+        run_data_systems(&mut world, &runtime, &mut deck, TickPhase::PreSimulation);
 
         let log = ORDER_LOG.lock().unwrap();
         // Hard guarantee: c must come after a (declared `runs_after: ["test_a"]`).

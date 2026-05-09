@@ -355,8 +355,8 @@ impl CommandEncoder for WgpuCommandEncoder {
         }
     }
 
-    fn finish(mut self: Box<Self>) -> CommandBufferId {
-        let finished_encoder = self.encoder.take().unwrap();
+    fn finish(mut self: Box<Self>) -> Option<CommandBufferId> {
+        let finished_encoder = self.encoder.take()?;
         self.device
             .register_command_buffer(finished_encoder.finish())
     }

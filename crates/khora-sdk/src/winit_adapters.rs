@@ -184,6 +184,12 @@ impl<W: WindowProvider, A: EngineApp> WinitAppRunner<W, A> {
         // Stage 5b: present.
         self.engine.present_frame(presents);
 
+        // Stage 6: end-of-tick Maintenance (writebacks, ECS compaction,
+        // deferred cleanup). Without this, Maintenance-phase DataSystems
+        // (`audio_playback_writeback`, `physics_world_writeback`,
+        // `ecs_maintenance`) never run in the production winit flow.
+        self.engine.run_maintenance();
+
         // Wait for hot-path tasks before returning so the next frame sees a
         // settled GPU state.
         if let Some(rt) = &self.tokio_runtime {

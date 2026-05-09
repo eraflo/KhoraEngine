@@ -13,39 +13,24 @@
 // limitations under the License.
 
 //! Drains the [`AudioPlaybackWriteback`](crate::flow::AudioPlaybackWriteback)
-//! resource emitted by `SpatialMixingLane` and applies the per-source
-//! playback-state updates back to `AudioSource` components.
+//! slot the `SpatialMixingLane` wrote into during the CLAD descent and
+//! applies the per-source playback-state updates back to `AudioSource`
+//! components.
 //!
-//! Phase C parks the writeback in a `Resource` rather than a per-tick
-//! `OutputDeck` slot because the audio callback runs on a separate
-//! thread from the main game loop; the production wiring will push
-//! updates from the audio thread into this `Resource`, and the system
-//! below drains it on the main thread during `Maintenance`.
+//! This system is the canonical Lane → Deck → DataSystem writeback
+//! pattern: the lane is a pure strategy that publishes into the typed
+//! `OutputDeck`; the engine threads the same deck through to the
+//! `Maintenance`-phase `DataSystem`s; this system drains the slot and
+//! mutates the World. No subsystem-specific code lives in the engine.
 
-use std::sync::{Arc, Mutex};
-
+use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
 
 use crate::ecs::{AudioSource, DataSystemRegistration, TickPhase, World};
 use crate::flow::AudioPlaybackWriteback;
 
-/// Lock-protected sink for `AudioPlaybackUpdate`s emitted by the
-/// audio callback thread. Lives in `Resources` once the production
-/// audio path is wired through; the `audio_playback_writeback`
-/// DataSystem drains it on the main thread.
-pub type AudioPlaybackSink = Arc<Mutex<AudioPlaybackWriteback>>;
-
-fn audio_playback_writeback(world: &mut World, runtime: &Runtime) {
-    let Some(sink) = runtime.resources.get::<AudioPlaybackSink>().cloned() else {
-        return;
-    };
-    let drained = match sink.lock() {
-        Ok(mut g) => std::mem::take(&mut *g),
-        Err(e) => {
-            log::error!("audio_playback_writeback: sink mutex poisoned: {}", e);
-            return;
-        }
-    };
+fn audio_playback_writeback(world: &mut World, _runtime: &Runtime, deck: &mut OutputDeck) {
+    let drained = deck.take::<AudioPlaybackWriteback>();
     if drained.updates.is_empty() {
         return;
     }

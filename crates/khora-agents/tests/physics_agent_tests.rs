@@ -70,7 +70,12 @@ fn step_n(agent: &mut PhysicsAgent, world: &mut World, runtime: &Arc<Runtime>, n
 
         // Maintenance — physics_world_writeback pulls provider state
         // back into Transform / KCC / CollisionEvents.
-        substrate::run_data_systems(world, runtime, khora_data::ecs::TickPhase::Maintenance);
+        substrate::run_data_systems(
+            world,
+            runtime,
+            &mut deck,
+            khora_data::ecs::TickPhase::Maintenance,
+        );
     }
 }
 

@@ -75,6 +75,21 @@ pub struct PhysicsView {
     pub camera_anchor: Option<Vec3>,
 }
 
+/// Slot type written into [`OutputDeck`](khora_core::lane::OutputDeck)
+/// by `StandardPhysicsLane` after `provider.step(dt)` completes.
+///
+/// Drained in `Maintenance` by the `physics_world_writeback` DataSystem,
+/// which uses its presence to decide whether the simulation actually
+/// advanced this frame (and therefore whether to pull fresh transforms
+/// out of the provider). When the agent skips its lane (paused agent,
+/// budget exhaustion …) no `PhysicsStepResult` lands in the deck and the
+/// writeback no-ops.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PhysicsStepResult {
+    /// The simulation timestep that was advanced.
+    pub dt: f32,
+}
+
 /// AGDF-aware physics presentation Flow.
 #[derive(Default)]
 pub struct PhysicsFlow {

@@ -12,6 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//! ⚠️ **Orphan / experimental** — `NativeBroadphaseLane` and
+//! `NativeSolverLane` are NOT wired into any agent. Only
+//! [`CollisionPairsResource`] is kept live (registered eagerly in
+//! `khora-sdk::engine` so any in-flight wiring of these lanes finds the
+//! sink already present).
+//!
+//! These lanes predate the `LaneBus` / `OutputDeck` substrate and query
+//! the `World` directly (a violation of CLAD rule R2 — *Lanes consume
+//! Views, never `world.query*`*). Reviving them as the canonical native
+//! physics backend is part of the deferred P1.b / P1.c plan, which will
+//! either:
+//! 1. Migrate them to read a `BroadphaseView` / `NarrowphaseView` from
+//!    [`LaneBus`](khora_core::lane::LaneBus) and write a typed slot into
+//!    [`OutputDeck`](khora_core::lane::OutputDeck), drained by a
+//!    `Maintenance` `DataSystem`, OR
+//! 2. Delete this file entirely if Rapier remains the only physics
+//!    backend.
+//!
+//! Until that decision is made, this module is dead-code-friendly: no
+//! agent registers either lane, and the type alias above is the only
+//! cross-crate consumer.
+
+#![allow(dead_code)]
+
 use khora_core::ecs::entity::EntityId;
 use khora_core::physics::{
     ContactManifold, DynamicTree, ImpulseSolver, NarrowPhase, VelocityState,

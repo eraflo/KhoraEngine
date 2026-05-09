@@ -1435,9 +1435,18 @@ impl RenderSystem for WgpuRenderSystem {
 
         // --- 7. Finalize and Submit Commands ---
         let submission_timer = Stopwatch::new();
-        let command_buffer = command_encoder.finish();
-        device.submit_command_buffer(command_buffer);
-        let submission_ms = submission_timer.elapsed_ms().unwrap_or(0);
+        let submission_ms = match command_encoder.finish() {
+            Some(command_buffer) => {
+                device.submit_command_buffer(command_buffer);
+                submission_timer.elapsed_ms().unwrap_or(0)
+            }
+            None => {
+                log::error!(
+                    "WgpuRenderSystem: command_encoder.finish() returned None — skipping submit"
+                );
+                0
+            }
+        };
 
         if settings.enable_gpu_timestamps {
             if let Some(p) = self.gpu_profiler.as_mut() {

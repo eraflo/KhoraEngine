@@ -78,8 +78,12 @@ pub use khora_control::{Context as EngineContext, DccConfig, DccService, EngineM
 // Re-export the same Context as `DccContext` so editor code can use the
 // more descriptive name without a separate `use` line. (Same type — both
 // re-exports point at `khora_control::Context`.)
+//
+// `AgentRegistry` is exposed as a read-only telemetry surface for the
+// editor's Control Plane panel. The mutating side (`ExecutionScheduler`,
+// `BudgetChannel`, `EnginePlugin`) stays internal — the SDK is a façade
+// for game code, not for engine internals.
 pub use khora_control::registry::AgentRegistry;
-pub use khora_control::scheduler::ExecutionScheduler;
 pub use khora_control::Context as DccContext;
 
 // Core types

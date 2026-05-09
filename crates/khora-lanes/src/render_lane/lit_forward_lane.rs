@@ -130,18 +130,18 @@ pub struct LitForwardLane {
     pub max_point_lights: u32,
     /// Maximum number of spot lights supported per pass.
     pub max_spot_lights: u32,
-    /// The stored render pipeline handle.
-    pipeline: std::sync::Mutex<Option<RenderPipelineId>>,
-    /// Layout for Camera (Group 0)
-    camera_layout: std::sync::Mutex<Option<BindGroupLayoutId>>,
-    /// Layout for Model (Group 1)
-    model_layout: std::sync::Mutex<Option<BindGroupLayoutId>>,
-    /// Layout for Material (Group 2)
-    material_layout: std::sync::Mutex<Option<BindGroupLayoutId>>,
+    /// The stored render pipeline handle (lock-free init-once).
+    pipeline: std::sync::OnceLock<RenderPipelineId>,
+    /// Layout for Camera (Group 0).
+    camera_layout: std::sync::OnceLock<BindGroupLayoutId>,
+    /// Layout for Model (Group 1).
+    model_layout: std::sync::OnceLock<BindGroupLayoutId>,
+    /// Layout for Material (Group 2).
+    material_layout: std::sync::OnceLock<BindGroupLayoutId>,
     /// Layout for Lighting (Group 3) — full layout with shadow atlas + sampler for pipeline.
-    light_layout: std::sync::Mutex<Option<BindGroupLayoutId>>,
+    light_layout: std::sync::OnceLock<BindGroupLayoutId>,
     /// Layout for the lighting uniform buffer only (1 binding) — used by the ring buffer.
-    lighting_buffer_layout: std::sync::Mutex<Option<BindGroupLayoutId>>,
+    lighting_buffer_layout: std::sync::OnceLock<BindGroupLayoutId>,
     /// Persistent ring buffer for camera uniforms (eliminates per-frame allocation).
     camera_ring: std::sync::Mutex<Option<UniformRingBuffer>>,
     /// Persistent ring buffer for lighting uniforms (eliminates per-frame allocation).
@@ -155,12 +155,12 @@ impl Default for LitForwardLane {
             max_directional_lights: 4,
             max_point_lights: 16,
             max_spot_lights: 8,
-            pipeline: std::sync::Mutex::new(None),
-            camera_layout: std::sync::Mutex::new(None),
-            model_layout: std::sync::Mutex::new(None),
-            material_layout: std::sync::Mutex::new(None),
-            light_layout: std::sync::Mutex::new(None),
-            lighting_buffer_layout: std::sync::Mutex::new(None),
+            pipeline: std::sync::OnceLock::new(),
+            camera_layout: std::sync::OnceLock::new(),
+            model_layout: std::sync::OnceLock::new(),
+            material_layout: std::sync::OnceLock::new(),
+            light_layout: std::sync::OnceLock::new(),
+            lighting_buffer_layout: std::sync::OnceLock::new(),
             camera_ring: std::sync::Mutex::new(None),
             lighting_ring: std::sync::Mutex::new(None),
         }
@@ -337,12 +337,10 @@ impl LitForwardLane {
         &self,
         _material: Option<&khora_core::asset::AssetHandle<Box<dyn Material>>>,
     ) -> RenderPipelineId {
-        // Return the stored pipeline. Fallback to pipeline 0 if on_gpu_init hasn't run yet
-        // or if the lock is poisoned.
+        // Lock-free read — `OnceLock` initialized in `on_gpu_init`.
         self.pipeline
-            .lock()
-            .ok()
-            .and_then(|g| *g)
+            .get()
+            .copied()
             .unwrap_or(RenderPipelineId(0))
     }
 
@@ -548,12 +546,12 @@ impl LitForwardLane {
         let gpu_mesh_assets =
             crate::lock_or_log!(gpu_meshes.read(), "LitForwardLane::render gpu_meshes");
 
-        // Pipeline binding logic moved before render pass to avoid issues
+        // Pipeline binding logic moved before render pass to avoid issues.
+        // Lock-free read via OnceLock; falls back to id 0 if not initialized.
         let pipeline_id = self
             .pipeline
-            .lock()
-            .ok()
-            .and_then(|g| *g)
+            .get()
+            .copied()
             .unwrap_or(RenderPipelineId(0));
 
         // Prepare Draw Commands
@@ -626,12 +624,9 @@ impl LitForwardLane {
                     Err(_) => continue,
                 };
 
-                // Create Bind Groups 1 & 2
+                // Create Bind Groups 1 & 2 — lock-free reads via OnceLock.
                 let mut model_bg = None;
-                if let Some(layout) = *crate::lock_or_log!(
-                    self.model_layout.lock(),
-                    "LitForwardLane::render model_layout"
-                ) {
+                if let Some(layout) = self.model_layout.get().copied() {
                     if let Ok(bg) = device.create_bind_group(&BindGroupDescriptor {
                         label: None,
                         layout,
@@ -651,10 +646,7 @@ impl LitForwardLane {
                 }
 
                 let mut material_bg = None;
-                if let Some(layout) = *crate::lock_or_log!(
-                    self.material_layout.lock(),
-                    "LitForwardLane::render material_layout"
-                ) {
+                if let Some(layout) = self.material_layout.get().copied() {
                     if let Ok(bg) = device.create_bind_group(&BindGroupDescriptor {
                         label: None,
                         layout,
@@ -717,10 +709,7 @@ impl LitForwardLane {
         // Build Lighting Bind Group with Shadow Atlas
         // The pipeline's group 3 layout expects 3 bindings: uniform buffer + shadow atlas + shadow sampler.
         // All 3 must be present for the bind group to be valid.
-        let final_lighting_bind_group = if let Some(layout) = *crate::lock_or_log!(
-            self.light_layout.lock(),
-            "LitForwardLane::render light_layout"
-        ) {
+        let final_lighting_bind_group = if let Some(layout) = self.light_layout.get().copied() {
             match (render_ctx.shadow_atlas, render_ctx.shadow_sampler) {
                 (Some(atlas), Some(sampler)) => {
                     let entries = [
@@ -1005,14 +994,12 @@ impl LitForwardLane {
         let pipeline_layout_ids = vec![camera_layout, model_layout, material_layout, light_layout];
         // Store bind group layouts for creating bind groups during rendering.
         use crate::render_lane::util::lock::mutex_lock_render;
-        *mutex_lock_render(&self.camera_layout, "LitForward init.camera_layout")? =
-            Some(camera_layout);
-        *mutex_lock_render(&self.model_layout, "LitForward init.model_layout")? =
-            Some(model_layout);
-        *mutex_lock_render(&self.material_layout, "LitForward init.material_layout")? =
-            Some(material_layout);
-        *mutex_lock_render(&self.light_layout, "LitForward init.light_layout")? =
-            Some(light_layout);
+        // Init-once writes — `set` is lock-free; second call returns Err
+        // which we ignore (re-init is a logic bug, not a runtime fault).
+        let _ = self.camera_layout.set(camera_layout);
+        let _ = self.model_layout.set(model_layout);
+        let _ = self.material_layout.set(material_layout);
+        let _ = self.light_layout.set(light_layout);
 
         // Create the pipeline layout from our bind group layouts.
         let pipeline_layout_desc = khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
@@ -1064,8 +1051,7 @@ impl LitForwardLane {
             .create_render_pipeline(&pipeline_desc)
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        let mut pipeline_lock = mutex_lock_render(&self.pipeline, "LitForward init.pipeline")?;
-        *pipeline_lock = Some(pipeline_id);
+        let _ = self.pipeline.set(pipeline_id);
 
         // 4. Create Persistent Ring Buffers for camera and lighting uniforms.
         // This eliminates per-frame buffer allocation in the render hot path.
@@ -1097,10 +1083,7 @@ impl LitForwardLane {
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *mutex_lock_render(
-            &self.lighting_buffer_layout,
-            "LitForward init.lighting_buffer_layout",
-        )? = Some(lighting_buffer_layout);
+        let _ = self.lighting_buffer_layout.set(lighting_buffer_layout);
 
         let lighting_ring = UniformRingBuffer::new(
             device,
@@ -1136,27 +1119,24 @@ impl LitForwardLane {
             ring.destroy(device);
         }
 
-        if let Some(id) = self.pipeline.lock().ok().and_then(|mut g| g.take()) {
+        // OnceLock-backed handles: lock-free read of the IDs (which are
+        // `Copy` newtypes) is enough for shutdown-time destruction.
+        if let Some(id) = self.pipeline.get().copied() {
             let _ = device.destroy_render_pipeline(id);
         }
-        if let Some(id) = self.camera_layout.lock().ok().and_then(|mut g| g.take()) {
+        if let Some(id) = self.camera_layout.get().copied() {
             let _ = device.destroy_bind_group_layout(id);
         }
-        if let Some(id) = self.model_layout.lock().ok().and_then(|mut g| g.take()) {
+        if let Some(id) = self.model_layout.get().copied() {
             let _ = device.destroy_bind_group_layout(id);
         }
-        if let Some(id) = self.material_layout.lock().ok().and_then(|mut g| g.take()) {
+        if let Some(id) = self.material_layout.get().copied() {
             let _ = device.destroy_bind_group_layout(id);
         }
-        if let Some(id) = self.light_layout.lock().ok().and_then(|mut g| g.take()) {
+        if let Some(id) = self.light_layout.get().copied() {
             let _ = device.destroy_bind_group_layout(id);
         }
-        if let Some(id) = self
-            .lighting_buffer_layout
-            .lock()
-            .ok()
-            .and_then(|mut g| g.take())
-        {
+        if let Some(id) = self.lighting_buffer_layout.get().copied() {
             let _ = device.destroy_bind_group_layout(id);
         }
     }

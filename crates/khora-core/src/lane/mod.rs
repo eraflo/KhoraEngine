@@ -70,9 +70,13 @@ use std::fmt;
 pub mod bus;
 pub mod context_keys;
 pub mod deck;
+pub mod lock;
 pub use bus::LaneBus;
 pub use context_keys::*;
 pub use deck::OutputDeck;
+pub use lock::{
+    mutex_lock, mutex_lock_render, read_lock, read_lock_render, write_lock, write_lock_render,
+};
 
 /// Error type for lane operations.
 #[derive(Debug)]

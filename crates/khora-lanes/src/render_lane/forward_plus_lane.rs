@@ -404,12 +404,15 @@ impl ForwardPlusLane {
         &self,
         _material: Option<&khora_core::asset::AssetHandle<Box<dyn Material>>>,
     ) -> RenderPipelineId {
-        // Return the stored pipeline. Fallback to pipeline 0 if on_gpu_init hasn't run yet.
-        self.gpu_resources
-            .lock()
-            .unwrap()
-            .render_pipeline
-            .unwrap_or(RenderPipelineId(0))
+        // Return the stored pipeline. Fallback to pipeline 0 if on_gpu_init
+        // hasn't run yet OR if the mutex is poisoned (degraded rendering
+        // rather than crashing the frame loop — R7).
+        let resources = crate::lock_or_log!(
+            self.gpu_resources.lock(),
+            "ForwardPlusLane::get_pipeline_for_material",
+            RenderPipelineId(0)
+        );
+        resources.render_pipeline.unwrap_or(RenderPipelineId(0))
     }
 
     fn render(

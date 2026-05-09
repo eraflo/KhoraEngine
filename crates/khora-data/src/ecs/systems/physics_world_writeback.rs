@@ -24,6 +24,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_core::ecs::entity::EntityId;
+use khora_core::lane::OutputDeck;
 use khora_core::physics::{CharacterControllerOptions, PhysicsProvider};
 use khora_core::Runtime;
 
@@ -31,8 +32,18 @@ use crate::ecs::{
     Collider, CollisionEvents, DataSystemRegistration, KinematicCharacterController, RigidBody,
     TickPhase, Transform, World,
 };
+use crate::flow::PhysicsStepResult;
 
-fn physics_world_writeback(world: &mut World, runtime: &Runtime) {
+fn physics_world_writeback(world: &mut World, runtime: &Runtime, deck: &mut OutputDeck) {
+    // Only writeback if the physics lane actually advanced the simulation
+    // this frame (it publishes a `PhysicsStepResult` slot when it ran).
+    // When the agent is paused, throttled, or the lane was skipped for
+    // any reason, we don't want to pull stale provider state.
+    if !deck.contains::<PhysicsStepResult>() {
+        return;
+    }
+    let _step = deck.take::<PhysicsStepResult>();
+
     let Some(provider_arc) = runtime
         .backends
         .get::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()

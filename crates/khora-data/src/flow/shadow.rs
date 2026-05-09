@@ -82,6 +82,16 @@ impl Flow for ShadowFlow {
                 continue;
             }
 
+            // Point lights would need a cubemap (6 view-proj matrices per
+            // light, sampled with a `texture_cube` lookup in lit shaders).
+            // That pipeline isn't built yet, so we deliberately skip point
+            // lights here rather than emit an identity matrix that would
+            // produce undefined shadow sampling. Tracked in the audit as
+            // P2.a — cubemap shadows.
+            if matches!(light.light_type, LightType::Point(_)) {
+                continue;
+            }
+
             let Some(camera) = camera_view.as_ref() else {
                 continue;
             };
@@ -90,7 +100,7 @@ impl Flow for ShadowFlow {
             let direction = match &light.light_type {
                 LightType::Directional(d) => transform.0.rotation() * d.direction,
                 LightType::Spot(s) => transform.0.rotation() * s.direction,
-                LightType::Point(_) => Vec3::ZERO,
+                LightType::Point(_) => unreachable!("filtered above"),
             };
 
             let view_proj =
@@ -128,7 +138,12 @@ fn compute_shadow_view_proj(
             let proj = Mat4::perspective_rh_zo(sl.outer_cone_angle * 2.0, 1.0, 0.1, sl.range);
             proj * view
         }
-        LightType::Point(_) => Mat4::IDENTITY, // TODO: cubemap
+        // Point lights are filtered out before reaching this function
+        // (cubemap shadows not yet wired); see the call site in `project`.
+        LightType::Point(_) => unreachable!(
+            "point lights are filtered out in ShadowFlow::project — \
+             cubemap shadows are not yet wired"
+        ),
     }
 }
 

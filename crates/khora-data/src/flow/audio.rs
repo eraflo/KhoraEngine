@@ -27,6 +27,9 @@
 //! phase) drains the writeback slot the lane wrote into and applies the
 //! new playback states back to the `AudioSource` components.
 
+use std::collections::HashMap;
+
+use khora_core::control::gorna::ResourceBudget;
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::affine_transform::AffineTransform;
 use khora_core::math::Vec3;
@@ -37,6 +40,17 @@ use crate::ecs::{AudioListener, AudioSource, GlobalTransform, PlaybackState, Sem
 use crate::flow::{Flow, Selection};
 use crate::register_flow;
 use khora_core::asset::AssetHandle;
+
+/// Distance beyond which an `AudioSource` is detached from the World.
+/// At this distance the source contributes essentially nothing to the
+/// final mix, so processing it wastes CPU. Mirrors the AGDF pattern in
+/// [`super::physics::PhysicsFlow`].
+const AUDIO_DETACH_RADIUS: f32 = 100.0;
+
+/// Distance below which a previously-stashed `AudioSource` is restored.
+/// Smaller than [`AUDIO_DETACH_RADIUS`] to provide hysteresis (avoids
+/// thrashing when an entity oscillates around the boundary).
+const AUDIO_REATTACH_RADIUS: f32 = 80.0;
 
 /// Per-source snapshot fed to `SpatialMixingLane::mix`.
 #[derive(Debug, Clone)]
@@ -98,13 +112,75 @@ pub struct AudioView {
 
 /// Audio domain Flow.
 #[derive(Default)]
-pub struct AudioFlow;
+pub struct AudioFlow {
+    /// Stashed `AudioSource` components, keyed by entity. Restored when
+    /// the entity comes back inside [`AUDIO_REATTACH_RADIUS`] of the
+    /// listener.
+    stash: HashMap<EntityId, AudioSource>,
+}
 
 impl Flow for AudioFlow {
     type View = AudioView;
 
     const DOMAIN: SemanticDomain = SemanticDomain::Audio;
     const NAME: &'static str = "audio";
+
+    fn adapt(
+        &mut self,
+        world: &mut World,
+        _sel: &Selection,
+        _budget: &ResourceBudget,
+        _runtime: &Runtime,
+    ) {
+        // AGDF: gate `AudioSource` by listener distance. Sources further
+        // than [`AUDIO_DETACH_RADIUS`] from the active listener are
+        // detached and stashed; they are reattached once they re-enter
+        // [`AUDIO_REATTACH_RADIUS`]. Mirrors the pattern in
+        // [`super::physics::PhysicsFlow`] — see that module for context.
+        let Some(anchor) = active_listener_position(world) else {
+            return;
+        };
+
+        // Pass 1 — detach.
+        let mut to_detach: Vec<(EntityId, AudioSource)> = Vec::new();
+        for (entity, transform, src) in
+            world.query::<(EntityId, &GlobalTransform, &AudioSource)>()
+        {
+            if (transform.0.translation() - anchor).length() > AUDIO_DETACH_RADIUS {
+                to_detach.push((entity, src.clone()));
+            }
+        }
+        for (entity, snapshot) in to_detach {
+            self.stash.insert(entity, snapshot);
+            let _ = world.remove_component::<AudioSource>(entity);
+        }
+
+        // Pass 2 — reattach.
+        let restorable: Vec<EntityId> = self
+            .stash
+            .keys()
+            .copied()
+            .filter(|e| {
+                world
+                    .get::<GlobalTransform>(*e)
+                    .map(|t| (t.0.translation() - anchor).length() < AUDIO_REATTACH_RADIUS)
+                    .unwrap_or(false)
+            })
+            .collect();
+        for entity in restorable {
+            if let Some(src) = self.stash.remove(&entity) {
+                let snapshot = src.clone();
+                if let Err(e) = world.add_component(entity, src) {
+                    log::warn!(
+                        "AudioFlow: failed to reattach AudioSource to {:?}: {:?}",
+                        entity,
+                        e
+                    );
+                    self.stash.insert(entity, snapshot);
+                }
+            }
+        }
+    }
 
     fn project(&self, world: &World, _sel: &Selection, _runtime: &Runtime) -> Self::View {
         let source_count = world.query::<&AudioSource>().count();
@@ -151,3 +227,10 @@ impl Flow for AudioFlow {
 }
 
 register_flow!(AudioFlow);
+
+fn active_listener_position(world: &World) -> Option<Vec3> {
+    world
+        .query::<(&AudioListener, &GlobalTransform)>()
+        .next()
+        .map(|(_, t)| t.0.translation())
+}

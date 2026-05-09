@@ -44,7 +44,7 @@ use khora_core::{
 };
 use khora_data::assets::Assets;
 use khora_data::render::RenderWorld;
-use std::sync::RwLock;
+use std::sync::{OnceLock, RwLock};
 
 /// A lane that implements a simple, unlit forward rendering strategy.
 ///
@@ -58,17 +58,22 @@ use std::sync::RwLock;
 /// - **Minimal state changes** (one pipeline bind per material, ideally)
 /// - **Suitable for**: High frame rates, simple scenes, or as a debug/fallback renderer
 pub struct SimpleUnlitLane {
-    pipeline: std::sync::Mutex<Option<RenderPipelineId>>,
-    camera_layout: std::sync::Mutex<Option<khora_core::renderer::api::command::BindGroupLayoutId>>,
-    model_layout: std::sync::Mutex<Option<khora_core::renderer::api::command::BindGroupLayoutId>>,
+    // Init-once handles (set in `on_initialize`, read every frame).
+    // `OnceLock` gives lock-free reads after the one-time write — no
+    // per-frame Mutex contention on the hot path.
+    pipeline: OnceLock<RenderPipelineId>,
+    camera_layout: OnceLock<khora_core::renderer::api::command::BindGroupLayoutId>,
+    model_layout: OnceLock<khora_core::renderer::api::command::BindGroupLayoutId>,
+    material_layout: OnceLock<khora_core::renderer::api::command::BindGroupLayoutId>,
+
+    // Per-frame mutated ring buffers — `Mutex` is required for exclusive
+    // access during `advance` / `write` / `push`.
     camera_ring: std::sync::Mutex<
         Option<khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer>,
     >,
     model_ring: std::sync::Mutex<
         Option<khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer>,
     >,
-    material_layout:
-        std::sync::Mutex<Option<khora_core::renderer::api::command::BindGroupLayoutId>>,
     material_ring: std::sync::Mutex<
         Option<khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer>,
     >,
@@ -84,12 +89,12 @@ impl SimpleUnlitLane {
     /// Creates a new `SimpleUnlitLane`.
     pub fn new() -> Self {
         Self {
-            pipeline: std::sync::Mutex::new(None),
-            camera_layout: std::sync::Mutex::new(None),
-            model_layout: std::sync::Mutex::new(None),
+            pipeline: OnceLock::new(),
+            camera_layout: OnceLock::new(),
+            model_layout: OnceLock::new(),
+            material_layout: OnceLock::new(),
             camera_ring: std::sync::Mutex::new(None),
             model_ring: std::sync::Mutex::new(None),
-            material_layout: std::sync::Mutex::new(None),
             material_ring: std::sync::Mutex::new(None),
         }
     }
@@ -216,11 +221,11 @@ impl SimpleUnlitLane {
         &self,
         _material: Option<&khora_core::asset::AssetHandle<Box<dyn Material>>>,
     ) -> RenderPipelineId {
-        // Return the stored pipeline, or 0 if not initialized / lock poisoned.
+        // Lock-free read — `OnceLock::get()` returns a borrow without
+        // any synchronization once the cell has been initialized.
         self.pipeline
-            .lock()
-            .ok()
-            .and_then(|g| *g)
+            .get()
+            .copied()
             .unwrap_or(RenderPipelineId(0))
     }
 
@@ -564,18 +569,12 @@ impl SimpleUnlitLane {
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *crate::render_lane::util::lock::mutex_lock_render(
-            &self.camera_layout,
-            "SimpleUnlit init.camera_layout",
-        )? = Some(camera_layout);
-        *crate::render_lane::util::lock::mutex_lock_render(
-            &self.model_layout,
-            "SimpleUnlit init.model_layout",
-        )? = Some(model_layout);
-        *crate::render_lane::util::lock::mutex_lock_render(
-            &self.material_layout,
-            "SimpleUnlit init.material_layout",
-        )? = Some(material_layout);
+        // Init-once writes — `set` returns Err if already initialized,
+        // which we ignore: a second `on_initialize` is a logic bug
+        // upstream, not a runtime failure.
+        let _ = self.camera_layout.set(camera_layout);
+        let _ = self.model_layout.set(model_layout);
+        let _ = self.material_layout.set(material_layout);
 
         // 2. Create Shader Module
         let shader_src = UNLIT_WGSL.to_string();
@@ -666,9 +665,7 @@ impl SimpleUnlitLane {
             .create_render_pipeline(&pipeline_desc)
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        let mut pipeline_lock =
-            crate::render_lane::util::lock::mutex_lock_render(&self.pipeline, "SimpleUnlit init.pipeline")?;
-        *pipeline_lock = Some(pipeline_id);
+        let _ = self.pipeline.set(pipeline_id);
 
         let camera_ring = UniformRingBuffer::new(
             device,
@@ -741,7 +738,9 @@ impl SimpleUnlitLane {
         {
             ring.destroy(device);
         }
-        if let Some(id) = self.pipeline.lock().ok().and_then(|mut g| g.take()) {
+        // `OnceLock::get()` is lock-free; the pipeline is only destroyed
+        // once on shutdown so the `Copy` of the ID is enough.
+        if let Some(id) = self.pipeline.get().copied() {
             let _ = device.destroy_render_pipeline(id);
         }
     }

@@ -58,7 +58,7 @@ impl khora_core::lane::Lane for StandardPhysicsLane {
         &self,
         ctx: &mut khora_core::lane::LaneContext,
     ) -> Result<(), khora_core::lane::LaneError> {
-        use khora_core::lane::{LaneError, Slot};
+        use khora_core::lane::{LaneError, OutputDeck, Slot};
 
         let dt = ctx
             .get::<khora_core::lane::PhysicsDeltaTime>()
@@ -70,6 +70,18 @@ impl khora_core::lane::Lane for StandardPhysicsLane {
             .get();
 
         provider.step(dt);
+
+        // Mark the simulation as having advanced this frame. The
+        // `physics_world_writeback` DataSystem checks this slot and only
+        // pulls fresh transforms from the provider when it's present —
+        // unifying the Lane → Deck → DataSystem pattern across audio and
+        // physics, and avoiding stale writebacks when the agent is paused.
+        if let Some(deck_slot) = ctx.get::<Slot<OutputDeck>>() {
+            *deck_slot
+                .get()
+                .slot::<khora_data::flow::PhysicsStepResult>() =
+                khora_data::flow::PhysicsStepResult { dt };
+        }
         Ok(())
     }
 

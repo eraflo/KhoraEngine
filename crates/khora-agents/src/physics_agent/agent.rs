@@ -184,6 +184,10 @@ impl Agent for PhysicsAgent {
         ctx.insert(PhysicsDeltaTime(self.fixed_timestep));
         ctx.insert(Slot::new(world));
         ctx.insert(Slot::new(provider_guard.as_mut()));
+        // Forward the per-frame `OutputDeck` so the lane can publish a
+        // `PhysicsStepResult` marker that `physics_world_writeback` reads
+        // during Maintenance.
+        ctx.insert(Slot::new(&mut *context.deck));
 
         // Both strategies dispatch the same lane today; LowPower simply
         // tightens the fixed_timestep via apply_budget. A future

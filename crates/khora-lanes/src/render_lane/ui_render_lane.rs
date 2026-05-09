@@ -16,7 +16,7 @@
 
 use std::any::Any;
 use std::borrow::Cow;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, OnceLock};
 
 use crate::render_lane::shaders::UI_WGSL;
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, Ref, Slot};
@@ -53,25 +53,31 @@ struct UiInstanceData {
 }
 
 /// A lane designed for high-performance UI rendering using instancing.
+///
+/// All GPU handles are initialised exactly once in `init_gpu_resources`
+/// and only read on subsequent frames, so each is held in a [`OnceLock`]
+/// for lock-free hot-path reads (the underlying buffer/texture *contents*
+/// are mutated per-frame at the GPU level — only the abstract IDs are
+/// stored here).
 pub struct UiRenderLane {
     /// The UI render pipeline.
-    pipeline: Mutex<Option<RenderPipelineId>>,
+    pipeline: OnceLock<RenderPipelineId>,
     /// Layout for the UI global uniform buffer (projection matrix).
-    global_layout: Mutex<Option<BindGroupLayoutId>>,
+    global_layout: OnceLock<BindGroupLayoutId>,
     /// Layout for the instance data storage buffer.
-    instance_layout: Mutex<Option<BindGroupLayoutId>>,
+    instance_layout: OnceLock<BindGroupLayoutId>,
     /// The projection matrix buffer.
-    projection_buffer: Mutex<Option<BufferId>>,
+    projection_buffer: OnceLock<BufferId>,
     /// The instance data buffer.
-    instance_buffer: Mutex<Option<BufferId>>,
+    instance_buffer: OnceLock<BufferId>,
     /// The global bind group (set 0).
-    global_bind_group: Mutex<Option<BindGroupId>>,
+    global_bind_group: OnceLock<BindGroupId>,
     /// The instance bind group (set 1).
-    instance_bind_group: Mutex<Option<BindGroupId>>,
+    instance_bind_group: OnceLock<BindGroupId>,
     /// Layout for the atlas texture and sampler (set 2).
-    atlas_layout: Mutex<Option<BindGroupLayoutId>>,
+    atlas_layout: OnceLock<BindGroupLayoutId>,
     /// Fixed sampler for UI textures.
-    sampler: Mutex<Option<khora_core::renderer::api::resource::SamplerId>>,
+    sampler: OnceLock<khora_core::renderer::api::resource::SamplerId>,
     /// Maximum number of UI elements supported in a single batch.
     max_instances: usize,
 }
@@ -79,15 +85,15 @@ pub struct UiRenderLane {
 impl Default for UiRenderLane {
     fn default() -> Self {
         Self {
-            pipeline: Mutex::new(None),
-            global_layout: Mutex::new(None),
-            instance_layout: Mutex::new(None),
-            projection_buffer: Mutex::new(None),
-            instance_buffer: Mutex::new(None),
-            global_bind_group: Mutex::new(None),
-            instance_bind_group: Mutex::new(None),
-            atlas_layout: Mutex::new(None),
-            sampler: Mutex::new(None),
+            pipeline: OnceLock::new(),
+            global_layout: OnceLock::new(),
+            instance_layout: OnceLock::new(),
+            projection_buffer: OnceLock::new(),
+            instance_buffer: OnceLock::new(),
+            global_bind_group: OnceLock::new(),
+            instance_bind_group: OnceLock::new(),
+            atlas_layout: OnceLock::new(),
+            sampler: OnceLock::new(),
             max_instances: 1024,
         }
     }
@@ -261,21 +267,16 @@ impl UiRenderLane {
             })
             .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
 
-        // Store resources.
-        use crate::render_lane::util::lock::mutex_lock;
-        *mutex_lock(&self.pipeline, "UiRenderLane init.pipeline")? = Some(pipeline_id);
-        *mutex_lock(&self.global_layout, "UiRenderLane init.global_layout")? = Some(global_layout);
-        *mutex_lock(&self.instance_layout, "UiRenderLane init.instance_layout")? =
-            Some(instance_layout);
-        *mutex_lock(&self.projection_buffer, "UiRenderLane init.projection_buffer")? =
-            Some(projection_buffer);
-        *mutex_lock(&self.instance_buffer, "UiRenderLane init.instance_buffer")? =
-            Some(instance_buffer);
-        *mutex_lock(&self.global_bind_group, "UiRenderLane init.global_bind_group")? =
-            Some(global_bind_group);
-        *mutex_lock(&self.instance_bind_group, "UiRenderLane init.instance_bind_group")? =
-            Some(instance_bind_group);
-        *mutex_lock(&self.atlas_layout, "UiRenderLane init.atlas_layout")? = Some(atlas_layout);
+        // Store resources — init-once writes via OnceLock; second `set`
+        // would Err but `init_gpu_resources` is only called once.
+        let _ = self.pipeline.set(pipeline_id);
+        let _ = self.global_layout.set(global_layout);
+        let _ = self.instance_layout.set(instance_layout);
+        let _ = self.projection_buffer.set(projection_buffer);
+        let _ = self.instance_buffer.set(instance_buffer);
+        let _ = self.global_bind_group.set(global_bind_group);
+        let _ = self.instance_bind_group.set(instance_bind_group);
+        let _ = self.atlas_layout.set(atlas_layout);
 
         let sampler = device
             .create_sampler(&khora_core::renderer::api::resource::SamplerDescriptor {
@@ -293,7 +294,7 @@ impl UiRenderLane {
                 border_color: None,
             })
             .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-        *mutex_lock(&self.sampler, "UiRenderLane init.sampler")? = Some(sampler);
+        let _ = self.sampler.set(sampler);
 
         Ok(())
     }
@@ -321,7 +322,6 @@ impl Lane for UiRenderLane {
     }
 
     fn execute(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
-        use crate::render_lane::util::lock::mutex_lock;
         let device = ctx
             .get::<Arc<dyn GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?;
@@ -346,7 +346,7 @@ impl Lane for UiRenderLane {
         let (width, height) = ui_scene.surface_size;
         let projection = Mat4::orthographic_rh_zo(0.0, width as f32, height as f32, 0.0, 0.0, 1.0);
 
-        if let Some(buffer_id) = *mutex_lock(&self.projection_buffer, "UiRenderLane.projection_buffer")? {
+        if let Some(buffer_id) = self.projection_buffer.get().copied() {
             device
                 .write_buffer(buffer_id, 0, bytemuck::bytes_of(&projection))
                 .map_err(|e| LaneError::ExecutionFailed(Box::new(e)))?;
@@ -395,7 +395,7 @@ impl Lane for UiRenderLane {
         }
 
         // 3. Upload Instance Data
-        if let Some(buffer_id) = *mutex_lock(&self.instance_buffer, "UiRenderLane.instance_buffer")? {
+        if let Some(buffer_id) = self.instance_buffer.get().copied() {
             device
                 .write_buffer(buffer_id, 0, bytemuck::cast_slice(&instances))
                 .map_err(|e| LaneError::ExecutionFailed(Box::new(e)))?;
@@ -406,8 +406,8 @@ impl Lane for UiRenderLane {
         if let Some(atlas_slot) = ctx.get::<Slot<khora_core::renderer::api::util::TextureAtlas>>() {
             let atlas = atlas_slot.get();
             if let (Some(layout), Some(sampler)) = (
-                *mutex_lock(&self.atlas_layout, "UiRenderLane.atlas_layout")?,
-                *mutex_lock(&self.sampler, "UiRenderLane.sampler")?,
+                self.atlas_layout.get().copied(),
+                self.sampler.get().copied(),
             ) {
                 let bg = device
                     .create_bind_group(&BindGroupDescriptor {
@@ -431,12 +431,12 @@ impl Lane for UiRenderLane {
             }
         }
 
-        // 5. Render Pass
-        let pipeline = mutex_lock(&self.pipeline, "UiRenderLane.pipeline")?;
-        let global_bg = mutex_lock(&self.global_bind_group, "UiRenderLane.global_bg")?;
-        let instance_bg = mutex_lock(&self.instance_bind_group, "UiRenderLane.instance_bg")?;
-
-        if let (Some(pipeline_id), Some(g_bg), Some(i_bg)) = (*pipeline, *global_bg, *instance_bg) {
+        // 5. Render Pass — lock-free reads via OnceLock.
+        if let (Some(pipeline_id), Some(g_bg), Some(i_bg)) = (
+            self.pipeline.get().copied(),
+            self.global_bind_group.get().copied(),
+            self.instance_bind_group.get().copied(),
+        ) {
             let color_attachment = RenderPassColorAttachment {
                 view: &color_target,
                 resolve_target: None,

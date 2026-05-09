@@ -65,7 +65,6 @@ struct RuntimeConfig {
     /// Build preset label written by the editor (debug/release/shipping).
     /// Optional for older runtime.json files. Used for diagnostics.
     #[serde(default)]
-    #[allow(dead_code)]
     preset: Option<String>,
     /// When `true`, the runtime hashes each loaded asset against
     /// `manifest.bin` and aborts on mismatch. Defaults to `false` so
@@ -88,10 +87,11 @@ impl RuntimeConfig {
             Ok(text) => match serde_json::from_str::<RuntimeConfig>(&text) {
                 Ok(cfg) => {
                     log::info!(
-                        "khora-sdk run_default: loaded {} (project='{}', scene='{}')",
+                        "khora-sdk run_default: loaded {} (project='{}', scene='{}', preset={})",
                         path.display(),
                         cfg.project_name,
-                        cfg.default_scene
+                        cfg.default_scene,
+                        cfg.preset.as_deref().unwrap_or("<unspecified>")
                     );
                     cfg
                 }

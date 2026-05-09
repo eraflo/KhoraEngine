@@ -49,6 +49,7 @@
 //! See [`TickPhase`] for the available phases and their intended use.
 
 use crate::ecs::World;
+use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
 
 /// Tick phases at which [`DataSystem`]s are dispatched.
@@ -88,12 +89,17 @@ pub struct DataSystemRegistration {
     pub name: &'static str,
     /// Phase this system belongs to.
     pub phase: TickPhase,
-    /// The function to invoke on `(&mut World, &Runtime)`. The `Runtime`
-    /// bundle lets a system fetch typed services / backends / resources
-    /// it needs (e.g. `EcsMaintenance` for compaction, `GraphicsDevice`
-    /// for GPU uploads). Systems that need neither just ignore the second
-    /// arg.
-    pub run: fn(&mut World, &Runtime),
+    /// The function to invoke on `(&mut World, &Runtime, &mut OutputDeck)`.
+    ///
+    /// - The `Runtime` bundle lets a system fetch typed services / backends /
+    ///   resources it needs (`EcsMaintenance`, `GraphicsDevice`, …).
+    /// - The `OutputDeck` is the per-tick typed deck the lanes wrote into
+    ///   during the CLAD descent. `Maintenance`-phase systems use
+    ///   `deck.take::<MyWriteback>()` to drain typed writeback slots and
+    ///   apply them to ECS components. Pre-scheduler phases receive an
+    ///   empty (transient) deck — systems that don't need it just ignore
+    ///   the third arg.
+    pub run: fn(&mut World, &Runtime, &mut OutputDeck),
     /// Tie-breaker used to order systems within a phase when no explicit
     /// `runs_after` ordering applies. Lower runs first. Default `0`.
     pub order_hint: i32,

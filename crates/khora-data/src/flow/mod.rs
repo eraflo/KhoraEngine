@@ -48,7 +48,7 @@ pub mod ui;
 pub use audio::{
     AudioFlow, AudioPlaybackUpdate, AudioPlaybackWriteback, AudioSourceSnapshot, AudioView,
 };
-pub use physics::{PhysicsFlow, PhysicsView};
+pub use physics::{PhysicsFlow, PhysicsStepResult, PhysicsView};
 pub use registration::*;
 pub use render::RenderFlow;
 pub use selection::Selection;

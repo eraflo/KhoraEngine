@@ -261,17 +261,22 @@ impl Agent for UiAgent {
         // Drop the LaneContext (with its Slot<TextureAtlas>) before
         // releasing `atlas_guard` so the borrow chain unwinds cleanly.
         drop(atlas_guard);
-        let cmd_buf = encoder.finish();
+        let Some(cmd_buf) = encoder.finish() else {
+            log::error!("UiAgent: encoder.finish() returned None — skipping UiPass submission");
+            return;
+        };
 
-        frame_graph
-            .lock()
-            .expect("FrameGraph mutex poisoned")
-            .add_pass(
+        match frame_graph.lock() {
+            Ok(mut g) => g.add_pass(
                 PassDescriptor::new("UiPass")
                     .reads(ResourceId::Color)
                     .writes(ResourceId::Color),
                 cmd_buf,
-            );
+            ),
+            Err(_) => {
+                log::error!("UiAgent: FrameGraph mutex poisoned, dropping UiPass");
+            }
+        };
     }
 
     fn report_status(&self) -> AgentStatus {

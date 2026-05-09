@@ -26,12 +26,13 @@
 
 use std::sync::{Arc, Mutex};
 
+use khora_core::lane::OutputDeck;
 use khora_core::physics::PhysicsProvider;
 use khora_core::Runtime;
 
 use crate::ecs::{DataSystemRegistration, PhysicsDebugData, TickPhase, World};
 
-fn physics_debug_extraction(world: &mut World, runtime: &Runtime) {
+fn physics_debug_extraction(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
     let Some(provider_arc) = runtime
         .backends
         .get::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()

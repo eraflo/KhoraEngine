@@ -315,7 +315,14 @@ impl Agent for RenderAgent {
                 }
             }
         }
-        let cmd_buf = encoder.finish();
+        let Some(cmd_buf) = encoder.finish() else {
+            log::error!(
+                "RenderAgent: encoder.finish() returned None — backend reported failure, \
+                 skipping ScenePass submission"
+            );
+            self.last_frame_time = frame_start.elapsed();
+            return;
+        };
 
         let mut descriptor = PassDescriptor::new("ScenePass")
             .writes(ResourceId::Color)
@@ -323,10 +330,12 @@ impl Agent for RenderAgent {
         if shadow_atlas.is_some() {
             descriptor = descriptor.reads(ResourceId::ShadowAtlas);
         }
-        frame_graph
-            .lock()
-            .expect("FrameGraph mutex poisoned")
-            .add_pass(descriptor, cmd_buf);
+        match frame_graph.lock() {
+            Ok(mut g) => g.add_pass(descriptor, cmd_buf),
+            Err(_) => {
+                log::error!("RenderAgent: FrameGraph mutex poisoned, dropping ScenePass");
+            }
+        }
 
         self.last_frame_time = frame_start.elapsed();
 
