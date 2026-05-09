@@ -13,29 +13,39 @@
 // limitations under the License.
 
 //! The Intelligent Subsystem Agent responsible for managing the audio system.
+//!
+//! Per CLAD the agent owns no hardware state. The audio device is opened
+//! by the application during bootstrap; the resulting [`AudioStream`]
+//! handle and the shared [`AudioMixBus`] live in the runtime. Each frame
+//! the agent reads the per-tick `AudioView` from the `LaneBus`, builds a
+//! `LaneContext` containing the bus + the view + a slot to the
+//! `OutputDeck`, and dispatches its audio lanes (currently only
+//! [`SpatialMixingLane`]). Lanes mix into a staging buffer and push
+//! samples to the bus; the backend's audio callback drains the bus on a
+//! dedicated real-time thread.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
-use khora_core::audio::device::AudioDevice;
+use khora_core::audio::AudioMixBus;
 use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
 };
-use khora_core::lane::{LaneContext, LaneRegistry};
+use khora_core::lane::{LaneContext, LaneRegistry, Ref, Slot};
 use khora_core::EngineContext;
+use khora_data::flow::AudioView;
 use khora_lanes::audio_lane::SpatialMixingLane;
 
 /// The ISA that orchestrates the audio subsystem.
-///
-/// Chooses audio lanes, negotiates resource budgets with GORNA, and dispatches
-/// `Lane::execute()` for spatial mixing each frame.
 pub struct AudioAgent {
-    /// The audio device backend, obtained from the service registry.
-    device: Option<Arc<Mutex<Box<dyn AudioDevice>>>>,
-    /// Audio processing lanes.
+    /// Audio processing lanes. Today only `SpatialMixingLane`; future
+    /// strategies (occlusion, reverb, music streaming) plug in here.
     lanes: LaneRegistry,
+    /// Currently selected lane, picked by `apply_budget` from
+    /// [`StrategyId`].
+    current_lane: &'static str,
     /// Current GORNA strategy.
     current_strategy: StrategyId,
     /// Max audio sources to process per frame (from budget).
@@ -50,8 +60,8 @@ impl Default for AudioAgent {
         lanes.register(Box::new(SpatialMixingLane::new()));
 
         Self {
-            device: None,
             lanes,
+            current_lane: "SpatialMixing",
             current_strategy: StrategyId::Balanced,
             max_sources_per_frame: 32,
             frame_count: 0,
@@ -99,18 +109,7 @@ impl Agent for AudioAgent {
         };
     }
 
-    fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
-        // Fetch the audio device from the service registry.
-        if self.device.is_none() {
-            self.device = context
-                .runtime
-                .backends
-                .get::<Arc<Mutex<Box<dyn AudioDevice>>>>()
-                .cloned();
-        }
-
-        // Initialize audio lanes. The SpatialMixingLane doesn't need
-        // GPU resources — it runs on the audio callback thread.
+    fn on_initialize(&mut self, _context: &mut EngineContext<'_>) {
         let mut init_ctx = LaneContext::new();
         for lane in self.lanes.all() {
             if let Err(e) = lane.on_initialize(&mut init_ctx) {
@@ -126,21 +125,34 @@ impl Agent for AudioAgent {
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
-        // Lazily fetch device from services if not yet available.
-        if self.device.is_none() {
-            self.device = context
-                .runtime
-                .backends
-                .get::<Arc<Mutex<Box<dyn AudioDevice>>>>()
-                .cloned();
-        }
-
-        // Audio mixing happens in real-time on the audio callback thread.
-        // The SpatialMixingLane::execute() is called directly from the
-        // audio callback with AudioStreamInfo + AudioOutputSlot.
-        // This agent manages strategy negotiation and lane lifecycle,
-        // but does not drive the audio lane from the main thread.
         self.frame_count += 1;
+
+        let Some(mix_bus) = context.runtime.resources.get::<Arc<dyn AudioMixBus>>().cloned() else {
+            log::debug!("AudioAgent: no AudioMixBus in resources, skipping mix");
+            return;
+        };
+
+        let Some(view): Option<&AudioView> = context.bus.get() else {
+            // AudioFlow not run yet (or no audio content) — nothing to mix.
+            return;
+        };
+
+        let mut ctx = LaneContext::new();
+        ctx.insert(mix_bus);
+        // SAFETY: `view` is borrowed from the LaneBus, which lives for
+        // the whole frame and is read-only; the Ref's pointer outlives
+        // its only consumer (the lane below).
+        ctx.insert(Ref::new(view));
+        // SAFETY: `deck` is borrowed from EngineContext for the duration
+        // of this agent.execute() call. The lane writes its
+        // `AudioPlaybackWriteback` slot through this borrow.
+        ctx.insert(Slot::new(&mut *context.deck));
+
+        if let Some(lane) = self.lanes.get(self.current_lane) {
+            if let Err(e) = lane.execute(&mut ctx) {
+                log::error!("Audio lane {} failed: {}", lane.strategy_name(), e);
+            }
+        }
     }
 
     fn report_status(&self) -> AgentStatus {

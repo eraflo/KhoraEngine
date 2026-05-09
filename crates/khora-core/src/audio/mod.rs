@@ -12,9 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the foundational, abstract components for Khora's audio system.
+//! Foundational, abstract components for Khora's audio system.
 //!
-//! This module contains the core contracts, such as the `AudioDevice` trait, that
-//! allow the engine to remain decoupled from any specific audio backend implementation.
+//! - [`device`] — `AudioDevice` (factory) + `AudioStream` (handle).
+//! - [`mix_bus`] — `AudioMixBus` cross-thread bridge between audio lanes
+//!   (main thread) and the backend's hardware callback (RT thread), plus
+//!   a default mutex-backed implementation.
 
 pub mod device;
+pub mod mix_bus;
+
+pub use device::{AudioDevice, AudioStream, StreamInfo};
+pub use mix_bus::{AudioMixBus, DefaultMixBus};

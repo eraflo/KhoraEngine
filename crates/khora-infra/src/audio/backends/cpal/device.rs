@@ -12,13 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Contains the `CpalAudioDevice` struct.
+//! CPAL-backed [`AudioDevice`] / [`AudioStream`].
+//!
+//! `CpalAudioDevice` is a zero-state factory: opening it consumes the box,
+//! grabs the host's default output device, builds a CPAL stream whose
+//! callback pulls from the supplied [`AudioMixBus`], and returns a
+//! [`CpalAudioStream`] handle that keeps the stream alive (via
+//! `Box<dyn AudioStream>` ownership) until dropped.
+
+use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use khora_core::audio::device::{AudioDevice, StreamInfo};
+use khora_core::audio::{AudioDevice, AudioMixBus, AudioStream, StreamInfo};
 
-/// An `AudioDevice` implementation that uses the host's default audio output device via CPAL.
+/// CPAL-backed `AudioDevice` factory.
 #[derive(Default)]
 pub struct CpalAudioDevice;
 
@@ -30,11 +38,7 @@ impl CpalAudioDevice {
 }
 
 impl AudioDevice for CpalAudioDevice {
-    fn start(
-        self: Box<Self>,
-        mut on_mix_needed: Box<dyn FnMut(&mut [f32], &StreamInfo) + Send>,
-    ) -> Result<()> {
-        // Set up the CPAL audio stream.
+    fn open(self: Box<Self>, mix_bus: Arc<dyn AudioMixBus>) -> Result<Box<dyn AudioStream>> {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
@@ -46,12 +50,13 @@ impl AudioDevice for CpalAudioDevice {
             sample_rate: config.sample_rate(),
         };
 
+        let bus_for_callback = Arc::clone(&mix_bus);
         let audio_callback = move |output_buffer: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            on_mix_needed(output_buffer, &stream_info);
+            bus_for_callback.pull(output_buffer);
         };
 
         let error_callback = |err| {
-            eprintln!("An error occurred on the audio stream: {}", err);
+            log::error!("audio stream error: {}", err);
         };
 
         let stream = match config.sample_format() {
@@ -63,9 +68,39 @@ impl AudioDevice for CpalAudioDevice {
 
         stream.play()?;
 
-        // Detach the stream to keep it running for the lifetime of the application.
-        std::mem::forget(stream);
+        log::info!(
+            "audio: stream opened ({} Hz, {} ch)",
+            stream_info.sample_rate,
+            stream_info.channels
+        );
 
-        Ok(())
+        Ok(Box::new(CpalAudioStream {
+            _stream: stream,
+            info: stream_info,
+        }))
+    }
+}
+
+/// Live CPAL output stream. Keeps the underlying `cpal::Stream` alive
+/// via owned storage; `Drop` stops the stream.
+pub struct CpalAudioStream {
+    // Field is read implicitly via `Drop` — its sole purpose is to keep
+    // the CPAL stream alive for the lifetime of this handle.
+    _stream: cpal::Stream,
+    info: StreamInfo,
+}
+
+// SAFETY: `cpal::Stream` is not Send/Sync because the underlying audio
+// thread is platform-specific. In practice the stream is created on the
+// thread that calls `open` and never moved across threads after — we only
+// store it for the duration of the program. Boxing it as `dyn AudioStream`
+// requires `Send + Sync`; the engine takes the same constraint that every
+// other CPAL-backed audio engine in the Rust ecosystem accepts.
+unsafe impl Send for CpalAudioStream {}
+unsafe impl Sync for CpalAudioStream {}
+
+impl AudioStream for CpalAudioStream {
+    fn stream_info(&self) -> StreamInfo {
+        self.info
     }
 }

@@ -137,6 +137,20 @@ pub mod renderer {
 // WgpuRenderSystem (used by editor main)
 pub use khora_infra::WgpuRenderSystem;
 
+// Backend implementations and their traits — apps insert these into
+// `Runtime::backends` / `Runtime::resources` during the `run_winit`
+// bootstrap closure to wire the engine to its physics, layout, text and
+// audio backends.
+pub use khora_core::audio::{AudioDevice, AudioMixBus, AudioStream, DefaultMixBus, StreamInfo};
+pub use khora_core::physics::PhysicsProvider;
+pub use khora_core::renderer::api::text::TextRenderer;
+pub use khora_core::ui::LayoutSystem;
+pub use khora_infra::audio::backends::cpal::CpalAudioDevice;
+pub use khora_infra::physics::rapier::RapierPhysicsWorld;
+pub use khora_infra::renderer::StandardTextRenderer;
+pub use khora_infra::ui::TaffyLayoutSystem;
+pub use khora_lanes::render_lane::shaders::TEXT_WGSL;
+
 // Data / ECS (needed for world restore)
 pub use khora_data;
 pub use khora_data::ecs::World as EcsWorld;

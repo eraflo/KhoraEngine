@@ -36,10 +36,11 @@
 //!
 //! # Audio domain
 //!
-//! | Key                | Meaning                               |
-//! |--------------------|---------------------------------------|
-//! | [`AudioStreamInfo`]| Sample rate, channels, etc.           |
-//! | [`AudioOutputSlot`]| Mutable borrow of the output buffer   |
+//! Audio lanes consume an [`Arc<dyn AudioMixBus>`](crate::audio::AudioMixBus)
+//! injected directly into the [`LaneContext`](super::LaneContext) by the
+//! [`AudioAgent`](../../../khora_agents/audio_agent). The bus carries its
+//! own [`StreamInfo`](crate::audio::StreamInfo), so no separate context
+//! key is needed.
 
 use crate::renderer::api::resource::{SamplerId, TextureViewId};
 
@@ -75,50 +76,3 @@ pub struct ShadowComparisonSampler(pub SamplerId);
 #[derive(Debug, Clone, Copy)]
 pub struct PhysicsDeltaTime(pub f32);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Audio domain
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Audio stream info (sample rate, channel count, etc.).
-///
-/// Re-exports [`crate::audio::device::StreamInfo`] as a context key.
-/// Agents insert `AudioStreamInfo(stream_info)` into the context.
-#[derive(Debug, Clone, Copy)]
-pub struct AudioStreamInfo(pub crate::audio::device::StreamInfo);
-
-/// Mutable borrow of the audio output buffer via raw pointer.
-///
-/// This wraps a `*mut [f32]` so it can be stored in [`LaneContext`](super::LaneContext).
-///
-/// # Safety
-///
-/// Same frame-scoped guarantees as [`Slot`](super::Slot).
-pub struct AudioOutputSlot {
-    ptr: *mut f32,
-    len: usize,
-}
-
-// SAFETY: frame-scoped, single-lane-at-a-time.
-unsafe impl Send for AudioOutputSlot {}
-unsafe impl Sync for AudioOutputSlot {}
-
-impl AudioOutputSlot {
-    /// Creates a new `AudioOutputSlot` from a mutable slice.
-    pub fn new(buffer: &mut [f32]) -> Self {
-        Self {
-            ptr: buffer.as_mut_ptr(),
-            len: buffer.len(),
-        }
-    }
-
-    /// Returns a mutable slice to the output buffer.
-    ///
-    /// # Safety contract
-    ///
-    /// Safe when called within the scope where the original slice is alive.
-    #[allow(clippy::mut_from_ref)]
-    pub fn get(&self) -> &mut [f32] {
-        // SAFETY: guaranteed by frame-scoped execution
-        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
-    }
-}

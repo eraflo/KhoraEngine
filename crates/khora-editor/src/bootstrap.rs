@@ -19,9 +19,11 @@ use khora_sdk::prelude::*;
 use khora_sdk::run_winit;
 use khora_sdk::winit;
 use khora_sdk::winit_adapters::WinitWindowProvider;
-use khora_sdk::EditorShell;
-use khora_sdk::RenderSystem;
-use khora_sdk::WgpuRenderSystem;
+use khora_sdk::{
+    AudioDevice, AudioMixBus, AudioStream, CpalAudioDevice, DefaultMixBus, EditorShell,
+    LayoutSystem, PhysicsProvider, RapierPhysicsWorld, RenderSystem, StandardTextRenderer,
+    StreamInfo, TaffyLayoutSystem, TextRenderer, WgpuRenderSystem, TEXT_WGSL,
+};
 
 use crate::app::EditorApp;
 
@@ -94,6 +96,38 @@ pub fn run() -> anyhow::Result<()> {
 
         let rs: Box<dyn RenderSystem> = Box::new(rs);
         runtime.backends.insert(Arc::new(Mutex::new(rs)));
+
+        // Physics — Rapier3D
+        let physics: Box<dyn PhysicsProvider> = Box::new(RapierPhysicsWorld::default());
+        runtime.backends.insert(Arc::new(Mutex::new(physics)));
+
+        // UI layout — Taffy
+        let layout: Box<dyn LayoutSystem> = Box::new(TaffyLayoutSystem::new());
+        runtime.backends.insert(Arc::new(Mutex::new(layout)));
+
+        // Text renderer — StandardTextRenderer
+        let text: Arc<dyn TextRenderer> = Arc::new(StandardTextRenderer::new(TEXT_WGSL.to_owned()));
+        runtime.backends.insert(text);
+
+        // Audio — shared mix bus + CPAL device. The bus is the sole
+        // synchronisation boundary between audio lanes (main thread) and
+        // the backend's hardware callback (RT thread). The opened
+        // AudioStream is stored as a backend handle; dropping it stops
+        // the stream.
+        let stream_info = StreamInfo {
+            channels: 2,
+            sample_rate: 48_000,
+        };
+        let mix_bus: Arc<dyn AudioMixBus> = Arc::new(DefaultMixBus::new(stream_info, 8192));
+        runtime.resources.insert(Arc::clone(&mix_bus));
+        let device: Box<dyn AudioDevice> = Box::new(CpalAudioDevice::new());
+        match device.open(mix_bus) {
+            Ok(stream) => {
+                let stream: Arc<dyn AudioStream> = Arc::from(stream);
+                runtime.backends.insert(stream);
+            }
+            Err(e) => log::error!("audio open failed: {}", e),
+        }
     })?;
     Ok(())
 }

@@ -17,15 +17,29 @@
 //!
 //! Per CLAD doctrine the lane consumes a typed
 //! [`AudioView`](khora_data::flow::AudioView) from the
-//! [`LaneBus`](khora_core::lane::LaneBus) and writes its per-source
-//! cursor updates into an
+//! [`LaneBus`](khora_core::lane::LaneBus), runs the spatialised mix into
+//! a per-frame staging buffer, and pushes the result into a shared
+//! [`AudioMixBus`](khora_core::audio::AudioMixBus). The audio backend's
+//! callback drains the bus on its dedicated real-time thread. The lane
+//! never touches the hardware buffer directly and never queries
+//! `World`.
+//!
+//! Per-source playback updates land in an
 //! [`AudioPlaybackWriteback`](khora_data::flow::AudioPlaybackWriteback)
-//! slot of the [`OutputDeck`](khora_core::lane::OutputDeck). It does
-//! **not** query or mutate `World`.
+//! slot of the per-frame `OutputDeck`; the
+//! `audio_playback_writeback` `DataSystem` drains that slot in
+//! `Maintenance` and patches `AudioSource` components.
 
-use khora_core::audio::device::StreamInfo;
+use std::sync::Arc;
+
+use khora_core::audio::{AudioMixBus, StreamInfo};
+use khora_core::lane::{LaneError, OutputDeck, Ref, Slot};
 use khora_data::ecs::PlaybackState;
 use khora_data::flow::{AudioPlaybackUpdate, AudioPlaybackWriteback, AudioView};
+
+/// Number of frames the lane mixes per `execute` call. Sized to comfortably
+/// cover one display frame at 60 Hz / 48 kHz (~800 frames) with headroom.
+const FRAMES_PER_TICK: usize = 1024;
 
 /// A lane that performs spatialized audio mixing.
 #[derive(Default)]
@@ -47,37 +61,29 @@ impl khora_core::lane::Lane for SpatialMixingLane {
         khora_core::lane::LaneKind::Audio
     }
 
-    fn execute(
-        &self,
-        ctx: &mut khora_core::lane::LaneContext,
-    ) -> Result<(), khora_core::lane::LaneError> {
-        use khora_core::lane::{AudioOutputSlot, AudioStreamInfo, LaneError, Ref};
-
-        let stream_info = ctx
-            .get::<AudioStreamInfo>()
-            .ok_or(LaneError::missing("AudioStreamInfo"))?
-            .0;
-        let output_slot = ctx
-            .get::<AudioOutputSlot>()
-            .ok_or(LaneError::missing("AudioOutputSlot"))?;
-        let output_buffer = output_slot.get();
+    fn execute(&self, ctx: &mut khora_core::lane::LaneContext) -> Result<(), LaneError> {
+        let mix_bus = ctx
+            .get::<Arc<dyn AudioMixBus>>()
+            .ok_or(LaneError::missing("Arc<dyn AudioMixBus>"))?
+            .clone();
         let view = ctx
             .get::<Ref<AudioView>>()
             .ok_or(LaneError::missing("Ref<AudioView>"))?
             .get();
 
-        // The audio mixing path runs on the audio callback thread in
-        // production, where it does not have access to the per-frame
-        // `OutputDeck` (which lives on the main thread's
-        // `EngineContext`). The writeback is currently dropped at the
-        // boundary of this `Lane::execute` call; callers that want to
-        // apply playback-state updates back to ECS should invoke
-        // [`Self::mix`] directly and forward the returned writeback
-        // through their own channel. A future PR can wire a thread-safe
-        // [`AudioPlaybackTable`] resource so the audio thread accumulates
-        // updates that the main thread's `audio_playback_writeback`
-        // DataSystem drains in `Maintenance`.
-        let _writeback = self.mix(view, output_buffer, &stream_info);
+        let stream_info = mix_bus.stream_info();
+        let sample_count = FRAMES_PER_TICK * stream_info.channels as usize;
+        let mut staging = vec![0.0_f32; sample_count];
+
+        let writeback = self.mix(view, &mut staging, &stream_info);
+        mix_bus.write_block(&staging);
+
+        if let Some(deck_slot) = ctx.get::<Slot<OutputDeck>>() {
+            let deck = deck_slot.get();
+            let slot = deck.slot::<AudioPlaybackWriteback>();
+            slot.updates.extend(writeback.updates);
+        }
+
         Ok(())
     }
 
@@ -121,9 +127,17 @@ impl SpatialMixingLane {
             }
 
             let sound_data = &source.handle;
-            let num_frames = sound_data.samples.len() / sound_data.channels as usize;
 
-            // Stop immediately if the sound is empty.
+            // A freshly added `AudioSource` (or a placeholder asset) may
+            // have `channels == 0` and/or no samples. Treat both as
+            // "empty source — emit a stop and skip" so the lane never
+            // divides by zero.
+            let channels = sound_data.channels as usize;
+            let num_frames = if channels == 0 {
+                0
+            } else {
+                sound_data.samples.len() / channels
+            };
             if num_frames == 0 {
                 writeback.updates.push(AudioPlaybackUpdate {
                     entity: source.entity,

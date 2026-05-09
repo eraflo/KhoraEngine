@@ -38,10 +38,12 @@ use crate::khora_core::asset::AssetUUID;
 use crate::khora_core::renderer::api::scene::Mesh;
 use crate::winit_adapters::WinitWindowProvider;
 use crate::{
-    run_winit, AgentProvider, AssetIo, AssetService, DccService, EngineApp, FileLoader,
-    FileSystemResolver, GameWorld, IndexBuilder, InputEvent, MeshDispatcher, MetricsRegistry,
-    PackLoader, PhaseProvider, RenderSystem, Runtime, SceneFile, SerializationService, SoundData,
-    SymphoniaDecoder, WgpuRenderSystem, WindowConfig,
+    run_winit, AgentProvider, AssetIo, AssetService, AudioDevice, AudioMixBus, AudioStream,
+    CpalAudioDevice, DccService, DefaultMixBus, EngineApp, FileLoader, FileSystemResolver,
+    GameWorld, IndexBuilder, InputEvent, LayoutSystem, MeshDispatcher, MetricsRegistry, PackLoader,
+    PhaseProvider, PhysicsProvider, RapierPhysicsWorld, RenderSystem, Runtime, SceneFile,
+    SerializationService, SoundData, StandardTextRenderer, StreamInfo, SymphoniaDecoder,
+    TaffyLayoutSystem, TextRenderer, WgpuRenderSystem, WindowConfig, TEXT_WGSL,
 };
 use khora_io::asset::PackManifest;
 use serde::Deserialize;
@@ -371,6 +373,35 @@ pub fn run_default() -> Result<()> {
         runtime.backends.insert(rs.graphics_device());
         let rs_dyn: Box<dyn RenderSystem> = Box::new(rs);
         runtime.backends.insert(Arc::new(Mutex::new(rs_dyn)));
+
+        // Physics — Rapier3D
+        let physics: Box<dyn PhysicsProvider> = Box::new(RapierPhysicsWorld::default());
+        runtime.backends.insert(Arc::new(Mutex::new(physics)));
+
+        // UI layout — Taffy
+        let layout: Box<dyn LayoutSystem> = Box::new(TaffyLayoutSystem::new());
+        runtime.backends.insert(Arc::new(Mutex::new(layout)));
+
+        // Text renderer — StandardTextRenderer
+        let text: Arc<dyn TextRenderer> = Arc::new(StandardTextRenderer::new(TEXT_WGSL.to_owned()));
+        runtime.backends.insert(text);
+
+        // Audio — shared mix bus + CPAL device. The opened AudioStream
+        // is stored as a backend handle; dropping it stops the stream.
+        let stream_info = StreamInfo {
+            channels: 2,
+            sample_rate: 48_000,
+        };
+        let mix_bus: Arc<dyn AudioMixBus> = Arc::new(DefaultMixBus::new(stream_info, 8192));
+        runtime.resources.insert(Arc::clone(&mix_bus));
+        let device: Box<dyn AudioDevice> = Box::new(CpalAudioDevice::new());
+        match device.open(mix_bus) {
+            Ok(stream) => {
+                let stream: Arc<dyn AudioStream> = Arc::from(stream);
+                runtime.backends.insert(stream);
+            }
+            Err(e) => log::error!("audio open failed: {}", e),
+        }
 
         let metrics = Arc::new(MetricsRegistry::new());
         match build_asset_service(&exe_dir, metrics, verify_integrity) {

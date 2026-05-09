@@ -30,8 +30,10 @@ use khora_sdk::run_winit;
 use khora_sdk::winit_adapters::WinitWindowProvider;
 use khora_sdk::khora_core::platform::{InputBinding, InputMap};
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, GameWorld, InputEvent, KeyCode, PhaseProvider,
-    RenderSystem, Runtime, WgpuRenderSystem, WindowConfig,
+    AgentProvider, AudioDevice, AudioMixBus, CpalAudioDevice, DccService, DefaultMixBus, EngineApp,
+    GameWorld, InputEvent, KeyCode, LayoutSystem, PhaseProvider, PhysicsProvider,
+    RapierPhysicsWorld, RenderSystem, Runtime, StandardTextRenderer, StreamInfo, TaffyLayoutSystem,
+    TextRenderer, WgpuRenderSystem, WindowConfig, TEXT_WGSL,
 };
 use std::sync::{Arc, Mutex};
 
@@ -351,6 +353,38 @@ fn main() -> Result<()> {
         runtime.backends.insert(rs.graphics_device());
         let rs: Box<dyn RenderSystem> = Box::new(rs);
         runtime.backends.insert(Arc::new(Mutex::new(rs)));
+
+        // Physics — Rapier3D
+        let physics: Box<dyn PhysicsProvider> = Box::new(RapierPhysicsWorld::default());
+        runtime.backends.insert(Arc::new(Mutex::new(physics)));
+
+        // UI layout — Taffy
+        let layout: Box<dyn LayoutSystem> = Box::new(TaffyLayoutSystem::new());
+        runtime.backends.insert(Arc::new(Mutex::new(layout)));
+
+        // Text renderer — StandardTextRenderer
+        let text: Arc<dyn TextRenderer> = Arc::new(StandardTextRenderer::new(TEXT_WGSL.to_owned()));
+        runtime.backends.insert(text);
+
+        // Audio — shared mix bus + CPAL device. The bus is the sole
+        // synchronisation boundary between audio lanes (main thread) and
+        // the backend's hardware callback (RT thread). The opened
+        // AudioStream is stored as a backend handle; dropping it stops
+        // the stream.
+        let stream_info = StreamInfo {
+            channels: 2,
+            sample_rate: 48_000,
+        };
+        let mix_bus: Arc<dyn AudioMixBus> = Arc::new(DefaultMixBus::new(stream_info, 8192));
+        runtime.resources.insert(Arc::clone(&mix_bus));
+        let device: Box<dyn AudioDevice> = Box::new(CpalAudioDevice::new());
+        match device.open(mix_bus) {
+            Ok(stream) => {
+                let stream: Arc<dyn khora_sdk::AudioStream> = Arc::from(stream);
+                runtime.backends.insert(stream);
+            }
+            Err(e) => log::error!("audio open failed: {}", e),
+        }
     })?;
     Ok(())
 }
