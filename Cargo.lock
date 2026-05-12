@@ -1139,7 +1139,6 @@ version = "0.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71ddb8ac7643d1dba1bb02110e804406dd459a838efcb14011ced10556711a8e"
 dependencies = [
- "bytemuck",
  "emath 0.33.3",
 ]
 
@@ -1164,7 +1163,7 @@ dependencies = [
  "document-features",
  "egui 0.34.2",
  "egui-wgpu",
- "egui-winit 0.34.2",
+ "egui-winit",
  "egui_glow",
  "glutin",
  "glutin-winit",
@@ -1246,27 +1245,6 @@ dependencies = [
 
 [[package]]
 name = "egui-winit"
-version = "0.33.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec6687e5bb551702f4ad10ac428bab12acf9d53047ebb1082d4a0ed8c6251a29"
-dependencies = [
- "arboard",
- "bytemuck",
- "egui 0.33.3",
- "log",
- "objc2 0.5.2",
- "objc2-foundation 0.2.2",
- "objc2-ui-kit 0.2.2",
- "profiling",
- "raw-window-handle",
- "smithay-clipboard",
- "web-time",
- "webbrowser",
- "winit",
-]
-
-[[package]]
-name = "egui-winit"
 version = "0.34.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8e97625c2fe0fadc8b92ec690fbf515e15e2efd67ca50e063ad3302ec8ee626"
@@ -1314,9 +1292,6 @@ name = "emath"
 version = "0.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "491bdf728bf25ddd9ad60d4cf1c48588fa82c013a2440b91aa7fc43e34a07c32"
-dependencies = [
- "bytemuck",
-]
 
 [[package]]
 name = "emath"
@@ -1376,7 +1351,6 @@ checksum = "009d0dd3c2163823a0abdb899451ecbc78798dec545ee91b43aff1fa790bab62"
 dependencies = [
  "ab_glyph",
  "ahash",
- "bytemuck",
  "ecolor 0.33.3",
  "emath 0.33.3",
  "epaint_default_fonts 0.33.3",
@@ -2699,7 +2673,7 @@ dependencies = [
  "bytemuck",
  "cpal",
  "egui 0.33.3",
- "egui-winit 0.33.3",
+ "egui-winit",
  "env_logger",
  "khora-core",
  "log",
@@ -6217,7 +6191,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
