@@ -43,7 +43,7 @@ rfd = "0.17"
 open = "5"
 
 # Zip extraction for engine downloads
-zip = "2"
+zip = "8"
 
 # Image decoding (for window icon from PNG)
 image = { version = "0.25", default-features = false, features = ["png"] }
