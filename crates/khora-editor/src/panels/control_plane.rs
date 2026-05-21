@@ -98,6 +98,7 @@ fn crate_for_id(id: AgentId) -> &'static str {
     match id {
         AgentId::Renderer
         | AgentId::ShadowRenderer
+        | AgentId::Overlay
         | AgentId::Physics
         | AgentId::Ecs
         | AgentId::Ui

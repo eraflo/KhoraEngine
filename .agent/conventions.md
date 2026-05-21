@@ -19,6 +19,7 @@ Code style and project conventions. Pair with [`rules.md`](./rules.md).
 7. Math
 8. Git
 9. Documentation
+10. Render bind-group budget
 
 ---
 
@@ -128,6 +129,40 @@ pub struct Light {
 - Public APIs require rustdoc. `# Examples` blocks compile via `cargo test --doc`.
 - Use intra-doc links (`[Type]`) instead of plain text references.
 - Keep mdBook chapters in sync with the codebase. If you change a public API, update the relevant chapter in the same PR.
+
+## 10 — Render bind-group budget
+
+Every render lane (`LitForwardLane`, `StandardPbrLane`, `ForwardPlusLane`,
+…) uses **exactly four bind groups**, assigned to the four fundamental,
+stable inputs of a draw:
+
+| Group | Domain | Contents |
+|---|---|---|
+| 0 | **Frame** | camera (view-projection, position) |
+| 1 | **Object** | model + normal matrix (per-draw) |
+| 2 | **Material** | base color, emissive, … |
+| 3 | **Lighting** | *every* lighting input |
+
+Group 3 is the **whole lighting domain** — direct lights, per-tile
+light-culling results, shadow atlases, shadow matrices all live here.
+The shadow atlas / sampler / cube bindings are fixed at indices
+**1 / 2 / 3** (the shared `khora::shadow::bindings` WGSL contract,
+mirrored by `khora_core::renderer::api::shadow::bindings`); a lane packs
+its own lighting buffers into the remaining indices (0, 4, 5, …).
+
+**Rule** — a new lighting feature (clustered lighting, GI probes, a new
+shadow technique) adds **bindings to group 3**, never a 5th group.
+Rationale:
+
+- 4 bind groups is the wgpu **universal baseline**
+  (`Limits::default().max_bind_groups == 4`) — works on every backend
+  and GPU with no capability negotiation.
+- Bindings *within* a group are effectively unbounded
+  (`max_bindings_per_bind_group ≈ 1000`).
+- "Few groups, many bindings" is the wgpu-idiomatic layout.
+
+Compute pipelines (e.g. Forward+ light culling) are independent — they
+own their own bind group layout and are not bound by this convention.
 
 ---
 

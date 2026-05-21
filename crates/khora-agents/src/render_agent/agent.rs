@@ -44,7 +44,7 @@ use khora_data::render::{
     extract_active_camera_view, PassDescriptor, RenderWorld, ResourceId, SharedFrameGraph,
 };
 use khora_data::GpuCache;
-use khora_lanes::render_lane::{ForwardPlusLane, LitForwardLane, SimpleUnlitLane};
+use khora_lanes::render_lane::{ForwardPlusLane, LitForwardLane, SimpleUnlitLane, StandardPbrLane};
 
 /// Threshold for switching to Forward+ rendering.
 const FORWARD_PLUS_LIGHT_THRESHOLD: usize = 20;
@@ -61,8 +61,10 @@ pub enum RenderingStrategy {
     /// Simple unlit rendering (vertex colors only).
     #[default]
     Unlit,
-    /// Standard forward rendering with lighting.
+    /// Standard forward rendering with lighting (Blinn-Phong).
     LitForward,
+    /// Full PBR (Cook-Torrance) forward rendering with shadows.
+    StandardPbr,
     /// Forward+ (tiled forward) rendering with compute-based light culling.
     ForwardPlus,
     /// Automatic selection based on scene complexity (light count).
@@ -120,6 +122,7 @@ impl Agent for RenderAgent {
             let (strategy_id, vram_overhead) = match lane.strategy_name() {
                 "SimpleUnlit" => (StrategyId::LowPower, 0u64),
                 "LitForward" => (StrategyId::Balanced, 4096u64),
+                "StandardPbr" => (StrategyId::Custom(1), 4096u64),
                 "ForwardPlus" => (StrategyId::HighPerformance, 4096 + 8 * 1024 * 1024),
                 _ => continue,
             };
@@ -172,9 +175,10 @@ impl Agent for RenderAgent {
             StrategyId::LowPower => self.strategy = RenderingStrategy::Auto,
             StrategyId::Balanced => self.strategy = RenderingStrategy::LitForward,
             StrategyId::HighPerformance => self.strategy = RenderingStrategy::ForwardPlus,
-            StrategyId::Custom(_) => {
+            StrategyId::Custom(1) => self.strategy = RenderingStrategy::StandardPbr,
+            StrategyId::Custom(other) => {
                 log::warn!(
-                    "RenderAgent received unsupported custom strategy. Falling back to Balanced."
+                    "RenderAgent received unsupported custom strategy {other}. Falling back to Balanced."
                 );
                 self.strategy = RenderingStrategy::LitForward;
             }
@@ -193,8 +197,21 @@ impl Agent for RenderAgent {
             return;
         };
 
+        // The `ShaderRegistry` is shared by every rendering lane; lanes
+        // pick the pipeline they need by logical name. The engine puts
+        // it into the runtime at boot; we forward it via the
+        // `LaneContext` so lanes don't need a direct `Runtime` handle.
+        let shader_registry = context
+            .runtime
+            .resources
+            .get::<Arc<Mutex<khora_lanes::render_lane::ShaderRegistry>>>()
+            .cloned();
+
         let mut init_ctx = LaneContext::new();
         init_ctx.insert(device_arc);
+        if let Some(registry) = shader_registry {
+            init_ctx.insert(registry);
+        }
         for lane in self.lanes.all() {
             if let Err(e) = lane.on_initialize(&mut init_ctx) {
                 log::error!(
@@ -405,6 +422,7 @@ impl Default for RenderAgent {
         let mut lanes = LaneRegistry::new();
         lanes.register(Box::new(SimpleUnlitLane::new()));
         lanes.register(Box::new(LitForwardLane::new()));
+        lanes.register(Box::new(StandardPbrLane::default()));
         lanes.register(Box::new(ForwardPlusLane::new()));
 
         Self {
@@ -430,6 +448,7 @@ fn lane_name_for_strategy(strategy: RenderingStrategy, world: &RenderWorld) -> &
     match strategy {
         RenderingStrategy::Unlit => "SimpleUnlit",
         RenderingStrategy::LitForward => "LitForward",
+        RenderingStrategy::StandardPbr => "StandardPbr",
         RenderingStrategy::ForwardPlus => "ForwardPlus",
         RenderingStrategy::Auto => {
             let total_lights = world.directional_light_count()
@@ -472,7 +491,7 @@ mod tests {
     use khora_core::control::gorna::{NegotiationRequest, ResourceConstraints, StrategyId};
 
     #[test]
-    fn test_negotiate_offers_three_default_strategies() {
+    fn test_negotiate_offers_all_default_strategies() {
         let mut agent = RenderAgent::default();
         let req = NegotiationRequest {
             target_latency: Duration::from_millis(16),
@@ -482,7 +501,8 @@ mod tests {
             agent_timing: ExecutionTiming::default(),
         };
         let res = agent.negotiate(req);
-        assert_eq!(res.strategies.len(), 3);
+        // SimpleUnlit / LitForward / StandardPbr / ForwardPlus.
+        assert_eq!(res.strategies.len(), 4);
     }
 
     #[test]

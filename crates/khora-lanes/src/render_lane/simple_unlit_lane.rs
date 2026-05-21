@@ -134,8 +134,15 @@ impl khora_core::lane::Lane for SimpleUnlitLane {
             .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
             .ok_or(khora_core::lane::LaneError::missing(
                 "Arc<dyn GraphicsDevice>",
-            ))?;
-        self.on_gpu_init(device.as_ref())
+            ))?
+            .clone();
+        let registry = ctx
+            .get::<std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>>()
+            .ok_or(khora_core::lane::LaneError::missing(
+                "Arc<Mutex<ShaderRegistry>>",
+            ))?
+            .clone();
+        self.on_gpu_init(device.as_ref(), &registry)
             .map_err(|e| khora_core::lane::LaneError::InitializationFailed(Box::new(e)))
     }
 
@@ -494,13 +501,12 @@ impl SimpleUnlitLane {
     fn on_gpu_init(
         &self,
         device: &dyn khora_core::renderer::GraphicsDevice,
+        shader_registry: &std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
-        use crate::render_lane::shaders::UNLIT_WGSL;
         use khora_core::renderer::api::{
             command::{
                 BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType,
             },
-            core::{ShaderModuleDescriptor, ShaderSourceData},
             pipeline::enums::{CompareFunction, VertexFormat, VertexStepMode},
             pipeline::state::{ColorWrites, DepthBiasState, StencilFaceState},
             pipeline::{
@@ -576,14 +582,28 @@ impl SimpleUnlitLane {
         let _ = self.model_layout.set(model_layout);
         let _ = self.material_layout.set(material_layout);
 
-        // 2. Create Shader Module
-        let shader_src = UNLIT_WGSL.to_string();
-        let shader_module = device
-            .create_shader_module(&ShaderModuleDescriptor {
-                label: Some("simple_unlit_shader"),
-                source: ShaderSourceData::Wgsl(Cow::Owned(shader_src)),
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        // 2. Create Shader Module via the central `ShaderRegistry`.
+        let shader_module = {
+            let mut registry = crate::lock_or_log!(
+                shader_registry.lock(),
+                "SimpleUnlitLane on_gpu_init.shader_registry",
+                Err(khora_core::renderer::error::RenderError::ResourceError(
+                    khora_core::renderer::ResourceError::BackendError(
+                        "shader_registry mutex poisoned".to_owned()
+                    )
+                ))
+            );
+            registry
+                .create_module(device, "khora::pipelines::unlit", Some("simple_unlit_shader"))
+                .map_err(|e| {
+                    khora_core::renderer::error::RenderError::ResourceError(
+                        khora_core::renderer::ResourceError::BackendError(format!(
+                            "ShaderRegistry compose failed: {}",
+                            e
+                        )),
+                    )
+                })?
+        };
 
         // 3. Define Vertex Layout (matching our standard vertex buffer)
         // Attribute 0: Position (vec3<f32>)

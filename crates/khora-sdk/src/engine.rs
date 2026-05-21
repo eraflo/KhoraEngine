@@ -130,6 +130,37 @@ impl<A: EngineApp> EngineCore<A> {
         let frame_graph: SharedFrameGraph = Arc::new(Mutex::new(FrameGraph::new()));
         runtime.resources.insert(frame_graph);
 
+        // ── Shader registry ──────────────────────────────────────────────────
+        // naga_oil-backed composer that resolves the `#import`s and
+        // `#{DEFS}` substitutions every render pipeline needs. Built
+        // once at boot, shared by every rendering lane through their
+        // `LaneContext`. The init fails fast if any of the embedded lib
+        // modules has a compose error (caught at boot, not on first
+        // frame).
+        match khora_lanes::render_lane::ShaderRegistry::new() {
+            Ok(registry) => {
+                runtime
+                    .resources
+                    .insert(Arc::new(Mutex::new(registry)));
+            }
+            Err(e) => {
+                log::error!(
+                    "Engine init: ShaderRegistry failed to initialise: {} — rendering lanes that require it will fail their on_initialize",
+                    e
+                );
+            }
+        }
+
+        // ── Gizmo overlay channel ────────────────────────────────────────────
+        // Shared `GizmoFrame` the host application (editor, debug tooling)
+        // writes line instances into each frame; `GizmoLane` (under
+        // `OverlayAgent`) reads it during the OUTPUT phase. The engine
+        // only provides the slot — it never produces gizmo data, keeping
+        // the editor a pure consumer of engine APIs.
+        let gizmo_frame: khora_lanes::render_lane::SharedGizmoFrame =
+            Arc::new(Mutex::new(khora_data::render::GizmoFrame::default()));
+        runtime.resources.insert(gizmo_frame);
+
         // ── Scene-extraction data containers ─────────────────────────────────
         // RenderFlow + UiFlow publish their per-frame views directly into
         // the LaneBus during the Substrate Pass — no shared service needed.
@@ -190,6 +221,12 @@ impl<A: EngineApp> EngineCore<A> {
         );
         dcc.register_agent(
             Arc::new(Mutex::new(
+                khora_agents::overlay_agent::OverlayAgent::default(),
+            )),
+            1.0,
+        );
+        dcc.register_agent(
+            Arc::new(Mutex::new(
                 khora_agents::physics_agent::PhysicsAgent::default(),
             )),
             1.0,
@@ -225,6 +262,7 @@ impl<A: EngineApp> EngineCore<A> {
         let agent_ids = vec![
             khora_core::control::gorna::AgentId::Renderer,
             khora_core::control::gorna::AgentId::ShadowRenderer,
+            khora_core::control::gorna::AgentId::Overlay,
             khora_core::control::gorna::AgentId::Physics,
             khora_core::control::gorna::AgentId::Ui,
             khora_core::control::gorna::AgentId::Audio,

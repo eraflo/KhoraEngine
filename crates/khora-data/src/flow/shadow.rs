@@ -39,14 +39,34 @@ use crate::flow::{Flow, Selection};
 use crate::register_flow;
 use crate::render::{primary_view, ExtractedView};
 
+/// View-projection matrices a single shadow-casting light publishes.
+///
+/// Two variants reflect the two atlas binding surfaces consumed by the lit
+/// shader: directional / spot use a single matrix sampled against the 2D
+/// depth-array atlas, point lights use six matrices sampled against the
+/// cubemap atlas.
+///
+/// `Cube` is significantly larger than `Single` (6 × `Mat4` ≈ 384 B vs
+/// `Mat4` ≈ 64 B). The variants are boxed to even out memory usage, since
+/// most lights are directional / spot and a fat enum would inflate the
+/// per-frame `HashMap<usize, ShadowMatrices>`.
+#[derive(Debug, Clone)]
+pub enum ShadowMatrices {
+    /// One view-projection — directional or spot light.
+    Single(Mat4),
+    /// Six view-projections in [`khora_core::math::CubeFace::ALL`] order
+    /// (`[+X, -X, +Y, -Y, +Z, -Z]`) — point light.
+    Cube(Box<[Mat4; 6]>),
+}
+
 /// Output of [`ShadowFlow`].
 #[derive(Debug, Default, Clone)]
 pub struct ShadowView {
     /// Number of enabled lights in the world (regardless of shadow-casting).
     pub light_count: usize,
-    /// Per-light view-projection matrices, keyed by the light's position in
+    /// Per-light shadow data, keyed by the light's position in
     /// `RenderWorld.lights`. Only shadow-casting lights have an entry.
-    pub matrices: HashMap<usize, Mat4>,
+    pub matrices: HashMap<usize, ShadowMatrices>,
 }
 
 /// Computes shadow view-projection matrices.
@@ -62,7 +82,7 @@ impl Flow for ShadowFlow {
 
     fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
         let camera_view = primary_view(world, runtime);
-        let mut matrices = HashMap::new();
+        let mut matrices: HashMap<usize, ShadowMatrices> = HashMap::new();
         let mut light_count = 0;
 
         // Mirror RenderFlow's iteration so indices align across views.
@@ -82,30 +102,36 @@ impl Flow for ShadowFlow {
                 continue;
             }
 
-            // Point lights would need a cubemap (6 view-proj matrices per
-            // light, sampled with a `texture_cube` lookup in lit shaders).
-            // That pipeline isn't built yet, so we deliberately skip point
-            // lights here rather than emit an identity matrix that would
-            // produce undefined shadow sampling. Tracked in the audit as
-            // P2.a — cubemap shadows.
-            if matches!(light.light_type, LightType::Point(_)) {
-                continue;
-            }
-
-            let Some(camera) = camera_view.as_ref() else {
-                continue;
-            };
-
             let position = transform.0.translation();
-            let direction = match &light.light_type {
-                LightType::Directional(d) => transform.0.rotation() * d.direction,
-                LightType::Spot(s) => transform.0.rotation() * s.direction,
-                LightType::Point(_) => unreachable!("filtered above"),
-            };
 
-            let view_proj =
-                compute_shadow_view_proj(&light.light_type, position, direction, camera);
-            matrices.insert(light_index, view_proj);
+            match &light.light_type {
+                LightType::Point(p) => {
+                    // Six view-proj matrices, one per cube face. The math
+                    // (90° FOV, near 0.1, far = light range, wgpu cubemap
+                    // basis) lives in `Mat4::cube_face_view_projs`.
+                    matrices.insert(
+                        light_index,
+                        ShadowMatrices::Cube(Box::new(Mat4::cube_face_view_projs(
+                            position, p.range,
+                        ))),
+                    );
+                }
+                LightType::Directional(_) | LightType::Spot(_) => {
+                    // Single matrix — needs the camera frustum for CSM /
+                    // perspective-spot derivations.
+                    let Some(camera) = camera_view.as_ref() else {
+                        continue;
+                    };
+                    let direction = match &light.light_type {
+                        LightType::Directional(d) => transform.0.rotation() * d.direction,
+                        LightType::Spot(s) => transform.0.rotation() * s.direction,
+                        LightType::Point(_) => unreachable!(),
+                    };
+                    let view_proj =
+                        compute_single_shadow_view_proj(&light.light_type, position, direction, camera);
+                    matrices.insert(light_index, ShadowMatrices::Single(view_proj));
+                }
+            }
         }
 
         ShadowView {
@@ -119,7 +145,7 @@ register_flow!(ShadowFlow);
 
 // ─── pure shadow-matrix math (moved out of `ShadowPassLane`) ─────────
 
-fn compute_shadow_view_proj(
+fn compute_single_shadow_view_proj(
     light_type: &LightType,
     position: Vec3,
     direction: Vec3,
@@ -138,11 +164,10 @@ fn compute_shadow_view_proj(
             let proj = Mat4::perspective_rh_zo(sl.outer_cone_angle * 2.0, 1.0, 0.1, sl.range);
             proj * view
         }
-        // Point lights are filtered out before reaching this function
-        // (cubemap shadows not yet wired); see the call site in `project`.
+        // Point lights are routed through `Mat4::cube_face_view_projs`
+        // directly in `project()`; they never reach this single-matrix path.
         LightType::Point(_) => unreachable!(
-            "point lights are filtered out in ShadowFlow::project — \
-             cubemap shadows are not yet wired"
+            "point lights are handled by Mat4::cube_face_view_projs in ShadowFlow::project"
         ),
     }
 }

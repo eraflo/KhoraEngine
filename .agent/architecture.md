@@ -103,7 +103,7 @@ Dependencies flow downward only. `khora-core` is the foundation — it depends o
 | `khora-lanes` | Lanes | Render (Unlit, LitForward, Forward+, Shadow, UI, Extract), Physics (Standard, Debug), Audio (SpatialMixing), Asset loaders (glTF, OBJ, WAV, Symphonia, Texture, Font, Pack), ECS (Compaction), Scene (Definition, Recipe, Archetype serialization, TransformPropagation), UI (StandardUi) |
 | `khora-infra` | Infra | Current default backends — WgpuRenderSystem and WgpuDevice (GPU), WinitWindow, input translation, Rapier3D physics, CPAL audio, Taffy layout, GpuMonitor / MemoryMonitor / VramMonitor. Each backend implements a `khora-core` trait and is swappable. |
 | `khora-io` | Data | AssetService, SerializationService, VFS, AssetIo, PackLoader, FileLoader |
-| `khora-agents` | Agents | RenderAgent, ShadowAgent, PhysicsAgent, UiAgent, AudioAgent + PhysicsQueryService |
+| `khora-agents` | Agents | RenderAgent, ShadowAgent, OverlayAgent, PhysicsAgent, UiAgent, AudioAgent + PhysicsQueryService |
 | `khora-plugins` | Extension | Plugin loading and registration |
 | `khora-sdk` | Public API | EngineCore + `run_winit` entry point, GameWorld (safe ECS facade), EngineApp / AgentProvider / PhaseProvider traits, WindowConfig, Vessel builder + spawn_plane / spawn_cube_at / spawn_sphere helpers |
 | `khora-editor` | Application | Editor application built on khora-sdk |
@@ -206,6 +206,7 @@ Dependencies flow downward only. `khora-core` is the foundation — it depends o
 |---|---|
 | RenderAgent | `crates/khora-agents/src/render_agent/` |
 | ShadowAgent | `crates/khora-agents/src/shadow_agent/` |
+| OverlayAgent | `crates/khora-agents/src/overlay_agent/` |
 | UiAgent | `crates/khora-agents/src/ui_agent/` |
 | PhysicsAgent | `crates/khora-agents/src/physics_agent/` |
 | AudioAgent | `crates/khora-agents/src/audio_agent/` |
@@ -257,15 +258,18 @@ pub trait Agent: Send + Sync {
 }
 ```
 
-The five agents — one per `LaneKind`:
+The six agents — one per CLAD domain:
 
 | Agent | `LaneKind` | Strategies | Allowed `EngineMode` |
 |---|---|---|---|
-| `RenderAgent` | `Render` | Unlit / LitForward / Forward+ | `Playing`, `Custom("editor")` |
-| `ShadowAgent` | `Shadow` | ShadowPassLane (atlas) | `Playing`, `Custom("editor")` |
+| `RenderAgent` | `Render` | Unlit / LitForward / Forward+ (StandardPbr scaffold) | `Playing`, `Custom("editor")` |
+| `ShadowAgent` | `Shadow` | Standard (2048² + 512³ cube) / LowRes (512² + 128³ cube) | `Playing`, `Custom("editor")` |
+| `OverlayAgent` | `Render` | Lanes run in parallel after main render: Emissive, Wireframe, Gizmo | `Playing`, `Custom("editor")` |
 | `PhysicsAgent` | `Physics` | Standard / Simplified | `Playing` |
 | `UiAgent` | `Ui` | Layout + Render | `Custom("editor")` (editor only) |
 | `AudioAgent` | `Audio` | Source count / quality | `Playing` |
+
+WGSL composition: every render lane that needs a pipeline calls `ShaderRegistry::create_module("khora::pipelines::<name>")` from its `on_initialize`. The registry resolves `#import` directives via `naga_oil` against the lib modules under `crates/khora-lanes/src/render_lane/shaders/lib/` (std/, lighting/, shadow/), validates with `naga`, and emits the final WGSL to the GPU. Shader source duplication and runtime filesystem reads are forbidden — add a new pipeline to `PIPELINE_MODULES` in `shader_registry.rs` and import lib modules by their `#define_import_path`.
 
 `EngineMode` is `Playing` or `Custom(String)`. The base engine ships only `Playing`; the editor injects `Custom("editor")`. Do not confuse with the editor's UI-state enum `PlayMode` (`Editing` / `Playing` / `Paused`).
 

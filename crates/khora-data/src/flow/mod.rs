@@ -52,7 +52,7 @@ pub use physics::{PhysicsFlow, PhysicsStepResult, PhysicsView};
 pub use registration::*;
 pub use render::RenderFlow;
 pub use selection::Selection;
-pub use shadow::{ShadowFlow, ShadowView};
+pub use shadow::{ShadowFlow, ShadowMatrices, ShadowView};
 pub use ui::UiFlow;
 
 use khora_core::control::gorna::ResourceBudget;

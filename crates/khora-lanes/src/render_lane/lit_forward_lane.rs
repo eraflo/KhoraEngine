@@ -242,8 +242,15 @@ impl khora_core::lane::Lane for LitForwardLane {
             .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
             .ok_or(khora_core::lane::LaneError::missing(
                 "Arc<dyn GraphicsDevice>",
-            ))?;
-        self.on_gpu_init(device.as_ref())
+            ))?
+            .clone();
+        let registry = ctx
+            .get::<std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>>()
+            .ok_or(khora_core::lane::LaneError::missing(
+                "Arc<Mutex<ShaderRegistry>>",
+            ))?
+            .clone();
+        self.on_gpu_init(device.as_ref(), &registry)
             .map_err(|e| khora_core::lane::LaneError::InitializationFailed(Box::new(e)))
     }
 
@@ -284,29 +291,31 @@ impl khora_core::lane::Lane for LitForwardLane {
             .get::<khora_core::lane::ClearColor>()
             .ok_or(LaneError::missing("ClearColor"))?
             .0;
-        let shadow_atlas = ctx.get::<khora_core::lane::ShadowAtlasView>().map(|v| v.0);
-        let shadow_sampler = ctx
-            .get::<khora_core::lane::ShadowComparisonSampler>()
-            .map(|v| v.0);
-
-        let mut render_ctx = khora_core::renderer::api::core::RenderContext::new(
+        let render_ctx = khora_core::renderer::api::core::RenderContext::new(
             &color_target,
             Some(&depth_target),
             clear_color,
         );
-        render_ctx.shadow_atlas = shadow_atlas.as_ref();
-        render_ctx.shadow_sampler = shadow_sampler.as_ref();
 
-        // Per-light shadow data published by `shadow_pass_lane` into the
-        // per-frame OutputDeck. Cloned out so the borrow on `ctx` is short.
-        let shadow_entries = ctx
+        // Read the per-frame `ShadowFrame` published by whichever shadow
+        // strategy ran. `bindings` may be `None` when the strategy
+        // hasn't initialised yet — the consumer falls back to skipping
+        // the lit render in that case. `entries` is always present
+        // (possibly empty).
+        let (shadow_entries, shadow_bindings) = ctx
             .get::<Slot<khora_core::lane::OutputDeck>>()
-            .map(|s| s.get().slot::<khora_data::render::ShadowEntries>().clone())
+            .map(|s| {
+                let frame = s
+                    .get()
+                    .slot::<khora_core::renderer::api::shadow::ShadowFrame>();
+                (frame.entries.clone(), frame.bindings)
+            })
             .unwrap_or_default();
 
         self.render(
             render_world,
             &shadow_entries,
+            shadow_bindings,
             device.as_ref(),
             encoder,
             &render_ctx,
@@ -344,10 +353,12 @@ impl LitForwardLane {
             .unwrap_or(RenderPipelineId(0))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render(
         &self,
         render_world: &RenderWorld,
         shadow_entries: &khora_data::render::ShadowEntries,
+        shadow_bindings: Option<khora_data::render::ShadowGpuBindings>,
         device: &dyn khora_core::renderer::GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
         render_ctx: &RenderContext,
@@ -450,10 +461,25 @@ impl LitForwardLane {
 
         for (light_index, light) in render_world.lights.iter().enumerate() {
             let shadow = shadow_entries.get(light_index);
-            let shadow_view_proj = shadow
-                .map(|e| e.view_proj)
-                .unwrap_or(khora_core::math::Mat4::IDENTITY);
-            let shadow_index = shadow.map(|e| e.atlas_index as f32).unwrap_or(-1.0);
+
+            // Atlas2D / single-matrix path used by directional + spot.
+            let (atlas2d_view_proj, atlas2d_index) = match shadow {
+                Some(khora_data::render::ShadowEntry::Atlas2D {
+                    view_proj,
+                    atlas_index,
+                }) => (*view_proj, *atlas_index as f32),
+                _ => (khora_core::math::Mat4::IDENTITY, -1.0),
+            };
+
+            // Cube path used by point lights.
+            let (cube_layer, cube_far_plane) = match shadow {
+                Some(khora_data::render::ShadowEntry::Cube {
+                    cube_array_index,
+                    far_plane,
+                    ..
+                }) => (*cube_array_index as f32, *far_plane),
+                _ => (-1.0, 0.0),
+            };
 
             match light.light_type {
                 khora_core::renderer::light::LightType::Directional(ref d) => {
@@ -468,8 +494,13 @@ impl LitForwardLane {
                                 0.0,
                             ],
                             color: d.color.with_alpha(d.intensity),
-                            shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
-                            shadow_params: [shadow_index, d.shadow_bias, d.shadow_normal_bias, 0.0],
+                            shadow_view_proj: atlas2d_view_proj.to_cols_array_2d(),
+                            shadow_params: [
+                                atlas2d_index,
+                                d.shadow_bias,
+                                d.shadow_normal_bias,
+                                0.0,
+                            ],
                         };
                         lighting_uniforms.num_directional_lights += 1;
                     }
@@ -477,6 +508,13 @@ impl LitForwardLane {
                 khora_core::renderer::light::LightType::Point(ref p) => {
                     if (lighting_uniforms.num_point_lights as usize) < MAX_POINT_LIGHTS {
                         let idx = lighting_uniforms.num_point_lights as usize;
+                        // `shadow_params` for point lights:
+                        //   x = cube layer (or -1 for none)
+                        //   y = depth bias
+                        //   z = normal bias
+                        //   w = far plane (matches the perspective the
+                        //       shadow pass used; the WGSL `sample_point_shadow`
+                        //       helper recomputes the depth value using it).
                         lighting_uniforms.point_lights[idx] = PointLightUniform {
                             position: [
                                 light.position.x,
@@ -485,7 +523,12 @@ impl LitForwardLane {
                                 p.range,
                             ],
                             color: p.color.with_alpha(p.intensity),
-                            shadow_params: [shadow_index, p.shadow_bias, p.shadow_normal_bias, 0.0],
+                            shadow_params: [
+                                cube_layer,
+                                p.shadow_bias,
+                                p.shadow_normal_bias,
+                                cube_far_plane,
+                            ],
                         };
                         lighting_uniforms.num_point_lights += 1;
                     }
@@ -508,8 +551,13 @@ impl LitForwardLane {
                             ],
                             color: s.color.with_alpha(s.intensity),
                             params: [s.outer_cone_angle.cos(), 0.0, 0.0, 0.0],
-                            shadow_view_proj: shadow_view_proj.to_cols_array_2d(),
-                            shadow_params: [shadow_index, s.shadow_bias, s.shadow_normal_bias, 0.0],
+                            shadow_view_proj: atlas2d_view_proj.to_cols_array_2d(),
+                            shadow_params: [
+                                atlas2d_index,
+                                s.shadow_bias,
+                                s.shadow_normal_bias,
+                                0.0,
+                            ],
                         };
                         lighting_uniforms.num_spot_lights += 1;
                     }
@@ -706,55 +754,47 @@ impl LitForwardLane {
             }),
         };
 
-        // Build Lighting Bind Group with Shadow Atlas
-        // The pipeline's group 3 layout expects 3 bindings: uniform buffer + shadow atlas + shadow sampler.
-        // All 3 must be present for the bind group to be valid.
+        // Build Lighting Bind Group. Shadow-related entries (atlas2D,
+        // sampler, atlas_cube) are filled by
+        // [`khora_data::render::shadow_bindings::fill_shadow_bind_group_entries`]
+        // — we never reference the individual texture types here.
         let final_lighting_bind_group = if let Some(layout) = self.light_layout.get().copied() {
-            match (render_ctx.shadow_atlas, render_ctx.shadow_sampler) {
-                (Some(atlas), Some(sampler)) => {
-                    let entries = [
-                        BindGroupEntry {
-                            binding: 0,
-                            resource: BindingResource::Buffer(BufferBinding {
-                                buffer: lighting_ring_buffer_id,
-                                offset: 0,
-                                size: None,
-                            }),
-                            _phantom: std::marker::PhantomData,
-                        },
-                        BindGroupEntry {
-                            binding: 1,
-                            resource: BindingResource::TextureView(*atlas),
-                            _phantom: std::marker::PhantomData,
-                        },
-                        BindGroupEntry {
-                            binding: 2,
-                            resource: BindingResource::Sampler(*sampler),
-                            _phantom: std::marker::PhantomData,
-                        },
-                    ];
+            let Some(shadow_bindings) = shadow_bindings else {
+                log::warn!(
+                    "LitForwardLane: ShadowGpuBindings not available (shadow agent inactive?), skipping lit render"
+                );
+                return;
+            };
 
-                    match device.create_bind_group(&BindGroupDescriptor {
-                        label: Some("lit_forward_lighting_bind_group_dynamic"),
-                        layout,
-                        entries: &entries,
-                    }) {
-                        Ok(bg) => {
-                            temp_bind_groups.push(bg);
-                            bg
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "LitForwardLane: Failed to create lighting bind group: {:?}",
-                                e
-                            );
-                            return;
-                        }
-                    }
+            // binding 0 — lighting uniform buffer (lit lane's responsibility)
+            let mut entries = vec![BindGroupEntry {
+                binding: khora_data::render::shadow_bindings::binding::LIGHTING_UNIFORMS,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: lighting_ring_buffer_id,
+                    offset: 0,
+                    size: None,
+                }),
+                _phantom: std::marker::PhantomData,
+            }];
+            // bindings 1, 2, 3 — shadow lane's responsibility (opaque)
+            khora_data::render::shadow_bindings::fill_shadow_bind_group_entries(
+                &shadow_bindings,
+                &mut entries,
+            );
+
+            match device.create_bind_group(&BindGroupDescriptor {
+                label: Some("lit_forward_lighting_bind_group_dynamic"),
+                layout,
+                entries: &entries,
+            }) {
+                Ok(bg) => {
+                    temp_bind_groups.push(bg);
+                    bg
                 }
-                _ => {
-                    log::warn!(
-                        "LitForwardLane: shadow atlas/sampler not available, skipping lit render"
+                Err(e) => {
+                    log::error!(
+                        "LitForwardLane: Failed to create lighting bind group: {:?}",
+                        e
                     );
                     return;
                 }
@@ -854,13 +894,12 @@ impl LitForwardLane {
     fn on_gpu_init(
         &self,
         device: &dyn khora_core::renderer::GraphicsDevice,
+        shader_registry: &std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
-        use crate::render_lane::shaders::LIT_FORWARD_WGSL;
         use khora_core::renderer::api::{
             command::{
                 BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType,
             },
-            core::{ShaderModuleDescriptor, ShaderSourceData},
             pipeline::enums::{CompareFunction, VertexFormat, VertexStepMode},
             pipeline::state::{ColorWrites, DepthBiasState, StencilFaceState},
             pipeline::{
@@ -924,47 +963,66 @@ impl LitForwardLane {
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        // Group 3: Lights
-        use khora_core::renderer::api::command::{SamplerBindingType, TextureSampleType};
+        // Group 3 — lights & shadows.
+        //   binding 0 — lighting uniforms (lit lane's responsibility)
+        //   binding 1 — 2D shadow atlas        ─┐
+        //   binding 2 — comparison sampler       ├ provided by the shadow lane
+        //   binding 3 — cube shadow atlas       ─┘
+        //
+        // The shadow-side entries come from
+        // [`khora_data::render::shadow_bindings::shadow_bind_group_layout_entries`];
+        // the lit lane never references the underlying texture / view
+        // dimensions directly so a different shadow algorithm (clustered,
+        // tiled, …) could swap them without touching this file.
+        let mut layout_entries: Vec<BindGroupLayoutEntry> = vec![BindGroupLayoutEntry {
+            binding: khora_data::render::shadow_bindings::binding::LIGHTING_UNIFORMS,
+            visibility: ShaderStageFlags::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+        }];
+        layout_entries.extend(
+            khora_data::render::shadow_bindings::shadow_bind_group_layout_entries(),
+        );
         let light_layout = device
             .create_bind_group_layout(&BindGroupLayoutDescriptor {
                 label: Some("lit_forward_light_layout"),
-                entries: &[
-                    BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: ShaderStageFlags::FRAGMENT,
-                        ty: BindingType::Buffer {
-                            ty: BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                    },
-                    BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: ShaderStageFlags::FRAGMENT,
-                        ty: BindingType::Texture {
-                            sample_type: TextureSampleType::Depth,
-                            view_dimension:
-                                khora_core::renderer::api::command::TextureViewDimension::D2Array,
-                            multisampled: false,
-                        },
-                    },
-                    BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: ShaderStageFlags::FRAGMENT,
-                        ty: BindingType::Sampler(SamplerBindingType::Comparison),
-                    },
-                ],
+                entries: &layout_entries,
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        // 2. Create Shader Module
-        let shader_module = device
-            .create_shader_module(&ShaderModuleDescriptor {
-                label: Some("lit_forward_shader"),
-                source: ShaderSourceData::Wgsl(Cow::Borrowed(LIT_FORWARD_WGSL)),
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        // 2. Create Shader Module via the central `ShaderRegistry`.
+        // The pipeline is composed from `khora::pipelines::lit_forward`
+        // with all its `#import`ed lib modules resolved + ShaderDefs
+        // injected by naga_oil. Validation runs through naga before the
+        // device sees the final WGSL.
+        let shader_module = {
+            let mut registry = crate::lock_or_log!(
+                shader_registry.lock(),
+                "LitForwardLane on_gpu_init.shader_registry",
+                Err(khora_core::renderer::error::RenderError::ResourceError(
+                    khora_core::renderer::ResourceError::BackendError(
+                        "shader_registry mutex poisoned".to_owned()
+                    )
+                ))
+            );
+            registry
+                .create_module(
+                    device,
+                    "khora::pipelines::lit_forward",
+                    Some("lit_forward_shader"),
+                )
+                .map_err(|e| {
+                    khora_core::renderer::error::RenderError::ResourceError(
+                        khora_core::renderer::ResourceError::BackendError(format!(
+                            "ShaderRegistry compose failed: {}",
+                            e
+                        )),
+                    )
+                })?
+        };
 
         // 3. Create Pipeline
         let vertex_attributes = vec![

@@ -18,7 +18,6 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::sync::{Arc, OnceLock};
 
-use crate::render_lane::shaders::UI_WGSL;
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, Ref, Slot};
 use khora_core::math::{Mat4, Vec4};
 use khora_core::renderer::api::command::{
@@ -27,7 +26,6 @@ use khora_core::renderer::api::command::{
     BufferBindingType, LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor,
     StoreOp,
 };
-use khora_core::renderer::api::core::{ShaderModuleDescriptor, ShaderSourceData};
 use khora_core::renderer::api::pipeline::{
     ColorTargetStateDescriptor, ColorWrites, MultisampleStateDescriptor, PipelineLayoutDescriptor,
     PrimitiveStateDescriptor, PrimitiveTopology, RenderPipelineDescriptor, RenderPipelineId,
@@ -105,7 +103,11 @@ impl UiRenderLane {
         Self::default()
     }
 
-    fn init_gpu_resources(&self, device: &dyn GraphicsDevice) -> Result<(), LaneError> {
+    fn init_gpu_resources(
+        &self,
+        device: &dyn GraphicsDevice,
+        shader_registry: &Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>,
+    ) -> Result<(), LaneError> {
         // 1. Create Bind Group Layouts
         let global_layout_desc = BindGroupLayoutDescriptor {
             label: Some("ui_global_layout"),
@@ -139,13 +141,20 @@ impl UiRenderLane {
             .create_bind_group_layout(&instance_layout_desc)
             .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
 
-        // 2. Create Shader Module
-        let shader_module = device
-            .create_shader_module(&ShaderModuleDescriptor {
-                label: Some("ui_render_shader"),
-                source: ShaderSourceData::Wgsl(Cow::Borrowed(UI_WGSL)),
-            })
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
+        // 2. Create Shader Module via ShaderRegistry.
+        let shader_module = {
+            let mut registry = shader_registry
+                .lock()
+                .map_err(|_| LaneError::lock_poisoned("UiRenderLane.shader_registry"))?;
+            registry
+                .create_module(device, "khora::pipelines::ui", Some("ui_render_shader"))
+                .map_err(|e| {
+                    LaneError::InitializationFailed(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("ShaderRegistry compose failed (ui): {}", e),
+                    )))
+                })?
+        };
 
         let atlas_layout_desc = BindGroupLayoutDescriptor {
             label: Some("ui_atlas_layout"),
@@ -316,9 +325,13 @@ impl Lane for UiRenderLane {
     fn on_initialize(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
         let device = ctx
             .get::<Arc<dyn GraphicsDevice>>()
-            .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?;
-
-        self.init_gpu_resources(device.as_ref())
+            .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
+            .clone();
+        let registry = ctx
+            .get::<Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>>()
+            .ok_or(LaneError::missing("Arc<Mutex<ShaderRegistry>>"))?
+            .clone();
+        self.init_gpu_resources(device.as_ref(), &registry)
     }
 
     fn execute(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {

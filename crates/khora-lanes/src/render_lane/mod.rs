@@ -18,16 +18,27 @@
 //! [`khora_data::render`].  This module exposes the lanes that consume that
 //! data and the UI-scene types specific to the UI render pipeline.
 
+mod emissive_lane;
 mod forward_plus_lane;
+mod gizmo_lane;
 mod lit_forward_lane;
+pub mod shader_registry;
 pub mod shaders;
-mod shadow_pass_lane;
+pub mod shadows_lane;
 mod simple_unlit_lane;
+mod standard_pbr_lane;
 mod ui_render_lane;
 pub mod util;
+mod wireframe_lane;
 
+pub use shader_registry::{ShaderRegistry, ShaderRegistryError};
+
+pub use emissive_lane::EmissiveLane;
 pub use forward_plus_lane::*;
+pub use gizmo_lane::{GizmoLane, SharedGizmoFrame};
 pub use lit_forward_lane::*;
-pub use shadow_pass_lane::*;
+pub use shadows_lane::{LowResShadowsLane, StandardShadowsLane};
 pub use simple_unlit_lane::*;
+pub use standard_pbr_lane::StandardPbrLane;
 pub use ui_render_lane::*;
+pub use wireframe_lane::WireframeLane;

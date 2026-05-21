@@ -60,9 +60,15 @@ pub struct DepthTarget(pub TextureViewId);
 #[derive(Debug, Clone, Copy)]
 pub struct ClearColor(pub crate::math::LinearRgba);
 
-/// Shadow atlas texture view, written by shadow lanes after `execute()`.
+/// 2D shadow atlas texture view (directional / spot lights), written by
+/// shadow lanes after `execute()`.
 #[derive(Debug, Clone, Copy)]
 pub struct ShadowAtlasView(pub TextureViewId);
+
+/// Cube shadow atlas texture view (point lights), bound by lit shaders as
+/// `texture_depth_cube_array`. Written by shadow lanes after `execute()`.
+#[derive(Debug, Clone, Copy)]
+pub struct ShadowAtlasCubeView(pub TextureViewId);
 
 /// Shadow comparison sampler, written by shadow lanes after `execute()`.
 #[derive(Debug, Clone, Copy)]

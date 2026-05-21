@@ -92,6 +92,24 @@ const PER_TILE_COST: f32 = 0.0001;
 /// Cost factor per light-tile intersection test.
 const LIGHT_TILE_TEST_COST: f32 = 0.00001;
 
+/// Binding indices inside the group-3 *lighting* bind group, mirroring
+/// `forward_plus.wgsl`. Bindings 1/2/3 belong to the shared shadow
+/// contract (`khora_data::render::shadow_bindings::binding`) — Forward+
+/// owns 0, 4, 5, 6, 7 around them. See the canonical render bind-group
+/// convention in `.agent/conventions.md`.
+mod g3 {
+    /// `lights` storage buffer.
+    pub const LIGHTS: u32 = 0;
+    /// `light_indices` storage buffer (per-tile light lists).
+    pub const LIGHT_INDICES: u32 = 4;
+    /// `light_grid` storage buffer (per-tile offset/count pairs).
+    pub const LIGHT_GRID: u32 = 5;
+    /// `tile_info` uniform buffer.
+    pub const TILE_INFO: u32 = 6;
+    /// `light_shadow_view_projs` storage buffer.
+    pub const SHADOW_VIEW_PROJS: u32 = 7;
+}
+
 // --- ForwardPlusLane ---
 
 /// GPU resource handles for the Forward+ compute pass.
@@ -110,6 +128,9 @@ pub struct ForwardPlusGpuResources {
     pub tile_info_buffer: Option<BufferId>,
     /// Uniform buffer for culling parameters.
     pub culling_uniforms_buffer: Option<BufferId>,
+    /// Storage buffer with per-light 2D shadow view-projection matrices,
+    /// indexed identically to the `light_buffer`.
+    pub shadow_view_projs_buffer: Option<BufferId>,
 
     /// Bind group layout for Group 0 (Camera).
     pub camera_layout: Option<BindGroupLayoutId>,
@@ -117,8 +138,9 @@ pub struct ForwardPlusGpuResources {
     pub model_layout: Option<BindGroupLayoutId>,
     /// Bind group layout for Group 2 (Material).
     pub material_layout: Option<BindGroupLayoutId>,
-    /// Bind group layout for Group 3 (Forward Light Data).
-    pub forward_layout: Option<BindGroupLayoutId>,
+    /// Bind group layout for Group 3 — the lighting domain: light list,
+    /// shadow atlases, per-tile culling results + shadow view-projs.
+    pub lighting_layout: Option<BindGroupLayoutId>,
     /// Bind group layout for Culling compute pass.
     pub culling_layout: Option<BindGroupLayoutId>,
 
@@ -131,8 +153,6 @@ pub struct ForwardPlusGpuResources {
 
     /// Bind group for the culling compute shader.
     pub culling_bind_group: Option<BindGroupId>,
-    /// Bind group for the forward pass (light data).
-    pub forward_bind_group: Option<BindGroupId>,
     /// Compute pipeline for light culling.
     pub culling_pipeline: Option<ComputePipelineId>,
     /// Render pipeline for the Forward+ pass.
@@ -317,8 +337,15 @@ impl khora_core::lane::Lane for ForwardPlusLane {
             .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
             .ok_or(khora_core::lane::LaneError::missing(
                 "Arc<dyn GraphicsDevice>",
-            ))?;
-        self.on_gpu_init(device.as_ref())
+            ))?
+            .clone();
+        let registry = ctx
+            .get::<std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>>()
+            .ok_or(khora_core::lane::LaneError::missing(
+                "Arc<Mutex<ShaderRegistry>>",
+            ))?
+            .clone();
+        self.on_gpu_init(device.as_ref(), &registry)
             .map_err(|e| khora_core::lane::LaneError::InitializationFailed(Box::new(e)))
     }
 
@@ -359,21 +386,30 @@ impl khora_core::lane::Lane for ForwardPlusLane {
             .get::<khora_core::lane::ClearColor>()
             .ok_or(LaneError::missing("ClearColor"))?
             .0;
-        let shadow_atlas = ctx.get::<khora_core::lane::ShadowAtlasView>().map(|v| v.0);
-        let shadow_sampler = ctx
-            .get::<khora_core::lane::ShadowComparisonSampler>()
-            .map(|v| v.0);
 
-        let mut render_ctx = khora_core::renderer::api::core::RenderContext::new(
+        let render_ctx = khora_core::renderer::api::core::RenderContext::new(
             &color_target,
             Some(&depth_target),
             clear_color,
         );
-        render_ctx.shadow_atlas = shadow_atlas.as_ref();
-        render_ctx.shadow_sampler = shadow_sampler.as_ref();
+
+        // Read the per-frame `ShadowFrame` published by whichever shadow
+        // strategy ran. Mirror of LitForwardLane's pattern — single
+        // cross-lane channel.
+        let (shadow_entries, shadow_bindings) = ctx
+            .get::<Slot<khora_core::lane::OutputDeck>>()
+            .map(|s| {
+                let frame = s
+                    .get()
+                    .slot::<khora_core::renderer::api::shadow::ShadowFrame>();
+                (frame.entries.clone(), frame.bindings)
+            })
+            .unwrap_or_default();
 
         self.render(
             render_world,
+            &shadow_entries,
+            shadow_bindings,
             device.as_ref(),
             encoder,
             &render_ctx,
@@ -415,9 +451,12 @@ impl ForwardPlusLane {
         resources.render_pipeline.unwrap_or(RenderPipelineId(0))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn render(
         &self,
         render_world: &RenderWorld,
+        shadow_entries: &khora_data::render::ShadowEntries,
+        shadow_bindings: Option<khora_data::render::ShadowGpuBindings>,
         device: &dyn khora_core::renderer::GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
         render_ctx: &RenderContext,
@@ -491,21 +530,66 @@ impl ForwardPlusLane {
             let _ = device.write_buffer(tile_buffer, 0, bytemuck::cast_slice(&tile_info));
         }
 
-        // 4. Update Light Data
+        // 4. Update Light Data — fold per-light shadow metadata from the
+        // ShadowFrame into each GpuLight, and accumulate a parallel
+        // `shadow_view_projs` buffer indexed identically to `lights`.
+        //
+        // Directional / spot: `shadow_map_index` = 2D atlas layer,
+        // `shadow_view_projs[i]` carries the per-light VP matrix.
+        // Point: `shadow_map_index` = cube atlas index,
+        // `shadow_far_plane` = perspective far plane used by the shadow
+        // pass (matches `ShadowEntry::Cube.far_plane`).
+        use khora_data::render::ShadowEntry;
         let lights: Vec<_> = render_world
             .lights
             .iter()
-            .map(|l| {
-                khora_core::renderer::GpuLight::from_parts(
+            .enumerate()
+            .map(|(i, l)| {
+                let mut gl = khora_core::renderer::GpuLight::from_parts(
                     [l.position.x, l.position.y, l.position.z],
                     [l.direction.x, l.direction.y, l.direction.z],
                     &l.light_type,
-                )
+                );
+                match shadow_entries.get(i) {
+                    Some(ShadowEntry::Atlas2D { atlas_index, .. }) => {
+                        gl.shadow_map_index = *atlas_index;
+                    }
+                    Some(ShadowEntry::Cube {
+                        cube_array_index,
+                        far_plane,
+                        ..
+                    }) => {
+                        gl.shadow_map_index = *cube_array_index;
+                        gl.shadow_far_plane = *far_plane;
+                    }
+                    None => {}
+                }
+                gl
             })
             .collect();
 
         if let Some(light_buffer) = resources.light_buffer {
             let _ = device.write_buffer(light_buffer, 0, bytemuck::cast_slice(&lights));
+        }
+
+        // Parallel shadow view-projection matrices — directional / spot
+        // pull from the entry's `view_proj`, everything else gets the
+        // identity (bypassed via `shadow_map_index < 0` early-out in
+        // `sample_shadow_pcf`).
+        let shadow_view_projs: Vec<[[f32; 4]; 4]> = render_world
+            .lights
+            .iter()
+            .enumerate()
+            .map(|(i, _)| match shadow_entries.get(i) {
+                Some(ShadowEntry::Atlas2D { view_proj, .. }) => view_proj.to_cols_array_2d(),
+                _ => khora_core::math::Mat4::IDENTITY.to_cols_array_2d(),
+            })
+            .collect();
+
+        if let Some(svp_buffer) = resources.shadow_view_projs_buffer {
+            if !shadow_view_projs.is_empty() {
+                let _ = device.write_buffer(svp_buffer, 0, bytemuck::cast_slice(&shadow_view_projs));
+            }
         }
 
         // Prepare and write Culling Uniforms
@@ -651,15 +735,96 @@ impl ForwardPlusLane {
             }),
         };
 
+        // Build the per-frame group-3 (lighting) bind group. It packs
+        // the lighting domain into one group per the canonical 4-group
+        // render convention: the light list (0), the shadow atlases
+        // (1/2/3, from the shared `khora::shadow::bindings` contract),
+        // the per-tile culling results (4/5/6) and the shadow
+        // view-projections (7). It mixes persistent light buffers with
+        // the per-frame shadow atlas views, so it cannot be cached.
+        //
+        // If no shadow strategy ran this frame, skip — wgpu requires
+        // every pipeline-declared group to be bound.
+        let Some(shadow_bindings) = shadow_bindings else {
+            log::warn!(
+                "ForwardPlusLane: ShadowGpuBindings not available (shadow agent inactive?), skipping render"
+            );
+            return;
+        };
+        let (
+            Some(lighting_layout),
+            Some(light_buffer),
+            Some(light_index_buffer),
+            Some(light_grid_buffer),
+            Some(tile_info_buffer),
+            Some(shadow_view_projs_buffer),
+        ) = (
+            resources.lighting_layout,
+            resources.light_buffer,
+            resources.light_index_buffer,
+            resources.light_grid_buffer,
+            resources.tile_info_buffer,
+            resources.shadow_view_projs_buffer,
+        )
+        else {
+            log::warn!("ForwardPlusLane: lighting GPU resources not initialized, skipping render");
+            return;
+        };
+
+        use khora_core::renderer::api::command::{BindGroupDescriptor, BindGroupEntry};
+        let mut lighting_entries: Vec<BindGroupEntry> = Vec::with_capacity(8);
+        lighting_entries.push(BindGroupEntry::buffer(g3::LIGHTS, light_buffer, 0, None));
+        // Bindings 1/2/3 — shadow atlas 2D + sampler + cube atlas.
+        khora_data::render::shadow_bindings::fill_shadow_bind_group_entries(
+            &shadow_bindings,
+            &mut lighting_entries,
+        );
+        lighting_entries.push(BindGroupEntry::buffer(
+            g3::LIGHT_INDICES,
+            light_index_buffer,
+            0,
+            None,
+        ));
+        lighting_entries.push(BindGroupEntry::buffer(
+            g3::LIGHT_GRID,
+            light_grid_buffer,
+            0,
+            None,
+        ));
+        lighting_entries.push(BindGroupEntry::buffer(
+            g3::TILE_INFO,
+            tile_info_buffer,
+            0,
+            None,
+        ));
+        lighting_entries.push(BindGroupEntry::buffer(
+            g3::SHADOW_VIEW_PROJS,
+            shadow_view_projs_buffer,
+            0,
+            None,
+        ));
+        let lighting_bg = match device.create_bind_group(&BindGroupDescriptor {
+            label: Some("forward_plus_lighting_bind_group"),
+            layout: lighting_layout,
+            entries: &lighting_entries,
+        }) {
+            Ok(bg) => bg,
+            Err(e) => {
+                log::error!(
+                    "ForwardPlusLane: failed to create lighting bind group: {:?}",
+                    e
+                );
+                return;
+            }
+        };
+
         let mut render_pass = encoder.begin_render_pass(&render_pass_desc);
 
         // Bind Group 0: Camera
         render_pass.set_bind_group(0, &camera_bind_group, &[]);
 
-        // Bind Group 3: Forward Light Data
-        if let Some(ref forward_bg) = resources.forward_bind_group {
-            render_pass.set_bind_group(3, forward_bg, &[]);
-        }
+        // Bind Group 3: Lighting (lights + shadows + tile culling).
+        render_pass.set_bind_group(3, &lighting_bg, &[]);
 
         // Set Render Pipeline
         if let Some(ref pipeline) = resources.render_pipeline {
@@ -681,6 +846,9 @@ impl ForwardPlusLane {
             render_pass.set_index_buffer(&cmd.index_buffer, 0, cmd.index_format);
             render_pass.draw_indexed(0..cmd.index_count, 0, 0..1);
         }
+
+        drop(render_pass);
+        let _ = device.destroy_bind_group(lighting_bg);
     }
 
     fn estimate_render_cost(
@@ -735,14 +903,13 @@ impl ForwardPlusLane {
     fn on_gpu_init(
         &self,
         device: &dyn khora_core::renderer::GraphicsDevice,
+        shader_registry: &std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
-        use crate::render_lane::shaders::FORWARD_PLUS_WGSL;
         use khora_core::renderer::api::{
             command::{
                 BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
                 BindGroupLayoutEntry, BindingType, BufferBindingType,
             },
-            core::{ShaderModuleDescriptor, ShaderSourceData},
             pipeline::enums::{CompareFunction, VertexFormat, VertexStepMode},
             pipeline::state::{ColorWrites, DepthBiasState, StencilFaceState},
             pipeline::{
@@ -813,44 +980,63 @@ impl ForwardPlusLane {
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        // Group 3: Forward Light Data (Render Pass side)
-        let forward_layout = device
+        // Group 3 — the lighting domain (canonical 4-group render
+        // convention, see `.agent/conventions.md`). One bind group holds
+        // every lighting input: the light list, the per-tile culling
+        // results, the shadow atlases. Shadow bindings stay at 1/2/3
+        // (shared `khora::shadow::bindings` contract, also used by
+        // `LitForwardLane`); Forward+ owns 0, 4, 5, 6, 7 around them.
+        let mut lighting_entries: Vec<BindGroupLayoutEntry> = vec![
+            // 0: Lights
+            BindGroupLayoutEntry::buffer(
+                g3::LIGHTS,
+                ShaderStageFlags::FRAGMENT,
+                BufferBindingType::Storage { read_only: true },
+                false,
+                None,
+            ),
+        ];
+        // 1/2/3: shadow atlas 2D + sampler + cube atlas.
+        lighting_entries
+            .extend(khora_data::render::shadow_bindings::shadow_bind_group_layout_entries());
+        lighting_entries.extend([
+            // 4: Light Index List
+            BindGroupLayoutEntry::buffer(
+                g3::LIGHT_INDICES,
+                ShaderStageFlags::FRAGMENT,
+                BufferBindingType::Storage { read_only: true },
+                false,
+                None,
+            ),
+            // 5: Light Grid
+            BindGroupLayoutEntry::buffer(
+                g3::LIGHT_GRID,
+                ShaderStageFlags::FRAGMENT,
+                BufferBindingType::Storage { read_only: true },
+                false,
+                None,
+            ),
+            // 6: Tile Info
+            BindGroupLayoutEntry::buffer(
+                g3::TILE_INFO,
+                ShaderStageFlags::FRAGMENT,
+                BufferBindingType::Uniform,
+                false,
+                None,
+            ),
+            // 7: Per-light shadow view-projection matrices.
+            BindGroupLayoutEntry::buffer(
+                g3::SHADOW_VIEW_PROJS,
+                ShaderStageFlags::FRAGMENT,
+                BufferBindingType::Storage { read_only: true },
+                false,
+                None,
+            ),
+        ]);
+        let lighting_layout = device
             .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("Forward+ Render Pass Light Layout"),
-                entries: &[
-                    // 0: Lights
-                    BindGroupLayoutEntry::buffer(
-                        0,
-                        ShaderStageFlags::FRAGMENT,
-                        BufferBindingType::Storage { read_only: true },
-                        false,
-                        None,
-                    ),
-                    // 1: Light Index List
-                    BindGroupLayoutEntry::buffer(
-                        1,
-                        ShaderStageFlags::FRAGMENT,
-                        BufferBindingType::Storage { read_only: true },
-                        false,
-                        None,
-                    ),
-                    // 2: Light Grid
-                    BindGroupLayoutEntry::buffer(
-                        2,
-                        ShaderStageFlags::FRAGMENT,
-                        BufferBindingType::Storage { read_only: true },
-                        false,
-                        None,
-                    ),
-                    // 3: Tile Info
-                    BindGroupLayoutEntry::buffer(
-                        3,
-                        ShaderStageFlags::FRAGMENT,
-                        BufferBindingType::Uniform,
-                        false,
-                        None,
-                    ),
-                ],
+                label: Some("Forward+ Lighting Layout (group 3)"),
+                entries: &lighting_entries,
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
@@ -895,15 +1081,35 @@ impl ForwardPlusLane {
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        // 2. Create Pipelines
+        // 2. Create Pipelines — composed through `ShaderRegistry` so
+        // the `#import`s of `khora::std::*`, `khora::lighting::*` are
+        // resolved by naga_oil at boot.
 
-        // Render Pipeline
-        let shader_module = device
-            .create_shader_module(&ShaderModuleDescriptor {
-                label: Some("forward_plus_render_shader"),
-                source: ShaderSourceData::Wgsl(Cow::Borrowed(FORWARD_PLUS_WGSL)),
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        let shader_module = {
+            let mut registry = crate::lock_or_log!(
+                shader_registry.lock(),
+                "ForwardPlusLane on_gpu_init.shader_registry",
+                Err(khora_core::renderer::error::RenderError::ResourceError(
+                    khora_core::renderer::ResourceError::BackendError(
+                        "shader_registry mutex poisoned".to_owned()
+                    )
+                ))
+            );
+            registry
+                .create_module(
+                    device,
+                    "khora::pipelines::forward_plus",
+                    Some("forward_plus_render_shader"),
+                )
+                .map_err(|e| {
+                    khora_core::renderer::error::RenderError::ResourceError(
+                        khora_core::renderer::ResourceError::BackendError(format!(
+                            "ShaderRegistry compose failed: {}",
+                            e
+                        )),
+                    )
+                })?
+        };
 
         let vertex_attributes = vec![
             VertexAttributeDescriptor {
@@ -929,7 +1135,8 @@ impl ForwardPlusLane {
             attributes: Cow::Owned(vertex_attributes),
         };
 
-        // Explicit Render Pipeline Layout
+        // Explicit Render Pipeline Layout — canonical 4-group render
+        // convention: frame / object / material / lighting.
         let render_pipeline_layout = device
             .create_pipeline_layout(
                 &khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
@@ -938,7 +1145,7 @@ impl ForwardPlusLane {
                         camera_layout,
                         model_layout,
                         material_layout,
-                        forward_layout,
+                        lighting_layout,
                     ],
                 },
             )
@@ -994,14 +1201,31 @@ impl ForwardPlusLane {
             )
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        let culling_shader_module = device
-            .create_shader_module(&ShaderModuleDescriptor {
-                label: Some("Forward+ Culling Shader"),
-                source: ShaderSourceData::Wgsl(Cow::Borrowed(
-                    crate::render_lane::shaders::LIGHT_CULLING_WGSL,
-                )),
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        let culling_shader_module = {
+            let mut registry = crate::lock_or_log!(
+                shader_registry.lock(),
+                "ForwardPlusLane on_gpu_init.shader_registry.culling",
+                Err(khora_core::renderer::error::RenderError::ResourceError(
+                    khora_core::renderer::ResourceError::BackendError(
+                        "shader_registry mutex poisoned".to_owned()
+                    )
+                ))
+            );
+            registry
+                .create_module(
+                    device,
+                    "khora::pipelines::light_culling",
+                    Some("Forward+ Culling Shader"),
+                )
+                .map_err(|e| {
+                    khora_core::renderer::error::RenderError::ResourceError(
+                        khora_core::renderer::ResourceError::BackendError(format!(
+                            "ShaderRegistry compose failed (light_culling): {}",
+                            e
+                        )),
+                    )
+                })?
+        };
 
         let culling_pipeline = device
             .create_compute_pipeline(
@@ -1055,6 +1279,19 @@ impl ForwardPlusLane {
                 label: Some(Cow::Borrowed("Forward+ Tile Info")),
                 size: 256,
                 usage: khora_core::renderer::api::resource::BufferUsage::UNIFORM
+                    | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
+                mapped_at_creation: false,
+            })
+            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+
+        // Shadow view-projection matrices (one mat4 per light, indexed
+        // identically to `light_buffer`). 64 KB matches the light buffer
+        // sizing — ~1024 matrices, well above any realistic scene.
+        let shadow_view_projs_buffer = device
+            .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
+                label: Some(Cow::Borrowed("Forward+ Shadow ViewProj Buffer")),
+                size: 64 * 1024,
+                usage: khora_core::renderer::api::resource::BufferUsage::STORAGE
                     | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
                 mapped_at_creation: false,
             })
@@ -1118,18 +1355,9 @@ impl ForwardPlusLane {
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        let forward_bg = device
-            .create_bind_group(&BindGroupDescriptor {
-                label: Some("Forward+ Render Pass Bind Group"),
-                layout: forward_layout,
-                entries: &[
-                    BindGroupEntry::buffer(0, light_buffer, 0, None),
-                    BindGroupEntry::buffer(1, light_index_buffer, 0, None),
-                    BindGroupEntry::buffer(2, light_grid_buffer, 0, None),
-                    BindGroupEntry::buffer(3, tile_info_buffer, 0, None),
-                ],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        // The group-3 (lighting) bind group is rebuilt every frame in
+        // `render` because it combines the persistent light buffers with
+        // the per-frame shadow atlas views — it cannot be cached here.
 
         // 5. Store all resources
         let mut res = self.gpu_resources.lock().map_err(|_| {
@@ -1144,16 +1372,16 @@ impl ForwardPlusLane {
         res.light_grid_buffer = Some(light_grid_buffer);
         res.tile_info_buffer = Some(tile_info_buffer);
         res.culling_uniforms_buffer = Some(culling_uniforms_buffer);
+        res.shadow_view_projs_buffer = Some(shadow_view_projs_buffer);
         res.camera_layout = Some(camera_layout);
         res.model_layout = Some(model_layout);
         res.material_layout = Some(material_layout);
-        res.forward_layout = Some(forward_layout);
+        res.lighting_layout = Some(lighting_layout);
         res.culling_layout = Some(culling_layout);
         res.camera_ring = Some(camera_ring);
         res.model_ring = Some(model_ring);
         res.material_ring = Some(material_ring);
         res.culling_bind_group = Some(culling_bg);
-        res.forward_bind_group = Some(forward_bg);
         res.culling_pipeline = Some(culling_pipeline);
         res.render_pipeline = Some(pipeline_id);
 
@@ -1186,6 +1414,9 @@ impl ForwardPlusLane {
             let _ = device.destroy_buffer(id);
         }
         if let Some(id) = resources.culling_uniforms_buffer.take() {
+            let _ = device.destroy_buffer(id);
+        }
+        if let Some(id) = resources.shadow_view_projs_buffer.take() {
             let _ = device.destroy_buffer(id);
         }
     }

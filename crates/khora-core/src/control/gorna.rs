@@ -29,6 +29,10 @@ pub enum AgentId {
     Renderer,
     /// The shadow map rendering agent (runs in OBSERVE phase before Renderer).
     ShadowRenderer,
+    /// Overlay / debug-viz rendering (gizmos, wireframes, emissive). Runs
+    /// after `Renderer` in the OUTPUT phase. Lanes activate independently
+    /// based on context flags rather than a single budget-driven strategy.
+    Overlay,
     /// The physics simulation agent.
     Physics,
     /// The ECS/Logic coordination agent.

@@ -44,10 +44,11 @@ fn budget(strategy_id: StrategyId) -> ResourceBudget {
 }
 
 #[test]
-fn test_negotiate_returns_three_strategies_when_unconstrained() {
+fn test_negotiate_returns_all_strategies_when_unconstrained() {
     let mut agent = RenderAgent::default();
     let res = agent.negotiate(unconstrained_req());
-    assert_eq!(res.strategies.len(), 3);
+    // SimpleUnlit / LitForward / StandardPbr / ForwardPlus.
+    assert_eq!(res.strategies.len(), 4);
 }
 
 #[test]

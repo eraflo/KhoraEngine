@@ -299,6 +299,24 @@ impl Vec3 {
         y: 0.0,
         z: 1.0,
     };
+    /// The unit vector pointing along the negative X-axis.
+    pub const NEG_X: Self = Self {
+        x: -1.0,
+        y: 0.0,
+        z: 0.0,
+    };
+    /// The unit vector pointing along the negative Y-axis.
+    pub const NEG_Y: Self = Self {
+        x: 0.0,
+        y: -1.0,
+        z: 0.0,
+    };
+    /// The unit vector pointing along the negative Z-axis.
+    pub const NEG_Z: Self = Self {
+        x: 0.0,
+        y: 0.0,
+        z: -1.0,
+    };
 
     /// Creates a new `Vec3` with the specified components.
     #[inline]
@@ -314,6 +332,22 @@ impl Vec3 {
             y: if self.y < 0.0 { -self.y } else { self.y },
             z: if self.z < 0.0 { -self.z } else { self.z },
         }
+    }
+
+    /// Returns the largest component of the vector (signed).
+    ///
+    /// Useful for major-axis selection in cubemap sampling and bounding-box
+    /// checks. Note that this is not the absolute maximum — for that,
+    /// call `.abs().max_element()`.
+    #[inline]
+    pub fn max_element(self) -> f32 {
+        self.x.max(self.y).max(self.z)
+    }
+
+    /// Returns the smallest component of the vector (signed).
+    #[inline]
+    pub fn min_element(self) -> f32 {
+        self.x.min(self.y).min(self.z)
     }
 
     /// Calculates the squared length (magnitude) of the vector.
@@ -1079,5 +1113,38 @@ mod tests {
         let v4 = Vec4::new(1.0, 2.0, 3.0, 4.0);
         let v3 = v4.truncate();
         assert_eq!(v3, Vec3::new(1.0, 2.0, 3.0));
+    }
+
+    #[test]
+    fn vec3_neg_constants_have_unit_length() {
+        assert!((Vec3::NEG_X.length() - 1.0).abs() < EPSILON);
+        assert!((Vec3::NEG_Y.length() - 1.0).abs() < EPSILON);
+        assert!((Vec3::NEG_Z.length() - 1.0).abs() < EPSILON);
+    }
+
+    #[test]
+    fn vec3_neg_constants_oppose_positive_axes() {
+        assert_eq!(Vec3::NEG_X, -Vec3::X);
+        assert_eq!(Vec3::NEG_Y, -Vec3::Y);
+        assert_eq!(Vec3::NEG_Z, -Vec3::Z);
+        assert_eq!(Vec3::NEG_X.dot(Vec3::X), -1.0);
+        assert_eq!(Vec3::NEG_Y.dot(Vec3::Y), -1.0);
+        assert_eq!(Vec3::NEG_Z.dot(Vec3::Z), -1.0);
+    }
+
+    #[test]
+    fn vec3_max_element_picks_largest_signed() {
+        assert_eq!(Vec3::new(1.0, 2.0, 3.0).max_element(), 3.0);
+        assert_eq!(Vec3::new(-1.0, -2.0, -3.0).max_element(), -1.0);
+        assert_eq!(Vec3::new(5.0, -10.0, 0.0).max_element(), 5.0);
+        assert_eq!(Vec3::ZERO.max_element(), 0.0);
+    }
+
+    #[test]
+    fn vec3_min_element_picks_smallest_signed() {
+        assert_eq!(Vec3::new(1.0, 2.0, 3.0).min_element(), 1.0);
+        assert_eq!(Vec3::new(-1.0, -2.0, -3.0).min_element(), -3.0);
+        assert_eq!(Vec3::new(5.0, -10.0, 0.0).min_element(), -10.0);
+        assert_eq!(Vec3::ZERO.min_element(), 0.0);
     }
 }

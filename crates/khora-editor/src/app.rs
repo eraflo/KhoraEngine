@@ -357,39 +357,42 @@ impl EngineApp for EditorApp {
             log::error!("editor: render_viewport failed: {e:?}");
         }
         wgpu_rs.prepare_frame(&view_info);
+
+        // Collect the current selection gizmos and publish them into the
+        // shared `GizmoFrame`. `OverlayAgent`'s `GizmoLane` renders them
+        // during the scheduler's OUTPUT phase — the editor is a pure data
+        // producer here, the engine owns the rendering mechanism. Gated
+        // on `PlayMode::Editing`: gizmos must not bleed into Play / Paused.
+        let gizmo_lines = if let Ok(state) = self.editor_state.lock() {
+            if state.play_mode != PlayMode::Editing || state.selection.is_empty() {
+                Vec::new()
+            } else {
+                mod_gizmo::collect_gizmo_lines(world, &state, &view_info)
+            }
+        } else {
+            Vec::new()
+        };
+        if let Some(shared) = runtime
+            .resources
+            .get::<khora_sdk::khora_lanes::render_lane::SharedGizmoFrame>()
+        {
+            if let Ok(mut frame) = shared.lock() {
+                frame.lines = gizmo_lines;
+            }
+        }
+
         self.last_view_info = Some(view_info);
     }
 
-    fn after_agents(&mut self, world: &mut GameWorld, runtime: &Runtime) {
+    fn after_agents(&mut self, _world: &mut GameWorld, runtime: &Runtime) {
         let Some(rs_arc) = runtime.backends.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() else {
             return;
         };
 
-        // Render gizmos for the current selection on top of the 3D scene.
-        // Gated on PlayMode::Editing — gizmos are an editor-only overlay
-        // and must not bleed into Play / Paused (those modes show the
-        // shipping experience).
-        if let Some(view_info) = self.last_view_info.as_ref() {
-            let gizmo_lines = if let Ok(state) = self.editor_state.lock() {
-                if state.play_mode != PlayMode::Editing || state.selection.is_empty() {
-                    Vec::new()
-                } else {
-                    mod_gizmo::collect_gizmo_lines(world, &state, view_info)
-                }
-            } else {
-                Vec::new()
-            };
-
-            if !gizmo_lines.is_empty() {
-                if let Ok(mut rs) = rs_arc.lock() {
-                    if let Some(wgpu_rs) = rs.as_any_mut().downcast_mut::<WgpuRenderSystem>() {
-                        if let Err(e) = wgpu_rs.render_gizmos(view_info, &gizmo_lines) {
-                            log::warn!("editor: render_gizmos failed: {e:?}");
-                        }
-                    }
-                }
-            }
-        }
+        // Gizmo rendering now happens inside the scheduler via
+        // `OverlayAgent`'s `GizmoLane` (the lines are published into the
+        // shared `GizmoFrame` from `before_agents`). The editor no longer
+        // drives a separate gizmo render pass here.
 
         // Present the egui overlay last so the dock + panels paint over
         // the 3D scene encoded by the agents.
