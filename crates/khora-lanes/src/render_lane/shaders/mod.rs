@@ -16,11 +16,10 @@
 //!
 //! All rendering lanes now consume shaders through
 //! [`crate::render_lane::ShaderRegistry`] (naga_oil composer +
-//! validation at boot). This module exposes the three legacy
-//! `include_str!` constants that are still required by infra-side
-//! consumers (the editor overlay creation in `khora-infra` /
-//! `khora-editor` and the text renderer) — they take raw WGSL
-//! strings, not registry handles.
+//! validation at boot). This module exposes the two remaining legacy
+//! `include_str!` constants still required by infra-side consumers
+//! (the egui editor overlay and the text renderer) — they take raw
+//! WGSL strings, not registry handles.
 //!
 //! New lanes / pipelines should be registered in
 //! [`crate::render_lane::shader_registry::PIPELINE_MODULES`] and
@@ -35,13 +34,9 @@ pub const TEXT_WGSL: &str = include_str!("pipelines/text.wgsl");
 /// as a raw `&str`.
 pub const EGUI_WGSL: &str = include_str!("pipelines/egui.wgsl");
 
-/// Infinite XZ ground grid. Consumed by
-/// `khora_infra::WgpuRenderSystem::create_editor_overlay_and_shell`
-/// as a raw `&str`.
-pub const GRID_WGSL: &str = include_str!("pipelines/grid.wgsl");
-
-// NOTE — the gizmo shader is NOT exposed as a `_WGSL` constant: gizmo
-// rendering is owned by the engine-side `GizmoLane`, which composes
+// NOTE — the grid and gizmo shaders are NOT exposed as `_WGSL`
+// constants: grid / gizmo rendering is owned by the engine-side
+// `GridLane` / `GizmoLane`, which compose `khora::pipelines::grid` /
 // `khora::pipelines::gizmo` through the `ShaderRegistry` like every
 // other render lane.
 
@@ -59,11 +54,5 @@ mod tests {
     fn egui_shader_valid() {
         assert!(EGUI_WGSL.contains("@vertex"));
         assert!(EGUI_WGSL.contains("@fragment"));
-    }
-
-    #[test]
-    fn grid_shader_valid() {
-        assert!(GRID_WGSL.contains("@vertex"));
-        assert!(GRID_WGSL.contains("@fragment"));
     }
 }

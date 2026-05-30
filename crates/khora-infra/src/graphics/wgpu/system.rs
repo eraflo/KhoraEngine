@@ -100,14 +100,9 @@ pub struct WgpuRenderSystem {
     /// When true, `begin_frame` returns viewport targets instead of the swapchain
     /// and the engine skips its own present (caller manages the viewport).
     render_to_viewport: bool,
-
-    // --- Grid Pipeline ---
-    grid_pipeline: Option<wgpu::RenderPipeline>,
-    grid_camera_bind_group_layout: Option<wgpu::BindGroupLayout>,
-    grid_camera_bind_group: Option<wgpu::BindGroup>,
-    grid_camera_buffer: Option<wgpu::Buffer>,
-    // Gizmo rendering moved to the engine-side `GizmoLane` (under
-    // `OverlayAgent`) — the backend no longer owns a gizmo pipeline.
+    // Grid + gizmo rendering moved to the engine-side `GridLane` /
+    // `GizmoLane` (under `OverlayAgent`) — the backend owns no
+    // render-strategy pipelines.
 }
 
 impl fmt::Debug for WgpuRenderSystem {
@@ -187,10 +182,6 @@ impl WgpuRenderSystem {
             viewport_color_view_id: None,
             viewport_depth_view_id: None,
             render_to_viewport: false,
-            grid_pipeline: None,
-            grid_camera_bind_group_layout: None,
-            grid_camera_bind_group: None,
-            grid_camera_buffer: None,
         }
     }
 
@@ -610,198 +601,9 @@ impl WgpuRenderSystem {
         Ok(())
     }
 
-    /// Initialises the grid render pipeline.
-    ///
-    /// Must be called after `create_viewport_target` so the surface
-    /// format is known.
-    pub fn init_grid_pipeline(&mut self, shader_source: &str) -> Result<(), RenderError> {
-        let gc = self
-            .graphics_context_shared
-            .as_ref()
-            .ok_or(RenderError::NotInitialized)?
-            .lock()
-            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
-
-        // Must match the viewport texture format from create_viewport_target.
-        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
-        let device = &gc.device;
-
-        // Camera uniform buffer (mat4 + vec4 = 80 bytes).
-        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("grid_camera_ubo"),
-            size: 80,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("grid_camera_bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("grid_camera_bg"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("grid_pipeline_layout"),
-            bind_group_layouts: &[Some(&bind_group_layout)],
-            immediate_size: 0,
-        });
-
-        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("grid_shader"),
-            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(shader_source)),
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("grid_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader_module,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader_module,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None, // fullscreen, no culling
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-
-        self.grid_pipeline = Some(pipeline);
-        self.grid_camera_bind_group_layout = Some(bind_group_layout);
-        self.grid_camera_bind_group = Some(bind_group);
-        self.grid_camera_buffer = Some(camera_buffer);
-
-        log::info!("Grid pipeline initialised.");
-        Ok(())
-    }
-
     /// Returns the current viewport dimensions `(width, height)` in pixels.
     pub fn viewport_size(&self) -> (u32, u32) {
         (self.viewport_width, self.viewport_height)
-    }
-
-    /// Renders the viewport: clear + grid + (future) 3D content.
-    ///
-    /// `view_info` supplies the camera matrices for grid rendering.
-    pub fn render_viewport(
-        &mut self,
-        clear_color: LinearRgba,
-        view_info: &ViewInfo,
-    ) -> Result<(), RenderError> {
-        let color_view = self
-            .viewport_view
-            .as_ref()
-            .ok_or(RenderError::NotInitialized)?;
-        let depth_view = self
-            .viewport_depth_view
-            .as_ref()
-            .ok_or(RenderError::NotInitialized)?;
-
-        let gc = self
-            .graphics_context_shared
-            .as_ref()
-            .ok_or(RenderError::NotInitialized)?
-            .lock()
-            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
-
-        // Upload camera uniforms for the grid (VP matrix + camera pos).
-        if let Some(buf) = &self.grid_camera_buffer {
-            let vp = view_info.view_projection_matrix();
-            let cam_pos = view_info.camera_position;
-            // Layout: mat4x4<f32>(64 bytes) + vec4<f32>(16 bytes) = 80 bytes
-            let mut data = [0u8; 80];
-            data[..64].copy_from_slice(bytemuck::bytes_of(&vp));
-            let pos_arr = [cam_pos.x, cam_pos.y, cam_pos.z, 1.0f32];
-            data[64..80].copy_from_slice(bytemuck::cast_slice(&pos_arr));
-            gc.queue.write_buffer(buf, 0, &data);
-        }
-
-        let mut encoder = gc
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("viewport_encoder"),
-            });
-
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("viewport_render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: clear_color.r as f64,
-                            g: clear_color.g as f64,
-                            b: clear_color.b as f64,
-                            a: clear_color.a as f64,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-
-            // Draw the infinite grid.
-            if let (Some(pipeline), Some(bg)) = (&self.grid_pipeline, &self.grid_camera_bind_group)
-            {
-                pass.set_pipeline(pipeline);
-                pass.set_bind_group(0, bg, &[]);
-                pass.draw(0..6, 0..1);
-            }
-        }
-
-        gc.queue.submit(std::iter::once(encoder.finish()));
-        Ok(())
     }
 
     /// Creates an [`EguiOverlay`] backed by the current wgpu graphics context.
@@ -838,7 +640,6 @@ impl WgpuRenderSystem {
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
         shader_source: &str,
-        grid_shader_source: &str,
         theme: khora_core::ui::UiTheme,
         viewport_handle: khora_core::ui::editor::viewport_texture::ViewportTextureHandle,
     ) -> Result<
@@ -853,11 +654,9 @@ impl WgpuRenderSystem {
         // Create an offscreen viewport target (initial 800×600).
         let egui_id = self.create_viewport_target(800, 600, &mut overlay)?;
 
-        // Initialise the infinite grid pipeline.
-        self.init_grid_pipeline(grid_shader_source)?;
-
-        // Gizmo rendering is owned by the engine-side `GizmoLane` (under
-        // `OverlayAgent`) — no gizmo pipeline is created on the backend.
+        // Grid + gizmo rendering are owned by the engine-side `GridLane`
+        // / `GizmoLane` (under `OverlayAgent`) — no render-strategy
+        // pipeline is created on the backend.
 
         let mut shell = crate::ui::egui::shell::EguiEditorShell::new(overlay.context(), theme);
         shell.register_viewport_texture(viewport_handle, egui_id);

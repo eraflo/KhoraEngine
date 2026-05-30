@@ -103,6 +103,26 @@ impl<A: EngineApp> EngineCore<A> {
         // DCC cold thread, read by observers each frame.
         runtime.resources.insert(dcc.context_handle());
 
+        // ── Overlay channels (gizmo + grid) ──────────────────────────────────
+        // Shared resources the host application (editor, debug tooling)
+        // writes into each frame; the `OverlayAgent` lanes read them in
+        // the OUTPUT phase. The engine only provides the slots — it never
+        // produces the data itself, keeping the editor a pure consumer
+        // of engine APIs (no engine-internal `EditorAgent`).
+        //
+        // Inserted BEFORE `app.setup` (like the observable handles above)
+        // so an app can configure them during setup — e.g. the editor
+        // enables the grid via `GridConfig` there. They are standalone
+        // `Arc<Mutex<Default>>` with no dependency on later-created
+        // resources, so exposing them this early is safe.
+        let gizmo_frame: khora_lanes::render_lane::SharedGizmoFrame =
+            Arc::new(Mutex::new(khora_data::render::GizmoFrame::default()));
+        runtime.resources.insert(gizmo_frame);
+        // Editor grid — disabled by default; the editor opts in.
+        let grid_config: khora_lanes::render_lane::SharedGridConfig =
+            Arc::new(Mutex::new(khora_data::render::GridConfig::default()));
+        runtime.resources.insert(grid_config);
+
         // Create the game world
         let mut game_world = GameWorld::new();
 
@@ -150,16 +170,6 @@ impl<A: EngineApp> EngineCore<A> {
                 );
             }
         }
-
-        // ── Gizmo overlay channel ────────────────────────────────────────────
-        // Shared `GizmoFrame` the host application (editor, debug tooling)
-        // writes line instances into each frame; `GizmoLane` (under
-        // `OverlayAgent`) reads it during the OUTPUT phase. The engine
-        // only provides the slot — it never produces gizmo data, keeping
-        // the editor a pure consumer of engine APIs.
-        let gizmo_frame: khora_lanes::render_lane::SharedGizmoFrame =
-            Arc::new(Mutex::new(khora_data::render::GizmoFrame::default()));
-        runtime.resources.insert(gizmo_frame);
 
         // ── Scene-extraction data containers ─────────────────────────────────
         // RenderFlow + UiFlow publish their per-frame views directly into

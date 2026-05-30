@@ -21,3 +21,5 @@ target/
 
 # GitAgent runtime state
 .gitagent/
+
+.codegraph/

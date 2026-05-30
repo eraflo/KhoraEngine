@@ -21,6 +21,7 @@
 mod emissive_lane;
 mod forward_plus_lane;
 mod gizmo_lane;
+mod grid_lane;
 mod lit_forward_lane;
 pub mod shader_registry;
 pub mod shaders;
@@ -36,6 +37,7 @@ pub use shader_registry::{ShaderRegistry, ShaderRegistryError};
 pub use emissive_lane::EmissiveLane;
 pub use forward_plus_lane::*;
 pub use gizmo_lane::{GizmoLane, SharedGizmoFrame};
+pub use grid_lane::{GridLane, SharedGridConfig};
 pub use lit_forward_lane::*;
 pub use shadows_lane::{LowResShadowsLane, StandardShadowsLane};
 pub use simple_unlit_lane::*;

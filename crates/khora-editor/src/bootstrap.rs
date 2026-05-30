@@ -78,7 +78,6 @@ pub fn run() -> anyhow::Result<()> {
         match rs.create_editor_overlay_and_shell(
             event_loop,
             khora_sdk::khora_lanes::render_lane::shaders::EGUI_WGSL,
-            khora_sdk::khora_lanes::render_lane::shaders::GRID_WGSL,
             theme,
             khora_sdk::PRIMARY_VIEWPORT,
         ) {

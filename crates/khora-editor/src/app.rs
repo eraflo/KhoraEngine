@@ -127,6 +127,9 @@ impl EngineApp for EditorApp {
         self.cache_services(runtime);
         self.register_panels(runtime);
         self.open_cli_project(world);
+        // The editor ground grid (`GridConfig`) is toggled per-frame in
+        // `before_agents` based on `PlayMode` — it is editor chrome and
+        // must hide in Play / Paused, like the selection gizmos.
     }
 
     fn update(&mut self, world: &mut GameWorld, inputs: &[InputEvent]) {
@@ -352,11 +355,25 @@ impl EngineApp for EditorApp {
                 position: view_info.camera_position,
             }));
 
-        let clear = khora_sdk::prelude::math::LinearRgba::new(0.15, 0.15, 0.18, 1.0);
-        if let Err(e) = wgpu_rs.render_viewport(clear, &view_info) {
-            log::error!("editor: render_viewport failed: {e:?}");
-        }
+        // The viewport clear + ground grid are no longer drawn here:
+        // the scene pass (RenderAgent) clears the viewport, and the grid
+        // is now `GridLane` under `OverlayAgent` (rendered after the
+        // scene). The editor only feeds the camera to the renderer.
         wgpu_rs.prepare_frame(&view_info);
+
+        // Toggle the editor ground grid per-frame: it is editor chrome,
+        // visible only while editing — hide it in Play / Paused (same
+        // gating as the selection gizmos below). The engine ships the
+        // `GridConfig` slot disabled; the editor drives it.
+        let grid_on = matches!(play_mode, PlayMode::Editing);
+        if let Some(grid_cfg) = runtime
+            .resources
+            .get::<khora_sdk::khora_lanes::render_lane::SharedGridConfig>()
+        {
+            if let Ok(mut cfg) = grid_cfg.lock() {
+                cfg.enabled = grid_on;
+            }
+        }
 
         // Collect the current selection gizmos and publish them into the
         // shared `GizmoFrame`. `OverlayAgent`'s `GizmoLane` renders them
