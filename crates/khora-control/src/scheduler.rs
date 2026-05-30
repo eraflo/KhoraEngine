@@ -23,12 +23,11 @@ use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::timing::AgentImportance;
 use khora_core::agent::{AgentDependency, EngineMode, ExecutionPhase};
-use khora_core::control::gorna::{AgentId, ResourceBudget};
+use khora_core::control::gorna::AgentId;
 use khora_core::graph::topological_sort;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -140,12 +139,10 @@ impl ExecutionScheduler {
         let mut bus = LaneBus::new();
         let mut deck = OutputDeck::new();
 
-        // 5. Snapshot agent budgets for this frame and run the Substrate
-        //    Pass: every registered Flow projects its View into the bus,
-        //    receiving the budget of its corresponding agent and access to
-        //    the runtime containers.
-        let budgets = self.snapshot_budgets(&agent_ids);
-        substrate::run_flows(world, &mut bus, &budgets, &runtime);
+        // 5. Run the Substrate Pass: every registered Flow projects its View
+        //    into the bus. Flows are read-only projectors — no budget needed
+        //    (only agents compete for the frame budget).
+        substrate::run_flows(world, &mut bus, &runtime);
 
         // 6. Clone phase order to avoid borrow conflicts
         let phases: Vec<ExecutionPhase> = self.phase_order.clone();
@@ -172,14 +169,6 @@ impl ExecutionScheduler {
 
         // 8. Hand the populated deck off to the engine for the I/O boundary.
         self.last_deck = deck;
-    }
-
-    /// Drains all currently buffered budgets into a per-agent snapshot.
-    fn snapshot_budgets(&self, agent_ids: &[AgentId]) -> HashMap<AgentId, ResourceBudget> {
-        agent_ids
-            .iter()
-            .filter_map(|id| self.budget_channel.get(*id).map(|b| (*id, b)))
-            .collect()
     }
 
     #[allow(clippy::too_many_arguments)]

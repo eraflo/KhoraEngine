@@ -70,16 +70,19 @@ Pass C — I/O boundary (Engine drains OutputDeck for submit/present)
 **AGDF** (Adaptive Game Data Flows) is the online adaptation of data **layout** to the
 hardware and observed access patterns — a *representation* (HOW) adaptation, never a
 *semantic* (WHAT) one. It lives in CRPECS (a `LayoutPolicy` per component column,
-access-pattern instrumentation, a budget-gated repack step) and is governed by the same
-DCC loop as GORNA. The default layout is plain SoA, so it is additive and inert until a
-component is profiled as worth re-tiling (e.g. SoA → AoSoA for SIMD).
+access-pattern instrumentation, a self-bounded repack step) as the Data layer's own
+self-maintenance (alongside `EcsMaintenance`); the DCC only *observes* it via telemetry.
+The default layout is plain SoA, so it is additive and inert until a component is profiled
+as worth re-tiling (e.g. SoA → AoSoA for SIMD).
 
-The representation step of `Flow::adapt` may rearrange storage; it must **not** change
-which components an entity has. **Gameplay relevance gating is not AGDF** — detaching a
-`RigidBody` by distance changes the simulation, so it is an opt-in, developer-authored
-policy. The engine provides the detach / reattach-with-hysteresis mechanism (originally
-prototyped in [`PhysicsFlow`](../crates/khora-data/src/flow/physics.rs)) but never
-applies it to an entity the developer has not opted in. Flows themselves are converging to *projection only* (`select → project`, publishing a View) — structural mutation is leaving `Flow::adapt`.
+Flows are **read-only projectors** (`select → project`, publishing a View) — `Flow::adapt`
+has been **removed**; Flows never mutate the World. The ECS → physics-provider sync that
+briefly lived there is now the `physics_provider_sync` `DataSystem` (`PreExtract`).
+**Gameplay relevance gating is not AGDF** — detaching a `RigidBody` by distance changes
+the simulation, so it is an opt-in, developer-authored policy (a `DataSystem`), never an
+automatic engine default. The detach / reattach-with-hysteresis mechanism (prototyped in
+[`PhysicsFlow`](../crates/khora-data/src/flow/physics.rs)'s git history) can be revived as
+that opt-in policy.
 
 ## 02 — Crate dependency graph
 

@@ -67,7 +67,7 @@ Code style and project conventions. Pair with [`rules.md`](./rules.md).
 
 ### 03.1 — Adding a new domain
 
-1. Author the **`Flow`** in `khora-data/src/flow/<domain>.rs` — implement `Flow`, define a typed `View`, optionally use `Flow::adapt` for AGDF mutations. Register with `register_flow!(MyFlow)`.
+1. Author the **`Flow`** in `khora-data/src/flow/<domain>.rs` — implement `Flow` (read-only `select → project`), define a typed `View`. Register with `register_flow!(MyFlow)`. A Flow never mutates the World; per-frame maintenance (e.g. provider sync) goes in a `DataSystem`.
 2. Author the **`Agent`** in `khora-agents/src/<domain>_agent/` — strict strategist, no per-frame state, invokes its lane with `(bus, deck, budget)` from `EngineContext`.
 3. Author the **`Lane`s** in `khora-lanes/src/<domain>_lane/` — read the `View` from `LaneContext::bus`, write outputs into `LaneContext::deck`. Never call `world.query*`.
 4. The engine drains the relevant typed slot of the `OutputDeck` at the I/O boundary if the domain produces side-effects (GPU submit, audio buffer flush, etc.).

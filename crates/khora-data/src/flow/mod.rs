@@ -14,15 +14,18 @@
 
 //! `Flow` — the typed interface between Data and Lanes.
 //!
-//! A [`Flow`] is a *per-domain* presenter of the World. It runs every tick
-//! during the Substrate Pass (before Lanes execute) in three steps:
+//! A [`Flow`] is a *per-domain*, **read-only** presenter of the World. It runs
+//! every tick during the Substrate Pass (before Lanes execute) in two steps:
 //!
 //! 1. **`select`** (read-only) — picks the entities relevant for this domain.
-//! 2. **`adapt`** (mutable) — applies AGDF structural mutations (attach /
-//!    detach components) calibrated by the agent's negotiated budget.
-//! 3. **`project`** (read-only) — builds a typed `View` published into the
+//! 2. **`project`** (read-only) — builds a typed `View` published into the
 //!    [`LaneBus`](khora_core::lane::LaneBus). Lanes consume the view; they
 //!    never query the World directly.
+//!
+//! A Flow **never mutates the World**. Representation adaptation (AGDF memory
+//! layout) is the Data layer's own self-maintenance; semantic / gameplay
+//! mutation is developer-authored (an opt-in `DataSystem`), never automatic
+//! here. See `.agent/rules.md` — *adapt the HOW, never the WHAT*.
 //!
 //! Each domain (Render, UI, Physics, Audio, Shadow, …) defines its own
 //! `Flow` implementation. Adding a new domain costs **one** registration:
@@ -55,7 +58,6 @@ pub use selection::Selection;
 pub use shadow::{ShadowFlow, ShadowMatrices, ShadowView};
 pub use ui::UiFlow;
 
-use khora_core::control::gorna::ResourceBudget;
 use khora_core::Runtime;
 
 use crate::ecs::{SemanticDomain, World};
@@ -82,21 +84,6 @@ pub trait Flow: Send + Sync {
         Selection::new()
     }
 
-    /// Stage 2 — AGDF structural mutations. Default: no-op.
-    ///
-    /// The `budget` is the agent's currently allocated `ResourceBudget`,
-    /// distributed by the agent. Implementations use it to calibrate their
-    /// adaptation aggressiveness (e.g. tighter scope when budget is mince).
-    fn adapt(
-        &mut self,
-        world: &mut World,
-        sel: &Selection,
-        budget: &ResourceBudget,
-        runtime: &Runtime,
-    ) {
-        let _ = (world, sel, budget, runtime);
-    }
-
-    /// Stage 3 — read-only projection of the (post-adapt) world into a View.
+    /// Stage 2 — read-only projection of the world into a View.
     fn project(&self, world: &World, sel: &Selection, runtime: &Runtime) -> Self::View;
 }

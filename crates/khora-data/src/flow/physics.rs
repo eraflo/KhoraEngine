@@ -12,36 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `PhysicsFlow` — first realisation of AGDF in the engine.
+//! `PhysicsFlow` — read-only projection of the physics domain.
 //!
-//! The Flow drives **two** kinds of work in `Flow::adapt`:
+//! `Flow::project` publishes a small [`PhysicsView`] (statistics) consumed by
+//! telemetry and the editor. Per CLAD, a Flow never mutates the World.
 //!
-//! 1. **AGDF relevance gating** — entities that drift outside the active
-//!    camera's "physics scope" have their `RigidBody` detached via CRPECS;
-//!    entities that drift back inside have it restored from a stashed copy
-//!    (with hysteresis to prevent thrashing).
-//! 2. **ECS → Physics-provider sync** — registers `RigidBody`s and
-//!    `Collider`s with the [`PhysicsProvider`], updates their existing
-//!    handles, and cleans up orphaned handles. This was previously done
-//!    inside `StandardPhysicsLane::sync_to_world` — moving it here
-//!    respects the CLAD rule "lanes must not query the World directly".
-//!    Component-handle field updates (`rb.handle = Some(...)`) are
-//!    performed in the same pass via `&mut World`.
+//! The **ECS → physics-provider sync** (registering `RigidBody`s / `Collider`s
+//! with the [`PhysicsProvider`], updating handles, cleaning up orphans) is a
+//! maintenance invariant, so it lives in the `physics_provider_sync`
+//! `DataSystem` below (`PreExtract` phase, before the physics lane steps), not
+//! in the Flow.
 //!
-//! `Flow::project` publishes a small statistics view consumed by telemetry
-//! and the editor.
+//! Distance-based *gameplay* gating (detaching a `RigidBody` when far from the
+//! camera) is **not** done here: it changes the simulation, so it is
+//! developer-authored (opt-in), never an automatic engine default. See
+//! `.agent/rules.md` — *adapt the HOW, never the WHAT*.
 //!
-//! The matching `physics_world_writeback` `DataSystem` (in
-//! [`crate::ecs::systems::physics_world_writeback`], `Maintenance` phase)
-//! runs after the lane's `provider.step(dt)` and pulls the new transforms,
-//! kinematic results, and collision events from the provider back into
-//! the World.
+//! The matching `physics_world_writeback` `DataSystem`
+//! ([`crate::ecs::systems::physics_world_writeback`], `Maintenance` phase) runs
+//! after the lane's `provider.step(dt)` and pulls the new transforms, kinematic
+//! results, and collision events from the provider back into the World.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-use khora_core::control::gorna::ResourceBudget;
 use khora_core::ecs::entity::EntityId;
+use khora_core::lane::OutputDeck;
 use khora_core::math::Vec3;
 use khora_core::physics::{
     ColliderDesc, ColliderHandle, PhysicsProvider, RigidBodyDesc, RigidBodyHandle,
@@ -49,18 +45,11 @@ use khora_core::physics::{
 use khora_core::Runtime;
 
 use crate::ecs::{
-    ActiveEvents, Camera, Collider, GlobalTransform, Parent, PhysicsMaterial, RigidBody,
-    SemanticDomain, World,
+    ActiveEvents, Camera, Collider, DataSystemRegistration, GlobalTransform, Parent,
+    PhysicsMaterial, RigidBody, SemanticDomain, TickPhase, World,
 };
 use crate::flow::{Flow, Selection};
 use crate::register_flow;
-
-/// Distance beyond which an entity's physics is detached.
-const DETACH_RADIUS: f32 = 50.0;
-
-/// Distance below which a previously-detached entity has its physics
-/// restored. Smaller than [`DETACH_RADIUS`] to provide hysteresis.
-const REATTACH_RADIUS: f32 = 30.0;
 
 /// View published into the [`LaneBus`](khora_core::lane::LaneBus) by
 /// `PhysicsFlow`. Carries per-frame physics statistics for downstream
@@ -90,13 +79,9 @@ pub struct PhysicsStepResult {
     pub dt: f32,
 }
 
-/// AGDF-aware physics presentation Flow.
+/// Read-only physics presentation Flow.
 #[derive(Default)]
-pub struct PhysicsFlow {
-    /// Stashed `RigidBody` components, keyed by entity. Restored when the
-    /// entity comes back inside the reattach radius.
-    stash: HashMap<EntityId, RigidBody>,
-}
+pub struct PhysicsFlow;
 
 impl Flow for PhysicsFlow {
     type View = PhysicsView;
@@ -104,40 +89,12 @@ impl Flow for PhysicsFlow {
     const DOMAIN: SemanticDomain = SemanticDomain::Physics;
     const NAME: &'static str = "physics";
 
-    fn adapt(
-        &mut self,
-        world: &mut World,
-        _sel: &Selection,
-        _budget: &ResourceBudget,
-        runtime: &Runtime,
-    ) {
-        // Pass A — AGDF: detach / reattach RigidBody by relevance.
-        self.adapt_agdf(world);
-
-        // Pass B — sync ECS → physics provider so the lane's
-        // `provider.step(dt)` sees the current entity state. This was
-        // previously `StandardPhysicsLane::sync_to_world`.
-        if let Some(provider_arc) = runtime
-            .backends
-            .get::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()
-        {
-            let provider_arc = provider_arc.clone();
-            let mut guard = match provider_arc.lock() {
-                Ok(g) => g,
-                Err(e) => {
-                    log::error!("PhysicsFlow: provider mutex poisoned: {}", e);
-                    return;
-                }
-            };
-            sync_to_provider(world, guard.as_mut());
-        }
-    }
-
     fn project(&self, world: &World, _sel: &Selection, _runtime: &Runtime) -> Self::View {
         let active_bodies = world.query::<&RigidBody>().count();
         PhysicsView {
             active_bodies,
-            stashed_bodies: self.stash.len(),
+            // No automatic AGDF gameplay gating — nothing is stashed.
+            stashed_bodies: 0,
             camera_anchor: active_camera_position(world),
         }
     }
@@ -145,51 +102,35 @@ impl Flow for PhysicsFlow {
 
 register_flow!(PhysicsFlow);
 
-impl PhysicsFlow {
-    /// AGDF relevance gating: detach RigidBody from entities outside the
-    /// active camera's scope, restore from stash on re-entry.
-    fn adapt_agdf(&mut self, world: &mut World) {
-        let Some(anchor) = active_camera_position(world) else {
+/// `DataSystem` (`PreExtract`) — syncs the ECS physics state into the
+/// [`PhysicsProvider`] backend before the physics lane steps it. This is the
+/// maintenance work that used to live in `PhysicsFlow::adapt`; moving it out
+/// keeps the Flow a read-only projector.
+fn physics_provider_sync(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+    let Some(provider_arc) = runtime
+        .backends
+        .get::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()
+    else {
+        return;
+    };
+    let provider_arc = provider_arc.clone();
+    let mut guard = match provider_arc.lock() {
+        Ok(g) => g,
+        Err(e) => {
+            log::error!("physics_provider_sync: provider mutex poisoned: {}", e);
             return;
-        };
+        }
+    };
+    sync_to_provider(world, guard.as_mut());
+}
 
-        // Pass 1 — detach.
-        let mut to_detach: Vec<(EntityId, RigidBody)> = Vec::new();
-        for (entity, transform, rb) in world.query::<(EntityId, &GlobalTransform, &RigidBody)>() {
-            if (transform.0.translation() - anchor).length() > DETACH_RADIUS {
-                to_detach.push((entity, rb.clone()));
-            }
-        }
-        for (entity, snapshot) in to_detach {
-            self.stash.insert(entity, snapshot);
-            let _ = world.remove_component::<RigidBody>(entity);
-        }
-
-        // Pass 2 — reattach.
-        let restorable: Vec<EntityId> = self
-            .stash
-            .keys()
-            .copied()
-            .filter(|e| {
-                world
-                    .get::<GlobalTransform>(*e)
-                    .map(|t| (t.0.translation() - anchor).length() < REATTACH_RADIUS)
-                    .unwrap_or(false)
-            })
-            .collect();
-        for entity in restorable {
-            if let Some(rb) = self.stash.remove(&entity) {
-                let snapshot = rb.clone();
-                if let Err(e) = world.add_component(entity, rb) {
-                    log::warn!(
-                        "PhysicsFlow: failed to reattach RigidBody to {:?}: {:?}",
-                        entity,
-                        e
-                    );
-                    self.stash.insert(entity, snapshot);
-                }
-            }
-        }
+inventory::submit! {
+    DataSystemRegistration {
+        name: "physics_provider_sync",
+        phase: TickPhase::PreExtract,
+        run: physics_provider_sync,
+        order_hint: 0,
+        runs_after: &[],
     }
 }
 

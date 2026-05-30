@@ -37,29 +37,35 @@ fn make_runtime(
     Arc::new(runtime)
 }
 
-/// Runs the full physics tick `n` times: Substrate-Pass flows
-/// (PhysicsFlow.adapt — sync_to_provider) → CLAD descent (the agent
-/// drives the lane → provider.step) → Maintenance DataSystems
-/// (physics_world_writeback — sync_from_provider).
+/// Runs the full physics tick `n` times: PreExtract DataSystems
+/// (physics_provider_sync — ECS → provider) → Substrate-Pass flows
+/// (read-only projection) → CLAD descent (the agent drives the lane →
+/// provider.step) → Maintenance DataSystems (physics_world_writeback —
+/// sync_from_provider).
 ///
 /// Mirrors what `khora-sdk::EngineCore::tick_with_runtime` does in
 /// production but without the renderer / scheduler scaffolding.
 fn step_n(agent: &mut PhysicsAgent, world: &mut World, runtime: &Arc<Runtime>, n: usize) {
     use khora_control::substrate;
-    use khora_core::control::gorna::AgentId;
     use khora_core::lane::LaneBus;
-    use std::collections::HashMap;
 
     for _ in 0..n {
-        // Substrate Pass — run flows (PhysicsFlow.adapt syncs World →
-        // provider, including handle assignments).
         let mut bus = LaneBus::new();
-        let budgets: HashMap<AgentId, khora_core::control::gorna::ResourceBudget> =
-            HashMap::new();
-        substrate::run_flows(world, &mut bus, &budgets, runtime);
+        let mut deck = khora_core::lane::OutputDeck::new();
+
+        // PreExtract — physics_provider_sync registers/updates bodies &
+        // colliders with the provider (was PhysicsFlow::adapt).
+        substrate::run_data_systems(
+            world,
+            runtime,
+            &mut deck,
+            khora_data::ecs::TickPhase::PreExtract,
+        );
+
+        // Substrate Pass — Flows project read-only Views into the bus.
+        substrate::run_flows(world, &mut bus, runtime);
 
         // CLAD descent — agent invokes the lane (provider.step(dt)).
-        let mut deck = khora_core::lane::OutputDeck::new();
         let mut ctx = EngineContext {
             world: Some(world as &mut dyn std::any::Any),
             runtime: Arc::clone(runtime),

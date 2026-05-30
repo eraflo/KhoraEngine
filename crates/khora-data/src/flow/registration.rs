@@ -14,7 +14,6 @@
 
 //! Auto-registration of [`Flow`](super::Flow) implementations via `inventory`.
 
-use khora_core::control::gorna::ResourceBudget;
 use khora_core::lane::LaneBus;
 use khora_core::Runtime;
 
@@ -33,8 +32,8 @@ pub struct FlowRegistration {
     pub name: &'static str,
     /// Domain this Flow serves — matches `Flow::DOMAIN`.
     pub domain: SemanticDomain,
-    /// Trampoline that runs select + adapt + project and publishes the View.
-    pub run: fn(&mut World, &mut LaneBus, &ResourceBudget, &Runtime),
+    /// Trampoline that runs select + project and publishes the View.
+    pub run: fn(&mut World, &mut LaneBus, &Runtime),
 }
 
 inventory::collect!(FlowRegistration);
@@ -59,7 +58,6 @@ macro_rules! register_flow {
             fn run_flow(
                 world: &mut $crate::ecs::World,
                 bus: &mut khora_core::lane::LaneBus,
-                budget: &khora_core::control::gorna::ResourceBudget,
                 runtime: &khora_core::Runtime,
             ) {
                 use std::sync::{Mutex, OnceLock};
@@ -69,7 +67,6 @@ macro_rules! register_flow {
                     .lock()
                     .expect("Flow mutex poisoned");
                 let sel = <$flow_ty as $crate::flow::Flow>::select(&mut flow, world, runtime);
-                <$flow_ty as $crate::flow::Flow>::adapt(&mut flow, world, &sel, budget, runtime);
                 let view = <$flow_ty as $crate::flow::Flow>::project(&flow, world, &sel, runtime);
                 bus.publish(view);
             }
