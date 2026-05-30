@@ -27,6 +27,7 @@ use std::collections::BTreeSet;
 /// [`khora_core::asset::AssetMetadata::tags`] for asset-side tags — they
 /// are not unified and serve different domains.
 #[derive(Debug, Clone, PartialEq, Eq, Component, Default)]
+#[component(domain = Spatial)]
 pub struct Tag(pub BTreeSet<String>);
 
 impl Tag {

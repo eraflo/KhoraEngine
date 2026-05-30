@@ -38,6 +38,7 @@ use khora_macros::Component;
 /// };
 /// ```
 #[derive(Debug, Clone, Component)]
+#[component(domain = Render)]
 pub struct Light {
     /// The type and properties of the light source.
     pub light_type: LightType,

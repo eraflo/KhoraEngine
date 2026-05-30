@@ -78,8 +78,43 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         no
     });
 
+    // Parse optional `#[component(domain = <SemanticDomain variant>)]`. When present,
+    // the component self-registers its domain into `World` via `inventory`, so the
+    // domain lives on the type instead of a hand-maintained list in `World::new`.
+    let domain_ident: Option<syn::Ident> = {
+        let mut found = None;
+        for attr in &input.attrs {
+            if !attr.path().is_ident("component") {
+                continue;
+            }
+            let _ = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("domain") {
+                    found = Some(meta.value()?.parse::<syn::Ident>()?);
+                }
+                Ok(())
+            });
+        }
+        found
+    };
+
+    let domain_registration = match &domain_ident {
+        Some(domain) => quote! {
+            inventory::submit! {
+                crate::ecs::ComponentDomainRegistration {
+                    register: |world: &mut crate::ecs::World| {
+                        world.register_component::<#name>(crate::ecs::SemanticDomain::#domain);
+                    }
+                }
+            }
+        },
+        None => quote! {},
+    };
+
     if no_serializable {
-        return TokenStream::from(component_impl);
+        return TokenStream::from(quote! {
+            #component_impl
+            #domain_registration
+        });
     }
 
     // Separate included and skipped fields
@@ -268,6 +303,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         #component_impl
+        #domain_registration
         #serializable_struct
         #from_original_to_serializable
         #from_serializable_to_original

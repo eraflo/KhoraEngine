@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 /// It provides high-level movement resolution (slopes, steps, etc.)
 /// that is more suitable for player characters than raw rigid-body physics.
 #[derive(Debug, Clone, Component, Serialize, Deserialize)]
+#[component(domain = Physics)]
 pub struct KinematicCharacterController {
     /// The translation to apply in the current frame.
     pub desired_translation: Vec3,

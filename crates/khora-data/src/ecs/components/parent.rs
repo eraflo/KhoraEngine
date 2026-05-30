@@ -21,6 +21,7 @@ use khora_macros::Component;
 /// relative to the transform of the entity specified by the `EntityId`.
 /// This is the foundational component for building scene hierarchies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Component)]
+#[component(domain = Spatial)]
 pub struct Parent(pub EntityId);
 
 impl Default for Parent {

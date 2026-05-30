@@ -27,7 +27,7 @@ What this engine does not yet answer, and where the next iteration should go.
 
 ## 01 — Adaptive core
 
-1. **Adaptation modes.** `Learning` (fully dynamic), `Stable` (predictable), `Manual` (locked strategies) are designed but not implemented. The contract for switching between them at runtime is open.
+1. **Adaptation modes.** `Learning` (fully dynamic), `Stable` (predictable), `Manual` (locked strategies) — plus designed extensions: `Bounded` (Learning within developer-set limits), `Calibration` (deliberately explore to seed the learner, then freeze), `Replay` (re-play a recorded decision trace bit-for-bit, for QA / lockstep netcode / bug repro — inspired by deterministic replay), and `Hinted` (the game biases the planner with semantic hints like "cutscene"/"combat"). Designed, not implemented; the runtime switching contract is open.
 2. **Constraints API.** "In this volume, physics > graphics" is a stated capability without a concrete API. `PriorityVolume` is in the roadmap.
 3. **Cross-agent coordination.** Today agents declare hard dependencies on each other (RenderAgent → ShadowAgent). When the dependency graph grows, do we need a richer scheduling model than per-frame topological sort?
 4. **Variable cold-path frequency.** ~20 Hz is a default. On low-power targets we may want 5–10 Hz. The trigger model for changing this at runtime is open.
@@ -36,7 +36,7 @@ What this engine does not yet answer, and where the next iteration should go.
 ## 02 — ECS and data
 
 1. **Parallel query execution.** Today queries run on the calling thread. The borrow-checker's compile-time exclusivity makes parallelization safe; the policy and API are not yet decided.
-2. **Live AGDF triggers.** The architecture supports adding/removing components based on context, but the *policy* — who decides, when, with what hysteresis — is open.
+2. **Adaptive layout (AGDF).** AGDF is the online adaptation of data *layout* — re-tiling hot component columns (SoA ↔ AoSoA, hot/cold split) from observed access patterns, run as Data self-maintenance **inside `khora-data`** (decided locally, gated by a cost/benefit test; the DCC only observes — not driven by Control, not a competitor in the GORNA auction). The hooks (`LayoutPolicy`, access instrumentation, repack) are a build target; default layout stays SoA. Prior art we draw on: profile-guided layout (compiler hot/cold splitting), AoSoA (LLAMA / Cabana), online reorganization with worst-case bounds (OREO), and just-in-time data structures (De Wael & Marr, 2015). The open part is the repack *policy* (thresholds, hysteresis, per-domain toggles). Distance-based *gameplay* gating (detaching physics) is **not** AGDF — it is opt-in, developer-authored policy.
 3. **Page-size tuning.** Pages start at 8 entries and grow geometrically. Whether 64 or 256 would be better at scale is unmeasured.
 4. **`khora-plugins` API.** The plugin model is real but its public API is still settling alongside editor needs.
 
@@ -59,7 +59,7 @@ What this engine does not yet answer, and where the next iteration should go.
 
 ## 05 — Physics
 
-1. **Per-region simulation rate.** "Use Standard near the player, Simplified everywhere else" is a stated goal of AGDF — the API for it is not built.
+1. **Per-region simulation rate.** "Use Standard near the player, Simplified everywhere else" is a gameplay-relevance policy — *not* AGDF (which is layout only). It must be opt-in and developer-authored; the engine provides the detach/reattach mechanism but never applies it by default. The opt-in API is not built.
 2. **Physics state in serialization.** `SerializationGoal::FastestLoad` does not preserve velocities or contacts. Whether to add a "snapshot with physics" goal is open.
 3. **Native solver migration.** Roadmap Phase 6. The trait surface is stable enough; the implementation is a multi-quarter effort.
 

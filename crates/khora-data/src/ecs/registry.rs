@@ -126,6 +126,20 @@ impl ComponentRegistry {
     }
 }
 
+/// Inventory entry submitted by `#[derive(Component)]` when the type carries a
+/// `#[component(domain = ...)]` attribute.
+///
+/// Each entry registers one concrete component type into a [`crate::ecs::World`]
+/// with its declared [`SemanticDomain`], so domain assignment is a **property of
+/// the type** (single source of truth) instead of a hand-maintained list in
+/// `World::new`. Collected via [`inventory`] and replayed by `World::new`.
+pub struct ComponentDomainRegistration {
+    /// Registers the component into `world` (calls `World::register_component`).
+    pub register: fn(&mut crate::ecs::World),
+}
+
+inventory::collect!(ComponentDomainRegistration);
+
 /// A registry that provides reflection data, like type names.
 #[derive(Debug, Default)]
 pub struct TypeRegistry {

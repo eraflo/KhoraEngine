@@ -39,6 +39,7 @@ pub enum ProjectionType {
 /// This component is used to configure how the 3D world is projected onto the 2D screen.
 /// It supports both perspective and orthographic projections.
 #[derive(Debug, Clone, Copy, PartialEq, Component)]
+#[component(domain = Render)]
 pub struct Camera {
     /// The type of projection (perspective or orthographic).
     pub projection: ProjectionType,

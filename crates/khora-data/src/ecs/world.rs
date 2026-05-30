@@ -34,9 +34,8 @@ use crate::ecs::{
     registry::ComponentRegistry,
     serialization::SceneMemoryLayout,
     storage::StorageManager,
-    AudioListener, AudioSource, Camera, Children, Collider, Component, ComponentBundle,
-    DomainBitset, GlobalTransform, MaterialComponent, Name, Parent, QueryMut, QueryPlan, RigidBody,
-    SemanticDomain, SerializedPage, Transform, TypeRegistry,
+    Component, ComponentBundle, DomainBitset, MaterialComponent, QueryMut, QueryPlan,
+    SemanticDomain, SerializedPage, TypeRegistry,
 };
 
 /// Errors that can occur when adding a component to an entity.
@@ -140,48 +139,20 @@ impl World {
             planner: QueryPlanner::new(),
             type_registry: TypeRegistry::default(),
         };
-        // Registration of built-in components
-        world.register_component::<Transform>(SemanticDomain::Spatial);
-        world.register_component::<GlobalTransform>(SemanticDomain::Spatial);
-        world.register_component::<Parent>(SemanticDomain::Spatial);
-        world.register_component::<Children>(SemanticDomain::Spatial);
-        world.register_component::<Name>(SemanticDomain::Spatial);
-        world.register_component::<crate::ecs::Tag>(SemanticDomain::Spatial);
-
-        // Registration of render components
+        // Generic and hand-implemented components can't self-register via the
+        // derive (generics have no single `TypeId`; `MaterialComponent` has a manual
+        // `Component` impl), so they stay explicit. CollisionPairs is **not** an ECS
+        // component — it lives in `Resources` as `Arc<Mutex<CollisionPairs>>`.
         world.register_component::<HandleComponent<Mesh>>(SemanticDomain::Render);
         world.register_component::<HandleComponent<GpuMesh>>(SemanticDomain::Render);
         world.register_component::<MaterialComponent>(SemanticDomain::Render);
-        world.register_component::<Camera>(SemanticDomain::Render);
-        world.register_component::<crate::ecs::Light>(SemanticDomain::Render);
 
-        // Registration of audio components
-        world.register_component::<AudioSource>(SemanticDomain::Audio);
-        world.register_component::<AudioListener>(SemanticDomain::Audio);
-
-        // Registration of physics components
-        world.register_component::<RigidBody>(SemanticDomain::Physics);
-        world.register_component::<Collider>(SemanticDomain::Physics);
-        world.register_component::<crate::ecs::PhysicsMaterial>(SemanticDomain::Physics);
-        world.register_component::<crate::ecs::KinematicCharacterController>(
-            SemanticDomain::Physics,
-        );
-        world.register_component::<crate::ecs::ActiveEvents>(SemanticDomain::Physics);
-        // CollisionPairs is **not** an ECS component anymore — it lives
-        // in `Resources` as `Arc<Mutex<crate::physics::CollisionPairs>>`
-        // (broadphase scratch shared between lanes, no entity identity).
-        world.register_component::<crate::ecs::CollisionEvents>(SemanticDomain::Physics);
-        world.register_component::<crate::ecs::PhysicsDebugData>(SemanticDomain::Physics);
-
-        // Registration of UI components
-        world.register_component::<crate::ui::components::UiNode>(SemanticDomain::Ui);
-        world.register_component::<crate::ui::components::UiTransform>(SemanticDomain::Ui);
-        world.register_component::<crate::ui::components::UiStyle>(SemanticDomain::Ui);
-        world.register_component::<crate::ui::components::UiColor>(SemanticDomain::Ui);
-        world.register_component::<crate::ui::components::UiImage>(SemanticDomain::Ui);
-        world.register_component::<crate::ui::components::UiBorder>(SemanticDomain::Ui);
-        world.register_component::<crate::ui::components::UiInteraction>(SemanticDomain::Ui);
-        world.register_component::<crate::ui::components::UiText>(SemanticDomain::Ui);
+        // Auto-register every component that declares its domain via
+        // `#[derive(Component)]` + `#[component(domain = ...)]`. Idempotent with the
+        // explicit calls above (same TypeId → same vtable) during migration.
+        for reg in inventory::iter::<crate::ecs::ComponentDomainRegistration> {
+            (reg.register)(&mut world);
+        }
 
         world
     }

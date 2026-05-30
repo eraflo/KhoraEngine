@@ -28,7 +28,7 @@ The data layer Khora is built on. CRPECS is a custom archetype-based ECS with So
 
 ## 01 — Why CRPECS
 
-CRPECS — *Chunked Relational Page ECS* — exists because SAA's promise of **Adaptive Game Data Flows** requires a storage model where structural change is cheap. The three letters of the name are load-bearing: storage is **chunked** into bounded **pages**, the relationship between an entity and its data is **relational** (entities are identifiers, not pointers), and the page is the unit at which everything — iteration, compaction, serialization — happens.
+CRPECS — *Chunked Relational Page ECS* — exists because SAA's promise of **Adaptive Game Data Flows** — adapting the in-memory *layout* of data to the hardware it runs on — requires a storage model where structural change is cheap. The three letters of the name are load-bearing: storage is **chunked** into bounded **pages**, the relationship between an entity and its data is **relational** (entities are identifiers, not pointers), and the page is the unit at which everything — iteration, compaction, serialization — happens.
 
 The consequence: adding or removing a component to an entity is not an O(N) operation; whole pages are queryable in cache-friendly bursts; queries are guided by bitsets so sparse iteration stays fast. Off-the-shelf ECS libraries optimize for one of these. CRPECS is built to do all three, because the SAA needs all three.
 
@@ -80,6 +80,7 @@ Components are plain data types annotated with `#[derive(Component)]`:
 
 ```rust
 #[derive(Component)]
+#[component(domain = Spatial)]
 pub struct Transform {
     pub translation: Vec3,
     pub rotation: Quaternion,
@@ -87,12 +88,13 @@ pub struct Transform {
 }
 ```
 
-The derive does four things at compile time:
+The derive does five things at compile time:
 
 1. `impl Component for Transform`
 2. Generates `SerializableTransform` with `Encode` / `Decode` (via bincode / serde).
 3. Generates `From<Transform> for SerializableTransform` and the reverse.
 4. Registers the component for scene serialization through `inventory::submit!`.
+5. With `#[component(domain = X)]`, registers the type's `SemanticDomain` (also via `inventory`) so `World::new` picks it up automatically — no manual registration list.
 
 Two attributes refine the behavior:
 
@@ -126,7 +128,7 @@ Components are tagged with a **semantic domain** for optimized queries. Domains 
 
 Domains let query planners pre-filter pages: a render extraction query with a `Render` domain hint never touches UI pages. This is part of how Khora keeps per-frame extraction fast even as the entity count grows.
 
-Components are registered with the `Registry` at startup (one entry per type, via `inventory::submit!`). The registry is the source of truth for domain assignment, serialization metadata, and component identity.
+Components self-register with the `Registry` at startup: each type tagged `#[component(domain = X)]` submits an entry (via `inventory`) that `World::new` replays. The registry is the source of truth for domain assignment, serialization metadata, and component identity.
 
 ## 07 — Queries
 
@@ -228,7 +230,7 @@ for (t,) in world.query_mut::<(&mut Transform,)>() {
 world.despawn(entity);
 ```
 
-For your own components: derive `Component`, register it once via `inventory::submit!` in your crate, and use it everywhere. The serialization mirror is generated for you. See [SDK quickstart](./16_sdk_quickstart.md) for a worked example.
+For your own components: derive `Component`, tag the type with `#[component(domain = X)]` so it self-registers, and use it everywhere. The serialization mirror is generated for you. See [SDK quickstart](./16_sdk_quickstart.md) for a worked example.
 
 ## For engine contributors
 
@@ -262,7 +264,7 @@ When extending CRPECS, the rule of thumb is: **changes to storage layout require
 ## Open questions
 
 1. **Parallel query execution.** Today queries run on the calling thread. The borrow-checker's compile-time exclusivity makes parallelization safe; the policy and API are not yet decided.
-2. **Live AGDF triggers.** The architecture supports adding/removing components based on context, but the *policy* — who decides, when, with what hysteresis — is open. See [Open questions](./open_questions.md).
+2. **Adaptive layout (AGDF).** Online adaptation of data *layout* — re-tiling hot component columns (SoA ↔ AoSoA, hot/cold field split) from observed access patterns. It runs as Data self-maintenance **inside `khora-data`** (alongside `EcsMaintenance`), decided locally and gated by a cost/benefit test — the DCC only *observes* it (telemetry), it does **not** drive it, and it does **not** compete in the GORNA budget auction. The hooks (`LayoutPolicy`, access instrumentation, repack) are a build target; the default layout stays plain SoA, so it is inert until a column is profiled as worth re-tiling. Prior art: profile-guided layout (compilers), AoSoA (LLAMA / Cabana), online reorganization with worst-case bounds (OREO), just-in-time data structures (De Wael & Marr). Note: distance-based *gameplay* gating (detaching physics) is **not** AGDF — it is an opt-in, developer-authored policy.
 3. **Page-size tuning.** Today pages start at 8 entries and grow geometrically. Whether 64 or 256 would be better at scale is unmeasured.
 
 ---

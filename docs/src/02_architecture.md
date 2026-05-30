@@ -60,22 +60,53 @@ graph TD
     AGDF --> Data
     Contracts --> Core
     Obs --> Tele
-    Control -.->|Orchestrates| Agents
+    Control -.->|budget auction| Agents
     Agents -.->|Switches| Lanes
+    Control -.->|invokes substrate: invariants + projection| Data
+    Data -.->|access telemetry; self-optimizes layout| Tele
+    Tele -.->|observation tunnel| Control
     Lanes -.->|Uses traits| Core
     Data -.->|Uses traits| Core
     IO -.->|I/O services| Agents
     Infra -.->|Implements contracts| Core
 ```
 
+### Two relationships of Control — and neither is a command over Data
+
+A frequent misreading is that the DCC "commands" subsystems, or that the Data layer
+"competes" for budget like an agent. Neither is true. Control relates to the rest of the
+engine in exactly two ways:
+
+1. **The descent — the budget auction.** `Control → Agent → Lane → Data` (via typed
+   Views). **Agents are the *only* parties that negotiate for the frame budget**; the DCC
+   arbitrates *among agents*. Once an agent's budget is fixed, it picks a Lane and work
+   descends. This is the competitive path.
+2. **The observation tunnel — Data → Control.** Telemetry flows *up*: hardware monitors,
+   agent status, and Data-layer signals (including access-pattern metrics) feed the DCC's
+   situational model. This is **read-only observation**, the opposite direction of a
+   command.
+
+**Data adapts itself.** The Data layer's representation — its memory *layout* (AGDF) — is
+a self-optimization internal to `khora-data`. It runs in the Data layer's own
+self-maintenance (alongside [`EcsMaintenance`](./05_ecs.md)), decided locally from the
+access patterns it measures, self-bounded by a cost/benefit test. **The DCC does not
+drive it; it only *observes* the result through the tunnel.** Symmetrically, the DCC never
+commands an agent's strategy either — it sets a budget, the agent decides. This is what
+keeps the architecture *symbiotic* rather than autocratic.
+
+(The Scheduler does *invoke* the Data layer's per-tick self-presentation — running
+`DataSystem` invariants and the projection `Flow`s that publish Views for Lanes — because
+the Scheduler owns the tick ordering. That is orchestration of *when* Data takes its turn,
+not a decision about *how* Data lays itself out.)
+
 ## 02 — The mapping
 
 | SAA concept (the why) | CLAD crate (the how) | Role |
 |---|---|---|
-| **Dynamic Context Core** & **GORNA** | `khora-control` | Strategic brain — observes telemetry, allocates budgets, runs the Scheduler |
+| **Dynamic Context Core** & **GORNA** | `khora-control` | Strategic brain — observes telemetry (incl. Data access patterns), arbitrates the agent budget auction, runs the Scheduler, and invokes the Substrate (Data invariants + projection Flows). It never drives Data's layout — Data self-optimizes |
 | **Intelligent Subsystem Agents** | `khora-agents` | Tactical managers — each responsible for a `LaneKind` (rendering, shadow, physics, audio, UI) |
 | **Multiple agent strategies** | `khora-lanes` | Fast, deterministic workers — algorithms an agent can choose from |
-| **Adaptive Game Data Flows** | `khora-data` | Foundation — CRPECS enables flexible data layouts, dynamic component change |
+| **Adaptive Game Data Flows** | `khora-data` | Foundation — CRPECS archetype storage + AGDF adaptive memory *layout* (SoA ↔ AoSoA), self-optimized **inside** the Data layer (the DCC only observes); *representation* only, never game semantics |
 | **Semantic interfaces and contracts** | `khora-core` | Universal language — traits, core types, math, GORNA types |
 | **I/O services** | `khora-io` | Asset loading, VFS, serialization — on-demand services, not agents |
 | **Observability and telemetry** | `khora-telemetry` | Nervous system — gathers performance data for the DCC |
@@ -110,6 +141,7 @@ graph LR
     SDK --> TELE
     SDK --> DATA
     CTRL --> CORE
+    CTRL --> DATA
     AGT --> CORE
     AGT --> DATA
     AGT --> LANE
@@ -142,6 +174,8 @@ graph LR
 | Backends in infra | Per-backend code lives in `khora-infra/src/<area>/<backend>/` (e.g., `graphics/wgpu/`, `physics/rapier/`) |
 
 Violating these is a hard build error. The dependency graph is the architecture; if you change one, you change the other.
+
+> **`khora-control` depends on `khora-data`.** This is intentional: the Scheduler *invokes* the **Substrate** (DataSystem invariants + projection Flows) over the World because it owns the tick ordering. This is orchestration of *when* Data takes its turn — not control over *how* Data lays itself out (that is Data's own self-optimization). Agents still never depend on control.
 
 > **`khora-infra` is *one* implementation, not *the* implementation.** Every backend in `khora-infra` implements a trait that lives in `khora-core`. Swapping to a different graphics backend, physics solver, audio device, or UI layout engine means writing a new implementation of the trait — typically as a new sibling folder under `khora-infra/src/<area>/<new_backend>/`. The rest of the engine never sees the change. This is the load-bearing reason backend code is segregated.
 
@@ -185,7 +219,7 @@ Reading these traits is reading the engine's API. They are kept short, stable, a
 
 ## 07 — Standard components
 
-The components shipped in `khora-data`. Custom components are added the same way — `#[derive(Component)]` plus an `inventory::submit!` registration.
+The components shipped in `khora-data`. Custom components are added the same way — `#[derive(Component)]` plus `#[component(domain = …)]`, which self-registers the type into `World`.
 
 | Component | Domain | Purpose |
 |---|---|---|

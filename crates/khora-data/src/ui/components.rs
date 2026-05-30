@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 /// Represents the layout definition of a UI element.
 /// Fully Send/Sync ECS component that is later translated to a layout engine (like taffy) internally.
 #[derive(Debug, Clone, PartialEq, Component, Default)]
+#[component(domain = Ui)]
 pub struct UiNode {
     /// The width of the UI element.
     pub width: UiVal,
@@ -74,6 +75,7 @@ impl From<UiNode> for khora_core::ui::types::UiNode {
 /// The computed screen-space transform of a UI element.
 /// This is populated by the layout system (e.g. `UiAgent`) after evaluating the `taffy` tree.
 #[derive(Debug, Clone, Copy, PartialEq, Component)]
+#[component(domain = Ui)]
 pub struct UiTransform {
     /// Absolute position of the top-left corner in screen coordinates
     pub pos: Vec2,
@@ -130,6 +132,7 @@ impl UiTransform {
 
 /// The visual style of a UI element.
 #[derive(Debug, Clone, PartialEq, Component)]
+#[component(domain = Ui)]
 pub struct UiStyle {
     /// Background color in RGBA format (0.0 to 1.0)
     pub background_color: Vec4,
@@ -159,6 +162,7 @@ impl Default for UiStyle {
 #[derive(
     Debug, Clone, Copy, PartialEq, Component, Default, Serialize, Deserialize, Encode, Decode,
 )]
+#[component(domain = Ui)]
 pub struct UiColor(pub Vec4);
 
 impl UiColor {
@@ -170,6 +174,7 @@ impl UiColor {
 
 /// Visual image of a UI element.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Component)]
+#[component(domain = Ui)]
 pub struct UiImage {
     /// The ID of the image asset.
     pub texture: AssetUUID,
@@ -188,6 +193,7 @@ impl UiImage {
 #[derive(
     Debug, Clone, Copy, PartialEq, Component, Default, Serialize, Deserialize, Encode, Decode,
 )]
+#[component(domain = Ui)]
 pub struct UiBorder {
     /// Width of the border for each side.
     pub width: UiRect<f32>,
@@ -224,6 +230,7 @@ pub enum UiInteractionState {
 
 /// Track the interaction capabilities and current state of a UI element.
 #[derive(Debug, Clone, Default, Component)]
+#[component(domain = Ui)]
 pub struct UiInteraction {
     /// The current interaction state, updated continuously by the input system
     pub state: UiInteractionState,
@@ -237,6 +244,7 @@ pub struct UiInteraction {
 
 /// Typography settings for a text element.
 #[derive(Debug, Clone, PartialEq, Component)]
+#[component(domain = Ui)]
 pub struct UiText {
     /// The string to display.
     pub content: String,

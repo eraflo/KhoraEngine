@@ -285,8 +285,8 @@ The engine inserts these into the registry during `EngineCore::initialize`, befo
 | `GpuCache` | khora-data | Shared GPU mesh store — handles to uploaded meshes |
 | `ProjectionRegistry` | khora-data | Per-frame projection / mesh sync (runs `sync_all` before agents) |
 | `SharedFrameGraph` | khora-data | `Arc<Mutex<FrameGraph>>` — per-frame pass collector, drained at `end_render_frame` |
-| `RenderWorldStore` | khora-data | `Arc<RwLock<RenderWorld>>` populated each frame by `extract_scene` |
-| `UiSceneStore` | khora-data | `Arc<RwLock<UiScene>>` populated each frame by `extract_ui_scene` |
+| `RenderWorld` view | khora-core (`LaneBus`) | Projected each frame by `RenderFlow::project` and published into the `LaneBus` for render lanes |
+| `UiScene` view | khora-core (`LaneBus`) | Projected each frame by `UiFlow::project` into the `LaneBus` |
 | `PhysicsQueryService` | khora-agents | Raycasts and shape queries (registered only if a `PhysicsProvider` is present) |
 
 ### Bootstrap-registered services

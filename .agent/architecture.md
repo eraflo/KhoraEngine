@@ -49,7 +49,9 @@ Control ──► Agent ──► Lane ──► Data (via typed Views)
 
 This descent is the engine's hot path and remains the organizing principle.
 
-Around it, the Scheduler runs a **Substrate Pass** that executes the Data layer's self-maintenance — invariants (`DataSystem`s) and presentation (`Flow`s) — and provides Lanes with their typed input ([`LaneBus`](../crates/khora-core/src/lane/bus.rs)) and output ([`OutputDeck`](../crates/khora-core/src/lane/deck.rs)) substrate. The Substrate Pass is *not* a descent: it is Data maintaining and projecting itself, called by Scheduler because Scheduler owns the tick.
+Around it, the Scheduler runs a **Substrate Pass** that executes the Data layer's self-maintenance — invariants (`DataSystem`s) and presentation (`Flow`s) — and provides Lanes with their typed input ([`LaneBus`](../crates/khora-core/src/lane/bus.rs)) and output ([`OutputDeck`](../crates/khora-core/src/lane/deck.rs)) substrate. The Substrate Pass is *not* a descent: it is Data maintaining and projecting itself, called by Scheduler because Scheduler owns the tick. Implemented in [`khora-control/src/substrate/`](../crates/khora-control/src/substrate/) (`run_data_systems`, `run_flows`).
+
+**Only Agents compete for the frame budget** (the descent's auction). The Data layer does **not** bid against agents. AGDF layout adaptation is a **self-optimization internal to `khora-data`** — it runs in the Data layer's own self-maintenance (alongside `EcsMaintenance`), decided locally from measured access patterns and self-bounded by a cost/benefit test. The DCC only **observes** it via telemetry (a read-only observation tunnel); it never commands a concrete layout — just as it never commands an agent's strategy (it sets a budget, the agent decides). `khora-control` depends on `khora-data` only to *invoke* the Substrate (DataSystem invariants + projection Flows), because the Scheduler owns tick ordering — not to drive Data's layout.
 
 ```
 Pass A — Substrate (Scheduler)
@@ -65,9 +67,19 @@ Pass C — I/O boundary (Engine drains OutputDeck for submit/present)
 
 ### AGDF realisation
 
-**AGDF** (Adaptive Game Data Flows) is realised in `Flow::adapt`. Each domain's Flow performs its own structural mutations (attach / detach components via CRPECS) calibrated by the budget the agent transmits to its flow. No central context, no SPF — each Flow queries the World for what its domain considers relevant.
+**AGDF** (Adaptive Game Data Flows) is the online adaptation of data **layout** to the
+hardware and observed access patterns — a *representation* (HOW) adaptation, never a
+*semantic* (WHAT) one. It lives in CRPECS (a `LayoutPolicy` per component column,
+access-pattern instrumentation, a budget-gated repack step) and is governed by the same
+DCC loop as GORNA. The default layout is plain SoA, so it is additive and inert until a
+component is profiled as worth re-tiling (e.g. SoA → AoSoA for SIMD).
 
-The first concrete realisation is [`PhysicsFlow`](../crates/khora-data/src/flow/physics.rs) — entities outside the active camera's "physics scope" have their `RigidBody` detached; entities that come back inside have it restored from a stash, with hysteresis to prevent thrashing.
+The representation step of `Flow::adapt` may rearrange storage; it must **not** change
+which components an entity has. **Gameplay relevance gating is not AGDF** — detaching a
+`RigidBody` by distance changes the simulation, so it is an opt-in, developer-authored
+policy. The engine provides the detach / reattach-with-hysteresis mechanism (originally
+prototyped in [`PhysicsFlow`](../crates/khora-data/src/flow/physics.rs)) but never
+applies it to an entity the developer has not opted in. Flows themselves are converging to *projection only* (`select → project`, publishing a View) — structural mutation is leaving `Flow::adapt`.
 
 ## 02 — Crate dependency graph
 

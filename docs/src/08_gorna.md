@@ -31,6 +31,8 @@ GORNA replaces that with a per-tick negotiation. Agents declare what they *can* 
 
 The result: an engine that runs the same code on a workstation, a laptop on battery, and a Steam Deck — and adapts strategy each tick to keep the frame rate.
 
+**Who negotiates.** Only **agents** negotiate in GORNA — one negotiation surface per `LaneKind`. The Data layer does *not* compete here: it self-optimizes its layout internally (AGDF), observed by the DCC rather than driven by it, and never bids for the frame budget. See [Architecture — two relationships of Control](./02_architecture.md).
+
 ## 02 — The five phases
 
 ```mermaid

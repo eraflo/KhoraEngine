@@ -38,16 +38,17 @@ sequenceDiagram
 
     OS->>SDK: redraw requested
     SDK->>SDK: drain_inputs()
+    SDK->>SDK: run_app_update (Pre/Post-Sim + Pre-Extract DataSystems around app.update)
     SDK->>App: app.update(world, inputs)
-    SDK->>GW: tick_maintenance()
-    SDK->>SDK: extract scene + UI into stores
     SDK->>RS: begin_frame() → ColorTarget, DepthTarget
     SDK->>Sch: run_frame()
     Sch->>Sch: budget_channel.sync()
+    Sch->>Sch: run Flows → publish Views into LaneBus
     Sch->>Sch: per phase: plugins, topo sort, execute agents
-    Note over Sch: Agents record passes into FrameGraph
+    Note over Sch: Agents record GPU passes into FrameGraph; lanes fill the OutputDeck
     SDK->>FG: drain + submit (topological pass order)
     SDK->>RS: end_frame(presents) → swapchain present
+    SDK->>SDK: run_maintenance (drain OutputDeck, EcsMaintenance compaction)
     DCC-->>Sch: budgets via BudgetChannel
 ```
 
@@ -77,34 +78,37 @@ After this, the engine enters the frame loop. Nothing in `setup` is ever re-run.
 
 ## 03 — The frame loop
 
-`EngineCore::tick_with_services` runs five stages in order. Each is a public method on `EngineCore` so drivers (the editor's overlay/shell) can interleave hooks between them.
+`EngineCore::tick_with_runtime` runs six stages in order. Each is a public method on `EngineCore` so drivers (the editor's overlay/shell) can interleave hooks between them.
 
 ```
-tick_with_services(frame_services):
+tick_with_runtime(frame_runtime):
   1. drain_inputs()              ← Pop queued InputEvents, tick telemetry
-  2. run_app_update(&inputs)     ← App logic + maintenance + extraction
-  3. presents = begin_render_frame(&frame_services)
+  2. run_app_update(&inputs)     ← Substrate invariants (Pre/Post-Sim, Pre-Extract) around app.update
+  3. presents = begin_render_frame(&frame_runtime)
                                  ← RenderSystem::begin_frame, swapchain acquire
-  4. run_scheduler(&frame_services)
-                                 ← Phase-by-phase agent execution
+  4. run_scheduler(&frame_runtime)
+                                 ← Substrate Pass (Flows publish Views) + phase-by-phase agent execution
   5. end_render_frame(presents)  ← submit_frame_graph + RenderSystem::end_frame
+  6. run_maintenance()           ← Maintenance DataSystems drain the OutputDeck; EcsMaintenance compacts
 ```
 
 ### Stage 1 — `drain_inputs`
 Pops queued `InputEvent`s into a vector for the app to consume. Ticks telemetry counters. Marks the simulation as started on the first input frame.
 
 ### Stage 2 — `run_app_update`
-Runs in this order:
-1. `app.update(world, &inputs)` — user game logic.
-2. `world.tick_maintenance()` — drain ECS cleanup / vacuum queues, compact pages.
-3. **GPU mesh sync** — handles freshly added meshes are uploaded through `GpuCache`.
-4. **Scene extraction** — `khora_data::render::extract_scene` populates `RenderWorldStore`; `khora_data::ui::extract_ui_scene` populates `UiSceneStore`.
+Runs the Data layer's invariants around the app's own logic, via `substrate::run_data_systems`:
+1. **Pre-simulation** `DataSystem`s — input-driven mutations visible to the app.
+2. `app.update(world, &inputs)` — user game logic.
+3. **Post-simulation** `DataSystem`s — hierarchy fix-ups (e.g. `transform_propagation`).
+4. **Pre-extract** `DataSystem`s — GPU mesh sync (`gpu_mesh_sync`).
+
+Scene *projection* no longer happens here: it is done by the projection `Flow`s during the scheduler's Substrate Pass (Stage 4), which publish typed Views into the `LaneBus`. ECS compaction is deferred to Stage 6.
 
 ### Stage 3 — `begin_render_frame`
 Calls `RenderSystem::begin_frame()`, which acquires the swapchain texture, registers a view, and inserts `ColorTarget`, `DepthTarget`, and `ClearColor` into the per-frame `FrameContext`. Returns the `presents` token used at end-of-frame.
 
 ### Stage 4 — `run_scheduler`
-The `ExecutionScheduler` runs every active phase in order (`INIT`, `OBSERVE`, `TRANSFORM`, `MUTATE`, `OUTPUT`, `FINALIZE`, plus any custom phases inserted after `OUTPUT`). For each phase it:
+First, the **Substrate Pass** runs every registered projection `Flow` (`substrate::run_flows`), publishing each domain's typed View into the `LaneBus` for lanes to consume. Then the `ExecutionScheduler` runs every active phase in order (`INIT`, `OBSERVE`, `TRANSFORM`, `MUTATE`, `OUTPUT`, `FINALIZE`, plus any custom phases inserted after `OUTPUT`). For each phase it:
 
 1. Syncs budgets from the DCC via `BudgetChannel::sync()`.
 2. Runs registered `EnginePlugin` hooks for this phase.
@@ -116,7 +120,12 @@ The `ExecutionScheduler` runs every active phase in order (`INIT`, `OBSERVE`, `T
 1. **Drain `FrameGraph`** — agents that recorded passes during `OUTPUT` now have their command buffers topologically ordered by resource reads/writes and submitted to the device.
 2. `RenderSystem::end_frame(presents)` — present the swapchain texture.
 
-The five stages are the single most important sequence in Khora. Everything performance-critical happens here, in this order.
+### Stage 6 — `run_maintenance`
+Runs the **Maintenance** `DataSystem`s, which drain the `OutputDeck` the lanes filled during Stage 4 — audio and physics write-backs are applied to ECS components — and `EcsMaintenance` compacts pages and cleans orphaned data. `EcsMaintenance` is **Data-owned and self-budgeted** (`max_per_frame`); it is not negotiated with the DCC. This is the home for the Data layer's own self-optimization (see [Architecture — two relationships of Control](./02_architecture.md)).
+
+The six stages are the single most important sequence in Khora. Everything performance-critical happens here, in this order.
+
+> **Two output channels.** Lanes feed two sinks: the `FrameGraph` carries recorded GPU render passes (drained and submitted in Stage 5), while the typed `OutputDeck` carries cross-domain results (audio, physics, …) drained by Maintenance `DataSystem`s in Stage 6. Inputs to lanes are the typed Views the projection `Flow`s publish into the `LaneBus` in Stage 4.
 
 ## 04 — Cold path — DCC thread
 

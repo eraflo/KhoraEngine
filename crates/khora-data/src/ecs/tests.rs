@@ -41,6 +41,23 @@ impl Component for RenderTag {}
 // --- TESTS ---
 
 #[test]
+fn derived_components_auto_register_their_domain() {
+    use crate::ecs::{Camera, RigidBody};
+    use std::any::TypeId;
+
+    // `World::new` replays the `#[component(domain = ...)]` inventory — no manual list.
+    let world = World::new();
+    assert_eq!(
+        world.component_domain(TypeId::of::<Camera>()),
+        Some(SemanticDomain::Render)
+    );
+    assert_eq!(
+        world.component_domain(TypeId::of::<RigidBody>()),
+        Some(SemanticDomain::Physics)
+    );
+}
+
+#[test]
 fn test_spawn_single_entity() {
     // --- 1. SETUP ---
     // Create a new, empty world.

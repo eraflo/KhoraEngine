@@ -37,40 +37,39 @@ The default backend is wgpu 28.0. It can be replaced — a Vulkan-direct or Meta
 ## 02 — Frame lifecycle
 
 ```
-EngineCore::tick_with_services
+EngineCore::tick_with_runtime
   ├─ drain_inputs                                     # Pop queued events
   │
-  ├─ run_app_update(&inputs)
+  ├─ run_app_update(&inputs)                          # Substrate DataSystems around app logic
+  │   ├─ Pre-simulation DataSystems                   # input-driven mutations
   │   ├─ app.update(world, inputs)                    # User logic
-  │   ├─ world.tick_maintenance()                     # ECS GC
-  │   ├─ GpuCache: upload freshly added meshes        # GPU mesh sync
-  │   ├─ extract_scene → RenderWorldStore             # Read ECS, fill render scene
-  │   └─ extract_ui_scene → UiSceneStore              # Read ECS, fill UI scene
+  │   ├─ Post-simulation DataSystems                  # transform_propagation, ...
+  │   └─ Pre-extract DataSystems                      # GpuCache: upload freshly added meshes
   │
-  ├─ presents = begin_render_frame(&frame_services)
+  ├─ presents = begin_render_frame(&frame_runtime)
   │   └─ RenderSystem::begin_frame()
   │       ├─ device.poll_device_non_blocking()
   │       ├─ device.wait_for_last_submission()
   │       ├─ get_current_texture()
   │       └─ insert ColorTarget, DepthTarget, ClearColor → FrameContext
   │
-  ├─ run_scheduler(&frame_services)
+  ├─ run_scheduler(&frame_runtime)
+  │   ├─ Substrate Pass: run Flows                    # RenderFlow/ShadowFlow/UiFlow project Views into LaneBus
   │   ├─ OBSERVE phase
-  │   │   ├─ ShadowAgent.execute()                    # Encode shadow atlas pass
-  │   │   │   └─ records into SharedFrameGraph; publishes ShadowAtlasView,
-  │   │   │      ShadowComparisonSampler into FrameContext
-  │   │   └─ RenderAgent.execute() (Observe)          # Records main pass
-  │   │       └─ LitForwardLane reads atlas from FrameContext, encodes draw
-  │   ├─ TRANSFORM phase                              # Physics, audio, AI agents
+  │   │   ├─ ShadowAgent.execute()                    # Encode shadow atlas pass (reads ShadowView)
+  │   │   └─ RenderAgent.execute() (Observe)          # Records main pass (reads RenderWorld from LaneBus)
+  │   ├─ TRANSFORM phase                              # Physics, audio agents
   │   ├─ MUTATE phase
   │   ├─ OUTPUT phase
-  │   │   └─ UiAgent.execute()                        # Records UI overlay pass
-  │   │       └─ UiRenderLane (LoadOp::Load) into SharedFrameGraph
+  │   │   └─ UiAgent.execute()                        # Records UI overlay pass (reads UiScene)
   │   └─ FINALIZE phase                               # Telemetry, cleanup
+  │   (agents record GPU passes into SharedFrameGraph; lanes fill the OutputDeck)
   │
-  └─ end_render_frame(presents)
-      ├─ submit_frame_graph(graph, device)            # Drain passes, topo-order, submit
-      └─ RenderSystem::end_frame(presents)            # surface_texture.present()
+  ├─ end_render_frame(presents)
+  │   ├─ submit_frame_graph(graph, device)            # Drain passes, topo-order, submit
+  │   └─ RenderSystem::end_frame(presents)            # surface_texture.present()
+  │
+  └─ run_maintenance                                  # Maintenance DataSystems drain OutputDeck; EcsMaintenance compacts
 ```
 
 One swapchain acquire, one present, per frame. Lanes do not encode directly to a shared encoder — they record `PassDescriptor`s into the `SharedFrameGraph`, and the engine drains the graph after the scheduler completes.
@@ -83,8 +82,8 @@ Several engine-registered services carry data through the frame:
 |---|---|---|
 | `GpuCache` | `khora-data::gpu::cache` | Shared GPU mesh store — handles to uploaded mesh buffers, keyed by ECS handle |
 | `ProjectionRegistry` | `khora-data` | Runs `sync_all()` once per frame before agents — uploads new meshes through `GpuCache`, syncs projection state |
-| `RenderWorldStore` | `khora-data::render` | `Arc<RwLock<RenderWorld>>` populated each frame by `extract_scene` from the ECS |
-| `UiSceneStore` | `khora-data::ui` | `Arc<RwLock<UiScene>>` populated each frame by `extract_ui_scene` |
+| `RenderWorld` view | `khora-core::lane` (`LaneBus`) | The render View, projected each frame by `RenderFlow::project` from the ECS and published into the `LaneBus`; render lanes read it there (never the World) |
+| `UiScene` view | `khora-core::lane` (`LaneBus`) | The UI View, projected each frame by `UiFlow::project` into the `LaneBus` |
 | `SharedFrameGraph` | `khora-data::render::frame_graph` | `Arc<Mutex<FrameGraph>>` — pass collector; agents append, the engine drains |
 | `FrameContext` | `khora-core::renderer::api::core::frame_context` | Per-frame blackboard for cross-agent sync (shadow atlas, color/depth targets, stages) |
 

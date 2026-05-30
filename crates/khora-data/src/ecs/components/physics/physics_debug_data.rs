@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 
 /// Component that holds debug rendering data for the physics simulation.
 #[derive(Debug, Clone, Default, Component, Serialize, Deserialize)]
+#[component(domain = Physics)]
 pub struct PhysicsDebugData {
     /// Vertices of the debug wireframe.
     pub vertices: Vec<Vec3>,

@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Component representing a rigid body in the physics simulation.
 #[derive(Debug, Clone, Component, Serialize, Deserialize)]
+#[component(domain = Physics)]
 pub struct RigidBody {
     /// Opaque handle used by the physics provider.
     #[component(skip)]

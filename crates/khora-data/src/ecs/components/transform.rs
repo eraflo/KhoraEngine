@@ -23,6 +23,7 @@ use khora_macros::Component;
 /// transform propagation system will use this component's value to calculate
 /// the final `GlobalTransform`.
 #[derive(Debug, Clone, Copy, PartialEq, Component)]
+#[component(domain = Spatial)]
 pub struct Transform {
     /// The translation (position) of the entity.
     pub translation: Vec3,

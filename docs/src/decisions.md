@@ -30,6 +30,7 @@ Choices we made, and what we said no to. The global ledger.
 - **Two threads, one channel.** The DCC owns its thread; the Scheduler owns the main thread; they touch only through `BudgetChannel`.
 - **Last-wins budget delivery.** The Scheduler doesn't replay a queue; it reads the latest snapshot.
 - **Phase-based ordering.** Agents declare phases, not absolute frame slots. The Scheduler resolves the dependency graph each frame.
+- **Adaptation targets the HOW, never the WHAT.** Automatic adaptation changes *representation* (strategy, quality, memory layout); *game semantics* (which components an entity has, simulation behaviour) stay developer-authored. Consequently **AGDF = adaptive data *layout***, not gameplay restructuring.
 
 ### We said no to
 - **Static budgets baked at compile time.** A `MAX_LIGHTS` constant has no place in an engine that adapts.

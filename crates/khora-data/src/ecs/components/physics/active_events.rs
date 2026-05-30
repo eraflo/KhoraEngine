@@ -20,4 +20,5 @@ use serde::{Deserialize, Serialize};
 /// to save on performance. Adding this component enables reporting for this entity.
 #[derive(Debug, Clone, Copy, Default, Component, Serialize, Deserialize)]
 #[component(no_serializable)]
+#[component(domain = Physics)]
 pub struct ActiveEvents;

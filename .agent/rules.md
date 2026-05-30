@@ -49,7 +49,8 @@ Hard constraints for all code changes. Read before editing.
 - Modify `khora-core` trait interfaces only when you also update every downstream implementation.
 - Keep GPU resources behind abstract IDs (`TextureId`, `BufferId`, `PipelineId`). Never expose raw wgpu handles in public APIs.
 - **Lanes MUST consume Views from the [`LaneBus`](../crates/khora-core/src/lane/bus.rs)**, not query the World directly. The Flow for a domain ([`khora-data/src/flow/`](../crates/khora-data/src/flow/)) is the only legitimate producer of those Views.
-- **Structural mutations** (attach/detach components via CRPECS) belong inside `Flow::adapt`, `DataSystem` invariants, or explicit user actions (editor, scripted gameplay events). They are forbidden inside Lanes.
+- **Adapt the HOW, never the WHAT.** Automatic adaptation (DCC / GORNA / `Flow`) may change only the *representation* — strategy, quality, memory layout. It MUST NEVER change *game semantics* (which components an entity has, simulation-observable behaviour). Restoring distant physics, merging entities, dropping gameplay components automatically is forbidden.
+- **Structural mutations** are forbidden inside Lanes in all cases. *Representation-only* layout changes (AGDF — e.g. SoA↔AoSoA) belong in the data layer (CRPECS / the representation step of `Flow::adapt`). *Semantic* structural change (attach/detach gameplay components) is developer-authored: opt-in policy, `DataSystem` invariants, or explicit user/editor/scripted actions — never the engine's automatic default.
 - **Agents MUST stay strategists** — choose a Lane given a budget, report status. They MUST NOT hold per-frame state, own a Flow, or buffer outputs. The CLAD descent is `Control → Agent → Lane → Data`; the agent invokes its own lane.
 - **Engine-tick wiring is data-driven** — to add an invariant, register a [`DataSystemRegistration`](../crates/khora-data/src/ecs/system.rs); to add a Flow, register a [`FlowRegistration`](../crates/khora-data/src/flow/registration.rs); to add an asset decoder, register an [`AssetDecoderRegistration`](../crates/khora-io/src/asset/registry.rs). Never wire a system manually in `engine.rs`.
 
@@ -81,7 +82,7 @@ Hard constraints for all code changes. Read before editing.
 - Use `#[derive(Component)]` for all ECS components. The macro auto-generates the `SerializableX` mirror struct and `From` conversions.
 - Use `#[component(skip)]` on fields that must not be serialized (GPU handles, runtime state).
 - Use `#[component(no_serializable)]` for components that need a manual `SerializableX` (unit structs, trait objects).
-- Register components via `inventory::submit!` in `khora-data/src/ecs/components/registrations.rs`. Use the `register_components!` macro for DRY registration.
+- Declare a component's `SemanticDomain` on the type: `#[derive(Component)] #[component(domain = Physics)]`. The derive then self-registers it (via `inventory`) into `World` — no manual list. Only generics (`HandleComponent<T>`) and hand-written `Component` impls (e.g. `MaterialComponent`) stay explicit in `World::new`.
 
 ## 08 — Must never
 

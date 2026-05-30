@@ -76,17 +76,19 @@ flowchart LR
 
 GORNA v0.3 is fully operational. The DCC runs nine heuristics each tick (Phase, Thermal, Battery, Frame Time, Stutter, Trend, CPU Pressure, GPU Pressure, Death Spiral). The full protocol lives in [GORNA](./08_gorna.md).
 
-### 4. Adaptive Game Data Flows — the living data
+### 4. Adaptive Game Data Flows — the living *representation*
 
-AGDF is the principle that **not only algorithms but also the structure of data should be dynamic**. Realized through CRPECS, Khora's archetype-based ECS:
+AGDF is the principle that **not only algorithms but also the in-memory *representation* of data should adapt** to the hardware it runs on. The engine observes how each component is actually accessed and lays its storage out for the machine it is on right now — without ever changing what the data *means*.
 
-| Scenario | AGDF action |
+| Signal | AGDF action (representation only) |
 |---|---|
-| Entity far from player | Remove physics components, reduce update frequency |
-| Entity enters player vicinity | Add physics components, increase update frequency |
-| Scene complexity exceeds budget | Merge similar entities, simplify component data |
+| A component is scanned in tight, vectorizable loops | Re-tile its column to a SIMD-friendly `AoSoA` layout |
+| A component mixes hot and cold fields | Split storage so iteration touches only the hot cache lines |
+| A layout stops paying off on this hardware | Repack back, gated by a cost/benefit test |
 
-Archetype storage makes structural change cheap. Adding or removing a component shifts an entity to a different page; queries see the change immediately. See [ECS — CRPECS](./05_ecs.md).
+This is a *representation* adaptation: it rearranges bytes, never the simulation outcome. It is the data-layer twin of GORNA — the same observe → decide → apply loop, applied to memory instead of strategy. Archetype storage (CRPECS) makes the structural change cheap. See [ECS — CRPECS](./05_ecs.md).
+
+> **What AGDF is *not*.** Removing an entity's physics because it is far from the player **changes the game**, not just its representation. That is a *gameplay* decision and belongs to the developer — the engine offers the mechanism (detach / reattach with hysteresis) but never applies it to an entity the developer has not opted in. See pillar 7.
 
 ### 5. Semantic interfaces and contracts — the common language
 
@@ -116,6 +118,8 @@ The engine's autonomy serves the developer. It does not replace them.
 |---|---|
 | Constraints | Define rules or volumes to influence decisions ("In this zone, physics > graphics") |
 | Adaptation modes (planned) | `Learning` (fully dynamic), `Stable` (predictable), `Manual` (locked strategies) |
+
+The boundary is firm: **automatic adaptation may change the *how* (strategy, quality, memory layout) but never the *what* (game semantics — which components an entity has, how the simulation behaves).** Changing the *what* is always the developer's call; the engine supplies the mechanism, the developer authors the policy.
 
 ## 03 — Cold path and hot path
 
@@ -151,6 +155,8 @@ graph TD
 | Communication | Unidirectional `BudgetChannel` | Agents read budgets at frame start |
 
 **Key insight.** Agents are not controllers — they are **adapters**. They receive budgets from GORNA and select the appropriate lane strategy. The DCC decides *what* resources are available; agents decide *how* to use them.
+
+The Data layer plays by the same spirit but on its own: it **self-optimizes its memory *layout* (AGDF) internally**, deciding locally from measured access patterns. The DCC does not drive it — it only *observes* the result through a read-only telemetry tunnel. **Only agents compete in the budget auction;** the Data layer never bids for frame time. See [Architecture — two relationships of Control](./02_architecture.md).
 
 ## 04 — Five engineering principles
 
