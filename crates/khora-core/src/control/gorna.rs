@@ -65,6 +65,37 @@ pub enum StrategyId {
     Custom(u32),
 }
 
+/// How much latitude GORNA has to change an agent's strategy — the
+/// developer-control surface over the adaptive core.
+///
+/// This is what keeps the engine a *partnership* rather than an autocracy: the
+/// DCC observes and proposes, but the developer decides how much it may act. Set
+/// per agent; `Learning` is the default. (A death-spiral safety stop can still
+/// force `LowPower` in any mode — safety overrides developer control.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AdaptationMode {
+    /// Full GORNA negotiation — the DCC freely picks the best-fitting strategy
+    /// each tick. The engine's default.
+    #[default]
+    Learning,
+    /// The agent is **pinned** to a fixed strategy; GORNA observes and reports
+    /// but never switches it. The developer takes control.
+    Manual(StrategyId),
+    /// **Predictable**: GORNA may *downgrade* under budget pressure but never
+    /// makes an opportunistic *upgrade*, so the strategy doesn't flap up and
+    /// down frame to frame.
+    Stable,
+    /// **Learning within limits**: the chosen strategy is clamped to the
+    /// `[min, max]` range (ordering `LowPower < Balanced < HighPerformance`;
+    /// `Custom` ranks above `HighPerformance`).
+    Bounded {
+        /// Lowest strategy GORNA may select.
+        min: StrategyId,
+        /// Highest strategy GORNA may select.
+        max: StrategyId,
+    },
+}
+
 /// Hard resource constraints the DCC imposes on an Agent during negotiation.
 ///
 /// These represent non-negotiable limits that any proposed strategy must respect.

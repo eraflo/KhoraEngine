@@ -30,7 +30,8 @@ use std::time::{Duration, Instant};
 use crate::analysis::HeuristicEngine;
 use crate::gorna::GornaArbitrator;
 use crate::registry::AgentRegistry;
-use khora_core::control::gorna::AgentId;
+use khora_core::control::gorna::{AdaptationMode, AgentId};
+use std::collections::HashMap;
 use std::sync::Mutex;
 
 /// Configuration for the DCC Service.
@@ -67,6 +68,9 @@ pub struct DccService {
     running: Arc<AtomicBool>,
     handle: Option<thread::JoinHandle<()>>,
     event_tx: Sender<TelemetryEvent>,
+    /// Per-agent developer-control modes, shared with the cold-path arbitrator.
+    /// Written from any thread (host/editor), read each tick by the DCC loop.
+    adaptation_modes: Arc<std::sync::RwLock<HashMap<AgentId, AdaptationMode>>>,
 }
 
 impl DccService {
@@ -81,8 +85,28 @@ impl DccService {
             running: Arc::new(AtomicBool::new(false)),
             handle: None,
             event_tx: tx,
+            adaptation_modes: Arc::new(std::sync::RwLock::new(HashMap::new())),
         };
         (service, rx)
+    }
+
+    /// Sets the [`AdaptationMode`] for an agent — the developer-control surface
+    /// over the adaptive core. Thread-safe; takes effect on the next arbitration
+    /// tick. `Manual(strategy)` pins an agent, `Stable` blocks opportunistic
+    /// upgrades, `Bounded` clamps the range, `Learning` (default) negotiates freely.
+    pub fn set_adaptation_mode(&self, agent_id: AgentId, mode: AdaptationMode) {
+        if let Ok(mut modes) = self.adaptation_modes.write() {
+            modes.insert(agent_id, mode);
+        }
+    }
+
+    /// Returns the [`AdaptationMode`] configured for an agent (default `Learning`).
+    pub fn adaptation_mode(&self, agent_id: AgentId) -> AdaptationMode {
+        self.adaptation_modes
+            .read()
+            .ok()
+            .and_then(|m| m.get(&agent_id).copied())
+            .unwrap_or_default()
     }
 
     /// Connects the DCC to the Scheduler's budget channel.
@@ -125,13 +149,14 @@ impl DccService {
         let context = Arc::clone(&self.context);
         let registry = Arc::clone(&self.registry);
         let budget_channel = self.budget_channel.clone();
+        let adaptation_modes = Arc::clone(&self.adaptation_modes);
         let tick_duration = Duration::from_secs_f32(1.0 / self.config.tick_rate as f32);
         let agent_lock_timeout = Duration::from_millis(self.config.agent_lock_timeout_ms);
 
         let handle = thread::spawn(move || {
             let mut store = MetricStore::new();
             let heuristic_engine = HeuristicEngine;
-            let arbitrator = GornaArbitrator::new(agent_lock_timeout);
+            let mut arbitrator = GornaArbitrator::new(agent_lock_timeout);
             let mut initial_negotiation_done = false;
 
             log::info!("DCC Service thread started.");
@@ -230,6 +255,13 @@ impl DccService {
                         drop(registry_lock);
 
                         let mut agents_slice: Vec<Arc<std::sync::Mutex<dyn Agent>>> = agents;
+                        // Sync developer-control modes into the arbitrator before
+                        // it issues budgets (host may have changed them).
+                        if let Ok(modes) = adaptation_modes.read() {
+                            for (id, mode) in modes.iter() {
+                                arbitrator.set_adaptation_mode(*id, *mode);
+                            }
+                        }
                         arbitrator.arbitrate(&ctx_copy, &report, &mut agents_slice);
                         initial_negotiation_done = true;
 
@@ -341,13 +373,13 @@ mod tests {
     use super::*;
     use crate::EngineMode;
     use khora_core::control::gorna::{
-        AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-        StrategyOption,
+        AdaptationMode, AgentId, AgentStatus, NegotiationRequest, NegotiationResponse,
+        ResourceBudget, StrategyId, StrategyOption,
     };
     use khora_core::telemetry::{MetricId, MetricValue};
 
     struct StubAgent {
-        budget_applied: bool,
+        applied: Option<StrategyId>,
     }
 
     impl Agent for StubAgent {
@@ -356,21 +388,28 @@ mod tests {
         }
         fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
             NegotiationResponse {
-                strategies: vec![StrategyOption {
-                    id: StrategyId::Balanced,
-                    estimated_time: Duration::from_millis(8),
-                    estimated_vram: 1024,
-                }],
+                strategies: vec![
+                    StrategyOption {
+                        id: StrategyId::LowPower,
+                        estimated_time: Duration::from_millis(2),
+                        estimated_vram: 1024,
+                    },
+                    StrategyOption {
+                        id: StrategyId::Balanced,
+                        estimated_time: Duration::from_millis(8),
+                        estimated_vram: 1024,
+                    },
+                ],
                 timing_adjustment: None,
             }
         }
-        fn apply_budget(&mut self, _: ResourceBudget) {
-            self.budget_applied = true;
+        fn apply_budget(&mut self, budget: ResourceBudget) {
+            self.applied = Some(budget.strategy_id);
         }
         fn report_status(&self) -> AgentStatus {
             AgentStatus {
                 agent_id: AgentId::Renderer,
-                current_strategy: StrategyId::Balanced,
+                current_strategy: self.applied.unwrap_or(StrategyId::Balanced),
                 health_score: 1.0,
                 is_stalled: false,
                 message: String::new(),
@@ -434,20 +473,43 @@ mod tests {
             tick_rate: 100,
             ..Default::default()
         });
-        let agent = Arc::new(std::sync::Mutex::new(StubAgent {
-            budget_applied: false,
-        }));
+        let agent = Arc::new(std::sync::Mutex::new(StubAgent { applied: None }));
         dcc.register_agent(agent.clone(), 1.0);
         dcc.start(rx);
 
         thread::sleep(Duration::from_millis(200));
 
-        let applied = agent.lock().unwrap().budget_applied;
+        let applied = agent.lock().unwrap().applied.is_some();
         dcc.stop();
 
         assert!(
             applied,
             "Initial GORNA negotiation should have called apply_budget"
+        );
+    }
+
+    #[test]
+    fn test_dcc_manual_mode_pins_strategy() {
+        let (mut dcc, rx) = DccService::new(DccConfig {
+            tick_rate: 100,
+            ..Default::default()
+        });
+        let agent = Arc::new(std::sync::Mutex::new(StubAgent { applied: None }));
+        dcc.register_agent(agent.clone(), 1.0);
+        // Developer pins the agent to LowPower. With ample budget, `Learning`
+        // would otherwise pick Balanced (the most expensive offered strategy).
+        dcc.set_adaptation_mode(AgentId::Renderer, AdaptationMode::Manual(StrategyId::LowPower));
+        dcc.start(rx);
+
+        thread::sleep(Duration::from_millis(200));
+
+        let applied = agent.lock().unwrap().applied;
+        dcc.stop();
+
+        assert_eq!(
+            applied,
+            Some(StrategyId::LowPower),
+            "Manual mode set via DccService should pin the agent's strategy"
         );
     }
 }

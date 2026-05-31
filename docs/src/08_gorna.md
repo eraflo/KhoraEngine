@@ -157,7 +157,7 @@ The two paths only touch through the `BudgetChannel` — one `crossbeam_channel`
 
 ## For game developers
 
-GORNA is internal. As a game developer, you observe its decisions through the editor's *GORNA Stream* panel: a live feed of "RenderAgent: switching from LitForward to Forward+ — reason: GPU pressure." If you want a lane never to switch, today the answer is to override the agent's negotiation surface (advanced — see [Extending Khora](./19_extending.md)). A first-class user-facing constraint API is on the [Roadmap](./roadmap.md) under DCC v2.
+GORNA is internal. As a game developer, you observe its decisions through the editor's *GORNA Stream* panel: a live feed of "RenderAgent: switching from LitForward to Forward+ — reason: GPU pressure." If you want to control how much GORNA may act, set the agent's **`AdaptationMode`** via `DccService::set_adaptation_mode` (the DCC is a registered service): `Manual(strategy)` pins it, `Stable` blocks opportunistic up-switches, `Bounded { min, max }` clamps the range, `Learning` (default) negotiates freely. A death-spiral safety stop can still force `LowPower`. These four modes are enforced today; calibration / deterministic-replay / game-hint modes and a spatial `PriorityVolume` constraint API are on the [Roadmap](./roadmap.md).
 
 ## For engine contributors
 
@@ -190,7 +190,7 @@ Adding a new agent strategy: add a new lane, give it a `strategy_name()`, expose
 ## Open questions
 
 1. **User constraints.** "In this volume, physics > graphics" is a stated capability without a concrete API. `PriorityVolume` is in the roadmap.
-2. **Adaptation modes.** `Learning` (fully dynamic), `Stable` (predictable), `Manual` (locked). The contract for switching at runtime is open.
+2. **Adaptation modes & predictive cost.** `Learning`, `Manual`, `Stable`, and `Bounded` are enforced (`AdaptationMode`, set per agent via `DccService::set_adaptation_mode`). Still open: `Calibration` (needs the layout learner), `Replay` (needs a decision recorder), `Hinted` (needs a game→engine hint channel). A `CostModel` fits measured `(n, time)` samples to a complexity class (`c·f(n)`) so GORNA can *anticipate* a breach; the fitter exists, but feeding it live samples from telemetry and using its forecast in arbitration is not yet wired.
 3. **ML-augmented heuristics.** A future heuristic could be a small ML model trained on telemetry. The deployment story (model storage, update cadence) is undecided.
 
 ---

@@ -117,7 +117,7 @@ The engine's autonomy serves the developer. It does not replace them.
 | Mechanism | Purpose |
 |---|---|
 | Constraints | Define rules or volumes to influence decisions ("In this zone, physics > graphics") |
-| Adaptation modes (planned) | `Learning` (fully dynamic), `Stable` (predictable), `Manual` (locked strategies) |
+| Adaptation modes | `Learning`/`Manual`/`Stable`/`Bounded` enforced (set via `DccService`); calibration/replay/hint planned |
 
 The boundary is firm: **automatic adaptation may change the *how* (strategy, quality, memory layout) but never the *what* (game semantics — which components an entity has, how the simulation behaves).** Changing the *what* is always the developer's call; the engine supplies the mechanism, the developer authors the policy.
 
@@ -199,7 +199,7 @@ Logs say what they mean. Errors give context. Metrics carry units. Color, when u
 
 What this chapter does not answer, and where the next iteration should go.
 
-1. **Adaptation modes.** `Learning`, `Stable`, `Manual` are designed but not yet implemented. The contract for switching between them at runtime is open.
+1. **Adaptation modes.** `Learning`, `Manual`, `Stable`, and `Bounded` are implemented (`AdaptationMode`, set per agent via `DccService::set_adaptation_mode`); calibration / replay / game-hint modes await their supporting subsystems.
 2. **Constraints API.** "In this zone, physics > graphics" is a stated capability with no concrete API yet. `PriorityVolume` is in the roadmap.
 3. **Cross-agent coordination.** Today agents declare hard dependencies on each other (RenderAgent → ShadowAgent). When the dependency graph grows, do we need a richer scheduling model than per-frame topological sort?
 

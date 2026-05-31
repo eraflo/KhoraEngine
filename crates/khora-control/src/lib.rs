@@ -40,6 +40,7 @@
 pub mod analysis;
 pub mod budget_channel;
 pub mod context;
+pub mod cost_model;
 pub mod gorna;
 pub mod metrics;
 pub mod plugin;

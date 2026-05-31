@@ -27,11 +27,12 @@ What this engine does not yet answer, and where the next iteration should go.
 
 ## 01 — Adaptive core
 
-1. **Adaptation modes.** `Learning` (fully dynamic), `Stable` (predictable), `Manual` (locked strategies) — plus designed extensions: `Bounded` (Learning within developer-set limits), `Calibration` (deliberately explore to seed the learner, then freeze), `Replay` (re-play a recorded decision trace bit-for-bit, for QA / lockstep netcode / bug repro — inspired by deterministic replay), and `Hinted` (the game biases the planner with semantic hints like "cutscene"/"combat"). Designed, not implemented; the runtime switching contract is open.
+1. **Adaptation modes.** `Learning`, `Manual` (pinned), `Stable` (no opportunistic upgrade), and `Bounded { min, max }` are **implemented** (`AdaptationMode`, settable per agent via `DccService::set_adaptation_mode`). Still open — each needs a supporting subsystem, not just an enum variant: `Calibration` (needs the layout learner to seed), `Replay` (needs a decision recorder for bit-for-bit replay — QA / lockstep / bug repro), and `Hinted` (needs a game→engine semantic-hint channel, e.g. "cutscene"/"combat").
 2. **Constraints API.** "In this volume, physics > graphics" is a stated capability without a concrete API. `PriorityVolume` is in the roadmap.
 3. **Cross-agent coordination.** Today agents declare hard dependencies on each other (RenderAgent → ShadowAgent). When the dependency graph grows, do we need a richer scheduling model than per-frame topological sort?
 4. **Variable cold-path frequency.** ~20 Hz is a default. On low-power targets we may want 5–10 Hz. The trigger model for changing this at runtime is open.
 5. **ML-augmented heuristics.** A future heuristic could be a small ML model trained on telemetry. The deployment story (model storage, update cadence) is undecided.
+6. **Predictive cost model.** A `CostModel` fits measured `(n, time)` samples to a complexity class (`c·f(n)`) so the DCC can forecast a budget breach ("at this growth rate, the frame budget breaks at ~N entities") instead of only reacting. The fitter is implemented and tested; collecting live per-agent `(n, time)` samples from telemetry and using the forecast in arbitration is pending.
 
 ## 02 — ECS and data
 

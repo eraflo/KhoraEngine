@@ -28,12 +28,26 @@ use crate::analysis::AnalysisReport;
 use crate::context::Context;
 use khora_core::agent::Agent;
 use khora_core::control::gorna::{
-    AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId, StrategyOption,
+    AdaptationMode, AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId,
+    StrategyOption,
 };
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const MAX_STALLED_AGENTS: usize = 2;
+
+/// Ordinal rank of a strategy for clamping (`Bounded` mode):
+/// `LowPower < Balanced < HighPerformance`, with `Custom` ranked above the
+/// standard tiers.
+fn strategy_rank(id: StrategyId) -> u8 {
+    match id {
+        StrategyId::LowPower => 0,
+        StrategyId::Balanced => 1,
+        StrategyId::HighPerformance => 2,
+        StrategyId::Custom(_) => 3,
+    }
+}
 
 fn try_lock_agent_with_timeout<T: ?Sized>(
     mutex: &Mutex<T>,
@@ -65,6 +79,9 @@ fn try_lock_agent_with_timeout<T: ?Sized>(
 ///   within the global frame budget, respecting priorities and VRAM constraints.
 pub struct GornaArbitrator {
     lock_timeout: Duration,
+    /// Per-agent developer-control mode (default `Learning`). Configured by the
+    /// host; consulted at issuance so a `Manual` agent is never overridden.
+    modes: HashMap<AgentId, AdaptationMode>,
 }
 
 /// A collected negotiation from a single agent, used during the fitting pass.
@@ -88,7 +105,21 @@ impl GornaArbitrator {
     /// during negotiation and budget issuance. Agents that cannot be locked within
     /// this timeout are skipped.
     pub fn new(lock_timeout: Duration) -> Self {
-        Self { lock_timeout }
+        Self {
+            lock_timeout,
+            modes: HashMap::new(),
+        }
+    }
+
+    /// Sets the [`AdaptationMode`] for an agent — the developer-control surface.
+    /// `Manual(strategy)` pins the agent; `Learning` (default) lets GORNA negotiate.
+    pub fn set_adaptation_mode(&mut self, agent_id: AgentId, mode: AdaptationMode) {
+        self.modes.insert(agent_id, mode);
+    }
+
+    /// Returns the [`AdaptationMode`] configured for an agent (default `Learning`).
+    pub fn adaptation_mode(&self, agent_id: AgentId) -> AdaptationMode {
+        self.modes.get(&agent_id).copied().unwrap_or_default()
     }
     /// Performs a full GORNA arbitration round.
     ///
@@ -206,19 +237,43 @@ impl GornaArbitrator {
                 continue;
             };
 
+            let agent_id = agent.id();
+
+            // Developer control: a `Manual` agent is pinned to its chosen
+            // strategy — GORNA reports but never overrides it. `Learning`
+            // (default) issues the negotiated fit.
+            let strategy = match self.adaptation_mode(agent_id) {
+                AdaptationMode::Manual(pinned) => self
+                    .strategy_for(&negotiations, alloc.agent_index, pinned)
+                    .unwrap_or_else(|| alloc.strategy.clone()),
+                AdaptationMode::Stable => {
+                    // No opportunistic upgrade: keep the current strategy unless
+                    // the fit is a downgrade (or the current one isn't offered).
+                    let current = agent.report_status().current_strategy;
+                    match self.strategy_for(&negotiations, alloc.agent_index, current) {
+                        Some(cur) if alloc.strategy.estimated_time > cur.estimated_time => cur,
+                        _ => alloc.strategy.clone(),
+                    }
+                }
+                AdaptationMode::Bounded { min, max } => {
+                    self.clamp_strategy(&negotiations, alloc.agent_index, &alloc.strategy, min, max)
+                }
+                AdaptationMode::Learning => alloc.strategy.clone(),
+            };
+
             let budget = ResourceBudget {
-                strategy_id: alloc.strategy.id,
-                time_limit: alloc.strategy.estimated_time,
-                memory_limit: Some(alloc.strategy.estimated_vram),
+                strategy_id: strategy.id,
+                time_limit: strategy.estimated_time,
+                memory_limit: Some(strategy.estimated_vram),
                 extra_params: std::collections::HashMap::new(),
             };
 
             log::info!(
                 "GORNA: Issuing budget to {:?} — strategy={:?}, time={:.2}ms, vram={}KB",
-                agent.id(),
+                agent_id,
                 budget.strategy_id,
                 budget.time_limit.as_secs_f64() * 1000.0,
-                alloc.strategy.estimated_vram / 1024
+                strategy.estimated_vram / 1024
             );
 
             agent.apply_budget(budget);
@@ -403,6 +458,58 @@ impl GornaArbitrator {
         allocations
     }
 
+    /// Clamps `fitted` into the `[min, max]` strategy range by picking, from the
+    /// agent's offered strategies within range, the one nearest the fit. Honours
+    /// `Bounded` mode.
+    fn clamp_strategy(
+        &self,
+        negotiations: &[AgentNegotiation],
+        agent_index: usize,
+        fitted: &StrategyOption,
+        min: StrategyId,
+        max: StrategyId,
+    ) -> StrategyOption {
+        let (lo, hi) = (strategy_rank(min), strategy_rank(max));
+        let fr = strategy_rank(fitted.id);
+        if fr >= lo && fr <= hi {
+            return fitted.clone();
+        }
+        let Some(n) = negotiations.iter().find(|n| n.agent_index == agent_index) else {
+            return fitted.clone();
+        };
+        let mut best: Option<&StrategyOption> = None;
+        for s in &n.strategies {
+            let sr = strategy_rank(s.id);
+            if sr < lo || sr > hi {
+                continue;
+            }
+            let closer = match best {
+                None => true,
+                Some(b) => {
+                    (sr as i32 - fr as i32).abs() < (strategy_rank(b.id) as i32 - fr as i32).abs()
+                }
+            };
+            if closer {
+                best = Some(s);
+            }
+        }
+        best.cloned().unwrap_or_else(|| fitted.clone())
+    }
+
+    /// Finds the negotiated [`StrategyOption`] with `id` for the agent at
+    /// `agent_index`, if that agent offered it. Used to honour `Manual` mode.
+    fn strategy_for(
+        &self,
+        negotiations: &[AgentNegotiation],
+        agent_index: usize,
+        id: StrategyId,
+    ) -> Option<StrategyOption> {
+        negotiations
+            .iter()
+            .find(|n| n.agent_index == agent_index)
+            .and_then(|n| n.strategies.iter().find(|s| s.id == id).cloned())
+    }
+
     /// Returns the priority weight for an agent.
     ///
     /// Higher values indicate greater importance. The DCC uses these weights to
@@ -438,8 +545,8 @@ mod tests {
     use crate::EngineMode;
     use khora_core::agent::Agent;
     use khora_core::control::gorna::{
-        AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-        StrategyOption,
+        AdaptationMode, AgentId, AgentStatus, NegotiationRequest, NegotiationResponse,
+        ResourceBudget, StrategyId, StrategyOption,
     };
     use khora_core::EngineContext;
 
@@ -570,6 +677,80 @@ mod tests {
             .expect("Budget should be applied");
         // With 16.66ms total budget and a single agent, it should get HighPerformance (14ms)
         assert_eq!(budget.strategy_id, StrategyId::HighPerformance);
+    }
+
+    #[test]
+    fn test_manual_mode_pins_strategy_against_budget() {
+        let mut arbitrator = create_arbitrator();
+        arbitrator
+            .set_adaptation_mode(AgentId::Renderer, AdaptationMode::Manual(StrategyId::LowPower));
+
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let agent = MockAgent::new(AgentId::Renderer);
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
+
+        arbitrator.arbitrate(&ctx, &report, &mut agents);
+
+        let lock = agents[0].lock().unwrap();
+        let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+        let budget = mock
+            .applied_budget
+            .as_ref()
+            .expect("Budget should be applied");
+        // The same 16.66ms budget yields HighPerformance under `Learning` (test
+        // above). `Manual` pins the developer's choice instead: LowPower.
+        assert_eq!(budget.strategy_id, StrategyId::LowPower);
+    }
+
+    #[test]
+    fn test_stable_mode_blocks_opportunistic_upgrade() {
+        let mut arbitrator = create_arbitrator();
+        arbitrator.set_adaptation_mode(AgentId::Renderer, AdaptationMode::Stable);
+
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        // MockAgent reports `Balanced` as its current strategy until a budget is
+        // applied. With a 16.66ms budget the fit would upgrade to HighPerformance,
+        // but `Stable` forbids opportunistic upgrades — it stays at Balanced.
+        let agent = MockAgent::new(AgentId::Renderer);
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
+
+        arbitrator.arbitrate(&ctx, &report, &mut agents);
+
+        let lock = agents[0].lock().unwrap();
+        let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+        assert_eq!(
+            mock.applied_budget.as_ref().unwrap().strategy_id,
+            StrategyId::Balanced
+        );
+    }
+
+    #[test]
+    fn test_bounded_mode_clamps_to_max() {
+        let mut arbitrator = create_arbitrator();
+        arbitrator.set_adaptation_mode(
+            AgentId::Renderer,
+            AdaptationMode::Bounded {
+                min: StrategyId::LowPower,
+                max: StrategyId::Balanced,
+            },
+        );
+
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        // Fit would pick HighPerformance; bounds cap it at Balanced.
+        let agent = MockAgent::new(AgentId::Renderer);
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
+
+        arbitrator.arbitrate(&ctx, &report, &mut agents);
+
+        let lock = agents[0].lock().unwrap();
+        let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+        assert_eq!(
+            mock.applied_budget.as_ref().unwrap().strategy_id,
+            StrategyId::Balanced
+        );
     }
 
     #[test]
