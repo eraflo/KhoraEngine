@@ -2613,6 +2613,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+ "wide",
 ]
 
 [[package]]
@@ -2630,7 +2631,7 @@ dependencies = [
  "ron",
  "serde",
  "serde_json",
- "taffy",
+ "wide",
 ]
 
 [[package]]

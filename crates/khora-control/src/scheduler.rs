@@ -211,8 +211,9 @@ impl ExecutionScheduler {
                 None => continue,
             };
 
-            // Skip optional if under budget pressure
-            if importance == AgentImportance::Optional && self.is_under_budget_pressure() {
+            // Budget escape valve: only *negotiable* (Optional) work is skipped
+            // under pressure. Critical/Important agents are non-negotiable.
+            if importance.is_negotiable() && self.is_under_budget_pressure() {
                 completion_map.mark(agent_id, CompletionOutcome::Skipped);
                 continue;
             }

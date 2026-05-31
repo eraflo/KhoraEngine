@@ -30,6 +30,7 @@ pub mod component;
 mod components;
 mod entity;
 mod entity_store;
+pub mod layout;
 pub mod maintenance;
 mod page;
 mod planner;

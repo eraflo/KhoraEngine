@@ -47,6 +47,7 @@ pub mod dimension;
 pub mod geometry;
 pub mod matrix;
 pub mod quaternion;
+pub mod simd;
 pub mod vector;
 
 // --- Re-export Principal Types ---

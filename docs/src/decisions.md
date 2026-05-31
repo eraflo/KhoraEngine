@@ -30,7 +30,7 @@ Choices we made, and what we said no to. The global ledger.
 - **Two threads, one channel.** The DCC owns its thread; the Scheduler owns the main thread; they touch only through `BudgetChannel`.
 - **Last-wins budget delivery.** The Scheduler doesn't replay a queue; it reads the latest snapshot.
 - **Phase-based ordering.** Agents declare phases, not absolute frame slots. The Scheduler resolves the dependency graph each frame.
-- **Adaptation targets the HOW, never the WHAT.** Automatic adaptation changes *representation* (strategy, quality, memory layout); *game semantics* (which components an entity has, simulation behaviour) stay developer-authored. Consequently **AGDF = adaptive data *layout***, not gameplay restructuring.
+- **Adaptation targets the HOW, never the WHAT.** Automatic adaptation changes *representation* (strategy, quality, memory layout); *game semantics* (which components an entity has, simulation behaviour) stay developer-authored. Consequently **AGDF (Adaptive Game Data Flows) = adaptive data *layout***, not gameplay restructuring.
 
 ### We said no to
 - **Static budgets baked at compile time.** A `MAX_LIGHTS` constant has no place in an engine that adapts.
@@ -46,6 +46,10 @@ Choices we made, and what we said no to. The global ledger.
 ### ECS (CRPECS)
 - **Yes:** archetype-based storage; bitset-guided iteration; generations on `EntityId`; `#[derive(Component)]` generates the serializable mirror.
 - **No:** sparse-set ECS; globally synchronous component change; reflection-driven serialization.
+
+### AGDF — adaptive layout
+- **Yes:** *surgical, opt-in, registration-time* field-SoA / AoSoA + explicit SIMD (`wide::f32x8`) on **designated hot compute components** — the measured ~4× lever on transform/quaternion/particle/skinning loops. Layout abstracted LLAMA-style (access decoupled from physical mapping; AoSoA tile width `L` a compile-time power-of-two). The access counters + `CostModel` + the deterministic `Ucb1` bandit run as a **read-only layout *advisor*** (recommends opt-ins; the DCC observes, never repacks). Citation anchors: OREO (Metrical Task System α-gate), Chilimbi / Pettis–Hansen (hot/cold split), MAPE-K (the DCC loop).
+- **No:** `std::simd` (nightly — Khora is stable Rust); raw `glam` in batched kernels (`glam` is 128-bit per-vector — kept for scalar math only); making *all* of CRPECS runtime layout-polymorphic now (only ~15 % on lean components for a hot-path rewrite — the field-SoA/SIMD win is on *compute-heavy* loops and stays opt-in); a runtime physical repack driven by the bandit (deferred until the advisor proves a component needs it, then gated by OREO's α-counter + a V8-style speculate-guard-deopt).
 
 ### Agents
 - **Yes:** agents implement only `Agent` + `Default` (no extra methods); one agent per `LaneKind`; Hard / Soft / Parallel dependency model; last-wins on `BudgetChannel`.

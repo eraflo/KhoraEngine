@@ -56,13 +56,40 @@ impl Default for ExecutionTiming {
     }
 }
 
-/// How critical an agent is for frame correctness.
+/// How critical an agent is for frame correctness — and therefore whether GORNA
+/// budget arbitration may skip it under pressure.
+///
+/// `Critical` and `Important` are **non-negotiable**: the scheduler never drops
+/// them to save frame time. Work that must be deterministic — physics in a
+/// simulation, or editor chrome once it owns a non-negotiable pass — lives here.
+/// Only `Optional` work is negotiable (the budget escape valve).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AgentImportance {
-    /// Must execute. Skipping causes errors or corruption.
+    /// Must execute — non-negotiable, never skipped. Skipping causes errors or corruption.
     Critical,
-    /// Should execute. Skippable if the frame budget is exceeded.
+    /// Should execute — non-negotiable under normal budget pressure (not skipped today).
     Important,
-    /// Nice to have. First to be skipped under budget pressure.
+    /// Nice to have — **negotiable**: the first (and currently only) work the
+    /// scheduler skips under budget pressure.
     Optional,
+}
+
+impl AgentImportance {
+    /// Whether GORNA may skip this work under budget pressure. Only `Optional`
+    /// is negotiable; `Critical` and `Important` are non-negotiable (always run).
+    pub fn is_negotiable(self) -> bool {
+        matches!(self, AgentImportance::Optional)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AgentImportance;
+
+    #[test]
+    fn only_optional_is_negotiable() {
+        assert!(!AgentImportance::Critical.is_negotiable());
+        assert!(!AgentImportance::Important.is_negotiable());
+        assert!(AgentImportance::Optional.is_negotiable());
+    }
 }
