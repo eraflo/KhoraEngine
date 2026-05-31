@@ -32,6 +32,15 @@ pub struct HardwareState {
     pub available_vram: Option<u64>,
     /// Total VRAM in bytes (if known).
     pub total_vram: Option<u64>,
+    /// Currently-allocated system RAM in bytes, from the tracking allocator
+    /// (if a `MemoryMonitor` is feeding telemetry). `None` when unknown.
+    pub current_ram_bytes: Option<u64>,
+    /// Developer-set system-RAM budget in bytes. When both this and
+    /// `current_ram_bytes` are known, the DCC derives `memory_pressure` and
+    /// degrades budgets as the ceiling approaches. `None` disables the signal
+    /// (no overhead, no effect) — it matters chiefly on memory-constrained
+    /// targets (console / mobile / iGPU).
+    pub memory_budget_bytes: Option<u64>,
 }
 
 /// The complete context model used for strategic decision making.
@@ -54,6 +63,12 @@ pub struct Context {
     /// | Throttling | 0.6 |
     /// | Critical thermal or battery | 0.4 |
     pub global_budget_multiplier: f32,
+    /// System-memory pressure in `[0, 1]` — `current_ram_bytes / memory_budget_bytes`,
+    /// or `0.0` when the budget is unset. A first-class resource signal alongside
+    /// thermal/CPU/GPU: drives graceful degradation here and feeds the AGDF
+    /// repack-headroom gate (a repack transiently doubles a column, so it is
+    /// declined under high pressure).
+    pub memory_pressure: f32,
 }
 
 impl Default for Context {
@@ -62,6 +77,7 @@ impl Default for Context {
             hardware: HardwareState::default(),
             mode: EngineMode::Playing,
             global_budget_multiplier: 1.0,
+            memory_pressure: 0.0,
         }
     }
 }
@@ -85,8 +101,27 @@ impl Context {
             BatteryLevel::Critical => 0.5,
         };
 
-        // Take the more restrictive of the two factors.
-        self.global_budget_multiplier = thermal_factor.min(battery_factor);
+        // Derive memory pressure from the current RAM vs the developer budget.
+        // Unset budget → pressure 0 → memory has no effect on the multiplier.
+        self.memory_pressure = match (
+            self.hardware.current_ram_bytes,
+            self.hardware.memory_budget_bytes,
+        ) {
+            (Some(current), Some(budget)) if budget > 0 => {
+                (current as f32 / budget as f32).clamp(0.0, 1.0)
+            }
+            _ => 0.0,
+        };
+        let memory_factor: f32 = if self.memory_pressure >= 0.95 {
+            0.5
+        } else if self.memory_pressure >= 0.85 {
+            0.8
+        } else {
+            1.0
+        };
+
+        // Take the most restrictive of the factors (thermal, battery, memory).
+        self.global_budget_multiplier = thermal_factor.min(battery_factor).min(memory_factor);
     }
 }
 
@@ -148,6 +183,27 @@ mod tests {
         ctx.hardware.battery = BatteryLevel::Critical;
         ctx.refresh_budget_multiplier();
         assert!((ctx.global_budget_multiplier - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_memory_pressure_reduces_multiplier() {
+        let mut ctx = Context::default();
+        ctx.hardware.current_ram_bytes = Some(960);
+        ctx.hardware.memory_budget_bytes = Some(1000);
+        ctx.refresh_budget_multiplier();
+        assert!((ctx.memory_pressure - 0.96).abs() < 0.001);
+        // ≥0.95 pressure → 0.5 memory factor dominates.
+        assert!((ctx.global_budget_multiplier - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_memory_pressure_zero_without_budget() {
+        let mut ctx = Context::default();
+        ctx.hardware.current_ram_bytes = Some(10_000_000);
+        ctx.hardware.memory_budget_bytes = None;
+        ctx.refresh_budget_multiplier();
+        assert_eq!(ctx.memory_pressure, 0.0);
+        assert_eq!(ctx.global_budget_multiplier, 1.0);
     }
 
     #[test]

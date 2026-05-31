@@ -21,6 +21,13 @@
 //!   - `input.rs`      — per-frame input event routing
 //!   - `hot_reload.rs` — project VFS hot-reload pump
 
+// Install the tracking allocator so the editor reports the same heap telemetry
+// as the runtime/sandbox (memory pressure + allocation-churn feed the DCC). A
+// `#[global_allocator]` is a per-binary attribute, so each entry point sets it.
+#[global_allocator]
+static GLOBAL: khora_sdk::prelude::SaaTrackingAllocator =
+    khora_sdk::prelude::SaaTrackingAllocator::new(std::alloc::System);
+
 mod app;
 mod bootstrap;
 mod build_game;

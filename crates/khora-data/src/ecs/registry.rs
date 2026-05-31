@@ -84,6 +84,9 @@ struct ComponentVTable {
     domain: SemanticDomain,
     /// Current physical layout of this component's columns (default `Soa`).
     layout: LayoutPolicy,
+    /// `size_of::<T>()` — recorded at registration (where `T` is known) so the
+    /// layout advisor can reason about component "fatness" from a `TypeId` alone.
+    size_bytes: usize,
     /// Creates a new, empty `Box<dyn AnyVec>` for this component type.
     create_column: fn() -> Box<dyn AnyVec>,
     /// Copies a single element from a source column to a destination column.
@@ -111,6 +114,7 @@ impl ComponentRegistry {
             ComponentVTable {
                 domain,
                 layout: LayoutPolicy::Soa,
+                size_bytes: std::mem::size_of::<T>(),
                 create_column: || Box::new(Vec::<T>::new()),
                 copy_row: |src_col, src_row, dest_col| {
                     // SAFETY: The registry keys this vtable by `TypeId::of::<T>()`. Callers
@@ -173,6 +177,31 @@ impl ComponentRegistry {
                 c.rows_scanned.load(Ordering::Relaxed),
             )
         })
+    }
+
+    /// `size_of` for a registered component type, or `None` if unregistered.
+    pub fn size_of(&self, type_id: TypeId) -> Option<usize> {
+        self.mapping.get(&type_id).map(|v| v.size_bytes)
+    }
+
+    /// Snapshot of every registered component's `(type_id, size_bytes,
+    /// query_count, rows_scanned)` — the input the DCC's layout advisor reads
+    /// (read-only; observation tunnel). Allocates a small `Vec` (one entry per
+    /// component *type*), so it is cheap enough to sample off the hot path.
+    pub fn access_snapshot(&self) -> Vec<(TypeId, usize, u64, u64)> {
+        self.access
+            .iter()
+            .filter_map(|(tid, c)| {
+                self.mapping.get(tid).map(|v| {
+                    (
+                        *tid,
+                        v.size_bytes,
+                        c.query_count.load(Ordering::Relaxed),
+                        c.rows_scanned.load(Ordering::Relaxed),
+                    )
+                })
+            })
+            .collect()
     }
 
     /// (Internal) Gets the column constructor function for a given TypeId.

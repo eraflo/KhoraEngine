@@ -63,16 +63,20 @@ All implementations live in `crates/khora-infra/src/telemetry/` because they cal
 
 ## 04 — SaaTrackingAllocator
 
-`SaaTrackingAllocator` is a global allocator that tracks every heap allocation. Installed once at startup:
+`SaaTrackingAllocator` wraps the system allocator and tracks every heap allocation. It is a per-binary attribute, so each entry point installs it (sandbox, editor, runtime, hub):
 
 ```rust
 #[global_allocator]
-static ALLOC: SaaTrackingAllocator = SaaTrackingAllocator::new();
+static GLOBAL: SaaTrackingAllocator = SaaTrackingAllocator::new(std::alloc::System);
 ```
 
-It records counts, sizes, and (in debug builds) call sites. The DCC reads the totals to detect memory pressure trends; the editor's *Control Plane* shows the live curve.
+It records counts and sizes into global atomic counters (`khora_core::memory`). The `MemoryMonitor` (infra) reads those counters and publishes `memory.current_bytes` / `memory.bytes_allocated_lifetime` / `memory.net_allocations` through the telemetry pipeline into the DCC's metric store. The DCC turns them into **decisions**, not just a readout:
 
-The cost is small — atomic counters per allocation — but real. In benchmark builds, it can be replaced with the system allocator. The trait surface is `khora-core::memory`; the implementation is `khora-data::allocators`.
+- **Memory pressure → budget.** When a system-RAM budget is set (`DccConfig::memory_budget_bytes`), the DCC derives `Context::memory_pressure` and degrades the global budget multiplier as the ceiling approaches — a first-class resource signal alongside thermal/CPU/GPU.
+- **Allocation churn → glass-box.** High volatility of resident bytes (coefficient of variation per window) surfaces an alert flagging a likely per-frame allocation hotspot.
+- **AGDF repack-headroom gate.** The (deferred) layout-repack cost/benefit gate reads `memory_pressure` so it declines a repack — which transiently doubles a column — under tight memory.
+
+The cost is small — a few atomic ops per allocation — but real; benchmark builds can swap in the bare system allocator. The trait surface is `khora-core::memory`; the implementation is `khora-core::memory::tracking_allocator`.
 
 ## 05 — MetricsRegistry
 
@@ -125,8 +129,8 @@ The split:
 
 | File | Purpose |
 |---|---|
-| `crates/khora-core/src/memory/` | `Allocator` trait, allocation counters |
-| `crates/khora-data/src/allocators/saa_tracking.rs` | `SaaTrackingAllocator` implementation |
+| `crates/khora-core/src/memory/` | allocation counters + public stats API |
+| `crates/khora-core/src/memory/tracking_allocator.rs` | `SaaTrackingAllocator` implementation |
 | `crates/khora-telemetry/src/service.rs` | `TelemetryService`, lifecycle |
 | `crates/khora-telemetry/src/metrics/` | `MetricsRegistry`, `MonitorRegistry` |
 | `crates/khora-infra/src/telemetry/` | `GpuMonitor`, `MemoryMonitor`, `VramMonitor` |
@@ -140,7 +144,7 @@ Adding a monitor: implement the `Monitor` trait, register with `MonitorRegistry:
 ### We said yes to
 - **Telemetry as a first-class service.** It feeds the DCC; without it, GORNA is blind.
 - **Two styles (poll + push).** Hardware monitors are pulled; software metrics are pushed.
-- **`SaaTrackingAllocator` as the default.** The cost is small; the visibility is enormous. Benchmarks can swap it out.
+- **`SaaTrackingAllocator` as the default, and *consumed*.** Installed in every binary and read by the DCC for memory-pressure budgeting + allocation-churn detection (not a write-only readout). The cost is small; the visibility is enormous. Benchmarks can swap it out.
 - **String-keyed metric registry.** The cold path can afford the lookup. The hot path holds typed handles.
 
 ### We said no to

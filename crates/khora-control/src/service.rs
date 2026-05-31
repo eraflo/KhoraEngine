@@ -16,12 +16,14 @@
 
 use crate::budget_channel::BudgetChannel;
 use crate::context::Context;
+use crate::cost_model::CostModel;
 use crate::metrics::MetricStore;
 use crate::EngineMode;
 use crossbeam_channel::{Receiver, Sender};
 use khora_core::agent::Agent;
 use khora_core::control::gorna::ResourceBudget;
 use khora_core::telemetry::TelemetryEvent;
+use khora_data::ecs::layout::{LayoutAdvisor, LayoutRecommendation};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -34,6 +36,25 @@ use khora_core::control::gorna::{AdaptationMode, AgentId};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+/// Number of recent `(n, time)` samples each per-agent cost model retains.
+const COST_MODEL_CAPACITY: usize = 64;
+
+/// Sums each agent's empirically-forecast cost (`c·f(n)`) at workload `n`.
+///
+/// Returns `None` until at least one agent has enough distinct-`n` samples to
+/// fit a model — before that the DCC has nothing to anticipate with.
+fn forecast_total_ms(models: &HashMap<AgentId, CostModel>, n: f64) -> Option<f64> {
+    let mut total = 0.0;
+    let mut any = false;
+    for m in models.values() {
+        if let Some(p) = m.predict_ms(n) {
+            total += p.max(0.0);
+            any = true;
+        }
+    }
+    any.then_some(total)
+}
+
 /// Configuration for the DCC Service.
 #[derive(Debug, Clone)]
 pub struct DccConfig {
@@ -45,6 +66,11 @@ pub struct DccConfig {
     /// Timeout for acquiring locks on agents during negotiation.
     /// If an agent lock cannot be acquired within this time, the agent is skipped.
     pub agent_lock_timeout_ms: u64,
+    /// Optional system-RAM budget in bytes. When set, the DCC derives
+    /// [`Context::memory_pressure`] from the tracking allocator's live usage and
+    /// degrades frame budgets as the ceiling approaches. `None` disables the
+    /// signal — chiefly useful on memory-constrained targets.
+    pub memory_budget_bytes: Option<u64>,
 }
 
 impl Default for DccConfig {
@@ -53,6 +79,7 @@ impl Default for DccConfig {
             tick_rate: 20,
             telemetry_buffer_size: 1000,
             agent_lock_timeout_ms: 100,
+            memory_budget_bytes: None,
         }
     }
 }
@@ -71,6 +98,10 @@ pub struct DccService {
     /// Per-agent developer-control modes, shared with the cold-path arbitrator.
     /// Written from any thread (host/editor), read each tick by the DCC loop.
     adaptation_modes: Arc<std::sync::RwLock<HashMap<AgentId, AdaptationMode>>>,
+    /// Latest read-only layout recommendations per component, derived by the
+    /// DCC from access telemetry via the Data-layer advisor. Glass-box only:
+    /// the DCC *advises*, it never repacks — Data owns its layout (CLAD).
+    layout_recommendations: Arc<std::sync::RwLock<HashMap<String, LayoutRecommendation>>>,
 }
 
 impl DccService {
@@ -86,6 +117,7 @@ impl DccService {
             handle: None,
             event_tx: tx,
             adaptation_modes: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            layout_recommendations: Arc::new(std::sync::RwLock::new(HashMap::new())),
         };
         (service, rx)
     }
@@ -106,6 +138,17 @@ impl DccService {
             .read()
             .ok()
             .and_then(|m| m.get(&agent_id).copied())
+            .unwrap_or_default()
+    }
+
+    /// Read-only snapshot of the per-component layout recommendations the DCC's
+    /// advisor has derived from access telemetry — for the glass-box surface
+    /// (e.g. the editor's Control-Plane panel). Advisory only: the DCC observes
+    /// the Data layer and recommends, it never repacks.
+    pub fn layout_recommendations(&self) -> HashMap<String, LayoutRecommendation> {
+        self.layout_recommendations
+            .read()
+            .map(|m| m.clone())
             .unwrap_or_default()
     }
 
@@ -150,14 +193,23 @@ impl DccService {
         let registry = Arc::clone(&self.registry);
         let budget_channel = self.budget_channel.clone();
         let adaptation_modes = Arc::clone(&self.adaptation_modes);
+        let layout_recommendations = Arc::clone(&self.layout_recommendations);
         let tick_duration = Duration::from_secs_f32(1.0 / self.config.tick_rate as f32);
         let agent_lock_timeout = Duration::from_millis(self.config.agent_lock_timeout_ms);
+        let memory_budget_bytes = self.config.memory_budget_bytes;
 
         let handle = thread::spawn(move || {
             let mut store = MetricStore::new();
             let heuristic_engine = HeuristicEngine;
             let mut arbitrator = GornaArbitrator::new(agent_lock_timeout);
             let mut initial_negotiation_done = false;
+            // Per-agent empirical cost models (`c·f(n)`), fed from `AgentCost`
+            // samples and used to forecast budget breaches before they happen.
+            let mut cost_models: HashMap<AgentId, CostModel> = HashMap::new();
+            let mut last_workload_n: f64 = 0.0;
+            // Read-only layout advisor: turns per-component access telemetry into
+            // a recommendation for the glass-box. Stateless (a tuned heuristic).
+            let layout_advisor = LayoutAdvisor::default();
 
             log::info!("DCC Service thread started.");
 
@@ -232,16 +284,82 @@ impl DccService {
                                 report.triangles_rendered as f32,
                             );
                         }
+                        TelemetryEvent::AgentCost { id, n, time_ms } => {
+                            // Feed the per-agent empirical cost model and surface
+                            // the latest time as a glass-box metric.
+                            last_workload_n = n;
+                            cost_models
+                                .entry(id)
+                                .or_insert_with(|| CostModel::new(COST_MODEL_CAPACITY))
+                                .record(n, time_ms);
+                            store.push(
+                                khora_core::telemetry::MetricId::new(
+                                    "agent",
+                                    format!("{id:?}_time_ms"),
+                                ),
+                                time_ms as f32,
+                            );
+                        }
+                        TelemetryEvent::ComponentAccess {
+                            type_name,
+                            size_bytes,
+                            query_count,
+                            rows_scanned,
+                        } => {
+                            // Advise (read-only) which layout this component would
+                            // benefit from, and surface rows-scanned for the
+                            // glass-box. The DCC never repacks — Data owns layout.
+                            let recommendation =
+                                layout_advisor.recommend(size_bytes, query_count, rows_scanned);
+                            if let Ok(mut recs) = layout_recommendations.write() {
+                                recs.insert(type_name.clone(), recommendation);
+                            }
+                            store.push(
+                                khora_core::telemetry::MetricId::new("ecs_access", type_name),
+                                rows_scanned as f32,
+                            );
+                        }
                     }
                 }
 
                 // 2. Perform Analysis & Arbitration
-                let (report, ctx_copy) = {
+                let (mut report, ctx_copy) = {
                     let mut ctx = context.write().unwrap();
+                    // Fold the latest tracking-allocator telemetry into the
+                    // context so memory pressure influences the budget alongside
+                    // thermal/battery (the allocator's data drives a decision).
+                    let mem_bytes = store.get_average(&khora_core::telemetry::MetricId::new(
+                        "memory",
+                        "current_bytes",
+                    ));
+                    ctx.hardware.current_ram_bytes = (mem_bytes > 0.0).then_some(mem_bytes as u64);
+                    ctx.hardware.memory_budget_bytes = memory_budget_bytes;
                     ctx.refresh_budget_multiplier();
                     let report = heuristic_engine.analyze(&ctx, &store);
                     (report, ctx.clone())
                 };
+
+                // 2b. Anticipatory budgeting: the empirical per-agent cost models
+                //     forecast the combined frame cost at the current workload. If
+                //     that exceeds the budget, negotiate now and tighten the target
+                //     so GORNA downgrades *before* the frame actually overruns —
+                //     turning the reactive loop predictive (model proposes,
+                //     measurement disposes).
+                if let Some(predicted_ms) = forecast_total_ms(&cost_models, last_workload_n) {
+                    if predicted_ms > report.suggested_latency_ms as f64 {
+                        let ratio = (report.suggested_latency_ms as f64 / predicted_ms)
+                            .clamp(0.5, 1.0) as f32;
+                        report.alerts.push(format!(
+                            "Cost-model forecast {:.1}ms > budget {:.1}ms at n={:.0} — tightening to {:.1}ms",
+                            predicted_ms,
+                            report.suggested_latency_ms,
+                            last_workload_n,
+                            report.suggested_latency_ms * ratio
+                        ));
+                        report.suggested_latency_ms *= ratio;
+                        report.needs_negotiation = true;
+                    }
+                }
 
                 for alert in &report.alerts {
                     log::info!("DCC Analysis: {}", alert);
@@ -468,6 +586,81 @@ mod tests {
     }
 
     #[test]
+    fn test_forecast_total_ms_sums_agent_models() {
+        // No models yet → nothing to anticipate.
+        let mut models: HashMap<AgentId, CostModel> = HashMap::new();
+        assert!(forecast_total_ms(&models, 100.0).is_none());
+
+        // Renderer: linear 3·n; Physics: linear 2·n.
+        let mut renderer = CostModel::new(16);
+        let mut physics = CostModel::new(16);
+        for n in [10.0, 20.0, 40.0] {
+            renderer.record(n, 3.0 * n);
+            physics.record(n, 2.0 * n);
+        }
+        models.insert(AgentId::Renderer, renderer);
+        models.insert(AgentId::Physics, physics);
+
+        // Forecast at n=100 → 300 + 200 = 500ms (within fit tolerance).
+        let total = forecast_total_ms(&models, 100.0).expect("a fit is available");
+        assert!((total - 500.0).abs() < 1.0, "forecast = {total}");
+    }
+
+    #[test]
+    fn test_dcc_ingests_agent_cost_and_component_access() {
+        // Smoke test for the observation-tunnel variants: the DCC must ingest
+        // AgentCost + ComponentAccess without panicking and keep running.
+        let (mut dcc, rx) = DccService::new(DccConfig::default());
+        let tx = dcc.event_sender();
+        dcc.start(rx);
+
+        tx.send(TelemetryEvent::AgentCost {
+            id: AgentId::Renderer,
+            n: 1000.0,
+            time_ms: 4.2,
+        })
+        .unwrap();
+        tx.send(TelemetryEvent::ComponentAccess {
+            type_name: "Transform".to_string(),
+            size_bytes: 40,
+            query_count: 12,
+            rows_scanned: 12_000,
+        })
+        .unwrap();
+
+        thread::sleep(Duration::from_millis(50));
+        assert!(dcc.running.load(Ordering::SeqCst));
+        dcc.stop();
+    }
+
+    #[test]
+    fn test_dcc_layout_advisor_produces_recommendation() {
+        // A lean component swept in large batches → the advisor recommends the
+        // field-SoA/SIMD layout, surfaced read-only via `layout_recommendations`.
+        let (mut dcc, rx) = DccService::new(DccConfig::default());
+        let tx = dcc.event_sender();
+        dcc.start(rx);
+
+        tx.send(TelemetryEvent::ComponentAccess {
+            type_name: "Velocity".to_string(),
+            size_bytes: 40,
+            query_count: 10,
+            rows_scanned: 40_960, // avg 4096 rows/query ≥ large-batch threshold
+        })
+        .unwrap();
+
+        thread::sleep(Duration::from_millis(80));
+        let recs = dcc.layout_recommendations();
+        dcc.stop();
+
+        assert_eq!(
+            recs.get("Velocity"),
+            Some(&LayoutRecommendation::SimdFieldSoa),
+            "advisor should recommend field-SoA for a lean, large-batch component"
+        );
+    }
+
+    #[test]
     fn test_dcc_initial_negotiation_fires_with_agent() {
         let (mut dcc, rx) = DccService::new(DccConfig {
             tick_rate: 100,
@@ -498,7 +691,10 @@ mod tests {
         dcc.register_agent(agent.clone(), 1.0);
         // Developer pins the agent to LowPower. With ample budget, `Learning`
         // would otherwise pick Balanced (the most expensive offered strategy).
-        dcc.set_adaptation_mode(AgentId::Renderer, AdaptationMode::Manual(StrategyId::LowPower));
+        dcc.set_adaptation_mode(
+            AgentId::Renderer,
+            AdaptationMode::Manual(StrategyId::LowPower),
+        );
         dcc.start(rx);
 
         thread::sleep(Duration::from_millis(200));

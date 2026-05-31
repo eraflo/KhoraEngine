@@ -105,7 +105,8 @@ The ECS and component storage layer.
 | `ecs/components/` | Standard components and the `register_components!` macro |
 | `ui/` | UI components (`UiTransform`, `UiColor`, `UiText`, `UiImage`, `UiBorder`) |
 | `assets/` | `Assets<T>` registry, `AssetHandle<T>` |
-| `allocators/` | `SaaTrackingAllocator` — heap allocation tracking |
+
+(`SaaTrackingAllocator` and the heap-allocation counters live in `khora-core::memory`, not here.)
 
 ### `khora-io`
 Asset and serialization services. Sits between data storage and the agents that need them.

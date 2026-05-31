@@ -38,6 +38,14 @@ const CPU_LOAD_CRITICAL: f32 = 0.95;
 const GPU_LOAD_CRITICAL: f32 = 0.95;
 /// GPU load threshold for a warning-level response.
 const GPU_LOAD_WARN: f32 = 0.90;
+/// Memory-pressure threshold (fraction of the RAM budget) for a critical response.
+const MEM_PRESSURE_CRITICAL: f32 = 0.95;
+/// Memory-pressure threshold for a warning-level response.
+const MEM_PRESSURE_WARN: f32 = 0.85;
+/// Coefficient-of-variation (stddev/mean) of resident bytes above which memory
+/// is "churning" — a scale-free signal of per-frame allocation hotspots. Pure
+/// glass-box diagnostic (no control action), so a noisy estimate can't misfire.
+const MEM_CHURN_COV_THRESHOLD: f32 = 0.15;
 
 /// Analysis results and alerts produced by the `HeuristicEngine`.
 #[derive(Debug, Clone)]
@@ -230,6 +238,52 @@ impl HeuristicEngine {
             ));
         }
 
+        // ── 8b. Memory Pressure ──────────────────────────────────────────
+        // A first-class resource signal alongside CPU/GPU: when resident RAM
+        // approaches the developer-set budget, downgrade so memory-heavy
+        // strategies aren't selected. Inert when no budget is set (pressure 0).
+        if context.memory_pressure > MEM_PRESSURE_CRITICAL {
+            log::warn!(
+                "Heuristic: Memory pressure critical ({:.0}%). Triggering negotiation.",
+                context.memory_pressure * 100.0
+            );
+            report.needs_negotiation = true;
+            report.alerts.push(format!(
+                "Memory: pressure {:.0}% exceeds critical threshold.",
+                context.memory_pressure * 100.0
+            ));
+            pressure_count += 1;
+        } else if context.memory_pressure > MEM_PRESSURE_WARN {
+            log::debug!(
+                "Heuristic: Memory pressure elevated ({:.0}%).",
+                context.memory_pressure * 100.0
+            );
+            report.needs_negotiation = true;
+            report.alerts.push(format!(
+                "Memory: pressure {:.0}% above warning threshold.",
+                context.memory_pressure * 100.0
+            ));
+        }
+
+        // ── 8c. Allocation churn (glass-box diagnostic) ──────────────────
+        // High volatility of resident bytes points to per-frame allocation
+        // hotspots (allocator locks / page faults = hitch risk). Surfaced as an
+        // alert only — it never forces a strategy change.
+        let mem_bytes_id = MetricId::new("memory", "current_bytes");
+        if store.get_sample_count(&mem_bytes_id) >= 10 {
+            let avg = store.get_average(&mem_bytes_id);
+            if avg > 0.0 {
+                let cov = store.get_variance(&mem_bytes_id).sqrt() / avg;
+                if cov > MEM_CHURN_COV_THRESHOLD {
+                    log::info!("Heuristic: high allocation churn (CoV {:.2}).", cov);
+                    report.alerts.push(format!(
+                        "Memory: high allocation churn (CoV {:.2}) — possible per-frame alloc hotspot.",
+                        cov
+                    ));
+                }
+            }
+        }
+
         // ── 9. Death Spiral Detection ────────────────────────────────────
         // If 3+ independent pressure sources are active simultaneously,
         // the engine is likely in a cascading failure ("death spiral").
@@ -408,6 +462,30 @@ mod tests {
         let report = engine.analyze(&ctx, &store);
         assert!(report.needs_negotiation);
         assert!(report.alerts.iter().any(|a| a.contains("GPU")));
+    }
+
+    // ── Memory Heuristics ────────────────────────────────────────────
+
+    #[test]
+    fn test_memory_pressure_triggers_negotiation() {
+        let engine = HeuristicEngine;
+        let mut ctx = simulation_context();
+        ctx.memory_pressure = 0.96; // above critical
+        let store = MetricStore::new();
+
+        let report = engine.analyze(&ctx, &store);
+        assert!(report.needs_negotiation);
+        assert!(report.alerts.iter().any(|a| a.contains("Memory")));
+    }
+
+    #[test]
+    fn test_no_memory_pressure_no_alert() {
+        let engine = HeuristicEngine;
+        let ctx = simulation_context(); // memory_pressure defaults to 0.0
+        let store = MetricStore::new();
+
+        let report = engine.analyze(&ctx, &store);
+        assert!(!report.alerts.iter().any(|a| a.contains("Memory")));
     }
 
     // ── Death Spiral ─────────────────────────────────────────────────

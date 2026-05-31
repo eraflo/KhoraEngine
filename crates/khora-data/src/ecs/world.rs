@@ -178,6 +178,32 @@ impl World {
         self.storage.registry.access_stats(type_id)
     }
 
+    /// The number of live entities — the coarse workload size `n` the DCC's
+    /// cost model fits agent execution time against.
+    pub fn entity_count(&self) -> usize {
+        self.entities.len()
+    }
+
+    /// A snapshot of every registered component's access pattern as
+    /// `(type_name, size_bytes, query_count, rows_scanned)`. The hot path
+    /// samples this at a low rate and publishes it through the observation
+    /// tunnel; the DCC turns it into a read-only layout recommendation.
+    pub fn component_access_snapshot(&self) -> Vec<(String, usize, u64, u64)> {
+        self.storage
+            .registry
+            .access_snapshot()
+            .into_iter()
+            .map(|(tid, size, qc, rows)| {
+                let name = self
+                    .type_registry
+                    .get_name_of(&tid)
+                    .unwrap_or("<unknown>")
+                    .to_string();
+                (name, size, qc, rows)
+            })
+            .collect()
+    }
+
     /// Spawns a new entity with the given bundle of components.
     ///
     /// This is the primary method for creating entities. It orchestrates the entire process:

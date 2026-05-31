@@ -14,6 +14,7 @@
 
 //! Event types for engine-wide telemetry.
 
+use crate::control::gorna::AgentId;
 use crate::telemetry::metrics::{MetricId, MetricValue};
 use crate::telemetry::monitoring::{GpuReport, HardwareReport, ResourceUsageReport};
 
@@ -35,4 +36,30 @@ pub enum TelemetryEvent {
     GpuReport(GpuReport),
     /// A change in the execution phase signaled by the engine.
     PhaseChange(String),
+    /// A per-agent execution-cost sample: the workload size `n` an agent
+    /// processed this frame and the wall-clock time it took. The DCC feeds
+    /// these to a per-agent cost model (`c·f(n)`) so it can *forecast* a budget
+    /// breach ("at this growth rate the frame budget breaks at ~N") instead of
+    /// only reacting. Published once per agent per frame from the hot path.
+    AgentCost {
+        /// The agent that produced the sample.
+        id: AgentId,
+        /// Workload size processed this frame (e.g. live entity count).
+        n: f64,
+        /// Wall-clock execution time, in milliseconds.
+        time_ms: f64,
+    },
+    /// A per-component access-pattern snapshot from the ECS, for the layout
+    /// advisor (AGDF). Cumulative counters, sampled at a low rate (not every
+    /// frame); the DCC turns them into a read-only layout recommendation.
+    ComponentAccess {
+        /// Component type name (for the glass-box report).
+        type_name: String,
+        /// Component size in bytes (`size_of`).
+        size_bytes: usize,
+        /// Cumulative number of queries that touched this component.
+        query_count: u64,
+        /// Cumulative rows scanned across those queries.
+        rows_scanned: u64,
+    },
 }

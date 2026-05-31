@@ -73,6 +73,7 @@ impl<A: EngineApp> EngineCore<A> {
                 hardware: khora_control::HardwareState::default(),
                 mode: EngineMode::Playing,
                 global_budget_multiplier: 1.0,
+                memory_pressure: 0.0,
             })),
             runtime: Arc::new(Runtime::new()),
             input_events: VecDeque::new(),
@@ -92,12 +93,21 @@ impl<A: EngineApp> EngineCore<A> {
         let telemetry =
             TelemetryService::new(Duration::from_secs(1)).with_dcc_sender(dcc.event_sender());
 
+        // Register the system-RAM monitor so the tracking allocator's live
+        // stats flow through telemetry into the DCC, where they drive memory
+        // pressure + allocation-churn signals (it is no longer write-only).
+        telemetry.monitor_registry().register(std::sync::Arc::new(
+            khora_infra::telemetry::memory_monitor::MemoryMonitor::new("System_RAM".to_string()),
+        ));
+
         // ── Expose observable handles via Resources ─────────────────────
         // Apps (e.g. the editor) read live engine state (monitors, agent
         // list, DCC context) through these handles. They're cheap clones of
         // internal Arc-shared structures, so doing so before `app.setup` is
         // safe.
-        runtime.resources.insert(telemetry.monitor_registry().clone());
+        runtime
+            .resources
+            .insert(telemetry.monitor_registry().clone());
         runtime.resources.insert(dcc.agent_registry().clone());
         // Live DCC context: shared `Arc<RwLock<Context>>` updated by the
         // DCC cold thread, read by observers each frame.
@@ -159,9 +169,7 @@ impl<A: EngineApp> EngineCore<A> {
         // frame).
         match khora_lanes::render_lane::ShaderRegistry::new() {
             Ok(registry) => {
-                runtime
-                    .resources
-                    .insert(Arc::new(Mutex::new(registry)));
+                runtime.resources.insert(Arc::new(Mutex::new(registry)));
             }
             Err(e) => {
                 log::error!(
@@ -184,9 +192,9 @@ impl<A: EngineApp> EngineCore<A> {
         // InputMap — engine-wide action / binding map. The engine ticks it
         // each frame from `drain_inputs`; app code reads it via
         // `runtime.resources.get::<Arc<Mutex<InputMap>>>()`.
-        runtime.resources.insert(Arc::new(Mutex::new(
-            khora_core::platform::InputMap::new(),
-        )));
+        runtime
+            .resources
+            .insert(Arc::new(Mutex::new(khora_core::platform::InputMap::new())));
 
         // UiImageAtlas — GPU texture atlas + persistent
         // `AssetUUID → AtlasRect` mapping for UI images. Lives here
@@ -282,6 +290,11 @@ impl<A: EngineApp> EngineCore<A> {
         let mut scheduler =
             khora_control::ExecutionScheduler::new(registry, self.context.clone(), &agent_ids);
 
+        // Connect the read-only observation tunnel: the scheduler publishes
+        // per-agent cost samples + per-component access snapshots the DCC's
+        // cost model and layout advisor consume.
+        scheduler.set_telemetry_sender(dcc.event_sender());
+
         // Inject custom phases from the app
         let custom_phases = app.custom_phases();
         for phase in custom_phases {
@@ -366,12 +379,7 @@ impl<A: EngineApp> EngineCore<A> {
             // No scheduler installed — pass a transient empty deck so
             // `DataSystem`s that read it harmlessly observe an empty slot.
             let mut deck = khora_core::lane::OutputDeck::new();
-            substrate::run_data_systems(
-                world,
-                &self.runtime,
-                &mut deck,
-                TickPhase::Maintenance,
-            );
+            substrate::run_data_systems(world, &self.runtime, &mut deck, TickPhase::Maintenance);
         }
     }
 
@@ -629,4 +637,3 @@ impl<A: EngineApp> Default for EngineCore<A> {
         Self::new()
     }
 }
-

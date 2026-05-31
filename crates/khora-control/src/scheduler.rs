@@ -19,6 +19,7 @@ use crate::context::Context;
 use crate::plugin::EnginePlugin;
 use crate::registry::AgentRegistry;
 use crate::substrate;
+use crossbeam_channel::Sender;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::timing::AgentImportance;
@@ -26,10 +27,16 @@ use khora_core::agent::{AgentDependency, EngineMode, ExecutionPhase};
 use khora_core::control::gorna::AgentId;
 use khora_core::graph::topological_sort;
 use khora_core::lane::{LaneBus, OutputDeck};
+use khora_core::telemetry::TelemetryEvent;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+/// How often (in frames) the scheduler samples per-component access stats for
+/// the layout advisor. Per-frame would flood the telemetry channel for data
+/// that changes slowly; ~once a second at 60 FPS is plenty.
+const COMPONENT_ACCESS_SAMPLE_PERIOD: u64 = 60;
 
 type AgentSlot = (
     Arc<Mutex<dyn khora_core::agent::Agent>>,
@@ -51,6 +58,12 @@ pub struct ExecutionScheduler {
     /// layer can drain typed lane outputs (recorded GPU commands, draw
     /// lists, etc.) after the scheduler has finished.
     last_deck: OutputDeck,
+    /// Read-only observation tunnel to the DCC: per-agent cost samples and
+    /// per-component access snapshots are pushed here (non-blocking) for the
+    /// cold-path cost model + layout advisor. `None` if telemetry is disabled.
+    telemetry: Option<Sender<TelemetryEvent>>,
+    /// Monotonic frame counter, used to throttle low-rate telemetry sampling.
+    frame_counter: u64,
 }
 
 impl ExecutionScheduler {
@@ -69,7 +82,17 @@ impl ExecutionScheduler {
             frame_start: Instant::now(),
             frame_budget: Duration::from_millis(16),
             last_deck: OutputDeck::new(),
+            telemetry: None,
+            frame_counter: 0,
         }
+    }
+
+    /// Connects the read-only observation tunnel to the DCC. The scheduler then
+    /// publishes per-agent cost samples and per-component access snapshots so
+    /// the cold path can fit cost models and recommend layouts. Non-blocking:
+    /// if the channel is full the sample is dropped (telemetry is best-effort).
+    pub fn set_telemetry_sender(&mut self, sender: Sender<TelemetryEvent>) {
+        self.telemetry = Some(sender);
     }
 
     /// Mutable access to the last frame's [`OutputDeck`] — drained by the
@@ -169,6 +192,29 @@ impl ExecutionScheduler {
 
         // 8. Hand the populated deck off to the engine for the I/O boundary.
         self.last_deck = deck;
+
+        // 9. Low-rate observation tunnel: publish per-component access snapshots
+        //    so the DCC's layout advisor can recommend layouts. Sampled every
+        //    `COMPONENT_ACCESS_SAMPLE_PERIOD` frames (the counters are cumulative
+        //    and move slowly), and best-effort (dropped if the channel is full).
+        self.frame_counter = self.frame_counter.wrapping_add(1);
+        if let Some(tx) = &self.telemetry {
+            if self
+                .frame_counter
+                .is_multiple_of(COMPONENT_ACCESS_SAMPLE_PERIOD)
+            {
+                for (type_name, size_bytes, query_count, rows_scanned) in
+                    world.component_access_snapshot()
+                {
+                    let _ = tx.try_send(TelemetryEvent::ComponentAccess {
+                        type_name,
+                        size_bytes,
+                        query_count,
+                        rows_scanned,
+                    });
+                }
+            }
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -205,6 +251,10 @@ impl ExecutionScheduler {
         bus: &LaneBus,
         deck: &mut OutputDeck,
     ) {
+        // Coarse workload size for the cost model — sampled once per phase
+        // (per-domain refinement is a later step).
+        let workload_n = world.entity_count() as f64;
+
         for (agent, importance, _priority, dependencies) in agents {
             let agent_id = match agent.lock().ok().map(|a| a.id()) {
                 Some(id) => id,
@@ -233,8 +283,18 @@ impl ExecutionScheduler {
                 deck,
             };
 
+            let started = Instant::now();
             if let Ok(mut a) = agent.lock() {
                 a.execute(&mut engine_ctx);
+            }
+            // Observation tunnel: report (n, time) so the DCC can fit this
+            // agent's cost model and forecast budget breaches. Best-effort.
+            if let Some(tx) = &self.telemetry {
+                let _ = tx.try_send(TelemetryEvent::AgentCost {
+                    id: agent_id,
+                    n: workload_n,
+                    time_ms: started.elapsed().as_secs_f64() * 1000.0,
+                });
             }
             completion_map.mark(agent_id, CompletionOutcome::Completed);
         }

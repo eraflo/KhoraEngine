@@ -131,6 +131,37 @@ impl ResourceMonitor for MemoryMonitor {
         }
     }
 
+    fn get_metrics(
+        &self,
+    ) -> Vec<(
+        khora_core::telemetry::metrics::MetricId,
+        khora_core::telemetry::metrics::MetricValue,
+    )> {
+        use khora_core::telemetry::metrics::{MetricId, MetricValue};
+        let stats = get_extended_memory_stats();
+        // Named gauges flow through the standard push pipeline into the DCC's
+        // metric store, where the heuristics read `memory.current_bytes` for
+        // pressure + allocation-churn signals (the allocator finally has teeth).
+        vec![
+            (
+                MetricId::new("memory", "current_bytes"),
+                MetricValue::Gauge(stats.current_allocated_bytes as f64),
+            ),
+            (
+                MetricId::new("memory", "peak_bytes"),
+                MetricValue::Gauge(stats.peak_allocated_bytes as f64),
+            ),
+            (
+                MetricId::new("memory", "bytes_allocated_lifetime"),
+                MetricValue::Gauge(stats.bytes_allocated_lifetime as f64),
+            ),
+            (
+                MetricId::new("memory", "net_allocations"),
+                MetricValue::Gauge(stats.net_allocations as f64),
+            ),
+        ]
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
