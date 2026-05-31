@@ -58,6 +58,38 @@ fn derived_components_auto_register_their_domain() {
 }
 
 #[test]
+fn layout_defaults_to_soa_and_access_is_recorded() {
+    use crate::ecs::{Camera, LayoutPolicy};
+    use std::any::TypeId;
+
+    let mut world = World::new();
+
+    // Every component defaults to the `Soa` layout (inert descriptor).
+    assert_eq!(
+        world.component_layout(TypeId::of::<Camera>()),
+        Some(LayoutPolicy::Soa)
+    );
+
+    // Access counters exist once a component is registered.
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.spawn(Position(1));
+    world.spawn(Position(2));
+
+    // Baseline (spawn paths may or may not query), then two explicit scans.
+    let (q0, r0) = world
+        .component_access_stats(TypeId::of::<Position>())
+        .expect("Position is registered");
+    let _ = world.query::<&Position>().count();
+    let _ = world.query::<&Position>().count();
+    let (q1, r1) = world
+        .component_access_stats(TypeId::of::<Position>())
+        .unwrap();
+
+    assert_eq!(q1 - q0, 2, "two queries recorded");
+    assert_eq!(r1 - r0, 4, "2 rows scanned per query × 2 queries");
+}
+
+#[test]
 fn test_spawn_single_entity() {
     // --- 1. SETUP ---
     // Create a new, empty world.

@@ -34,7 +34,7 @@ use crate::ecs::{
     registry::ComponentRegistry,
     serialization::SceneMemoryLayout,
     storage::StorageManager,
-    Component, ComponentBundle, DomainBitset, MaterialComponent, QueryMut, QueryPlan,
+    Component, ComponentBundle, DomainBitset, LayoutPolicy, MaterialComponent, QueryMut, QueryPlan,
     SemanticDomain, SerializedPage, TypeRegistry,
 };
 
@@ -163,6 +163,19 @@ impl World {
     /// inspector without hard-coding a per-type table.
     pub fn component_domain(&self, type_id: TypeId) -> Option<SemanticDomain> {
         self.storage.registry.get_domain(type_id)
+    }
+
+    /// The [`LayoutPolicy`] a component type is currently stored with. Defaults
+    /// to `Soa`; the layout-adaptation pass may change it.
+    pub fn component_layout(&self, type_id: TypeId) -> Option<LayoutPolicy> {
+        self.storage.registry.layout_of(type_id)
+    }
+
+    /// Online access stats `(query_count, rows_scanned)` for a component type —
+    /// the DCC / telemetry read these to drive memory-layout adaptation. The DCC
+    /// only *observes*; it never mutates the layout (Data self-optimizes).
+    pub fn component_access_stats(&self, type_id: TypeId) -> Option<(u64, u64)> {
+        self.storage.registry.access_stats(type_id)
     }
 
     /// Spawns a new entity with the given bundle of components.
@@ -309,7 +322,7 @@ impl World {
                 drop(cache);
                 let new_plan = self.analyze_query(&type_ids);
                 let mut cache = self.planner.query_cache.write().unwrap();
-                cache.insert(type_ids, new_plan.clone());
+                cache.insert(type_ids.clone(), new_plan.clone());
                 new_plan
             }
         };
@@ -319,6 +332,15 @@ impl World {
         // in a different domain since the last call.
         let matching_page_indices =
             self.find_matching_pages(&plan.driver_signature, &Q::without_type_ids());
+
+        // Record one access observation per queried component (coarse, off the
+        // per-element path): count the query and the rows it scans. The DCC reads
+        // these to drive adaptive memory layout — observation only, never control.
+        let rows_scanned: u64 = matching_page_indices
+            .iter()
+            .map(|&pid| self.storage.pages[pid as usize].row_count() as u64)
+            .sum();
+        self.storage.registry.record_access(&type_ids, rows_scanned);
 
         // 3. Return the query with the plan and the current matching pages.
         Query::new(self, plan, matching_page_indices)
@@ -340,7 +362,7 @@ impl World {
                 drop(cache);
                 let new_plan = self.analyze_query(&type_ids);
                 let mut cache = self.planner.query_cache.write().unwrap();
-                cache.insert(type_ids, new_plan.clone());
+                cache.insert(type_ids.clone(), new_plan.clone());
                 new_plan
             }
         };
@@ -348,6 +370,13 @@ impl World {
         // 2. Dynamically find pages
         let matching_page_indices =
             self.find_matching_pages(&plan.driver_signature, &Q::without_type_ids());
+
+        // Record one access observation per queried component (see `query`).
+        let rows_scanned: u64 = matching_page_indices
+            .iter()
+            .map(|&pid| self.storage.pages[pid as usize].row_count() as u64)
+            .sum();
+        self.storage.registry.record_access(&type_ids, rows_scanned);
 
         // 3. Construct the iterator
         QueryMut::new(self, plan, matching_page_indices)
