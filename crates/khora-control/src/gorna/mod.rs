@@ -29,7 +29,7 @@ use crate::context::Context;
 use khora_core::agent::Agent;
 use khora_core::control::gorna::{
     AdaptationMode, AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId,
-    StrategyOption,
+    StrategyOption, TickDecisions,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -127,14 +127,21 @@ impl GornaArbitrator {
     /// - `context`: The current DCC situational model (phase, hardware, multiplier).
     /// - `report`: The analysis report from the `HeuristicEngine`.
     /// - `agents`: The registered ISA agents.
+    /// - `replay`: When `Some`, issue the recorded strategy per agent instead of
+    ///   the negotiated fit (deterministic replay — bypasses budget fitting and
+    ///   the per-agent `AdaptationMode`). `None` for normal live arbitration.
+    ///
+    /// Returns the [`TickDecisions`] actually issued this tick (agent → strategy),
+    /// so the DCC can record them for later replay.
     pub fn arbitrate(
         &self,
         context: &Context,
         report: &AnalysisReport,
         agents: &mut [Arc<Mutex<dyn Agent>>],
-    ) {
+        replay: Option<&TickDecisions>,
+    ) -> TickDecisions {
         if agents.is_empty() {
-            return;
+            return TickDecisions::new();
         }
 
         log::debug!(
@@ -152,8 +159,7 @@ impl GornaArbitrator {
                 Forcing emergency LowPower on all agents.",
                 stalled_count
             );
-            self.emergency_stop(agents);
-            return;
+            return self.emergency_stop(agents);
         }
 
         // ── 1. Compute effective frame budget ────────────────────────────
@@ -226,6 +232,7 @@ impl GornaArbitrator {
         let allocations = self.fit_budgets(&negotiations, effective_budget_ms, max_vram);
 
         // ── 4. Issuance Pass ─────────────────────────────────────────────
+        let mut issued: TickDecisions = Vec::with_capacity(allocations.len());
         for alloc in &allocations {
             let Some(mut agent) =
                 try_lock_agent_with_timeout(&agents[alloc.agent_index], self.lock_timeout)
@@ -239,26 +246,41 @@ impl GornaArbitrator {
 
             let agent_id = agent.id();
 
-            // Developer control: a `Manual` agent is pinned to its chosen
-            // strategy — GORNA reports but never overrides it. `Learning`
-            // (default) issues the negotiated fit.
-            let strategy = match self.adaptation_mode(agent_id) {
-                AdaptationMode::Manual(pinned) => self
-                    .strategy_for(&negotiations, alloc.agent_index, pinned)
-                    .unwrap_or_else(|| alloc.strategy.clone()),
-                AdaptationMode::Stable => {
-                    // No opportunistic upgrade: keep the current strategy unless
-                    // the fit is a downgrade (or the current one isn't offered).
-                    let current = agent.report_status().current_strategy;
-                    match self.strategy_for(&negotiations, alloc.agent_index, current) {
-                        Some(cur) if alloc.strategy.estimated_time > cur.estimated_time => cur,
-                        _ => alloc.strategy.clone(),
+            let strategy = if let Some(recorded) = replay {
+                // Replay: issue the recorded strategy for this agent, bypassing
+                // the fit and the AdaptationMode (deterministic reproduction).
+                // Fall back to the fit if the recorded strategy isn't offered.
+                recorded
+                    .iter()
+                    .find(|(id, _)| *id == agent_id)
+                    .and_then(|(_, sid)| self.strategy_for(&negotiations, alloc.agent_index, *sid))
+                    .unwrap_or_else(|| alloc.strategy.clone())
+            } else {
+                // Developer control: a `Manual` agent is pinned to its chosen
+                // strategy — GORNA reports but never overrides it. `Learning`
+                // (default) issues the negotiated fit.
+                match self.adaptation_mode(agent_id) {
+                    AdaptationMode::Manual(pinned) => self
+                        .strategy_for(&negotiations, alloc.agent_index, pinned)
+                        .unwrap_or_else(|| alloc.strategy.clone()),
+                    AdaptationMode::Stable => {
+                        // No opportunistic upgrade: keep the current strategy unless
+                        // the fit is a downgrade (or the current one isn't offered).
+                        let current = agent.report_status().current_strategy;
+                        match self.strategy_for(&negotiations, alloc.agent_index, current) {
+                            Some(cur) if alloc.strategy.estimated_time > cur.estimated_time => cur,
+                            _ => alloc.strategy.clone(),
+                        }
                     }
+                    AdaptationMode::Bounded { min, max } => self.clamp_strategy(
+                        &negotiations,
+                        alloc.agent_index,
+                        &alloc.strategy,
+                        min,
+                        max,
+                    ),
+                    AdaptationMode::Learning => alloc.strategy.clone(),
                 }
-                AdaptationMode::Bounded { min, max } => {
-                    self.clamp_strategy(&negotiations, alloc.agent_index, &alloc.strategy, min, max)
-                }
-                AdaptationMode::Learning => alloc.strategy.clone(),
             };
 
             let budget = ResourceBudget {
@@ -277,12 +299,14 @@ impl GornaArbitrator {
             );
 
             agent.apply_budget(budget);
+            issued.push((agent_id, strategy.id));
         }
 
         log::debug!(
             "GORNA: Arbitration complete. {} budgets issued.",
-            allocations.len()
+            issued.len()
         );
+        issued
     }
 
     /// Polls all agents for health status and returns the count of stalled agents.
@@ -318,7 +342,9 @@ impl GornaArbitrator {
     }
 
     /// Forces all agents to their lowest-cost strategy as an emergency measure.
-    fn emergency_stop(&self, agents: &mut [Arc<Mutex<dyn Agent>>]) {
+    /// Returns the issued decisions (all `LowPower`) for recording.
+    fn emergency_stop(&self, agents: &mut [Arc<Mutex<dyn Agent>>]) -> TickDecisions {
+        let mut issued = TickDecisions::with_capacity(agents.len());
         for (i, agent_mutex) in agents.iter_mut().enumerate() {
             let Some(mut agent) = try_lock_agent_with_timeout(agent_mutex, self.lock_timeout)
             else {
@@ -338,7 +364,9 @@ impl GornaArbitrator {
 
             log::warn!("GORNA: Emergency LowPower issued to {:?}.", agent.id());
             agent.apply_budget(budget);
+            issued.push((agent.id(), StrategyId::LowPower));
         }
+        issued
     }
 
     /// Runs the global budget fitting algorithm.
@@ -546,7 +574,7 @@ mod tests {
     use khora_core::agent::Agent;
     use khora_core::control::gorna::{
         AdaptationMode, AgentId, AgentStatus, NegotiationRequest, NegotiationResponse,
-        ResourceBudget, StrategyId, StrategyOption,
+        ResourceBudget, StrategyId, StrategyOption, TickDecisions,
     };
     use khora_core::EngineContext;
 
@@ -667,7 +695,7 @@ mod tests {
         let agent = MockAgent::new(AgentId::Renderer);
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, None);
 
         let lock = agents[0].lock().unwrap();
         let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
@@ -682,15 +710,17 @@ mod tests {
     #[test]
     fn test_manual_mode_pins_strategy_against_budget() {
         let mut arbitrator = create_arbitrator();
-        arbitrator
-            .set_adaptation_mode(AgentId::Renderer, AdaptationMode::Manual(StrategyId::LowPower));
+        arbitrator.set_adaptation_mode(
+            AgentId::Renderer,
+            AdaptationMode::Manual(StrategyId::LowPower),
+        );
 
         let ctx = simulation_ctx();
         let report = normal_report();
         let agent = MockAgent::new(AgentId::Renderer);
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, None);
 
         let lock = agents[0].lock().unwrap();
         let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
@@ -716,7 +746,7 @@ mod tests {
         let agent = MockAgent::new(AgentId::Renderer);
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, None);
 
         let lock = agents[0].lock().unwrap();
         let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
@@ -743,7 +773,7 @@ mod tests {
         let agent = MockAgent::new(AgentId::Renderer);
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, None);
 
         let lock = agents[0].lock().unwrap();
         let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
@@ -771,7 +801,7 @@ mod tests {
             Arc::new(Mutex::new(physics)),
         ];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, None);
 
         // Both should have received budgets
         for agent_mutex in &agents {
@@ -806,7 +836,9 @@ mod tests {
         let arbitrator = create_arbitrator();
         let mut ctx = simulation_ctx();
         ctx.hardware.thermal = khora_core::platform::ThermalStatus::Throttling;
-        ctx.refresh_budget_multiplier(); // 0.6
+        // The PID owns the multiplier in the live loop; here we pin it directly
+        // to exercise the lever `arbitrate` consumes.
+        ctx.global_budget_multiplier = 0.6;
 
         let mut report = normal_report();
         report.suggested_latency_ms = 33.33; // Heuristic suggestion for throttling
@@ -814,7 +846,7 @@ mod tests {
         let agent = MockAgent::new(AgentId::Renderer);
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, None);
 
         let lock = agents[0].lock().unwrap();
         let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
@@ -840,7 +872,7 @@ mod tests {
             Arc::new(Mutex::new(physics)),
         ];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, None);
 
         // Both agents should be forced to LowPower
         for agent_mutex in &agents {
@@ -868,7 +900,7 @@ mod tests {
             Arc::new(Mutex::new(stalled2)),
         ];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, None);
 
         // Both should be forced to LowPower
         for agent_mutex in &agents {
@@ -890,7 +922,7 @@ mod tests {
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![];
 
         // Should not panic
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, None);
     }
 
     #[test]
@@ -909,7 +941,7 @@ mod tests {
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> =
             vec![Arc::new(Mutex::new(renderer)), Arc::new(Mutex::new(asset))];
 
-        arbitrator.arbitrate(&ctx, &tight_report, &mut agents);
+        arbitrator.arbitrate(&ctx, &tight_report, &mut agents, None);
 
         // With 10ms total: both minimum = 2+2=4ms, remaining=6ms.
         // Renderer (priority 1.0) should be upgraded first: +6ms → Balanced (8ms).
@@ -920,6 +952,44 @@ mod tests {
         assert_eq!(
             renderer_mock.applied_budget.as_ref().unwrap().strategy_id,
             StrategyId::Balanced
+        );
+    }
+
+    #[test]
+    fn test_arbitrate_returns_issued_decisions() {
+        let arbitrator = create_arbitrator();
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> =
+            vec![Arc::new(Mutex::new(MockAgent::new(AgentId::Renderer)))];
+
+        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, None);
+        // Single agent, ample budget → HighPerformance, reported back as issued.
+        assert_eq!(
+            issued,
+            vec![(AgentId::Renderer, StrategyId::HighPerformance)]
+        );
+    }
+
+    #[test]
+    fn test_replay_overrides_fit_with_recorded_decision() {
+        let arbitrator = create_arbitrator();
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> =
+            vec![Arc::new(Mutex::new(MockAgent::new(AgentId::Renderer)))];
+
+        // A recorded decision of LowPower must be issued verbatim, even though
+        // the live fit (ample budget) would pick HighPerformance.
+        let recorded: TickDecisions = vec![(AgentId::Renderer, StrategyId::LowPower)];
+        let replayed = arbitrator.arbitrate(&ctx, &report, &mut agents, Some(&recorded));
+        assert_eq!(replayed, vec![(AgentId::Renderer, StrategyId::LowPower)]);
+
+        let lock = agents[0].lock().unwrap();
+        let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+        assert_eq!(
+            mock.applied_budget.as_ref().unwrap().strategy_id,
+            StrategyId::LowPower
         );
     }
 

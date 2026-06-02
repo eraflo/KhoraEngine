@@ -347,10 +347,7 @@ impl LitForwardLane {
         _material: Option<&khora_core::asset::AssetHandle<Box<dyn Material>>>,
     ) -> RenderPipelineId {
         // Lock-free read — `OnceLock` initialized in `on_gpu_init`.
-        self.pipeline
-            .get()
-            .copied()
-            .unwrap_or(RenderPipelineId(0))
+        self.pipeline.get().copied().unwrap_or(RenderPipelineId(0))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -596,11 +593,7 @@ impl LitForwardLane {
 
         // Pipeline binding logic moved before render pass to avoid issues.
         // Lock-free read via OnceLock; falls back to id 0 if not initialized.
-        let pipeline_id = self
-            .pipeline
-            .get()
-            .copied()
-            .unwrap_or(RenderPipelineId(0));
+        let pipeline_id = self.pipeline.get().copied().unwrap_or(RenderPipelineId(0));
 
         // Prepare Draw Commands
         let mut draw_commands = Vec::with_capacity(render_world.meshes.len());
@@ -983,9 +976,8 @@ impl LitForwardLane {
                 min_binding_size: None,
             },
         }];
-        layout_entries.extend(
-            khora_data::render::shadow_bindings::shadow_bind_group_layout_entries(),
-        );
+        layout_entries
+            .extend(khora_data::render::shadow_bindings::shadow_bind_group_layout_entries());
         let light_layout = device
             .create_bind_group_layout(&BindGroupLayoutDescriptor {
                 label: Some("lit_forward_light_layout"),

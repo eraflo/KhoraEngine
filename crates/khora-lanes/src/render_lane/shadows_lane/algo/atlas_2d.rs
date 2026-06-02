@@ -26,8 +26,8 @@ use std::sync::RwLock;
 
 use khora_core::math::{Extent3D, Mat4};
 use khora_core::renderer::api::resource::{
-    CameraUniformData, ImageAspect, TextureDescriptor, TextureDimension, TextureId,
-    TextureUsage, TextureViewDescriptor, TextureViewDimension, TextureViewId,
+    CameraUniformData, ImageAspect, TextureDescriptor, TextureDimension, TextureId, TextureUsage,
+    TextureViewDescriptor, TextureViewDimension, TextureViewId,
 };
 use khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer;
 use khora_core::renderer::api::util::{SampleCount, TextureFormat};

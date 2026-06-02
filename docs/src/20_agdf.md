@@ -200,15 +200,17 @@ flowchart LR
     M --> ST["DCC MetricStore"]
     ST --> P["Context.memory_pressure<br/>= current / budget"]
     ST --> CH["alloc-churn (CoV of bytes)"]
-    P --> BUD["budget multiplier<br/>≥0.95 → 0.5, ≥0.85 → 0.8"]
+    P --> BUD["budget multiplier<br/>≥0.95 → hard safety cap 0.5"]
     P -.-> GATE["AGDF repack headroom gate (Layer 3)"]
     CH --> ALERT["glass-box stutter/leak alert"]
 ```
 
 1. **Memory pressure → budget.** With a budget set (`DccConfig::memory_budget_bytes`),
-   the DCC derives `Context::memory_pressure` and degrades the global budget
-   multiplier as the ceiling approaches — a first-class resource signal beside
-   thermal/CPU/GPU. Unset budget ⇒ pressure 0 ⇒ no effect (chiefly useful on
+   the DCC derives `Context::memory_pressure` — a first-class resource signal beside
+   thermal/CPU/GPU. At/above 0.95 it imposes a hard safety cap (0.5) on the budget
+   multiplier; the 0.85 warning tier feeds the heuristic engine (forces a
+   renegotiation) but no longer scales the multiplier directly — the frame-time PID
+   owns the multiplier. Unset budget ⇒ pressure 0 ⇒ no effect (chiefly useful on
    memory-constrained targets).
 2. **Allocation churn → glass-box.** High volatility of resident bytes
    (coefficient of variation per window) raises an alert flagging a likely

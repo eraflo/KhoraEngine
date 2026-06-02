@@ -34,9 +34,7 @@ use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
 };
-use khora_core::lane::{
-    ClearColor, ColorTarget, DepthTarget, LaneContext, LaneRegistry, Slot,
-};
+use khora_core::lane::{ClearColor, ColorTarget, DepthTarget, LaneContext, LaneRegistry, Slot};
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::api::scene::GpuMesh;
 use khora_core::renderer::GraphicsDevice;
@@ -95,7 +93,11 @@ impl Agent for OverlayAgent {
     }
 
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
-        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>().cloned()
+        let Some(device_arc) = context
+            .runtime
+            .backends
+            .get::<Arc<dyn GraphicsDevice>>()
+            .cloned()
         else {
             log::warn!("OverlayAgent: graphics device unavailable in on_initialize");
             return;
@@ -218,11 +220,7 @@ impl Agent for OverlayAgent {
 
             for lane in self.lanes.all() {
                 if let Err(e) = lane.execute(&mut ctx) {
-                    log::error!(
-                        "OverlayAgent: lane {} failed: {}",
-                        lane.strategy_name(),
-                        e
-                    );
+                    log::error!("OverlayAgent: lane {} failed: {}", lane.strategy_name(), e);
                 }
             }
         }

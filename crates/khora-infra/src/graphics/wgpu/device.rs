@@ -936,9 +936,10 @@ impl GraphicsDevice for WgpuDevice {
         &self,
         descriptor: &api_cmd::ComputePipelineDescriptor,
     ) -> Result<ComputePipelineId, ResourceError> {
-        let context = self.internal.context.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-        })?;
+        let context =
+            self.internal.context.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
+            })?;
         let device = &context.device;
 
         // 1. Get shader module
@@ -1015,9 +1016,10 @@ impl GraphicsDevice for WgpuDevice {
         &self,
         descriptor: &api_buf::BufferDescriptor,
     ) -> Result<api_buf::BufferId, ResourceError> {
-        let context = self.internal.context.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-        })?;
+        let context =
+            self.internal.context.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
+            })?;
         let device = &context.device;
 
         // Create the buffer using the wgpu device
@@ -1071,9 +1073,10 @@ impl GraphicsDevice for WgpuDevice {
         descriptor: &api_buf::BufferDescriptor,
         data: &[u8],
     ) -> Result<api_buf::BufferId, ResourceError> {
-        let context = self.internal.context.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-        })?;
+        let context =
+            self.internal.context.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
+            })?;
 
         let wgpu_buffer = context
             .device
@@ -1119,9 +1122,10 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_buffer(&self, id: api_buf::BufferId) -> Result<(), ResourceError> {
-        let mut buffers = self.internal.buffers.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (buffers): {e}"))
-        })?;
+        let mut buffers =
+            self.internal.buffers.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (buffers): {e}"))
+            })?;
 
         // Remove the buffer from the map and track VRAM usage
         if let Some(entry) = buffers.remove(&id) {
@@ -1142,13 +1146,15 @@ impl GraphicsDevice for WgpuDevice {
         data: &[u8],
     ) -> Result<(), ResourceError> {
         // 1. Get the resources
-        let buffers = self.internal.buffers.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (buffers): {e}"))
-        })?;
+        let buffers =
+            self.internal.buffers.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (buffers): {e}"))
+            })?;
         let entry = buffers.get(&id).ok_or(ResourceError::NotFound)?;
-        let context = self.internal.context.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-        })?;
+        let context =
+            self.internal.context.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
+            })?;
 
         // 2. Check the bounds
         let buffer_size = entry.wgpu_buffer.size();
@@ -1277,9 +1283,10 @@ impl GraphicsDevice for WgpuDevice {
         &self,
         descriptor: &api_tex::TextureDescriptor,
     ) -> Result<api_tex::TextureId, ResourceError> {
-        let context = self.internal.context.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-        })?;
+        let context =
+            self.internal.context.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
+            })?;
         let device = &context.device;
 
         let wgpu_texture_descriptor = wgpu::TextureDescriptor {
@@ -1338,9 +1345,10 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_texture(&self, id: api_tex::TextureId) -> Result<(), ResourceError> {
-        let mut textures = self.internal.textures.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (textures): {e}"))
-        })?;
+        let mut textures =
+            self.internal.textures.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (textures): {e}"))
+            })?;
 
         // Remove the texture from the map and track VRAM usage
         if let Some(entry) = textures.remove(&id) {
@@ -1362,13 +1370,15 @@ impl GraphicsDevice for WgpuDevice {
         offset: dimension::Origin3D,
         size: dimension::Extent3D,
     ) -> Result<(), ResourceError> {
-        let textures = self.internal.textures.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (textures): {e}"))
-        })?;
+        let textures =
+            self.internal.textures.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (textures): {e}"))
+            })?;
         let entry = textures.get(&texture_id).ok_or(ResourceError::NotFound)?;
-        let context = self.internal.context.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-        })?;
+        let context =
+            self.internal.context.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
+            })?;
 
         context.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
@@ -1399,9 +1409,10 @@ impl GraphicsDevice for WgpuDevice {
         texture_id: api_tex::TextureId,
         descriptor: &api_tex::TextureViewDescriptor,
     ) -> Result<api_tex::TextureViewId, ResourceError> {
-        let textures = self.internal.textures.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (textures): {e}"))
-        })?;
+        let textures =
+            self.internal.textures.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (textures): {e}"))
+            })?;
         let texture_entry = textures.get(&texture_id).ok_or(ResourceError::NotFound)?;
 
         let wgpu_view_descriptor = wgpu::TextureViewDescriptor {
@@ -1469,9 +1480,10 @@ impl GraphicsDevice for WgpuDevice {
         &self,
         descriptor: &api_tex::SamplerDescriptor,
     ) -> Result<api_tex::SamplerId, ResourceError> {
-        let context = self.internal.context.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-        })?;
+        let context =
+            self.internal.context.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
+            })?;
         let device = &context.device;
 
         let wgpu_sampler_descriptor = wgpu::SamplerDescriptor {
@@ -1512,9 +1524,10 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_sampler(&self, id: api_tex::SamplerId) -> Result<(), ResourceError> {
-        let mut samplers = self.internal.samplers.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (samplers): {e}"))
-        })?;
+        let mut samplers =
+            self.internal.samplers.lock().map_err(|e| {
+                ResourceError::BackendError(format!("Mutex poisoned (samplers): {e}"))
+            })?;
 
         // Remove the sampler from the map
         if samplers.remove(&id).is_some() {

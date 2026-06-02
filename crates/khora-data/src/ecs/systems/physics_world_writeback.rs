@@ -80,8 +80,7 @@ fn sync_from_provider(world: &mut World, provider: &dyn PhysicsProvider) {
 fn resolve_characters(world: &mut World, provider: &dyn PhysicsProvider) {
     let mut results = Vec::new();
     {
-        let query =
-            world.query_mut::<(EntityId, &mut KinematicCharacterController, &Collider)>();
+        let query = world.query_mut::<(EntityId, &mut KinematicCharacterController, &Collider)>();
         for (id, kcc, collider) in query {
             if let Some(h) = collider.handle {
                 let options = CharacterControllerOptions {

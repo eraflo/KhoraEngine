@@ -20,9 +20,7 @@ use crate::theme::{pal, tint};
 use crate::widgets::{
     badge, ghost_button, paint_diamond_filled, paint_separator, primary_button, rgba,
 };
-use khora_sdk::tool_ui::{
-    CornerRadius, FontFamilyHint, Margin, Stroke, TextAlign, UiBuilder,
-};
+use khora_sdk::tool_ui::{CornerRadius, FontFamilyHint, Margin, Stroke, TextAlign, UiBuilder};
 
 pub fn show_engine_manager(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     if !app.engine_manager.has_fetched_once && app.engine_manager.fetch_rx.is_none() {
@@ -40,7 +38,10 @@ pub fn show_engine_manager(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         });
         ui.spacing(10.0);
         title_label(ui, "Engine Manager", 22.0);
-        ui.colored_label(rgba(pal::TEXT_DIM), "Manage local + downloaded engine builds.");
+        ui.colored_label(
+            rgba(pal::TEXT_DIM),
+            "Manage local + downloaded engine builds.",
+        );
         ui.spacing(20.0);
         paint_separator(ui, tint(pal::SEPARATOR, 0.55));
         ui.spacing(14.0);
@@ -62,7 +63,11 @@ fn show_local_card(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     } else {
         "Local engine (dev) — not configured"
     };
-    let accent = if dev.is_some() { pal::SUCCESS } else { pal::WARNING };
+    let accent = if dev.is_some() {
+        pal::SUCCESS
+    } else {
+        pal::WARNING
+    };
     card_frame(ui, title, accent, &mut |ui| match dev.as_ref() {
         Some(d) => {
             kv_row(ui, "Editor", &d.editor_binary, FontFamilyHint::Monospace);
@@ -103,8 +108,12 @@ fn show_releases_card(app: &mut HubApp, ui: &mut dyn UiBuilder) {
             return;
         }
 
-        let installed: std::collections::HashSet<String> =
-            app.config.engines.iter().map(|e| e.version.clone()).collect();
+        let installed: std::collections::HashSet<String> = app
+            .config
+            .engines
+            .iter()
+            .map(|e| e.version.clone())
+            .collect();
 
         let releases = app.engine_manager.releases.clone();
         let mut to_download: Option<github::GithubRelease> = None;
@@ -219,7 +228,11 @@ fn release_card(
     if already_installed {
         let salt = format!("em-uninstall-{}", release.tag_name);
         let int = ui.interact_rect(&salt, [btn_x, btn_y, btn_w, btn_h]);
-        let fill = if int.hovered { tint(pal::ERROR, 0.18) } else { pal::SURFACE };
+        let fill = if int.hovered {
+            tint(pal::ERROR, 0.18)
+        } else {
+            pal::SURFACE
+        };
         ui.paint_rect_filled([btn_x, btn_y], [btn_w, btn_h], rgba(fill), 5.0);
         ui.paint_rect_stroke(
             [btn_x, btn_y],
@@ -228,7 +241,11 @@ fn release_card(
             5.0,
             1.0,
         );
-        let text_color = if int.hovered { pal::ERROR } else { pal::TEXT_DIM };
+        let text_color = if int.hovered {
+            pal::ERROR
+        } else {
+            pal::TEXT_DIM
+        };
         let s = ui.measure_text("Uninstall", 12.0, FontFamilyHint::Proportional);
         ui.paint_text_styled(
             [btn_x + (btn_w - s[0]) * 0.5, btn_y + (btn_h - s[1]) * 0.5],
@@ -244,7 +261,11 @@ fn release_card(
     } else if release.editor_asset().is_some() {
         let salt = format!("em-dl-{}", release.tag_name);
         let int = ui.interact_rect(&salt, [btn_x, btn_y, btn_w, btn_h]);
-        let fill = if int.hovered { pal::SURFACE_ACTIVE } else { pal::SURFACE };
+        let fill = if int.hovered {
+            pal::SURFACE_ACTIVE
+        } else {
+            pal::SURFACE
+        };
         ui.paint_rect_filled([btn_x, btn_y], [btn_w, btn_h], rgba(fill), 5.0);
         ui.paint_rect_stroke(
             [btn_x, btn_y],
@@ -271,13 +292,22 @@ fn release_card(
 fn show_installed_card(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     card_frame(ui, "Installed engines", pal::ACCENT_CYAN, &mut |ui| {
         if app.config.engines.is_empty() {
-            ui.colored_label(rgba(pal::TEXT_MUTED), "No engines installed yet — download one above.");
+            ui.colored_label(
+                rgba(pal::TEXT_MUTED),
+                "No engines installed yet — download one above.",
+            );
             return;
         }
         let engines = app.config.engines.clone();
         let mut to_remove: Option<usize> = None;
         for (i, engine) in engines.iter().enumerate() {
-            installed_card(ui, &engine.version, &engine.editor_binary, i, &mut to_remove);
+            installed_card(
+                ui,
+                &engine.version,
+                &engine.editor_binary,
+                i,
+                &mut to_remove,
+            );
             ui.spacing(8.0);
         }
         if let Some(idx) = to_remove
@@ -331,7 +361,11 @@ fn installed_card(
     let btn_x = pos[0] + card_w - 12.0 - btn_w;
     let salt = format!("em-rm-{}", idx);
     let int = ui.interact_rect(&salt, [btn_x, btn_y, btn_w, btn_h]);
-    let fill = if int.hovered { tint(pal::ERROR, 0.18) } else { pal::SURFACE };
+    let fill = if int.hovered {
+        tint(pal::ERROR, 0.18)
+    } else {
+        pal::SURFACE
+    };
     ui.paint_rect_filled([btn_x, btn_y], [btn_w, btn_h], rgba(fill), 5.0);
     ui.paint_rect_stroke(
         [btn_x, btn_y],
@@ -340,7 +374,11 @@ fn installed_card(
         5.0,
         1.0,
     );
-    let text_color = if int.hovered { pal::ERROR } else { pal::TEXT_DIM };
+    let text_color = if int.hovered {
+        pal::ERROR
+    } else {
+        pal::TEXT_DIM
+    };
     let s = ui.measure_text("Uninstall", 12.0, FontFamilyHint::Proportional);
     ui.paint_text_styled(
         [btn_x + (btn_w - s[0]) * 0.5, btn_y + (btn_h - s[1]) * 0.5],

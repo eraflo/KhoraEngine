@@ -564,12 +564,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
 
     // ── Inset panels (Phase 7) ─────────────────────────
 
-    fn top_inset_panel(
-        &mut self,
-        id: &str,
-        height: f32,
-        f: &mut dyn FnMut(&mut dyn UiBuilder),
-    ) {
+    fn top_inset_panel(&mut self, id: &str, height: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let vt = self.viewport_textures;
         egui::TopBottomPanel::top(egui::Id::new(id.to_owned()))
             .exact_height(height)
@@ -581,12 +576,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
             });
     }
 
-    fn bottom_inset_panel(
-        &mut self,
-        id: &str,
-        height: f32,
-        f: &mut dyn FnMut(&mut dyn UiBuilder),
-    ) {
+    fn bottom_inset_panel(&mut self, id: &str, height: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let vt = self.viewport_textures;
         egui::TopBottomPanel::bottom(egui::Id::new(id.to_owned()))
             .exact_height(height)
@@ -598,12 +588,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
             });
     }
 
-    fn left_inset_panel(
-        &mut self,
-        id: &str,
-        width: f32,
-        f: &mut dyn FnMut(&mut dyn UiBuilder),
-    ) {
+    fn left_inset_panel(&mut self, id: &str, width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let vt = self.viewport_textures;
         egui::SidePanel::left(egui::Id::new(id.to_owned()))
             .exact_width(width)
@@ -615,12 +600,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
             });
     }
 
-    fn right_inset_panel(
-        &mut self,
-        id: &str,
-        width: f32,
-        f: &mut dyn FnMut(&mut dyn UiBuilder),
-    ) {
+    fn right_inset_panel(&mut self, id: &str, width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let vt = self.viewport_textures;
         egui::SidePanel::right(egui::Id::new(id.to_owned()))
             .exact_width(width)
@@ -671,7 +651,10 @@ impl UiBuilder for EguiUiBuilder<'_> {
             frame = frame.fill(linear_to_color(fill_color));
         }
         if stroke.width > 0.0 {
-            frame = frame.stroke(egui::Stroke::new(stroke.width, linear_to_color(stroke.color)));
+            frame = frame.stroke(egui::Stroke::new(
+                stroke.width,
+                linear_to_color(stroke.color),
+            ));
         }
         let vt = self.viewport_textures;
         frame.show(self.ui, |ui| {
@@ -718,10 +701,7 @@ impl EguiUiBuilder<'_> {
             .fixed_size([size[0], size[1]])
             .resizable(false)
             .collapsible(false)
-            .frame(
-                egui::Frame::window(&ctx.style())
-                    .inner_margin(egui::Margin::same(0)),
-            )
+            .frame(egui::Frame::window(&ctx.style()).inner_margin(egui::Margin::same(0)))
             .show(&ctx, |ui| {
                 let mut nested = EguiUiBuilder::new(ui, &vt_clone);
                 f(&mut nested);

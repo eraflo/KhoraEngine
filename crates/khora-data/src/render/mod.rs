@@ -42,8 +42,8 @@ pub use world::{ExtractedLight, ExtractedMesh, ExtractedView, RenderWorld};
 // migration; once every consumer points at the new path, these
 // aliases can be deleted.
 pub use khora_core::renderer::api::shadow::{
-    bindings as shadow_bindings, fill_shadow_bind_group_entries,
-    shadow_bind_group_layout_entries, ShadowEntries, ShadowEntry, ShadowFrame, ShadowGpuBindings,
+    bindings as shadow_bindings, fill_shadow_bind_group_entries, shadow_bind_group_layout_entries,
+    ShadowEntries, ShadowEntry, ShadowFrame, ShadowGpuBindings,
 };
 
 use khora_core::{

@@ -241,13 +241,49 @@ mod tests {
     #[test]
     fn push_get_set_roundtrip() {
         let mut col = FieldSoaColumn::<P>::new();
-        col.push(P { x: 1.0, y: 2.0, z: 3.0 });
-        col.push(P { x: 4.0, y: 5.0, z: 6.0 });
+        col.push(P {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        });
+        col.push(P {
+            x: 4.0,
+            y: 5.0,
+            z: 6.0,
+        });
         assert_eq!(col.len(), 2);
-        assert_eq!(col.get(0), P { x: 1.0, y: 2.0, z: 3.0 });
-        assert_eq!(col.get(1), P { x: 4.0, y: 5.0, z: 6.0 });
-        col.set(0, P { x: 7.0, y: 8.0, z: 9.0 });
-        assert_eq!(col.get(0), P { x: 7.0, y: 8.0, z: 9.0 });
+        assert_eq!(
+            col.get(0),
+            P {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0
+            }
+        );
+        assert_eq!(
+            col.get(1),
+            P {
+                x: 4.0,
+                y: 5.0,
+                z: 6.0
+            }
+        );
+        col.set(
+            0,
+            P {
+                x: 7.0,
+                y: 8.0,
+                z: 9.0,
+            },
+        );
+        assert_eq!(
+            col.get(0),
+            P {
+                x: 7.0,
+                y: 8.0,
+                z: 9.0
+            }
+        );
         // Each field array is contiguous (the SIMD-friendly property).
         assert_eq!(col.field(0), &[7.0, 4.0]);
         assert_eq!(col.field(2), &[9.0, 6.0]);
@@ -266,21 +302,57 @@ mod tests {
         }
         col.swap_remove_any(0); // row 0 replaced by last row (index 2)
         assert_eq!(col.len(), 2);
-        assert_eq!(col.get(0), P { x: 2.0, y: 12.0, z: 22.0 });
-        assert_eq!(col.get(1), P { x: 1.0, y: 11.0, z: 21.0 });
+        assert_eq!(
+            col.get(0),
+            P {
+                x: 2.0,
+                y: 12.0,
+                z: 22.0
+            }
+        );
+        assert_eq!(
+            col.get(1),
+            P {
+                x: 1.0,
+                y: 11.0,
+                z: 21.0
+            }
+        );
     }
 
     #[test]
     fn bytes_roundtrip() {
         let mut col = FieldSoaColumn::<P>::new();
-        col.push(P { x: 1.5, y: -2.5, z: 3.25 });
-        col.push(P { x: 4.0, y: 5.0, z: 6.0 });
+        col.push(P {
+            x: 1.5,
+            y: -2.5,
+            z: 3.25,
+        });
+        col.push(P {
+            x: 4.0,
+            y: 5.0,
+            z: 6.0,
+        });
         let bytes = col.to_bytes();
         let mut restored = FieldSoaColumn::<P>::new();
         unsafe { restored.set_from_bytes(&bytes) };
         assert_eq!(restored.len(), 2);
-        assert_eq!(restored.get(0), P { x: 1.5, y: -2.5, z: 3.25 });
-        assert_eq!(restored.get(1), P { x: 4.0, y: 5.0, z: 6.0 });
+        assert_eq!(
+            restored.get(0),
+            P {
+                x: 1.5,
+                y: -2.5,
+                z: 3.25
+            }
+        );
+        assert_eq!(
+            restored.get(1),
+            P {
+                x: 4.0,
+                y: 5.0,
+                z: 6.0
+            }
+        );
     }
 }
 
@@ -312,15 +384,31 @@ mod world_integration {
         let mut world = World::default();
         world.register_component::<Velocity>(SemanticDomain::Physics);
 
-        let e0 = world.spawn(Velocity { x: 1.0, y: 2.0, z: 3.0 });
-        let e1 = world.spawn(Velocity { x: 4.0, y: 5.0, z: 6.0 });
+        let e0 = world.spawn(Velocity {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        });
+        let e1 = world.spawn(Velocity {
+            x: 4.0,
+            y: 5.0,
+            z: 6.0,
+        });
 
         // By-value query reconstructs each value from the field arrays.
         assert_eq!(
             sorted_by_x(&world),
             vec![
-                Velocity { x: 1.0, y: 2.0, z: 3.0 },
-                Velocity { x: 4.0, y: 5.0, z: 6.0 },
+                Velocity {
+                    x: 1.0,
+                    y: 2.0,
+                    z: 3.0
+                },
+                Velocity {
+                    x: 4.0,
+                    y: 5.0,
+                    z: 6.0
+                },
             ]
         );
 
@@ -334,17 +422,32 @@ mod world_integration {
         assert_eq!(world.clone_component::<Velocity>(e1).unwrap().x, 8.0);
 
         // By-value write.
-        assert!(world.set_component(e0, Velocity { x: 9.0, y: 9.0, z: 9.0 }));
+        assert!(world.set_component(
+            e0,
+            Velocity {
+                x: 9.0,
+                y: 9.0,
+                z: 9.0
+            }
+        ));
         assert_eq!(
             world.clone_component::<Velocity>(e0),
-            Some(Velocity { x: 9.0, y: 9.0, z: 9.0 })
+            Some(Velocity {
+                x: 9.0,
+                y: 9.0,
+                z: 9.0
+            })
         );
 
         // Despawn one; the other's field arrays stay aligned and correct.
         world.despawn(e0);
         assert_eq!(
             world.clone_component::<Velocity>(e1),
-            Some(Velocity { x: 8.0, y: 5.0, z: 6.0 })
+            Some(Velocity {
+                x: 8.0,
+                y: 5.0,
+                z: 6.0
+            })
         );
         assert_eq!(world.query::<Soa<Velocity>>().count(), 1);
     }

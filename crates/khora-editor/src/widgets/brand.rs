@@ -14,7 +14,7 @@
 
 //! Brand-mark painters — the Khora "diamond" shape and its containing pills.
 
-use khora_sdk::editor_ui::{UiTheme, FontFamilyHint, TextAlign, UiBuilder};
+use khora_sdk::editor_ui::{FontFamilyHint, TextAlign, UiBuilder, UiTheme};
 
 use super::paint::with_alpha;
 

@@ -376,7 +376,11 @@ mod tests {
 
         let names: Vec<String> = world
             .iter_entities()
-            .filter_map(|e| world.get_component::<Name>(e).map(|n| n.as_str().to_owned()))
+            .filter_map(|e| {
+                world
+                    .get_component::<Name>(e)
+                    .map(|n| n.as_str().to_owned())
+            })
             .collect();
         assert!(
             names.contains(&"TestCube".to_string()),

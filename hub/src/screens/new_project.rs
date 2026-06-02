@@ -34,7 +34,10 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         });
         ui.spacing(8.0);
         title_label(ui, "New Project", 20.0);
-        ui.colored_label(rgba(pal::TEXT_DIM), "Create a Khora project from a template.");
+        ui.colored_label(
+            rgba(pal::TEXT_DIM),
+            "Create a Khora project from a template.",
+        );
         ui.spacing(16.0);
         paint_separator(ui, tint(pal::SEPARATOR, 0.55));
         ui.spacing(14.0);
@@ -60,9 +63,9 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
             for (i, choice) in choices.iter().enumerate() {
                 let label = match choice {
                     EngineChoice::Installed(e) => format!("{} (installed)", e.version),
-                    EngineChoice::Remote {
-                        version, size, ..
-                    } => format!("{} (download {} MB)", version, size / 1_000_000),
+                    EngineChoice::Remote { version, size, .. } => {
+                        format!("{} (download {} MB)", version, size / 1_000_000)
+                    }
                 };
                 let active = i == app.new_project.engine_idx;
                 let salt = format!("np-engine-{}", i);
@@ -97,10 +100,7 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
             ui.checkbox(&mut app.new_project.git_init, "Initialize git repository");
             if app.new_project.git_init {
                 ui.indent("np-git-opts", &mut |ui| {
-                    ui.checkbox(
-                        &mut app.new_project.git_remote,
-                        "Also create a GitHub repo",
-                    );
+                    ui.checkbox(&mut app.new_project.git_remote, "Also create a GitHub repo");
                     if app.new_project.git_remote {
                         ui.indent("np-remote-opts", &mut |ui| {
                             ui.colored_label(
@@ -234,7 +234,9 @@ fn create_with_engine(app: &mut HubApp, engine: crate::config::EngineInstall) {
         Err(e) => {
             app.new_project.success = false;
             app.new_project.status = Some(format!("Error: {e}"));
-            app.banner = Some(crate::Banner::error(format!("Project creation failed: {e}")));
+            app.banner = Some(crate::Banner::error(format!(
+                "Project creation failed: {e}"
+            )));
         }
     }
 }

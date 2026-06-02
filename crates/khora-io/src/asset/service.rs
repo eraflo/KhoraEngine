@@ -286,8 +286,7 @@ mod tests {
         let mut files = HashMap::new();
         files.insert(std::path::PathBuf::from("scenes/a.kscene"), b"SCN".to_vec());
         let metrics = Arc::new(MetricsRegistry::new());
-        let mut svc =
-            AssetService::new(&bytes, Box::new(MockIo { files }), metrics, None).unwrap();
+        let mut svc = AssetService::new(&bytes, Box::new(MockIo { files }), metrics, None).unwrap();
 
         let uuid = AssetUUID::new_v5("scenes/a.kscene");
         let raw = svc.load_raw(&uuid).unwrap();

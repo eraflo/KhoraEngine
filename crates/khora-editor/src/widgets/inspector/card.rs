@@ -10,7 +10,7 @@
 //! collapsible body. Used by the Properties tab to wrap each component
 //! the inspected entity carries.
 
-use khora_sdk::editor_ui::{EditorState, UiTheme, Icon, PropertyEdit, UiBuilder};
+use khora_sdk::editor_ui::{EditorState, Icon, PropertyEdit, UiBuilder, UiTheme};
 use khora_sdk::prelude::ecs::EntityId;
 
 use crate::widgets::paint::{paint_icon, paint_text_size, with_alpha};
@@ -76,13 +76,7 @@ pub fn render_card(
         14.0,
         theme.primary_dim,
     );
-    paint_text_size(
-        ui,
-        [card_x + 46.0, cursor_y + 9.0],
-        title,
-        12.0,
-        theme.text,
-    );
+    paint_text_size(ui, [card_x + 46.0, cursor_y + 9.0], title, 12.0, theme.text);
 
     // Trailing edge: optional toggle, then optional trash button.
     let mut right_edge = card_x + card_w - 10.0;

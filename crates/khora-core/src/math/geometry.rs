@@ -89,7 +89,10 @@ impl Rect2D {
     /// Returns `true` if `point` lies inside this rectangle (inclusive
     /// of `min`, exclusive of `max` — typical hit-test convention).
     pub fn contains(&self, point: Vec2) -> bool {
-        point.x >= self.min.x && point.x < self.max.x && point.y >= self.min.y && point.y < self.max.y
+        point.x >= self.min.x
+            && point.x < self.max.x
+            && point.y >= self.min.y
+            && point.y < self.max.y
     }
 }
 

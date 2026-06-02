@@ -81,14 +81,12 @@ fn init_gpu_resources(
             BindingResource, BindingType, BufferBinding, BufferBindingType,
         },
         pipeline::enums::PrimitiveTopology,
-        pipeline::state::{
-            BlendComponentDescriptor, BlendStateDescriptor, ColorWrites,
-        },
+        pipeline::enums::{BlendFactor, BlendOperation},
+        pipeline::state::{BlendComponentDescriptor, BlendStateDescriptor, ColorWrites},
         pipeline::{
             ColorTargetStateDescriptor, MultisampleStateDescriptor, PrimitiveStateDescriptor,
             RenderPipelineDescriptor,
         },
-        pipeline::enums::{BlendFactor, BlendOperation},
         resource::{BufferDescriptor, BufferUsage},
         util::{SampleCount, ShaderStageFlags, TextureFormat},
     };
@@ -198,10 +196,12 @@ fn init_gpu_resources(
     };
 
     let pipeline_layout_id = device
-        .create_pipeline_layout(&khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
-            label: Some(Cow::Borrowed("Gizmo Pipeline Layout")),
-            bind_group_layouts: &[camera_layout, storage_layout],
-        })
+        .create_pipeline_layout(
+            &khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
+                label: Some(Cow::Borrowed("Gizmo Pipeline Layout")),
+                bind_group_layouts: &[camera_layout, storage_layout],
+            },
+        )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
     // Alpha blend; no depth attachment — gizmos always draw on top
@@ -306,9 +306,11 @@ fn render_gizmos(
         log::error!("GizmoLane: camera buffer write failed: {:?}", e);
         return;
     }
-    if let Err(e) =
-        device.write_buffer(storage_buffer, 0, bytemuck::cast_slice(&lines[..line_count]))
-    {
+    if let Err(e) = device.write_buffer(
+        storage_buffer,
+        0,
+        bytemuck::cast_slice(&lines[..line_count]),
+    ) {
         log::error!("GizmoLane: storage buffer write failed: {:?}", e);
         return;
     }

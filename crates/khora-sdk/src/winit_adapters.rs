@@ -115,9 +115,7 @@ pub struct WinitAppRunner<W: WindowProvider, A: EngineApp> {
 impl<W: WindowProvider, A: EngineApp> WinitAppRunner<W, A> {
     /// Creates a new winit app runner with the given bootstrap closure.
     pub fn new(
-        bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::Runtime, &dyn Any)
-            + Send
-            + 'static,
+        bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::Runtime, &dyn Any) + Send + 'static,
     ) -> Self {
         Self {
             window: None,
@@ -140,10 +138,7 @@ impl<W: WindowProvider, A: EngineApp> WinitAppRunner<W, A> {
         // previous frame's by replacing entries of the same type.
         let runtime_arc = Arc::clone(self.engine.runtime());
         if self.frame_context.is_none() {
-            self.frame_context = runtime_arc
-                .resources
-                .get::<Arc<FrameContext>>()
-                .cloned();
+            self.frame_context = runtime_arc.resources.get::<Arc<FrameContext>>().cloned();
         }
 
         // Stage 1: drain inputs (also marks simulation started + ticks telemetry).
@@ -360,9 +355,7 @@ impl<W: WindowProvider, A: EngineApp> Drop for WinitAppRunner<W, A> {
 /// });
 /// ```
 pub fn run_winit<W: WindowProvider, A: EngineApp>(
-    bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::Runtime, &dyn Any)
-        + Send
-        + 'static,
+    bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::Runtime, &dyn Any) + Send + 'static,
 ) -> Result<()> {
     log::info!("Khora Engine: Starting...");
 

@@ -149,23 +149,13 @@ pub trait UiBuilder {
     ///
     /// Default implementation is a no-op so the trait stays
     /// object-safe — the egui backend overrides it.
-    fn top_inset_panel(
-        &mut self,
-        id: &str,
-        height: f32,
-        f: &mut dyn FnMut(&mut dyn UiBuilder),
-    ) {
+    fn top_inset_panel(&mut self, id: &str, height: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let _ = (id, height, f);
     }
 
     /// Inset panel along the bottom edge — counterpart of
     /// [`top_inset_panel`](Self::top_inset_panel).
-    fn bottom_inset_panel(
-        &mut self,
-        id: &str,
-        height: f32,
-        f: &mut dyn FnMut(&mut dyn UiBuilder),
-    ) {
+    fn bottom_inset_panel(&mut self, id: &str, height: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let _ = (id, height, f);
     }
 
@@ -173,23 +163,13 @@ pub trait UiBuilder {
     ///
     /// Splits the layout horizontally: the closure draws into the
     /// left `width` pixels.
-    fn left_inset_panel(
-        &mut self,
-        id: &str,
-        width: f32,
-        f: &mut dyn FnMut(&mut dyn UiBuilder),
-    ) {
+    fn left_inset_panel(&mut self, id: &str, width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let _ = (id, width, f);
     }
 
     /// Inset sidebar on the right edge — counterpart of
     /// [`left_inset_panel`](Self::left_inset_panel).
-    fn right_inset_panel(
-        &mut self,
-        id: &str,
-        width: f32,
-        f: &mut dyn FnMut(&mut dyn UiBuilder),
-    ) {
+    fn right_inset_panel(&mut self, id: &str, width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let _ = (id, width, f);
     }
 

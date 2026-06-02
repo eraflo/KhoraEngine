@@ -15,7 +15,7 @@
 //! preview cards (texture image, mesh stats, audio duration) come in
 //! a follow-up.
 
-use khora_sdk::editor_ui::{UiTheme, FontFamilyHint, Icon, TextAlign, UiBuilder};
+use khora_sdk::editor_ui::{FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
 
 use super::header::paint_inspector_header;
 use crate::widgets::paint::{paint_icon, paint_text_size, with_alpha};
@@ -65,14 +65,11 @@ pub fn render_asset_pane(
         .join(rel_path.replace('/', std::path::MAIN_SEPARATOR_STR));
     let meta = std::fs::metadata(&abs).ok();
     let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-    let modified = meta
-        .as_ref()
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| {
-            t.duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .map(|d| d.as_secs())
-        });
+    let modified = meta.as_ref().and_then(|m| m.modified().ok()).and_then(|t| {
+        t.duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_secs())
+    });
     let extension = std::path::Path::new(rel_path)
         .extension()
         .and_then(|e| e.to_str())
@@ -111,14 +108,7 @@ pub fn render_asset_pane(
         theme,
     );
     row_y += 18.0;
-    paint_kv_row(
-        ui,
-        [row_x, row_y],
-        row_w,
-        "SIZE",
-        &format_size(size),
-        theme,
-    );
+    paint_kv_row(ui, [row_x, row_y], row_w, "SIZE", &format_size(size), theme);
     row_y += 18.0;
     paint_kv_row(
         ui,
@@ -195,11 +185,7 @@ pub fn paint_asset_header(
     rel_path: &str,
     theme: &UiTheme,
 ) -> f32 {
-    let name = rel_path
-        .rsplit('/')
-        .next()
-        .unwrap_or(rel_path)
-        .to_string();
+    let name = rel_path.rsplit('/').next().unwrap_or(rel_path).to_string();
     let extension = std::path::Path::new(rel_path)
         .extension()
         .and_then(|e| e.to_str())

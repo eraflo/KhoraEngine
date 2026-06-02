@@ -268,7 +268,11 @@ impl EngineApp for EditorApp {
         // receives the viewport color/depth targets (instead of the
         // swapchain) and agents paint into the texture displayed by the
         // egui viewport panel.
-        if let Some(rs_arc) = runtime.backends.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() {
+        if let Some(rs_arc) = runtime
+            .backends
+            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+            .cloned()
+        {
             if let Ok(mut rs) = rs_arc.lock() {
                 rs.set_render_to_viewport(true);
             }
@@ -306,7 +310,11 @@ impl EngineApp for EditorApp {
 
         self.last_view_info = None;
 
-        let Some(rs_arc) = runtime.backends.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() else {
+        let Some(rs_arc) = runtime
+            .backends
+            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+            .cloned()
+        else {
             return;
         };
         let Ok(mut rs) = rs_arc.lock() else { return };
@@ -402,7 +410,11 @@ impl EngineApp for EditorApp {
     }
 
     fn after_agents(&mut self, _world: &mut GameWorld, runtime: &Runtime) {
-        let Some(rs_arc) = runtime.backends.get::<Arc<Mutex<Box<dyn RenderSystem>>>>().cloned() else {
+        let Some(rs_arc) = runtime
+            .backends
+            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+            .cloned()
+        else {
             return;
         };
 
@@ -461,7 +473,10 @@ impl EditorApp {
             .backends
             .get::<Arc<Mutex<Box<dyn EditorOverlay>>>>()
             .cloned();
-        self.monitors = runtime.resources.get::<khora_sdk::MonitorRegistry>().cloned();
+        self.monitors = runtime
+            .resources
+            .get::<khora_sdk::MonitorRegistry>()
+            .cloned();
         self.agent_registry = runtime
             .resources
             .get::<Arc<Mutex<khora_sdk::AgentRegistry>>>()
@@ -602,7 +617,11 @@ impl EditorApp {
         let mut pvfs = match ProjectVfs::open(path.clone(), metrics) {
             Ok(p) => p,
             Err(e) => {
-                log::error!("Failed to open ProjectVfs for '{}': {:#}", path.display(), e);
+                log::error!(
+                    "Failed to open ProjectVfs for '{}': {:#}",
+                    path.display(),
+                    e
+                );
                 return;
             }
         };

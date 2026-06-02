@@ -165,7 +165,11 @@ pub fn browse_and_open_project(
             Some(Arc::new(Mutex::new(pvfs)))
         }
         Err(e) => {
-            log::error!("Failed to open ProjectVfs for '{}': {:#}", path.display(), e);
+            log::error!(
+                "Failed to open ProjectVfs for '{}': {:#}",
+                path.display(),
+                e
+            );
             None
         }
     }
@@ -256,7 +260,10 @@ fn apply_new_scene(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>
     }
 }
 
-fn apply_undo(editor_state: &Arc<Mutex<EditorState>>, command_history: &Arc<Mutex<CommandHistory>>) {
+fn apply_undo(
+    editor_state: &Arc<Mutex<EditorState>>,
+    command_history: &Arc<Mutex<CommandHistory>>,
+) {
     if let Ok(mut history) = command_history.lock() {
         if let Some(edit) = history.undo() {
             if let Ok(mut state) = editor_state.lock() {
@@ -266,7 +273,10 @@ fn apply_undo(editor_state: &Arc<Mutex<EditorState>>, command_history: &Arc<Mute
     }
 }
 
-fn apply_redo(editor_state: &Arc<Mutex<EditorState>>, command_history: &Arc<Mutex<CommandHistory>>) {
+fn apply_redo(
+    editor_state: &Arc<Mutex<EditorState>>,
+    command_history: &Arc<Mutex<CommandHistory>>,
+) {
     if let Ok(mut history) = command_history.lock() {
         if let Some(edit) = history.redo() {
             if let Ok(mut state) = editor_state.lock() {
@@ -489,10 +499,7 @@ pub fn process_pending_prefab_spawn(
     };
 
     let Some(pvfs_arc) = project_vfs else {
-        log::warn!(
-            "Prefab spawn requested ('{}') but no project is open",
-            rel
-        );
+        log::warn!("Prefab spawn requested ('{}') but no project is open", rel);
         return;
     };
 

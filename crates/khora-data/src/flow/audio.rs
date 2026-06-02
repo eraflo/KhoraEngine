@@ -33,7 +33,9 @@ use khora_core::math::Vec3;
 use khora_core::Runtime;
 
 use crate::assets::SoundData;
-use crate::ecs::{AudioListener, AudioSource, GlobalTransform, PlaybackState, SemanticDomain, World};
+use crate::ecs::{
+    AudioListener, AudioSource, GlobalTransform, PlaybackState, SemanticDomain, World,
+};
 use crate::flow::{Flow, Selection};
 use crate::register_flow;
 use khora_core::asset::AssetHandle;

@@ -15,7 +15,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::editor_ui::{EditorState, UiTheme, InspectedEntity, PropertyEdit, UiBuilder};
+use khora_sdk::editor_ui::{EditorState, InspectedEntity, PropertyEdit, UiBuilder, UiTheme};
 use khora_sdk::prelude::ecs::EntityId;
 use khora_sdk::CommandHistory;
 
@@ -40,7 +40,12 @@ pub struct InspectorTabContext<'a> {
 pub trait InspectorTab: Send + Sync {
     fn id(&self) -> &'static str;
     fn label(&self) -> &str;
-    fn render(&mut self, ui: &mut dyn UiBuilder, body_rect: [f32; 4], ctx: &mut InspectorTabContext<'_>);
+    fn render(
+        &mut self,
+        ui: &mut dyn UiBuilder,
+        body_rect: [f32; 4],
+        ctx: &mut InspectorTabContext<'_>,
+    );
 }
 
 /// Default tab — component cards plus "+ Add Component" menu.

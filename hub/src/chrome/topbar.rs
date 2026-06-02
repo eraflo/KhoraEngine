@@ -66,7 +66,10 @@ pub fn show_topbar(app: &mut HubApp, ui: &mut dyn UiBuilder) {
             ui.paint_rect_stroke(pos, [w, h], rgba(pal::BORDER), 5.0, 1.0);
             let text_size = ui.measure_text(label, 12.0, FontFamilyHint::Proportional);
             ui.paint_text_styled(
-                [pos[0] + (w - text_size[0]) * 0.5, pos[1] + (h - text_size[1]) * 0.5],
+                [
+                    pos[0] + (w - text_size[0]) * 0.5,
+                    pos[1] + (h - text_size[1]) * 0.5,
+                ],
                 label,
                 12.0,
                 rgba(pal::TEXT_DIM),
@@ -84,10 +87,18 @@ pub fn show_topbar(app: &mut HubApp, ui: &mut dyn UiBuilder) {
 fn paint_brand_pill(app: &HubApp, ui: &mut dyn UiBuilder, panel_rect: [f32; 4]) {
     let total_w = 220.0;
     let height = 26.0;
-    let pos = [panel_rect[0] + 14.0, panel_rect[1] + (panel_rect[3] - height) * 0.5];
+    let pos = [
+        panel_rect[0] + 14.0,
+        panel_rect[1] + (panel_rect[3] - height) * 0.5,
+    ];
     let pill_radius = (height * 0.5).floor();
 
-    ui.paint_rect_filled(pos, [total_w, height], rgba(tint(pal::BG, 0.55)), pill_radius);
+    ui.paint_rect_filled(
+        pos,
+        [total_w, height],
+        rgba(tint(pal::BG, 0.55)),
+        pill_radius,
+    );
     ui.paint_rect_stroke(
         pos,
         [total_w, height],

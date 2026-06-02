@@ -14,7 +14,7 @@
 //! adding a `match_shape` predicate and a `render_*` function and wiring
 //! them in `walker::render_object`.
 
-use khora_sdk::editor_ui::{UiTheme, UiBuilder};
+use khora_sdk::editor_ui::{UiBuilder, UiTheme};
 use serde_json::Value;
 
 // ─── shape detection ────────────────────────────────────────────────

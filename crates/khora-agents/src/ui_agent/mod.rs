@@ -93,8 +93,10 @@ impl Agent for UiAgent {
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
         // Build the layout lane if a layout system is registered.
         if self.layout_lane.is_none() {
-            if let Some(layout_system_svc) =
-                context.runtime.backends.get::<Arc<Mutex<Box<dyn LayoutSystem>>>>()
+            if let Some(layout_system_svc) = context
+                .runtime
+                .backends
+                .get::<Arc<Mutex<Box<dyn LayoutSystem>>>>()
             {
                 self.layout_lane = Some(Box::new(StandardUiLane::new(layout_system_svc.clone())));
             }
@@ -106,7 +108,11 @@ impl Agent for UiAgent {
         }
         if let (Some(lane), Some(device)) = (
             self.render_lane.as_ref(),
-            context.runtime.backends.get::<Arc<dyn GraphicsDevice>>().cloned(),
+            context
+                .runtime
+                .backends
+                .get::<Arc<dyn GraphicsDevice>>()
+                .cloned(),
         ) {
             let mut init_ctx = LaneContext::new();
             init_ctx.insert(device);
@@ -118,7 +124,11 @@ impl Agent for UiAgent {
         // Lazily allocate the GPU texture atlas inside the UiImageAtlas
         // resource (one-shot, idempotent).
         if let (Some(atlas_res), Some(device)) = (
-            context.runtime.resources.get::<Arc<UiImageAtlas>>().cloned(),
+            context
+                .runtime
+                .resources
+                .get::<Arc<UiImageAtlas>>()
+                .cloned(),
             context
                 .runtime
                 .backends

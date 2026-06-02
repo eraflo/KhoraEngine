@@ -96,6 +96,23 @@ pub enum AdaptationMode {
     },
 }
 
+/// One arbitration tick's outcome: the strategy issued to each agent, in
+/// issuance order.
+pub type TickDecisions = Vec<(AgentId, StrategyId)>;
+
+/// An ordered, replayable recording of GORNA's per-tick decisions.
+///
+/// Arbitration is deterministic (no RNG), so recording the issued strategy per
+/// agent per tick and replaying it reproduces a session's adaptation
+/// **bit-for-bit** — for QA, network lockstep, and bug reproduction. Recorded by
+/// the DCC while recording is enabled; fed back to drive issuance from the trace
+/// instead of from live negotiation (the `Replay` capability).
+#[derive(Debug, Clone, Default)]
+pub struct DecisionTrace {
+    /// Per-tick issued decisions, in arbitration order.
+    pub ticks: Vec<TickDecisions>,
+}
+
 /// Hard resource constraints the DCC imposes on an Agent during negotiation.
 ///
 /// These represent non-negotiable limits that any proposed strategy must respect.

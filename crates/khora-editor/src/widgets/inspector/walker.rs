@@ -23,7 +23,7 @@
 //! | `Array<f64>` (3 or 4)                 | falls through to Vec3 / colour |
 //! | `Null`                                | dim "null" label |
 
-use khora_sdk::editor_ui::{UiTheme, UiBuilder};
+use khora_sdk::editor_ui::{UiBuilder, UiTheme};
 use serde_json::Value;
 
 use crate::widgets::enum_variants::editable_variants;
@@ -35,11 +35,7 @@ use super::renderers::{
 
 /// Renders a top-level component value. Returns true if the user mutated
 /// any leaf — the caller queues a `SetComponentJson` edit in that case.
-pub fn render_value(
-    ui: &mut dyn UiBuilder,
-    value: &mut Value,
-    theme: &UiTheme,
-) -> bool {
+pub fn render_value(ui: &mut dyn UiBuilder, value: &mut Value, theme: &UiTheme) -> bool {
     match value {
         Value::Object(map) => render_object(ui, map, theme),
         Value::Array(arr) => render_array(ui, "", arr, theme),
@@ -126,12 +122,7 @@ fn render_object(
 
 /// Renders a single labelled row. Picks a widget by leaf type or
 /// recurses for nested structure.
-fn render_field(
-    ui: &mut dyn UiBuilder,
-    label: &str,
-    value: &mut Value,
-    theme: &UiTheme,
-) -> bool {
+fn render_field(ui: &mut dyn UiBuilder, label: &str, value: &mut Value, theme: &UiTheme) -> bool {
     match value {
         Value::Bool(b) => {
             let mut local = *b;
@@ -180,12 +171,7 @@ fn render_field(
 /// Generic array row. Numeric arrays of length 3 / 4 are treated like
 /// Vec3 / Vec4 with axis colours; everything else falls back to "[i] = …"
 /// rows.
-fn render_array(
-    ui: &mut dyn UiBuilder,
-    label: &str,
-    arr: &mut [Value],
-    theme: &UiTheme,
-) -> bool {
+fn render_array(ui: &mut dyn UiBuilder, label: &str, arr: &mut [Value], theme: &UiTheme) -> bool {
     if arr.iter().all(|v| v.is_number()) {
         match arr.len() {
             3 => return render_numeric_triple(ui, label, arr),

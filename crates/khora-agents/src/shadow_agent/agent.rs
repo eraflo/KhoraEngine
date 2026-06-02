@@ -42,9 +42,7 @@ use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 use khora_data::render::RenderWorld;
 use khora_data::GpuCache;
-use khora_lanes::render_lane::shadows_lane::{
-    LOW_RES_STRATEGY_NAME, STANDARD_STRATEGY_NAME,
-};
+use khora_lanes::render_lane::shadows_lane::{LOW_RES_STRATEGY_NAME, STANDARD_STRATEGY_NAME};
 use khora_lanes::render_lane::{LowResShadowsLane, StandardShadowsLane};
 
 const COST_TO_MS_SCALE: f32 = 5.0;
@@ -173,7 +171,12 @@ impl Agent for ShadowAgent {
         // Strategies are cheap to keep idle — only the selected lane
         // executes per frame, but each one needs its own resources ready
         // when the agent eventually picks it.
-        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>().cloned() else {
+        let Some(device_arc) = context
+            .runtime
+            .backends
+            .get::<Arc<dyn GraphicsDevice>>()
+            .cloned()
+        else {
             log::warn!("ShadowAgent: graphics device unavailable in on_initialize");
             return;
         };
@@ -219,7 +222,11 @@ impl Agent for ShadowAgent {
             return;
         };
 
-        let frame_ctx = context.runtime.resources.get::<Arc<FrameContext>>().cloned();
+        let frame_ctx = context
+            .runtime
+            .resources
+            .get::<Arc<FrameContext>>()
+            .cloned();
 
         // Encode shadow passes into a standalone command buffer.
         let mut encoder = device.create_command_encoder(Some("Shadow Command Encoder"));
@@ -275,9 +282,7 @@ impl Agent for ShadowAgent {
         if let Some(cmd_buf) = encoder.finish() {
             device.submit_command_buffer(cmd_buf);
         } else {
-            log::error!(
-                "ShadowAgent: encoder.finish() returned None — skipping shadow submission"
-            );
+            log::error!("ShadowAgent: encoder.finish() returned None — skipping shadow submission");
         }
 
         self.last_frame_time = frame_start.elapsed();
@@ -387,10 +392,7 @@ mod tests {
         agent.apply_budget(budget(StrategyId::LowPower));
         assert_eq!(agent.strategy, ShadowStrategy::LowRes);
         assert_eq!(agent.strategy.lane_name(), LOW_RES_STRATEGY_NAME);
-        assert_eq!(
-            agent.report_status().current_strategy,
-            StrategyId::LowPower
-        );
+        assert_eq!(agent.report_status().current_strategy, StrategyId::LowPower);
     }
 
     #[test]

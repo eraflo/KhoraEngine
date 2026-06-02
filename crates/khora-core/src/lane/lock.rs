@@ -120,7 +120,12 @@ mod tests {
         })
         .join();
         let err = mutex_lock(&m, "poisoned").unwrap_err();
-        assert!(matches!(err, LaneError::LockPoisoned { context: "poisoned" }));
+        assert!(matches!(
+            err,
+            LaneError::LockPoisoned {
+                context: "poisoned"
+            }
+        ));
     }
 
     #[test]

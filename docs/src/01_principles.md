@@ -74,7 +74,7 @@ flowchart LR
 | **3. Allocation** | DCC grants a final budget to each agent (may be less than requested) |
 | **4. Adaptation** | Agent selects a less resource-intensive strategy to stay within budget |
 
-GORNA v0.3 is fully operational. The DCC runs nine heuristics each tick (Phase, Thermal, Battery, Frame Time, Stutter, Trend, CPU Pressure, GPU Pressure, Death Spiral). The full protocol lives in [GORNA](./08_gorna.md).
+GORNA v0.3 is fully operational. The DCC runs nine heuristics each tick (Phase, Thermal, Battery, Frame Time, Stutter, Trend, CPU Pressure, GPU Pressure, Death Spiral) to shape a single frame-time target, then a closed-loop **PID controller** regulates the global budget multiplier so the *measured* frame time tracks that target (with a hard safety cap for Critical thermal/battery/memory). The full protocol lives in [GORNA](./08_gorna.md).
 
 ### 4. Adaptive Game Data Flows — the living *representation*
 

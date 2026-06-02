@@ -230,10 +230,7 @@ impl SimpleUnlitLane {
     ) -> RenderPipelineId {
         // Lock-free read — `OnceLock::get()` returns a borrow without
         // any synchronization once the cell has been initialized.
-        self.pipeline
-            .get()
-            .copied()
-            .unwrap_or(RenderPipelineId(0))
+        self.pipeline.get().copied().unwrap_or(RenderPipelineId(0))
     }
 
     fn render(
@@ -308,10 +305,8 @@ impl SimpleUnlitLane {
         };
 
         // Lock the model ring buffer and advance it for this frame
-        let mut model_ring_lock = crate::lock_or_log!(
-            self.model_ring.lock(),
-            "SimpleUnlitLane::render model_ring"
-        );
+        let mut model_ring_lock =
+            crate::lock_or_log!(self.model_ring.lock(), "SimpleUnlitLane::render model_ring");
         let model_ring = match model_ring_lock.as_mut() {
             Some(mr) => {
                 mr.advance();
@@ -594,7 +589,11 @@ impl SimpleUnlitLane {
                 ))
             );
             registry
-                .create_module(device, "khora::pipelines::unlit", Some("simple_unlit_shader"))
+                .create_module(
+                    device,
+                    "khora::pipelines::unlit",
+                    Some("simple_unlit_shader"),
+                )
                 .map_err(|e| {
                     khora_core::renderer::error::RenderError::ResourceError(
                         khora_core::renderer::ResourceError::BackendError(format!(
@@ -739,23 +738,13 @@ impl SimpleUnlitLane {
     }
 
     fn on_gpu_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
-        if let Some(ring) = self
-            .camera_ring
-            .lock()
-            .ok()
-            .and_then(|mut g| g.take())
-        {
+        if let Some(ring) = self.camera_ring.lock().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
         if let Some(ring) = self.model_ring.lock().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
-        if let Some(ring) = self
-            .material_ring
-            .lock()
-            .ok()
-            .and_then(|mut g| g.take())
-        {
+        if let Some(ring) = self.material_ring.lock().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
         // `OnceLock::get()` is lock-free; the pipeline is only destroyed

@@ -14,7 +14,7 @@
 
 //! Asset-browser tile widget — type-coloured gradient thumbnails.
 
-use khora_sdk::editor_ui::{UiTheme, FontFamilyHint, Icon, TextAlign, UiBuilder};
+use khora_sdk::editor_ui::{FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
 
 use super::paint::{paint_icon, paint_text_size, with_alpha};
 

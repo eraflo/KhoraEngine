@@ -60,9 +60,7 @@ fn init_gpu_resources(
             BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
             BindingResource, BindingType, BufferBinding, BufferBindingType,
         },
-        pipeline::enums::{
-            BlendFactor, BlendOperation, CompareFunction, PrimitiveTopology,
-        },
+        pipeline::enums::{BlendFactor, BlendOperation, CompareFunction, PrimitiveTopology},
         pipeline::state::{
             BlendComponentDescriptor, BlendStateDescriptor, ColorWrites, DepthBiasState,
             StencilFaceState,
@@ -140,10 +138,12 @@ fn init_gpu_resources(
     };
 
     let pipeline_layout_id = device
-        .create_pipeline_layout(&khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
-            label: Some(Cow::Borrowed("Grid Pipeline Layout")),
-            bind_group_layouts: &[camera_layout],
-        })
+        .create_pipeline_layout(
+            &khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
+                label: Some(Cow::Borrowed("Grid Pipeline Layout")),
+                bind_group_layouts: &[camera_layout],
+            },
+        )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
     // Alpha blend — antialiased grid lines fade against the scene.
@@ -337,7 +337,14 @@ impl Lane for GridLane {
             return Ok(());
         };
 
-        render_grid(self, device.as_ref(), encoder, color_target, depth_target, &view);
+        render_grid(
+            self,
+            device.as_ref(),
+            encoder,
+            color_target,
+            depth_target,
+            &view,
+        );
         Ok(())
     }
 

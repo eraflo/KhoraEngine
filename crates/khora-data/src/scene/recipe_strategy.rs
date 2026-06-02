@@ -116,8 +116,9 @@ pub fn instantiate_subtree(
     world: &mut crate::ecs::World,
     recipe_bytes: &[u8],
 ) -> Result<EntityId, DeserializationError> {
-    let (recipe, _): (SceneRecipe, _) = bincode::decode_from_slice(recipe_bytes, config::standard())
-        .map_err(|e| DeserializationError::InvalidFormat(e.to_string()))?;
+    let (recipe, _): (SceneRecipe, _) =
+        bincode::decode_from_slice(recipe_bytes, config::standard())
+            .map_err(|e| DeserializationError::InvalidFormat(e.to_string()))?;
 
     let mut id_map = HashMap::<EntityId, EntityId>::new();
     let mut new_root: Option<EntityId> = None;

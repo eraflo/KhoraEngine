@@ -127,8 +127,12 @@ impl Flow for ShadowFlow {
                         LightType::Spot(s) => transform.0.rotation() * s.direction,
                         LightType::Point(_) => unreachable!(),
                     };
-                    let view_proj =
-                        compute_single_shadow_view_proj(&light.light_type, position, direction, camera);
+                    let view_proj = compute_single_shadow_view_proj(
+                        &light.light_type,
+                        position,
+                        direction,
+                        camera,
+                    );
                     matrices.insert(light_index, ShadowMatrices::Single(view_proj));
                 }
             }

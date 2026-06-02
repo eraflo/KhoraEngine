@@ -66,7 +66,7 @@ impl PackManifest {
         // determinism across builds. Sorted by BLAKE3 digest because
         // `AssetUUID` doesn't implement `Ord` and the digest is already
         // stable + total.
-        entries.sort_by(|a, b| a.blake3.cmp(&b.blake3));
+        entries.sort_by_key(|a| a.blake3);
         let cfg = bincode::config::standard();
         bincode::serde::encode_to_vec(&entries, cfg)
             .map_err(|e| anyhow!("Failed to encode manifest: {}", e))

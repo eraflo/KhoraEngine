@@ -498,18 +498,12 @@ impl ShadowsLaneState {
         }
         if let Some(layout) = self.camera_layout.write().ok().and_then(|mut g| g.take()) {
             if let Err(e) = device.destroy_bind_group_layout(layout) {
-                log::warn!(
-                    "ShadowsLaneState: failed to destroy camera layout: {:?}",
-                    e
-                );
+                log::warn!("ShadowsLaneState: failed to destroy camera layout: {:?}", e);
             }
         }
         if let Some(layout) = self.model_layout.write().ok().and_then(|mut g| g.take()) {
             if let Err(e) = device.destroy_bind_group_layout(layout) {
-                log::warn!(
-                    "ShadowsLaneState: failed to destroy model layout: {:?}",
-                    e
-                );
+                log::warn!("ShadowsLaneState: failed to destroy model layout: {:?}", e);
             }
         }
         self.atlas_2d.destroy(device);

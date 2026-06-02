@@ -16,7 +16,11 @@ use khora_sdk::tool_ui::{FontFamilyHint, LinearRgba, TextAlign, UiBuilder};
 /// Paint the global banner overlay near the top of the central area.
 pub fn paint_banner(ui: &mut dyn UiBuilder, banner: &Banner) {
     let r = ui.panel_rect();
-    let bg = if banner.is_error { pal::ERROR } else { pal::PRIMARY };
+    let bg = if banner.is_error {
+        pal::ERROR
+    } else {
+        pal::PRIMARY
+    };
     let h = 32.0;
     let w = (r[2] - 80.0).min(680.0);
     let pos = [r[0] + (r[2] - w) * 0.5, r[1] + 56.0];

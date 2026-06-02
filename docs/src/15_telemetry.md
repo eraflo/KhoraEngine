@@ -72,7 +72,7 @@ static GLOBAL: SaaTrackingAllocator = SaaTrackingAllocator::new(std::alloc::Syst
 
 It records counts and sizes into global atomic counters (`khora_core::memory`). The `MemoryMonitor` (infra) reads those counters and publishes `memory.current_bytes` / `memory.bytes_allocated_lifetime` / `memory.net_allocations` through the telemetry pipeline into the DCC's metric store. The DCC turns them into **decisions**, not just a readout:
 
-- **Memory pressure → budget.** When a system-RAM budget is set (`DccConfig::memory_budget_bytes`), the DCC derives `Context::memory_pressure` and degrades the global budget multiplier as the ceiling approaches — a first-class resource signal alongside thermal/CPU/GPU.
+- **Memory pressure → budget.** When a system-RAM budget is set (`DccConfig::memory_budget_bytes`), the DCC derives `Context::memory_pressure` — a first-class resource signal alongside thermal/CPU/GPU. Near the ceiling it imposes a hard safety cap on the global budget multiplier (the frame-time PID owns the multiplier otherwise).
 - **Allocation churn → glass-box.** High volatility of resident bytes (coefficient of variation per window) surfaces an alert flagging a likely per-frame allocation hotspot.
 - **AGDF repack-headroom gate.** The (deferred) layout-repack cost/benefit gate reads `memory_pressure` so it declines a repack — which transiently doubles a column — under tight memory.
 

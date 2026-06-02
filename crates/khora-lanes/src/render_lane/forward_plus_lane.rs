@@ -588,7 +588,8 @@ impl ForwardPlusLane {
 
         if let Some(svp_buffer) = resources.shadow_view_projs_buffer {
             if !shadow_view_projs.is_empty() {
-                let _ = device.write_buffer(svp_buffer, 0, bytemuck::cast_slice(&shadow_view_projs));
+                let _ =
+                    device.write_buffer(svp_buffer, 0, bytemuck::cast_slice(&shadow_view_projs));
             }
         }
 
@@ -642,8 +643,7 @@ impl ForwardPlusLane {
             ring.advance();
         }
 
-        let gpu_mesh_assets =
-            crate::lock_or_log!(gpu_meshes.read(), "ForwardPlusLane::render");
+        let gpu_mesh_assets = crate::lock_or_log!(gpu_meshes.read(), "ForwardPlusLane::render");
         for extracted_mesh in &render_world.meshes {
             if let Some(gpu_mesh_handle) = gpu_mesh_assets.get(&extracted_mesh.cpu_mesh_uuid) {
                 // Compute Matrices
@@ -856,8 +856,11 @@ impl ForwardPlusLane {
         render_world: &RenderWorld,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) -> f32 {
-        let gpu_mesh_assets =
-            crate::lock_or_log!(gpu_meshes.read(), "ForwardPlusLane::estimate_render_cost", 0.0);
+        let gpu_mesh_assets = crate::lock_or_log!(
+            gpu_meshes.read(),
+            "ForwardPlusLane::estimate_render_cost",
+            0.0
+        );
 
         let mut total_triangles = 0u32;
         let mut draw_call_count = 0u32;

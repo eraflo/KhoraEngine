@@ -127,7 +127,12 @@ impl Agent for AudioAgent {
     fn execute(&mut self, context: &mut EngineContext<'_>) {
         self.frame_count += 1;
 
-        let Some(mix_bus) = context.runtime.resources.get::<Arc<dyn AudioMixBus>>().cloned() else {
+        let Some(mix_bus) = context
+            .runtime
+            .resources
+            .get::<Arc<dyn AudioMixBus>>()
+            .cloned()
+        else {
             log::debug!("AudioAgent: no AudioMixBus in resources, skipping mix");
             return;
         };

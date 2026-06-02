@@ -269,13 +269,19 @@ mod tests {
             })
             .collect();
 
-        assert_eq!(by_path.get("textures/foo.png").map(String::as_str), Some("texture"));
+        assert_eq!(
+            by_path.get("textures/foo.png").map(String::as_str),
+            Some("texture")
+        );
         assert_eq!(
             by_path.get("scenes/default.kscene").map(String::as_str),
             Some("scene")
         );
         // Unknown extension still flows into the index.
-        assert_eq!(by_path.get("docs/README.md").map(String::as_str), Some("md"));
+        assert_eq!(
+            by_path.get("docs/README.md").map(String::as_str),
+            Some("md")
+        );
         // No-extension file too — bucketed as "blob".
         assert_eq!(by_path.get("notes").map(String::as_str), Some("blob"));
         // Scratch files dropped.

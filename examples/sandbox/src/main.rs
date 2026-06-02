@@ -24,11 +24,11 @@
 //! - Shift: Move down
 
 use anyhow::Result;
+use khora_sdk::khora_core::platform::{InputBinding, InputMap};
 use khora_sdk::prelude::math::{Quaternion, Vec3};
 use khora_sdk::prelude::*;
 use khora_sdk::run_winit;
 use khora_sdk::winit_adapters::WinitWindowProvider;
-use khora_sdk::khora_core::platform::{InputBinding, InputMap};
 use khora_sdk::{
     AgentProvider, AudioDevice, AudioMixBus, CpalAudioDevice, DccService, DefaultMixBus, EngineApp,
     GameWorld, InputEvent, KeyCode, LayoutSystem, PhaseProvider, PhysicsProvider,

@@ -192,7 +192,12 @@ impl Agent for RenderAgent {
         // One-shot lane GPU initialization.  We fetch the device from the
         // service registry, drive lane.on_initialize() once, and drop the
         // device handle — the agent does not store it.
-        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>().cloned() else {
+        let Some(device_arc) = context
+            .runtime
+            .backends
+            .get::<Arc<dyn GraphicsDevice>>()
+            .cloned()
+        else {
             log::warn!("RenderAgent: graphics device unavailable in on_initialize");
             return;
         };
@@ -232,7 +237,11 @@ impl Agent for RenderAgent {
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
 
-        let Some(rs_arc) = context.runtime.backends.get::<Arc<Mutex<Box<dyn RenderSystem>>>>() else {
+        let Some(rs_arc) = context
+            .runtime
+            .backends
+            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+        else {
             return;
         };
         let render_system: Arc<Mutex<Box<dyn RenderSystem>>> = (*rs_arc).clone();

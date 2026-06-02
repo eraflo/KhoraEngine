@@ -13,9 +13,7 @@
 //! [`UiBuilder`] paint primitives — no direct egui calls.
 
 use crate::theme::pal;
-use khora_sdk::tool_ui::{
-    FontFamilyHint, Interaction, LinearRgba, TextAlign, UiBuilder,
-};
+use khora_sdk::tool_ui::{FontFamilyHint, Interaction, LinearRgba, TextAlign, UiBuilder};
 
 use super::theme::tint;
 
@@ -65,12 +63,7 @@ pub fn paint_diamond_outline(
 
 /// Legacy alias.
 #[inline]
-pub fn paint_khora_star(
-    ui: &mut dyn UiBuilder,
-    center: [f32; 2],
-    size: f32,
-    color: LinearRgba,
-) {
+pub fn paint_khora_star(ui: &mut dyn UiBuilder, center: [f32; 2], size: f32, color: LinearRgba) {
     paint_diamond_filled(ui, center, size, color);
 }
 
@@ -90,7 +83,12 @@ pub fn paint_vertical_gradient(
         let t = i as f32 / (steps - 1) as f32;
         let color = LinearRgba::lerp(top, bottom, t);
         let y = rect[1] + strip_h * i as f32;
-        ui.paint_rect_filled([rect[0], y], [rect[2], strip_h.ceil() + 0.6], rgba(color), 0.0);
+        ui.paint_rect_filled(
+            [rect[0], y],
+            [rect[2], strip_h.ceil() + 0.6],
+            rgba(color),
+            0.0,
+        );
     }
 }
 
@@ -103,13 +101,7 @@ pub fn paint_separator(ui: &mut dyn UiBuilder, color: LinearRgba) {
 }
 
 /// Draws a vertical hairline at `x` between `top` and `bottom`.
-pub fn paint_v_hairline(
-    ui: &mut dyn UiBuilder,
-    x: f32,
-    top: f32,
-    bottom: f32,
-    color: LinearRgba,
-) {
+pub fn paint_v_hairline(ui: &mut dyn UiBuilder, x: f32, top: f32, bottom: f32, color: LinearRgba) {
     ui.paint_line([x, top], [x, bottom], rgba(color), 1.0);
 }
 
@@ -192,7 +184,12 @@ pub fn field_label(ui: &mut dyn UiBuilder, text: &str) {
 // ── Tabs & nav ──────────────────────────────────────────────────────
 
 /// Sidebar nav button — primary-tinted bg when active.
-pub fn sidebar_nav_btn(ui: &mut dyn UiBuilder, salt: &str, label: &str, active: bool) -> Interaction {
+pub fn sidebar_nav_btn(
+    ui: &mut dyn UiBuilder,
+    salt: &str,
+    label: &str,
+    active: bool,
+) -> Interaction {
     let w = 180.0;
     let h = 30.0;
     let r = ui.allocate_size([w, h]);

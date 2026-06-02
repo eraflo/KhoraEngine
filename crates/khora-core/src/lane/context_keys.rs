@@ -81,4 +81,3 @@ pub struct ShadowComparisonSampler(pub SamplerId);
 /// Fixed timestep for the current physics step.
 #[derive(Debug, Clone, Copy)]
 pub struct PhysicsDeltaTime(pub f32);
-

@@ -14,7 +14,7 @@
 //
 //! Field-level controls used inside Inspector cards and panel toolbars.
 
-use khora_sdk::editor_ui::{UiTheme, UiBuilder};
+use khora_sdk::editor_ui::{UiBuilder, UiTheme};
 
 use super::paint::with_alpha;
 

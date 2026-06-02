@@ -211,11 +211,9 @@ impl AssetIo for PackLoader {
                 match compression {
                     CompressionKind::None => Ok(buffer),
                     CompressionKind::Lz4 => {
-                        let decompressed = lz4_flex::block::decompress(
-                            &buffer,
-                            *uncompressed_size as usize,
-                        )
-                        .map_err(|e| anyhow::anyhow!("LZ4 decompress failed: {}", e))?;
+                        let decompressed =
+                            lz4_flex::block::decompress(&buffer, *uncompressed_size as usize)
+                                .map_err(|e| anyhow::anyhow!("LZ4 decompress failed: {}", e))?;
                         if decompressed.len() != *uncompressed_size as usize {
                             bail!(
                                 "Pack: LZ4-decompressed size {} != recorded uncompressed_size {}",

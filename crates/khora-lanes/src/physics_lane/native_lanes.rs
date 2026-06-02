@@ -148,10 +148,7 @@ impl NativeBroadphaseLane {
                 sink.pairs = all_pairs;
             }
             Err(e) => {
-                log::error!(
-                    "NativeBroadphaseLane: collision-pairs sink poisoned: {}",
-                    e
-                );
+                log::error!("NativeBroadphaseLane: collision-pairs sink poisoned: {}", e);
             }
         }
     }
@@ -327,10 +324,7 @@ impl SequentialImpulseSolver {
         let candidates: Vec<CollisionPair> = match pairs_sink.lock() {
             Ok(g) => g.pairs.clone(),
             Err(e) => {
-                log::error!(
-                    "NativeSolverLane: collision-pairs sink poisoned: {}",
-                    e
-                );
+                log::error!("NativeSolverLane: collision-pairs sink poisoned: {}", e);
                 return;
             }
         };

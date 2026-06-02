@@ -47,7 +47,13 @@ pub fn show_status_bar(app: &HubApp, ui: &mut dyn UiBuilder) {
     );
     x += 50.0;
 
-    paint_v_hairline(ui, x, r[1] + 6.0, r[1] + r[3] - 6.0, tint(pal::SEPARATOR, 0.55));
+    paint_v_hairline(
+        ui,
+        x,
+        r[1] + 6.0,
+        r[1] + r[3] - 6.0,
+        tint(pal::SEPARATOR, 0.55),
+    );
     x += 12.0;
     let proj_label = format!("{} projects", app.config.recent_projects.len());
     ui.paint_text_styled(
@@ -60,7 +66,13 @@ pub fn show_status_bar(app: &HubApp, ui: &mut dyn UiBuilder) {
     );
     x += 90.0;
 
-    paint_v_hairline(ui, x, r[1] + 6.0, r[1] + r[3] - 6.0, tint(pal::SEPARATOR, 0.55));
+    paint_v_hairline(
+        ui,
+        x,
+        r[1] + 6.0,
+        r[1] + r[3] - 6.0,
+        tint(pal::SEPARATOR, 0.55),
+    );
     x += 12.0;
     let total_engines = app.config.engines.len() + usize::from(app.config.dev_engine().is_some());
     ui.paint_text_styled(

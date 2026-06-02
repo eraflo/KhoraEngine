@@ -121,19 +121,16 @@ const PIPELINE_MODULES: &[(&str, &str)] = &[
         "khora::pipelines::wireframe",
         include_str!("shaders/pipelines/wireframe.wgsl"),
     ),
-
     // Shadow depth-pass — uses `lib/std/{camera,model}` via `#import`.
     (
         "khora::pipelines::shadow_pass",
         include_str!("shaders/pipelines/shadow_pass.wgsl"),
     ),
-
     // Compute — light culling for Forward+. Self-contained.
     (
         "khora::pipelines::light_culling",
         include_str!("shaders/pipelines/light_culling.wgsl"),
     ),
-
     // UI / editor overlay — self-contained, validated through naga at
     // boot for consistency (no lib reuse currently).
     (

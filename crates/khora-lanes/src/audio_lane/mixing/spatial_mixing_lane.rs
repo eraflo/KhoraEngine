@@ -256,7 +256,10 @@ mod tests {
             listener_position: Some(Vec3::ZERO),
             listener_transform: Some(AffineTransform::IDENTITY),
             sources: vec![AudioSourceSnapshot {
-                entity: EntityId { index: 0, generation: 0 },
+                entity: EntityId {
+                    index: 0,
+                    generation: 0,
+                },
                 handle: create_test_sound(1024, 44100),
                 position: Vec3::new(10.0, 0.0, 0.0),
                 volume: 1.0,
@@ -311,7 +314,10 @@ mod tests {
             listener_position: None,
             listener_transform: None,
             sources: vec![AudioSourceSnapshot {
-                entity: EntityId { index: 0, generation: 0 },
+                entity: EntityId {
+                    index: 0,
+                    generation: 0,
+                },
                 handle: create_test_sound(1024, 44100),
                 position: Vec3::new(10.0, 0.0, 0.0),
                 volume: 1.0,
@@ -349,7 +355,10 @@ mod tests {
             listener_position: None,
             listener_transform: None,
             sources: vec![AudioSourceSnapshot {
-                entity: EntityId { index: 0, generation: 0 },
+                entity: EntityId {
+                    index: 0,
+                    generation: 0,
+                },
                 handle: create_test_sound(64, 44100),
                 position: Vec3::ZERO,
                 volume: 1.0,

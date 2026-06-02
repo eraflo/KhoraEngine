@@ -8,7 +8,7 @@
 
 //! Inspector header — composite widget used by the Properties panel.
 
-use khora_sdk::editor_ui::{UiTheme, FontFamilyHint, Icon, TextAlign, UiBuilder};
+use khora_sdk::editor_ui::{FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
 
 use crate::widgets::paint::{paint_icon, paint_text_size, with_alpha};
 

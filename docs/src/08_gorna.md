@@ -103,9 +103,9 @@ The DCC's heuristic engine runs nine heuristics each tick:
 
 | Heuristic | Input | Output |
 |---|---|---|
-| **Phase** | Current `EnginePhase` (Boot, Menu, Simulation, Background) | Multiplier favoring relevant subsystems |
-| **Thermal** | GPU/CPU temperature | Reduce budget multiplier when hot |
-| **Battery** | Battery level + AC state | Reduce budget on low battery, prefer LowPower strategies |
+| **Phase** | Current `EnginePhase` (Boot, Menu, Simulation, Background) | Relax/tighten the frame-time target for the phase |
+| **Thermal** | GPU/CPU temperature | Relax the frame-time target when hot (e.g. 30 FPS while throttling); hard safety cap on Critical |
+| **Battery** | Battery level + AC state | Relax the target on low battery, prefer LowPower; hard safety cap on Critical |
 | **Frame Time** | Recent frame durations | Tighten budgets if frames are over target |
 | **Stutter** | Frame time variance | Penalize strategies that produce inconsistent timings |
 | **Trend** | Frame time slope | Anticipate degradation before it triggers a stutter |
@@ -113,7 +113,26 @@ The DCC's heuristic engine runs nine heuristics each tick:
 | **GPU Pressure** | GPU utilization | Rebalance toward GPU-light strategies |
 | **Death Spiral** | Consecutive over-budget frames | Force LowPower strategy until recovery |
 
-Heuristics are independent. Each emits a multiplier or a recommendation; the arbitrator combines them. New heuristics can be added without touching existing ones — the engine's adaptive intelligence grows by accretion.
+Heuristics are independent. Each emits a target adjustment or a recommendation; the arbitrator combines them. New heuristics can be added without touching existing ones — the engine's adaptive intelligence grows by accretion.
+
+### Budget multiplier — a closed-loop PID
+
+The heuristics above shape a single **frame-time target** (`AnalysisReport::suggested_latency_ms`):
+thermal, battery, and phase *relax* it (a hot device aims for 30 FPS rather than 60), while the
+cost-model forecast can *tighten* it preemptively. They no longer scale the budget directly.
+
+The actual `global_budget_multiplier` — the scalar applied to every agent's frame budget — is driven
+by a **PID controller** (`khora_core::control::pid`) that closes the loop on the *measured* frame time
+versus that target. When frames run long the loop lowers the multiplier (agents pick cheaper
+strategies → frames speed up); when there is headroom it climbs back toward 1.0. This replaces the old
+static thermal/battery lookup, which stepped the multiplier in coarse jumps and double-counted
+thermal/battery (once in the target, once in the multiplier).
+
+The controller uses the practical refinements that matter for a noisy, saturating, discrete-actuator
+plant: derivative-on-measurement with a low-pass filter, back-calculation anti-windup, setpoint
+weighting, and output clamping to `[floor, 1.0]`. On top of the loop, a **hard safety ceiling** caps
+the multiplier immediately on `Critical` thermal/battery or near-budget memory pressure — the loop
+regulates the steady state, the ceiling handles emergencies.
 
 > **GORNA cannot force phases.** It can only suggest importance changes (`TimingAdjustment`). Agents always control which phases they run in via `allowed_phases`.
 

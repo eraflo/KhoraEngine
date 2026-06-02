@@ -67,7 +67,14 @@ fn show_sidebar(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         section_label(ui, "VIEW");
         ui.spacing(6.0);
 
-        if sidebar_nav_btn(ui, "hp-nav-projects", "Projects", app.screen == Screen::Home).clicked {
+        if sidebar_nav_btn(
+            ui,
+            "hp-nav-projects",
+            "Projects",
+            app.screen == Screen::Home,
+        )
+        .clicked
+        {
             app.screen = Screen::Home;
         }
         if sidebar_nav_btn(
@@ -80,9 +87,16 @@ fn show_sidebar(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         {
             app.screen = Screen::EngineManager;
         }
-        if sidebar_nav_btn(ui, "hp-nav-settings", "Settings", app.screen == Screen::Settings).clicked
+        if sidebar_nav_btn(
+            ui,
+            "hp-nav-settings",
+            "Settings",
+            app.screen == Screen::Settings,
+        )
+        .clicked
         {
-            app.settings.local_repo_draft = app.config.local_engine_repo.clone().unwrap_or_default();
+            app.settings.local_repo_draft =
+                app.config.local_engine_repo.clone().unwrap_or_default();
             app.screen = Screen::Settings;
         }
 
@@ -166,8 +180,7 @@ fn show_main(app: &mut HubApp, ui: &mut dyn UiBuilder) {
                 let proj = app.config.recent_projects.get(src_idx).cloned();
                 if let Some(proj) = proj {
                     let root = std::path::PathBuf::from(&proj.path);
-                    match crate::project::add_native_code(&root, &proj.name, &proj.engine_version)
-                    {
+                    match crate::project::add_native_code(&root, &proj.name, &proj.engine_version) {
                         Ok(()) => {
                             app.banner = Some(crate::Banner::info(format!(
                                 "Added native Rust scaffold to '{}'.",
@@ -199,9 +212,21 @@ fn project_card(
     let card_h = 84.0;
     let pos = ui.cursor_pos();
 
-    let card_fill = if hovered { pal::SURFACE3 } else { pal::SURFACE2 };
-    let card_border = if hovered { pal::BORDER_LIGHT } else { pal::BORDER };
-    let accent = if hovered { pal::PRIMARY } else { pal::PRIMARY_DIM };
+    let card_fill = if hovered {
+        pal::SURFACE3
+    } else {
+        pal::SURFACE2
+    };
+    let card_border = if hovered {
+        pal::BORDER_LIGHT
+    } else {
+        pal::BORDER
+    };
+    let accent = if hovered {
+        pal::PRIMARY
+    } else {
+        pal::PRIMARY_DIM
+    };
 
     // Allocate the card-wide hit region FIRST so subsequent button
     // `interact_rect` calls take click priority over it (egui resolves
@@ -278,7 +303,10 @@ fn project_card(
     ui.paint_rect_filled([x, btn_y], [btn_w, btn_h], rgba(open_fill), 5.0);
     let open_size = ui.measure_text("Open", 12.0, FontFamilyHint::Proportional);
     ui.paint_text_styled(
-        [x + (btn_w - open_size[0]) * 0.5, btn_y + (btn_h - open_size[1]) * 0.5],
+        [
+            x + (btn_w - open_size[0]) * 0.5,
+            btn_y + (btn_h - open_size[1]) * 0.5,
+        ],
         "Open",
         12.0,
         rgba(pal::BG),
@@ -292,12 +320,19 @@ fn project_card(
 
     let salt_rm = format!("hp-card-{}-rm", src_idx);
     let int_rm = ui.interact_rect(&salt_rm, [x, btn_y, btn_w, btn_h]);
-    let rm_fill = if int_rm.hovered { pal::SURFACE_ACTIVE } else { pal::SURFACE3 };
+    let rm_fill = if int_rm.hovered {
+        pal::SURFACE_ACTIVE
+    } else {
+        pal::SURFACE3
+    };
     ui.paint_rect_filled([x, btn_y], [btn_w, btn_h], rgba(rm_fill), 5.0);
     ui.paint_rect_stroke([x, btn_y], [btn_w, btn_h], rgba(pal::BORDER), 5.0, 1.0);
     let rm_size = ui.measure_text("Remove", 12.0, FontFamilyHint::Proportional);
     ui.paint_text_styled(
-        [x + (btn_w - rm_size[0]) * 0.5, btn_y + (btn_h - rm_size[1]) * 0.5],
+        [
+            x + (btn_w - rm_size[0]) * 0.5,
+            btn_y + (btn_h - rm_size[1]) * 0.5,
+        ],
         "Remove",
         12.0,
         rgba(pal::TEXT_DIM),
@@ -320,7 +355,11 @@ fn project_card(
         x -= native_w + 8.0;
         let salt = format!("hp-card-{}-native", src_idx);
         let int = ui.interact_rect(&salt, [x, btn_y, native_w, btn_h]);
-        let fill = if int.hovered { pal::SURFACE_ACTIVE } else { pal::SURFACE3 };
+        let fill = if int.hovered {
+            pal::SURFACE_ACTIVE
+        } else {
+            pal::SURFACE3
+        };
         ui.paint_rect_filled([x, btn_y], [native_w, btn_h], rgba(fill), 5.0);
         ui.paint_rect_stroke([x, btn_y], [native_w, btn_h], rgba(pal::BORDER), 5.0, 1.0);
         let s = ui.measure_text("Add Native Code", 12.0, FontFamilyHint::Proportional);

@@ -60,7 +60,11 @@ impl AppContext for EguiAppContext<'_> {
         }
         use std::sync::Arc;
         let mut defs = egui::FontDefinitions::default();
-        install_family(&mut defs, egui::FontFamily::Proportional, &pack.proportional);
+        install_family(
+            &mut defs,
+            egui::FontFamily::Proportional,
+            &pack.proportional,
+        );
         install_family(&mut defs, egui::FontFamily::Monospace, &pack.monospace);
         if !pack.icons.is_empty() {
             install_family(
@@ -110,8 +114,7 @@ impl AppContext for EguiAppContext<'_> {
     }
 
     fn request_close(&mut self) {
-        self.ctx
-            .send_viewport_cmd(egui::ViewportCommand::Close);
+        self.ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         let _ = &self.frame; // mark used
     }
 }

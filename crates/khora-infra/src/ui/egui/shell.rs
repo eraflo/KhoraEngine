@@ -40,8 +40,8 @@ use khora_core::ui::editor::panel::{EditorPanel, PanelLocation};
 use khora_core::ui::editor::shell::EditorShell;
 use khora_core::ui::editor::state::{EditorMode, EditorState, StatusBarData};
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
-use khora_core::ui::UiTheme;
 use khora_core::ui::fonts::{FontHandle, FontPack, NamedFont};
+use khora_core::ui::UiTheme;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 

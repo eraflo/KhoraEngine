@@ -16,7 +16,7 @@
 //! headers. Everything below paints to absolute screen-space coordinates and
 //! tracks its own click hit-test via [`UiBuilder::interact_rect`].
 
-use khora_sdk::editor_ui::{UiTheme, FontFamilyHint, Icon, Interaction, TextAlign, UiBuilder};
+use khora_sdk::editor_ui::{FontFamilyHint, Icon, Interaction, TextAlign, UiBuilder, UiTheme};
 // `Icon` is consumed inside `paint_search_pill` via `Icon::Search`.
 // `Interaction` is the return type of `paint_search_pill` and `panel_tab` (for
 // the click + width tuple). Kept explicit to make the public surface readable.

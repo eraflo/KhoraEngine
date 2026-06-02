@@ -62,11 +62,7 @@ pub fn build_pack() -> FontPack {
     pack
 }
 
-fn install_family(
-    family: &mut Vec<NamedFont>,
-    roots: &[PathBuf],
-    files: &[(&str, &str)],
-) -> usize {
+fn install_family(family: &mut Vec<NamedFont>, roots: &[PathBuf], files: &[(&str, &str)]) -> usize {
     let mut installed = 0;
     for (name, file) in files {
         let Some(found) = find_in_roots(roots, file) else {

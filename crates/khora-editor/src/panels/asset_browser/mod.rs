@@ -430,7 +430,11 @@ impl AssetBrowserPanel {
             [icon_x + 14.0, *y + 5.0],
             label,
             11.5,
-            if is_current { theme.text } else { theme.text_dim },
+            if is_current {
+                theme.text
+            } else {
+                theme.text_dim
+            },
         );
         ui.paint_text_styled(
             [row_x + row_w - 6.0, *y + 5.0],
@@ -508,7 +512,12 @@ impl AssetBrowserPanel {
             let salt = format!("ab-crumb-{}", i);
             let int = ui.interact_rect(&salt, rect);
             if int.hovered && !active {
-                ui.paint_rect_filled([x, y], [label_w, 18.0], theme.surface_active, theme.radius_sm);
+                ui.paint_rect_filled(
+                    [x, y],
+                    [label_w, 18.0],
+                    theme.surface_active,
+                    theme.radius_sm,
+                );
             }
             ui.paint_text_styled(
                 [x + 3.0, y + 2.5],
@@ -670,13 +679,7 @@ impl EditorPanel for AssetBrowserPanel {
 
         // Tree separator label.
         row_y += 8.0;
-        paint_text_size(
-            ui,
-            [px + 8.0, row_y],
-            "FOLDERS",
-            10.0,
-            theme.text_muted,
-        );
+        paint_text_size(ui, [px + 8.0, row_y], "FOLDERS", 10.0, theme.text_muted);
         row_y += 16.0;
 
         // Folder tree (real VFS hierarchy).
@@ -712,7 +715,14 @@ impl EditorPanel for AssetBrowserPanel {
 
         // Breadcrumb on the left, capped to leave room for the search.
         let crumb_max_w = (search_x - grid_x - 24.0).max(0.0);
-        self.render_breadcrumb(ui, grid_x + 12.0, crumb_y + 7.0, crumb_max_w, &theme, &project_folder);
+        self.render_breadcrumb(
+            ui,
+            grid_x + 12.0,
+            crumb_y + 7.0,
+            crumb_max_w,
+            &theme,
+            &project_folder,
+        );
 
         // Search affordance icon.
         paint_icon(
@@ -752,9 +762,7 @@ impl EditorPanel for AssetBrowserPanel {
                         || a.folder.starts_with(&format!("{}/", current_folder))
                 }
             })
-            .filter(|(_, a)| {
-                filter_text.is_empty() || a.name.to_lowercase().contains(&filter_text)
-            })
+            .filter(|(_, a)| filter_text.is_empty() || a.name.to_lowercase().contains(&filter_text))
             .collect();
 
         // Drop target for entity drags from the scene tree. Registered
@@ -767,10 +775,8 @@ impl EditorPanel for AssetBrowserPanel {
         // already-read drop status.
         let drop_y = grid_inner_y;
         let drop_h = (body_y + body_h - grid_inner_y).max(0.0);
-        let _drop_int = ui.interact_rect(
-            "ab-grid-drop",
-            [grid_inner_x, drop_y, grid_inner_w, drop_h],
-        );
+        let _drop_int =
+            ui.interact_rect("ab-grid-drop", [grid_inner_x, drop_y, grid_inner_w, drop_h]);
         if let Some(payload) = ui.dnd_take_drop_payload() {
             if crate::panels::scene_tree::payload_is_entity(payload) {
                 let entity = crate::panels::scene_tree::unpack_entity(payload);

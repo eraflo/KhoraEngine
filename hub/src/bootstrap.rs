@@ -15,7 +15,7 @@ use crate::screens;
 use crate::state::Screen;
 use crate::theme::pal;
 use crate::widgets::rgba;
-use crate::{fonts, theme, HubApp};
+use crate::{HubApp, fonts, theme};
 use khora_sdk::tool_ui::{
     self as kui, App, AppContext, UiBuilder, WindowConfigInput, WindowIconInput,
 };

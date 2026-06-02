@@ -14,9 +14,7 @@ use crate::Screen;
 use crate::auth;
 use crate::theme::{pal, tint};
 use crate::widgets::{ghost_button, paint_separator, primary_button, rgba, status_chip};
-use khora_sdk::tool_ui::{
-    CornerRadius, FontFamilyHint, Margin, Stroke, TextAlign, UiBuilder,
-};
+use khora_sdk::tool_ui::{CornerRadius, FontFamilyHint, Margin, Stroke, TextAlign, UiBuilder};
 
 pub fn show_settings(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     ui.spacing(20.0);
@@ -72,7 +70,8 @@ fn show_github_card(app: &mut HubApp, ui: &mut dyn UiBuilder) {
             AuthState::Disconnected => {
                 status_chip(ui, "Disconnected", pal::TEXT_MUTED);
                 ui.spacing(8.0);
-                if primary_button(ui, "settings-gh-connect", "Connect GitHub", [180.0, 32.0]).clicked
+                if primary_button(ui, "settings-gh-connect", "Connect GitHub", [180.0, 32.0])
+                    .clicked
                 {
                     app.start_github_auth();
                 }
@@ -109,11 +108,8 @@ fn show_local_repo_card(app: &mut HubApp, ui: &mut dyn UiBuilder) {
                     app.config.local_engine_repo = Some(value.to_owned());
                 }
                 let _ = app.config.save();
-                app.engine_manager.local_repo = app
-                    .config
-                    .local_engine_repo
-                    .clone()
-                    .unwrap_or_default();
+                app.engine_manager.local_repo =
+                    app.config.local_engine_repo.clone().unwrap_or_default();
                 app.banner = Some(crate::Banner::info("Local engine path saved."));
             }
         });
@@ -130,7 +126,12 @@ fn card_frame(ui: &mut dyn UiBuilder, title: &str, body: &mut dyn FnMut(&mut dyn
         CornerRadius::same(6.0),
         &mut |ui| {
             let pos = ui.cursor_pos();
-            ui.paint_rect_filled([pos[0], pos[1] + 2.0], [3.0, 18.0], rgba(pal::PRIMARY_DIM), 2.0);
+            ui.paint_rect_filled(
+                [pos[0], pos[1] + 2.0],
+                [3.0, 18.0],
+                rgba(pal::PRIMARY_DIM),
+                2.0,
+            );
             ui.paint_text_styled(
                 [pos[0] + 12.0, pos[1] + 2.0],
                 title,

@@ -50,18 +50,15 @@ pub struct Context {
     pub hardware: HardwareState,
     /// Current engine mode.
     pub mode: EngineMode,
-    /// Global budget multiplier derived from thermal and battery state.
+    /// Global budget multiplier applied to all frame budgets for graceful
+    /// performance degradation. Ranges from 0.0 (emergency) to 1.0 (full
+    /// performance).
     ///
-    /// Applied to all frame budgets to implement graceful performance degradation.
-    /// Ranges from 0.0 (emergency) to 1.0 (full performance).
-    ///
-    /// | Condition | Multiplier |
-    /// |---|---|
-    /// | Cool + Mains | 1.0 |
-    /// | Warm | 0.9 |
-    /// | Battery Low | 0.8 |
-    /// | Throttling | 0.6 |
-    /// | Critical thermal or battery | 0.4 |
+    /// Driven by the DCC's frame-time **PID** controller (`khora_core::control::pid`),
+    /// not a static table: the loop asservits this value so the *measured* frame
+    /// time tracks the heuristic-suggested latency (`AnalysisReport::suggested_latency_ms`,
+    /// itself modulated by thermal/battery/phase). On `Critical` thermal/battery or
+    /// high memory pressure the DCC additionally clamps it to a hard safety ceiling.
     pub global_budget_multiplier: f32,
     /// System-memory pressure in `[0, 1]` — `current_ram_bytes / memory_budget_bytes`,
     /// or `0.0` when the budget is unset. A first-class resource signal alongside
@@ -82,27 +79,20 @@ impl Default for Context {
     }
 }
 
+/// Memory pressure at or above which the DCC clamps the budget multiplier to a
+/// hard safety ceiling, regardless of where the PID loop currently sits.
+pub const MEMORY_PRESSURE_CRITICAL: f32 = 0.95;
+
 impl Context {
-    /// Recomputes `global_budget_multiplier` from the current hardware state.
+    /// Recomputes [`Context::memory_pressure`] from the current RAM usage versus
+    /// the developer-set budget.
     ///
-    /// This should be called whenever `hardware.thermal` or `hardware.battery` changes.
-    pub fn refresh_budget_multiplier(&mut self) {
-        let thermal_factor: f32 = match self.hardware.thermal {
-            ThermalStatus::Cool => 1.0,
-            ThermalStatus::Warm => 0.9,
-            ThermalStatus::Throttling => 0.6,
-            ThermalStatus::Critical => 0.4,
-        };
-
-        let battery_factor = match self.hardware.battery {
-            BatteryLevel::Mains => 1.0,
-            BatteryLevel::High => 1.0,
-            BatteryLevel::Low => 0.8,
-            BatteryLevel::Critical => 0.5,
-        };
-
-        // Derive memory pressure from the current RAM vs the developer budget.
-        // Unset budget → pressure 0 → memory has no effect on the multiplier.
+    /// Pressure is `current_ram_bytes / memory_budget_bytes`, clamped to `[0, 1]`.
+    /// An unset budget yields `0.0` (the signal is inert). This is a first-class
+    /// resource signal consumed by the heuristic engine and the AGDF repack gate;
+    /// it no longer feeds the budget multiplier directly — that is the PID loop's
+    /// job — but it does drive the DCC's hard safety clamp (see [`safety_ceiling`]).
+    pub fn refresh_memory_pressure(&mut self) {
         self.memory_pressure = match (
             self.hardware.current_ram_bytes,
             self.hardware.memory_budget_bytes,
@@ -112,17 +102,28 @@ impl Context {
             }
             _ => 0.0,
         };
-        let memory_factor: f32 = if self.memory_pressure >= 0.95 {
-            0.5
-        } else if self.memory_pressure >= 0.85 {
-            0.8
-        } else {
-            1.0
-        };
-
-        // Take the most restrictive of the factors (thermal, battery, memory).
-        self.global_budget_multiplier = thermal_factor.min(battery_factor).min(memory_factor);
     }
+}
+
+/// The hard ceiling on the budget multiplier for the current context.
+///
+/// The PID loop regulates the multiplier smoothly toward the frame-time target,
+/// but emergencies (`Critical` thermal/battery, near-budget memory pressure)
+/// demand an immediate cap that does not wait for the loop to converge. This is
+/// the feedforward / safety half of the controller: it can only ever *lower* the
+/// multiplier, never raise it.
+pub fn safety_ceiling(ctx: &Context) -> f32 {
+    let mut ceiling = 1.0_f32;
+    if ctx.hardware.thermal == ThermalStatus::Critical {
+        ceiling = ceiling.min(0.4);
+    }
+    if ctx.hardware.battery == BatteryLevel::Critical {
+        ceiling = ceiling.min(0.5);
+    }
+    if ctx.memory_pressure >= MEMORY_PRESSURE_CRITICAL {
+        ceiling = ceiling.min(0.5);
+    }
+    ceiling
 }
 
 #[cfg(test)]
@@ -137,63 +138,12 @@ mod tests {
     }
 
     #[test]
-    fn test_cool_mains_full_multiplier() {
-        let mut ctx = Context::default();
-        ctx.hardware.thermal = ThermalStatus::Cool;
-        ctx.hardware.battery = BatteryLevel::Mains;
-        ctx.refresh_budget_multiplier();
-        assert_eq!(ctx.global_budget_multiplier, 1.0);
-    }
-
-    #[test]
-    fn test_warm_reduces_multiplier() {
-        let mut ctx = Context::default();
-        ctx.hardware.thermal = ThermalStatus::Warm;
-        ctx.refresh_budget_multiplier();
-        assert!((ctx.global_budget_multiplier - 0.9).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_throttling_heavy_reduction() {
-        let mut ctx = Context::default();
-        ctx.hardware.thermal = ThermalStatus::Throttling;
-        ctx.refresh_budget_multiplier();
-        assert!((ctx.global_budget_multiplier - 0.6).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_critical_thermal_severe_reduction() {
-        let mut ctx = Context::default();
-        ctx.hardware.thermal = ThermalStatus::Critical;
-        ctx.refresh_budget_multiplier();
-        assert!((ctx.global_budget_multiplier - 0.4).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_battery_low_reduces_multiplier() {
-        let mut ctx = Context::default();
-        ctx.hardware.battery = BatteryLevel::Low;
-        ctx.refresh_budget_multiplier();
-        assert!((ctx.global_budget_multiplier - 0.8).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_battery_critical_severe_reduction() {
-        let mut ctx = Context::default();
-        ctx.hardware.battery = BatteryLevel::Critical;
-        ctx.refresh_budget_multiplier();
-        assert!((ctx.global_budget_multiplier - 0.5).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_memory_pressure_reduces_multiplier() {
+    fn test_memory_pressure_from_budget() {
         let mut ctx = Context::default();
         ctx.hardware.current_ram_bytes = Some(960);
         ctx.hardware.memory_budget_bytes = Some(1000);
-        ctx.refresh_budget_multiplier();
+        ctx.refresh_memory_pressure();
         assert!((ctx.memory_pressure - 0.96).abs() < 0.001);
-        // ≥0.95 pressure → 0.5 memory factor dominates.
-        assert!((ctx.global_budget_multiplier - 0.5).abs() < 0.001);
     }
 
     #[test]
@@ -201,18 +151,54 @@ mod tests {
         let mut ctx = Context::default();
         ctx.hardware.current_ram_bytes = Some(10_000_000);
         ctx.hardware.memory_budget_bytes = None;
-        ctx.refresh_budget_multiplier();
+        ctx.refresh_memory_pressure();
         assert_eq!(ctx.memory_pressure, 0.0);
-        assert_eq!(ctx.global_budget_multiplier, 1.0);
     }
 
     #[test]
-    fn test_combined_thermal_and_battery_takes_minimum() {
+    fn test_safety_ceiling_open_when_healthy() {
+        let ctx = Context::default();
+        assert_eq!(safety_ceiling(&ctx), 1.0);
+    }
+
+    #[test]
+    fn test_safety_ceiling_critical_thermal() {
         let mut ctx = Context::default();
-        ctx.hardware.thermal = ThermalStatus::Throttling; // 0.6
+        ctx.hardware.thermal = ThermalStatus::Critical;
+        assert!((safety_ceiling(&ctx) - 0.4).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_safety_ceiling_critical_battery() {
+        let mut ctx = Context::default();
+        ctx.hardware.battery = BatteryLevel::Critical;
+        assert!((safety_ceiling(&ctx) - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_safety_ceiling_high_memory_pressure() {
+        let ctx = Context {
+            memory_pressure: 0.96,
+            ..Default::default()
+        };
+        assert!((safety_ceiling(&ctx) - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_safety_ceiling_takes_minimum() {
+        let mut ctx = Context::default();
+        ctx.hardware.thermal = ThermalStatus::Critical; // 0.4
         ctx.hardware.battery = BatteryLevel::Critical; // 0.5
-        ctx.refresh_budget_multiplier();
-        // Should pick the more restrictive value: 0.5
-        assert!((ctx.global_budget_multiplier - 0.5).abs() < 0.001);
+                                                       // Most restrictive wins.
+        assert!((safety_ceiling(&ctx) - 0.4).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_non_critical_states_leave_ceiling_open() {
+        let mut ctx = Context::default();
+        ctx.hardware.thermal = ThermalStatus::Throttling;
+        ctx.hardware.battery = BatteryLevel::Low;
+        // Throttling / Low now shape the setpoint, not a hard clamp.
+        assert_eq!(safety_ceiling(&ctx), 1.0);
     }
 }
