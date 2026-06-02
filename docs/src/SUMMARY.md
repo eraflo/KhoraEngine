@@ -14,6 +14,9 @@
 - [Lanes](./07_lanes.md)
 - [GORNA](./08_gorna.md)
 
+# Adaptive layer
+- [Adaptive Game Data Flows (AGDF)](./20_agdf.md)
+
 # Subsystems
 - [Rendering](./09_rendering.md)
 - [Physics](./10_physics.md)

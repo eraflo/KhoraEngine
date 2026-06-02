@@ -31,18 +31,22 @@ pub trait AnyVec: Any + Send + Sync {
     /// Casts the trait object to `&mut dyn Any`.
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
-    /// Performs a `swap_remove` on the underlying `Vec`, removing the element at `index`.
+    /// Performs a `swap_remove` on the underlying column, removing the element at `index`.
     fn swap_remove_any(&mut self, index: usize);
 
-    /// # Safety
-    /// Returns the raw byte slice of the underlying `Vec<T>`.
-    /// The caller must ensure that this byte representation is handled correctly.
-    unsafe fn as_bytes(&self) -> &[u8];
+    /// Serialises the column to an owned byte buffer.
+    ///
+    /// Returns an *owned* `Vec<u8>` (not a borrowed slice) so that columns whose
+    /// data is not a single contiguous buffer — e.g. a field-split SoA column —
+    /// can materialise their bytes. The format is the column's own concern; the
+    /// only contract is that [`set_from_bytes`](AnyVec::set_from_bytes) on the
+    /// same column type reverses it.
+    fn to_bytes(&self) -> Vec<u8>;
 
     /// # Safety
-    /// Replaces the contents of the `Vec<T>` with the given raw bytes.
-    /// The caller must guarantee that the bytes represent a valid sequence of `T`
-    /// with the correct size and alignment.
+    /// Replaces the column contents from bytes previously produced by
+    /// [`to_bytes`](AnyVec::to_bytes) **on the same column type**. The caller must
+    /// guarantee the bytes match this column's element type, size, and alignment.
     unsafe fn set_from_bytes(&mut self, bytes: &[u8]);
 }
 
@@ -60,11 +64,16 @@ impl<T: 'static + Send + Sync> AnyVec for Vec<T> {
         self.swap_remove(index);
     }
 
-    unsafe fn as_bytes(&self) -> &[u8] {
-        std::slice::from_raw_parts(
-            self.as_ptr() as *const u8,
-            self.len() * std::mem::size_of::<T>(),
-        )
+    fn to_bytes(&self) -> Vec<u8> {
+        // SAFETY: reads `len * size_of::<T>()` initialised bytes from the Vec's
+        // buffer and copies them into an owned `Vec<u8>`.
+        unsafe {
+            std::slice::from_raw_parts(
+                self.as_ptr() as *const u8,
+                self.len() * std::mem::size_of::<T>(),
+            )
+            .to_vec()
+        }
     }
 
     unsafe fn set_from_bytes(&mut self, bytes: &[u8]) {

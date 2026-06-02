@@ -115,23 +115,11 @@ impl ComponentRegistry {
                 domain,
                 layout: LayoutPolicy::Soa,
                 size_bytes: std::mem::size_of::<T>(),
-                create_column: || Box::new(Vec::<T>::new()),
-                copy_row: |src_col, src_row, dest_col| {
-                    // SAFETY: The registry keys this vtable by `TypeId::of::<T>()`. Callers
-                    // (the `World` migration / clone paths) only invoke `copy_row` when the
-                    // dynamic types of `src_col` and `dest_col` are both `Vec<T>` for the
-                    // same `T` this vtable was registered against — guaranteed by their
-                    // matching TypeId lookup. The two downcasts therefore always succeed.
-                    // `src_row` is required by the caller contract to satisfy
-                    // `src_row < src_vec.len()`; entity locations stored on the World only
-                    // ever point to valid rows in their registered pages, so
-                    // `get_unchecked` is sound here.
-                    unsafe {
-                        let src_vec = src_col.as_any().downcast_ref::<Vec<T>>().unwrap();
-                        let dest_vec = dest_col.as_any_mut().downcast_mut::<Vec<T>>().unwrap();
-                        dest_vec.push(src_vec.get_unchecked(src_row).clone());
-                    }
-                },
+                // Column creation, row-push, and cross-page row-copy all route
+                // through the `Component` trait hooks, which default to the AoS
+                // `Vec<T>` column and are overridden by field-SoA components.
+                create_column: T::make_column,
+                copy_row: T::copy_row_between,
             },
         );
         // Ensure an access-counter slot exists for this component type.

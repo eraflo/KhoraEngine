@@ -180,6 +180,15 @@ Each page holds component arrays in struct-of-arrays form, a bitset describing w
 
 Compaction runs in `tick_maintenance()`. When too many holes accumulate, the page is rewritten with live entries packed to the front. Bitsets are rebuilt in the same pass.
 
+**Per-component physical layout (AGDF).** By default each column is a `Vec<T>` —
+SoA *across entities*, but Array-of-Structures *within* the component (whole
+structs back to back). A compute-heavy component can opt into a **field-split**
+column (`#[component(layout = "soa")]`), where each field is its own contiguous
+`f32` stream for SIMD — without changing its semantics or the rest of CRPECS.
+This is Khora's adaptive-layout layer; see [Adaptive Game Data Flows
+(AGDF)](./20_agdf.md) for the full mechanism, the access model, and the
+optimizations that ride on it.
+
 ---
 
 ## For game developers

@@ -16,7 +16,7 @@ use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::{
     page::{AnyVec, ComponentPage},
-    Component, DomainBitset, QueryMode, QueryPlan, World,
+    Component, DomainBitset, FieldSoaColumn, QueryMode, QueryPlan, SoaLayout, World,
 };
 use std::{any::TypeId, marker::PhantomData};
 
@@ -310,6 +310,44 @@ impl WorldQuery for EntityId {
     ) -> Option<Self::Item<'a>> {
         // We already have the entity ID, just return it.
         Some(entity_id)
+    }
+}
+
+/// A query that reads a field-SoA component **by value**.
+///
+/// A component stored field-SoA (`#[component(layout = "soa")]`) cannot be
+/// borrowed as `&T` — its bytes are split across per-field lanes, not laid out
+/// as a contiguous `T` — so it is queried as `Soa<T>`, which yields an owned
+/// `T` reconstructed (gathered) from the lanes. For the bulk SIMD path that is
+/// the *point* of the layout, use [`World::for_each_soa_column_mut`] instead;
+/// `Soa<T>` is the per-row, mix-with-other-components access.
+///
+/// [`World::for_each_soa_column_mut`]: crate::ecs::World::for_each_soa_column_mut
+pub struct Soa<T: SoaLayout>(PhantomData<T>);
+
+impl<T: SoaLayout> WorldQuery for Soa<T> {
+    type Item<'a> = T;
+
+    fn type_ids() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
+
+    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
+        let page = &*page_ptr;
+        let column: &dyn AnyVec = &**page.columns.get(&TypeId::of::<T>()).unwrap();
+        let soa = column
+            .as_any()
+            .downcast_ref::<FieldSoaColumn<T>>()
+            .expect("Soa<T> queried on a component that is not field-SoA stored");
+        soa.get(row_index)
+    }
+
+    unsafe fn fetch_from_world<'a>(
+        world: *const World,
+        entity_id: EntityId,
+    ) -> Option<Self::Item<'a>> {
+        let world = &*world;
+        world.clone_component::<T>(entity_id)
     }
 }
 

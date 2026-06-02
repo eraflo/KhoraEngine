@@ -952,6 +952,83 @@ impl World {
         vec.get(location.row_index as usize)
     }
 
+    /// Reads a component by **value**, working for *any* physical layout (AoS or
+    /// field-SoA). This is the layout-agnostic read path: a field-SoA component
+    /// can't hand out `&T` (its bytes aren't a contiguous `T`), so callers that
+    /// must work regardless of layout — the serialization recipe, the `Soa<T>`
+    /// query — go through here. For AoS it simply clones the `&T`.
+    ///
+    /// `None` if the entity is not alive or lacks the component.
+    pub fn clone_component<T: Component>(&self, entity_id: EntityId) -> Option<T> {
+        let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
+        if id_in_world.generation != entity_id.generation {
+            return None;
+        }
+        let metadata = metadata_opt.as_ref()?;
+        let domain = self.storage.registry.get_domain(TypeId::of::<T>())?;
+        let location = metadata.locations.get(&domain)?;
+        let page = self.storage.pages.get(location.page_id as usize)?;
+        let column = page.columns.get(&TypeId::of::<T>())?;
+        Some(T::clone_from_column(
+            column.as_ref(),
+            location.row_index as usize,
+        ))
+    }
+
+    /// Writes a component by **value**, working for any physical layout. The
+    /// layout-agnostic write path (AoS assigns the slot; field-SoA scatters into
+    /// its lanes). Returns `false` if the entity is not alive or lacks the
+    /// component (nothing is written).
+    pub fn set_component<T: Component>(&mut self, entity_id: EntityId, value: T) -> bool {
+        let Some((id_in_world, metadata_opt)) = self.entities.get(entity_id.index as usize) else {
+            return false;
+        };
+        if id_in_world.generation != entity_id.generation {
+            return false;
+        }
+        let Some(metadata) = metadata_opt.as_ref() else {
+            return false;
+        };
+        let Some(domain) = self.storage.registry.get_domain(TypeId::of::<T>()) else {
+            return false;
+        };
+        let Some(location) = metadata.locations.get(&domain).copied() else {
+            return false;
+        };
+        let Some(page) = self.storage.pages.get_mut(location.page_id as usize) else {
+            return false;
+        };
+        let Some(column) = page.columns.get_mut(&TypeId::of::<T>()) else {
+            return false;
+        };
+        value.set_in_column(column.as_mut(), location.row_index as usize);
+        true
+    }
+
+    /// Runs `f` over every field-SoA column of component `T` in the world — the
+    /// bulk SIMD entry point. Each call hands the kernel a [`FieldSoaColumn`]
+    /// whose per-field `f32` lanes are contiguous, so it can tile them into
+    /// `f32x8` without gather (the resident layout that reaches ~4×).
+    ///
+    /// Iterates per page so each lane slice is a single archetype's run. A
+    /// no-op for any page whose `T` column is not field-SoA.
+    pub fn for_each_soa_column_mut<T: crate::ecs::SoaLayout>(
+        &mut self,
+        mut f: impl FnMut(&mut crate::ecs::FieldSoaColumn<T>),
+    ) {
+        let type_id = TypeId::of::<T>();
+        for page in self.storage.pages.iter_mut() {
+            if let Some(column) = page.columns.get_mut(&type_id) {
+                if let Some(soa) = column
+                    .as_any_mut()
+                    .downcast_mut::<crate::ecs::FieldSoaColumn<T>>()
+                {
+                    f(soa);
+                }
+            }
+        }
+    }
+
     /// Returns an iterator over all currently living `EntityId`s in the world.
     pub fn iter_entities(&self) -> impl Iterator<Item = EntityId> + '_ {
         self.entities
@@ -977,9 +1054,9 @@ impl World {
             for type_id in &page.type_ids {
                 let type_name = self.type_registry.get_name_of(type_id).unwrap();
                 let column = &page.columns[type_id];
-                // UNSAFE: Copying raw bytes from the component vector.
-                let bytes = unsafe { column.as_bytes() };
-                serialized_columns.insert(type_name.to_string(), bytes.to_vec());
+                // The column owns its byte format (AoS raw bytes, or field-major
+                // for a field-SoA column) — round-tripped by `set_from_bytes`.
+                serialized_columns.insert(type_name.to_string(), column.to_bytes());
             }
 
             serialized_pages.push(SerializedPage {
