@@ -1,59 +1,132 @@
 // Best-effort, idempotent, non-fatal tooling bootstrap: rtk, codegraph,
 // headroom, impeccable. Failures only warn — they never block an install.
+// Project-local tools live in a gitignored `.khora/` folder.
 
 import { execFileSync, spawn } from 'node:child_process';
+import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
 import net from 'node:net';
-import { log } from './core.mjs';
+import { log, exists } from './core.mjs';
 
 const HEADROOM_PORT = 8787;
+const WIN = process.platform === 'win32';
+const BIN = WIN ? 'Scripts' : 'bin';
+const EXE = WIN ? '.exe' : '';
 
 function has(cmd) {
-  try {
-    execFileSync(process.platform === 'win32' ? 'where' : 'which', [cmd], { stdio: 'ignore' });
-    return true;
-  } catch { return false; }
+  try { execFileSync(WIN ? 'where' : 'which', [cmd], { stdio: 'ignore' }); return true; }
+  catch { return false; }
 }
-
-function run(cmd, args, { timeout = 120000 } = {}) {
-  execFileSync(cmd, args, { stdio: 'inherit', timeout });
+function run(cmd, args, { timeout = 120000, shell = false } = {}) {
+  execFileSync(cmd, args, { stdio: 'inherit', timeout, shell });
 }
+function khoraDir(ctx) { return path.join(ctx.repoRoot, '.khora'); }
 
 export function bootstrapTools(ctx, { noTools }) {
   if (noTools) { log.info('tooling bootstrap skipped (--no-tools)'); return; }
-  log.step('Tooling bootstrap (best-effort)');
+  log.step('Tooling bootstrap (best-effort, project-local in .khora/)');
+  ensureKhoraDir(ctx);
   rtk();
   codegraph();
-  headroom();
-  impeccable(ctx);
+  headroom(ctx);
+  impeccable();
 }
 
+function ensureKhoraDir(ctx) {
+  const dir = khoraDir(ctx);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    // Belt-and-braces: the folder ignores its own contents even if the managed
+    // .gitignore block is missing.
+    const gi = path.join(dir, '.gitignore');
+    if (!exists(gi)) fs.writeFileSync(gi, '*\n', 'utf8');
+  } catch (e) { log.warn(`.khora: ${e.message}`); }
+}
+
+// ── rtk: detect, else install from rtk-ai/rtk + ensure PATH ────────────────
 function rtk() {
   try {
-    if (!has('rtk')) { log.warn('rtk not found — install the Rust Token Killer to enable token-optimized commands'); return; }
-    try { run('rtk', ['ai']); log.ok('rtk ai configured'); }
-    catch { log.warn('`rtk ai` not available on this rtk build — skipping'); }
+    if (has('rtk')) {
+      try { run('rtk', ['--version']); } catch {}
+      log.ok('rtk present');
+      return;
+    }
+    log.info('rtk not found — installing from github.com/rtk-ai/rtk…');
+    if (WIN) {
+      if (has('cargo')) {
+        try { run('cargo', ['install', '--git', 'https://github.com/rtk-ai/rtk'], { timeout: 600000 }); log.ok('rtk installed via cargo (~/.cargo/bin, already on PATH)'); }
+        catch { log.warn('cargo install rtk failed — download the prebuilt x86_64-pc-windows-msvc binary from https://github.com/rtk-ai/rtk/releases'); }
+      } else {
+        log.warn('no cargo — install rtk manually: prebuilt binary from https://github.com/rtk-ai/rtk/releases (add its folder to PATH)');
+      }
+    } else {
+      try {
+        run('sh', ['-c', 'curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh'], { timeout: 300000 });
+        log.ok('rtk installed to ~/.local/bin');
+        ensureLocalBinOnPath();
+      } catch { log.warn('rtk install script failed — try `brew install rtk` or `cargo install --git https://github.com/rtk-ai/rtk`'); }
+    }
   } catch (e) { log.warn(`rtk: ${e.message}`); }
 }
 
+function ensureLocalBinOnPath() {
+  try {
+    const home = os.homedir();
+    const localBin = path.join(home, '.local', 'bin');
+    if ((process.env.PATH || '').split(':').includes(localBin)) return;
+    const line = 'export PATH="$HOME/.local/bin:$PATH"  # added by khora-ai';
+    let touched = false;
+    for (const rc of ['.zshrc', '.bashrc', '.profile']) {
+      const rcPath = path.join(home, rc);
+      if (!exists(rcPath)) continue;
+      const content = fs.readFileSync(rcPath, 'utf8');
+      if (/\.local\/bin/.test(content)) continue;
+      fs.appendFileSync(rcPath, `\n${line}\n`);
+      touched = true;
+    }
+    if (touched) log.warn('added ~/.local/bin to your shell PATH — restart your shell (or `source ~/.zshrc`)');
+  } catch (e) { log.warn(`rtk PATH: ${e.message}`); }
+}
+
+// ── codegraph: manages its own .codegraph/ index ───────────────────────────
 function codegraph() {
   try {
     if (has('codegraph')) { try { run('codegraph', ['index', '.'], { timeout: 300000 }); log.ok('codegraph index refreshed'); } catch { log.ok('codegraph present'); } }
-    else log.warn('codegraph CLI not found — agents will fall back to grep until the MCP server is registered');
+    else log.warn('codegraph CLI not found — agents fall back to grep until the MCP server is registered');
   } catch (e) { log.warn(`codegraph: ${e.message}`); }
 }
 
-function headroom() {
+// ── headroom: Python venv in .khora/ (the CLI ships only in the pip pkg) ────
+function pythonCmd() {
+  for (const c of ['python3', 'python']) {
+    try {
+      const out = execFileSync(c, ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      const m = out.match(/Python (\d+)\.(\d+)/);
+      if (m && (Number(m[1]) > 3 || (Number(m[1]) === 3 && Number(m[2]) >= 10))) return c;
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
+function headroom(ctx) {
   try {
-    if (has('headroom')) { log.ok('headroom present (launched on session start)'); return; }
-    log.info('installing headroom (npm i -g headroom-ai)…');
-    try { run('npm', ['i', '-g', 'headroom-ai'], { timeout: 180000 }); log.ok('headroom installed'); return; }
-    catch { /* fall through to pip */ }
-    try { run('pip', ['install', 'headroom-ai[all]'], { timeout: 180000 }); log.ok('headroom installed (pip)'); }
-    catch { log.warn('could not install headroom automatically — `npm i -g headroom-ai` or `pip install "headroom-ai[all]"`'); }
+    const venv = path.join(khoraDir(ctx), 'venv');
+    const venvHeadroom = path.join(venv, BIN, 'headroom' + EXE);
+    if (exists(venvHeadroom)) { log.ok('headroom present in .khora/venv (launched on session start)'); return; }
+    const py = pythonCmd();
+    if (!py) { log.warn('Python 3.10+ not found — headroom needs the Python CLI (`pip install "headroom-ai[all]"`)'); return; }
+    log.info('creating headroom venv in .khora/venv…');
+    run(py, ['-m', 'venv', venv], { timeout: 120000 });
+    const vpy = path.join(venv, BIN, 'python' + EXE);
+    try { run(vpy, ['-m', 'pip', 'install', '--upgrade', 'pip'], { timeout: 120000 }); } catch {}
+    run(vpy, ['-m', 'pip', 'install', 'headroom-ai[all]'], { timeout: 600000 });
+    log.ok('headroom installed in .khora/venv (launched on session start)');
   } catch (e) { log.warn(`headroom: ${e.message}`); }
 }
 
-function impeccable(ctx) {
+// ── impeccable: design skill (writes provider files via npx; nothing to keep) ─
+function impeccable() {
   try {
     log.info('installing impeccable design skill (npx impeccable skills install)…');
     run('npx', ['-y', 'impeccable', 'skills', 'install'], { timeout: 180000 });
@@ -61,9 +134,11 @@ function impeccable(ctx) {
   } catch { log.warn('could not install impeccable — `npx impeccable skills install` (design authority for UI/UX)'); }
 }
 
-// SessionStart hook target: ensure the headroom proxy is up. Fast + idempotent.
-export function launchHeadroom() {
-  if (!has('headroom')) return; // nothing to do
+// ── SessionStart target: ensure the headroom proxy is up (fast + idempotent) ─
+export function launchHeadroom(ctx) {
+  const venvHeadroom = path.join(khoraDir(ctx), 'venv', BIN, 'headroom' + EXE);
+  const cmd = exists(venvHeadroom) ? venvHeadroom : (has('headroom') ? 'headroom' : null);
+  if (!cmd) return; // nothing installed
   const sock = net.connect(HEADROOM_PORT, '127.0.0.1');
   sock.setTimeout(300);
   sock.on('connect', () => { sock.destroy(); /* already running */ });
@@ -71,7 +146,7 @@ export function launchHeadroom() {
   sock.on('error', () => start());
   function start() {
     try {
-      const child = spawn('headroom', ['proxy', '--port', String(HEADROOM_PORT)], { detached: true, stdio: 'ignore' });
+      const child = spawn(cmd, ['proxy', '--port', String(HEADROOM_PORT)], { detached: true, stdio: 'ignore' });
       child.unref();
     } catch { /* best-effort */ }
   }

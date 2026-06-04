@@ -84,6 +84,7 @@ target/
 /.github/instructions/editor-ui-ux.instructions.md
 /.github/instructions/graphics-rendering-expert.instructions.md
 /.github/instructions/physics-expert.instructions.md
+/.khora/
 /AGENTS.md
 /CLAUDE.md
 /GEMINI.md

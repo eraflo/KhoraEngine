@@ -115,6 +115,7 @@ export function rewriteGitignore(ctx) {
   const m = readManifest(ctx);
   const paths = new Set();
   paths.add('.agent/.khora-ai.json');
+  paths.add('.khora/'); // project-local tool home (headroom venv, etc.)
   for (const prof of Object.values(m.profiles)) {
     for (const g of (prof.generated ?? [])) paths.add(g);
   }

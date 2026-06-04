@@ -27,7 +27,7 @@ async function main() {
     case 'sync':         return cmdSync(ctx, rest, flags);
     case 'uninstall':    return cmdUninstall(ctx, args);
     case 'scan-secrets': return cmdScanSecrets(ctx, flags);
-    case 'launch-headroom': return launchHeadroom();
+    case 'launch-headroom': return launchHeadroom(ctx);
     case 'list':         return cmdList(ctx);
     case 'help': case undefined: return usage();
     default: log.err(`unknown command: ${cmd}`); usage(); process.exit(2);
