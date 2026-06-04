@@ -1,0 +1,69 @@
+# Machine-readable index for the engine profile.
+# Context loaders use `load` to decide what enters context up front vs. on demand.
+# Progressive disclosure: keep `always` tiny; pull `on_demand` only when a task matches.
+
+profile: engine
+description: AI documentation for developing the Khora Engine itself (contributors).
+
+docs:
+  - path: SOUL.md
+    load: always
+    tags: [identity, orchestrator, map, routing]
+  - path: RULES.md
+    load: always
+    tags: [rules, constraints, boundaries, permissions]
+  - path: index.md
+    load: always
+    tags: [index, navigation]
+  - path: conventions.md
+    load: on_demand
+    tags: [style, naming, patterns, file-layout, bind-groups]
+  - path: architecture.md
+    load: on_demand
+    tags: [clad, crates, traits, components, file-locations, codegraph]
+  - path: security-privacy.md
+    load: on_demand
+    tags: [security, privacy, secrets, unsafe]
+
+knowledge:
+  - path: knowledge/MEMORY.md
+    load: on_demand
+    tags: [state, current-work, known-issues]
+  - path: knowledge/decisions.md
+    load: on_demand
+    tags: [architecture-decisions, rationale]
+  - path: knowledge/context.md
+    load: on_demand
+    tags: [project, workspace, build-commands]
+
+# Specialist sub-agents — invoke when a task is squarely in the domain.
+agents:
+  - { path: agents/orchestrator.md,             when: default front door / routing }
+  - { path: agents/graphics-rendering-expert.md, when: wgpu / WGSL / render pipelines / shadows }
+  - { path: agents/physics-expert.md,            when: Rapier3D / rigid bodies / colliders / CCD }
+  - { path: agents/audio-expert.md,              when: CPAL / spatial mixing / audio flow }
+  - { path: agents/math-expert.md,               when: khora_core::math / SIMD / numerics }
+  - { path: agents/ecs-data-expert.md,           when: CRPECS / storage / SoA / AGDF / components }
+  - { path: agents/control-gorna-expert.md,      when: DCC / GORNA / cost model / PID / budgets }
+  - { path: agents/editor-ui-ux.md,              when: khora-editor panels / gizmos / dock (uses /impeccable) }
+  - { path: agents/api-ux-expert.md,             when: khora-sdk ergonomics / builder / type-state }
+  - { path: agents/documentation-expert.md,      when: mdBook / rustdoc / diagrams }
+  - { path: agents/security-auditor.md,          when: unsafe audit / supply chain / secrets / pre-push }
+  - { path: agents/deprecation-cleaner.md,       when: API modernization / dead-code removal }
+
+# Task skills — run when the recurring task matches.
+skills:
+  - { path: skills/build-and-test/SKILL.md,   when: validate a change }
+  - { path: skills/add-a-lane/SKILL.md,       when: add a Lane }
+  - { path: skills/add-an-agent/SKILL.md,     when: add an Agent }
+  - { path: skills/add-a-component/SKILL.md,  when: add/register an ECS component }
+  - { path: skills/add-a-shader/SKILL.md,     when: add a WGSL shader + pipeline }
+  - { path: skills/run-the-engine/SKILL.md,   when: launch editor or sandbox }
+  - { path: skills/debug-frame/SKILL.md,      when: investigate a frame / GORNA decision }
+  - { path: skills/release-checklist/SKILL.md, when: pre-push gate }
+
+hooks:
+  - { path: hooks/doc-change.md,  event: on AI-doc change → reinstall wrappers }
+  - { path: hooks/bootstrap.md,   event: session start }
+  - { path: hooks/teardown.md,    event: session end }
+  - { path: hooks/secret-scan.md, event: pre-commit secret scan }

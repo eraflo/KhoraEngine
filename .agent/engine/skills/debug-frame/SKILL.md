@@ -1,0 +1,27 @@
+---
+name: debug-frame
+description: Investigates a per-frame problem or a GORNA budget decision — wrong strategy selected, a stutter, a render glitch, or a negotiation that didn't behave. Use when diagnosing runtime frame behavior rather than a compile error.
+---
+
+# Debug a frame / GORNA decision
+
+## Approach
+1. **Reproduce** with `cargo run -p sandbox` (or editor); capture the exact log lines and `RUST_LOG=debug`
+   for the suspect subsystem.
+2. **Locate** the path with codegraph: `codegraph_trace` from the agent's `execute` to the lane, or from
+   `negotiate → arbitrate → apply_budget`.
+3. **Inspect the descent**: which `LaneKind`/strategy was chosen? what budget did the arbitrator grant?
+   GORNA fitting is in `crates/khora-control/src/gorna/mod.rs`; cost prediction in `cost_model.rs`;
+   PID output in `crates/khora-core/src/control/pid.rs`.
+4. **Substrate vs descent**: confirm whether the issue is in Pass A (DataSystems/Flows publishing Views) or
+   Pass B (agent → lane). A missing/stale `View` in the `LaneBus` is a common cause of "nothing renders".
+5. **Replay**: GORNA supports deterministic replay (`Option<&TickDecisions>`) — use a recorded tick to
+   isolate negotiation from rendering.
+
+## Known-issue checklist
+- Scene not rendering → check bind-group count (must be 4) and that the Flow published its `View`.
+- Camera jitter → matrix precision / shadow bias (see [`../knowledge/MEMORY.md`](../knowledge/MEMORY.md)).
+- Vulkan semaphore warnings → known, usually non-fatal.
+
+Find the root cause before patching; explain it concisely. Delegate to `control-gorna-expert` or
+`graphics-rendering-expert` as the cause narrows.

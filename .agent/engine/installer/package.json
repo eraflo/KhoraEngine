@@ -1,0 +1,16 @@
+{
+  "name": "khora-ai-engine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Generates provider AI wrappers (Claude Code, Cursor, GitHub Copilot, Gemini CLI) from the canonical .agent/engine docs, wires a doc-change reinstall hook, and gitignores every generated artifact.",
+  "bin": {
+    "khora-ai-engine": "bin/khora-ai.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "install:all": "node bin/khora-ai.mjs install all"
+  }
+}
