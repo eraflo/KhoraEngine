@@ -1,7 +1,7 @@
 ---
 name: ecs-data-expert
 description: Use when working on the data layer — CRPECS (World, storage, queries), SoA/AGDF layout adaptation (LayoutAdvisor, Ucb1), component definition/registration via #[derive(Component)], Flows, or DataSystems.
-tools: Read, Edit, Write, Grep, Glob, Bash
+tools: Read, Edit, Write, Grep, Glob, Bash, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # ECS / Data Expert

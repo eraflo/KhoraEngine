@@ -10,6 +10,10 @@
 #import khora::std::model::model
 #import khora::std::vertex::{VertexInput, VertexOutput}
 #import khora::std::material::material
+#import khora::std::material_textures::{sample_albedo, sample_emissive}
+#ifdef HAS_NORMAL_MAP
+#import khora::std::material_textures::apply_normal_map
+#endif
 #import khora::lighting::structs::{DirectionalLight, PointLight, SpotLight}
 #import khora::lighting::uniforms::lights
 #import khora::lighting::attenuation::{calculate_attenuation, calculate_spot_attenuation}
@@ -135,18 +139,24 @@ fn calculate_spot_lights(
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let N = normalize(input.normal);
+    let base = sample_albedo(input.uv);
+    let geometric_normal = normalize(input.normal);
+#ifdef HAS_NORMAL_MAP
+    let N = apply_normal_map(geometric_normal, input.world_position, input.uv);
+#else
+    let N = geometric_normal;
+#endif
     let V = normalize(camera.camera_position.xyz - input.world_position);
-    let diffuse_color = material.base_color.rgb;
+    let diffuse_color = material.base_color.rgb * base.rgb;
 
     var final_color = material.ambient * diffuse_color;
     final_color += calculate_directional_lights(input.world_position, N, V, diffuse_color, material.specular_power);
     final_color += calculate_point_lights(input.world_position, N, V, diffuse_color, material.specular_power);
     final_color += calculate_spot_lights(input.world_position, N, V, diffuse_color, material.specular_power);
-    final_color += material.emissive;
+    final_color += material.emissive * sample_emissive(input.uv);
 
     final_color = final_color / (final_color + vec3<f32>(1.0));
     final_color = pow(final_color, vec3<f32>(1.0 / 2.2));
 
-    return vec4<f32>(final_color, material.base_color.a);
+    return vec4<f32>(final_color, material.base_color.a * base.a);
 }

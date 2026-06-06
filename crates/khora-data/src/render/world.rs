@@ -21,7 +21,10 @@
 use khora_core::{
     asset::{AssetHandle, AssetUUID, Material},
     math::{affine_transform::AffineTransform, Vec3},
-    renderer::{api::scene::GpuMesh, light::LightType},
+    renderer::{
+        api::scene::{GpuMaterial, GpuMesh},
+        light::LightType,
+    },
 };
 
 /// Flat, GPU-friendly representation of a single mesh to render.
@@ -32,8 +35,17 @@ pub struct ExtractedMesh {
     pub cpu_mesh_uuid: AssetUUID,
     /// Handle to the uploaded GPU mesh data.
     pub gpu_mesh: AssetHandle<GpuMesh>,
-    /// Optional material handle.  `None` means use a default material.
+    /// Optional CPU-side material handle.  `None` means use a default material.
+    ///
+    /// Still consumed by lanes that branch on the concrete material type
+    /// (e.g. `SimpleUnlitLane` pipeline selection); lit lanes read the
+    /// projected [`gpu_material`](Self::gpu_material) instead.
     pub material: Option<AssetHandle<Box<dyn Material>>>,
+    /// Handle to the projected GPU material (uniform buffer + textures +
+    /// group-2 bind group), produced by the material projection.  `None`
+    /// until the projection has uploaded it, or when the entity carries no
+    /// `MaterialComponent` (lit lanes fall back to a default material).
+    pub gpu_material: Option<AssetHandle<GpuMaterial>>,
 }
 
 /// Flat, GPU-friendly representation of a light source.

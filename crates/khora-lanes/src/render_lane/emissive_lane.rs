@@ -17,15 +17,15 @@
 //!
 //! Registered under [`OverlayAgent`](khora_agents::overlay_agent), runs
 //! every frame after the main lit pass. Uses the
-//! `khora::pipelines::emissive` shader composed by `ShaderRegistry`.
+//! `khora::pipelines::emissive` shader resolved through the
+//! `PipelineSystem` backend.
 //!
-//! **Status — Phase 3 scaffold.** The pipeline is created at init
-//! through the ShaderRegistry (so the shader is validated and the GPU
-//! resources are ready), but `execute()` is a no-op until a CPU-side
-//! `MaterialKind::Emissive` flag exists in `khora-data` to filter the
-//! `RenderWorld.meshes` iterator. Adding that flag is a follow-up; the
-//! lane is in place so wiring + the agent contract are exercised by
-//! the existing test harness.
+//! The pipeline is created at init through the `PipelineSystem` (so the
+//! shader is validated and the GPU resources are ready), but `execute()`
+//! is a no-op until a CPU-side `MaterialKind::Emissive` flag exists in
+//! `khora-data` to filter the `RenderWorld.meshes` iterator. Adding that
+//! flag is a follow-up; the lane is in place so wiring + the agent
+//! contract are exercised by the existing test harness.
 
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind};
 use khora_core::renderer::api::command::BindGroupLayoutId;
@@ -50,130 +50,85 @@ pub struct EmissiveLane {
 fn init_gpu_resources(
     lane: &EmissiveLane,
     device: &dyn khora_core::renderer::GraphicsDevice,
-    shader_registry: &std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>,
+    pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
 ) -> Result<(), khora_core::renderer::error::RenderError> {
-    use khora_core::renderer::api::{
-        command::{
-            BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType,
-        },
-        pipeline::enums::{
-            BlendFactor, BlendOperation, CompareFunction, VertexFormat, VertexStepMode,
-        },
-        pipeline::state::{
-            BlendComponentDescriptor, BlendStateDescriptor, ColorWrites, DepthBiasState,
-            StencilFaceState,
-        },
-        pipeline::{
-            ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
-            PrimitiveStateDescriptor, RenderPipelineDescriptor, VertexAttributeDescriptor,
-            VertexBufferLayoutDescriptor,
-        },
-        util::{SampleCount, ShaderStageFlags, TextureFormat},
+    // Bespoke layouts resolved + cached by the PipelineSystem so the pipeline
+    // and any future bind groups share one layout id.
+    let camera_layout = pipeline_system.inline_layout(
+        device,
+        EMISSIVE_CAMERA_LAYOUT_LABEL,
+        &emissive_uniform_layout_entries(
+            khora_core::renderer::api::util::ShaderStageFlags::VERTEX
+                | khora_core::renderer::api::util::ShaderStageFlags::FRAGMENT,
+        ),
+    )?;
+    let model_layout = pipeline_system.inline_layout(
+        device,
+        EMISSIVE_MODEL_LAYOUT_LABEL,
+        &emissive_uniform_layout_entries(khora_core::renderer::api::util::ShaderStageFlags::VERTEX),
+    )?;
+    let material_layout = pipeline_system.inline_layout(
+        device,
+        EMISSIVE_MATERIAL_LAYOUT_LABEL,
+        &emissive_uniform_layout_entries(
+            khora_core::renderer::api::util::ShaderStageFlags::FRAGMENT,
+        ),
+    )?;
+
+    // Pipeline — compiled + cached by the backend from
+    // `khora::pipelines::emissive`.
+    let pipeline_id = pipeline_system.pipeline(device, &emissive_pipeline_spec(device))?;
+
+    let _ = lane.camera_layout.set(camera_layout);
+    let _ = lane.model_layout.set(model_layout);
+    let _ = lane.material_layout.set(material_layout);
+    let _ = lane.pipeline.set(pipeline_id);
+    Ok(())
+}
+
+/// Stable cache labels for the emissive lane's bespoke layouts.
+const EMISSIVE_CAMERA_LAYOUT_LABEL: &str = "emissive_camera_layout";
+const EMISSIVE_MODEL_LAYOUT_LABEL: &str = "emissive_model_layout";
+const EMISSIVE_MATERIAL_LAYOUT_LABEL: &str = "emissive_material_layout";
+
+/// A single uniform-buffer layout entry visible to `visibility`.
+fn emissive_uniform_layout_entries(
+    visibility: khora_core::renderer::api::util::ShaderStageFlags,
+) -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
+    use khora_core::renderer::api::command::{
+        BindGroupLayoutEntry, BindingType, BufferBindingType,
     };
+    vec![BindGroupLayoutEntry {
+        binding: 0,
+        visibility,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+    }]
+}
+
+/// The declarative pipeline spec for the emissive overlay — additive blend,
+/// depth read-only (LessEqual), standard mesh vertex layout.
+fn emissive_pipeline_spec(
+    device: &dyn khora_core::renderer::GraphicsDevice,
+) -> khora_core::renderer::api::pipeline::PipelineSpec {
+    use khora_core::renderer::api::pipeline::enums::{
+        BlendFactor, BlendOperation, CompareFunction, VertexFormat, VertexStepMode,
+    };
+    use khora_core::renderer::api::pipeline::state::{
+        BlendComponentDescriptor, BlendStateDescriptor, ColorWrites, DepthBiasState,
+        StencilFaceState,
+    };
+    use khora_core::renderer::api::pipeline::{
+        ColorTargetStateDescriptor, DepthStencilStateDescriptor, LayoutSpec,
+        MultisampleStateDescriptor, PipelineSpec, PrimitiveStateDescriptor, ShaderVariantKey,
+        VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
+    };
+    use khora_core::renderer::api::util::ShaderStageFlags;
+    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
     use std::borrow::Cow;
-
-    let camera_layout = device
-        .create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("emissive_camera_layout"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-            }],
-        })
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-    let model_layout = device
-        .create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("emissive_model_layout"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStageFlags::VERTEX,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-            }],
-        })
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-    let material_layout = device
-        .create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("emissive_material_layout"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStageFlags::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-            }],
-        })
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-    let shader_module = {
-        let mut registry = crate::lock_or_log!(
-            shader_registry.lock(),
-            "EmissiveLane on_gpu_init.shader_registry",
-            Err(khora_core::renderer::error::RenderError::ResourceError(
-                khora_core::renderer::ResourceError::BackendError(
-                    "shader_registry mutex poisoned".to_owned()
-                )
-            ))
-        );
-        registry
-            .create_module(
-                device,
-                "khora::pipelines::emissive",
-                Some("emissive_shader"),
-            )
-            .map_err(|e| {
-                khora_core::renderer::error::RenderError::ResourceError(
-                    khora_core::renderer::ResourceError::BackendError(format!(
-                        "ShaderRegistry compose failed: {}",
-                        e
-                    )),
-                )
-            })?
-    };
-
-    let pipeline_layout_ids = vec![camera_layout, model_layout, material_layout];
-    let pipeline_layout_id = device
-        .create_pipeline_layout(
-            &khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
-                label: Some(Cow::Borrowed("Emissive Pipeline Layout")),
-                bind_group_layouts: &pipeline_layout_ids,
-            },
-        )
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-    // Standard mesh vertex layout: pos(3) / normal(3) / uv(2).
-    let vertex_attributes = vec![
-        VertexAttributeDescriptor {
-            format: VertexFormat::Float32x3,
-            offset: 0,
-            shader_location: 0,
-        },
-        VertexAttributeDescriptor {
-            format: VertexFormat::Float32x3,
-            offset: 12,
-            shader_location: 1,
-        },
-        VertexAttributeDescriptor {
-            format: VertexFormat::Float32x2,
-            offset: 24,
-            shader_location: 2,
-        },
-    ];
-    let vertex_layout = VertexBufferLayoutDescriptor {
-        array_stride: 32,
-        step_mode: VertexStepMode::Vertex,
-        attributes: Cow::Owned(vertex_attributes),
-    };
 
     // Additive blend — emissive adds to the existing color.
     let additive = BlendStateDescriptor {
@@ -189,16 +144,51 @@ fn init_gpu_resources(
         },
     };
 
-    let pipeline_desc = RenderPipelineDescriptor {
-        label: Some(Cow::Borrowed("Emissive Pipeline")),
-        layout: Some(pipeline_layout_id),
-        vertex_shader_module: shader_module,
-        vertex_entry_point: Cow::Borrowed("vs_main"),
-        fragment_shader_module: Some(shader_module),
-        fragment_entry_point: Some(Cow::Borrowed("fs_main")),
-        vertex_buffers_layout: Cow::Owned(vec![vertex_layout]),
-        primitive_state: PrimitiveStateDescriptor::default(),
-        depth_stencil_state: Some(DepthStencilStateDescriptor {
+    PipelineSpec {
+        label: "Emissive Pipeline",
+        shader: "khora::pipelines::emissive",
+        variant: ShaderVariantKey::empty(),
+        bind_group_layouts: vec![
+            LayoutSpec::Inline {
+                label: EMISSIVE_CAMERA_LAYOUT_LABEL,
+                entries: Cow::Owned(emissive_uniform_layout_entries(
+                    ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
+                )),
+            },
+            LayoutSpec::Inline {
+                label: EMISSIVE_MODEL_LAYOUT_LABEL,
+                entries: Cow::Owned(emissive_uniform_layout_entries(ShaderStageFlags::VERTEX)),
+            },
+            LayoutSpec::Inline {
+                label: EMISSIVE_MATERIAL_LAYOUT_LABEL,
+                entries: Cow::Owned(emissive_uniform_layout_entries(ShaderStageFlags::FRAGMENT)),
+            },
+        ],
+        vertex_buffers: vec![VertexBufferLayoutDescriptor {
+            array_stride: 32,
+            step_mode: VertexStepMode::Vertex,
+            attributes: Cow::Owned(vec![
+                VertexAttributeDescriptor {
+                    format: VertexFormat::Float32x3,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                VertexAttributeDescriptor {
+                    format: VertexFormat::Float32x3,
+                    offset: 12,
+                    shader_location: 1,
+                },
+                VertexAttributeDescriptor {
+                    format: VertexFormat::Float32x2,
+                    offset: 24,
+                    shader_location: 2,
+                },
+            ]),
+        }],
+        vs_entry: "vs_main",
+        fs_entry: Some("fs_main"),
+        primitive: PrimitiveStateDescriptor::default(),
+        depth_stencil: Some(DepthStencilStateDescriptor {
             format: TextureFormat::Depth32Float,
             depth_write_enabled: false, // overlay — depth read-only
             depth_compare: CompareFunction::LessEqual,
@@ -208,28 +198,19 @@ fn init_gpu_resources(
             stencil_write_mask: 0,
             bias: DepthBiasState::default(),
         }),
-        color_target_states: Cow::Owned(vec![ColorTargetStateDescriptor {
+        color_targets: vec![ColorTargetStateDescriptor {
             format: device
                 .get_surface_format()
                 .unwrap_or(TextureFormat::Rgba8UnormSrgb),
             blend: Some(additive),
             write_mask: ColorWrites::ALL,
-        }]),
-        multisample_state: MultisampleStateDescriptor {
+        }],
+        multisample: MultisampleStateDescriptor {
             count: SampleCount::X1,
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-    };
-    let pipeline_id = device
-        .create_render_pipeline(&pipeline_desc)
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-    let _ = lane.camera_layout.set(camera_layout);
-    let _ = lane.model_layout.set(model_layout);
-    let _ = lane.material_layout.set(material_layout);
-    let _ = lane.pipeline.set(pipeline_id);
-    Ok(())
+    }
 }
 
 impl Lane for EmissiveLane {
@@ -246,11 +227,11 @@ impl Lane for EmissiveLane {
             .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
             .clone();
-        let registry = ctx
-            .get::<std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>>()
-            .ok_or(LaneError::missing("Arc<Mutex<ShaderRegistry>>"))?
+        let pipeline_system = ctx
+            .get::<std::sync::Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .ok_or(LaneError::missing("Arc<dyn PipelineSystem>"))?
             .clone();
-        init_gpu_resources(self, device.as_ref(), &registry)
+        init_gpu_resources(self, device.as_ref(), pipeline_system.as_ref())
             .map_err(|e| LaneError::InitializationFailed(Box::new(e)))
     }
 

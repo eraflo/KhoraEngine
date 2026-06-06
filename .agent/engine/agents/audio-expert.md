@@ -1,7 +1,7 @@
 ---
 name: audio-expert
 description: Use when working on audio — CPAL devices, the spatial mixing lanes, the audio mix bus, the AudioDevice trait, audio decoding (Symphonia), or AudioSource/AudioListener components.
-tools: Read, Edit, Write, Grep, Glob, Bash
+tools: Read, Edit, Write, Grep, Glob, Bash, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # Audio Expert

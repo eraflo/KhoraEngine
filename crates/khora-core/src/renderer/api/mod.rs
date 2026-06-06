@@ -25,6 +25,7 @@
 
 pub mod command;
 pub mod core;
+pub mod material;
 pub mod pipeline;
 pub mod resource;
 pub mod scene;

@@ -15,7 +15,7 @@
 //! Defines the standard PBR material with metallic-roughness workflow.
 
 use crate::{
-    asset::{Asset, Material},
+    asset::{Asset, AssetUUID, Material},
     math::LinearRgba,
 };
 
@@ -79,9 +79,7 @@ pub struct StandardMaterial {
     ///
     /// If present, this texture's RGB values are multiplied with `base_color`.
     /// The alpha channel can be used for transparency when combined with appropriate `alpha_mode`.
-    ///
-    /// **Future work**: Texture asset system integration pending.
-    // pub base_color_texture: Option<AssetHandle<TextureId>>,
+    pub base_color_texture: Option<AssetUUID>,
 
     /// The metallic factor (0.0 = dielectric, 1.0 = metal).
     ///
@@ -100,25 +98,21 @@ pub struct StandardMaterial {
     ///
     /// **glTF 2.0 convention**: Blue channel = metallic, Green channel = roughness.
     /// If present, the texture values are multiplied with the `metallic` and `roughness` factors.
-    ///
-    /// **Future work**: Texture asset system integration pending.
-    // pub metallic_roughness_texture: Option<AssetHandle<TextureId>>,
+    pub metallic_roughness_texture: Option<AssetUUID>,
 
     /// Optional normal map for adding surface detail.
     ///
     /// Normal maps perturb the surface normal to create the illusion of fine geometric
     /// detail without adding actual geometry. Stored in tangent space.
-    ///
-    /// **Future work**: Texture asset system integration pending.
-    // pub normal_map: Option<AssetHandle<TextureId>>,
+    pub normal_map: Option<AssetUUID>,
 
     /// Optional ambient occlusion map.
     ///
     /// AO maps darken areas that should receive less ambient light, such as crevices
     /// and contact points. The red channel is typically used.
     ///
-    /// **Future work**: Texture asset system integration pending.
-    // pub occlusion_map: Option<AssetHandle<TextureId>>,
+    /// **Future work**: occlusion sampling is not yet wired into the lit shaders.
+    pub occlusion_map: Option<AssetUUID>,
 
     /// The emissive color of the material.
     ///
@@ -130,9 +124,7 @@ pub struct StandardMaterial {
     /// Optional texture for emissive color.
     ///
     /// If present, this texture's RGB values are multiplied with `emissive`.
-    ///
-    /// **Future work**: Texture asset system integration pending.
-    // pub emissive_texture: Option<AssetHandle<TextureId>>,
+    pub emissive_texture: Option<AssetUUID>,
 
     /// The alpha blending mode for this material.
     ///
@@ -156,14 +148,14 @@ impl Default for StandardMaterial {
     fn default() -> Self {
         Self {
             base_color: LinearRgba::new(0.8, 0.8, 0.8, 1.0), // Light gray
-            // base_color_texture: None,
+            base_color_texture: None,
             metallic: 0.0,  // Non-metallic by default
             roughness: 0.5, // Medium roughness
-            // metallic_roughness_texture: None,
-            // normal_map: None,
-            // occlusion_map: None,
+            metallic_roughness_texture: None,
+            normal_map: None,
+            occlusion_map: None,
             emissive: LinearRgba::new(0.0, 0.0, 0.0, 1.0), // No emission
-            // emissive_texture: None,
+            emissive_texture: None,
             alpha_mode: AlphaMode::Opaque,
             alpha_cutoff: 0.5,
             double_sided: false,
@@ -179,6 +171,30 @@ impl Material for StandardMaterial {
 
     fn emissive_color(&self) -> crate::math::LinearRgba {
         self.emissive
+    }
+
+    fn metallic(&self) -> f32 {
+        self.metallic
+    }
+
+    fn roughness(&self) -> f32 {
+        self.roughness
+    }
+
+    fn base_color_texture(&self) -> Option<AssetUUID> {
+        self.base_color_texture
+    }
+
+    fn metallic_roughness_texture(&self) -> Option<AssetUUID> {
+        self.metallic_roughness_texture
+    }
+
+    fn normal_map(&self) -> Option<AssetUUID> {
+        self.normal_map
+    }
+
+    fn emissive_texture(&self) -> Option<AssetUUID> {
+        self.emissive_texture
     }
 }
 
@@ -197,11 +213,11 @@ mod tests {
         assert_eq!(material.alpha_mode, AlphaMode::Opaque);
         assert_eq!(material.alpha_cutoff, 0.5);
         assert!(!material.double_sided);
-        // assert!(material.base_color_texture.is_none());
-        // assert!(material.metallic_roughness_texture.is_none());
-        // assert!(material.normal_map.is_none());
-        // assert!(material.occlusion_map.is_none());
-        // assert!(material.emissive_texture.is_none());
+        assert!(material.base_color_texture.is_none());
+        assert!(material.metallic_roughness_texture.is_none());
+        assert!(material.normal_map.is_none());
+        assert!(material.occlusion_map.is_none());
+        assert!(material.emissive_texture.is_none());
     }
 
     #[test]

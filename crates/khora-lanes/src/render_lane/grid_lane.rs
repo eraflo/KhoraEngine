@@ -53,42 +53,22 @@ pub struct GridLane {
 fn init_gpu_resources(
     lane: &GridLane,
     device: &dyn khora_core::renderer::GraphicsDevice,
-    shader_registry: &Arc<Mutex<crate::render_lane::ShaderRegistry>>,
+    pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
 ) -> Result<(), khora_core::renderer::error::RenderError> {
     use khora_core::renderer::api::{
-        command::{
-            BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
-            BindingResource, BindingType, BufferBinding, BufferBindingType,
-        },
-        pipeline::enums::{BlendFactor, BlendOperation, CompareFunction, PrimitiveTopology},
-        pipeline::state::{
-            BlendComponentDescriptor, BlendStateDescriptor, ColorWrites, DepthBiasState,
-            StencilFaceState,
-        },
-        pipeline::{
-            ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
-            PrimitiveStateDescriptor, RenderPipelineDescriptor,
-        },
+        command::{BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding},
         resource::{BufferDescriptor, BufferUsage, CameraUniformData},
-        util::{SampleCount, ShaderStageFlags, TextureFormat},
     };
     use std::borrow::Cow;
 
-    // Group 0 — camera UBO (mat4 view-proj + vec4 position = 80 B).
-    let camera_layout = device
-        .create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("grid_camera_layout"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-            }],
-        })
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+    // Group 0 — camera UBO (mat4 view-proj + vec4 position = 80 B). Bespoke
+    // layout resolved + cached by the PipelineSystem so the pipeline and the
+    // lane's bind group share one layout id.
+    let camera_layout = pipeline_system.inline_layout(
+        device,
+        GRID_CAMERA_LAYOUT_LABEL,
+        &grid_camera_layout_entries(),
+    )?;
 
     let camera_buffer = device
         .create_buffer(&BufferDescriptor {
@@ -115,36 +95,54 @@ fn init_gpu_resources(
         })
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-    let shader_module = {
-        let mut registry = crate::lock_or_log!(
-            shader_registry.lock(),
-            "GridLane init_gpu_resources.shader_registry",
-            Err(khora_core::renderer::error::RenderError::ResourceError(
-                khora_core::renderer::ResourceError::BackendError(
-                    "shader_registry mutex poisoned".to_owned()
-                )
-            ))
-        );
-        registry
-            .create_module(device, "khora::pipelines::grid", Some("grid_shader"))
-            .map_err(|e| {
-                khora_core::renderer::error::RenderError::ResourceError(
-                    khora_core::renderer::ResourceError::BackendError(format!(
-                        "ShaderRegistry compose failed: {}",
-                        e
-                    )),
-                )
-            })?
-    };
+    // Pipeline — compiled + cached by the backend from `khora::pipelines::grid`.
+    let pipeline_id = pipeline_system.pipeline(device, &grid_pipeline_spec(device))?;
 
-    let pipeline_layout_id = device
-        .create_pipeline_layout(
-            &khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
-                label: Some(Cow::Borrowed("Grid Pipeline Layout")),
-                bind_group_layouts: &[camera_layout],
-            },
-        )
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+    let _ = lane.camera_layout.set(camera_layout);
+    let _ = lane.camera_buffer.set(camera_buffer);
+    let _ = lane.camera_bind_group.set(camera_bind_group);
+    let _ = lane.pipeline.set(pipeline_id);
+    Ok(())
+}
+
+/// Stable cache label for the grid camera layout.
+const GRID_CAMERA_LAYOUT_LABEL: &str = "grid_camera_layout";
+
+/// Group-0 camera layout: a single uniform buffer (vertex + fragment).
+fn grid_camera_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
+    use khora_core::renderer::api::command::{
+        BindGroupLayoutEntry, BindingType, BufferBindingType,
+    };
+    use khora_core::renderer::api::util::ShaderStageFlags;
+    vec![BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+    }]
+}
+
+/// The declarative pipeline spec for the grid overlay — fullscreen triangle,
+/// alpha-blended, depth-tested (LessEqual) against the scene buffer.
+fn grid_pipeline_spec(
+    device: &dyn khora_core::renderer::GraphicsDevice,
+) -> khora_core::renderer::api::pipeline::PipelineSpec {
+    use khora_core::renderer::api::pipeline::enums::{
+        BlendFactor, BlendOperation, CompareFunction, PrimitiveTopology,
+    };
+    use khora_core::renderer::api::pipeline::state::{
+        BlendComponentDescriptor, BlendStateDescriptor, ColorWrites, DepthBiasState,
+        StencilFaceState,
+    };
+    use khora_core::renderer::api::pipeline::{
+        ColorTargetStateDescriptor, DepthStencilStateDescriptor, LayoutSpec,
+        MultisampleStateDescriptor, PipelineSpec, PrimitiveStateDescriptor, ShaderVariantKey,
+    };
+    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
+    use std::borrow::Cow;
 
     // Alpha blend — antialiased grid lines fade against the scene.
     let blend = BlendStateDescriptor {
@@ -160,22 +158,25 @@ fn init_gpu_resources(
         },
     };
 
-    let pipeline_desc = RenderPipelineDescriptor {
-        label: Some(Cow::Borrowed("Grid Pipeline")),
-        layout: Some(pipeline_layout_id),
-        vertex_shader_module: shader_module,
-        vertex_entry_point: Cow::Borrowed("vs_main"),
-        fragment_shader_module: Some(shader_module),
-        fragment_entry_point: Some(Cow::Borrowed("fs_main")),
-        vertex_buffers_layout: Cow::Owned(vec![]),
-        primitive_state: PrimitiveStateDescriptor {
+    PipelineSpec {
+        label: "Grid Pipeline",
+        shader: "khora::pipelines::grid",
+        variant: ShaderVariantKey::empty(),
+        bind_group_layouts: vec![LayoutSpec::Inline {
+            label: GRID_CAMERA_LAYOUT_LABEL,
+            entries: Cow::Owned(grid_camera_layout_entries()),
+        }],
+        vertex_buffers: vec![],
+        vs_entry: "vs_main",
+        fs_entry: Some("fs_main"),
+        primitive: PrimitiveStateDescriptor {
             topology: PrimitiveTopology::TriangleList,
             ..Default::default()
         },
         // The grid fragment shader writes `@builtin(frag_depth)`; depth
-        // testing against the scene buffer (LessEqual) lets closer
-        // geometry occlude the grid.
-        depth_stencil_state: Some(DepthStencilStateDescriptor {
+        // testing against the scene buffer (LessEqual) lets closer geometry
+        // occlude the grid.
+        depth_stencil: Some(DepthStencilStateDescriptor {
             format: TextureFormat::Depth32Float,
             depth_write_enabled: true,
             depth_compare: CompareFunction::LessEqual,
@@ -185,28 +186,19 @@ fn init_gpu_resources(
             stencil_write_mask: 0,
             bias: DepthBiasState::default(),
         }),
-        color_target_states: Cow::Owned(vec![ColorTargetStateDescriptor {
+        color_targets: vec![ColorTargetStateDescriptor {
             format: device
                 .get_surface_format()
                 .unwrap_or(TextureFormat::Rgba8UnormSrgb),
             blend: Some(blend),
             write_mask: ColorWrites::ALL,
-        }]),
-        multisample_state: MultisampleStateDescriptor {
+        }],
+        multisample: MultisampleStateDescriptor {
             count: SampleCount::X1,
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-    };
-    let pipeline_id = device
-        .create_render_pipeline(&pipeline_desc)
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-    let _ = lane.camera_layout.set(camera_layout);
-    let _ = lane.camera_buffer.set(camera_buffer);
-    let _ = lane.camera_bind_group.set(camera_bind_group);
-    let _ = lane.pipeline.set(pipeline_id);
-    Ok(())
+    }
 }
 
 fn render_grid(
@@ -288,11 +280,11 @@ impl Lane for GridLane {
             .get::<Arc<dyn khora_core::renderer::GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
             .clone();
-        let registry = ctx
-            .get::<Arc<Mutex<crate::render_lane::ShaderRegistry>>>()
-            .ok_or(LaneError::missing("Arc<Mutex<ShaderRegistry>>"))?
+        let pipeline_system = ctx
+            .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .ok_or(LaneError::missing("Arc<dyn PipelineSystem>"))?
             .clone();
-        init_gpu_resources(self, device.as_ref(), &registry)
+        init_gpu_resources(self, device.as_ref(), pipeline_system.as_ref())
             .map_err(|e| LaneError::InitializationFailed(Box::new(e)))
     }
 

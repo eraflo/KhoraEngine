@@ -29,6 +29,8 @@ use khora_core::math::{Extent2D, Extent3D, LinearRgba, Mat4, Origin3D};
 #[allow(unused_imports)]
 use khora_core::renderer::api::command::BindGroupLayoutId;
 
+use khora_core::renderer::api::pipeline::{LayoutKey, LayoutSpec, PipelineSpec, ShaderVariantKey};
+use khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer;
 use khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer;
 use khora_core::{
     asset::Material,
@@ -42,9 +44,9 @@ use khora_core::{
             pipeline::enums::PrimitiveTopology,
             pipeline::RenderPipelineId,
             scene::{
-                DirectionalLightUniform, GpuMesh, LightingUniforms, MaterialUniforms,
-                ModelUniforms, PointLightUniform, SpotLightUniform, MAX_DIRECTIONAL_LIGHTS,
-                MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS,
+                DirectionalLightUniform, GpuMesh, LightingUniforms, ModelUniforms,
+                PointLightUniform, SpotLightUniform, MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS,
+                MAX_SPOT_LIGHTS,
             },
         },
         traits::CommandEncoder,
@@ -120,7 +122,6 @@ impl ShaderComplexity {
 /// - Base triangle and draw call costs (same as `SimpleUnlitLane`)
 /// - Shader complexity multiplier based on the configured complexity level
 /// - Per-light cost scaling based on the number of active lights
-#[derive(Debug)]
 pub struct LitForwardLane {
     /// The shader complexity level to use for cost estimation.
     pub shader_complexity: ShaderComplexity,
@@ -132,6 +133,10 @@ pub struct LitForwardLane {
     pub max_spot_lights: u32,
     /// The stored render pipeline handle (lock-free init-once).
     pipeline: std::sync::OnceLock<RenderPipelineId>,
+    /// Backend pipeline system, retained so the render path can resolve the
+    /// per-material-variant pipeline (cheap cache hit). Set in `on_gpu_init`.
+    pipeline_system:
+        std::sync::OnceLock<std::sync::Arc<dyn khora_core::renderer::traits::PipelineSystem>>,
     /// Layout for Camera (Group 0).
     camera_layout: std::sync::OnceLock<BindGroupLayoutId>,
     /// Layout for Model (Group 1).
@@ -146,6 +151,8 @@ pub struct LitForwardLane {
     camera_ring: std::sync::Mutex<Option<UniformRingBuffer>>,
     /// Persistent ring buffer for lighting uniforms (eliminates per-frame allocation).
     lighting_ring: std::sync::Mutex<Option<UniformRingBuffer>>,
+    /// Per-frame model (transform) uniforms — dynamic offset per draw.
+    model_ring: std::sync::Mutex<Option<DynamicUniformRingBuffer>>,
 }
 
 impl Default for LitForwardLane {
@@ -156,6 +163,7 @@ impl Default for LitForwardLane {
             max_point_lights: 16,
             max_spot_lights: 8,
             pipeline: std::sync::OnceLock::new(),
+            pipeline_system: std::sync::OnceLock::new(),
             camera_layout: std::sync::OnceLock::new(),
             model_layout: std::sync::OnceLock::new(),
             material_layout: std::sync::OnceLock::new(),
@@ -163,6 +171,7 @@ impl Default for LitForwardLane {
             lighting_buffer_layout: std::sync::OnceLock::new(),
             camera_ring: std::sync::Mutex::new(None),
             lighting_ring: std::sync::Mutex::new(None),
+            model_ring: std::sync::Mutex::new(None),
         }
     }
 }
@@ -244,13 +253,16 @@ impl khora_core::lane::Lane for LitForwardLane {
                 "Arc<dyn GraphicsDevice>",
             ))?
             .clone();
-        let registry = ctx
-            .get::<std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>>()
+        let pipeline_system = ctx
+            .get::<std::sync::Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
             .ok_or(khora_core::lane::LaneError::missing(
-                "Arc<Mutex<ShaderRegistry>>",
+                "Arc<dyn PipelineSystem>",
             ))?
             .clone();
-        self.on_gpu_init(device.as_ref(), &registry)
+        // Retain the system so the render hot path can resolve a pipeline per
+        // material variant (a cheap cache hit after first compile).
+        let _ = self.pipeline_system.set(pipeline_system.clone());
+        self.on_gpu_init(device.as_ref(), pipeline_system.as_ref())
             .map_err(|e| khora_core::lane::LaneError::InitializationFailed(Box::new(e)))
     }
 
@@ -361,9 +373,8 @@ impl LitForwardLane {
         render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) {
-        use khora_core::renderer::api::{
-            command::{BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding},
-            resource::{BufferDescriptor, BufferUsage},
+        use khora_core::renderer::api::command::{
+            BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding,
         };
 
         // 1. Get Active Camera View.
@@ -591,134 +602,87 @@ impl LitForwardLane {
         let gpu_mesh_assets =
             crate::lock_or_log!(gpu_meshes.read(), "LitForwardLane::render gpu_meshes");
 
-        // Pipeline binding logic moved before render pass to avoid issues.
-        // Lock-free read via OnceLock; falls back to id 0 if not initialized.
-        let pipeline_id = self.pipeline.get().copied().unwrap_or(RenderPipelineId(0));
+        // Fallback pipeline (empty variant) used only if the per-variant
+        // resolve fails; lock-free read via OnceLock.
+        let fallback_pipeline = self.pipeline.get().copied().unwrap_or(RenderPipelineId(0));
 
         // Prepare Draw Commands
         let mut draw_commands = Vec::with_capacity(render_world.meshes.len());
 
-        let mut temp_buffers = Vec::new();
         let mut temp_bind_groups = Vec::new();
 
-        for extracted_mesh in &render_world.meshes {
-            if let Some(gpu_mesh_handle) = gpu_mesh_assets.get(&extracted_mesh.cpu_mesh_uuid) {
-                // Create Per-Mesh Uniforms
-                let model_mat = extracted_mesh.transform.to_matrix();
-
-                // Strict check: if the matrix is not invertible, skip
-                let normal_mat = if let Some(inverse) = model_mat.inverse() {
-                    inverse.transpose()
-                } else {
-                    continue;
-                };
-
-                let mut base_color = khora_core::math::LinearRgba::WHITE;
-                let mut emissive = khora_core::math::LinearRgba::BLACK;
-                let mut specular_power = 32.0;
-
-                if let Some(mat_handle) = &extracted_mesh.material {
-                    base_color = mat_handle.base_color();
-                    emissive = mat_handle.emissive_color();
-                    specular_power = mat_handle.specular_power();
-                }
-
-                let model_uniforms = ModelUniforms {
-                    model_matrix: model_mat.to_cols_array_2d(),
-                    normal_matrix: normal_mat.to_cols_array_2d(),
-                };
-
-                let model_buffer = match device.create_buffer_with_data(
-                    &BufferDescriptor {
-                        label: None,
-                        size: std::mem::size_of::<ModelUniforms>() as u64,
-                        usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
-                        mapped_at_creation: false,
-                    },
-                    bytemuck::bytes_of(&model_uniforms),
-                ) {
-                    Ok(b) => {
-                        temp_buffers.push(b);
-                        b
-                    }
-                    Err(_) => continue,
-                };
-
-                let material_uniforms = MaterialUniforms {
-                    base_color,
-                    emissive: emissive.with_alpha(specular_power),
-                    ambient: khora_core::math::LinearRgba::new(0.1, 0.1, 0.1, 0.0),
-                };
-                let material_buffer = match device.create_buffer_with_data(
-                    &BufferDescriptor {
-                        label: None,
-                        size: std::mem::size_of::<MaterialUniforms>() as u64,
-                        usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
-                        mapped_at_creation: false,
-                    },
-                    bytemuck::bytes_of(&material_uniforms),
-                ) {
-                    Ok(b) => {
-                        temp_buffers.push(b);
-                        b
-                    }
-                    Err(_) => continue,
-                };
-
-                // Create Bind Groups 1 & 2 — lock-free reads via OnceLock.
-                let mut model_bg = None;
-                if let Some(layout) = self.model_layout.get().copied() {
-                    if let Ok(bg) = device.create_bind_group(&BindGroupDescriptor {
-                        label: None,
-                        layout,
-                        entries: &[BindGroupEntry {
-                            binding: 0,
-                            resource: BindingResource::Buffer(BufferBinding {
-                                buffer: model_buffer,
-                                offset: 0,
-                                size: None,
-                            }),
-                            _phantom: std::marker::PhantomData,
-                        }],
-                    }) {
-                        model_bg = Some(bg);
-                        temp_bind_groups.push(bg);
-                    }
-                }
-
-                let mut material_bg = None;
-                if let Some(layout) = self.material_layout.get().copied() {
-                    if let Ok(bg) = device.create_bind_group(&BindGroupDescriptor {
-                        label: None,
-                        layout,
-                        entries: &[BindGroupEntry {
-                            binding: 0,
-                            resource: BindingResource::Buffer(BufferBinding {
-                                buffer: material_buffer,
-                                offset: 0,
-                                size: None,
-                            }),
-                            _phantom: std::marker::PhantomData,
-                        }],
-                    }) {
-                        material_bg = Some(bg);
-                        temp_bind_groups.push(bg);
-                    }
-                }
-
-                draw_commands.push(khora_core::renderer::api::command::DrawCommand {
-                    pipeline: pipeline_id,
-                    vertex_buffer: gpu_mesh_handle.vertex_buffer,
-                    index_buffer: gpu_mesh_handle.index_buffer,
-                    index_format: gpu_mesh_handle.index_format,
-                    index_count: gpu_mesh_handle.index_count,
-                    model_bind_group: model_bg,
-                    model_offset: 0,
-                    material_bind_group: material_bg,
-                    material_offset: 0,
-                });
+        // Model transforms go through the per-frame dynamic ring; materials
+        // are consumed from the cached `GpuMaterial` (no per-draw churn).
+        let mut model_ring_lock =
+            crate::lock_or_log!(self.model_ring.lock(), "LitForwardLane::render model_ring");
+        let model_ring = match model_ring_lock.as_mut() {
+            Some(r) => r,
+            None => {
+                log::warn!("LitForwardLane: model ring buffer not initialized");
+                return;
             }
+        };
+        model_ring.advance();
+
+        for extracted_mesh in &render_world.meshes {
+            let Some(gpu_mesh_handle) = gpu_mesh_assets.get(&extracted_mesh.cpu_mesh_uuid) else {
+                continue;
+            };
+            // The material projection tags every rendered entity with a
+            // `GpuMaterial` before `RenderFlow` runs.
+            let Some(gpu_material) = &extracted_mesh.gpu_material else {
+                continue;
+            };
+            // Resolve the pipeline for this material's texture variant. The
+            // backend caches per `(shader, variant, format)` so this is a
+            // cheap lookup after first compile; the lane never retains a
+            // long-term `RenderPipelineId` per variant.
+            let pipeline_id = self
+                .pipeline_system
+                .get()
+                .map(|ps| ps.pipeline(device, &pipeline_spec(device, gpu_material.variant.clone())))
+                .transpose()
+                .unwrap_or_else(|e| {
+                    log::error!("LitForwardLane: pipeline resolve failed: {:?}", e);
+                    None
+                })
+                .unwrap_or(fallback_pipeline);
+            let model_mat = extracted_mesh.transform.to_matrix();
+            let normal_mat = if let Some(inverse) = model_mat.inverse() {
+                inverse.transpose()
+            } else {
+                continue;
+            };
+            let model_uniforms = ModelUniforms {
+                model_matrix: model_mat.to_cols_array_2d(),
+                normal_matrix: normal_mat.to_cols_array_2d(),
+            };
+            let model_offset = match model_ring.push(device, bytemuck::bytes_of(&model_uniforms)) {
+                Ok(offset) => offset,
+                Err(e) => {
+                    log::error!("LitForwardLane: failed to push model uniforms: {:?}", e);
+                    continue;
+                }
+            };
+            let model_bg = *model_ring.current_bind_group();
+
+            draw_commands.push(khora_core::renderer::api::command::DrawCommand {
+                pipeline: pipeline_id,
+                vertex_buffer: gpu_mesh_handle.vertex_buffer,
+                index_buffer: gpu_mesh_handle.index_buffer,
+                index_format: gpu_mesh_handle.index_format,
+                index_count: gpu_mesh_handle.index_count,
+                model_bind_group: Some(model_bg),
+                model_offset,
+                material_bind_group: Some(gpu_material.bind_group),
+                material_offset: 0,
+            });
         }
+
+        // Batch by pipeline (variant) so each pipeline is set once across the
+        // whole pass — avoids per-draw pipeline thrash when materials mix
+        // variants. Stable sort keeps submission order within a variant.
+        draw_commands.sort_by_key(|cmd| cmd.pipeline.0);
 
         // Render Pass
         let color_attachment = RenderPassColorAttachment {
@@ -806,13 +770,13 @@ impl LitForwardLane {
         let mut current_pipeline: Option<RenderPipelineId> = None;
 
         for cmd in &draw_commands {
-            if current_pipeline != Some(pipeline_id) {
-                render_pass.set_pipeline(&pipeline_id);
-                current_pipeline = Some(pipeline_id);
+            if current_pipeline != Some(cmd.pipeline) {
+                render_pass.set_pipeline(&cmd.pipeline);
+                current_pipeline = Some(cmd.pipeline);
             }
 
             if let Some(bg) = &cmd.model_bind_group {
-                render_pass.set_bind_group(1, bg, &[]);
+                render_pass.set_bind_group(1, bg, &[cmd.model_offset]);
             }
 
             if let Some(bg) = &cmd.material_bind_group {
@@ -825,12 +789,10 @@ impl LitForwardLane {
             render_pass.draw_indexed(0..cmd.index_count, 0, 0..1);
         }
 
-        // Clean up temporary resources (they remain alive on the GPU until the command buffer finishes)
+        // Only the per-frame group-3 lighting bind group is transient now;
+        // model uniforms live in the ring, materials in the GpuMaterial cache.
         for bg in temp_bind_groups {
             let _ = device.destroy_bind_group(bg);
-        }
-        for buf in temp_buffers {
-            let _ = device.destroy_buffer(buf);
         }
     }
 
@@ -887,225 +849,40 @@ impl LitForwardLane {
     fn on_gpu_init(
         &self,
         device: &dyn khora_core::renderer::GraphicsDevice,
-        shader_registry: &std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>,
+        pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
-        use khora_core::renderer::api::{
-            command::{
-                BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType,
-            },
-            pipeline::enums::{CompareFunction, VertexFormat, VertexStepMode},
-            pipeline::state::{ColorWrites, DepthBiasState, StencilFaceState},
-            pipeline::{
-                ColorTargetStateDescriptor, DepthStencilStateDescriptor,
-                MultisampleStateDescriptor, PrimitiveStateDescriptor, RenderPipelineDescriptor,
-                VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
-            },
-            util::{SampleCount, ShaderStageFlags, TextureFormat},
-        };
-        use std::borrow::Cow;
+        use crate::render_lane::util::lock::mutex_lock_render;
 
         log::info!("LitForwardLane: Initializing GPU resources...");
 
-        // 1. Create Bind Group Layouts
+        // Canonical layouts come from the backend's LayoutCache (deduped across
+        // lit lanes + shared with the material projection's group-2 bind group).
+        let variant = ShaderVariantKey::empty();
+        let camera_layout = pipeline_system.layout(device, LayoutKey::Camera, &variant)?;
+        let model_layout = pipeline_system.layout(device, LayoutKey::Model, &variant)?;
+        let material_layout = pipeline_system.layout(device, LayoutKey::Material, &variant)?;
+        let light_layout = pipeline_system.layout(device, LayoutKey::Lighting, &variant)?;
+        let lighting_buffer_layout =
+            pipeline_system.layout(device, LayoutKey::LightingBuffer, &variant)?;
 
-        // Group 0: Camera
-        let camera_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("lit_forward_camera_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                }],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        // Warm the empty-variant pipeline (untextured materials). Textured
+        // variants are compiled lazily in the render path on first use, keyed
+        // by `GpuMaterial::variant`.
+        let pipeline_id =
+            pipeline_system.pipeline(device, &pipeline_spec(device, ShaderVariantKey::empty()))?;
 
-        // Group 1: Model
-        let model_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("lit_forward_model_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::VERTEX,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false, // Using simple uniform for now, could be dynamic later
-                        min_binding_size: None,
-                    },
-                }],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // Group 2: Material
-        let material_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("lit_forward_material_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                }],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // Group 3 — lights & shadows.
-        //   binding 0 — lighting uniforms (lit lane's responsibility)
-        //   binding 1 — 2D shadow atlas        ─┐
-        //   binding 2 — comparison sampler       ├ provided by the shadow lane
-        //   binding 3 — cube shadow atlas       ─┘
-        //
-        // The shadow-side entries come from
-        // [`khora_data::render::shadow_bindings::shadow_bind_group_layout_entries`];
-        // the lit lane never references the underlying texture / view
-        // dimensions directly so a different shadow algorithm (clustered,
-        // tiled, …) could swap them without touching this file.
-        let mut layout_entries: Vec<BindGroupLayoutEntry> = vec![BindGroupLayoutEntry {
-            binding: khora_data::render::shadow_bindings::binding::LIGHTING_UNIFORMS,
-            visibility: ShaderStageFlags::FRAGMENT,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-        }];
-        layout_entries
-            .extend(khora_data::render::shadow_bindings::shadow_bind_group_layout_entries());
-        let light_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("lit_forward_light_layout"),
-                entries: &layout_entries,
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // 2. Create Shader Module via the central `ShaderRegistry`.
-        // The pipeline is composed from `khora::pipelines::lit_forward`
-        // with all its `#import`ed lib modules resolved + ShaderDefs
-        // injected by naga_oil. Validation runs through naga before the
-        // device sees the final WGSL.
-        let shader_module = {
-            let mut registry = crate::lock_or_log!(
-                shader_registry.lock(),
-                "LitForwardLane on_gpu_init.shader_registry",
-                Err(khora_core::renderer::error::RenderError::ResourceError(
-                    khora_core::renderer::ResourceError::BackendError(
-                        "shader_registry mutex poisoned".to_owned()
-                    )
-                ))
-            );
-            registry
-                .create_module(
-                    device,
-                    "khora::pipelines::lit_forward",
-                    Some("lit_forward_shader"),
-                )
-                .map_err(|e| {
-                    khora_core::renderer::error::RenderError::ResourceError(
-                        khora_core::renderer::ResourceError::BackendError(format!(
-                            "ShaderRegistry compose failed: {}",
-                            e
-                        )),
-                    )
-                })?
-        };
-
-        // 3. Create Pipeline
-        let vertex_attributes = vec![
-            VertexAttributeDescriptor {
-                format: VertexFormat::Float32x3,
-                offset: 0,
-                shader_location: 0,
-            },
-            VertexAttributeDescriptor {
-                format: VertexFormat::Float32x3,
-                offset: 12,
-                shader_location: 1,
-            },
-            VertexAttributeDescriptor {
-                format: VertexFormat::Float32x2,
-                offset: 24,
-                shader_location: 2,
-            },
-        ];
-
-        let vertex_layout = VertexBufferLayoutDescriptor {
-            array_stride: 32, // 3+3+2 floats * 4 bytes
-            step_mode: VertexStepMode::Vertex,
-            attributes: Cow::Owned(vertex_attributes),
-        };
-
-        let pipeline_layout_ids = vec![camera_layout, model_layout, material_layout, light_layout];
-        // Store bind group layouts for creating bind groups during rendering.
-        use crate::render_lane::util::lock::mutex_lock_render;
         // Init-once writes — `set` is lock-free; second call returns Err
         // which we ignore (re-init is a logic bug, not a runtime fault).
         let _ = self.camera_layout.set(camera_layout);
         let _ = self.model_layout.set(model_layout);
         let _ = self.material_layout.set(material_layout);
         let _ = self.light_layout.set(light_layout);
-
-        // Create the pipeline layout from our bind group layouts.
-        let pipeline_layout_desc = khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
-            label: Some(Cow::Borrowed("LitForward Pipeline Layout")),
-            bind_group_layouts: &pipeline_layout_ids,
-        };
-
-        let pipeline_layout_id = device
-            .create_pipeline_layout(&pipeline_layout_desc)
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        let pipeline_desc = RenderPipelineDescriptor {
-            label: Some(Cow::Borrowed("LitForward Pipeline")),
-            layout: Some(pipeline_layout_id),
-            vertex_shader_module: shader_module,
-            vertex_entry_point: Cow::Borrowed("vs_main"),
-            fragment_shader_module: Some(shader_module),
-            fragment_entry_point: Some(Cow::Borrowed("fs_main")),
-            vertex_buffers_layout: Cow::Owned(vec![vertex_layout]),
-            primitive_state: PrimitiveStateDescriptor {
-                topology: PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil_state: Some(DepthStencilStateDescriptor {
-                format: TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: CompareFunction::Less,
-                stencil_front: StencilFaceState::default(),
-                stencil_back: StencilFaceState::default(),
-                stencil_read_mask: 0,
-                stencil_write_mask: 0,
-                bias: DepthBiasState::default(),
-            }),
-            color_target_states: Cow::Owned(vec![ColorTargetStateDescriptor {
-                format: device
-                    .get_surface_format()
-                    .unwrap_or(TextureFormat::Rgba8UnormSrgb),
-                blend: None,
-                write_mask: ColorWrites::ALL,
-            }]),
-            multisample_state: MultisampleStateDescriptor {
-                count: SampleCount::X1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-        };
-
-        let pipeline_id = device
-            .create_render_pipeline(&pipeline_desc)
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
+        let _ = self.lighting_buffer_layout.set(lighting_buffer_layout);
         let _ = self.pipeline.set(pipeline_id);
 
-        // 4. Create Persistent Ring Buffers for camera and lighting uniforms.
-        // This eliminates per-frame buffer allocation in the render hot path.
-
+        // Persistent ring buffers (per-lane GPU buffers) built against the
+        // shared layouts. This eliminates per-frame buffer allocation in the
+        // render hot path.
         let camera_ring = UniformRingBuffer::new(
             device,
             camera_layout,
@@ -1114,26 +891,6 @@ impl LitForwardLane {
             "Camera Uniform Ring",
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // The lighting ring buffer needs its own 1-binding layout (just the uniform buffer).
-        // The full 3-binding light_layout (uniform + shadow atlas + shadow sampler) is used
-        // for the pipeline and per-frame bind group creation in render().
-        let lighting_buffer_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("lit_forward_lighting_buffer_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                }],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        let _ = self.lighting_buffer_layout.set(lighting_buffer_layout);
 
         let lighting_ring = UniformRingBuffer::new(
             device,
@@ -1144,9 +901,21 @@ impl LitForwardLane {
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
+        let model_ring = DynamicUniformRingBuffer::new(
+            device,
+            model_layout,
+            0,
+            std::mem::size_of::<ModelUniforms>() as u32,
+            khora_core::renderer::api::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
+            khora_core::renderer::api::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+            "LitForward Model Ring",
+        )
+        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+
         *mutex_lock_render(&self.camera_ring, "LitForward init.camera_ring")? = Some(camera_ring);
         *mutex_lock_render(&self.lighting_ring, "LitForward init.lighting_ring")? =
             Some(lighting_ring);
+        *mutex_lock_render(&self.model_ring, "LitForward init.model_ring")? = Some(model_ring);
 
         log::info!(
             "LitForwardLane: Persistent ring buffers created (camera: {} bytes, lighting: {} bytes, {} slots each)",
@@ -1162,33 +931,102 @@ impl LitForwardLane {
         // Destroy ring buffers first (they own buffers + bind groups).
         // `.lock().ok().and_then(|mut g| g.take())` gracefully degrades
         // to a no-op on poisoning rather than panicking.
+        //
+        // Bind-group layouts and the pipeline are owned + cached by the
+        // `PipelineSystem` backend (shared across lit lanes), so the lane
+        // must not destroy them here.
         if let Some(ring) = self.camera_ring.lock().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
         if let Some(ring) = self.lighting_ring.lock().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
+    }
+}
 
-        // OnceLock-backed handles: lock-free read of the IDs (which are
-        // `Copy` newtypes) is enough for shutdown-time destruction.
-        if let Some(id) = self.pipeline.get().copied() {
-            let _ = device.destroy_render_pipeline(id);
-        }
-        if let Some(id) = self.camera_layout.get().copied() {
-            let _ = device.destroy_bind_group_layout(id);
-        }
-        if let Some(id) = self.model_layout.get().copied() {
-            let _ = device.destroy_bind_group_layout(id);
-        }
-        if let Some(id) = self.material_layout.get().copied() {
-            let _ = device.destroy_bind_group_layout(id);
-        }
-        if let Some(id) = self.light_layout.get().copied() {
-            let _ = device.destroy_bind_group_layout(id);
-        }
-        if let Some(id) = self.lighting_buffer_layout.get().copied() {
-            let _ = device.destroy_bind_group_layout(id);
-        }
+// ─── Free functions (CLAD: declarative pipeline spec) ───
+
+/// The declarative pipeline spec for LitForward under a given material
+/// variant — built each call, deduped by the `PipelineSystem`. Layouts are
+/// the canonical 4-group budget; the backend owns + caches them per variant
+/// (shared across lit lanes). The group-2 (Material) layout resolves to the
+/// variant's texture-binding set.
+fn pipeline_spec(
+    device: &dyn khora_core::renderer::GraphicsDevice,
+    variant: ShaderVariantKey,
+) -> PipelineSpec {
+    use khora_core::renderer::api::pipeline::enums::{
+        CompareFunction, VertexFormat, VertexStepMode,
+    };
+    use khora_core::renderer::api::pipeline::state::{
+        ColorWrites, DepthBiasState, StencilFaceState,
+    };
+    use khora_core::renderer::api::pipeline::{
+        ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
+        PrimitiveStateDescriptor, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
+    };
+    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
+    use std::borrow::Cow;
+
+    PipelineSpec {
+        label: "LitForward Pipeline",
+        shader: "khora::pipelines::lit_forward",
+        variant,
+        bind_group_layouts: vec![
+            LayoutSpec::Named(LayoutKey::Camera),
+            LayoutSpec::Named(LayoutKey::Model),
+            LayoutSpec::Named(LayoutKey::Material),
+            LayoutSpec::Named(LayoutKey::Lighting),
+        ],
+        vertex_buffers: vec![VertexBufferLayoutDescriptor {
+            array_stride: 32,
+            step_mode: VertexStepMode::Vertex,
+            attributes: Cow::Owned(vec![
+                VertexAttributeDescriptor {
+                    format: VertexFormat::Float32x3,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                VertexAttributeDescriptor {
+                    format: VertexFormat::Float32x3,
+                    offset: 12,
+                    shader_location: 1,
+                },
+                VertexAttributeDescriptor {
+                    format: VertexFormat::Float32x2,
+                    offset: 24,
+                    shader_location: 2,
+                },
+            ]),
+        }],
+        vs_entry: "vs_main",
+        fs_entry: Some("fs_main"),
+        primitive: PrimitiveStateDescriptor {
+            topology: PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: Some(DepthStencilStateDescriptor {
+            format: TextureFormat::Depth32Float,
+            depth_write_enabled: true,
+            depth_compare: CompareFunction::Less,
+            stencil_front: StencilFaceState::default(),
+            stencil_back: StencilFaceState::default(),
+            stencil_read_mask: 0,
+            stencil_write_mask: 0,
+            bias: DepthBiasState::default(),
+        }),
+        color_targets: vec![ColorTargetStateDescriptor {
+            format: device
+                .get_surface_format()
+                .unwrap_or(TextureFormat::Rgba8UnormSrgb),
+            blend: None,
+            write_mask: ColorWrites::ALL,
+        }],
+        multisample: MultisampleStateDescriptor {
+            count: SampleCount::X1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
     }
 }
 
@@ -1270,6 +1108,7 @@ mod tests {
             cpu_mesh_uuid: mesh_uuid,
             gpu_mesh: AssetHandle::new(create_test_gpu_mesh(300)),
             material: None,
+            gpu_material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -1307,6 +1146,7 @@ mod tests {
             cpu_mesh_uuid: mesh_uuid,
             gpu_mesh: AssetHandle::new(create_test_gpu_mesh(300)),
             material: None,
+            gpu_material: None,
         });
 
         // Add 4 directional lights
@@ -1348,6 +1188,7 @@ mod tests {
             cpu_mesh_uuid: mesh_uuid,
             gpu_mesh: AssetHandle::new(create_test_gpu_mesh(300)),
             material: None,
+            gpu_material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));

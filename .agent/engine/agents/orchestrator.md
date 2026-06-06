@@ -1,7 +1,7 @@
 ---
 name: orchestrator
 description: Default front door for engine work. Use when a request spans multiple subsystems, the scope is unclear, or you need to decide which specialist or doc to pull in. Holds the global engine map and routes; does not dive into details itself.
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # Orchestrator (engine)

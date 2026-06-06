@@ -15,9 +15,11 @@
 //! GPU data handles and descriptors.
 
 pub mod buffer;
+pub mod shader_source;
 pub mod texture;
 pub mod view;
 
 pub use self::buffer::*;
+pub use self::shader_source::*;
 pub use self::texture::*;
 pub use self::view::*;

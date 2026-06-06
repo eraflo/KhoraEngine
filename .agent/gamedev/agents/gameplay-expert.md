@@ -1,7 +1,7 @@
 ---
 name: gameplay-expert
 description: Use for gameplay code — the EngineApp update loop, spawning and moving entities via Vessel/GameWorld, input handling with InputMap, components (Transform, RigidBody, Camera), and game state.
-tools: Read, Edit, Write, Grep, Glob, Bash
+tools: Read, Edit, Write, Grep, Glob, Bash, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # Gameplay Expert

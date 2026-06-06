@@ -2,7 +2,7 @@
 // headroom, impeccable. Failures only warn — they never block an install.
 // Project-local tools live in a gitignored `.khora/` folder.
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, execSync, spawn } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -28,6 +28,7 @@ export function bootstrapTools(ctx, { noTools }) {
   log.step('Tooling bootstrap (best-effort, project-local in .khora/)');
   ensureKhoraDir(ctx);
   rtk();
+  ripgrep();
   codegraph();
   headroom(ctx);
   impeccable();
@@ -89,11 +90,34 @@ function ensureLocalBinOnPath() {
   } catch (e) { log.warn(`rtk PATH: ${e.message}`); }
 }
 
+// ── ripgrep: rtk delegates search to `rg`; ensure it's on PATH ─────────────
+function ripgrep() {
+  try {
+    if (has('rg')) { log.ok('ripgrep (rg) present'); return; }
+    if (has('cargo')) {
+      log.info('ripgrep (rg) not found — rtk needs it; installing via cargo…');
+      try { run('cargo', ['install', 'ripgrep'], { timeout: 600000 }); log.ok('ripgrep installed via cargo (~/.cargo/bin)'); }
+      catch { log.warn('cargo install ripgrep failed — install rg manually (winget install BurntSushi.ripgrep.MSVC / brew install ripgrep)'); }
+    } else {
+      log.warn('ripgrep (rg) missing and no cargo — rtk falls back to slow exec. Install rg: winget install BurntSushi.ripgrep.MSVC / brew install ripgrep');
+    }
+  } catch (e) { log.warn(`ripgrep: ${e.message}`); }
+}
+
 // ── codegraph: manages its own .codegraph/ index ───────────────────────────
 function codegraph() {
   try {
-    if (has('codegraph')) { try { run('codegraph', ['index', '.'], { timeout: 300000 }); log.ok('codegraph index refreshed'); } catch { log.ok('codegraph present'); } }
-    else log.warn('codegraph CLI not found — agents fall back to grep until the MCP server is registered');
+    if (!has('codegraph')) {
+      // npm is a .cmd on Windows (execFile needs shell). The MCP server in
+      // .mcp.json points at this CLI (`codegraph serve --mcp`).
+      log.info('codegraph CLI not found — installing @colbymchenry/codegraph globally…');
+      try { execSync('npm install -g @colbymchenry/codegraph', { stdio: 'inherit', timeout: 300000 }); log.ok('codegraph installed (npm -g)'); }
+      catch { log.warn('codegraph install failed — `npm i -g @colbymchenry/codegraph` (agents fall back to grep)'); return; }
+    }
+    // Refresh the index. Never reinstall when present: reinstalling over the
+    // running codegraph daemon EPERMs on Windows (locked node.exe).
+    try { run('codegraph', ['index', '.'], { timeout: 300000 }); log.ok('codegraph index refreshed'); }
+    catch { log.ok('codegraph present'); }
   } catch (e) { log.warn(`codegraph: ${e.message}`); }
 }
 
@@ -129,7 +153,12 @@ function headroom(ctx) {
 function impeccable() {
   try {
     log.info('installing impeccable design skill (npx impeccable skills install)…');
-    run('npx', ['-y', 'impeccable', 'skills', 'install'], { timeout: 180000 });
+    // npx is a .cmd on Windows (needs the shell); `skills install` prompts
+    // "Install … into N folder(s)? (Y/n)" → confirm via stdin. execSync runs
+    // through the shell with a string command (avoids the DEP0190 shell+args warning).
+    execSync('npx -y impeccable skills install', {
+      stdio: ['pipe', 'inherit', 'inherit'], input: 'y\n', timeout: 180000,
+    });
     log.ok('impeccable installed (/impeccable available)');
   } catch { log.warn('could not install impeccable — `npx impeccable skills install` (design authority for UI/UX)'); }
 }

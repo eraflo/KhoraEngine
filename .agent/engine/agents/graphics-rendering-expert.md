@@ -1,7 +1,7 @@
 ---
 name: graphics-rendering-expert
 description: Use when working on rendering — wgpu/WGSL pipelines, PBR (LitForward/Forward+/StandardPbr), shadow techniques (CSM, PCF, cube shadows), the render lanes, the ShaderRegistry, or the bind-group budget. Real-time graphics specialist.
-tools: Read, Edit, Write, Grep, Glob, Bash
+tools: Read, Edit, Write, Grep, Glob, Bash, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # Graphics Rendering Expert

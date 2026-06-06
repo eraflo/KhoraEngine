@@ -73,55 +73,26 @@ impl Default for GizmoLane {
 fn init_gpu_resources(
     lane: &GizmoLane,
     device: &dyn khora_core::renderer::GraphicsDevice,
-    shader_registry: &Arc<Mutex<crate::render_lane::ShaderRegistry>>,
+    pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
 ) -> Result<(), khora_core::renderer::error::RenderError> {
     use khora_core::renderer::api::{
-        command::{
-            BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
-            BindingResource, BindingType, BufferBinding, BufferBindingType,
-        },
-        pipeline::enums::PrimitiveTopology,
-        pipeline::enums::{BlendFactor, BlendOperation},
-        pipeline::state::{BlendComponentDescriptor, BlendStateDescriptor, ColorWrites},
-        pipeline::{
-            ColorTargetStateDescriptor, MultisampleStateDescriptor, PrimitiveStateDescriptor,
-            RenderPipelineDescriptor,
-        },
+        command::{BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding},
         resource::{BufferDescriptor, BufferUsage},
-        util::{SampleCount, ShaderStageFlags, TextureFormat},
     };
     use std::borrow::Cow;
 
-    // Group 0 — camera UBO (mat4 view-proj + vec4 position = 80 B).
-    let camera_layout = device
-        .create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("gizmo_camera_layout"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStageFlags::VERTEX,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-            }],
-        })
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-    // Group 1 — storage buffer of line instances.
-    let storage_layout = device
-        .create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: Some("gizmo_storage_layout"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStageFlags::VERTEX,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-            }],
-        })
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+    // Bespoke layouts resolved + cached by the PipelineSystem so the pipeline
+    // and the lane's bind groups share one layout id.
+    let camera_layout = pipeline_system.inline_layout(
+        device,
+        GIZMO_CAMERA_LAYOUT_LABEL,
+        &gizmo_camera_layout_entries(),
+    )?;
+    let storage_layout = pipeline_system.inline_layout(
+        device,
+        GIZMO_STORAGE_LAYOUT_LABEL,
+        &gizmo_storage_layout_entries(),
+    )?;
 
     let camera_buffer = device
         .create_buffer(&BufferDescriptor {
@@ -173,40 +144,79 @@ fn init_gpu_resources(
         })
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-    let shader_module = {
-        let mut registry = crate::lock_or_log!(
-            shader_registry.lock(),
-            "GizmoLane init_gpu_resources.shader_registry",
-            Err(khora_core::renderer::error::RenderError::ResourceError(
-                khora_core::renderer::ResourceError::BackendError(
-                    "shader_registry mutex poisoned".to_owned()
-                )
-            ))
-        );
-        registry
-            .create_module(device, "khora::pipelines::gizmo", Some("gizmo_shader"))
-            .map_err(|e| {
-                khora_core::renderer::error::RenderError::ResourceError(
-                    khora_core::renderer::ResourceError::BackendError(format!(
-                        "ShaderRegistry compose failed: {}",
-                        e
-                    )),
-                )
-            })?
+    // Pipeline — compiled + cached by the backend from
+    // `khora::pipelines::gizmo`.
+    let pipeline_id = pipeline_system.pipeline(device, &gizmo_pipeline_spec(device))?;
+
+    let _ = lane.camera_layout.set(camera_layout);
+    let _ = lane.storage_layout.set(storage_layout);
+    let _ = lane.camera_buffer.set(camera_buffer);
+    let _ = lane.storage_buffer.set(storage_buffer);
+    let _ = lane.camera_bind_group.set(camera_bind_group);
+    let _ = lane.storage_bind_group.set(storage_bind_group);
+    let _ = lane.pipeline.set(pipeline_id);
+    Ok(())
+}
+
+/// Stable cache labels for the gizmo lane's bespoke layouts.
+const GIZMO_CAMERA_LAYOUT_LABEL: &str = "gizmo_camera_layout";
+const GIZMO_STORAGE_LAYOUT_LABEL: &str = "gizmo_storage_layout";
+
+/// Group-0 camera layout: a single uniform buffer (vertex stage).
+fn gizmo_camera_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
+    use khora_core::renderer::api::command::{
+        BindGroupLayoutEntry, BindingType, BufferBindingType,
     };
+    use khora_core::renderer::api::util::ShaderStageFlags;
+    vec![BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStageFlags::VERTEX,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+    }]
+}
 
-    let pipeline_layout_id = device
-        .create_pipeline_layout(
-            &khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
-                label: Some(Cow::Borrowed("Gizmo Pipeline Layout")),
-                bind_group_layouts: &[camera_layout, storage_layout],
-            },
-        )
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+/// Group-1 storage layout: the read-only line-instance storage buffer.
+fn gizmo_storage_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
+    use khora_core::renderer::api::command::{
+        BindGroupLayoutEntry, BindingType, BufferBindingType,
+    };
+    use khora_core::renderer::api::util::ShaderStageFlags;
+    vec![BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStageFlags::VERTEX,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Storage { read_only: true },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+    }]
+}
 
-    // Alpha blend; no depth attachment — gizmos always draw on top
-    // (the legacy infra path used `CompareFunction::Always`, which is
-    // equivalent to having no depth test at all for an overlay).
+/// The declarative pipeline spec for the gizmo overlay — line-list, alpha
+/// blended, no depth (always on top).
+fn gizmo_pipeline_spec(
+    device: &dyn khora_core::renderer::GraphicsDevice,
+) -> khora_core::renderer::api::pipeline::PipelineSpec {
+    use khora_core::renderer::api::pipeline::enums::{
+        BlendFactor, BlendOperation, PrimitiveTopology,
+    };
+    use khora_core::renderer::api::pipeline::state::{
+        BlendComponentDescriptor, BlendStateDescriptor, ColorWrites,
+    };
+    use khora_core::renderer::api::pipeline::{
+        ColorTargetStateDescriptor, LayoutSpec, MultisampleStateDescriptor, PipelineSpec,
+        PrimitiveStateDescriptor, ShaderVariantKey,
+    };
+    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
+    use std::borrow::Cow;
+
+    // Alpha blend; no depth attachment — gizmos always draw on top (the legacy
+    // infra path used `CompareFunction::Always`, equivalent to no depth test
+    // for an overlay).
     let blend = BlendStateDescriptor {
         color: BlendComponentDescriptor {
             src_factor: BlendFactor::SrcAlpha,
@@ -220,44 +230,41 @@ fn init_gpu_resources(
         },
     };
 
-    let pipeline_desc = RenderPipelineDescriptor {
-        label: Some(Cow::Borrowed("Gizmo Pipeline")),
-        layout: Some(pipeline_layout_id),
-        vertex_shader_module: shader_module,
-        vertex_entry_point: Cow::Borrowed("vs_main"),
-        fragment_shader_module: Some(shader_module),
-        fragment_entry_point: Some(Cow::Borrowed("fs_main")),
-        vertex_buffers_layout: Cow::Owned(vec![]),
-        primitive_state: PrimitiveStateDescriptor {
+    PipelineSpec {
+        label: "Gizmo Pipeline",
+        shader: "khora::pipelines::gizmo",
+        variant: ShaderVariantKey::empty(),
+        bind_group_layouts: vec![
+            LayoutSpec::Inline {
+                label: GIZMO_CAMERA_LAYOUT_LABEL,
+                entries: Cow::Owned(gizmo_camera_layout_entries()),
+            },
+            LayoutSpec::Inline {
+                label: GIZMO_STORAGE_LAYOUT_LABEL,
+                entries: Cow::Owned(gizmo_storage_layout_entries()),
+            },
+        ],
+        vertex_buffers: vec![],
+        vs_entry: "vs_main",
+        fs_entry: Some("fs_main"),
+        primitive: PrimitiveStateDescriptor {
             topology: PrimitiveTopology::LineList,
             ..Default::default()
         },
-        depth_stencil_state: None,
-        color_target_states: Cow::Owned(vec![ColorTargetStateDescriptor {
+        depth_stencil: None,
+        color_targets: vec![ColorTargetStateDescriptor {
             format: device
                 .get_surface_format()
                 .unwrap_or(TextureFormat::Rgba8UnormSrgb),
             blend: Some(blend),
             write_mask: ColorWrites::ALL,
-        }]),
-        multisample_state: MultisampleStateDescriptor {
+        }],
+        multisample: MultisampleStateDescriptor {
             count: SampleCount::X1,
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-    };
-    let pipeline_id = device
-        .create_render_pipeline(&pipeline_desc)
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-    let _ = lane.camera_layout.set(camera_layout);
-    let _ = lane.storage_layout.set(storage_layout);
-    let _ = lane.camera_buffer.set(camera_buffer);
-    let _ = lane.storage_buffer.set(storage_buffer);
-    let _ = lane.camera_bind_group.set(camera_bind_group);
-    let _ = lane.storage_bind_group.set(storage_bind_group);
-    let _ = lane.pipeline.set(pipeline_id);
-    Ok(())
+    }
 }
 
 fn render_gizmos(
@@ -354,11 +361,11 @@ impl Lane for GizmoLane {
             .get::<Arc<dyn khora_core::renderer::GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
             .clone();
-        let registry = ctx
-            .get::<Arc<Mutex<crate::render_lane::ShaderRegistry>>>()
-            .ok_or(LaneError::missing("Arc<Mutex<ShaderRegistry>>"))?
+        let pipeline_system = ctx
+            .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .ok_or(LaneError::missing("Arc<dyn PipelineSystem>"))?
             .clone();
-        init_gpu_resources(self, device.as_ref(), &registry)
+        init_gpu_resources(self, device.as_ref(), pipeline_system.as_ref())
             .map_err(|e| LaneError::InitializationFailed(Box::new(e)))
     }
 

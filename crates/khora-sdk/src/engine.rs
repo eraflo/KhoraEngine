@@ -133,93 +133,66 @@ impl<A: EngineApp> EngineCore<A> {
             Arc::new(Mutex::new(khora_data::render::GridConfig::default()));
         runtime.resources.insert(grid_config);
 
-        // Create the game world
-        let mut game_world = GameWorld::new();
-
-        // Call app setup. We pass `&runtime` so the app can read whatever
-        // entries the bootstrap closure registered. Mutation goes through
-        // `register_agents` below.
-        app.setup(&mut game_world, &runtime);
-
-        // Register agents via the app's AgentProvider trait.
-        app.register_agents(&dcc, &mut runtime);
-
         // ── Data-layer GPU resources ─────────────────────────────────────
-        // GpuCache: engine-wide shared GPU mesh store. All agents read from it.
-        // ProjectionRegistry: runs sync_all() once per frame in
-        // tick_with_services() before the scheduler dispatches agents.
-        let gpu_cache = khora_data::GpuCache::new();
-        let proj_registry = khora_data::ProjectionRegistry::new(gpu_cache.clone());
-        runtime.resources.insert(gpu_cache);
+        // AssetStore: the single engine-wide store of projected GPU assets
+        // (Assets<GpuMesh> / GpuMaterial / CpuTexture sub-stores, created on
+        // demand). The SDK/app fills the CpuTexture sub-store (it owns the
+        // AssetService); the data-layer projection (ProjectionRegistry, runs
+        // sync_all/sync_materials once per frame in PreExtract) only uploads
+        // from it (khora-data must not depend on khora-io).
+        //
+        // Inserted BEFORE `app.setup` so an app can register assets (e.g.
+        // decoded textures) into the store during setup. Neither needs a
+        // graphics device at construction, so this is safe this early.
+        let asset_store = khora_data::AssetStore::new();
+        let proj_registry = khora_data::ProjectionRegistry::new(asset_store.clone());
+        runtime.resources.insert(asset_store);
         runtime.resources.insert(proj_registry);
 
-        // ── Frame graph ──────────────────────────────────────────────────────
-        // Per-frame collection of render passes recorded by agents during the
-        // OUTPUT phase. `tick_with_services()` drains it after the scheduler
-        // completes and submits the recorded command buffers.
-        let frame_graph: SharedFrameGraph = Arc::new(Mutex::new(FrameGraph::new()));
-        runtime.resources.insert(frame_graph);
-
-        // ── Shader registry ──────────────────────────────────────────────────
-        // naga_oil-backed composer that resolves the `#import`s and
-        // `#{DEFS}` substitutions every render pipeline needs. Built
-        // once at boot, shared by every rendering lane through their
-        // `LaneContext`. The init fails fast if any of the embedded lib
-        // modules has a compose error (caught at boot, not on first
-        // frame).
-        match khora_lanes::render_lane::ShaderRegistry::new() {
-            Ok(registry) => {
-                runtime.resources.insert(Arc::new(Mutex::new(registry)));
-            }
-            Err(e) => {
-                log::error!(
-                    "Engine init: ShaderRegistry failed to initialise: {} — rendering lanes that require it will fail their on_initialize",
-                    e
-                );
-            }
-        }
-
-        // ── Scene-extraction data containers ─────────────────────────────────
-        // RenderFlow + UiFlow publish their per-frame views directly into
-        // the LaneBus during the Substrate Pass — no shared service needed.
-
-        // EcsMaintenance — owned by Resources so the `ecs_maintenance`
-        // DataSystem (Maintenance phase) can fetch and tick it each frame.
-        runtime
-            .resources
-            .insert(Arc::new(Mutex::new(khora_data::ecs::EcsMaintenance::new())));
-
-        // InputMap — engine-wide action / binding map. The engine ticks it
-        // each frame from `drain_inputs`; app code reads it via
-        // `runtime.resources.get::<Arc<Mutex<InputMap>>>()`.
+        // InputMap — engine-wide action / binding map. Inserted BEFORE
+        // `app.setup` so apps can bind actions and cache the handle during
+        // setup (e.g. the sandbox's PlayerController). The engine ticks it
+        // each frame from `drain_inputs`.
         runtime
             .resources
             .insert(Arc::new(Mutex::new(khora_core::platform::InputMap::new())));
 
-        // UiImageAtlas — GPU texture atlas + persistent
-        // `AssetUUID → AtlasRect` mapping for UI images. Lives here
-        // (Resource) so the UiAgent owns no GPU state and can be
-        // recreated without losing the atlas. The GPU atlas itself is
-        // allocated lazily by `UiAgent::on_initialize` once a graphics
-        // device is available.
+        // Frame graph — per-frame collection of render passes recorded by
+        // agents during OUTPUT; `tick_with_services()` drains + submits it.
+        let frame_graph: SharedFrameGraph = Arc::new(Mutex::new(FrameGraph::new()));
+        runtime.resources.insert(frame_graph);
+
+        // Shader/pipeline composition is owned by the `PipelineSystem` backend
+        // (`WgpuPipelineSystem`), injected into `runtime.resources` by the app
+        // bootstrap; render lanes resolve their layouts + pipelines through it.
+
+        // EcsMaintenance — fetched + ticked each frame by the `ecs_maintenance`
+        // DataSystem (Maintenance phase).
+        runtime
+            .resources
+            .insert(Arc::new(Mutex::new(khora_data::ecs::EcsMaintenance::new())));
+
+        // UiImageAtlas — `AssetUUID → AtlasRect` mapping for UI images; the GPU
+        // atlas itself is allocated lazily by `UiAgent::on_initialize`.
         runtime
             .resources
             .insert(Arc::new(khora_data::ui::UiImageAtlas::new()));
 
-        // CollisionPairs — broadphase scratch shared between the
-        // (currently unused) `NativeBroadphaseLane` and `NativeSolverLane`.
-        // Registered eagerly so any dev wiring those lanes finds the
-        // sink already present.
+        // CollisionPairs — broadphase scratch shared between the (currently
+        // unused) `NativeBroadphaseLane` and `NativeSolverLane`.
         let collision_pairs: khora_lanes::physics_lane::CollisionPairsResource =
             Arc::new(Mutex::new(khora_data::physics::CollisionPairs::default()));
         runtime.resources.insert(collision_pairs);
 
-        // Raycast / debug-geometry queries are exposed directly on the
-        // `PhysicsProvider` trait; gameplay code looks the backend up via
-        // `runtime.backends.get::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()`
-        // and calls the methods on the locked provider. The legacy
-        // `PhysicsQueryService` wrapper was a stateless façade — a single
-        // `provider.lock()?.cast_ray(...)` is the canonical pattern now.
+        // Create the game world
+        let mut game_world = GameWorld::new();
+
+        // Call app setup. The runtime is now fully populated, so the app can
+        // read any engine resource here. Mutation goes through `register_agents`.
+        app.setup(&mut game_world, &runtime);
+
+        // Register agents via the app's AgentProvider trait.
+        app.register_agents(&dcc, &mut runtime);
 
         let runtime_arc = Arc::new(runtime);
 

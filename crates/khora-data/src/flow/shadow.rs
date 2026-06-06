@@ -176,19 +176,45 @@ fn compute_single_shadow_view_proj(
     }
 }
 
+/// World-space distance the directional shadow cascade covers, measured
+/// from the camera near plane along each frustum edge.
+///
+/// A directional light has no position, so the shadow map must be fitted
+/// to a *bounded* slice of the camera frustum: fitting the full near→far
+/// range (cameras commonly use a 1000-unit far plane) spreads the 2048²
+/// atlas across ~2000 world units — roughly one world unit per texel —
+/// which is far too coarse to resolve sub-unit casters, so their shadows
+/// vanish entirely. Capping the cascade concentrates the texels near the
+/// viewer where shadows read; casters beyond this distance are covered by
+/// the ortho z-padding but not finely shadowed. This is a shadow-quality
+/// (representation) constant, not a scene-semantics value.
+const SHADOW_CASCADE_DISTANCE: f32 = 60.0;
+
 /// CSM (cascaded shadow map) view-projection for a directional light.
-/// Lifted verbatim from the previous `ShadowPassLane::calculate_shadow_view_proj`
-/// so behaviour is identical — the only change is *where* it lives.
 fn directional_shadow_view_proj(direction: Vec3, camera: &ExtractedView) -> Mat4 {
-    // 1. Camera frustum corners in world space.
+    // 1. Camera frustum corners in world space. Each (x, y) edge yields a
+    // near (z=0) and far (z=1) corner; the far corner is pulled back along
+    // the near→far ray so the cascade covers at most
+    // `SHADOW_CASCADE_DISTANCE` world units rather than the full far plane.
     let inv_view_proj = camera.view_proj.inverse().unwrap_or(Mat4::IDENTITY);
     let mut corners = Vec::with_capacity(8);
-    for x in &[-1.0, 1.0] {
-        for y in &[-1.0, 1.0] {
-            for z in &[0.0, 1.0] {
-                let pt = inv_view_proj * Vec4::new(*x, *y, *z, 1.0);
-                corners.push(pt.truncate() / pt.w);
-            }
+    for x in &[-1.0_f32, 1.0] {
+        for y in &[-1.0_f32, 1.0] {
+            let near_h = inv_view_proj * Vec4::new(*x, *y, 0.0, 1.0);
+            let far_h = inv_view_proj * Vec4::new(*x, *y, 1.0, 1.0);
+            let near = near_h.truncate() / near_h.w;
+            let far = far_h.truncate() / far_h.w;
+
+            let edge = far - near;
+            let edge_len = edge.length();
+            let clamped_far = if edge_len > SHADOW_CASCADE_DISTANCE {
+                near + edge * (SHADOW_CASCADE_DISTANCE / edge_len)
+            } else {
+                far
+            };
+
+            corners.push(near);
+            corners.push(clamped_far);
         }
     }
 

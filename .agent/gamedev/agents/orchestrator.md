@@ -1,7 +1,7 @@
 ---
 name: orchestrator
 description: Default front door for building a game with the Khora SDK. Use when a request spans gameplay and scene work or the scope is unclear. Holds the SDK map and routes to specialists; does not modify engine internals.
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # Orchestrator (gamedev)

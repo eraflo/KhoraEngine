@@ -1,7 +1,7 @@
 ---
 name: editor-ui-ux
 description: Use when working on the editor's UI/UX — khora-editor panels, gizmos, dock layouts, the command palette, inspector, viewport, theme, and egui/Taffy integration. Defers all design decisions to /impeccable.
-tools: Read, Edit, Write, Grep, Glob, Bash
+tools: Read, Edit, Write, Grep, Glob, Bash, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # Editor UI/UX

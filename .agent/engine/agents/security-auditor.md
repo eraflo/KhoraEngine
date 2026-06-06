@@ -1,7 +1,7 @@
 ---
 name: security-auditor
 description: Use to audit safety and confidentiality — review unsafe blocks, supply-chain/dependency risk, input validation at boundaries, and scan for secrets before any commit or push. Read-only; reports findings, does not edit.
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # Security Auditor

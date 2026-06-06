@@ -24,7 +24,7 @@
 //! it has work to do — `GizmoLane` skips if no gizmos were published,
 //! `WireframeLane` runs when the debug flag is on, etc.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use khora_core::agent::{
@@ -41,7 +41,7 @@ use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 use khora_data::assets::Assets;
 use khora_data::render::{PassDescriptor, RenderWorld, ResourceId, SharedFrameGraph};
-use khora_data::GpuCache;
+use khora_data::AssetStore;
 use std::sync::RwLock;
 
 /// The agent responsible for overlay / debug rendering passes.
@@ -102,16 +102,16 @@ impl Agent for OverlayAgent {
             log::warn!("OverlayAgent: graphics device unavailable in on_initialize");
             return;
         };
-        let shader_registry = context
+        let pipeline_system = context
             .runtime
             .resources
-            .get::<Arc<Mutex<khora_lanes::render_lane::ShaderRegistry>>>()
+            .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
             .cloned();
 
         let mut init_ctx = LaneContext::new();
         init_ctx.insert(device_arc);
-        if let Some(registry) = shader_registry {
-            init_ctx.insert(registry);
+        if let Some(ps) = pipeline_system {
+            init_ctx.insert(ps);
         }
         for lane in self.lanes.all() {
             if let Err(e) = lane.on_initialize(&mut init_ctx) {
@@ -137,10 +137,10 @@ impl Agent for OverlayAgent {
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
 
-        let Some(gpu_cache) = context.runtime.resources.get::<GpuCache>() else {
+        let Some(asset_store) = context.runtime.resources.get::<AssetStore>() else {
             return;
         };
-        let gpu_meshes: Arc<RwLock<Assets<GpuMesh>>> = gpu_cache.inner().clone();
+        let gpu_meshes: Arc<RwLock<Assets<GpuMesh>>> = asset_store.store::<GpuMesh>();
 
         let render_world: Option<&RenderWorld> = context.bus.get();
 

@@ -1,7 +1,7 @@
 ---
 name: scene-design-expert
 description: Use for world building — scene composition, spawning props, lighting, materials, cameras, and game UI/HUD. Defers all visual/design decisions to /impeccable.
-tools: Read, Edit, Write, Grep, Glob, Bash
+tools: Read, Edit, Write, Grep, Glob, Bash, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # Scene / Design Expert

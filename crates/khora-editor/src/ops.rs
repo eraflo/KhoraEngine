@@ -103,18 +103,43 @@ pub fn extract_scene_tree(world: &GameWorld, state: &mut EditorState) {
 }
 
 /// Processes pending spawn requests from the scene tree panel.
+/// The material the editor attaches to a freshly-spawned primitive so it is
+/// immediately visible and editable. The engine projection has no implicit
+/// default material (a meshed entity without one is a clear, logged error),
+/// so the authoring tool supplies an explicit one — a neutral matte grey the
+/// user then tweaks in the inspector.
+fn default_surface_material() -> khora_sdk::prelude::materials::StandardMaterial {
+    khora_sdk::prelude::materials::StandardMaterial {
+        base_color: khora_sdk::prelude::math::LinearRgba::new(0.7, 0.7, 0.7, 1.0),
+        roughness: 0.8,
+        ..Default::default()
+    }
+}
+
 pub fn process_spawns(world: &mut GameWorld, state: &mut EditorState) {
     if let Some(request) = state.pending_spawn.take() {
         let entity = match request.as_str() {
-            "Cube" => khora_sdk::spawn_cube_at(world, khora_sdk::prelude::math::Vec3::ZERO, 1.0)
-                .with_component(Name::new("Cube"))
-                .build(),
-            "Sphere" => khora_sdk::spawn_sphere(world, 0.5, 16, 16)
-                .with_component(Name::new("Sphere"))
-                .build(),
-            "Plane" => khora_sdk::spawn_plane(world, 10.0, 0.0)
-                .with_component(Name::new("Plane"))
-                .build(),
+            "Cube" => {
+                let mat = world.add_material(default_surface_material());
+                khora_sdk::spawn_cube_at(world, khora_sdk::prelude::math::Vec3::ZERO, 1.0)
+                    .with_component(Name::new("Cube"))
+                    .with_component(mat)
+                    .build()
+            }
+            "Sphere" => {
+                let mat = world.add_material(default_surface_material());
+                khora_sdk::spawn_sphere(world, 0.5, 16, 16)
+                    .with_component(Name::new("Sphere"))
+                    .with_component(mat)
+                    .build()
+            }
+            "Plane" => {
+                let mat = world.add_material(default_surface_material());
+                khora_sdk::spawn_plane(world, 10.0, 0.0)
+                    .with_component(Name::new("Plane"))
+                    .with_component(mat)
+                    .build()
+            }
             "Light" => world.spawn((
                 Transform::identity(),
                 GlobalTransform::identity(),

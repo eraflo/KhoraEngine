@@ -94,7 +94,7 @@ impl ShadowsLaneState {
     pub fn init_gpu(
         &self,
         device: &dyn GraphicsDevice,
-        shader_registry: &std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>,
+        pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
         atlas_2d_resolution: u32,
         atlas_2d_max_lights: u32,
         cube_face_resolution: u32,
@@ -102,134 +102,29 @@ impl ShadowsLaneState {
         label_prefix: &str,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
         use crate::render_lane::util::lock::write_lock_render;
-        use khora_core::renderer::api::{
-            command::{
-                BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType,
-            },
-            pipeline::enums::{CompareFunction, PrimitiveTopology, VertexFormat, VertexStepMode},
-            pipeline::state::{DepthBiasState, StencilFaceState},
-            pipeline::{
-                DepthStencilStateDescriptor, MultisampleStateDescriptor, PipelineLayoutDescriptor,
-                PrimitiveStateDescriptor, RenderPipelineDescriptor, VertexAttributeDescriptor,
-                VertexBufferLayoutDescriptor,
-            },
-            resource::{AddressMode, FilterMode, MipmapFilterMode, SamplerDescriptor},
-            util::{SampleCount, ShaderStageFlags, TextureFormat},
+        use khora_core::renderer::api::pipeline::enums::CompareFunction;
+        use khora_core::renderer::api::resource::{
+            AddressMode, FilterMode, MipmapFilterMode, SamplerDescriptor,
         };
         use std::borrow::Cow;
 
-        // 1. Bind Group Layouts.
-        let camera_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("shadow_camera_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::VERTEX,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: None,
-                    },
-                }],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        // 1. Bind Group Layouts — bespoke per-draw dynamic-offset uniforms,
+        // resolved + cached by the PipelineSystem so the pipeline and the ring
+        // buffers share one layout id.
+        let camera_layout = pipeline_system.inline_layout(
+            device,
+            SHADOW_CAMERA_LAYOUT_LABEL,
+            &shadow_camera_layout_entries(),
+        )?;
+        let model_layout = pipeline_system.inline_layout(
+            device,
+            SHADOW_MODEL_LAYOUT_LABEL,
+            &shadow_model_layout_entries(),
+        )?;
 
-        let model_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("shadow_model_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::VERTEX,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: None,
-                    },
-                }],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // 2. Pipeline (depth-only) — composed via the central
-        // `ShaderRegistry` (`khora::pipelines::shadow_pass`).
-        let shader_module = {
-            let mut registry = crate::lock_or_log!(
-                shader_registry.lock(),
-                "ShadowsLaneState init_gpu.shader_registry",
-                Err(khora_core::renderer::error::RenderError::ResourceError(
-                    khora_core::renderer::ResourceError::BackendError(
-                        "shader_registry mutex poisoned".to_owned()
-                    )
-                ))
-            );
-            registry
-                .create_module(
-                    device,
-                    "khora::pipelines::shadow_pass",
-                    Some("shadow_pass_shader"),
-                )
-                .map_err(|e| {
-                    khora_core::renderer::error::RenderError::ResourceError(
-                        khora_core::renderer::ResourceError::BackendError(format!(
-                            "ShaderRegistry compose failed: {}",
-                            e
-                        )),
-                    )
-                })?
-        };
-
-        let pipeline_layout = device
-            .create_pipeline_layout(&PipelineLayoutDescriptor {
-                label: Some(Cow::Borrowed("Shadow Pass Pipeline Layout")),
-                bind_group_layouts: &[camera_layout, model_layout],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        let vertex_layout = VertexBufferLayoutDescriptor {
-            array_stride: 32,
-            step_mode: VertexStepMode::Vertex,
-            attributes: Cow::Owned(vec![VertexAttributeDescriptor {
-                format: VertexFormat::Float32x3,
-                offset: 0,
-                shader_location: 0,
-            }]),
-        };
-
-        let pipeline_desc = RenderPipelineDescriptor {
-            label: Some(Cow::Borrowed("Shadow Pass Pipeline")),
-            layout: Some(pipeline_layout),
-            vertex_shader_module: shader_module,
-            vertex_entry_point: Cow::Borrowed("vs_main"),
-            fragment_shader_module: None,
-            fragment_entry_point: None,
-            color_target_states: Cow::Borrowed(&[]),
-            vertex_buffers_layout: Cow::Owned(vec![vertex_layout]),
-            primitive_state: PrimitiveStateDescriptor {
-                topology: PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil_state: Some(DepthStencilStateDescriptor {
-                format: TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: CompareFunction::Less,
-                stencil_front: StencilFaceState::default(),
-                stencil_back: StencilFaceState::default(),
-                stencil_read_mask: 0,
-                stencil_write_mask: 0,
-                bias: DepthBiasState {
-                    constant: 2,
-                    slope_scale: 2.0,
-                    clamp: 0.0,
-                },
-            }),
-            multisample_state: MultisampleStateDescriptor {
-                count: SampleCount::X1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-        };
-        let pipeline = device
-            .create_render_pipeline(&pipeline_desc)
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        // 2. Pipeline (depth-only) — compiled + cached by the backend from
+        // `khora::pipelines::shadow_pass`.
+        let pipeline = pipeline_system.pipeline(device, &shadow_pipeline_spec())?;
 
         *write_lock_render(&self.pipeline, "ShadowsLaneState.pipeline")? = Some(pipeline);
         *write_lock_render(&self.camera_layout, "ShadowsLaneState.camera_layout")? =
@@ -491,21 +386,12 @@ impl ShadowsLaneState {
         if let Some(ring) = self.model_ring.write().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
-        if let Some(pipeline) = self.pipeline.write().ok().and_then(|mut g| g.take()) {
-            if let Err(e) = device.destroy_render_pipeline(pipeline) {
-                log::warn!("ShadowsLaneState: failed to destroy pipeline: {:?}", e);
-            }
-        }
-        if let Some(layout) = self.camera_layout.write().ok().and_then(|mut g| g.take()) {
-            if let Err(e) = device.destroy_bind_group_layout(layout) {
-                log::warn!("ShadowsLaneState: failed to destroy camera layout: {:?}", e);
-            }
-        }
-        if let Some(layout) = self.model_layout.write().ok().and_then(|mut g| g.take()) {
-            if let Err(e) = device.destroy_bind_group_layout(layout) {
-                log::warn!("ShadowsLaneState: failed to destroy model layout: {:?}", e);
-            }
-        }
+        // The depth-only pipeline and the camera/model bind-group layouts are
+        // owned + cached by the `PipelineSystem` backend, so they are not
+        // destroyed here; just clear the lane's cached handles.
+        let _ = self.pipeline.write().map(|mut g| g.take());
+        let _ = self.camera_layout.write().map(|mut g| g.take());
+        let _ = self.model_layout.write().map(|mut g| g.take());
         self.atlas_2d.destroy(device);
         self.atlas_cube.destroy(device);
         if let Some(sampler) = self.shadow_sampler.write().ok().and_then(|mut g| g.take()) {
@@ -513,5 +399,103 @@ impl ShadowsLaneState {
                 log::warn!("ShadowsLaneState: failed to destroy sampler: {:?}", e);
             }
         }
+    }
+}
+
+// ─── Free functions (CLAD: declarative spec + bespoke layouts) ───
+
+/// Stable cache label for the shadow camera (light view-projection) layout.
+const SHADOW_CAMERA_LAYOUT_LABEL: &str = "shadow_camera_layout";
+/// Stable cache label for the shadow model-uniform layout.
+const SHADOW_MODEL_LAYOUT_LABEL: &str = "shadow_model_layout";
+
+/// Bespoke shadow camera layout: a single dynamic-offset uniform buffer
+/// (vertex stage only).
+fn shadow_camera_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
+    use khora_core::renderer::api::command::{
+        BindGroupLayoutEntry, BindingType, BufferBindingType,
+    };
+    use khora_core::renderer::api::util::ShaderStageFlags;
+    vec![BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStageFlags::VERTEX,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Uniform,
+            has_dynamic_offset: true,
+            min_binding_size: None,
+        },
+    }]
+}
+
+/// Bespoke shadow model layout: a single dynamic-offset uniform buffer
+/// (vertex stage only).
+fn shadow_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
+    shadow_camera_layout_entries()
+}
+
+/// The declarative depth-only pipeline spec for the shadow pass — built each
+/// call, deduped by the `PipelineSystem`. No fragment / color state.
+fn shadow_pipeline_spec() -> khora_core::renderer::api::pipeline::PipelineSpec {
+    use khora_core::renderer::api::pipeline::enums::{
+        CompareFunction, PrimitiveTopology, VertexFormat, VertexStepMode,
+    };
+    use khora_core::renderer::api::pipeline::state::{DepthBiasState, StencilFaceState};
+    use khora_core::renderer::api::pipeline::{
+        DepthStencilStateDescriptor, LayoutSpec, MultisampleStateDescriptor, PipelineSpec,
+        PrimitiveStateDescriptor, ShaderVariantKey, VertexAttributeDescriptor,
+        VertexBufferLayoutDescriptor,
+    };
+    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
+    use std::borrow::Cow;
+
+    PipelineSpec {
+        label: "Shadow Pass Pipeline",
+        shader: "khora::pipelines::shadow_pass",
+        variant: ShaderVariantKey::empty(),
+        bind_group_layouts: vec![
+            LayoutSpec::Inline {
+                label: SHADOW_CAMERA_LAYOUT_LABEL,
+                entries: Cow::Owned(shadow_camera_layout_entries()),
+            },
+            LayoutSpec::Inline {
+                label: SHADOW_MODEL_LAYOUT_LABEL,
+                entries: Cow::Owned(shadow_model_layout_entries()),
+            },
+        ],
+        vertex_buffers: vec![VertexBufferLayoutDescriptor {
+            array_stride: 32,
+            step_mode: VertexStepMode::Vertex,
+            attributes: Cow::Owned(vec![VertexAttributeDescriptor {
+                format: VertexFormat::Float32x3,
+                offset: 0,
+                shader_location: 0,
+            }]),
+        }],
+        vs_entry: "vs_main",
+        fs_entry: None,
+        primitive: PrimitiveStateDescriptor {
+            topology: PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: Some(DepthStencilStateDescriptor {
+            format: TextureFormat::Depth32Float,
+            depth_write_enabled: true,
+            depth_compare: CompareFunction::Less,
+            stencil_front: StencilFaceState::default(),
+            stencil_back: StencilFaceState::default(),
+            stencil_read_mask: 0,
+            stencil_write_mask: 0,
+            bias: DepthBiasState {
+                constant: 2,
+                slope_scale: 2.0,
+                clamp: 0.0,
+            },
+        }),
+        color_targets: vec![],
+        multisample: MultisampleStateDescriptor {
+            count: SampleCount::X1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
     }
 }

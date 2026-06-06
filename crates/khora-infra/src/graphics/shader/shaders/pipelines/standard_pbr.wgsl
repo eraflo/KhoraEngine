@@ -14,6 +14,10 @@
 #import khora::std::model::model
 #import khora::std::vertex::{VertexInput, VertexOutput}
 #import khora::std::material::material
+#import khora::std::material_textures::{sample_albedo, sample_metallic_roughness, sample_emissive}
+#ifdef HAS_NORMAL_MAP
+#import khora::std::material_textures::apply_normal_map
+#endif
 #import khora::lighting::structs::{DirectionalLight, PointLight, SpotLight}
 #import khora::lighting::uniforms::lights
 #import khora::lighting::attenuation::{calculate_attenuation, calculate_spot_attenuation}
@@ -98,19 +102,6 @@ fn cook_torrance(
     let diffuse = k_d * albedo / PI;
 
     return (diffuse + specular) * radiance * n_dot_l;
-}
-
-// The shared material struct only carries Blinn-Phong fields
-// (base_color, emissive, ambient, specular_power) — until a true
-// PBR material struct lands, derive metallic/roughness from those:
-//   roughness = clamp(1.0 - specular_power / 256.0, 0.05, 1.0)
-//   metallic  = 0.0 (dielectric default)
-// A future MaterialKind::Pbr will replace this heuristic.
-fn derived_roughness() -> f32 {
-    return clamp(1.0 - material.specular_power / 256.0, 0.05, 1.0);
-}
-fn derived_metallic() -> f32 {
-    return 0.0;
 }
 
 fn calculate_directional_lights(
@@ -208,21 +199,32 @@ fn calculate_spot_lights(
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let n = normalize(input.normal);
+    let base = sample_albedo(input.uv);
+    let albedo = material.base_color.rgb * base.rgb;
+    // glTF metallic-roughness texture × scalar factors (white fallback ⇒
+    // factors pass through).
+    let mr = sample_metallic_roughness(input.uv);
+    let metallic = clamp(material.pbr_factors.x * mr.x, 0.0, 1.0);
+    let roughness = clamp(material.pbr_factors.y * mr.y, 0.05, 1.0);
+    // Geometric normal, perturbed by the tangent-space normal map only for
+    // materials whose variant declares one (`HAS_NORMAL_MAP`).
+    let geometric_normal = normalize(input.normal);
+#ifdef HAS_NORMAL_MAP
+    let n = apply_normal_map(geometric_normal, input.world_position, input.uv);
+#else
+    let n = geometric_normal;
+#endif
     let v = normalize(camera.camera_position.xyz - input.world_position);
-    let albedo = material.base_color.rgb;
-    let metallic = derived_metallic();
-    let roughness = derived_roughness();
 
     var color = material.ambient * albedo;
     color += calculate_directional_lights(input.world_position, n, v, albedo, metallic, roughness);
     color += calculate_point_lights(input.world_position, n, v, albedo, metallic, roughness);
     color += calculate_spot_lights(input.world_position, n, v, albedo, metallic, roughness);
-    color += material.emissive;
+    color += material.emissive * sample_emissive(input.uv);
 
     // Reinhard tone-map + gamma.
     color = color / (color + vec3<f32>(1.0));
     color = pow(color, vec3<f32>(1.0 / 2.2));
 
-    return vec4<f32>(color, material.base_color.a);
+    return vec4<f32>(color, material.base_color.a * base.a);
 }

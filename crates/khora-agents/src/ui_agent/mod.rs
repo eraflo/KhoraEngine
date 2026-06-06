@@ -116,6 +116,16 @@ impl Agent for UiAgent {
         ) {
             let mut init_ctx = LaneContext::new();
             init_ctx.insert(device);
+            // Forward the PipelineSystem backend so the UI lane can resolve its
+            // bespoke layouts + pipeline through it.
+            if let Some(ps) = context
+                .runtime
+                .resources
+                .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+                .cloned()
+            {
+                init_ctx.insert(ps);
+            }
             if let Err(e) = lane.on_initialize(&mut init_ctx) {
                 log::error!("UiAgent: Failed to initialize UiRenderLane: {}", e);
             }

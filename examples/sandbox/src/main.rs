@@ -31,9 +31,9 @@ use khora_sdk::run_winit;
 use khora_sdk::winit_adapters::WinitWindowProvider;
 use khora_sdk::{
     AgentProvider, AudioDevice, AudioMixBus, CpalAudioDevice, DccService, DefaultMixBus, EngineApp,
-    GameWorld, InputEvent, KeyCode, LayoutSystem, PhaseProvider, PhysicsProvider,
+    GameWorld, InputEvent, KeyCode, LayoutSystem, PhaseProvider, PhysicsProvider, PipelineSystem,
     RapierPhysicsWorld, RenderSystem, Runtime, StandardTextRenderer, StreamInfo, TaffyLayoutSystem,
-    TextRenderer, WgpuRenderSystem, WindowConfig, TEXT_WGSL,
+    TextRenderer, WgpuPipelineSystem, WgpuRenderSystem, WindowConfig, TEXT_WGSL,
 };
 use std::sync::{Arc, Mutex};
 
@@ -230,7 +230,18 @@ impl EngineApp for SandboxGame {
                 .build(),
         );
 
-        khora_sdk::spawn_plane(world, 20.0, 0.0).build();
+        // The ground needs an explicit material: the projection has no
+        // default-material fallback, so a mesh without a material handle is
+        // skipped (and logged). A matte grey, no texture map.
+        let ground_mat = khora_sdk::prelude::materials::StandardMaterial {
+            base_color: khora_sdk::prelude::math::LinearRgba::new(0.5, 0.5, 0.5, 1.0),
+            roughness: 0.9,
+            ..Default::default()
+        };
+        let ground_handle = world.add_material(ground_mat);
+        khora_sdk::spawn_plane(world, 20.0, 0.0)
+            .with_component(ground_handle)
+            .build();
 
         let sun_rotation = Quaternion::from_axis_angle(Vec3::X, -std::f32::consts::FRAC_PI_2 * 0.8);
         let mut sun_light = khora_sdk::prelude::ecs::Light::directional();
@@ -245,6 +256,11 @@ impl EngineApp for SandboxGame {
             .with_component(sun_light)
             .with_rotation(sun_rotation)
             .build();
+
+        // Register a procedural checkerboard texture in the shared AssetStore
+        // (CpuTexture sub-store); the material projection uploads it to the GPU
+        // and every lit lane samples it as the albedo map.
+        let checker_uuid = register_checker_texture(runtime);
 
         let positions = [
             Vec3::new(0.0, 0.5, -5.0),
@@ -263,7 +279,12 @@ impl EngineApp for SandboxGame {
 
         let mut point_light = khora_sdk::prelude::ecs::Light::point();
         if let khora_sdk::prelude::ecs::LightType::Point(ref mut p) = point_light.light_type {
-            p.intensity = 500.0;
+            // `intensity` is a direct linear multiplier on the light color in
+            // this shading model (not a physical luminous power), so it pairs
+            // with the windowed `(1 - (d/range)^2)^2` attenuation. A few units
+            // is bright; large values saturate every nearby surface to white
+            // after the Reinhard tonemap.
+            p.intensity = 5.0;
             p.color = khora_sdk::prelude::math::LinearRgba::new(0.8, 0.9, 1.0, 1.0);
             p.range = 15.0;
         }
@@ -276,6 +297,7 @@ impl EngineApp for SandboxGame {
         for (i, pos) in positions.iter().enumerate() {
             let mat = khora_sdk::prelude::materials::StandardMaterial {
                 base_color: colors[i],
+                base_color_texture: Some(checker_uuid),
                 roughness: 0.2,
                 ..Default::default()
             };
@@ -337,6 +359,55 @@ impl PhaseProvider for SandboxGame {
     }
 }
 
+/// Builds a small procedural checkerboard [`CpuTexture`] and inserts it into
+/// the shared AssetStore CpuTexture sub-store (filled by the SDK layer, uploaded to the GPU
+/// by the data-layer material projection). Returns the texture's `AssetUUID`
+/// to attach to a material's `base_color_texture`.
+fn register_checker_texture(runtime: &Runtime) -> khora_sdk::khora_core::asset::AssetUUID {
+    use khora_sdk::khora_core::asset::{AssetHandle, AssetUUID};
+    use khora_sdk::khora_core::math::Extent3D;
+    use khora_sdk::khora_core::renderer::api::resource::{
+        CpuTexture, TextureDimension, TextureUsage,
+    };
+    use khora_sdk::khora_core::renderer::api::util::{SampleCount, TextureFormat};
+
+    const N: u32 = 8;
+    let mut pixels = Vec::with_capacity((N * N * 4) as usize);
+    for y in 0..N {
+        for x in 0..N {
+            let lit = (x + y) % 2 == 0;
+            let v = if lit { 235u8 } else { 60u8 };
+            pixels.extend_from_slice(&[v, v, v, 255]);
+        }
+    }
+
+    let cpu = CpuTexture {
+        pixels,
+        size: Extent3D {
+            width: N,
+            height: N,
+            depth_or_array_layers: 1,
+        },
+        format: TextureFormat::Rgba8UnormSrgb,
+        mip_level_count: 1,
+        sample_count: SampleCount::X1,
+        dimension: TextureDimension::D2,
+        usage: TextureUsage::TEXTURE_BINDING | TextureUsage::COPY_DST,
+    };
+
+    let uuid = AssetUUID::new_v5("sandbox/checker_albedo");
+    if let Some(assets) = runtime.resources.get::<khora_sdk::khora_data::AssetStore>() {
+        assets
+            .store::<CpuTexture>()
+            .write()
+            .unwrap()
+            .insert(uuid, AssetHandle::new(cpu));
+    } else {
+        log::warn!("sandbox: AssetStore not found; checker texture not registered");
+    }
+    uuid
+}
+
 fn main() -> Result<()> {
     use env_logger::{Builder, Env};
 
@@ -353,6 +424,16 @@ fn main() -> Result<()> {
         runtime.backends.insert(rs.graphics_device());
         let rs: Box<dyn RenderSystem> = Box::new(rs);
         runtime.backends.insert(Arc::new(Mutex::new(rs)));
+
+        // Shader / pipeline backend — wgpu + naga_oil. The app picks the
+        // backend; the engine core consumes it as `Arc<dyn PipelineSystem>`.
+        match WgpuPipelineSystem::new() {
+            Ok(sys) => {
+                let sys: Arc<dyn PipelineSystem> = Arc::new(sys);
+                runtime.resources.insert(sys);
+            }
+            Err(e) => log::error!("pipeline system init failed: {e}"),
+        }
 
         // Physics — Rapier3D
         let physics: Box<dyn PhysicsProvider> = Box::new(RapierPhysicsWorld::default());
@@ -384,6 +465,33 @@ fn main() -> Result<()> {
                 runtime.backends.insert(stream);
             }
             Err(e) => log::error!("audio open failed: {}", e),
+        }
+
+        // `.wgsl` hot-reload (engine-dev convenience). Watch the canonical
+        // shader source tree so edits to lighting / shadow / material WGSL
+        // recompose the affected modules and rebuild the cached pipelines in
+        // place — no rebuild, no lane change (the `shader_hot_reload` data
+        // system pumps the watcher each tick; lanes re-fetch pipelines by key).
+        // The directory is resolved from this crate's compile-time location, so
+        // it only exists when the sandbox runs from the source checkout; a
+        // relocated binary skips hot-reload and serves the embedded shaders.
+        let shader_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../crates/khora-infra/src/graphics/shader/shaders");
+        if let Ok(shader_dir) = shader_dir.canonicalize() {
+            match khora_sdk::AssetWatcher::new(&shader_dir) {
+                Ok(watcher) => {
+                    runtime.resources.insert(Arc::new(watcher));
+                    log::info!(
+                        "sandbox: watching {} for shader hot-reload",
+                        shader_dir.display()
+                    );
+                }
+                Err(e) => log::warn!(
+                    "sandbox: shader hot-reload disabled ({}): {:#}",
+                    shader_dir.display(),
+                    e
+                ),
+            }
         }
     })?;
     Ok(())

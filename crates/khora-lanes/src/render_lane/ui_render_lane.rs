@@ -21,14 +21,13 @@ use std::sync::{Arc, OnceLock};
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, Ref, Slot};
 use khora_core::math::{Mat4, Vec4};
 use khora_core::renderer::api::command::{
-    BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutDescriptor,
-    BindGroupLayoutEntry, BindGroupLayoutId, BindingResource, BindingType, BufferBinding,
-    BufferBindingType, LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor,
-    StoreOp,
+    BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutEntry, BindGroupLayoutId,
+    BindingResource, BindingType, BufferBinding, BufferBindingType, LoadOp, Operations,
+    RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
 };
 use khora_core::renderer::api::pipeline::{
-    ColorTargetStateDescriptor, ColorWrites, MultisampleStateDescriptor, PipelineLayoutDescriptor,
-    PrimitiveStateDescriptor, PrimitiveTopology, RenderPipelineDescriptor, RenderPipelineId,
+    ColorTargetStateDescriptor, ColorWrites, MultisampleStateDescriptor, PrimitiveStateDescriptor,
+    PrimitiveTopology, RenderPipelineId,
 };
 use khora_core::renderer::api::resource::{
     BufferDescriptor, BufferId, BufferUsage, TextureViewDimension,
@@ -106,122 +105,29 @@ impl UiRenderLane {
     fn init_gpu_resources(
         &self,
         device: &dyn GraphicsDevice,
-        shader_registry: &Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>,
+        pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
     ) -> Result<(), LaneError> {
-        // 1. Create Bind Group Layouts
-        let global_layout_desc = BindGroupLayoutDescriptor {
-            label: Some("ui_global_layout"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-            }],
-        };
-        let global_layout = device
-            .create_bind_group_layout(&global_layout_desc)
+        // 1. Bind Group Layouts — bespoke to the UI lane, resolved + cached by
+        // the PipelineSystem so the pipeline and the lane's bind groups share
+        // one layout id.
+        let global_layout = pipeline_system
+            .inline_layout(device, UI_GLOBAL_LAYOUT_LABEL, &ui_global_layout_entries())
+            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
+        let instance_layout = pipeline_system
+            .inline_layout(
+                device,
+                UI_INSTANCE_LAYOUT_LABEL,
+                &ui_instance_layout_entries(),
+            )
+            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
+        let atlas_layout = pipeline_system
+            .inline_layout(device, UI_ATLAS_LAYOUT_LABEL, &ui_atlas_layout_entries())
             .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
 
-        let instance_layout_desc = BindGroupLayoutDescriptor {
-            label: Some("ui_instance_layout"),
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Storage { read_only: true },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-            }],
-        };
-        let instance_layout = device
-            .create_bind_group_layout(&instance_layout_desc)
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-
-        // 2. Create Shader Module via ShaderRegistry.
-        let shader_module = {
-            let mut registry = shader_registry
-                .lock()
-                .map_err(|_| LaneError::lock_poisoned("UiRenderLane.shader_registry"))?;
-            registry
-                .create_module(device, "khora::pipelines::ui", Some("ui_render_shader"))
-                .map_err(|e| {
-                    LaneError::InitializationFailed(Box::new(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("ShaderRegistry compose failed (ui): {}", e),
-                    )))
-                })?
-        };
-
-        let atlas_layout_desc = BindGroupLayoutDescriptor {
-            label: Some("ui_atlas_layout"),
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::FRAGMENT,
-                    ty: BindingType::Texture {
-                        sample_type: khora_core::renderer::api::command::TextureSampleType::Float {
-                            filterable: true,
-                        },
-                        view_dimension: TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                },
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStageFlags::FRAGMENT,
-                    ty: BindingType::Sampler(
-                        khora_core::renderer::api::command::SamplerBindingType::Filtering,
-                    ),
-                },
-            ],
-        };
-        let atlas_layout = device
-            .create_bind_group_layout(&atlas_layout_desc)
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-
-        // 3. Create Pipeline Layout
-        let pipeline_layout_desc = PipelineLayoutDescriptor {
-            label: Some(Cow::Borrowed("UI Pipeline Layout")),
-            bind_group_layouts: &[global_layout, instance_layout, atlas_layout],
-        };
-        let pipeline_layout_id = device
-            .create_pipeline_layout(&pipeline_layout_desc)
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-
-        // 4. Create Pipeline
-        let pipeline_desc = RenderPipelineDescriptor {
-            label: Some(Cow::Borrowed("UI Render Pipeline")),
-            layout: Some(pipeline_layout_id),
-            vertex_shader_module: shader_module,
-            vertex_entry_point: Cow::Borrowed("vs_main"),
-            fragment_shader_module: Some(shader_module),
-            fragment_entry_point: Some(Cow::Borrowed("fs_main")),
-            vertex_buffers_layout: Cow::Owned(vec![]), // Using vertex_index and instancing
-            primitive_state: PrimitiveStateDescriptor {
-                topology: PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil_state: None,
-            color_target_states: Cow::Owned(vec![ColorTargetStateDescriptor {
-                format: device
-                    .get_surface_format()
-                    .unwrap_or(TextureFormat::Rgba8UnormSrgb),
-                blend: None,
-                write_mask: ColorWrites::ALL,
-            }]),
-            multisample_state: MultisampleStateDescriptor {
-                count: SampleCount::X1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-        };
-
-        let pipeline_id = device
-            .create_render_pipeline(&pipeline_desc)
+        // 2. Pipeline — compiled + cached by the backend from
+        // `khora::pipelines::ui`.
+        let pipeline_id = pipeline_system
+            .pipeline(device, &ui_pipeline_spec(device))
             .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
 
         // 5. Create Buffers
@@ -327,11 +233,11 @@ impl Lane for UiRenderLane {
             .get::<Arc<dyn GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
             .clone();
-        let registry = ctx
-            .get::<Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>>()
-            .ok_or(LaneError::missing("Arc<Mutex<ShaderRegistry>>"))?
+        let pipeline_system = ctx
+            .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .ok_or(LaneError::missing("Arc<dyn PipelineSystem>"))?
             .clone();
-        self.init_gpu_resources(device.as_ref(), &registry)
+        self.init_gpu_resources(device.as_ref(), pipeline_system.as_ref())
     }
 
     fn execute(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
@@ -498,5 +404,111 @@ impl Lane for UiRenderLane {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+// ─── Free functions (CLAD: declarative spec + bespoke layouts) ───
+
+/// Stable cache label for the UI global uniform layout (set 0).
+const UI_GLOBAL_LAYOUT_LABEL: &str = "ui_global_layout";
+/// Stable cache label for the UI instance storage layout (set 1).
+const UI_INSTANCE_LAYOUT_LABEL: &str = "ui_instance_layout";
+/// Stable cache label for the UI atlas texture + sampler layout (set 2).
+const UI_ATLAS_LAYOUT_LABEL: &str = "ui_atlas_layout";
+
+/// Set-0 layout: the projection-matrix uniform buffer.
+fn ui_global_layout_entries() -> Vec<BindGroupLayoutEntry> {
+    vec![BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+    }]
+}
+
+/// Set-1 layout: the read-only instance storage buffer.
+fn ui_instance_layout_entries() -> Vec<BindGroupLayoutEntry> {
+    vec![BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Storage { read_only: true },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+    }]
+}
+
+/// Set-2 layout: the atlas texture + filtering sampler.
+fn ui_atlas_layout_entries() -> Vec<BindGroupLayoutEntry> {
+    vec![
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStageFlags::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: khora_core::renderer::api::command::TextureSampleType::Float {
+                    filterable: true,
+                },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStageFlags::FRAGMENT,
+            ty: BindingType::Sampler(
+                khora_core::renderer::api::command::SamplerBindingType::Filtering,
+            ),
+        },
+    ]
+}
+
+/// The declarative pipeline spec for the UI lane — instanced, no vertex buffer,
+/// no depth, surface-format color target.
+fn ui_pipeline_spec(
+    device: &dyn GraphicsDevice,
+) -> khora_core::renderer::api::pipeline::PipelineSpec {
+    use khora_core::renderer::api::pipeline::{LayoutSpec, PipelineSpec, ShaderVariantKey};
+    PipelineSpec {
+        label: "UI Render Pipeline",
+        shader: "khora::pipelines::ui",
+        variant: ShaderVariantKey::empty(),
+        bind_group_layouts: vec![
+            LayoutSpec::Inline {
+                label: UI_GLOBAL_LAYOUT_LABEL,
+                entries: Cow::Owned(ui_global_layout_entries()),
+            },
+            LayoutSpec::Inline {
+                label: UI_INSTANCE_LAYOUT_LABEL,
+                entries: Cow::Owned(ui_instance_layout_entries()),
+            },
+            LayoutSpec::Inline {
+                label: UI_ATLAS_LAYOUT_LABEL,
+                entries: Cow::Owned(ui_atlas_layout_entries()),
+            },
+        ],
+        vertex_buffers: vec![],
+        vs_entry: "vs_main",
+        fs_entry: Some("fs_main"),
+        primitive: PrimitiveStateDescriptor {
+            topology: PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        color_targets: vec![ColorTargetStateDescriptor {
+            format: device
+                .get_surface_format()
+                .unwrap_or(TextureFormat::Rgba8UnormSrgb),
+            blend: None,
+            write_mask: ColorWrites::ALL,
+        }],
+        multisample: MultisampleStateDescriptor {
+            count: SampleCount::X1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
     }
 }

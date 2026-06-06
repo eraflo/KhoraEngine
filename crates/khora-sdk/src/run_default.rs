@@ -38,12 +38,13 @@ use crate::khora_core::asset::AssetUUID;
 use crate::khora_core::renderer::api::scene::Mesh;
 use crate::winit_adapters::WinitWindowProvider;
 use crate::{
-    run_winit, AgentProvider, AssetIo, AssetService, AudioDevice, AudioMixBus, AudioStream,
-    CpalAudioDevice, DccService, DefaultMixBus, EngineApp, FileLoader, FileSystemResolver,
-    GameWorld, IndexBuilder, InputEvent, LayoutSystem, MeshDispatcher, MetricsRegistry, PackLoader,
-    PhaseProvider, PhysicsProvider, RapierPhysicsWorld, RenderSystem, Runtime, SceneFile,
-    SerializationService, SoundData, StandardTextRenderer, StreamInfo, SymphoniaDecoder,
-    TaffyLayoutSystem, TextRenderer, WgpuRenderSystem, WindowConfig, TEXT_WGSL,
+    run_winit, AgentProvider, AssetIo, AssetService, AssetWatcher, AudioDevice, AudioMixBus,
+    AudioStream, CpalAudioDevice, DccService, DefaultMixBus, EngineApp, FileLoader,
+    FileSystemResolver, GameWorld, IndexBuilder, InputEvent, LayoutSystem, MeshDispatcher,
+    MetricsRegistry, PackLoader, PhaseProvider, PhysicsProvider, PipelineSystem,
+    RapierPhysicsWorld, RenderSystem, Runtime, SceneFile, SerializationService, SoundData,
+    StandardTextRenderer, StreamInfo, SymphoniaDecoder, TaffyLayoutSystem, TextRenderer,
+    WgpuPipelineSystem, WgpuRenderSystem, WindowConfig, TEXT_WGSL,
 };
 use khora_io::asset::PackManifest;
 use serde::Deserialize;
@@ -374,6 +375,16 @@ pub fn run_default() -> Result<()> {
         let rs_dyn: Box<dyn RenderSystem> = Box::new(rs);
         runtime.backends.insert(Arc::new(Mutex::new(rs_dyn)));
 
+        // Shader / pipeline backend — wgpu + naga_oil. The app picks the
+        // backend; the engine core consumes it as `Arc<dyn PipelineSystem>`.
+        match WgpuPipelineSystem::new() {
+            Ok(sys) => {
+                let sys: Arc<dyn PipelineSystem> = Arc::new(sys);
+                runtime.resources.insert(sys);
+            }
+            Err(e) => log::error!("pipeline system init failed: {e}"),
+        }
+
         // Physics — Rapier3D
         let physics: Box<dyn PhysicsProvider> = Box::new(RapierPhysicsWorld::default());
         runtime.backends.insert(Arc::new(Mutex::new(physics)));
@@ -410,6 +421,29 @@ pub fn run_default() -> Result<()> {
             }
             Err(e) => {
                 log::error!("khora-sdk run_default: AssetService init failed: {:#}", e);
+            }
+        }
+
+        // `.wgsl` hot-reload: when running against a loose `assets/shaders`
+        // tree, watch it so edits recompose shader modules and rebuild cached
+        // pipelines in place (the `shader_hot_reload` data system pumps the
+        // watcher each tick). With no such directory — packed runtime — no
+        // watcher is created and the backend serves its embedded sources.
+        let shader_dir = exe_dir.join("assets").join("shaders");
+        if shader_dir.is_dir() {
+            match AssetWatcher::new(&shader_dir) {
+                Ok(watcher) => {
+                    runtime.resources.insert(Arc::new(watcher));
+                    log::info!(
+                        "khora-sdk run_default: watching {} for shader hot-reload",
+                        shader_dir.display()
+                    );
+                }
+                Err(e) => log::warn!(
+                    "khora-sdk run_default: shader hot-reload disabled ({}): {:#}",
+                    shader_dir.display(),
+                    e
+                ),
             }
         }
     })?;

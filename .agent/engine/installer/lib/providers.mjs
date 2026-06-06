@@ -88,6 +88,14 @@ export function generateClaude(ctx, generated) {
   let settings = {};
   if (exists(settingsPath)) { try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch {} }
   settings.hooks = mergeClaudeHooks(settings.hooks ?? {}, ctx);
+  // Route Claude Code through the headroom proxy when it's actually installed —
+  // guarded so a contributor without headroom isn't pointed at a dead port.
+  const BIN = process.platform === 'win32' ? 'Scripts' : 'bin';
+  const EXE = process.platform === 'win32' ? '.exe' : '';
+  const venvHeadroom = path.join(root, '.khora', 'venv', BIN, 'headroom' + EXE);
+  if (exists(venvHeadroom)) {
+    settings.env = { ...(settings.env ?? {}), ANTHROPIC_BASE_URL: 'http://127.0.0.1:8787' };
+  }
   writeFileRecording(ctx, settingsPath, JSON.stringify(settings, null, 2) + '\n', generated);
   log.ok('Claude Code wrappers (CLAUDE.md, .claude/agents, .claude/skills, .claude/settings.json)');
 }

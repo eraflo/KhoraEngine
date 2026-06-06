@@ -14,6 +14,11 @@ pollster = "0.4"
 async-trait = "0.1"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 
+# Shader composition (PipelineSystem backend) — moved here from khora-lanes.
+naga_oil = "0.22.0"
+naga = { version = "29.0.3", features = ["wgsl-out"] }
+thiserror = "2.0.18"
+
 # Platform dependencies (winit).
 # `default-features` already include `x11` + `wayland` on Linux, but listing
 # them explicitly guards against a transitive dep (egui-winit, wgpu, …)

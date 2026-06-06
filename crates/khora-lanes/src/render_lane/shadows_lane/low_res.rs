@@ -85,14 +85,14 @@ impl Lane for LowResShadowsLane {
             .get::<std::sync::Arc<dyn GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
             .clone();
-        let registry = ctx
-            .get::<std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>>()
-            .ok_or(LaneError::missing("Arc<Mutex<ShaderRegistry>>"))?
+        let pipeline_system = ctx
+            .get::<std::sync::Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .ok_or(LaneError::missing("Arc<dyn PipelineSystem>"))?
             .clone();
         self.state
             .init_gpu(
                 device.as_ref(),
-                &registry,
+                pipeline_system.as_ref(),
                 Self::ATLAS_2D_RESOLUTION,
                 Self::ATLAS_2D_MAX_LIGHTS,
                 Self::CUBE_FACE_RESOLUTION,

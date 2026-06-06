@@ -2682,11 +2682,14 @@ dependencies = [
  "env_logger",
  "khora-core",
  "log",
+ "naga 29.0.3",
+ "naga_oil",
  "pollster",
  "rapier3d",
  "raw-window-handle",
  "sysinfo",
  "taffy",
+ "thiserror 2.0.18",
  "wgpu 29.0.3",
  "winit",
 ]
@@ -2733,11 +2736,8 @@ dependencies = [
  "khora-data",
  "khora-io",
  "log",
- "naga 29.0.3",
- "naga_oil",
  "ron",
  "serde",
- "thiserror 2.0.18",
 ]
 
 [[package]]

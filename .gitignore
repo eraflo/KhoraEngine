@@ -47,6 +47,7 @@ target/
 /.claude/skills/add-an-agent/SKILL.md
 /.claude/skills/build-and-test/SKILL.md
 /.claude/skills/debug-frame/SKILL.md
+/.claude/skills/impeccable/
 /.claude/skills/release-checklist/SKILL.md
 /.claude/skills/run-the-engine/SKILL.md
 /.cursor/rules/000-index.mdc
@@ -75,7 +76,9 @@ target/
 /.cursor/rules/skills/debug-frame.mdc
 /.cursor/rules/skills/release-checklist.mdc
 /.cursor/rules/skills/run-the-engine.mdc
+/.cursor/skills/impeccable/
 /.gemini/settings.json
+/.gemini/skills/impeccable/
 /.github/copilot-instructions.md
 /.github/instructions/api-ux-expert.instructions.md
 /.github/instructions/audio-expert.instructions.md
@@ -84,6 +87,7 @@ target/
 /.github/instructions/editor-ui-ux.instructions.md
 /.github/instructions/graphics-rendering-expert.instructions.md
 /.github/instructions/physics-expert.instructions.md
+/.github/skills/impeccable/
 /.khora/
 /AGENTS.md
 /CLAUDE.md

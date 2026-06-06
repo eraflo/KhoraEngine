@@ -275,8 +275,118 @@ impl SerializationStrategy for RecipeSerializationStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ecs::{Children, Parent, Transform, World};
-    use khora_core::math::Vec3;
+    use crate::ecs::{
+        material_from_json, material_to_json, Children, MaterialComponent, Parent, Transform, World,
+    };
+    use khora_core::asset::{
+        AssetHandle, AssetUUID, EmissiveMaterial, Material, StandardMaterial,
+    };
+    use khora_core::math::{LinearRgba, Vec3};
+
+    /// Wraps a concrete material in a `MaterialComponent` the way the SDK /
+    /// editor do — a fresh handle around the boxed trait object.
+    fn material_component<M: Material + 'static>(material: M) -> MaterialComponent {
+        MaterialComponent {
+            handle: AssetHandle::new(Box::new(material) as Box<dyn Material>),
+            uuid: AssetUUID::new(),
+        }
+    }
+
+    /// The `EditorInterchange` goal selects the Recipe strategy, so exercising
+    /// it directly reproduces the editor Play-enter → Play-exit round-trip and
+    /// the on-disk save/load path.
+    #[test]
+    fn recipe_round_trip_preserves_standard_material() {
+        let mut src = World::new();
+        let distinctive = StandardMaterial {
+            base_color: LinearRgba::new(0.12, 0.34, 0.56, 0.78),
+            roughness: 0.37,
+            metallic: 0.6,
+            base_color_texture: Some(AssetUUID::new()),
+            ..Default::default()
+        };
+        let entity = src.spawn(Transform::default());
+        src.add_component(entity, material_component(distinctive.clone()))
+            .unwrap();
+
+        let strategy = RecipeSerializationStrategy::new();
+        let bytes = strategy.serialize(&src).expect("serialize");
+
+        let mut dst = World::new();
+        strategy.deserialize(&bytes, &mut dst).expect("deserialize");
+
+        let restored = dst
+            .iter_entities()
+            .find_map(|e| dst.get::<MaterialComponent>(e))
+            .expect("material component should survive the round trip");
+        let material: &dyn Material = &**restored.handle;
+        let standard = material
+            .as_any()
+            .downcast_ref::<StandardMaterial>()
+            .expect("restored material should downcast to StandardMaterial");
+
+        assert_eq!(standard.base_color, distinctive.base_color);
+        assert_eq!(standard.roughness, distinctive.roughness);
+        assert_eq!(standard.metallic, distinctive.metallic);
+        assert_eq!(standard.base_color_texture, distinctive.base_color_texture);
+    }
+
+    #[test]
+    fn recipe_round_trip_preserves_emissive_material() {
+        let mut src = World::new();
+        let distinctive = EmissiveMaterial {
+            emissive_color: LinearRgba::new(0.9, 0.1, 0.4, 1.0),
+            intensity: 2.5,
+            ..Default::default()
+        };
+        let entity = src.spawn(Transform::default());
+        src.add_component(entity, material_component(distinctive.clone()))
+            .unwrap();
+
+        let strategy = RecipeSerializationStrategy::new();
+        let bytes = strategy.serialize(&src).expect("serialize");
+
+        let mut dst = World::new();
+        strategy.deserialize(&bytes, &mut dst).expect("deserialize");
+
+        let restored = dst
+            .iter_entities()
+            .find_map(|e| dst.get::<MaterialComponent>(e))
+            .expect("material component should survive the round trip");
+        let material: &dyn Material = &**restored.handle;
+        let emissive = material
+            .as_any()
+            .downcast_ref::<EmissiveMaterial>()
+            .expect("restored material should downcast to EmissiveMaterial");
+
+        assert_eq!(emissive.emissive_color, distinctive.emissive_color);
+        assert_eq!(emissive.intensity, distinctive.intensity);
+    }
+
+    #[test]
+    fn material_json_round_trip_is_lossless() {
+        let distinctive = StandardMaterial {
+            base_color: LinearRgba::new(0.12, 0.34, 0.56, 0.78),
+            roughness: 0.37,
+            metallic: 0.6,
+            base_color_texture: Some(AssetUUID::new()),
+            ..Default::default()
+        };
+        let material: Box<dyn Material> = Box::new(distinctive.clone());
+
+        let json = material_to_json(material.as_ref()).expect("to_json should produce a value");
+        let (handle, _uuid) = material_from_json(&json).expect("from_json should reconstruct");
+        let restored: &dyn Material = &**handle;
+        let standard = restored
+            .as_any()
+            .downcast_ref::<StandardMaterial>()
+            .expect("restored material should downcast to StandardMaterial");
+
+        assert_eq!(standard.base_color, distinctive.base_color);
+        assert_eq!(standard.roughness, distinctive.roughness);
+        assert_eq!(standard.metallic, distinctive.metallic);
+        assert_eq!(standard.base_color_texture, distinctive.base_color_texture);
+    }
 
     /// Builds the parent's `Children` component manually since the
     /// maintenance system that normally syncs it isn't running here.

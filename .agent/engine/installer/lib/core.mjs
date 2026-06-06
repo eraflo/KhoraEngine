@@ -116,6 +116,8 @@ export function rewriteGitignore(ctx) {
   const paths = new Set();
   paths.add('.agent/.khora-ai.json');
   paths.add('.khora/'); // project-local tool home (headroom venv, etc.)
+  // Bootstrapped design skill (impeccable) — installed per harness, never committed.
+  for (const h of ['.claude', '.cursor', '.gemini', '.github']) paths.add(`${h}/skills/impeccable/`);
   for (const prof of Object.values(m.profiles)) {
     for (const g of (prof.generated ?? [])) paths.add(g);
   }

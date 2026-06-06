@@ -22,7 +22,10 @@
 
 use khora_core::{
     math::{Mat4, Vec3},
-    renderer::{api::scene::GpuMesh, light::LightType},
+    renderer::{
+        api::scene::{GpuMaterial, GpuMesh},
+        light::LightType,
+    },
     Runtime,
 };
 
@@ -32,6 +35,7 @@ use crate::ecs::{
 use crate::flow::{Flow, Selection};
 use crate::register_flow;
 use crate::render::{ExtractedLight, ExtractedMesh, ExtractedView, RenderWorld};
+use khora_core::ecs::entity::EntityId;
 
 /// Projects the ECS World into the per-frame [`RenderWorld`] consumed by the
 /// render lanes.
@@ -65,18 +69,24 @@ impl Flow for RenderFlow {
 register_flow!(RenderFlow);
 
 fn extract_meshes(world: &World, render_world: &mut RenderWorld) {
-    let query = world.query::<(&GlobalTransform, &HandleComponent<GpuMesh>)>();
-    for (entity_id, (transform, gpu_mesh_handle)) in query.enumerate() {
+    let query = world.query::<(EntityId, &GlobalTransform, &HandleComponent<GpuMesh>)>();
+    for (entity_id, transform, gpu_mesh_handle) in query {
+        // Per-entity component lookup, NOT positional: entities with vs without
+        // a material live in different archetypes, so correlating two separate
+        // queries by enumerate-index would mismatch (and drop the GpuMaterial).
         let material = world
-            .query::<&MaterialComponent>()
-            .nth(entity_id)
+            .get::<MaterialComponent>(entity_id)
             .map(|m| m.handle.clone());
+        let gpu_material = world
+            .get::<HandleComponent<GpuMaterial>>(entity_id)
+            .map(|h| h.handle.clone());
 
         render_world.meshes.push(ExtractedMesh {
             transform: transform.0,
             cpu_mesh_uuid: gpu_mesh_handle.uuid,
             gpu_mesh: gpu_mesh_handle.handle.clone(),
             material,
+            gpu_material,
         });
     }
 }

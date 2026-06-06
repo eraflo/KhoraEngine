@@ -22,6 +22,7 @@
 
 pub mod audio_playback_writeback;
 pub mod ecs_maintenance;
+pub mod gpu_material_sync;
 pub mod gpu_mesh_sync;
 pub mod physics_debug_extraction;
 pub mod physics_world_writeback;

@@ -1,7 +1,7 @@
 ---
 name: documentation-expert
 description: Use when writing or updating documentation — mdBook chapters (docs/src/), rustdoc, diagrams, and keeping docs in sync with code. Documents in existing files in place (no separate ADR files).
-tools: Read, Edit, Write, Grep, Glob, Bash
+tools: Read, Edit, Write, Grep, Glob, Bash, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # Documentation Expert

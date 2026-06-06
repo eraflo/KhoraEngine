@@ -38,10 +38,11 @@ use khora_core::control::gorna::{
 };
 use khora_core::lane::{LaneContext, LaneRegistry, Ref, Slot};
 use khora_core::renderer::api::core::FrameContext;
+use khora_core::renderer::api::scene::GpuMesh;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 use khora_data::render::RenderWorld;
-use khora_data::GpuCache;
+use khora_data::AssetStore;
 use khora_lanes::render_lane::shadows_lane::{LOW_RES_STRATEGY_NAME, STANDARD_STRATEGY_NAME};
 use khora_lanes::render_lane::{LowResShadowsLane, StandardShadowsLane};
 
@@ -180,16 +181,16 @@ impl Agent for ShadowAgent {
             log::warn!("ShadowAgent: graphics device unavailable in on_initialize");
             return;
         };
-        let shader_registry = context
+        let pipeline_system = context
             .runtime
             .resources
-            .get::<Arc<std::sync::Mutex<khora_lanes::render_lane::ShaderRegistry>>>()
+            .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
             .cloned();
 
         let mut init_ctx = LaneContext::new();
         init_ctx.insert(device_arc);
-        if let Some(registry) = shader_registry {
-            init_ctx.insert(registry);
+        if let Some(ps) = pipeline_system {
+            init_ctx.insert(ps);
         }
         for lane in self.lanes.all() {
             if let Err(e) = lane.on_initialize(&mut init_ctx) {
@@ -212,10 +213,10 @@ impl Agent for ShadowAgent {
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
 
-        let Some(gpu_cache) = context.runtime.resources.get::<GpuCache>() else {
+        let Some(asset_store) = context.runtime.resources.get::<AssetStore>() else {
             return;
         };
-        let gpu_meshes = gpu_cache.inner().clone();
+        let gpu_meshes = asset_store.store::<GpuMesh>();
 
         let Some(render_world): Option<&RenderWorld> = context.bus.get() else {
             log::warn!("ShadowAgent: no RenderWorld in LaneBus (RenderFlow not run?)");

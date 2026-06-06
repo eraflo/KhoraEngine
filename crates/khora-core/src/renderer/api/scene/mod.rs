@@ -14,11 +14,13 @@
 
 //! Rendering entities and scene data.
 
+pub mod gpu_material;
 pub mod lighting;
 pub mod material_uniforms;
 pub mod mesh;
 pub mod render_object;
 
+pub use self::gpu_material::*;
 pub use self::lighting::*;
 pub use self::material_uniforms::*;
 pub use self::mesh::*;

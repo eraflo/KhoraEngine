@@ -23,7 +23,6 @@ mod forward_plus_lane;
 mod gizmo_lane;
 mod grid_lane;
 mod lit_forward_lane;
-pub mod shader_registry;
 pub mod shaders;
 pub mod shadows_lane;
 mod simple_unlit_lane;
@@ -31,8 +30,6 @@ mod standard_pbr_lane;
 mod ui_render_lane;
 pub mod util;
 mod wireframe_lane;
-
-pub use shader_registry::{ShaderRegistry, ShaderRegistryError};
 
 pub use emissive_lane::EmissiveLane;
 pub use forward_plus_lane::*;

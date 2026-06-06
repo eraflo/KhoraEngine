@@ -1,7 +1,7 @@
 ---
 name: physics-expert
 description: Use when working on physics — Rapier3D rigid bodies, colliders, continuous collision detection (CCD), the physics lanes, the PhysicsProvider trait, or physics components/flow.
-tools: Read, Edit, Write, Grep, Glob, Bash
+tools: Read, Edit, Write, Grep, Glob, Bash, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # Physics Expert

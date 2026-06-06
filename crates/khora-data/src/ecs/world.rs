@@ -22,7 +22,7 @@ use std::{
 use bincode::config;
 use khora_core::{
     ecs::entity::EntityId,
-    renderer::api::scene::{GpuMesh, Mesh},
+    renderer::api::scene::{GpuMaterial, GpuMesh, Mesh},
 };
 
 use crate::ecs::{
@@ -145,6 +145,7 @@ impl World {
         // component — it lives in `Resources` as `Arc<Mutex<CollisionPairs>>`.
         world.register_component::<HandleComponent<Mesh>>(SemanticDomain::Render);
         world.register_component::<HandleComponent<GpuMesh>>(SemanticDomain::Render);
+        world.register_component::<HandleComponent<GpuMaterial>>(SemanticDomain::Render);
         world.register_component::<MaterialComponent>(SemanticDomain::Render);
 
         // Auto-register every component that declares its domain via

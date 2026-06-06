@@ -14,16 +14,15 @@
 
 //! Built-in shader sources for the Khora Engine rendering system.
 //!
-//! All rendering lanes now consume shaders through
-//! [`crate::render_lane::ShaderRegistry`] (naga_oil composer +
-//! validation at boot). This module exposes the two remaining legacy
-//! `include_str!` constants still required by infra-side consumers
-//! (the egui editor overlay and the text renderer) — they take raw
-//! WGSL strings, not registry handles.
+//! Rendering lanes consume shaders through the `PipelineSystem` backend
+//! (`khora-infra`, naga_oil composer + validation). This module exposes
+//! the two remaining `include_str!` constants still required by
+//! infra-side consumers (the egui editor overlay and the text renderer)
+//! — they take raw WGSL strings, not pipeline handles.
 //!
-//! New lanes / pipelines should be registered in
-//! [`crate::render_lane::shader_registry::PIPELINE_MODULES`] and
-//! looked up by name; no new `_WGSL` constants should appear here.
+//! New lanes / pipelines should be added to the backend's pipeline
+//! module table and looked up by name; no new `_WGSL` constants should
+//! appear here.
 
 /// Shader for text rendering. Consumed by
 /// `khora_infra::StandardTextRenderer::new` as a raw `String`.
@@ -36,9 +35,9 @@ pub const EGUI_WGSL: &str = include_str!("pipelines/egui.wgsl");
 
 // NOTE — the grid and gizmo shaders are NOT exposed as `_WGSL`
 // constants: grid / gizmo rendering is owned by the engine-side
-// `GridLane` / `GizmoLane`, which compose `khora::pipelines::grid` /
-// `khora::pipelines::gizmo` through the `ShaderRegistry` like every
-// other render lane.
+// `GridLane` / `GizmoLane`, which resolve `khora::pipelines::grid` /
+// `khora::pipelines::gizmo` through the `PipelineSystem` backend like
+// every other render lane.
 
 #[cfg(test)]
 mod tests {

@@ -36,6 +36,7 @@ use khora_core::lane::{
 };
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::api::scene::GpuMesh;
+use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::{GraphicsDevice, RenderSystem};
 use khora_core::EngineContext;
 use khora_data::assets::Assets;
@@ -43,7 +44,7 @@ use khora_data::ecs::World;
 use khora_data::render::{
     extract_active_camera_view, PassDescriptor, RenderWorld, ResourceId, SharedFrameGraph,
 };
-use khora_data::GpuCache;
+use khora_data::AssetStore;
 use khora_lanes::render_lane::{ForwardPlusLane, LitForwardLane, SimpleUnlitLane, StandardPbrLane};
 
 /// Threshold for switching to Forward+ rendering.
@@ -202,20 +203,20 @@ impl Agent for RenderAgent {
             return;
         };
 
-        // The `ShaderRegistry` is shared by every rendering lane; lanes
-        // pick the pipeline they need by logical name. The engine puts
-        // it into the runtime at boot; we forward it via the
-        // `LaneContext` so lanes don't need a direct `Runtime` handle.
-        let shader_registry = context
+        // The PipelineSystem backend — the shader/pipeline machine. Render
+        // lanes resolve their layouts + pipeline through it; it also owns the
+        // canonical Material layout (shared with the material projection's
+        // cached `GpuMaterial` bind groups).
+        let pipeline_system = context
             .runtime
             .resources
-            .get::<Arc<Mutex<khora_lanes::render_lane::ShaderRegistry>>>()
+            .get::<Arc<dyn PipelineSystem>>()
             .cloned();
 
         let mut init_ctx = LaneContext::new();
         init_ctx.insert(device_arc);
-        if let Some(registry) = shader_registry {
-            init_ctx.insert(registry);
+        if let Some(ps) = pipeline_system {
+            init_ctx.insert(ps);
         }
         for lane in self.lanes.all() {
             if let Err(e) = lane.on_initialize(&mut init_ctx) {
@@ -246,10 +247,18 @@ impl Agent for RenderAgent {
         };
         let render_system: Arc<Mutex<Box<dyn RenderSystem>>> = (*rs_arc).clone();
 
-        let Some(gpu_cache) = context.runtime.resources.get::<GpuCache>() else {
+        let Some(asset_store) = context.runtime.resources.get::<AssetStore>() else {
             return;
         };
-        let gpu_meshes: Arc<RwLock<Assets<GpuMesh>>> = gpu_cache.inner().clone();
+        let gpu_meshes: Arc<RwLock<Assets<GpuMesh>>> = asset_store.store::<GpuMesh>();
+
+        // PipelineSystem backend — migrated lanes re-fetch their pipeline by
+        // key each frame through this.
+        let pipeline_system = context
+            .runtime
+            .resources
+            .get::<Arc<dyn PipelineSystem>>()
+            .cloned();
 
         // Render lanes consume the per-frame `RenderWorld` from the LaneBus,
         // populated by `RenderFlow` during the Substrate Pass.
@@ -305,6 +314,9 @@ impl Agent for RenderAgent {
             let mut ctx = LaneContext::new();
             ctx.insert(device.clone());
             ctx.insert(gpu_meshes.clone());
+            if let Some(ps) = pipeline_system.clone() {
+                ctx.insert(ps);
+            }
             // SAFETY: encoder is alive for this whole block; ctx (which holds
             // the slot) is dropped before encoder.finish() consumes it.
             let encoder_slot = Slot::new(encoder.as_mut());

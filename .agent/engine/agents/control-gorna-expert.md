@@ -1,7 +1,7 @@
 ---
 name: control-gorna-expert
 description: Use when working on the control plane — the DCC service, GORNA negotiation/arbitration/replay, the cost model, the PID frame-budget controller, adaptation modes, or the Substrate dispatcher and scheduler.
-tools: Read, Edit, Write, Grep, Glob, Bash
+tools: Read, Edit, Write, Grep, Glob, Bash, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # Control / GORNA Expert

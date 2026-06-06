@@ -15,15 +15,15 @@
 //! Compile-time constants shared between Rust and WGSL.
 //!
 //! These values are injected as `#define`s into every shader at module
-//! creation time by the `ShaderRegistry` (in `khora-lanes`), giving a
-//! **single source of truth** for limits that both the CPU side
+//! creation time by the `PipelineSystem` backend (`khora-infra`), giving
+//! a **single source of truth** for limits that both the CPU side
 //! (uniform layouts, atlas allocations) and the GPU side (array
 //! lengths, loop bounds) need to agree on.
 //!
 //! Adding a new shared constant:
 //! 1. Add a `pub const` here.
 //! 2. Reference it in Rust via `ShaderDefs::MY_CONST`.
-//! 3. Reference it in WGSL via `MY_CONST` (the `ShaderRegistry` injects
+//! 3. Reference it in WGSL via `MY_CONST` (the `PipelineSystem` injects
 //!    it as a `#define`).
 //!
 //! Never duplicate a value: if the WGSL shader writes

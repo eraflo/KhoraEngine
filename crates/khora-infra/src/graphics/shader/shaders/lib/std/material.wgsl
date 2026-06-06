@@ -11,6 +11,9 @@ struct MaterialUniforms {
     specular_power: f32,
     ambient: vec3<f32>,
     _padding: f32,
+    // [metallic, roughness, alpha_cutoff, _reserved]. Multiplied with the
+    // metallic-roughness texture (white fallback ⇒ factors pass through).
+    pbr_factors: vec4<f32>,
 };
 
 @group(2) @binding(0)

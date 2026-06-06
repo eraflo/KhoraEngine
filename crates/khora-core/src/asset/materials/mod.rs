@@ -71,6 +71,43 @@ pub trait Material: Asset + AsAny {
     fn ambient_color(&self) -> crate::math::LinearRgba {
         crate::math::LinearRgba::new(0.1, 0.1, 0.1, 0.0)
     }
+
+    /// Returns the metallic factor (0.0 = dielectric, 1.0 = metal).
+    /// Default implementation is 0.0.
+    fn metallic(&self) -> f32 {
+        0.0
+    }
+
+    /// Returns the roughness factor (0.0 = smooth, 1.0 = rough).
+    /// Default implementation is 1.0.
+    fn roughness(&self) -> f32 {
+        1.0
+    }
+
+    /// Returns the UUID of the base-color (albedo) texture, if any.
+    /// Default implementation is `None` (untextured).
+    fn base_color_texture(&self) -> Option<crate::asset::AssetUUID> {
+        None
+    }
+
+    /// Returns the UUID of the metallic-roughness texture, if any
+    /// (glTF convention: B=metallic, G=roughness).
+    /// Default implementation is `None`.
+    fn metallic_roughness_texture(&self) -> Option<crate::asset::AssetUUID> {
+        None
+    }
+
+    /// Returns the UUID of the tangent-space normal map, if any.
+    /// Default implementation is `None`.
+    fn normal_map(&self) -> Option<crate::asset::AssetUUID> {
+        None
+    }
+
+    /// Returns the UUID of the emissive texture, if any.
+    /// Default implementation is `None`.
+    fn emissive_texture(&self) -> Option<crate::asset::AssetUUID> {
+        None
+    }
 }
 
 /// This is the key to our type-erased material handle system.

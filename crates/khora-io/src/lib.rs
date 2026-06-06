@@ -20,4 +20,5 @@
 
 pub mod asset;
 pub mod serialization;
+pub mod shader_hot_reload;
 pub mod vfs;

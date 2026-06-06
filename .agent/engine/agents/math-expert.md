@@ -1,7 +1,7 @@
 ---
 name: math-expert
 description: Use when working on math — khora_core::math types, explicit SIMD batch kernels (TrsBatchSoa, wide::f32x8), transform/quaternion/matrix code, numerical correctness, or coordinate-system questions.
-tools: Read, Edit, Write, Grep, Glob, Bash
+tools: Read, Edit, Write, Grep, Glob, Bash, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # Math Expert

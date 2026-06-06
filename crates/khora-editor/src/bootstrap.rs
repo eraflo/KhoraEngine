@@ -21,8 +21,9 @@ use khora_sdk::winit;
 use khora_sdk::winit_adapters::WinitWindowProvider;
 use khora_sdk::{
     AudioDevice, AudioMixBus, AudioStream, CpalAudioDevice, DefaultMixBus, EditorShell,
-    LayoutSystem, PhysicsProvider, RapierPhysicsWorld, RenderSystem, StandardTextRenderer,
-    StreamInfo, TaffyLayoutSystem, TextRenderer, WgpuRenderSystem, TEXT_WGSL,
+    LayoutSystem, PhysicsProvider, PipelineSystem, RapierPhysicsWorld, RenderSystem,
+    StandardTextRenderer, StreamInfo, TaffyLayoutSystem, TextRenderer, WgpuPipelineSystem,
+    WgpuRenderSystem, TEXT_WGSL,
 };
 
 use crate::app::EditorApp;
@@ -95,6 +96,16 @@ pub fn run() -> anyhow::Result<()> {
 
         let rs: Box<dyn RenderSystem> = Box::new(rs);
         runtime.backends.insert(Arc::new(Mutex::new(rs)));
+
+        // Shader / pipeline backend — wgpu + naga_oil. The app picks the
+        // backend; the engine core consumes it as `Arc<dyn PipelineSystem>`.
+        match WgpuPipelineSystem::new() {
+            Ok(sys) => {
+                let sys: Arc<dyn PipelineSystem> = Arc::new(sys);
+                runtime.resources.insert(sys);
+            }
+            Err(e) => log::error!("pipeline system init failed: {e}"),
+        }
 
         // Physics — Rapier3D
         let physics: Box<dyn PhysicsProvider> = Box::new(RapierPhysicsWorld::default());

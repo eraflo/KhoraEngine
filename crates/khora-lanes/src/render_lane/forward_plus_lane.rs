@@ -64,7 +64,10 @@ use khora_core::{
             },
             core::RenderContext,
             pipeline::enums::PrimitiveTopology,
-            pipeline::RenderPipelineId,
+            pipeline::{
+                ComputePipelineSpec, LayoutKey, LayoutSpec, PipelineSpec, RenderPipelineId,
+                ShaderVariantKey,
+            },
             resource::{BufferId, CameraUniformData},
             scene::GpuMesh,
         },
@@ -148,8 +151,6 @@ pub struct ForwardPlusGpuResources {
     pub camera_ring: Option<UniformRingBuffer>,
     /// Ring buffer for model uniforms.
     pub model_ring: Option<DynamicUniformRingBuffer>,
-    /// Ring buffer for material uniforms.
-    pub material_ring: Option<DynamicUniformRingBuffer>,
 
     /// Bind group for the culling compute shader.
     pub culling_bind_group: Option<BindGroupId>,
@@ -183,7 +184,6 @@ impl ForwardPlusGpuResources {
 /// - **Tile size**: 16x16 or 32x32 pixels (trade-off between culling granularity and overhead)
 /// - **Max lights per tile**: Memory budget for per-tile light lists
 /// - **Depth pre-pass**: Optional optimization for depth-bounded light culling
-#[derive(Debug)]
 pub struct ForwardPlusLane {
     /// Tile configuration for light culling.
     pub tile_config: ForwardPlusTileConfig,
@@ -196,6 +196,11 @@ pub struct ForwardPlusLane {
 
     /// GPU resources for compute and render passes.
     pub gpu_resources: std::sync::Mutex<ForwardPlusGpuResources>,
+
+    /// Backend pipeline system, retained so the render path can resolve the
+    /// per-material-variant pipeline (cheap cache hit). Set in `on_gpu_init`.
+    pipeline_system:
+        std::sync::OnceLock<std::sync::Arc<dyn khora_core::renderer::traits::PipelineSystem>>,
 }
 
 impl Default for ForwardPlusLane {
@@ -205,6 +210,7 @@ impl Default for ForwardPlusLane {
             shader_complexity: ShaderComplexity::SimpleLit,
             screen_size: (1920, 1080),
             gpu_resources: std::sync::Mutex::new(ForwardPlusGpuResources::default()),
+            pipeline_system: std::sync::OnceLock::new(),
         }
     }
 }
@@ -339,13 +345,16 @@ impl khora_core::lane::Lane for ForwardPlusLane {
                 "Arc<dyn GraphicsDevice>",
             ))?
             .clone();
-        let registry = ctx
-            .get::<std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>>()
+        let pipeline_system = ctx
+            .get::<std::sync::Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
             .ok_or(khora_core::lane::LaneError::missing(
-                "Arc<Mutex<ShaderRegistry>>",
+                "Arc<dyn PipelineSystem>",
             ))?
             .clone();
-        self.on_gpu_init(device.as_ref(), &registry)
+        // Retain the system so the render hot path can resolve a pipeline per
+        // material variant (a cheap cache hit after first compile).
+        let _ = self.pipeline_system.set(pipeline_system.clone());
+        self.on_gpu_init(device.as_ref(), pipeline_system.as_ref())
             .map_err(|e| khora_core::lane::LaneError::InitializationFailed(Box::new(e)))
     }
 
@@ -639,39 +648,48 @@ impl ForwardPlusLane {
         if let Some(ref mut ring) = resources.model_ring {
             ring.advance();
         }
-        if let Some(ref mut ring) = resources.material_ring {
-            ring.advance();
-        }
+
+        // Fallback pipeline (empty variant) used only if the per-variant
+        // resolve fails.
+        let fallback_pipeline = resources.render_pipeline.unwrap_or(RenderPipelineId(0));
 
         let gpu_mesh_assets = crate::lock_or_log!(gpu_meshes.read(), "ForwardPlusLane::render");
         for extracted_mesh in &render_world.meshes {
             if let Some(gpu_mesh_handle) = gpu_mesh_assets.get(&extracted_mesh.cpu_mesh_uuid) {
+                // The material projection tags every rendered entity with a
+                // `GpuMaterial` before RenderFlow runs.
+                let Some(gpu_material) = &extracted_mesh.gpu_material else {
+                    continue;
+                };
+
+                // Resolve the pipeline for this material's texture variant
+                // (cheap cache hit after first compile; never retained).
+                let pipeline_id = self
+                    .pipeline_system
+                    .get()
+                    .map(|ps| {
+                        ps.pipeline(
+                            device,
+                            &render_pipeline_spec(device, gpu_material.variant.clone()),
+                        )
+                    })
+                    .transpose()
+                    .unwrap_or_else(|e| {
+                        log::error!("ForwardPlusLane: pipeline resolve failed: {:?}", e);
+                        None
+                    })
+                    .unwrap_or(fallback_pipeline);
+
                 // Compute Matrices
                 let model_mat = extracted_mesh.transform.to_matrix();
                 let normal_mat = model_mat.inverse().unwrap_or_default().transpose();
-
-                let mut base_color = khora_core::math::LinearRgba::WHITE;
-                let mut emissive = khora_core::math::LinearRgba::BLACK;
-                let mut specular_power = 32.0;
-
-                if let Some(mat_handle) = &extracted_mesh.material {
-                    base_color = mat_handle.base_color();
-                    emissive = mat_handle.emissive_color();
-                    specular_power = mat_handle.specular_power();
-                }
 
                 let model_uniforms = khora_core::renderer::api::scene::ModelUniforms {
                     model_matrix: model_mat.to_cols_array_2d(),
                     normal_matrix: normal_mat.to_cols_array_2d(),
                 };
 
-                let material_uniforms = khora_core::renderer::api::scene::MaterialUniforms {
-                    base_color,
-                    emissive: emissive.with_alpha(specular_power),
-                    ambient: khora_core::math::LinearRgba::new(0.05, 0.05, 0.05, 1.0),
-                };
-
-                // Push to rings and get offsets/ids
+                // Model transform → dynamic ring; material → cached GpuMaterial.
                 let (model_bg, model_offset) = if let Some(ref mut ring) = resources.model_ring {
                     let offset = match ring.push(device, bytemuck::bytes_of(&model_uniforms)) {
                         Ok(off) => off,
@@ -682,31 +700,22 @@ impl ForwardPlusLane {
                     continue;
                 };
 
-                let (material_bg, material_offset) = if let Some(ref mut ring) =
-                    resources.material_ring
-                {
-                    let offset = match ring.push(device, bytemuck::bytes_of(&material_uniforms)) {
-                        Ok(off) => off,
-                        Err(_) => continue,
-                    };
-                    (*ring.current_bind_group(), offset)
-                } else {
-                    continue;
-                };
-
                 draw_commands.push(khora_core::renderer::api::command::DrawCommand {
-                    pipeline: resources.render_pipeline.unwrap_or(RenderPipelineId(0)),
+                    pipeline: pipeline_id,
                     vertex_buffer: gpu_mesh_handle.vertex_buffer,
                     index_buffer: gpu_mesh_handle.index_buffer,
                     index_count: gpu_mesh_handle.index_count,
                     index_format: gpu_mesh_handle.index_format,
                     model_bind_group: Some(model_bg),
                     model_offset,
-                    material_bind_group: Some(material_bg),
-                    material_offset,
+                    material_bind_group: Some(gpu_material.bind_group),
+                    material_offset: 0,
                 });
             }
         }
+
+        // Batch by pipeline (variant): one `set_pipeline` per variant.
+        draw_commands.sort_by_key(|cmd| cmd.pipeline.0);
 
         // 6. Render Pass
         let color_attachment = RenderPassColorAttachment {
@@ -826,20 +835,19 @@ impl ForwardPlusLane {
         // Bind Group 3: Lighting (lights + shadows + tile culling).
         render_pass.set_bind_group(3, &lighting_bg, &[]);
 
-        // Set Render Pipeline
-        if let Some(ref pipeline) = resources.render_pipeline {
-            render_pass.set_pipeline(pipeline);
-        } else {
-            return;
-        }
-
-        // Draw Cached Commands
+        // Draw Cached Commands — set the pipeline once per variant (commands
+        // are pre-sorted by pipeline above).
+        let mut current_pipeline: Option<RenderPipelineId> = None;
         for cmd in &draw_commands {
+            if current_pipeline != Some(cmd.pipeline) {
+                render_pass.set_pipeline(&cmd.pipeline);
+                current_pipeline = Some(cmd.pipeline);
+            }
             if let Some(ref bg) = cmd.model_bind_group {
                 render_pass.set_bind_group(1, bg, &[cmd.model_offset]);
             }
             if let Some(ref bg) = cmd.material_bind_group {
-                render_pass.set_bind_group(2, bg, &[cmd.material_offset]);
+                render_pass.set_bind_group(2, bg, &[]);
             }
 
             render_pass.set_vertex_buffer(0, &cmd.vertex_buffer, 0);
@@ -906,340 +914,49 @@ impl ForwardPlusLane {
     fn on_gpu_init(
         &self,
         device: &dyn khora_core::renderer::GraphicsDevice,
-        shader_registry: &std::sync::Arc<std::sync::Mutex<crate::render_lane::ShaderRegistry>>,
+        pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
         use khora_core::renderer::api::{
-            command::{
-                BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
-                BindGroupLayoutEntry, BindingType, BufferBindingType,
-            },
-            pipeline::enums::{CompareFunction, VertexFormat, VertexStepMode},
-            pipeline::state::{ColorWrites, DepthBiasState, StencilFaceState},
-            pipeline::{
-                ColorTargetStateDescriptor, DepthStencilStateDescriptor,
-                MultisampleStateDescriptor, PrimitiveStateDescriptor, RenderPipelineDescriptor,
-                VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
-            },
+            command::{BindGroupDescriptor, BindGroupEntry},
             resource::CameraUniformData,
-            scene::{MaterialUniforms, ModelUniforms},
-            util::{SampleCount, ShaderStageFlags},
+            scene::ModelUniforms,
         };
         use std::borrow::Cow;
 
         log::info!("ForwardPlusLane: Initializing GPU resources...");
 
-        // 1. Create Bind Group Layouts
+        // Layouts — canonical Camera (group 0) + Material (group 2) come from
+        // the backend's cache (shared with the lit lanes); the per-draw Model
+        // (group 1), Forward+ lighting (group 3) and the compute culling layout
+        // are bespoke inline layouts shared with the lane's pipelines + buffers.
+        let variant = ShaderVariantKey::empty();
+        let camera_layout = pipeline_system.layout(device, LayoutKey::Camera, &variant)?;
+        let material_layout = pipeline_system.layout(device, LayoutKey::Material, &variant)?;
+        let model_layout = pipeline_system.inline_layout(
+            device,
+            FP_MODEL_LAYOUT_LABEL,
+            &fp_model_layout_entries(),
+        )?;
+        let lighting_layout = pipeline_system.inline_layout(
+            device,
+            FP_LIGHTING_LAYOUT_LABEL,
+            &fp_lighting_layout_entries(),
+        )?;
+        let culling_layout = pipeline_system.inline_layout(
+            device,
+            FP_CULLING_LAYOUT_LABEL,
+            &fp_culling_layout_entries(),
+        )?;
 
-        // Group 0: Camera
-        let camera_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("forward_plus_camera_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                }],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // Group 1: Model
-        let model_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("forward_plus_model_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::VERTEX,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: std::num::NonZeroU64::new(
-                            std::mem::size_of::<ModelUniforms>() as u64,
-                        ),
-                    },
-                }],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // Group 2: Material
-        let material_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("forward_plus_material_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: std::num::NonZeroU64::new(std::mem::size_of::<
-                            MaterialUniforms,
-                        >()
-                            as u64),
-                    },
-                }],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // Group 3 — the lighting domain (canonical 4-group render
-        // convention, see `.agent/conventions.md`). One bind group holds
-        // every lighting input: the light list, the per-tile culling
-        // results, the shadow atlases. Shadow bindings stay at 1/2/3
-        // (shared `khora::shadow::bindings` contract, also used by
-        // `LitForwardLane`); Forward+ owns 0, 4, 5, 6, 7 around them.
-        let mut lighting_entries: Vec<BindGroupLayoutEntry> = vec![
-            // 0: Lights
-            BindGroupLayoutEntry::buffer(
-                g3::LIGHTS,
-                ShaderStageFlags::FRAGMENT,
-                BufferBindingType::Storage { read_only: true },
-                false,
-                None,
-            ),
-        ];
-        // 1/2/3: shadow atlas 2D + sampler + cube atlas.
-        lighting_entries
-            .extend(khora_data::render::shadow_bindings::shadow_bind_group_layout_entries());
-        lighting_entries.extend([
-            // 4: Light Index List
-            BindGroupLayoutEntry::buffer(
-                g3::LIGHT_INDICES,
-                ShaderStageFlags::FRAGMENT,
-                BufferBindingType::Storage { read_only: true },
-                false,
-                None,
-            ),
-            // 5: Light Grid
-            BindGroupLayoutEntry::buffer(
-                g3::LIGHT_GRID,
-                ShaderStageFlags::FRAGMENT,
-                BufferBindingType::Storage { read_only: true },
-                false,
-                None,
-            ),
-            // 6: Tile Info
-            BindGroupLayoutEntry::buffer(
-                g3::TILE_INFO,
-                ShaderStageFlags::FRAGMENT,
-                BufferBindingType::Uniform,
-                false,
-                None,
-            ),
-            // 7: Per-light shadow view-projection matrices.
-            BindGroupLayoutEntry::buffer(
-                g3::SHADOW_VIEW_PROJS,
-                ShaderStageFlags::FRAGMENT,
-                BufferBindingType::Storage { read_only: true },
-                false,
-                None,
-            ),
-        ]);
-        let lighting_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("Forward+ Lighting Layout (group 3)"),
-                entries: &lighting_entries,
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // Culling Layout (Compute Pass side)
-        let culling_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("Forward+ Culling Layout"),
-                entries: &[
-                    // 0: Uniforms
-                    BindGroupLayoutEntry::buffer(
-                        0,
-                        ShaderStageFlags::COMPUTE,
-                        BufferBindingType::Uniform,
-                        false,
-                        None,
-                    ),
-                    // 1: Lights (Storage read-only)
-                    BindGroupLayoutEntry::buffer(
-                        1,
-                        ShaderStageFlags::COMPUTE,
-                        BufferBindingType::Storage { read_only: true },
-                        false,
-                        None,
-                    ),
-                    // 2: Light Index List (Storage read-write)
-                    BindGroupLayoutEntry::buffer(
-                        2,
-                        ShaderStageFlags::COMPUTE,
-                        BufferBindingType::Storage { read_only: false },
-                        false,
-                        None,
-                    ),
-                    // 3: Light Grid (Storage read-write)
-                    BindGroupLayoutEntry::buffer(
-                        3,
-                        ShaderStageFlags::COMPUTE,
-                        BufferBindingType::Storage { read_only: false },
-                        false,
-                        None,
-                    ),
-                ],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // 2. Create Pipelines — composed through `ShaderRegistry` so
-        // the `#import`s of `khora::std::*`, `khora::lighting::*` are
-        // resolved by naga_oil at boot.
-
-        let shader_module = {
-            let mut registry = crate::lock_or_log!(
-                shader_registry.lock(),
-                "ForwardPlusLane on_gpu_init.shader_registry",
-                Err(khora_core::renderer::error::RenderError::ResourceError(
-                    khora_core::renderer::ResourceError::BackendError(
-                        "shader_registry mutex poisoned".to_owned()
-                    )
-                ))
-            );
-            registry
-                .create_module(
-                    device,
-                    "khora::pipelines::forward_plus",
-                    Some("forward_plus_render_shader"),
-                )
-                .map_err(|e| {
-                    khora_core::renderer::error::RenderError::ResourceError(
-                        khora_core::renderer::ResourceError::BackendError(format!(
-                            "ShaderRegistry compose failed: {}",
-                            e
-                        )),
-                    )
-                })?
-        };
-
-        let vertex_attributes = vec![
-            VertexAttributeDescriptor {
-                format: VertexFormat::Float32x3,
-                offset: 0,
-                shader_location: 0,
-            },
-            VertexAttributeDescriptor {
-                format: VertexFormat::Float32x3,
-                offset: 12,
-                shader_location: 1,
-            },
-            VertexAttributeDescriptor {
-                format: VertexFormat::Float32x2,
-                offset: 24,
-                shader_location: 2,
-            },
-        ];
-
-        let vertex_layout = VertexBufferLayoutDescriptor {
-            array_stride: 32,
-            step_mode: VertexStepMode::Vertex,
-            attributes: Cow::Owned(vertex_attributes),
-        };
-
-        // Explicit Render Pipeline Layout — canonical 4-group render
-        // convention: frame / object / material / lighting.
-        let render_pipeline_layout = device
-            .create_pipeline_layout(
-                &khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
-                    label: Some(Cow::Borrowed("Forward+ Render Pipeline Layout")),
-                    bind_group_layouts: &[
-                        camera_layout,
-                        model_layout,
-                        material_layout,
-                        lighting_layout,
-                    ],
-                },
-            )
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        let pipeline_desc = RenderPipelineDescriptor {
-            label: Some(Cow::Borrowed("ForwardPlus Pipeline")),
-            layout: Some(render_pipeline_layout),
-            vertex_shader_module: shader_module,
-            vertex_entry_point: Cow::Borrowed("vs_main"),
-            fragment_shader_module: Some(shader_module),
-            fragment_entry_point: Some(Cow::Borrowed("fs_main")),
-            vertex_buffers_layout: Cow::Owned(vec![vertex_layout]),
-            primitive_state: PrimitiveStateDescriptor {
-                topology: PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil_state: Some(DepthStencilStateDescriptor {
-                format: khora_core::renderer::api::util::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: CompareFunction::Less,
-                stencil_front: StencilFaceState::default(),
-                stencil_back: StencilFaceState::default(),
-                stencil_read_mask: 0,
-                stencil_write_mask: 0,
-                bias: DepthBiasState::default(),
-            }),
-            color_target_states: Cow::Owned(vec![ColorTargetStateDescriptor {
-                format: device
-                    .get_surface_format()
-                    .unwrap_or(khora_core::renderer::api::util::TextureFormat::Rgba8UnormSrgb),
-                blend: None,
-                write_mask: ColorWrites::ALL,
-            }]),
-            multisample_state: MultisampleStateDescriptor {
-                count: SampleCount::X1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-        };
-
-        let pipeline_id = device
-            .create_render_pipeline(&pipeline_desc)
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // Compute Pipeline for Culling
-        let culling_pipeline_layout = device
-            .create_pipeline_layout(
-                &khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
-                    label: Some(Cow::Borrowed("Forward+ Culling Pipeline Layout")),
-                    bind_group_layouts: &[culling_layout],
-                },
-            )
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        let culling_shader_module = {
-            let mut registry = crate::lock_or_log!(
-                shader_registry.lock(),
-                "ForwardPlusLane on_gpu_init.shader_registry.culling",
-                Err(khora_core::renderer::error::RenderError::ResourceError(
-                    khora_core::renderer::ResourceError::BackendError(
-                        "shader_registry mutex poisoned".to_owned()
-                    )
-                ))
-            );
-            registry
-                .create_module(
-                    device,
-                    "khora::pipelines::light_culling",
-                    Some("Forward+ Culling Shader"),
-                )
-                .map_err(|e| {
-                    khora_core::renderer::error::RenderError::ResourceError(
-                        khora_core::renderer::ResourceError::BackendError(format!(
-                            "ShaderRegistry compose failed (light_culling): {}",
-                            e
-                        )),
-                    )
-                })?
-        };
-
-        let culling_pipeline = device
-            .create_compute_pipeline(
-                &khora_core::renderer::api::command::ComputePipelineDescriptor {
-                    label: Some(Cow::Borrowed("Forward+ Culling Pipeline")),
-                    layout: Some(culling_pipeline_layout),
-                    shader_module: culling_shader_module,
-                    entry_point: Cow::Borrowed("cs_main"),
-                },
-            )
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        // Pipelines (compiled + cached by the backend). Warm the empty-variant
+        // render pipeline (untextured materials); textured variants compile
+        // lazily in the render path keyed by `GpuMaterial::variant`.
+        let pipeline_id = pipeline_system.pipeline(
+            device,
+            &render_pipeline_spec(device, ShaderVariantKey::empty()),
+        )?;
+        let culling_pipeline =
+            pipeline_system.compute_pipeline(device, &culling_pipeline_spec())?;
 
         // 3. Create Buffers and Rings
 
@@ -1332,16 +1049,9 @@ impl ForwardPlusLane {
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        let material_ring = DynamicUniformRingBuffer::new(
-            device,
-            material_layout,
-            0,
-            std::mem::size_of::<MaterialUniforms>() as u32,
-            khora_core::renderer::api::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
-            khora_core::renderer::api::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
-            "Forward+ Material Ring",
-        )
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        // Materials are no longer per-frame ring uniforms: each material is a
+        // cached `GpuMaterial` (uniforms + textures + group-2 bind group)
+        // produced by the data-layer projection. The lane just binds it.
 
         // 4. Bind Groups
 
@@ -1383,7 +1093,6 @@ impl ForwardPlusLane {
         res.culling_layout = Some(culling_layout);
         res.camera_ring = Some(camera_ring);
         res.model_ring = Some(model_ring);
-        res.material_ring = Some(material_ring);
         res.culling_bind_group = Some(culling_bg);
         res.culling_pipeline = Some(culling_pipeline);
         res.render_pipeline = Some(pipeline_id);
@@ -1403,9 +1112,6 @@ impl ForwardPlusLane {
         if let Some(ring) = resources.model_ring.take() {
             ring.destroy(device);
         }
-        if let Some(ring) = resources.material_ring.take() {
-            ring.destroy(device);
-        }
 
         if let Some(id) = resources.light_buffer.take() {
             device.destroy_buffer(id).ok();
@@ -1422,6 +1128,222 @@ impl ForwardPlusLane {
         if let Some(id) = resources.shadow_view_projs_buffer.take() {
             let _ = device.destroy_buffer(id);
         }
+    }
+}
+
+// ─── Free functions (CLAD: declarative specs + bespoke layouts) ───
+
+/// Stable cache label for the Forward+ per-draw model layout.
+const FP_MODEL_LAYOUT_LABEL: &str = "forward_plus_model_layout";
+/// Stable cache label for the Forward+ group-3 lighting layout.
+const FP_LIGHTING_LAYOUT_LABEL: &str = "forward_plus_lighting_layout";
+/// Stable cache label for the Forward+ compute culling layout.
+const FP_CULLING_LAYOUT_LABEL: &str = "forward_plus_culling_layout";
+
+/// Bespoke group-1 (model) layout: a single dynamic-offset uniform buffer.
+fn fp_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
+    use khora_core::renderer::api::command::{
+        BindGroupLayoutEntry, BindingType, BufferBindingType,
+    };
+    use khora_core::renderer::api::scene::ModelUniforms;
+    use khora_core::renderer::api::util::ShaderStageFlags;
+    vec![BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStageFlags::VERTEX,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Uniform,
+            has_dynamic_offset: true,
+            min_binding_size: std::num::NonZeroU64::new(std::mem::size_of::<ModelUniforms>() as u64),
+        },
+    }]
+}
+
+/// Bespoke group-3 (lighting) layout — the canonical 4-group render
+/// convention's lighting domain. One bind group holds every lighting input:
+/// the light list (0), the shadow atlases (1/2/3, shared
+/// `khora::shadow::bindings` contract), the per-tile culling results (4/5/6)
+/// and the per-light shadow view-projections (7).
+fn fp_lighting_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
+    use khora_core::renderer::api::command::{BindGroupLayoutEntry, BufferBindingType};
+    use khora_core::renderer::api::util::ShaderStageFlags;
+    let mut entries: Vec<BindGroupLayoutEntry> = vec![BindGroupLayoutEntry::buffer(
+        g3::LIGHTS,
+        ShaderStageFlags::FRAGMENT,
+        BufferBindingType::Storage { read_only: true },
+        false,
+        None,
+    )];
+    entries.extend(khora_data::render::shadow_bindings::shadow_bind_group_layout_entries());
+    entries.extend([
+        BindGroupLayoutEntry::buffer(
+            g3::LIGHT_INDICES,
+            ShaderStageFlags::FRAGMENT,
+            BufferBindingType::Storage { read_only: true },
+            false,
+            None,
+        ),
+        BindGroupLayoutEntry::buffer(
+            g3::LIGHT_GRID,
+            ShaderStageFlags::FRAGMENT,
+            BufferBindingType::Storage { read_only: true },
+            false,
+            None,
+        ),
+        BindGroupLayoutEntry::buffer(
+            g3::TILE_INFO,
+            ShaderStageFlags::FRAGMENT,
+            BufferBindingType::Uniform,
+            false,
+            None,
+        ),
+        BindGroupLayoutEntry::buffer(
+            g3::SHADOW_VIEW_PROJS,
+            ShaderStageFlags::FRAGMENT,
+            BufferBindingType::Storage { read_only: true },
+            false,
+            None,
+        ),
+    ]);
+    entries
+}
+
+/// Bespoke compute culling layout (compute pass side).
+fn fp_culling_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
+    use khora_core::renderer::api::command::{BindGroupLayoutEntry, BufferBindingType};
+    use khora_core::renderer::api::util::ShaderStageFlags;
+    vec![
+        BindGroupLayoutEntry::buffer(
+            0,
+            ShaderStageFlags::COMPUTE,
+            BufferBindingType::Uniform,
+            false,
+            None,
+        ),
+        BindGroupLayoutEntry::buffer(
+            1,
+            ShaderStageFlags::COMPUTE,
+            BufferBindingType::Storage { read_only: true },
+            false,
+            None,
+        ),
+        BindGroupLayoutEntry::buffer(
+            2,
+            ShaderStageFlags::COMPUTE,
+            BufferBindingType::Storage { read_only: false },
+            false,
+            None,
+        ),
+        BindGroupLayoutEntry::buffer(
+            3,
+            ShaderStageFlags::COMPUTE,
+            BufferBindingType::Storage { read_only: false },
+            false,
+            None,
+        ),
+    ]
+}
+
+/// The declarative render pipeline spec for Forward+ under a given material
+/// variant — built each call, deduped by the `PipelineSystem`. Canonical
+/// Camera/Material; bespoke Model + Lighting. The group-2 (Material) layout
+/// resolves to the variant's texture-binding set.
+fn render_pipeline_spec(
+    device: &dyn khora_core::renderer::GraphicsDevice,
+    variant: ShaderVariantKey,
+) -> PipelineSpec {
+    use khora_core::renderer::api::pipeline::enums::{
+        CompareFunction, VertexFormat, VertexStepMode,
+    };
+    use khora_core::renderer::api::pipeline::state::{
+        ColorWrites, DepthBiasState, StencilFaceState,
+    };
+    use khora_core::renderer::api::pipeline::{
+        ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
+        PrimitiveStateDescriptor, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
+    };
+    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
+    use std::borrow::Cow;
+
+    PipelineSpec {
+        label: "ForwardPlus Pipeline",
+        shader: "khora::pipelines::forward_plus",
+        variant,
+        bind_group_layouts: vec![
+            LayoutSpec::Named(LayoutKey::Camera),
+            LayoutSpec::Inline {
+                label: FP_MODEL_LAYOUT_LABEL,
+                entries: Cow::Owned(fp_model_layout_entries()),
+            },
+            LayoutSpec::Named(LayoutKey::Material),
+            LayoutSpec::Inline {
+                label: FP_LIGHTING_LAYOUT_LABEL,
+                entries: Cow::Owned(fp_lighting_layout_entries()),
+            },
+        ],
+        vertex_buffers: vec![VertexBufferLayoutDescriptor {
+            array_stride: 32,
+            step_mode: VertexStepMode::Vertex,
+            attributes: Cow::Owned(vec![
+                VertexAttributeDescriptor {
+                    format: VertexFormat::Float32x3,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                VertexAttributeDescriptor {
+                    format: VertexFormat::Float32x3,
+                    offset: 12,
+                    shader_location: 1,
+                },
+                VertexAttributeDescriptor {
+                    format: VertexFormat::Float32x2,
+                    offset: 24,
+                    shader_location: 2,
+                },
+            ]),
+        }],
+        vs_entry: "vs_main",
+        fs_entry: Some("fs_main"),
+        primitive: PrimitiveStateDescriptor {
+            topology: PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: Some(DepthStencilStateDescriptor {
+            format: TextureFormat::Depth32Float,
+            depth_write_enabled: true,
+            depth_compare: CompareFunction::Less,
+            stencil_front: StencilFaceState::default(),
+            stencil_back: StencilFaceState::default(),
+            stencil_read_mask: 0,
+            stencil_write_mask: 0,
+            bias: DepthBiasState::default(),
+        }),
+        color_targets: vec![ColorTargetStateDescriptor {
+            format: device
+                .get_surface_format()
+                .unwrap_or(TextureFormat::Rgba8UnormSrgb),
+            blend: None,
+            write_mask: ColorWrites::ALL,
+        }],
+        multisample: MultisampleStateDescriptor {
+            count: SampleCount::X1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+    }
+}
+
+/// The declarative compute pipeline spec for Forward+ light culling.
+fn culling_pipeline_spec() -> ComputePipelineSpec {
+    use std::borrow::Cow;
+    ComputePipelineSpec {
+        label: "Forward+ Culling Pipeline",
+        shader: "khora::pipelines::light_culling",
+        variant: ShaderVariantKey::empty(),
+        bind_group_layouts: vec![LayoutSpec::Inline {
+            label: FP_CULLING_LAYOUT_LABEL,
+            entries: Cow::Owned(fp_culling_layout_entries()),
+        }],
+        entry_point: "cs_main",
     }
 }
 

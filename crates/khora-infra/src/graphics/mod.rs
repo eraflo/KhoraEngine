@@ -14,4 +14,7 @@
 
 //! WGPU graphics backend implementation
 
+pub mod shader;
 pub mod wgpu;
+
+pub use shader::WgpuPipelineSystem;

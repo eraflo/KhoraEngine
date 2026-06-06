@@ -1,7 +1,7 @@
 ---
 name: api-ux-expert
 description: Use when shaping the public SDK surface — khora-sdk ergonomics, builder/type-state patterns, the prelude, re-exports, and keeping engine internals hidden behind the façade.
-tools: Read, Edit, Write, Grep, Glob, Bash
+tools: Read, Edit, Write, Grep, Glob, Bash, mcp__codegraph__codegraph_context, mcp__codegraph__codegraph_search, mcp__codegraph__codegraph_explore, mcp__codegraph__codegraph_node, mcp__codegraph__codegraph_trace
 ---
 
 # API / UX Expert

@@ -51,6 +51,14 @@ pub struct MaterialRegistration {
     pub deserialize: MaterialDeserializeFn,
     /// Creates a default instance of this material type (for placeholder handles).
     pub create_default: fn() -> Box<dyn Material>,
+    /// Serializes a `dyn Material` into a serde-JSON value for the editor
+    /// inspector. Returns `None` if the material does not match this
+    /// registration's concrete type. Mirrors `serialize` but in an
+    /// editable, human-readable encoding.
+    pub serialize_json: fn(&dyn Material) -> Option<serde_json::Value>,
+    /// Deserializes a serde-JSON value (as produced by `serialize_json`) back
+    /// into a `Box<dyn Material>`.
+    pub deserialize_json: fn(&serde_json::Value) -> Result<Box<dyn Material>, String>,
 }
 
 collect!(MaterialRegistration);
@@ -116,9 +124,117 @@ pub fn deserialize_material_component(
     ))
 }
 
+/// Serializes a material into an editable serde-JSON object of the form
+/// `{ "type_name": <name>, "material": <concrete material> }`, matching the
+/// `(type_name, data)` split that [`serialize_material_component`] uses for
+/// bincode. Returns `None` if no registration claims the material.
+pub fn material_to_json(material: &dyn Material) -> Option<serde_json::Value> {
+    for reg in inventory::iter::<MaterialRegistration> {
+        if let Some(material_json) = (reg.serialize_json)(material) {
+            return Some(serde_json::json!({
+                "type_name": reg.type_name,
+                "material": material_json,
+            }));
+        }
+    }
+    None
+}
+
+/// Reconstructs a `(handle, uuid)` pair from a JSON object produced by
+/// [`material_to_json`]. The `type_name` selects the matching registration; the
+/// `material` sub-value is decoded by that registration's `deserialize_json`.
+pub fn material_from_json(
+    value: &serde_json::Value,
+) -> Result<(AssetHandle<Box<dyn Material>>, AssetUUID), String> {
+    let type_name = value
+        .get("type_name")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "material JSON missing string 'type_name'".to_string())?;
+    let material_value = value
+        .get("material")
+        .ok_or_else(|| "material JSON missing 'material' object".to_string())?;
+
+    for reg in inventory::iter::<MaterialRegistration> {
+        if reg.type_name == type_name {
+            let material = (reg.deserialize_json)(material_value)?;
+            return Ok((AssetHandle::new(material), AssetUUID::new()));
+        }
+    }
+
+    Err(format!(
+        "No MaterialRegistration found for type '{type_name}'"
+    ))
+}
+
 // ─── Built-in material registrations ───
 
 use khora_core::asset::{EmissiveMaterial, StandardMaterial, UnlitMaterial, WireframeMaterial};
+
+// ─── Scene + inspector registration for `MaterialComponent` ───
+//
+// `MaterialComponent` carries a `Box<dyn Material>` behind an `AssetHandle`, so
+// it cannot use `#[derive(Component)]` (the generated mirror needs a concrete,
+// serde/bincode type). Without a `ComponentRegistration` the scene strategies
+// (Definition / Recipe / MessagePack) — which iterate `ComponentRegistration` —
+// silently drop the material on save and never restore it on load. This manual
+// entry wires the bincode (scene) and JSON (inspector) round-trips to the open
+// `MaterialRegistration` system above, so every registered material type
+// survives serialization.
+
+use crate::ecs::components::MaterialComponent;
+
+inventory::submit! {
+    crate::scene::ComponentRegistration {
+        type_id: std::any::TypeId::of::<MaterialComponent>(),
+        type_name: "MaterialComponent",
+        serialize_recipe: |world, entity| {
+            let mc = world.get::<MaterialComponent>(entity)?;
+            let material: &dyn Material = &**mc.handle;
+            serialize_material_component(material.base_color(), material)
+        },
+        deserialize_recipe: |world, entity, data| {
+            let (handle, uuid) = deserialize_material_component(data)?;
+            world
+                .add_component(entity, MaterialComponent { handle, uuid })
+                .map_err(|e| format!("{e:?}"))?;
+            Ok(())
+        },
+        create_default: |world, entity| {
+            let handle = AssetHandle::new(Box::new(StandardMaterial::default()) as Box<dyn Material>);
+            world
+                .add_component(
+                    entity,
+                    MaterialComponent {
+                        handle,
+                        uuid: AssetUUID::new(),
+                    },
+                )
+                .map_err(|e| format!("{e:?}"))?;
+            Ok(())
+        },
+        to_json: |world, entity| {
+            let mc = world.get::<MaterialComponent>(entity)?;
+            let material: &dyn Material = &**mc.handle;
+            material_to_json(material)
+        },
+        from_json: |world, entity, value| {
+            let (handle, uuid) = material_from_json(value)?;
+            let new_value = MaterialComponent { handle, uuid };
+            if !world.set_component(entity, new_value.clone()) {
+                world
+                    .add_component(entity, new_value)
+                    .map_err(|e| format!("{e:?}"))?;
+            }
+            Ok(())
+        },
+        remove: |world, entity| {
+            match world.remove_component::<MaterialComponent>(entity) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("{e:?}")),
+            }
+        },
+    }
+}
 
 inventory::submit! {
     MaterialRegistration {
@@ -134,6 +250,16 @@ inventory::submit! {
             Ok(Box::new(m) as Box<dyn Material>)
         },
         create_default: || Box::new(StandardMaterial::default()) as Box<dyn Material>,
+        serialize_json: |mat| {
+            mat.as_any()
+                .downcast_ref::<StandardMaterial>()
+                .and_then(|m| serde_json::to_value(m).ok())
+        },
+        deserialize_json: |value| {
+            let m: StandardMaterial =
+                serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+            Ok(Box::new(m) as Box<dyn Material>)
+        },
     }
 }
 
@@ -151,6 +277,16 @@ inventory::submit! {
             Ok(Box::new(m) as Box<dyn Material>)
         },
         create_default: || Box::new(UnlitMaterial::default()) as Box<dyn Material>,
+        serialize_json: |mat| {
+            mat.as_any()
+                .downcast_ref::<UnlitMaterial>()
+                .and_then(|m| serde_json::to_value(m).ok())
+        },
+        deserialize_json: |value| {
+            let m: UnlitMaterial =
+                serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+            Ok(Box::new(m) as Box<dyn Material>)
+        },
     }
 }
 
@@ -168,6 +304,16 @@ inventory::submit! {
             Ok(Box::new(m) as Box<dyn Material>)
         },
         create_default: || Box::new(EmissiveMaterial::default()) as Box<dyn Material>,
+        serialize_json: |mat| {
+            mat.as_any()
+                .downcast_ref::<EmissiveMaterial>()
+                .and_then(|m| serde_json::to_value(m).ok())
+        },
+        deserialize_json: |value| {
+            let m: EmissiveMaterial =
+                serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+            Ok(Box::new(m) as Box<dyn Material>)
+        },
     }
 }
 
@@ -185,5 +331,15 @@ inventory::submit! {
             Ok(Box::new(m) as Box<dyn Material>)
         },
         create_default: || Box::new(WireframeMaterial::default()) as Box<dyn Material>,
+        serialize_json: |mat| {
+            mat.as_any()
+                .downcast_ref::<WireframeMaterial>()
+                .and_then(|m| serde_json::to_value(m).ok())
+        },
+        deserialize_json: |value| {
+            let m: WireframeMaterial =
+                serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+            Ok(Box::new(m) as Box<dyn Material>)
+        },
     }
 }
