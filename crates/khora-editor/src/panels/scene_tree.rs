@@ -344,6 +344,9 @@ impl EditorPanel for SceneTreePanel {
                 EditorAction::SaveAsPrefab(eid) => {
                     state_guard.pending_save_as_prefab = Some(eid);
                 }
+                EditorAction::SaveAsMaterial(eid, name) => {
+                    state_guard.pending_save_as_material = Some((eid, name));
+                }
             }
         }
     }
@@ -430,6 +433,7 @@ fn render_node(
     // like Duplicate / Delete operate on the right entity even if it
     // wasn't already selected.
     let entity = node.entity;
+    let node_name = node.name.clone();
     ui.context_menu_last(&mut |menu| {
         if menu.button("Rename") {
             pending.set(Some(EditorAction::Rename(entity)));
@@ -441,6 +445,10 @@ fn render_node(
         }
         if menu.button("Save as Prefab…") {
             pending.set(Some(EditorAction::SaveAsPrefab(entity)));
+            menu.close_menu();
+        }
+        if menu.button("Save Material as .kmat") {
+            pending.set(Some(EditorAction::SaveAsMaterial(entity, node_name.clone())));
             menu.close_menu();
         }
         menu.separator();
@@ -594,4 +602,9 @@ enum EditorAction {
     /// asset. The path is picked through `rfd::FileDialog` in the
     /// command dispatcher.
     SaveAsPrefab(khora_sdk::prelude::ecs::EntityId),
+    /// Save the entity's inline material to a `.kmat` asset and convert
+    /// the entity to reference it. Carries the entity plus the chosen
+    /// material name (file stem). No-op in the dispatcher when the entity
+    /// has no inline material.
+    SaveAsMaterial(khora_sdk::prelude::ecs::EntityId, String),
 }

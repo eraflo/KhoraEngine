@@ -544,6 +544,7 @@ const SIDEBAR_CATEGORIES: &[(AssetTileKind, &str, Icon)] = &[
     (AssetTileKind::Scene, "Scenes", Icon::Film),
     (AssetTileKind::Mesh, "Meshes", Icon::Cube),
     (AssetTileKind::Texture, "Textures", Icon::Image),
+    (AssetTileKind::Material, "Materials", Icon::Circle),
     (AssetTileKind::Audio, "Audio", Icon::Music),
     (AssetTileKind::Shader, "Shaders", Icon::Zap),
     (AssetTileKind::Script, "Scripts", Icon::Code),
@@ -803,6 +804,7 @@ impl EditorPanel for AssetBrowserPanel {
         let tile_h = TILE_SIZE + 22.0;
         let mut to_select: Option<usize> = None;
         let mut to_activate: Option<usize> = None;
+        let mut to_assign_material: Option<String> = None;
         for (i, (orig_idx, asset)) in visible.iter().enumerate() {
             let col = i % cols;
             let row = i / cols;
@@ -825,10 +827,35 @@ impl EditorPanel for AssetBrowserPanel {
             if asset.type_name == "prefab" {
                 ui.dnd_attach_drag_payload(pack_prefab_drag(*orig_idx as u32));
             }
+            // Material tiles offer "Assign to selected" — the same idiom
+            // the scene tree uses for entity actions. Mirrors how a texture
+            // or material is dropped onto a selection in other editors.
+            if asset.type_name == "material" {
+                let rel = asset.rel_path.clone();
+                ui.context_menu_last(&mut |menu| {
+                    if menu.button("Assign to selected") {
+                        to_assign_material = Some(rel.clone());
+                        menu.close_menu();
+                    }
+                });
+            }
             if interaction.double_clicked {
                 to_activate = Some(*orig_idx);
             } else if interaction.clicked {
                 to_select = Some(*orig_idx);
+            }
+        }
+        if let Some(rel) = to_assign_material {
+            if let Ok(mut state) = self.state.lock() {
+                if state.selection.is_empty() {
+                    log::warn!(
+                        "Asset browser: assign material '{}' ignored — no entity selected",
+                        rel
+                    );
+                } else {
+                    state.pending_assign_material = Some(rel.clone());
+                    log::info!("Asset browser: assigning material '{}' to selection", rel);
+                }
             }
         }
         if let Some(i) = to_select {

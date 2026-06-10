@@ -115,7 +115,10 @@ export function rewriteGitignore(ctx) {
   const m = readManifest(ctx);
   const paths = new Set();
   paths.add('.agent/.khora-ai.json');
-  paths.add('.khora/'); // project-local tool home (headroom venv, etc.)
+  paths.add('.khora/'); // project-local tool home (gitignored tool state)
+  // Per-machine Claude overrides (e.g. local permissions) live here, outside the
+  // manifest, so they must never be committed.
+  paths.add('.claude/settings.local.json');
   // Bootstrapped design skill (impeccable) — installed per harness, never committed.
   for (const h of ['.claude', '.cursor', '.gemini', '.github']) paths.add(`${h}/skills/impeccable/`);
   for (const prof of Object.values(m.profiles)) {

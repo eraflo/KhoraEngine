@@ -19,8 +19,8 @@ You are working ON Khora Engine — an experimental Rust game engine (SAA / CLAD
 - Never push to git or create PRs without explicit permission. Never commit secrets.
 
 ## Tooling
-Query the **codegraph** MCP before grepping. Context is compressed by **headroom**. Token-optimized
-commands via **rtk**. For any design / UI-UX task, use **`/impeccable`**.
+Query the **codegraph** MCP before grepping. Token-optimized commands via **rtk**. For any design /
+UI-UX task, use **`/impeccable`**.
 
 ## Canonical context (imported)
 

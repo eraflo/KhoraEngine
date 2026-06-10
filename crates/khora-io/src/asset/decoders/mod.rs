@@ -23,12 +23,14 @@
 
 pub mod audio;
 pub mod font;
+pub mod material;
 pub mod mesh;
 pub mod shader;
 pub mod texture;
 
 pub use audio::*;
 pub use font::*;
+pub use material::*;
 pub use mesh::*;
 pub use shader::*;
 pub use texture::*;

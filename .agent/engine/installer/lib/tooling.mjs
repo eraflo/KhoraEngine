@@ -1,18 +1,14 @@
 // Best-effort, idempotent, non-fatal tooling bootstrap: rtk, codegraph,
-// headroom, impeccable. Failures only warn — they never block an install.
+// impeccable. Failures only warn — they never block an install.
 // Project-local tools live in a gitignored `.khora/` folder.
 
-import { execFileSync, execSync, spawn } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import net from 'node:net';
 import { log, exists } from './core.mjs';
 
-const HEADROOM_PORT = 8787;
 const WIN = process.platform === 'win32';
-const BIN = WIN ? 'Scripts' : 'bin';
-const EXE = WIN ? '.exe' : '';
 
 function has(cmd) {
   try { execFileSync(WIN ? 'where' : 'which', [cmd], { stdio: 'ignore' }); return true; }
@@ -30,7 +26,6 @@ export function bootstrapTools(ctx, { noTools }) {
   rtk();
   ripgrep();
   codegraph();
-  headroom(ctx);
   impeccable();
 }
 
@@ -121,34 +116,6 @@ function codegraph() {
   } catch (e) { log.warn(`codegraph: ${e.message}`); }
 }
 
-// ── headroom: Python venv in .khora/ (the CLI ships only in the pip pkg) ────
-function pythonCmd() {
-  for (const c of ['python3', 'python']) {
-    try {
-      const out = execFileSync(c, ['--version'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-      const m = out.match(/Python (\d+)\.(\d+)/);
-      if (m && (Number(m[1]) > 3 || (Number(m[1]) === 3 && Number(m[2]) >= 10))) return c;
-    } catch { /* try next */ }
-  }
-  return null;
-}
-
-function headroom(ctx) {
-  try {
-    const venv = path.join(khoraDir(ctx), 'venv');
-    const venvHeadroom = path.join(venv, BIN, 'headroom' + EXE);
-    if (exists(venvHeadroom)) { log.ok('headroom present in .khora/venv (launched on session start)'); return; }
-    const py = pythonCmd();
-    if (!py) { log.warn('Python 3.10+ not found — headroom needs the Python CLI (`pip install "headroom-ai[all]"`)'); return; }
-    log.info('creating headroom venv in .khora/venv…');
-    run(py, ['-m', 'venv', venv], { timeout: 120000 });
-    const vpy = path.join(venv, BIN, 'python' + EXE);
-    try { run(vpy, ['-m', 'pip', 'install', '--upgrade', 'pip'], { timeout: 120000 }); } catch {}
-    run(vpy, ['-m', 'pip', 'install', 'headroom-ai[all]'], { timeout: 600000 });
-    log.ok('headroom installed in .khora/venv (launched on session start)');
-  } catch (e) { log.warn(`headroom: ${e.message}`); }
-}
-
 // ── impeccable: design skill (writes provider files via npx; nothing to keep) ─
 function impeccable() {
   try {
@@ -161,22 +128,4 @@ function impeccable() {
     });
     log.ok('impeccable installed (/impeccable available)');
   } catch { log.warn('could not install impeccable — `npx impeccable skills install` (design authority for UI/UX)'); }
-}
-
-// ── SessionStart target: ensure the headroom proxy is up (fast + idempotent) ─
-export function launchHeadroom(ctx) {
-  const venvHeadroom = path.join(khoraDir(ctx), 'venv', BIN, 'headroom' + EXE);
-  const cmd = exists(venvHeadroom) ? venvHeadroom : (has('headroom') ? 'headroom' : null);
-  if (!cmd) return; // nothing installed
-  const sock = net.connect(HEADROOM_PORT, '127.0.0.1');
-  sock.setTimeout(300);
-  sock.on('connect', () => { sock.destroy(); /* already running */ });
-  sock.on('timeout', () => { sock.destroy(); start(); });
-  sock.on('error', () => start());
-  function start() {
-    try {
-      const child = spawn(cmd, ['proxy', '--port', String(HEADROOM_PORT)], { detached: true, stdio: 'ignore' });
-      child.unref();
-    } catch { /* best-effort */ }
-  }
 }

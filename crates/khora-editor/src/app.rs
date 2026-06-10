@@ -173,6 +173,12 @@ impl EngineApp for EditorApp {
             world,
             &self.editor_state,
         );
+        commands::process_pending_save_as_material(
+            self.project_vfs.as_ref(),
+            world,
+            &self.editor_state,
+        );
+        commands::process_pending_assign_material(world, &self.editor_state);
 
         if let Ok(mut state) = self.editor_state.lock() {
             ops::apply_edits(world, &mut state);

@@ -254,6 +254,21 @@ pub struct EditorState {
     /// load the recipe via the asset service and call
     /// `instantiate_subtree`.
     pub pending_prefab_spawn: Option<String>,
+
+    // ── Material authoring workflow ─────────────────────
+    /// Set when the user picks "Save Material as .kmat" on an entity that
+    /// carries a `MaterialRef::Inline`. Holds the entity plus the chosen
+    /// material name (file stem). The editor consumes this next frame:
+    /// serializes the inline material to RON under
+    /// `assets/materials/<name>.kmat`, reindexes, and rewrites the entity's
+    /// component to `MaterialRef::Asset(uuid)` so it now references the
+    /// shared, reloadable asset.
+    pub pending_save_as_material: Option<(EntityId, String)>,
+    /// Set when the user assigns a `.kmat` from the asset browser to the
+    /// current selection. Holds the forward-slash relative path of the
+    /// `.kmat` under `<project>/assets/`. Consumed next frame: each
+    /// selected entity's `MaterialRef` is set to `Asset(uuid)`.
+    pub pending_assign_material: Option<String>,
 }
 
 impl EditorState {

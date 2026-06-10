@@ -21,6 +21,7 @@ use std::{
 
 use bincode::config;
 use khora_core::{
+    asset::Material,
     ecs::entity::EntityId,
     renderer::api::scene::{GpuMaterial, GpuMesh, Mesh},
 };
@@ -34,8 +35,8 @@ use crate::ecs::{
     registry::ComponentRegistry,
     serialization::SceneMemoryLayout,
     storage::StorageManager,
-    Component, ComponentBundle, DomainBitset, LayoutPolicy, MaterialComponent, QueryMut, QueryPlan,
-    SemanticDomain, SerializedPage, TypeRegistry,
+    Component, ComponentBundle, DomainBitset, LayoutPolicy, MaterialRef, MeshRef, QueryMut,
+    QueryPlan, SemanticDomain, SerializedPage, TypeRegistry,
 };
 
 /// Errors that can occur when adding a component to an entity.
@@ -140,13 +141,16 @@ impl World {
             type_registry: TypeRegistry::default(),
         };
         // Generic and hand-implemented components can't self-register via the
-        // derive (generics have no single `TypeId`; `MaterialComponent` has a manual
-        // `Component` impl), so they stay explicit. CollisionPairs is **not** an ECS
-        // component — it lives in `Resources` as `Arc<Mutex<CollisionPairs>>`.
+        // derive (generics have no single `TypeId`; `MaterialRef` holds a trait
+        // object and has a manual `Component` impl), so they stay explicit.
+        // CollisionPairs is **not** an ECS component — it lives in `Resources`
+        // as `Arc<Mutex<CollisionPairs>>`.
         world.register_component::<HandleComponent<Mesh>>(SemanticDomain::Render);
         world.register_component::<HandleComponent<GpuMesh>>(SemanticDomain::Render);
         world.register_component::<HandleComponent<GpuMaterial>>(SemanticDomain::Render);
-        world.register_component::<MaterialComponent>(SemanticDomain::Render);
+        world.register_component::<HandleComponent<Box<dyn Material>>>(SemanticDomain::Render);
+        world.register_component::<MaterialRef>(SemanticDomain::Render);
+        world.register_component::<MeshRef>(SemanticDomain::Render);
 
         // Auto-register every component that declares its domain via
         // `#[derive(Component)]` + `#[component(domain = ...)]`. Idempotent with the

@@ -13,6 +13,9 @@ log = "0.4"
 anyhow = "1.0"
 thiserror = "2.0.18"
 serde = { version = "1.0", features = ["derive"] }
+# Bridge for the `.kmat` decoder: RON → serde_json::Value → MaterialRegistration
+# (which dispatches through `deserialize_json`). Matches khora-data's version.
+serde_json = "1.0"
 bincode = { version = "2.0.1", features = ["serde"] }
 ron = "0.12.0"
 ahash = "0.8"

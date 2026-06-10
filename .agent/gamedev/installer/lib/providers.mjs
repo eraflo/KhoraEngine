@@ -70,8 +70,8 @@ ${e.identity}
 ${e.rules.map((r) => `- ${r}`).join('\n')}
 
 ## Tooling
-Query the **codegraph** MCP before grepping. Context is compressed by **headroom**. Token-optimized
-commands via **rtk**. For any design / UI-UX task, use **\`/impeccable\`**.
+Query the **codegraph** MCP before grepping. Token-optimized commands via **rtk**. For any design /
+UI-UX task, use **\`/impeccable\`**.
 ${imports}`;
 }
 
@@ -83,18 +83,17 @@ export function generateClaude(ctx, generated) {
   // Copy agents + skills verbatim into the Claude discovery dirs.
   copyTreeRecording(ctx, path.join(ctx.profileDir, 'agents'), path.join(root, '.claude', 'agents'), generated);
   copyTreeRecording(ctx, path.join(ctx.profileDir, 'skills'), path.join(root, '.claude', 'skills'), generated);
-  // settings.json with the doc-change + headroom hooks (merged idempotently).
+  // settings.json with the doc-change hook (merged idempotently).
   const settingsPath = path.join(root, '.claude', 'settings.json');
   let settings = {};
   if (exists(settingsPath)) { try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch {} }
   settings.hooks = mergeClaudeHooks(settings.hooks ?? {}, ctx);
-  // Route Claude Code through the headroom proxy when it's actually installed —
-  // guarded so a contributor without headroom isn't pointed at a dead port.
-  const BIN = process.platform === 'win32' ? 'Scripts' : 'bin';
-  const EXE = process.platform === 'win32' ? '.exe' : '';
-  const venvHeadroom = path.join(root, '.khora', 'venv', BIN, 'headroom' + EXE);
-  if (exists(venvHeadroom)) {
-    settings.env = { ...(settings.env ?? {}), ANTHROPIC_BASE_URL: 'http://127.0.0.1:8787' };
+  // Strip the legacy headroom redirect if a previous install wrote it. Headroom only
+  // ever routed the `claude` CLI, never the Desktop GUI (which hard-codes its endpoint),
+  // so the integration was removed; this cleans it up on the next regeneration.
+  if (settings.env) {
+    delete settings.env.ANTHROPIC_BASE_URL;
+    if (Object.keys(settings.env).length === 0) delete settings.env;
   }
   writeFileRecording(ctx, settingsPath, JSON.stringify(settings, null, 2) + '\n', generated);
   log.ok('Claude Code wrappers (CLAUDE.md, .claude/agents, .claude/skills, .claude/settings.json)');
@@ -103,12 +102,12 @@ export function generateClaude(ctx, generated) {
 function mergeClaudeHooks(hooks, ctx) {
   const bin = canon(ctx.profile, 'installer/bin/khora-ai.mjs');
   const syncCmd = `node ${bin} sync --if-changed "$CLAUDE_TOOL_INPUT_FILE_PATH"`;
-  const headroomCmd = `node ${bin} launch-headroom`;
   const owned = (c) => typeof c === 'string' && c.includes('khora-ai.mjs');
   const post = (hooks.PostToolUse ?? []).filter((g) => !(g.hooks ?? []).some((h) => owned(h.command)));
   post.push({ matcher: 'Write|Edit', hooks: [{ type: 'command', command: syncCmd }] });
+  // Strip any previously-installed khora-ai SessionStart hook (the old headroom proxy
+  // launcher); none is added anymore.
   const start = (hooks.SessionStart ?? []).filter((g) => !(g.hooks ?? []).some((h) => owned(h.command)));
-  start.push({ hooks: [{ type: 'command', command: headroomCmd }] });
   return { ...hooks, PostToolUse: post, SessionStart: start };
 }
 

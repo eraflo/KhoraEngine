@@ -15,9 +15,9 @@
 //! Pure ECS operations used by the editor application.
 
 use khora_sdk::editor_ui::*;
-use khora_sdk::khora_data::ecs::{HandleComponent, SemanticDomain, Tag};
+use khora_sdk::khora_data::ecs::{SemanticDomain, Tag};
 use khora_sdk::prelude::ecs::*;
-use khora_sdk::{GameWorld, Mesh};
+use khora_sdk::GameWorld;
 
 /// Maps [`SemanticDomain`] to the small integer tag the editor side uses
 /// in [`ComponentJson::domain`]. Kept here so `khora-core` doesn't have to
@@ -55,7 +55,7 @@ pub fn extract_scene_tree(world: &GameWorld, state: &mut EditorState) {
             EntityIcon::Light
         } else if world.get_component::<AudioSource>(entity).is_some() {
             EntityIcon::Audio
-        } else if world.get_component::<MaterialComponent>(entity).is_some() {
+        } else if world.get_component::<MeshRef>(entity).is_some() {
             EntityIcon::Mesh
         } else {
             EntityIcon::Empty
@@ -196,9 +196,8 @@ pub fn duplicate_entity(world: &mut GameWorld, entity: EntityId, state: &mut Edi
     let rigid_body = world.get_component::<RigidBody>(entity).cloned();
     let collider = world.get_component::<Collider>(entity).cloned();
     let audio_source = world.get_component::<AudioSource>(entity).cloned();
-    let mesh_handle = world
-        .get_component::<HandleComponent<Mesh>>(entity)
-        .cloned();
+    let mesh_ref = world.get_component::<MeshRef>(entity).cloned();
+    let material_ref = world.get_component::<MaterialRef>(entity).cloned();
 
     let new_entity = world.spawn((
         transform.unwrap_or_else(Transform::identity),
@@ -221,8 +220,11 @@ pub fn duplicate_entity(world: &mut GameWorld, entity: EntityId, state: &mut Edi
     if let Some(audio) = audio_source {
         world.add_component(new_entity, audio);
     }
-    if let Some(mesh) = mesh_handle {
-        world.add_component(new_entity, mesh.clone());
+    if let Some(mesh) = mesh_ref {
+        world.add_component(new_entity, mesh);
+    }
+    if let Some(material) = material_ref {
+        world.add_component(new_entity, material);
     }
 
     state.select(new_entity);
@@ -402,4 +404,82 @@ pub fn add_component_to_entity(world: &mut GameWorld, entity: EntityId, type_nam
         }
     }
     log::warn!("No component registration found for type '{}'", type_name);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_sdk::khora_core::asset::Material;
+
+    /// Regression: duplicating an entity must carry its material across.
+    /// A broken implementation drops `MaterialRef`, so the copy renders
+    /// with no material (logged error) instead of the original look.
+    #[test]
+    fn duplicate_entity_clones_material_ref() {
+        let mut world = GameWorld::new();
+        let mut state = EditorState::default();
+
+        let mat = world.add_material(khora_sdk::prelude::materials::StandardMaterial {
+            base_color: khora_sdk::prelude::math::LinearRgba::new(0.2, 0.4, 0.6, 1.0),
+            roughness: 0.3,
+            ..Default::default()
+        });
+        let original = world.spawn((
+            Transform::identity(),
+            GlobalTransform::identity(),
+            Name::new("Source"),
+            mat,
+        ));
+
+        duplicate_entity(&mut world, original, &mut state);
+
+        let copy = state.single_selected().expect("duplicate selects the copy");
+        assert_ne!(copy, original, "duplicate must produce a new entity");
+
+        let copy_mat = world
+            .get_component::<MaterialRef>(copy)
+            .expect("copy should carry a MaterialRef");
+        match copy_mat {
+            MaterialRef::Inline(material) => {
+                assert_eq!(
+                    material.base_color(),
+                    khora_sdk::prelude::math::LinearRgba::new(0.2, 0.4, 0.6, 1.0),
+                    "cloned inline material should preserve base color"
+                );
+            }
+            MaterialRef::Asset(_) => panic!("inline material must stay inline after duplication"),
+        }
+    }
+
+    /// Regression: duplicating an entity must carry its authored `MeshRef`
+    /// across so the resolver regenerates the copy's runtime mesh handle.
+    #[test]
+    fn duplicate_entity_clones_mesh_ref() {
+        let mut world = GameWorld::new();
+        let mut state = EditorState::default();
+
+        let original = world.spawn((
+            Transform::identity(),
+            GlobalTransform::identity(),
+            Name::new("Source"),
+            MeshRef::Procedural {
+                kind: ProceduralMeshKind::Sphere,
+                params: [0.75, 32.0, 16.0, 0.0],
+            },
+        ));
+
+        duplicate_entity(&mut world, original, &mut state);
+
+        let copy = state.single_selected().expect("duplicate selects the copy");
+        let copy_mesh = world
+            .get_component::<MeshRef>(copy)
+            .expect("copy should carry a MeshRef");
+        assert_eq!(
+            copy_mesh,
+            &MeshRef::Procedural {
+                kind: ProceduralMeshKind::Sphere,
+                params: [0.75, 32.0, 16.0, 0.0],
+            }
+        );
+    }
 }

@@ -208,8 +208,8 @@ pub mod prelude {
         pub use khora_core::renderer::light::{DirectionalLight, LightType, PointLight, SpotLight};
         pub use khora_data::ecs::{
             AudioSource, Camera, Children, Collider, Component, ComponentBundle, GlobalTransform,
-            Light, MaterialComponent, Name, Parent, ProjectionType, RigidBody, Tag, Transform,
-            Without,
+            Light, MaterialRef, MeshRef, Name, Parent, ProceduralMeshKind, ProjectionType,
+            RigidBody, Tag, Transform, Without,
         };
     }
 

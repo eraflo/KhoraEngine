@@ -365,23 +365,23 @@ impl GameWorld {
         false
     }
 
-    /// Adds a material to the asset registry and returns a handle component.
+    /// Builds an authored, inline material reference to attach to entities.
     ///
-    /// The returned `MaterialComponent` can be attached to entities
-    /// to give them a visible material.
+    /// The returned [`MaterialRef::Inline`](khora_data::ecs::MaterialRef) embeds
+    /// the material value directly in the scene. The resolver turns it into a
+    /// runtime material handle, which the GPU projection uploads. To reference a
+    /// `.kmat` asset instead, attach `MaterialRef::Asset(uuid)`.
     ///
     /// # Arguments
-    /// * `material` - The CPU-side material data (e.g., StandardMaterial).
+    /// * `material` - The CPU-side material data (e.g., `StandardMaterial`).
     ///
     /// # Returns
-    /// A `MaterialComponent` that references the stored material.
+    /// A `MaterialRef::Inline` referencing the given material.
     pub fn add_material<M: khora_core::asset::Material>(
         &mut self,
         material: M,
-    ) -> khora_data::ecs::MaterialComponent {
-        let uuid = AssetUUID::new();
-        let handle = AssetHandle::new(Box::new(material) as Box<dyn khora_core::asset::Material>);
-        khora_data::ecs::MaterialComponent { handle, uuid }
+    ) -> khora_data::ecs::MaterialRef {
+        khora_data::ecs::MaterialRef::Inline(Box::new(material))
     }
 
     // ─────────────────────────────────────────────────────────────────────

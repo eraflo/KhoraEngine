@@ -30,6 +30,9 @@ pub enum AssetTileKind {
     Audio,
     Shader,
     Scene,
+    /// Authored materials (`.kmat`) — RON material definitions referenced
+    /// by entities through `MaterialRef::Asset`.
+    Material,
     /// Gameplay scripts (`.kscript`) — data-driven, hot-reloadable. Tier
     /// 3 of the project's three "code" tiers; the scripting language
     /// runtime itself isn't implemented yet, but the asset browser
@@ -47,6 +50,7 @@ impl AssetTileKind {
             Self::Audio => Icon::Music,
             Self::Shader => Icon::Zap,
             Self::Scene => Icon::Globe,
+            Self::Material => Icon::Circle,
             Self::Script => Icon::Code,
             Self::Unknown => Icon::Box,
         }
@@ -62,6 +66,7 @@ impl AssetTileKind {
             Self::Audio => theme.success,
             Self::Shader => theme.accent_a,
             Self::Scene => theme.accent_a,
+            Self::Material => theme.accent_c,
             Self::Script => theme.warning,
             Self::Unknown => theme.surface_active,
         };
@@ -75,6 +80,7 @@ impl AssetTileKind {
             Self::Audio => "OGG",
             Self::Shader => "GLSL",
             Self::Scene => "SCN",
+            Self::Material => "MAT",
             Self::Script => "KSCR",
             Self::Unknown => "—",
         }

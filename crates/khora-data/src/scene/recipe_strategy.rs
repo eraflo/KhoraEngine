@@ -276,20 +276,15 @@ impl SerializationStrategy for RecipeSerializationStrategy {
 mod tests {
     use super::*;
     use crate::ecs::{
-        material_from_json, material_to_json, Children, MaterialComponent, Parent, Transform, World,
+        material_from_json, material_to_json, Children, MaterialRef, Parent, Transform, World,
     };
-    use khora_core::asset::{
-        AssetHandle, AssetUUID, EmissiveMaterial, Material, StandardMaterial,
-    };
+    use khora_core::asset::{AssetUUID, EmissiveMaterial, Material, StandardMaterial};
     use khora_core::math::{LinearRgba, Vec3};
 
-    /// Wraps a concrete material in a `MaterialComponent` the way the SDK /
-    /// editor do — a fresh handle around the boxed trait object.
-    fn material_component<M: Material + 'static>(material: M) -> MaterialComponent {
-        MaterialComponent {
-            handle: AssetHandle::new(Box::new(material) as Box<dyn Material>),
-            uuid: AssetUUID::new(),
-        }
+    /// Wraps a concrete material in an inline `MaterialRef` the way the SDK /
+    /// editor do — the authored, serialized material reference.
+    fn material_component<M: Material + 'static>(material: M) -> MaterialRef {
+        MaterialRef::Inline(Box::new(material))
     }
 
     /// The `EditorInterchange` goal selects the Recipe strategy, so exercising
@@ -317,9 +312,11 @@ mod tests {
 
         let restored = dst
             .iter_entities()
-            .find_map(|e| dst.get::<MaterialComponent>(e))
-            .expect("material component should survive the round trip");
-        let material: &dyn Material = &**restored.handle;
+            .find_map(|e| dst.get::<MaterialRef>(e))
+            .expect("material ref should survive the round trip");
+        let MaterialRef::Inline(material) = restored else {
+            panic!("expected an inline material ref");
+        };
         let standard = material
             .as_any()
             .downcast_ref::<StandardMaterial>()
@@ -351,9 +348,11 @@ mod tests {
 
         let restored = dst
             .iter_entities()
-            .find_map(|e| dst.get::<MaterialComponent>(e))
-            .expect("material component should survive the round trip");
-        let material: &dyn Material = &**restored.handle;
+            .find_map(|e| dst.get::<MaterialRef>(e))
+            .expect("material ref should survive the round trip");
+        let MaterialRef::Inline(material) = restored else {
+            panic!("expected an inline material ref");
+        };
         let emissive = material
             .as_any()
             .downcast_ref::<EmissiveMaterial>()
@@ -386,6 +385,32 @@ mod tests {
         assert_eq!(standard.roughness, distinctive.roughness);
         assert_eq!(standard.metallic, distinctive.metallic);
         assert_eq!(standard.base_color_texture, distinctive.base_color_texture);
+    }
+
+    /// Anti-vestigial regression: a `MaterialRef::Asset(uuid)` must round-trip
+    /// with the SAME uuid. The previous inline-handle path minted a fresh uuid
+    /// on every load, making VFS material identity impossible.
+    #[test]
+    fn recipe_round_trip_preserves_asset_material_uuid() {
+        let mut src = World::new();
+        let uuid = AssetUUID::new_v5("materials/brass.kmat");
+        let entity = src.spawn(Transform::default());
+        src.add_component(entity, MaterialRef::Asset(uuid)).unwrap();
+
+        let strategy = RecipeSerializationStrategy::new();
+        let bytes = strategy.serialize(&src).expect("serialize");
+
+        let mut dst = World::new();
+        strategy.deserialize(&bytes, &mut dst).expect("deserialize");
+
+        let restored = dst
+            .iter_entities()
+            .find_map(|e| dst.get::<MaterialRef>(e))
+            .expect("material ref should survive the round trip");
+        let MaterialRef::Asset(restored_uuid) = restored else {
+            panic!("expected an asset material ref");
+        };
+        assert_eq!(*restored_uuid, uuid, "asset uuid must be preserved verbatim");
     }
 
     /// Builds the parent's `Children` component manually since the

@@ -202,6 +202,22 @@ pub mod builtins {
         }
     }
 
+    pub struct MaterialHandler;
+    impl AssetTypeHandler for MaterialHandler {
+        fn matches_type_name(&self, n: &str) -> bool {
+            n == "material"
+        }
+        fn tile_kind(&self) -> AssetTileKind {
+            AssetTileKind::Material
+        }
+        fn icon(&self) -> Icon {
+            Icon::Circle
+        }
+        fn category_label(&self) -> &'static str {
+            "Materials"
+        }
+    }
+
     pub struct ScriptHandler;
     impl AssetTypeHandler for ScriptHandler {
         fn matches_type_name(&self, n: &str) -> bool {
@@ -238,5 +254,8 @@ pub mod builtins {
     }
     inventory::submit! {
         super::AssetTypeHandlerRegistration { handler: &PrefabHandler }
+    }
+    inventory::submit! {
+        super::AssetTypeHandlerRegistration { handler: &MaterialHandler }
     }
 }

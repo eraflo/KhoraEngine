@@ -63,7 +63,7 @@ pub struct MaterialRegistration {
 
 collect!(MaterialRegistration);
 
-/// Serializes a `MaterialComponent` by finding the matching `MaterialRegistration`
+/// Serializes a `dyn Material` by finding the matching `MaterialRegistration`
 /// and encoding the material data with its type name.
 pub fn serialize_material_component(
     base_color: LinearRgba,
@@ -89,7 +89,7 @@ pub fn serialize_material_component(
     bincode::encode_to_vec(&serializable, config::standard()).ok()
 }
 
-/// Deserializes a `MaterialComponent` from binary data.
+/// Deserializes a `(handle, uuid)` material pair from binary data.
 pub fn deserialize_material_component(
     data: &[u8],
 ) -> Result<(AssetHandle<Box<dyn Material>>, AssetUUID), String> {
@@ -170,71 +170,11 @@ pub fn material_from_json(
 
 use khora_core::asset::{EmissiveMaterial, StandardMaterial, UnlitMaterial, WireframeMaterial};
 
-// ─── Scene + inspector registration for `MaterialComponent` ───
-//
-// `MaterialComponent` carries a `Box<dyn Material>` behind an `AssetHandle`, so
-// it cannot use `#[derive(Component)]` (the generated mirror needs a concrete,
-// serde/bincode type). Without a `ComponentRegistration` the scene strategies
-// (Definition / Recipe / MessagePack) — which iterate `ComponentRegistration` —
-// silently drop the material on save and never restore it on load. This manual
-// entry wires the bincode (scene) and JSON (inspector) round-trips to the open
-// `MaterialRegistration` system above, so every registered material type
-// survives serialization.
-
-use crate::ecs::components::MaterialComponent;
-
-inventory::submit! {
-    crate::scene::ComponentRegistration {
-        type_id: std::any::TypeId::of::<MaterialComponent>(),
-        type_name: "MaterialComponent",
-        serialize_recipe: |world, entity| {
-            let mc = world.get::<MaterialComponent>(entity)?;
-            let material: &dyn Material = &**mc.handle;
-            serialize_material_component(material.base_color(), material)
-        },
-        deserialize_recipe: |world, entity, data| {
-            let (handle, uuid) = deserialize_material_component(data)?;
-            world
-                .add_component(entity, MaterialComponent { handle, uuid })
-                .map_err(|e| format!("{e:?}"))?;
-            Ok(())
-        },
-        create_default: |world, entity| {
-            let handle = AssetHandle::new(Box::new(StandardMaterial::default()) as Box<dyn Material>);
-            world
-                .add_component(
-                    entity,
-                    MaterialComponent {
-                        handle,
-                        uuid: AssetUUID::new(),
-                    },
-                )
-                .map_err(|e| format!("{e:?}"))?;
-            Ok(())
-        },
-        to_json: |world, entity| {
-            let mc = world.get::<MaterialComponent>(entity)?;
-            let material: &dyn Material = &**mc.handle;
-            material_to_json(material)
-        },
-        from_json: |world, entity, value| {
-            let (handle, uuid) = material_from_json(value)?;
-            let new_value = MaterialComponent { handle, uuid };
-            if !world.set_component(entity, new_value.clone()) {
-                world
-                    .add_component(entity, new_value)
-                    .map_err(|e| format!("{e:?}"))?;
-            }
-            Ok(())
-        },
-        remove: |world, entity| {
-            match world.remove_component::<MaterialComponent>(entity) {
-                Ok(_) => Ok(()),
-                Err(e) => Err(format!("{e:?}")),
-            }
-        },
-    }
-}
+// The scene + inspector `ComponentRegistration` for the authored material
+// reference lives on `MaterialRef` (see `material_ref.rs`); it reuses the
+// helpers above. The four built-in `MaterialRegistration` entries below are
+// the open type-tag registry those helpers (and the `.kmat` decoder) dispatch
+// through — keep them.
 
 inventory::submit! {
     MaterialRegistration {

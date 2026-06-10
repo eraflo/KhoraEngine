@@ -41,6 +41,7 @@ target/
 /.claude/agents/physics-expert.md
 /.claude/agents/security-auditor.md
 /.claude/settings.json
+/.claude/settings.local.json
 /.claude/skills/add-a-component/SKILL.md
 /.claude/skills/add-a-lane/SKILL.md
 /.claude/skills/add-a-shader/SKILL.md

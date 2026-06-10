@@ -44,7 +44,7 @@ pub struct ExtractedMesh {
     /// Handle to the projected GPU material (uniform buffer + textures +
     /// group-2 bind group), produced by the material projection.  `None`
     /// until the projection has uploaded it, or when the entity carries no
-    /// `MaterialComponent` (lit lanes fall back to a default material).
+    /// resolved material handle (lit lanes fall back to a default material).
     pub gpu_material: Option<AssetHandle<GpuMaterial>>,
 }
 

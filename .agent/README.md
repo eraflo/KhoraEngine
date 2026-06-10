@@ -71,12 +71,11 @@ node .agent/<profile>/installer/bin/khora-ai.mjs list            # show install 
 2. **Wires hooks** into each provider:
    - a **doc-change** hook — editing `.agent/<profile>/**` re-runs that profile's installer (in-session via
      the provider's `PostToolUse`, cross-editor via a `git pre-commit` block);
-   - a **secret-scan** `pre-commit` hook — blocks commits containing secrets;
-   - a **headroom** `SessionStart` launch (context compression).
+   - a **secret-scan** `pre-commit` hook — blocks commits containing secrets.
 3. **Bootstraps tooling** (best-effort, `--no-tools` to skip): **rtk** (Rust Token Killer — detected, or
    installed from [rtk-ai/rtk](https://github.com/rtk-ai/rtk) and added to PATH if missing), **codegraph**,
-   **headroom** (context compression — a Python venv under `.khora/`), and **impeccable** (the `/impeccable`
-   design authority). Project-local tool state lives in a gitignored `.khora/` folder.
+   and **impeccable** (the `/impeccable` design authority). Project-local tool state lives in a gitignored
+   `.khora/` folder.
 4. **Gitignores every generated artifact** via a managed block in `.gitignore`, and records the install in
    `.agent/.khora-ai.json` (per-machine, gitignored).
 

@@ -21,6 +21,7 @@
 //! frustum culling, etc.).
 
 use khora_core::{
+    asset::Material,
     math::{Mat4, Vec3},
     renderer::{
         api::scene::{GpuMaterial, GpuMesh},
@@ -30,7 +31,7 @@ use khora_core::{
 };
 
 use crate::ecs::{
-    Camera, GlobalTransform, HandleComponent, Light, MaterialComponent, SemanticDomain, World,
+    Camera, GlobalTransform, HandleComponent, Light, SemanticDomain, World,
 };
 use crate::flow::{Flow, Selection};
 use crate::register_flow;
@@ -75,7 +76,7 @@ fn extract_meshes(world: &World, render_world: &mut RenderWorld) {
         // a material live in different archetypes, so correlating two separate
         // queries by enumerate-index would mismatch (and drop the GpuMaterial).
         let material = world
-            .get::<MaterialComponent>(entity_id)
+            .get::<HandleComponent<Box<dyn Material>>>(entity_id)
             .map(|m| m.handle.clone());
         let gpu_material = world
             .get::<HandleComponent<GpuMaterial>>(entity_id)

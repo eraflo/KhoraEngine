@@ -42,12 +42,26 @@ impl<T: Any> AsAny for T {
     }
 }
 
+/// Supertrait that gives every material a `clone_box` without making `Material`
+/// itself depend on the non-object-safe `Clone`. The blanket impl below covers
+/// every `T: Material + Clone`, so concrete materials implement nothing extra.
+pub trait MaterialClone {
+    /// Clones `self` into a new boxed `dyn Material`.
+    fn clone_box(&self) -> Box<dyn Material>;
+}
+
+impl<T: Material + Clone + 'static> MaterialClone for T {
+    fn clone_box(&self) -> Box<dyn Material> {
+        Box::new(self.clone())
+    }
+}
+
 /// A trait for types that can be used as a material.
 ///
 /// A material defines the surface properties of an object being rendered,
 /// influencing how it interacts with light and determining which shader
 /// (`RenderPipeline`) is used to draw it.
-pub trait Material: Asset + AsAny {
+pub trait Material: Asset + AsAny + MaterialClone {
     /// Returns the base color (albedo or diffuse) of the material.
     /// Default implementation is White.
     fn base_color(&self) -> crate::math::LinearRgba {
@@ -115,3 +129,9 @@ pub trait Material: Asset + AsAny {
 /// object can itself be treated as a valid Asset. This allows it to be
 /// stored inside an AssetHandle.
 impl Asset for Box<dyn Material> {}
+
+impl Clone for Box<dyn Material> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}

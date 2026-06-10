@@ -2646,6 +2646,7 @@ dependencies = [
  "log",
  "open",
  "rfd",
+ "ron",
  "serde",
  "serde_json",
 ]
@@ -2717,6 +2718,7 @@ dependencies = [
  "notify",
  "ron",
  "serde",
+ "serde_json",
  "symphonia",
  "tempfile",
  "thiserror 2.0.18",

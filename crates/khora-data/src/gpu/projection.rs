@@ -29,12 +29,12 @@
 //! material's [`ShaderVariantKey`] is exactly the set of maps it declares, and
 //! the cached group-2 bind group is built against the same
 //! `(LayoutKey::Material, variant)` layout the lit pipeline binds. A mesh with
-//! no `MaterialComponent`, or a material referencing a texture absent from the
-//! `Assets<CpuTexture>` store, is logged and skipped rather than silently
-//! substituted.
+//! no resolved material handle (and no pending `MaterialRef`), or a material
+//! referencing a texture absent from the `Assets<CpuTexture>` store, is logged
+//! and skipped rather than silently substituted.
 
 use crate::{
-    ecs::{HandleComponent, MaterialComponent, Without, World},
+    ecs::{HandleComponent, MaterialRef, Without, World},
     gpu::AssetStore,
 };
 use khora_core::{
@@ -196,12 +196,12 @@ impl ProjectionRegistry {
     /// and before `RenderFlow` projects the world. Idempotent: entities
     /// already carrying a `HandleComponent<GpuMaterial>` are skipped.
     ///
-    /// Only entities with a `MaterialComponent` are projected. Each
-    /// material's [`ShaderVariantKey`] is exactly the maps it declares; the
-    /// group-2 bind group is built against the matching
+    /// Only entities with a resolved `HandleComponent<Box<dyn Material>>` are
+    /// projected. Each material's [`ShaderVariantKey`] is exactly the maps it
+    /// declares; the group-2 bind group is built against the matching
     /// `pipeline_system.layout(device, LayoutKey::Material, &variant)` — the
     /// SAME layout the lit pipeline binds for that variant. There is no
-    /// fallback: a mesh entity without a `MaterialComponent` is logged and
+    /// fallback: a mesh entity without any material reference is logged and
     /// skipped, and a material referencing a texture absent from
     /// `Assets<CpuTexture>` is deferred (a missing decode is logged once it
     /// has clearly stalled — see [`MaterialProjector::resolve_texture`]).
@@ -227,13 +227,13 @@ impl ProjectionRegistry {
         {
             let query = world.query::<(
                 EntityId,
-                &MaterialComponent,
+                &HandleComponent<Box<dyn Material>>,
                 Without<HandleComponent<GpuMaterial>>,
             )>();
             let textures = cpu_textures.read().unwrap();
-            for (entity_id, material_comp, _) in query {
-                let uuid = material_comp.uuid;
-                let material: &dyn Material = &**material_comp.handle;
+            for (entity_id, material_handle, _) in query {
+                let uuid = material_handle.uuid;
+                let material: &dyn Material = &**material_handle.handle;
 
                 if !material_cache.read().unwrap().contains(&uuid) {
                     // Defer until every referenced texture has been decoded.
@@ -265,19 +265,23 @@ impl ProjectionRegistry {
             }
         }
 
-        // A mesh entity carrying no `MaterialComponent` has no material to
-        // project — there is no default. Log + skip so it is visibly absent
-        // rather than silently substituted (SAA: never invent game state).
+        // A mesh entity that references no material at all has nothing to
+        // project — there is no default. An entity with an unresolved
+        // `MaterialRef` is NOT materialless (the resolver will produce its
+        // handle on a later tick), so it is excluded from the warning. Log +
+        // skip so a truly materialless entity is visibly absent rather than
+        // silently substituted (SAA: never invent game state).
         {
             let query = world.query::<(
                 EntityId,
                 &HandleComponent<GpuMesh>,
-                Without<MaterialComponent>,
+                Without<MaterialRef>,
+                Without<HandleComponent<Box<dyn Material>>>,
                 Without<HandleComponent<GpuMaterial>>,
             )>();
-            for (entity_id, _, _, _) in query {
+            for (entity_id, _, _, _, _) in query {
                 log::warn!(
-                    "ProjectionRegistry: entity {entity_id:?} has a mesh but no MaterialComponent; \
+                    "ProjectionRegistry: entity {entity_id:?} has a mesh but no material reference; \
                      skipping (no default material)."
                 );
             }

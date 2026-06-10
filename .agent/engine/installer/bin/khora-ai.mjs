@@ -11,7 +11,7 @@ import {
   installGitHook, removeGitHook, stagedFiles,
 } from '../lib/core.mjs';
 import { PROVIDERS, generateAgentsMd } from '../lib/providers.mjs';
-import { bootstrapTools, launchHeadroom } from '../lib/tooling.mjs';
+import { bootstrapTools } from '../lib/tooling.mjs';
 import { scanSecrets } from '../lib/secrets.mjs';
 
 const ALL = Object.keys(PROVIDERS);
@@ -27,7 +27,6 @@ async function main() {
     case 'sync':         return cmdSync(ctx, rest, flags);
     case 'uninstall':    return cmdUninstall(ctx, args);
     case 'scan-secrets': return cmdScanSecrets(ctx, flags);
-    case 'launch-headroom': return launchHeadroom(ctx);
     case 'list':         return cmdList(ctx);
     case 'help': case undefined: return usage();
     default: log.err(`unknown command: ${cmd}`); usage(); process.exit(2);
@@ -58,8 +57,10 @@ function generateFor(ctx, providers) {
 function cmdInstall(ctx, args, flags) {
   const providers = resolveProviders(args);
   log.step(`Installing ${ctx.profile} wrappers: ${providers.join(', ')}`);
-  const generated = generateFor(ctx, providers);
+  // Bootstrap tooling FIRST (rtk, codegraph, impeccable) so the generated wrappers
+  // can reference tools that are actually present.
   bootstrapTools(ctx, { noTools: flags.has('--no-tools') });
+  const generated = generateFor(ctx, providers);
   log.step(`Done — ${generated.length} artifacts generated and gitignored.`);
   log.info('Edit the canonical docs in .agent/' + ctx.profile + '/ — wrappers regenerate on change.');
 }
