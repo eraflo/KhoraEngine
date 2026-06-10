@@ -381,7 +381,7 @@ impl GameWorld {
         &mut self,
         material: M,
     ) -> khora_data::ecs::MaterialRef {
-        khora_data::ecs::MaterialRef::Inline(Box::new(material))
+        khora_data::ecs::MaterialRef::inline(Box::new(material))
     }
 
     // ─────────────────────────────────────────────────────────────────────

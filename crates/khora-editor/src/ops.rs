@@ -440,7 +440,7 @@ mod tests {
             .get_component::<MaterialRef>(copy)
             .expect("copy should carry a MaterialRef");
         match copy_mat {
-            MaterialRef::Inline(material) => {
+            MaterialRef::Inline { material, .. } => {
                 assert_eq!(
                     material.base_color(),
                     khora_sdk::prelude::math::LinearRgba::new(0.2, 0.4, 0.6, 1.0),
@@ -462,10 +462,7 @@ mod tests {
             Transform::identity(),
             GlobalTransform::identity(),
             Name::new("Source"),
-            MeshRef::Procedural {
-                kind: ProceduralMeshKind::Sphere,
-                params: [0.75, 32.0, 16.0, 0.0],
-            },
+            MeshRef::procedural(ProceduralMeshKind::Sphere, [0.75, 32.0, 16.0, 0.0]),
         ));
 
         duplicate_entity(&mut world, original, &mut state);
@@ -476,10 +473,7 @@ mod tests {
             .expect("copy should carry a MeshRef");
         assert_eq!(
             copy_mesh,
-            &MeshRef::Procedural {
-                kind: ProceduralMeshKind::Sphere,
-                params: [0.75, 32.0, 16.0, 0.0],
-            }
+            &MeshRef::procedural(ProceduralMeshKind::Sphere, [0.75, 32.0, 16.0, 0.0])
         );
     }
 }

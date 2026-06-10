@@ -58,14 +58,26 @@ pub enum ProceduralMeshKind {
 /// The enum *is* the discriminator: `Procedural` carries the primitive kind
 /// and its generator parameters; `Asset` carries the stable UUID of an
 /// imported mesh in the VFS.
-#[derive(Debug, Clone, PartialEq, Encode, Decode, serde::Serialize, serde::Deserialize)]
+///
+/// Both arms carry an *identity UUID* — the content-derived UUID for
+/// `Procedural`, the stable asset UUID for `Asset`. The resolver compares this
+/// against the resolved handle's UUID every tick: a mismatch (or a missing
+/// handle) means the authored reference changed and must be re-resolved. The
+/// `Procedural` UUID is never serialized; it is recomputed from `kind` +
+/// `params` on deserialize via [`MeshRef::procedural`] so it stays purely
+/// content-derived. Construct `Procedural` through [`MeshRef::procedural`] so
+/// the UUID and the parameters can never disagree.
+#[derive(Debug, Clone, PartialEq)]
 pub enum MeshRef {
     /// Procedural primitive — rebuilt from `kind` + `params` by the resolver.
+    /// The `uuid` is content-derived; build via [`MeshRef::procedural`].
     Procedural {
         /// Which procedural primitive to regenerate.
         kind: ProceduralMeshKind,
         /// Generator parameters (kind-specific layout, padded with zeros).
         params: [f32; 4],
+        /// Content-derived identity UUID. Not serialized — recomputed on load.
+        uuid: AssetUUID,
     },
     /// Reference to an imported mesh asset in the VFS, resolved by UUID.
     Asset(AssetUUID),
@@ -74,11 +86,75 @@ pub enum MeshRef {
 impl crate::ecs::Component for MeshRef {}
 
 impl MeshRef {
+    /// Builds a `Procedural` reference, deriving its identity UUID from the
+    /// primitive `kind` discriminant plus the raw parameter bytes. Identical
+    /// procedural meshes get the same UUID, so they dedup to one resolved
+    /// handle (and one `GpuMesh`). This is the SAME content hash the GPU
+    /// projection keys on.
+    pub fn procedural(kind: ProceduralMeshKind, params: [f32; 4]) -> Self {
+        let mut key = Vec::with_capacity(1 + 16);
+        key.push(match kind {
+            ProceduralMeshKind::Cube => 0u8,
+            ProceduralMeshKind::Sphere => 1,
+            ProceduralMeshKind::Plane => 2,
+        });
+        for p in params {
+            key.extend_from_slice(&p.to_le_bytes());
+        }
+        let uuid = AssetUUID::new_v5(&blake3::hash(&key).to_hex());
+        Self::Procedural { kind, params, uuid }
+    }
+
+    /// Returns the identity UUID: the content-derived UUID for `Procedural`,
+    /// the stable asset UUID for `Asset`. The resolver compares this against the
+    /// resolved handle's UUID to detect an authored change.
+    pub fn uuid(&self) -> AssetUUID {
+        match self {
+            Self::Procedural { uuid, .. } => *uuid,
+            Self::Asset(uuid) => *uuid,
+        }
+    }
+
     /// A unit cube — the default authored mesh.
     pub fn unit_cube() -> Self {
-        Self::Procedural {
-            kind: ProceduralMeshKind::Cube,
-            params: [1.0, 0.0, 0.0, 0.0],
+        Self::procedural(ProceduralMeshKind::Cube, [1.0, 0.0, 0.0, 0.0])
+    }
+}
+
+/// On-disk form of a [`MeshRef`]. The `Procedural` arm omits the identity
+/// UUID — it is recomputed from `kind` + `params` on load via
+/// [`MeshRef::procedural`] so it always stays content-derived. The `Asset`
+/// arm round-trips its UUID verbatim.
+#[derive(Encode, Decode, serde::Serialize, serde::Deserialize)]
+enum SerializableMeshRef {
+    /// Procedural primitive parameters (UUID recomputed on load).
+    Procedural {
+        /// Which procedural primitive to regenerate.
+        kind: ProceduralMeshKind,
+        /// Generator parameters (kind-specific layout, padded with zeros).
+        params: [f32; 4],
+    },
+    /// VFS asset UUID, round-tripped unchanged.
+    Asset(AssetUUID),
+}
+
+impl From<&MeshRef> for SerializableMeshRef {
+    fn from(mesh_ref: &MeshRef) -> Self {
+        match mesh_ref {
+            MeshRef::Procedural { kind, params, .. } => Self::Procedural {
+                kind: *kind,
+                params: *params,
+            },
+            MeshRef::Asset(uuid) => Self::Asset(*uuid),
+        }
+    }
+}
+
+impl From<SerializableMeshRef> for MeshRef {
+    fn from(on_disk: SerializableMeshRef) -> Self {
+        match on_disk {
+            SerializableMeshRef::Procedural { kind, params } => Self::procedural(kind, params),
+            SerializableMeshRef::Asset(uuid) => Self::Asset(uuid),
         }
     }
 }
@@ -89,7 +165,8 @@ fn serialize_mesh_ref(
     entity: khora_core::ecs::entity::EntityId,
 ) -> Option<Vec<u8>> {
     let mesh_ref = world.get::<MeshRef>(entity)?;
-    bincode::encode_to_vec(mesh_ref, config::standard()).ok()
+    let on_disk = SerializableMeshRef::from(mesh_ref);
+    bincode::encode_to_vec(&on_disk, config::standard()).ok()
 }
 
 /// Reconstructs a `MeshRef` from recipe bytes and attaches it to `entity`.
@@ -98,21 +175,22 @@ fn deserialize_mesh_ref(
     entity: khora_core::ecs::entity::EntityId,
     data: &[u8],
 ) -> Result<(), String> {
-    let (mesh_ref, _): (MeshRef, _) =
+    let (on_disk, _): (SerializableMeshRef, _) =
         bincode::decode_from_slice(data, config::standard()).map_err(|e| e.to_string())?;
     world
-        .add_component(entity, mesh_ref)
+        .add_component(entity, MeshRef::from(on_disk))
         .map_err(|e| format!("{e:?}"))?;
     Ok(())
 }
 
-/// Editor JSON form — the `MeshRef` enum serialized directly.
+/// Editor JSON form — the on-disk `MeshRef` shape (UUID omitted for
+/// `Procedural`, recomputed on parse).
 fn mesh_ref_to_json(
     world: &crate::ecs::World,
     entity: khora_core::ecs::entity::EntityId,
 ) -> Option<serde_json::Value> {
     let mesh_ref = world.get::<MeshRef>(entity)?;
-    serde_json::to_value(mesh_ref).ok()
+    serde_json::to_value(SerializableMeshRef::from(mesh_ref)).ok()
 }
 
 /// Parses the editor JSON form back into a `MeshRef` and applies it.
@@ -121,7 +199,9 @@ fn mesh_ref_from_json(
     entity: khora_core::ecs::entity::EntityId,
     value: &serde_json::Value,
 ) -> Result<(), String> {
-    let mesh_ref: MeshRef = serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+    let on_disk: SerializableMeshRef =
+        serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+    let mesh_ref = MeshRef::from(on_disk);
     if !world.set_component(entity, mesh_ref.clone()) {
         world
             .add_component(entity, mesh_ref)
@@ -378,10 +458,10 @@ mod tests {
     #[test]
     fn procedural_mesh_ref_recipe_round_trip() {
         let mut src = World::new();
-        let entity = src.spawn(MeshRef::Procedural {
-            kind: ProceduralMeshKind::Sphere,
-            params: [0.75, 32.0, 16.0, 0.0],
-        });
+        let entity = src.spawn(MeshRef::procedural(
+            ProceduralMeshKind::Sphere,
+            [0.75, 32.0, 16.0, 0.0],
+        ));
 
         let reg = inventory::iter::<ComponentRegistration>
             .into_iter()
@@ -394,12 +474,10 @@ mod tests {
         (reg.deserialize_recipe)(&mut dst, new_entity, &bytes).expect("deserialize");
 
         let restored = dst.get::<MeshRef>(new_entity).expect("mesh ref restored");
+        // The recomputed identity UUID matches the original (content-derived).
         assert_eq!(
             restored,
-            &MeshRef::Procedural {
-                kind: ProceduralMeshKind::Sphere,
-                params: [0.75, 32.0, 16.0, 0.0],
-            }
+            &MeshRef::procedural(ProceduralMeshKind::Sphere, [0.75, 32.0, 16.0, 0.0])
         );
     }
 

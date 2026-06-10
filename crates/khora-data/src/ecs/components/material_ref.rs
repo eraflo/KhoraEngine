@@ -45,17 +45,67 @@ pub type MaterialHandle = HandleComponent<Box<dyn Material>>;
 ///
 /// The enum *is* the discriminator: `Inline` embeds the material value,
 /// `Asset` carries the stable UUID of a `.kmat` in the VFS.
+///
+/// Both arms carry an *identity UUID* — the content-derived UUID for `Inline`,
+/// the stable asset UUID for `Asset`. The resolver compares this identity
+/// against the resolved handle's UUID every tick: a mismatch (or a missing
+/// handle) means the authored reference changed and must be re-resolved. The
+/// `Inline` UUID is never serialized; it is recomputed from the material
+/// content on deserialize via [`MaterialRef::inline`] so it stays purely
+/// content-derived. Construct `Inline` through [`MaterialRef::inline`] so the
+/// UUID and the material value can never disagree.
 pub enum MaterialRef {
     /// Ad-hoc material data created in code or the editor, embedded inline.
-    Inline(Box<dyn Material>),
+    /// The `uuid` is content-derived; build via [`MaterialRef::inline`].
+    Inline {
+        /// The embedded material value.
+        material: Box<dyn Material>,
+        /// Content-derived identity UUID (the same content hash the GPU
+        /// projection keys on). Not serialized — recomputed on load.
+        uuid: AssetUUID,
+    },
     /// Reference to a `.kmat` asset in the VFS, resolved by UUID.
     Asset(AssetUUID),
+}
+
+impl MaterialRef {
+    /// Builds an `Inline` reference from a material value, deriving its identity
+    /// UUID from the material content. Two inline references holding equal
+    /// material content get the same UUID, so they dedup to one resolved handle
+    /// (and one `GpuMaterial`). On a serialization failure the UUID falls back
+    /// to a fresh random value (logged) rather than panicking.
+    pub fn inline(material: Box<dyn Material>) -> Self {
+        let uuid = match serialize_material_component(material.base_color(), &*material) {
+            Some(bytes) => AssetUUID::new_v5(&blake3::hash(&bytes).to_hex()),
+            None => {
+                log::error!(
+                    "MaterialRef::inline: failed to serialize material for identity UUID; \
+                     using a random UUID (this inline material will not dedup)."
+                );
+                AssetUUID::new()
+            }
+        };
+        Self::Inline { material, uuid }
+    }
+
+    /// Returns the identity UUID: the content-derived UUID for `Inline`, the
+    /// stable asset UUID for `Asset`. The resolver compares this against the
+    /// resolved handle's UUID to detect an authored change.
+    pub fn uuid(&self) -> AssetUUID {
+        match self {
+            Self::Inline { uuid, .. } => *uuid,
+            Self::Asset(uuid) => *uuid,
+        }
+    }
 }
 
 impl Clone for MaterialRef {
     fn clone(&self) -> Self {
         match self {
-            Self::Inline(mat) => Self::Inline(mat.clone_box()),
+            Self::Inline { material, uuid } => Self::Inline {
+                material: material.clone_box(),
+                uuid: *uuid,
+            },
             Self::Asset(uuid) => Self::Asset(*uuid),
         }
     }
@@ -82,8 +132,8 @@ fn serialize_material_ref(
 ) -> Option<Vec<u8>> {
     let mref = world.get::<MaterialRef>(entity)?;
     let on_disk = match mref {
-        MaterialRef::Inline(mat) => {
-            let bytes = serialize_material_component(mat.base_color(), &**mat)?;
+        MaterialRef::Inline { material, .. } => {
+            let bytes = serialize_material_component(material.base_color(), &**material)?;
             SerializableMaterialRef::Inline(bytes)
         }
         MaterialRef::Asset(uuid) => SerializableMaterialRef::Asset(*uuid),
@@ -102,7 +152,7 @@ fn deserialize_material_ref(
     let mref = match on_disk {
         SerializableMaterialRef::Inline(bytes) => {
             let (handle, _uuid) = deserialize_material_component(&bytes)?;
-            MaterialRef::Inline(handle.clone_box())
+            MaterialRef::inline(handle.clone_box())
         }
         SerializableMaterialRef::Asset(uuid) => MaterialRef::Asset(uuid),
     };
@@ -120,7 +170,7 @@ fn material_ref_to_json(
 ) -> Option<serde_json::Value> {
     let mref = world.get::<MaterialRef>(entity)?;
     match mref {
-        MaterialRef::Inline(mat) => material_to_json(&**mat),
+        MaterialRef::Inline { material, .. } => material_to_json(&**material),
         MaterialRef::Asset(uuid) => serde_json::to_value(uuid)
             .ok()
             .map(|uuid_json| serde_json::json!({ "asset": uuid_json })),
@@ -139,7 +189,7 @@ fn material_ref_from_json(
         MaterialRef::Asset(uuid)
     } else {
         let (handle, _uuid) = material_from_json(value)?;
-        MaterialRef::Inline(handle.clone_box())
+        MaterialRef::inline(handle.clone_box())
     };
     if !world.set_component(entity, mref.clone()) {
         world
@@ -159,7 +209,7 @@ inventory::submit! {
             world
                 .add_component(
                     entity,
-                    MaterialRef::Inline(Box::new(StandardMaterial::default())),
+                    MaterialRef::inline(Box::new(StandardMaterial::default())),
                 )
                 .map_err(|e| format!("{e:?}"))?;
             Ok(())

@@ -21,10 +21,9 @@
 #import khora::lighting::structs::{DirectionalLight, PointLight, SpotLight}
 #import khora::lighting::uniforms::lights
 #import khora::lighting::attenuation::{calculate_attenuation, calculate_spot_attenuation}
+#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard}
 #import khora::shadow::sample_2d::sample_shadow_pcf
 #import khora::shadow::sample_cube::sample_point_shadow
-
-const PI: f32 = 3.14159265359;
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
@@ -35,73 +34,6 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.normal = normalize((model.normal_matrix * vec4<f32>(input.normal, 0.0)).xyz);
     out.uv = input.uv;
     return out;
-}
-
-// Schlick approximation of the Fresnel term.
-fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
-    return f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - cos_theta, 5.0);
-}
-
-// GGX / Trowbridge-Reitz normal distribution.
-fn distribution_ggx(n: vec3<f32>, h: vec3<f32>, roughness: f32) -> f32 {
-    let a = roughness * roughness;
-    let a2 = a * a;
-    let n_dot_h = max(dot(n, h), 0.0);
-    let denom_inner = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
-    return a2 / (PI * denom_inner * denom_inner);
-}
-
-fn geometry_schlick_ggx(n_dot_v: f32, roughness: f32) -> f32 {
-    let r = roughness + 1.0;
-    let k = (r * r) / 8.0;
-    return n_dot_v / (n_dot_v * (1.0 - k) + k);
-}
-
-fn geometry_smith(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, roughness: f32) -> f32 {
-    let n_dot_v = max(dot(n, v), 0.0);
-    let n_dot_l = max(dot(n, l), 0.0);
-    return geometry_schlick_ggx(n_dot_v, roughness)
-        * geometry_schlick_ggx(n_dot_l, roughness);
-}
-
-// Cook-Torrance BRDF contribution for a single light, multiplied by
-// `n_dot_l * radiance`. `albedo` is the base color, `metallic` and
-// `roughness` come from the material. `radiance` is `light.color *
-// light.intensity * attenuation`.
-fn cook_torrance(
-    n: vec3<f32>,
-    v: vec3<f32>,
-    l: vec3<f32>,
-    albedo: vec3<f32>,
-    metallic: f32,
-    roughness: f32,
-    radiance: vec3<f32>,
-) -> vec3<f32> {
-    let h = normalize(v + l);
-    let n_dot_l = max(dot(n, l), 0.0);
-    if (n_dot_l <= 0.0) {
-        return vec3<f32>(0.0);
-    }
-
-    // F0 = 0.04 for dielectrics, lerps to albedo for metals.
-    var f0 = vec3<f32>(0.04);
-    f0 = mix(f0, albedo, metallic);
-
-    let ndf = distribution_ggx(n, h, roughness);
-    let g = geometry_smith(n, v, l, roughness);
-    let f = fresnel_schlick(max(dot(h, v), 0.0), f0);
-
-    let numerator = ndf * g * f;
-    let denominator = 4.0 * max(dot(n, v), 0.0) * n_dot_l + 0.001;
-    let specular = numerator / denominator;
-
-    // Energy conservation: diffuse is the complement of the reflected
-    // fraction, scaled by `1 - metallic` because metals have no diffuse.
-    let k_s = f;
-    let k_d = (vec3<f32>(1.0) - k_s) * (1.0 - metallic);
-    let diffuse = k_d * albedo / PI;
-
-    return (diffuse + specular) * radiance * n_dot_l;
 }
 
 fn calculate_directional_lights(
@@ -222,9 +154,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     color += calculate_spot_lights(input.world_position, n, v, albedo, metallic, roughness);
     color += material.emissive * sample_emissive(input.uv);
 
-    // Reinhard tone-map + gamma.
-    color = color / (color + vec3<f32>(1.0));
-    color = pow(color, vec3<f32>(1.0 / 2.2));
+    color = tonemap_reinhard(color);
 
     return vec4<f32>(color, material.base_color.a * base.a);
 }

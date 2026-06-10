@@ -151,10 +151,7 @@ impl<'a> Vessel<'a> {
 /// the plane geometry and mints the runtime `HandleComponent<Mesh>` before the
 /// GPU mesh projection runs.
 pub fn spawn_plane<'a>(world: &'a mut GameWorld, size: f32, y: f32) -> Vessel<'a> {
-    let mesh_ref = MeshRef::Procedural {
-        kind: ProceduralMeshKind::Plane,
-        params: [size, y, 0.0, 0.0],
-    };
+    let mesh_ref = MeshRef::procedural(ProceduralMeshKind::Plane, [size, y, 0.0, 0.0]);
     Vessel::new(world).with_component(mesh_ref)
 }
 
@@ -163,10 +160,7 @@ pub fn spawn_plane<'a>(world: &'a mut GameWorld, size: f32, y: f32) -> Vessel<'a
 /// Attaches an authored [`MeshRef::Procedural`]; see [`spawn_plane`] for the
 /// resolution flow.
 pub fn spawn_cube_at<'a>(world: &'a mut GameWorld, position: Vec3, size: f32) -> Vessel<'a> {
-    let mesh_ref = MeshRef::Procedural {
-        kind: ProceduralMeshKind::Cube,
-        params: [size, 0.0, 0.0, 0.0],
-    };
+    let mesh_ref = MeshRef::procedural(ProceduralMeshKind::Cube, [size, 0.0, 0.0, 0.0]);
     Vessel::at(world, position).with_component(mesh_ref)
 }
 
@@ -180,9 +174,9 @@ pub fn spawn_sphere<'a>(
     segments: u32,
     rings: u32,
 ) -> Vessel<'a> {
-    let mesh_ref = MeshRef::Procedural {
-        kind: ProceduralMeshKind::Sphere,
-        params: [radius, segments as f32, rings as f32, 0.0],
-    };
+    let mesh_ref = MeshRef::procedural(
+        ProceduralMeshKind::Sphere,
+        [radius, segments as f32, rings as f32, 0.0],
+    );
     Vessel::new(world).with_component(mesh_ref)
 }

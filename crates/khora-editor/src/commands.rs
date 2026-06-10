@@ -567,7 +567,7 @@ pub fn process_pending_save_as_material(
             }
         };
         let material = match mref {
-            MaterialRef::Inline(material) => material,
+            MaterialRef::Inline { material, .. } => material,
             MaterialRef::Asset(_) => {
                 log::warn!(
                     "Save material: entity {:?} already references a .kmat asset",

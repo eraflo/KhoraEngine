@@ -1,6 +1,11 @@
-// Forward+ pipeline — tile-based light lookup with Blinn-Phong shading
-// and full shadow sampling: 2D atlas for directional / spot, cube atlas
-// for point lights.
+// Forward+ pipeline — tile-based light lookup with the shared Cook-Torrance
+// PBR BRDF and full shadow sampling: 2D atlas for directional / spot, cube
+// atlas for point lights.
+//
+// The BRDF (`khora::lighting::pbr`) and the output tone-map are shared with
+// `standard_pbr` and `lit_forward`, so the three lit lanes render the same
+// image — this lane differs only in iterating just the lights its tile's
+// culling list selected.
 //
 // Bind-group layout — the engine's canonical 4-group render convention
 // (see .agent/conventions.md). Group 3 is the *lighting domain*: it
@@ -24,13 +29,13 @@
 #import khora::std::camera::camera
 #import khora::std::model::model
 #import khora::std::material::material
-#import khora::std::material_textures::{sample_albedo, sample_emissive}
+#import khora::std::material_textures::{sample_albedo, sample_metallic_roughness, sample_emissive}
 #ifdef HAS_NORMAL_MAP
 #import khora::std::material_textures::apply_normal_map
 #endif
 #import khora::std::vertex::{VertexInput, VertexOutput}
 #import khora::lighting::attenuation::{calculate_attenuation, calculate_spot_attenuation}
-#import khora::lighting::blinn_phong::blinn_phong
+#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard}
 #import khora::shadow::sample_2d::sample_shadow_pcf
 #import khora::shadow::sample_cube::sample_point_shadow_params
 
@@ -97,12 +102,14 @@ fn calculate_light_contribution(
     world_position: vec3<f32>,
     N: vec3<f32>,
     V: vec3<f32>,
-    diffuse_color: vec3<f32>,
-    specular_power: f32,
+    albedo: vec3<f32>,
+    metallic: f32,
+    roughness: f32,
 ) -> vec3<f32> {
     if (light.light_type == 0u) {
         let L = -normalize(light.direction);
-        return blinn_phong(N, V, L, light.color, light.intensity, diffuse_color, specular_power);
+        let radiance = light.color * light.intensity;
+        return cook_torrance(N, V, L, albedo, metallic, roughness, radiance);
     }
 
     let light_vec = light.position - world_position;
@@ -127,12 +134,19 @@ fn calculate_light_contribution(
         return vec3<f32>(0.0);
     }
 
-    return blinn_phong(N, V, L, light.color, light.intensity * attenuation, diffuse_color, specular_power);
+    let radiance = light.color * light.intensity * attenuation;
+    return cook_torrance(N, V, L, albedo, metallic, roughness, radiance);
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let base = sample_albedo(input.uv);
+    let albedo = material.base_color.rgb * base.rgb;
+    // glTF metallic-roughness texture × scalar factors (white fallback ⇒
+    // factors pass through).
+    let mr = sample_metallic_roughness(input.uv);
+    let metallic = clamp(material.pbr_factors.x * mr.x, 0.0, 1.0);
+    let roughness = clamp(material.pbr_factors.y * mr.y, 0.05, 1.0);
     let geometric_normal = normalize(input.normal);
 #ifdef HAS_NORMAL_MAP
     let N = apply_normal_map(geometric_normal, input.world_position, input.uv);
@@ -140,7 +154,6 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let N = geometric_normal;
 #endif
     let V = normalize(camera.camera_position.xyz - input.world_position);
-    let diffuse_color = material.base_color.rgb * base.rgb;
 
     let tile_x = u32(input.clip_position.x) / tile_info.tile_size;
     let tile_y = u32(input.clip_position.y) / tile_info.tile_size;
@@ -149,7 +162,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let light_offset = light_grid[tile_index * 2u];
     let light_count = light_grid[tile_index * 2u + 1u];
 
-    var final_color = material.ambient * diffuse_color;
+    var final_color = material.ambient * albedo;
     for (var i = 0u; i < light_count; i++) {
         let light_index = light_indices[light_offset + i];
         let light = lights[light_index];
@@ -186,14 +199,14 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             light,
             input.world_position,
             N, V,
-            diffuse_color,
-            material.specular_power,
+            albedo,
+            metallic,
+            roughness,
         ) * shadow_factor;
     }
 
     final_color += material.emissive * sample_emissive(input.uv);
-    final_color = final_color / (final_color + vec3<f32>(1.0));
-    final_color = pow(final_color, vec3<f32>(1.0 / 2.2));
+    final_color = tonemap_reinhard(final_color);
 
     return vec4<f32>(final_color, material.base_color.a * base.a);
 }

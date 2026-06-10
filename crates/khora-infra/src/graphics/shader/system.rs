@@ -81,8 +81,8 @@ const LIB_MODULES: &[(&str, &str)] = &[
         include_str!("shaders/lib/lighting/attenuation.wgsl"),
     ),
     (
-        "khora::lighting::blinn_phong",
-        include_str!("shaders/lib/lighting/blinn_phong.wgsl"),
+        "khora::lighting::pbr",
+        include_str!("shaders/lib/lighting/pbr.wgsl"),
     ),
     (
         "khora::shadow::bindings",

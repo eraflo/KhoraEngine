@@ -284,7 +284,7 @@ mod tests {
     /// Wraps a concrete material in an inline `MaterialRef` the way the SDK /
     /// editor do — the authored, serialized material reference.
     fn material_component<M: Material + 'static>(material: M) -> MaterialRef {
-        MaterialRef::Inline(Box::new(material))
+        MaterialRef::inline(Box::new(material))
     }
 
     /// The `EditorInterchange` goal selects the Recipe strategy, so exercising
@@ -314,7 +314,7 @@ mod tests {
             .iter_entities()
             .find_map(|e| dst.get::<MaterialRef>(e))
             .expect("material ref should survive the round trip");
-        let MaterialRef::Inline(material) = restored else {
+        let MaterialRef::Inline { material, .. } = restored else {
             panic!("expected an inline material ref");
         };
         let standard = material
@@ -350,7 +350,7 @@ mod tests {
             .iter_entities()
             .find_map(|e| dst.get::<MaterialRef>(e))
             .expect("material ref should survive the round trip");
-        let MaterialRef::Inline(material) = restored else {
+        let MaterialRef::Inline { material, .. } = restored else {
             panic!("expected an inline material ref");
         };
         let emissive = material
