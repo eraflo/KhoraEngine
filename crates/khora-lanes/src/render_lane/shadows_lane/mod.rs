@@ -18,9 +18,10 @@
 //! quality strategy**, all implementing the same shadow domain:
 //!
 //! - [`StandardShadowsLane`] — full quality (2048² atlas + 512² cube)
-//! - [`LowResShadowsLane`]   — same algorithm, smaller atlases (512² + 128²)
+//! - [`MediumShadowsLane`]   — same algorithm, half resolution (1024² + 256²)
+//! - [`LowResShadowsLane`]   — same algorithm, quarter resolution (512² + 128²)
 //!
-//! Both produce identical output types (`ShadowGpuBindings` +
+//! All produce identical output types (`ShadowGpuBindings` +
 //! `ShadowEntries`); lit consumer lanes never need to know which one
 //! ran. The agent picks one per frame via `apply_budget`.
 //!
@@ -30,9 +31,11 @@
 
 pub mod algo;
 mod low_res;
+mod medium;
 mod standard;
 
 pub use low_res::{LowResShadowsLane, STRATEGY_NAME as LOW_RES_STRATEGY_NAME};
+pub use medium::{MediumShadowsLane, STRATEGY_NAME as MEDIUM_STRATEGY_NAME};
 pub use standard::{StandardShadowsLane, STRATEGY_NAME as STANDARD_STRATEGY_NAME};
 
 use khora_core::lane::{LaneContext, LaneError, Ref, Slot};

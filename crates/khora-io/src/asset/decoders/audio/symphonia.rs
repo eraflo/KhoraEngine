@@ -63,6 +63,10 @@ impl AssetDecoder<SoundData> for SymphoniaDecoder {
         let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts)?;
 
         let mut all_samples = Vec::<f32>::new();
+        // A corrupt stream can fail to decode on every packet; warn once on the
+        // first failure (with debug! for the rest) and summarise the total after
+        // the loop so a bad file cannot flood the log.
+        let mut decode_errors: u64 = 0;
 
         loop {
             match format_reader.next_packet() {
@@ -81,7 +85,12 @@ impl AssetDecoder<SoundData> for SymphoniaDecoder {
                             all_samples.extend_from_slice(sample_buf.samples());
                         }
                         Err(e) => {
-                            eprintln!("Decode error: {}", e);
+                            if decode_errors == 0 {
+                                log::warn!("Audio packet decode error: {e}");
+                            } else {
+                                log::debug!("Audio packet decode error: {e}");
+                            }
+                            decode_errors += 1;
                         }
                     }
                 }
@@ -92,6 +101,10 @@ impl AssetDecoder<SoundData> for SymphoniaDecoder {
                     return Err(Box::new(e));
                 }
             }
+        }
+
+        if decode_errors > 1 {
+            log::warn!("Audio decoding skipped {decode_errors} corrupt packets in total");
         }
 
         Ok(SoundData {

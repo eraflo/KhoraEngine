@@ -19,13 +19,15 @@
 //! strategies as separate lanes; per-frame it selects **one** lane based
 //! on the budget GORNA assigned via `apply_budget`.
 //!
-//! Strategies (M1):
+//! Strategies:
 //!
 //! - [`StandardShadowsLane`] — full quality, 2048² 2D atlas + 512² cube atlas.
-//! - [`LowResShadowsLane`] — same algorithm, smaller atlases (512² + 128²)
+//! - [`MediumShadowsLane`] — same algorithm, half resolution (1024² + 256²),
+//!   the `Balanced` middle rung.
+//! - [`LowResShadowsLane`] — same algorithm, quarter resolution (512² + 128²)
 //!   for tight time / VRAM budgets.
 //!
-//! Both produce the same `ShadowGpuBindings` + `ShadowEntries` contract;
+//! All produce the same `ShadowGpuBindings` + `ShadowEntries` contract;
 //! lit consumer lanes are agnostic about which one ran.
 
 use std::sync::Arc;
@@ -43,8 +45,10 @@ use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 use khora_data::render::RenderWorld;
 use khora_data::AssetStore;
-use khora_lanes::render_lane::shadows_lane::{LOW_RES_STRATEGY_NAME, STANDARD_STRATEGY_NAME};
-use khora_lanes::render_lane::{LowResShadowsLane, StandardShadowsLane};
+use khora_lanes::render_lane::shadows_lane::{
+    LOW_RES_STRATEGY_NAME, MEDIUM_STRATEGY_NAME, STANDARD_STRATEGY_NAME,
+};
+use khora_lanes::render_lane::{LowResShadowsLane, MediumShadowsLane, StandardShadowsLane};
 
 const COST_TO_MS_SCALE: f32 = 5.0;
 
@@ -58,7 +62,10 @@ pub enum ShadowStrategy {
     /// Full-quality pipeline: 2048² × 4-layer 2D atlas + 512² × 4-cube
     /// cube atlas. Maps to [`StandardShadowsLane`].
     Standard,
-    /// Same algorithm, smaller atlases (512² × 4-layer + 128² × 4-cube).
+    /// Half resolution (1024² × 4-layer + 256² × 4-cube) — the `Balanced`
+    /// middle rung. Maps to [`MediumShadowsLane`].
+    Medium,
+    /// Quarter resolution (512² × 4-layer + 128² × 4-cube).
     /// Maps to [`LowResShadowsLane`].
     LowRes,
 }
@@ -68,14 +75,18 @@ impl ShadowStrategy {
     pub fn lane_name(self) -> &'static str {
         match self {
             ShadowStrategy::Standard => STANDARD_STRATEGY_NAME,
+            ShadowStrategy::Medium => MEDIUM_STRATEGY_NAME,
             ShadowStrategy::LowRes => LOW_RES_STRATEGY_NAME,
         }
     }
 
     /// Maps a GORNA-issued [`StrategyId`] onto a concrete shadow strategy.
+    /// Each tier gets a genuinely different pipeline so budget changes are
+    /// observable in quality and cost.
     fn from_strategy_id(id: StrategyId) -> Self {
         match id {
-            StrategyId::HighPerformance | StrategyId::Balanced => ShadowStrategy::Standard,
+            StrategyId::HighPerformance => ShadowStrategy::Standard,
+            StrategyId::Balanced => ShadowStrategy::Medium,
             StrategyId::LowPower => ShadowStrategy::LowRes,
             StrategyId::Custom(_) => ShadowStrategy::Standard,
         }
@@ -118,41 +129,52 @@ impl Agent for ShadowAgent {
         let mut ctx = LaneContext::new();
         ctx.insert(Ref::new(&stub_world));
 
-        let std_cost = self
-            .lanes
-            .get(STANDARD_STRATEGY_NAME)
-            .map(|lane| lane.estimate_cost(&ctx))
-            .unwrap_or(1.0);
-        let std_time = Duration::from_secs_f32((std_cost * COST_TO_MS_SCALE).max(0.1) / 1000.0);
+        let lane_time = |name: &str, default_cost: f32| {
+            let cost = self
+                .lanes
+                .get(name)
+                .map(|lane| lane.estimate_cost(&ctx))
+                .unwrap_or(default_cost);
+            Duration::from_secs_f32((cost * COST_TO_MS_SCALE).max(0.1) / 1000.0)
+        };
 
-        // Atlas2D (2048² × 4 layers) + AtlasCube (512² × 24 layers) at
-        // Depth32Float ≈ 64 MB + 24 MB.
+        // Per-tier VRAM at Depth32Float: 2D atlas (res² × 4 layers × 4B) +
+        // cube atlas (face² × 24 layers × 4B).
+        //   Standard: 64 + 24 MiB · Medium: 16 + 6 MiB · LowRes: 4 + 1.5 MiB
         let std_vram = (64 + 24) * 1024 * 1024_u64;
+        let med_vram = (16 + 6) * 1024 * 1024_u64;
+        let low_vram = 4 * 1024 * 1024 + 3 * 512 * 1024_u64;
+
+        let fits = |vram: u64| {
+            request
+                .constraints
+                .max_vram_bytes
+                .map(|max| vram <= max)
+                .unwrap_or(true)
+        };
 
         let mut strategies = Vec::new();
-        let fits_std = request
-            .constraints
-            .max_vram_bytes
-            .map(|max| std_vram <= max)
-            .unwrap_or(true);
-        if fits_std {
+        if fits(std_vram) {
             strategies.push(StrategyOption {
                 id: StrategyId::HighPerformance,
-                estimated_time: std_time,
-                estimated_vram: std_vram,
-            });
-            strategies.push(StrategyOption {
-                id: StrategyId::Balanced,
-                estimated_time: std_time,
+                estimated_time: lane_time(STANDARD_STRATEGY_NAME, 1.0),
                 estimated_vram: std_vram,
             });
         }
+        if fits(med_vram) {
+            strategies.push(StrategyOption {
+                id: StrategyId::Balanced,
+                estimated_time: lane_time(MEDIUM_STRATEGY_NAME, 0.75),
+                estimated_vram: med_vram,
+            });
+        }
 
-        // Budget pipeline always fits — no atlas, no GPU work.
+        // LowRes is always offered so the agent never returns an empty
+        // strategy set — it is the floor GORNA can fall back to.
         strategies.push(StrategyOption {
             id: StrategyId::LowPower,
-            estimated_time: Duration::from_micros(50),
-            estimated_vram: 0,
+            estimated_time: lane_time(LOW_RES_STRATEGY_NAME, 0.5),
+            estimated_vram: low_vram,
         });
 
         NegotiationResponse {
@@ -336,6 +358,7 @@ impl Default for ShadowAgent {
     fn default() -> Self {
         let mut lanes = LaneRegistry::new();
         lanes.register(Box::new(StandardShadowsLane::default()));
+        lanes.register(Box::new(MediumShadowsLane::default()));
         lanes.register(Box::new(LowResShadowsLane::default()));
 
         Self {
@@ -376,14 +399,18 @@ mod tests {
     }
 
     #[test]
-    fn from_strategy_id_maps_balanced_and_high_to_standard() {
-        assert_eq!(
-            ShadowStrategy::from_strategy_id(StrategyId::Balanced),
-            ShadowStrategy::Standard
-        );
+    fn from_strategy_id_maps_each_tier_to_a_distinct_strategy() {
         assert_eq!(
             ShadowStrategy::from_strategy_id(StrategyId::HighPerformance),
             ShadowStrategy::Standard
+        );
+        assert_eq!(
+            ShadowStrategy::from_strategy_id(StrategyId::Balanced),
+            ShadowStrategy::Medium
+        );
+        assert_eq!(
+            ShadowStrategy::from_strategy_id(StrategyId::LowPower),
+            ShadowStrategy::LowRes
         );
     }
 
@@ -409,16 +436,68 @@ mod tests {
     }
 
     #[test]
-    fn apply_budget_balanced_selects_standard_lane() {
+    fn apply_budget_balanced_selects_medium_lane() {
         let mut agent = ShadowAgent::default();
         agent.apply_budget(budget(StrategyId::Balanced));
-        assert_eq!(agent.strategy, ShadowStrategy::Standard);
+        assert_eq!(agent.strategy, ShadowStrategy::Medium);
+        assert_eq!(agent.strategy.lane_name(), MEDIUM_STRATEGY_NAME);
     }
 
     #[test]
     fn registered_lanes_match_strategy_names() {
         let agent = ShadowAgent::default();
         assert!(agent.lanes.get(STANDARD_STRATEGY_NAME).is_some());
+        assert!(agent.lanes.get(MEDIUM_STRATEGY_NAME).is_some());
         assert!(agent.lanes.get(LOW_RES_STRATEGY_NAME).is_some());
+    }
+
+    #[test]
+    fn negotiate_offers_three_distinct_tiers() {
+        let mut agent = ShadowAgent::default();
+        let response = agent.negotiate(NegotiationRequest {
+            target_latency: Duration::from_millis(16),
+            priority_weight: 1.0,
+            constraints: Default::default(),
+            current_mode: khora_core::agent::mode::EngineMode::Playing,
+            agent_timing: agent.execution_timing(),
+        });
+
+        let ids: Vec<StrategyId> = response.strategies.iter().map(|s| s.id).collect();
+        assert!(ids.contains(&StrategyId::HighPerformance));
+        assert!(ids.contains(&StrategyId::Balanced));
+        assert!(ids.contains(&StrategyId::LowPower));
+
+        // VRAM quotes must be strictly decreasing across the tiers — three
+        // genuinely different pipelines, not relabeled copies.
+        let vram = |id: StrategyId| {
+            response
+                .strategies
+                .iter()
+                .find(|s| s.id == id)
+                .map(|s| s.estimated_vram)
+                .unwrap()
+        };
+        assert!(vram(StrategyId::HighPerformance) > vram(StrategyId::Balanced));
+        assert!(vram(StrategyId::Balanced) > vram(StrategyId::LowPower));
+        assert!(vram(StrategyId::LowPower) > 0, "LowRes still has real atlases");
+    }
+
+    #[test]
+    fn negotiate_under_vram_pressure_drops_expensive_tiers() {
+        let mut agent = ShadowAgent::default();
+        let response = agent.negotiate(NegotiationRequest {
+            target_latency: Duration::from_millis(16),
+            priority_weight: 1.0,
+            constraints: khora_core::control::gorna::ResourceConstraints {
+                // Below Medium's 22 MiB but above LowRes's ~5.5 MiB.
+                max_vram_bytes: Some(8 * 1024 * 1024),
+                ..Default::default()
+            },
+            current_mode: khora_core::agent::mode::EngineMode::Playing,
+            agent_timing: agent.execution_timing(),
+        });
+
+        let ids: Vec<StrategyId> = response.strategies.iter().map(|s| s.id).collect();
+        assert_eq!(ids, vec![StrategyId::LowPower]);
     }
 }

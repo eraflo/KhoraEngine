@@ -481,7 +481,15 @@ impl<A: EngineApp> EngineCore<A> {
                 true
             }
             Err(e) => {
-                log::error!("EngineCore: begin_frame failed: {}", e);
+                // Fatal device errors (lost / out-of-memory) are surfaced loudly
+                // so the host can decide to tear down; transient acquisition
+                // skips (minimized window, surface reconfigure, timeout) are
+                // expected and logged at debug to avoid per-frame spam.
+                if e.is_fatal() {
+                    log::error!("EngineCore: begin_frame fatal error: {}", e);
+                } else {
+                    log::debug!("EngineCore: begin_frame skipped this frame: {}", e);
+                }
                 false
             }
         }
@@ -536,7 +544,11 @@ impl<A: EngineApp> EngineCore<A> {
         if let Some(rs) = &render_system {
             if let Ok(mut guard) = rs.lock() {
                 if let Err(e) = guard.end_frame() {
-                    log::error!("EngineCore: end_frame failed: {}", e);
+                    if e.is_fatal() {
+                        log::error!("EngineCore: end_frame fatal error: {}", e);
+                    } else {
+                        log::debug!("EngineCore: end_frame skipped this frame: {}", e);
+                    }
                 }
             }
         }

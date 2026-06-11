@@ -130,6 +130,8 @@ Domains let query planners pre-filter pages: a render extraction query with a `R
 
 Components self-register with the `Registry` at startup: each type tagged `#[component(domain = X)]` submits an entry (via `inventory`) that `World::new` replays. The registry is the source of truth for domain assignment, serialization metadata, and component identity.
 
+**Change epochs.** The `World` also keeps a monotonic change counter ("epoch") per domain, bumped in O(1) by every mutation entry point that can affect the domain's *semantic* content — spawn/despawn, component insert/remove, `get_mut`, mutable query construction, deserialization, and compaction that reorders rows. Equal epochs across two reads guarantee the domain's data (and its query iteration order) is unchanged; a different value only means "possibly changed" — bumps are conservative, so over-bumping is harmless while a missed bump would mean stale consumers. Representation-only changes (an AGDF layout choice) do **not** bump. Read it via `World::domain_epoch(domain)`, and pair it with `World::instance_id()` so epochs from two different `World` instances never compare equal. The first consumer is Flow view caching — see [AGDF](./20_agdf.md).
+
 ## 07 — Queries
 
 Queries are type-safe and use a planner for optimal execution:

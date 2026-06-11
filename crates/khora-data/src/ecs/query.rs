@@ -44,6 +44,14 @@ pub trait WorldQuery {
         Vec::new()
     }
 
+    /// Returns the `TypeId`s of the components this query accesses **mutably**
+    /// (`&mut T` / `Option<&mut T>` terms). [`World::query_mut`] uses this to
+    /// mark the matching domains changed once per query construction.
+    /// Read-only terms and filters return nothing (the default).
+    fn mutable_type_ids() -> Vec<TypeId> {
+        Vec::new()
+    }
+
     /// Fetches the query's item from a specific row in a `ComponentPage`.
     ///
     /// # Safety
@@ -127,6 +135,10 @@ impl<T: Component> WorldQuery for &mut T {
         vec![TypeId::of::<T>()]
     }
 
+    fn mutable_type_ids() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
+
     /// Fetches a mutable reference to the component `T` from the specified row.
     ///
     /// # Safety
@@ -206,6 +218,10 @@ impl<T: Component> WorldQuery for Option<&mut T> {
         Vec::new()
     }
 
+    fn mutable_type_ids() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
+
     unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
         let page = &mut *(page_ptr as *mut ComponentPage);
         let column = page.columns.get_mut(&TypeId::of::<T>())?;
@@ -255,6 +271,14 @@ macro_rules! impl_query_tuple {
                 $(ids.extend($Q::without_type_ids());)*
                 ids.sort();
                 ids.dedup(); // Ensure unique TypeIds for canonical signature
+                ids
+            }
+
+            fn mutable_type_ids() -> Vec<TypeId> {
+                let mut ids = Vec::new();
+                $(ids.extend($Q::mutable_type_ids());)*
+                ids.sort();
+                ids.dedup();
                 ids
             }
 
@@ -429,8 +453,10 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                 return None; // No more pages, iteration is finished.
             }
 
-            // Unsafe block because we are dereferencing a raw pointer.
-            // This is safe because the `Query` is only created from a valid `World` reference.
+            // SAFETY: `world_ptr` was obtained from the `&'a World` passed to
+            // `Query::new`, and the borrow checker holds that shared borrow alive
+            // for `'a` via `_phantom`. No `&mut World` can exist concurrently, so
+            // reborrowing it as `&World` here is sound.
             let world = unsafe { &*self.world_ptr };
 
             // 2. Get the current page.
@@ -439,10 +465,11 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
 
             // 3. Check if there are rows left in the current page.
             if self.current_row_index < page.row_count() {
-                let item = unsafe {
-                    // Safe because the page signature matches the query requirements.
-                    Q::fetch(page as *const _, self.current_row_index)
-                };
+                // SAFETY: `page` lives in `world`, which is borrowed for `'a`, and
+                // `matching_page_indices` only contains pages whose signature
+                // satisfies `Q`, so every column `Q::fetch` reads is present.
+                // `current_row_index < page.row_count()` keeps the row in bounds.
+                let item = unsafe { Q::fetch(page as *const _, self.current_row_index) };
 
                 // Advance the row index for the next call.
                 self.current_row_index += 1;
@@ -463,6 +490,9 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                 return None;
             }
 
+            // SAFETY: same invariant as `next_native` — `world_ptr` came from the
+            // `&'a World` given to `Query::new` and that shared borrow is kept
+            // alive for `'a`, so no aliasing `&mut World` exists.
             let world = unsafe { &*self.world_ptr };
             let page_id = self.matching_page_indices[self.current_page_index];
             let page = &world.storage.pages[page_id as usize];
@@ -480,7 +510,9 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                     }
                 }
 
-                // Attempt to fetch the Full item (driver + peers) from the world.
+                // SAFETY: `world` is a valid `&World` borrowed for `'a` (see the
+                // deref above); `fetch_from_world` only reads peer columns through
+                // it for an entity that exists in the driver page.
                 if let Some(item) = unsafe { Q::fetch_from_world(world as *const _, entity_id) } {
                     return Some(item);
                 }
@@ -527,6 +559,9 @@ impl<T: Component> WorldQuery for Without<T> {
         world: *const World,
         entity_id: EntityId,
     ) -> Option<Self::Item<'a>> {
+        // SAFETY: `fetch_from_world` is an `unsafe fn` whose contract requires
+        // `world` to point to a `World` valid for `'a`; the `Query`/`QueryMut`
+        // callers always pass a pointer derived from their live borrow.
         let world = unsafe { &*world };
         let metadata = world.entities.get(entity_id.index as usize)?.1.as_ref()?;
 
@@ -600,7 +635,11 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                 return None;
             }
 
-            // SAFETY: `world_ptr` is guaranteed to be valid for the lifetime 'a.
+            // SAFETY: `world_ptr` came from the `&'a mut World` passed to
+            // `QueryMut::new`; that exclusive borrow is held for `'a` (via
+            // `_phantom`), so no other reference to the `World` can be observed
+            // while this reborrow lives. Each `next` call drops its `&mut World`
+            // before returning, so reborrows never overlap.
             let world = unsafe { &mut *self.world_ptr };
             let page_id = self.matching_page_indices[self.current_page_index] as usize;
 
@@ -609,6 +648,10 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             let page = &mut world.storage.pages[page_id];
 
             if self.current_row_index < page.row_count() {
+                // SAFETY: `page` is borrowed from the exclusively-held `world`;
+                // `matching_page_indices` only lists pages matching `Q`, so the
+                // columns `Q::fetch` reads (and mutably aliases for `&mut`
+                // queries) are present, and the row index is in bounds.
                 let item = unsafe { Q::fetch(page as *mut _ as *const _, self.current_row_index) };
 
                 self.current_row_index += 1;
@@ -626,7 +669,10 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                 return None;
             }
 
-            // Get the current page.
+            // SAFETY: same invariant as `next_native` — `world_ptr` came from the
+            // `&'a mut World` given to `QueryMut::new`, that exclusive borrow is
+            // held for `'a`, and each `next` call drops its reborrow before
+            // returning, so no two `&mut World` reborrows overlap.
             let world = unsafe { &mut *self.world_ptr };
             let page_id = self.matching_page_indices[self.current_page_index] as usize;
             let page = &mut world.storage.pages[page_id];
@@ -643,7 +689,9 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                     }
                 }
 
-                // Attempt to fetch the Full item (driver + peers) from the world.
+                // SAFETY: `world` is the exclusively-borrowed `&mut World` reborrowed
+                // above; passing it as `*const World` to `fetch_from_world` only reads
+                // peer columns for an entity that exists in the driver page.
                 if let Some(item) = unsafe { Q::fetch_from_world(world as *const _, entity_id) } {
                     return Some(item);
                 }

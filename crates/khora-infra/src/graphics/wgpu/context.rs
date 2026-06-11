@@ -15,9 +15,12 @@
 use anyhow::anyhow;
 use anyhow::Result;
 use khora_core::platform::window::KhoraWindowHandle;
+use std::sync::Arc;
 use wgpu::SurfaceTargetUnsafe;
 use wgpu::{Adapter, Features, Instance};
 use winit::dpi::PhysicalSize;
+
+use super::resilience::GpuHealth;
 
 /// Holds the core WGPU state objects required for rendering.
 /// This structure manages the connection to the graphics API for a specific surface.
@@ -40,6 +43,12 @@ pub struct WgpuGraphicsContext {
     pub active_device_features: wgpu::Features,
     #[allow(dead_code)]
     pub device_limits: wgpu::Limits,
+
+    /// Lock-free device-health flags raised by the wgpu error callbacks
+    /// (uncaptured-error and device-lost). The render system reads these once
+    /// per frame to decide whether the device is still usable. Shared by Arc so
+    /// the callback closures can outlive any single borrow of the context.
+    pub(crate) health: Arc<GpuHealth>,
 }
 
 impl WgpuGraphicsContext {
@@ -62,11 +71,23 @@ impl WgpuGraphicsContext {
         log::info!("Initializing WGPU Graphics Context with pre-selected adapter...");
 
         // --- 1. Create Surface ---
+        // SAFETY: `from_window` reads the raw window/display handles out of
+        // `window_handle`. `KhoraWindowHandle` is an
+        // `Arc<dyn WindowHandle + Send + Sync + 'static>`, so the underlying
+        // window outlives the borrow taken here and the handles it exposes are
+        // valid for the call. We pass a borrow, so ownership is unaffected.
         let surface_target = unsafe {
             SurfaceTargetUnsafe::from_window(&window_handle)
                 .map_err(|e| anyhow!("Failed to create surface target: {}", e))?
         };
 
+        // SAFETY: `surface_target` carries raw handles whose validity wgpu
+        // cannot verify, which is why this is the `_unsafe` variant. The
+        // resulting `Surface<'static>` must not outlive the window: callers
+        // keep the same `KhoraWindowHandle` Arc alive for the whole lifetime of
+        // the render system (the instance was built from a clone of it, and the
+        // window is dropped only at shutdown after the surface), upholding the
+        // `'static` contract.
         let surface = unsafe { instance.create_surface_unsafe(surface_target)? };
         log::debug!("WGPU surface created for the window.");
 
@@ -94,9 +115,39 @@ impl WgpuGraphicsContext {
             .map_err(|e| anyhow!("Failed to create logical device: {}", e))?;
         log::info!("Logical device and command queue created.");
 
-        device.on_uncaptured_error(std::sync::Arc::new(|e| {
-            log::error!("WGPU Uncaptured Error: {e:?}");
+        // Shared health flags: the error/device-lost callbacks run on wgpu's
+        // own threads and must not hold a borrow of the context, so they
+        // capture an `Arc<GpuHealth>` clone. The render system reads the same
+        // flags each frame to decide whether the device is still usable.
+        let health = Arc::new(GpuHealth::default());
+
+        let uncaptured_health = Arc::clone(&health);
+        device.on_uncaptured_error(std::sync::Arc::new(move |e| {
+            // Out-of-memory is fatal and non-recoverable in place; validation
+            // and internal errors are logged but only an OOM forces teardown.
+            match &e {
+                wgpu::Error::OutOfMemory { .. } => {
+                    log::error!("WGPU uncaptured out-of-memory error: {e:?}");
+                    uncaptured_health.mark_out_of_memory();
+                }
+                wgpu::Error::Internal { .. } => {
+                    log::error!("WGPU uncaptured internal device error: {e:?}");
+                    uncaptured_health.mark_device_lost();
+                }
+                wgpu::Error::Validation { .. } => {
+                    log::error!("WGPU uncaptured validation error: {e:?}");
+                }
+            }
         }));
+
+        // Device-lost callback: a driver crash/reset/destroy surfaces here. We
+        // raise the sticky `device_lost` flag so the next frame stops
+        // submitting and reports a fatal, non-panicking error to the host.
+        let lost_health = Arc::clone(&health);
+        device.set_device_lost_callback(move |reason, message| {
+            log::error!("WGPU device lost ({reason:?}): {message}");
+            lost_health.mark_device_lost();
+        });
 
         let active_device_features = device.features();
         let device_limits = device.limits();
@@ -140,6 +191,7 @@ impl WgpuGraphicsContext {
             adapter_device_type: adapter_info.device_type,
             active_device_features,
             device_limits,
+            health,
         })
     }
 

@@ -242,6 +242,15 @@ impl ExecutionScheduler {
         self.execute_agents_sequential(sorted, world, runtime, completion_map, bus, deck);
     }
 
+    /// Executes the phase's agents **sequentially, in priority order** (the
+    /// [`sort_agents`] output). GORNA budgets are therefore per-agent
+    /// *exclusive time slices of the frame*, not concurrent allocations:
+    /// measured agent costs add up (T1 + T2 + …), which is exactly what the
+    /// arbitrator's budget fitting assumes when it sums estimated times
+    /// against the frame budget. When parallel execution lands
+    /// ([`execute_agents_parallel`](Self::execute_agents_parallel), today an
+    /// `unimplemented!` stub), the fitting must switch from sum-of-costs to a
+    /// critical-path model.
     fn execute_agents_sequential(
         &self,
         agents: Vec<AgentSlot>,
@@ -300,7 +309,7 @@ impl ExecutionScheduler {
         }
     }
 
-    /// Parallel execution path — Phase 4 stub.
+    /// Parallel execution path — roadmap stub, not yet implemented.
     ///
     /// The intended structure (once enabled):
     /// ```ignore

@@ -108,6 +108,18 @@ impl Flow for AudioFlow {
     const DOMAIN: SemanticDomain = SemanticDomain::Audio;
     const NAME: &'static str = "audio";
 
+    /// The projection below reads only `AudioSource` / `AudioListener`
+    /// (Audio domain) and `GlobalTransform` (Spatial domain) — no runtime
+    /// state — so those two epochs (plus the World instance id) fully
+    /// determine the view.
+    fn cache_key(&self, world: &World, _runtime: &Runtime) -> Option<u64> {
+        Some(crate::flow::combine_cache_key([
+            world.instance_id(),
+            world.domain_epoch(SemanticDomain::Audio),
+            world.domain_epoch(SemanticDomain::Spatial),
+        ]))
+    }
+
     fn project(&self, world: &World, _sel: &Selection, _runtime: &Runtime) -> Self::View {
         let source_count = world.query::<&AudioSource>().count();
         let listener = world

@@ -25,6 +25,7 @@ use khora_core::math::{Vec2, Vec4};
 use khora_core::renderer::api::text::TextLayout;
 use khora_core::renderer::api::util::AtlasRect;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::ui::components::{UiBorder, UiColor, UiImage};
 
@@ -46,11 +47,13 @@ pub struct ExtractedUiNode {
 }
 
 /// Extracted text data for rendering.
+#[derive(Clone)]
 pub struct ExtractedUiText {
     /// Screen-space position.
     pub pos: Vec2,
-    /// Pre-computed text layout.
-    pub layout: Box<dyn TextLayout>,
+    /// Pre-computed text layout. `Arc` (immutable, shared) rather than
+    /// `Box` so the containing `UiScene` view is cheaply clonable.
+    pub layout: Arc<dyn TextLayout>,
     /// Text color RGBA.
     pub color: Vec4,
     /// Z-index for sorting.
@@ -58,7 +61,7 @@ pub struct ExtractedUiText {
 }
 
 /// All UI data extracted from the main `World` for a single frame.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct UiScene {
     /// UI nodes to render.
     pub nodes: Vec<ExtractedUiNode>,

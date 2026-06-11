@@ -44,6 +44,13 @@ const COST_MODEL_CAPACITY: usize = 64;
 /// the controller holds its current output rather than reacting to thin data.
 const FRAME_TIME_MIN_SAMPLES: usize = 10;
 
+/// How far the PID's budget multiplier must drift from its value at the last
+/// budget issuance before the DCC re-arbitrates on its own. The pressure
+/// heuristics already force negotiation on the way *down*; this is what lets
+/// agents recover (upgrade) once measured frame time settles back under the
+/// setpoint, instead of staying pinned at a degraded strategy.
+const PID_RENEGOTIATE_DELTA: f32 = 0.05;
+
 /// Sums each agent's empirically-forecast cost (`c·f(n)`) at workload `n`.
 ///
 /// Returns `None` until at least one agent has enough distinct-`n` samples to
@@ -292,6 +299,9 @@ impl DccService {
             // ticks; `last_tick` gives the real `dt` between updates.
             let mut frame_pid = PidController::new(frame_pid_cfg);
             let mut last_tick: Option<Instant> = None;
+            // Multiplier in effect when budgets were last issued — drift beyond
+            // PID_RENEGOTIATE_DELTA re-arbitrates (closes the recovery path).
+            let mut last_issued_multiplier: Option<f32> = None;
 
             log::info!("DCC Service thread started.");
 
@@ -474,6 +484,21 @@ impl DccService {
                     dt
                 );
 
+                // 2b-ter. Re-arbitrate when the PID has moved the effective budget
+                //     significantly since the last issuance — in both directions.
+                //     Pressure heuristics drive downgrades; this drives recovery:
+                //     once measured frame time settles under the setpoint, the
+                //     multiplier climbs back and budgets are re-issued so agents
+                //     can upgrade instead of staying degraded forever.
+                if let Some(last) = last_issued_multiplier {
+                    if (multiplier - last).abs() > PID_RENEGOTIATE_DELTA {
+                        report.needs_negotiation = true;
+                        report.alerts.push(format!(
+                            "PID: budget multiplier {last:.2} → {multiplier:.2} since last issuance — re-arbitrating",
+                        ));
+                    }
+                }
+
                 for alert in &report.alerts {
                     log::info!("DCC Analysis: {}", alert);
                 }
@@ -502,13 +527,28 @@ impl DccService {
                                 arbitrator.set_adaptation_mode(*id, *mode);
                             }
                         }
+                        // Per-agent measured costs anchor the agents' self-quoted
+                        // estimates in reality during fitting: prefer the model's
+                        // forecast at the current workload, fall back to the
+                        // latest raw observation when no fit is available yet.
+                        let measured_costs: HashMap<AgentId, f64> = cost_models
+                            .iter()
+                            .filter_map(|(id, m)| {
+                                m.predict_ms(last_workload_n)
+                                    .or_else(|| m.latest_ms())
+                                    .map(|ms| (*id, ms))
+                            })
+                            .collect();
+
                         let issued = arbitrator.arbitrate(
                             &ctx_copy,
                             &report,
                             &mut agents_slice,
+                            &measured_costs,
                             replay_tick.as_ref(),
                         );
                         initial_negotiation_done = true;
+                        last_issued_multiplier = Some(multiplier);
 
                         // Advance the replay cursor, or record this tick's decisions.
                         if replaying {
@@ -925,6 +965,121 @@ mod tests {
         assert!(
             multiplier >= 0.3,
             "multiplier must respect the output floor, got {multiplier}"
+        );
+    }
+
+    /// Stub whose two strategies straddle the frame budget: Balanced (14ms)
+    /// fits the 16.66ms target only when the budget multiplier is near 1.0,
+    /// so a degraded multiplier forces LowPower and a recovered one allows
+    /// the upgrade back — making the recovery path observable.
+    struct RecoveryStubAgent {
+        applied: Option<StrategyId>,
+    }
+
+    impl Agent for RecoveryStubAgent {
+        fn id(&self) -> AgentId {
+            AgentId::Renderer
+        }
+        fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
+            NegotiationResponse {
+                strategies: vec![
+                    StrategyOption {
+                        id: StrategyId::LowPower,
+                        estimated_time: Duration::from_millis(2),
+                        estimated_vram: 0,
+                    },
+                    StrategyOption {
+                        id: StrategyId::Balanced,
+                        estimated_time: Duration::from_millis(14),
+                        estimated_vram: 0,
+                    },
+                ],
+                timing_adjustment: None,
+            }
+        }
+        fn apply_budget(&mut self, budget: ResourceBudget) {
+            self.applied = Some(budget.strategy_id);
+        }
+        fn report_status(&self) -> AgentStatus {
+            AgentStatus {
+                agent_id: AgentId::Renderer,
+                current_strategy: self.applied.unwrap_or(StrategyId::LowPower),
+                health_score: 1.0,
+                is_stalled: false,
+                message: String::new(),
+            }
+        }
+        fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
+
+    #[test]
+    fn test_pid_recovery_reissues_budgets_and_upgrades() {
+        // Once measured frame time settles back under the setpoint, the PID
+        // multiplier climbs and its drift past PID_RENEGOTIATE_DELTA must
+        // re-arbitrate so the agent is upgraded — without this trigger the
+        // agent would stay pinned at the degraded strategy forever (no
+        // pressure heuristic fires when everything is healthy).
+        let (mut dcc, rx) = DccService::new(DccConfig {
+            tick_rate: 100,
+            ..Default::default()
+        });
+        let agent = Arc::new(std::sync::Mutex::new(RecoveryStubAgent { applied: None }));
+        dcc.register_agent(agent.clone(), 1.0);
+        let tx = dcc.event_sender();
+        dcc.start(rx);
+
+        let frame_time_id = MetricId::new("renderer", "frame_time");
+
+        // Phase 1 — sustained overrun (40ms ≫ 16.66ms): the PID pulls the
+        // multiplier down until Balanced (14ms) no longer fits and the agent
+        // is downgraded to LowPower. Poll instead of a fixed sleep.
+        let mut degraded = false;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            tx.send(TelemetryEvent::MetricUpdate {
+                id: frame_time_id.clone(),
+                value: khora_core::telemetry::MetricValue::Gauge(40.0),
+            })
+            .unwrap();
+            thread::sleep(Duration::from_millis(5));
+            if agent.lock().unwrap().applied == Some(StrategyId::LowPower) {
+                degraded = true;
+                break;
+            }
+        }
+        assert!(
+            degraded,
+            "sustained overrun should downgrade the agent to LowPower"
+        );
+
+        // Phase 2 — recovery (5ms ≪ 16.66ms): the averages drop below every
+        // pressure threshold, so only the PID-drift trigger can re-issue
+        // budgets. The multiplier climbs back and the agent must be upgraded.
+        let mut recovered = false;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            tx.send(TelemetryEvent::MetricUpdate {
+                id: frame_time_id.clone(),
+                value: khora_core::telemetry::MetricValue::Gauge(5.0),
+            })
+            .unwrap();
+            thread::sleep(Duration::from_millis(5));
+            if agent.lock().unwrap().applied == Some(StrategyId::Balanced) {
+                recovered = true;
+                break;
+            }
+        }
+        dcc.stop();
+
+        assert!(
+            recovered,
+            "once frame time settles, the PID drift must re-arbitrate and upgrade the agent"
         );
     }
 

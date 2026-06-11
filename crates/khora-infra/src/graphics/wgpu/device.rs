@@ -221,6 +221,11 @@ pub struct WgpuDeviceInternal {
     /// The submission index returned by the most recent `queue.submit()` call.
     /// Used to synchronize frame acquisition with GPU completion.
     last_submission_index: Mutex<Option<wgpu::SubmissionIndex>>,
+
+    /// Lock-free device-health flags shared with the graphics context. Raised
+    /// by the wgpu error/device-lost callbacks; read by the render system each
+    /// frame to detect a lost or out-of-memory device.
+    health: Arc<super::resilience::GpuHealth>,
 }
 
 /// A clonable, thread-safe handle to the WGPU graphics device.
@@ -233,9 +238,21 @@ pub struct WgpuDevice {
 
 impl WgpuDevice {
     pub fn new(context: Arc<Mutex<WgpuGraphicsContext>>) -> Self {
+        // Share the context's health flags so the render system can query the
+        // device directly without taking the context lock on the hot path. If
+        // the context is momentarily poisoned at construction, fall back to a
+        // fresh set of flags (no health signal yet, but never a panic).
+        let health = match context.lock() {
+            Ok(ctx) => Arc::clone(&ctx.health),
+            Err(_) => {
+                log::error!("WgpuDevice::new: context mutex poisoned; using detached health flags");
+                Arc::new(super::resilience::GpuHealth::default())
+            }
+        };
         Self {
             internal: Arc::new(WgpuDeviceInternal {
                 context,
+                health,
                 shader_modules: Mutex::new(HashMap::new()),
                 pipelines: Mutex::new(HashMap::new()),
                 compute_pipelines: Mutex::new(HashMap::new()),
@@ -479,6 +496,21 @@ impl WgpuDevice {
                 });
             }
         }
+    }
+
+    /// Returns `true` if the underlying device has been reported lost
+    /// (driver crash/reset/destroy) or hit an internal device error.
+    ///
+    /// Raised asynchronously by the wgpu device-lost / uncaptured-error
+    /// callbacks; the render system polls this each frame to stop submitting
+    /// work and surface a fatal, non-panicking error.
+    pub fn is_device_lost(&self) -> bool {
+        self.internal.health.is_device_lost()
+    }
+
+    /// Returns `true` if the device reported an out-of-memory condition.
+    pub fn is_device_out_of_memory(&self) -> bool {
+        self.internal.health.is_out_of_memory()
     }
 
     /// Creates a texture view for a raw wgpu::Texture (e.g., from the swap chain)
@@ -1546,7 +1578,7 @@ impl GraphicsDevice for WgpuDevice {
                 return None;
             }
         };
-        Some(from_wgpu_texture_format(context.surface_config.format))
+        from_wgpu_texture_format(context.surface_config.format)
     }
 
     fn get_surface_size(&self) -> (u32, u32) {

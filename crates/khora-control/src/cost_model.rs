@@ -174,11 +174,40 @@ impl CostModel {
     pub fn predict_ms(&self, n: f64) -> Option<f64> {
         self.best_fit().map(|(class, c)| c * class.f(n))
     }
+
+    /// The most recently recorded observation's time in milliseconds, if any.
+    ///
+    /// Fallback cost signal when [`predict_ms`](Self::predict_ms) has no fit yet
+    /// (a stable workload never produces two distinct `n` values, so the model
+    /// can't pick a complexity class — but the raw measurement is still the best
+    /// available anchor).
+    pub fn latest_ms(&self) -> Option<f64> {
+        if self.samples.is_empty() {
+            return None;
+        }
+        let idx = if self.samples.len() < self.capacity {
+            self.samples.len() - 1
+        } else {
+            (self.next + self.capacity - 1) % self.capacity
+        };
+        Some(self.samples[idx].time_ms)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn latest_ms_returns_most_recent_sample_across_ring_wrap() {
+        let mut m = CostModel::new(2);
+        assert!(m.latest_ms().is_none());
+        m.record(10.0, 1.0);
+        assert_eq!(m.latest_ms(), Some(1.0));
+        m.record(10.0, 2.0);
+        m.record(10.0, 3.0); // ring is full — overwrites the oldest slot
+        assert_eq!(m.latest_ms(), Some(3.0));
+    }
 
     #[test]
     fn fits_linear_and_predicts() {

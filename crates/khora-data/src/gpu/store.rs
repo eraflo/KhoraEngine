@@ -72,7 +72,7 @@ mod tests {
     #[derive(Debug, PartialEq)]
     struct Foo(u32);
     impl Asset for Foo {}
-    struct Bar(&'static str);
+    struct Bar(#[allow(dead_code)] &'static str);
     impl Asset for Bar {}
 
     #[test]

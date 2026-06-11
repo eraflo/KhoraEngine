@@ -409,7 +409,6 @@ pub fn add_component_to_entity(world: &mut GameWorld, entity: EntityId, type_nam
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_sdk::khora_core::asset::Material;
 
     /// Regression: duplicating an entity must carry its material across.
     /// A broken implementation drops `MaterialRef`, so the copy renders

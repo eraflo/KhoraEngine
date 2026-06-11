@@ -170,7 +170,16 @@ fn read_and_validate_header(file: &mut File) -> Result<PackHeader> {
             &buf[0..8]
         );
     }
-    let format_version = u32::from_le_bytes(buf[8..12].try_into().unwrap());
+    // `buf` is exactly `PACK_HEADER_SIZE` bytes and `read_exact` succeeded, so
+    // each 4-byte window below is in bounds; propagate rather than unwrap so a
+    // future header-size change surfaces as an error instead of a panic.
+    let to_u32 = |slice: &[u8]| -> Result<u32> {
+        let arr: [u8; 4] = slice
+            .try_into()
+            .context("Pack header field is not 4 bytes — truncated or corrupt pack")?;
+        Ok(u32::from_le_bytes(arr))
+    };
+    let format_version = to_u32(&buf[8..12])?;
     if format_version != PACK_FORMAT_VERSION {
         bail!(
             "Unsupported pack format version {} (this runtime supports v{})",
@@ -178,8 +187,8 @@ fn read_and_validate_header(file: &mut File) -> Result<PackHeader> {
             PACK_FORMAT_VERSION
         );
     }
-    let asset_count = u32::from_le_bytes(buf[12..16].try_into().unwrap());
-    let flags = u32::from_le_bytes(buf[16..20].try_into().unwrap());
+    let asset_count = to_u32(&buf[12..16])?;
+    let flags = to_u32(&buf[16..20])?;
     Ok(PackHeader {
         format_version,
         asset_count,

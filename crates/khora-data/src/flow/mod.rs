@@ -69,8 +69,11 @@ use crate::ecs::{SemanticDomain, World};
 /// renderer, font cache, surface size, editor view overrides, …) without
 /// crossing the CLAD dependency graph in awkward ways.
 pub trait Flow: Send + Sync {
-    /// The typed view this Flow publishes into the LaneBus.
-    type View: std::any::Any + Send + Sync + 'static;
+    /// The typed view this Flow publishes into the LaneBus. `Clone` so the
+    /// registration trampoline can republish a cached view without
+    /// re-running `select`/`project` (views hold `Arc`s and plain data, so
+    /// cloning is cheap relative to a full re-projection).
+    type View: std::any::Any + Send + Sync + Clone + 'static;
 
     /// Domain identifier — matches the agent's domain.
     const DOMAIN: SemanticDomain;
@@ -86,4 +89,34 @@ pub trait Flow: Send + Sync {
 
     /// Stage 2 — read-only projection of the world into a View.
     fn project(&self, world: &World, sel: &Selection, runtime: &Runtime) -> Self::View;
+
+    /// Cache key for view reuse. When `Some(k)` matches the key of the
+    /// previously published view, the registration trampoline republishes
+    /// the cached view without re-running select/project. `None` (default)
+    /// disables caching — correct for flows whose projection depends on
+    /// inputs without a change signal.
+    ///
+    /// Implementations MUST fold every input the projection reads into the
+    /// key: the relevant [`World::domain_epoch`]s, [`World::instance_id`]
+    /// (so a different World instance never aliases a cached key), and a
+    /// bit-level hash of any `runtime` state consulted. A key that misses
+    /// an input produces *stale* views; an over-broad key merely
+    /// re-projects more often, which is always safe.
+    fn cache_key(&self, world: &World, runtime: &Runtime) -> Option<u64> {
+        let _ = (world, runtime);
+        None
+    }
+}
+
+/// Folds an ordered sequence of cache-key ingredients (domain epochs,
+/// bit-level hashes of runtime state, the World instance id) into a single
+/// `u64` via the std hasher. Deterministic within a process, which is all a
+/// per-process view cache needs.
+pub fn combine_cache_key<I: IntoIterator<Item = u64>>(parts: I) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for part in parts {
+        part.hash(&mut hasher);
+    }
+    hasher.finish()
 }

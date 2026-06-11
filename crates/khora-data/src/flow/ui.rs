@@ -38,6 +38,11 @@ use crate::ui::components::{UiBorder, UiColor, UiImage, UiText, UiTransform};
 use crate::ui::{ExtractedUiNode, ExtractedUiText, UiScene};
 
 /// UI presentation Flow.
+///
+/// Deliberately **uncached** (no `cache_key` override): the projection
+/// depends on the surface size (runtime state) and on font assets that can
+/// hot-reload without any change signal the key could fold in, so a cached
+/// `UiScene` could go stale. It re-projects every tick.
 #[derive(Default)]
 pub struct UiFlow;
 
@@ -109,7 +114,7 @@ fn layout_texts(
                 text_renderer.layout_text(&text.content, font_handle, text.font, text.size, None);
             scene.texts.push(ExtractedUiText {
                 pos: transform.pos,
-                layout,
+                layout: std::sync::Arc::from(layout),
                 color: text.color,
                 z_index: transform.z_index,
             });

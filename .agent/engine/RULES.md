@@ -15,7 +15,7 @@ and [`security-privacy.md`](./security-privacy.md).
 - Naming: `snake_case` (Rust), `PascalCase` (types), `kebab-case` (crate names). See [`conventions.md`](./conventions.md).
 - Add `#[cfg(test)]` unit tests for any new public function.
 - Add a `// SAFETY:` comment on every `unsafe` block explaining why the invariant holds.
-- Log via `log::{info,warn,error,debug,trace}` — never `println!` / `eprintln!`.
+- Log via `log::{info,warn,error,debug,trace}` — never `println!` / `eprintln!`. **Sole exception:** the engine's own log sink (`EditorLogCapture::log` in `khora-core/src/ui/editor/log_capture.rs`) writes to stderr with `eprintln!` because a `log::Log` implementation calling `log::*` would recurse infinitely.
 - Validate at system boundaries (user input, file I/O, GPU errors). Trust internal API contracts.
 - Write WGSL for the wgpu backend — no GLSL or SPIR-V.
 
@@ -47,7 +47,7 @@ and [`security-privacy.md`](./security-privacy.md).
 
 ## 5 — Concurrency
 
-- Never use `std::thread::spawn` directly. Concurrency goes through the DCC agent system. The DCC schedules; agents execute. Per-frame work runs through agents and the `Lane` trait.
+- Never use `std::thread::spawn` directly. Concurrency goes through the DCC agent system. The DCC schedules; agents execute. Per-frame work runs through agents and the `Lane` trait. **Sole exception:** the DCC's own cold-path tick thread (`DccService::start` in `khora-control/src/service.rs`) — it *is* the concurrency authority this rule routes everything else through, spawned once at startup. Test code may also spawn threads for isolation.
 
 ## 6 — Subsystem boundaries
 

@@ -62,7 +62,12 @@ Pass C — I/O boundary (Engine):   drain OutputDeck for submit/present
 *representation* (HOW) adaptation, never *semantic* (WHAT). It lives in CRPECS (a layout policy per
 component column, access instrumentation, a self-bounded repack step), default layout plain SoA, so it
 is additive and inert until a column is profiled as worth re-tiling (e.g. SoA → AoSoA for SIMD). Flows
-are **read-only projectors** (`select → project`); they never mutate the World. Gameplay-relevance
+are **read-only projectors** (`select → project`); they never mutate the World. A Flow may opt into
+**view caching** via `Flow::cache_key`: the `register_flow!` trampoline republishes the previous View
+(cheap clone) when the key — `World::instance_id` + per-domain change epochs (`World::domain_epoch`,
+bumped O(1) at every semantic mutation) + any runtime-state fingerprint — is unchanged. Cached today:
+Audio/Render/Shadow flows; Ui/Physics stay uncached (no change signal / mutates every frame).
+Representation-only: a cached View is bit-identical to a re-projected one. Gameplay-relevance
 gating (e.g. detach `RigidBody` by distance) is **not** AGDF — it changes the simulation, so it is an
 opt-in, developer-authored `DataSystem`. See `khora-data/src/ecs/layout.rs` (`LayoutAdvisor`, `Ucb1`).
 
@@ -182,7 +187,7 @@ pub trait Agent: Send + Sync {
 | Agent | `LaneKind` | Strategies |
 |---|---|---|
 | `RenderAgent` | Render | Unlit / LitForward / Forward+ / StandardPbr |
-| `ShadowAgent` | Shadow | Standard (2048² + 512³ cube) / LowRes (512² + 128³) |
+| `ShadowAgent` | Shadow | Standard (2048² + 512² cube, ≈88 MiB) / Medium (1024² + 256², ≈22 MiB) / LowRes (512² + 128², ≈5.5 MiB) — HighPerformance/Balanced/LowPower |
 | `OverlayAgent` | Render | parallel post-render lanes: Grid → Emissive → Wireframe → Gizmo |
 | `PhysicsAgent` | Physics | Standard / Simplified |
 | `UiAgent` | Ui | Layout + Render (editor mode) |

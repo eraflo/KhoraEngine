@@ -80,6 +80,11 @@ pub struct PhysicsStepResult {
 }
 
 /// Read-only physics presentation Flow.
+///
+/// Deliberately **uncached** (no `cache_key` override): while the
+/// simulation runs, the per-frame provider sync and transform writeback
+/// mutate the Physics/Spatial domains anyway, so a cache would never hit —
+/// it would only add key computation and a clone to every tick.
 #[derive(Default)]
 pub struct PhysicsFlow;
 

@@ -20,6 +20,9 @@ use super::backend::WgpuBackendSelector;
 use super::context::WgpuGraphicsContext;
 use super::device::WgpuDevice;
 use super::profiler::WgpuTimestampProfiler;
+use super::resilience::{
+    classify_acquire, surface_is_renderable, AcquireAction, SurfaceAcquireStatus,
+};
 use khora_core::math::LinearRgba;
 use khora_core::platform::window::{KhoraWindow, KhoraWindowHandle};
 use khora_core::renderer::api::command::{
@@ -663,6 +666,129 @@ impl WgpuRenderSystem {
 
         Ok((overlay, shell))
     }
+
+    /// Checks the device-health flags raised by the wgpu error callbacks.
+    ///
+    /// Returns a fatal, non-panicking [`RenderError`] when the device has been
+    /// lost or has run out of memory so the host can tear down cleanly. The
+    /// frame loop calls this before any GPU submission; once a fatal condition
+    /// is observed the system stops acquiring/submitting work.
+    fn check_device_health(&self) -> Result<(), RenderError> {
+        let Some(device) = self.wgpu_device.as_ref() else {
+            return Ok(());
+        };
+        if device.is_device_out_of_memory() {
+            return Err(RenderError::DeviceOutOfMemory(
+                "device reported out-of-memory via wgpu error callback".to_string(),
+            ));
+        }
+        if device.is_device_lost() {
+            return Err(RenderError::DeviceLost);
+        }
+        Ok(())
+    }
+
+    /// Acquires the swapchain texture with full resilience.
+    ///
+    /// Covers every [`wgpu::CurrentSurfaceTexture`] outcome via the pure
+    /// [`classify_acquire`] policy:
+    /// - `Success`/`Suboptimal` → return the texture.
+    /// - `Lost`/`Outdated` with a valid size → reconfigure and retry in-frame.
+    /// - `Lost`/`Outdated` at zero size, `Timeout`, `Occluded` → skip the frame
+    ///   (returns `Ok(None)`), no error spam.
+    /// - `Validation`/unknown → non-fatal [`RenderError::SurfaceAcquisitionFailed`].
+    ///
+    /// `Ok(None)` means "skip this frame, retry next frame"; the caller must
+    /// not treat it as an error.
+    fn acquire_surface_texture(
+        &mut self,
+        gc: &Arc<Mutex<WgpuGraphicsContext>>,
+    ) -> Result<Option<wgpu::SurfaceTexture>, RenderError> {
+        // A zero-size (minimized) window has no renderable surface. Skip the
+        // frame silently rather than churning reconfigure/acquire every tick.
+        if !surface_is_renderable(self.current_width, self.current_height) {
+            log::debug!(
+                "WgpuRenderSystem: surface not renderable ({}x{}); skipping frame.",
+                self.current_width,
+                self.current_height
+            );
+            return Ok(None);
+        }
+
+        // Bounded retry: at most one in-frame reconfigure for a lost/outdated
+        // surface, then a single re-acquire. Avoids any unbounded spin.
+        let max_attempts = 2;
+        for attempt in 0..max_attempts {
+            let mut gc_guard = gc
+                .lock()
+                .map_err(|_| RenderError::Internal("graphics context lock poisoned".into()))?;
+
+            let (status, texture) = match gc_guard.get_current_texture() {
+                wgpu::CurrentSurfaceTexture::Success(t)
+                | wgpu::CurrentSurfaceTexture::Suboptimal(t) => {
+                    (SurfaceAcquireStatus::Usable, Some(t))
+                }
+                wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
+                    (SurfaceAcquireStatus::LostOrOutdated, None)
+                }
+                wgpu::CurrentSurfaceTexture::Timeout => (SurfaceAcquireStatus::Timeout, None),
+                wgpu::CurrentSurfaceTexture::Occluded => (SurfaceAcquireStatus::Occluded, None),
+                wgpu::CurrentSurfaceTexture::Validation => (SurfaceAcquireStatus::Validation, None),
+                // Forward-compat: should wgpu add a swapchain-status variant in
+                // a future release, classify it as a non-fatal unknown hiccup
+                // rather than failing to compile or panicking. Unreachable today
+                // because the enum is currently exhaustive.
+                #[allow(unreachable_patterns)]
+                _ => (SurfaceAcquireStatus::Unknown, None),
+            };
+
+            let has_valid_size =
+                surface_is_renderable(self.current_width, self.current_height);
+            match classify_acquire(status, has_valid_size) {
+                AcquireAction::Proceed => {
+                    // `texture` is `Some` exactly for the `Usable` status.
+                    return Ok(texture);
+                }
+                AcquireAction::ReconfigureAndRetry => {
+                    log::warn!(
+                        "WgpuRenderSystem: surface lost/outdated; reconfiguring to {}x{} (attempt {}).",
+                        self.current_width,
+                        self.current_height,
+                        attempt + 1
+                    );
+                    gc_guard.resize(self.current_width, self.current_height);
+                    drop(gc_guard);
+                    self.last_surface_config = Some(Instant::now());
+                    self.pending_resize = false;
+                    // Loop to re-acquire on the next iteration.
+                    continue;
+                }
+                AcquireAction::SkipFrame => {
+                    log::debug!(
+                        "WgpuRenderSystem: acquire status {:?} — skipping frame.",
+                        status
+                    );
+                    return Ok(None);
+                }
+                AcquireAction::NonFatalError => {
+                    log::error!(
+                        "WgpuRenderSystem: non-fatal surface acquire failure ({:?}).",
+                        status
+                    );
+                    return Err(RenderError::SurfaceAcquisitionFailed(format!("{status:?}")));
+                }
+            }
+        }
+
+        // Exhausted the in-frame reconfigure budget without a usable texture.
+        // Skip this frame; the next frame retries from a freshly configured
+        // surface rather than erroring out.
+        log::warn!(
+            "WgpuRenderSystem: surface still unavailable after {} acquire attempts; skipping frame.",
+            max_attempts
+        );
+        Ok(None)
+    }
 }
 
 impl RenderSystem for WgpuRenderSystem {
@@ -762,6 +888,9 @@ impl RenderSystem for WgpuRenderSystem {
             .clone()
             .ok_or(RenderError::NotInitialized)?;
 
+        // Bail out early (non-panicking) on a lost / out-of-memory device.
+        self.check_device_health()?;
+
         // Poll the device to process any pending GPU-to-CPU callbacks, such as
         // those from the profiler's `map_async` calls. This is crucial.
         device.poll_device_non_blocking();
@@ -818,58 +947,14 @@ impl RenderSystem for WgpuRenderSystem {
             }
         }
 
-        // --- 1. Acquire Frame from Swap Chain ---
+        // --- 1. Acquire Frame from Swap Chain (resilient) ---
         device.wait_for_last_submission();
-        let output_surface_texture = loop {
-            let mut gc_guard = gc.lock().unwrap();
-            match gc_guard.get_current_texture() {
-                wgpu::CurrentSurfaceTexture::Success(texture) => break texture,
-                wgpu::CurrentSurfaceTexture::Suboptimal(texture) => {
-                    log::debug!(
-                        "WgpuRenderSystem: Acquired suboptimal swapchain frame; using it but a reconfigure may be needed soon."
-                    );
-                    break texture;
-                }
-                status @ (wgpu::CurrentSurfaceTexture::Lost
-                | wgpu::CurrentSurfaceTexture::Outdated) => {
-                    if self.current_width > 0 && self.current_height > 0 {
-                        log::warn!(
-                            "WgpuRenderSystem: Swapchain surface lost or outdated ({:?}). Reconfiguring with current dimensions: W={}, H={}",
-                            status,
-                            self.current_width,
-                            self.current_height
-                        );
-                        gc_guard.resize(self.current_width, self.current_height);
-                        self.last_surface_config = Some(Instant::now());
-                        self.pending_resize = false; // reset pending state after forced reconfigure
-                    } else {
-                        log::error!(
-                            "WgpuRenderSystem: Swapchain lost/outdated ({:?}), but current stored size is zero ({},{}). Cannot reconfigure. Waiting for valid resize event.",
-                            status,
-                            self.current_width,
-                            self.current_height
-                        );
-                        return Err(RenderError::SurfaceAcquisitionFailed(format!(
-                            "Surface Lost/Outdated ({status:?}) and current size is zero",
-                        )));
-                    }
-                }
-                wgpu::CurrentSurfaceTexture::Timeout => {
-                    log::warn!("WgpuRenderSystem: Swapchain Timeout acquiring frame.");
-                    return Err(RenderError::SurfaceAcquisitionFailed("Timeout".to_string()));
-                }
-                wgpu::CurrentSurfaceTexture::Occluded => {
-                    log::debug!("WgpuRenderSystem: Surface occluded; skipping frame.");
-                    return Err(RenderError::SurfaceAcquisitionFailed(
-                        "Occluded".to_string(),
-                    ));
-                }
-                wgpu::CurrentSurfaceTexture::Validation => {
-                    log::error!("WgpuRenderSystem: Surface validation error during acquisition.");
-                    return Err(RenderError::SurfaceAcquisitionFailed(
-                        "Validation error".to_string(),
-                    ));
-                }
+        let output_surface_texture = match self.acquire_surface_texture(&gc)? {
+            Some(texture) => texture,
+            None => {
+                // Transient skip — return last frame's stats unchanged so the
+                // caller treats this as a no-op frame, not a hard failure.
+                return Ok(self.last_frame_stats.clone());
             }
         };
 
@@ -901,7 +986,9 @@ impl RenderSystem for WgpuRenderSystem {
 
         // --- 5. Main Render Pass (drawing all objects) ---
         {
-            let gc_guard = gc.lock().unwrap();
+            let gc_guard = gc
+                .lock()
+                .map_err(|_| RenderError::Internal("graphics context lock poisoned".into()))?;
             let wgpu_color = gc_guard.get_clear_color();
             let clear_color = LinearRgba::new(
                 wgpu_color.r as f32,
@@ -1023,6 +1110,10 @@ impl RenderSystem for WgpuRenderSystem {
             .clone()
             .ok_or(RenderError::NotInitialized)?;
 
+        // Bail out early (non-panicking) if the device was reported lost or
+        // out-of-memory: there is no point acquiring or submitting any work.
+        self.check_device_health()?;
+
         // Process any pending GPU-to-CPU callbacks (profiler map_async, etc.).
         device.poll_device_non_blocking();
         // Block until the previous submission is consumed so the acquire
@@ -1069,23 +1160,16 @@ impl RenderSystem for WgpuRenderSystem {
             }
         }
 
-        // --- Acquire swapchain texture ---
-        let output_surface_texture = loop {
-            let mut gc_guard = gc.lock().unwrap();
-            match gc_guard.get_current_texture() {
-                wgpu::CurrentSurfaceTexture::Success(texture)
-                | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => break texture,
-                status @ (wgpu::CurrentSurfaceTexture::Lost
-                | wgpu::CurrentSurfaceTexture::Outdated) => {
-                    if self.current_width > 0 && self.current_height > 0 {
-                        gc_guard.resize(self.current_width, self.current_height);
-                        continue;
-                    }
-                    return Err(RenderError::SurfaceAcquisitionFailed(format!("{status:?}")));
-                }
-                status => {
-                    return Err(RenderError::SurfaceAcquisitionFailed(format!("{status:?}")));
-                }
+        // --- Acquire swapchain texture (resilient: see acquire_surface_texture) ---
+        let output_surface_texture = match self.acquire_surface_texture(&gc)? {
+            Some(texture) => texture,
+            None => {
+                // Transient skip (minimized / timeout / occluded / reconfigure
+                // in flight). Not an error — report a non-fatal acquisition
+                // failure so the engine skips this frame and retries next one.
+                return Err(RenderError::SurfaceAcquisitionFailed(
+                    "frame skipped (surface not ready)".to_string(),
+                ));
             }
         };
 
@@ -1115,6 +1199,14 @@ impl RenderSystem for WgpuRenderSystem {
     }
 
     fn end_frame(&mut self) -> Result<RenderStats, RenderError> {
+        // If the device went down between acquire and present, surface a fatal
+        // error instead of presenting a texture from a dead device.
+        self.check_device_health()?;
+
+        // `SurfaceTexture::present()` is infallible in this wgpu version: if a
+        // present fails internally it is reported through the device error
+        // callback (handled by `check_device_health`), and an un-presented
+        // texture is discarded on drop rather than panicking.
         if let Some(texture) = self.active_frame_texture.take() {
             texture.present();
         }
@@ -1242,9 +1334,17 @@ impl RenderSystem for WgpuRenderSystem {
     }
 
     fn graphics_device(&self) -> Arc<dyn GraphicsDevice> {
-        self.wgpu_device
-            .clone()
-            .expect("WgpuRenderSystem: No WgpuDevice available.")
+        // Invariant: `wgpu_device` is populated during render-system
+        // initialization (adapter + device creation) and is only cleared on
+        // shutdown. The bootstrap path calls `graphics_device()` exactly once,
+        // right after a successful init and long before shutdown — so the
+        // device is always present here. The trait returns a bare
+        // `Arc<dyn GraphicsDevice>` (no fallible variant), and there is no
+        // sound placeholder device to substitute, so a `None` at this point is
+        // an init-ordering bug rather than a recoverable runtime condition.
+        self.wgpu_device.clone().expect(
+            "WgpuRenderSystem::graphics_device called before initialization or after shutdown",
+        )
     }
 }
 

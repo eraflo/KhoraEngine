@@ -117,3 +117,36 @@ pub fn primary_view(world: &World, runtime: &Runtime) -> Option<ExtractedView> {
         .get::<EditorViewportOverride>()
         .and_then(|o| o.get())
 }
+
+/// Bit-level fingerprint of the [`EditorViewportOverride`] as seen by
+/// [`primary_view`]: distinguishes "no override" from "override present"
+/// and any change in the override's value (editor camera moves do not
+/// mutate the ECS, so flows that consult `primary_view` must fold this
+/// into their cache key or they would serve stale views while the editor
+/// camera flies).
+pub(crate) fn editor_override_fingerprint(runtime: &Runtime) -> u64 {
+    use std::hash::{Hash, Hasher};
+
+    let Some(view) = runtime
+        .resources
+        .get::<EditorViewportOverride>()
+        .and_then(|o| o.get())
+    else {
+        return 0;
+    };
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    // Presence marker, so an override that happens to hash to 0 still
+    // differs from "no override".
+    1u8.hash(&mut hasher);
+    for col in &view.view_proj.cols {
+        col.x.to_bits().hash(&mut hasher);
+        col.y.to_bits().hash(&mut hasher);
+        col.z.to_bits().hash(&mut hasher);
+        col.w.to_bits().hash(&mut hasher);
+    }
+    view.position.x.to_bits().hash(&mut hasher);
+    view.position.y.to_bits().hash(&mut hasher);
+    view.position.z.to_bits().hash(&mut hasher);
+    hasher.finish()
+}

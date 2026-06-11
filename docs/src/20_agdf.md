@@ -17,13 +17,14 @@ optimizations that ride on top of it.
 4. Layer 1 — anticipatory budgeting (cost model)
 5. Layer 1 — the layout advisor
 6. Layer 1 — memory tracking with teeth
-7. The performance lever — field-SoA + explicit SIMD
-8. Layer 2 — persistent field-SoA storage
-9. The decision core — bandits and gates
-10. Layer 3 — online repack (the deferred frontier)
-11. Developer guide
-12. Verification
-13. Prior art and references
+7. Flow view caching — per-domain change epochs
+8. The performance lever — field-SoA + explicit SIMD
+9. Layer 2 — persistent field-SoA storage
+10. The decision core — bandits and gates
+11. Layer 3 — online repack (the deferred frontier)
+12. Developer guide
+13. Verification
+14. Prior art and references
 
 ---
 
@@ -95,7 +96,7 @@ flowchart TD
   registration (industry-standard); the rest of CRPECS is untouched.
 - **Layer 3 — online repack** *(deferred).* Flipping a populated component's
   layout at runtime, driven by the learned decision core. Deferred for a sound
-  reason (see §10); the decision primitives are built and ready.
+  reason (see §11); the decision primitives are built and ready.
 
 ---
 
@@ -156,8 +157,13 @@ flowchart LR
 
 When the combined forecast at the current workload exceeds the frame budget, the
 DCC tightens the target latency *before* the frame actually overruns, so GORNA
-selects cheaper strategies in advance. The arbitrator is untouched — the logic
-is contained in the cold loop ("model proposes, measurement disposes").
+selects cheaper strategies in advance ("model proposes, measurement disposes").
+The same measurements also flow *into* arbitration: `GornaArbitrator::arbitrate`
+receives the per-agent measured costs (the model's forecast at the current
+workload, falling back to `CostModel::latest_ms`) and rescales each agent's
+self-quoted strategy estimates so the option matching its current strategy
+equals the measurement (factor clamped to `[0.25, 4.0]`) — the budget fitting
+reasons about real milliseconds, not static quotes. See [GORNA](./08_gorna.md).
 
 ---
 
@@ -178,7 +184,7 @@ pub enum LayoutRecommendation {
 }
 ```
 
-The thresholds encode the engine's own benchmark findings (see §07): the
+The thresholds encode the engine's own benchmark findings (see §08): the
 field-SoA/SIMD lever pays on *large, compute-bound* batches; the hot/cold split
 pays on *fat* components; Khora's lean built-ins want neither. **CLAD invariant:
 Control observes and advises; Data owns its layout — the DCC never repacks.**
@@ -220,7 +226,53 @@ flowchart LR
 
 ---
 
-## 07 — The performance lever: field-SoA + explicit SIMD
+## 07 — Flow view caching: per-domain change epochs
+
+The first piece of *data-flow* adaptation shipped at runtime — and a literal
+application of the organizing rule: a cached View is **bit-identical** to a
+re-projected one, so only the HOW (whether the projection work runs at all)
+changes, never the WHAT.
+
+Flows are read-only projectors: every Substrate Pass they re-derive a View
+(`RenderWorld`, `ShadowView`, …) from the World and publish it to the
+`LaneBus`. Most frames, nothing the projection reads has changed — the work is
+pure waste. Two pieces close that gap:
+
+- **Per-domain change epochs.** The `World` keeps a monotonic counter per
+  `SemanticDomain`, bumped O(1) at every mutation entry point that can affect
+  that domain's *semantic* content (spawn/despawn, component insert/remove,
+  `get_mut`, mutable query construction, deserialization, row-reordering
+  compaction). Equal epochs guarantee "unchanged"; a bump means only "possibly
+  changed" — conservative by design, so over-bumping is harmless while a missed
+  bump would mean stale Views. Representation-only changes (an AGDF layout
+  repack) do **not** bump. See [ECS — Semantic domains](./05_ecs.md).
+- **An opt-in `Flow::cache_key`.** A flow that can name *all* of its inputs
+  returns `Some(combine_cache_key([world.instance_id(), epochs…, runtime
+  fingerprints…]))`. The `register_flow!` trampoline (`run_flow_cached`)
+  compares the key against the previously published View and, on a hit,
+  republishes it (a cheap clone) without re-running `select`/`project`. The
+  default `None` disables caching; a `None` key also clears the cache, so a
+  flow can opt out dynamically without risking a stale entry. The
+  `instance_id` ingredient keeps a freshly created World (whose epochs restart
+  at zero, e.g. a play-mode snapshot restore) from aliasing a previous World's
+  key.
+
+Which flows opt in is an honest audit of their input signals:
+
+| Flow | Cached? | Key / reason |
+|---|---|---|
+| `AudioFlow` | yes | instance id + Audio + Spatial epochs — the projection reads nothing else |
+| `RenderFlow` | yes | instance id + Render + Spatial epochs + a bit-level fingerprint of the editor viewport override (runtime state with no ECS epoch — editor camera motion must not serve stale views) |
+| `ShadowFlow` | yes | same inputs as `RenderFlow` |
+| `UiFlow` | no | depends on surface size and hot-reloadable fonts, which have no change signal a key could fold in |
+| `PhysicsFlow` | no | the simulation mutates the Physics/Spatial domains every simulated frame — a cache would never hit |
+
+The missing signals (asset versions for hot reload, a surface-size signal) are
+the open edge — see [Open questions](./open_questions.md).
+
+---
+
+## 08 — The performance lever: field-SoA + explicit SIMD
 
 The reason layout matters at all. A normal CRPECS column is `Vec<T>` —
 *Array-of-Structures within the component*:
@@ -257,7 +309,7 @@ measured, on this machine:
 
 ---
 
-## 08 — Layer 2: persistent field-SoA storage
+## 09 — Layer 2: persistent field-SoA storage
 
 This is the substrate that lets a compute kernel stay resident. It is **opt-in
 per component**, integrated *into* CRPECS (not a parallel store), and bit-
@@ -326,7 +378,7 @@ macro extension, not needed for the lever.
 
 ---
 
-## 09 — The decision core: bandits and gates
+## 10 — The decision core: bandits and gates
 
 AGDF's brain is a MAPE-K autonomic loop (Kephart & Chess, 2003): **M**onitor
 (access counters, frame timings) → **A**nalyze (cost model) → **P**lan (the
@@ -349,7 +401,7 @@ signal offline in `layout_bench`; the primitives are ready for the online loop.
 
 ---
 
-## 10 — Layer 3: online repack (the deferred frontier)
+## 11 — Layer 3: online repack (the deferred frontier)
 
 Flipping a *populated* component's layout at runtime is consciously deferred —
 for a sound reason, not for lack of effort:
@@ -374,7 +426,7 @@ playtest).
 
 ---
 
-## 11 — Developer guide
+## 12 — Developer guide
 
 **Read engine adaptation state (glass-box).**
 
@@ -386,7 +438,7 @@ for (component, rec) in dcc.layout_recommendations() {
 ```
 
 **Opt a hot, compute-heavy component into field-SoA** — `#[component(layout =
-"soa")]` (§08), all-`f32` fields. Query it by value with `Soa<T>`, or process it
+"soa")]` (§09), all-`f32` fields. Query it by value with `Soa<T>`, or process it
 in bulk for SIMD:
 
 ```rust
@@ -398,7 +450,7 @@ world.for_each_soa_column_mut::<Particle>(|col| {
 
 **Use the SIMD kernels directly** (`khora_core::math::simd`) for batched
 transform/quaternion math; keep the data field-SoA *resident* across the loop —
-do not transpose in and out (§07).
+do not transpose in and out (§08).
 
 **Set a memory budget** to enable memory-pressure budgeting on a constrained
 target: `DccConfig { memory_budget_bytes: Some(…), .. }`.
@@ -409,19 +461,19 @@ component — exactly what the advisor flags as `SimdFieldSoa`.
 
 ---
 
-## 12 — Verification
+## 13 — Verification
 
 - `cargo test --workspace` — the AGDF units (cost model, SW-UCB, decay counter,
   advisor, `FieldSoaColumn` round-trip, the SoA `World` lifecycle integration
   test) run here; the default AoS path is asserted bit-identical.
 - `cargo run -p khora-data --example layout_bench --release` — reproduces the
-  resident-vs-scatter numbers in §07 (the shipped kernels, not throwaway code).
+  resident-vs-scatter numbers in §08 (the shipped kernels, not throwaway code).
 - `cargo test -p khora-core math::simd` — the `f32x8` kernels match their scalar
   twins to `EPSILON`, with the exact affine constants the conversion asserts.
 
 ---
 
-## 13 — Prior art and references
+## 14 — Prior art and references
 
 AGDF's contribution is *unifying* models proven in other domains into a game
 ECS, governed by the DCC — not inventing memory that optimizes itself.

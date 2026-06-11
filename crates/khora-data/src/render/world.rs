@@ -28,6 +28,7 @@ use khora_core::{
 };
 
 /// Flat, GPU-friendly representation of a single mesh to render.
+#[derive(Clone)]
 pub struct ExtractedMesh {
     /// World-space transform derived from `GlobalTransform`.
     pub transform: AffineTransform,
@@ -76,7 +77,7 @@ pub struct ExtractedView {
 ///
 /// Populated by [`extract_scene`](super::extract_scene).  Consumed by the
 /// render lanes through the shared [`RenderWorldStore`](super::RenderWorldStore).
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RenderWorld {
     /// Meshes to draw this frame.
     pub meshes: Vec<ExtractedMesh>,

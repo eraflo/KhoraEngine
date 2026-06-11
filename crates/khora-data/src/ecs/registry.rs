@@ -45,6 +45,24 @@ pub enum SemanticDomain {
     Ui,
 }
 
+impl SemanticDomain {
+    /// Number of semantic domains — sizes fixed per-domain tables such as the
+    /// [`World`](crate::ecs::World)'s change epochs.
+    pub const COUNT: usize = 5;
+
+    /// Dense index of this domain in `0..COUNT`, used to address fixed
+    /// per-domain arrays without a `HashMap` lookup.
+    pub const fn index(self) -> usize {
+        match self {
+            SemanticDomain::Spatial => 0,
+            SemanticDomain::Render => 1,
+            SemanticDomain::Audio => 2,
+            SemanticDomain::Physics => 3,
+            SemanticDomain::Ui => 4,
+        }
+    }
+}
+
 /// How a component column is physically laid out in memory.
 ///
 /// **AGDF** (adaptive data *layout*) adapts this per component as Data

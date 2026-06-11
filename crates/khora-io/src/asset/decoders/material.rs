@@ -52,30 +52,54 @@ impl AssetDecoder<Box<dyn Material>> for MaterialDecoder {
         &self,
         bytes: &[u8],
     ) -> Result<Box<dyn Material>, Box<dyn Error + Send + Sync + 'static>> {
-        // RON is self-describing, so it deserializes straight into a serde
-        // value tree. From there we read the `{ type_name, material }` split.
-        let doc: serde_json::Value = ron::de::from_bytes(bytes)
-            .map_err(|e| format!("failed to parse .kmat RON: {e}"))?;
-
-        let type_name = doc
-            .get("type_name")
-            .and_then(serde_json::Value::as_str)
-            .ok_or("`.kmat` missing string field `type_name`")?;
-
-        let material_value = doc
-            .get("material")
-            .ok_or("`.kmat` missing field `material`")?;
-
-        for reg in inventory::iter::<MaterialRegistration> {
-            if reg.type_name == type_name {
-                let material = (reg.deserialize_json)(material_value)
-                    .map_err(|e| format!("failed to decode `{type_name}` material: {e}"))?;
-                return Ok(material);
-            }
-        }
-
-        Err(format!("no MaterialRegistration found for type `{type_name}`").into())
+        decode_material_inner(bytes)
     }
+}
+
+/// Decodes `.kmat` RON bytes into a [`Material`] without the runtime
+/// [`AssetService`], returning `None` on any failure.
+///
+/// The index builder calls this to read a material's texture references while
+/// scanning a project, where spinning up the asset service would be both
+/// heavyweight and circular. Because [`MaterialDecoder`] is stateless and
+/// dispatches purely through the `inventory` type-tag registry, decoding needs
+/// nothing but the bytes. A decode failure is intentionally swallowed (the
+/// caller logs and continues); use [`MaterialDecoder::load`] when the error
+/// detail matters.
+///
+/// [`AssetService`]: crate::asset::AssetService
+pub fn decode_material(bytes: &[u8]) -> Option<Box<dyn Material>> {
+    decode_material_inner(bytes).ok()
+}
+
+/// Shared `.kmat` RON → [`Material`] decode used by both the [`AssetDecoder`]
+/// impl and the service-free [`decode_material`] helper.
+fn decode_material_inner(
+    bytes: &[u8],
+) -> Result<Box<dyn Material>, Box<dyn Error + Send + Sync + 'static>> {
+    // RON is self-describing, so it deserializes straight into a serde
+    // value tree. From there we read the `{ type_name, material }` split.
+    let doc: serde_json::Value =
+        ron::de::from_bytes(bytes).map_err(|e| format!("failed to parse .kmat RON: {e}"))?;
+
+    let type_name = doc
+        .get("type_name")
+        .and_then(serde_json::Value::as_str)
+        .ok_or("`.kmat` missing string field `type_name`")?;
+
+    let material_value = doc
+        .get("material")
+        .ok_or("`.kmat` missing field `material`")?;
+
+    for reg in inventory::iter::<MaterialRegistration> {
+        if reg.type_name == type_name {
+            let material = (reg.deserialize_json)(material_value)
+                .map_err(|e| format!("failed to decode `{type_name}` material: {e}"))?;
+            return Ok(material);
+        }
+    }
+
+    Err(format!("no MaterialRegistration found for type `{type_name}`").into())
 }
 
 inventory::submit! {

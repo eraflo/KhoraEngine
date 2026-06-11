@@ -80,6 +80,18 @@ impl Flow for ShadowFlow {
     const DOMAIN: SemanticDomain = SemanticDomain::Render;
     const NAME: &'static str = "shadow";
 
+    /// Same inputs as `RenderFlow`: `Light` / `Camera` (Render domain),
+    /// `GlobalTransform` (Spatial domain), and `primary_view`'s editor
+    /// viewport override (runtime state, fingerprinted bit-for-bit).
+    fn cache_key(&self, world: &World, runtime: &Runtime) -> Option<u64> {
+        Some(crate::flow::combine_cache_key([
+            world.instance_id(),
+            world.domain_epoch(SemanticDomain::Render),
+            world.domain_epoch(SemanticDomain::Spatial),
+            crate::render::editor_override_fingerprint(runtime),
+        ]))
+    }
+
     fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
         let camera_view = primary_view(world, runtime);
         let mut matrices: HashMap<usize, ShadowMatrices> = HashMap::new();

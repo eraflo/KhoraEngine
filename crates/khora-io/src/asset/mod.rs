@@ -16,6 +16,7 @@
 
 mod decoder;
 pub mod decoders;
+mod dependencies;
 mod file;
 mod index_builder;
 mod io;
@@ -28,6 +29,7 @@ mod watcher;
 
 pub use decoder::*;
 pub use decoders::*;
+pub use dependencies::*;
 pub use file::*;
 pub use index_builder::*;
 pub use io::*;

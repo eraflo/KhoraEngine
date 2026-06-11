@@ -133,11 +133,7 @@ impl SpatialMixingLane {
             // "empty source — emit a stop and skip" so the lane never
             // divides by zero.
             let channels = sound_data.channels as usize;
-            let num_frames = if channels == 0 {
-                0
-            } else {
-                sound_data.samples.len() / channels
-            };
+            let num_frames = sound_data.samples.len().checked_div(channels).unwrap_or(0);
             if num_frames == 0 {
                 writeback.updates.push(AudioPlaybackUpdate {
                     entity: source.entity,

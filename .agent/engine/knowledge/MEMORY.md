@@ -8,9 +8,32 @@ Deep history lives in git and `docs/plans/`.
 - **Build**: clean (all crates compile, 0 errors); clippy 0 errors.
 - **Tests**: ~586 passing, ~35 ignored, 0 failures. Treat the live `cargo test --workspace` count as truth.
 
-## Latest work (2026-05-19) — WGSL migration finalization
+## Latest work (2026-06-11) — Adaptive loop closure
+- **PID recovery loop closed** (`khora-control/src/service.rs`): the DCC remembers the
+  `global_budget_multiplier` at last budget issuance and re-arbitrates when the frame-time PID drifts
+  it by more than `PID_RENEGOTIATE_DELTA` (0.05) — pressure heuristics drive downgrades, this drift
+  trigger drives *recovery* (agents upgrade again once measured frame time settles under the setpoint).
+- **Empirical cost calibration** (`khora-control/src/gorna/mod.rs`): `GornaArbitrator::arbitrate` takes
+  per-agent measured costs (CostModel forecast at current workload, fallback `latest_ms`); during
+  negotiation each agent's quoted estimates are rescaled so the current-strategy option equals the
+  measurement (factor clamped `[0.25, 4.0]`) — the fit reasons in measured ms, not static quotes.
+- **Three real shadow tiers**: new `MediumShadowsLane` (1024² × 4-layer 2D + 256² × 4-cube, ≈22 MiB).
+  Mapping: HighPerformance→Standard (2048²+512², ≈88 MiB), Balanced→Medium, LowPower→LowRes
+  (512²+128², ≈5.5 MiB). Honest per-tier VRAM quotes, each tier gated on the VRAM constraint; LowRes
+  always offered as the floor.
+- **Per-domain change epochs + Flow view caching** (`khora-data`): `World::domain_epoch` /
+  `World::instance_id`; opt-in `Flow::cache_key`; `register_flow!` (`run_flow_cached`) republishes the
+  previous View on a key hit. Cached: Audio, Render, Shadow (Render/Shadow fold a bit-level fingerprint
+  of the editor viewport override). Uncached: Ui (surface size / hot-reload fonts have no signal),
+  Physics (mutates every simulated frame). Representation-only — cached View is bit-identical.
+- **Sequential budget semantics documented** (`khora-control/src/scheduler.rs` rustdoc + `08_gorna.md`):
+  agents run sequentially in priority order, so GORNA budgets are exclusive per-agent time slices
+  (sum-of-costs fitting); parallel execution (stub) will require a critical-path model.
+
+## Earlier work (2026-05-19) — WGSL migration finalization
 - **Shadow agent**: `ShadowStrategy::from_strategy_id` made `pub`; tests cover StrategyId→ShadowStrategy
-  mapping (`LowPower→LowRes`, `HighPerformance/Balanced→Standard`) and `apply_budget`.
+  mapping (`LowPower→LowRes`, `HighPerformance/Balanced→Standard` — since superseded by the Medium tier,
+  see Latest work) and `apply_budget`.
 - **Forward+ shadows**: `ForwardPlusLane` reads `ShadowFrame` from the deck; group 3 = shadow bindings,
   group 4 = F+ tile/light data + `shadow_view_projs`. Directional/spot 2D PCF + point-light cube shadows
   → full parity with `LitForwardLane`.

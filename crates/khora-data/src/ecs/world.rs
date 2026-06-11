@@ -61,6 +61,41 @@ pub enum RemoveComponentError {
     ComponentNotPresent,
 }
 
+/// Errors that can occur while reconstructing a `World` from a raw archetype
+/// memory snapshot in [`World::deserialize_archetype`].
+#[derive(Debug)]
+pub enum DeserializeArchetypeError {
+    /// The outer bincode payload could not be decoded.
+    Decode(bincode::error::DecodeError),
+    /// A serialized component type name is not present in the type registry of
+    /// this `World`, so its column cannot be reconstructed.
+    UnknownComponent(String),
+    /// A column's raw bytes failed validation (misaligned or oversized length).
+    InvalidColumn(super::page::SetFromBytesError),
+}
+
+impl std::fmt::Display for DeserializeArchetypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeserializeArchetypeError::Decode(e) => write!(f, "archetype decode failed: {e}"),
+            DeserializeArchetypeError::UnknownComponent(name) => {
+                write!(f, "unknown serialized component type: {name}")
+            }
+            DeserializeArchetypeError::InvalidColumn(e) => {
+                write!(f, "invalid component column: {e}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for DeserializeArchetypeError {}
+
+impl From<bincode::error::DecodeError> for DeserializeArchetypeError {
+    fn from(e: bincode::error::DecodeError) -> Self {
+        DeserializeArchetypeError::Decode(e)
+    }
+}
+
 /// Simple statistics for a semantic domain.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DomainStats {
@@ -93,7 +128,23 @@ pub struct World {
     pub(crate) planner: QueryPlanner,
     /// The type registry for serialization purposes.
     type_registry: TypeRegistry,
+    /// Monotonic per-domain change counters ("epochs"), indexed by
+    /// [`SemanticDomain::index`]. Every entry point that can change a
+    /// domain's *semantic* content (spawn/despawn, component add/remove,
+    /// mutable access) bumps the matching epoch in O(1). Flows compare
+    /// epochs across frames to decide whether a cached View is still
+    /// valid, so over-bumping is harmless while a missed bump would mean
+    /// stale Views. Representation-only changes (AGDF layout) do NOT bump.
+    domain_epochs: [u64; SemanticDomain::COUNT],
+    /// Process-unique id of this `World` instance. Folded into Flow cache
+    /// keys so a freshly created World (whose epochs restart at zero, e.g.
+    /// a play-mode snapshot restore) can never alias a previous World's
+    /// epoch values and serve a stale cached View.
+    instance_id: u64,
 }
+
+/// Source of process-unique [`World::instance_id`] values.
+static WORLD_INSTANCE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 impl World {
     /// (Internal) Allocates a new or recycled `EntityId` and reserves its metadata slot.
@@ -106,24 +157,36 @@ impl World {
         self.storage.find_or_create_page_for_bundle::<B>()
     }
 
-    /// (Internal) A helper function to handle the `swap_remove` logic for a single component group.
-    fn remove_from_page(
-        &mut self,
-        entity_to_despawn: EntityId,
-        location: PageIndex,
-        domain: SemanticDomain,
-    ) {
+    /// (Internal) Removes a single physical row from a page via `swap_remove`,
+    /// patching the moved entity's metadata so every domain that referenced the
+    /// vacated slot now points at it.
+    ///
+    /// A mixed-domain bundle is stored in one page but registered under several
+    /// domain keys in [`EntityMetadata::locations`], all addressing the same
+    /// `(page_id, row_index)`. The moved (last-row) entity may likewise reference
+    /// this page under more than one domain, so every one of its locations that
+    /// pointed at the page's old last row is repointed at `location` — patching a
+    /// single domain would leave the others dangling. O(domains) per page, no scan.
+    fn remove_from_page(&mut self, entity_to_despawn: EntityId, location: PageIndex) {
         let page = &mut self.storage.pages[location.page_id as usize];
         if page.entities.is_empty() {
             return;
         }
 
-        let last_entity_in_page = *page.entities.last().unwrap();
+        let old_last_row = (page.entities.len() - 1) as u32;
+        let last_entity_in_page = page.entities[old_last_row as usize];
         page.swap_remove_row(location.row_index);
 
+        // The last row moved into the vacated slot. Repoint every location of the
+        // moved entity that addressed this page's old last row at the new slot.
+        // (When the despawned entity *is* the last row, nothing moved.)
         if last_entity_in_page != entity_to_despawn {
             let metadata = self.entities.get_metadata_mut(last_entity_in_page).unwrap();
-            metadata.locations.insert(domain, location);
+            for loc in metadata.locations.values_mut() {
+                if loc.page_id == location.page_id && loc.row_index == old_last_row {
+                    *loc = location;
+                }
+            }
         }
     }
 
@@ -139,6 +202,9 @@ impl World {
             storage: StorageManager::new(ComponentRegistry::default()),
             planner: QueryPlanner::new(),
             type_registry: TypeRegistry::default(),
+            domain_epochs: [0; SemanticDomain::COUNT],
+            instance_id: WORLD_INSTANCE_COUNTER
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         };
         // Generic and hand-implemented components can't self-register via the
         // derive (generics have no single `TypeId`; `MaterialRef` holds a trait
@@ -209,6 +275,37 @@ impl World {
             .collect()
     }
 
+    /// Current change epoch of `domain` — a monotonic counter bumped by
+    /// every mutation entry point that can affect the domain's semantic
+    /// content. Equal epochs across two reads guarantee the domain's data
+    /// (and its query iteration order) is unchanged; a different value
+    /// only means "possibly changed" (bumps are conservative). Flows use
+    /// this to validate cached Views.
+    pub fn domain_epoch(&self, domain: SemanticDomain) -> u64 {
+        self.domain_epochs[domain.index()]
+    }
+
+    /// Process-unique identifier of this `World` instance. Cache keys
+    /// derived from [`domain_epoch`](Self::domain_epoch) must include it so
+    /// that epochs from two different World instances never compare equal.
+    pub fn instance_id(&self) -> u64 {
+        self.instance_id
+    }
+
+    /// (Internal) Marks `domain` as semantically changed. O(1).
+    pub(crate) fn bump_domain_epoch(&mut self, domain: SemanticDomain) {
+        self.domain_epochs[domain.index()] = self.domain_epochs[domain.index()].wrapping_add(1);
+    }
+
+    /// (Internal) Marks every domain as semantically changed — used by bulk
+    /// paths (deserialization, compaction) where per-domain attribution is
+    /// not worth the bookkeeping. Over-invalidation is always safe.
+    pub(crate) fn bump_all_domain_epochs(&mut self) {
+        for epoch in &mut self.domain_epochs {
+            *epoch = epoch.wrapping_add(1);
+        }
+    }
+
     /// Spawns a new entity with the given bundle of components.
     ///
     /// This is the primary method for creating entities. It orchestrates the entire process:
@@ -260,6 +357,13 @@ impl World {
                 .entry(*domain)
                 .or_default()
                 .entity_count += 1;
+
+            // A new entity appeared in this domain — invalidate cached
+            // Views. Inline field access: `metadata` still borrows
+            // `self.entities`, so `bump_domain_epoch(&mut self)` can't be
+            // called here.
+            self.domain_epochs[domain.index()] =
+                self.domain_epochs[domain.index()].wrapping_add(1);
         }
 
         entity_id
@@ -302,9 +406,18 @@ impl World {
             .unwrap();
         self.entities.freed_entities.push(entity_id.index);
 
-        // --- Step 3: Iterate over the entity's component locations and remove them ---
+        // --- Step 3: Remove the entity's data and update per-domain bookkeeping. ---
+        // A mixed-domain bundle lives in one page but is registered under several
+        // domain keys that all address the same `(page_id, row_index)`. The
+        // physical row must be `swap_remove`d exactly once — calling it per domain
+        // key would remove the moved survivor's data on the second pass — while the
+        // bitset/stats/epoch bookkeeping still runs for every domain the entity
+        // belonged to.
+        let mut removed_rows: HashSet<PageIndex> = HashSet::new();
         for (domain, location) in metadata.locations {
-            self.remove_from_page(entity_id, location, domain);
+            if removed_rows.insert(location) {
+                self.remove_from_page(entity_id, location);
+            }
 
             // Clear the entity's bit in the domain bitset and update stats.
             if let Some(bitset) = self.storage.domain_bitsets.get_mut(&domain) {
@@ -313,6 +426,10 @@ impl World {
             if let Some(stats) = self.storage.domain_stats.get_mut(&domain) {
                 stats.entity_count = stats.entity_count.saturating_sub(1);
             }
+
+            // An entity left this domain (and `remove_from_page` may have
+            // reordered the page) — invalidate cached Views.
+            self.bump_domain_epoch(domain);
         }
         true
     }
@@ -408,6 +525,15 @@ impl World {
             .map(|&pid| self.storage.pages[pid as usize].row_count() as u64)
             .sum();
         self.storage.registry.record_access(&type_ids, rows_scanned);
+
+        // The caller may write through every `&mut` term of the query:
+        // mark those domains changed ONCE here, at construction — never
+        // per row, which would put the bump on the iteration hot path.
+        for type_id in Q::mutable_type_ids() {
+            if let Some(domain) = self.storage.registry.get_domain(type_id) {
+                self.bump_domain_epoch(domain);
+            }
+        }
 
         // 3. Construct the iterator
         QueryMut::new(self, plan, matching_page_indices)
@@ -649,6 +775,9 @@ impl World {
 
         self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
 
+        // The entity gained a component in this domain — invalidate cached Views.
+        self.bump_domain_epoch(domain);
+
         // 6. Return the old location for cleanup, without performing swap_remove
         Ok(old_location_opt)
     }
@@ -732,6 +861,8 @@ impl World {
                 bitset.clear(entity_id.index);
             }
             self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
+            // The entity left this domain entirely — invalidate cached Views.
+            self.bump_domain_epoch(domain);
             return Ok(Some(loc));
         }
 
@@ -775,6 +906,9 @@ impl World {
         // The bitset stays set — other components remain in this domain.
         self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
 
+        // The entity lost a component in this domain — invalidate cached Views.
+        self.bump_domain_epoch(domain);
+
         // 8. Hand the old location off to the GC.
         Ok(Some(loc))
     }
@@ -817,6 +951,8 @@ impl World {
             if let Some(bitset) = self.storage.domain_bitsets.get_mut(&domain) {
                 bitset.clear(entity_id.index);
             }
+            // The entity left this domain — invalidate cached Views.
+            self.bump_domain_epoch(domain);
         }
 
         location
@@ -841,6 +977,12 @@ impl World {
         // 2. Use the registry to find the component's domain and its location.
         let domain = self.storage.registry.get_domain(TypeId::of::<T>())?;
         let location = metadata.locations.get(&domain)?;
+
+        // Handing out `&mut T` means T may change — invalidate cached
+        // Views. Inline field access: `metadata` still borrows
+        // `self.entities`, so `bump_domain_epoch(&mut self)` can't be
+        // called here.
+        self.domain_epochs[domain.index()] = self.domain_epochs[domain.index()].wrapping_add(1);
 
         // 3. Get the component data from the page.
         let type_id = TypeId::of::<T>();
@@ -871,6 +1013,10 @@ impl World {
             Some(d) => d,
             None => return results,
         };
+
+        // Handing out `&mut T` references means T may change — invalidate
+        // cached Views (conservative: bumped even if no entity resolves).
+        self.bump_domain_epoch(domain);
 
         // 1. Collect locations and check for duplicates
         let mut locations = [(0u32, 0u32); N];
@@ -1007,6 +1153,8 @@ impl World {
             return false;
         };
         value.set_in_column(column.as_mut(), location.row_index as usize);
+        // The component's value changed — invalidate cached Views.
+        self.bump_domain_epoch(domain);
         true
     }
 
@@ -1022,6 +1170,11 @@ impl World {
         mut f: impl FnMut(&mut crate::ecs::FieldSoaColumn<T>),
     ) {
         let type_id = TypeId::of::<T>();
+        // Bulk mutable access to T's lanes — invalidate cached Views once,
+        // up front (never inside the per-page/per-element loop).
+        if let Some(domain) = self.storage.registry.get_domain(type_id) {
+            self.bump_domain_epoch(domain);
+        }
         for page in self.storage.pages.iter_mut() {
             if let Some(column) = page.columns.get_mut(&type_id) {
                 if let Some(soa) = column
@@ -1084,7 +1237,7 @@ impl World {
     pub fn deserialize_archetype(
         &mut self,
         data: &[u8],
-    ) -> Result<(), bincode::error::DecodeError> {
+    ) -> Result<(), DeserializeArchetypeError> {
         let (layout, _): (SceneMemoryLayout, _) =
             bincode::decode_from_slice(data, config::standard())?;
 
@@ -1093,16 +1246,18 @@ impl World {
         self.storage.pages.clear();
 
         for serialized_page in layout.pages {
-            // Use the TypeRegistry to convert string names back to TypeIds.
+            // Use the TypeRegistry to convert string names back to TypeIds. A
+            // name absent from the registry comes from an untrusted/foreign
+            // scene, so fail gracefully instead of panicking.
             let type_ids: Vec<TypeId> = serialized_page
                 .type_names
                 .iter()
                 .map(|name| {
                     self.type_registry
                         .get_id_of(name)
-                        .expect("Serialized component type not registered")
+                        .ok_or_else(|| DeserializeArchetypeError::UnknownComponent(name.clone()))
                 })
-                .collect();
+                .collect::<Result<_, _>>()?;
 
             let mut new_page = ComponentPage {
                 type_ids,
@@ -1111,21 +1266,37 @@ impl World {
             };
 
             for (type_name, bytes) in &serialized_page.columns {
-                let type_id = self.type_registry.get_id_of(type_name).unwrap();
+                let type_id = self
+                    .type_registry
+                    .get_id_of(type_name)
+                    .ok_or_else(|| DeserializeArchetypeError::UnknownComponent(type_name.clone()))?;
                 let constructor = self
                     .storage
                     .registry
                     .get_column_constructor(&type_id)
-                    .unwrap();
+                    .ok_or_else(|| {
+                        DeserializeArchetypeError::UnknownComponent(type_name.clone())
+                    })?;
                 let mut column = constructor();
-                // UNSAFE: Writing raw bytes into the newly created component vector.
+                // SAFETY: `constructor` is the registered column factory for
+                // `type_id`, so it produces a column whose element type matches
+                // the bytes serialized for that same type. `set_from_bytes`
+                // additionally validates the byte length before any allocation,
+                // returning an error (propagated here) on a hostile or
+                // mismatched length rather than aborting.
                 unsafe {
-                    column.set_from_bytes(bytes);
+                    column
+                        .set_from_bytes(bytes)
+                        .map_err(DeserializeArchetypeError::InvalidColumn)?;
                 }
                 new_page.columns.insert(type_id, column);
             }
             self.storage.pages.push(new_page);
         }
+
+        // The entire World content was replaced by raw storage writes —
+        // every domain may have changed, so invalidate all cached Views.
+        self.bump_all_domain_epochs();
 
         Ok(())
     }
@@ -1149,6 +1320,13 @@ impl WorldMaintenance for World {
                 }
             }
         }
+
+        // Compaction is representation-only (no component appears or
+        // disappears), but `swap_remove_row` moves the page's last entity
+        // into the hole, which changes query *iteration order* — and
+        // projected Views are order-sensitive (e.g. index-aligned light
+        // and audio-source lists). Conservatively invalidate everything.
+        self.bump_all_domain_epochs();
     }
 
     fn vacuum_hole_at(&mut self, page_index: u32, hole_row_index: u32) {

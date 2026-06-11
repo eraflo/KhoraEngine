@@ -43,7 +43,7 @@ use std::any::Any;
 use std::marker::PhantomData;
 
 use crate::ecs::component::Component;
-use crate::ecs::page::AnyVec;
+use crate::ecs::page::{AnyVec, SetFromBytesError, MAX_COLUMN_PAYLOAD_BYTES};
 
 /// Per-type knowledge the generic [`FieldSoaColumn`] needs to scatter a
 /// component into its `f32` field arrays and gather it back.
@@ -182,10 +182,31 @@ impl<T: SoaLayout> AnyVec for FieldSoaColumn<T> {
         out
     }
 
-    unsafe fn set_from_bytes(&mut self, bytes: &[u8]) {
+    unsafe fn set_from_bytes(&mut self, bytes: &[u8]) -> Result<(), SetFromBytesError> {
         let field_count = T::FIELD_COUNT;
-        let total_f32 = bytes.len() / 4;
-        let rows = total_f32.checked_div(field_count).unwrap_or(0);
+        // One row occupies `field_count` little-endian f32s. A zero-field layout
+        // has no payload, mirroring the ZST handling in the `Vec<T>` column.
+        let row_size = field_count.saturating_mul(4);
+        if row_size == 0 {
+            return Ok(());
+        }
+
+        // Validate the untrusted length before reserving any rows: it must be an
+        // exact multiple of a full row and stay under the payload ceiling.
+        if !bytes.len().is_multiple_of(row_size) {
+            return Err(SetFromBytesError::MisalignedLength {
+                len: bytes.len(),
+                elem_size: row_size,
+            });
+        }
+        if bytes.len() > MAX_COLUMN_PAYLOAD_BYTES {
+            return Err(SetFromBytesError::PayloadTooLarge {
+                len: bytes.len(),
+                max: MAX_COLUMN_PAYLOAD_BYTES,
+            });
+        }
+
+        let rows = bytes.len() / row_size;
         let mut idx = 0usize;
         for field in &mut self.fields {
             field.clear();
@@ -201,6 +222,7 @@ impl<T: SoaLayout> AnyVec for FieldSoaColumn<T> {
                 idx += 1;
             }
         }
+        Ok(())
     }
 }
 
@@ -335,7 +357,9 @@ mod tests {
         });
         let bytes = col.to_bytes();
         let mut restored = FieldSoaColumn::<P>::new();
-        unsafe { restored.set_from_bytes(&bytes) };
+        // SAFETY: `bytes` came from `to_bytes` on the same `FieldSoaColumn<P>`
+        // type, so the field-major f32 layout matches exactly.
+        unsafe { restored.set_from_bytes(&bytes) }.expect("valid bytes must round-trip");
         assert_eq!(restored.len(), 2);
         assert_eq!(
             restored.get(0),

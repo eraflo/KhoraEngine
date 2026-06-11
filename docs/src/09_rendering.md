@@ -125,7 +125,7 @@ Per-frame switching via GORNA. The `RenderAgent` selects based on its current `R
 | Unlit | `SimpleUnlitLane` | No lighting, baseline cost |
 | Forward | `LitForwardLane` | PBR with per-light passes, shadow sampling (PCF 3×3) |
 | Forward+ | `ForwardPlusLane` | Tile-based light culling, many lights |
-| Shadow | `ShadowPassLane` | Depth-only shadow map rendering (owned by `ShadowAgent`) |
+| Shadow | `StandardShadowsLane` / `MediumShadowsLane` / `LowResShadowsLane` | Depth-only shadow atlas rendering, three quality tiers (owned by `ShadowAgent`) |
 | UI | `UiRenderLane` | 2D UI primitives (owned by `UiAgent`) |
 | Extract | `ExtractLane` | ECS → GPU-ready data transfer |
 
@@ -135,19 +135,27 @@ The transition between strategies is seamless: pipelines for all strategies are 
 
 `ShadowAgent` is the canonical example of agent split. It runs in `OBSERVE`, before `RenderAgent`, and produces:
 
-- A 2048 × 2048 Depth32Float **shadow atlas** with 4 layers.
-- A `ShadowAtlasView` and `ShadowComparisonSampler` in `FrameContext`.
+- A Depth32Float **2D shadow atlas** (4 layers, directional/spot) plus a **cube atlas** (4 cubes, point lights) — at the resolution of the tier GORNA selected.
+- A `ShadowFrame` slot (GPU bindings + per-light entries) published into the per-frame `OutputDeck`.
 
-`RenderAgent` declares `AgentDependency::Hard(AgentId::ShadowRenderer)`. The Scheduler enforces ordering. The lit forward pass reads the atlas from the per-frame context.
+`RenderAgent` declares `AgentDependency::Hard(AgentId::ShadowRenderer)`. The Scheduler enforces ordering. Lit consumer lanes read `deck.slot::<ShadowFrame>()` — the only cross-agent channel for shadow data.
+
+Shadow quality is a real GORNA negotiation surface: three tiers, three lanes, honest per-tier VRAM quotes. During `negotiate()` each tier is gated on the VRAM constraint; LowRes is always offered as the floor, so the agent never returns an empty strategy set.
+
+| GORNA strategy | Lane | 2D atlas | Cube atlas | VRAM (Depth32Float) |
+|---|---|---|---|---|
+| `HighPerformance` | `StandardShadowsLane` | 2048² × 4 layers | 512² × 4 cubes | ≈88 MiB |
+| `Balanced` | `MediumShadowsLane` | 1024² × 4 layers | 256² × 4 cubes | ≈22 MiB |
+| `LowPower` | `LowResShadowsLane` | 512² × 4 layers | 128² × 4 cubes | ≈5.5 MiB |
+
+All three tiers run the same algorithm and produce the same `ShadowFrame` contract — consumer lanes are agnostic about which one ran. The tier-independent details:
 
 | Detail | Value |
 |---|---|
-| Atlas size | 2048 × 2048, Depth32Float |
-| Layers | 4 (one per cascade) |
-| Light type | Directional (orthographic projection from camera frustum AABB in light space) |
+| Light types | Directional + spot (2D atlas, orthographic/perspective), point (cube atlas, 6 faces) |
 | Texel snapping | Ortho bounds rounded to texel-aligned boundaries to prevent shimmer |
 | Sampling | PCF 3×3 in `lit_forward.wgsl` with comparison sampler |
-| Inter-agent transport | `ShadowAtlasView` + `ShadowComparisonSampler` slots in `FrameContext` |
+| Inter-agent transport | `ShadowFrame` slot in the per-frame `OutputDeck` |
 
 Shimmer prevention is the subtle bit. A naive ortho projection re-derived per frame jitters by sub-texel amounts as the camera moves, producing crawl on shadow edges. We snap the ortho bounds to texel boundaries — visible artifacts disappear.
 
@@ -240,7 +248,7 @@ The render pipeline is a stack of lanes orchestrated by two agents (`RenderAgent
 
 Cost estimates calibrate themselves over time through telemetry, but the initial value should reflect a measured baseline.
 
-For shadow work specifically: the atlas size, cascade count, and PCF kernel are tunable in `ShadowPassLane`. Texel-snapping logic lives in the same lane — leave it alone unless you can prove a bug.
+For shadow work specifically: each tier's atlas resolutions are fixed in its lane (`crates/khora-lanes/src/render_lane/shadows_lane/{standard,medium,low_res}.rs`); the shared atlas/pass infrastructure lives in `shadows_lane/algo`, and the shadow matrices come from `ShadowFlow` (`khora-data`). Adding a fourth tier means a new lane plus a `StrategyOption` in `ShadowAgent::negotiate`. Texel-snapping logic — leave it alone unless you can prove a bug.
 
 ## Decisions
 

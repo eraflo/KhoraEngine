@@ -49,6 +49,20 @@ impl Flow for RenderFlow {
     const DOMAIN: SemanticDomain = SemanticDomain::Render;
     const NAME: &'static str = "render";
 
+    /// The projection below reads mesh/material handles, `Light` and
+    /// `Camera` (Render domain), `GlobalTransform` (Spatial domain), and —
+    /// through `primary_view` — the editor viewport override, which is
+    /// runtime state with no ECS epoch. Folding its bit-level fingerprint
+    /// into the key keeps editor camera motion from serving stale views.
+    fn cache_key(&self, world: &World, runtime: &Runtime) -> Option<u64> {
+        Some(crate::flow::combine_cache_key([
+            world.instance_id(),
+            world.domain_epoch(SemanticDomain::Render),
+            world.domain_epoch(SemanticDomain::Spatial),
+            crate::render::editor_override_fingerprint(runtime),
+        ]))
+    }
+
     fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
         let mut rw = RenderWorld::new();
         extract_meshes(world, &mut rw);

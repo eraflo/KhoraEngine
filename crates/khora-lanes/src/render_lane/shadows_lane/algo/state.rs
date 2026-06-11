@@ -206,6 +206,7 @@ impl ShadowsLaneState {
     /// providing its own atlas capacities (used here only to **cap**
     /// per-frame allocation; the texture is already sized correctly by
     /// `init_gpu`).
+    #[allow(clippy::too_many_arguments)] // one parameter per render input; a config struct would obscure the call sites
     pub fn render(
         &self,
         atlas_2d_max_lights: u32,

@@ -134,6 +134,27 @@ weighting, and output clamping to `[floor, 1.0]`. On top of the loop, a **hard s
 the multiplier immediately on `Critical` thermal/battery or near-budget memory pressure — the loop
 regulates the steady state, the ceiling handles emergencies.
 
+The loop is closed **in both directions**. Pressure heuristics (and the cost-model forecast) drive
+the *downgrades*: they tighten the target and flag a renegotiation. Recovery is driven by the
+multiplier itself: the DCC remembers the multiplier in effect when budgets were last issued, and
+re-arbitrates whenever the PID has since moved it by more than `PID_RENEGOTIATE_DELTA` (0.05) in
+either direction. Once measured frame time settles back under the setpoint the multiplier climbs,
+budgets are re-issued, and agents upgrade again — instead of staying pinned at a degraded strategy
+forever.
+
+### Empirical calibration — fitting measured milliseconds
+
+Agents quote static estimates in `negotiate()`; reality drifts from the quote per machine and per
+scene. The DCC already fits each agent's measured `(n, time)` samples to an empirical `CostModel`,
+and `GornaArbitrator::arbitrate` takes those per-agent measured costs (the model's forecast at the
+current workload, falling back to `CostModel::latest_ms`) to anchor the quotes: during the
+negotiation pass, every strategy option of an agent is rescaled so the option matching the agent's
+*current* strategy equals the measurement. The factor is clamped to `[0.25, 4.0]` so one pathological
+sample (a hitch, a cold cache) cannot swing the fit by orders of magnitude, and the relative ordering
+between options is preserved — only the absolute scale moves. The budget fitting therefore reasons
+about measured milliseconds, not static worst-case quotes. Agents without a measurement (cold start)
+keep their quotes as-is.
+
 > **GORNA cannot force phases.** It can only suggest importance changes (`TimingAdjustment`). Agents always control which phases they run in via `allowed_phases`.
 
 ## 05 — Compliance today
@@ -141,7 +162,7 @@ regulates the steady state, the ceiling handles emergencies.
 | Agent | Negotiates | Applies budget | Reports status |
 |---|---|---|---|
 | `RenderAgent` | 3 strategies (Unlit / LitForward / Forward+) | Switches lane strategy | Frame time, draw calls, lights |
-| `ShadowAgent` | 1 strategy (atlas) | (no-op, single strategy) | Atlas usage, cascade count |
+| `ShadowAgent` | 3 strategies (Standard / Medium / LowRes atlas tiers) | Switches shadow lane (atlas resolution + VRAM) | Strategy, last pass time |
 | `PhysicsAgent` | 3 strategies (Standard / Simplified / Disabled) | Adjusts fixed timestep | Step time, body count, collider count |
 | `UiAgent` | 1 strategy (layout + render) | (no-op, single strategy) | Node count, text count |
 | `AudioAgent` | 3 strategies (Full / Reduced / Minimal) | Adjusts max sources | Source count, frame |
@@ -171,6 +192,8 @@ graph TD
 ```
 
 The two paths only touch through the `BudgetChannel` — one `crossbeam_channel` per agent, shared current-state cache, last-wins semantics. The hot path **never blocks** on the cold path. If a budget is late, the previous one stays in effect.
+
+**Budget semantics under sequential execution.** Within each phase the Scheduler currently executes agents **sequentially, in priority order** (`ExecutionScheduler::execute_agents_sequential`). A GORNA budget is therefore a per-agent *exclusive time slice* of the frame, not a concurrent allocation — measured agent costs add up, which is exactly what the budget fitting assumes when it sums the (calibrated) estimated times against the frame budget. Parallel agent execution is roadmap work (the scheduler stub exists); when it lands, the fitting must switch from sum-of-costs to a critical-path model.
 
 ---
 
@@ -209,7 +232,7 @@ Adding a new agent strategy: add a new lane, give it a `strategy_name()`, expose
 ## Open questions
 
 1. **User constraints.** "In this volume, physics > graphics" is a stated capability without a concrete API. `PriorityVolume` is in the roadmap.
-2. **Adaptation modes & predictive cost.** `Learning`, `Manual`, `Stable`, and `Bounded` are enforced (`AdaptationMode`, set per agent via `DccService::set_adaptation_mode`). Still open: `Calibration` (needs the layout learner), `Replay` (needs a decision recorder), `Hinted` (needs a game→engine hint channel). A `CostModel` fits measured `(n, time)` samples to a complexity class (`c·f(n)`) so GORNA can *anticipate* a breach; the fitter exists, but feeding it live samples from telemetry and using its forecast in arbitration is not yet wired.
+2. **Adaptation modes & predictive cost.** `Learning`, `Manual`, `Stable`, and `Bounded` are enforced (`AdaptationMode`, set per agent via `DccService::set_adaptation_mode`). Still open: `Calibration` (needs the layout learner), `Replay` (needs a decision recorder), `Hinted` (needs a game→engine hint channel). The predictive cost loop is now closed: the `CostModel` (`c·f(n)`) is fed live `(n, time)` samples via `TelemetryEvent::AgentCost`, its forecast tightens the target *before* a breach, and the measured costs calibrate agent quotes inside arbitration (see §04). Remaining: the workload size `n` is the coarse global entity count — per-domain workload refinement is open.
 3. **ML-augmented heuristics.** A future heuristic could be a small ML model trained on telemetry. The deployment story (model storage, update cadence) is undecided.
 
 ---

@@ -35,6 +35,7 @@
 //! produces a release archive (PackLoader). This is the foundation that makes
 //! the dev/release transparency promise of the VFS work.
 
+use crate::asset::dependencies::{extract_dependencies, type_has_dependency_extractor};
 use anyhow::{anyhow, Context, Result};
 use khora_core::asset::{AssetMetadata, AssetSource, AssetUUID};
 use std::{
@@ -150,7 +151,10 @@ impl<'a> IndexBuilder<'a> {
             return Ok(Vec::new());
         }
 
-        let mut entries: Vec<(String, PathBuf, String)> = Vec::new();
+        // The absolute path is retained alongside the relative one so handled
+        // asset types can have their bytes read for dependency extraction after
+        // sorting. Leaf types are never read (see below).
+        let mut entries: Vec<(String, PathBuf, PathBuf, String)> = Vec::new();
 
         for entry in walkdir::WalkDir::new(self.assets_root)
             .follow_links(false)
@@ -175,22 +179,41 @@ impl<'a> IndexBuilder<'a> {
                 None => EXTENSIONLESS_ASSET_TYPE.to_string(),
             };
             let rel_fwd = rel_to_forward_slash(&rel);
-            entries.push((rel_fwd, rel, type_name));
+            entries.push((rel_fwd, rel, abs.to_path_buf(), type_name));
         }
 
         // Sort by forward-slash relative path for byte-deterministic output.
+        // Dependencies are extracted *after* sorting so the order they are
+        // visited never affects the result.
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
         let mut metadata = Vec::with_capacity(entries.len());
-        for (rel_fwd, rel_path, type_name) in entries {
+        for (rel_fwd, rel_path, abs_path, type_name) in entries {
             let uuid = AssetUUID::new_v5(&rel_fwd);
+            // Only read file contents for types whose references we can parse.
+            // Textures, audio, meshes, etc. are never read — this preserves the
+            // builder's stat-only fast path and avoids a per-file I/O cliff.
+            let dependencies = if type_has_dependency_extractor(&type_name) {
+                match std::fs::read(&abs_path) {
+                    Ok(bytes) => extract_dependencies(&type_name, &bytes),
+                    Err(e) => {
+                        log::warn!(
+                            "asset index: failed to read '{}' for dependency extraction: {e}",
+                            rel_fwd
+                        );
+                        Vec::new()
+                    }
+                }
+            } else {
+                Vec::new()
+            };
             let mut variants = HashMap::with_capacity(1);
             variants.insert("default".to_string(), AssetSource::Path(rel_path.clone()));
             metadata.push(AssetMetadata {
                 uuid,
                 source_path: rel_path,
                 asset_type_name: type_name,
-                dependencies: Vec::new(),
+                dependencies,
                 variants,
                 tags: Vec::new(),
             });
@@ -322,6 +345,110 @@ mod tests {
         let uuid = AssetUUID::new_v5("textures/foo.png");
         let meta = vfs.get_metadata(&uuid).expect("VFS must surface the asset");
         assert_eq!(meta.asset_type_name, "texture");
+    }
+
+    /// Writes a `StandardMaterial` to `path` as `.kmat` RON — the on-disk form
+    /// the index builder reads when extracting dependencies.
+    fn write_kmat(path: &Path, material: &khora_core::asset::StandardMaterial) {
+        let json =
+            khora_data::ecs::material_to_json(material).expect("material serializes to JSON");
+        let ron = ron::ser::to_string(&json).expect("material JSON encodes to RON");
+        fs::write(path, ron).unwrap();
+    }
+
+    #[test]
+    fn material_metadata_lists_its_textures_sorted_and_deduped() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("textures")).unwrap();
+        fs::create_dir_all(root.join("materials")).unwrap();
+        fs::write(root.join("textures").join("base.png"), b"PNG").unwrap();
+        fs::write(root.join("textures").join("normal.png"), b"PNG").unwrap();
+
+        // The UUIDs a material stores are derived from the texture's
+        // forward-slash relative path — identical to the UUIDs the index
+        // assigns those texture files.
+        let base_uuid = AssetUUID::new_v5("textures/base.png");
+        let normal_uuid = AssetUUID::new_v5("textures/normal.png");
+        let material = khora_core::asset::StandardMaterial {
+            base_color_texture: Some(base_uuid),
+            // Reuse the base texture in a second slot to exercise dedup.
+            metallic_roughness_texture: Some(base_uuid),
+            normal_map: Some(normal_uuid),
+            ..Default::default()
+        };
+        write_kmat(&root.join("materials").join("wood.kmat"), &material);
+
+        let metadata = IndexBuilder::new(root).build_metadata().unwrap();
+        let mat_meta = metadata
+            .iter()
+            .find(|m| m.asset_type_name == "material")
+            .expect("the material must be indexed");
+
+        let mut expected = vec![base_uuid, normal_uuid];
+        expected.sort();
+        assert_eq!(
+            mat_meta.dependencies, expected,
+            "material deps must be both textures, sorted and deduped"
+        );
+
+        // The texture entries themselves must carry no dependencies — they are
+        // leaf assets and are never read/parsed.
+        for tex in metadata.iter().filter(|m| m.asset_type_name == "texture") {
+            assert!(
+                tex.dependencies.is_empty(),
+                "texture '{}' must have no dependencies",
+                rel_to_forward_slash(&tex.source_path)
+            );
+        }
+    }
+
+    #[test]
+    fn build_index_bytes_is_byte_equal_with_material_and_textures() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("textures")).unwrap();
+        fs::create_dir_all(root.join("materials")).unwrap();
+        fs::write(root.join("textures").join("a.png"), b"A").unwrap();
+        fs::write(root.join("textures").join("b.png"), b"B").unwrap();
+
+        let material = khora_core::asset::StandardMaterial {
+            base_color_texture: Some(AssetUUID::new_v5("textures/a.png")),
+            normal_map: Some(AssetUUID::new_v5("textures/b.png")),
+            ..Default::default()
+        };
+        write_kmat(&root.join("materials").join("m.kmat"), &material);
+
+        let bytes_a = IndexBuilder::new(root).build_index_bytes().unwrap();
+        let bytes_b = IndexBuilder::new(root).build_index_bytes().unwrap();
+        assert_eq!(
+            bytes_a, bytes_b,
+            "an index over a material + textures must be byte-deterministic"
+        );
+    }
+
+    #[test]
+    fn corrupt_material_still_builds_with_empty_deps() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("materials")).unwrap();
+        fs::write(
+            root.join("materials").join("broken.kmat"),
+            b"this is not valid kmat RON",
+        )
+        .unwrap();
+
+        let metadata = IndexBuilder::new(root)
+            .build_metadata()
+            .expect("a corrupt material must not abort the index build");
+        let mat_meta = metadata
+            .iter()
+            .find(|m| m.asset_type_name == "material")
+            .expect("the corrupt material is still indexed");
+        assert!(
+            mat_meta.dependencies.is_empty(),
+            "a corrupt material yields empty deps, not a panic"
+        );
     }
 
     #[test]

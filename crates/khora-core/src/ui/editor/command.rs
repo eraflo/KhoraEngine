@@ -106,4 +106,73 @@ impl CommandHistory {
     pub fn redo_description(&self) -> Option<&str> {
         self.redo_stack.last().map(|c| c.description.as_str())
     }
+
+    /// Number of commands currently on the undo stack. Bounded by the
+    /// configured maximum depth.
+    pub fn undo_depth(&self) -> usize {
+        self.undo_stack.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ecs::entity::EntityId;
+
+    fn cmd(label: &str) -> EditorCommand {
+        let e = EntityId {
+            index: 0,
+            generation: 0,
+        };
+        EditorCommand {
+            description: label.to_owned(),
+            forward: PropertyEdit::SetName(e, format!("{label}-fwd")),
+            reverse: PropertyEdit::SetName(e, format!("{label}-rev")),
+        }
+    }
+
+    #[test]
+    fn push_is_bounded_and_evicts_oldest() {
+        let mut history = CommandHistory::new(4);
+        for i in 0..10 {
+            history.push(cmd(&format!("cmd{i}")));
+        }
+        // The stack never grows past its cap, and the oldest entries are the
+        // ones dropped — the newest command is still on top.
+        assert_eq!(history.undo_depth(), 4);
+        assert_eq!(history.undo_description(), Some("cmd9"));
+    }
+
+    #[test]
+    fn push_clears_the_redo_stack() {
+        let mut history = CommandHistory::new(8);
+        history.push(cmd("a"));
+        history.undo();
+        assert!(history.can_redo());
+        // A fresh edit after an undo discards the redo branch.
+        history.push(cmd("b"));
+        assert!(!history.can_redo());
+    }
+
+    #[test]
+    fn undo_then_redo_roundtrips() {
+        let mut history = CommandHistory::new(8);
+        history.push(cmd("a"));
+        assert!(history.can_undo() && !history.can_redo());
+
+        let reverse = history.undo().expect("a command to undo");
+        assert!(matches!(reverse, PropertyEdit::SetName(_, ref s) if s == "a-rev"));
+        assert!(!history.can_undo() && history.can_redo());
+
+        let forward = history.redo().expect("a command to redo");
+        assert!(matches!(forward, PropertyEdit::SetName(_, ref s) if s == "a-fwd"));
+        assert!(history.can_undo() && !history.can_redo());
+    }
+
+    #[test]
+    fn undo_redo_on_empty_history_is_none() {
+        let mut history = CommandHistory::new(4);
+        assert!(history.undo().is_none());
+        assert!(history.redo().is_none());
+    }
 }

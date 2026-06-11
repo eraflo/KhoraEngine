@@ -37,6 +37,17 @@ pub trait UiLayoutView {
 
     /// Writes the computed transform back to the entity.
     fn set_transform(&mut self, entity: EntityId, transform: UiTransform);
+
+    /// The available layout viewport in physical pixels `(width, height)`.
+    ///
+    /// Layout systems use this as the root `AvailableSpace` so percentage and
+    /// `flex` sizing resolve against the real surface rather than a fixed
+    /// assumption. The default returns `(1920, 1080)` for views that do not
+    /// track a surface size; implementors backed by a live surface should
+    /// override it (e.g. the ECS `World` exposing the current surface size).
+    fn viewport_size(&self) -> (u32, u32) {
+        (1920, 1080)
+    }
 }
 
 /// A trait defining a system capable of computing UI layouts.

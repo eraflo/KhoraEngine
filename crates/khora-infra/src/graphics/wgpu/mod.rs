@@ -20,6 +20,7 @@ pub(crate) mod context;
 mod conversions;
 mod device;
 mod profiler;
+mod resilience;
 mod system;
 
 pub use self::system::WgpuRenderSystem;
