@@ -188,6 +188,10 @@ struct SandboxGame {
     /// `update` (which doesn't receive `&ServiceRegistry`) can still query
     /// actions each frame.
     input_map: Option<Arc<Mutex<InputMap>>>,
+    /// Cached handle to the engine's per-frame [`Time`] resource. Cached at
+    /// `setup` time so `update` can read the real frame delta (the scheduler
+    /// publishes it each frame) instead of a hardcoded constant.
+    time: Option<khora_sdk::prelude::SharedTime>,
 }
 
 impl EngineApp for SandboxGame {
@@ -205,6 +209,7 @@ impl EngineApp for SandboxGame {
             player: None,
             controller: PlayerController::new(),
             input_map: None,
+            time: None,
         }
     }
 
@@ -216,6 +221,13 @@ impl EngineApp for SandboxGame {
             }
             self.input_map = Some(map_arc.clone());
         }
+
+        // Cache the per-frame Time handle so `update` reads the real frame
+        // delta instead of a hardcoded step.
+        self.time = runtime
+            .resources
+            .get::<khora_sdk::prelude::SharedTime>()
+            .cloned();
 
         let camera = khora_sdk::prelude::ecs::Camera::new_perspective(
             std::f32::consts::FRAC_PI_4,
@@ -315,11 +327,20 @@ impl EngineApp for SandboxGame {
 
         self.controller.process_input(inputs);
 
+        // Real wall-clock delta from the engine's Time resource — gameplay
+        // movement is variable-rate, so it uses `delta_seconds` (not the fixed
+        // sim step). Falls back to a 60 Hz step if the resource is unavailable.
+        let dt = self
+            .time
+            .as_ref()
+            .and_then(|t| t.read().ok().map(|t| t.delta_seconds))
+            .unwrap_or(1.0 / 60.0);
+
         if let Some(player) = self.player {
             if let Some(transform) = world.get_transform_mut(player) {
                 if let Some(map_arc) = &self.input_map {
                     if let Ok(map) = map_arc.lock() {
-                        self.controller.update(transform, 0.016, &map);
+                        self.controller.update(transform, dt, &map);
                     }
                 }
             }

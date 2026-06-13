@@ -200,6 +200,11 @@ pub mod prelude {
     // Input
     pub use khora_core::platform::{InputEvent, KeyCode, MouseButton};
 
+    // Per-frame timing — real frame delta, fixed sim step, interpolation alpha.
+    // `SharedTime` is the interior-mutable handle to cache in `setup` and read
+    // each frame in `update`.
+    pub use khora_core::time::{SharedTime, Time};
+
     // ECS types
     pub mod ecs {
         //! Core ECS types for game logic.

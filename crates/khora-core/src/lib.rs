@@ -28,6 +28,7 @@ pub mod control;
 pub mod ecs;
 pub mod event;
 pub mod graph;
+pub mod interpolation;
 pub mod lane;
 pub mod math;
 pub mod memory;
@@ -37,6 +38,7 @@ pub mod renderer;
 pub mod runtime;
 pub mod scene;
 pub mod telemetry;
+pub mod time;
 pub mod ui;
 pub mod utils;
 

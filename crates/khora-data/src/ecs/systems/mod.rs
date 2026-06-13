@@ -21,6 +21,7 @@
 //! own file.
 
 pub mod audio_playback_writeback;
+pub mod capture_previous_transform;
 pub mod ecs_maintenance;
 pub mod gpu_material_sync;
 pub mod gpu_mesh_sync;

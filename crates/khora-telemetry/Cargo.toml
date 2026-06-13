@@ -2,6 +2,8 @@
 name = "khora-telemetry"
 version = "0.1.0"
 edition = "2021"
+rust-version.workspace = true
+license.workspace = true
 description = "Telemetry, logging, and monitoring systems for the engine"
 
 [dependencies]

@@ -38,12 +38,106 @@ use std::time::{Duration, Instant};
 /// that changes slowly; ~once a second at 60 FPS is plenty.
 const COMPONENT_ACCESS_SAMPLE_PERIOD: u64 = 60;
 
+/// Upper bound on real frame delta fed into the simulation accumulator, in
+/// seconds. A longer real gap (debugger break, asset hitch, window drag) is
+/// truncated to this value so the accumulator never demands an unbounded
+/// number of catch-up steps — the classic "spiral of death".
+const MAX_FRAME_DELTA_SECONDS: f32 = 0.25;
+
+/// Upper bound on fixed simulation sub-steps run in a single frame. When the
+/// accumulator would demand more, the excess time is dropped (the sim runs
+/// in slow-motion rather than freezing). Bounds worst-case per-frame cost.
+const MAX_SIM_STEPS: u32 = 5;
+
+/// Pure step-count arithmetic for the fixed-timestep accumulator.
+///
+/// Given the carried-over `accumulator`, the (already clamped) real frame
+/// `dt`, the simulation `fixed_delta`, and a `max_steps` ceiling, returns:
+/// - `steps` — whole fixed sub-steps to run this frame (`0..=max_steps`),
+/// - `new_accumulator` — leftover time carried to the next frame,
+/// - `alpha` — render-interpolation factor in `[0, 1)`.
+///
+/// On `max_steps` saturation the excess accumulated time is discarded so the
+/// accumulator stays bounded (slow-motion under sustained overload rather than
+/// a runaway). A non-positive `fixed_delta` is treated as a single step with
+/// no leftover (degenerate guard; callers pass a positive step).
+fn compute_sim_steps(accumulator: f32, dt: f32, fixed_delta: f32, max_steps: u32) -> SimSteps {
+    if fixed_delta <= 0.0 {
+        return SimSteps {
+            steps: 1,
+            new_accumulator: 0.0,
+            alpha: 0.0,
+        };
+    }
+
+    let mut acc = accumulator + dt;
+    let mut steps = (acc / fixed_delta).floor() as i64;
+    if steps < 0 {
+        steps = 0;
+    }
+    let mut steps = steps as u32;
+
+    if steps > max_steps {
+        // Drop the excess: consume exactly `max_steps` worth of time and
+        // discard the remainder so the accumulator cannot grow without bound.
+        acc -= max_steps as f32 * fixed_delta;
+        let dropped = (acc / fixed_delta).floor().max(0.0);
+        acc -= dropped * fixed_delta;
+        steps = max_steps;
+    } else {
+        acc -= steps as f32 * fixed_delta;
+    }
+
+    // Guard against tiny negative residue from float subtraction.
+    if acc < 0.0 {
+        acc = 0.0;
+    }
+    let alpha = (acc / fixed_delta).clamp(0.0, 1.0);
+
+    SimSteps {
+        steps,
+        new_accumulator: acc,
+        alpha,
+    }
+}
+
+/// Result of [`compute_sim_steps`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SimSteps {
+    steps: u32,
+    new_accumulator: f32,
+    alpha: f32,
+}
+
 type AgentSlot = (
     Arc<Mutex<dyn khora_core::agent::Agent>>,
     AgentImportance,
     f32,
     Vec<AgentDependency>,
 );
+
+/// Which subset of a phase's agents [`ExecutionScheduler::execute_agents_in_phase`]
+/// should run, used to split the fixed-update sub-loop from the once-per-frame
+/// loop without double-running any agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AgentSelection {
+    /// Every agent in the phase (legacy path — no fixed agent present).
+    All,
+    /// Only agents declaring a `fixed_timestep` (the sub-stepped sim agents).
+    FixedOnly,
+    /// Every agent except the fixed-timestep ones (they were sub-stepped).
+    ExcludeFixed,
+}
+
+/// Whether the agent in `slot` declares a positive `fixed_timestep`.
+fn slot_is_fixed(slot: &AgentSlot) -> bool {
+    slot.0
+        .lock()
+        .ok()
+        .and_then(|a| a.execution_timing().fixed_timestep)
+        .map(|d| d > Duration::ZERO)
+        .unwrap_or(false)
+}
 
 /// The hot-path execution scheduler.
 pub struct ExecutionScheduler {
@@ -64,6 +158,13 @@ pub struct ExecutionScheduler {
     telemetry: Option<Sender<TelemetryEvent>>,
     /// Monotonic frame counter, used to throttle low-rate telemetry sampling.
     frame_counter: u64,
+    /// Wall-clock instant of the previous `run_frame`, used to derive the
+    /// real per-frame delta. `None` on the very first frame.
+    last_frame_instant: Option<Instant>,
+    /// Carried-over simulation time (seconds) for the fixed-timestep
+    /// accumulator. Each frame the real delta is added and whole
+    /// `fixed_delta` steps are consumed; the remainder stays here.
+    sim_accumulator: f32,
 }
 
 impl ExecutionScheduler {
@@ -84,6 +185,8 @@ impl ExecutionScheduler {
             last_deck: OutputDeck::new(),
             telemetry: None,
             frame_counter: 0,
+            last_frame_instant: None,
+            sim_accumulator: 0.0,
         }
     }
 
@@ -139,10 +242,69 @@ impl ExecutionScheduler {
     /// Executes the complete frame cycle.
     ///
     /// This is called every frame by the engine loop.
+    ///
+    /// ## Fixed-timestep sequencing
+    ///
+    /// Rendering runs at the display's variable rate, but the simulation must
+    /// advance in fixed increments to stay frame-rate independent and
+    /// deterministic. The scheduler reconciles the two with an accumulator:
+    ///
+    /// 1. Measure the real wall-clock delta since the previous frame, clamped
+    ///    to [`MAX_FRAME_DELTA_SECONDS`] (spiral-of-death guard), and add it to
+    ///    `sim_accumulator`.
+    /// 2. The **fixed step** is the smallest `fixed_timestep` declared by any
+    ///    registered agent (a single sim clock — physics owns it via its GORNA
+    ///    strategy). If no agent declares one, the frame degrades to the legacy
+    ///    "everything once per frame" path with no behaviour change.
+    /// 3. Consume whole steps: `steps = floor(accumulator / fixed_delta)`,
+    ///    capped at [`MAX_SIM_STEPS`]; the remainder carries over and yields the
+    ///    render `interpolation_alpha`.
+    /// 4. Run the **fixed-timestep agents** (TRANSFORM-phase physics) `steps`
+    ///    times — a fixed-update sub-loop — so the provider advances N discrete
+    ///    sub-steps. Then run the regular phase loop **once**, excluding the
+    ///    agents already stepped, so OUTPUT-phase render fires a single time.
+    /// 5. Publish the fresh `Time` (delta, fixed_delta, alpha) into the runtime
+    ///    resource before the render phase reads it.
+    ///
+    /// Substrate Flows project once per frame; the GORNA completion map,
+    /// budget arbitration, and telemetry all observe each individual agent
+    /// invocation (a sub-step counts as a real run, with its own cost sample).
     pub fn run_frame(&mut self, world: &mut World, runtime: Arc<Runtime>) {
         // 1. Sync budgets from cold thread
         self.budget_channel.sync();
         self.frame_start = Instant::now();
+
+        // 1b. Real frame delta + fixed-timestep accumulator bookkeeping.
+        let now = self.frame_start;
+        let fixed_delta = self.smallest_fixed_delta();
+        let dt = match self.last_frame_instant {
+            Some(prev) => now.duration_since(prev).as_secs_f32(),
+            // First frame: advance by exactly one fixed step (no real history).
+            None => fixed_delta.unwrap_or(khora_core::time::DEFAULT_FIXED_DELTA_SECONDS),
+        }
+        .min(MAX_FRAME_DELTA_SECONDS);
+        self.last_frame_instant = Some(now);
+
+        // With no fixed-timestep agent, the simulation isn't decoupled: run
+        // everything exactly once (legacy behaviour) and report alpha 0.
+        let (sim_steps, fixed_delta_for_time) = match fixed_delta {
+            Some(fd) => {
+                let r = compute_sim_steps(self.sim_accumulator, dt, fd, MAX_SIM_STEPS);
+                self.sim_accumulator = r.new_accumulator;
+                (r, fd)
+            }
+            None => (
+                SimSteps {
+                    steps: 1,
+                    new_accumulator: 0.0,
+                    alpha: 0.0,
+                },
+                khora_core::time::DEFAULT_FIXED_DELTA_SECONDS,
+            ),
+        };
+
+        // 1c. Publish the per-frame Time resource (read by Flows + game code).
+        self.publish_time(&runtime, dt, fixed_delta_for_time, sim_steps.alpha);
 
         // 2. Build the per-frame completion map. The scheduler tracks
         //    completion internally — agents do not read it through the
@@ -167,10 +329,41 @@ impl ExecutionScheduler {
         //    (only agents compete for the frame budget).
         substrate::run_flows(world, &mut bus, &runtime);
 
-        // 6. Clone phase order to avoid borrow conflicts
+        // 6. Fixed-update sub-loop. When the simulation is decoupled, the
+        //    fixed-timestep agents advance `steps` discrete sub-steps before
+        //    the once-per-frame phase loop. Each sub-step is a full agent
+        //    invocation, so the physics provider integrates N times while the
+        //    render pass below fires once. When there is no fixed agent
+        //    (`fixed_delta == None`), `steps` is 1 and these agents simply run
+        //    in their normal phase below — so this loop does nothing.
         let phases: Vec<ExecutionPhase> = self.phase_order.clone();
+        if fixed_delta.is_some() {
+            for _ in 0..sim_steps.steps {
+                for &phase in &phases {
+                    self.execute_agents_in_phase(
+                        phase,
+                        world,
+                        &runtime,
+                        &mode,
+                        &completion_map,
+                        &bus,
+                        &mut deck,
+                        AgentSelection::FixedOnly,
+                    );
+                }
+            }
+        }
 
-        // 7. Execute each phase: plugins then agents (CLAD descent —
+        // Once-per-frame agents. When the sim was sub-stepped above, fixed
+        // agents are excluded here so they are not run an extra time; with no
+        // fixed agent, every agent runs through this `All` path as before.
+        let selection = if fixed_delta.is_some() {
+            AgentSelection::ExcludeFixed
+        } else {
+            AgentSelection::All
+        };
+
+        // 8. Execute each phase: plugins then agents (CLAD descent —
         //    agents invoke their lanes themselves through `Agent::execute`).
         for phase in phases {
             for plugin in &mut self.plugins {
@@ -187,13 +380,14 @@ impl ExecutionScheduler {
                 &completion_map,
                 &bus,
                 &mut deck,
+                selection,
             );
         }
 
-        // 8. Hand the populated deck off to the engine for the I/O boundary.
+        // 9. Hand the populated deck off to the engine for the I/O boundary.
         self.last_deck = deck;
 
-        // 9. Low-rate observation tunnel: publish per-component access snapshots
+        // 10. Low-rate observation tunnel: publish per-component access snapshots
         //    so the DCC's layout advisor can recommend layouts. Sampled every
         //    `COMPONENT_ACCESS_SAMPLE_PERIOD` frames (the counters are cumulative
         //    and move slowly), and best-effort (dropped if the channel is full).
@@ -217,6 +411,42 @@ impl ExecutionScheduler {
         }
     }
 
+    /// Smallest `fixed_timestep` (in seconds) declared by any registered
+    /// agent, or `None` if no agent declares one.
+    ///
+    /// A single sim clock is assumed: when several agents declare different
+    /// fixed steps the smallest wins, so every fixed agent is stepped at least
+    /// as often as it asked for. In practice physics is the sole owner.
+    fn smallest_fixed_delta(&self) -> Option<f32> {
+        let registry = self.registry.lock().ok()?;
+        registry
+            .iter()
+            .filter_map(|agent| {
+                agent
+                    .lock()
+                    .ok()
+                    .and_then(|a| a.execution_timing().fixed_timestep)
+            })
+            .map(|d| d.as_secs_f32())
+            .filter(|d| *d > 0.0)
+            .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+    }
+
+    /// Writes the per-frame [`Time`](khora_core::time::Time) into the runtime
+    /// resource so Flows and game `update` read the real delta + alpha.
+    /// No-op if no `SharedTime` resource is registered.
+    fn publish_time(&self, runtime: &Runtime, dt: f32, fixed_delta: f32, alpha: f32) {
+        let Some(shared) = runtime.resources.get::<khora_core::time::SharedTime>() else {
+            return;
+        };
+        if let Ok(mut time) = shared.write() {
+            time.delta_seconds = dt;
+            time.fixed_delta_seconds = fixed_delta;
+            time.interpolation_alpha = alpha;
+            time.frame = time.frame.wrapping_add(1);
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn execute_agents_in_phase(
         &mut self,
@@ -227,11 +457,24 @@ impl ExecutionScheduler {
         completion_map: &Arc<AgentCompletionMap>,
         bus: &LaneBus,
         deck: &mut OutputDeck,
+        selection: AgentSelection,
     ) {
         // Collect agents for this phase and mode
         let agents = {
             let registry = self.registry.lock().unwrap();
             registry.collect_for_phase(phase, mode)
+        };
+
+        // Partition by whether the agent declares a fixed timestep, so the
+        // fixed-update sub-loop and the once-per-frame loop never double-run
+        // the same agent.
+        let agents: Vec<AgentSlot> = match selection {
+            AgentSelection::All => agents,
+            AgentSelection::FixedOnly => agents.into_iter().filter(slot_is_fixed).collect(),
+            AgentSelection::ExcludeFixed => agents
+                .into_iter()
+                .filter(|slot| !slot_is_fixed(slot))
+                .collect(),
         };
 
         if agents.is_empty() {
@@ -424,4 +667,105 @@ fn are_hard_dependencies_completed(
         }
     }
     true
+}
+
+#[cfg(test)]
+mod sim_step_tests {
+    use super::{compute_sim_steps, MAX_SIM_STEPS};
+
+    const FIXED: f32 = 1.0 / 60.0;
+
+    #[test]
+    fn exact_multiple_runs_whole_steps_no_remainder() {
+        // Two full steps' worth of time, nothing carried over.
+        let r = compute_sim_steps(0.0, 2.0 * FIXED, FIXED, MAX_SIM_STEPS);
+        assert_eq!(r.steps, 2);
+        assert!(r.new_accumulator.abs() < 1e-6, "no remainder expected");
+        assert!(r.alpha.abs() < 1e-6);
+    }
+
+    #[test]
+    fn fractional_carry_advances_remainder() {
+        // 2.5 steps → 2 steps run, half a step carried.
+        let r = compute_sim_steps(0.0, 2.5 * FIXED, FIXED, MAX_SIM_STEPS);
+        assert_eq!(r.steps, 2);
+        assert!((r.new_accumulator - 0.5 * FIXED).abs() < 1e-6);
+        assert!((r.alpha - 0.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn dt_below_fixed_delta_runs_no_step() {
+        let r = compute_sim_steps(0.0, 0.5 * FIXED, FIXED, MAX_SIM_STEPS);
+        assert_eq!(r.steps, 0);
+        assert!((r.new_accumulator - 0.5 * FIXED).abs() < 1e-6);
+        assert!((r.alpha - 0.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn accumulator_from_prior_frame_is_included() {
+        // 0.7 carried + 0.6 this frame = 1.3 steps → 1 step, 0.3 carry.
+        let r = compute_sim_steps(0.7 * FIXED, 0.6 * FIXED, FIXED, MAX_SIM_STEPS);
+        assert_eq!(r.steps, 1);
+        assert!((r.new_accumulator - 0.3 * FIXED).abs() < 1e-5);
+    }
+
+    #[test]
+    fn spiral_clamp_caps_steps_and_bounds_accumulator() {
+        // A huge dt (100 steps' worth) must clamp to MAX_SIM_STEPS and the
+        // accumulator must stay bounded (excess time dropped).
+        let r = compute_sim_steps(0.0, 100.0 * FIXED, FIXED, MAX_SIM_STEPS);
+        assert_eq!(r.steps, MAX_SIM_STEPS);
+        assert!(
+            r.new_accumulator < FIXED,
+            "accumulator must be bounded below one step, got {}",
+            r.new_accumulator
+        );
+        assert!((0.0..1.0).contains(&r.alpha));
+    }
+
+    #[test]
+    fn alpha_always_in_unit_interval() {
+        for k in 0..400u32 {
+            let dt = (k as f32) * 0.001;
+            let r = compute_sim_steps(0.0, dt, FIXED, MAX_SIM_STEPS);
+            assert!(
+                (0.0..1.0).contains(&r.alpha),
+                "alpha out of range for dt={dt}: {}",
+                r.alpha
+            );
+        }
+    }
+
+    #[test]
+    fn determinism_same_total_time_same_step_count() {
+        // Cadence A: ten frames of 1.5 fixed-steps each (144 Hz-ish bursts).
+        let mut acc_a = 0.0;
+        let mut steps_a = 0u32;
+        for _ in 0..10 {
+            let r = compute_sim_steps(acc_a, 1.5 * FIXED, FIXED, MAX_SIM_STEPS);
+            acc_a = r.new_accumulator;
+            steps_a += r.steps;
+        }
+        // Cadence B: five frames of 3.0 fixed-steps each (30 Hz). Same total
+        // simulated time (15 fixed steps) split differently.
+        let mut acc_b = 0.0;
+        let mut steps_b = 0u32;
+        for _ in 0..5 {
+            let r = compute_sim_steps(acc_b, 3.0 * FIXED, FIXED, MAX_SIM_STEPS);
+            acc_b = r.new_accumulator;
+            steps_b += r.steps;
+        }
+        assert_eq!(
+            steps_a, steps_b,
+            "same total sim time must yield the same total steps regardless of frame cadence"
+        );
+        assert_eq!(steps_a, 15);
+    }
+
+    #[test]
+    fn degenerate_fixed_delta_runs_single_step() {
+        let r = compute_sim_steps(0.0, 0.016, 0.0, MAX_SIM_STEPS);
+        assert_eq!(r.steps, 1);
+        assert_eq!(r.alpha, 0.0);
+    }
 }

@@ -172,6 +172,26 @@ impl<A: EngineApp> EngineCore<A> {
             .resources
             .insert(Arc::new(Mutex::new(khora_data::ecs::EcsMaintenance::new())));
 
+        // Time — the engine's per-frame clock. The scheduler publishes the
+        // real frame delta + fixed step + render-interpolation alpha into it
+        // each frame; Flows and game `update` read it (replacing hardcoded
+        // deltas). Shared behind RwLock so the scheduler (holding Arc<Runtime>)
+        // writes while readers borrow `&Runtime`. Inserted before `app.setup`
+        // so apps can read it during setup.
+        let time: khora_core::time::SharedTime =
+            Arc::new(std::sync::RwLock::new(khora_core::time::Time::default()));
+        runtime.resources.insert(time);
+
+        // TransformInterpolation — engine-owned per-entity "previous pose" store
+        // the capture pass fills and the render projection blends by the
+        // interpolation alpha. A resource, not an ECS component, so it never
+        // appears in the editor or scene files (interpolation is render-only).
+        let transform_interpolation: khora_core::interpolation::SharedTransformInterpolation =
+            Arc::new(std::sync::RwLock::new(
+                khora_core::interpolation::TransformInterpolation::new(),
+            ));
+        runtime.resources.insert(transform_interpolation);
+
         // UiImageAtlas — `AssetUUID → AtlasRect` mapping for UI images; the GPU
         // atlas itself is allocated lazily by `UiAgent::on_initialize`.
         runtime

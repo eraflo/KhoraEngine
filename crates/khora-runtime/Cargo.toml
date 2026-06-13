@@ -2,6 +2,8 @@
 name = "khora-runtime"
 version = "0.1.0"
 edition = "2021"
+rust-version.workspace = true
+license.workspace = true
 description = "Generic Khora game runtime — the binary the editor's Build feature stamps with packed project assets."
 
 [[bin]]

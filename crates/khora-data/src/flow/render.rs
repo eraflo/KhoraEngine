@@ -30,13 +30,12 @@ use khora_core::{
     Runtime,
 };
 
-use crate::ecs::{
-    Camera, GlobalTransform, HandleComponent, Light, SemanticDomain, World,
-};
+use crate::ecs::{Camera, GlobalTransform, HandleComponent, Light, SemanticDomain, World};
 use crate::flow::{Flow, Selection};
 use crate::register_flow;
 use crate::render::{ExtractedLight, ExtractedMesh, ExtractedView, RenderWorld};
 use khora_core::ecs::entity::EntityId;
+use khora_core::interpolation::{SharedTransformInterpolation, TransformInterpolation};
 
 /// Projects the ECS World into the per-frame [`RenderWorld`] consumed by the
 /// render lanes.
@@ -60,12 +59,24 @@ impl Flow for RenderFlow {
             world.domain_epoch(SemanticDomain::Render),
             world.domain_epoch(SemanticDomain::Spatial),
             crate::render::editor_override_fingerprint(runtime),
+            // Render interpolation makes the projected transforms a function of
+            // the per-frame alpha, which moves without any ECS epoch change.
+            // Fold its bit pattern in so the cached view is never served stale
+            // while bodies visibly interpolate between two sim steps.
+            render_interpolation_alpha(runtime).to_bits() as u64,
         ]))
     }
 
     fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
         let mut rw = RenderWorld::new();
-        extract_meshes(world, &mut rw);
+        // Render-only interpolation factor between the previous and current
+        // simulation step (0 when no decoupled sim / no Time resource).
+        let alpha = render_interpolation_alpha(runtime);
+        // Engine-owned previous-pose store (resource, not a component): held
+        // read-locked across the mesh extraction. Absent in GPU-free tests.
+        let interp = runtime.resources.get::<SharedTransformInterpolation>();
+        let interp_guard = interp.as_ref().and_then(|shared| shared.read().ok());
+        extract_meshes(world, &mut rw, alpha, interp_guard.as_deref());
         extract_lights(world, &mut rw);
         extract_views(world, &mut rw);
 
@@ -83,7 +94,24 @@ impl Flow for RenderFlow {
 
 register_flow!(RenderFlow);
 
-fn extract_meshes(world: &World, render_world: &mut RenderWorld) {
+/// Reads the render-interpolation factor published by the scheduler into the
+/// per-frame [`Time`](khora_core::time::Time) resource. Returns `0.0` (no
+/// blend — render at the current transform) when the simulation isn't
+/// decoupled or the resource is absent (e.g. GPU-free Flow tests).
+fn render_interpolation_alpha(runtime: &Runtime) -> f32 {
+    runtime
+        .resources
+        .get::<khora_core::time::SharedTime>()
+        .and_then(|shared| shared.read().ok().map(|t| t.interpolation_alpha))
+        .unwrap_or(0.0)
+}
+
+fn extract_meshes(
+    world: &World,
+    render_world: &mut RenderWorld,
+    alpha: f32,
+    interpolation: Option<&TransformInterpolation>,
+) {
     let query = world.query::<(EntityId, &GlobalTransform, &HandleComponent<GpuMesh>)>();
     for (entity_id, transform, gpu_mesh_handle) in query {
         // Per-entity component lookup, NOT positional: entities with vs without
@@ -96,8 +124,18 @@ fn extract_meshes(world: &World, render_world: &mut RenderWorld) {
             .get::<HandleComponent<GpuMaterial>>(entity_id)
             .map(|h| h.handle.clone());
 
+        // Render-only interpolation: when the engine recorded a previous
+        // world-space pose for this entity (it is sim-moved), blend prev →
+        // current by `alpha`. The authoritative `GlobalTransform` is untouched
+        // — only the projected transform is interpolated ("adapt the HOW, not
+        // the WHAT").
+        let transform = match interpolation.and_then(|store| store.previous(entity_id)) {
+            Some(prev) => prev.interpolate(&transform.0, alpha),
+            None => transform.0,
+        };
+
         render_world.meshes.push(ExtractedMesh {
-            transform: transform.0,
+            transform,
             cpu_mesh_uuid: gpu_mesh_handle.uuid,
             gpu_mesh: gpu_mesh_handle.handle.clone(),
             material,

@@ -94,6 +94,41 @@ fn run_substrate(world: &mut World, runtime: &Runtime) -> LaneBus {
     bus
 }
 
+/// A `Runtime` carrying a `SharedTime` resource fixed at `alpha` plus an empty
+/// `SharedTransformInterpolation` store, so the `RenderFlow`'s interpolation
+/// path is exercised at a known factor. Use [`record_previous_pose`] to seed a
+/// previous pose for an entity.
+fn runtime_with_alpha(alpha: f32) -> Runtime {
+    let mut runtime = Runtime::new();
+    let time = khora_core::time::Time {
+        interpolation_alpha: alpha,
+        ..khora_core::time::Time::default()
+    };
+    let shared: khora_core::time::SharedTime = Arc::new(std::sync::RwLock::new(time));
+    runtime.resources.insert(shared);
+
+    let interp: khora_core::interpolation::SharedTransformInterpolation = Arc::new(
+        std::sync::RwLock::new(khora_core::interpolation::TransformInterpolation::new()),
+    );
+    runtime.resources.insert(interp);
+    runtime
+}
+
+/// Records a previous world-space pose for `entity` in the runtime's
+/// interpolation store — the engine-owned analogue of "this body was here
+/// before the last sim step".
+fn record_previous_pose(
+    runtime: &Runtime,
+    entity: khora_core::ecs::entity::EntityId,
+    pose: khora_core::math::affine_transform::AffineTransform,
+) {
+    let store = runtime
+        .resources
+        .get::<khora_core::interpolation::SharedTransformInterpolation>()
+        .expect("runtime_with_alpha inserts the interpolation store");
+    store.write().unwrap().record(entity, pose);
+}
+
 // ─── 1. Spawn → Flow → Bus ──────────────────────────────────────────────
 
 /// Builds a World with a mesh, a light and an active camera, runs the
@@ -437,4 +472,79 @@ fn transform_propagation_feeds_render_flow() {
 
     // Sanity: the rotation-free composition is a pure translation.
     let _ = Quaternion::IDENTITY;
+}
+
+// ─── 5. Render interpolation ────────────────────────────────────────────
+
+/// An entity with a recorded previous pose and a current `GlobalTransform` must
+/// be projected at the blended world-space position for the active alpha. Here
+/// previous=(0,0,0), current=(10,0,0), alpha=0.5 ⇒ the projected mesh sits at
+/// (5,0,0) — render-only interpolation, the authoritative transforms untouched.
+#[test]
+fn render_flow_interpolates_when_previous_present() {
+    let mut world = World::new();
+    let runtime = runtime_with_alpha(0.5);
+
+    let entity = world.spawn((
+        Transform::from_translation(Vec3::new(10.0, 0.0, 0.0)),
+        GlobalTransform::at_position(Vec3::new(10.0, 0.0, 0.0)),
+        gpu_mesh_handle(),
+    ));
+    record_previous_pose(&runtime, entity, GlobalTransform::at_position(Vec3::ZERO).0);
+
+    let bus = run_substrate(&mut world, &runtime);
+    let rw = bus.get::<RenderWorld>().expect("RenderWorld published");
+
+    assert_eq!(rw.meshes.len(), 1);
+    let got = rw.meshes[0].transform.translation();
+    let expected = Vec3::new(5.0, 0.0, 0.0);
+    assert!(
+        (got - expected).length() < 1e-4,
+        "interpolated mesh should sit at the alpha-blended position: expected {expected:?}, got {got:?}"
+    );
+
+    // The authoritative GlobalTransform is untouched — only the projection blends.
+    let gt = world.get::<GlobalTransform>(entity).unwrap();
+    assert_eq!(gt.0.translation(), Vec3::new(10.0, 0.0, 0.0));
+}
+
+/// alpha=1.0 with a previous pose must yield exactly the current world-space
+/// position (the endpoint of the blend).
+#[test]
+fn render_flow_alpha_one_yields_current_transform() {
+    let mut world = World::new();
+    let runtime = runtime_with_alpha(1.0);
+
+    let entity = world.spawn((
+        Transform::from_translation(Vec3::new(4.0, 0.0, 0.0)),
+        GlobalTransform::at_position(Vec3::new(4.0, 0.0, 0.0)),
+        gpu_mesh_handle(),
+    ));
+    record_previous_pose(&runtime, entity, GlobalTransform::at_position(Vec3::ZERO).0);
+
+    let bus = run_substrate(&mut world, &runtime);
+    let rw = bus.get::<RenderWorld>().expect("RenderWorld published");
+
+    let got = rw.meshes[0].transform.translation();
+    assert!((got - Vec3::new(4.0, 0.0, 0.0)).length() < 1e-4);
+}
+
+/// An entity with **no** recorded previous pose is projected at its current
+/// transform unchanged, regardless of the active alpha — interpolation only
+/// applies to entities the sim moves.
+#[test]
+fn render_flow_without_previous_uses_current_transform() {
+    let mut world = World::new();
+    let runtime = runtime_with_alpha(0.5);
+
+    spawn_mesh(&mut world, Vec3::new(7.0, 0.0, 0.0));
+
+    let bus = run_substrate(&mut world, &runtime);
+    let rw = bus.get::<RenderWorld>().expect("RenderWorld published");
+
+    let got = rw.meshes[0].transform.translation();
+    assert!(
+        (got - Vec3::new(7.0, 0.0, 0.0)).length() < 1e-4,
+        "an entity without a previous transform must render at its current position, got {got:?}"
+    );
 }

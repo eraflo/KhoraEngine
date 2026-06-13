@@ -350,6 +350,46 @@ impl AffineTransform {
         Quaternion::from_rotation_matrix(&self.0)
     }
 
+    /// Extracts the non-negative scale factors along each local axis.
+    ///
+    /// Returns the Euclidean lengths of the three basis columns (right, up,
+    /// forward). For a transform built as translation ∘ rotation ∘ scale this
+    /// recovers the original scale vector. Mirror/negative scales are reported
+    /// as their magnitudes (sign is folded into the rotation extraction).
+    #[inline]
+    pub fn scale(&self) -> Vec3 {
+        Vec3::new(
+            self.right().length(),
+            self.up().length(),
+            self.forward().length(),
+        )
+    }
+
+    /// Interpolates between two affine transforms for smooth rendering
+    /// between discrete simulation steps.
+    ///
+    /// Decomposes both transforms into translation / rotation / scale and
+    /// blends each channel independently: translation and scale by linear
+    /// interpolation, rotation by spherical interpolation (shortest-path
+    /// `slerp`). `alpha` is clamped to `[0, 1]`; `alpha = 0` returns `self`
+    /// (the *previous* transform) and `alpha = 1` returns `other` (the
+    /// *current* transform).
+    ///
+    /// This is a render-only blend: it never feeds back into the authoritative
+    /// simulation state.
+    #[inline]
+    pub fn interpolate(&self, other: &Self, alpha: f32) -> Self {
+        let alpha = alpha.clamp(0.0, 1.0);
+        let translation = Vec3::lerp(self.translation(), other.translation(), alpha);
+        let rotation = Quaternion::slerp(self.rotation(), other.rotation(), alpha);
+        let scale = Vec3::lerp(self.scale(), other.scale(), alpha);
+
+        let mat = Mat4::from_translation(translation)
+            * Mat4::from_quat(rotation)
+            * Mat4::from_scale(scale);
+        Self(mat)
+    }
+
     /// Computes the inverse of the affine transformation.
     ///
     /// This uses an optimized affine inverse algorithm that's more efficient than
@@ -407,5 +447,74 @@ impl From<Mat4> for AffineTransform {
             "Matrix is not a valid affine transformation"
         );
         AffineTransform(val)
+    }
+}
+
+#[cfg(test)]
+mod interpolation_tests {
+    use super::*;
+    use crate::math::Quaternion;
+    use std::f32::consts::PI;
+
+    fn vec3_close(a: Vec3, b: Vec3) -> bool {
+        (a - b).length() < 1e-4
+    }
+
+    #[test]
+    fn interpolate_endpoints_return_inputs() {
+        let prev = AffineTransform::from_translation(Vec3::new(0.0, 0.0, 0.0));
+        let curr = AffineTransform::from_translation(Vec3::new(10.0, 0.0, 0.0));
+
+        let at_zero = prev.interpolate(&curr, 0.0);
+        let at_one = prev.interpolate(&curr, 1.0);
+
+        assert!(vec3_close(at_zero.translation(), prev.translation()));
+        assert!(vec3_close(at_one.translation(), curr.translation()));
+    }
+
+    #[test]
+    fn interpolate_midpoint_blends_translation_and_scale() {
+        let prev = AffineTransform(
+            Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0))
+                * Mat4::from_scale(Vec3::new(1.0, 1.0, 1.0)),
+        );
+        let curr = AffineTransform(
+            Mat4::from_translation(Vec3::new(4.0, 8.0, 2.0))
+                * Mat4::from_scale(Vec3::new(3.0, 3.0, 3.0)),
+        );
+
+        let mid = prev.interpolate(&curr, 0.5);
+
+        assert!(vec3_close(mid.translation(), Vec3::new(2.0, 4.0, 1.0)));
+        assert!(vec3_close(mid.scale(), Vec3::new(2.0, 2.0, 2.0)));
+    }
+
+    #[test]
+    fn interpolate_midpoint_blends_rotation() {
+        let y_axis = Vec3::new(0.0, 1.0, 0.0);
+        let prev = AffineTransform::from_quat(Quaternion::IDENTITY);
+        let curr = AffineTransform::from_quat(Quaternion::from_axis_angle(y_axis, PI / 2.0));
+
+        let mid = prev.interpolate(&curr, 0.5);
+        let expected = Quaternion::from_axis_angle(y_axis, PI / 4.0);
+
+        // Rotating a forward vector by the interpolated quaternion must match
+        // rotating it by the half-angle rotation (slerp is constant-speed).
+        let probe = Vec3::new(0.0, 0.0, 1.0);
+        let got = mid.rotation() * probe;
+        let want = expected * probe;
+        assert!(vec3_close(got, want), "got {got:?}, want {want:?}");
+    }
+
+    #[test]
+    fn interpolate_clamps_alpha() {
+        let prev = AffineTransform::from_translation(Vec3::ZERO);
+        let curr = AffineTransform::from_translation(Vec3::new(10.0, 0.0, 0.0));
+
+        let below = prev.interpolate(&curr, -1.0);
+        let above = prev.interpolate(&curr, 2.0);
+
+        assert!(vec3_close(below.translation(), prev.translation()));
+        assert!(vec3_close(above.translation(), curr.translation()));
     }
 }

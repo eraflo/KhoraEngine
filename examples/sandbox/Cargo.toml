@@ -2,6 +2,8 @@
 name = "sandbox"
 version = "0.2.0"
 edition = "2021"
+rust-version.workspace = true
+license.workspace = true
 description = "Sandbox example demonstrating high-level game logic"
 
 [[bin]]

@@ -2,6 +2,8 @@
 name = "khora-core"
 version = "0.2.2"
 edition = "2021"
+rust-version.workspace = true
+license.workspace = true
 description = "Foundational crate with traits, core types, and interface contracts"
 
 [features]

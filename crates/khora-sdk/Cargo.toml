@@ -2,6 +2,8 @@
 name = "khora-sdk"
 version = "0.3.0"
 edition = "2021"
+rust-version.workspace = true
+license.workspace = true
 description = "The stable, public-facing API and engine frameworks for game developers"
 
 [dependencies]

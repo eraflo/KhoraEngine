@@ -2,6 +2,8 @@
 name = "khora-io"
 version = "0.1.0"
 edition = "2021"
+rust-version.workspace = true
+license.workspace = true
 description = "I/O services for asset loading, VFS, and scene serialization"
 
 [dependencies]
