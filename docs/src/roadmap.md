@@ -35,8 +35,8 @@ With the successful abstraction of command recording and submission, the core ar
 ### Architecture refactoring
 - **Lift `asset_lane` and `ecs_lane` out of the Lane abstraction.** Per the *Agent vs Service* rule, a `Lane` is a strategy variant an agent picks under GORNA negotiation. Asset decoders (glTF, OBJ, WAV, Symphonia, texture, font, pack) and ECS compaction have no per-frame strategies to negotiate — they are on-demand or fixed maintenance work. They should expose their behavior through the existing service surfaces (`AssetService`, `EcsMaintenance`) rather than implement `Lane`. Targets:
   - Replace `AssetDecoder<A>` *lane* implementations with plain `AssetDecoder<A>` services registered in `DecoderRegistry`. The `AssetDecoder<A>` trait already exists in `khora-lanes` without a `Lane` bound — finish moving the decoders to use it cleanly and drop the lane scaffolding.
-  - Move `CompactionLane` work directly into `EcsMaintenance::tick`, deleting the lane wrapper. Maintenance is already not an agent (see [ECS](./05_ecs.md) §08); the lane wrapper is residual.
-  - Update [Lanes](./07_lanes.md) and [Architecture](./02_architecture.md) tables once the migration lands — today they still list `asset_lane/` and `ecs_lane/` for accuracy with the current code, but those entries should disappear after this refacto.
+  - Move `CompactionLane` work directly into `EcsMaintenance::tick`, deleting the lane wrapper. Maintenance is already not an agent (see [ECS](./concepts/ecs.md) §08); the lane wrapper is residual.
+  - Update [Lanes](./concepts/agents-and-lanes.md) and [Architecture](./concepts/clad.md) tables once the migration lands — today they still list `asset_lane/` and `ecs_lane/` for accuracy with the current code, but those entries should disappear after this refacto.
 
 ### Rendering capabilities, physics, animation, AI
 - #101 Implement Skeletal Animation System

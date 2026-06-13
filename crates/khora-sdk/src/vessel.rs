@@ -23,15 +23,20 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
-//! // Create a cube at a specific position
-//! let cube = world.spawn_at(Vec3::new(0.0, 0.5, -5.0))
-//!     .as_cube(1.0)
-//!     .build();
+//! ```rust
+//! use khora_sdk::{GameWorld, Vessel};
+//! use khora_sdk::prelude::ecs::Camera;
+//! use khora_sdk::prelude::math::{Quaternion, Vec3};
 //!
-//! // Create a camera
-//! let camera = world.spawn_at(Vec3::new(0.0, 2.0, 10.0))
-//!     .as_camera_perspective(45.0, 16.0/9.0, 0.1, 1000.0)
+//! let mut world = GameWorld::new();
+//!
+//! // Spawn a camera at a position, rotated to face the scene.
+//! let camera = Camera::new_perspective(
+//!     std::f32::consts::FRAC_PI_4, 16.0 / 9.0, 0.1, 1000.0,
+//! );
+//! let _entity = Vessel::at(&mut world, Vec3::new(0.0, 2.0, 10.0))
+//!     .with_component(camera)
+//!     .with_rotation(Quaternion::from_axis_angle(Vec3::Y, std::f32::consts::PI))
 //!     .build();
 //! ```
 
@@ -50,6 +55,26 @@ use crate::GameWorld;
 /// Every Vessel is guaranteed to have:
 /// - Transform (local position/rotation/scale)
 /// - GlobalTransform (world-space transform for rendering)
+///
+/// # Examples
+///
+/// ```rust
+/// use khora_sdk::{GameWorld, Vessel};
+/// use khora_sdk::prelude::ecs::Name;
+/// use khora_sdk::prelude::math::Vec3;
+///
+/// let mut world = GameWorld::new();
+///
+/// // `at(..)` spawns the entity; chained calls configure it; `build()` finalizes.
+/// let entity = Vessel::at(&mut world, Vec3::new(1.0, 0.0, -3.0))
+///     .with_scale(Vec3::ONE * 2.0)
+///     .with_component(Name::new("crate"))
+///     .build();
+///
+/// // The entity exists and carries the position we set.
+/// let transform = world.get_transform(entity).unwrap();
+/// assert_eq!(transform.translation, Vec3::new(1.0, 0.0, -3.0));
+/// ```
 pub struct Vessel<'a> {
     world: &'a mut GameWorld,
     entity: EntityId,

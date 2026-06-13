@@ -314,6 +314,28 @@ impl IndexMut<usize> for Mat3 {
 /// scale) in 3D space. It is also used for camera view and projection matrices.
 /// The memory layout is column-major, which is compatible with modern graphics APIs
 /// like Vulkan, Metal, and DirectX.
+///
+/// # Examples
+///
+/// ```rust
+/// use khora_core::math::{Mat4, Quaternion, Vec3};
+/// use std::f32::consts::FRAC_PI_2;
+///
+/// // The identity matrix leaves a point unchanged.
+/// assert_eq!(Mat4::IDENTITY.transform_point(Vec3::ONE), Vec3::ONE);
+///
+/// // Compose translation ∘ rotation ∘ scale by multiplying matrices
+/// // (applied right-to-left).
+/// let model = Mat4::from_translation(Vec3::new(0.0, 1.0, 0.0))
+///     * Mat4::from_quat(Quaternion::from_axis_angle(Vec3::Y, FRAC_PI_2))
+///     * Mat4::from_scale(Vec3::ONE * 2.0);
+/// let moved = model.transform_point(Vec3::ZERO);
+/// assert!((moved - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-5);
+///
+/// // A perspective projection for a 16:9 viewport.
+/// let proj = Mat4::perspective_rh_zo(FRAC_PI_2, 16.0 / 9.0, 0.1, 1000.0);
+/// assert!(proj != Mat4::IDENTITY);
+/// ```
 #[derive(
     Debug,
     Clone,

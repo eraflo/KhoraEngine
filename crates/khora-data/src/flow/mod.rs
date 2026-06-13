@@ -68,6 +68,42 @@ use crate::ecs::{SemanticDomain, World};
 /// services, backends, or resources its domain genuinely needs (text
 /// renderer, font cache, surface size, editor view overrides, …) without
 /// crossing the CLAD dependency graph in awkward ways.
+///
+/// # Examples
+///
+/// A read-only Flow that projects the World into a typed `View` for its domain's
+/// Lanes. `select` narrows the entities; `project` builds the view published into
+/// the [`LaneBus`](khora_core::lane::LaneBus). (Marked `ignore` because a
+/// compiling impl needs a concrete `View` type and a [`SemanticDomain`] from the
+/// data layer's domain set.)
+///
+/// ```ignore
+/// use khora_data::ecs::{SemanticDomain, World};
+/// use khora_data::flow::{Flow, Selection};
+/// use khora_core::Runtime;
+///
+/// #[derive(Clone)]
+/// struct MyView {
+///     entity_count: usize,
+/// }
+///
+/// struct MyFlow;
+///
+/// impl Flow for MyFlow {
+///     type View = MyView;
+///     const DOMAIN: SemanticDomain = SemanticDomain::Render;
+///     const NAME: &'static str = "MyFlow";
+///
+///     fn select(&mut self, world: &World, _runtime: &Runtime) -> Selection {
+///         // Pick the entities this domain cares about.
+///         Selection::new()
+///     }
+///
+///     fn project(&self, world: &World, _sel: &Selection, _runtime: &Runtime) -> Self::View {
+///         MyView { entity_count: world.iter_entities().count() }
+///     }
+/// }
+/// ```
 pub trait Flow: Send + Sync {
     /// The typed view this Flow publishes into the LaneBus. `Clone` so the
     /// registration trampoline can republish a cached view without

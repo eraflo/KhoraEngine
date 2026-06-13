@@ -48,6 +48,47 @@ pub use timing::{AgentImportance, ExecutionTiming};
 ///
 /// An agent must contain **no business logic** beyond lane selection, budget
 /// negotiation, and lane dispatch. All real work belongs in [`Lane`] implementations.
+///
+/// # Examples
+///
+/// A skeleton agent. Real agents cache their lanes in `on_initialize` and select
+/// one per frame in `execute` based on the budget applied via `apply_budget`.
+/// (Marked `ignore` because a compiling impl needs the GORNA request/response
+/// types and an [`EngineContext`] from the running engine.)
+///
+/// ```ignore
+/// use khora_core::agent::{Agent, ExecutionTiming};
+/// use khora_core::control::gorna::{
+///     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget,
+/// };
+/// use khora_core::EngineContext;
+/// use std::any::Any;
+///
+/// #[derive(Default)]
+/// struct MyAgent;
+///
+/// impl Agent for MyAgent {
+///     fn id(&self) -> AgentId { AgentId::Renderer }
+///
+///     fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
+///         // Propose a strategy that fits `request`'s constraints.
+///         NegotiationResponse::default()
+///     }
+///
+///     fn apply_budget(&mut self, _budget: ResourceBudget) {
+///         // Adjust quality / LOD to stay within the allocated budget.
+///     }
+///
+///     fn report_status(&self) -> AgentStatus { AgentStatus::default() }
+///
+///     fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
+///         // Pick a lane for this frame and dispatch `Lane::execute`.
+///     }
+///
+///     fn as_any(&self) -> &dyn Any { self }
+///     fn as_any_mut(&mut self) -> &mut dyn Any { self }
+/// }
+/// ```
 pub trait Agent: Send + Sync {
     /// Returns the unique identifier for this agent.
     fn id(&self) -> AgentId;

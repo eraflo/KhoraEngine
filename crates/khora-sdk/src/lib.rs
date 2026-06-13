@@ -16,6 +16,59 @@
 //!
 //! This is the **only** crate that should be used by game developers.
 //! All internal crates (khora-agents, khora-control, etc.) are implementation details.
+//!
+//! # Examples
+//!
+//! A minimal game is an [`EngineApp`] handed to [`run_winit`]. The SDK owns the
+//! engine loop; your type owns the game logic. Everything you need for game code
+//! is in [`prelude`].
+//!
+//! ```rust,no_run
+//! use khora_sdk::prelude::*;
+//! use khora_sdk::prelude::math::Vec3;
+//! use khora_sdk::{
+//!     run_winit, AgentProvider, DccService, EngineApp, GameWorld, PhaseProvider,
+//!     Runtime, Vessel, WindowConfig,
+//! };
+//! use khora_sdk::winit_adapters::WinitWindowProvider;
+//!
+//! struct MyGame;
+//!
+//! impl EngineApp for MyGame {
+//!     fn window_config() -> WindowConfig {
+//!         WindowConfig { title: "My Game".into(), ..WindowConfig::default() }
+//!     }
+//!     fn new() -> Self {
+//!         MyGame
+//!     }
+//!     fn setup(&mut self, world: &mut GameWorld, _runtime: &Runtime) {
+//!         // Spawn a camera looking down the -Z axis.
+//!         let camera = ecs::Camera::new_perspective(
+//!             std::f32::consts::FRAC_PI_4,
+//!             16.0 / 9.0,
+//!             0.1,
+//!             1000.0,
+//!         );
+//!         Vessel::at(world, Vec3::new(0.0, 2.0, 10.0))
+//!             .with_component(camera)
+//!             .build();
+//!     }
+//!     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
+//! }
+//!
+//! // `AgentProvider` / `PhaseProvider` are required super-traits; the default
+//! // (no custom agents, no custom phases) is enough for most games.
+//! impl AgentProvider for MyGame {
+//!     fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
+//! }
+//! impl PhaseProvider for MyGame {}
+//!
+//! fn main() -> anyhow::Result<()> {
+//!     run_winit::<WinitWindowProvider, MyGame>(|_window, _runtime, _event_loop| {
+//!         // Wire backends (renderer, physics, audio, …) into `_runtime` here.
+//!     })
+//! }
+//! ```
 
 #![warn(missing_docs)]
 
@@ -187,6 +240,24 @@ pub extern crate inventory;
 
 pub mod prelude {
     //! Common imports for game development.
+    //!
+    //! Glob-import this module to bring the everyday game-dev types into scope:
+    //! input ([`InputEvent`], [`KeyCode`], [`MouseButton`]), timing
+    //! ([`Time`], [`SharedTime`]), assets ([`AssetHandle`], [`AssetUUID`]), and
+    //! the [`ecs`], [`materials`], and [`math`] sub-modules. The window config
+    //! types [`WindowConfig`] and [`WindowIcon`] come along too.
+    //!
+    //! # Examples
+    //!
+    //! ```rust
+    //! use khora_sdk::prelude::*;
+    //! use khora_sdk::prelude::math::Vec3;
+    //!
+    //! // ECS components, math, and materials are all reachable through the prelude.
+    //! let _transform = ecs::Transform::from_translation(Vec3::new(0.0, 1.0, 0.0));
+    //! let _material = materials::StandardMaterial::default();
+    //! let _red = math::LinearRgba::RED;
+    //! ```
 
     // SDK types
     pub use crate::{WindowConfig, WindowIcon, PRIMARY_VIEWPORT};

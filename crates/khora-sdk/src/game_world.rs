@@ -35,16 +35,25 @@ use khora_data::ecs::{
 ///
 /// # Examples
 ///
-/// ```rust,ignore
-/// fn setup(&mut self, world: &mut GameWorld) {
-///     // Spawn a camera
-///     world.spawn_camera(Camera::new_perspective(
-///         std::f32::consts::FRAC_PI_4, 16.0 / 9.0, 0.1, 1000.0,
-///     ));
+/// ```rust
+/// use khora_sdk::GameWorld;
+/// use khora_sdk::prelude::ecs::{Camera, GlobalTransform, Name, Transform};
+/// use khora_sdk::prelude::math::Vec3;
 ///
-///     // Spawn a custom entity
-///     world.spawn((Transform::identity(), MyComponent { speed: 10.0 }));
-/// }
+/// let mut world = GameWorld::new();
+///
+/// // Spawn a camera.
+/// world.spawn_camera(Camera::new_perspective(
+///     std::f32::consts::FRAC_PI_4, 16.0 / 9.0, 0.1, 1000.0,
+/// ));
+///
+/// // Spawn an entity from a component bundle.
+/// let entity = world.spawn((
+///     Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
+///     GlobalTransform::default(),
+///     Name::new("hero"),
+/// ));
+/// assert!(world.get_transform(entity).is_some());
 /// ```
 pub struct GameWorld {
     /// The internal ECS world.
@@ -81,8 +90,13 @@ impl GameWorld {
     ///
     /// # Examples
     ///
-    /// ```rust,ignore
-    /// let entity = world.spawn((Transform::identity(), Velocity::default()));
+    /// ```rust
+    /// use khora_sdk::GameWorld;
+    /// use khora_sdk::prelude::ecs::{GlobalTransform, Transform};
+    ///
+    /// let mut world = GameWorld::new();
+    /// let entity = world.spawn((Transform::identity(), GlobalTransform::default()));
+    /// assert!(world.get_transform(entity).is_some());
     /// ```
     pub fn spawn<B: ComponentBundle>(&mut self, bundle: B) -> EntityId {
         self.world.spawn(bundle)
@@ -130,10 +144,14 @@ impl GameWorld {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// let plane_mesh = create_plane(10.0, 0.0);
-    /// let handle = world.add_mesh(plane_mesh);
+    /// // `mesh` is CPU-side geometry you have built or loaded.
+    /// let handle = world.add_mesh(mesh);
     /// let entity = world.spawn((Transform::identity(), handle));
     /// ```
+    ///
+    /// For the common case of built-in shapes, prefer the procedural helpers
+    /// [`spawn_plane`](crate::spawn_plane), [`spawn_cube_at`](crate::spawn_cube_at),
+    /// and [`spawn_sphere`](crate::spawn_sphere), which attach the mesh for you.
     pub fn add_mesh(&mut self, mesh: Mesh) -> HandleComponent<Mesh> {
         let uuid = AssetUUID::new();
         let handle = AssetHandle::new(mesh);
@@ -176,9 +194,16 @@ impl GameWorld {
     ///
     /// # Examples
     ///
-    /// ```rust,ignore
-    /// for (pos, vel) in world.query::<(&Transform, &Velocity)>() {
-    ///     // iterate matching entities
+    /// ```rust
+    /// use khora_sdk::GameWorld;
+    /// use khora_sdk::prelude::ecs::{GlobalTransform, Name, Transform};
+    ///
+    /// let mut world = GameWorld::new();
+    /// world.spawn((Transform::identity(), GlobalTransform::default(), Name::new("a")));
+    ///
+    /// // Iterate every entity that has both a Transform and a Name.
+    /// for (transform, name) in world.query::<(&Transform, &Name)>() {
+    ///     let _ = (transform.translation, &name.0);
     /// }
     /// ```
     pub fn query<'a, Q: WorldQuery>(&'a self) -> Query<'a, Q> {
@@ -189,9 +214,17 @@ impl GameWorld {
     ///
     /// # Examples
     ///
-    /// ```rust,ignore
-    /// for (pos,) in world.query_mut::<(&mut Transform,)>() {
-    ///     pos.translate(Vec3::Y * delta);
+    /// ```rust
+    /// use khora_sdk::GameWorld;
+    /// use khora_sdk::prelude::ecs::{GlobalTransform, Transform};
+    /// use khora_sdk::prelude::math::Vec3;
+    ///
+    /// let mut world = GameWorld::new();
+    /// world.spawn((Transform::identity(), GlobalTransform::default()));
+    ///
+    /// // Nudge every transform up by one unit.
+    /// for (transform,) in world.query_mut::<(&mut Transform,)>() {
+    ///     transform.translation = transform.translation + Vec3::Y;
     /// }
     /// ```
     pub fn query_mut<'a, Q: WorldQuery>(&'a mut self) -> QueryMut<'a, Q> {
@@ -254,12 +287,18 @@ impl GameWorld {
     /// copies the local transform to the global transform.
     ///
     /// # Example
-    /// ```rust,ignore
-    /// // Move entity
+    /// ```rust
+    /// use khora_sdk::GameWorld;
+    /// use khora_sdk::prelude::ecs::{GlobalTransform, Transform};
+    /// use khora_sdk::prelude::math::Vec3;
+    ///
+    /// let mut world = GameWorld::new();
+    /// let entity = world.spawn((Transform::identity(), GlobalTransform::default()));
+    ///
+    /// // Move the entity, then sync so the renderer sees the new pose.
     /// if let Some(transform) = world.get_transform_mut(entity) {
-    ///     transform.translation += Vec3::Y * delta;
+    ///     transform.translation = transform.translation + Vec3::Y;
     /// }
-    /// // Sync to rendering
     /// world.sync_global_transform(entity);
     /// ```
     pub fn sync_global_transform(&mut self, entity: EntityId) {
@@ -277,9 +316,16 @@ impl GameWorld {
     /// applying a modification function, and syncing to GlobalTransform.
     ///
     /// # Example
-    /// ```rust,ignore
+    /// ```rust
+    /// use khora_sdk::GameWorld;
+    /// use khora_sdk::prelude::ecs::{GlobalTransform, Transform};
+    /// use khora_sdk::prelude::math::Vec3;
+    ///
+    /// let mut world = GameWorld::new();
+    /// let entity = world.spawn((Transform::identity(), GlobalTransform::default()));
+    ///
     /// world.update_transform(entity, |t| {
-    ///     t.translation += Vec3::Y * delta;
+    ///     t.translation = t.translation + Vec3::Y;
     /// });
     /// ```
     pub fn update_transform<F>(&mut self, entity: EntityId, f: F)

@@ -246,6 +246,30 @@ impl IndexMut<usize> for Vec2 {
 // --- Vector3D ---
 
 /// A 3-dimensional vector with `f32` components.
+///
+/// `Vec3` is the workhorse for positions, directions, and scales throughout
+/// the engine. It supports the usual arithmetic operators plus `dot`, `cross`,
+/// `length`, and `normalize`.
+///
+/// # Examples
+///
+/// ```rust
+/// use khora_core::math::Vec3;
+///
+/// // Component-wise arithmetic and scalar multiplication.
+/// let a = Vec3::new(1.0, 2.0, 3.0);
+/// let b = Vec3::new(4.0, 5.0, 6.0);
+/// assert_eq!(a + b, Vec3::new(5.0, 7.0, 9.0));
+/// assert_eq!(a * 2.0, Vec3::new(2.0, 4.0, 6.0));
+///
+/// // Dot product and the right-handed cross product of the basis axes.
+/// assert_eq!(Vec3::X.dot(Vec3::Y), 0.0);
+/// assert_eq!(Vec3::X.cross(Vec3::Y), Vec3::Z);
+///
+/// // Normalizing yields a unit-length direction.
+/// let dir = Vec3::new(0.0, 3.0, 0.0).normalize();
+/// assert_eq!(dir, Vec3::Y);
+/// ```
 #[derive(
     Debug,
     Clone,

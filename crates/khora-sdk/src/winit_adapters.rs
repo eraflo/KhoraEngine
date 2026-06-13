@@ -344,15 +344,45 @@ impl<W: WindowProvider, A: EngineApp> Drop for WinitAppRunner<W, A> {
 ///     leak the winit type. Apps that need it (e.g., egui) downcast to
 ///     `&winit::event_loop::ActiveEventLoop`.
 ///
-/// # Example
+/// This call blocks until the window is closed, so it is the last thing `main`
+/// does.
 ///
-/// ```ignore
-/// run_winit::<WinitWindowProvider, MyGame>(|window, services, _event_loop| {
-///     let mut rs = WgpuRenderSystem::new();
-///     rs.init(window)?;
-///     services.insert(Arc::new(Mutex::new(rs as Box<dyn RenderSystem>)));
-///     services.insert(Arc::new(MemoryMonitor::new("System_RAM")));
-/// });
+/// # Errors
+///
+/// Returns an error if the winit event loop cannot be created or fails while
+/// running (e.g. the platform refuses to open a window).
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use khora_sdk::prelude::*;
+/// use khora_sdk::{
+///     run_winit, AgentProvider, DccService, EngineApp, GameWorld, PhaseProvider,
+///     Runtime, WindowConfig,
+/// };
+/// use khora_sdk::winit_adapters::WinitWindowProvider;
+///
+/// struct MyGame;
+///
+/// impl EngineApp for MyGame {
+///     fn window_config() -> WindowConfig { WindowConfig::default() }
+///     fn new() -> Self { MyGame }
+///     fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {}
+///     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
+/// }
+/// impl AgentProvider for MyGame {
+///     fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
+/// }
+/// impl PhaseProvider for MyGame {}
+///
+/// fn main() -> anyhow::Result<()> {
+///     run_winit::<WinitWindowProvider, MyGame>(|_window, runtime, _event_loop| {
+///         // Insert your renderer, physics, audio, and UI backends into
+///         // `runtime.backends` / `runtime.resources` here. See the `sandbox`
+///         // example for a full backend wiring.
+///         let _ = runtime;
+///     })
+/// }
 /// ```
 pub fn run_winit<W: WindowProvider, A: EngineApp>(
     bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::Runtime, &dyn Any) + Send + 'static,

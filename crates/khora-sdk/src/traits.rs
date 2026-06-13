@@ -125,6 +125,49 @@ pub trait PhaseProvider {
 /// - `setup(&mut self, world: &mut GameWorld)`
 /// - `update(&mut self, world: &mut GameWorld, inputs: &[InputEvent])`
 /// - `on_shutdown(&mut self)`
+///
+/// # Examples
+///
+/// A minimal application. `setup` populates the world once; `update` runs every
+/// frame. The optional hooks (`on_shutdown`, `before_frame`, …) keep their
+/// no-op defaults.
+///
+/// ```rust,no_run
+/// use khora_sdk::prelude::*;
+/// use khora_sdk::{
+///     AgentProvider, DccService, EngineApp, GameWorld, PhaseProvider, Runtime,
+///     WindowConfig,
+/// };
+///
+/// struct MyGame {
+///     frame: u64,
+/// }
+///
+/// impl EngineApp for MyGame {
+///     fn window_config() -> WindowConfig {
+///         WindowConfig::default()
+///     }
+///     fn new() -> Self {
+///         MyGame { frame: 0 }
+///     }
+///     fn setup(&mut self, world: &mut GameWorld, _runtime: &Runtime) {
+///         world.spawn_camera(ecs::Camera::new_perspective(
+///             std::f32::consts::FRAC_PI_4,
+///             16.0 / 9.0,
+///             0.1,
+///             1000.0,
+///         ));
+///     }
+///     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {
+///         self.frame += 1;
+///     }
+/// }
+///
+/// impl AgentProvider for MyGame {
+///     fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
+/// }
+/// impl PhaseProvider for MyGame {}
+/// ```
 pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync {
     /// Returns the window configuration for the application.
     fn window_config() -> WindowConfig

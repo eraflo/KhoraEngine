@@ -377,6 +377,23 @@ impl AffineTransform {
     ///
     /// This is a render-only blend: it never feeds back into the authoritative
     /// simulation state.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use khora_core::math::Vec3;
+    /// use khora_core::math::affine_transform::AffineTransform;
+    ///
+    /// let prev = AffineTransform::from_translation(Vec3::ZERO);
+    /// let curr = AffineTransform::from_translation(Vec3::new(10.0, 0.0, 0.0));
+    ///
+    /// // The endpoints round-trip the inputs; the midpoint blends them.
+    /// assert_eq!(prev.interpolate(&curr, 0.0).translation(), Vec3::ZERO);
+    /// assert_eq!(prev.interpolate(&curr, 1.0).translation(), curr.translation());
+    ///
+    /// let mid = prev.interpolate(&curr, 0.5).translation();
+    /// assert!((mid - Vec3::new(5.0, 0.0, 0.0)).length() < 1e-5);
+    /// ```
     #[inline]
     pub fn interpolate(&self, other: &Self, alpha: f32) -> Self {
         let alpha = alpha.clamp(0.0, 1.0);

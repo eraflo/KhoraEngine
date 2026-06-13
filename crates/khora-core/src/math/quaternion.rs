@@ -29,6 +29,27 @@ use std::ops::{Add, Mul, MulAssign, Neg, Sub};
 /// A quaternion is stored as `(x, y, z, w)`, where `[x, y, z]` is the "vector" part
 /// and `w` is the "scalar" part. For representing rotations, it should be a "unit
 /// quaternion" where `x² + y² + z² + w² = 1`.
+///
+/// # Examples
+///
+/// ```rust
+/// use khora_core::math::{Quaternion, Vec3};
+/// use std::f32::consts::FRAC_PI_2;
+///
+/// // A quarter-turn about the Y axis maps +Z onto +X.
+/// let yaw = Quaternion::from_axis_angle(Vec3::Y, FRAC_PI_2);
+/// let rotated = yaw * Vec3::Z;
+/// assert!((rotated - Vec3::X).length() < 1e-5);
+///
+/// // Composing rotations is quaternion multiplication; the identity is a no-op.
+/// let combined = yaw * Quaternion::IDENTITY;
+/// assert!((combined * Vec3::Z - Vec3::X).length() < 1e-5);
+///
+/// // `slerp` blends along the shortest arc; halfway is a 45° turn.
+/// let half = Quaternion::slerp(Quaternion::IDENTITY, yaw, 0.5);
+/// let expected = Quaternion::from_axis_angle(Vec3::Y, FRAC_PI_2 / 2.0);
+/// assert!((half * Vec3::Z - expected * Vec3::Z).length() < 1e-5);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
 #[repr(C)]
 pub struct Quaternion {
