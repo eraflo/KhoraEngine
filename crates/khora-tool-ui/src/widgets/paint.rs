@@ -81,6 +81,31 @@ pub fn fill_stroke(
     stroke(ui, rect, stroke_color, rounding, 1.0);
 }
 
+/// Approximates a vertical gradient by stacking horizontal strips.
+///
+/// The paint API has no gradient primitive; the strips overlap by a fraction of
+/// a pixel so no seams show at fractional DPI scales.
+pub fn vertical_gradient(
+    ui: &mut dyn UiBuilder,
+    rect: Rect,
+    top: Color,
+    bottom: Color,
+    steps: u32,
+) {
+    let steps = steps.max(2);
+    let strip_h = rect[3] / steps as f32;
+    for i in 0..steps {
+        let t = i as f32 / (steps - 1) as f32;
+        let y = rect[1] + strip_h * i as f32;
+        ui.paint_rect_filled(
+            [rect[0], y],
+            [rect[2], strip_h.ceil() + 0.6],
+            lerp_color(top, bottom, t),
+            0.0,
+        );
+    }
+}
+
 /// A 1px horizontal separator across `[x0, x1]` at `y`, in the theme's
 /// separator color.
 #[inline]

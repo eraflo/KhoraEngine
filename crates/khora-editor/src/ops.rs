@@ -465,7 +465,10 @@ mod tests {
         let t = world
             .get_component::<Transform>(entity)
             .expect("entity keeps its Transform");
-        assert_eq!(t.translation.x, 9.0, "SetComponentJson must patch the field");
+        assert_eq!(
+            t.translation.x, 9.0,
+            "SetComponentJson must patch the field"
+        );
         assert_eq!(t.translation.y, 2.0, "untouched fields must survive");
 
         // Edits are drained — a second apply is a no-op.
@@ -617,7 +620,9 @@ mod tests {
             before + 1,
             "a spawn request must add exactly one entity"
         );
-        let spawned = state.single_selected().expect("spawn selects the new entity");
+        let spawned = state
+            .single_selected()
+            .expect("spawn selects the new entity");
         assert_eq!(
             world.get_component::<Name>(spawned).map(|n| n.as_str()),
             Some("Marker"),

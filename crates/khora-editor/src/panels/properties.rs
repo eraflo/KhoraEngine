@@ -30,7 +30,7 @@ use crate::widgets::inspector::asset_pane::{paint_asset_header, render_asset_pan
 use crate::widgets::inspector::display::{pick_icon, pick_type_tag};
 use crate::widgets::inspector::header::paint_inspector_header;
 use crate::widgets::inspector::tabs::{DebugTab, InspectorTab, InspectorTabContext, PropertiesTab};
-use crate::widgets::paint::{paint_icon, with_alpha};
+use crate::widgets::paint::paint_icon;
 
 const HEADER_HEIGHT: f32 = 34.0;
 const INSPECTOR_HEADER_HEIGHT: f32 = 64.0;
@@ -158,15 +158,20 @@ impl EditorPanel for PropertiesPanel {
                         theme.surface,
                         0.0,
                     );
-                    ui.paint_text_styled(
-                        [px + pw * 0.5, py + HEADER_HEIGHT + 22.0],
-                        "Select an entity or asset",
-                        13.0,
-                        theme.text_muted,
-                        FontFamilyHint::Proportional,
-                        TextAlign::Center,
-                    );
-                    py + HEADER_HEIGHT + INSPECTOR_HEADER_HEIGHT
+                    // Nothing selected: teach what the panel is for rather
+                    // than reporting a void.
+                    let w = (pw - 32.0).max(0.0);
+                    if w > 0.0 {
+                        khora_tool_ui::widgets::empty_state(
+                            ui,
+                            &theme,
+                            [px + 16.0, py + HEADER_HEIGHT + 24.0, w, 120.0],
+                            Icon::Crosshair,
+                            "No selection",
+                            "Select an entity to inspect it.",
+                        );
+                    }
+                    py + HEADER_HEIGHT + INSPECTOR_HEADER_HEIGHT + 96.0
                 }
             }
         };
@@ -182,50 +187,20 @@ impl EditorPanel for PropertiesPanel {
             return;
         }
 
-        // ── Sub-tabs (segmented control) ─────────────
+        // ── Sub-tabs: Properties | Debug ─────────────
+        // Two views of the *same* entity, so a segmented control — not tabs,
+        // which would imply navigating somewhere else.
         let subtab_y = after_header + 8.0;
-        let subtab_w = pw - 12.0;
-        ui.paint_rect_filled(
-            [px + 6.0, subtab_y],
-            [subtab_w, SUBTAB_HEIGHT],
-            theme.background,
-            theme.radius_md,
-        );
-        ui.paint_rect_stroke(
-            [px + 6.0, subtab_y],
-            [subtab_w, SUBTAB_HEIGHT],
-            with_alpha(theme.separator, 0.55),
-            theme.radius_md,
-            1.0,
-        );
-        let segment_count = self.tabs.len().max(1);
-        let segment_w = (subtab_w - 4.0) / segment_count as f32;
-        for (i, tab) in self.tabs.iter().enumerate() {
-            let sx = px + 8.0 + i as f32 * segment_w;
-            let active = self.active_tab == i;
-            let interaction = ui.interact_rect(
-                &format!("p-sub-{}", tab.id()),
-                [sx, subtab_y + 2.0, segment_w, SUBTAB_HEIGHT - 4.0],
-            );
-            if active {
-                ui.paint_rect_filled(
-                    [sx, subtab_y + 2.0],
-                    [segment_w, SUBTAB_HEIGHT - 4.0],
-                    theme.surface_active,
-                    theme.radius_md - 2.0,
-                );
-            }
-            ui.paint_text_styled(
-                [sx + segment_w * 0.5, subtab_y + 7.0],
-                tab.label(),
-                11.0,
-                if active { theme.text } else { theme.text_dim },
-                FontFamilyHint::Proportional,
-                TextAlign::Center,
-            );
-            if interaction.clicked {
-                self.active_tab = i;
-            }
+        let labels: Vec<&str> = self.tabs.iter().map(|t| t.label()).collect();
+        if let Some(hit) = khora_tool_ui::widgets::segmented_tabs(
+            ui,
+            &theme,
+            [px + 6.0, subtab_y, pw - 12.0, SUBTAB_HEIGHT],
+            "p-sub",
+            &labels,
+            self.active_tab,
+        ) {
+            self.active_tab = hit;
         }
 
         // ── Body — dispatched to the active tab ──────

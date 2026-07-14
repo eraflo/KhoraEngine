@@ -38,7 +38,6 @@ pub struct InspectorTabContext<'a> {
 /// A self-contained body for one Inspector sub-tab. The panel iterates
 /// the registered tabs and dispatches the active one's `render`.
 pub trait InspectorTab: Send + Sync {
-    fn id(&self) -> &'static str;
     fn label(&self) -> &str;
     fn render(
         &mut self,
@@ -52,9 +51,6 @@ pub trait InspectorTab: Send + Sync {
 pub struct PropertiesTab;
 
 impl InspectorTab for PropertiesTab {
-    fn id(&self) -> &'static str {
-        "properties"
-    }
     fn label(&self) -> &str {
         "Properties"
     }
@@ -133,9 +129,6 @@ impl InspectorTab for PropertiesTab {
 pub struct DebugTab;
 
 impl InspectorTab for DebugTab {
-    fn id(&self) -> &'static str {
-        "debug"
-    }
     fn label(&self) -> &str {
         "Debug"
     }

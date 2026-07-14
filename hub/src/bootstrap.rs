@@ -10,20 +10,20 @@
 //! the window icon, and surfaces the per-frame `update` impl.
 
 use crate::async_pump::pump_async_messages;
-use crate::chrome::{paint_banner, show_status_bar, show_topbar};
+use crate::chrome::{STATUS_HEIGHT, TOPBAR_HEIGHT, paint_banner, show_status_bar, show_topbar};
 use crate::screens;
 use crate::state::Screen;
-use crate::theme::pal;
-use crate::widgets::rgba;
-use crate::{HubApp, fonts, theme};
+use crate::{HubApp, fonts};
 use khora_sdk::tool_ui::{
     self as kui, App, AppContext, UiBuilder, WindowConfigInput, WindowIconInput,
 };
+use khora_tool_ui::khora_dark;
 
 impl App for HubApp {
     fn on_start(&mut self, ctx: &mut dyn AppContext) {
         ctx.set_fonts(&fonts::build_pack());
-        ctx.set_theme(&theme::khora_hub_dark());
+        // The one canonical Khora theme, shared with the editor.
+        ctx.set_theme(&khora_dark());
     }
 
     fn update(&mut self, ctx: &mut dyn AppContext) {
@@ -33,16 +33,17 @@ impl App for HubApp {
             ctx.request_repaint();
         }
 
+        let theme = khora_dark();
+        let mut dismiss_banner = false;
+
         ctx.central(&mut |ui| {
             let r = ui.panel_rect();
-            ui.paint_rect_filled([r[0], r[1]], [r[2], r[3]], rgba(pal::BG), 0.0);
+            ui.paint_rect_filled([r[0], r[1]], [r[2], r[3]], theme.background, 0.0);
 
-            ui.top_inset_panel("hub_topbar", 44.0, &mut |ui| show_topbar(self, ui));
-            ui.bottom_inset_panel("hub_status_bar", 24.0, &mut |ui| show_status_bar(self, ui));
-
-            if let Some(banner) = self.banner.as_ref() {
-                paint_banner(ui, banner);
-            }
+            ui.top_inset_panel("hub_topbar", TOPBAR_HEIGHT, &mut |ui| show_topbar(self, ui));
+            ui.bottom_inset_panel("hub_status_bar", STATUS_HEIGHT, &mut |ui| {
+                show_status_bar(self, ui)
+            });
 
             ui.central_inset(&mut |ui: &mut dyn UiBuilder| match self.screen {
                 Screen::Home => screens::show_home(self, ui),
@@ -50,7 +51,18 @@ impl App for HubApp {
                 Screen::EngineManager => screens::show_engine_manager(self, ui),
                 Screen::Settings => screens::show_settings(self, ui),
             });
+
+            // The toast floats over the screen, so it is painted last.
+            if let Some(banner) = self.banner.as_ref()
+                && paint_banner(ui, banner)
+            {
+                dismiss_banner = true;
+            }
         });
+
+        if dismiss_banner {
+            self.banner = None;
+        }
     }
 }
 

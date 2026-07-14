@@ -321,35 +321,32 @@ impl EditorPanel for CommandPalettePanel {
                 let row_x = modal_x + pad - 4.0;
                 let row_w = modal_w - pad * 2.0 + 8.0;
                 let row_h = 36.0;
+
+                // The highlighted row carries the gold selection bar, exactly
+                // like a selected entity or asset — one selection language
+                // across the whole editor. The icon sits bare: a filled plate
+                // per row turns the list into a grid of buttons.
                 if active {
                     ui.paint_rect_filled(
                         [row_x, row_y],
                         [row_w, row_h],
-                        with_alpha(theme.primary, 0.12),
+                        theme.surface_active,
                         theme.radius_md,
+                    );
+                    khora_tool_ui::widgets::paint::selection_bar(
+                        ui,
+                        [row_x, row_y, row_w, row_h],
+                        theme.accent_c,
                     );
                 }
 
-                // Icon box
-                let icon_box_x = row_x + 8.0;
-                let icon_box_y = row_y + 4.0;
-                ui.paint_rect_filled(
-                    [icon_box_x, icon_box_y],
-                    [28.0, 28.0],
-                    if active {
-                        theme.primary
-                    } else {
-                        theme.surface_active
-                    },
-                    6.0,
-                );
                 paint_icon(
                     ui,
-                    [icon_box_x + 7.0, icon_box_y + 7.0],
+                    [row_x + 15.0, row_y + 11.0],
                     cmd.icon,
                     14.0,
                     if active {
-                        theme.background
+                        theme.accent_c
                     } else {
                         theme.primary_dim
                     },

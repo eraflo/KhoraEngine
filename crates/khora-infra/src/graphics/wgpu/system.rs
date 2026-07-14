@@ -742,8 +742,7 @@ impl WgpuRenderSystem {
                 _ => (SurfaceAcquireStatus::Unknown, None),
             };
 
-            let has_valid_size =
-                surface_is_renderable(self.current_width, self.current_height);
+            let has_valid_size = surface_is_renderable(self.current_width, self.current_height);
             match classify_acquire(status, has_valid_size) {
                 AcquireAction::Proceed => {
                     // `texture` is `Some` exactly for the `Usable` status.

@@ -6,21 +6,32 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Home screen — project list + sidebar nav.
+//! Home — the project grid and the sidebar.
 //!
-//! All painting goes through `UiBuilder` primitives. Includes a modal
-//! confirmation when removing a project from disk, vertical-gradient
-//! sidebar backdrop, and accent-stripe project cards.
+//! Cards carry their identity with the brand diamond and a clean border. The
+//! old left accent-stripe is gone: a coloured bar down the side of a card is
+//! decoration pretending to be information, and with a grid of them it reads
+//! as noise.
 
 use crate::HubApp;
 use crate::Screen;
 use crate::config::RecentProject;
-use crate::theme::{pal, tint};
-use crate::widgets::{
-    badge, format_ts, ghost_button, paint_diamond_filled, paint_diamond_outline, paint_separator,
-    paint_vertical_gradient, primary_button, rgba, sidebar_nav_btn, status_chip,
+use crate::ui::widgets::format_ts;
+use khora_sdk::tool_ui::{FontFamilyHint, Icon, Interaction, UiBuilder, UiTheme};
+use khora_tool_ui::brand::khora_dark;
+use khora_tool_ui::widgets::{
+    self, Button, ButtonKind, Tone, button, chip, diamond, empty_state, icon_button, nav_item,
+    paint::{display, fill_stroke, mono, text, vertical_gradient},
+    search_field,
 };
-use khora_sdk::tool_ui::{FontFamilyHint, LinearRgba, TextAlign, UiBuilder};
+
+/// Sidebar width — wide enough for the nav labels, narrow enough that the
+/// grid still gets three columns on a 1100px window.
+const SIDEBAR_W: f32 = 228.0;
+
+const CARD_MIN_W: f32 = 252.0;
+const CARD_H: f32 = 104.0;
+const GAP: f32 = 12.0;
 
 enum ProjectAction {
     Open(RecentProject),
@@ -28,8 +39,9 @@ enum ProjectAction {
     AddNativeCode(usize),
 }
 
+/// Renders the home screen.
 pub fn show_home(app: &mut HubApp, ui: &mut dyn UiBuilder) {
-    ui.left_inset_panel("hp_sidebar", 220.0, &mut |ui| show_sidebar(app, ui));
+    ui.left_inset_panel("hp_sidebar", SIDEBAR_W, &mut |ui| show_sidebar(app, ui));
     ui.central_inset(&mut |ui| show_main(app, ui));
 
     if let Some(idx) = app.home.remove_confirm {
@@ -37,399 +49,453 @@ pub fn show_home(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     }
 }
 
+// ── Sidebar ─────────────────────────────────────────────
+
 fn show_sidebar(app: &mut HubApp, ui: &mut dyn UiBuilder) {
+    let t = khora_dark();
     let r = ui.panel_rect();
-    paint_vertical_gradient(ui, r, pal::SURFACE, pal::BG, 8);
+
+    vertical_gradient(ui, r, t.surface, t.background, 8);
     ui.paint_line(
-        [r[0] + r[2], r[1]],
-        [r[0] + r[2], r[1] + r[3]],
-        rgba(tint(pal::BORDER, 0.55)),
+        [widgets::right(r), r[1]],
+        [widgets::right(r), widgets::bottom(r)],
+        t.border,
         1.0,
     );
 
-    ui.spacing(20.0);
-    ui.indent("hp_side_actions", &mut |ui| {
-        section_label(ui, "PROJECT ACTIONS");
-        ui.spacing(8.0);
-        if primary_button(ui, "hp-new", "+ New Project", [188.0, 32.0]).clicked {
-            app.screen = Screen::NewProject;
-        }
-        ui.spacing(2.0);
-        if ghost_button(ui, "hp-open-folder", "Open Folder…", [188.0, 28.0]).clicked
-            && let Some(path) = rfd::FileDialog::new().pick_folder()
-        {
-            app.open_existing_project(path);
-        }
+    let pad = 16.0;
+    let x = r[0] + pad;
+    let w = r[2] - pad * 2.0;
+    let mut y = r[1] + pad;
 
-        ui.spacing(18.0);
-        paint_separator(ui, tint(pal::BORDER, 0.5));
-        ui.spacing(14.0);
-        section_label(ui, "VIEW");
-        ui.spacing(6.0);
+    eyebrow(ui, &t, [x, y], "Projects");
+    y += 20.0;
 
-        if sidebar_nav_btn(
-            ui,
-            "hp-nav-projects",
-            "Projects",
-            app.screen == Screen::Home,
-        )
-        .clicked
-        {
-            app.screen = Screen::Home;
-        }
-        if sidebar_nav_btn(
-            ui,
+    if button(
+        ui,
+        &t,
+        [x, y, w, 32.0],
+        "hp-new",
+        Button::new("New project", ButtonKind::Primary).icon(Icon::Plus),
+    )
+    .clicked
+    {
+        app.screen = Screen::NewProject;
+    }
+    y += 32.0 + 8.0;
+
+    if button(
+        ui,
+        &t,
+        [x, y, w, 30.0],
+        "hp-open-folder",
+        Button::new("Open folder…", ButtonKind::Ghost).icon(Icon::FolderOpen),
+    )
+    .clicked
+        && let Some(path) = rfd::FileDialog::new().pick_folder()
+    {
+        app.open_existing_project(path);
+    }
+    y += 30.0 + 24.0;
+
+    eyebrow(ui, &t, [x, y], "View");
+    y += 20.0;
+
+    let nav = [
+        ("hp-nav-projects", Icon::Layers, "Recent", Screen::Home),
+        (
             "hp-nav-engines",
-            "Engine Manager",
-            app.screen == Screen::EngineManager,
-        )
-        .clicked
-        {
-            app.screen = Screen::EngineManager;
-        }
-        if sidebar_nav_btn(
-            ui,
+            Icon::Cpu,
+            "Engines",
+            Screen::EngineManager,
+        ),
+        (
             "hp-nav-settings",
+            Icon::Settings,
             "Settings",
-            app.screen == Screen::Settings,
-        )
-        .clicked
-        {
-            app.settings.local_repo_draft =
-                app.config.local_engine_repo.clone().unwrap_or_default();
-            app.screen = Screen::Settings;
-        }
-
-        ui.spacing(20.0);
-        match &app.settings.auth {
-            crate::AuthState::Connected { login, .. } => {
-                status_chip(ui, &format!("@{login}"), pal::SUCCESS)
+            Screen::Settings,
+        ),
+    ];
+    for (salt, glyph, label, screen) in nav {
+        let active = app.screen == screen;
+        if nav_item(ui, &t, [x, y, w, 32.0], salt, glyph, label, active).clicked {
+            if screen == Screen::Settings {
+                app.settings.local_repo_draft =
+                    app.config.local_engine_repo.clone().unwrap_or_default();
             }
-            crate::AuthState::Connecting { .. } => status_chip(ui, "Connecting…", pal::WARNING),
-            crate::AuthState::Disconnected => status_chip(ui, "GitHub: offline", pal::TEXT_MUTED),
+            app.screen = screen;
         }
-    });
+        y += 32.0 + 2.0;
+    }
+
+    // ── Bottom: where GitHub stands ──
+    let gh_h = 30.0;
+    let gh_y = widgets::bottom(r) - pad - gh_h;
+    let (label, tone) = match &app.settings.auth {
+        crate::AuthState::Connected { login, .. } => (format!("@{login}"), Tone::Success),
+        crate::AuthState::Connecting { .. } => ("connecting…".to_owned(), Tone::Warning),
+        crate::AuthState::Disconnected => ("not connected".to_owned(), Tone::Neutral),
+    };
+    chip(ui, &t, [x, gh_y + 6.0, w, 18.0], &label, tone, true);
 }
 
+fn eyebrow(ui: &mut dyn UiBuilder, t: &UiTheme, pos: [f32; 2], label: &str) {
+    mono(
+        ui,
+        pos,
+        &label.to_uppercase(),
+        t.font_size_caption - 1.0,
+        t.text_disabled,
+    );
+}
+
+// ── Main ────────────────────────────────────────────────
+
 fn show_main(app: &mut HubApp, ui: &mut dyn UiBuilder) {
-    ui.spacing(20.0);
-    ui.indent("hp_main", &mut |ui| {
-        big_label(ui, "Recent Projects", 18.0, pal::TEXT);
-        ui.spacing(6.0);
+    let t = khora_dark();
+    let r = ui.panel_rect();
+    let pad = 24.0;
 
-        ui.horizontal(&mut |row| {
-            row.label("Filter:");
-            row.text_edit_singleline(&mut app.home.filter);
-        });
-        ui.spacing(10.0);
-        paint_separator(ui, tint(pal::SEPARATOR, 0.55));
-        ui.spacing(12.0);
+    // Header: the one display-serif moment on the screen.
+    let head_y = r[1] + 20.0;
+    display(ui, [r[0] + pad, head_y], "Recent projects", 19.0, t.text);
 
-        if app.config.recent_projects.is_empty() {
-            paint_empty_state(ui);
-            ui.spacing(14.0);
-            if primary_button(ui, "hp-empty-new", "+ New Project", [200.0, 34.0]).clicked {
-                app.screen = Screen::NewProject;
-            }
-            return;
+    let sw = 220.0;
+    if search_field(
+        ui,
+        &t,
+        [widgets::right(r) - pad - sw, head_y - 4.0, sw, 30.0],
+        "hp-filter",
+        &app.home.filter,
+        "Filter projects…",
+    )
+    .clicked
+    {
+        // The frame is painted here; the real text edit lives behind it.
+    }
+
+    let body_y = head_y + 34.0;
+    let body = [
+        r[0] + pad,
+        body_y,
+        r[2] - pad * 2.0,
+        widgets::bottom(r) - body_y - pad,
+    ];
+
+    if app.config.recent_projects.is_empty() {
+        let w = 340.0f32.min(body[2]);
+        let h = 170.0;
+        let e = [body[0] + (body[2] - w) * 0.5, body[1] + 24.0, w, h];
+        empty_state(
+            ui,
+            &t,
+            e,
+            Icon::Layers,
+            "No projects yet",
+            "Create your first Khora project, or open an existing folder.",
+        );
+        if button(
+            ui,
+            &t,
+            [
+                e[0] + (w - 150.0) * 0.5,
+                widgets::bottom(e) + 14.0,
+                150.0,
+                32.0,
+            ],
+            "hp-empty-new",
+            Button::new("New project", ButtonKind::Primary).icon(Icon::Plus),
+        )
+        .clicked
+        {
+            app.screen = Screen::NewProject;
         }
+        return;
+    }
 
-        let needle = app.home.filter.to_ascii_lowercase();
-        let projects: Vec<(usize, RecentProject)> = app
-            .config
-            .recent_projects
-            .iter()
-            .cloned()
-            .enumerate()
-            .filter(|(_, p)| {
-                if needle.is_empty() {
-                    true
-                } else {
-                    p.name.to_ascii_lowercase().contains(&needle)
-                        || p.path.to_ascii_lowercase().contains(&needle)
-                }
-            })
-            .collect();
+    // Filter, keeping the original index so actions still address the right
+    // project after the list is narrowed.
+    let needle = app.home.filter.to_ascii_lowercase();
+    let projects: Vec<(usize, RecentProject)> = app
+        .config
+        .recent_projects
+        .iter()
+        .cloned()
+        .enumerate()
+        .filter(|(_, p)| {
+            needle.is_empty()
+                || p.name.to_ascii_lowercase().contains(&needle)
+                || p.path.to_ascii_lowercase().contains(&needle)
+        })
+        .collect();
 
-        if projects.is_empty() {
-            ui.colored_label(rgba(pal::TEXT_MUTED), "No projects match your filter.");
-            return;
+    if projects.is_empty() {
+        text(
+            ui,
+            [body[0], body[1] + 8.0],
+            "No projects match your filter.",
+            t.font_size_body,
+            t.text_muted,
+        );
+        return;
+    }
+
+    // Responsive grid: as many columns as fit at the minimum card width.
+    let cols = (((body[2] + GAP) / (CARD_MIN_W + GAP)).floor() as usize).max(1);
+    let card_w = (body[2] - GAP * (cols - 1) as f32) / cols as f32;
+
+    let mut action: Option<ProjectAction> = None;
+    for (i, (src_idx, proj)) in projects.iter().enumerate() {
+        let col = i % cols;
+        let row = i / cols;
+        let rect = [
+            body[0] + col as f32 * (card_w + GAP),
+            body[1] + row as f32 * (CARD_H + GAP),
+            card_w,
+            CARD_H,
+        ];
+        if widgets::bottom(rect) > widgets::bottom(body) {
+            break; // Off-screen; the panel doesn't scroll yet.
         }
+        project_card(ui, &t, rect, proj, *src_idx, &mut action);
+    }
 
-        let mut action: Option<ProjectAction> = None;
-
-        ui.scroll_area("hp-list", &mut |ui| {
-            for (src_idx, proj) in projects.iter() {
-                let hovered = app.home.hovered == Some(*src_idx);
-                let int = project_card(ui, proj, *src_idx, hovered, &mut action);
-                if int.hovered && app.home.hovered != Some(*src_idx) {
-                    app.home.hovered = Some(*src_idx);
-                } else if !int.hovered && app.home.hovered == Some(*src_idx) {
-                    app.home.hovered = None;
-                }
-                ui.spacing(8.0);
-            }
-        });
-
-        match action {
-            Some(ProjectAction::Open(proj)) => app.launch_project(&proj),
-            Some(ProjectAction::AskRemove(src_idx)) => {
-                app.home.remove_confirm = Some(src_idx);
-            }
-            Some(ProjectAction::AddNativeCode(src_idx)) => {
-                let proj = app.config.recent_projects.get(src_idx).cloned();
-                if let Some(proj) = proj {
-                    let root = std::path::PathBuf::from(&proj.path);
-                    match crate::project::add_native_code(&root, &proj.name, &proj.engine_version) {
-                        Ok(()) => {
-                            app.banner = Some(crate::Banner::info(format!(
-                                "Added native Rust scaffold to '{}'.",
-                                proj.name
-                            )));
-                        }
-                        Err(e) => {
-                            app.banner = Some(crate::Banner::error(format!(
-                                "Add Native Code failed: {e:#}"
-                            )));
-                        }
-                    }
-                }
-            }
-            None => {}
-        }
-    });
+    apply_action(app, action);
 }
 
 fn project_card(
     ui: &mut dyn UiBuilder,
+    t: &UiTheme,
+    rect: [f32; 4],
     proj: &RecentProject,
-    src_idx: usize,
-    hovered: bool,
+    idx: usize,
     action: &mut Option<ProjectAction>,
-) -> khora_sdk::tool_ui::Interaction {
-    let r = ui.panel_rect();
-    let card_w = (r[2] - 16.0).max(200.0);
-    let card_h = 84.0;
-    let pos = ui.cursor_pos();
+) -> Interaction {
+    // The whole card is the Open affordance. Allocate it first so the icon
+    // buttons painted later win the click.
+    let card = ui.interact_rect(&format!("hp-card-{idx}"), rect);
 
-    let card_fill = if hovered {
-        pal::SURFACE3
+    let (bg, border) = if card.hovered {
+        (t.surface_elevated, t.border_strong)
     } else {
-        pal::SURFACE2
+        (t.surface, t.border)
     };
-    let card_border = if hovered {
-        pal::BORDER_LIGHT
-    } else {
-        pal::BORDER
-    };
-    let accent = if hovered {
-        pal::PRIMARY
-    } else {
-        pal::PRIMARY_DIM
-    };
+    fill_stroke(ui, rect, bg, border, t.radius_md);
 
-    // Allocate the card-wide hit region FIRST so subsequent button
-    // `interact_rect` calls take click priority over it (egui resolves
-    // overlapping rects in last-allocated-wins order). Without this,
-    // the card-wide rect would swallow every button click.
-    let card_int = ui.interact_rect(
-        &format!("hp-card-{}-bg", src_idx),
-        [pos[0], pos[1], card_w, card_h],
-    );
+    let pad = 16.0;
+    let x = rect[0] + pad;
 
-    ui.paint_rect_filled(pos, [card_w, card_h], rgba(card_fill), 6.0);
-    ui.paint_rect_stroke(pos, [card_w, card_h], rgba(card_border), 6.0, 1.0);
-
-    // Left accent stripe.
-    ui.paint_rect_filled([pos[0], pos[1]], [3.0, card_h], rgba(accent), 2.0);
-
-    // Diamond mark.
-    paint_diamond_filled(ui, [pos[0] + 28.0, pos[1] + card_h * 0.5], 8.0, accent);
-
-    // Title + path + meta.
-    ui.paint_text_styled(
-        [pos[0] + 50.0, pos[1] + 12.0],
-        &proj.name,
+    // Header: diamond, name, version.
+    let cy = rect[1] + pad + 7.0;
+    diamond(
+        ui,
+        [x + 7.0, cy],
         14.0,
-        rgba(pal::TEXT),
-        FontFamilyHint::Proportional,
-        TextAlign::Left,
+        if card.hovered {
+            t.primary
+        } else {
+            t.primary_dim
+        },
     );
-    ui.paint_text_styled(
-        [pos[0] + 50.0, pos[1] + 32.0],
-        &proj.path,
-        11.0,
-        rgba(pal::TEXT_MUTED),
-        FontFamilyHint::Monospace,
-        TextAlign::Left,
+
+    let name_x = x + 24.0;
+    let ver = proj.engine_version.as_str();
+    let ver_w = ui.measure_text(ver, t.font_size_caption, FontFamilyHint::Monospace)[0] + 18.0;
+    chip(
+        ui,
+        t,
+        [widgets::right(rect) - pad - ver_w, cy - 9.0, ver_w, 18.0],
+        ver,
+        Tone::Neutral,
+        false,
     );
-    let badge_x = pos[0] + 50.0;
-    let badge_y = pos[1] + 54.0;
-    ui.region_at([badge_x, badge_y, 220.0, 22.0], &mut |ui| {
-        badge(
+
+    let name_w = (widgets::right(rect) - pad - ver_w - 8.0 - name_x).max(0.0);
+    ui.region_at([name_x, cy - 8.0, name_w, 16.0], &mut |ui| {
+        text(
             ui,
-            &format!("v{}", proj.engine_version),
-            tint(pal::PRIMARY, 0.18),
-            pal::PRIMARY,
-        )
+            [name_x, cy - 7.0],
+            &proj.name,
+            t.font_size_title,
+            t.text,
+        );
     });
-    ui.paint_text_styled(
-        [badge_x + 70.0, badge_y + 4.0],
-        &format_ts(proj.last_opened),
-        11.0,
-        rgba(pal::TEXT_DIM),
-        FontFamilyHint::Monospace,
-        TextAlign::Left,
+
+    // Path — data, so monospace.
+    mono(
+        ui,
+        [x, rect[1] + 44.0],
+        &proj.path,
+        t.font_size_caption,
+        t.text_disabled,
     );
 
-    // Right cluster.
-    let btn_w = 80.0;
-    let btn_h = 28.0;
-    let btn_y = pos[1] + (card_h - btn_h) * 0.5;
-    let mut x = pos[0] + card_w - 12.0 - btn_w;
+    // ── Footer ──
+    let fy = widgets::bottom(rect) - pad - 9.0;
 
-    let salt_open = format!("hp-card-{}-open", src_idx);
-    let int_open = ui.interact_rect(&salt_open, [x, btn_y, btn_w, btn_h]);
-    let open_fill = if int_open.hovered {
-        LinearRgba::new(
-            (pal::PRIMARY.r * 1.08).min(1.0),
-            (pal::PRIMARY.g * 1.08).min(1.0),
-            (pal::PRIMARY.b * 1.08).min(1.0),
-            pal::PRIMARY.a,
-        )
-    } else {
-        pal::PRIMARY
-    };
-    ui.paint_rect_filled([x, btn_y], [btn_w, btn_h], rgba(open_fill), 5.0);
-    let open_size = ui.measure_text("Open", 12.0, FontFamilyHint::Proportional);
-    ui.paint_text_styled(
-        [
-            x + (btn_w - open_size[0]) * 0.5,
-            btn_y + (btn_h - open_size[1]) * 0.5,
-        ],
+    text(
+        ui,
+        [x, fy - 7.0],
         "Open",
-        12.0,
-        rgba(pal::BG),
-        FontFamilyHint::Proportional,
-        TextAlign::Left,
+        t.font_size_caption + 1.0,
+        t.primary,
     );
-    if int_open.clicked {
+
+    // Row actions replace the timestamp on hover — they are rare, and a card
+    // grid should read as content, not as a wall of buttons.
+    if card.hovered {
+        let bw = 26.0;
+        let mut bx = widgets::right(rect) - pad - bw;
+
+        if icon_button(
+            ui,
+            t,
+            [bx, fy - 13.0, bw, 26.0],
+            &format!("hp-rm-{idx}"),
+            Icon::Trash,
+            true,
+        )
+        .clicked
+        {
+            *action = Some(ProjectAction::AskRemove(idx));
+        }
+        bx -= bw + 2.0;
+
+        if !crate::project::has_native_code(std::path::Path::new(&proj.path))
+            && icon_button(
+                ui,
+                t,
+                [bx, fy - 13.0, bw, 26.0],
+                &format!("hp-native-{idx}"),
+                Icon::Code,
+                true,
+            )
+            .clicked
+        {
+            *action = Some(ProjectAction::AddNativeCode(idx));
+        }
+    } else {
+        let ts = format_ts(proj.last_opened);
+        let w = ui.measure_text(&ts, t.font_size_caption, FontFamilyHint::Monospace)[0];
+        mono(
+            ui,
+            [widgets::right(rect) - pad - w, fy - 7.0],
+            &ts,
+            t.font_size_caption,
+            t.text_muted,
+        );
+    }
+
+    if card.clicked {
         *action = Some(ProjectAction::Open(proj.clone()));
     }
-    x -= btn_w + 8.0;
-
-    let salt_rm = format!("hp-card-{}-rm", src_idx);
-    let int_rm = ui.interact_rect(&salt_rm, [x, btn_y, btn_w, btn_h]);
-    let rm_fill = if int_rm.hovered {
-        pal::SURFACE_ACTIVE
-    } else {
-        pal::SURFACE3
-    };
-    ui.paint_rect_filled([x, btn_y], [btn_w, btn_h], rgba(rm_fill), 5.0);
-    ui.paint_rect_stroke([x, btn_y], [btn_w, btn_h], rgba(pal::BORDER), 5.0, 1.0);
-    let rm_size = ui.measure_text("Remove", 12.0, FontFamilyHint::Proportional);
-    ui.paint_text_styled(
-        [
-            x + (btn_w - rm_size[0]) * 0.5,
-            btn_y + (btn_h - rm_size[1]) * 0.5,
-        ],
-        "Remove",
-        12.0,
-        rgba(pal::TEXT_DIM),
-        FontFamilyHint::Proportional,
-        TextAlign::Left,
-    );
-    if int_rm.clicked {
-        *action = Some(ProjectAction::AskRemove(src_idx));
-    }
-
-    let project_root = std::path::Path::new(&proj.path);
-    if crate::project::has_native_code(project_root) {
-        x -= 90.0 + 8.0;
-        ui.region_at([x, btn_y, 90.0, btn_h], &mut |ui| {
-            ui.spacing(2.0);
-            status_chip(ui, "Native ✓", pal::PRIMARY);
-        });
-    } else {
-        let native_w = 132.0;
-        x -= native_w + 8.0;
-        let salt = format!("hp-card-{}-native", src_idx);
-        let int = ui.interact_rect(&salt, [x, btn_y, native_w, btn_h]);
-        let fill = if int.hovered {
-            pal::SURFACE_ACTIVE
-        } else {
-            pal::SURFACE3
-        };
-        ui.paint_rect_filled([x, btn_y], [native_w, btn_h], rgba(fill), 5.0);
-        ui.paint_rect_stroke([x, btn_y], [native_w, btn_h], rgba(pal::BORDER), 5.0, 1.0);
-        let s = ui.measure_text("Add Native Code", 12.0, FontFamilyHint::Proportional);
-        ui.paint_text_styled(
-            [x + (native_w - s[0]) * 0.5, btn_y + (btn_h - s[1]) * 0.5],
-            "Add Native Code",
-            12.0,
-            rgba(pal::TEXT_DIM),
-            FontFamilyHint::Proportional,
-            TextAlign::Left,
-        );
-        if int.clicked {
-            *action = Some(ProjectAction::AddNativeCode(src_idx));
-        }
-    }
-
-    ui.spacing(card_h + 4.0);
-    card_int
+    card
 }
 
-fn show_remove_confirm_modal(app: &mut HubApp, ui: &mut dyn UiBuilder, idx: usize) {
-    let proj = match app.config.recent_projects.get(idx).cloned() {
-        Some(p) => p,
-        None => {
-            app.home.remove_confirm = None;
-            return;
+fn apply_action(app: &mut HubApp, action: Option<ProjectAction>) {
+    match action {
+        Some(ProjectAction::Open(proj)) => app.launch_project(&proj),
+        Some(ProjectAction::AskRemove(idx)) => app.home.remove_confirm = Some(idx),
+        Some(ProjectAction::AddNativeCode(idx)) => {
+            let Some(proj) = app.config.recent_projects.get(idx).cloned() else {
+                return;
+            };
+            let root = std::path::PathBuf::from(&proj.path);
+            match crate::project::add_native_code(&root, &proj.name, &proj.engine_version) {
+                Ok(()) => {
+                    app.banner = Some(crate::Banner::info(format!(
+                        "Added a native Rust scaffold to '{}'.",
+                        proj.name
+                    )));
+                }
+                Err(e) => {
+                    app.banner = Some(crate::Banner::error(format!(
+                        "Couldn't add native code: {e:#}"
+                    )));
+                }
+            }
         }
-    };
+        None => {}
+    }
+}
 
-    let mut do_delete = false;
+// ── Destructive confirm ─────────────────────────────────
+
+fn show_remove_confirm_modal(app: &mut HubApp, ui: &mut dyn UiBuilder, idx: usize) {
+    let Some(proj) = app.config.recent_projects.get(idx).cloned() else {
+        app.home.remove_confirm = None;
+        return;
+    };
+    let t = khora_dark();
+
+    let mut delete = false;
     let mut close = false;
 
-    ui.modal("hp-remove-confirm", [460.0, 200.0], &mut |ui| {
-        ui.spacing(18.0);
-        ui.indent("hp-modal-body", &mut |ui| {
-            big_label(
-                ui,
-                &format!("Delete '{}' from disk?", proj.name),
-                14.0,
-                pal::TEXT,
-            );
-            ui.spacing(6.0);
-            ui.colored_label(rgba(pal::TEXT_DIM), &format!("Path: {}", proj.path));
-            ui.spacing(6.0);
-            ui.colored_label(rgba(pal::WARNING), "This cannot be undone.");
-            ui.spacing(20.0);
+    ui.modal("hp-remove-confirm", [420.0, 190.0], &mut |ui| {
+        let r = ui.panel_rect();
+        let pad = 20.0;
+        let x = r[0] + pad;
 
-            ui.horizontal(&mut |row| {
-                if ghost_button(row, "hp-modal-cancel", "Cancel", [100.0, 32.0]).clicked {
-                    close = true;
-                }
-                if ghost_button(row, "hp-modal-delete", "Delete", [100.0, 32.0]).clicked {
-                    do_delete = true;
-                }
-            });
-        });
+        text(
+            ui,
+            [x, r[1] + pad],
+            &format!("Delete “{}” from disk?", proj.name),
+            t.font_size_title,
+            t.text,
+        );
+        mono(
+            ui,
+            [x, r[1] + pad + 26.0],
+            &proj.path,
+            t.font_size_caption,
+            t.text_muted,
+        );
+        text(
+            ui,
+            [x, r[1] + pad + 48.0],
+            "This removes the folder and everything in it. It cannot be undone.",
+            t.font_size_caption + 1.0,
+            t.warning,
+        );
+
+        let by = widgets::bottom(r) - pad - 32.0;
+        let bw = 96.0;
+        if button(
+            ui,
+            &t,
+            [widgets::right(r) - pad - bw, by, bw, 32.0],
+            "hp-modal-delete",
+            Button::new("Delete", ButtonKind::Danger).icon(Icon::Trash),
+        )
+        .clicked
+        {
+            delete = true;
+        }
+        if button(
+            ui,
+            &t,
+            [widgets::right(r) - pad - bw * 2.0 - 8.0, by, bw, 32.0],
+            "hp-modal-cancel",
+            Button::new("Cancel", ButtonKind::Ghost),
+        )
+        .clicked
+        {
+            close = true;
+        }
     });
 
-    if do_delete {
+    if delete {
         let path = std::path::PathBuf::from(&proj.path);
         if path.exists() {
             match std::fs::remove_dir_all(&path) {
                 Ok(()) => {
-                    app.banner = Some(crate::Banner::info(format!("Deleted '{}'", proj.name)));
+                    app.banner = Some(crate::Banner::info(format!("Deleted '{}'", proj.name)))
                 }
                 Err(e) => {
                     app.banner = Some(crate::Banner::error(format!(
-                        "Failed to delete '{}': {e}",
+                        "Couldn't delete '{}': {e}",
                         proj.path
-                    )));
+                    )))
                 }
             }
         }
@@ -439,62 +505,4 @@ fn show_remove_confirm_modal(app: &mut HubApp, ui: &mut dyn UiBuilder, idx: usiz
     } else if close {
         app.home.remove_confirm = None;
     }
-}
-
-fn paint_empty_state(ui: &mut dyn UiBuilder) {
-    ui.spacing(40.0);
-    let r = ui.panel_rect();
-    let cx = r[0] + r[2] * 0.5;
-    let cy = ui.cursor_pos()[1] + 36.0;
-    paint_diamond_outline(ui, [cx, cy], 24.0, tint(pal::PRIMARY, 0.35), 1.5);
-    paint_diamond_filled(ui, [cx, cy], 8.0, pal::PRIMARY_DIM);
-    ui.spacing(80.0);
-    let label = "No projects yet";
-    let label_size = ui.measure_text(label, 15.0, FontFamilyHint::Proportional);
-    ui.paint_text_styled(
-        [cx - label_size[0] * 0.5, ui.cursor_pos()[1]],
-        label,
-        15.0,
-        rgba(pal::TEXT_DIM),
-        FontFamilyHint::Proportional,
-        TextAlign::Left,
-    );
-    ui.spacing(24.0);
-    let sub = "Create your first project to get started.";
-    let sub_size = ui.measure_text(sub, 12.0, FontFamilyHint::Proportional);
-    ui.paint_text_styled(
-        [cx - sub_size[0] * 0.5, ui.cursor_pos()[1]],
-        sub,
-        12.0,
-        rgba(pal::TEXT_MUTED),
-        FontFamilyHint::Proportional,
-        TextAlign::Left,
-    );
-    ui.spacing(20.0);
-}
-
-fn section_label(ui: &mut dyn UiBuilder, text: &str) {
-    let pos = ui.cursor_pos();
-    ui.paint_text_styled(
-        pos,
-        text,
-        11.0,
-        rgba(pal::TEXT_MUTED),
-        FontFamilyHint::Monospace,
-        TextAlign::Left,
-    );
-    ui.spacing(16.0);
-}
-
-fn big_label(ui: &mut dyn UiBuilder, text: &str, size: f32, color: LinearRgba) {
-    let pos = ui.cursor_pos();
-    ui.paint_text_styled(
-        pos,
-        text,
-        size,
-        rgba(color),
-        FontFamilyHint::Proportional,
-        TextAlign::Left,
-    );
-    ui.spacing(size + 6.0);
 }

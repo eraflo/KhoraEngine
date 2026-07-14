@@ -57,6 +57,7 @@ use khora_core::ui::UiTheme;
 
 pub mod buttons;
 pub mod chips;
+pub mod containers;
 pub mod disclosure;
 pub mod feedback;
 pub mod fields;
@@ -67,9 +68,12 @@ pub mod paint;
 
 pub use buttons::{button, icon_button, Button, ButtonKind};
 pub use chips::{chip, filter_pill, kbd_chip, Pill, Tone};
+pub use containers::{card, card_action_slot};
 pub use disclosure::{group_header, Group};
 pub use feedback::{banner, empty_state, tooltip};
-pub use fields::{axis_field, property_row, search_field, Axis};
+pub use fields::{
+    axis_field, checkbox, error_line, field_label, input_frame, property_row, search_field, Axis,
+};
 pub use indicators::{
     health_bar, meter_bar, progress_row, skeleton, sparkline, status_dot, Health,
 };
@@ -78,7 +82,7 @@ pub use nav::{
     breadcrumb, nav_item, panel_tab, radio_card, segmented_tabs, selectable_row, step_rail,
     StepState,
 };
-pub use paint::{fill, lerp_color, stroke, tint, with_alpha};
+pub use paint::{fill, lerp_color, stroke, tint, vertical_gradient, with_alpha};
 
 /// A rectangle as `[x, y, width, height]` — the same shape
 /// [`UiBuilder::interact_rect`] and [`UiBuilder::allocate_size`] speak.

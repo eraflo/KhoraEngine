@@ -12,33 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Spine — vertical mode switcher on the far-left edge.
+//! Spine — the vertical workspace switcher on the far-left edge.
 //!
-//! Phase C: real Lucide icons, silver bar + glow on the active button,
-//! tooltips on hover. Six modes mirroring the design mockup.
+//! The active workspace is marked in **gold**, because which workspace you are
+//! in *is* a selection — the same thing the gold bar means everywhere else in
+//! the editor. (The hub's sidebar is different: it navigates between places,
+//! so it tints with the brand silver instead.)
 
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
+use khora_tool_ui::widgets::paint::{icon_centered, selection_bar};
 
-use crate::widgets::brand::paint_diamond_filled;
-use crate::widgets::paint::{paint_hairline_h, paint_icon, with_alpha};
+/// Width of the spine strip.
+pub const SPINE_WIDTH: f32 = 48.0;
+const BTN_SIZE: f32 = 34.0;
 
-const SPINE_WIDTH: f32 = 56.0;
-const BTN_SIZE: f32 = 40.0;
-
-/// The workspaces that ship today. Future authoring workspaces (2D canvas,
-/// node graph, animation, shader graph) join this list as they are built.
+/// The workspaces that ship today.
 const MODES: &[(EditorMode, Icon, &str)] = &[
     (EditorMode::Scene, Icon::Cube, "Scene"),
     (EditorMode::ControlPlane, Icon::Cpu, "Control Plane · DCC"),
 ];
 
-/// Bottom items are also pruned — Plugins and Preferences had no handler.
-/// Re-add them when there's actually something to open.
-const BOTTOM_ITEMS: &[(Icon, &str)] = &[];
-
-/// Vertical mode-switcher strip — 56px wide.
+/// Vertical workspace-switcher strip.
 pub struct SpinePanel {
     state: Arc<Mutex<EditorState>>,
     theme: UiTheme,
@@ -80,135 +76,57 @@ impl EditorPanel for SpinePanel {
 
     fn ui(&mut self, ui: &mut dyn UiBuilder) {
         let theme = &self.theme;
-        let rect = ui.panel_rect();
-        let [px, py, pw, ph] = rect;
+        let [px, py, pw, ph] = ui.panel_rect();
 
-        ui.paint_rect_filled([px, py], [pw, ph], theme.background, 0.0);
-        ui.paint_line(
-            [px + pw, py],
-            [px + pw, py + ph],
-            with_alpha(theme.separator, 0.55),
-            1.0,
-        );
+        ui.paint_rect_filled([px, py], [pw, ph], theme.surface, 0.0);
+        ui.paint_line([px + pw, py], [px + pw, py + ph], theme.border, 1.0);
 
-        // ── Brand block ────────────────────────────────
-        let brand_cy = py + 26.0;
-        let brand_cx = px + pw * 0.5;
-        ui.paint_rect_filled(
-            [brand_cx - 20.0, brand_cy - 20.0],
-            [40.0, 40.0],
-            theme.surface_active,
-            theme.radius_md,
-        );
-        ui.paint_rect_stroke(
-            [brand_cx - 20.0, brand_cy - 20.0],
-            [40.0, 40.0],
-            theme.border,
-            theme.radius_md,
-            1.0,
-        );
-        paint_diamond_filled(ui, brand_cx, brand_cy, 10.0, theme.primary);
+        // Brand mark — the diamond, no plate around it. The spine is chrome;
+        // it should recede, not compete with the work.
+        let cx = px + pw * 0.5;
+        khora_tool_ui::widgets::diamond(ui, [cx, py + 22.0], 18.0, theme.primary);
 
-        paint_hairline_h(ui, px + 14.0, py + 56.0, pw - 28.0, theme.separator);
-
-        // ── Mode buttons ───────────────────────────────
+        // Mode buttons.
         let current = self.current_mode();
-        let mut cy = py + 70.0;
+        let mut y = py + 48.0;
 
         for (mode, icon, tooltip) in MODES {
-            paint_spine_button(
-                ui,
-                px,
-                cy,
-                pw,
-                *icon,
-                *mode == current,
-                tooltip,
-                &format!("spine-{}", tooltip),
-                theme,
-                |selected| {
-                    if selected {
-                        self.set_mode(*mode);
-                    }
-                },
-            );
-            cy += BTN_SIZE + 4.0;
+            let bx = px + (pw - BTN_SIZE) * 0.5;
+            let rect = [bx, y, BTN_SIZE, BTN_SIZE];
+            let active = *mode == current;
+
+            let hit = ui.interact_rect(&format!("spine-{tooltip}"), rect);
+
+            if active || hit.hovered {
+                ui.paint_rect_filled(
+                    [rect[0], rect[1]],
+                    [rect[2], rect[3]],
+                    theme.surface_interactive,
+                    theme.radius_md,
+                );
+            }
+            if active {
+                // The gold bar sits in the gutter, left of the button.
+                selection_bar(ui, [px + 1.0, y, 2.0, BTN_SIZE], theme.accent_c);
+            }
+
+            let color = if active {
+                theme.accent_c
+            } else if hit.hovered {
+                theme.text
+            } else {
+                theme.text_muted
+            };
+            icon_centered(ui, rect, *icon, 17.0, color);
+
+            if hit.hovered {
+                ui.tooltip_for_last(tooltip);
+            }
+            if hit.clicked {
+                self.set_mode(*mode);
+            }
+
+            y += BTN_SIZE + 4.0;
         }
-
-        // ── Bottom items ───────────────────────────────
-        let mut by = py + ph - 6.0 - BTN_SIZE * BOTTOM_ITEMS.len() as f32 - 4.0;
-        for (icon, tooltip) in BOTTOM_ITEMS {
-            paint_spine_button(
-                ui,
-                px,
-                by,
-                pw,
-                *icon,
-                false,
-                tooltip,
-                &format!("spine-{}", tooltip),
-                theme,
-                |_| {},
-            );
-            by += BTN_SIZE + 4.0;
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn paint_spine_button(
-    ui: &mut dyn UiBuilder,
-    px: f32,
-    cy: f32,
-    pw: f32,
-    icon: Icon,
-    active: bool,
-    tooltip: &str,
-    id_salt: &str,
-    theme: &UiTheme,
-    on_click: impl FnOnce(bool),
-) {
-    let bx = px + (pw - BTN_SIZE) * 0.5;
-    let interaction = ui.interact_rect(id_salt, [bx, cy, BTN_SIZE, BTN_SIZE]);
-
-    if active || interaction.hovered {
-        ui.paint_rect_filled(
-            [bx, cy],
-            [BTN_SIZE, BTN_SIZE],
-            theme.surface_elevated,
-            theme.radius_md,
-        );
-    }
-
-    if active {
-        // Vertical accent bar on the left + soft glow
-        ui.paint_rect_filled(
-            [bx - 1.0, cy + 8.0],
-            [2.0, BTN_SIZE - 16.0],
-            theme.primary,
-            1.0,
-        );
-        ui.paint_rect_filled(
-            [bx - 4.0, cy + 6.0],
-            [4.0, BTN_SIZE - 12.0],
-            with_alpha(theme.primary, 0.25),
-            2.0,
-        );
-    }
-
-    let icon_color = if active {
-        theme.primary
-    } else if interaction.hovered {
-        theme.text
-    } else {
-        theme.text_dim
-    };
-    paint_icon(ui, [bx + 12.0, cy + 12.0], icon, 16.0, icon_color);
-
-    if interaction.hovered {
-        ui.tooltip_for_last(tooltip);
-    }
-    if interaction.clicked {
-        on_click(true);
     }
 }

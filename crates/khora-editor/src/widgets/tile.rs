@@ -128,8 +128,9 @@ pub fn paint_asset_tile(
     let outer = [origin[0], origin[1], w, h];
     let interaction = ui.interact_rect(id_salt, outer);
 
+    // Gold marks the selection, here as everywhere else in the editor.
     if selected {
-        ui.paint_rect_filled(origin, [w, h], with_alpha(theme.primary, 0.18), 6.0);
+        ui.paint_rect_filled(origin, [w, h], with_alpha(theme.accent_c, 0.12), 6.0);
     } else if interaction.hovered {
         ui.paint_rect_filled(origin, [w, h], with_alpha(theme.surface_elevated, 0.4), 6.0);
     }
@@ -149,7 +150,7 @@ pub fn paint_asset_tile(
         1.0,
     );
     if selected {
-        ui.paint_rect_stroke([thumb_x, thumb_y], [tw, th], theme.primary, 4.0, 1.5);
+        ui.paint_rect_stroke([thumb_x, thumb_y], [tw, th], theme.accent_c, 4.0, 1.5);
     }
 
     // Centered icon

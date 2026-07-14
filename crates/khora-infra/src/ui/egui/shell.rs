@@ -277,9 +277,12 @@ impl EditorShell for EguiEditorShell {
             egui::FontFamily::Name("icons".into()),
             fonts.icons,
         );
-        // Display headings fall back to the proportional face when Fraunces
-        // isn't installed, so `FontFamily::Name("display")` always resolves.
+        // Both named families must always resolve: epaint *panics* when text
+        // asks for a `FontFamily::Name` bound to no fonts. The proportional
+        // fallback means a missing Fraunces degrades to Geist and a missing
+        // icon font degrades to tofu — never to a crash.
         ensure_family_fallback(&mut definitions, "display", &egui::FontFamily::Proportional);
+        ensure_family_fallback(&mut definitions, "icons", &egui::FontFamily::Proportional);
         self.ctx.set_fonts(definitions);
     }
 

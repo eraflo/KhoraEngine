@@ -80,9 +80,12 @@ impl AppContext for EguiAppContext<'_> {
                 &pack.icons,
             );
         }
-        // Display headings fall back to the proportional face when Fraunces
-        // isn't installed, so `FontFamily::Name("display")` always resolves.
-        {
+        // Both named families must always resolve: epaint *panics* when text
+        // asks for a `FontFamily::Name` that is bound to no fonts. Appending
+        // the proportional faces as a fallback means a missing Fraunces
+        // degrades to Geist and a missing icon font degrades to tofu — never
+        // to a crash.
+        for named in ["display", "icons"] {
             let fallback = defs
                 .families
                 .get(&egui::FontFamily::Proportional)
@@ -90,7 +93,7 @@ impl AppContext for EguiAppContext<'_> {
                 .unwrap_or_default();
             let entry = defs
                 .families
-                .entry(egui::FontFamily::Name("display".into()))
+                .entry(egui::FontFamily::Name(named.into()))
                 .or_default();
             for key in fallback {
                 if !entry.contains(&key) {

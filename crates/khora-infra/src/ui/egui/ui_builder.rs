@@ -19,6 +19,8 @@ use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
 use khora_core::ui::editor::UiBuilder;
 use std::collections::HashMap;
 
+use super::theme::AXIS_COLORS_KEY;
+
 /// Maps a backend-neutral [`FontFamilyHint`] to an egui [`FontId`](egui::FontId).
 ///
 /// `Display` and `Icons` resolve to named families installed by `set_fonts`;
@@ -144,43 +146,46 @@ impl UiBuilder for EguiUiBuilder<'_> {
     }
 
     fn vec3_editor(&mut self, label: &str, value: &mut [f32; 3], speed: f32) -> bool {
-        // Unity-style: filled colored X/Y/Z badges before each drag value.
-        // Red = X, green = Y, blue = Z.
-        const X_COLOR: egui::Color32 = egui::Color32::from_rgb(214, 75, 64);
-        const Y_COLOR: egui::Color32 = egui::Color32::from_rgb(96, 178, 81);
-        const Z_COLOR: egui::Color32 = egui::Color32::from_rgb(78, 132, 222);
+        // The axis colour rides on the *letter*, not on a filled badge behind
+        // it. Three saturated badges per row turn a transform-heavy inspector
+        // into a rainbow; a tinted letter says the same thing and lets the
+        // numbers stay the loudest part of the row.
+        //
+        // Colours come from the active theme (stashed by `apply_theme`), so
+        // the inspector's X/Y/Z always match the viewport gizmo's.
+        let axes = self
+            .ui
+            .ctx()
+            .data(|d| d.get_temp::<[egui::Color32; 3]>(egui::Id::new(AXIS_COLORS_KEY)))
+            .unwrap_or([
+                egui::Color32::from_rgb(246, 109, 103),
+                egui::Color32::from_rgb(114, 207, 142),
+                egui::Color32::from_rgb(115, 204, 234),
+            ]);
 
-        let axis_badge = |ui: &mut egui::Ui, ch: &str, color: egui::Color32| {
-            egui::Frame::new()
-                .fill(color)
-                .corner_radius(egui::CornerRadius::same(3))
-                .inner_margin(egui::Margin::symmetric(5, 1))
-                .show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(ch)
-                            .color(egui::Color32::WHITE)
-                            .strong()
-                            .monospace(),
-                    );
-                });
+        let axis_letter = |ui: &mut egui::Ui, ch: &str, color: egui::Color32| {
+            ui.label(
+                egui::RichText::new(ch)
+                    .color(color)
+                    .strong()
+                    .monospace()
+                    .size(10.0),
+            );
         };
 
         self.ui
             .horizontal(|ui| {
-                ui.label(label);
-                axis_badge(ui, "X", X_COLOR);
-                let x = ui
-                    .add(egui::DragValue::new(&mut value[0]).speed(speed))
-                    .changed();
-                axis_badge(ui, "Y", Y_COLOR);
-                let y = ui
-                    .add(egui::DragValue::new(&mut value[1]).speed(speed))
-                    .changed();
-                axis_badge(ui, "Z", Z_COLOR);
-                let z = ui
-                    .add(egui::DragValue::new(&mut value[2]).speed(speed))
-                    .changed();
-                x || y || z
+                if !label.is_empty() {
+                    ui.label(label);
+                }
+                let mut changed = false;
+                for (i, ch) in ["X", "Y", "Z"].iter().enumerate() {
+                    axis_letter(ui, ch, axes[i]);
+                    changed |= ui
+                        .add(egui::DragValue::new(&mut value[i]).speed(speed))
+                        .changed();
+                }
+                changed
             })
             .inner
     }

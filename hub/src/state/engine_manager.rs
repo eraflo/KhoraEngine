@@ -21,6 +21,9 @@ pub struct EngineManagerState {
     pub download_rx: Option<mpsc::Receiver<download::DownloadMessage>>,
     pub download_progress: Option<(u64, u64)>,
     pub fetch_rx: Option<mpsc::Receiver<Result<Vec<github::GithubRelease>, String>>>,
+    /// Version awaiting an uninstall confirmation. Wiping an engine off disk
+    /// is irreversible and breaks every project pinned to it, so it asks.
+    pub uninstall_confirm: Option<String>,
 }
 
 impl EngineManagerState {
@@ -34,6 +37,7 @@ impl EngineManagerState {
             download_rx: None,
             download_progress: None,
             fetch_rx: None,
+            uninstall_confirm: None,
         }
     }
 }

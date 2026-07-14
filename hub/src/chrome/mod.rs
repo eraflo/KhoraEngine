@@ -13,5 +13,5 @@ pub mod status_bar;
 pub mod topbar;
 
 pub use banner::paint_banner;
-pub use status_bar::show_status_bar;
-pub use topbar::show_topbar;
+pub use status_bar::{STATUS_HEIGHT, show_status_bar};
+pub use topbar::{TOPBAR_HEIGHT, show_topbar};

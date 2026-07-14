@@ -148,24 +148,30 @@ impl ViewportPanel {
         viewport_min: [f32; 2],
         viewport_size: [f32; 2],
     ) {
+        let theme = &self.theme;
         let min_dim = viewport_size[0].min(viewport_size[1]);
         let scale = (min_dim / 700.0).clamp(0.75, 1.55);
-        // Compass-style gizmo anchored to the top-right corner *below* the
-        // transport pill (top edge of pill = viewport_min.y + 12, height 32,
-        // so we push the gizmo to viewport_min.y + 56 to clear it).
-        let plate_half = 36.0 * scale;
-        let length = 24.0 * scale;
-        let transport_clear = 56.0; // pill_y(12) + pill_h(32) + 12 breathing
-        let margin_right = 12.0 * scale;
+
+        // Top-right corner. This is where every 3D tool puts the view-
+        // orientation gizmo, and muscle memory is worth more here than
+        // novelty. The transport lives at the bottom centre, so nothing
+        // competes for the corner.
+        let plate_half = 34.0 * scale;
+        let length = 22.0 * scale;
+        let margin = 12.0 * scale;
         let center = [
-            viewport_min[0] + viewport_size[0] - margin_right - plate_half,
-            viewport_min[1] + transport_clear + plate_half,
+            viewport_min[0] + viewport_size[0] - margin - plate_half,
+            viewport_min[1] + margin + plate_half,
         ];
 
-        // Round backplate so the gizmo reads as a "navigation puck" (mockup
-        // calls for a circular widget with X/Y/Z labels around the rim).
-        ui.paint_circle_filled(center, plate_half, [0.04, 0.06, 0.10, 0.78]);
-        ui.paint_circle_stroke(center, plate_half, [0.32, 0.38, 0.52, 0.55], 1.0);
+        // A translucent puck so the gizmo stays legible over any scene without
+        // hiding it.
+        ui.paint_circle_filled(
+            center,
+            plate_half,
+            khora_tool_ui::widgets::paint::tint(theme.background, 0.7),
+        );
+        ui.paint_circle_stroke(center, plate_half, theme.border, 1.0);
 
         let (right, up) = if let Ok(cam) = self.camera.lock() {
             (cam.right(), cam.up())
@@ -402,114 +408,131 @@ impl ViewportPanel {
         let _ = cx; // Local/World toggle removed until it's actually wired.
     }
 
+    /// The transport — play, pause, stop — floating at the bottom centre.
+    ///
+    /// Each button's *state* is derived from `PlayMode`, so the control always
+    /// tells the truth about what the engine is doing: a disabled Stop while
+    /// editing means there is genuinely nothing to stop. Buttons that cannot
+    /// act are dimmed and swallow their clicks rather than silently no-op.
     fn paint_transport_pill(
         &self,
         ui: &mut dyn UiBuilder,
         viewport_min: [f32; 2],
         viewport_size: [f32; 2],
     ) {
+        use khora_tool_ui::widgets::paint::{fill_stroke, icon_centered, tint};
+
         let theme = &self.theme;
-        let play_mode = self
+        let mode = self
             .state
             .lock()
             .ok()
             .map(|s| s.play_mode)
             .unwrap_or(PlayMode::Editing);
 
-        // Pill = Play/Pause + Stop only. The "step back/forward" chevrons
-        // were unwired decorations; removed until the editor actually
-        // supports per-frame stepping.
-        let pill_w = 156.0;
-        let pill_x = viewport_min[0] + viewport_size[0] - pill_w - 12.0;
-        let pill_y = viewport_min[1] + 12.0;
-        let pill_h = 32.0;
+        let playing = mode == PlayMode::Playing;
+        let paused = mode == PlayMode::Paused;
+        let running = playing || paused;
 
-        ui.paint_rect_filled(
-            [pill_x, pill_y],
-            [pill_w, pill_h],
-            crate::widgets::paint::with_alpha(theme.surface_elevated, 0.92),
-            999.0,
-        );
-        ui.paint_rect_stroke(
-            [pill_x, pill_y],
-            [pill_w, pill_h],
-            crate::widgets::paint::with_alpha(theme.separator, 0.6),
-            999.0,
-            1.0,
-        );
+        let btn = 26.0;
+        let gap = 4.0;
+        let pad = 6.0;
+        let pill_w = btn * 3.0 + gap * 2.0 + pad * 2.0;
+        let pill_h = btn + pad * 2.0;
+        let pill_x = viewport_min[0] + (viewport_size[0] - pill_w) * 0.5;
+        let pill_y = viewport_min[1] + viewport_size[1] - pill_h - 12.0;
 
-        let mut cx = pill_x + 6.0;
-
-        // Play / Pause / Resume button (bigger, primary look)
-        let is_playing = play_mode == PlayMode::Playing;
-        let is_paused = play_mode == PlayMode::Paused;
-
-        let play_w = 90.0;
-        let play_r = [cx, pill_y + 3.0, play_w, pill_h - 6.0];
-        let play_int = ui.interact_rect("vp-play", play_r);
-        let play_bg = if is_playing {
-            theme.warning
-        } else {
-            theme.success
-        };
-        ui.paint_rect_filled(
-            [play_r[0], play_r[1]],
-            [play_r[2], play_r[3]],
-            play_bg,
-            999.0,
-        );
-        let label = if is_paused {
-            "Resume"
-        } else if is_playing {
-            "Pause"
-        } else {
-            "Play"
-        };
-        let icon = if is_playing { Icon::Pause } else { Icon::Play };
-        crate::widgets::paint::paint_icon(
-            ui,
-            [play_r[0] + 14.0, play_r[1] + 6.0],
-            icon,
-            13.0,
-            theme.background,
-        );
-        crate::widgets::paint::paint_text_size(
-            ui,
-            [play_r[0] + 36.0, play_r[1] + 6.0],
-            label,
-            12.0,
-            theme.background,
-        );
-        if play_int.clicked {
-            if let Ok(mut s) = self.state.lock() {
-                if is_playing {
-                    s.pending_menu_action = Some("pause".to_owned());
-                } else {
-                    s.pending_menu_action = Some("play".to_owned());
-                }
-            }
+        if viewport_size[0] < pill_w + 24.0 || viewport_size[1] < 80.0 {
+            return;
         }
-        cx += play_w + 4.0;
 
-        // Stop
-        let stop_r = [cx, pill_y + 4.0, 28.0, pill_h - 8.0];
-        let stop_int = ui.interact_rect("vp-stop", stop_r);
-        let stop_color = if is_playing || is_paused {
-            theme.error
-        } else {
-            theme.text_muted
-        };
-        crate::widgets::paint::paint_icon(
+        fill_stroke(
             ui,
-            [stop_r[0] + 7.0, stop_r[1] + 5.0],
+            [pill_x, pill_y, pill_w, pill_h],
+            tint(theme.surface_elevated, 0.92),
+            theme.border,
+            pill_h * 0.5,
+        );
+
+        let mut x = pill_x + pad;
+        let cy = pill_y + pad;
+
+        // ── Play / resume ──
+        // While playing, this is the "running" indicator rather than an action.
+        let play_rect = [x, cy, btn, btn];
+        let play_hit = ui.interact_rect("vp-play", play_rect);
+        if playing {
+            ui.paint_circle_filled([x + btn * 0.5, cy + btn * 0.5], btn * 0.5, theme.success);
+        }
+        icon_centered(
+            ui,
+            play_rect,
+            Icon::Play,
+            13.0,
+            if playing {
+                theme.text_inverse
+            } else if play_hit.hovered {
+                theme.success
+            } else {
+                theme.text
+            },
+        );
+        if play_hit.clicked && !playing {
+            self.dispatch("play");
+        }
+        x += btn + gap;
+
+        // ── Pause ── only meaningful while something is running.
+        let pause_rect = [x, cy, btn, btn];
+        let pause_hit = ui.interact_rect("vp-pause", pause_rect);
+        if paused {
+            ui.paint_circle_filled([x + btn * 0.5, cy + btn * 0.5], btn * 0.5, theme.warning);
+        }
+        icon_centered(
+            ui,
+            pause_rect,
+            Icon::Pause,
+            13.0,
+            if paused {
+                theme.text_inverse
+            } else if !running {
+                theme.text_disabled
+            } else if pause_hit.hovered {
+                theme.warning
+            } else {
+                theme.text
+            },
+        );
+        if pause_hit.clicked && playing {
+            self.dispatch("pause");
+        }
+        x += btn + gap;
+
+        // ── Stop ──
+        let stop_rect = [x, cy, btn, btn];
+        let stop_hit = ui.interact_rect("vp-stop", stop_rect);
+        icon_centered(
+            ui,
+            stop_rect,
             Icon::Stop,
             13.0,
-            stop_color,
+            if !running {
+                theme.text_disabled
+            } else if stop_hit.hovered {
+                theme.error
+            } else {
+                theme.text
+            },
         );
-        if stop_int.clicked && (is_playing || is_paused) {
-            if let Ok(mut s) = self.state.lock() {
-                s.pending_menu_action = Some("stop".to_owned());
-            }
+        if stop_hit.clicked && running {
+            self.dispatch("stop");
+        }
+    }
+
+    /// Queues a menu action for the app to pick up next tick.
+    fn dispatch(&self, action: &str) {
+        if let Ok(mut s) = self.state.lock() {
+            s.pending_menu_action = Some(action.to_owned());
         }
     }
 

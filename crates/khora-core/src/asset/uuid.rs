@@ -28,9 +28,7 @@ const ASSET_NAMESPACE_UUID: Uuid = Uuid::from_u128(0x4a6a81e9_f0d1_4b8f_91a8_7e7
 ///
 /// By using a stable UUID, assets can be moved, renamed, or have their source
 /// data modified without breaking references to them in scenes or other assets.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct AssetUUID(Uuid);
 
 impl Encode for AssetUUID {

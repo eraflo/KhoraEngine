@@ -16,6 +16,17 @@
 
 use khora_core::ui::UiTheme;
 
+/// Key under which [`apply_theme`] stashes the X/Y/Z axis colours in the egui
+/// context.
+///
+/// `UiBuilder::vec3_editor` is a stock widget with no access to a [`UiTheme`],
+/// but it must tint its axes with the theme's own tokens — otherwise the
+/// inspector's X/Y/Z and the viewport gizmo's X/Y/Z drift apart, and the two
+/// stop reading as the same thing. Rather than widen the trait or hard-code a
+/// second copy of the palette in this backend, the theme leaves the colours
+/// here for the widget to pick up.
+pub(crate) const AXIS_COLORS_KEY: &str = "khora.axis_colors";
+
 fn c(color: [f32; 4]) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(
         (color[0] * 255.0) as u8,
@@ -98,6 +109,10 @@ pub fn apply_theme(ctx: &egui::Context, theme: &UiTheme) {
     visuals.slider_trailing_fill = true;
 
     ctx.set_visuals(visuals);
+
+    // Hand the axis tints to `vec3_editor` (see AXIS_COLORS_KEY).
+    let axes: [egui::Color32; 3] = [c(theme.axis_x), c(theme.axis_y), c(theme.axis_z)];
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(AXIS_COLORS_KEY), axes));
 
     // ── Spacing & sizing ─────────────────────────────
     let mut style = (*ctx.style()).clone();

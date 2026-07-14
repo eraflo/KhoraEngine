@@ -40,6 +40,7 @@ use crate::widgets::brand::paint_diamond_filled;
 use crate::widgets::chrome::{paint_panel_header, paint_status_dot, panel_tab};
 use crate::widgets::controls::paint_meter_bar;
 use crate::widgets::paint::{paint_hairline_h, paint_icon, paint_text_size, with_alpha};
+use khora_tool_ui::widgets::Health;
 
 const SUMMARY_BAR_HEIGHT: f32 = 88.0;
 const AGENTS_PANEL_WIDTH: f32 = 280.0;
@@ -562,15 +563,11 @@ impl ControlPlanePanel {
             TextAlign::Left,
         );
 
-        // Health meter (real value: 0..1 from report_status)
+        // Health meter (real value: 0..1 from report_status). The thresholds
+        // live in the shared `Health` type so the bar, the dot and the
+        // "healthy / degraded" label can never disagree about the same agent.
         let health = agent.status.health_score.clamp(0.0, 1.0);
-        let bar_color = if health > 0.7 {
-            theme.success
-        } else if health > 0.4 {
-            theme.warning
-        } else {
-            theme.error
-        };
+        let bar_color = Health::from_ratio(health).color(theme);
         paint_meter_bar(ui, [x + 38.0, y + 40.0], w - 56.0, health, bar_color, theme);
 
         // Foot: phase + priority
@@ -786,13 +783,16 @@ impl ControlPlanePanel {
             TextAlign::Center,
         );
 
-        // Status pill
+        // Status pill — same thresholds as the health bar (see `Health`), so
+        // the word and the bar always agree.
         let (status_label, status_color) = if agent.status.is_stalled {
             ("stalled", theme.error)
-        } else if agent.status.health_score < 0.5 {
-            ("degraded", theme.warning)
         } else {
-            ("healthy", theme.success)
+            match Health::from_ratio(agent.status.health_score) {
+                Health::Good => ("healthy", theme.success),
+                Health::Degraded => ("degraded", theme.warning),
+                Health::Bad => ("failing", theme.error),
+            }
         };
         let pill_x = x + 58.0 + tag_w + 8.0;
         let pill_label_w =
@@ -884,13 +884,7 @@ impl ControlPlanePanel {
             theme,
         );
         cy += 22.0;
-        let bar_color = if agent.status.health_score > 0.7 {
-            theme.success
-        } else if agent.status.health_score > 0.4 {
-            theme.warning
-        } else {
-            theme.error
-        };
+        let bar_color = Health::from_ratio(agent.status.health_score).color(theme);
         paint_meter_bar(
             ui,
             [x + 18.0, cy + 4.0],

@@ -401,18 +401,21 @@ fn render_node(
         }
     }
 
+    // Selection is **gold** — the same mark the asset tiles, the palette and
+    // the spine use. Silver is the brand colour and says "Khora"; gold says
+    // "this is the thing you are acting on", and it has to mean only that for
+    // the eye to find it instantly.
     if is_selected {
         ui.paint_rect_filled(
             [row_x, y],
             [row_w, ROW_HEIGHT],
-            with_alpha(theme.primary, 0.14),
+            theme.surface_active,
             theme.radius_sm,
         );
-        ui.paint_rect_filled(
-            [row_x, y + 4.0],
-            [2.0, ROW_HEIGHT - 8.0],
-            theme.primary,
-            1.0,
+        khora_tool_ui::widgets::paint::selection_bar(
+            ui,
+            [row_x, y, row_w, ROW_HEIGHT],
+            theme.accent_c,
         );
     } else if interaction.hovered {
         ui.paint_rect_filled(
@@ -448,7 +451,10 @@ fn render_node(
             menu.close_menu();
         }
         if menu.button("Save Material as .kmat") {
-            pending.set(Some(EditorAction::SaveAsMaterial(entity, node_name.clone())));
+            pending.set(Some(EditorAction::SaveAsMaterial(
+                entity,
+                node_name.clone(),
+            )));
             menu.close_menu();
         }
         menu.separator();
@@ -470,7 +476,7 @@ fn render_node(
 
     // Icon
     let base_icon_color = if is_selected {
-        theme.primary
+        theme.accent_c
     } else {
         theme.text_dim
     };

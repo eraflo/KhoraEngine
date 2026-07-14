@@ -46,7 +46,6 @@ pub use state::{
     SettingsState,
 };
 pub use ui::fonts;
-pub use ui::theme;
 pub use ui::widgets;
 
 fn main() -> anyhow::Result<()> {

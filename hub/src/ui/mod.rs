@@ -6,14 +6,14 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Hub UI infrastructure — theme, fonts, shared widgets.
+//! Hub UI infrastructure.
 //!
-//! The hub depends on `khora-sdk` and pulls the brand tokens + fonts from
-//! `khora_sdk::tool_ui` (the shared `khora-core::ui::brand` palette), so the
-//! hub and editor render from one source of truth. `theme` is a thin
-//! re-export shim; `widgets` is hub-local until Phase C promotes the shared
-//! ones into `khora-core::ui::widgets`.
+//! The look — brand palette, widget vocabulary — comes from the
+//! `khora-tool-ui` crate, shared with the editor so the two tools cannot
+//! drift. Nothing visual is defined here.
+//!
+//! What remains is hub-specific: loading the font files, and the handful of
+//! helpers that format the hub's own data.
 
 pub mod fonts;
-pub mod theme;
 pub mod widgets;

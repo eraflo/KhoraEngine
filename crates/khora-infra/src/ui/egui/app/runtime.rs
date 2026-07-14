@@ -30,10 +30,23 @@ struct AppAdapter {
 impl eframe::App for AppAdapter {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let mut adapter = EguiAppContext::new(ctx, frame);
+
         if !self.started {
             self.inner.on_start(&mut adapter);
             self.started = true;
+
+            // `on_start` is where the app installs its fonts, but
+            // `Context::set_fonts` only takes effect at the *next* pass — we
+            // are already inside this one. Painting now would lay text out
+            // against egui's built-in fonts, and any widget asking for a named
+            // family (`icons`, `display`) would panic because that family does
+            // not exist yet. So skip drawing this frame and come straight back
+            // with the real fonts loaded. One blank frame at startup, and no
+            // app has to know about the ordering.
+            ctx.request_repaint();
+            return;
         }
+
         self.inner.update(&mut adapter);
     }
 

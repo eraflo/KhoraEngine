@@ -386,6 +386,12 @@ pub struct LogEntry {
     pub level: LogLevel,
     pub message: String,
     pub target: String,
+    /// Wall-clock time the entry was captured, as `HH:MM:SS`.
+    ///
+    /// Formatted at capture rather than stored as an instant: the console is
+    /// the only consumer, it always renders it, and doing it once at capture
+    /// keeps the paint path free of formatting work.
+    pub time: String,
 }
 
 /// Log severity matching `log::Level`.
