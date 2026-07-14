@@ -1073,6 +1073,36 @@ mod tests {
     }
 
     #[test]
+    fn test_vram_budget_caps_upgrade() {
+        let arbitrator = create_arbitrator();
+        let mut ctx = simulation_ctx();
+        let report = normal_report();
+
+        // Ample time budget (16.66ms) would let a lone agent reach
+        // HighPerformance (14ms). But HighPerformance costs 20MB of VRAM,
+        // Balanced 10MB. Cap available VRAM at 15MB: the fit must stop at
+        // Balanced — the time budget is not the binding constraint here.
+        ctx.hardware.available_vram = Some(15 * 1024 * 1024);
+
+        let agent = MockAgent::new(AgentId::Renderer);
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
+
+        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None);
+
+        assert_eq!(
+            issued,
+            vec![(AgentId::Renderer, StrategyId::Balanced)],
+            "VRAM ceiling must block the HighPerformance upgrade"
+        );
+        let lock = agents[0].lock().unwrap();
+        let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+        assert_eq!(
+            mock.applied_budget.as_ref().unwrap().strategy_id,
+            StrategyId::Balanced
+        );
+    }
+
+    #[test]
     fn test_agent_priorities() {
         let arbitrator = create_arbitrator();
         assert!(arbitrator.get_agent_priority(AgentId::Renderer) >= 0.9);

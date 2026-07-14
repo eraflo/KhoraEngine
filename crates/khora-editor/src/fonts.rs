@@ -55,6 +55,15 @@ const MONOSPACE_FILES: &[(&str, &str)] = &[
     ("geist-mono-medium", "fonts/GeistMono-Medium.ttf"),
 ];
 
+/// Display / serif faces (Fraunces 72pt optical, SIL OFL). Listed
+/// regular-then-semibold so the heavier face becomes the primary display face
+/// (see `install_named`). Optional — absent files leave the display family
+/// aliased to proportional.
+const DISPLAY_FILES: &[(&str, &str)] = &[
+    ("fraunces-regular", "fonts/Fraunces-Regular.ttf"),
+    ("fraunces-semibold", "fonts/Fraunces-SemiBold.ttf"),
+];
+
 const ICON_FILES: &[(&str, &str)] = &[("lucide", "fonts/Lucide.ttf")];
 
 /// Attempts to load the Khora brand font pack via the asset I/O layer.
@@ -70,19 +79,26 @@ pub fn load_pack() -> FontPack {
         let mut loader = FileLoader::new(root);
         let proportional = collect(&mut loader, PROPORTIONAL_FILES);
         let monospace = collect(&mut loader, MONOSPACE_FILES);
+        let display = collect(&mut loader, DISPLAY_FILES);
         let icons = collect(&mut loader, ICON_FILES);
 
-        if !proportional.is_empty() || !monospace.is_empty() || !icons.is_empty() {
+        if !proportional.is_empty()
+            || !monospace.is_empty()
+            || !display.is_empty()
+            || !icons.is_empty()
+        {
             log::info!(
-                "Editor fonts: loaded {} proportional + {} monospace + {} icon face(s) from '{}'.",
+                "Editor fonts: loaded {} proportional + {} monospace + {} display + {} icon face(s) from '{}'.",
                 proportional.len(),
                 monospace.len(),
+                display.len(),
                 icons.len(),
                 root.display()
             );
             return FontPack {
                 proportional,
                 monospace,
+                display,
                 icons,
             };
         }

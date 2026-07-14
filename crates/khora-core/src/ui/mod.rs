@@ -14,10 +14,15 @@
 
 //! Core interfaces for the UI system.
 //!
-//! `theme` and `fonts` are app-agnostic structures shared by every Khora
-//! UI surface (editor, hub, future tools). The `editor` submodule layers
-//! the editor-specific framework (panels, dock, viewport handle, paint
-//! `UiBuilder`) on top.
+//! `theme` and `fonts` are app-agnostic, **brand-neutral** contracts shared by
+//! every Khora UI surface (editor, hub, future tools): [`theme::UiTheme`] is a
+//! semantic slot struct with a neutral [`Default`], and the UI backend consumes
+//! it. The concrete Khora palette that fills those slots is *cosmetics* and
+//! lives outside the engine, in the `khora-tool-ui` crate — so a game built on
+//! Khora never inherits the engine vendor's brand.
+//!
+//! The `editor` submodule layers the editor-specific framework (panels, dock,
+//! viewport handle, paint `UiBuilder`) on top.
 
 pub mod app;
 pub mod editor;

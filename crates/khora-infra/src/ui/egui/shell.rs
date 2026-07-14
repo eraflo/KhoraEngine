@@ -63,6 +63,26 @@ fn install_named(defs: &mut egui::FontDefinitions, family: egui::FontFamily, lis
     }
 }
 
+/// Appends `fallback`'s font keys after whatever was installed for the named
+/// family, so requesting `FontFamily::Name(name)` always resolves to glyphs
+/// even when no dedicated face was supplied for it.
+fn ensure_family_fallback(
+    defs: &mut egui::FontDefinitions,
+    name: &str,
+    fallback: &egui::FontFamily,
+) {
+    let fallback_keys = defs.families.get(fallback).cloned().unwrap_or_default();
+    let entry = defs
+        .families
+        .entry(egui::FontFamily::Name(name.into()))
+        .or_default();
+    for key in fallback_keys {
+        if !entry.contains(&key) {
+            entry.push(key);
+        }
+    }
+}
+
 /// Fixed-height/width slots — same on every screen.
 const DEFAULT_TOPBAR_HEIGHT: f32 = 32.0;
 const DEFAULT_SPINE_WIDTH: f32 = 56.0;
@@ -249,9 +269,17 @@ impl EditorShell for EguiEditorShell {
         );
         install_named(
             &mut definitions,
+            egui::FontFamily::Name("display".into()),
+            fonts.display,
+        );
+        install_named(
+            &mut definitions,
             egui::FontFamily::Name("icons".into()),
             fonts.icons,
         );
+        // Display headings fall back to the proportional face when Fraunces
+        // isn't installed, so `FontFamily::Name("display")` always resolves.
+        ensure_family_fallback(&mut definitions, "display", &egui::FontFamily::Proportional);
         self.ctx.set_fonts(definitions);
     }
 

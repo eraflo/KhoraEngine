@@ -54,7 +54,7 @@ The visual language — colors, typography, panels, voice — is documented in [
 | Region | Purpose |
 |---|---|
 | **Title bar** | Brand, project name, window controls |
-| **Spine** | Mode rail (Scene / Canvas / Graph / Animation / Shader / Control Plane) |
+| **Spine** | Mode rail (Scene, Control Plane) |
 | **Hierarchy** | Tree of entities, left of the viewport |
 | **Viewport** | The 3D scene with floating gizmos |
 | **Inspector** | Components of the selected entity, right of the viewport |
@@ -65,18 +65,14 @@ Full anatomy and pixel-level layout in [Editor design system](../design/editor.m
 
 ## 03 — Modes
 
-The Spine offers six modes:
+Two workspaces ship today, switched from the Spine:
 
 | Mode | Purpose |
 |---|---|
 | **Scene** | 3D editing (default) |
-| **Canvas** | 2D layout and UI |
-| **Graph** | Node-based logic and shader |
-| **Animation** | Timeline and curves |
-| **Shader** | Code editor with live preview |
 | **Control Plane** | Engine telemetry and GORNA stream |
 
-Each mode has its own panel layout. We commit to opinionated defaults — Unity and Unreal let you arrange panels freely, and most users keep the defaults forever. We pick the layouts users won't want to change.
+Each mode has its own panel layout. We commit to opinionated defaults — Unity and Unreal let you arrange panels freely, and most users keep the defaults forever. We pick the layouts users won't want to change. Further authoring workspaces (2D canvas, node graph, animation, shader graph) will be added as they are built.
 
 ## 04 — Play mode
 

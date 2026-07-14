@@ -16,12 +16,15 @@
 //!
 //! All slots are *semantic*: `primary`, `accent_a`, `success`, etc. The theme
 //! contains no brand-specific naming — apps configure the concrete values.
-//! All color slots are `[r, g, b, a]` in linear space (0.0–1.0). The concrete
-//! UI backend converts them to its native format.
+//! Color slots are `[r, g, b, a]` **sRGB** components in `0.0..=1.0` (see the
+//! note on the color pipeline in [`crate::ui::brand`]); the concrete UI
+//! backend feeds them to its native format.
 //!
-//! Same struct used by both the editor (`khora-editor`) and the hub
-//! (`hub`); each app defines its own `khora_dark()`-style constructor
-//! with its own values.
+//! The same struct is used by both the editor (`khora-editor`) and the hub
+//! (`hub`). Both install the one canonical [`crate::ui::brand::khora_dark`]
+//! producer, so there is a single source of truth and the two apps cannot
+//! drift. [`Default`] stays a neutral fallback for anything that wants a theme
+//! without pulling in the brand.
 
 /// Color palette and sizing tokens for any Khora UI surface.
 #[derive(Debug, Clone)]
@@ -55,6 +58,9 @@ pub struct UiTheme {
     pub text_muted: [f32; 4],
     /// Disabled text.
     pub text_disabled: [f32; 4],
+    /// Dark "inverse" ink for text sitting on a filled brand (`primary`)
+    /// surface — e.g. the label of a solid silver primary button.
+    pub text_inverse: [f32; 4],
 
     // ── Brand / accents ──────────────────────────────
     /// Primary brand color (selection rings, focus highlights).
@@ -135,6 +141,7 @@ impl Default for UiTheme {
             text_dim: [0.612, 0.647, 0.706, 1.0],
             text_muted: [0.420, 0.455, 0.518, 1.0],
             text_disabled: [0.300, 0.325, 0.380, 1.0],
+            text_inverse: [0.055, 0.063, 0.086, 1.0],
 
             // Brand / accents
             primary: [0.227, 0.529, 0.941, 1.0],

@@ -41,6 +41,9 @@ pub enum FontFamilyHint {
     Proportional,
     /// Monospaced (Geist Mono if installed).
     Monospace,
+    /// Display / serif face for headings and hero numerals (Fraunces if
+    /// installed). Falls back to the proportional family when absent.
+    Display,
     /// Icon font (Lucide if installed). Pass single-char codepoints.
     Icons,
 }

@@ -46,7 +46,7 @@ use crate::panels::{
     ViewportPanel,
 };
 use crate::project_vfs::ProjectVfs;
-use crate::{commands, hot_reload, input, mod_agents, mod_gizmo, ops, scene_io, theme, util};
+use crate::{commands, hot_reload, input, mod_agents, mod_gizmo, ops, scene_io, util};
 
 pub struct EditorApp {
     camera: Arc<Mutex<EditorCamera>>,
@@ -517,7 +517,7 @@ impl EditorApp {
             shell.set_editor_state(self.editor_state.clone());
 
             // ── Brand identity (theme + typefaces) ─────────
-            let brand_theme = theme::khora_dark();
+            let brand_theme = khora_tool_ui::khora_dark();
             shell.set_theme(brand_theme.clone());
             shell.set_fonts(crate::fonts::load_pack());
 

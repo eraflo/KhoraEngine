@@ -62,9 +62,14 @@ pub struct FontPack {
     pub proportional: Vec<NamedFont>,
     /// Monospaced faces. The first one becomes the default monospace font.
     pub monospace: Vec<NamedFont>,
+    /// Display / serif faces (Fraunces / …). The first one is exposed by the
+    /// backend under the family name `"display"` so widgets can reach it via
+    /// [`FontFamilyHint::Display`](super::editor::ui_builder::FontFamilyHint::Display).
+    /// When empty, the backend aliases `"display"` to the proportional family.
+    pub display: Vec<NamedFont>,
     /// Icon faces (Lucide / Phosphor / …). The first one is exposed by the
     /// backend under the family name `"icons"` so widgets can reach it via
-    /// [`FontFamilyHint::Icons`](super::ui_builder::FontFamilyHint::Icons).
+    /// [`FontFamilyHint::Icons`](super::editor::ui_builder::FontFamilyHint::Icons).
     pub icons: Vec<NamedFont>,
 }
 
@@ -72,6 +77,9 @@ impl FontPack {
     /// Returns `true` if no fonts were specified — backends should leave
     /// their defaults untouched in that case.
     pub fn is_empty(&self) -> bool {
-        self.proportional.is_empty() && self.monospace.is_empty() && self.icons.is_empty()
+        self.proportional.is_empty()
+            && self.monospace.is_empty()
+            && self.display.is_empty()
+            && self.icons.is_empty()
     }
 }

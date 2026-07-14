@@ -410,6 +410,222 @@ pub fn add_component_to_entity(world: &mut GameWorld, entity: EntityId, type_nam
 mod tests {
     use super::*;
 
+    /// Captures the live JSON of a component on `entity` via the inventory
+    /// registration — mirrors exactly what the inspector renders, so edits
+    /// built on top of it patch the same shape `from_json` consumes.
+    fn component_json(
+        world: &GameWorld,
+        entity: EntityId,
+        type_name: &str,
+    ) -> Option<serde_json::Value> {
+        for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
+            if reg.type_name == type_name {
+                return (reg.to_json)(world.inner_world(), entity);
+            }
+        }
+        None
+    }
+
+    /// Inspector edit → commit: a queued `SetName` plus a `SetComponentJson`
+    /// (patching a real component's field through its JSON shape) must land in
+    /// the live `World` once `apply_edits` runs. This is the editor's single
+    /// mutation path; if `drain_edits` / registry dispatch / `from_json` break,
+    /// inspector edits silently no-op.
+    #[test]
+    fn apply_edits_commits_name_and_component_json() {
+        let mut world = GameWorld::new();
+        let mut state = EditorState::default();
+
+        let entity = world.spawn((
+            Transform::from_translation(khora_sdk::prelude::math::Vec3::new(1.0, 2.0, 3.0)),
+            GlobalTransform::identity(),
+            Name::new("Before"),
+        ));
+
+        // Patch the Transform translation through its JSON shape, exactly as
+        // the inspector does: read the live value, mutate one field, ship back.
+        let mut transform_json =
+            component_json(&world, entity, "Transform").expect("Transform JSON view");
+        transform_json["translation"]["x"] = serde_json::json!(9.0);
+
+        state.push_edit(PropertyEdit::SetName(entity, "After".to_owned()));
+        state.push_edit(PropertyEdit::SetComponentJson {
+            entity,
+            type_name: "Transform".to_owned(),
+            value: transform_json,
+        });
+
+        apply_edits(&mut world, &mut state);
+
+        assert_eq!(
+            world.get_component::<Name>(entity).map(|n| n.as_str()),
+            Some("After"),
+            "SetName must rename the entity"
+        );
+        let t = world
+            .get_component::<Transform>(entity)
+            .expect("entity keeps its Transform");
+        assert_eq!(t.translation.x, 9.0, "SetComponentJson must patch the field");
+        assert_eq!(t.translation.y, 2.0, "untouched fields must survive");
+
+        // Edits are drained — a second apply is a no-op.
+        assert!(state.pending_edits.is_empty());
+    }
+
+    /// Undo/redo driven through the real apply path: push a forward edit to the
+    /// history and apply it, then `undo()` → apply reverse → back to baseline,
+    /// then `redo()` → apply forward → changed again. The history state machine
+    /// is unit-tested elsewhere; this locks in its integration with
+    /// `apply_edits`.
+    #[test]
+    fn undo_redo_roundtrips_through_apply_edits() {
+        let mut world = GameWorld::new();
+        let mut state = EditorState::default();
+        let mut history = khora_sdk::editor_ui::CommandHistory::default();
+
+        let entity = world.spawn((
+            Transform::identity(),
+            GlobalTransform::identity(),
+            Name::new("Baseline"),
+        ));
+
+        let forward = PropertyEdit::SetName(entity, "Renamed".to_owned());
+        let reverse = PropertyEdit::SetName(entity, "Baseline".to_owned());
+        history.push(khora_sdk::editor_ui::EditorCommand {
+            description: "Rename".to_owned(),
+            forward: forward.clone(),
+            reverse,
+        });
+
+        // Apply forward.
+        state.push_edit(forward);
+        apply_edits(&mut world, &mut state);
+        assert_eq!(
+            world.get_component::<Name>(entity).map(|n| n.as_str()),
+            Some("Renamed")
+        );
+
+        // Undo → apply the reverse edit the history hands back.
+        let reverse_edit = history.undo().expect("a command to undo");
+        state.push_edit(reverse_edit);
+        apply_edits(&mut world, &mut state);
+        assert_eq!(
+            world.get_component::<Name>(entity).map(|n| n.as_str()),
+            Some("Baseline"),
+            "undo must restore the baseline name"
+        );
+
+        // Redo → re-apply the forward edit.
+        let forward_again = history.redo().expect("a command to redo");
+        state.push_edit(forward_again);
+        apply_edits(&mut world, &mut state);
+        assert_eq!(
+            world.get_component::<Name>(entity).map(|n| n.as_str()),
+            Some("Renamed"),
+            "redo must re-apply the change"
+        );
+    }
+
+    /// `process_reparents` must wire both sides of the hierarchy: the child
+    /// gains a `Parent`, the parent gains the child in its `Children` list.
+    #[test]
+    fn process_reparents_links_parent_and_child() {
+        let mut world = GameWorld::new();
+        let mut state = EditorState::default();
+
+        let parent = world.spawn((Transform::identity(), GlobalTransform::identity()));
+        let child = world.spawn((Transform::identity(), GlobalTransform::identity()));
+
+        state.pending_reparent = Some((child, Some(parent)));
+        process_reparents(&mut world, &mut state);
+
+        assert_eq!(
+            world.get_component::<Parent>(child).map(|p| p.0),
+            Some(parent),
+            "child must reference its new parent"
+        );
+        let children = world
+            .get_component::<Children>(parent)
+            .expect("parent gains a Children list");
+        assert!(
+            children.0.contains(&child),
+            "parent's Children must include the reparented child"
+        );
+
+        // Detach back to root: Parent drops, parent's Children empties.
+        state.pending_reparent = Some((child, None));
+        process_reparents(&mut world, &mut state);
+        assert!(
+            world.get_component::<Parent>(child).is_none(),
+            "detached child must lose its Parent"
+        );
+        let children = world.get_component::<Children>(parent).unwrap();
+        assert!(
+            !children.0.contains(&child),
+            "former parent must drop the detached child"
+        );
+    }
+
+    /// `delete_selection` removes the selected entity from the world and clears
+    /// the editor's selection/inspector state. A surviving sibling is left
+    /// untouched.
+    #[test]
+    fn delete_selection_removes_selected_entity() {
+        let mut world = GameWorld::new();
+        let mut state = EditorState::default();
+
+        let keep = world.spawn((
+            Transform::identity(),
+            GlobalTransform::identity(),
+            Name::new("Keep"),
+        ));
+        let drop = world.spawn((
+            Transform::identity(),
+            GlobalTransform::identity(),
+            Name::new("Drop"),
+        ));
+
+        state.select(drop);
+        delete_selection(&mut world, &mut state);
+
+        let alive: Vec<EntityId> = world.iter_entities().collect();
+        assert!(!alive.contains(&drop), "deleted entity must be gone");
+        assert!(alive.contains(&keep), "unselected entity must survive");
+        assert_eq!(
+            world.get_component::<Name>(keep).map(|n| n.as_str()),
+            Some("Keep"),
+            "survivor's data must be intact"
+        );
+        assert!(state.selection.is_empty(), "selection cleared after delete");
+        assert!(state.inspected.is_none(), "inspector cleared after delete");
+    }
+
+    /// `process_spawns` honours a queued spawn request, creating the entity and
+    /// selecting it. A simple, dependency-free case ("Empty"/custom tag) keeps
+    /// the test off the procedural-mesh path.
+    #[test]
+    fn process_spawns_creates_and_selects_entity() {
+        let mut world = GameWorld::new();
+        let mut state = EditorState::default();
+
+        let before = world.iter_entities().count();
+        state.pending_spawn = Some("Marker".to_owned());
+        process_spawns(&mut world, &mut state);
+
+        assert_eq!(
+            world.iter_entities().count(),
+            before + 1,
+            "a spawn request must add exactly one entity"
+        );
+        let spawned = state.single_selected().expect("spawn selects the new entity");
+        assert_eq!(
+            world.get_component::<Name>(spawned).map(|n| n.as_str()),
+            Some("Marker"),
+            "the custom request tag becomes the entity Name"
+        );
+        assert!(state.pending_spawn.is_none(), "the request is consumed");
+    }
+
     /// Regression: duplicating an entity must carry its material across.
     /// A broken implementation drops `MaterialRef`, so the copy renders
     /// with no material (logged error) instead of the original look.

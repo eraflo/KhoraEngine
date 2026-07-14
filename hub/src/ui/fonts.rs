@@ -6,15 +6,16 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Brand fonts loader — Geist / Geist Mono.
+//! Brand fonts loader — Geist / Geist Mono / Fraunces / Lucide.
 //!
 //! Produces a [`FontPack`] backend-neutrally. The engine's
-//! `AppContext::set_fonts` does the lifting onto egui.
+//! `AppContext::set_fonts` does the lifting onto egui. Shares the exact
+//! font set with the editor so the two apps render identically.
 //!
-//! If the .ttf files are missing the pack is empty — the backend
-//! falls back to its built-in fonts. Drop the files into
-//! `hub/assets/fonts/` to enable the brand typography (license: SIL
-//! OFL, see <https://github.com/vercel/geist-font>).
+//! If a .ttf file is missing that family is simply skipped — the backend
+//! falls back (Fraunces → Geist, no icons → tofu). Drop the files into
+//! `hub/assets/fonts/` to enable the brand typography (licenses: SIL OFL —
+//! Geist <https://github.com/vercel/geist-font>, Fraunces, and Lucide).
 
 use khora_sdk::tool_ui::{FontHandle, FontPack, NamedFont};
 use std::path::{Path, PathBuf};
@@ -38,13 +39,22 @@ pub fn build_pack() -> FontPack {
         ("geist-mono-regular", "GeistMono-Regular.ttf"),
         ("geist-mono-medium", "GeistMono-Medium.ttf"),
     ];
+    // Regular-then-semibold so the heavier face is the primary display face;
+    // optional, absent files leave display aliased to proportional.
+    let display: &[(&str, &str)] = &[
+        ("fraunces-regular", "Fraunces-Regular.ttf"),
+        ("fraunces-semibold", "Fraunces-SemiBold.ttf"),
+    ];
+    let icons: &[(&str, &str)] = &[("lucide", "Lucide.ttf")];
 
     let prop_count = install_family(&mut pack.proportional, &candidates, proportional);
     let mono_count = install_family(&mut pack.monospace, &candidates, monospace);
+    let disp_count = install_family(&mut pack.display, &candidates, display);
+    let icon_count = install_family(&mut pack.icons, &candidates, icons);
 
-    if prop_count + mono_count == 0 {
+    if prop_count + mono_count + disp_count + icon_count == 0 {
         log::info!(
-            "Hub fonts: no Geist files found under {:?} \u{2014} keeping default fonts. \
+            "Hub fonts: no font files found under {:?} \u{2014} keeping default fonts. \
              Drop the .ttf files into 'hub/assets/fonts/' to enable the brand typography.",
             candidates
                 .iter()
@@ -53,9 +63,11 @@ pub fn build_pack() -> FontPack {
         );
     } else {
         log::info!(
-            "Hub fonts: loaded {} proportional + {} monospace face(s).",
+            "Hub fonts: loaded {} proportional + {} monospace + {} display + {} icon face(s).",
             prop_count,
-            mono_count
+            mono_count,
+            disp_count,
+            icon_count
         );
     }
 

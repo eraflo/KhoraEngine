@@ -112,6 +112,12 @@ pub mod tool_ui {
     //! or `eframe`. The day the engine swaps backend, this re-export
     //! list moves to whichever crate provides the new
     //! [`run_native`] + [`AppContext`] implementation.
+    //!
+    //! This module is the **runtime** seam only. Khora's *look* — the brand
+    //! palette and the shared widget vocabulary — is cosmetics and lives in
+    //! the separate `khora-tool-ui` crate, which the SDK deliberately does
+    //! **not** depend on, so a game built on Khora never compiles the engine
+    //! vendor's brand. Tools depend on both.
 
     pub use khora_core::math::{LinearRgba, Rect2D, Vec2};
     pub use khora_core::ui::editor::{FontFamilyHint, Icon, Interaction, TextAlign};

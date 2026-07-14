@@ -388,4 +388,153 @@ mod tests {
             names
         );
     }
+
+    /// Save/load round-trip beyond the single-`Name` case: several entities,
+    /// each carrying multiple components with non-default field values, must
+    /// survive snapshot → restore with entity count and key field values
+    /// intact. Covers Transform + Name + Light + Camera.
+    #[test]
+    fn snapshot_restore_preserves_multiple_components() {
+        let mut world = GameWorld::new();
+
+        let cube = world.spawn((
+            Transform::from_translation(Vec3::new(4.0, 5.0, 6.0)),
+            GlobalTransform::identity(),
+            Name::new("Cube"),
+        ));
+        let _light = world.spawn((
+            Transform::from_translation(Vec3::new(0.0, 10.0, 0.0)),
+            GlobalTransform::identity(),
+            Name::new("Sun"),
+            Light::directional(),
+        ));
+        let _camera = world.spawn((
+            Transform::from_translation(Vec3::new(0.0, 2.0, 9.0)),
+            GlobalTransform::identity(),
+            Name::new("Cam"),
+            Camera::new_perspective(std::f32::consts::FRAC_PI_4, 1.5, 0.1, 800.0),
+        ));
+        let _ = cube;
+
+        let before = world.iter_entities().count();
+        assert_eq!(before, 3);
+
+        let snap = snapshot_scene(&world);
+        assert!(!snap.is_empty());
+
+        // Throw the live world away and rebuild from the snapshot.
+        let all: Vec<_> = world.iter_entities().collect();
+        for e in all {
+            world.despawn(e);
+        }
+        restore_scene(&mut world, &snap);
+
+        assert_eq!(
+            world.iter_entities().count(),
+            before,
+            "entity count must survive the round-trip"
+        );
+
+        // The cube's translation and name must come back exactly.
+        let restored: Vec<_> = world.iter_entities().collect();
+        let cube_back = restored
+            .iter()
+            .find(|&&e| {
+                world
+                    .get_component::<Name>(e)
+                    .is_some_and(|n| n.as_str() == "Cube")
+            })
+            .copied()
+            .expect("the 'Cube' entity must survive restore");
+        let t = world
+            .get_component::<Transform>(cube_back)
+            .expect("restored cube keeps its Transform");
+        assert_eq!(t.translation, Vec3::new(4.0, 5.0, 6.0));
+
+        // The Light and Camera components must come back on their entities.
+        let has_light = restored
+            .iter()
+            .any(|&e| world.get_component::<Light>(e).is_some());
+        let has_camera = restored
+            .iter()
+            .any(|&e| world.get_component::<Camera>(e).is_some());
+        assert!(has_light, "a Light must survive the round-trip");
+        assert!(has_camera, "a Camera must survive the round-trip");
+    }
+
+    /// Play/stop guard: entities that share storage pages across domains
+    /// (mesh entities carry Spatial + Render components) are snapshotted,
+    /// despawned wholesale during "play", then restored. The pre-play state
+    /// must come back fully — this exercises the multi-domain despawn path
+    /// that previously corrupted survivor rows.
+    #[test]
+    fn play_stop_restores_state_after_multi_domain_despawn() {
+        let mut world = GameWorld::new();
+
+        // Two mesh entities (Spatial Transform + Render MeshRef) plus a light,
+        // so the snapshot spans pages in more than one semantic domain.
+        let a = world.spawn((
+            Transform::from_translation(Vec3::new(1.0, 0.0, 0.0)),
+            GlobalTransform::identity(),
+            Name::new("MeshA"),
+            MeshRef::procedural(ProceduralMeshKind::Cube, [1.0, 0.0, 0.0, 0.0]),
+        ));
+        let _b = world.spawn((
+            Transform::from_translation(Vec3::new(2.0, 0.0, 0.0)),
+            GlobalTransform::identity(),
+            Name::new("MeshB"),
+            MeshRef::procedural(ProceduralMeshKind::Sphere, [0.5, 16.0, 16.0, 0.0]),
+        ));
+        let _light = world.spawn((
+            Transform::identity(),
+            GlobalTransform::identity(),
+            Name::new("Light"),
+            Light::point(),
+        ));
+        let _ = a;
+
+        let before = world.iter_entities().count();
+        assert_eq!(before, 3);
+
+        // Enter play: snapshot the authoring state.
+        let snap = snapshot_scene(&world);
+        assert!(!snap.is_empty());
+
+        // During play, the simulation despawns everything (and could spawn more).
+        let all: Vec<_> = world.iter_entities().collect();
+        for e in all {
+            world.despawn(e);
+        }
+        world.spawn((Transform::identity(), GlobalTransform::identity()));
+        assert_ne!(world.iter_entities().count(), before);
+
+        // Stop: restore the pre-play state.
+        restore_scene(&mut world, &snap);
+
+        assert_eq!(
+            world.iter_entities().count(),
+            before,
+            "stop must restore the exact pre-play entity count"
+        );
+
+        // A survivor's data across both domains must be intact.
+        let restored: Vec<_> = world.iter_entities().collect();
+        let mesh_a = restored
+            .iter()
+            .find(|&&e| {
+                world
+                    .get_component::<Name>(e)
+                    .is_some_and(|n| n.as_str() == "MeshA")
+            })
+            .copied()
+            .expect("'MeshA' must survive restore");
+        let t = world
+            .get_component::<Transform>(mesh_a)
+            .expect("restored MeshA keeps its Spatial Transform");
+        assert_eq!(t.translation, Vec3::new(1.0, 0.0, 0.0));
+        assert!(
+            world.get_component::<MeshRef>(mesh_a).is_some(),
+            "restored MeshA keeps its Render-domain MeshRef"
+        );
+    }
 }

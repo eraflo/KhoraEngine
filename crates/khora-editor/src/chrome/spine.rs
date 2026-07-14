@@ -27,10 +27,8 @@ use crate::widgets::paint::{paint_hairline_h, paint_icon, with_alpha};
 const SPINE_WIDTH: f32 = 56.0;
 const BTN_SIZE: f32 = 40.0;
 
-/// Modes that have a real workspace wired up. The other variants of
-/// `EditorMode` (Canvas2D / NodeGraph / Animation / Shader) exist in the
-/// state enum for future use but are NOT exposed here — adding them back
-/// is a follow-up once each workspace is implemented.
+/// The workspaces that ship today. Future authoring workspaces (2D canvas,
+/// node graph, animation, shader graph) join this list as they are built.
 const MODES: &[(EditorMode, Icon, &str)] = &[
     (EditorMode::Scene, Icon::Cube, "Scene"),
     (EditorMode::ControlPlane, Icon::Cpu, "Control Plane · DCC"),

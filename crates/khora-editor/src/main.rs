@@ -43,7 +43,6 @@ mod ops;
 mod panels;
 mod project_vfs;
 mod scene_io;
-mod theme;
 mod util;
 mod widgets;
 

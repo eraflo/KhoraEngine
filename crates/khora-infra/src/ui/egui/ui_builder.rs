@@ -19,6 +19,22 @@ use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
 use khora_core::ui::editor::UiBuilder;
 use std::collections::HashMap;
 
+/// Maps a backend-neutral [`FontFamilyHint`] to an egui [`FontId`](egui::FontId).
+///
+/// `Display` and `Icons` resolve to named families installed by `set_fonts`;
+/// both fall back to the proportional family (via egui's own family fallback)
+/// when their face wasn't provided.
+fn font_id_for(family: FontFamilyHint, size: f32) -> egui::FontId {
+    match family {
+        FontFamilyHint::Proportional => egui::FontId::proportional(size),
+        FontFamilyHint::Monospace => egui::FontId::monospace(size),
+        FontFamilyHint::Display => {
+            egui::FontId::new(size, egui::FontFamily::Name("display".into()))
+        }
+        FontFamilyHint::Icons => egui::FontId::new(size, egui::FontFamily::Name("icons".into())),
+    }
+}
+
 /// Wraps `&mut egui::Ui` to implement the abstract [`UiBuilder`] trait.
 pub struct EguiUiBuilder<'a> {
     ui: &'a mut egui::Ui,
@@ -448,13 +464,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
             TextAlign::Center => egui::Align2::CENTER_TOP,
             TextAlign::Right => egui::Align2::RIGHT_TOP,
         };
-        let font_id = match family {
-            FontFamilyHint::Proportional => egui::FontId::proportional(size),
-            FontFamilyHint::Monospace => egui::FontId::monospace(size),
-            FontFamilyHint::Icons => {
-                egui::FontId::new(size, egui::FontFamily::Name("icons".into()))
-            }
-        };
+        let font_id = font_id_for(family, size);
         self.ui.painter().text(
             egui::pos2(pos[0], pos[1]),
             egui_align,
@@ -545,13 +555,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
     }
 
     fn measure_text(&self, text: &str, size: f32, family: FontFamilyHint) -> [f32; 2] {
-        let font_id = match family {
-            FontFamilyHint::Proportional => egui::FontId::proportional(size),
-            FontFamilyHint::Monospace => egui::FontId::monospace(size),
-            FontFamilyHint::Icons => {
-                egui::FontId::new(size, egui::FontFamily::Name("icons".into()))
-            }
-        };
+        let font_id = font_id_for(family, size);
         // Use the painter's helper to lay out text — handles fonts atlas
         // mutability internally in egui 0.33.
         let galley =

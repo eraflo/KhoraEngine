@@ -50,22 +50,14 @@ pub enum PlayMode {
 
 /// The active editing workspace, switched via the left "spine" mode bar.
 ///
-/// Most modes are placeholders for now — the working ones in Phase 2 are
-/// `Scene` (the default 3D dock) and `ControlPlane` (the DCC / agents
-/// inspector, when implemented).
+/// Two workspaces ship today: `Scene` (the default 3D dock) and `ControlPlane`
+/// (the DCC / agents inspector). Future authoring workspaces (2D canvas, node
+/// graph, animation, shader graph) will be added as they are built.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EditorMode {
     /// Default 3D viewport workspace.
     #[default]
     Scene,
-    /// 2D canvas / UI authoring (placeholder).
-    Canvas2D,
-    /// Visual node-graph editor (placeholder).
-    NodeGraph,
-    /// Animation / timeline editor (placeholder).
-    Animation,
-    /// Shader graph editor (placeholder).
-    Shader,
     /// Dynamic Context Core / agents control workspace.
     ControlPlane,
 }

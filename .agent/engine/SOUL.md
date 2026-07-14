@@ -45,7 +45,7 @@ Control ──► Agent ──► Lane ──► Data        (the per-frame desc
        budget   selects   reads bus / writes deck
 ```
 
-**16 workspace crates** (13 `khora-*` + `sandbox` + `xtask` + `hub`). One line each:
+**17 workspace crates** (14 `khora-*` + `sandbox` + `xtask` + `hub`). One line each:
 
 | Crate | One-line role | Specialist |
 |---|---|---|
@@ -60,6 +60,7 @@ Control ──► Agent ──► Lane ──► Data        (the per-frame desc
 | `khora-telemetry` | Metrics, monitors, telemetry events. | control-gorna |
 | `khora-plugins` | Plugin loading / registration. | api-ux |
 | `khora-sdk` | The **only** public API for game devs (façade). | api-ux |
+| `khora-tool-ui` | First-party **tool** design system: brand palette + shared widgets. Not an engine crate — the SDK does *not* depend on it, so games never inherit Khora's brand. Used by `khora-editor` + `hub`. | editor-ui-ux |
 | `khora-editor` | Editor app on the SDK (panels, gizmos, dock). | editor-ui-ux |
 | `khora-runtime` | Generic player binary stamped with packed assets. | api-ux |
 | `sandbox` | Example game using the SDK. | gameplay |

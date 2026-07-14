@@ -66,12 +66,37 @@ impl AppContext for EguiAppContext<'_> {
             &pack.proportional,
         );
         install_family(&mut defs, egui::FontFamily::Monospace, &pack.monospace);
+        if !pack.display.is_empty() {
+            install_family(
+                &mut defs,
+                egui::FontFamily::Name("display".into()),
+                &pack.display,
+            );
+        }
         if !pack.icons.is_empty() {
             install_family(
                 &mut defs,
                 egui::FontFamily::Name("icons".into()),
                 &pack.icons,
             );
+        }
+        // Display headings fall back to the proportional face when Fraunces
+        // isn't installed, so `FontFamily::Name("display")` always resolves.
+        {
+            let fallback = defs
+                .families
+                .get(&egui::FontFamily::Proportional)
+                .cloned()
+                .unwrap_or_default();
+            let entry = defs
+                .families
+                .entry(egui::FontFamily::Name("display".into()))
+                .or_default();
+            for key in fallback {
+                if !entry.contains(&key) {
+                    entry.push(key);
+                }
+            }
         }
         self.ctx.set_fonts(defs);
 

@@ -14,6 +14,9 @@ members = [
     "crates/khora-plugins",
     "crates/khora-runtime",
     "crates/khora-sdk",
+    # First-party tool design system (brand + widgets). Not an engine crate:
+    # khora-sdk does not depend on it, so games never compile Khora's brand.
+    "crates/khora-tool-ui",
     # Examples and tools
     "examples/sandbox",
     "xtask",

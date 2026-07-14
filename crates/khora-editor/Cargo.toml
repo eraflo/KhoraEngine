@@ -11,7 +11,11 @@ name = "khora-editor"
 path = "src/main.rs"
 
 [dependencies]
+# Runtime (engine + egui backend seam).
 khora-sdk = { path = "../khora-sdk" }
+# Look (brand palette + shared widgets). Separate from the SDK so games don't
+# inherit Khora's tool brand; the editor is a tool, so it takes both.
+khora-tool-ui = { path = "../khora-tool-ui" }
 inventory = "0.3"
 log = "0.4"
 env_logger = "0.11"

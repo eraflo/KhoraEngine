@@ -2632,6 +2632,7 @@ dependencies = [
  "image",
  "inventory",
  "khora-sdk",
+ "khora-tool-ui",
  "log",
  "open",
  "rfd",
@@ -2649,6 +2650,7 @@ dependencies = [
  "env_logger",
  "image",
  "khora-sdk",
+ "khora-tool-ui",
  "log",
  "open",
  "reqwest",
@@ -2794,6 +2796,13 @@ dependencies = [
  "serde",
  "serde_json",
  "sysinfo",
+]
+
+[[package]]
+name = "khora-tool-ui"
+version = "0.1.0"
+dependencies = [
+ "khora-core",
 ]
 
 [[package]]
