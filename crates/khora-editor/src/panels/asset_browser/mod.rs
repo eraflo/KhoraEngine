@@ -532,8 +532,14 @@ impl AssetBrowserPanel {
             }
             x += label_w;
             if i < segments.len() - 1 {
-                paint_text_size(ui, [x, y + 2.5], "›", 11.0, theme.text_muted);
-                x += 10.0;
+                khora_tool_ui::widgets::paint::icon(
+                    ui,
+                    [x, y + 2.0],
+                    Icon::ChevronRight,
+                    12.0,
+                    theme.text_disabled,
+                );
+                x += 14.0;
             }
         }
     }

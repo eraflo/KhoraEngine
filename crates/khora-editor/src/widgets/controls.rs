@@ -13,12 +13,15 @@
 // limitations under the License.
 //
 //! Field-level controls used inside Inspector cards and panel toolbars.
+//!
+//! The meter bar itself lives in `khora_tool_ui::widgets`; this is a thin
+//! adapter that keeps the editor's `(origin, width)` calling convention so the
+//! panels don't all have to change. There is one implementation of the bar,
+//! shared with the hub.
 
 use khora_sdk::editor_ui::{UiBuilder, UiTheme};
 
-use super::paint::with_alpha;
-
-/// A thin horizontal meter bar (used by DCC summary + agent rows).
+/// A thin horizontal meter bar (used by the DCC summary + agent rows).
 pub fn paint_meter_bar(
     ui: &mut dyn UiBuilder,
     origin: [f32; 2],
@@ -27,17 +30,11 @@ pub fn paint_meter_bar(
     fill_color: [f32; 4],
     theme: &UiTheme,
 ) {
-    let h = 3.0;
-    ui.paint_rect_filled(origin, [width, h], theme.background, 999.0);
-    ui.paint_rect_stroke(
-        origin,
-        [width, h],
-        with_alpha(theme.separator, 0.6),
-        999.0,
-        1.0,
+    khora_tool_ui::widgets::meter_bar(
+        ui,
+        theme,
+        [origin[0], origin[1], width, 3.0],
+        fraction,
+        fill_color,
     );
-    let f = fraction.clamp(0.0, 1.0);
-    if f > 0.001 {
-        ui.paint_rect_filled(origin, [width * f, h], fill_color, 999.0);
-    }
 }

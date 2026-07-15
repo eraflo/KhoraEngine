@@ -13,29 +13,22 @@
 // limitations under the License.
 
 //! Low-level painting helpers used by other widgets.
+//!
+//! Colour maths and the gradient live once in `khora_tool_ui::widgets`; the
+//! helpers here re-expose them under the editor's historical names, plus the
+//! icon / text conveniences that are just thin wrappers over the `UiBuilder`
+//! trait (no logic to share).
 
 use khora_sdk::editor_ui::{FontFamilyHint, Icon, TextAlign, UiBuilder};
 
-/// Returns `color` with its alpha channel replaced.
+/// Returns `color` with its alpha channel replaced. See
+/// [`khora_tool_ui::widgets::with_alpha`].
 pub fn with_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {
-    [color[0], color[1], color[2], alpha.clamp(0.0, 1.0)]
+    khora_tool_ui::widgets::with_alpha(color, alpha)
 }
 
-/// Linear interpolation between two RGBA colors. Used by
-/// [`paint_vertical_gradient`].
-fn lerp_color(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
-    let t = t.clamp(0.0, 1.0);
-    [
-        a[0] * (1.0 - t) + b[0] * t,
-        a[1] * (1.0 - t) + b[1] * t,
-        a[2] * (1.0 - t) + b[2] * t,
-        a[3] * (1.0 - t) + b[3] * t,
-    ]
-}
-
-/// Paints a vertical gradient by stacking `steps` strips that lerp between
-/// `top` and `bottom`. Cheap approximation of an actual gradient — egui has
-/// no native gradient support.
+/// Paints a vertical gradient. Adapter over
+/// [`khora_tool_ui::widgets::vertical_gradient`].
 pub fn paint_vertical_gradient(
     ui: &mut dyn UiBuilder,
     rect: [f32; 4],
@@ -43,19 +36,7 @@ pub fn paint_vertical_gradient(
     bottom: [f32; 4],
     steps: u32,
 ) {
-    let [x, y, w, h] = rect;
-    let steps = steps.max(1);
-    let strip_h = h / steps as f32;
-    for i in 0..steps {
-        let t = i as f32 / (steps - 1).max(1) as f32;
-        let color = lerp_color(top, bottom, t);
-        ui.paint_rect_filled(
-            [x, y + strip_h * i as f32],
-            [w, strip_h.ceil() + 0.6],
-            color,
-            0.0,
-        );
-    }
+    khora_tool_ui::widgets::vertical_gradient(ui, rect, top, bottom, steps);
 }
 
 /// 1-pixel horizontal hairline.

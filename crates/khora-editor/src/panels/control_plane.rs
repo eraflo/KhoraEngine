@@ -108,12 +108,20 @@ fn crate_for_id(id: AgentId) -> &'static str {
     }
 }
 
+/// How many recent frame-time samples the summary sparkline keeps.
+const FRAME_HISTORY: usize = 48;
+
 pub struct ControlPlanePanel {
     state: Arc<Mutex<EditorState>>,
     theme: UiTheme,
     registry: Option<Arc<Mutex<AgentRegistry>>>,
     dcc_context: Option<Arc<std::sync::RwLock<DccContext>>>,
     selected_idx: usize,
+    /// Recent frame-time samples (ms), oldest first. The DCC's aggregate cost
+    /// is the frame budget itself, and it *is* recorded every frame — unlike
+    /// per-agent cost, which the engine doesn't yet expose — so this is the
+    /// one sparkline the Control Plane can draw truthfully today.
+    frame_history: std::collections::VecDeque<f32>,
 }
 
 impl ControlPlanePanel {
@@ -129,7 +137,16 @@ impl ControlPlanePanel {
             registry,
             dcc_context,
             selected_idx: 0,
+            frame_history: std::collections::VecDeque::with_capacity(FRAME_HISTORY),
         }
+    }
+
+    /// Records one frame-time sample, keeping the buffer bounded.
+    fn push_frame_sample(&mut self, ms: f32) {
+        if self.frame_history.len() == FRAME_HISTORY {
+            self.frame_history.pop_front();
+        }
+        self.frame_history.push_back(ms);
     }
 
     /// Snapshots all agents for this frame. Returns an empty Vec if the
@@ -229,6 +246,10 @@ impl EditorPanel for ControlPlanePanel {
                 snap.5 = vram_used;
             }
         }
+        // Record this frame's time before drawing, so the budget sparkline
+        // includes the current sample.
+        self.push_frame_sample(snap.1);
+        let frame_samples: Vec<f32> = self.frame_history.iter().copied().collect();
         self.paint_summary_bar(
             ui,
             [px + 8.0, py + 8.0, pw - 16.0, SUMMARY_BAR_HEIGHT],
@@ -236,6 +257,7 @@ impl EditorPanel for ControlPlanePanel {
             dcc_snap.as_ref(),
             agents.len(),
             &theme,
+            &frame_samples,
         );
 
         // ── 2. Body grid: agents | schedule | inspector
@@ -269,6 +291,7 @@ impl EditorPanel for ControlPlanePanel {
 }
 
 impl ControlPlanePanel {
+    #[allow(clippy::too_many_arguments)] // A paint helper; the args are all data it draws.
     fn paint_summary_bar(
         &self,
         ui: &mut dyn UiBuilder,
@@ -277,6 +300,7 @@ impl ControlPlanePanel {
         dcc: Option<&DccContext>,
         agent_count: usize,
         theme: &UiTheme,
+        frame_samples: &[f32],
     ) {
         let [x, y, w, h] = rect;
         ui.paint_rect_filled([x, y], [w, h], theme.surface, theme.radius_lg);
@@ -420,7 +444,18 @@ impl ControlPlanePanel {
                 FontFamilyHint::Monospace,
                 TextAlign::Left,
             );
-            paint_meter_bar(ui, [cx, y + 56.0], cell_w - 16.0, *frac, *color, theme);
+            // The frame budget shows a trend (it's the DCC's real cost signal);
+            // the other cells are instantaneous, so a single bar fits them.
+            if i == 0 && frame_samples.len() >= 4 {
+                khora_tool_ui::widgets::sparkline(
+                    ui,
+                    theme,
+                    [cx, y + 44.0, cell_w - 16.0, 22.0],
+                    frame_samples,
+                );
+            } else {
+                paint_meter_bar(ui, [cx, y + 56.0], cell_w - 16.0, *frac, *color, theme);
+            }
         }
     }
 
