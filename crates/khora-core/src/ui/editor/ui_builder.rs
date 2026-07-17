@@ -48,6 +48,20 @@ pub enum FontFamilyHint {
     Icons,
 }
 
+/// Outcome of an [`UiBuilder::inline_text_field`] this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InlineEditEvent {
+    /// Still editing (or backend has no real text field).
+    #[default]
+    Idle,
+    /// The text changed this frame (not yet committed).
+    Changed,
+    /// The user confirmed the edit (Enter, or focus lost without Escape).
+    Committed,
+    /// The user cancelled the edit (Escape).
+    Cancelled,
+}
+
 /// Horizontal alignment for [`UiBuilder::paint_text_styled`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextAlign {
@@ -235,6 +249,13 @@ pub trait UiBuilder {
     /// Returns `true` if Escape was pressed while the last widget had focus.
     fn is_last_item_escape_pressed(&self) -> bool;
 
+    /// Returns `true` if the last interacted region is currently being dragged.
+    /// Used by drag sources to paint a cursor-following ghost so the user can
+    /// see a drag is in progress. Default: `false`.
+    fn is_last_item_dragged(&self) -> bool {
+        false
+    }
+
     /// Shows a right-click context menu on the last widget.
     /// The closure is called to build menu content when the menu is open.
     fn context_menu_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder));
@@ -350,6 +371,73 @@ pub trait UiBuilder {
     /// [`interact_rect`](Self::interact_rect). Default: no-op.
     fn dnd_take_drop_payload(&mut self) -> Option<u64> {
         None
+    }
+
+    /// Current pointer (cursor) position in window-space `[x, y]`, or `None`
+    /// when the pointer is outside the window or unknown. Drop targets use this
+    /// to place a dropped item where the cursor released (e.g. unproject the
+    /// drop point into the 3D scene). Default: `None`.
+    fn pointer_position(&self) -> Option<[f32; 2]> {
+        None
+    }
+
+    /// `true` while any `u64` drag payload is in flight this frame (a drag
+    /// started and hasn't been released). Drop targets use it to show a
+    /// "droppable here" highlight. Default: `false`.
+    fn is_drag_active(&self) -> bool {
+        false
+    }
+
+    /// Draws a single-line text editor at an absolute window-space rect and
+    /// returns its outcome **this frame** (see [`InlineEditEvent`]). Unlike the
+    /// generic [`region_at`](Self::region_at) + response-tracking helpers, this
+    /// is self-contained: it owns the widget's `Response`, so Enter / Escape /
+    /// focus-loss are detected reliably. Pass `request_focus = true` on the
+    /// frame the field first appears so the user can type immediately.
+    /// Default: no-op returning [`InlineEditEvent::Idle`].
+    fn inline_text_field(
+        &mut self,
+        rect: [f32; 4],
+        id_salt: &str,
+        text: &mut String,
+        request_focus: bool,
+    ) -> InlineEditEvent {
+        let _ = (rect, id_salt, text, request_focus);
+        InlineEditEvent::Idle
+    }
+
+    /// Paints a filled rounded rect in an **unclipped top overlay layer**
+    /// (above all panels). For cursor-following affordances like drag ghosts
+    /// that must remain visible outside the current panel's clip rect.
+    /// Default: no-op.
+    fn overlay_rect_filled(&mut self, min: [f32; 2], size: [f32; 2], color: [f32; 4], rounding: f32) {
+        let _ = (min, size, color, rounding);
+    }
+
+    /// Stroked rounded rect in the unclipped overlay layer. See
+    /// [`overlay_rect_filled`](Self::overlay_rect_filled). Default: no-op.
+    fn overlay_rect_stroke(
+        &mut self,
+        min: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        rounding: f32,
+        thickness: f32,
+    ) {
+        let _ = (min, size, color, rounding, thickness);
+    }
+
+    /// Text in the unclipped overlay layer. See
+    /// [`overlay_rect_filled`](Self::overlay_rect_filled). Default: no-op.
+    fn overlay_text(
+        &mut self,
+        pos: [f32; 2],
+        text: &str,
+        size: f32,
+        color: [f32; 4],
+        family: FontFamilyHint,
+    ) {
+        let _ = (pos, text, size, color, family);
     }
 
     /// Attaches a tooltip to the most recently created widget / interaction.

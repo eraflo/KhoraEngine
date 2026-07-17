@@ -15,13 +15,14 @@ The editor application — panels, gizmos, play mode, scene I/O.
 3. Modes
 4. Play mode
 5. Scene I/O
-6. Gizmos and selection
-7. Build Game
-8. The Control Plane
-9. For game developers
-10. For engine contributors
-11. Decisions
-12. Open questions
+6. Asset browser
+7. Gizmos and selection
+8. Build Game
+9. The Control Plane
+10. For game developers
+11. For engine contributors
+12. Decisions
+13. Open questions
 
 ---
 
@@ -129,7 +130,26 @@ The editor uses `SerializationService` for all scene operations. As of v0.4 it g
 
 Scene files are compact-binary in development today. RON dumps for diffing are available through `SerializationGoal::HumanReadableDebug` — not yet wired to a menu, but the strategy is registered in the service.
 
-## 06 — Gizmos and selection
+## 06 — Asset browser
+
+The Assets panel in the bottom dock is a real file explorer over `<project>/assets/`, not just a read-only list. It reads off the same `ProjectVfs` the rest of the editor uses, so every operation goes through the identity registry — renaming or moving an asset here **does not break its references** (see [Scene I/O](#05--scene-io) and [File formats — asset identity registry](formats.md#asset-identity-registry)).
+
+| Interaction | Result |
+|---|---|
+| **Left-click** | Selects a tile. |
+| **Double-click** | Opens / activates it (a `.kscene` loads, other types open). |
+| **Right-click a file tile** | Context menu: Open, Reveal in Explorer, Rename (inline), Duplicate, Delete, plus "Assign to selected" for materials. |
+| **Right-click a folder** | New Folder, Rename, Delete, Reveal. |
+| **Right-click empty space** | New Folder, Reveal Current Folder, Refresh. |
+| **Header buttons** | More (menu), Trash (delete selected), Filter (category menu). |
+
+Empty folders are shown, so **New Folder** produces a usable target immediately. **Delete goes to the OS recycle bin** (via the `trash` crate), so a mistaken delete is reversible from the system trash rather than lost.
+
+**Drag & drop.** Drag a tile onto a folder in the tree to **move** it (the move is mediated by the editor, so the identity registry freezes the UUID and references survive). Drag a tile into the **3D viewport** to instantiate it: a mesh spawns an entity at the drop point, a prefab instantiates its subtree, a scene loads, and a texture or material assigns to the selected entity.
+
+> **Rename/move only inside the editor.** The registry freeze happens because the editor mediates the file operation. Renaming or moving an asset from a shell or `git` bypasses that path — see [Troubleshoot](../how-to/troubleshoot.md#assets--vfs).
+
+## 07 — Gizmos and selection
 
 The viewport has floating gizmos for the selected entity:
 
@@ -141,7 +161,7 @@ Selection is tracked in `EditorState.selected_entity`. Clicking an entity in the
 
 Numeric fields in the Inspector are draggable scrubbers — drag horizontally to change a value, modifier keys for precision. No spinner buttons.
 
-## 07 — Build Game
+## 08 — Build Game
 
 `Build → Build Game…` packages the open project for a target OS. The editor picks one of two **strategies** automatically, based on the presence of `<project>/Cargo.toml`:
 
@@ -149,7 +169,7 @@ Numeric fields in the Inspector are draggable scrubbers — drag horizontally to
 
 Used when the project has no `Cargo.toml` — the typical state for a fresh project from the hub.
 
-1. **Pack** — `khora_io::asset::PackBuilder` walks `<project>/assets/` (sorted by forward-slash relative path), assigns `AssetUUID::new_v5(rel_path)` to each file, and writes the two-file release layout: `data.pack` (16-byte header + concatenated asset bytes) + `index.bin` (`Vec<AssetMetadata>` with each variant rewritten to `AssetSource::Packed { offset, size }`).
+1. **Pack** — `khora_io::asset::PackBuilder` walks `<project>/assets/` (sorted by forward-slash relative path), resolves each file's UUID through the project's identity registry (a frozen entry if one exists, else the `AssetUUID::new_v5(rel_path)` default — the same registry the editor's dev VFS reads, so dev and release UUIDs match by construction; see [File formats — asset identity registry](formats.md#asset-identity-registry)), and writes the two-file release layout: `data.pack` (16-byte header + concatenated asset bytes) + `index.bin` (`Vec<AssetMetadata>` with each variant rewritten to `AssetSource::Packed { offset, size }`).
 2. **Stamp runtime** — the editor copies the pre-built `khora-runtime` for the chosen target into the output directory and renames it after the project. The runtime binary lives next to the editor (release-archive layout) or in the hub's `~/.khora/engines/<version>/runtime/` cache.
 3. **Write `runtime.json`** — read by the runtime at boot to learn which scene to auto-load.
 
@@ -182,7 +202,7 @@ Run the binary directly — both `khora-runtime` and any project compiled via `k
 
 The choice is **deterministic** (presence of `Cargo.toml` is the contract) and **opt-in** (the user explicitly upgrades a project to native Rust by clicking the hub button). Most projects stay on Strategy A and benefit from trivial cross-platform export. Strategy B is the escape hatch when raw performance, compile-time safety, or new engine primitives are needed. Future scripting (`assets/scripts/`, hot-reloadable, see [Assets](../concepts/assets.md)) plugs into both strategies transparently — scripts are just assets that get packed.
 
-## 08 — The Control Plane
+## 09 — The Control Plane
 
 The sixth Spine mode is the **Control Plane** — a workspace dedicated to the engine's mind.
 

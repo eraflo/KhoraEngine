@@ -9,8 +9,8 @@ in a release build.
 
 ## How assets are identified
 
-Every asset has a stable `AssetUUID`, decoupled from its file path. The asset index
-derives that UUID from the asset's forward-slash relative path with
+Every asset has a stable `AssetUUID`, decoupled from its file path. By **default** the
+asset index derives that UUID from the asset's forward-slash relative path with
 `AssetUUID::new_v5`:
 
 ```rust
@@ -19,9 +19,17 @@ use khora_sdk::prelude::AssetUUID;
 let wood_uuid = AssetUUID::new_v5("textures/wood.png");
 ```
 
-Because the UUID is path-derived, it is **identical** in development (loose files via the
-`FileLoader`) and in release (a single `data.pack` via the `PackLoader`). Game code that
-carries a UUID or an `AssetHandle<T>` does not change between the two — see
+The default is only a starting point. The moment you rename or move an asset in the
+editor, its identity is **frozen** in the project's identity registry
+(`<project>/.khora/asset-registry.ron`), so the UUID stays put even though the path
+changed — every `MeshRef::Asset`, `MaterialRef`, and texture slot that referenced it
+keeps resolving, with nothing to rewrite. See
+[File formats — asset identity registry](../reference/formats.md#asset-identity-registry).
+
+Either way the resolved UUID is **identical** in development (loose files via the
+`FileLoader`) and in release (a single `data.pack` via the `PackLoader`), because both
+resolve through the same registry. Game code that carries a UUID or an
+`AssetHandle<T>` does not change between the two — see
 [Assets and the VFS](../concepts/assets.md) for the pipeline.
 
 ## Reference a mesh

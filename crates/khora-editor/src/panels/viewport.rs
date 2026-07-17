@@ -14,6 +14,7 @@
 
 //! 3D Viewport panel — displays the offscreen render texture.
 
+use std::path::{Path, MAIN_SEPARATOR_STR};
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
@@ -294,18 +295,22 @@ impl EditorPanel for ViewportPanel {
         if w > 1.0 && h > 1.0 {
             if let Some(min) = ui.viewport_image(self.handle, [w, h]) {
                 let hovered = ui.is_last_item_hovered();
-                // Drop target: a `.kprefab` tile dragged onto the viewport
-                // queues a prefab spawn for the next frame. The asset
-                // browser tags its drag payload with `PREFAB_DRAG_TAG`
+                // Drop target: any asset tile dragged onto the viewport. The
+                // asset browser tags its drag payload with `ASSET_DRAG_TAG`
                 // (high 32 bits) so we can tell our drops apart from the
-                // scene-tree reparent flow's `EntityId`-packed payloads.
+                // scene-tree reparent flow's `EntityId`-packed payloads. We
+                // dispatch by the asset's declared type.
                 if let Some(payload) = ui.dnd_take_drop_payload() {
-                    if let Some(idx) = crate::panels::asset_browser::unpack_prefab_drag(payload) {
-                        if let Ok(mut state) = self.state.lock() {
-                            if let Some(entry) = state.asset_entries.get(idx as usize).cloned() {
-                                state.pending_prefab_spawn = Some(entry.source_path);
-                                log::info!("Viewport: prefab '{}' dropped — spawning", entry.name);
-                            }
+                    if let Some(idx) = crate::panels::asset_browser::unpack_asset_drag(payload) {
+                        // Snapshot the dropped entry without holding the lock
+                        // across the type-specific dispatch below.
+                        let entry = self
+                            .state
+                            .lock()
+                            .ok()
+                            .and_then(|s| s.asset_entries.get(idx as usize).cloned());
+                        if let Some(entry) = entry {
+                            self.dispatch_asset_drop(ui, &entry, min, [w, h]);
                         }
                     }
                 }
@@ -697,6 +702,115 @@ impl ViewportPanel {
             FontFamilyHint::Proportional,
             TextAlign::Center,
         );
+    }
+
+    /// Routes a dropped asset by its declared type. Prefabs/scenes spawn or
+    /// load; a mesh materialises at the unprojected drop point; a texture or
+    /// material is assigned to the current selection.
+    fn dispatch_asset_drop(
+        &self,
+        ui: &dyn UiBuilder,
+        entry: &AssetEntry,
+        viewport_min: [f32; 2],
+        viewport_size: [f32; 2],
+    ) {
+        let rel = entry.source_path.clone();
+        match entry.asset_type.as_str() {
+            "prefab" => {
+                if let Ok(mut state) = self.state.lock() {
+                    state.pending_prefab_spawn = Some((rel, None));
+                    log::info!("Viewport: prefab '{}' dropped — spawning", entry.name);
+                }
+            }
+            "scene" => {
+                let abs = self
+                    .state
+                    .lock()
+                    .ok()
+                    .and_then(|s| s.project_folder.clone())
+                    .map(|pf| {
+                        Path::new(&pf)
+                            .join("assets")
+                            .join(rel.replace('/', MAIN_SEPARATOR_STR))
+                            .to_string_lossy()
+                            .to_string()
+                    });
+                match abs {
+                    Some(abs) => {
+                        if let Ok(mut state) = self.state.lock() {
+                            state.pending_scene_load = Some(abs);
+                            log::info!("Viewport: scene '{}' dropped — loading", entry.name);
+                        }
+                    }
+                    None => log::warn!(
+                        "Viewport: cannot load scene '{}' — no project folder set",
+                        rel
+                    ),
+                }
+            }
+            "mesh" => {
+                let point = self.compute_drop_point(ui, viewport_min, viewport_size);
+                if let Ok(mut state) = self.state.lock() {
+                    state.pending_spawn_mesh_asset = Some((rel, point, None));
+                    log::info!(
+                        "Viewport: mesh '{}' dropped at [{:.2}, {:.2}, {:.2}]",
+                        entry.name,
+                        point[0],
+                        point[1],
+                        point[2]
+                    );
+                }
+            }
+            "texture" | "material" => {
+                if let Ok(mut state) = self.state.lock() {
+                    match state.selection.iter().copied().next() {
+                        Some(target) => {
+                            state.pending_assign_texture = Some((rel, target));
+                            log::info!(
+                                "Viewport: '{}' dropped — assigning to selected entity",
+                                entry.name
+                            );
+                        }
+                        None => log::warn!(
+                            "Viewport: select an entity to assign '{}' to",
+                            entry.name
+                        ),
+                    }
+                }
+            }
+            other => log::info!("Viewport: dropped asset type '{other}' is not droppable here"),
+        }
+    }
+
+    /// Unprojects the drop point onto the ground plane (`y = 0`). Falls back to
+    /// a fixed distance along the ray when the ray is parallel to the ground or
+    /// the pointer position is unavailable (uses the viewport centre then).
+    fn compute_drop_point(
+        &self,
+        ui: &dyn UiBuilder,
+        viewport_min: [f32; 2],
+        viewport_size: [f32; 2],
+    ) -> [f32; 3] {
+        let [w, h] = viewport_size;
+        let (local_x, local_y) = match ui.pointer_position() {
+            Some([px, py]) => (px - viewport_min[0], py - viewport_min[1]),
+            None => (w * 0.5, h * 0.5),
+        };
+        let ray = match self.camera.lock() {
+            Ok(cam) => cam.screen_to_ray(local_x, local_y, w, h),
+            Err(_) => return [0.0, 0.0, 0.0],
+        };
+        let point = if ray.direction.y.abs() > 1e-4 {
+            let t = -ray.origin.y / ray.direction.y;
+            if t > 0.0 {
+                ray.origin + ray.direction * t
+            } else {
+                ray.origin + ray.direction * 10.0
+            }
+        } else {
+            ray.origin + ray.direction * 10.0
+        };
+        [point.x, point.y, point.z]
     }
 
     fn paint_diamond_watermark(

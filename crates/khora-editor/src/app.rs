@@ -178,7 +178,22 @@ impl EngineApp for EditorApp {
             world,
             &self.editor_state,
         );
-        commands::process_pending_assign_material(world, &self.editor_state);
+        commands::process_pending_assign_material(
+            self.project_vfs.as_ref(),
+            world,
+            &self.editor_state,
+        );
+        commands::process_pending_asset_file_ops(self.project_vfs.as_ref(), &self.editor_state);
+        commands::process_pending_spawn_mesh_asset(
+            self.project_vfs.as_ref(),
+            world,
+            &self.editor_state,
+        );
+        commands::process_pending_assign_texture(
+            self.project_vfs.as_ref(),
+            world,
+            &self.editor_state,
+        );
 
         if let Ok(mut state) = self.editor_state.lock() {
             ops::apply_edits(world, &mut state);
@@ -645,6 +660,7 @@ impl EditorApp {
         });
 
         let entries = hot_reload::collect_asset_entries(&pvfs);
+        let dirs = pvfs.list_dirs();
         let git_branch = util::read_git_branch(&path);
 
         if let Ok(mut state) = self.editor_state.lock() {
@@ -652,6 +668,8 @@ impl EditorApp {
             state.project_name = project_name.clone();
             state.project_engine_version = project_engine_version.clone();
             state.asset_entries = entries;
+            state.asset_dirs = dirs;
+            state.asset_epoch = state.asset_epoch.wrapping_add(1);
             state.current_git_branch = git_branch.clone();
             log::info!(
                 "Opened project '{}' from CLI: '{}' ({} assets, git: {}, engine: {})",
@@ -670,8 +688,11 @@ impl EditorApp {
         // Refresh the asset browser cache after the potential
         // default-scene seed.
         let entries: Vec<AssetEntry> = hot_reload::collect_asset_entries(&pvfs);
+        let dirs = pvfs.list_dirs();
         if let Ok(mut state) = self.editor_state.lock() {
             state.asset_entries = entries;
+            state.asset_dirs = dirs;
+            state.asset_epoch = state.asset_epoch.wrapping_add(1);
         }
 
         self.project_vfs = Some(Arc::new(Mutex::new(pvfs)));

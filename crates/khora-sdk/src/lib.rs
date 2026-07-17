@@ -120,7 +120,9 @@ pub mod tool_ui {
     //! vendor's brand. Tools depend on both.
 
     pub use khora_core::math::{LinearRgba, Rect2D, Vec2};
-    pub use khora_core::ui::editor::{FontFamilyHint, Icon, Interaction, TextAlign};
+    pub use khora_core::ui::editor::{
+        FontFamilyHint, Icon, InlineEditEvent, Interaction, TextAlign,
+    };
     pub use khora_core::ui::{
         Align, Align2, App, AppContext, AppLifecycle, CornerRadius, FontHandle, FontPack, Margin,
         NamedFont, Stroke, UiBuilder, UiTheme,
@@ -180,9 +182,10 @@ pub use khora_data::assets::SoundData;
 pub use khora_io;
 pub use khora_io::asset::decoders::audio::SymphoniaDecoder;
 pub use khora_io::asset::{
-    AssetChangeEvent, AssetChangeKind, AssetIo, AssetService, AssetWatcher, AssetWriter,
-    FileLoader, FileSystemResolver, IndexBuilder, MeshDispatcher, PackBuilder, PackHeader,
-    PackLoader, PackOutput, PackProgress, PACK_FORMAT_VERSION, PACK_HEADER_SIZE, PACK_MAGIC,
+    AssetChangeEvent, AssetChangeKind, AssetIdRegistry, AssetIo, AssetService, AssetWatcher,
+    AssetWriter, FileLoader, FileSystemResolver, IndexBuilder, MeshDispatcher, PackBuilder,
+    PackHeader, PackLoader, PackOutput, PackProgress, PACK_FORMAT_VERSION, PACK_HEADER_SIZE,
+    PACK_MAGIC,
 };
 pub use khora_io::serialization::SerializationService;
 pub use khora_telemetry::MetricsRegistry;

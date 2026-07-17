@@ -967,8 +967,9 @@ impl World {
     ///
     /// `None` if the entity is not alive or does not have the requested component.
     pub fn get_mut<T: Component>(&mut self, entity_id: EntityId) -> Option<&mut T> {
-        // 1. Validate the entity ID.
-        let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize).unwrap();
+        // 1. Validate the entity ID. An out-of-range index means "not alive"
+        // (e.g. a stale or malformed EntityId), so return None rather than panic.
+        let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
         if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
             return None;
         }
@@ -1079,8 +1080,9 @@ impl World {
     ///
     /// `None` if the entity is not alive or does not have the requested component.
     pub fn get<T: Component>(&self, entity_id: EntityId) -> Option<&T> {
-        // 1. Validate the entity ID.
-        let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize).unwrap();
+        // 1. Validate the entity ID. An out-of-range index means "not alive"
+        // (e.g. a stale or malformed EntityId), so return None rather than panic.
+        let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
         if id_in_world.generation != entity_id.generation || metadata_opt.is_none() {
             return None;
         }

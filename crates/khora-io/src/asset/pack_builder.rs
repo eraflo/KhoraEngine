@@ -24,9 +24,11 @@
 //!   metadata's `variants["default"]` rewritten from `AssetSource::Path(rel)`
 //!   to `AssetSource::Packed { offset, size }`.
 //!
-//! UUIDs are produced by `IndexBuilder`, so they match what the editor sees
-//! during dev mode — same project, same UUIDs in dev and release, by
-//! construction.
+//! UUIDs are produced by `IndexBuilder`, resolved through the project's
+//! [`crate::asset::AssetIdRegistry`] (loaded from `<project>/.khora/`), so they
+//! match what the editor sees during dev mode — same project, same UUIDs in dev
+//! and release, by construction. Projects without a registry fall back to the
+//! path-derived default, which is identical on both sides.
 //!
 //! # Determinism
 //!
@@ -50,7 +52,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{IndexBuilder, PackLoader, PackManifest, PACK_FLAG_LZ4, PACK_FLAG_MANIFEST};
+use super::{
+    AssetIdRegistry, IndexBuilder, PackLoader, PackManifest, PACK_FLAG_LZ4, PACK_FLAG_MANIFEST,
+};
 
 /// One step of a pack build, suitable for driving a UI progress bar.
 #[derive(Debug, Clone)]
@@ -180,7 +184,14 @@ impl<'a> PackBuilder<'a> {
             )
         })?;
 
+        // Resolve UUIDs through the same identity registry the editor uses so a
+        // renamed asset keeps its frozen UUID in the release pack. The registry
+        // lives at the project root (parent of `assets/`); a missing file yields
+        // an empty registry, i.e. the path-derived default — identical to dev.
+        let project_root = self.assets_root.parent().unwrap_or(self.assets_root);
+        let registry = AssetIdRegistry::load(project_root);
         let mut metadata = IndexBuilder::new(self.assets_root)
+            .with_registry(&registry)
             .build_metadata()
             .context("Pack: failed to build asset metadata")?;
         let total = metadata.len();

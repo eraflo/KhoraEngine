@@ -240,12 +240,13 @@ pub struct EditorState {
     /// no file dialog and reuses the entity name as the file stem when
     /// the path ends in `/`.
     pub pending_save_as_prefab_at: Option<(EntityId, String)>,
-    /// Set when the user drops a `.kprefab` tile onto the viewport (or
-    /// activates one from the asset browser). Stores the forward-slash
-    /// relative path under `<project>/assets/`. Consumed next frame to
-    /// load the recipe via the asset service and call
-    /// `instantiate_subtree`.
-    pub pending_prefab_spawn: Option<String>,
+    /// Set when the user drops a `.kprefab` tile onto the viewport / hierarchy
+    /// (or activates one from the asset browser). Holds the forward-slash
+    /// relative path under `<project>/assets/` plus an optional parent entity
+    /// (the hierarchy row it was dropped on) so the instantiated root is
+    /// parented under it. Consumed next frame to load the recipe via the asset
+    /// service and call `instantiate_subtree`.
+    pub pending_prefab_spawn: Option<(String, Option<EntityId>)>,
 
     // ── Material authoring workflow ─────────────────────
     /// Set when the user picks "Save Material as .kmat" on an entity that
@@ -261,6 +262,36 @@ pub struct EditorState {
     /// `.kmat` under `<project>/assets/`. Consumed next frame: each
     /// selected entity's `MaterialRef` is set to `Asset(uuid)`.
     pub pending_assign_material: Option<String>,
+
+    // ── Asset explorer: file operations & scene drop ───
+    /// Every directory under `assets/` (forward-slash, relative), so the asset
+    /// browser can show empty folders the file-only VFS can't. Refreshed with
+    /// `asset_entries`.
+    pub asset_dirs: Vec<String>,
+    /// Bumped whenever `asset_entries`/`asset_dirs` change. The asset browser
+    /// rescans its flattened cache on epoch change instead of on entry-count
+    /// change (a modified-in-place file used to be missed).
+    pub asset_epoch: u64,
+    /// Create an empty folder at this forward-slash relative path under
+    /// `assets/`. Consumed next frame.
+    pub pending_create_folder: Option<String>,
+    /// Rename/move an asset: `(old_rel, new_rel)`, both forward-slash under
+    /// `assets/`. The identity registry freezes the UUID so references survive.
+    pub pending_rename_asset: Option<(String, String)>,
+    /// Move an asset into a folder: `(src_rel, dest_dir)` (dest_dir `""` = root).
+    pub pending_move_asset: Option<(String, String)>,
+    /// Send an asset to the OS recycle bin: forward-slash relative path.
+    pub pending_delete_asset: Option<String>,
+    /// Duplicate an asset next to itself: forward-slash relative path.
+    pub pending_duplicate_asset: Option<String>,
+    /// Spawn a mesh asset into the scene: `(rel_path, [x,y,z] world point,
+    /// optional parent entity)`. Set by dragging a mesh tile onto the viewport
+    /// (parent `None`) or a hierarchy row (parent = that entity); drained into a
+    /// `MeshRef::Asset` entity spawn, parented under the target when present.
+    pub pending_spawn_mesh_asset: Option<(String, [f32; 3], Option<EntityId>)>,
+    /// Assign a texture/material asset to a specific entity (drag onto an entity
+    /// in the viewport): `(rel_path, entity)`.
+    pub pending_assign_texture: Option<(String, EntityId)>,
 }
 
 impl EditorState {

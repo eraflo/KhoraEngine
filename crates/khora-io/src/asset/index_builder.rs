@@ -28,14 +28,18 @@
 //!
 //! # UUID stability
 //!
-//! Each asset's [`AssetUUID`] is derived via
-//! [`AssetUUID::new_v5`] from the **forward-slash relative path** (e.g.
-//! `"textures/wood.png"`). The same file produces the same UUID whether
-//! the editor scans the project in dev mode (FileLoader) or the pack builder
-//! produces a release archive (PackLoader). This is the foundation that makes
-//! the dev/release transparency promise of the VFS work.
+//! Each asset's [`AssetUUID`] is resolved through the project's
+//! [`AssetIdRegistry`] when one is supplied via [`IndexBuilder::with_registry`],
+//! and otherwise **defaults** to [`AssetUUID::new_v5`] of the **forward-slash
+//! relative path** (e.g. `"textures/wood.png"`). The registry is authoritative:
+//! once an asset has been renamed/moved in the editor its identity is *frozen*
+//! there, so the same file keeps the same UUID across renames. For any asset
+//! without a registry entry the path-derived default applies, which is what
+//! makes pre-registry projects and the pack builder agree by construction (the
+//! pack builder loads the same registry, so dev and release resolve identically).
 
 use crate::asset::dependencies::{extract_dependencies, type_has_dependency_extractor};
+use crate::asset::id_registry::AssetIdRegistry;
 use anyhow::{anyhow, Context, Result};
 use khora_core::asset::{AssetMetadata, AssetSource, AssetUUID};
 use std::{
@@ -128,6 +132,7 @@ pub fn should_skip_file(name: &str) -> bool {
 /// See module documentation for determinism and UUID stability guarantees.
 pub struct IndexBuilder<'a> {
     assets_root: &'a Path,
+    registry: Option<&'a AssetIdRegistry>,
 }
 
 impl<'a> IndexBuilder<'a> {
@@ -136,8 +141,23 @@ impl<'a> IndexBuilder<'a> {
     /// `assets_root` must be the **assets directory of a project**, not the
     /// project root — the relative paths recorded in `AssetMetadata` (and
     /// hence the UUIDs) are computed relative to it.
+    ///
+    /// Without [`Self::with_registry`], UUIDs are the path-derived
+    /// `new_v5` default (the pre-registry behaviour).
     pub fn new(assets_root: &'a Path) -> Self {
-        Self { assets_root }
+        Self {
+            assets_root,
+            registry: None,
+        }
+    }
+
+    /// Resolves each asset's UUID through `registry` (frozen identities win;
+    /// unfrozen paths still fall back to `new_v5`). Supply the same registry in
+    /// dev (editor VFS) and release (pack builder) so UUIDs match by
+    /// construction.
+    pub fn with_registry(mut self, registry: &'a AssetIdRegistry) -> Self {
+        self.registry = Some(registry);
+        self
     }
 
     /// Walks the assets root and produces a sorted, deterministic
@@ -189,7 +209,11 @@ impl<'a> IndexBuilder<'a> {
 
         let mut metadata = Vec::with_capacity(entries.len());
         for (rel_fwd, rel_path, abs_path, type_name) in entries {
-            let uuid = AssetUUID::new_v5(&rel_fwd);
+            // Registry-frozen identity if present, else the path-derived default.
+            let uuid = match self.registry {
+                Some(reg) => reg.resolve(&rel_fwd),
+                None => AssetUUID::new_v5(&rel_fwd),
+            };
             // Only read file contents for types whose references we can parse.
             // Textures, audio, meshes, etc. are never read — this preserves the
             // builder's stat-only fast path and avoids a per-file I/O cliff.
@@ -263,6 +287,35 @@ mod tests {
         // file is still tracked (vs. silently dropped).
         assert_eq!(asset_type_for_extension("xyz").as_deref(), Some("xyz"));
         assert_eq!(asset_type_for_extension("MD").as_deref(), Some("md"));
+    }
+
+    #[test]
+    fn index_builder_honours_frozen_registry_uuid() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("meshes")).unwrap();
+        fs::write(root.join("meshes").join("hero.gltf"), b"GLTF").unwrap();
+
+        // Default (no registry): UUID is derived from the path.
+        let default_uuid = AssetUUID::new_v5("meshes/hero.gltf");
+        let md = IndexBuilder::new(root).build_metadata().unwrap();
+        assert_eq!(md[0].uuid, default_uuid);
+
+        // Freeze a *different* identity for that path — exactly what a rename
+        // does (the file kept the UUID it had under its previous name).
+        let mut reg = AssetIdRegistry::load(root);
+        let frozen = AssetUUID::new_v5("meshes/protagonist.gltf");
+        reg.freeze("meshes/hero.gltf", frozen);
+
+        let md2 = IndexBuilder::new(root)
+            .with_registry(&reg)
+            .build_metadata()
+            .unwrap();
+        assert_eq!(
+            md2[0].uuid, frozen,
+            "IndexBuilder must resolve the frozen registry UUID, not new_v5(path)"
+        );
+        assert_ne!(md2[0].uuid, default_uuid);
     }
 
     #[test]

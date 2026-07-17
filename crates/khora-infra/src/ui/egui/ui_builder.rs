@@ -14,7 +14,7 @@
 
 //! Concrete [`UiBuilder`] backed by `egui::Ui`.
 
-use khora_core::ui::editor::ui_builder::{FontFamilyHint, Interaction, TextAlign};
+use khora_core::ui::editor::ui_builder::{FontFamilyHint, InlineEditEvent, Interaction, TextAlign};
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
 use khora_core::ui::editor::UiBuilder;
 use std::collections::HashMap;
@@ -57,6 +57,16 @@ impl<'a> EguiUiBuilder<'a> {
             viewport_textures,
             last_response: None,
         }
+    }
+
+    /// A painter on the top foreground layer, clipped only to the whole screen.
+    /// Used for overlay affordances (drag ghosts) that must stay visible when
+    /// the cursor leaves the current panel's clip rect.
+    fn overlay_painter(&self) -> egui::Painter {
+        self.ui.ctx().layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("khora_overlay"),
+        ))
     }
 }
 
@@ -524,6 +534,119 @@ impl UiBuilder for EguiUiBuilder<'_> {
             .as_ref()
             .and_then(|r| r.dnd_release_payload::<u64>())
             .map(|payload| *payload)
+    }
+
+    fn pointer_position(&self) -> Option<[f32; 2]> {
+        self.ui
+            .ctx()
+            .pointer_interact_pos()
+            .map(|p| [p.x, p.y])
+    }
+
+    fn is_last_item_dragged(&self) -> bool {
+        self.last_response
+            .as_ref()
+            .map(|r| r.dragged())
+            .unwrap_or(false)
+    }
+
+    fn is_drag_active(&self) -> bool {
+        self.ui.ctx().dragged_id().is_some()
+    }
+
+    fn inline_text_field(
+        &mut self,
+        rect: [f32; 4],
+        id_salt: &str,
+        text: &mut String,
+        request_focus: bool,
+    ) -> InlineEditEvent {
+        let r =
+            egui::Rect::from_min_size(egui::pos2(rect[0], rect[1]), egui::vec2(rect[2], rect[3]));
+        let mut child = self.ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(r)
+                .id_salt(("khora_inline", id_salt))
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        let field_id = egui::Id::new(("khora_inline_edit", id_salt));
+        let resp = child.add(
+            egui::TextEdit::singleline(text)
+                .id(field_id)
+                .desired_width(rect[2]),
+        );
+        if request_focus {
+            resp.request_focus();
+        }
+        if resp.lost_focus() {
+            // Escape cancels; Enter or a click elsewhere commits (commit-on-blur
+            // — the standard file-explorer rename behaviour, and it avoids a
+            // stuck field if the user clicks away).
+            let escaped = child.input(|i| i.key_pressed(egui::Key::Escape));
+            return if escaped {
+                InlineEditEvent::Cancelled
+            } else {
+                InlineEditEvent::Committed
+            };
+        }
+        if resp.changed() {
+            InlineEditEvent::Changed
+        } else {
+            InlineEditEvent::Idle
+        }
+    }
+
+    fn overlay_rect_filled(
+        &mut self,
+        min: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        rounding: f32,
+    ) {
+        let painter = self.overlay_painter();
+        let rect =
+            egui::Rect::from_min_size(egui::pos2(min[0], min[1]), egui::vec2(size[0], size[1]));
+        let corner = egui::CornerRadius::same(rounding.clamp(0.0, 255.0) as u8);
+        painter.rect_filled(rect, corner, color_to_egui(color));
+    }
+
+    fn overlay_rect_stroke(
+        &mut self,
+        min: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        rounding: f32,
+        thickness: f32,
+    ) {
+        let painter = self.overlay_painter();
+        let rect =
+            egui::Rect::from_min_size(egui::pos2(min[0], min[1]), egui::vec2(size[0], size[1]));
+        let corner = egui::CornerRadius::same(rounding.clamp(0.0, 255.0) as u8);
+        painter.rect_stroke(
+            rect,
+            corner,
+            egui::Stroke::new(thickness, color_to_egui(color)),
+            egui::epaint::StrokeKind::Inside,
+        );
+    }
+
+    fn overlay_text(
+        &mut self,
+        pos: [f32; 2],
+        text: &str,
+        size: f32,
+        color: [f32; 4],
+        family: FontFamilyHint,
+    ) {
+        let painter = self.overlay_painter();
+        let font_id = font_id_for(family, size);
+        painter.text(
+            egui::pos2(pos[0], pos[1]),
+            egui::Align2::LEFT_TOP,
+            text,
+            font_id,
+            color_to_egui(color),
+        );
     }
 
     fn tooltip_for_last(&mut self, text: &str) {

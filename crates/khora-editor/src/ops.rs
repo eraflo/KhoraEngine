@@ -116,6 +116,34 @@ fn default_surface_material() -> khora_sdk::prelude::materials::StandardMaterial
     }
 }
 
+/// Spawns an entity that references a mesh asset by UUID at a world point,
+/// attaching a default surface material so it renders immediately. The
+/// `asset_resolver_system` loads the mesh from the `MeshRef::Asset` next tick.
+/// Returns the new entity. `label` is used to derive a readable `Name`.
+pub fn spawn_mesh_asset(
+    world: &mut GameWorld,
+    uuid: khora_sdk::khora_core::asset::AssetUUID,
+    point: [f32; 3],
+    label: &str,
+) -> EntityId {
+    let mat = world.add_material(default_surface_material());
+    let name = std::path::Path::new(label)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(label)
+        .to_string();
+    let entity = world.spawn((
+        Transform::from_translation(khora_sdk::prelude::math::Vec3::new(
+            point[0], point[1], point[2],
+        )),
+        GlobalTransform::identity(),
+        Name::new(name),
+        MeshRef::Asset(uuid),
+    ));
+    world.add_component(entity, mat);
+    entity
+}
+
 pub fn process_spawns(world: &mut GameWorld, state: &mut EditorState) {
     if let Some(request) = state.pending_spawn.take() {
         let entity = match request.as_str() {

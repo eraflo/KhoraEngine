@@ -142,7 +142,8 @@ pub fn load_scene_in_project(
     world: &mut GameWorld,
     rel_path_fwd_slash: &str,
 ) -> bool {
-    let uuid = ProjectVfs::uuid_for_rel_path(rel_path_fwd_slash);
+    // Registry-aware: a scene that was renamed keeps its frozen UUID.
+    let uuid = pvfs.resolve_uuid(rel_path_fwd_slash);
 
     // Try the existing index first; if absent, reindex once and retry.
     let bytes = match pvfs.asset_service.load_raw(&uuid) {

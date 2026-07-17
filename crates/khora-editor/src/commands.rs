@@ -153,9 +153,12 @@ pub fn browse_and_open_project(
     match ProjectVfs::open(path.clone(), metrics) {
         Ok(pvfs) => {
             let entries = hot_reload::collect_asset_entries(&pvfs);
+            let dirs = pvfs.list_dirs();
             if let Ok(mut state) = editor_state.lock() {
                 state.project_folder = Some(path.to_string_lossy().to_string());
                 state.asset_entries = entries;
+                state.asset_dirs = dirs;
+                state.asset_epoch = state.asset_epoch.wrapping_add(1);
                 log::info!(
                     "Asset browser: scanned '{}' - {} assets found",
                     path.display(),
@@ -490,11 +493,11 @@ pub fn process_pending_prefab_spawn(
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
-    let rel = match editor_state.lock() {
+    let pending = match editor_state.lock() {
         Ok(mut s) => s.pending_prefab_spawn.take(),
         Err(_) => None,
     };
-    let Some(rel) = rel else {
+    let Some((rel, parent)) = pending else {
         return;
     };
 
@@ -508,7 +511,7 @@ pub fn process_pending_prefab_spawn(
             log::error!("Project VFS mutex poisoned");
             return;
         };
-        let uuid = ProjectVfs::uuid_for_rel_path(&rel);
+        let uuid = pvfs.resolve_uuid(&rel);
         match pvfs.asset_service.load_raw(&uuid) {
             Ok(b) => b,
             Err(e) => {
@@ -520,10 +523,15 @@ pub fn process_pending_prefab_spawn(
 
     match instantiate_subtree(world.inner_world_mut(), &bytes) {
         Ok(new_root) => {
+            // Parent under the hierarchy row it was dropped on, if any.
+            if let Some(parent) = parent {
+                world.set_parent(new_root, Some(parent));
+            }
             log::info!(
-                "Prefab '{}' instantiated (root entity index={})",
+                "Prefab '{}' instantiated (root entity index={}{})",
                 rel,
-                new_root.index
+                new_root.index,
+                if parent.is_some() { ", parented" } else { "" }
             );
         }
         Err(e) => log::error!("Failed to instantiate prefab '{}': {:?}", rel, e),
@@ -608,7 +616,7 @@ pub fn process_pending_save_as_material(
         if let Err(e) = pvfs.rebuild_index() {
             log::warn!("Save material: wrote '{rel_fwd}' but index rebuild failed: {e:#}");
         }
-        ProjectVfs::uuid_for_rel_path(&rel_fwd)
+        pvfs.resolve_uuid(&rel_fwd)
     };
 
     // Convert the entity from an inline material to a reference to the
@@ -627,6 +635,7 @@ pub fn process_pending_save_as_material(
 /// `MaterialRef::Asset(uuid)` on every selected entity, where `uuid` is
 /// derived from the chosen `.kmat`'s forward-slash relative path.
 pub fn process_pending_assign_material(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
@@ -646,10 +655,176 @@ pub fn process_pending_assign_material(
         return;
     }
 
-    let uuid = ProjectVfs::uuid_for_rel_path(&rel);
+    // Registry-aware so a renamed `.kmat` resolves to its frozen UUID.
+    let uuid = resolve_asset_uuid(project_vfs, &rel);
     for entity in targets {
         world.add_component(entity, MaterialRef::Asset(uuid));
         log::info!("Assigned material '{rel}' to entity {entity:?}");
+    }
+}
+
+/// Resolves a forward-slash relative asset path to its UUID through the open
+/// project's identity registry, falling back to the path-derived default when
+/// no project is open.
+fn resolve_asset_uuid(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    rel_fwd: &str,
+) -> khora_sdk::khora_core::asset::AssetUUID {
+    if let Some(pvfs_arc) = project_vfs {
+        if let Ok(pvfs) = pvfs_arc.lock() {
+            return pvfs.resolve_uuid(rel_fwd);
+        }
+    }
+    ProjectVfs::uuid_for_rel_path(rel_fwd)
+}
+
+/// Recomputes the asset-browser cache (entries + directories) after a file
+/// operation and bumps the epoch so the panel rescans its flattened view.
+fn refresh_asset_cache(pvfs_arc: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<EditorState>>) {
+    let refreshed = match pvfs_arc.lock() {
+        Ok(pvfs) => Some((hot_reload::collect_asset_entries(&pvfs), pvfs.list_dirs())),
+        Err(_) => None,
+    };
+    if let Some((entries, dirs)) = refreshed {
+        if let Ok(mut s) = editor_state.lock() {
+            s.asset_entries = entries;
+            s.asset_dirs = dirs;
+            s.asset_epoch = s.asset_epoch.wrapping_add(1);
+        }
+    }
+}
+
+/// Drains the asset-explorer file operations (new folder / rename / move /
+/// delete-to-trash / duplicate). Each routes through [`ProjectVfs`], which keeps
+/// the identity registry consistent so references survive renames and moves.
+pub fn process_pending_asset_file_ops(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    editor_state: &Arc<Mutex<EditorState>>,
+) {
+    let (create, rename, move_op, delete, duplicate) = match editor_state.lock() {
+        Ok(mut s) => (
+            s.pending_create_folder.take(),
+            s.pending_rename_asset.take(),
+            s.pending_move_asset.take(),
+            s.pending_delete_asset.take(),
+            s.pending_duplicate_asset.take(),
+        ),
+        Err(_) => return,
+    };
+    if create.is_none()
+        && rename.is_none()
+        && move_op.is_none()
+        && delete.is_none()
+        && duplicate.is_none()
+    {
+        return;
+    }
+    let Some(pvfs_arc) = project_vfs else {
+        log::warn!("Asset file operation ignored: no project is open");
+        return;
+    };
+
+    {
+        let Ok(mut pvfs) = pvfs_arc.lock() else {
+            log::error!("Asset file op: project VFS mutex poisoned");
+            return;
+        };
+        if let Some(dir) = create {
+            match pvfs.create_folder(&dir) {
+                Ok(()) => log::info!("Created folder '{dir}'"),
+                Err(e) => log::error!("Create folder '{dir}' failed: {e:#}"),
+            }
+        }
+        if let Some((old, new)) = rename {
+            match pvfs.rename_asset(&old, &new) {
+                Ok(()) => log::info!("Renamed '{old}' → '{new}'"),
+                Err(e) => log::error!("Rename '{old}' → '{new}' failed: {e:#}"),
+            }
+        }
+        if let Some((src, dest)) = move_op {
+            match pvfs.move_asset(&src, &dest) {
+                Ok(()) => log::info!("Moved '{src}' → '{dest}/'"),
+                Err(e) => log::error!("Move '{src}' → '{dest}' failed: {e:#}"),
+            }
+        }
+        if let Some(rel) = delete {
+            match pvfs.delete_to_trash(&rel) {
+                Ok(()) => log::info!("Moved '{rel}' to the recycle bin"),
+                Err(e) => log::error!("Delete '{rel}' failed: {e:#}"),
+            }
+        }
+        if let Some(rel) = duplicate {
+            match pvfs.duplicate_asset(&rel) {
+                Ok(new_rel) => log::info!("Duplicated '{rel}' → '{new_rel}'"),
+                Err(e) => log::error!("Duplicate '{rel}' failed: {e:#}"),
+            }
+        }
+    }
+
+    refresh_asset_cache(pvfs_arc, editor_state);
+}
+
+/// Drains [`EditorState::pending_spawn_mesh_asset`]: spawns a `MeshRef::Asset`
+/// entity at the drop point. Set by dragging a mesh tile onto the viewport; the
+/// `asset_resolver_system` loads the mesh next tick.
+pub fn process_pending_spawn_mesh_asset(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &mut GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
+) {
+    let pending = match editor_state.lock() {
+        Ok(mut s) => s.pending_spawn_mesh_asset.take(),
+        Err(_) => None,
+    };
+    let Some((rel, point, parent)) = pending else {
+        return;
+    };
+    let uuid = resolve_asset_uuid(project_vfs, &rel);
+    let entity = ops::spawn_mesh_asset(world, uuid, point, &rel);
+    // Parent under the hierarchy row it was dropped on, if any.
+    if let Some(parent) = parent {
+        world.set_parent(entity, Some(parent));
+    }
+    if let Ok(mut s) = editor_state.lock() {
+        s.select(entity);
+    }
+    log::info!("Spawned mesh '{rel}' as entity {entity:?} at {point:?}");
+}
+
+/// Drains [`EditorState::pending_assign_texture`]: assigns a dropped texture or
+/// `.kmat` to a specific entity. A `.kmat` becomes a `MaterialRef::Asset`; an
+/// image becomes the `base_color_texture` of a fresh inline standard material.
+pub fn process_pending_assign_texture(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &mut GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
+) {
+    let pending = match editor_state.lock() {
+        Ok(mut s) => s.pending_assign_texture.take(),
+        Err(_) => None,
+    };
+    let Some((rel, entity)) = pending else {
+        return;
+    };
+    let uuid = resolve_asset_uuid(project_vfs, &rel);
+
+    let ext = rel.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match ext.as_str() {
+        "kmat" | "mat" => {
+            world.add_component(entity, MaterialRef::Asset(uuid));
+            log::info!("Assigned material '{rel}' to entity {entity:?}");
+        }
+        "png" | "jpg" | "jpeg" | "tga" | "bmp" | "hdr" => {
+            let std_mat = khora_sdk::prelude::materials::StandardMaterial {
+                base_color_texture: Some(uuid),
+                ..Default::default()
+            };
+            world.add_component(entity, MaterialRef::inline(Box::new(std_mat)));
+            log::info!("Assigned texture '{rel}' to entity {entity:?} (base color)");
+        }
+        _ => {
+            log::warn!("Drop of '{rel}' on entity {entity:?} ignored: not a texture or material")
+        }
     }
 }
 

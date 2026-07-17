@@ -13,7 +13,7 @@
 //! when files are added or removed. Run once per frame, before the agents
 //! see the world, so a coherent VFS is in scope for the rest of the tick.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::AssetEntry;
@@ -34,34 +34,35 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
         return;
     }
 
-    // Coalesce per-uuid (last event wins) — saves often produce flurries
-    // of Modified events that should collapse to a single invalidation.
-    let mut by_uuid: HashMap<_, _> = HashMap::new();
-    for e in events {
-        by_uuid.insert(e.uuid, e);
-    }
-
+    // Coalesce Modified by path (one save fires a flurry); Created/Removed
+    // trigger a full reindex.
     let mut needs_reindex = false;
-    for (uuid, ev) in &by_uuid {
-        match ev.kind {
+    let mut modified: HashSet<String> = HashSet::new();
+    for e in events {
+        match e.kind {
             AssetChangeKind::Modified => {
-                let dropped = pvfs.asset_service.invalidate(uuid);
-                log::info!(
-                    "Hot reload: Modified '{}' (cache dropped: {})",
-                    ev.rel_path,
-                    dropped
-                );
+                modified.insert(e.rel_path);
             }
             AssetChangeKind::Created | AssetChangeKind::Removed => {
                 log::info!(
                     "Hot reload: {:?} '{}' — full reindex queued",
-                    ev.kind,
-                    ev.rel_path
+                    e.kind,
+                    e.rel_path
                 );
                 needs_reindex = true;
             }
         }
     }
+
+    // Resolve the UUID through the identity registry (not the event's raw
+    // path-derived value) so a modified *renamed* asset invalidates the right
+    // cache entry.
+    for rel in &modified {
+        let uuid = pvfs.resolve_uuid(rel);
+        let dropped = pvfs.asset_service.invalidate(&uuid);
+        log::info!("Hot reload: Modified '{}' (cache dropped: {})", rel, dropped);
+    }
+
     if !needs_reindex {
         return;
     }
@@ -69,26 +70,12 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
         log::error!("Hot reload: failed to rebuild index: {:#}", e);
         return;
     }
-    let entries: Vec<AssetEntry> = pvfs
-        .asset_service
-        .vfs()
-        .iter_all()
-        .map(|m| {
-            let rel_str = m.source_path.to_string_lossy().to_string();
-            let name = m
-                .source_path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| rel_str.clone());
-            AssetEntry {
-                name,
-                asset_type: m.asset_type_name.clone(),
-                source_path: rel_str,
-            }
-        })
-        .collect();
+    let entries = collect_asset_entries(&pvfs);
+    let dirs = pvfs.list_dirs();
     if let Ok(mut state) = editor_state.lock() {
         state.asset_entries = entries;
+        state.asset_dirs = dirs;
+        state.asset_epoch = state.asset_epoch.wrapping_add(1);
     }
 }
 

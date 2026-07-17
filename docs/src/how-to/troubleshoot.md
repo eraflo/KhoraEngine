@@ -54,11 +54,12 @@ security vulnerability, and the advisory itself states no safe upgrade exists �
 be silent. Never add an ID to `ignore` to mask a live vulnerability; each entry must carry a
 documented justification.
 
-### Platform note — UUIDs are path-derived, not OS-derived
+### Platform note — the default UUID is path-derived, not OS-derived
 
-The asset index normalizes relative paths to forward slashes before deriving UUIDs, so a path that
-hashes to one UUID on Windows (`textures\wood.png`) produces the *same* UUID on Linux/macOS — assets
-built on one OS resolve on another. See [Assets / VFS](#assets--vfs). For the supported build/run
+The asset index normalizes relative paths to forward slashes before deriving the default UUID, so a
+path that hashes to one UUID on Windows (`textures\wood.png`) produces the *same* UUID on Linux/macOS
+— assets built on one OS resolve on another. (Frozen identities in the registry are OS-agnostic too:
+the stored path is always forward-slash.) See [Assets / VFS](#assets--vfs). For the supported build/run
 targets, follow the [SDK quickstart](../tutorials/your-first-game.md) and the editor's Build Game flow
 ([Editor](../reference/editor.md)).
 
@@ -229,23 +230,39 @@ supported format.
 
 ## Assets / VFS
 
-Assets are identified by a **UUID derived from the forward-slash relative path** under `assets/`
-(`AssetUUID::new_v5(rel_path)`, see `crates/khora-io/src/asset/index_builder.rs`). The same file
-yields the same UUID in dev (FileLoader) and in a release pack (PackLoader) — that identity is what
-makes dev/release transparent.
+Assets are identified by a stable **`AssetUUID`**: `AssetUUID::new_v5(rel_path)` derived from the
+forward-slash relative path under `assets/` by **default**, or a value **frozen** in the project's
+identity registry (`<project>/.khora/asset-registry.ron`) once the asset has been renamed/moved in
+the editor (see `crates/khora-io/src/asset/index_builder.rs` and
+[File formats — asset identity registry](../reference/formats.md#asset-identity-registry)). Both dev
+(FileLoader) and a release pack (PackLoader) resolve through the same registry, so a file yields the
+same UUID in either — that identity is what makes dev/release transparent.
 
 ### "Asset not found" / a handle never resolves
 
-**Cause.** The UUID is computed from the **relative path with forward slashes**, e.g.
-`textures/wood.png`. A mismatch is almost always a path mismatch: the file is outside the project's
-`assets/` root, the relative path differs (a renamed/moved file changes its UUID), or a reference was
-authored against a different path. The UUID is platform-agnostic — `textures\wood.png` on Windows and
-`textures/wood.png` on Linux hash to the *same* UUID — so a missing asset is a path/identity problem,
-not an OS path-separator problem.
+**Cause.** For an asset that has never been renamed, its UUID is computed from the **relative path
+with forward slashes**, e.g. `textures/wood.png`. A mismatch is almost always a path/identity
+mismatch: the file is outside the project's `assets/` root, or a reference was authored against a
+different path. (Renaming or moving *inside the editor* does **not** cause this — the registry freezes
+the UUID; see the entry below for renames done outside the editor.) The default UUID is
+platform-agnostic — `textures\wood.png` on Windows and `textures/wood.png` on Linux hash to the
+*same* UUID — so a missing asset is a path/identity problem, not an OS path-separator problem.
 
-**Fix.** Confirm the file lives under `<project>/assets/`, and that the reference uses the exact
-relative path the file is indexed under. Materials store the texture UUIDs derived from those same
-relative paths, so a moved texture orphans its references until re-pointed.
+**Fix.** Confirm the file lives under `<project>/assets/`, and that the reference resolves to an
+indexed asset — either at its original path (unfrozen default) or at whatever path the identity
+registry currently binds its UUID to.
+
+### A reference broke after renaming/moving an asset *outside* the editor (shell, `git`, another tool)
+
+**Cause.** Stable identity relies on the **editor** mediating the file operation: it moves the file
+*and* freezes the UUID into `.khora/asset-registry.ron` in the same step. Renaming or moving an asset
+from a shell, `git`, or any external tool bypasses that freeze. The file now resolves to
+`new_v5(new_path)` (a *different* UUID), while scenes and materials still reference the old UUID — so
+the reference orphans, exactly as it would have before the registry existed.
+
+**Fix.** Prefer doing renames/moves in the editor's asset browser, which keeps references intact. If a
+file was already moved outside the editor, either move it back to its original path (restoring the
+default UUID) or add a matching entry to the registry so the old UUID binds to the new path.
 
 ### An asset loads in the editor (FileLoader) but not in a built game (PackLoader), or vice versa
 

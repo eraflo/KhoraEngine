@@ -17,11 +17,15 @@ must not break when they do. So game code carries a typed handle backed by a UUI
 and the **virtual file system** resolves that UUID to wherever the bytes actually
 live.
 
-Crucially the UUID is **content-derived**: it is computed from the asset's
-forward-slash relative path (a v5 UUID). That single fact has a large payoff — the
-identifier a texture gets in development is *byte-identical* to the one it gets when
-packed for release, because both derive it the same way. A handle therefore works
-in either mode without changes, and the index is deterministic across runs.
+By **default** the UUID is derived from the asset's forward-slash relative path (a v5
+UUID). But the path is only the *default* seed for identity, not identity itself: the
+moment an asset is renamed or moved in the editor, its UUID is **frozen** in a
+per-project identity registry (`<project>/.khora/asset-registry.ron`) so the reference
+survives the move. Whether frozen or still on its path-derived default, the identifier
+a texture gets in development is *byte-identical* to the one it gets when packed for
+release, because both resolve through the same registry. A handle therefore works in
+either mode without changes, and the index is deterministic across runs. See
+[File formats — asset identity registry](../reference/formats.md#asset-identity-registry).
 
 ## The pipeline
 

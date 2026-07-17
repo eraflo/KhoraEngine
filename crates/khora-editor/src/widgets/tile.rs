@@ -43,7 +43,7 @@ pub enum AssetTileKind {
 }
 
 impl AssetTileKind {
-    fn icon(self) -> Icon {
+    pub(crate) fn icon(self) -> Icon {
         match self {
             Self::Mesh => Icon::Cube,
             Self::Texture => Icon::Image,
@@ -59,7 +59,7 @@ impl AssetTileKind {
     /// Returns the top accent colour for the tile gradient (the bottom
     /// always falls into `theme.surface` so the tile blends with the panel
     /// background regardless of category).
-    fn accent(self, theme: &UiTheme) -> [f32; 4] {
+    pub(crate) fn accent(self, theme: &UiTheme) -> [f32; 4] {
         let raw = match self {
             Self::Mesh => theme.accent_a,
             Self::Texture => theme.accent_c,

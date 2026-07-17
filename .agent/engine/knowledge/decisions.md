@@ -39,3 +39,14 @@ Durable decisions and their rationale. Append when a new structural decision lan
 
 11. **Documentation in place, no ADR files** — record decisions in existing docs, not a separate ADR
     section. (Project convention.)
+
+12. **Stable asset identity via a lazy registry** — an asset's `AssetUUID` must not derive from its path
+    (rename breaks it) nor its content (edit breaks it), so identity is a persisted token. It is stored in a
+    single project file `<root>/.khora/asset-registry.ron` (RON, one `(uuid, path)` per line, **sorted by UUID**
+    for line-oriented git merges, written atomically), *not* per-asset sidecars (chosen to avoid doubling the
+    file count) and *not* a monolithic blob (chosen to avoid a merge/corruption hotspot). **Lazy freeze**: no
+    entry ⇒ the `new_v5(path)` default (back-compatible with every existing project/test); the first rename/move
+    freezes the current UUID. Since scenes/prefabs/`.kmat` store raw UUID bytes, a frozen UUID means moving a
+    file breaks no reference, with no remap. The read side is engine infrastructure (`IndexBuilder`,
+    `PackBuilder`, runtime all resolve through it ⇒ dev/release parity); the editor (`ProjectVfs`) is the sole
+    writer. The file sits outside `assets/`, so it is never scanned, watched, or packed.

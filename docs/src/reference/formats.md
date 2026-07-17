@@ -114,7 +114,7 @@ future additions to `AssetMetadata` keep older files readable. Each
 
 | Field | Meaning |
 |---|---|
-| `uuid` | `AssetUUID` — derived from the asset's forward-slash relative path. |
+| `uuid` | `AssetUUID` — the asset's stable identity: `AssetUUID::new_v5(forward_slash_rel_path)` by default, or the frozen value the [identity registry](#asset-identity-registry) holds for that path. |
 | `asset_type_name` | Canonical type tag (`"texture"`, `"mesh"`, `"material"`, `"script"`, …). |
 | `dependencies` | `Vec<AssetUUID>` — assets this one references (deduplicated, sorted). |
 | `variants` | `HashMap<String, AssetSource>` — the `"default"` variant points into `data.pack` as `Packed { offset, size }`. |
@@ -124,11 +124,43 @@ future additions to `AssetMetadata` keep older files readable. Each
 
 `IndexBuilder` sorts asset paths lexicographically (forward-slash relative path)
 before `PackBuilder` streams them, so two consecutive packs of the same `assets/`
-directory are byte-identical. UUIDs are derived via
-`AssetUUID::new_v5(forward_slash_rel_path)`, so they are **identical** between dev
-mode (loose files + in-memory index) and release mode (packed file + on-disk
-`index.bin`). Game code carrying an `AssetHandle<T>` works in either mode
-unchanged.
+directory are byte-identical. Each asset's UUID is resolved the same way in both
+modes: the frozen entry from the [identity registry](#asset-identity-registry)
+if one exists, otherwise the default `AssetUUID::new_v5(forward_slash_rel_path)`.
+Because dev (`IndexBuilder::with_registry`) and release (`PackBuilder`, which loads
+the same registry) resolve through it identically, a UUID is **the same in dev mode**
+(loose files + in-memory index) **and release mode** (packed file + on-disk
+`index.bin`) by construction. Game code carrying an `AssetHandle<T>` works in either
+mode unchanged.
+
+## Asset identity registry
+
+An asset's `AssetUUID` must survive a rename or move so that references stored as
+raw UUID bytes — `MeshRef::Asset`, `MaterialRef`, `.kmat` texture slots — never
+break. The `<project_root>/.khora/asset-registry.ron` file decouples identity from
+path: it freezes a stable UUID for a relative path (`AssetIdRegistry` in
+`crates/khora-io/src/asset/id_registry.rs`).
+
+**Lazy freeze.** An asset that has never been renamed has **no** registry entry and
+keeps its `AssetUUID::new_v5(rel_path)` default, so pre-registry projects and tests
+are unaffected. The first time an asset is renamed or moved in the editor, its
+*current* UUID is frozen into the registry — so it keeps that UUID forever,
+regardless of any future path change. A rename therefore rewrites nothing: scenes,
+prefabs, and `.kmat` files on disk and the open scene all keep resolving through the
+unchanged UUID.
+
+**Format.** RON, one `(uuid, path)` entry per asset, **sorted by UUID**. Because the
+UUID is immutable, adding, renaming, or deleting an asset each touch a single line,
+so two branches that rename *different* assets produce non-overlapping diffs that git
+3-way-merges cleanly (a real conflict arises only when the same asset is renamed on
+both branches). The file is written **atomically** (temp file + rename) so a crash
+mid-write cannot corrupt it.
+
+**Placement.** The registry lives at the **project root**, a sibling of `assets/`, so
+it is never scanned, watched, or packed — the scanner, the filesystem watcher, and
+the packer are all rooted at `assets/`. The editor (`ProjectVfs`) is the **only**
+writer; the read side (`IndexBuilder::with_registry`, the runtime, and `PackBuilder`)
+resolves through it, which is what makes dev and release agree on identity.
 
 ## `.kmat` — material file
 

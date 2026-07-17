@@ -6,7 +6,27 @@ Deep history lives in git and `docs/plans/`.
 ## Current state
 - **Branch**: `dev`
 - **Build**: clean (all crates compile, 0 errors); clippy 0 errors.
-- **Tests**: ~586 passing, ~35 ignored, 0 failures. Treat the live `cargo test --workspace` count as truth.
+- **Tests**: ~866 passing, ~29 ignored, 0 failures. Treat the live `cargo test --workspace` count as truth.
+
+## Latest work (2026-07-15) — Asset explorer + stable asset identity
+- **Stable asset UUIDs via a registry** (`khora-io/src/asset/id_registry.rs`, `AssetIdRegistry`): UUIDs were
+  always `new_v5(rel_path)`; now that's only the *default*. `<project>/.khora/asset-registry.ron` (RON, one
+  `(uuid, path)` per line, sorted by UUID, atomic write) can **freeze** an identity. **Lazy freeze**: no entry ⇒
+  `new_v5(path)` (old projects/tests unaffected); a rename/move freezes the *current* UUID so references
+  (`MeshRef::Asset`/`MaterialRef`/texture slots — stored as raw UUID bytes) never break, on disk or in the open
+  scene, with zero rewriting. Read side is engine (`IndexBuilder::with_registry`, `PackBuilder` both resolve
+  through it ⇒ dev/release parity); **only the editor writes** it (`ProjectVfs`). Registry lives at project root
+  (outside `assets/`) ⇒ never scanned/watched/packed.
+- **Real file explorer** (`khora-editor/src/panels/asset_browser/`): generic per-tile/folder/empty context menus
+  (Open, Reveal, Rename [inline], Duplicate, Delete→OS recycle bin via `trash` crate), wired header buttons,
+  empty folders shown (`ProjectVfs::list_dirs` + `EditorState::asset_dirs`), epoch-based rescan
+  (`asset_epoch`, replaces the count-only key), generic drag payload (`ASSET_DRAG_TAG`, was prefab-only).
+  Drag a tile onto a folder = move; onto the viewport = instantiate (mesh spawns `MeshRef::Asset` at the
+  unprojected ground-plane drop point via `UiBuilder::pointer_position` + `EditorCamera::screen_to_ray`, prefab
+  instantiates, scene loads, texture/material assigns to the selected entity).
+- File ops routed through new `ProjectVfs::{create_folder,rename_asset,move_asset,delete_to_trash,duplicate_asset}`
+  + drained by `commands::process_pending_asset_file_ops` / `process_pending_spawn_mesh_asset` /
+  `process_pending_assign_texture`. New deps: `trash`, `walkdir` (editor).
 
 ## Latest work (2026-06-11) — Adaptive loop closure
 - **PID recovery loop closed** (`khora-control/src/service.rs`): the DCC remembers the

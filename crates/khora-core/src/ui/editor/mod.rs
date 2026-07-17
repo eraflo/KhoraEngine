@@ -39,5 +39,5 @@ pub use state::{
     AssetEntry, ComponentJson, EditorMode, EditorState, EntityIcon, GizmoMode, InspectedEntity,
     LogEntry, LogLevel, PlayMode, PropertyEdit, SceneNode, StatusBarData,
 };
-pub use ui_builder::{FontFamilyHint, Interaction, TextAlign, UiBuilder};
+pub use ui_builder::{FontFamilyHint, InlineEditEvent, Interaction, TextAlign, UiBuilder};
 pub use viewport_texture::ViewportTextureHandle;
