@@ -1397,6 +1397,12 @@ impl World {
             for domain in domains {
                 self.bump_domain_epoch(domain);
             }
+
+            // If compaction drained the page completely, recycle its slot so a
+            // later allocation reuses it instead of growing the pages vec.
+            if self.storage.pages[page_id as usize].entities.is_empty() {
+                self.storage.mark_page_free(page_id);
+            }
         }
     }
 

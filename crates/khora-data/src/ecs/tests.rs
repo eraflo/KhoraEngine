@@ -1505,3 +1505,32 @@ fn churn_then_compaction_leaves_no_orphan_rows() {
         assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(i as i32)));
     }
 }
+
+#[test]
+fn emptied_page_slot_is_recycled() {
+    let mut world = compaction_world();
+
+    // Churn a single-domain cohort so its shared spawn page empties out.
+    let es: Vec<_> = (0..4).map(|i| world.spawn(RenderId(i))).collect();
+    for &e in &es {
+        world.add_component(e, RenderTag).expect("add_component");
+    }
+    while world.run_compaction(16) > 0 {}
+
+    let pages_before = world.storage.pages.len();
+
+    // The emptied {RenderId} page slot is now free. A brand-new archetype must
+    // recycle it rather than grow the pages vec.
+    let p = world.spawn(Position(1));
+    assert_eq!(
+        world.storage.pages.len(),
+        pages_before,
+        "a freed page slot must be recycled, not appended"
+    );
+
+    // The recycled page serves its new occupant correctly, and prior data is intact.
+    assert_eq!(world.get::<Position>(p).copied(), Some(Position(1)));
+    for (i, &e) in es.iter().enumerate() {
+        assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(i as i32)));
+    }
+}
