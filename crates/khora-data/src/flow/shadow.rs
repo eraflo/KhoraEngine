@@ -137,7 +137,9 @@ impl Flow for ShadowFlow {
                     let direction = match &light.light_type {
                         LightType::Directional(d) => transform.0.rotation() * d.direction,
                         LightType::Spot(s) => transform.0.rotation() * s.direction,
-                        LightType::Point(_) => unreachable!(),
+                        LightType::Point(_) => unreachable!(
+                            "outer match restricts this arm to Directional/Spot lights"
+                        ),
                     };
                     let view_proj = compute_single_shadow_view_proj(
                         &light.light_type,

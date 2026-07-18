@@ -112,16 +112,20 @@ impl ProjectionRegistry {
                 let uuid = mesh_handle_comp.uuid;
 
                 // Cache miss: upload to GPU for the first time.
-                if !cache.read().unwrap().contains(&uuid) {
+                if !cache
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .contains(&uuid)
+                {
                     let gpu_mesh = Self::upload_mesh(mesh_handle_comp, device);
                     cache
                         .write()
-                        .unwrap()
+                        .unwrap_or_else(|e| e.into_inner())
                         .insert(uuid, AssetHandle::new(gpu_mesh));
                 }
 
                 // Schedule the ECS component addition.
-                if let Some(handle) = cache.read().unwrap().get(&uuid) {
+                if let Some(handle) = cache.read().unwrap_or_else(|e| e.into_inner()).get(&uuid) {
                     pending.insert(
                         entity_id,
                         HandleComponent {
@@ -135,7 +139,9 @@ impl ProjectionRegistry {
 
         // Phase 2: mutate the ECS world (no longer borrowed by the query above).
         for (entity_id, component) in pending {
-            let _ = world.add_component(entity_id, component);
+            if let Err(e) = world.add_component(entity_id, component) {
+                log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");
+            }
         }
     }
 
@@ -230,12 +236,16 @@ impl ProjectionRegistry {
                 &HandleComponent<Box<dyn Material>>,
                 Without<HandleComponent<GpuMaterial>>,
             )>();
-            let textures = cpu_textures.read().unwrap();
+            let textures = cpu_textures.read().unwrap_or_else(|e| e.into_inner());
             for (entity_id, material_handle, _) in query {
                 let uuid = material_handle.uuid;
                 let material: &dyn Material = &**material_handle.handle;
 
-                if !material_cache.read().unwrap().contains(&uuid) {
+                if !material_cache
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .contains(&uuid)
+                {
                     // Defer until every referenced texture has been decoded.
                     if !material_textures_ready(material, &textures) {
                         continue;
@@ -249,11 +259,13 @@ impl ProjectionRegistry {
                     };
                     material_cache
                         .write()
-                        .unwrap()
+                        .unwrap_or_else(|e| e.into_inner())
                         .insert(uuid, AssetHandle::new(gpu_material));
                 }
 
-                if let Some(handle) = material_cache.read().unwrap().get(&uuid) {
+                if let Some(handle) =
+                    material_cache.read().unwrap_or_else(|e| e.into_inner()).get(&uuid)
+                {
                     pending.insert(
                         entity_id,
                         HandleComponent {
@@ -288,7 +300,9 @@ impl ProjectionRegistry {
         }
 
         for (entity_id, component) in pending {
-            let _ = world.add_component(entity_id, component);
+            if let Err(e) = world.add_component(entity_id, component) {
+                log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");
+            }
         }
     }
 

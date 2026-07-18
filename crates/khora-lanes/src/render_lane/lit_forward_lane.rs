@@ -24,9 +24,6 @@
 //! with the number of lights in the scene. This allows GORNA to make informed decisions
 //! about rendering strategy selection based on performance budgets.
 
-#[allow(unused_imports)]
-use khora_core::math::{Extent2D, Extent3D, LinearRgba, Mat4, Origin3D};
-#[allow(unused_imports)]
 use khora_core::renderer::api::command::BindGroupLayoutId;
 
 use khora_core::renderer::api::pipeline::{LayoutKey, LayoutSpec, PipelineSpec, ShaderVariantKey};

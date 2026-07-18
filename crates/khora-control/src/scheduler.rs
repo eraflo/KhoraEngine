@@ -309,12 +309,16 @@ impl ExecutionScheduler {
         // 2. Build the per-frame completion map. The scheduler tracks
         //    completion internally — agents do not read it through the
         //    runtime containers.
-        let agent_ids = self.registry.lock().unwrap().all_ids();
+        let agent_ids = self
+            .registry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .all_ids();
         let completion_map = Arc::new(AgentCompletionMap::new(&agent_ids));
 
         // 3. Read current mode
         let mode = {
-            let ctx = self.context.read().unwrap();
+            let ctx = self.context.read().unwrap_or_else(|e| e.into_inner());
             ctx.mode.clone()
         };
 
@@ -461,7 +465,7 @@ impl ExecutionScheduler {
     ) {
         // Collect agents for this phase and mode
         let agents = {
-            let registry = self.registry.lock().unwrap();
+            let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
             registry.collect_for_phase(phase, mode)
         };
 

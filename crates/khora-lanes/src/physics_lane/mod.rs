@@ -28,10 +28,6 @@
 //!    new transforms, kinematic results, and collision events back into
 //!    the World during the `Maintenance` phase.
 
-mod native_lanes;
-
-pub use native_lanes::*;
-
 use khora_core::physics::PhysicsProvider;
 
 /// The standard physics lane for industrial-grade simulation.

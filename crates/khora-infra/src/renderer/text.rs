@@ -352,7 +352,7 @@ impl TextRenderer for StandardTextRenderer {
 
     fn queue_text(&self, layout: &dyn TextLayout, pos: Vec2, color: Vec4, _z_index: i32) {
         if let Some(std_layout) = layout.as_any().downcast_ref::<StandardTextLayout>() {
-            let mut queue = self.queue.lock().unwrap();
+            let mut queue = self.queue.lock().unwrap_or_else(|e| e.into_inner());
             queue.push(QueuedText {
                 layout: Arc::new(StandardTextLayout {
                     size: std_layout.size,
@@ -373,13 +373,19 @@ impl TextRenderer for StandardTextRenderer {
         encoder: &mut dyn CommandEncoder,
         color_target: &TextureViewId,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let mut resources_lock = self.gpu_resources.lock().unwrap();
+        let mut resources_lock = self
+            .gpu_resources
+            .lock()
+            .map_err(|_| "TextRenderer::flush: gpu_resources lock poisoned")?;
         if resources_lock.is_none() {
             *resources_lock = Some(self.init_resources(device)?);
         }
         let res = resources_lock.as_mut().unwrap();
 
-        let mut queue = self.queue.lock().unwrap();
+        let mut queue = self
+            .queue
+            .lock()
+            .map_err(|_| "TextRenderer::flush: queue lock poisoned")?;
         if queue.is_empty() {
             return Ok(());
         }
@@ -398,7 +404,10 @@ impl TextRenderer for StandardTextRenderer {
                 let cache_key = (font_uuid, c, font_size_fixed);
 
                 // Get or rasterize glyph
-                let mut cache = self.glyph_cache.lock().unwrap();
+                let mut cache = self
+                    .glyph_cache
+                    .lock()
+                    .map_err(|_| "TextRenderer::flush: glyph cache lock poisoned")?;
                 let glyph = if let Some(g) = cache.get(&cache_key) {
                     *g
                 } else if let Some((w, h, pixels)) = self.rasterize_glyph(c) {

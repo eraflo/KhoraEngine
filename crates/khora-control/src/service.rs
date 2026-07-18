@@ -243,7 +243,7 @@ impl DccService {
     /// Higher priority values mean the agent is updated first in each frame.
     /// The agent is active in all engine modes.
     pub fn register_agent(&self, agent: Arc<std::sync::Mutex<dyn Agent>>, priority: f32) {
-        let mut registry = self.registry.lock().unwrap();
+        let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
         registry.register(agent, priority);
     }
 
@@ -257,7 +257,7 @@ impl DccService {
         priority: f32,
         modes: Vec<EngineMode>,
     ) {
-        let mut registry = self.registry.lock().unwrap();
+        let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
         registry.register_for_mode(agent, priority, modes);
     }
 
@@ -318,7 +318,7 @@ impl DccService {
                         }
                         TelemetryEvent::ResourceReport(_) => {}
                         TelemetryEvent::HardwareReport(report) => {
-                            let mut ctx = context.write().unwrap();
+                            let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
                             ctx.hardware.thermal = report.thermal;
                             ctx.hardware.battery = report.battery;
                             ctx.hardware.cpu_load = report.cpu_load;
@@ -345,7 +345,7 @@ impl DccService {
                             );
                         }
                         TelemetryEvent::PhaseChange(phase_name) => {
-                            let mut ctx = context.write().unwrap();
+                            let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
                             if let Some(new_mode) = EngineMode::from_name(&phase_name) {
                                 log::debug!("DCC Mode: {:?} → {:?}", ctx.mode, new_mode);
                                 ctx.mode = new_mode;
@@ -415,7 +415,7 @@ impl DccService {
 
                 // 2. Perform Analysis & Arbitration
                 let (mut report, mut ctx_copy) = {
-                    let mut ctx = context.write().unwrap();
+                    let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
                     // Fold the latest tracking-allocator telemetry into the
                     // context so memory pressure influences the budget alongside
                     // thermal/battery (the allocator's data drives a decision).
@@ -514,7 +514,7 @@ impl DccService {
 
                 // 3. GORNA Negotiation
                 if report.needs_negotiation || !initial_negotiation_done || replaying {
-                    let registry_lock = registry.lock().unwrap();
+                    let registry_lock = registry.lock().unwrap_or_else(|e| e.into_inner());
                     if !registry_lock.is_empty() {
                         let agents: Vec<_> = registry_lock.iter().cloned().collect();
                         drop(registry_lock);
@@ -617,7 +617,7 @@ impl DccService {
 
     /// Returns the current context.
     pub fn get_context(&self) -> Context {
-        self.context.read().unwrap().clone()
+        self.context.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Returns a shared handle to the live context.

@@ -40,7 +40,7 @@ impl GpuMonitor {
 
     /// Returns the latest detailed GPU performance report.
     pub fn get_gpu_report(&self) -> Option<GpuReport> {
-        *self.last_frame_stats.lock().unwrap()
+        *self.last_frame_stats.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Update performance stats from frame timing data
@@ -73,7 +73,7 @@ impl GpuMonitor {
             triangles_rendered: render_stats.triangles_rendered,
         };
 
-        let mut last_stats = self.last_frame_stats.lock().unwrap();
+        let mut last_stats = self.last_frame_stats.lock().unwrap_or_else(|e| e.into_inner());
         *last_stats = Some(report);
     }
 }

@@ -463,13 +463,13 @@ impl World {
         // 1. Try to fetch the strategy plan from the cache.
         // We cache the execution logic (Native vs Transversal), not the page indices.
         let plan = {
-            let cache = self.planner.query_cache.read().unwrap();
+            let cache = self.planner.query_cache.read().unwrap_or_else(|e| e.into_inner());
             if let Some(plan) = cache.get(&type_ids) {
                 plan.clone()
             } else {
                 drop(cache);
                 let new_plan = self.analyze_query(&type_ids);
-                let mut cache = self.planner.query_cache.write().unwrap();
+                let mut cache = self.planner.query_cache.write().unwrap_or_else(|e| e.into_inner());
                 cache.insert(type_ids.clone(), new_plan.clone());
                 new_plan
             }
@@ -503,13 +503,13 @@ impl World {
 
         // 1. Get strategy from cache
         let plan = {
-            let cache = self.planner.query_cache.read().unwrap();
+            let cache = self.planner.query_cache.read().unwrap_or_else(|e| e.into_inner());
             if let Some(plan) = cache.get(&type_ids) {
                 plan.clone()
             } else {
                 drop(cache);
                 let new_plan = self.analyze_query(&type_ids);
-                let mut cache = self.planner.query_cache.write().unwrap();
+                let mut cache = self.planner.query_cache.write().unwrap_or_else(|e| e.into_inner());
                 cache.insert(type_ids.clone(), new_plan.clone());
                 new_plan
             }
@@ -719,11 +719,17 @@ impl World {
         // 4. Perform the migration
         let dest_row_index;
         unsafe {
+            // SAFETY: when an old location exists it lives on a different page
+            // than `dest_page_id` (the equal-page case is unreachable — a
+            // differing signature guarantees a different page), so `src_page`
+            // and `dest_page` are borrowed disjointly through raw pointers into
+            // `storage.pages`.
             let (src_page_opt, dest_page) = if let Some(loc) = old_location_opt {
                 if loc.page_id == dest_page_id {
-                    unreachable!(); // Should be caught by signature check above
+                    unreachable!(
+                        "same-page migration must be caught by the earlier signature check"
+                    );
                 } else {
-                    // This unsafe block is needed to get mutable access to two different pages
                     let all_pages_ptr = self.storage.pages.as_mut_ptr();
                     let dest_page = &mut *all_pages_ptr.add(dest_page_id as usize);
                     let src_page = &*all_pages_ptr.add(loc.page_id as usize);

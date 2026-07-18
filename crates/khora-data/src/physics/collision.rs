@@ -14,12 +14,11 @@
 
 //! Broadphase collision-pair scratch.
 //!
-//! Used to be an ECS [`Component`](khora_macros::Component) that the
-//! `NativeBroadphaseLane` spawned as a singleton entity — that polluted
-//! the editor scene tree and forced lanes to perform structural
-//! mutations on the world. Now lives as plain data inside an
-//! `Arc<Mutex<CollisionPairs>>` [`Resource`](khora_core::Resources)
-//! shared between the broadphase and resolution lanes.
+//! Plain data (never an ECS component, to keep it out of the editor scene
+//! tree and off the structural-mutation path) meant to live as an
+//! `Arc<Mutex<CollisionPairs>>` [`Resource`](khora_core::Resources). It has
+//! no consumer today — the experimental native broadphase/solver lanes that
+//! used it were removed — but is kept as a reusable serializable type.
 
 use bincode::{Decode, Encode};
 use khora_core::ecs::entity::EntityId;
@@ -36,9 +35,9 @@ pub struct CollisionPair {
 
 /// Sink of potential collision pairs identified during broadphase.
 ///
-/// Lives in [`khora_core::Resources`] as `Arc<Mutex<CollisionPairs>>`.
-/// `NativeBroadphaseLane::generate_pairs` overwrites the inner `pairs`
-/// vector each frame; `NativeSolverLane::solve_collisions` reads it.
+/// Intended to live in [`khora_core::Resources`] as
+/// `Arc<Mutex<CollisionPairs>>`: a broadphase pass overwrites the inner
+/// `pairs` vector each frame and a resolution pass reads it.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CollisionPairs {
     /// List of potential collision pairs detected this frame.

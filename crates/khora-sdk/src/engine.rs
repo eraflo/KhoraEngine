@@ -198,12 +198,6 @@ impl<A: EngineApp> EngineCore<A> {
             .resources
             .insert(Arc::new(khora_data::ui::UiImageAtlas::new()));
 
-        // CollisionPairs — broadphase scratch shared between the (currently
-        // unused) `NativeBroadphaseLane` and `NativeSolverLane`.
-        let collision_pairs: khora_lanes::physics_lane::CollisionPairsResource =
-            Arc::new(Mutex::new(khora_data::physics::CollisionPairs::default()));
-        runtime.resources.insert(collision_pairs);
-
         // Create the game world
         let mut game_world = GameWorld::new();
 

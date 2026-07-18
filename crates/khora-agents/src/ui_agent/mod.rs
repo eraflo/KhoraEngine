@@ -27,7 +27,7 @@
 //! `Resource`). The agent owns **no** GPU state and no buffered output.
 
 use std::any::Any;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
@@ -41,12 +41,10 @@ use khora_core::lane::{ColorTarget, Lane, LaneContext, Slot};
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::api::text::TextRenderer;
 use khora_core::renderer::GraphicsDevice;
-use khora_core::ui::LayoutSystem;
 use khora_data::assets::Assets;
 use khora_data::render::{PassDescriptor, ResourceId, SharedFrameGraph};
 use khora_data::ui::{UiAtlasMap, UiImageAtlas, UiScene};
 use khora_lanes::render_lane::UiRenderLane;
-use khora_lanes::ui_lane::StandardUiLane;
 
 /// The agent responsible for the UI subsystem (`LaneKind::Ui`).
 ///
@@ -57,8 +55,6 @@ use khora_lanes::ui_lane::StandardUiLane;
 /// per-frame `UiScene`) is looked up from `EngineContext::runtime` per
 /// frame.
 pub struct UiAgent {
-    /// Layout strategy lane.
-    layout_lane: Option<Box<dyn Lane>>,
     /// UI render strategy lane.
     render_lane: Option<Box<dyn Lane>>,
     /// Time budget assigned by GORNA via `apply_budget`.
@@ -91,17 +87,6 @@ impl Agent for UiAgent {
     }
 
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
-        // Build the layout lane if a layout system is registered.
-        if self.layout_lane.is_none() {
-            if let Some(layout_system_svc) = context
-                .runtime
-                .backends
-                .get::<Arc<Mutex<Box<dyn LayoutSystem>>>>()
-            {
-                self.layout_lane = Some(Box::new(StandardUiLane::new(layout_system_svc.clone())));
-            }
-        }
-
         // Build the render lane and run its one-shot GPU initialization.
         if self.render_lane.is_none() {
             self.render_lane = Some(Box::new(UiRenderLane::new()));
@@ -332,7 +317,6 @@ impl Agent for UiAgent {
 impl Default for UiAgent {
     fn default() -> Self {
         Self {
-            layout_lane: None,
             render_lane: None,
             time_budget: Duration::ZERO,
             current_strategy: StrategyId::Balanced,

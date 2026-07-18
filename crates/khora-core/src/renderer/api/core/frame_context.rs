@@ -164,17 +164,17 @@ impl FrameContext {
 
     /// Inserts a value into the blackboard, replacing any existing value of the same type.
     pub fn insert<T: Send + Sync + 'static>(&self, value: T) {
-        self.data.lock().unwrap().insert(value);
+        self.data.lock().unwrap_or_else(|e| e.into_inner()).insert(value);
     }
 
     /// Retrieves a cloned Arc of a value of the given type, if present.
     pub fn get<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
-        self.data.lock().unwrap().get::<T>()
+        self.data.lock().unwrap_or_else(|e| e.into_inner()).get::<T>()
     }
 
     /// Returns true if a value of type `T` is stored.
     pub fn contains<T: Send + Sync + 'static>(&self) -> bool {
-        self.data.lock().unwrap().contains::<T>()
+        self.data.lock().unwrap_or_else(|e| e.into_inner()).contains::<T>()
     }
 
     // ─── Stage synchronization ──────────────────────────────────
@@ -185,7 +185,7 @@ impl FrameContext {
     /// `get::<StageHandle<T>>()` to wait for or signal completion.
     pub fn insert_stage<T: Send + Sync + 'static>(&self) -> StageHandle<T> {
         let handle = StageHandle::<T>::new();
-        self.data.lock().unwrap().insert(handle.clone());
+        self.data.lock().unwrap_or_else(|e| e.into_inner()).insert(handle.clone());
         handle
     }
 

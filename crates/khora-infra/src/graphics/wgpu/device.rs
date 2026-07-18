@@ -490,10 +490,12 @@ impl WgpuDevice {
         };
         if let Some(submission_index) = idx {
             if let Ok(context_guard) = self.internal.context.lock() {
-                let _ = context_guard.device.poll(wgpu::PollType::Wait {
+                if let Err(e) = context_guard.device.poll(wgpu::PollType::Wait {
                     submission_index: Some(submission_index),
                     timeout: None,
-                });
+                }) {
+                    log::warn!("WgpuDevice::wait_for_last_submission: device poll failed: {e:?}");
+                }
             }
         }
     }

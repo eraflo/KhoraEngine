@@ -167,7 +167,14 @@ impl GameWorld {
     /// If the entity already has a component of this type, the old value
     /// is replaced.
     pub fn add_component<C: Component>(&mut self, entity: EntityId, component: C) {
-        let _ = self.world.add_component(entity, component);
+        if let Err(e) = self.world.add_component(entity, component) {
+            log::warn!(
+                "GameWorld::add_component<{}>({:?}) failed: {:?}",
+                std::any::type_name::<C>(),
+                entity,
+                e
+            );
+        }
     }
 
     /// Removes a single component `C` from `entity`. Other components on
@@ -370,14 +377,14 @@ impl GameWorld {
                 if let Some(existing) = self.world.get_mut::<Parent>(child) {
                     existing.0 = np;
                 } else {
-                    let _ = self.world.add_component(child, Parent(np));
+                    self.add_component(child, Parent(np));
                 }
             }
             None => {
                 // Surgical: drop only the `Parent` component, keep the
                 // entity's other Spatial components (Transform,
                 // GlobalTransform, Name, …) intact.
-                let _ = self.world.remove_component::<Parent>(child);
+                self.remove_component::<Parent>(child);
             }
         }
 
@@ -388,7 +395,7 @@ impl GameWorld {
                     children.0.push(child);
                 }
             } else {
-                let _ = self.world.add_component(np, Children(vec![child]));
+                self.add_component(np, Children(vec![child]));
             }
         }
     }

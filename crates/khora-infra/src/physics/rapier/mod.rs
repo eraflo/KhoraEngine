@@ -268,7 +268,7 @@ impl PhysicsProvider for RapierPhysicsWorld {
     }
 
     fn get_collision_events(&self) -> Vec<CollisionEvent> {
-        let mut events = self.events.lock().unwrap();
+        let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
         std::mem::take(&mut *events)
     }
 

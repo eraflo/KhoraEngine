@@ -329,7 +329,12 @@ impl CommandEncoder for WgpuCommandEncoder {
         let timestamp_writes = match pass_index {
             0 => concrete_profiler.compute_pass_a_timestamp_writes(),
             1 => concrete_profiler.compute_pass_b_timestamp_writes(),
-            _ => panic!("Invalid profiler pass index"),
+            other => {
+                log::error!(
+                    "begin_profiler_compute_pass: invalid profiler pass index {other}, defaulting to pass A"
+                );
+                concrete_profiler.compute_pass_a_timestamp_writes()
+            }
         };
 
         let pass =

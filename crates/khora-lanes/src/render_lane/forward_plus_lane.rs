@@ -536,7 +536,9 @@ impl ForwardPlusLane {
                 config.tile_size.pixels(),
                 config.max_lights_per_tile,
             ];
-            let _ = device.write_buffer(tile_buffer, 0, bytemuck::cast_slice(&tile_info));
+            if let Err(e) = device.write_buffer(tile_buffer, 0, bytemuck::cast_slice(&tile_info)) {
+                log::error!("ForwardPlusLane::render: tile info buffer write failed: {e:?}");
+            }
         }
 
         // 4. Update Light Data — fold per-light shadow metadata from the
@@ -578,7 +580,9 @@ impl ForwardPlusLane {
             .collect();
 
         if let Some(light_buffer) = resources.light_buffer {
-            let _ = device.write_buffer(light_buffer, 0, bytemuck::cast_slice(&lights));
+            if let Err(e) = device.write_buffer(light_buffer, 0, bytemuck::cast_slice(&lights)) {
+                log::error!("ForwardPlusLane::render: light data buffer write failed: {e:?}");
+            }
         }
 
         // Parallel shadow view-projection matrices — directional / spot
@@ -597,8 +601,13 @@ impl ForwardPlusLane {
 
         if let Some(svp_buffer) = resources.shadow_view_projs_buffer {
             if !shadow_view_projs.is_empty() {
-                let _ =
-                    device.write_buffer(svp_buffer, 0, bytemuck::cast_slice(&shadow_view_projs));
+                if let Err(e) =
+                    device.write_buffer(svp_buffer, 0, bytemuck::cast_slice(&shadow_view_projs))
+                {
+                    log::error!(
+                        "ForwardPlusLane::render: shadow view-proj buffer write failed: {e:?}"
+                    );
+                }
             }
         }
 
@@ -621,7 +630,11 @@ impl ForwardPlusLane {
                 _padding: [0.0; 2],
             };
 
-            let _ = device.write_buffer(culling_buffer, 0, bytemuck::bytes_of(&culling_data));
+            if let Err(e) =
+                device.write_buffer(culling_buffer, 0, bytemuck::bytes_of(&culling_data))
+            {
+                log::error!("ForwardPlusLane::render: culling uniforms buffer write failed: {e:?}");
+            }
         }
 
         // Run Culling Compute Pass

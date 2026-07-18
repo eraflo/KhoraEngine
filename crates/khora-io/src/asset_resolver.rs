@@ -196,14 +196,21 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
     } in pending
     {
         if let Some(store) = &store {
-            store.write().unwrap().insert(uuid, handle.clone());
+            store
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(uuid, handle.clone());
         }
         let component = HandleComponent { handle, uuid };
         if had_stale_handle {
             world.set_component(entity, component);
-            let _ = world.remove_component::<HandleComponent<GpuMaterial>>(entity);
-        } else {
-            let _ = world.add_component(entity, component);
+            if let Err(e) = world.remove_component::<HandleComponent<GpuMaterial>>(entity) {
+                log::trace!(
+                    "asset_resolver: dropping stale GpuMaterial handle on {entity:?} skipped: {e:?}"
+                );
+            }
+        } else if let Err(e) = world.add_component(entity, component) {
+            log::warn!("asset_resolver: attaching GpuMaterial handle on {entity:?} failed: {e:?}");
         }
     }
 }
@@ -294,14 +301,21 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime) {
     } in pending
     {
         if let Some(store) = &store {
-            store.write().unwrap().insert(uuid, handle.clone());
+            store
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(uuid, handle.clone());
         }
         let component = HandleComponent { handle, uuid };
         if had_stale_handle {
             world.set_component(entity, component);
-            let _ = world.remove_component::<HandleComponent<GpuMesh>>(entity);
-        } else {
-            let _ = world.add_component(entity, component);
+            if let Err(e) = world.remove_component::<HandleComponent<GpuMesh>>(entity) {
+                log::trace!(
+                    "asset_resolver: dropping stale GpuMesh handle on {entity:?} skipped: {e:?}"
+                );
+            }
+        } else if let Err(e) = world.add_component(entity, component) {
+            log::warn!("asset_resolver: attaching GpuMesh handle on {entity:?} failed: {e:?}");
         }
     }
 }

@@ -8,6 +8,21 @@ Deep history lives in git and `docs/plans/`.
 - **Build**: clean (all crates compile, 0 errors); clippy 0 errors.
 - **Tests**: ~866 passing, ~29 ignored, 0 failures. Treat the live `cargo test --workspace` count as truth.
 
+## Latest work (2026-07-18) — Audit remediation (robustness + dead-code sweep)
+- Plan/recherche : `docs/plans/2026-07-18_codebase-audit-remediation.md`, `docs/research/2026-07-18_codebase-audit.md`.
+- **Results faillibles jetés** (`let _ =`) désormais gérés : `write_buffer` (`forward_plus_lane`, pattern
+  `if let Err → log::error`), `add_component` (`game_world`, `asset_resolver`, `projection` → logués),
+  `device.poll` (`wgpu/device.rs`). `// SAFETY:` ajouté à `world.rs` (page-migration).
+- **Locks poison-safe workspace-wide** : ~30 sites `.lock()/.read()/.write().unwrap()` → idiome
+  `.unwrap_or_else(|e| e.into_inner())` (recovery, ne crashe jamais) ; `text.rs::flush` propage via `?`.
+  Helpers existants : `khora_core::lane::lock` + macro `lock_or_log!` (khora-lanes).
+- **Hygiène** : `command.rs` profiler pass index → fallback logué ; `unreachable!()` gardés auto-documentés.
+- **Code mort supprimé** : `physics_lane/native_lanes.rs` (orphelin, violait CLAD R2) + son wiring
+  `CollisionPairs` mort dans `engine.rs` ; module `ui_lane`/`StandardUiLane` + champ `layout_lane` de
+  `UiAgent` (chemin jamais exécuté, violation CLAD R2 latente éliminée) ; imports morts `lit_forward_lane`.
+- **Reste** : Phase 6 (unification statut agent, design Option A) non faite — architectural, gated à part.
+- Vérif : `cargo test --workspace` 866 passed / 0 failed ; `cargo clippy --workspace` clean.
+
 ## Latest work (2026-07-15) — Asset explorer + stable asset identity
 - **Stable asset UUIDs via a registry** (`khora-io/src/asset/id_registry.rs`, `AssetIdRegistry`): UUIDs were
   always `new_v5(rel_path)`; now that's only the *default*. `<project>/.khora/asset-registry.ron` (RON, one
@@ -69,9 +84,9 @@ Deep history lives in git and `docs/plans/`.
 - **Bugfix — 5-bind-group Forward+ pipeline**: F+ briefly used 5 groups; `max_bind_groups == 4` made the
   pipeline invalid (scene stopped rendering). Fixed by the canonical 4-bind-group convention
   (`conventions.md §10`): group 3 = whole lighting domain.
-- Remaining TODOs tracked in `docs/plans/render-lanes-followups.md` (visual validation,
-  Emissive/Wireframe `execute` bodies, real PBR material struct, LitForward CLAD refactor, GORNA
-  `Custom` strategy support).
+- Remaining render-lane TODOs (no separate tracking doc — read the in-code `// TODO`s): Emissive/Wireframe
+  `execute` draw bodies (`emissive_lane.rs`, `wireframe_lane.rs`), LitForward CLAD refactor, GORNA `Custom`
+  strategy support.
 
 ## Earlier milestones (condensed; see git history)
 - **Substrate / Flow / AGDF refactor**: `LaneBus`/`OutputDeck`/`TickPhase`/`DataSystemRegistration`;
@@ -84,18 +99,18 @@ Deep history lives in git and `docs/plans/`.
   extract/instantiate (`.kprefab`), drag-and-drop reparenting, Save-As goal picker.
 
 ## Open / deferred work (verified against code, 2026-06-04)
-- **`physics_lane` reads the World directly** — `physics_lane/native_lanes.rs` still uses `world.query`/
-  `world.get_many_mut` for broadphase and the solver, instead of an `OutputDeck` writeback channel. This is
-  the deferred CLAD-purity migration (audio already routes through the mix bus). Flow/bus input side is ready.
 - **`EmissiveLane` / `WireframeLane` `execute` are no-ops** — pipelines compose at init but the draw bodies
-  are TODO (`emissive_lane.rs:258`, `wireframe_lane.rs:257`) pending gating data (`MaterialKind::Emissive`
-  flag / a debug flag). Tracked in `docs/plans/render-lanes-followups.md`.
+  are TODO (`emissive_lane.rs`, `wireframe_lane.rs`) pending gating data (`MaterialKind::Emissive`
+  flag / a debug flag).
 - **Minor TODOs**: GPU VRAM capacity detection + dynamic adapter name (`wgpu/device.rs`), GPU timestamp
   writes (`wgpu/command.rs`), Taffy uses a hardcoded 1920px viewport width (`ui/taffy/taffy_layout.rs`).
 
 > Verify the live state before asserting — these are code-grounded as of the date above, not runtime claims.
 > Resolved (do not re-list as issues): Vulkan semaphore errors are handled by the single-acquire frame
 > lifecycle (`wgpu/device.rs`); egui↔wgpu-28 is solved by the custom `EguiWgpuRenderer` in `khora-infra`.
+> The orphan `physics_lane/native_lanes.rs` (experimental broadphase/solver that queried the World
+> directly) was **removed** rather than migrated; the real physics path routes through `PhysicsProvider`
+> + the `physics_world_writeback` DataSystem.
 
 ## Architecture decisions
 See [`decisions.md`](./decisions.md). Crate count is **16** (13 `khora-*` + sandbox + xtask + hub);
