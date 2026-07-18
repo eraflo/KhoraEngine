@@ -125,11 +125,29 @@ because they write the shared `FrameGraph`).
   So `[Ui, Overlay]` is now a valid concurrent wave (Ui the lone SharedWorld,
   Overlay Isolated), with Render its own wave before them.
 
+## Update — parallel execution ENABLED (2026-07-18)
+
+`EngineCore` bootstrap now calls `scheduler.set_parallel_execution(true)`. With
+the current agents this runs `[Ui, Overlay]` as a concurrent wave every frame
+(Ui the lone `SharedWorld` atlas-writer, Overlay `Isolated`), Render and the
+rest serial. Both agents are budgeted ~0.5ms, so overlapping them nets ~0.5ms
+against a ~40µs scoped-thread spawn cost — a real win. Validated in the sandbox:
+900+ frames, rendering unchanged, no validation errors / panics / deadlocks /
+mutex poisoning; 842 tests + clippy green.
+
 ## Remaining path (follow-ups)
 
-1. **Enable + validate** — flip `set_parallel_execution(true)` in the frame
-   loop and validate determinism/visual parity on a scene exercising Ui +
-   Overlay concurrently (currently off by default).
+1. **Persistent worker pool** — replace the per-wave `std::thread::scope`
+   spawn with a pool spawned once, to amortize the (small) spawn cost when
+   waves grow. Needs the frame's `&LaneBus` reachable as `'static`/`Arc` or a
+   scoped-pool primitive.
+2. **GORNA fit → critical path** — `fit_budgets` still sums per-agent estimates,
+   so a concurrent wave is costed as its *sum* rather than its *max*. This is
+   conservative (it can only under-allocate, never overrun), but leaves quality
+   on the table; the fit should budget a wave by its critical path. Requires the
+   wave structure at arbitration time (today the DCC cold path doesn't see it).
+3. **Broader validation** — exercise the live `[Ui, Overlay]` wave in the editor
+   (rich UI + gizmos) and confirm determinism/visual parity there too.
 2. **Per-agent deck-write declarations** — replace the defensive
    collision-log in `merge_from` with a compile-of-schedule check that two
    `Isolated` agents in a wave never write the same slot type.

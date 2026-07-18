@@ -297,6 +297,13 @@ impl<A: EngineApp> EngineCore<A> {
         // cost model and layout advisor consume.
         scheduler.set_telemetry_sender(dcc.event_sender());
 
+        // Run phases through the parallel wave executor: agents declaring
+        // `AgentAccess::Isolated` / `SharedWorld` (no `&mut World`, disjoint
+        // outputs) run concurrently within a phase, the rest serially. With
+        // the current agents this makes `[Ui, Overlay]` a concurrent wave;
+        // pass submission stays deterministic (fixed scene→ui→overlay fold).
+        scheduler.set_parallel_execution(true);
+
         // Inject custom phases from the app
         let custom_phases = app.custom_phases();
         for phase in custom_phases {
