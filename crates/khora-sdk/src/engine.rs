@@ -550,6 +550,28 @@ impl<A: EngineApp> EngineCore<A> {
             .get::<SharedFrameGraph>()
             .map(|arc| (*arc).clone());
 
+        // Fold the agents' recorded passes (buffered in the scheduler's deck by
+        // Render/Ui/Overlay instead of locking the shared graph) into the
+        // FrameGraph in a fixed layer order — scene, then UI, then overlay
+        // compositing. This reproduces the previous add_pass insertion order,
+        // so the topological submit order is unchanged.
+        if let (Some(graph), Some(scheduler)) = (&frame_graph, self.scheduler.as_mut()) {
+            use khora_data::render::{OverlayPassSlot, ScenePassSlot, UiPassSlot};
+            let deck = scheduler.deck_mut();
+            let scene = deck.take::<ScenePassSlot>().0;
+            let ui = deck.take::<UiPassSlot>().0;
+            let overlay = deck.take::<OverlayPassSlot>().0;
+            if scene.is_some() || ui.is_some() || overlay.is_some() {
+                if let Ok(mut fg) = graph.lock() {
+                    for pass in [scene, ui, overlay].into_iter().flatten() {
+                        fg.add_pass(pass.descriptor, pass.command_buffer);
+                    }
+                } else {
+                    log::error!("submit_passes: FrameGraph mutex poisoned, dropping frame passes");
+                }
+            }
+        }
+
         if presents {
             if let (Some(graph), Some(device)) = (&frame_graph, &device) {
                 submit_frame_graph(graph, device.as_ref());

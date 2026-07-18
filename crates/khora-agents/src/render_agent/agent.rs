@@ -43,7 +43,8 @@ use khora_core::EngineContext;
 use khora_data::assets::Assets;
 use khora_data::ecs::World;
 use khora_data::render::{
-    extract_active_camera_view, PassDescriptor, RenderWorld, ResourceId, SharedFrameGraph,
+    extract_active_camera_view, PassContribution, PassDescriptor, RenderWorld, ResourceId,
+    ScenePassSlot,
 };
 use khora_data::AssetStore;
 use khora_lanes::render_lane::{ForwardPlusLane, LitForwardLane, SimpleUnlitLane, StandardPbrLane};
@@ -272,11 +273,6 @@ impl Agent for RenderAgent {
             return;
         };
 
-        let Some(frame_graph) = context.runtime.resources.get::<SharedFrameGraph>().cloned() else {
-            log::warn!("RenderAgent: no FrameGraph in services");
-            return;
-        };
-
         // The engine inserts ColorTarget/DepthTarget/ClearColor and the shadow
         // atlas data into the per-frame FrameContext after `begin_frame()`.
         // ShadowAgent runs in OBSERVE (before OUTPUT) and publishes its atlas
@@ -373,12 +369,13 @@ impl Agent for RenderAgent {
         if shadow_atlas.is_some() {
             descriptor = descriptor.reads(ResourceId::ShadowAtlas);
         }
-        match frame_graph.lock() {
-            Ok(mut g) => g.add_pass(descriptor, cmd_buf),
-            Err(_) => {
-                log::error!("RenderAgent: FrameGraph mutex poisoned, dropping ScenePass");
-            }
-        };
+        // Buffer the pass into the deck; the engine folds it into the FrameGraph
+        // (scene → ui → overlay order) after the wave, so the agent never locks
+        // the shared graph.
+        context.deck.slot::<ScenePassSlot>().0 = Some(PassContribution {
+            descriptor,
+            command_buffer: cmd_buf,
+        });
     }
 
     fn report_status(&self) -> AgentStatus {

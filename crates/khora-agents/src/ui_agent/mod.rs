@@ -30,7 +30,7 @@ use std::any::Any;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase, ExecutionTiming};
 use khora_core::context::EngineContext;
 use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
@@ -42,7 +42,7 @@ use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::api::text::TextRenderer;
 use khora_core::renderer::GraphicsDevice;
 use khora_data::assets::Assets;
-use khora_data::render::{PassDescriptor, ResourceId, SharedFrameGraph};
+use khora_data::render::{PassContribution, PassDescriptor, ResourceId, UiPassSlot};
 use khora_data::ui::{UiAtlasMap, UiImageAtlas, UiScene};
 use khora_lanes::render_lane::UiRenderLane;
 
@@ -66,6 +66,15 @@ pub struct UiAgent {
 impl Agent for UiAgent {
     fn id(&self) -> AgentId {
         AgentId::Ui
+    }
+
+    /// Reads the `LaneBus` and records its own encoder, but mutates the shared
+    /// `UiImageAtlas` (GPU glyph/image uploads). It never touches the `World`,
+    /// but the shared-resource write puts it in the `SharedWorld` tier — the
+    /// scheduler runs at most one such agent per wave (alongside `Isolated`
+    /// agents), so its atlas writes never race another shared-resource writer.
+    fn access(&self) -> AgentAccess {
+        AgentAccess::SharedWorld
     }
 
     fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
@@ -144,11 +153,6 @@ impl Agent for UiAgent {
         // Read the per-frame UiScene from the LaneBus (UiFlow).
         let Some(ui_scene): Option<&UiScene> = context.bus.get() else {
             log::warn!("UiAgent: no UiScene in LaneBus (UiFlow not run?)");
-            return;
-        };
-
-        let Some(frame_graph) = context.runtime.resources.get::<SharedFrameGraph>().cloned() else {
-            log::warn!("UiAgent: no FrameGraph in services");
             return;
         };
 
@@ -271,17 +275,14 @@ impl Agent for UiAgent {
             return;
         };
 
-        match frame_graph.lock() {
-            Ok(mut g) => g.add_pass(
-                PassDescriptor::new("UiPass")
-                    .reads(ResourceId::Color)
-                    .writes(ResourceId::Color),
-                cmd_buf,
-            ),
-            Err(_) => {
-                log::error!("UiAgent: FrameGraph mutex poisoned, dropping UiPass");
-            }
-        };
+        // Buffer the pass into the deck; the engine folds it into the FrameGraph
+        // (after the scene pass, before overlay) once the wave completes.
+        context.deck.slot::<UiPassSlot>().0 = Some(PassContribution {
+            descriptor: PassDescriptor::new("UiPass")
+                .reads(ResourceId::Color)
+                .writes(ResourceId::Color),
+            command_buffer: cmd_buf,
+        });
     }
 
     fn report_status(&self) -> AgentStatus {

@@ -28,7 +28,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use khora_core::agent::{
-    Agent, AgentDependency, AgentImportance, DependencyKind, ExecutionPhase, ExecutionTiming,
+    Agent, AgentAccess, AgentDependency, AgentImportance, DependencyKind, ExecutionPhase,
+    ExecutionTiming,
 };
 use khora_core::control::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
@@ -40,7 +41,9 @@ use khora_core::renderer::api::scene::GpuMesh;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 use khora_data::assets::Assets;
-use khora_data::render::{PassDescriptor, RenderWorld, ResourceId, SharedFrameGraph};
+use khora_data::render::{
+    OverlayPassSlot, PassContribution, PassDescriptor, RenderWorld, ResourceId,
+};
 use khora_data::AssetStore;
 use std::sync::RwLock;
 
@@ -66,6 +69,13 @@ pub struct OverlayAgent {
 impl Agent for OverlayAgent {
     fn id(&self) -> AgentId {
         AgentId::Overlay
+    }
+
+    /// Reads only the `LaneBus` and shared read-only resources, records into its
+    /// own encoder, and buffers its pass into its `OutputDeck` — no `World`, no
+    /// shared mutable resource. Eligible to run concurrently with any wave.
+    fn access(&self) -> AgentAccess {
+        AgentAccess::Isolated
     }
 
     fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
@@ -146,10 +156,6 @@ impl Agent for OverlayAgent {
 
         let render_world: Option<&RenderWorld> = context.bus.get();
 
-        let Some(frame_graph) = context.runtime.resources.get::<SharedFrameGraph>().cloned() else {
-            return;
-        };
-
         // Read frame targets — overlay lanes draw into the same color
         // target as the main render and use the existing depth buffer
         // read-only.
@@ -229,12 +235,13 @@ impl Agent for OverlayAgent {
             let descriptor = PassDescriptor::new("OverlayPass")
                 .writes(ResourceId::Color)
                 .reads(ResourceId::Depth);
-            match frame_graph.lock() {
-                Ok(mut g) => g.add_pass(descriptor, cmd_buf),
-                Err(_) => {
-                    log::error!("OverlayAgent: FrameGraph mutex poisoned, dropping OverlayPass");
-                }
-            };
+            // Buffer into the deck; the engine folds it into the FrameGraph after
+            // the wave. With no shared-graph lock and no other shared mutable
+            // write, OverlayAgent is `AgentAccess::Isolated`.
+            context.deck.slot::<OverlayPassSlot>().0 = Some(PassContribution {
+                descriptor,
+                command_buffer: cmd_buf,
+            });
         }
     }
 

@@ -107,11 +107,29 @@ with an `Isolated` agent. Still no *live* concurrent wave in the sandbox: Render
 is alone among non-Exclusive agents in OUTPUT (Overlay/Ui remain `Exclusive`
 because they write the shared `FrameGraph`).
 
+## Update — FrameGraph isolation + concurrent-executor test landed (2026-07-18)
+
+- **Concurrent executor validated end-to-end**: a scheduler test drives
+  `execute_agents_parallel` with a `SharedWorld` reader + an `Isolated` writer
+  in one wave and asserts the reader gets a shared `&World`, the writer gets
+  none, both run, and their deck shards fold back (`concurrent_exec_tests`).
+- **FrameGraph isolation done**: Render/Ui/Overlay no longer lock the shared
+  `Mutex<FrameGraph>`. Each buffers its pass into a per-layer deck slot
+  (`ScenePassSlot` / `UiPassSlot` / `OverlayPassSlot`, khora-data), and
+  `EngineCore::submit_passes` folds them into the graph in the fixed
+  scene → ui → overlay order — reproducing the previous insertion order exactly
+  (rendering unchanged, verified in the sandbox). Access is now:
+  RenderAgent = `SharedWorld` (reads world + writes RenderSystem),
+  UiAgent = `SharedWorld` (mutates the shared `UiImageAtlas`),
+  OverlayAgent = `Isolated` (own encoder + deck slot, no shared mutable write).
+  So `[Ui, Overlay]` is now a valid concurrent wave (Ui the lone SharedWorld,
+  Overlay Isolated), with Render its own wave before them.
+
 ## Remaining path (follow-ups)
 
-1. **FrameGraph isolation** — give Overlay/Ui their own deck-shard draw lists
-   merged deterministically, so they can be `Isolated`/`SharedWorld` and form a
-   real concurrent wave with Render.
+1. **Enable + validate** — flip `set_parallel_execution(true)` in the frame
+   loop and validate determinism/visual parity on a scene exercising Ui +
+   Overlay concurrently (currently off by default).
 2. **Per-agent deck-write declarations** — replace the defensive
    collision-log in `merge_from` with a compile-of-schedule check that two
    `Isolated` agents in a wave never write the same slot type.
