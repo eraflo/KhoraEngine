@@ -60,6 +60,7 @@
 //! it calls the `khora-io`-owned `AssetService` while mutating the
 //! `khora-data` `World` + `AssetStore`.
 
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use khora_core::asset::{AssetHandle, AssetUUID, Material};
@@ -112,24 +113,42 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
     // is cloned, loaded, or hashed. Real work happens only when the authored
     // ref changed (or has no handle yet).
     let mut pending: Vec<ResolvedMaterial> = Vec::new();
+    let mut seen: HashSet<EntityId> = HashSet::new();
     {
-        let query = world.query::<(
-            EntityId,
-            &MaterialRef,
-            Option<&HandleComponent<Box<dyn Material>>>,
-        )>();
+        let query = world.query::<(EntityId, &MaterialRef)>();
 
-        for (entity, material_ref, current) in query {
+        for (entity, _) in query {
+            // The same entity can be re-yielded from an unreclaimed orphan row
+            // left by an earlier migration this frame; process it at most once
+            // so phase 2 never double-adds the handle.
+            if !seen.insert(entity) {
+                continue;
+            }
+            // Read both the authored ref and the resolved handle from the
+            // entity's *live* metadata, never the per-row values the query
+            // yielded. A migration leaves an orphaned row in the old page
+            // (reclaimed later by the async ECS-maintenance GC); until then the
+            // entity is re-yielded from that stale row, which carries an old
+            // copy of the ref and lacks the handle column — fooling this pass
+            // into re-resolving against a stale ref or re-adding a handle the
+            // entity already holds (`ComponentAlreadyExists`). `world.get`
+            // consults the live location for both.
+            let Some(material_ref) = world.get::<MaterialRef>(entity) else {
+                continue;
+            };
             let expected = material_ref.uuid();
+            let resolved_uuid = world
+                .get::<HandleComponent<Box<dyn Material>>>(entity)
+                .map(|h| h.uuid);
             // Up to date: the resolved handle already carries the authored
             // identity. Nothing to do.
-            if current.map(|h| h.uuid) == Some(expected) {
+            if resolved_uuid == Some(expected) {
                 continue;
             }
             // A stale handle is present (the authored ref changed); the new
             // handle must overwrite it in place and the GPU projection must be
             // dropped so it re-projects under the new identity.
-            let had_stale_handle = current.is_some();
+            let had_stale_handle = resolved_uuid.is_some();
 
             match material_ref {
                 MaterialRef::Inline { material, .. } => {
@@ -210,7 +229,7 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
                 );
             }
         } else if let Err(e) = world.add_component(entity, component) {
-            log::warn!("asset_resolver: attaching GpuMaterial handle on {entity:?} failed: {e:?}");
+            log::warn!("asset_resolver: attaching material handle on {entity:?} failed: {e:?}");
         }
     }
 }
@@ -224,18 +243,29 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime) {
     // clone, or hash); geometry is regenerated only when the authored ref
     // changed (or has no handle yet).
     let mut pending: Vec<ResolvedMesh> = Vec::new();
+    let mut seen: HashSet<EntityId> = HashSet::new();
     {
-        let query =
-            world.query::<(EntityId, &MeshRef, Option<&HandleComponent<Mesh>>)>();
+        let query = world.query::<(EntityId, &MeshRef)>();
 
-        for (entity, mesh_ref, current) in query {
-            let expected = mesh_ref.uuid();
-            // Up to date: the resolved handle already carries the authored
-            // identity. Nothing to do.
-            if current.map(|h| h.uuid) == Some(expected) {
+        for (entity, _) in query {
+            // See `resolve_materials`: dedup re-yields from orphan rows, and
+            // read both the authored ref and the resolved handle from the
+            // entity's live metadata (orphan rows carry stale ref copies and
+            // lack the handle column).
+            if !seen.insert(entity) {
                 continue;
             }
-            let had_stale_handle = current.is_some();
+            let Some(mesh_ref) = world.get::<MeshRef>(entity) else {
+                continue;
+            };
+            let expected = mesh_ref.uuid();
+            let resolved_uuid = world.get::<HandleComponent<Mesh>>(entity).map(|h| h.uuid);
+            // Up to date: the resolved handle already carries the authored
+            // identity. Nothing to do.
+            if resolved_uuid == Some(expected) {
+                continue;
+            }
+            let had_stale_handle = resolved_uuid.is_some();
 
             match mesh_ref {
                 MeshRef::Procedural { kind, params, .. } => {
@@ -315,7 +345,7 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime) {
                 );
             }
         } else if let Err(e) = world.add_component(entity, component) {
-            log::warn!("asset_resolver: attaching GpuMesh handle on {entity:?} failed: {e:?}");
+            log::warn!("asset_resolver: attaching mesh handle on {entity:?} failed: {e:?}");
         }
     }
 }

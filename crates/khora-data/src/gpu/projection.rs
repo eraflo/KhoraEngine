@@ -21,9 +21,16 @@
 //!
 //! After `sync_all()` returns for a given frame, every entity that has a
 //! `HandleComponent<Mesh>` also has a `HandleComponent<GpuMesh>`, and the
-//! shared `GpuCache` is fully up to date.  This call is idempotent: entities
-//! already holding a `HandleComponent<GpuMesh>` are skipped via the
-//! `Without<HandleComponent<GpuMesh>>` query filter.
+//! shared `GpuCache` is fully up to date.  This call is idempotent: the
+//! `Without<HandleComponent<GpuMesh>>` query filter is a cheap page-level
+//! pre-filter, but the authoritative skip is a per-entity metadata re-check
+//! (`world.get`). The page-level filter alone is not sufficient: a migration
+//! leaves an orphaned row in the entity's old page (reclaimed later by the
+//! async ECS maintenance GC), and that page's signature still lacks
+//! `HandleComponent<GpuMesh>`, so it keeps matching `Without` and re-yields
+//! the stale row until the hole is reclaimed. The metadata re-check consults
+//! the entity's live location, so an already-handled entity is skipped
+//! regardless of any lingering orphan row.
 //!
 //! Materials are projected per-variant with **no fallback textures**: a
 //! material's [`ShaderVariantKey`] is exactly the set of maps it declares, and
@@ -34,7 +41,7 @@
 //! and skipped rather than silently substituted.
 
 use crate::{
-    ecs::{AddComponentError, HandleComponent, MaterialRef, Without, World},
+    ecs::{HandleComponent, MaterialRef, Without, World},
     gpu::AssetStore,
 };
 use khora_core::{
@@ -109,6 +116,15 @@ impl ProjectionRegistry {
             )>();
 
             for (entity_id, mesh_handle_comp, _) in query {
+                // The `Without` page-filter can still yield an entity whose
+                // GPU handle lives in a not-yet-reclaimed orphan row of its
+                // old page. Re-check the entity's authoritative metadata so we
+                // never collect — and never redundantly `add_component` — an
+                // entity that already holds the handle.
+                if world.get::<HandleComponent<GpuMesh>>(entity_id).is_some() {
+                    continue;
+                }
+
                 let uuid = mesh_handle_comp.uuid;
 
                 // Cache miss: upload to GPU for the first time.
@@ -138,13 +154,11 @@ impl ProjectionRegistry {
         }
 
         // Phase 2: mutate the ECS world (no longer borrowed by the query above).
+        // The phase-1 metadata re-check guarantees every entity here genuinely
+        // lacks the handle, so a failure is now always unexpected.
         for (entity_id, component) in pending {
-            // `ComponentAlreadyExists` is the benign idempotent case (the handle
-            // is already attached); only surface genuinely unexpected failures.
             if let Err(e) = world.add_component(entity_id, component) {
-                if !matches!(e, AddComponentError::ComponentAlreadyExists) {
-                    log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");
-                }
+                log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");
             }
         }
     }
@@ -204,7 +218,9 @@ impl ProjectionRegistry {
     /// Runs once per frame in `TickPhase::PreExtract`, after `sync_all`
     /// (so every rendered entity already has a `HandleComponent<GpuMesh>`)
     /// and before `RenderFlow` projects the world. Idempotent: entities
-    /// already carrying a `HandleComponent<GpuMaterial>` are skipped.
+    /// already carrying a `HandleComponent<GpuMaterial>` are skipped via a
+    /// per-entity metadata re-check (the `Without` page-filter alone can
+    /// re-yield an unreclaimed orphan row — see [`Self::sync_all`]).
     ///
     /// Only entities with a resolved `HandleComponent<Box<dyn Material>>` are
     /// projected. Each material's [`ShaderVariantKey`] is exactly the maps it
@@ -242,6 +258,14 @@ impl ProjectionRegistry {
             )>();
             let textures = cpu_textures.read().unwrap_or_else(|e| e.into_inner());
             for (entity_id, material_handle, _) in query {
+                // As in `sync_all`: the `Without` page-filter can re-yield an
+                // entity whose `GpuMaterial` handle sits in an unreclaimed
+                // orphan row. Re-check the entity's authoritative metadata to
+                // avoid a redundant `add_component`.
+                if world.get::<HandleComponent<GpuMaterial>>(entity_id).is_some() {
+                    continue;
+                }
+
                 let uuid = material_handle.uuid;
                 let material: &dyn Material = &**material_handle.handle;
 
@@ -303,13 +327,11 @@ impl ProjectionRegistry {
             }
         }
 
+        // The phase-1 metadata re-check guarantees every entity here genuinely
+        // lacks the handle, so a failure is now always unexpected.
         for (entity_id, component) in pending {
-            // `ComponentAlreadyExists` is the benign idempotent case (the handle
-            // is already attached); only surface genuinely unexpected failures.
             if let Err(e) = world.add_component(entity_id, component) {
-                if !matches!(e, AddComponentError::ComponentAlreadyExists) {
-                    log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");
-                }
+                log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");
             }
         }
     }
