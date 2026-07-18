@@ -31,12 +31,12 @@
 //! lit consumer lanes are agnostic about which one ran.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
 use khora_core::control::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-    StrategyOption,
+    measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
+    NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
 use khora_core::lane::{LaneContext, LaneRegistry, Ref, Slot};
 use khora_core::renderer::api::core::FrameContext;
@@ -105,14 +105,11 @@ pub struct ShadowAgent {
     strategy: ShadowStrategy,
     /// Time budget assigned by GORNA via `apply_budget`.
     time_budget: Duration,
-    /// Duration of the last shadow pass.
-    last_frame_time: Duration,
-    /// Total number of shadow frames rendered.
-    frame_count: u64,
     /// Current GORNA strategy ID applied via `apply_budget`.
     current_strategy: StrategyId,
-    /// Number of `execute` invocations attempted.
-    execute_attempts: u64,
+    /// Shared, scheduler-written per-agent frame metrics, read in
+    /// `report_status`; the agent holds no per-frame counters.
+    frame_status: Option<AgentFrameStatusMap>,
 }
 
 impl Agent for ShadowAgent {
@@ -190,6 +187,12 @@ impl Agent for ShadowAgent {
     }
 
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
+        self.frame_status = context
+            .runtime
+            .resources
+            .get::<AgentFrameStatusMap>()
+            .cloned();
+
         // One-shot lane GPU initialization for every registered strategy.
         // Strategies are cheap to keep idle — only the selected lane
         // executes per frame, but each one needs its own resources ready
@@ -226,9 +229,6 @@ impl Agent for ShadowAgent {
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
-        self.execute_attempts += 1;
-        let frame_start = Instant::now();
-
         // Look up everything from services — the agent owns none of it.
         let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
             return;
@@ -307,30 +307,22 @@ impl Agent for ShadowAgent {
         } else {
             log::error!("ShadowAgent: encoder.finish() returned None — skipping shadow submission");
         }
-
-        self.last_frame_time = frame_start.elapsed();
-        self.frame_count += 1;
     }
 
     fn report_status(&self) -> AgentStatus {
-        let health_score = if self.time_budget.is_zero() || self.frame_count == 0 {
+        let measured_time_ms = measured_frame_time_ms(&self.frame_status, self.id());
+        let health_score = if self.time_budget.is_zero() || measured_time_ms <= 0.0 {
             1.0
         } else {
-            let ratio =
-                self.time_budget.as_secs_f32() / self.last_frame_time.as_secs_f32().max(0.0001);
-            ratio.min(1.0)
+            (self.time_budget.as_secs_f32() * 1000.0 / measured_time_ms).min(1.0)
         };
 
         AgentStatus {
             agent_id: self.id(),
             health_score,
             current_strategy: self.current_strategy,
-            is_stalled: self.execute_attempts > 0 && self.frame_count == 0,
-            message: format!(
-                "shadow_strategy={:?} time={:.2}ms",
-                self.strategy,
-                self.last_frame_time.as_secs_f32() * 1000.0,
-            ),
+            is_stalled: false,
+            message: format!("shadow_strategy={:?} time={measured_time_ms:.2}ms", self.strategy),
         }
     }
 
@@ -367,10 +359,8 @@ impl Default for ShadowAgent {
             // pressure via `apply_budget`.
             strategy: ShadowStrategy::Standard,
             time_budget: Duration::ZERO,
-            last_frame_time: Duration::ZERO,
-            frame_count: 0,
             current_strategy: StrategyId::HighPerformance,
-            execute_attempts: 0,
+            frame_status: None,
         }
     }
 }

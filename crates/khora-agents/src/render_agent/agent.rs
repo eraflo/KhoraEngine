@@ -21,14 +21,14 @@
 //! the owners of those resources.
 
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use khora_core::agent::{
     Agent, AgentDependency, AgentImportance, DependencyKind, ExecutionPhase, ExecutionTiming,
 };
 use khora_core::control::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-    StrategyOption,
+    measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
+    NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
 use khora_core::lane::{
     ClearColor, ColorTarget, DepthTarget, LaneContext, LaneKind, LaneRegistry, ShadowAtlasView,
@@ -86,19 +86,10 @@ pub struct RenderAgent {
     current_strategy: StrategyId,
     /// Time budget assigned by GORNA via `apply_budget`.
     time_budget: Duration,
-    /// Duration of the last `execute` call.
-    last_frame_time: Duration,
-    /// Number of draw calls issued in the last frame.
-    draw_call_count: u32,
-    /// Number of triangles rendered in the last frame.
-    triangle_count: u32,
-    /// Total number of frames rendered since agent creation.
-    frame_count: u64,
-    /// Number of lights in the most recently extracted scene (for status).
-    last_light_count: usize,
-    /// Number of `execute` invocations attempted.  Used by `is_stalled` to
-    /// distinguish "never tried" from "tried but produced no frame".
-    execute_attempts: u64,
+    /// Shared, scheduler-written per-agent frame metrics. Read in
+    /// `report_status` to derive `health_score`; the agent stores no
+    /// per-frame counters of its own.
+    frame_status: Option<AgentFrameStatusMap>,
 }
 
 impl Agent for RenderAgent {
@@ -190,6 +181,12 @@ impl Agent for RenderAgent {
     }
 
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
+        self.frame_status = context
+            .runtime
+            .resources
+            .get::<AgentFrameStatusMap>()
+            .cloned();
+
         // One-shot lane GPU initialization.  We fetch the device from the
         // service registry, drive lane.on_initialize() once, and drop the
         // device handle — the agent does not store it.
@@ -230,8 +227,6 @@ impl Agent for RenderAgent {
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
-        self.execute_attempts += 1;
-
         // Look up every dependency from services — the agent owns none of these.
         let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
             return;
@@ -303,7 +298,6 @@ impl Agent for RenderAgent {
             }
         }
 
-        let frame_start = Instant::now();
         let strategy = self.strategy;
         let select_name = lane_name_for_strategy(strategy, render_world);
 
@@ -358,7 +352,6 @@ impl Agent for RenderAgent {
                 "RenderAgent: encoder.finish() returned None — backend reported failure, \
                  skipping ScenePass submission"
             );
-            self.last_frame_time = frame_start.elapsed();
             return;
         };
 
@@ -373,41 +366,23 @@ impl Agent for RenderAgent {
             Err(_) => {
                 log::error!("RenderAgent: FrameGraph mutex poisoned, dropping ScenePass");
             }
-        }
-
-        self.last_frame_time = frame_start.elapsed();
-
-        // Refresh per-frame metrics from the LaneBus's RenderWorld view.
-        self.draw_call_count = render_world.meshes.len() as u32;
-        self.triangle_count = count_triangles(render_world, &gpu_meshes);
-        self.last_light_count = render_world.directional_light_count()
-            + render_world.point_light_count()
-            + render_world.spot_light_count();
-
-        self.frame_count += 1;
+        };
     }
 
     fn report_status(&self) -> AgentStatus {
-        let health_score = if self.time_budget.is_zero() || self.frame_count == 0 {
+        let measured_time_ms = measured_frame_time_ms(&self.frame_status, self.id());
+        let health_score = if self.time_budget.is_zero() || measured_time_ms <= 0.0 {
             1.0
         } else {
-            let ratio =
-                self.time_budget.as_secs_f32() / self.last_frame_time.as_secs_f32().max(0.0001);
-            ratio.min(1.0)
+            (self.time_budget.as_secs_f32() * 1000.0 / measured_time_ms).min(1.0)
         };
 
         AgentStatus {
             agent_id: self.id(),
             health_score,
             current_strategy: self.current_strategy,
-            is_stalled: self.execute_attempts > 0 && self.frame_count == 0,
-            message: format!(
-                "frame_time={:.2}ms draws={} tris={} lights={}",
-                self.last_frame_time.as_secs_f32() * 1000.0,
-                self.draw_call_count,
-                self.triangle_count,
-                self.last_light_count,
-            ),
+            is_stalled: false,
+            message: format!("frame_time={measured_time_ms:.2}ms"),
         }
     }
 
@@ -451,12 +426,7 @@ impl Default for RenderAgent {
             strategy: RenderingStrategy::Auto,
             current_strategy: StrategyId::Balanced,
             time_budget: Duration::ZERO,
-            last_frame_time: Duration::ZERO,
-            draw_call_count: 0,
-            triangle_count: 0,
-            frame_count: 0,
-            last_light_count: 0,
-            execute_attempts: 0,
+            frame_status: None,
         }
     }
 }
@@ -484,25 +454,6 @@ fn lane_name_for_strategy(strategy: RenderingStrategy, world: &RenderWorld) -> &
             }
         }
     }
-}
-
-fn count_triangles(render_world: &RenderWorld, gpu_meshes: &RwLock<Assets<GpuMesh>>) -> u32 {
-    use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
-
-    let Ok(guard) = gpu_meshes.read() else {
-        return 0;
-    };
-    let mut total = 0u32;
-    for mesh in &render_world.meshes {
-        if let Some(gpu_mesh) = guard.get(&mesh.cpu_mesh_uuid) {
-            total += match gpu_mesh.primitive_topology {
-                PrimitiveTopology::TriangleList => gpu_mesh.index_count / 3,
-                PrimitiveTopology::TriangleStrip => gpu_mesh.index_count.saturating_sub(2),
-                _ => 0,
-            };
-        }
-    }
-    total
 }
 
 #[cfg(test)]

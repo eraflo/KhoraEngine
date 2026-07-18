@@ -24,7 +24,7 @@ use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::timing::AgentImportance;
 use khora_core::agent::{AgentDependency, EngineMode, ExecutionPhase};
-use khora_core::control::gorna::AgentId;
+use khora_core::control::gorna::{AgentFrameStatus, AgentFrameStatusMap, AgentId};
 use khora_core::graph::topological_sort;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::telemetry::TelemetryEvent;
@@ -511,6 +511,17 @@ impl ExecutionScheduler {
         // (per-domain refinement is a later step).
         let workload_n = world.entity_count() as f64;
 
+        // Scheduler-owned per-agent frame metrics: agents read their own slot
+        // in `report_status` so they hold no per-frame counters themselves.
+        let frame_status = runtime.resources.get::<AgentFrameStatusMap>().cloned();
+        let record_frame_time = |id: AgentId, measured_time_ms: f32| {
+            if let Some(fs) = &frame_status {
+                fs.write()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(id, AgentFrameStatus { measured_time_ms });
+            }
+        };
+
         for (agent, importance, _priority, dependencies) in agents {
             let agent_id = match agent.lock().ok().map(|a| a.id()) {
                 Some(id) => id,
@@ -521,12 +532,14 @@ impl ExecutionScheduler {
             // under pressure. Critical/Important agents are non-negotiable.
             if importance.is_negotiable() && self.is_under_budget_pressure() {
                 completion_map.mark(agent_id, CompletionOutcome::Skipped);
+                record_frame_time(agent_id, 0.0);
                 continue;
             }
 
             // Skip if hard dependencies were skipped or are unmarked
             if !are_hard_dependencies_completed(&dependencies, completion_map) {
                 completion_map.mark(agent_id, CompletionOutcome::Skipped);
+                record_frame_time(agent_id, 0.0);
                 continue;
             }
 
@@ -543,13 +556,15 @@ impl ExecutionScheduler {
             if let Ok(mut a) = agent.lock() {
                 a.execute(&mut engine_ctx);
             }
+            let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+            record_frame_time(agent_id, elapsed_ms as f32);
             // Observation tunnel: report (n, time) so the DCC can fit this
             // agent's cost model and forecast budget breaches. Best-effort.
             if let Some(tx) = &self.telemetry {
                 let _ = tx.try_send(TelemetryEvent::AgentCost {
                     id: agent_id,
                     n: workload_n,
-                    time_ms: started.elapsed().as_secs_f64() * 1000.0,
+                    time_ms: elapsed_ms,
                 });
             }
             completion_map.mark(agent_id, CompletionOutcome::Completed);

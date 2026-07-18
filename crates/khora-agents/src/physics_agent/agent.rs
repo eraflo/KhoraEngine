@@ -19,12 +19,12 @@
 //! the [`ServiceRegistry`] each frame — agents are not the owners.
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
 use khora_core::control::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-    StrategyOption,
+    measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
+    NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
 use khora_core::lane::PhysicsDeltaTime;
 use khora_core::lane::{LaneContext, LaneRegistry, Slot};
@@ -64,16 +64,13 @@ pub struct PhysicsAgent {
     strategy: PhysicsStrategy,
     /// Current GORNA strategy ID.
     current_strategy: StrategyId,
-    /// Duration of the last physics step.
-    last_step_time: Duration,
     /// Time budget allocated by GORNA.
     time_budget: Duration,
-    /// Total frames simulated.
-    frame_count: u64,
     /// Fixed timestep for physics simulation.
     fixed_timestep: f32,
-    /// Number of `execute` invocations attempted.
-    execute_attempts: u64,
+    /// Shared, scheduler-written per-agent frame metrics, read in
+    /// `report_status`; the agent holds no per-frame counters.
+    frame_status: Option<AgentFrameStatusMap>,
 }
 
 impl Agent for PhysicsAgent {
@@ -149,9 +146,15 @@ impl Agent for PhysicsAgent {
         self.time_budget = budget.time_limit;
     }
 
-    fn execute(&mut self, context: &mut EngineContext<'_>) {
-        self.execute_attempts += 1;
+    fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
+        self.frame_status = context
+            .runtime
+            .resources
+            .get::<AgentFrameStatusMap>()
+            .cloned();
+    }
 
+    fn execute(&mut self, context: &mut EngineContext<'_>) {
         // Look up the physics provider from services every frame.
         let Some(provider_arc) = context
             .runtime
@@ -169,8 +172,6 @@ impl Agent for PhysicsAgent {
         let Some(world) = world_any.downcast_mut::<World>() else {
             return;
         };
-
-        let start = Instant::now();
 
         let mut provider_guard = match provider_arc.lock() {
             Ok(g) => g,
@@ -199,29 +200,22 @@ impl Agent for PhysicsAgent {
                 log::error!("Physics lane {} failed: {}", lane.strategy_name(), e);
             }
         }
-
-        self.last_step_time = start.elapsed();
-        self.frame_count += 1;
     }
 
     fn report_status(&self) -> AgentStatus {
-        let health_score = if self.time_budget.is_zero() || self.frame_count == 0 {
+        let measured_time_ms = measured_frame_time_ms(&self.frame_status, self.id());
+        let health_score = if self.time_budget.is_zero() || measured_time_ms <= 0.0 {
             1.0
         } else {
-            let ratio =
-                self.time_budget.as_secs_f32() / self.last_step_time.as_secs_f32().max(0.0001);
-            ratio.min(1.0)
+            (self.time_budget.as_secs_f32() * 1000.0 / measured_time_ms).min(1.0)
         };
 
         AgentStatus {
             agent_id: self.id(),
             health_score,
             current_strategy: self.current_strategy,
-            is_stalled: self.execute_attempts > 0 && self.frame_count == 0,
-            message: format!(
-                "step_time={:.2}ms",
-                self.last_step_time.as_secs_f32() * 1000.0,
-            ),
+            is_stalled: false,
+            message: format!("step_time={measured_time_ms:.2}ms"),
         }
     }
 
@@ -258,11 +252,9 @@ impl Default for PhysicsAgent {
             lanes,
             strategy: PhysicsStrategy::Standard,
             current_strategy: StrategyId::Balanced,
-            last_step_time: Duration::ZERO,
             time_budget: Duration::ZERO,
-            frame_count: 0,
             fixed_timestep: 1.0 / 60.0,
-            execute_attempts: 0,
+            frame_status: None,
         }
     }
 }

@@ -34,7 +34,7 @@
 //! and skipped rather than silently substituted.
 
 use crate::{
-    ecs::{HandleComponent, MaterialRef, Without, World},
+    ecs::{AddComponentError, HandleComponent, MaterialRef, Without, World},
     gpu::AssetStore,
 };
 use khora_core::{
@@ -139,8 +139,12 @@ impl ProjectionRegistry {
 
         // Phase 2: mutate the ECS world (no longer borrowed by the query above).
         for (entity_id, component) in pending {
+            // `ComponentAlreadyExists` is the benign idempotent case (the handle
+            // is already attached); only surface genuinely unexpected failures.
             if let Err(e) = world.add_component(entity_id, component) {
-                log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");
+                if !matches!(e, AddComponentError::ComponentAlreadyExists) {
+                    log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");
+                }
             }
         }
     }
@@ -300,8 +304,12 @@ impl ProjectionRegistry {
         }
 
         for (entity_id, component) in pending {
+            // `ComponentAlreadyExists` is the benign idempotent case (the handle
+            // is already attached); only surface genuinely unexpected failures.
             if let Err(e) = world.add_component(entity_id, component) {
-                log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");
+                if !matches!(e, AddComponentError::ComponentAlreadyExists) {
+                    log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");
+                }
             }
         }
     }

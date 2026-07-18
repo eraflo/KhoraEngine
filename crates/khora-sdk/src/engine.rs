@@ -198,6 +198,13 @@ impl<A: EngineApp> EngineCore<A> {
             .resources
             .insert(Arc::new(khora_data::ui::UiImageAtlas::new()));
 
+        // AgentFrameStatus map — per-agent execution metrics measured and
+        // written by the scheduler each frame; agents read their own slot in
+        // `report_status` instead of holding per-frame counters.
+        let agent_frame_status: khora_core::control::gorna::AgentFrameStatusMap =
+            Arc::new(std::sync::RwLock::new(std::collections::HashMap::new()));
+        runtime.resources.insert(agent_frame_status);
+
         // Create the game world
         let mut game_world = GameWorld::new();
 

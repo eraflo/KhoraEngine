@@ -50,8 +50,6 @@ pub struct AudioAgent {
     current_strategy: StrategyId,
     /// Max audio sources to process per frame (from budget).
     max_sources_per_frame: usize,
-    /// Frame counter.
-    frame_count: u64,
 }
 
 impl Default for AudioAgent {
@@ -64,7 +62,6 @@ impl Default for AudioAgent {
             current_lane: "SpatialMixing",
             current_strategy: StrategyId::Balanced,
             max_sources_per_frame: 32,
-            frame_count: 0,
         }
     }
 }
@@ -125,8 +122,6 @@ impl Agent for AudioAgent {
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
-        self.frame_count += 1;
-
         let Some(mix_bus) = context
             .runtime
             .resources
@@ -166,10 +161,7 @@ impl Agent for AudioAgent {
             health_score: 1.0,
             current_strategy: self.current_strategy,
             is_stalled: false,
-            message: format!(
-                "max_sources={} frame={}",
-                self.max_sources_per_frame, self.frame_count
-            ),
+            message: format!("max_sources={}", self.max_sources_per_frame),
         }
     }
 

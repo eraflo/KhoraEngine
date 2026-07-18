@@ -193,10 +193,10 @@ fn test_report_status_message_contains_metrics() {
     let agent = RenderAgent::default();
     let status = agent.report_status();
 
+    // Draw/triangle/light counts now come from the GPU telemetry path
+    // (GpuReport / MonitorRegistry); the agent's status message carries the
+    // scheduler-measured frame time only.
     assert!(status.message.contains("frame_time="));
-    assert!(status.message.contains("draws="));
-    assert!(status.message.contains("tris="));
-    assert!(status.message.contains("lights="));
 }
 
 #[test]

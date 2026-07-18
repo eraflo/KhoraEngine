@@ -196,3 +196,38 @@ pub struct AgentStatus {
     /// Human-readable status message for telemetry.
     pub message: String,
 }
+
+/// Per-frame execution metrics for one agent, **measured and written by the
+/// scheduler** — agents hold no per-frame counters of their own. An agent
+/// reads its own slot in `report_status` to derive `health_score` from the
+/// GORNA time budget it retains.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AgentFrameStatus {
+    /// Wall-clock duration of the agent's last `execute`, in milliseconds.
+    /// `0.0` means the agent did not run last frame (skipped or not yet scheduled).
+    pub measured_time_ms: f32,
+}
+
+/// Shared, scheduler-owned map of the latest [`AgentFrameStatus`] per agent.
+///
+/// Lives in [`Resources`](crate::Resources): the scheduler writes it at its
+/// per-agent measurement point and agents read their own slot, so the
+/// per-frame numbers never live as agent state.
+pub type AgentFrameStatusMap =
+    std::sync::Arc<std::sync::RwLock<std::collections::HashMap<AgentId, AgentFrameStatus>>>;
+
+/// Reads the scheduler-measured `execute` time (ms) for `id` out of a shared
+/// [`AgentFrameStatusMap`], yielding `0.0` when the map is absent or has no
+/// entry yet. Agents call this from `report_status` so they never cache
+/// per-frame timing themselves.
+#[must_use]
+pub fn measured_frame_time_ms(map: &Option<AgentFrameStatusMap>, id: AgentId) -> f32 {
+    let Some(map) = map else {
+        return 0.0;
+    };
+    map.read()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&id)
+        .map(|s| s.measured_time_ms)
+        .unwrap_or(0.0)
+}

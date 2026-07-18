@@ -20,8 +20,16 @@ Deep history lives in git and `docs/plans/`.
 - **Code mort supprimé** : `physics_lane/native_lanes.rs` (orphelin, violait CLAD R2) + son wiring
   `CollisionPairs` mort dans `engine.rs` ; module `ui_lane`/`StandardUiLane` + champ `layout_lane` de
   `UiAgent` (chemin jamais exécuté, violation CLAD R2 latente éliminée) ; imports morts `lit_forward_lane`.
-- **Reste** : Phase 6 (unification statut agent, design Option A) non faite — architectural, gated à part.
-- Vérif : `cargo test --workspace` 866 passed / 0 failed ; `cargo clippy --workspace` clean.
+- **Unification statut agent (Option A)** : les 5 agents ne portent **plus d'état par-frame**. Le
+  scheduler mesure le temps d'`execute` et l'écrit dans un `AgentFrameStatusMap`
+  (`Arc<RwLock<HashMap<AgentId, AgentFrameStatus>>>`, dans `runtime.resources`, défini
+  `khora-core/control/gorna.rs`). `report_status` lit ce temps via le free fn `measured_frame_time_ms`
+  (pas de méthode inhérente, RULES §8) et dérive `health_score` du `time_budget` retenu. `is_stalled`
+  retiré (`false`) : le scheduler ne peut pas distinguer « crash interne » d'un skip volontaire → GORNA
+  garde les triggers pression + health-degraded, perd le détecteur crash (qui reposait sur l'auto-report).
+  `AgentStatus` inchangé ; editor + GORNA non modifiés. draws/tris de l'editor = `GpuReport`/MonitorRegistry.
+- Vérif : `cargo test --workspace` 866 passed / 0 failed ; `cargo clippy --workspace` clean ; run editor
+  12 s sans panic ni erreur de validation Vulkan.
 
 ## Latest work (2026-07-15) — Asset explorer + stable asset identity
 - **Stable asset UUIDs via a registry** (`khora-io/src/asset/id_registry.rs`, `AssetIdRegistry`): UUIDs were

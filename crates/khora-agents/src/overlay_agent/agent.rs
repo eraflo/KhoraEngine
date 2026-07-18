@@ -25,14 +25,14 @@
 //! `WireframeLane` runs when the debug flag is on, etc.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use khora_core::agent::{
     Agent, AgentDependency, AgentImportance, DependencyKind, ExecutionPhase, ExecutionTiming,
 };
 use khora_core::control::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-    StrategyOption,
+    measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
+    NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
 use khora_core::lane::{ClearColor, ColorTarget, DepthTarget, LaneContext, LaneRegistry, Slot};
 use khora_core::renderer::api::core::FrameContext;
@@ -58,12 +58,9 @@ pub struct OverlayAgent {
     time_budget: Duration,
     /// Current GORNA strategy ID applied via `apply_budget`.
     current_strategy: StrategyId,
-    /// Duration of the last `execute` call.
-    last_frame_time: Duration,
-    /// Total number of frames the agent ran.
-    frame_count: u64,
-    /// Number of `execute` invocations attempted (for stall detection).
-    execute_attempts: u64,
+    /// Shared, scheduler-written per-agent frame metrics, read in
+    /// `report_status`; the agent holds no per-frame counters.
+    frame_status: Option<AgentFrameStatusMap>,
 }
 
 impl Agent for OverlayAgent {
@@ -93,6 +90,12 @@ impl Agent for OverlayAgent {
     }
 
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
+        self.frame_status = context
+            .runtime
+            .resources
+            .get::<AgentFrameStatusMap>()
+            .cloned();
+
         let Some(device_arc) = context
             .runtime
             .backends
@@ -125,7 +128,6 @@ impl Agent for OverlayAgent {
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
-        self.execute_attempts += 1;
         if self.lanes.is_empty() {
             // Nothing to do — no overlay lanes registered. Common when
             // the host application doesn't need debug viz.
@@ -163,8 +165,6 @@ impl Agent for OverlayAgent {
             .get::<ClearColor>()
             .map(|a| *a)
             .unwrap_or_else(|| ClearColor(khora_core::math::LinearRgba::new(0.0, 0.0, 0.0, 0.0)));
-
-        let frame_start = Instant::now();
 
         // Encode every overlay lane's commands into a single command
         // buffer, attached to the FrameGraph as a single OverlayPass.
@@ -234,30 +234,25 @@ impl Agent for OverlayAgent {
                 Err(_) => {
                     log::error!("OverlayAgent: FrameGraph mutex poisoned, dropping OverlayPass");
                 }
-            }
+            };
         }
-
-        self.last_frame_time = frame_start.elapsed();
-        self.frame_count += 1;
     }
 
     fn report_status(&self) -> AgentStatus {
-        let health_score = if self.time_budget.is_zero() || self.frame_count == 0 {
+        let measured_time_ms = measured_frame_time_ms(&self.frame_status, self.id());
+        let health_score = if self.time_budget.is_zero() || measured_time_ms <= 0.0 {
             1.0
         } else {
-            let ratio =
-                self.time_budget.as_secs_f32() / self.last_frame_time.as_secs_f32().max(0.0001);
-            ratio.min(1.0)
+            (self.time_budget.as_secs_f32() * 1000.0 / measured_time_ms).min(1.0)
         };
         AgentStatus {
             agent_id: self.id(),
             health_score,
             current_strategy: self.current_strategy,
-            is_stalled: self.execute_attempts > 0 && self.frame_count == 0,
+            is_stalled: false,
             message: format!(
-                "overlay_lanes={} frame_time={:.2}ms",
+                "overlay_lanes={} frame_time={measured_time_ms:.2}ms",
                 self.lanes.len(),
-                self.last_frame_time.as_secs_f32() * 1000.0,
             ),
         }
     }
@@ -305,9 +300,7 @@ impl Default for OverlayAgent {
             lanes,
             time_budget: Duration::ZERO,
             current_strategy: StrategyId::Balanced,
-            last_frame_time: Duration::ZERO,
-            frame_count: 0,
-            execute_attempts: 0,
+            frame_status: None,
         }
     }
 }
