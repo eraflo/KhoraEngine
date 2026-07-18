@@ -105,18 +105,6 @@ pub struct DomainStats {
     pub page_count: u32,
 }
 
-/// A trait providing low-level access to the World for maintenance tasks.
-pub trait WorldMaintenance {
-    /// Cleans up an orphaned data slot in a page.
-    fn cleanup_orphan_at(&mut self, location: PageIndex, domain: SemanticDomain);
-
-    /// Vacuums a hole in a page by moving the last entity into it.
-    ///
-    /// # Arguments
-    /// * `page_index` - The index of the page containing the hole.
-    /// * `hole_row_index` - The row index of the hole to be filled.
-    fn vacuum_hole_at(&mut self, page_index: u32, hole_row_index: u32);
-}
 
 /// The central container for the entire ECS, holding all entities, components, and metadata.
 pub struct World {
@@ -784,7 +772,15 @@ impl World {
         // The entity gained a component in this domain — invalidate cached Views.
         self.bump_domain_epoch(domain);
 
-        // 6. Return the old location for cleanup, without performing swap_remove
+        // 6. Record the abandoned source page so maintenance compacts its
+        //    now-orphaned row later (see `StorageManager::dirty_pages`). The
+        //    `None` case adds the entity to a domain for the first time, leaving
+        //    no orphan behind.
+        if let Some(old) = old_location_opt {
+            self.storage.dirty_pages.insert(old.page_id);
+        }
+
+        // 7. Return the old location for cleanup, without performing swap_remove
         Ok(old_location_opt)
     }
 
@@ -869,6 +865,9 @@ impl World {
             self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
             // The entity left this domain entirely — invalidate cached Views.
             self.bump_domain_epoch(domain);
+            // The row is orphaned (metadata no longer references it) — schedule
+            // its page for compaction.
+            self.storage.dirty_pages.insert(loc.page_id);
             return Ok(Some(loc));
         }
 
@@ -915,7 +914,11 @@ impl World {
         // The entity lost a component in this domain — invalidate cached Views.
         self.bump_domain_epoch(domain);
 
-        // 8. Hand the old location off to the GC.
+        // 8. Record the abandoned source page so maintenance compacts its
+        //    now-orphaned row later.
+        self.storage.dirty_pages.insert(loc.page_id);
+
+        // 9. Hand the old location off to the GC.
         Ok(Some(loc))
     }
 
@@ -953,12 +956,15 @@ impl World {
         let location = metadata.locations.remove(&domain);
 
         // Clear the domain bitset if a component was removed.
-        if location.is_some() {
+        if let Some(loc) = location {
             if let Some(bitset) = self.storage.domain_bitsets.get_mut(&domain) {
                 bitset.clear(entity_id.index);
             }
             // The entity left this domain — invalidate cached Views.
             self.bump_domain_epoch(domain);
+            // The row is orphaned (metadata no longer references it) — schedule
+            // its page for compaction.
+            self.storage.dirty_pages.insert(loc.page_id);
         }
 
         location
@@ -1310,53 +1316,113 @@ impl World {
     }
 }
 
-impl WorldMaintenance for World {
-    fn cleanup_orphan_at(&mut self, location: PageIndex, domain: SemanticDomain) {
-        let page = &mut self.storage.pages[location.page_id as usize];
-        if page.entities.is_empty() || location.row_index as usize >= page.entities.len() {
-            return;
+impl World {
+    /// Returns `true` if any of `entity`'s live metadata locations references
+    /// `(page_id, row)`. Domain-**agnostic** on purpose: in a multi-domain page a
+    /// physical row is dead only when *no* domain still points at it, so a
+    /// per-domain check (like the query layer's `is_live_row`) would wrongly
+    /// classify a row still live for another domain as an orphan and destroy it.
+    ///
+    /// A dead/recycled entity (generation mismatch or vacated metadata) counts as
+    /// not referencing the row, so its leftover row is reclaimable.
+    fn entity_references_row(&self, entity: EntityId, page_id: u32, row: usize) -> bool {
+        let Some((slot_id, metadata_opt)) = self.entities.get(entity.index as usize) else {
+            return false;
+        };
+        if slot_id.generation != entity.generation {
+            return false;
         }
-
-        let last_entity_in_page = *page.entities.last().unwrap();
-        page.swap_remove_row(location.row_index);
-
-        if let Some((_id, metadata_opt)) = self.entities.get_mut(last_entity_in_page.index as usize)
-        {
-            if let Some(metadata) = metadata_opt.as_mut() {
-                if let Some(loc) = metadata.locations.get_mut(&domain) {
-                    *loc = location;
-                }
-            }
-        }
-
-        // Compaction is representation-only (no component appears or
-        // disappears), but `swap_remove_row` moves the page's last entity
-        // into the hole, which changes query *iteration order* — and
-        // projected Views are order-sensitive (e.g. index-aligned light
-        // and audio-source lists). Conservatively invalidate everything.
-        self.bump_all_domain_epochs();
+        let Some(metadata) = metadata_opt.as_ref() else {
+            return false;
+        };
+        metadata
+            .locations
+            .values()
+            .any(|loc| loc.page_id == page_id && loc.row_index as usize == row)
     }
 
-    fn vacuum_hole_at(&mut self, page_index: u32, hole_row_index: u32) {
-        // Find the domain for this page.
-        // We can infer the domain from the first component type in the page.
-        let domain = {
-            let page = &self.storage.pages[page_index as usize];
-            if let Some(first_type) = page.type_ids.first() {
-                self.storage.registry.get_domain(*first_type)
-            } else {
-                None
-            }
-        };
-
-        if let Some(domain) = domain {
-            // Reuse cleanup logic, constructing a transient PageIndex.
-            let location = PageIndex {
-                page_id: page_index,
-                row_index: hole_row_index,
-            };
-            self.cleanup_orphan_at(location, domain);
+    /// Compacts a single page: physically drops every row no live entity
+    /// references (a migration orphan), preserving order for the surviving rows.
+    ///
+    /// Reuses [`remove_from_page`](Self::remove_from_page) as the removal
+    /// primitive, so the survivor moved into each hole has its metadata repaired
+    /// across **all** its domains — the validation the former `cleanup_orphan_at`
+    /// lacked. Representation-only, but reordering rows changes query iteration
+    /// order, so the page's domain epochs are bumped when at least one row is
+    /// removed (order-sensitive Views — index-aligned light/audio lists — depend
+    /// on the bump). No bump when nothing was removed.
+    pub(crate) fn compact_page(&mut self, page_id: u32) {
+        match self.storage.pages.get(page_id as usize) {
+            Some(page) if !page.entities.is_empty() => {}
+            _ => return,
         }
+
+        let mut removed_any = false;
+        let mut row = 0usize;
+        loop {
+            let len = self.storage.pages[page_id as usize].entities.len();
+            if row >= len {
+                break;
+            }
+            let entity = self.storage.pages[page_id as usize].entities[row];
+            if self.entity_references_row(entity, page_id, row) {
+                // Live for some domain — keep it and advance.
+                row += 1;
+            } else {
+                // Orphan: `remove_from_page` swap-removes it and repoints the
+                // survivor moved into the slot (across all its domains). The
+                // swapped-in row now sits at `row`, so re-check the same index.
+                self.remove_from_page(
+                    entity,
+                    PageIndex {
+                        page_id,
+                        row_index: row as u32,
+                    },
+                );
+                removed_any = true;
+            }
+        }
+
+        if removed_any {
+            // Iteration order for every domain this page participates in changed.
+            let mut domains: Vec<SemanticDomain> = {
+                let page = &self.storage.pages[page_id as usize];
+                page.type_ids
+                    .iter()
+                    .filter_map(|t| self.storage.registry.get_domain(*t))
+                    .collect()
+            };
+            domains.sort_by_key(|d| d.index());
+            domains.dedup();
+            for domain in domains {
+                self.bump_domain_epoch(domain);
+            }
+        }
+    }
+
+    /// Drains up to `budget` dirty pages and compacts each, returning the number
+    /// of pages processed. Called once per frame by
+    /// [`EcsMaintenance`](crate::ecs::EcsMaintenance) in `TickPhase::Maintenance`.
+    /// Pages beyond the budget stay queued for the next frame — harmless, since
+    /// the query layer already skips orphan rows via `is_live_row`.
+    pub(crate) fn run_compaction(&mut self, budget: usize) -> usize {
+        if budget == 0 || self.storage.dirty_pages.is_empty() {
+            return 0;
+        }
+        let take: Vec<u32> = self
+            .storage
+            .dirty_pages
+            .iter()
+            .copied()
+            .take(budget)
+            .collect();
+        for &page_id in &take {
+            self.storage.dirty_pages.remove(&page_id);
+        }
+        for &page_id in &take {
+            self.compact_page(page_id);
+        }
+        take.len()
     }
 }
 

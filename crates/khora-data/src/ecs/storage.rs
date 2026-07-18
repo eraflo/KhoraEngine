@@ -19,7 +19,7 @@ use crate::ecs::{
     SemanticDomain,
 };
 use std::any::TypeId;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Internal manager for component pages, domain bitsets, and archetype caching.
 ///
@@ -38,6 +38,15 @@ pub(crate) struct StorageManager {
     pub(crate) domain_bitsets: HashMap<SemanticDomain, DomainBitset>,
     /// Running statistics for each semantic domain (e.g., entity count, page count).
     pub(crate) domain_stats: HashMap<SemanticDomain, DomainStats>,
+    /// Pages that gained an orphaned row since the last maintenance pass.
+    ///
+    /// A component migration (`add_component` / `remove_component` /
+    /// `remove_component_domain`) repoints the entity's metadata to a new page
+    /// but leaves the old physical row in place. The source page id is recorded
+    /// here so [`EcsMaintenance`](crate::ecs::EcsMaintenance) can compact it
+    /// (drop the fully-dead rows) later in `TickPhase::Maintenance`, without any
+    /// migration call site having to remember to forward the orphan.
+    pub(crate) dirty_pages: HashSet<u32>,
 }
 
 impl StorageManager {
@@ -49,6 +58,7 @@ impl StorageManager {
             registry,
             domain_bitsets: HashMap::new(),
             domain_stats: HashMap::new(),
+            dirty_pages: HashSet::new(),
         }
     }
 

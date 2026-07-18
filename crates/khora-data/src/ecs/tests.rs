@@ -1351,3 +1351,157 @@ fn despawn_multi_domain_bumps_every_domain_epoch() {
         "despawn must bump the Render epoch"
     );
 }
+
+// --- PAGE COMPACTION (ORPHAN-ROW RECLAMATION) REGRESSION TESTS ---
+//
+// A component migration repoints one domain's location to a new page but leaves
+// the old physical row in place. `World::run_compaction` (driven each frame by
+// `EcsMaintenance`) reclaims the rows no live entity references, while
+// preserving partial orphans (rows still live for another domain in a
+// multi-domain page) and repairing every domain of a moved survivor.
+
+/// `multi_domain_world` + a second Render component so a migration
+/// (`add_component`) can move an entity between Render pages.
+fn compaction_world() -> World {
+    let mut world = multi_domain_world(); // Position/Velocity (Spatial), RenderId (Render)
+    world.register_component::<RenderTag>(SemanticDomain::Render);
+    world
+}
+
+/// Total physical rows across every page — equals the number of live
+/// `(entity, domain)` occupancies once all orphans are reclaimed.
+fn total_rows(world: &World) -> usize {
+    world.storage.pages.iter().map(|p| p.entities.len()).sum()
+}
+
+#[test]
+fn compaction_reclaims_fully_dead_single_domain_row() {
+    let mut world = compaction_world();
+
+    // Single-domain (Render) entity in its own page {RenderId}. Adding another
+    // Render component migrates the whole signature to a new page, leaving the
+    // old row fully dead (no domain references it).
+    let e = world.spawn(RenderId(10));
+    world.add_component(e, RenderTag).expect("add_component");
+
+    // The query is already correct (orphan rows are skipped) but the dead row
+    // still occupies storage.
+    assert_eq!(world.query::<&RenderId>().count(), 1);
+    assert_eq!(total_rows(&world), 2, "orphan row present before compaction");
+
+    let compacted = world.run_compaction(16);
+    assert!(compacted >= 1, "the dirty page must be compacted");
+
+    assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(10)));
+    assert_eq!(world.query::<&RenderId>().count(), 1);
+    assert_eq!(total_rows(&world), 1, "the dead row was reclaimed");
+}
+
+#[test]
+fn compaction_preserves_partial_orphan_in_multi_domain_page() {
+    let mut world = compaction_world();
+
+    // Multi-domain entity: one page {Position, RenderId}, both domains at the
+    // same row. Migrating only the Render domain leaves the spawn row still live
+    // for Spatial — a PARTIAL orphan that must NOT be removed.
+    let e = world.spawn((Position(1), RenderId(10)));
+    world.add_component(e, RenderTag).expect("add_component");
+
+    let _ = world.run_compaction(16);
+
+    assert_eq!(
+        world.get::<Position>(e).copied(),
+        Some(Position(1)),
+        "the Spatial row was wrongly reclaimed"
+    );
+    assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(10)));
+    assert_eq!(world.query::<&Position>().count(), 1);
+    assert_eq!(world.query::<&RenderId>().count(), 1);
+}
+
+#[test]
+fn compaction_repoints_all_domains_of_moved_survivor() {
+    let mut world = compaction_world();
+
+    let a = world.spawn((Position(1), RenderId(10))); // P0 row 0
+    let b = world.spawn((Position(2), RenderId(20))); // P0 row 1
+
+    // Fully vacate a's row by migrating BOTH its domains away from P0.
+    world.add_component(a, Velocity(9)).expect("spatial migrate");
+    world.add_component(a, RenderTag).expect("render migrate");
+    // Now (P0, 0) is referenced by no domain (dead); (P0, 1) = b is live for both
+    // Spatial and Render.
+
+    let _ = world.run_compaction(16);
+
+    // b was swap-moved into (P0, 0); BOTH its domain locations must be repaired.
+    assert_eq!(world.get::<Position>(b).copied(), Some(Position(2)));
+    assert_eq!(world.get::<RenderId>(b).copied(), Some(RenderId(20)));
+    // a's data survives in its migrated pages.
+    assert_eq!(world.get::<Position>(a).copied(), Some(Position(1)));
+    assert_eq!(world.get::<RenderId>(a).copied(), Some(RenderId(10)));
+
+    assert_eq!(world.query::<&Position>().count(), 2);
+    assert_eq!(world.query::<&RenderId>().count(), 2);
+}
+
+#[test]
+fn compaction_bumps_page_domains_only_when_a_row_is_removed() {
+    let mut world = compaction_world();
+    let e = world.spawn(RenderId(10));
+    world.add_component(e, RenderTag).expect("add_component"); // dirties the Render page
+
+    let render_before = world.domain_epoch(SemanticDomain::Render);
+    let spatial_before = world.domain_epoch(SemanticDomain::Spatial);
+
+    assert_eq!(world.run_compaction(16), 1);
+
+    assert!(
+        world.domain_epoch(SemanticDomain::Render) > render_before,
+        "removing a Render-page row must bump the Render epoch"
+    );
+    assert_eq!(
+        world.domain_epoch(SemanticDomain::Spatial),
+        spatial_before,
+        "a Render-only page must not bump the Spatial epoch"
+    );
+
+    // A second pass has no dirty pages — a no-op that bumps nothing.
+    let render_after = world.domain_epoch(SemanticDomain::Render);
+    assert_eq!(world.run_compaction(16), 0);
+    assert_eq!(world.domain_epoch(SemanticDomain::Render), render_after);
+}
+
+#[test]
+fn run_compaction_respects_budget_and_drains_dirty_pages() {
+    let mut world = compaction_world();
+
+    // Two distinct dirty pages (different archetypes → different source pages).
+    let a = world.spawn(Position(1)); // Spatial page {Position}
+    let b = world.spawn(RenderId(2)); // Render page {RenderId}
+    world.add_component(a, Velocity(3)).expect("add_component");
+    world.add_component(b, RenderTag).expect("add_component");
+
+    // A budget of 1 compacts one page per call and leaves the rest queued.
+    assert_eq!(world.run_compaction(1), 1);
+    assert_eq!(world.run_compaction(1), 1);
+    assert_eq!(world.run_compaction(1), 0, "dirty set drained");
+}
+
+#[test]
+fn churn_then_compaction_leaves_no_orphan_rows() {
+    let mut world = compaction_world();
+
+    let entities: Vec<_> = (0..8).map(|i| world.spawn(RenderId(i))).collect();
+    for &e in &entities {
+        world.add_component(e, RenderTag).expect("add_component");
+    }
+
+    while world.run_compaction(16) > 0 {}
+
+    // Every live entity now occupies exactly one Render row; no orphans linger.
+    assert_eq!(total_rows(&world), entities.len());
+    for (i, &e) in entities.iter().enumerate() {
+        assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(i as i32)));
+    }
+}
