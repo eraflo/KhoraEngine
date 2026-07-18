@@ -23,7 +23,7 @@ use crossbeam_channel::Sender;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::timing::AgentImportance;
-use khora_core::agent::{AgentDependency, EngineMode, ExecutionPhase};
+use khora_core::agent::{AgentAccess, AgentDependency, EngineMode, ExecutionPhase};
 use khora_core::control::gorna::{AgentFrameStatus, AgentFrameStatusMap, AgentId};
 use khora_core::graph::topological_sort;
 use khora_core::lane::{LaneBus, OutputDeck};
@@ -165,6 +165,13 @@ pub struct ExecutionScheduler {
     /// accumulator. Each frame the real delta is added and whole
     /// `fixed_delta` steps are consumed; the remainder stays here.
     sim_accumulator: f32,
+    /// When `true`, each phase runs through the parallel wave executor
+    /// ([`execute_agents_parallel`](Self::execute_agents_parallel)); when
+    /// `false` (default) agents run sequentially. Off by default: enabling it
+    /// is only sound once agents opt into
+    /// [`AgentAccess::Isolated`](khora_core::agent::AgentAccess::Isolated) and no
+    /// two `Isolated` agents in a phase write the same deck slot.
+    parallel_execution: bool,
 }
 
 impl ExecutionScheduler {
@@ -187,7 +194,19 @@ impl ExecutionScheduler {
             frame_counter: 0,
             last_frame_instant: None,
             sim_accumulator: 0.0,
+            parallel_execution: false,
         }
+    }
+
+    /// Enables or disables the parallel wave executor (default off).
+    ///
+    /// Sound only when the phase's agents correctly declare their
+    /// [`AgentAccess`](khora_core::agent::AgentAccess): eligible agents must
+    /// touch no `World` and write disjoint deck slots. With the default
+    /// (all-`Exclusive`) declarations every wave is a singleton, so this is
+    /// behaviourally identical to sequential execution.
+    pub fn set_parallel_execution(&mut self, enabled: bool) {
+        self.parallel_execution = enabled;
     }
 
     /// Connects the read-only observation tunnel to the DCC. The scheduler then
@@ -486,7 +505,11 @@ impl ExecutionScheduler {
         }
 
         let sorted = sort_agents(agents);
-        self.execute_agents_sequential(sorted, world, runtime, completion_map, bus, deck);
+        if self.parallel_execution {
+            self.execute_agents_parallel(sorted, world, runtime, completion_map, bus, deck);
+        } else {
+            self.execute_agents_sequential(sorted, world, runtime, completion_map, bus, deck);
+        }
     }
 
     /// Executes the phase's agents **sequentially, in priority order** (the
@@ -571,34 +594,170 @@ impl ExecutionScheduler {
         }
     }
 
-    /// Parallel execution path — roadmap stub, not yet implemented.
+    /// Parallel execution path — runs the phase's agents wave by wave.
     ///
-    /// The intended structure (once enabled):
-    /// ```ignore
-    /// for (agent, _, _, deps) in agents {
-    ///     let map = Arc::clone(completion_map);
-    ///     tokio::spawn(async move {
-    ///         for dep in deps.iter().filter(|d| d.kind == DependencyKind::Hard) {
-    ///             match map.wait(dep.target).await {
-    ///                 Some(CompletionOutcome::Completed) => {}
-    ///                 _ => { map.mark(agent.id(), Skipped); return; }
-    ///             }
-    ///         }
-    ///         agent.lock().execute(&mut ctx);
-    ///         map.mark(agent.id(), Completed);
-    ///     });
-    /// }
-    /// // join_all spawned handles before returning.
-    /// ```
-    #[allow(dead_code)]
+    /// Agents declaring [`AgentAccess::Isolated`] (no `World` access, writes
+    /// only their own `OutputDeck`) are grouped into concurrent **waves** via
+    /// [`partition_waves`]; every other agent is a singleton wave. Waves run in
+    /// order, so a wave never contains an agent that hard-depends on another
+    /// member — Hard-dependency ordering is preserved exactly as in the
+    /// sequential path.
+    ///
+    /// A concurrent wave runs each agent on its own scoped thread with
+    /// `world: None`, a private `OutputDeck` shard, and a shared `&LaneBus`
+    /// (all `Send`/`Sync`); the shards are folded back into the shared deck in
+    /// wave order after the barrier, keeping outputs deterministic. Singleton
+    /// waves run inline with exclusive `&mut World`, identical to
+    /// [`execute_agents_sequential`](Self::execute_agents_sequential).
+    ///
+    /// GORNA cost fitting still assumes sequential (sum-of-costs) budgets;
+    /// switching it to a critical-path model is a follow-up (see the concurrent
+    /// wave's per-agent timings recorded here).
     fn execute_agents_parallel(
         &self,
-        _agents: Vec<AgentSlot>,
-        _world: &mut World,
-        _runtime: &Arc<Runtime>,
-        _completion_map: &Arc<AgentCompletionMap>,
+        agents: Vec<AgentSlot>,
+        world: &mut World,
+        runtime: &Arc<Runtime>,
+        completion_map: &Arc<AgentCompletionMap>,
+        bus: &LaneBus,
+        deck: &mut OutputDeck,
     ) {
-        unimplemented!("parallel agent execution — not yet implemented");
+        let workload_n = world.entity_count() as f64;
+        let frame_status = runtime.resources.get::<AgentFrameStatusMap>().cloned();
+        let record_frame_time = |id: AgentId, measured_time_ms: f32| {
+            if let Some(fs) = &frame_status {
+                fs.write()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(id, AgentFrameStatus { measured_time_ms });
+            }
+        };
+        let report_cost = |id: AgentId, time_ms: f64| {
+            if let Some(tx) = &self.telemetry {
+                let _ = tx.try_send(TelemetryEvent::AgentCost {
+                    id,
+                    n: workload_n,
+                    time_ms,
+                });
+            }
+        };
+
+        // Read each agent's id + access footprint once (a failed lock yields no
+        // id → an always-singleton, always-skipped slot, matching sequential).
+        let metas: Vec<WaveMeta> = agents
+            .iter()
+            .map(|(agent, _, _, deps)| {
+                let (id, access) = agent
+                    .lock()
+                    .ok()
+                    .map(|a| (Some(a.id()), a.access()))
+                    .unwrap_or((None, AgentAccess::Exclusive));
+                WaveMeta {
+                    id,
+                    access,
+                    hard_dep_targets: deps
+                        .iter()
+                        .filter(|d| matches!(d.kind, DependencyKind::Hard))
+                        .map(|d| d.target)
+                        .collect(),
+                }
+            })
+            .collect();
+
+        // Returns true if the agent should run (not budget-skipped, hard deps
+        // satisfied); marks + records the skip otherwise.
+        let gate = |id: AgentId, importance: AgentImportance, deps: &[AgentDependency]| -> bool {
+            if importance.is_negotiable() && self.is_under_budget_pressure() {
+                completion_map.mark(id, CompletionOutcome::Skipped);
+                record_frame_time(id, 0.0);
+                return false;
+            }
+            if !are_hard_dependencies_completed(deps, completion_map) {
+                completion_map.mark(id, CompletionOutcome::Skipped);
+                record_frame_time(id, 0.0);
+                return false;
+            }
+            true
+        };
+
+        for wave in partition_waves(&metas) {
+            // Singleton wave: run inline with exclusive &mut World (identical to
+            // the sequential path — covers every Exclusive agent).
+            if wave.len() == 1 {
+                let idx = wave[0];
+                let Some(id) = metas[idx].id else { continue };
+                let (agent, importance, _priority, deps) = &agents[idx];
+                if !gate(id, *importance, deps) {
+                    continue;
+                }
+                let mut engine_ctx = EngineContext {
+                    world: Some(world as &mut dyn std::any::Any),
+                    runtime: Arc::clone(runtime),
+                    bus,
+                    deck,
+                };
+                let started = Instant::now();
+                if let Ok(mut a) = agent.lock() {
+                    a.execute(&mut engine_ctx);
+                }
+                let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+                record_frame_time(id, elapsed_ms as f32);
+                report_cost(id, elapsed_ms);
+                completion_map.mark(id, CompletionOutcome::Completed);
+                continue;
+            }
+
+            // Concurrent wave: gate on this thread, then execute the survivors
+            // on scoped threads — each with world: None + a private deck shard.
+            let runnable: Vec<usize> = wave
+                .into_iter()
+                .filter(|&idx| match metas[idx].id {
+                    Some(id) => gate(id, agents[idx].1, &agents[idx].3),
+                    None => false,
+                })
+                .collect();
+            if runnable.is_empty() {
+                continue;
+            }
+
+            let mut results: Vec<(usize, AgentId, OutputDeck, f64)> =
+                std::thread::scope(|scope| {
+                    let handles: Vec<_> = runnable
+                        .iter()
+                        .map(|&idx| {
+                            let agent = Arc::clone(&agents[idx].0);
+                            let id = metas[idx].id.expect("gated runnable has an id");
+                            let runtime = Arc::clone(runtime);
+                            scope.spawn(move || {
+                                let mut shard = OutputDeck::new();
+                                let started = Instant::now();
+                                {
+                                    let mut ctx = EngineContext {
+                                        world: None,
+                                        runtime,
+                                        bus,
+                                        deck: &mut shard,
+                                    };
+                                    if let Ok(mut a) = agent.lock() {
+                                        a.execute(&mut ctx);
+                                    }
+                                }
+                                let ms = started.elapsed().as_secs_f64() * 1000.0;
+                                (idx, id, shard, ms)
+                            })
+                        })
+                        .collect();
+                    handles.into_iter().filter_map(|h| h.join().ok()).collect()
+                });
+
+            // Fold shards back in wave order → deterministic deck contents.
+            results.sort_by_key(|(idx, _, _, _)| *idx);
+            for (_, id, shard, ms) in results {
+                deck.merge_from(shard);
+                record_frame_time(id, ms as f32);
+                report_cost(id, ms);
+                completion_map.mark(id, CompletionOutcome::Completed);
+            }
+        }
     }
 
     fn is_under_budget_pressure(&self) -> bool {
@@ -671,6 +830,43 @@ fn sort_agents(mut agents: Vec<AgentSlot>) -> Vec<AgentSlot> {
     }
 }
 
+/// Per-agent metadata the parallel executor needs to group agents into waves.
+struct WaveMeta {
+    /// The agent's id, or `None` if it could not be locked (→ singleton, skipped).
+    id: Option<AgentId>,
+    /// Whether the agent is safe to run concurrently.
+    access: AgentAccess,
+    /// Ids this agent hard-depends on (must run in an earlier wave).
+    hard_dep_targets: Vec<AgentId>,
+}
+
+/// Groups agents (already in `sort_agents` order) into execution waves.
+///
+/// A wave is a maximal run of consecutive [`AgentAccess::Isolated`] agents in
+/// which no member hard-depends on another member. Any [`AgentAccess::Exclusive`]
+/// agent is its own singleton wave. Because the input is already topologically
+/// ordered by hard deps, and a dependent never shares a wave with its target,
+/// running the waves in order preserves the exact Hard-dependency ordering the
+/// sequential path guarantees.
+fn partition_waves(metas: &[WaveMeta]) -> Vec<Vec<usize>> {
+    let mut waves: Vec<Vec<usize>> = Vec::new();
+    for (i, meta) in metas.iter().enumerate() {
+        let joins_current = meta.access == AgentAccess::Isolated
+            && waves.last().is_some_and(|wave| {
+                wave.iter().all(|&j| metas[j].access == AgentAccess::Isolated)
+                    && !meta.hard_dep_targets.iter().any(|target| {
+                        wave.iter().any(|&j| metas[j].id == Some(*target))
+                    })
+            });
+        if joins_current {
+            waves.last_mut().expect("checked non-empty").push(i);
+        } else {
+            waves.push(vec![i]);
+        }
+    }
+    waves
+}
+
 fn are_hard_dependencies_completed(
     dependencies: &[AgentDependency],
     completion_map: &AgentCompletionMap,
@@ -686,6 +882,64 @@ fn are_hard_dependencies_completed(
         }
     }
     true
+}
+
+#[cfg(test)]
+mod wave_tests {
+    use super::{partition_waves, WaveMeta};
+    use khora_core::agent::AgentAccess;
+    use khora_core::control::gorna::AgentId;
+
+    fn meta(id: AgentId, access: AgentAccess, deps: &[AgentId]) -> WaveMeta {
+        WaveMeta {
+            id: Some(id),
+            access,
+            hard_dep_targets: deps.to_vec(),
+        }
+    }
+
+    #[test]
+    fn all_exclusive_are_singletons() {
+        let metas = vec![
+            meta(AgentId::Physics, AgentAccess::Exclusive, &[]),
+            meta(AgentId::Renderer, AgentAccess::Exclusive, &[]),
+        ];
+        assert_eq!(partition_waves(&metas), vec![vec![0], vec![1]]);
+    }
+
+    #[test]
+    fn consecutive_isolated_form_one_wave() {
+        let metas = vec![
+            meta(AgentId::Audio, AgentAccess::Isolated, &[]),
+            meta(AgentId::ShadowRenderer, AgentAccess::Isolated, &[]),
+        ];
+        assert_eq!(partition_waves(&metas), vec![vec![0, 1]]);
+    }
+
+    #[test]
+    fn exclusive_breaks_the_wave() {
+        let metas = vec![
+            meta(AgentId::Audio, AgentAccess::Isolated, &[]),
+            meta(AgentId::Physics, AgentAccess::Exclusive, &[]),
+            meta(AgentId::ShadowRenderer, AgentAccess::Isolated, &[]),
+        ];
+        assert_eq!(partition_waves(&metas), vec![vec![0], vec![1], vec![2]]);
+    }
+
+    #[test]
+    fn hard_dep_on_wave_member_splits_it() {
+        // The second Isolated agent hard-depends on the first, so it must run in
+        // a later wave — preserving the dependency ordering.
+        let metas = vec![
+            meta(AgentId::Audio, AgentAccess::Isolated, &[]),
+            meta(
+                AgentId::ShadowRenderer,
+                AgentAccess::Isolated,
+                &[AgentId::Audio],
+            ),
+        ];
+        assert_eq!(partition_waves(&metas), vec![vec![0], vec![1]]);
+    }
 }
 
 #[cfg(test)]

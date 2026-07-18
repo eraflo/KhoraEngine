@@ -672,8 +672,8 @@ mod tests {
     use crate::EngineMode;
     use khora_core::agent::Agent;
     use khora_core::control::gorna::{
-        AdaptationMode, AgentHints, AgentId, AgentStatus, EngineHint, NegotiationRequest,
-        NegotiationResponse, ResourceBudget, StrategyId, StrategyOption, TickDecisions,
+        AdaptationMode, AgentHints, AgentId, AgentStatus, NegotiationRequest, NegotiationResponse,
+        ResourceBudget, StrategyId, StrategyOption, TickDecisions,
     };
     use khora_core::EngineContext;
 

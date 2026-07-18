@@ -47,7 +47,8 @@ and [`security-privacy.md`](./security-privacy.md).
 
 ## 5 — Concurrency
 
-- Never use `std::thread::spawn` directly. Concurrency goes through the DCC agent system. The DCC schedules; agents execute. Per-frame work runs through agents and the `Lane` trait. **Sole exception:** the DCC's own cold-path tick thread (`DccService::start` in `khora-control/src/service.rs`) — it *is* the concurrency authority this rule routes everything else through, spawned once at startup. Test code may also spawn threads for isolation.
+- Never use `std::thread::spawn` directly. Concurrency goes through the DCC agent system. The DCC schedules; agents execute. Per-frame work runs through agents and the `Lane` trait. **Exceptions:** (1) the DCC's own cold-path tick thread (`DccService::start` in `khora-control/src/service.rs`) — it *is* the concurrency authority this rule routes everything else through, spawned once at startup; (2) the scheduler's **structured parallel executor** (`ExecutionScheduler::execute_agents_parallel` in `khora-control/src/scheduler.rs`), which uses `std::thread::scope` to run a phase's `AgentAccess::Isolated` agents concurrently and joins them before returning — the threads are scheduler-owned, phase-scoped, and never escape the frame. Test code may also spawn threads for isolation.
+- Parallel agent execution is gated on `Agent::access()`: an agent runs concurrently only if it declares `AgentAccess::Isolated` (touches no `World`, writes only its own `OutputDeck`). The default is `AgentAccess::Exclusive` (serial). Never declare `Isolated` for an agent that reads/writes the `World` or a shared mutable resource during `execute`.
 
 ## 6 — Subsystem boundaries
 

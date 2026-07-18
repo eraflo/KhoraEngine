@@ -130,9 +130,43 @@ pub trait Agent: Send + Sync {
         ExecutionTiming::default()
     }
 
+    /// Declares this agent's data-access footprint during [`execute`](Self::execute),
+    /// so the scheduler can decide whether it is safe to run concurrently with
+    /// other agents in the same phase.
+    ///
+    /// Defaults to [`AgentAccess::Exclusive`] — the safe fallback: the agent is
+    /// assumed to need exclusive `&mut World`, so it runs serially. An agent
+    /// overrides this to [`AgentAccess::Isolated`] **only** if `execute` provably
+    /// touches no `World` and no shared mutable engine resource (it reads the
+    /// `LaneBus` and writes solely its own `OutputDeck`).
+    fn access(&self) -> AgentAccess {
+        AgentAccess::Exclusive
+    }
+
     /// Allows downcasting to concrete agent types.
     fn as_any(&self) -> &dyn Any;
 
     /// Allows mutable downcasting to concrete agent types.
     fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+/// An agent's data-access footprint during [`Agent::execute`], used by the
+/// scheduler's parallel executor to decide which agents may run concurrently.
+///
+/// The default ([`Exclusive`](Self::Exclusive)) is the safe fallback: the agent
+/// may touch the ECS `World` mutably (or a shared mutable resource), so it must
+/// run serially. Only an agent that provably confines itself to reading the
+/// `LaneBus` and writing its own `OutputDeck` should declare
+/// [`Isolated`](Self::Isolated).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AgentAccess {
+    /// Needs exclusive `&mut World` (or touches a shared mutable resource);
+    /// runs serially. The safe default.
+    #[default]
+    Exclusive,
+    /// Touches no `World` and writes only its own `OutputDeck` — no shared
+    /// mutable engine resources. Eligible for concurrent execution: the
+    /// scheduler runs it with `world: None` and a private deck shard, folded
+    /// back into the shared deck after the concurrent wave.
+    Isolated,
 }
