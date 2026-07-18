@@ -21,8 +21,10 @@
 //! Both are registered into the [`ServiceRegistry`] during bootstrap and
 //! must not be held as local fields inside agents.
 
+pub mod eviction;
 pub mod projection;
 pub mod store;
 
+pub use eviction::AssetEviction;
 pub use projection::ProjectionRegistry;
 pub use store::AssetStore;

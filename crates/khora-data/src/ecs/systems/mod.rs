@@ -20,6 +20,7 @@
 //! `inventory`; nothing else needs to know about a new system except its
 //! own file.
 
+pub mod asset_eviction;
 pub mod audio_playback_writeback;
 pub mod capture_previous_transform;
 pub mod ecs_maintenance;

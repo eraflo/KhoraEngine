@@ -76,6 +76,24 @@ impl<A: Asset> Assets<A> {
     pub fn remove(&mut self, uuid: &AssetUUID) -> Option<AssetHandle<A>> {
         self.storage.remove(uuid)
     }
+
+    /// Returns an iterator over every `AssetUUID` currently cached.
+    ///
+    /// Used by the asset-eviction maintenance pass to diff the cached set
+    /// against the set of UUIDs still referenced by live entities.
+    pub fn keys(&self) -> impl Iterator<Item = AssetUUID> + '_ {
+        self.storage.keys().copied()
+    }
+
+    /// The number of assets currently cached.
+    pub fn len(&self) -> usize {
+        self.storage.len()
+    }
+
+    /// Returns `true` if no assets are cached.
+    pub fn is_empty(&self) -> bool {
+        self.storage.is_empty()
+    }
 }
 
 #[cfg(test)]

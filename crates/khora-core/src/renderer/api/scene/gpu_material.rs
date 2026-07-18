@@ -18,7 +18,7 @@ use crate::asset::Asset;
 use crate::renderer::api::command::BindGroupId;
 use crate::renderer::api::material::MaterialGpuBindings;
 use crate::renderer::api::pipeline::ShaderVariantKey;
-use crate::renderer::api::resource::{BufferId, SamplerId, TextureViewId};
+use crate::renderer::api::resource::{BufferId, SamplerId, TextureId, TextureViewId};
 
 /// A GPU-ready representation of a material: its uniform buffer, the PBR
 /// texture views it declares, the shared sampler, and a ready-to-bind
@@ -32,6 +32,15 @@ use crate::renderer::api::resource::{BufferId, SamplerId, TextureViewId};
 /// exactly that set of `HAS_*` flags, so the bind group, the group-2 layout
 /// it was built against, and the lit pipeline's group-2 layout all resolve
 /// from the same `(LayoutKey::Material, variant)`.
+///
+/// Each declared map is uploaded as a texture private to this material (the
+/// projection does not share GPU textures across materials), so the material
+/// **exclusively owns** its `uniform_buffer`, its four `*_texture` /
+/// `*_view` handles, and its `bind_group`. The `sampler` is the opposite:
+/// it is the engine-shared filtering sampler. This ownership split is what
+/// asset eviction relies on to free the resources — it destroys everything
+/// but the shared sampler when the material is reclaimed. The `*_texture`
+/// and matching `*_view` fields are always `Some`/`None` together.
 #[derive(Debug, Clone)]
 pub struct GpuMaterial {
     /// `MaterialUniforms` uniform buffer (base color, factors, …).
@@ -44,7 +53,17 @@ pub struct GpuMaterial {
     pub normal_view: Option<TextureViewId>,
     /// Emissive texture view, if declared.
     pub emissive_view: Option<TextureViewId>,
-    /// Filtering sampler shared by all maps.
+    /// Base-color texture backing [`base_color_view`](Self::base_color_view),
+    /// owned by this material and freed on eviction.
+    pub base_color_texture: Option<TextureId>,
+    /// Metallic-roughness texture backing
+    /// [`metallic_roughness_view`](Self::metallic_roughness_view).
+    pub metallic_roughness_texture: Option<TextureId>,
+    /// Normal texture backing [`normal_view`](Self::normal_view).
+    pub normal_texture: Option<TextureId>,
+    /// Emissive texture backing [`emissive_view`](Self::emissive_view).
+    pub emissive_texture: Option<TextureId>,
+    /// Filtering sampler shared by all maps (engine-owned; NOT freed on eviction).
     pub sampler: SamplerId,
     /// Prebuilt group-2 bind group bound by lit lanes.
     pub bind_group: BindGroupId,

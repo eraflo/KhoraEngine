@@ -404,13 +404,14 @@ impl MaterialProjector<'_> {
 
         // Color maps decode as sRGB; data maps (normal, metallic-roughness)
         // must stay linear or lighting is wrong. A declared-but-unuploadable
-        // texture aborts the build (no silent fallback).
+        // texture aborts the build (no silent fallback). Each slot resolves to
+        // the `(texture, view)` pair so the material owns both — the view for
+        // binding, the texture so eviction can free it.
         let base_color = self.resolve_texture(material.base_color_texture(), true, cpu_textures)?;
         let metallic_roughness =
             self.resolve_texture(material.metallic_roughness_texture(), false, cpu_textures)?;
         let normal = self.resolve_texture(material.normal_map(), false, cpu_textures)?;
-        let emissive_view =
-            self.resolve_texture(material.emissive_texture(), true, cpu_textures)?;
+        let emissive = self.resolve_texture(material.emissive_texture(), true, cpu_textures)?;
 
         let uniform_buffer = self
             .device
@@ -428,10 +429,10 @@ impl MaterialProjector<'_> {
 
         let bindings = MaterialGpuBindings {
             uniform_buffer,
-            base_color,
-            metallic_roughness,
-            normal,
-            emissive: emissive_view,
+            base_color: base_color.map(|(_, view)| view),
+            metallic_roughness: metallic_roughness.map(|(_, view)| view),
+            normal: normal.map(|(_, view)| view),
+            emissive: emissive.map(|(_, view)| view),
             sampler: self.sampler,
         };
 
@@ -458,31 +459,37 @@ impl MaterialProjector<'_> {
 
         Some(GpuMaterial {
             uniform_buffer,
-            base_color_view: base_color,
-            metallic_roughness_view: metallic_roughness,
-            normal_view: normal,
-            emissive_view,
+            base_color_view: base_color.map(|(_, view)| view),
+            metallic_roughness_view: metallic_roughness.map(|(_, view)| view),
+            normal_view: normal.map(|(_, view)| view),
+            emissive_view: emissive.map(|(_, view)| view),
+            base_color_texture: base_color.map(|(texture, _)| texture),
+            metallic_roughness_texture: metallic_roughness.map(|(texture, _)| texture),
+            normal_texture: normal.map(|(texture, _)| texture),
+            emissive_texture: emissive.map(|(texture, _)| texture),
             sampler: self.sampler,
             bind_group,
             variant,
         })
     }
 
-    /// Resolves an optional texture slot to an optional view:
+    /// Resolves an optional texture slot to an optional `(texture, view)` pair:
     /// - `None` slot → `Ok(None)` (the variant omits this binding).
-    /// - `Some(uuid)` decoded + uploaded → `Some(Some(view))`.
+    /// - `Some(uuid)` decoded + uploaded → `Some(Some((texture, view)))`.
     /// - `Some(uuid)` absent from the store, or an upload failure → `None`
     ///   (the whole build aborts after a clear log), never a fallback.
     ///
-    /// Returns `Option<Option<TextureViewId>>` so the caller's `?` aborts the
-    /// build on a hard failure while still distinguishing "no texture
-    /// declared" from "texture present".
+    /// Returns `Option<Option<(TextureId, TextureViewId)>>` so the caller's `?`
+    /// aborts the build on a hard failure while still distinguishing "no
+    /// texture declared" from "texture present". The `TextureId` is carried
+    /// alongside the view so the built [`GpuMaterial`] owns both and eviction
+    /// can free the underlying texture, not just its view.
     fn resolve_texture(
         &self,
         slot: Option<AssetUUID>,
         srgb: bool,
         cpu_textures: &crate::assets::Assets<CpuTexture>,
-    ) -> Option<Option<TextureViewId>> {
+    ) -> Option<Option<(TextureId, TextureViewId)>> {
         let Some(uuid) = slot else {
             return Some(None);
         };
@@ -493,15 +500,17 @@ impl MaterialProjector<'_> {
             );
             return None;
         };
-        let view = self.upload_texture(cpu, srgb)?;
-        Some(Some(view))
+        let pair = self.upload_texture(cpu, srgb)?;
+        Some(Some(pair))
     }
 
-    /// Uploads a decoded [`CpuTexture`] to the GPU and returns a sampleable
-    /// view. `srgb` selects the role-correct format family (color maps decode
-    /// as sRGB, data maps stay linear); the texture's own format is ignored so
-    /// a single decoder output can serve either role.
-    fn upload_texture(&self, cpu: &CpuTexture, srgb: bool) -> Option<TextureViewId> {
+    /// Uploads a decoded [`CpuTexture`] to the GPU and returns the created
+    /// texture together with a sampleable view. `srgb` selects the role-correct
+    /// format family (color maps decode as sRGB, data maps stay linear); the
+    /// texture's own format is ignored so a single decoder output can serve
+    /// either role. The `TextureId` is returned so the owning material can free
+    /// it on eviction — destroying the view alone would leak the texture.
+    fn upload_texture(&self, cpu: &CpuTexture, srgb: bool) -> Option<(TextureId, TextureViewId)> {
         let format = if srgb {
             TextureFormat::Rgba8UnormSrgb
         } else {
@@ -531,7 +540,8 @@ impl MaterialProjector<'_> {
             )
             .map_err(|e| log::error!("material texture write failed: {e:?}"))
             .ok()?;
-        self.device
+        let view = self
+            .device
             .create_texture_view(
                 texture,
                 &TextureViewDescriptor {
@@ -546,6 +556,7 @@ impl MaterialProjector<'_> {
                 },
             )
             .map_err(|e| log::error!("material texture view failed: {e:?}"))
-            .ok()
+            .ok()?;
+        Some((texture, view))
     }
 }

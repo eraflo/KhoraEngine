@@ -33,7 +33,9 @@ use std::time::{Duration, Instant};
 use crate::analysis::HeuristicEngine;
 use crate::gorna::GornaArbitrator;
 use crate::registry::AgentRegistry;
-use khora_core::control::gorna::{AdaptationMode, AgentId, DecisionTrace, TickDecisions};
+use khora_core::control::gorna::{
+    AdaptationMode, AgentHints, AgentId, DecisionTrace, EngineHint, TickDecisions,
+};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -115,6 +117,11 @@ pub struct DccService {
     /// Per-agent developer-control modes, shared with the cold-path arbitrator.
     /// Written from any thread (host/editor), read each tick by the DCC loop.
     adaptation_modes: Arc<std::sync::RwLock<HashMap<AgentId, AdaptationMode>>>,
+    /// Per-agent developer hints (`Cap`, `Prioritize`) that bias arbitration
+    /// without changing game semantics. Written from any thread (host/editor)
+    /// via [`set_hint`](Self::set_hint), read each tick by the DCC loop and fed
+    /// into the arbitrator. The same developer-control axis as `adaptation_modes`.
+    hints: Arc<std::sync::RwLock<HashMap<AgentId, AgentHints>>>,
     /// Latest read-only layout recommendations per component, derived by the
     /// DCC from access telemetry via the Data-layer advisor. Glass-box only:
     /// the DCC *advises*, it never repacks — Data owns its layout (CLAD).
@@ -141,6 +148,7 @@ impl DccService {
             handle: None,
             event_tx: tx,
             adaptation_modes: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            hints: Arc::new(std::sync::RwLock::new(HashMap::new())),
             layout_recommendations: Arc::new(std::sync::RwLock::new(HashMap::new())),
             decision_recording: Arc::new(std::sync::RwLock::new(false)),
             recorded_trace: Arc::new(std::sync::RwLock::new(DecisionTrace::default())),
@@ -166,6 +174,33 @@ impl DccService {
             .ok()
             .and_then(|m| m.get(&agent_id).copied())
             .unwrap_or_default()
+    }
+
+    /// Applies a developer [`EngineHint`] biasing GORNA arbitration — the same
+    /// control axis as [`set_adaptation_mode`](Self::set_adaptation_mode).
+    /// `Cap` bounds an agent's per-frame time budget; `Prioritize` biases its
+    /// negotiation weight. Thread-safe; takes effect on the next arbitration
+    /// tick. Hints persist and accumulate per agent (latest value wins per
+    /// kind) until cleared with [`clear_agent_hints`](Self::clear_agent_hints).
+    /// Advisory only: a `Manual` pin and the death-spiral safety stop still win.
+    pub fn set_hint(&self, hint: EngineHint) {
+        if let Ok(mut hints) = self.hints.write() {
+            hints.entry(hint.agent()).or_default().apply(hint);
+        }
+    }
+
+    /// Clears all developer hints for an agent, restoring engine defaults.
+    /// Thread-safe; takes effect on the next arbitration tick.
+    pub fn clear_agent_hints(&self, agent_id: AgentId) {
+        if let Ok(mut hints) = self.hints.write() {
+            hints.remove(&agent_id);
+        }
+    }
+
+    /// Read-only snapshot of the accumulated per-agent hints (glass-box; safe
+    /// any time), e.g. for the editor's Control-Plane panel.
+    pub fn hints(&self) -> HashMap<AgentId, AgentHints> {
+        self.hints.read().map(|h| h.clone()).unwrap_or_default()
     }
 
     /// Read-only snapshot of the per-component layout recommendations the DCC's
@@ -273,6 +308,7 @@ impl DccService {
         let registry = Arc::clone(&self.registry);
         let budget_channel = self.budget_channel.clone();
         let adaptation_modes = Arc::clone(&self.adaptation_modes);
+        let hints = Arc::clone(&self.hints);
         let layout_recommendations = Arc::clone(&self.layout_recommendations);
         let decision_recording = Arc::clone(&self.decision_recording);
         let recorded_trace = Arc::clone(&self.recorded_trace);
@@ -527,6 +563,11 @@ impl DccService {
                                 arbitrator.set_adaptation_mode(*id, *mode);
                             }
                         }
+                        // Snapshot the developer hints for this tick (Cap /
+                        // Prioritize biases). Empty map = no hints = default
+                        // behaviour, so this is bit-identical when unused.
+                        let tick_hints: HashMap<AgentId, AgentHints> =
+                            hints.read().map(|h| h.clone()).unwrap_or_default();
                         // Per-agent measured costs anchor the agents' self-quoted
                         // estimates in reality during fitting: prefer the model's
                         // forecast at the current workload, fall back to the
@@ -546,6 +587,7 @@ impl DccService {
                             &mut agents_slice,
                             &measured_costs,
                             replay_tick.as_ref(),
+                            &tick_hints,
                         );
                         initial_negotiation_done = true;
                         last_issued_multiplier = Some(multiplier);

@@ -172,6 +172,14 @@ impl<A: EngineApp> EngineCore<A> {
             .resources
             .insert(Arc::new(Mutex::new(khora_data::ecs::EcsMaintenance::new())));
 
+        // AssetEviction — fetched + ticked each frame by the `asset_eviction`
+        // DataSystem (Maintenance phase). Reclaims orphaned GPU meshes/materials
+        // (from despawns and inline material edits) that the insert-only
+        // projection would otherwise leak, freeing their wgpu resources.
+        runtime
+            .resources
+            .insert(Arc::new(Mutex::new(khora_data::AssetEviction::new())));
+
         // Time — the engine's per-frame clock. The scheduler publishes the
         // real frame delta + fixed step + render-interpolation alpha into it
         // each frame; Flows and game `update` read it (replacing hardcoded
@@ -624,6 +632,37 @@ impl<A: EngineApp> EngineCore<A> {
     /// Returns the DCC service, if initialized.
     pub fn dcc(&self) -> Option<&DccService> {
         self.dcc.as_ref()
+    }
+
+    /// Applies a developer [`EngineHint`](khora_core::control::gorna::EngineHint)
+    /// biasing GORNA arbitration (`Cap` a per-frame budget, `Prioritize` an
+    /// agent) without changing game semantics. No-op if the DCC isn't running.
+    /// Thread-safe; takes effect on the next arbitration tick.
+    pub fn set_engine_hint(&self, hint: khora_core::control::gorna::EngineHint) {
+        if let Some(dcc) = &self.dcc {
+            dcc.set_hint(hint);
+        }
+    }
+
+    /// Clears all developer hints for an agent, restoring engine defaults.
+    pub fn clear_agent_hints(&self, agent_id: khora_core::control::gorna::AgentId) {
+        if let Some(dcc) = &self.dcc {
+            dcc.clear_agent_hints(agent_id);
+        }
+    }
+
+    /// Read-only snapshot of the accumulated per-agent hints (glass-box), or an
+    /// empty map if the DCC isn't running.
+    pub fn engine_hints(
+        &self,
+    ) -> std::collections::HashMap<
+        khora_core::control::gorna::AgentId,
+        khora_core::control::gorna::AgentHints,
+    > {
+        self.dcc
+            .as_ref()
+            .map(|d| d.hints())
+            .unwrap_or_default()
     }
 
     /// Shuts down the engine, calling `app.on_shutdown()`.
