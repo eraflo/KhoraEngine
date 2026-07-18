@@ -16,9 +16,35 @@ use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::{
     page::{AnyVec, ComponentPage},
-    Component, DomainBitset, FieldSoaColumn, QueryMode, QueryPlan, SoaLayout, World,
+    Component, DomainBitset, FieldSoaColumn, QueryMode, QueryPlan, SemanticDomain, SoaLayout, World,
 };
 use std::{any::TypeId, marker::PhantomData};
+
+/// Returns `true` if `row` in `page_id` is the entity's **live** location for
+/// `domain` — i.e. not a stale orphan row left behind by a migration.
+///
+/// `add_component` / `remove_component` move an entity's domain row to a new
+/// page but leave the old row in place (reclaimed later by the maintenance GC),
+/// and the old page's signature is unchanged, so `find_matching_pages` keeps
+/// matching it. Only the row the entity's metadata points to is real; any other
+/// row bearing the same entity is a stale orphan (holding outdated component
+/// values) that must not be yielded. The Native iterators call this per row; the
+/// Transversal path performs the equivalent check inside `Without::fetch_from_world`.
+fn is_live_row(
+    world: &World,
+    page_id: u32,
+    row: usize,
+    entity: EntityId,
+    domain: SemanticDomain,
+) -> bool {
+    world
+        .entities
+        .get(entity.index as usize)
+        .filter(|(slot, _)| slot.generation == entity.generation)
+        .and_then(|(_, meta)| meta.as_ref())
+        .and_then(|meta| meta.locations.get(&domain))
+        .is_some_and(|loc| loc.page_id == page_id && loc.row_index as usize == row)
+}
 
 // ------------------------- //
 // ---- WorldQuery Part ---- //
@@ -465,14 +491,24 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
 
             // 3. Check if there are rows left in the current page.
             if self.current_row_index < page.row_count() {
+                let row = self.current_row_index;
+                self.current_row_index += 1;
+
+                // Skip stale orphan rows (see `is_live_row`): `find_matching_pages`
+                // filters by page signature, which a migration leaves unchanged on
+                // the abandoned old page, so an entity can appear in a matched page
+                // it no longer lives in.
+                if let Some(domain) = self.plan.driver_domain {
+                    if !is_live_row(world, page_id, row, page.entities[row], domain) {
+                        continue;
+                    }
+                }
+
                 // SAFETY: `page` lives in `world`, which is borrowed for `'a`, and
                 // `matching_page_indices` only contains pages whose signature
                 // satisfies `Q`, so every column `Q::fetch` reads is present.
-                // `current_row_index < page.row_count()` keeps the row in bounds.
-                let item = unsafe { Q::fetch(page as *const _, self.current_row_index) };
-
-                // Advance the row index for the next call.
-                self.current_row_index += 1;
+                // `row < page.row_count()` keeps the row in bounds.
+                let item = unsafe { Q::fetch(page as *const _, row) };
                 return Some(item);
             } else {
                 self.current_page_index += 1;
@@ -643,18 +679,27 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             let world = unsafe { &mut *self.world_ptr };
             let page_id = self.matching_page_indices[self.current_page_index] as usize;
 
-            // We get a mutable reference to the page, which is a safe operation
-            // because `world` is a mutable reference.
-            let page = &mut world.storage.pages[page_id];
+            if self.current_row_index < world.storage.pages[page_id].row_count() {
+                let row = self.current_row_index;
+                self.current_row_index += 1;
 
-            if self.current_row_index < page.row_count() {
+                // Skip stale orphan rows (see `is_live_row`), through a shared
+                // borrow taken before the `&mut` page below.
+                if let Some(domain) = self.plan.driver_domain {
+                    let entity = world.storage.pages[page_id].entities[row];
+                    if !is_live_row(world, page_id as u32, row, entity, domain) {
+                        continue;
+                    }
+                }
+
+                // We get a mutable reference to the page, which is a safe operation
+                // because `world` is a mutable reference.
                 // SAFETY: `page` is borrowed from the exclusively-held `world`;
                 // `matching_page_indices` only lists pages matching `Q`, so the
                 // columns `Q::fetch` reads (and mutably aliases for `&mut`
-                // queries) are present, and the row index is in bounds.
-                let item = unsafe { Q::fetch(page as *mut _ as *const _, self.current_row_index) };
-
-                self.current_row_index += 1;
+                // queries) are present, and `row` is in bounds.
+                let page = &mut world.storage.pages[page_id];
+                let item = unsafe { Q::fetch(page as *mut _ as *const _, row) };
                 return Some(item);
             } else {
                 self.current_page_index += 1;
