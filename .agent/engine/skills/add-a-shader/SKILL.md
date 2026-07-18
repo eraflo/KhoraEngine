@@ -26,4 +26,4 @@ WGSL as a Rust string; **never** read shader files at runtime.
 
 ## Verify
 `cargo test --workspace` and `cargo run -p sandbox` (clean frame, scene renders). For visual style choices,
-use `/impeccable`. Delegate technique detail to the `graphics-rendering-expert` agent.
+use `/impeccable`. For technique detail, consult [`../../reference/graphics-rendering.md`](../../reference/graphics-rendering.md).

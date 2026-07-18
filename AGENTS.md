@@ -20,4 +20,6 @@ You are working ON Khora Engine — an experimental Rust game engine (SAA / CLAD
 
 ## Tooling
 Query the **codegraph** MCP before grepping. Token-optimized commands via **rtk**. For any design /
-UI-UX task, use **`/impeccable`**.
+UI-UX task, use **`/impeccable`**. For non-trivial work, follow the **RPI** loop
+(`/research-codebase` → `/create-plan` → `/implement-plan`); dispatch read-only research subagents
+for context control (see `.agent/engine/workflow-rpi.md`).

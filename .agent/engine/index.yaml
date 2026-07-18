@@ -15,6 +15,9 @@ docs:
   - path: index.md
     load: always
     tags: [index, navigation]
+  - path: workflow-rpi.md
+    load: always
+    tags: [workflow, rpi, research, plan, implement, context-engineering]
   - path: conventions.md
     load: on_demand
     tags: [style, naming, patterns, file-layout, bind-groups]
@@ -36,23 +39,33 @@ knowledge:
     load: on_demand
     tags: [project, workspace, build-commands]
 
-# Specialist sub-agents — invoke when a task is squarely in the domain.
+# Research subagents — read-only context-control workers; dispatch during the Research phase.
 agents:
-  - { path: agents/orchestrator.md,             when: default front door / routing }
-  - { path: agents/graphics-rendering-expert.md, when: wgpu / WGSL / render pipelines / shadows }
-  - { path: agents/physics-expert.md,            when: Rapier3D / rigid bodies / colliders / CCD }
-  - { path: agents/audio-expert.md,              when: CPAL / spatial mixing / audio flow }
-  - { path: agents/math-expert.md,               when: khora_core::math / SIMD / numerics }
-  - { path: agents/ecs-data-expert.md,           when: CRPECS / storage / SoA / AGDF / components }
-  - { path: agents/control-gorna-expert.md,      when: DCC / GORNA / cost model / PID / budgets }
-  - { path: agents/editor-ui-ux.md,              when: khora-editor panels / gizmos / dock (uses /impeccable) }
-  - { path: agents/api-ux-expert.md,             when: khora-sdk ergonomics / builder / type-state }
-  - { path: agents/documentation-expert.md,      when: mdBook / rustdoc / diagrams }
-  - { path: agents/security-auditor.md,          when: unsafe audit / supply chain / secrets / pre-push }
-  - { path: agents/deprecation-cleaner.md,       when: API modernization / dead-code removal }
+  - { path: agents/orchestrator.md,             when: default front door / routing / drive the RPI loop }
+  - { path: agents/codebase-locator.md,         when: find WHERE files / symbols / modules live }
+  - { path: agents/codebase-analyzer.md,        when: understand HOW a mechanism works (file:line + CLAD flow) }
+  - { path: agents/codebase-pattern-finder.md,  when: find an existing example / pattern to mirror }
+  - { path: agents/knowledge-locator.md,        when: find prior research / plans / decisions }
+  - { path: agents/security-auditor.md,         when: unsafe audit / supply chain / secrets / pre-push }
+
+# Domain reference — on-demand knowledge (scope, key files, hard rules) per domain.
+reference:
+  - { path: reference/graphics-rendering.md, load: on_demand, tags: [wgpu, wgsl, pbr, shadows, bind-groups] }
+  - { path: reference/physics.md,            load: on_demand, tags: [rapier, rigid-body, colliders, ccd] }
+  - { path: reference/audio.md,              load: on_demand, tags: [cpal, spatial-mixing, mix-bus] }
+  - { path: reference/math.md,               load: on_demand, tags: [khora-math, simd, numerics] }
+  - { path: reference/ecs-data.md,           load: on_demand, tags: [crpecs, storage, soa, agdf, components] }
+  - { path: reference/control-gorna.md,      load: on_demand, tags: [dcc, gorna, cost-model, pid, budgets] }
+  - { path: reference/editor-ui-ux.md,       load: on_demand, tags: [editor, panels, gizmos, dock, impeccable] }
+  - { path: reference/api-ux.md,             load: on_demand, tags: [sdk, ergonomics, builder, facade] }
+  - { path: reference/documentation.md,      load: on_demand, tags: [mdbook, rustdoc, diagrams] }
+  - { path: reference/deprecation.md,        load: on_demand, tags: [modernization, dead-code, cleanup] }
 
 # Task skills — run when the recurring task matches.
 skills:
+  - { path: skills/research-codebase/SKILL.md, when: RPI phase 1 — understand a problem → docs/research/ }
+  - { path: skills/create-plan/SKILL.md,       when: RPI phase 2 — write a phase-by-phase plan → docs/plans/ }
+  - { path: skills/implement-plan/SKILL.md,    when: RPI phase 3 — execute a plan, compact per phase }
   - { path: skills/build-and-test/SKILL.md,   when: validate a change }
   - { path: skills/add-a-lane/SKILL.md,       when: add a Lane }
   - { path: skills/add-an-agent/SKILL.md,     when: add an Agent }

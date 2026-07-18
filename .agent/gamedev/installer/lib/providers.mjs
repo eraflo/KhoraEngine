@@ -6,6 +6,18 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { writeFileRecording, copyTreeRecording, exists, log } from './core.mjs';
 
+// Remove every child of `dir` except the names in `keep`. Used before a
+// verbatim copy so files dropped from the canonical source (e.g. a retired
+// agent) don't linger in a generated dir. `keep` protects bootstrapped content
+// (the `impeccable` design skill) that lives alongside generated files.
+function cleanDir(dir, { keep = [] } = {}) {
+  if (!exists(dir)) return;
+  for (const entry of fs.readdirSync(dir)) {
+    if (keep.includes(entry)) continue;
+    fs.rmSync(path.join(dir, entry), { recursive: true, force: true });
+  }
+}
+
 // ── Per-profile essentials baked into the thin routers ─────────────────────
 function essentials(profile) {
   if (profile === 'gamedev') {
@@ -71,7 +83,9 @@ ${e.rules.map((r) => `- ${r}`).join('\n')}
 
 ## Tooling
 Query the **codegraph** MCP before grepping. Token-optimized commands via **rtk**. For any design /
-UI-UX task, use **\`/impeccable\`**.
+UI-UX task, use **\`/impeccable\`**. For non-trivial work, follow the **RPI** loop
+(\`/research-codebase\` → \`/create-plan\` → \`/implement-plan\`); dispatch read-only research subagents
+for context control (see \`${canon(p, 'workflow-rpi.md')}\`).
 ${imports}`;
 }
 
@@ -80,7 +94,10 @@ export function generateClaude(ctx, generated) {
   const root = ctx.repoRoot;
   // Router
   writeFileRecording(ctx, path.join(root, 'CLAUDE.md'), routerMarkdown(ctx, { withImports: true }), generated);
-  // Copy agents + skills verbatim into the Claude discovery dirs.
+  // Clean stale generated entries first (retired agents/skills), preserving the
+  // bootstrapped impeccable skill, then copy agents + skills verbatim.
+  cleanDir(path.join(root, '.claude', 'agents'), { keep: ['.impeccable'] });
+  cleanDir(path.join(root, '.claude', 'skills'), { keep: ['impeccable'] });
   copyTreeRecording(ctx, path.join(ctx.profileDir, 'agents'), path.join(root, '.claude', 'agents'), generated);
   copyTreeRecording(ctx, path.join(ctx.profileDir, 'skills'), path.join(root, '.claude', 'skills'), generated);
   // settings.json with the doc-change hook (merged idempotently).
@@ -141,9 +158,14 @@ Query codegraph before grepping. For design, use /impeccable.
     const mdc = `---\ndescription: ${desc}\nalwaysApply: false\n---\n\n${body}`;
     writeFileRecording(ctx, path.join(rulesDir, `10-${doc.replace('.md', '')}.mdc`), mdc, generated);
   }
-  // Agents + skills as manual/agent-decided rules.
+  // Agents + skills + domain reference as manual/agent-decided rules.
+  // Clean stale rule files first so retired agents/reference docs don't linger.
+  cleanDir(path.join(rulesDir, 'agents'));
+  cleanDir(path.join(rulesDir, 'skills'));
+  cleanDir(path.join(rulesDir, 'reference'));
   cursorMirror(ctx, path.join(ctx.profileDir, 'agents'), path.join(rulesDir, 'agents'), generated, 'agent');
   cursorMirror(ctx, path.join(ctx.profileDir, 'skills'), path.join(rulesDir, 'skills'), generated, 'skill');
+  cursorMirror(ctx, path.join(ctx.profileDir, 'reference'), path.join(rulesDir, 'reference'), generated, 'reference');
   log.ok('Cursor wrappers (.cursor/rules/*.mdc)');
 }
 
@@ -172,28 +194,31 @@ export function generateCopilot(ctx, generated) {
   const root = ctx.repoRoot;
   writeFileRecording(ctx, path.join(root, '.github', 'copilot-instructions.md'),
     routerMarkdown(ctx, { withImports: false }), generated);
-  // Per-agent instruction files with applyTo globs (best-effort domain mapping).
+  // Per-domain instruction files with applyTo globs (best-effort mapping), sourced
+  // from the reference/ docs. Keys are reference doc basenames.
   const globs = {
-    'graphics-rendering-expert': 'crates/khora-lanes/src/render_lane/**,crates/khora-infra/src/graphics/**',
-    'physics-expert': 'crates/khora-infra/src/physics/**,crates/khora-lanes/src/physics_lane/**',
-    'audio-expert': 'crates/khora-infra/src/audio/**,crates/khora-lanes/src/audio_lane/**',
-    'ecs-data-expert': 'crates/khora-data/**',
-    'control-gorna-expert': 'crates/khora-control/**',
+    'graphics-rendering': 'crates/khora-lanes/src/render_lane/**,crates/khora-infra/src/graphics/**',
+    'physics': 'crates/khora-infra/src/physics/**,crates/khora-lanes/src/physics_lane/**',
+    'audio': 'crates/khora-infra/src/audio/**,crates/khora-lanes/src/audio_lane/**',
+    'ecs-data': 'crates/khora-data/**',
+    'control-gorna': 'crates/khora-control/**',
     'editor-ui-ux': 'crates/khora-editor/**',
-    'api-ux-expert': 'crates/khora-sdk/**',
-    'gameplay-expert': 'src/**,examples/**',
-    'scene-design-expert': 'src/**,assets/**',
+    'api-ux': 'crates/khora-sdk/**',
+    'gameplay': 'src/**,examples/**',
+    'scene-design': 'src/**,assets/**',
   };
-  const agentsDir = path.join(ctx.profileDir, 'agents');
-  if (exists(agentsDir)) {
-    for (const f of fs.readdirSync(agentsDir)) {
+  const instrDir = path.join(root, '.github', 'instructions');
+  cleanDir(instrDir); // drop stale per-agent instruction files
+  const refDir = path.join(ctx.profileDir, 'reference');
+  if (exists(refDir)) {
+    for (const f of fs.readdirSync(refDir)) {
       if (!f.endsWith('.md')) continue;
       const name = f.replace('.md', '');
       const applyTo = globs[name];
       if (!applyTo) continue;
-      const content = fs.readFileSync(path.join(agentsDir, f), 'utf8').replace(/^---[\s\S]*?---\n/, '');
+      const content = fs.readFileSync(path.join(refDir, f), 'utf8').replace(/^---[\s\S]*?---\n/, '');
       const out = `---\napplyTo: "${applyTo}"\n---\n\n${content}`;
-      writeFileRecording(ctx, path.join(root, '.github', 'instructions', `${name}.instructions.md`), out, generated);
+      writeFileRecording(ctx, path.join(instrDir, `${name}.instructions.md`), out, generated);
     }
   }
   log.ok('GitHub Copilot wrappers (.github/copilot-instructions.md, .github/instructions/*)');

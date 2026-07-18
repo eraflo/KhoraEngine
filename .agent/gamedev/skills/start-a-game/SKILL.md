@@ -20,5 +20,5 @@ Create a Cargo **binary** crate that depends on `khora-sdk`.
 ## Rules
 - SDK-only; `prelude::*`; no internal `khora-*` deps; no `unwrap()` on backend init you can recover from; no secrets.
 
-Delegate gameplay detail to `gameplay-expert`, scene/lighting to `scene-design-expert`. The `sandbox`
-example is the working reference.
+For gameplay detail see [`../../reference/gameplay.md`](../../reference/gameplay.md); scene/lighting see
+[`../../reference/scene-design.md`](../../reference/scene-design.md). The `sandbox` example is the working reference.

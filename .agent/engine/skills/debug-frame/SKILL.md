@@ -23,5 +23,6 @@ description: Investigates a per-frame problem or a GORNA budget decision — wro
 - Camera jitter → matrix precision / shadow bias (see [`../knowledge/MEMORY.md`](../knowledge/MEMORY.md)).
 - Vulkan semaphore warnings → known, usually non-fatal.
 
-Find the root cause before patching; explain it concisely. Delegate to `control-gorna-expert` or
-`graphics-rendering-expert` as the cause narrows.
+Find the root cause before patching; explain it concisely. As the cause narrows, consult
+[`../../reference/control-gorna.md`](../../reference/control-gorna.md) or
+[`../../reference/graphics-rendering.md`](../../reference/graphics-rendering.md).
