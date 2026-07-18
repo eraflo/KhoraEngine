@@ -267,7 +267,7 @@ impl<A: EngineApp> EngineCore<A> {
             let init_bus = khora_core::lane::LaneBus::new();
             let mut init_deck = khora_core::lane::OutputDeck::new();
             let mut init_ctx = khora_core::EngineContext {
-                world: None,
+                world: khora_core::WorldAccess::None,
                 runtime: Arc::clone(&runtime_arc),
                 bus: &init_bus,
                 deck: &mut init_deck,

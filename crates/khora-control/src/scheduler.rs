@@ -28,7 +28,7 @@ use khora_core::control::gorna::{AgentFrameStatus, AgentFrameStatusMap, AgentId}
 use khora_core::graph::topological_sort;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::telemetry::TelemetryEvent;
-use khora_core::{EngineContext, Runtime};
+use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::World;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -569,7 +569,7 @@ impl ExecutionScheduler {
             // Build EngineContext and execute (CLAD descent: the agent
             // chooses and invokes its lane internally).
             let mut engine_ctx = EngineContext {
-                world: Some(world as &mut dyn std::any::Any),
+                world: WorldAccess::Exclusive(world as &mut dyn std::any::Any),
                 runtime: Arc::clone(runtime),
                 bus,
                 deck,
@@ -603,11 +603,13 @@ impl ExecutionScheduler {
     /// member — Hard-dependency ordering is preserved exactly as in the
     /// sequential path.
     ///
-    /// A concurrent wave runs each agent on its own scoped thread with
-    /// `world: None`, a private `OutputDeck` shard, and a shared `&LaneBus`
-    /// (all `Send`/`Sync`); the shards are folded back into the shared deck in
-    /// wave order after the barrier, keeping outputs deterministic. Singleton
-    /// waves run inline with exclusive `&mut World`, identical to
+    /// A concurrent wave runs each agent on its own scoped thread with a
+    /// private `OutputDeck` shard and a shared `&LaneBus` (all `Send`/`Sync`);
+    /// `Isolated` agents get `WorldAccess::None`, the wave's lone `SharedWorld`
+    /// agent gets a shared `&World` (sound: read-only, `World: Sync`). The
+    /// shards are folded back into the shared deck in wave order after the
+    /// barrier, keeping outputs deterministic. Singleton waves run inline with
+    /// exclusive `&mut World`, identical to
     /// [`execute_agents_sequential`](Self::execute_agents_sequential).
     ///
     /// GORNA cost fitting still assumes sequential (sum-of-costs) budgets;
@@ -690,7 +692,7 @@ impl ExecutionScheduler {
                     continue;
                 }
                 let mut engine_ctx = EngineContext {
-                    world: Some(world as &mut dyn std::any::Any),
+                    world: WorldAccess::Exclusive(world as &mut dyn std::any::Any),
                     runtime: Arc::clone(runtime),
                     bus,
                     deck,
@@ -707,7 +709,9 @@ impl ExecutionScheduler {
             }
 
             // Concurrent wave: gate on this thread, then execute the survivors
-            // on scoped threads — each with world: None + a private deck shard.
+            // on scoped threads. `Isolated` agents get `WorldAccess::None`;
+            // `SharedWorld` agents get a shared `&World` — sound because they
+            // only read it, and at most one is ever in a wave.
             let runnable: Vec<usize> = wave
                 .into_iter()
                 .filter(|&idx| match metas[idx].id {
@@ -719,6 +723,11 @@ impl ExecutionScheduler {
                 continue;
             }
 
+            // Shared read-only view of the world for any `SharedWorld` agent in
+            // the wave. `World: Sync`, so many readers across threads are safe;
+            // the immutable reborrow ends when the scope joins, before the next
+            // (possibly `Exclusive`) wave takes the world mutably.
+            let world_shared: &World = world;
             let mut results: Vec<(usize, AgentId, OutputDeck, f64)> =
                 std::thread::scope(|scope| {
                     let handles: Vec<_> = runnable
@@ -726,13 +735,19 @@ impl ExecutionScheduler {
                         .map(|&idx| {
                             let agent = Arc::clone(&agents[idx].0);
                             let id = metas[idx].id.expect("gated runnable has an id");
+                            let access = metas[idx].access;
                             let runtime = Arc::clone(runtime);
                             scope.spawn(move || {
                                 let mut shard = OutputDeck::new();
                                 let started = Instant::now();
                                 {
+                                    let world = if access == AgentAccess::SharedWorld {
+                                        WorldAccess::Shared(world_shared as &dyn std::any::Any)
+                                    } else {
+                                        WorldAccess::None
+                                    };
                                     let mut ctx = EngineContext {
-                                        world: None,
+                                        world,
                                         runtime,
                                         bus,
                                         deck: &mut shard,
@@ -842,21 +857,30 @@ struct WaveMeta {
 
 /// Groups agents (already in `sort_agents` order) into execution waves.
 ///
-/// A wave is a maximal run of consecutive [`AgentAccess::Isolated`] agents in
-/// which no member hard-depends on another member. Any [`AgentAccess::Exclusive`]
-/// agent is its own singleton wave. Because the input is already topologically
-/// ordered by hard deps, and a dependent never shares a wave with its target,
-/// running the waves in order preserves the exact Hard-dependency ordering the
-/// sequential path guarantees.
+/// A wave is a maximal run of consecutive concurrency-eligible agents
+/// ([`AgentAccess::Isolated`] or [`AgentAccess::SharedWorld`]) in which no
+/// member hard-depends on another member and **at most one** is `SharedWorld`
+/// (that agent may write shared resources, so two of them could race). Any
+/// [`AgentAccess::Exclusive`] agent is its own singleton wave. Because the input
+/// is already topologically ordered by hard deps, and a dependent never shares
+/// a wave with its target, running the waves in order preserves the exact
+/// Hard-dependency ordering the sequential path guarantees.
 fn partition_waves(metas: &[WaveMeta]) -> Vec<Vec<usize>> {
     let mut waves: Vec<Vec<usize>> = Vec::new();
     for (i, meta) in metas.iter().enumerate() {
-        let joins_current = meta.access == AgentAccess::Isolated
+        let joins_current = meta.access != AgentAccess::Exclusive
             && waves.last().is_some_and(|wave| {
-                wave.iter().all(|&j| metas[j].access == AgentAccess::Isolated)
+                // every current member is concurrency-eligible …
+                wave.iter().all(|&j| metas[j].access != AgentAccess::Exclusive)
+                    // … no member is this agent's hard-dep target …
                     && !meta.hard_dep_targets.iter().any(|target| {
                         wave.iter().any(|&j| metas[j].id == Some(*target))
                     })
+                    // … and the wave holds no other SharedWorld agent.
+                    && !(meta.access == AgentAccess::SharedWorld
+                        && wave
+                            .iter()
+                            .any(|&j| metas[j].access == AgentAccess::SharedWorld))
             });
         if joins_current {
             waves.last_mut().expect("checked non-empty").push(i);
@@ -939,6 +963,39 @@ mod wave_tests {
             ),
         ];
         assert_eq!(partition_waves(&metas), vec![vec![0], vec![1]]);
+    }
+
+    #[test]
+    fn shared_world_joins_isolated_agents() {
+        // One SharedWorld reader runs alongside any number of Isolated agents.
+        let metas = vec![
+            meta(AgentId::Renderer, AgentAccess::SharedWorld, &[]),
+            meta(AgentId::Audio, AgentAccess::Isolated, &[]),
+            meta(AgentId::ShadowRenderer, AgentAccess::Isolated, &[]),
+        ];
+        assert_eq!(partition_waves(&metas), vec![vec![0, 1, 2]]);
+    }
+
+    #[test]
+    fn two_shared_world_agents_split_into_separate_waves() {
+        // Two SharedWorld agents may each write shared resources, so at most one
+        // runs per wave.
+        let metas = vec![
+            meta(AgentId::Renderer, AgentAccess::SharedWorld, &[]),
+            meta(AgentId::Overlay, AgentAccess::SharedWorld, &[]),
+        ];
+        assert_eq!(partition_waves(&metas), vec![vec![0], vec![1]]);
+    }
+
+    #[test]
+    fn exclusive_still_breaks_a_mixed_wave() {
+        let metas = vec![
+            meta(AgentId::Audio, AgentAccess::Isolated, &[]),
+            meta(AgentId::Renderer, AgentAccess::SharedWorld, &[]),
+            meta(AgentId::Physics, AgentAccess::Exclusive, &[]),
+            meta(AgentId::ShadowRenderer, AgentAccess::Isolated, &[]),
+        ];
+        assert_eq!(partition_waves(&metas), vec![vec![0, 1], vec![2], vec![3]]);
     }
 }
 

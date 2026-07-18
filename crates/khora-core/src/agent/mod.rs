@@ -160,13 +160,21 @@ pub trait Agent: Send + Sync {
 /// [`Isolated`](Self::Isolated).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AgentAccess {
-    /// Needs exclusive `&mut World` (or touches a shared mutable resource);
-    /// runs serially. The safe default.
+    /// Needs exclusive `&mut World` (or mutates a shared resource); runs
+    /// serially. The safe default.
     #[default]
     Exclusive,
     /// Touches no `World` and writes only its own `OutputDeck` — no shared
     /// mutable engine resources. Eligible for concurrent execution: the
-    /// scheduler runs it with `world: None` and a private deck shard, folded
-    /// back into the shared deck after the concurrent wave.
+    /// scheduler runs it with [`WorldAccess::None`](crate::WorldAccess::None)
+    /// and a private deck shard, folded back into the shared deck after the
+    /// concurrent wave. Any number may run in the same wave.
     Isolated,
+    /// Reads the `World` immutably (never mutates it) and may write shared
+    /// engine resources. The scheduler runs it with a shared
+    /// [`WorldAccess::Shared`](crate::WorldAccess::Shared) reference so many
+    /// world-readers execute concurrently. Because it may write shared
+    /// resources whose ordering matters, **at most one `SharedWorld` agent runs
+    /// per wave** (alongside any number of `Isolated` agents).
+    SharedWorld,
 }

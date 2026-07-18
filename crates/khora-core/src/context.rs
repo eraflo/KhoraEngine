@@ -19,6 +19,23 @@ use crate::runtime::Runtime;
 use std::any::Any;
 use std::sync::Arc;
 
+/// How an agent's `execute` may reach the ECS `World` this frame, granted by
+/// the scheduler according to the agent's
+/// [`Agent::access`](crate::agent::Agent::access) declaration.
+///
+/// The parallel executor uses this to hand a serial (`Exclusive`) agent a
+/// mutable world while giving concurrently-running read-only (`Shared`) agents
+/// a shared reference — `World` is `Sync`, so many `&World` readers are safe,
+/// but a mutable borrow must be exclusive.
+pub enum WorldAccess<'a> {
+    /// No world access — the agent reads only the `LaneBus` and writes its deck.
+    None,
+    /// Shared, read-only world. Multiple `Shared` agents may run concurrently.
+    Shared(&'a dyn Any),
+    /// Exclusive, mutable world. The agent runs serially.
+    Exclusive(&'a mut dyn Any),
+}
+
 /// Engine context providing access to various subsystems.
 ///
 /// Built once per frame by the Scheduler and passed to every Agent's
@@ -33,8 +50,10 @@ use std::sync::Arc;
 ///
 /// [`Flow`]: ../../../khora_data/flow/index.html
 pub struct EngineContext<'a> {
-    /// A type-erased pointer to the main ECS World.
-    pub world: Option<&'a mut dyn Any>,
+    /// The ECS `World` access this agent was granted — see [`WorldAccess`].
+    /// Reach it through [`world_ref`](Self::world_ref) (read) or
+    /// [`world_mut`](Self::world_mut) (mutate), never by matching directly.
+    pub world: WorldAccess<'a>,
 
     /// Runtime containers — services (business APIs), backends (trait
     /// impls), resources (shared state).
@@ -47,4 +66,27 @@ pub struct EngineContext<'a> {
     /// Mutable typed deck for lane outputs (recorded GPU commands, draw
     /// lists, etc.). Drained by the engine at the I/O boundary.
     pub deck: &'a mut OutputDeck,
+}
+
+impl EngineContext<'_> {
+    /// Read-only access to the type-erased `World`, if any was granted.
+    /// Available under both `Shared` and `Exclusive` access (a mutable grant
+    /// also permits reads). `None` for an `Isolated` (world-free) agent.
+    pub fn world_ref(&self) -> Option<&dyn Any> {
+        match &self.world {
+            WorldAccess::Shared(w) => Some(*w),
+            WorldAccess::Exclusive(w) => Some(&**w),
+            WorldAccess::None => None,
+        }
+    }
+
+    /// Mutable access to the type-erased `World`, granted only under
+    /// `Exclusive` access. `None` for `Shared` or `Isolated` agents — a
+    /// read-only or world-free agent must never mutate the world.
+    pub fn world_mut(&mut self) -> Option<&mut dyn Any> {
+        match &mut self.world {
+            WorldAccess::Exclusive(w) => Some(&mut **w),
+            _ => None,
+        }
+    }
 }

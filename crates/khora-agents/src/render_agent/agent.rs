@@ -24,7 +24,8 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use khora_core::agent::{
-    Agent, AgentDependency, AgentImportance, DependencyKind, ExecutionPhase, ExecutionTiming,
+    Agent, AgentAccess, AgentDependency, AgentImportance, DependencyKind, ExecutionPhase,
+    ExecutionTiming,
 };
 use khora_core::control::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
@@ -95,6 +96,15 @@ pub struct RenderAgent {
 impl Agent for RenderAgent {
     fn id(&self) -> AgentId {
         AgentId::Renderer
+    }
+
+    /// Reads the world read-only (active-camera extraction) and writes shared
+    /// render resources (`RenderSystem`, `FrameGraph`), so it takes the world by
+    /// shared reference. The scheduler may run it concurrently with `Isolated`
+    /// agents (which touch disjoint state), never with another shared-resource
+    /// writer in the same wave.
+    fn access(&self) -> AgentAccess {
+        AgentAccess::SharedWorld
     }
 
     fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
@@ -288,8 +298,10 @@ impl Agent for RenderAgent {
         let shadow_sampler = fctx.get::<ShadowComparisonSampler>().map(|a| *a);
 
         // Push the active camera view into the render system if present.
-        if let Some(world_any) = context.world.as_deref_mut() {
-            if let Some(world) = world_any.downcast_mut::<World>() {
+        // Camera extraction is read-only, so the agent takes the world by
+        // shared reference (`AgentAccess::SharedWorld`) — never `&mut`.
+        if let Some(world_any) = context.world_ref() {
+            if let Some(world) = world_any.downcast_ref::<World>() {
                 if let Some(view_info) = extract_active_camera_view(world) {
                     if let Ok(mut rs) = render_system.lock() {
                         rs.prepare_frame(&view_info);

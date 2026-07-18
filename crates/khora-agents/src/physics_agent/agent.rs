@@ -166,7 +166,7 @@ impl Agent for PhysicsAgent {
         };
         let provider_arc: Arc<Mutex<Box<dyn PhysicsProvider>>> = (*provider_arc).clone();
 
-        let Some(world_any) = context.world.as_deref_mut() else {
+        let Some(world_any) = context.world_mut() else {
             return;
         };
         let Some(world) = world_any.downcast_mut::<World>() else {

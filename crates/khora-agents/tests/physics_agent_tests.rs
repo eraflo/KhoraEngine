@@ -67,7 +67,7 @@ fn step_n(agent: &mut PhysicsAgent, world: &mut World, runtime: &Arc<Runtime>, n
 
         // CLAD descent — agent invokes the lane (provider.step(dt)).
         let mut ctx = EngineContext {
-            world: Some(world as &mut dyn std::any::Any),
+            world: khora_core::WorldAccess::Exclusive(world as &mut dyn std::any::Any),
             runtime: Arc::clone(runtime),
             bus: &bus,
             deck: &mut deck,
@@ -94,7 +94,7 @@ fn make_init_ctx<'a>(
     deck: &'a mut khora_core::lane::OutputDeck,
 ) -> EngineContext<'a> {
     EngineContext {
-        world: Some(world as &mut dyn std::any::Any),
+        world: khora_core::WorldAccess::Exclusive(world as &mut dyn std::any::Any),
         runtime: Arc::clone(runtime),
         bus,
         deck,

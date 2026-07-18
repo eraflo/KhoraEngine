@@ -91,21 +91,36 @@ Turning the flag on yields no *safe* speedup with the current six agents:
 
 So the executor is correct infrastructure with no live concurrent wave yet.
 
+## Update — shared-`&World` tier landed (2026-07-18)
+
+Follow-up #1 is done. `EngineContext.world` is now a `WorldAccess<'a>` enum
+(`None` / `Shared(&dyn Any)` / `Exclusive(&mut dyn Any)`) reached via
+`world_ref()` / `world_mut()`; a new `AgentAccess::SharedWorld` variant grants a
+shared `&World`. **RenderAgent** now reads the world through `world_ref()`
+(camera extraction is read-only) and declares `SharedWorld` — it no longer
+demands an exclusive world borrow. `partition_waves` groups a wave as
+Isolated + at most one SharedWorld (a SharedWorld agent may write shared
+resources, so two can't share a wave); the concurrent executor hands the lone
+SharedWorld agent a shared `&World` (sound: `World: Sync`, proven at compile
+time by the scoped-thread capture). Render can therefore now run concurrently
+with an `Isolated` agent. Still no *live* concurrent wave in the sandbox: Render
+is alone among non-Exclusive agents in OUTPUT (Overlay/Ui remain `Exclusive`
+because they write the shared `FrameGraph`).
+
 ## Remaining path (follow-ups)
 
-1. **Shared-`World` read tier (H3)** — add a `world_shared: Option<&World>`
-   access mode so Render's camera extraction can run without an exclusive
-   borrow, making Render parallel-eligible against a world-free agent.
-2. **FrameGraph isolation** — give Overlay/Ui their own deck-shard draw lists
-   merged deterministically, so they can be `Isolated`.
-3. **Per-agent deck-write declarations** — replace the defensive
+1. **FrameGraph isolation** — give Overlay/Ui their own deck-shard draw lists
+   merged deterministically, so they can be `Isolated`/`SharedWorld` and form a
+   real concurrent wave with Render.
+2. **Per-agent deck-write declarations** — replace the defensive
    collision-log in `merge_from` with a compile-of-schedule check that two
    `Isolated` agents in a wave never write the same slot type.
-4. **Cost model → critical path** — GORNA `fit_budgets` still sums per-agent
+3. **Cost model → critical path** — GORNA `fit_budgets` still sums per-agent
    costs (correct for serial). Once waves run concurrently, the fit must budget
    the wave's *max* cost, not its sum (the executor already records per-agent
    wave timings).
-5. **Integration test** — drive `execute_agents_parallel` with two synthetic
-   `Isolated` mock agents writing disjoint deck slots; assert both outputs land
-   and ordering is deterministic. (Wave partitioning + deck merge are unit
-   tested now; the end-to-end scoped-thread path is not.)
+4. **Integration test** — drive `execute_agents_parallel` with a synthetic
+   `SharedWorld` agent (reads world) + an `Isolated` agent (writes a disjoint
+   deck slot); assert both outputs land and ordering is deterministic. (Wave
+   partitioning + deck merge are unit tested now; the end-to-end scoped-thread
+   path is not.)
