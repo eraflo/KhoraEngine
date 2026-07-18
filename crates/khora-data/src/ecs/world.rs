@@ -751,14 +751,33 @@ impl World {
             dest_page.add_entity(entity_id);
         }
 
-        // 5. Update metadata and put it back
-        metadata.locations.insert(
-            domain,
-            PageIndex {
-                page_id: dest_page_id,
-                row_index: dest_row_index,
-            },
-        );
+        // 5. Update metadata and put it back.
+        //
+        // The migration copied the entity's *whole* archetype row (every
+        // component in the source page, across all its domains) into the
+        // destination page. A multi-domain entity is stored in one page under
+        // several domain keys all addressing the same `(page, row)` (see
+        // `remove_from_page`), so repoint EVERY co-located domain — not just the
+        // added component's — to keep the entity in one page (the CRPECS
+        // archetype model) and leave the old row fully dead (reclaimable by
+        // compaction) instead of a partial orphan with duplicated columns.
+        let new_location = PageIndex {
+            page_id: dest_page_id,
+            row_index: dest_row_index,
+        };
+        match old_location_opt {
+            Some(old) => {
+                for loc in metadata.locations.values_mut() {
+                    if *loc == old {
+                        *loc = new_location;
+                    }
+                }
+            }
+            // First component in this domain — no prior row to migrate from.
+            None => {
+                metadata.locations.insert(domain, new_location);
+            }
+        }
 
         // Update the domain bitset for the entity.
         self.storage
@@ -900,14 +919,19 @@ impl World {
             dest_page.add_entity(entity_id);
         }
 
-        // 7. Update entity metadata to point at the new (page, row).
-        metadata.locations.insert(
-            domain,
-            PageIndex {
-                page_id: dest_page_id,
-                row_index: dest_row_index,
-            },
-        );
+        // 7. Update entity metadata to point at the new (page, row). As in
+        //    `add_component`, the whole archetype row migrated, so repoint every
+        //    co-located domain (not just this one) to keep the entity in one page
+        //    and leave the old row fully dead.
+        let new_location = PageIndex {
+            page_id: dest_page_id,
+            row_index: dest_row_index,
+        };
+        for l in metadata.locations.values_mut() {
+            if *l == loc {
+                *l = new_location;
+            }
+        }
         // The bitset stays set — other components remain in this domain.
         self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
 

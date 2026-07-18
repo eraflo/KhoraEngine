@@ -1401,21 +1401,24 @@ fn compaction_reclaims_fully_dead_single_domain_row() {
 fn compaction_preserves_partial_orphan_in_multi_domain_page() {
     let mut world = compaction_world();
 
-    // Multi-domain entity: one page {Position, RenderId}, both domains at the
-    // same row. Migrating only the Render domain leaves the spawn row still live
-    // for Spatial — a PARTIAL orphan that must NOT be removed.
+    // Multi-domain entity in one page {Position, RenderId}. Dropping the Spatial
+    // domain (without migrating the rest) leaves the row still live for Render —
+    // a PARTIAL orphan (dead Position column, live RenderId) that compaction must
+    // NOT remove.
     let e = world.spawn((Position(1), RenderId(10)));
-    world.add_component(e, RenderTag).expect("add_component");
+    assert!(world.remove_component_domain::<Position>(e).is_some());
 
     let _ = world.run_compaction(16);
 
-    assert_eq!(
-        world.get::<Position>(e).copied(),
-        Some(Position(1)),
-        "the Spatial row was wrongly reclaimed"
+    assert!(
+        world.get::<Position>(e).is_none(),
+        "the Spatial component was removed"
     );
-    assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(10)));
-    assert_eq!(world.query::<&Position>().count(), 1);
+    assert_eq!(
+        world.get::<RenderId>(e).copied(),
+        Some(RenderId(10)),
+        "the row was still live for Render and must not be reclaimed"
+    );
     assert_eq!(world.query::<&RenderId>().count(), 1);
 }
 
@@ -1426,23 +1429,62 @@ fn compaction_repoints_all_domains_of_moved_survivor() {
     let a = world.spawn((Position(1), RenderId(10))); // P0 row 0
     let b = world.spawn((Position(2), RenderId(20))); // P0 row 1
 
-    // Fully vacate a's row by migrating BOTH its domains away from P0.
-    world.add_component(a, Velocity(9)).expect("spatial migrate");
-    world.add_component(a, RenderTag).expect("render migrate");
-    // Now (P0, 0) is referenced by no domain (dead); (P0, 1) = b is live for both
-    // Spatial and Render.
+    // Migrating `a` moves its WHOLE archetype row (both its Spatial and Render
+    // locations, faithful to the CRPECS archetype model) to a new page, so
+    // (P0, 0) becomes fully dead. `b` (P0, 1) stays live for both domains.
+    world.add_component(a, RenderTag).expect("migrate a");
 
     let _ = world.run_compaction(16);
 
     // b was swap-moved into (P0, 0); BOTH its domain locations must be repaired.
     assert_eq!(world.get::<Position>(b).copied(), Some(Position(2)));
     assert_eq!(world.get::<RenderId>(b).copied(), Some(RenderId(20)));
-    // a's data survives in its migrated pages.
+    // a's whole archetype lives, co-located, in its new page.
     assert_eq!(world.get::<Position>(a).copied(), Some(Position(1)));
     assert_eq!(world.get::<RenderId>(a).copied(), Some(RenderId(10)));
 
     assert_eq!(world.query::<&Position>().count(), 2);
     assert_eq!(world.query::<&RenderId>().count(), 2);
+}
+
+#[test]
+fn migrating_a_multi_domain_entity_keeps_it_co_located_without_dead_columns() {
+    let mut world = compaction_world();
+
+    // Spawn a multi-domain entity, then add a component in an EXISTING domain
+    // (Render) — the whole archetype migrates. After compaction the entity must
+    // occupy exactly one live row and leave no dead columns behind.
+    let e = world.spawn((Position(1), RenderId(10)));
+    world.add_component(e, RenderTag).expect("add_component");
+
+    while world.run_compaction(16) > 0 {}
+
+    // Both domains resolve to the SAME (page, row): the entity stayed co-located.
+    let loc_spatial = *world
+        .entities
+        .get(e.index as usize)
+        .and_then(|(_, m)| m.as_ref())
+        .unwrap()
+        .locations
+        .get(&SemanticDomain::Spatial)
+        .unwrap();
+    let loc_render = *world
+        .entities
+        .get(e.index as usize)
+        .and_then(|(_, m)| m.as_ref())
+        .unwrap()
+        .locations
+        .get(&SemanticDomain::Render)
+        .unwrap();
+    assert_eq!(
+        loc_spatial, loc_render,
+        "a migrated multi-domain entity must stay in one page"
+    );
+
+    // Exactly one physical row remains (no leftover partial-orphan spawn row).
+    assert_eq!(total_rows(&world), 1);
+    assert_eq!(world.get::<Position>(e).copied(), Some(Position(1)));
+    assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(10)));
 }
 
 #[test]
