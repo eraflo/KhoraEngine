@@ -26,6 +26,7 @@ pub mod capture_previous_transform;
 pub mod ecs_maintenance;
 pub mod gpu_material_sync;
 pub mod gpu_mesh_sync;
+pub mod ibl_bake;
 pub mod physics_debug_extraction;
 pub mod physics_world_writeback;
 pub mod transform_propagation;

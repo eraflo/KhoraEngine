@@ -22,9 +22,11 @@
 //! must not be held as local fields inside agents.
 
 pub mod eviction;
+pub mod ibl;
 pub mod projection;
 pub mod store;
 
 pub use eviction::AssetEviction;
+pub use ibl::IblBaker;
 pub use projection::ProjectionRegistry;
 pub use store::AssetStore;

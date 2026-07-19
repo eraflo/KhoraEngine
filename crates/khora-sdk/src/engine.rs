@@ -149,6 +149,12 @@ impl<A: EngineApp> EngineCore<A> {
         runtime.resources.insert(asset_store);
         runtime.resources.insert(proj_registry);
 
+        // IBL bake service — projects the scene environment (procedural sky
+        // for now) into the GPU cubes/LUT image-based lighting samples. Baked
+        // once by the `ibl_bake` DataSystem on the first frame a device is
+        // available; the lit lanes read the result at group 3.
+        runtime.resources.insert(khora_data::IblBaker::new());
+
         // InputMap — engine-wide action / binding map. Inserted BEFORE
         // `app.setup` so apps can bind actions and cache the handle during
         // setup (e.g. the sandbox's PlayerController). The engine ticks it
