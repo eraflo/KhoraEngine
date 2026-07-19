@@ -210,8 +210,13 @@ pub fn collect_passes(
 
         let draw_cmds = build_draw_cmds(device, render_world, gpu_meshes, model_ring);
         passes.push(AttachmentPass {
+            // The depth attachment path recreates the render target from the
+            // source texture + this layer index (it ignores the view's own
+            // layer), so it MUST be the absolute cube-array layer — passing 0
+            // would collapse every face of every cube into layer 0. Matches the
+            // 2D atlas, which passes its real cascade layer.
             target_view: face_view,
-            base_array_layer: 0,
+            base_array_layer: face_view_index as u32,
             camera_bg,
             camera_offset,
             draw_cmds,
