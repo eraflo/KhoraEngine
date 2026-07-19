@@ -14,7 +14,7 @@
 #import khora::std::model::model
 #import khora::std::vertex::{VertexInput, VertexOutput}
 #import khora::std::material::material
-#import khora::std::material_textures::{sample_albedo, sample_metallic_roughness, sample_emissive}
+#import khora::std::material_textures::{sample_albedo, sample_metallic_roughness, sample_emissive, sample_occlusion}
 #ifdef HAS_NORMAL_MAP
 #import khora::std::material_textures::apply_normal_map
 #endif
@@ -132,6 +132,12 @@ fn calculate_spot_lights(
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let base = sample_albedo(input.uv);
+    // Alpha-mask discard: pbr_factors.z is the cutoff (0 for Opaque/Blend, so
+    // the test never fires for them).
+    let out_alpha = material.base_color.a * base.a;
+    if (out_alpha < material.pbr_factors.z) {
+        discard;
+    }
     let albedo = material.base_color.rgb * base.rgb;
     // glTF metallic-roughness texture × scalar factors (white fallback ⇒
     // factors pass through).
@@ -148,7 +154,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 #endif
     let v = normalize(camera.camera_position.xyz - input.world_position);
 
-    var color = material.ambient * albedo;
+    // AO attenuates the indirect (ambient) term only — never direct light.
+    let ao = sample_occlusion(input.uv);
+    var color = material.ambient * albedo * ao;
     color += calculate_directional_lights(input.world_position, n, v, albedo, metallic, roughness);
     color += calculate_point_lights(input.world_position, n, v, albedo, metallic, roughness);
     color += calculate_spot_lights(input.world_position, n, v, albedo, metallic, roughness);
@@ -156,5 +164,5 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     color = tonemap_reinhard(color);
 
-    return vec4<f32>(color, material.base_color.a * base.a);
+    return vec4<f32>(color, out_alpha);
 }

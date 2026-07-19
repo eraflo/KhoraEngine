@@ -29,7 +29,7 @@
 #import khora::std::camera::camera
 #import khora::std::model::model
 #import khora::std::material::material
-#import khora::std::material_textures::{sample_albedo, sample_metallic_roughness, sample_emissive}
+#import khora::std::material_textures::{sample_albedo, sample_metallic_roughness, sample_emissive, sample_occlusion}
 #ifdef HAS_NORMAL_MAP
 #import khora::std::material_textures::apply_normal_map
 #endif
@@ -141,6 +141,12 @@ fn calculate_light_contribution(
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let base = sample_albedo(input.uv);
+    // Alpha-mask discard: pbr_factors.z is the cutoff (0 for Opaque/Blend, so
+    // the test never fires for them).
+    let out_alpha = material.base_color.a * base.a;
+    if (out_alpha < material.pbr_factors.z) {
+        discard;
+    }
     let albedo = material.base_color.rgb * base.rgb;
     // glTF metallic-roughness texture × scalar factors (white fallback ⇒
     // factors pass through).
@@ -162,7 +168,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let light_offset = light_grid[tile_index * 2u];
     let light_count = light_grid[tile_index * 2u + 1u];
 
-    var final_color = material.ambient * albedo;
+    // AO attenuates the indirect (ambient) term only — never direct light.
+    let ao = sample_occlusion(input.uv);
+    var final_color = material.ambient * albedo * ao;
     for (var i = 0u; i < light_count; i++) {
         let light_index = light_indices[light_offset + i];
         let light = lights[light_index];
@@ -208,5 +216,5 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     final_color += material.emissive * sample_emissive(input.uv);
     final_color = tonemap_reinhard(final_color);
 
-    return vec4<f32>(final_color, material.base_color.a * base.a);
+    return vec4<f32>(final_color, out_alpha);
 }

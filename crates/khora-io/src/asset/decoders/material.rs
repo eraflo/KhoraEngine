@@ -204,6 +204,7 @@ mod tests {
             metallic: 0.9,
             roughness: 0.11,
             normal_map: Some(AssetUUID::new_v5("textures/normal.png")),
+            occlusion_map: Some(AssetUUID::new_v5("textures/ao.png")),
             alpha_mode: khora_core::asset::AlphaMode::Mask(0.33),
             alpha_cutoff: 0.33,
             double_sided: true,
@@ -226,6 +227,7 @@ mod tests {
         assert_eq!(standard.metallic, original.metallic);
         assert_eq!(standard.roughness, original.roughness);
         assert_eq!(standard.normal_map, original.normal_map);
+        assert_eq!(standard.occlusion_map, original.occlusion_map);
         assert_eq!(standard.alpha_mode, original.alpha_mode);
         assert_eq!(standard.alpha_cutoff, original.alpha_cutoff);
         assert_eq!(standard.double_sided, original.double_sided);

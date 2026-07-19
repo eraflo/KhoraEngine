@@ -1,6 +1,6 @@
 #define_import_path khora::std::material_textures
 
-// PBR material textures — group 2, bindings 1..5. Mirrors the Rust
+// PBR material textures — group 2, bindings 1..6. Mirrors the Rust
 // contract in `khora_core::renderer::api::material::bindings`. The
 // uniform at binding 0 lives in `khora::std::material`.
 //
@@ -27,7 +27,10 @@
 #ifdef HAS_EMISSIVE_TEXTURE
 @group(2) @binding(4) var emissive_tex: texture_2d<f32>;
 #endif
-@group(2) @binding(5) var material_sampler: sampler;
+#ifdef HAS_OCCLUSION_MAP
+@group(2) @binding(5) var occlusion_tex: texture_2d<f32>;
+#endif
+@group(2) @binding(6) var material_sampler: sampler;
 
 // Albedo (sRGB texture decoded to linear by the GPU on sample). Without a
 // base-color map, returns white so the base-color factor passes through.
@@ -56,6 +59,17 @@ fn sample_emissive(uv: vec2<f32>) -> vec3<f32> {
     return textureSample(emissive_tex, material_sampler, uv).rgb;
 #else
     return vec3<f32>(1.0, 1.0, 1.0);
+#endif
+}
+
+// Ambient-occlusion factor (red channel). Multiplies the indirect (ambient/
+// IBL) term only. Without an AO map, returns 1.0 so the indirect term is
+// unattenuated.
+fn sample_occlusion(uv: vec2<f32>) -> f32 {
+#ifdef HAS_OCCLUSION_MAP
+    return textureSample(occlusion_tex, material_sampler, uv).r;
+#else
+    return 1.0;
 #endif
 }
 

@@ -889,7 +889,7 @@ mod tests {
     /// Composes the lit pipelines for every combination of material texture
     /// variant flags, catching `#ifdef`-gated binding / import drift in the
     /// material-textures lib at boot (no GPU needed). The full power set of
-    /// the four `HAS_*` flags exercises each gated declaration in isolation
+    /// the five `HAS_*` flags exercises each gated declaration in isolation
     /// and together.
     #[test]
     fn composes_lit_pipelines_for_texture_variants() {
@@ -900,6 +900,7 @@ mod tests {
             flag::HAS_METALLIC_ROUGHNESS_TEXTURE,
             flag::HAS_NORMAL_MAP,
             flag::HAS_EMISSIVE_TEXTURE,
+            flag::HAS_OCCLUSION_MAP,
         ];
         let lit_pipelines = [
             "khora::pipelines::lit_forward",

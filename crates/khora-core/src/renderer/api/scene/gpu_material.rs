@@ -53,6 +53,8 @@ pub struct GpuMaterial {
     pub normal_view: Option<TextureViewId>,
     /// Emissive texture view, if declared.
     pub emissive_view: Option<TextureViewId>,
+    /// Ambient-occlusion texture view, if declared.
+    pub occlusion_view: Option<TextureViewId>,
     /// Base-color texture backing [`base_color_view`](Self::base_color_view),
     /// owned by this material and freed on eviction.
     pub base_color_texture: Option<TextureId>,
@@ -63,6 +65,8 @@ pub struct GpuMaterial {
     pub normal_texture: Option<TextureId>,
     /// Emissive texture backing [`emissive_view`](Self::emissive_view).
     pub emissive_texture: Option<TextureId>,
+    /// Ambient-occlusion texture backing [`occlusion_view`](Self::occlusion_view).
+    pub occlusion_texture: Option<TextureId>,
     /// Filtering sampler shared by all maps (engine-owned; NOT freed on eviction).
     pub sampler: SamplerId,
     /// Prebuilt group-2 bind group bound by lit lanes.
@@ -83,6 +87,7 @@ impl GpuMaterial {
             metallic_roughness: self.metallic_roughness_view,
             normal: self.normal_view,
             emissive: self.emissive_view,
+            occlusion: self.occlusion_view,
             sampler: self.sampler,
         }
     }

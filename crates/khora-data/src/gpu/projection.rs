@@ -38,7 +38,7 @@ use crate::{
     gpu::AssetStore,
 };
 use khora_core::{
-    asset::{AssetHandle, AssetUUID, Material},
+    asset::{AlphaMode, AssetHandle, AssetUUID, Material},
     ecs::entity::EntityId,
     math::{LinearRgba, Origin3D},
     renderer::{
@@ -336,6 +336,17 @@ impl ProjectionRegistry {
     }
 }
 
+/// The alpha-mask cutoff written to `pbr_factors.z`: the shader discards a
+/// fragment whose output alpha is below it. Only [`AlphaMode::Mask`] masks;
+/// `Opaque` and `Blend` never discard, so the cutoff is `0.0` (an alpha in
+/// `[0, 1]` is never `< 0.0`).
+fn alpha_mask_cutoff(mode: AlphaMode) -> f32 {
+    match mode {
+        AlphaMode::Mask(cutoff) => cutoff,
+        AlphaMode::Opaque | AlphaMode::Blend => 0.0,
+    }
+}
+
 /// Returns `true` once every texture the material references has been
 /// decoded into `cpu_textures` (texture-less slots count as ready).
 fn material_textures_ready(
@@ -347,6 +358,7 @@ fn material_textures_ready(
         material.metallic_roughness_texture(),
         material.normal_map(),
         material.emissive_texture(),
+        material.occlusion_map(),
     ]
     .into_iter()
     .all(|slot| slot.is_none_or(|uuid| cpu_textures.contains(&uuid)))
@@ -369,6 +381,9 @@ fn material_variant(material: &dyn Material) -> ShaderVariantKey {
     }
     if material.emissive_texture().is_some() {
         variant = variant.flag(flag::HAS_EMISSIVE_TEXTURE);
+    }
+    if material.occlusion_map().is_some() {
+        variant = variant.flag(flag::HAS_OCCLUSION_MAP);
     }
     variant
 }
@@ -399,7 +414,12 @@ impl MaterialProjector<'_> {
             base_color: material.base_color(),
             emissive: LinearRgba::new(emissive.r, emissive.g, emissive.b, 1.0),
             ambient: material.ambient_color(),
-            pbr_factors: [material.metallic(), material.roughness(), 0.5, 0.0],
+            pbr_factors: [
+                material.metallic(),
+                material.roughness(),
+                alpha_mask_cutoff(material.alpha_mode()),
+                0.0,
+            ],
         };
 
         // Color maps decode as sRGB; data maps (normal, metallic-roughness)
@@ -412,6 +432,8 @@ impl MaterialProjector<'_> {
             self.resolve_texture(material.metallic_roughness_texture(), false, cpu_textures)?;
         let normal = self.resolve_texture(material.normal_map(), false, cpu_textures)?;
         let emissive = self.resolve_texture(material.emissive_texture(), true, cpu_textures)?;
+        // AO is a linear data map (red channel = occlusion), never sRGB.
+        let occlusion = self.resolve_texture(material.occlusion_map(), false, cpu_textures)?;
 
         let uniform_buffer = self
             .device
@@ -433,6 +455,7 @@ impl MaterialProjector<'_> {
             metallic_roughness: metallic_roughness.map(|(_, view)| view),
             normal: normal.map(|(_, view)| view),
             emissive: emissive.map(|(_, view)| view),
+            occlusion: occlusion.map(|(_, view)| view),
             sampler: self.sampler,
         };
 
@@ -445,7 +468,7 @@ impl MaterialProjector<'_> {
             .map_err(|e| log::error!("material group-2 layout resolution failed: {e:?}"))
             .ok()?;
 
-        let mut entries = Vec::with_capacity(6);
+        let mut entries = Vec::with_capacity(7);
         fill_material_bind_group_entries(&bindings, &mut entries);
         let bind_group = self
             .device
@@ -463,10 +486,12 @@ impl MaterialProjector<'_> {
             metallic_roughness_view: metallic_roughness.map(|(_, view)| view),
             normal_view: normal.map(|(_, view)| view),
             emissive_view: emissive.map(|(_, view)| view),
+            occlusion_view: occlusion.map(|(_, view)| view),
             base_color_texture: base_color.map(|(texture, _)| texture),
             metallic_roughness_texture: metallic_roughness.map(|(texture, _)| texture),
             normal_texture: normal.map(|(texture, _)| texture),
             emissive_texture: emissive.map(|(texture, _)| texture),
+            occlusion_texture: occlusion.map(|(texture, _)| texture),
             sampler: self.sampler,
             bind_group,
             variant,
@@ -558,5 +583,31 @@ impl MaterialProjector<'_> {
             .map_err(|e| log::error!("material texture view failed: {e:?}"))
             .ok()?;
         Some((texture, view))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::asset::{AssetUUID, StandardMaterial};
+    use khora_core::renderer::api::material::bindings::flag;
+
+    #[test]
+    fn alpha_mask_cutoff_only_masks_for_mask_mode() {
+        assert_eq!(alpha_mask_cutoff(AlphaMode::Opaque), 0.0);
+        assert_eq!(alpha_mask_cutoff(AlphaMode::Blend), 0.0);
+        assert_eq!(alpha_mask_cutoff(AlphaMode::Mask(0.3)), 0.3);
+    }
+
+    #[test]
+    fn material_variant_sets_occlusion_flag_when_declared() {
+        let plain = StandardMaterial::default();
+        assert!(!material_variant(&plain).has_flag(flag::HAS_OCCLUSION_MAP));
+
+        let with_ao = StandardMaterial {
+            occlusion_map: Some(AssetUUID::new_v5("textures/ao.png")),
+            ..Default::default()
+        };
+        assert!(material_variant(&with_ao).has_flag(flag::HAS_OCCLUSION_MAP));
     }
 }

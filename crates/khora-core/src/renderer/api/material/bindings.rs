@@ -41,8 +41,10 @@ pub mod binding {
     pub const NORMAL_TEXTURE: u32 = 3;
     /// Binding slot for the emissive texture — sRGB.
     pub const EMISSIVE_TEXTURE: u32 = 4;
+    /// Binding slot for the ambient-occlusion texture (red channel) — linear.
+    pub const OCCLUSION_TEXTURE: u32 = 5;
     /// Binding slot for the filtering sampler shared by all material maps.
-    pub const SAMPLER: u32 = 5;
+    pub const SAMPLER: u32 = 6;
 }
 
 /// Canonical shader-variant flag names for the optional material texture
@@ -60,6 +62,8 @@ pub mod flag {
     pub const HAS_NORMAL_MAP: &str = "HAS_NORMAL_MAP";
     /// Set when the material declares an emissive texture.
     pub const HAS_EMISSIVE_TEXTURE: &str = "HAS_EMISSIVE_TEXTURE";
+    /// Set when the material declares an ambient-occlusion map.
+    pub const HAS_OCCLUSION_MAP: &str = "HAS_OCCLUSION_MAP";
 }
 
 /// Per-material GPU resources composing the group-2 bind group.
@@ -83,14 +87,16 @@ pub struct MaterialGpuBindings {
     pub normal: Option<TextureViewId>,
     /// Emissive texture view, if the material declares one.
     pub emissive: Option<TextureViewId>,
+    /// Ambient-occlusion texture view, if the material declares one.
+    pub occlusion: Option<TextureViewId>,
     /// Filtering sampler shared by all maps.
     pub sampler: SamplerId,
 }
 
-/// Returns the six [`BindGroupLayoutEntry`] values defining the canonical
+/// Returns the seven [`BindGroupLayoutEntry`] values defining the canonical
 /// group-2 material layout. Created once at bootstrap and referenced by
 /// every lit pipeline and every cached material bind group.
-pub fn material_bind_group_layout_entries() -> [BindGroupLayoutEntry; 6] {
+pub fn material_bind_group_layout_entries() -> [BindGroupLayoutEntry; 7] {
     let texture = |binding: u32| BindGroupLayoutEntry {
         binding,
         visibility: ShaderStageFlags::FRAGMENT,
@@ -114,6 +120,7 @@ pub fn material_bind_group_layout_entries() -> [BindGroupLayoutEntry; 6] {
         texture(binding::METALLIC_ROUGHNESS_TEXTURE),
         texture(binding::NORMAL_TEXTURE),
         texture(binding::EMISSIVE_TEXTURE),
+        texture(binding::OCCLUSION_TEXTURE),
         BindGroupLayoutEntry {
             binding: binding::SAMPLER,
             visibility: ShaderStageFlags::FRAGMENT,
@@ -164,6 +171,9 @@ pub fn material_layout_entries_for_variant(
     if variant.has_flag(flag::HAS_EMISSIVE_TEXTURE) {
         entries.push(texture(binding::EMISSIVE_TEXTURE));
     }
+    if variant.has_flag(flag::HAS_OCCLUSION_MAP) {
+        entries.push(texture(binding::OCCLUSION_TEXTURE));
+    }
     entries.push(BindGroupLayoutEntry {
         binding: binding::SAMPLER,
         visibility: ShaderStageFlags::FRAGMENT,
@@ -208,6 +218,9 @@ pub fn fill_material_bind_group_entries<'a>(
     if let Some(view) = bindings.emissive {
         entries.push(texture(binding::EMISSIVE_TEXTURE, view));
     }
+    if let Some(view) = bindings.occlusion {
+        entries.push(texture(binding::OCCLUSION_TEXTURE, view));
+    }
     entries.push(BindGroupEntry {
         binding: binding::SAMPLER,
         resource: BindingResource::Sampler(bindings.sampler),
@@ -226,31 +239,33 @@ mod tests {
         assert_eq!(binding::METALLIC_ROUGHNESS_TEXTURE, 2);
         assert_eq!(binding::NORMAL_TEXTURE, 3);
         assert_eq!(binding::EMISSIVE_TEXTURE, 4);
-        assert_eq!(binding::SAMPLER, 5);
+        assert_eq!(binding::OCCLUSION_TEXTURE, 5);
+        assert_eq!(binding::SAMPLER, 6);
     }
 
     #[test]
-    fn layout_entries_cover_six_bindings_in_order() {
+    fn layout_entries_cover_seven_bindings_in_order() {
         let entries = material_bind_group_layout_entries();
-        assert_eq!(entries.len(), 6);
+        assert_eq!(entries.len(), 7);
         for (i, entry) in entries.iter().enumerate() {
             assert_eq!(entry.binding, i as u32);
         }
     }
 
     #[test]
-    fn fill_bind_group_entries_pushes_six_in_order() {
+    fn fill_bind_group_entries_pushes_seven_in_order() {
         let bindings = MaterialGpuBindings {
             uniform_buffer: BufferId(1),
             base_color: Some(TextureViewId(2)),
             metallic_roughness: Some(TextureViewId(3)),
             normal: Some(TextureViewId(4)),
             emissive: Some(TextureViewId(5)),
-            sampler: SamplerId(6),
+            occlusion: Some(TextureViewId(6)),
+            sampler: SamplerId(7),
         };
         let mut entries: Vec<BindGroupEntry> = Vec::new();
         fill_material_bind_group_entries(&bindings, &mut entries);
-        assert_eq!(entries.len(), 6);
+        assert_eq!(entries.len(), 7);
         for (i, entry) in entries.iter().enumerate() {
             assert_eq!(entry.binding, i as u32);
         }
@@ -272,6 +287,7 @@ mod tests {
             metallic_roughness: None,
             normal: None,
             emissive: None,
+            occlusion: None,
             sampler: SamplerId(6),
         };
         let mut entries: Vec<BindGroupEntry> = Vec::new();
@@ -288,5 +304,32 @@ mod tests {
         assert_eq!(layout.len(), 2);
         assert_eq!(layout[0].binding, binding::MATERIAL_UNIFORMS);
         assert_eq!(layout[1].binding, binding::SAMPLER);
+    }
+
+    #[test]
+    fn occlusion_variant_layout_and_entries_agree() {
+        let variant = ShaderVariantKey::empty().flag(flag::HAS_OCCLUSION_MAP);
+        let layout = material_layout_entries_for_variant(&variant);
+        // uniform@0 + occlusion@5 + sampler@6 — occlusion binds before the sampler.
+        assert_eq!(layout.len(), 3);
+        assert_eq!(layout[0].binding, binding::MATERIAL_UNIFORMS);
+        assert_eq!(layout[1].binding, binding::OCCLUSION_TEXTURE);
+        assert_eq!(layout[2].binding, binding::SAMPLER);
+
+        let bindings = MaterialGpuBindings {
+            uniform_buffer: BufferId(1),
+            base_color: None,
+            metallic_roughness: None,
+            normal: None,
+            emissive: None,
+            occlusion: Some(TextureViewId(2)),
+            sampler: SamplerId(6),
+        };
+        let mut entries: Vec<BindGroupEntry> = Vec::new();
+        fill_material_bind_group_entries(&bindings, &mut entries);
+        assert_eq!(entries.len(), layout.len());
+        for (entry, layout_entry) in entries.iter().zip(layout.iter()) {
+            assert_eq!(entry.binding, layout_entry.binding);
+        }
     }
 }

@@ -109,9 +109,8 @@ pub struct StandardMaterial {
     /// Optional ambient occlusion map.
     ///
     /// AO maps darken areas that should receive less ambient light, such as crevices
-    /// and contact points. The red channel is typically used.
-    ///
-    /// **Future work**: occlusion sampling is not yet wired into the lit shaders.
+    /// and contact points. The red channel is sampled and multiplied into the
+    /// indirect (ambient/IBL) term only — it never attenuates direct lighting.
     pub occlusion_map: Option<AssetUUID>,
 
     /// The emissive color of the material.
@@ -195,6 +194,14 @@ impl Material for StandardMaterial {
 
     fn emissive_texture(&self) -> Option<AssetUUID> {
         self.emissive_texture
+    }
+
+    fn occlusion_map(&self) -> Option<AssetUUID> {
+        self.occlusion_map
+    }
+
+    fn alpha_mode(&self) -> AlphaMode {
+        self.alpha_mode
     }
 }
 

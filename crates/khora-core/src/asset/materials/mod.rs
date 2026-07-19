@@ -122,6 +122,20 @@ pub trait Material: Asset + AsAny + MaterialClone {
     fn emissive_texture(&self) -> Option<crate::asset::AssetUUID> {
         None
     }
+
+    /// Returns the UUID of the ambient-occlusion map, if any (red channel).
+    /// Attenuates the indirect (ambient/IBL) term only, never direct light.
+    /// Default implementation is `None`.
+    fn occlusion_map(&self) -> Option<crate::asset::AssetUUID> {
+        None
+    }
+
+    /// Returns the material's alpha (transparency) mode. For [`AlphaMode::Mask`]
+    /// the contained value is the alpha-cutoff threshold: fragments below it are
+    /// discarded. Default implementation is [`AlphaMode::Opaque`].
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Opaque
+    }
 }
 
 /// This is the key to our type-erased material handle system.

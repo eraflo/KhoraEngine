@@ -186,6 +186,7 @@ fn destroy_gpu_material(material: &GpuMaterial, device: &dyn GraphicsDevice) {
         material.metallic_roughness_view,
         material.normal_view,
         material.emissive_view,
+        material.occlusion_view,
     ]
     .into_iter()
     .flatten()
@@ -199,6 +200,7 @@ fn destroy_gpu_material(material: &GpuMaterial, device: &dyn GraphicsDevice) {
         material.metallic_roughness_texture,
         material.normal_texture,
         material.emissive_texture,
+        material.occlusion_texture,
     ]
     .into_iter()
     .flatten()
@@ -238,10 +240,12 @@ mod tests {
             metallic_roughness_view: None,
             normal_view: None,
             emissive_view: None,
+            occlusion_view: None,
             base_color_texture: None,
             metallic_roughness_texture: None,
             normal_texture: None,
             emissive_texture: None,
+            occlusion_texture: None,
             sampler: SamplerId(0),
             bind_group: BindGroupId(0),
             variant: ShaderVariantKey::empty(),
