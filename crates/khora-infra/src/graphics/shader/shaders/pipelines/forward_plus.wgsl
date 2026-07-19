@@ -35,7 +35,7 @@
 #endif
 #import khora::std::vertex::{VertexInput, VertexOutput}
 #import khora::lighting::attenuation::{calculate_attenuation, calculate_spot_attenuation}
-#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard}
+#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard, ibl_ambient, IBL_MAX_MIP}
 #import khora::shadow::sample_2d::sample_shadow_pcf
 #import khora::shadow::sample_cube::sample_point_shadow_params
 
@@ -101,6 +101,8 @@ var<storage, read> light_shadow_view_projs: array<mat4x4<f32>>;
 // follows at 8..12. Diffuse-only for now (prefiltered @9 and BRDF LUT @10 are
 // in the layout but not yet sampled; Inc 4 adds specular).
 @group(3) @binding(8) var ibl_irradiance: texture_cube<f32>;
+@group(3) @binding(9) var ibl_prefiltered: texture_cube<f32>;
+@group(3) @binding(10) var ibl_brdf_lut: texture_2d<f32>;
 @group(3) @binding(11) var ibl_sampler: sampler;
 
 fn calculate_light_contribution(
@@ -174,11 +176,14 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let light_offset = light_grid[tile_index * 2u];
     let light_count = light_grid[tile_index * 2u + 1u];
 
-    // AO attenuates the indirect (ambient) term only — never direct light.
+    // Image-based ambient: diffuse irradiance + prefiltered specular via the
+    // split-sum BRDF LUT, attenuated by AO.
     let ao = sample_occlusion(input.uv);
-    // Diffuse image-based lighting: convolved irradiance × albedo × AO.
     let irradiance = textureSampleLevel(ibl_irradiance, ibl_sampler, N, 0.0).rgb;
-    var final_color = irradiance * albedo * ao;
+    let refl = reflect(-V, N);
+    let prefiltered = textureSampleLevel(ibl_prefiltered, ibl_sampler, refl, roughness * IBL_MAX_MIP).rgb;
+    let brdf = textureSampleLevel(ibl_brdf_lut, ibl_sampler, vec2<f32>(max(dot(N, V), 0.0), roughness), 0.0).rg;
+    var final_color = ibl_ambient(N, V, albedo, metallic, roughness, ao, irradiance, prefiltered, brdf);
     for (var i = 0u; i < light_count; i++) {
         let light_index = light_indices[light_offset + i];
         let light = lights[light_index];

@@ -21,7 +21,7 @@
 #import khora::lighting::structs::{DirectionalLight, PointLight, SpotLight}
 #import khora::lighting::uniforms::lights
 #import khora::lighting::attenuation::{calculate_attenuation, calculate_spot_attenuation}
-#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard}
+#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard, ibl_ambient, IBL_MAX_MIP}
 #import khora::shadow::sample_2d::sample_shadow_pcf
 #import khora::shadow::sample_cube::sample_point_shadow
 
@@ -30,6 +30,8 @@
 // irradiance cube + sampler are sampled; the prefiltered cube (@5) and BRDF
 // LUT (@6) are declared in the layout but not yet read (Inc 4 adds specular).
 @group(3) @binding(4) var ibl_irradiance: texture_cube<f32>;
+@group(3) @binding(5) var ibl_prefiltered: texture_cube<f32>;
+@group(3) @binding(6) var ibl_brdf_lut: texture_2d<f32>;
 @group(3) @binding(7) var ibl_sampler: sampler;
 
 @vertex
@@ -163,10 +165,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     // AO attenuates the indirect (ambient) term only — never direct light.
     let ao = sample_occlusion(input.uv);
-    // Diffuse image-based lighting: the convolved irradiance for the surface
-    // normal, tinted by albedo and attenuated by AO.
+    // Image-based ambient: diffuse irradiance + prefiltered specular (sampled
+    // at the roughness LOD) combined via the split-sum BRDF LUT.
     let irradiance = textureSampleLevel(ibl_irradiance, ibl_sampler, n, 0.0).rgb;
-    var color = irradiance * albedo * ao;
+    let refl = reflect(-v, n);
+    let prefiltered = textureSampleLevel(ibl_prefiltered, ibl_sampler, refl, roughness * IBL_MAX_MIP).rgb;
+    let brdf = textureSampleLevel(ibl_brdf_lut, ibl_sampler, vec2<f32>(max(dot(n, v), 0.0), roughness), 0.0).rg;
+    var color = ibl_ambient(n, v, albedo, metallic, roughness, ao, irradiance, prefiltered, brdf);
     color += calculate_directional_lights(input.world_position, n, v, albedo, metallic, roughness);
     color += calculate_point_lights(input.world_position, n, v, albedo, metallic, roughness);
     color += calculate_spot_lights(input.world_position, n, v, albedo, metallic, roughness);

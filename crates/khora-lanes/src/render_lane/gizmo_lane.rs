@@ -331,6 +331,7 @@ fn render_gizmos(
             store: StoreOp::Store,
         },
         base_array_layer: 0,
+        base_mip_level: 0,
     };
     let pass_desc = RenderPassDescriptor {
         label: Some("Gizmo Overlay Pass"),

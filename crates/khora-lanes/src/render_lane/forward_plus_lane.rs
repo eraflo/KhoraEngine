@@ -493,6 +493,7 @@ impl ForwardPlusLane {
                     store: khora_core::renderer::api::command::StoreOp::Store,
                 },
                 base_array_layer: 0,
+                base_mip_level: 0,
             };
             let clear_desc = khora_core::renderer::api::command::RenderPassDescriptor {
                 label: Some("ForwardPlus Clear-Only Pass"),
@@ -749,6 +750,7 @@ impl ForwardPlusLane {
                 store: StoreOp::Store,
             },
             base_array_layer: 0,
+            base_mip_level: 0,
         };
 
         let render_pass_desc = RenderPassDescriptor {

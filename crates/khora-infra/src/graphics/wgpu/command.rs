@@ -199,6 +199,8 @@ impl CommandEncoder for WgpuCommandEncoder {
                             label: Some("Temp Layer View (Color)"),
                             base_array_layer: att.base_array_layer,
                             array_layer_count: Some(1),
+                            base_mip_level: att.base_mip_level,
+                            mip_level_count: Some(1),
                             dimension: Some(wgpu::TextureViewDimension::D2),
                             ..Default::default()
                         });

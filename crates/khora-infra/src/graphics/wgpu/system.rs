@@ -1004,6 +1004,7 @@ impl RenderSystem for WgpuRenderSystem {
                     store: StoreOp::Store,
                 },
                 base_array_layer: 0,
+                base_mip_level: 0,
             };
 
             // Create depth/stencil attachment if depth texture is available

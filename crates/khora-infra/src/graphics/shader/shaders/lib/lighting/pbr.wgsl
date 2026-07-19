@@ -93,3 +93,39 @@ fn hemisphere_ambient(n: vec3<f32>) -> vec3<f32> {
     let t = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
     return mix(AMBIENT_GROUND, AMBIENT_SKY, t);
 }
+
+// The highest mip index of the prefiltered specular cube (PREFILTER_MIPS - 1).
+// Roughness maps linearly to this LOD range.
+const IBL_MAX_MIP: f32 = 4.0;
+
+// Fresnel-Schlick with a roughness term, used for the ambient (IBL) specular
+// so rough surfaces keep a sensible grazing response.
+fn fresnel_schlick_roughness(cos_theta: f32, f0: vec3<f32>, roughness: f32) -> vec3<f32> {
+    let inv_rough = vec3<f32>(1.0 - roughness);
+    return f0 + (max(inv_rough, f0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
+// Split-sum image-based ambient: diffuse irradiance + prefiltered specular,
+// combined with the metallic/Fresnel energy split and attenuated by AO.
+// `prefiltered` is the roughness-LOD sample of the specular cube; `brdf` is the
+// (scale, bias) from the BRDF LUT.
+fn ibl_ambient(
+    n: vec3<f32>,
+    v: vec3<f32>,
+    albedo: vec3<f32>,
+    metallic: f32,
+    roughness: f32,
+    ao: f32,
+    irradiance: vec3<f32>,
+    prefiltered: vec3<f32>,
+    brdf: vec2<f32>,
+) -> vec3<f32> {
+    let n_dot_v = max(dot(n, v), 0.0);
+    var f0 = vec3<f32>(0.04);
+    f0 = mix(f0, albedo, metallic);
+    let f = fresnel_schlick_roughness(n_dot_v, f0, roughness);
+    let k_d = (vec3<f32>(1.0) - f) * (1.0 - metallic);
+    let diffuse = irradiance * albedo * k_d;
+    let specular = prefiltered * (f * brdf.x + brdf.y);
+    return (diffuse + specular) * ao;
+}

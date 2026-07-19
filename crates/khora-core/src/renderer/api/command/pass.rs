@@ -57,6 +57,9 @@ pub struct RenderPassColorAttachment<'a> {
     pub ops: Operations<LinearRgba>,
     /// The target array layer to render to. Defaults to 0.
     pub base_array_layer: u32,
+    /// The target mip level to render to. Defaults to 0. Used to bake a
+    /// prefiltered mip chain (e.g. IBL specular) one mip at a time.
+    pub base_mip_level: u32,
 }
 
 /// A comprehensive description of a depth/stencil attachment for a render pass.

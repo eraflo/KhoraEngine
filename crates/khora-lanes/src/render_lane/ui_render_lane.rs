@@ -394,6 +394,7 @@ impl Lane for UiRenderLane {
                     store: StoreOp::Store,
                 },
                 base_array_layer: 0,
+                base_mip_level: 0,
             };
 
             let attachments = [color_attachment];

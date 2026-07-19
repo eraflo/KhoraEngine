@@ -32,7 +32,7 @@
 use std::borrow::Cow;
 use std::sync::OnceLock;
 
-use khora_core::math::{Extent3D, LinearRgba, Origin3D};
+use khora_core::math::{Extent3D, LinearRgba};
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType,
     BufferBinding, BufferBindingType, LoadOp, Operations, RenderPassColorAttachment,
@@ -63,10 +63,21 @@ const IRRADIANCE_FACE_SIZE: u32 = 32;
 /// Linear HDR format for every IBL cube (sky may exceed 1.0 once authored).
 const IBL_FORMAT: TextureFormat = TextureFormat::Rgba16Float;
 
+/// Prefiltered specular cube face resolution (mip 0). Higher-roughness mips
+/// are progressively smaller.
+const PREFILTER_FACE_SIZE: u32 = 128;
+/// Number of prefiltered roughness levels (mips). Roughness = mip / (mips-1).
+const PREFILTER_MIPS: u32 = 5;
+/// Split-sum BRDF integration LUT resolution.
+const BRDF_LUT_SIZE: u32 = 512;
+
 const SKY_SHADER: &str = "khora::pipelines::ibl_sky";
 const IRRADIANCE_SHADER: &str = "khora::pipelines::ibl_irradiance";
+const PREFILTER_SHADER: &str = "khora::pipelines::ibl_prefilter";
+const BRDF_SHADER: &str = "khora::pipelines::ibl_brdf_lut";
 const FACE_BASIS_LAYOUT: &str = "ibl_sky_face_basis";
 const IRRADIANCE_LAYOUT: &str = "ibl_irradiance_conv";
+const PREFILTER_LAYOUT: &str = "ibl_prefilter";
 
 /// Per-face basis uploaded to the bake shaders: `forward` / `right` / `up` in
 /// world space (w unused). The fragment reconstructs a texel's world direction
@@ -282,52 +293,101 @@ fn create_ibl_sampler(device: &dyn GraphicsDevice) -> Result<SamplerId, RenderEr
         .map_err(RenderError::ResourceError)
 }
 
-/// Creates a 1×1 white 2D texture standing in for the split-sum BRDF LUT until
-/// the real integration pass lands (Inc 4). The lit shaders do not sample it
-/// yet (diffuse-only IBL), so its contents are irrelevant — it only satisfies
-/// the group-3 layout, which declares the LUT binding from the start.
-fn create_brdf_placeholder(
+/// Creates a mipmapped color cubemap (6 layers, `mips` levels) with a `Cube`
+/// sampling view spanning all mips. Per-(mip, face) render targets are not
+/// pre-created: the backend recreates the target from the attachment's
+/// `base_array_layer` + `base_mip_level`, so one view (for its source texture)
+/// suffices.
+fn create_mip_cube(
     device: &dyn GraphicsDevice,
+    face_size: u32,
+    mips: u32,
+    label: &str,
 ) -> Result<(TextureId, TextureViewId), RenderError> {
     let texture = device.create_texture(&TextureDescriptor {
-        label: Some(Cow::Borrowed("IBL BRDF LUT (placeholder)")),
+        label: Some(Cow::Owned(format!("{label} Texture"))),
         size: Extent3D {
-            width: 1,
-            height: 1,
+            width: face_size,
+            height: face_size,
+            depth_or_array_layers: 6,
+        },
+        mip_level_count: mips,
+        sample_count: SampleCount::X1,
+        dimension: TextureDimension::D2,
+        format: IBL_FORMAT,
+        usage: TextureUsage::RENDER_ATTACHMENT | TextureUsage::TEXTURE_BINDING,
+        view_formats: Cow::Borrowed(&[]),
+    })?;
+    let cube_view = device.create_texture_view(
+        texture,
+        &TextureViewDescriptor {
+            label: Some(Cow::Owned(format!("{label} Cube View"))),
+            format: Some(IBL_FORMAT),
+            dimension: Some(TextureViewDimension::Cube),
+            aspect: ImageAspect::All,
+            base_mip_level: 0,
+            mip_level_count: Some(mips),
+            base_array_layer: 0,
+            array_layer_count: Some(6),
+        },
+    )?;
+    Ok((texture, cube_view))
+}
+
+/// Creates the split-sum BRDF LUT texture (2D, HDR, render-target + sampled)
+/// and a view; the contents are produced by the BRDF integration pass.
+fn create_brdf_lut(device: &dyn GraphicsDevice) -> Result<(TextureId, TextureViewId), RenderError> {
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some(Cow::Borrowed("IBL BRDF LUT")),
+        size: Extent3D {
+            width: BRDF_LUT_SIZE,
+            height: BRDF_LUT_SIZE,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
         sample_count: SampleCount::X1,
         dimension: TextureDimension::D2,
-        format: TextureFormat::Rgba8Unorm,
-        usage: TextureUsage::TEXTURE_BINDING | TextureUsage::COPY_DST,
+        format: IBL_FORMAT,
+        usage: TextureUsage::RENDER_ATTACHMENT | TextureUsage::TEXTURE_BINDING,
         view_formats: Cow::Borrowed(&[]),
     })?;
-    device.write_texture(
-        texture,
-        &[255u8, 255, 255, 255],
-        Some(4),
-        Origin3D::default(),
-        Extent3D {
-            width: 1,
-            height: 1,
-            depth_or_array_layers: 1,
-        },
-    )?;
     let view = device.create_texture_view(
         texture,
         &TextureViewDescriptor {
-            label: Some(Cow::Borrowed("IBL BRDF LUT View (placeholder)")),
-            format: None,
+            label: Some(Cow::Borrowed("IBL BRDF LUT View")),
+            format: Some(IBL_FORMAT),
             dimension: Some(TextureViewDimension::D2),
             aspect: ImageAspect::All,
             base_mip_level: 0,
-            mip_level_count: None,
+            mip_level_count: Some(1),
             base_array_layer: 0,
-            array_layer_count: None,
+            array_layer_count: Some(1),
         },
     )?;
     Ok((texture, view))
+}
+
+/// Uploads the six per-face basis buffers for a given roughness (packed in
+/// `forward.w`, read by the prefilter shader; ignored by sky/irradiance).
+fn create_prefilter_basis_buffers(
+    device: &dyn GraphicsDevice,
+    roughness: f32,
+) -> Result<Vec<BufferId>, RenderError> {
+    let mut buffers = Vec::with_capacity(6);
+    for (face, basis) in FACE_BASES.iter().enumerate() {
+        let mut b = *basis;
+        b.forward[3] = roughness;
+        buffers.push(device.create_buffer_with_data(
+            &BufferDescriptor {
+                label: Some(Cow::Owned(format!("IBL Prefilter Basis [r={roughness:.2} f={face}]"))),
+                size: std::mem::size_of::<FaceBasisUniform>() as u64,
+                usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
+                mapped_at_creation: false,
+            },
+            bytemuck::bytes_of(&b),
+        )?);
+    }
+    Ok(buffers)
 }
 
 /// Runs the full one-time bake: env cube (procedural sky) → diffuse irradiance
@@ -339,16 +399,21 @@ fn bake(
 ) -> Result<IblResources, RenderError> {
     let env = create_cube(device, ENV_FACE_SIZE, "IBL Env")?;
     let irradiance = create_cube(device, IRRADIANCE_FACE_SIZE, "IBL Irradiance")?;
+    let (prefilter_texture, prefilter_view) =
+        create_mip_cube(device, PREFILTER_FACE_SIZE, PREFILTER_MIPS, "IBL Prefilter")?;
+    let (brdf_texture, brdf_view) = create_brdf_lut(device)?;
     let sampler = create_ibl_sampler(device)?;
-    let (brdf_texture, brdf_view) = create_brdf_placeholder(device)?;
 
     // Pipelines + inline layouts.
     let sky_pipeline = pipeline_system.pipeline(device, &sky_pipeline_spec())?;
-    let sky_layout =
-        pipeline_system.inline_layout(device, FACE_BASIS_LAYOUT, &[uniform_entry(0)])?;
+    let sky_layout = pipeline_system.inline_layout(device, FACE_BASIS_LAYOUT, &[uniform_entry(0)])?;
     let irr_pipeline = pipeline_system.pipeline(device, &irradiance_pipeline_spec())?;
     let irr_layout =
         pipeline_system.inline_layout(device, IRRADIANCE_LAYOUT, &irradiance_layout_entries())?;
+    let pre_pipeline = pipeline_system.pipeline(device, &prefilter_pipeline_spec())?;
+    let pre_layout =
+        pipeline_system.inline_layout(device, PREFILTER_LAYOUT, &irradiance_layout_entries())?;
+    let brdf_pipeline = pipeline_system.pipeline(device, &brdf_pipeline_spec())?;
 
     let sky_bufs = create_face_basis_buffers(device)?;
     let irr_bufs = create_face_basis_buffers(device)?;
@@ -365,30 +430,38 @@ fn bake(
     // Irradiance bind groups (env cube + sampler + uniform), one per face.
     let mut irr_bgs = Vec::with_capacity(6);
     for buf in &irr_bufs {
-        irr_bgs.push(device.create_bind_group(&BindGroupDescriptor {
-            label: Some("IBL Irradiance Face BG"),
-            layout: irr_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(env.cube_view),
-                    _phantom: std::marker::PhantomData,
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Sampler(sampler),
-                    _phantom: std::marker::PhantomData,
-                },
-                uniform_bg_entry(2, *buf),
-            ],
-        })?);
+        irr_bgs.push(cube_sample_bind_group(
+            device,
+            irr_layout,
+            env.cube_view,
+            sampler,
+            *buf,
+        )?);
+    }
+    // Prefilter bind groups — one per (mip, face); roughness rises with the mip.
+    let mut pre_bufs: Vec<BufferId> = Vec::with_capacity((PREFILTER_MIPS * 6) as usize);
+    let mut pre_bgs = Vec::with_capacity((PREFILTER_MIPS * 6) as usize);
+    for mip in 0..PREFILTER_MIPS {
+        // Roughness spans [0, 1] across the mip chain (PREFILTER_MIPS >= 2).
+        let roughness = mip as f32 / (PREFILTER_MIPS - 1) as f32;
+        let bufs = create_prefilter_basis_buffers(device, roughness)?;
+        for buf in &bufs {
+            pre_bgs.push(cube_sample_bind_group(
+                device,
+                pre_layout,
+                env.cube_view,
+                sampler,
+                *buf,
+            )?);
+        }
+        pre_bufs.extend(bufs);
     }
 
-    // The irradiance convolution SAMPLES the env cube, so the sky bake must
-    // fully complete first. Cross-submission ordering on the queue guarantees
-    // that; a single encoder would leave the env-cube write→read hazard
-    // unsynchronised (nothing else in the engine writes then reads a texture
-    // within one encoder — shadows write and read across separate lanes).
+    // Submission 1: sky → env cube. The convolution + prefilter SAMPLE the env
+    // cube, so it must fully complete first; cross-submission ordering on the
+    // queue guarantees that (a single encoder would leave the write→read hazard
+    // unsynchronised — nothing else in the engine writes then reads a texture
+    // within one encoder).
     let mut sky_encoder = device.create_command_encoder(Some("IBL Sky Bake"));
     record_face_passes(
         &mut *sky_encoder,
@@ -402,38 +475,92 @@ fn bake(
         None => log::error!("IBL: sky bake encoder finish returned None; skipping submit"),
     }
 
-    let mut irr_encoder = device.create_command_encoder(Some("IBL Irradiance Bake"));
+    // Submission 2: irradiance + prefiltered specular (both read env) + the
+    // environment-independent BRDF LUT.
+    let mut encoder = device.create_command_encoder(Some("IBL Filter Bake"));
     record_face_passes(
-        &mut *irr_encoder,
+        &mut *encoder,
         &irr_pipeline,
         &irradiance.face_views,
         &irr_bgs,
         "IBL Irradiance Face",
     );
-    match irr_encoder.finish() {
+    // Prefilter: one pass per (mip, face), each writing that mip's roughness.
+    for mip in 0..PREFILTER_MIPS {
+        for face in 0..6usize {
+            let idx = (mip as usize) * 6 + face;
+            let attachments = [RenderPassColorAttachment {
+                view: &prefilter_view,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(LinearRgba::BLACK),
+                    store: StoreOp::Store,
+                },
+                base_array_layer: face as u32,
+                base_mip_level: mip,
+            }];
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("IBL Prefilter Face"),
+                color_attachments: &attachments,
+                depth_stencil_attachment: None,
+            });
+            pass.set_pipeline(&pre_pipeline);
+            pass.set_bind_group(0, &pre_bgs[idx], &[]);
+            pass.draw(0..3, 0..1);
+        }
+    }
+    // BRDF LUT: a single environment-independent integration pass (no bindings).
+    {
+        let attachments = [RenderPassColorAttachment {
+            view: &brdf_view,
+            resolve_target: None,
+            ops: Operations {
+                load: LoadOp::Clear(LinearRgba::BLACK),
+                store: StoreOp::Store,
+            },
+            base_array_layer: 0,
+            base_mip_level: 0,
+        }];
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("IBL BRDF LUT"),
+            color_attachments: &attachments,
+            depth_stencil_attachment: None,
+        });
+        pass.set_pipeline(&brdf_pipeline);
+        pass.draw(0..3, 0..1);
+    }
+    match encoder.finish() {
         Some(cb) => device.submit_command_buffer(cb),
-        None => log::error!("IBL: irradiance bake encoder finish returned None; skipping submit"),
+        None => log::error!("IBL: filter bake encoder finish returned None; skipping submit"),
     }
 
-    // Diffuse-only for now: irradiance is real; the specular cube stands in as
-    // the env cube and the BRDF LUT is a stub — the lit shaders sample neither
-    // yet. Inc 4 replaces both with the prefiltered cube + real LUT.
     let bindings = IblGpuBindings {
         irradiance_cube: irradiance.cube_view,
-        prefiltered_cube: env.cube_view,
+        prefiltered_cube: prefilter_view,
         brdf_lut: brdf_view,
         sampler,
     };
 
-    let mut keep_views = vec![env.cube_view, irradiance.cube_view, brdf_view];
+    let mut keep_views = vec![
+        env.cube_view,
+        irradiance.cube_view,
+        prefilter_view,
+        brdf_view,
+    ];
     keep_views.extend(env.face_views);
     keep_views.extend(irradiance.face_views);
     let mut keep_buffers = sky_bufs;
     keep_buffers.extend(irr_bufs);
+    keep_buffers.extend(pre_bufs);
 
     Ok(IblResources {
         bindings,
-        _keep_textures: vec![env.texture, irradiance.texture, brdf_texture],
+        _keep_textures: vec![
+            env.texture,
+            irradiance.texture,
+            prefilter_texture,
+            brdf_texture,
+        ],
         _keep_views: keep_views,
         _keep_buffers: keep_buffers,
     })
@@ -474,6 +601,7 @@ fn record_face_passes(
             // this MUST be the real face index — else every face renders into
             // layer 0 and the other five stay black.
             base_array_layer: face as u32,
+            base_mip_level: 0,
         }];
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some(label),
@@ -486,16 +614,69 @@ fn record_face_passes(
     }
 }
 
+/// A bind group of (env cube @0, sampler @1, per-face basis uniform @2) —
+/// shared by the irradiance convolution and the specular prefilter.
+fn cube_sample_bind_group(
+    device: &dyn GraphicsDevice,
+    layout: khora_core::renderer::api::command::BindGroupLayoutId,
+    cube_view: TextureViewId,
+    sampler: SamplerId,
+    basis_buffer: BufferId,
+) -> Result<khora_core::renderer::api::command::BindGroupId, RenderError> {
+    device
+        .create_bind_group(&BindGroupDescriptor {
+            label: Some("IBL Cube-Sample BG"),
+            layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(cube_view),
+                    _phantom: std::marker::PhantomData,
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(sampler),
+                    _phantom: std::marker::PhantomData,
+                },
+                uniform_bg_entry(2, basis_buffer),
+            ],
+        })
+        .map_err(RenderError::ResourceError)
+}
+
 /// The declarative spec for the procedural-sky bake pipeline.
 fn sky_pipeline_spec() -> PipelineSpec {
     bake_pipeline_spec(
         "IBL Sky Bake",
         SKY_SHADER,
-        LayoutSpec::Inline {
+        vec![LayoutSpec::Inline {
             label: FACE_BASIS_LAYOUT,
             entries: Cow::Owned(vec![uniform_entry(0)]),
-        },
+        }],
     )
+}
+
+/// The declarative spec for the specular prefilter pipeline (same bindings as
+/// the irradiance convolution: env cube + sampler + per-face/roughness basis).
+fn prefilter_pipeline_spec() -> PipelineSpec {
+    bake_pipeline_spec(
+        "IBL Prefilter Bake",
+        PREFILTER_SHADER,
+        vec![LayoutSpec::Inline {
+            label: PREFILTER_LAYOUT,
+            entries: Cow::Owned(irradiance_layout_entries()),
+        }],
+    )
+}
+
+/// The declarative spec for the split-sum BRDF LUT pipeline. No bindings — the
+/// integration is pure math over the fragment's (N·V, roughness).
+fn brdf_pipeline_spec() -> PipelineSpec {
+    let mut spec = bake_pipeline_spec("IBL BRDF LUT Bake", BRDF_SHADER, vec![]);
+    // The LUT stores (scale, bias) in RG; the shared IBL_FORMAT (Rgba16Float)
+    // carries them fine.
+    spec.label = "IBL BRDF LUT Bake";
+    spec
 }
 
 /// The bind-group layout entries for the irradiance convolution: the env cube
@@ -525,25 +706,25 @@ fn irradiance_pipeline_spec() -> PipelineSpec {
     bake_pipeline_spec(
         "IBL Irradiance Bake",
         IRRADIANCE_SHADER,
-        LayoutSpec::Inline {
+        vec![LayoutSpec::Inline {
             label: IRRADIANCE_LAYOUT,
             entries: Cow::Owned(irradiance_layout_entries()),
-        },
+        }],
     )
 }
 
 /// Shared shape for the bake pipelines: a fullscreen triangle (no vertex
-/// buffer, no depth) writing linear HDR into one cube face.
+/// buffer, no depth) writing linear HDR into one target (cube face or 2D LUT).
 fn bake_pipeline_spec(
     label: &'static str,
     shader: &'static str,
-    layout: LayoutSpec,
+    bind_group_layouts: Vec<LayoutSpec>,
 ) -> PipelineSpec {
     PipelineSpec {
         label,
         shader,
         variant: ShaderVariantKey::empty(),
-        bind_group_layouts: vec![layout],
+        bind_group_layouts,
         vertex_buffers: vec![],
         vs_entry: "vs_main",
         fs_entry: Some("fs_main"),

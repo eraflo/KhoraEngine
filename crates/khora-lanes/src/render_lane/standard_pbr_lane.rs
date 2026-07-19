@@ -267,6 +267,7 @@ fn render_pbr(
                 store: StoreOp::Store,
             },
             base_array_layer: 0,
+            base_mip_level: 0,
         };
         let clear_desc = RenderPassDescriptor {
             label: Some("StandardPbr Clear-Only Pass"),
@@ -535,6 +536,7 @@ fn render_pbr(
             store: StoreOp::Store,
         },
         base_array_layer: 0,
+        base_mip_level: 0,
     };
     let render_pass_desc = RenderPassDescriptor {
         label: Some("Standard PBR Pass"),

@@ -256,6 +256,7 @@ impl SimpleUnlitLane {
                     store: StoreOp::Store,
                 },
                 base_array_layer: 0,
+                base_mip_level: 0,
             };
             let clear_desc = RenderPassDescriptor {
                 label: Some("Simple Unlit Clear-Only Pass"),
@@ -402,6 +403,7 @@ impl SimpleUnlitLane {
                 store: StoreOp::Store,
             },
             base_array_layer: 0,
+            base_mip_level: 0,
         };
 
         let render_pass_desc = RenderPassDescriptor {
