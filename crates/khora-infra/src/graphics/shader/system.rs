@@ -148,6 +148,10 @@ const PIPELINE_MODULES: &[(&str, &str)] = &[
         "khora::pipelines::ibl_sky",
         include_str!("shaders/pipelines/ibl_sky.wgsl"),
     ),
+    (
+        "khora::pipelines::ibl_irradiance",
+        include_str!("shaders/pipelines/ibl_irradiance.wgsl"),
+    ),
 ];
 
 /// Mutable interior state behind the system's `Mutex`.
@@ -948,29 +952,33 @@ mod tests {
         }
     }
 
-    /// The IBL procedural-sky bake shader composes + validates (no GPU),
-    /// catching WGSL errors in the env-cube bake at boot.
+    /// The IBL bake shaders compose + validate (no GPU), catching WGSL errors
+    /// in the env-cube / irradiance bakes at boot.
     #[test]
-    fn composes_ibl_sky_pipeline() {
+    fn composes_ibl_bake_pipelines() {
         let sys = WgpuPipelineSystem::new().expect("system init");
         let mut inner = sys.inner.lock().unwrap();
-        let defs = inner.base_defs.clone();
-        let name = "khora::pipelines::ibl_sky";
-        let source = *inner.pipelines.get(name).expect("ibl_sky registered");
-        let patched = inject_float_defs(source);
-        let module = inner
-            .composer
-            .make_naga_module(NagaModuleDescriptor {
-                source: &patched,
-                file_path: name,
-                shader_defs: defs,
-                shader_type: ShaderType::Wgsl,
-                ..Default::default()
-            })
-            .unwrap_or_else(|e| panic!("compose {name}: {e}"));
-        Validator::new(ValidationFlags::all(), Capabilities::all())
-            .validate(&module)
-            .unwrap_or_else(|e| panic!("validate {name}: {e:?}"));
+        for name in [
+            "khora::pipelines::ibl_sky",
+            "khora::pipelines::ibl_irradiance",
+        ] {
+            let defs = inner.base_defs.clone();
+            let source = *inner.pipelines.get(name).expect("ibl bake registered");
+            let patched = inject_float_defs(source);
+            let module = inner
+                .composer
+                .make_naga_module(NagaModuleDescriptor {
+                    source: &patched,
+                    file_path: name,
+                    shader_defs: defs,
+                    shader_type: ShaderType::Wgsl,
+                    ..Default::default()
+                })
+                .unwrap_or_else(|e| panic!("compose {name}: {e}"));
+            Validator::new(ValidationFlags::all(), Capabilities::all())
+                .validate(&module)
+                .unwrap_or_else(|e| panic!("validate {name}: {e:?}"));
+        }
     }
 
     /// `#import` lines collapse to their module path; item / `{...}` selectors

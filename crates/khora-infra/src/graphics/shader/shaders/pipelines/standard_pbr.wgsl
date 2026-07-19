@@ -21,9 +21,16 @@
 #import khora::lighting::structs::{DirectionalLight, PointLight, SpotLight}
 #import khora::lighting::uniforms::lights
 #import khora::lighting::attenuation::{calculate_attenuation, calculate_spot_attenuation}
-#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard, hemisphere_ambient}
+#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard}
 #import khora::shadow::sample_2d::sample_shadow_pcf
 #import khora::shadow::sample_cube::sample_point_shadow
+
+// Image-based lighting (group 3, after the lighting uniform @0 and shadow
+// @1/2/3). StandardPbr places IBL at 4..8. Diffuse-only for now: the
+// irradiance cube + sampler are sampled; the prefiltered cube (@5) and BRDF
+// LUT (@6) are declared in the layout but not yet read (Inc 4 adds specular).
+@group(3) @binding(4) var ibl_irradiance: texture_cube<f32>;
+@group(3) @binding(7) var ibl_sampler: sampler;
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
@@ -156,7 +163,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     // AO attenuates the indirect (ambient) term only — never direct light.
     let ao = sample_occlusion(input.uv);
-    var color = hemisphere_ambient(n) * albedo * ao;
+    // Diffuse image-based lighting: the convolved irradiance for the surface
+    // normal, tinted by albedo and attenuated by AO.
+    let irradiance = textureSampleLevel(ibl_irradiance, ibl_sampler, n, 0.0).rgb;
+    var color = irradiance * albedo * ao;
     color += calculate_directional_lights(input.world_position, n, v, albedo, metallic, roughness);
     color += calculate_point_lights(input.world_position, n, v, albedo, metallic, roughness);
     color += calculate_spot_lights(input.world_position, n, v, albedo, metallic, roughness);

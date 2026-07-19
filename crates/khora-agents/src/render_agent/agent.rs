@@ -271,6 +271,15 @@ impl Agent for RenderAgent {
             .get::<Arc<dyn PipelineSystem>>()
             .cloned();
 
+        // Image-based lighting bindings — baked once by the `ibl_bake` system
+        // (PreExtract, before this OUTPUT phase). Forwarded into the lane ctx so
+        // lit lanes bind the irradiance/specular/LUT block at group 3.
+        let ibl_bindings = context
+            .runtime
+            .resources
+            .get::<khora_data::IblBaker>()
+            .and_then(|b| b.bindings());
+
         // Render lanes consume the per-frame `RenderWorld` from the LaneBus,
         // populated by `RenderFlow` during the Substrate Pass.
         let Some(render_world): Option<&RenderWorld> = context.bus.get() else {
@@ -347,6 +356,9 @@ impl Agent for RenderAgent {
                 ctx.insert(dt);
             }
             ctx.insert(clear_color);
+            if let Some(ibl) = ibl_bindings {
+                ctx.insert(ibl);
+            }
             if let Some(view) = shadow_atlas {
                 ctx.insert(view);
             }

@@ -35,7 +35,7 @@
 #endif
 #import khora::std::vertex::{VertexInput, VertexOutput}
 #import khora::lighting::attenuation::{calculate_attenuation, calculate_spot_attenuation}
-#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard, hemisphere_ambient}
+#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard}
 #import khora::shadow::sample_2d::sample_shadow_pcf
 #import khora::shadow::sample_cube::sample_point_shadow_params
 
@@ -96,6 +96,12 @@ var<uniform> tile_info: TileInfo;
 // `sample_shadow_pcf`.
 @group(3) @binding(7)
 var<storage, read> light_shadow_view_projs: array<mat4x4<f32>>;
+
+// Image-based lighting — Forward+ packs its culling buffers at 4..8, so IBL
+// follows at 8..12. Diffuse-only for now (prefiltered @9 and BRDF LUT @10 are
+// in the layout but not yet sampled; Inc 4 adds specular).
+@group(3) @binding(8) var ibl_irradiance: texture_cube<f32>;
+@group(3) @binding(11) var ibl_sampler: sampler;
 
 fn calculate_light_contribution(
     light: GpuLight,
@@ -170,7 +176,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     // AO attenuates the indirect (ambient) term only — never direct light.
     let ao = sample_occlusion(input.uv);
-    var final_color = hemisphere_ambient(N) * albedo * ao;
+    // Diffuse image-based lighting: convolved irradiance × albedo × AO.
+    let irradiance = textureSampleLevel(ibl_irradiance, ibl_sampler, N, 0.0).rgb;
+    var final_color = irradiance * albedo * ao;
     for (var i = 0u; i < light_count; i++) {
         let light_index = light_indices[light_offset + i];
         let light = lights[light_index];

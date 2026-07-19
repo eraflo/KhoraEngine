@@ -245,6 +245,7 @@ fn render_pbr(
     render_world: &RenderWorld,
     shadow_entries: &khora_data::render::ShadowEntries,
     shadow_bindings: Option<khora_data::render::ShadowGpuBindings>,
+    ibl_bindings: Option<khora_core::renderer::api::ibl::IblGpuBindings>,
     device: &dyn khora_core::renderer::GraphicsDevice,
     encoder: &mut dyn CommandEncoder,
     render_ctx: &RenderContext,
@@ -570,6 +571,12 @@ fn render_pbr(
             &shadow_bindings,
             &mut entries,
         );
+        // IBL occupies group-3 bindings 4..8 for StandardPbr (after shadow).
+        let Some(ibl) = ibl_bindings else {
+            log::warn!("StandardPbrLane: IBL bindings not available, skipping render");
+            return;
+        };
+        khora_core::renderer::api::ibl::fill_ibl_bind_group_entries(&ibl, 4, &mut entries);
         match device.create_bind_group(&BindGroupDescriptor {
             label: Some("standard_pbr_lighting_bind_group_dynamic"),
             layout,
@@ -706,11 +713,18 @@ impl khora_core::lane::Lane for StandardPbrLane {
             })
             .unwrap_or_default();
 
+        // Image-based lighting bindings — baked once at startup, forwarded into
+        // the lane ctx by the render agent (static after the bake).
+        let ibl_bindings = ctx
+            .get::<khora_core::renderer::api::ibl::IblGpuBindings>()
+            .copied();
+
         render_pbr(
             self,
             render_world,
             &shadow_entries,
             shadow_bindings,
+            ibl_bindings,
             device.as_ref(),
             encoder,
             &render_ctx,

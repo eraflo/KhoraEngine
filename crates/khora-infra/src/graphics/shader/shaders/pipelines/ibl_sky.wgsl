@@ -37,9 +37,11 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
 // and a dim warm ground below. Placeholder environment until an authored HDR
 // map replaces it.
 fn procedural_sky(dir: vec3<f32>) -> vec3<f32> {
-    let zenith = vec3<f32>(0.10, 0.24, 0.52);
-    let horizon = vec3<f32>(0.70, 0.75, 0.82);
-    let ground = vec3<f32>(0.14, 0.12, 0.10);
+    // Linear values — a moderately bright sky so the indirect (ambient) term
+    // reads clearly on shaded surfaces without washing them out.
+    let zenith = vec3<f32>(0.25, 0.40, 0.70);
+    let horizon = vec3<f32>(0.60, 0.65, 0.72);
+    let ground = vec3<f32>(0.18, 0.16, 0.13);
     let t = dir.y;
     if (t >= 0.0) {
         return mix(horizon, zenith, pow(clamp(t, 0.0, 1.0), 0.5));

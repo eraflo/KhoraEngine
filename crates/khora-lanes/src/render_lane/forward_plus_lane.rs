@@ -415,10 +415,15 @@ impl khora_core::lane::Lane for ForwardPlusLane {
             })
             .unwrap_or_default();
 
+        let ibl_bindings = ctx
+            .get::<khora_core::renderer::api::ibl::IblGpuBindings>()
+            .copied();
+
         self.render(
             render_world,
             &shadow_entries,
             shadow_bindings,
+            ibl_bindings,
             device.as_ref(),
             encoder,
             &render_ctx,
@@ -466,6 +471,7 @@ impl ForwardPlusLane {
         render_world: &RenderWorld,
         shadow_entries: &khora_data::render::ShadowEntries,
         shadow_bindings: Option<khora_data::render::ShadowGpuBindings>,
+        ibl_bindings: Option<khora_core::renderer::api::ibl::IblGpuBindings>,
         device: &dyn khora_core::renderer::GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
         render_ctx: &RenderContext,
@@ -829,6 +835,13 @@ impl ForwardPlusLane {
             0,
             None,
         ));
+        // Bindings 8..12 — image-based lighting (Forward+ packs its culling
+        // buffers at 4..8, so IBL follows at 8).
+        let Some(ibl) = ibl_bindings else {
+            log::warn!("ForwardPlusLane: IBL bindings not available, skipping render");
+            return;
+        };
+        khora_core::renderer::api::ibl::fill_ibl_bind_group_entries(&ibl, 8, &mut lighting_entries);
         let lighting_bg = match device.create_bind_group(&BindGroupDescriptor {
             label: Some("forward_plus_lighting_bind_group"),
             layout: lighting_layout,
@@ -1221,6 +1234,8 @@ fn fp_lighting_layout_entries() -> Vec<khora_core::renderer::api::command::BindG
             None,
         ),
     ]);
+    // IBL at 8..12 (irradiance cube, prefiltered cube, BRDF LUT, sampler).
+    entries.extend(khora_core::renderer::api::ibl::ibl_bind_group_layout_entries(8));
     entries
 }
 

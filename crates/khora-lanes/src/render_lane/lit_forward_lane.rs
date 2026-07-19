@@ -321,10 +321,15 @@ impl khora_core::lane::Lane for LitForwardLane {
             })
             .unwrap_or_default();
 
+        let ibl_bindings = ctx
+            .get::<khora_core::renderer::api::ibl::IblGpuBindings>()
+            .copied();
+
         self.render(
             render_world,
             &shadow_entries,
             shadow_bindings,
+            ibl_bindings,
             device.as_ref(),
             encoder,
             &render_ctx,
@@ -365,6 +370,7 @@ impl LitForwardLane {
         render_world: &RenderWorld,
         shadow_entries: &khora_data::render::ShadowEntries,
         shadow_bindings: Option<khora_data::render::ShadowGpuBindings>,
+        ibl_bindings: Option<khora_core::renderer::api::ibl::IblGpuBindings>,
         device: &dyn khora_core::renderer::GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
         render_ctx: &RenderContext,
@@ -740,6 +746,12 @@ impl LitForwardLane {
                 &shadow_bindings,
                 &mut entries,
             );
+            // bindings 4..8 — image-based lighting (after shadow)
+            let Some(ibl) = ibl_bindings else {
+                log::warn!("LitForwardLane: IBL bindings not available, skipping lit render");
+                return;
+            };
+            khora_core::renderer::api::ibl::fill_ibl_bind_group_entries(&ibl, 4, &mut entries);
 
             match device.create_bind_group(&BindGroupDescriptor {
                 label: Some("lit_forward_lighting_bind_group_dynamic"),

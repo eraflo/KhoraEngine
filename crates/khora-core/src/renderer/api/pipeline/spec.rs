@@ -140,6 +140,10 @@ impl LayoutKey {
                     false,
                 )];
                 entries.extend(crate::renderer::api::shadow::shadow_bind_group_layout_entries());
+                // IBL follows shadow in group 3: lighting uniform at 0, shadow
+                // at 1/2/3, IBL at 4..8. (Forward+ hand-rolls its own layout and
+                // places IBL at 8..12 instead — see `forward_plus_lane`.)
+                entries.extend(crate::renderer::api::ibl::ibl_bind_group_layout_entries(4));
                 entries
             }
             LayoutKey::LightingBuffer => {
