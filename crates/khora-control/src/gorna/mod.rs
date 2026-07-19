@@ -88,6 +88,10 @@ pub struct GornaArbitrator {
     /// Per-agent developer-control mode (default `Learning`). Configured by the
     /// host; consulted at issuance so a `Manual` agent is never overridden.
     modes: HashMap<AgentId, AdaptationMode>,
+    /// The scheduler's latest wave grouping (agents that run concurrently),
+    /// refreshed by the DCC each tick via [`set_wave_plan`](Self::set_wave_plan).
+    /// Empty means serial execution: budget fitting then sums per-agent costs.
+    wave_plan: Vec<Vec<AgentId>>,
 }
 
 /// A collected negotiation from a single agent, used during the fitting pass.
@@ -114,7 +118,17 @@ impl GornaArbitrator {
         Self {
             lock_timeout,
             modes: HashMap::new(),
+            wave_plan: Vec::new(),
         }
+    }
+
+    /// Sets the scheduler's latest wave plan (how agents are grouped for
+    /// concurrent execution). Budget fitting costs each wave by its critical
+    /// path (`max` of its members); an empty plan means serial execution, so
+    /// fitting falls back to summing per-agent costs — bit-identical to the
+    /// pre-parallel behaviour.
+    pub fn set_wave_plan(&mut self, waves: &[Vec<AgentId>]) {
+        self.wave_plan = waves.to_vec();
     }
 
     /// Sets the [`AdaptationMode`] for an agent — the developer-control surface.
@@ -434,6 +448,33 @@ impl GornaArbitrator {
         issued
     }
 
+    /// Maps each negotiation to a wave id from `self.wave_plan`.
+    ///
+    /// Agents named together in a plan wave share its id (they run concurrently);
+    /// any agent the plan does not mention — and every agent when the plan is
+    /// empty — gets a fresh singleton id, so its cost is summed rather than
+    /// folded into a wave `max`.
+    fn assign_waves(&self, negotiations: &[AgentNegotiation]) -> Vec<usize> {
+        let mut wave_of_id: HashMap<AgentId, usize> = HashMap::new();
+        for (w, wave) in self.wave_plan.iter().enumerate() {
+            for id in wave {
+                wave_of_id.entry(*id).or_insert(w);
+            }
+        }
+        let mut next_singleton = self.wave_plan.len();
+        negotiations
+            .iter()
+            .map(|n| match wave_of_id.get(&n.agent_id) {
+                Some(&w) => w,
+                None => {
+                    let w = next_singleton;
+                    next_singleton += 1;
+                    w
+                }
+            })
+            .collect()
+    }
+
     /// Runs the global budget fitting algorithm.
     ///
     /// Strategy: Priority-weighted greedy allocation.
@@ -441,6 +482,13 @@ impl GornaArbitrator {
     /// 2. Try to give each agent its most expensive strategy that fits.
     /// 3. If the total exceeds the budget, downgrade lower-priority agents first.
     /// 4. Respect VRAM constraints if specified.
+    ///
+    /// Time is costed along the **critical path**: agents grouped in the same
+    /// wave by `self.wave_plan` run concurrently, so the wave contributes only
+    /// its `max` member time to the frame, and the frame budget is spent against
+    /// the sum over waves. An empty plan (serial execution) makes every agent
+    /// its own wave, so this reduces exactly to the sum-of-costs fit. VRAM is
+    /// always additive (memory does not overlap), so it stays a plain sum.
     fn fit_budgets(
         &self,
         negotiations: &[AgentNegotiation],
@@ -467,16 +515,28 @@ impl GornaArbitrator {
             })
             .collect();
 
-        let total_min_ms: f32 = allocations
-            .iter()
-            .map(|a| a.strategy.estimated_time.as_secs_f32() * 1000.0)
-            .sum();
+        // Assign each negotiation to a wave id. Agents named together in a plan
+        // wave share one; any agent absent from the plan (or when the plan is
+        // empty) becomes its own singleton wave — so its cost is summed, never
+        // hidden under a `max`.
+        let wave_of = self.assign_waves(negotiations);
+        let wave_count = wave_of.iter().copied().max().map_or(0, |m| m + 1);
+
+        // The frame's baseline time is the sum over waves of each wave's slowest
+        // member (its critical path). `wave_max[w]` also stays the invariant
+        // "current max member cost of wave w" through the upgrade loop below.
+        let cost_ms = |a: &AgentAllocation| a.strategy.estimated_time.as_secs_f32() * 1000.0;
+        let mut wave_max = vec![0.0_f32; wave_count];
+        for (i, a) in allocations.iter().enumerate() {
+            wave_max[wave_of[i]] = wave_max[wave_of[i]].max(cost_ms(a));
+        }
+        let total_min_ms: f32 = wave_max.iter().sum();
 
         let total_min_vram: u64 = allocations.iter().map(|a| a.strategy.estimated_vram).sum();
 
         if total_min_ms > total_budget_ms {
             log::warn!(
-                "GORNA: Even minimum strategies ({:.2}ms) exceed budget ({:.2}ms). \
+                "GORNA: Even minimum strategies ({:.2}ms critical path) exceed budget ({:.2}ms). \
                 All agents at LowPower.",
                 total_min_ms,
                 total_budget_ms
@@ -499,13 +559,16 @@ impl GornaArbitrator {
 
         for &idx in &sorted_indices {
             let negotiation = &negotiations[idx];
-            let current_cost_ms = allocations[idx].strategy.estimated_time.as_secs_f32() * 1000.0;
+            let w = wave_of[idx];
             let current_vram_cost = allocations[idx].strategy.estimated_vram;
 
             let mut best_upgrade: Option<&StrategyOption> = None;
             for strategy in negotiation.strategies.iter().rev() {
-                let cost_ms = strategy.estimated_time.as_secs_f32() * 1000.0;
-                let delta_ms = cost_ms - current_cost_ms;
+                let cost = strategy.estimated_time.as_secs_f32() * 1000.0;
+                // Upgrades only raise cost, and `wave_max[w]` already covers this
+                // agent's current cost, so the frame grows only if the agent
+                // overtakes its wave's slowest member.
+                let delta_ms = (cost - wave_max[w]).max(0.0);
                 let delta_vram = strategy.estimated_vram.saturating_sub(current_vram_cost);
 
                 let time_fits = delta_ms <= remaining_ms;
@@ -520,19 +583,21 @@ impl GornaArbitrator {
             }
 
             if let Some(upgrade) = best_upgrade {
-                let old_cost = current_cost_ms;
                 let new_cost = upgrade.estimated_time.as_secs_f32() * 1000.0;
                 let delta_vram = upgrade.estimated_vram.saturating_sub(current_vram_cost);
+                let delta_frame = (new_cost - wave_max[w]).max(0.0);
 
-                remaining_ms -= new_cost - old_cost;
+                remaining_ms -= delta_frame;
+                wave_max[w] = wave_max[w].max(new_cost);
                 current_vram += delta_vram;
                 allocations[idx].strategy = upgrade.clone();
 
                 log::trace!(
-                    "GORNA: Upgraded {:?} from {:.2}ms to {:.2}ms (remaining={:.2}ms, vram={:.2}MB)",
+                    "GORNA: Upgraded {:?} to {:.2}ms (wave {} max={:.2}ms, remaining={:.2}ms, vram={:.2}MB)",
                     negotiation.agent_id,
-                    old_cost,
                     new_cost,
+                    w,
+                    wave_max[w],
                     remaining_ms,
                     current_vram as f64 / (1024.0 * 1024.0)
                 );
@@ -839,6 +904,57 @@ mod tests {
             .expect("Budget should be applied");
         // With 16.66ms total budget and a single agent, it should get HighPerformance (14ms)
         assert_eq!(budget.strategy_id, StrategyId::HighPerformance);
+    }
+
+    #[test]
+    fn test_fit_budgets_costs_concurrent_wave_by_critical_path() {
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let two_agents = || -> Vec<Arc<Mutex<dyn Agent>>> {
+            vec![
+                Arc::new(Mutex::new(MockAgent::new(AgentId::Renderer))),
+                Arc::new(Mutex::new(MockAgent::new(AgentId::Physics))),
+            ]
+        };
+
+        // Serial (no wave plan): 14 + 14ms > 16.66ms budget, so the fit cannot
+        // grant both agents HighPerformance — one is downgraded. This is the
+        // pre-parallel sum-of-costs behaviour, unchanged.
+        let serial = create_arbitrator();
+        let mut agents = two_agents();
+        let issued =
+            serial.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        let hp_serial = issued
+            .iter()
+            .filter(|(_, s)| *s == StrategyId::HighPerformance)
+            .count();
+        assert!(
+            hp_serial < 2,
+            "serial fit must not grant both HighPerformance: {issued:?}"
+        );
+
+        // Concurrent wave [Renderer, Physics]: the wave costs max(14, 14) = 14ms
+        // on the critical path, which fits the budget — so both reach
+        // HighPerformance. This is the win parallel execution unlocks.
+        let mut concurrent = create_arbitrator();
+        concurrent.set_wave_plan(&[vec![AgentId::Renderer, AgentId::Physics]]);
+        let mut agents = two_agents();
+        let issued = concurrent.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
+        let hp_concurrent = issued
+            .iter()
+            .filter(|(_, s)| *s == StrategyId::HighPerformance)
+            .count();
+        assert_eq!(
+            hp_concurrent, 2,
+            "concurrent wave must grant both HighPerformance: {issued:?}"
+        );
     }
 
     #[test]

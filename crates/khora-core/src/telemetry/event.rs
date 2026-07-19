@@ -49,6 +49,20 @@ pub enum TelemetryEvent {
         /// Wall-clock execution time, in milliseconds.
         time_ms: f64,
     },
+    /// The scheduler's per-frame **wave plan**: how the agents will actually be
+    /// grouped for execution. Each inner list is one wave — agents that run
+    /// concurrently (an `Isolated` set plus at most one `SharedWorld` agent);
+    /// a singleton list is a serially-executed agent. Published only when
+    /// parallel execution is enabled (serial execution needs no grouping — the
+    /// DCC then falls back to summing per-agent costs).
+    ///
+    /// The DCC uses it to cost a concurrent wave by its **critical path**
+    /// (`max` of its members) instead of the sum, so budget fitting doesn't
+    /// leave frame time on the table for work that overlaps.
+    WavePlan {
+        /// Agent ids grouped by wave, in execution order.
+        waves: Vec<Vec<AgentId>>,
+    },
     /// A per-component access-pattern snapshot from the ECS, for the layout
     /// advisor (AGDF). Cumulative counters, sampled at a low rate (not every
     /// frame); the DCC turns them into a read-only layout recommendation.

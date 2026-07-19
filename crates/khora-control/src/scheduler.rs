@@ -19,6 +19,7 @@ use crate::context::Context;
 use crate::plugin::EnginePlugin;
 use crate::registry::AgentRegistry;
 use crate::substrate;
+use crate::worker_pool::WorkerPool;
 use crossbeam_channel::Sender;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::dependency::DependencyKind;
@@ -172,6 +173,10 @@ pub struct ExecutionScheduler {
     /// [`AgentAccess::Isolated`](khora_core::agent::AgentAccess::Isolated) and no
     /// two `Isolated` agents in a phase write the same deck slot.
     parallel_execution: bool,
+    /// Persistent worker pool for concurrent waves. Spawned once here and
+    /// joined on drop; runs a wave's `Isolated` agents as `'static` jobs while
+    /// the lone `SharedWorld` agent runs inline. See [`WorkerPool`].
+    pool: WorkerPool,
 }
 
 impl ExecutionScheduler {
@@ -195,6 +200,7 @@ impl ExecutionScheduler {
             last_frame_instant: None,
             sim_accumulator: 0.0,
             parallel_execution: false,
+            pool: WorkerPool::new(default_pool_size()),
         }
     }
 
@@ -207,6 +213,43 @@ impl ExecutionScheduler {
     /// behaviourally identical to sequential execution.
     pub fn set_parallel_execution(&mut self, enabled: bool) {
         self.parallel_execution = enabled;
+    }
+
+    /// Publishes the current frame's [`TelemetryEvent::WavePlan`] to the DCC so
+    /// the cold-path cost model can budget a concurrent wave by its critical
+    /// path (`max`) rather than the sum of its members.
+    ///
+    /// No-op when telemetry is disabled or parallel execution is off — serial
+    /// execution runs every agent as its own singleton, so summing per-agent
+    /// costs (the DCC's fallback with no plan) is already exact.
+    fn emit_wave_plan(&self, mode: &EngineMode) {
+        let Some(tx) = &self.telemetry else { return };
+        if !self.parallel_execution {
+            return;
+        }
+        // Mirror the executor's grouping: for each phase, the phase's agents in
+        // `sort_agents` order, partitioned into waves. Every agent lands in
+        // exactly one wave (Exclusive agents are singletons), so cross-phase and
+        // serial work is naturally costed as a sum while concurrent members
+        // share a wave.
+        let mut waves: Vec<Vec<AgentId>> = Vec::new();
+        for &phase in &self.phase_order {
+            let agents = {
+                let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+                registry.collect_for_phase(phase, mode)
+            };
+            if agents.is_empty() {
+                continue;
+            }
+            let metas = build_wave_metas(&sort_agents(agents));
+            for wave in partition_waves(&metas) {
+                let ids: Vec<AgentId> = wave.iter().filter_map(|&i| metas[i].id).collect();
+                if !ids.is_empty() {
+                    waves.push(ids);
+                }
+            }
+        }
+        let _ = tx.try_send(TelemetryEvent::WavePlan { waves });
     }
 
     /// Connects the read-only observation tunnel to the DCC. The scheduler then
@@ -341,6 +384,10 @@ impl ExecutionScheduler {
             ctx.mode.clone()
         };
 
+        // 3b. Publish how agents will be grouped into concurrent waves this
+        //     frame, so the DCC can budget each wave by its critical path.
+        self.emit_wave_plan(&mode);
+
         // 4. Build the per-frame substrate: typed input bus and output deck.
         //    The deck is moved into the scheduler's `last_deck` slot at the
         //    end of the frame so the engine I/O layer can drain it.
@@ -351,6 +398,12 @@ impl ExecutionScheduler {
         //    into the bus. Flows are read-only projectors — no budget needed
         //    (only agents compete for the frame budget).
         substrate::run_flows(world, &mut bus, &runtime);
+
+        // Freeze the bus behind an `Arc` for the rest of the frame. It is
+        // strictly read-only from here on (the CLAD descent only reads Views),
+        // and the worker pool needs an owned `Arc<LaneBus>` to make a concurrent
+        // wave's `Isolated` jobs `'static`. Serial paths deref it to `&LaneBus`.
+        let bus = Arc::new(bus);
 
         // 6. Fixed-update sub-loop. When the simulation is decoupled, the
         //    fixed-timestep agents advance `steps` discrete sub-steps before
@@ -478,7 +531,7 @@ impl ExecutionScheduler {
         runtime: &Arc<Runtime>,
         mode: &EngineMode,
         completion_map: &Arc<AgentCompletionMap>,
-        bus: &LaneBus,
+        bus: &Arc<LaneBus>,
         deck: &mut OutputDeck,
         selection: AgentSelection,
     ) {
@@ -515,21 +568,24 @@ impl ExecutionScheduler {
     /// Executes the phase's agents **sequentially, in priority order** (the
     /// [`sort_agents`] output). GORNA budgets are therefore per-agent
     /// *exclusive time slices of the frame*, not concurrent allocations:
-    /// measured agent costs add up (T1 + T2 + …), which is exactly what the
-    /// arbitrator's budget fitting assumes when it sums estimated times
-    /// against the frame budget. When parallel execution lands
-    /// ([`execute_agents_parallel`](Self::execute_agents_parallel), today an
-    /// `unimplemented!` stub), the fitting must switch from sum-of-costs to a
-    /// critical-path model.
+    /// measured agent costs add up (T1 + T2 + …), which the arbitrator's budget
+    /// fit models as a sum. The parallel path
+    /// ([`execute_agents_parallel`](Self::execute_agents_parallel)) instead
+    /// groups concurrency-eligible agents into waves and publishes that grouping
+    /// so the fit costs each wave by its critical path; with an all-singleton
+    /// grouping (this serial path) the two are identical.
     fn execute_agents_sequential(
         &self,
         agents: Vec<AgentSlot>,
         world: &mut World,
         runtime: &Arc<Runtime>,
         completion_map: &Arc<AgentCompletionMap>,
-        bus: &LaneBus,
+        bus: &Arc<LaneBus>,
         deck: &mut OutputDeck,
     ) {
+        // Serial paths only need a shared `&LaneBus`.
+        let bus: &LaneBus = bus;
+
         // Coarse workload size for the cost model — sampled once per phase
         // (per-domain refinement is a later step).
         let workload_n = world.entity_count() as f64;
@@ -603,13 +659,15 @@ impl ExecutionScheduler {
     /// member — Hard-dependency ordering is preserved exactly as in the
     /// sequential path.
     ///
-    /// A concurrent wave runs each agent on its own scoped thread with a
-    /// private `OutputDeck` shard and a shared `&LaneBus` (all `Send`/`Sync`);
-    /// `Isolated` agents get `WorldAccess::None`, the wave's lone `SharedWorld`
-    /// agent gets a shared `&World` (sound: read-only, `World: Sync`). The
-    /// shards are folded back into the shared deck in wave order after the
-    /// barrier, keeping outputs deterministic. Singleton waves run inline with
-    /// exclusive `&mut World`, identical to
+    /// In a concurrent wave the `Isolated` agents run as `'static` jobs on the
+    /// persistent [`WorkerPool`], each with a private `OutputDeck` shard and a
+    /// cloned `Arc<LaneBus>` (`WorldAccess::None`); the wave's lone `SharedWorld`
+    /// agent, if any, runs **inline on this thread** with a shared `&World` and
+    /// writes straight into the shared deck. The `World` never crosses a thread
+    /// boundary (no `unsafe`, no lifetime transmute). The pooled shards are
+    /// folded back into the shared deck in wave (index) order once collected,
+    /// keeping outputs deterministic. Singleton waves run inline with exclusive
+    /// `&mut World`, identical to
     /// [`execute_agents_sequential`](Self::execute_agents_sequential).
     ///
     /// GORNA cost fitting still assumes sequential (sum-of-costs) budgets;
@@ -621,9 +679,13 @@ impl ExecutionScheduler {
         world: &mut World,
         runtime: &Arc<Runtime>,
         completion_map: &Arc<AgentCompletionMap>,
-        bus: &LaneBus,
+        bus: &Arc<LaneBus>,
         deck: &mut OutputDeck,
     ) {
+        // Inline/singleton paths only need a shared `&LaneBus`; the pool jobs
+        // clone the `Arc` itself to become `'static`.
+        let bus_ref: &LaneBus = bus;
+
         let workload_n = world.entity_count() as f64;
         let frame_status = runtime.resources.get::<AgentFrameStatusMap>().cloned();
         let record_frame_time = |id: AgentId, measured_time_ms: f32| {
@@ -645,25 +707,7 @@ impl ExecutionScheduler {
 
         // Read each agent's id + access footprint once (a failed lock yields no
         // id → an always-singleton, always-skipped slot, matching sequential).
-        let metas: Vec<WaveMeta> = agents
-            .iter()
-            .map(|(agent, _, _, deps)| {
-                let (id, access) = agent
-                    .lock()
-                    .ok()
-                    .map(|a| (Some(a.id()), a.access()))
-                    .unwrap_or((None, AgentAccess::Exclusive));
-                WaveMeta {
-                    id,
-                    access,
-                    hard_dep_targets: deps
-                        .iter()
-                        .filter(|d| matches!(d.kind, DependencyKind::Hard))
-                        .map(|d| d.target)
-                        .collect(),
-                }
-            })
-            .collect();
+        let metas = build_wave_metas(&agents);
 
         // Returns true if the agent should run (not budget-skipped, hard deps
         // satisfied); marks + records the skip otherwise.
@@ -694,7 +738,7 @@ impl ExecutionScheduler {
                 let mut engine_ctx = EngineContext {
                     world: WorldAccess::Exclusive(world as &mut dyn std::any::Any),
                     runtime: Arc::clone(runtime),
-                    bus,
+                    bus: bus_ref,
                     deck,
                 };
                 let started = Instant::now();
@@ -708,10 +752,18 @@ impl ExecutionScheduler {
                 continue;
             }
 
-            // Concurrent wave: gate on this thread, then execute the survivors
-            // on scoped threads. `Isolated` agents get `WorldAccess::None`;
-            // `SharedWorld` agents get a shared `&World` — sound because they
-            // only read it, and at most one is ever in a wave.
+            // Verify the wave's members write disjoint deck slots before we run
+            // them into private shards (declared via `Agent::deck_writes`). A
+            // collision is a parallel-eligibility bug: the shards would clash on
+            // merge — surface it here, naming the agents, not later on a raw TypeId.
+            check_wave_deck_disjoint(&wave, &metas);
+
+            // Concurrent wave. Gate on this thread, then split the survivors:
+            // the `Isolated` agents (world-free) run as `'static` jobs on the
+            // persistent pool, reaching their inputs through `Arc<LaneBus>` /
+            // `Arc<Runtime>`; the wave's lone `SharedWorld` agent (if any) runs
+            // inline here with a shared `&World`. The `World` therefore never
+            // crosses a thread boundary — no `unsafe`, no lifetime transmute.
             let runnable: Vec<usize> = wave
                 .into_iter()
                 .filter(|&idx| match metas[idx].id {
@@ -723,48 +775,73 @@ impl ExecutionScheduler {
                 continue;
             }
 
-            // Shared read-only view of the world for any `SharedWorld` agent in
-            // the wave. `World: Sync`, so many readers across threads are safe;
-            // the immutable reborrow ends when the scope joins, before the next
-            // (possibly `Exclusive`) wave takes the world mutably.
-            let world_shared: &World = world;
-            let mut results: Vec<(usize, AgentId, OutputDeck, f64)> =
-                std::thread::scope(|scope| {
-                    let handles: Vec<_> = runnable
-                        .iter()
-                        .map(|&idx| {
-                            let agent = Arc::clone(&agents[idx].0);
-                            let id = metas[idx].id.expect("gated runnable has an id");
-                            let access = metas[idx].access;
-                            let runtime = Arc::clone(runtime);
-                            scope.spawn(move || {
-                                let mut shard = OutputDeck::new();
-                                let started = Instant::now();
-                                {
-                                    let world = if access == AgentAccess::SharedWorld {
-                                        WorldAccess::Shared(world_shared as &dyn std::any::Any)
-                                    } else {
-                                        WorldAccess::None
-                                    };
-                                    let mut ctx = EngineContext {
-                                        world,
-                                        runtime,
-                                        bus,
-                                        deck: &mut shard,
-                                    };
-                                    if let Ok(mut a) = agent.lock() {
-                                        a.execute(&mut ctx);
-                                    }
-                                }
-                                let ms = started.elapsed().as_secs_f64() * 1000.0;
-                                (idx, id, shard, ms)
-                            })
-                        })
-                        .collect();
-                    handles.into_iter().filter_map(|h| h.join().ok()).collect()
+            // Dispatch every `Isolated` agent to the pool first, so their work
+            // overlaps the inline `SharedWorld` agent below. Each sends back
+            // `(idx, id, shard, ms)`; `idx` recovers wave order for a
+            // deterministic fold.
+            let (tx, rx) = std::sync::mpsc::channel::<(usize, AgentId, OutputDeck, f64)>();
+            let mut isolated_count = 0usize;
+            for &idx in runnable
+                .iter()
+                .filter(|&&idx| metas[idx].access != AgentAccess::SharedWorld)
+            {
+                let agent = Arc::clone(&agents[idx].0);
+                let id = metas[idx].id.expect("gated runnable has an id");
+                let runtime = Arc::clone(runtime);
+                let bus = Arc::clone(bus);
+                let tx = tx.clone();
+                isolated_count += 1;
+                self.pool.submit(move || {
+                    let bus_ref: &LaneBus = &bus;
+                    let mut shard = OutputDeck::new();
+                    let started = Instant::now();
+                    {
+                        let mut ctx = EngineContext {
+                            world: WorldAccess::None,
+                            runtime,
+                            bus: bus_ref,
+                            deck: &mut shard,
+                        };
+                        if let Ok(mut a) = agent.lock() {
+                            a.execute(&mut ctx);
+                        }
+                    }
+                    let ms = started.elapsed().as_secs_f64() * 1000.0;
+                    let _ = tx.send((idx, id, shard, ms));
                 });
+            }
+            // Drop our sender so the collector below terminates once the pool
+            // jobs (the only remaining senders) have all reported.
+            drop(tx);
 
-            // Fold shards back in wave order → deterministic deck contents.
+            // Run the lone `SharedWorld` agent inline on this thread. It reads
+            // `&World` and writes its slot straight into the shared deck (its
+            // slot type is disjoint from the pooled shards, checked above).
+            for &idx in runnable
+                .iter()
+                .filter(|&&idx| metas[idx].access == AgentAccess::SharedWorld)
+            {
+                let id = metas[idx].id.expect("gated runnable has an id");
+                let mut ctx = EngineContext {
+                    world: WorldAccess::Shared(&*world as &dyn std::any::Any),
+                    runtime: Arc::clone(runtime),
+                    bus: bus_ref,
+                    deck,
+                };
+                let started = Instant::now();
+                if let Ok(mut a) = agents[idx].0.lock() {
+                    a.execute(&mut ctx);
+                }
+                let ms = started.elapsed().as_secs_f64() * 1000.0;
+                record_frame_time(id, ms as f32);
+                report_cost(id, ms);
+                completion_map.mark(id, CompletionOutcome::Completed);
+            }
+
+            // Collect the pooled `Isolated` results and fold their shards in
+            // wave (idx) order → deterministic deck contents.
+            let mut results: Vec<(usize, AgentId, OutputDeck, f64)> =
+                rx.iter().take(isolated_count).collect();
             results.sort_by_key(|(idx, _, _, _)| *idx);
             for (_, id, shard, ms) in results {
                 deck.merge_from(shard);
@@ -853,6 +930,44 @@ struct WaveMeta {
     access: AgentAccess,
     /// Ids this agent hard-depends on (must run in an earlier wave).
     hard_dep_targets: Vec<AgentId>,
+    /// `OutputDeck` slot types this agent writes (from [`Agent::deck_writes`]),
+    /// used to verify co-wave agents write disjoint slots before dispatch.
+    deck_writes: Vec<std::any::TypeId>,
+}
+
+/// Worker-pool size: one thread per available core minus two (reserved for the
+/// main/render thread and the DCC cold thread), clamped to `[1, 16]`.
+fn default_pool_size() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get().saturating_sub(2))
+        .unwrap_or(1)
+        .clamp(1, 16)
+}
+
+/// Reads each agent's id, access footprint, and declared deck writes once,
+/// building the [`WaveMeta`] the wave partitioner + disjointness check need. A
+/// failed lock yields `id: None` → an always-singleton, always-skipped slot.
+fn build_wave_metas(agents: &[AgentSlot]) -> Vec<WaveMeta> {
+    agents
+        .iter()
+        .map(|(agent, _, _, deps)| {
+            let (id, access, deck_writes) = agent
+                .lock()
+                .ok()
+                .map(|a| (Some(a.id()), a.access(), a.deck_writes()))
+                .unwrap_or((None, AgentAccess::Exclusive, Vec::new()));
+            WaveMeta {
+                id,
+                access,
+                hard_dep_targets: deps
+                    .iter()
+                    .filter(|d| matches!(d.kind, DependencyKind::Hard))
+                    .map(|d| d.target)
+                    .collect(),
+                deck_writes,
+            }
+        })
+        .collect()
 }
 
 /// Groups agents (already in `sort_agents` order) into execution waves.
@@ -891,6 +1006,37 @@ fn partition_waves(metas: &[WaveMeta]) -> Vec<Vec<usize>> {
     waves
 }
 
+/// Logs an error for every `OutputDeck` slot type written by more than one
+/// agent in the same concurrent `wave`.
+///
+/// Co-wave agents run into private deck shards that are folded back together
+/// afterwards, so they must write disjoint slots (guaranteed in principle by
+/// the [`AgentAccess`] eligibility rules). Declaring writes via
+/// [`Agent::deck_writes`](khora_core::agent::Agent::deck_writes) lets the
+/// scheduler catch a violation here — naming the offending agents — rather than
+/// discovering it defensively during the shard merge on a bare `TypeId`.
+///
+/// Returns the number of collisions detected (0 = disjoint, the expected case).
+fn check_wave_deck_disjoint(wave: &[usize], metas: &[WaveMeta]) -> usize {
+    let mut seen: std::collections::HashMap<std::any::TypeId, AgentId> =
+        std::collections::HashMap::new();
+    let mut collisions = 0;
+    for &idx in wave {
+        let Some(id) = metas[idx].id else { continue };
+        for &slot in &metas[idx].deck_writes {
+            if let Some(prev) = seen.insert(slot, id) {
+                collisions += 1;
+                log::error!(
+                    "Scheduler: agents {prev:?} and {id:?} share a concurrent wave but both write \
+                     OutputDeck slot {slot:?} — their shards will collide on merge \
+                     (parallel-eligibility bug)"
+                );
+            }
+        }
+    }
+    collisions
+}
+
 fn are_hard_dependencies_completed(
     dependencies: &[AgentDependency],
     completion_map: &AgentCompletionMap,
@@ -910,7 +1056,7 @@ fn are_hard_dependencies_completed(
 
 #[cfg(test)]
 mod wave_tests {
-    use super::{partition_waves, WaveMeta};
+    use super::{check_wave_deck_disjoint, partition_waves, WaveMeta};
     use khora_core::agent::AgentAccess;
     use khora_core::control::gorna::AgentId;
 
@@ -919,6 +1065,7 @@ mod wave_tests {
             id: Some(id),
             access,
             hard_dep_targets: deps.to_vec(),
+            deck_writes: Vec::new(),
         }
     }
 
@@ -996,6 +1143,51 @@ mod wave_tests {
             meta(AgentId::ShadowRenderer, AgentAccess::Isolated, &[]),
         ];
         assert_eq!(partition_waves(&metas), vec![vec![0, 1], vec![2], vec![3]]);
+    }
+
+    fn meta_writes(id: AgentId, access: AgentAccess, writes: &[std::any::TypeId]) -> WaveMeta {
+        WaveMeta {
+            id: Some(id),
+            access,
+            hard_dep_targets: Vec::new(),
+            deck_writes: writes.to_vec(),
+        }
+    }
+
+    #[test]
+    fn disjoint_deck_writes_pass_the_check() {
+        // Two agents writing distinct slot types share a wave cleanly.
+        let metas = vec![
+            meta_writes(
+                AgentId::Ui,
+                AgentAccess::SharedWorld,
+                &[std::any::TypeId::of::<u32>()],
+            ),
+            meta_writes(
+                AgentId::Overlay,
+                AgentAccess::Isolated,
+                &[std::any::TypeId::of::<u64>()],
+            ),
+        ];
+        assert_eq!(check_wave_deck_disjoint(&[0, 1], &metas), 0);
+    }
+
+    #[test]
+    fn colliding_deck_writes_are_detected() {
+        // Two agents in one wave both declaring the same slot type collide.
+        let metas = vec![
+            meta_writes(
+                AgentId::Ui,
+                AgentAccess::SharedWorld,
+                &[std::any::TypeId::of::<u32>()],
+            ),
+            meta_writes(
+                AgentId::Overlay,
+                AgentAccess::Isolated,
+                &[std::any::TypeId::of::<u32>()],
+            ),
+        ];
+        assert_eq!(check_wave_deck_disjoint(&[0, 1], &metas), 1);
     }
 }
 
@@ -1084,9 +1276,9 @@ mod concurrent_exec_tests {
     }
 
     /// Drives `execute_agents_parallel` directly with a `SharedWorld` reader and
-    /// an `Isolated` writer in the same wave, proving the scoped-thread path:
-    /// the reader receives a shared `&World`, the writer receives none, both run,
-    /// and their private deck shards fold back into the shared deck.
+    /// an `Isolated` writer in the same wave, proving the pool path: the reader
+    /// runs inline with a shared `&World`, the writer runs pooled with none, both
+    /// run, and the pooled shard folds back into the shared deck.
     #[test]
     fn concurrent_wave_runs_shared_reader_and_isolated_writer() {
         let scheduler = ExecutionScheduler::new(
@@ -1097,7 +1289,7 @@ mod concurrent_exec_tests {
         let mut world = World::new();
         let runtime = Arc::new(Runtime::new());
         let completion = Arc::new(AgentCompletionMap::new(&[AgentId::Renderer, AgentId::Audio]));
-        let bus = LaneBus::new();
+        let bus = Arc::new(LaneBus::new());
         let mut deck = OutputDeck::new();
 
         let agents: Vec<AgentSlot> = vec![

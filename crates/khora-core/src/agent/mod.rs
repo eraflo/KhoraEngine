@@ -143,6 +143,22 @@ pub trait Agent: Send + Sync {
         AgentAccess::Exclusive
     }
 
+    /// Declares the [`OutputDeck`](crate::lane::OutputDeck) slot types this agent
+    /// writes during [`execute`](Self::execute), by [`TypeId`](std::any::TypeId).
+    ///
+    /// The scheduler uses this at wave-formation time: two concurrency-eligible
+    /// agents grouped into the same wave write into private deck shards that are
+    /// folded back together afterwards, so they **must** write disjoint slot
+    /// types. Declaring the written slots lets the scheduler catch a collision
+    /// when the wave is built — naming the offending agents — instead of only
+    /// discovering it defensively during the shard merge.
+    ///
+    /// Defaults to empty: an agent that writes no deck slot (or only runs
+    /// `Exclusive`, i.e. never in a concurrent wave) need not override it.
+    fn deck_writes(&self) -> Vec<std::any::TypeId> {
+        Vec::new()
+    }
+
     /// Allows downcasting to concrete agent types.
     fn as_any(&self) -> &dyn Any;
 

@@ -78,6 +78,11 @@ impl Agent for OverlayAgent {
         AgentAccess::Isolated
     }
 
+    /// Buffers its pass into the [`OverlayPassSlot`] deck slot.
+    fn deck_writes(&self) -> Vec<std::any::TypeId> {
+        vec![std::any::TypeId::of::<OverlayPassSlot>()]
+    }
+
     fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
         // Overlay passes are bounded by host application activity (editor
         // gizmos, debug flags). They don't compete for the main render

@@ -1,7 +1,7 @@
 # AGDF M4 — Parallel Agent Execution: design & first increment
 
 - Date — 2026-07-18
-- Status — Foundation implemented (executor off by default); live enablement deferred
+- Status — Complete: parallel execution enabled via a persistent worker pool; critical-path budgeting live (see 2026-07-19 update)
 - Scope — `khora-control` scheduler, `khora-core` agent/lane primitives
 
 ## Problem
@@ -135,28 +135,40 @@ against a ~40µs scoped-thread spawn cost — a real win. Validated in the sandb
 900+ frames, rendering unchanged, no validation errors / panics / deadlocks /
 mutex poisoning; 842 tests + clippy green.
 
-## Remaining path (follow-ups)
+## Update — follow-ups completed (2026-07-19)
 
-1. **Persistent worker pool** — replace the per-wave `std::thread::scope`
-   spawn with a pool spawned once, to amortize the (small) spawn cost when
-   waves grow. Needs the frame's `&LaneBus` reachable as `'static`/`Arc` or a
-   scoped-pool primitive.
-2. **GORNA fit → critical path** — `fit_budgets` still sums per-agent estimates,
-   so a concurrent wave is costed as its *sum* rather than its *max*. This is
-   conservative (it can only under-allocate, never overrun), but leaves quality
-   on the table; the fit should budget a wave by its critical path. Requires the
-   wave structure at arbitration time (today the DCC cold path doesn't see it).
-3. **Broader validation** — exercise the live `[Ui, Overlay]` wave in the editor
-   (rich UI + gizmos) and confirm determinism/visual parity there too.
-2. **Per-agent deck-write declarations** — replace the defensive
-   collision-log in `merge_from` with a compile-of-schedule check that two
-   `Isolated` agents in a wave never write the same slot type.
-3. **Cost model → critical path** — GORNA `fit_budgets` still sums per-agent
-   costs (correct for serial). Once waves run concurrently, the fit must budget
-   the wave's *max* cost, not its sum (the executor already records per-agent
-   wave timings).
-4. **Integration test** — drive `execute_agents_parallel` with a synthetic
-   `SharedWorld` agent (reads world) + an `Isolated` agent (writes a disjoint
-   deck slot); assert both outputs land and ordering is deterministic. (Wave
-   partitioning + deck merge are unit tested now; the end-to-end scoped-thread
-   path is not.)
+The four remaining follow-ups are done (the fifth, an end-to-end integration
+test, was already landed as `concurrent_wave_runs_shared_reader_and_isolated_writer`).
+
+1. **Persistent worker pool** — `WorkerPool` (`khora-control/src/worker_pool.rs`)
+   spawns its threads once in `ExecutionScheduler::new` and joins them on `Drop`.
+   The frame's bus is frozen behind `Arc<LaneBus>` after `run_flows`, which makes
+   a concurrent wave's `Isolated` agents fully `'static` jobs; the wave's lone
+   `SharedWorld` agent now runs **inline** on the calling thread with a shared
+   `&World`, so the `World` never crosses a thread boundary — **no `unsafe`, no
+   lifetime transmute, no new dependency**. The old per-wave `std::thread::scope`
+   is gone. RULES §5 names this as its third exception.
+
+2. **Cost model → critical path** — the scheduler publishes its wave grouping
+   each frame via `TelemetryEvent::WavePlan`; the DCC stores the latest plan and
+   `GornaArbitrator::set_wave_plan` hands it to `fit_budgets`, which now costs
+   each wave by its `max` member (critical path) and spends the budget against
+   the sum over waves. `forecast_total_ms` does the same. **Safety property:**
+   with an all-singleton grouping (serial execution, or an empty plan) sum-of-
+   wave-maxes ≡ sum-of-costs, so the serial path is bit-identical to before.
+
+3. **Per-agent deck-write declarations** — `Agent::deck_writes()` (defaulted,
+   rule-compliant) declares the deck slot `TypeId`s an agent writes;
+   `check_wave_deck_disjoint` verifies co-wave agents write disjoint slots at
+   wave formation, naming the offending agents. `OutputDeck::merge_from` keeps
+   its defensive collision log as a backstop.
+
+4. **Broader validation** — the live `[Ui, Overlay]` wave was exercised in the
+   sandbox and editor (rich UI + gizmos): rendering unchanged, deterministic, no
+   Vulkan validation errors / panics / deadlocks / mutex poisoning.
+
+### Still open (not in this pass)
+- Costing sub-stepped fixed agents by their sub-step multiplicity (orthogonal to
+  concurrency; the fit still counts each agent once per phase membership).
+- Growing the live concurrent surface beyond `[Ui, Overlay]` (more `Isolated`
+  agents per phase) — infrastructure now supports it; no agent qualifies yet.

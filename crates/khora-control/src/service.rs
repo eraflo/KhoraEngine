@@ -53,19 +53,53 @@ const FRAME_TIME_MIN_SAMPLES: usize = 10;
 /// setpoint, instead of staying pinned at a degraded strategy.
 const PID_RENEGOTIATE_DELTA: f32 = 0.05;
 
-/// Sums each agent's empirically-forecast cost (`c·f(n)`) at workload `n`.
+/// Forecasts the frame's empirical cost (`c·f(n)`) at workload `n`, grouping
+/// agents into concurrent waves: a wave costs its **critical path** (the `max`
+/// of its members), and the frame is the sum over waves.
+///
+/// With an empty `wave_plan` — serial execution, or before the hot path has
+/// published one — every agent is its own singleton wave, so this reduces
+/// exactly to the plain per-agent sum. A model for an agent absent from the
+/// plan is likewise summed as its own singleton (conservative).
 ///
 /// Returns `None` until at least one agent has enough distinct-`n` samples to
 /// fit a model — before that the DCC has nothing to anticipate with.
-fn forecast_total_ms(models: &HashMap<AgentId, CostModel>, n: f64) -> Option<f64> {
+fn forecast_total_ms(
+    models: &HashMap<AgentId, CostModel>,
+    n: f64,
+    wave_plan: &[Vec<AgentId>],
+) -> Option<f64> {
+    let mut planned: std::collections::HashSet<AgentId> = std::collections::HashSet::new();
     let mut total = 0.0;
     let mut any = false;
-    for m in models.values() {
+
+    for wave in wave_plan {
+        let mut wave_max = 0.0_f64;
+        let mut wave_has = false;
+        for id in wave {
+            planned.insert(*id);
+            if let Some(p) = models.get(id).and_then(|m| m.predict_ms(n)) {
+                wave_max = wave_max.max(p.max(0.0));
+                wave_has = true;
+            }
+        }
+        if wave_has {
+            total += wave_max;
+            any = true;
+        }
+    }
+
+    // Any model not covered by the plan is its own singleton wave.
+    for (id, m) in models {
+        if planned.contains(id) {
+            continue;
+        }
         if let Some(p) = m.predict_ms(n) {
             total += p.max(0.0);
             any = true;
         }
     }
+
     any.then_some(total)
 }
 
@@ -327,6 +361,11 @@ impl DccService {
             // samples and used to forecast budget breaches before they happen.
             let mut cost_models: HashMap<AgentId, CostModel> = HashMap::new();
             let mut last_workload_n: f64 = 0.0;
+            // Latest wave plan from the hot path: how agents are grouped for
+            // concurrent execution. Empty until the scheduler publishes one (and
+            // stays empty under serial execution), in which case cost fitting
+            // falls back to summing per-agent costs.
+            let mut latest_wave_plan: Vec<Vec<AgentId>> = Vec::new();
             // Read-only layout advisor: turns per-component access telemetry into
             // a recommendation for the glass-box. Stateless (a tuned heuristic).
             let layout_advisor = LayoutAdvisor::default();
@@ -427,6 +466,12 @@ impl DccService {
                                 time_ms as f32,
                             );
                         }
+                        TelemetryEvent::WavePlan { waves } => {
+                            // The hot path republishes this each frame; keep the
+                            // latest so arbitration costs concurrent waves by
+                            // their critical path.
+                            latest_wave_plan = waves;
+                        }
                         TelemetryEvent::ComponentAccess {
                             type_name,
                             size_bytes,
@@ -469,7 +514,9 @@ impl DccService {
                 //     so GORNA downgrades *before* the frame actually overruns —
                 //     turning the reactive loop predictive (model proposes,
                 //     measurement disposes).
-                if let Some(predicted_ms) = forecast_total_ms(&cost_models, last_workload_n) {
+                if let Some(predicted_ms) =
+                    forecast_total_ms(&cost_models, last_workload_n, &latest_wave_plan)
+                {
                     if predicted_ms > report.suggested_latency_ms as f64 {
                         let ratio = (report.suggested_latency_ms as f64 / predicted_ms)
                             .clamp(0.5, 1.0) as f32;
@@ -581,6 +628,10 @@ impl DccService {
                             })
                             .collect();
 
+                        // Give the arbitrator the current wave grouping so its
+                        // budget fit costs concurrent waves by their critical
+                        // path (empty plan = serial = sum-of-costs).
+                        arbitrator.set_wave_plan(&latest_wave_plan);
                         let issued = arbitrator.arbitrate(
                             &ctx_copy,
                             &report,
@@ -811,7 +862,7 @@ mod tests {
     fn test_forecast_total_ms_sums_agent_models() {
         // No models yet → nothing to anticipate.
         let mut models: HashMap<AgentId, CostModel> = HashMap::new();
-        assert!(forecast_total_ms(&models, 100.0).is_none());
+        assert!(forecast_total_ms(&models, 100.0, &[]).is_none());
 
         // Renderer: linear 3·n; Physics: linear 2·n.
         let mut renderer = CostModel::new(16);
@@ -823,9 +874,17 @@ mod tests {
         models.insert(AgentId::Renderer, renderer);
         models.insert(AgentId::Physics, physics);
 
-        // Forecast at n=100 → 300 + 200 = 500ms (within fit tolerance).
-        let total = forecast_total_ms(&models, 100.0).expect("a fit is available");
-        assert!((total - 500.0).abs() < 1.0, "forecast = {total}");
+        // Serial (empty plan): 300 + 200 = 500ms (within fit tolerance).
+        let total = forecast_total_ms(&models, 100.0, &[]).expect("a fit is available");
+        assert!((total - 500.0).abs() < 1.0, "serial forecast = {total}");
+
+        // Concurrent wave [Renderer, Physics]: critical path = max(300, 200).
+        let plan = vec![vec![AgentId::Renderer, AgentId::Physics]];
+        let concurrent = forecast_total_ms(&models, 100.0, &plan).expect("a fit is available");
+        assert!(
+            (concurrent - 300.0).abs() < 1.0,
+            "concurrent forecast = {concurrent}"
+        );
     }
 
     #[test]

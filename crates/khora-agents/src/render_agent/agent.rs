@@ -108,6 +108,11 @@ impl Agent for RenderAgent {
         AgentAccess::SharedWorld
     }
 
+    /// Buffers its main scene pass into the [`ScenePassSlot`] deck slot.
+    fn deck_writes(&self) -> Vec<std::any::TypeId> {
+        vec![std::any::TypeId::of::<ScenePassSlot>()]
+    }
+
     fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
         let mut strategies = Vec::new();
         // Negotiate from a stub LaneContext: we don't have access to the live

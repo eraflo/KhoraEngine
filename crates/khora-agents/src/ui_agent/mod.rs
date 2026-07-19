@@ -77,6 +77,11 @@ impl Agent for UiAgent {
         AgentAccess::SharedWorld
     }
 
+    /// Buffers its pass into the [`UiPassSlot`] deck slot.
+    fn deck_writes(&self) -> Vec<std::any::TypeId> {
+        vec![std::any::TypeId::of::<UiPassSlot>()]
+    }
+
     fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
         let strategies = vec![StrategyOption {
             id: StrategyId::Balanced,
