@@ -16,10 +16,11 @@
 
 use std::any::Any;
 use std::borrow::Cow;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, Ref, Slot};
 use khora_core::math::{Mat4, Vec4};
+use khora_core::renderer::GraphicsDevice;
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutEntry, BindGroupLayoutId,
     BindingResource, BindingType, BufferBinding, BufferBindingType, LoadOp, Operations,
@@ -30,11 +31,10 @@ use khora_core::renderer::api::pipeline::{
     PrimitiveTopology, RenderPipelineId,
 };
 use khora_core::renderer::api::resource::{
-    BufferDescriptor, BufferId, BufferUsage, TextureViewDimension,
+    BufferDescriptor, BufferId, BufferUsage, TextureViewDimension, TextureViewId,
 };
 use khora_core::renderer::api::text::TextRenderer;
 use khora_core::renderer::api::util::{SampleCount, ShaderStageFlags, TextureFormat};
-use khora_core::renderer::GraphicsDevice;
 use khora_data::ui::UiScene;
 
 /// Data for a single UI instance sent to the GPU.
@@ -75,6 +75,13 @@ pub struct UiRenderLane {
     atlas_layout: OnceLock<BindGroupLayoutId>,
     /// Fixed sampler for UI textures.
     sampler: OnceLock<khora_core::renderer::api::resource::SamplerId>,
+    /// Cached atlas bind group (set 2), keyed by the atlas texture view it
+    /// binds. Rebuilt only when the atlas view changes (the atlas texture was
+    /// reallocated); atlas *content* updates keep the same view, so the bind
+    /// group stays valid. Rebuilding destroys the previous one, so the device's
+    /// bind-group table never grows across frames. `None` until the first
+    /// atlas-bearing frame.
+    atlas_bind_group: Mutex<Option<(TextureViewId, BindGroupId)>>,
     /// Maximum number of UI elements supported in a single batch.
     max_instances: usize,
 }
@@ -91,6 +98,7 @@ impl Default for UiRenderLane {
             instance_bind_group: OnceLock::new(),
             atlas_layout: OnceLock::new(),
             sampler: OnceLock::new(),
+            atlas_bind_group: Mutex::new(None),
             max_instances: 1024,
         }
     }
@@ -130,7 +138,7 @@ impl UiRenderLane {
             .pipeline(device, &ui_pipeline_spec(device))
             .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
 
-        // 5. Create Buffers
+        // 3. Create Buffers
         let projection_buffer = device
             .create_buffer(&BufferDescriptor {
                 label: Some(Cow::Borrowed("UI Projection Buffer")),
@@ -149,7 +157,7 @@ impl UiRenderLane {
             })
             .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
 
-        // 6. Create Bind Groups
+        // 4. Create Bind Groups
         let global_bind_group = device
             .create_bind_group(&BindGroupDescriptor {
                 label: Some("ui_global_bind_group"),
@@ -320,7 +328,12 @@ impl Lane for UiRenderLane {
                 .map_err(|e| LaneError::ExecutionFailed(Box::new(e)))?;
         }
 
-        // 4. Create Atlas Bind Group if available
+        // 4. Atlas bind group (set 2), cached by the atlas texture view it binds.
+        //    It is rebuilt only when the view changes (the atlas texture was
+        //    reallocated) and the previous one is destroyed then — atlas *content*
+        //    updates keep the same view, so the bind group stays valid. This keeps
+        //    the device's bind-group table bounded instead of leaking one entry
+        //    per UI frame.
         let mut atlas_bg = None;
         if let Some(atlas_slot) = ctx.get::<Slot<khora_core::renderer::api::util::TextureAtlas>>() {
             let atlas = atlas_slot.get();
@@ -328,24 +341,41 @@ impl Lane for UiRenderLane {
                 self.atlas_layout.get().copied(),
                 self.sampler.get().copied(),
             ) {
-                let bg = device
-                    .create_bind_group(&BindGroupDescriptor {
-                        label: Some("ui_atlas_bind_group"),
-                        layout,
-                        entries: &[
-                            BindGroupEntry {
-                                binding: 0,
-                                resource: BindingResource::TextureView(atlas.view()),
-                                _phantom: std::marker::PhantomData,
-                            },
-                            BindGroupEntry {
-                                binding: 1,
-                                resource: BindingResource::Sampler(sampler),
-                                _phantom: std::marker::PhantomData,
-                            },
-                        ],
-                    })
-                    .map_err(|e| LaneError::ExecutionFailed(Box::new(e)))?;
+                let view = atlas.view();
+                let mut cache = self
+                    .atlas_bind_group
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                let bg = match *cache {
+                    // Same atlas view → reuse the existing bind group.
+                    Some((cached_view, bg)) if cached_view == view => bg,
+                    // First atlas, or the atlas texture was reallocated: build a
+                    // fresh bind group and destroy the stale one (if any).
+                    _ => {
+                        let bg = device
+                            .create_bind_group(&BindGroupDescriptor {
+                                label: Some("ui_atlas_bind_group"),
+                                layout,
+                                entries: &[
+                                    BindGroupEntry {
+                                        binding: 0,
+                                        resource: BindingResource::TextureView(view),
+                                        _phantom: std::marker::PhantomData,
+                                    },
+                                    BindGroupEntry {
+                                        binding: 1,
+                                        resource: BindingResource::Sampler(sampler),
+                                        _phantom: std::marker::PhantomData,
+                                    },
+                                ],
+                            })
+                            .map_err(|e| LaneError::ExecutionFailed(Box::new(e)))?;
+                        if let Some((_, stale)) = cache.replace((view, bg)) {
+                            let _ = device.destroy_bind_group(stale);
+                        }
+                        bg
+                    }
+                };
                 atlas_bg = Some(bg);
             }
         }
