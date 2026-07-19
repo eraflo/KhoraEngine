@@ -637,7 +637,12 @@ impl LitForwardLane {
             let pipeline_id = self
                 .pipeline_system
                 .get()
-                .map(|ps| ps.pipeline(device, &pipeline_spec(device, gpu_material.variant.clone())))
+                .map(|ps| {
+                    ps.pipeline(
+                        device,
+                        &pipeline_spec(device, gpu_material.variant.clone(), gpu_material.double_sided),
+                    )
+                })
                 .transpose()
                 .unwrap_or_else(|e| {
                     log::error!("LitForwardLane: pipeline resolve failed: {:?}", e);
@@ -866,7 +871,7 @@ impl LitForwardLane {
         // variants are compiled lazily in the render path on first use, keyed
         // by `GpuMaterial::variant`.
         let pipeline_id =
-            pipeline_system.pipeline(device, &pipeline_spec(device, ShaderVariantKey::empty()))?;
+            pipeline_system.pipeline(device, &pipeline_spec(device, ShaderVariantKey::empty(), false))?;
 
         // Init-once writes — `set` is lock-free; second call returns Err
         // which we ignore (re-init is a logic bug, not a runtime fault).
@@ -951,9 +956,10 @@ impl LitForwardLane {
 fn pipeline_spec(
     device: &dyn khora_core::renderer::GraphicsDevice,
     variant: ShaderVariantKey,
+    double_sided: bool,
 ) -> PipelineSpec {
     use khora_core::renderer::api::pipeline::enums::{
-        CompareFunction, VertexFormat, VertexStepMode,
+        CompareFunction, CullMode, VertexFormat, VertexStepMode,
     };
     use khora_core::renderer::api::pipeline::state::{
         ColorWrites, DepthBiasState, StencilFaceState,
@@ -1000,6 +1006,13 @@ fn pipeline_spec(
         fs_entry: Some("fs_main"),
         primitive: PrimitiveStateDescriptor {
             topology: PrimitiveTopology::TriangleList,
+            // Single-sided materials cull back faces; double-sided disable
+            // culling. The cull mode is part of the pipeline cache key.
+            cull_mode: if double_sided {
+                None
+            } else {
+                Some(CullMode::Back)
+            },
             ..Default::default()
         },
         depth_stencil: Some(DepthStencilStateDescriptor {

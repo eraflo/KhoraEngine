@@ -35,7 +35,7 @@
 #endif
 #import khora::std::vertex::{VertexInput, VertexOutput}
 #import khora::lighting::attenuation::{calculate_attenuation, calculate_spot_attenuation}
-#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard}
+#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard, hemisphere_ambient}
 #import khora::shadow::sample_2d::sample_shadow_pcf
 #import khora::shadow::sample_cube::sample_point_shadow_params
 
@@ -170,7 +170,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     // AO attenuates the indirect (ambient) term only — never direct light.
     let ao = sample_occlusion(input.uv);
-    var final_color = material.ambient * albedo * ao;
+    var final_color = hemisphere_ambient(N) * albedo * ao;
     for (var i = 0u; i < light_count; i++) {
         let light_index = light_indices[light_offset + i];
         let light = lights[light_index];

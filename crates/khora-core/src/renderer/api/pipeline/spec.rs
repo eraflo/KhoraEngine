@@ -27,6 +27,7 @@
 use std::borrow::Cow;
 
 use crate::renderer::api::command::{BindGroupLayoutEntry, BindingType, BufferBindingType};
+use crate::renderer::api::pipeline::enums::CullMode;
 use crate::renderer::api::pipeline::{
     ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
     PrimitiveStateDescriptor, VertexBufferLayoutDescriptor,
@@ -231,13 +232,17 @@ pub struct PipelineSpec {
 }
 
 impl PipelineSpec {
-    /// The cache key: `(shader, variant, first color-target format)`. For a
-    /// given shader + variant + target format the rest of the config is fixed.
+    /// The cache key: `(shader, variant, first color-target format, cull_mode)`.
+    /// The cull mode is part of the key because it is a rasterizer state baked
+    /// into the pipeline: double-sided vs single-sided materials share a shader,
+    /// variant, and format but need distinct pipelines. Everything else is fixed
+    /// for a given key.
     pub fn key(&self) -> PipelineKey {
         PipelineKey {
             shader: self.shader,
             variant: self.variant.clone(),
             color_format: self.color_targets.first().map(|c| c.format),
+            cull_mode: self.primitive.cull_mode,
         }
     }
 }
@@ -251,6 +256,8 @@ pub struct PipelineKey {
     pub variant: ShaderVariantKey,
     /// First color-target format (None = no color target).
     pub color_format: Option<TextureFormat>,
+    /// Face-culling mode (double-sided materials render with `None`).
+    pub cull_mode: Option<CullMode>,
 }
 
 /// Declarative description of a compute pipeline. Mirrors [`PipelineSpec`] for
@@ -290,4 +297,27 @@ pub struct ComputePipelineKey {
     pub shader: &'static str,
     /// Shader variant.
     pub variant: ShaderVariantKey,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::renderer::api::pipeline::enums::CullMode;
+
+    #[test]
+    fn pipeline_key_distinguishes_cull_mode() {
+        // Single-sided vs double-sided materials share shader + variant +
+        // format but must resolve to distinct cached pipelines.
+        let single_sided = PipelineKey {
+            shader: "khora::pipelines::standard_pbr",
+            variant: ShaderVariantKey::empty(),
+            color_format: None,
+            cull_mode: Some(CullMode::Back),
+        };
+        let double_sided = PipelineKey {
+            cull_mode: None,
+            ..single_sided.clone()
+        };
+        assert_ne!(single_sided, double_sided);
+    }
 }

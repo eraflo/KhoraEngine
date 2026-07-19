@@ -74,6 +74,10 @@ pub struct GpuMaterial {
     /// Shader variant (`HAS_*` texture flags) this material was built for.
     /// The lit lane requests the matching pipeline and groups draws by it.
     pub variant: ShaderVariantKey,
+    /// Whether the material renders double-sided (back faces not culled). The
+    /// lit lane selects a no-cull pipeline for it; single-sided materials cull
+    /// back faces. Part of the pipeline cache key via [`PipelineKey`].
+    pub double_sided: bool,
 }
 
 impl GpuMaterial {

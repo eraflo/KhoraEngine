@@ -683,7 +683,11 @@ impl ForwardPlusLane {
                     .map(|ps| {
                         ps.pipeline(
                             device,
-                            &render_pipeline_spec(device, gpu_material.variant.clone()),
+                            &render_pipeline_spec(
+                                device,
+                                gpu_material.variant.clone(),
+                                gpu_material.double_sided,
+                            ),
                         )
                     })
                     .transpose()
@@ -966,7 +970,7 @@ impl ForwardPlusLane {
         // lazily in the render path keyed by `GpuMaterial::variant`.
         let pipeline_id = pipeline_system.pipeline(
             device,
-            &render_pipeline_spec(device, ShaderVariantKey::empty()),
+            &render_pipeline_spec(device, ShaderVariantKey::empty(), false),
         )?;
         let culling_pipeline =
             pipeline_system.compute_pipeline(device, &culling_pipeline_spec())?;
@@ -1263,9 +1267,10 @@ fn fp_culling_layout_entries() -> Vec<khora_core::renderer::api::command::BindGr
 fn render_pipeline_spec(
     device: &dyn khora_core::renderer::GraphicsDevice,
     variant: ShaderVariantKey,
+    double_sided: bool,
 ) -> PipelineSpec {
     use khora_core::renderer::api::pipeline::enums::{
-        CompareFunction, VertexFormat, VertexStepMode,
+        CompareFunction, CullMode, VertexFormat, VertexStepMode,
     };
     use khora_core::renderer::api::pipeline::state::{
         ColorWrites, DepthBiasState, StencilFaceState,
@@ -1318,6 +1323,13 @@ fn render_pipeline_spec(
         fs_entry: Some("fs_main"),
         primitive: PrimitiveStateDescriptor {
             topology: PrimitiveTopology::TriangleList,
+            // Single-sided materials cull back faces; double-sided disable
+            // culling. The cull mode is part of the pipeline cache key.
+            cull_mode: if double_sided {
+                None
+            } else {
+                Some(CullMode::Back)
+            },
             ..Default::default()
         },
         depth_stencil: Some(DepthStencilStateDescriptor {

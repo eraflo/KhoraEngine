@@ -21,7 +21,7 @@
 #import khora::lighting::structs::{DirectionalLight, PointLight, SpotLight}
 #import khora::lighting::uniforms::lights
 #import khora::lighting::attenuation::{calculate_attenuation, calculate_spot_attenuation}
-#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard}
+#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard, hemisphere_ambient}
 #import khora::shadow::sample_2d::sample_shadow_pcf
 #import khora::shadow::sample_cube::sample_point_shadow
 
@@ -156,7 +156,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     // AO attenuates the indirect (ambient) term only — never direct light.
     let ao = sample_occlusion(input.uv);
-    var color = material.ambient * albedo * ao;
+    var color = hemisphere_ambient(n) * albedo * ao;
     color += calculate_directional_lights(input.world_position, n, v, albedo, metallic, roughness);
     color += calculate_point_lights(input.world_position, n, v, albedo, metallic, roughness);
     color += calculate_spot_lights(input.world_position, n, v, albedo, metallic, roughness);

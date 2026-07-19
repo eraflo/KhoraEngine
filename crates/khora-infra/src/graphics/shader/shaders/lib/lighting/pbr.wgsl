@@ -80,3 +80,16 @@ fn tonemap_reinhard(color: vec3<f32>) -> vec3<f32> {
     let mapped = color / (color + vec3<f32>(1.0));
     return pow(mapped, vec3<f32>(1.0 / 2.2));
 }
+
+// Hemispheric ambient: a cheap directional stand-in for indirect sky/ground
+// light until full IBL lands. Interpolates a sky and a ground color by the
+// surface normal's up component, so upward faces catch cool sky light and
+// downward faces catch warmer bounce. The call site multiplies this by albedo
+// and the AO factor. These are the scene-default environment colors; a
+// configurable / image-based environment replaces them with IBL.
+const AMBIENT_SKY: vec3<f32> = vec3<f32>(0.16, 0.18, 0.22);
+const AMBIENT_GROUND: vec3<f32> = vec3<f32>(0.06, 0.055, 0.05);
+fn hemisphere_ambient(n: vec3<f32>) -> vec3<f32> {
+    let t = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+    return mix(AMBIENT_GROUND, AMBIENT_SKY, t);
+}

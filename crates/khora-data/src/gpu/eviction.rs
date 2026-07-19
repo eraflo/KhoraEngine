@@ -249,6 +249,7 @@ mod tests {
             sampler: SamplerId(0),
             bind_group: BindGroupId(0),
             variant: ShaderVariantKey::empty(),
+            double_sided: false,
         }
     }
 

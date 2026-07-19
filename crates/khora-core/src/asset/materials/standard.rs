@@ -203,6 +203,10 @@ impl Material for StandardMaterial {
     fn alpha_mode(&self) -> AlphaMode {
         self.alpha_mode
     }
+
+    fn double_sided(&self) -> bool {
+        self.double_sided
+    }
 }
 
 #[cfg(test)]

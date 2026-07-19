@@ -290,7 +290,10 @@ pub fn create_plane(size: f32, y: f32) -> Mesh {
         Vec2::new(1.0, 1.0),
         Vec2::new(0.0, 1.0),
     ];
-    let indices = vec![0u32, 1, 2, 0, 2, 3];
+    // CCW winding viewed from above (+Y), so the front face matches the +Y
+    // normal — consistent with the cube and glTF convention (front = CCW =
+    // outward), which back-face culling relies on.
+    let indices = vec![0u32, 2, 1, 0, 3, 2];
     Mesh {
         positions,
         normals: Some(normals),
@@ -418,17 +421,20 @@ pub fn create_sphere(radius: f32, segments: u32, rings: u32) -> Mesh {
         }
     }
 
+    // CCW winding as seen from outside, so front faces point outward —
+    // consistent with the cube and glTF convention that back-face culling
+    // relies on.
     let mut indices = Vec::new();
     for ring in 0..rings {
         for segment in 0..segments {
             let current = ring * (segments + 1) + segment;
             let next = current + segments + 1;
             indices.push(current);
-            indices.push(next);
-            indices.push(current + 1);
             indices.push(current + 1);
             indices.push(next);
+            indices.push(current + 1);
             indices.push(next + 1);
+            indices.push(next);
         }
     }
 

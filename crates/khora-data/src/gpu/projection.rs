@@ -495,6 +495,7 @@ impl MaterialProjector<'_> {
             sampler: self.sampler,
             bind_group,
             variant,
+            double_sided: material.double_sided(),
         })
     }
 
