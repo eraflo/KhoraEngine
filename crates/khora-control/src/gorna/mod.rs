@@ -716,6 +716,7 @@ impl GornaArbitrator {
             AgentId::Audio => 0.6,
             AgentId::Asset => 0.5,
             AgentId::Overlay => 0.4,
+            AgentId::Skybox => 0.4,
         }
     }
 

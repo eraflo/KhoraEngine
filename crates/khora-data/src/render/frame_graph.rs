@@ -107,6 +107,12 @@ pub struct ScenePassSlot(pub Option<PassContribution>);
 #[derive(Default)]
 pub struct UiPassSlot(pub Option<PassContribution>);
 
+/// Deck slot carrying the skybox / environment-background pass, written by
+/// `SkyboxAgent`. Folded in after the scene pass and before overlays, so the
+/// sky sits behind the geometry (depth-tested) and under the debug overlays.
+#[derive(Default)]
+pub struct SkyboxPassSlot(pub Option<PassContribution>);
+
 /// Deck slot carrying the overlay / debug-viz pass, written by `OverlayAgent`.
 #[derive(Default)]
 pub struct OverlayPassSlot(pub Option<PassContribution>);

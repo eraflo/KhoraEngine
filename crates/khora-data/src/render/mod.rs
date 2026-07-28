@@ -32,7 +32,7 @@ mod world;
 pub use editor_view::EditorViewportOverride;
 pub use frame_graph::{
     submit_frame_graph, FrameGraph, OverlayPassSlot, PassContribution, PassDescriptor, ResourceId,
-    ScenePassSlot, SharedFrameGraph, UiPassSlot,
+    ScenePassSlot, SharedFrameGraph, SkyboxPassSlot, UiPassSlot,
 };
 pub use gizmo::GizmoFrame;
 pub use grid::GridConfig;

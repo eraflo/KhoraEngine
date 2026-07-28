@@ -74,11 +74,15 @@ fn cook_torrance(
     return (diffuse + specular) * radiance * n_dot_l;
 }
 
-// Reinhard tone-map followed by gamma correction. The single output curve
-// shared by every lit lane so their final pixels match.
+// Reinhard tone-map — the single output curve shared by every lit lane (and
+// the skybox) so their final pixels match.
+//
+// Returns a LINEAR value. It must NOT gamma-encode: the swapchain is an sRGB
+// format (the backend explicitly selects one), so the hardware applies the
+// linear→sRGB transfer function on write. Encoding here as well would apply
+// the curve twice, crushing contrast and saturation into a pale wash.
 fn tonemap_reinhard(color: vec3<f32>) -> vec3<f32> {
-    let mapped = color / (color + vec3<f32>(1.0));
-    return pow(mapped, vec3<f32>(1.0 / 2.2));
+    return color / (color + vec3<f32>(1.0));
 }
 
 // Hemispheric ambient: a cheap directional stand-in for indirect sky/ground

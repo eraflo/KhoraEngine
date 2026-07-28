@@ -3,8 +3,12 @@
 // A fullscreen triangle covers one cube face; the fragment reconstructs the
 // world-space direction for its texel from the per-face basis (forward /
 // right / up chosen to match wgpu's cube-sampling convention) and evaluates a
-// simple gradient sky. Output is linear HDR into the `Rgba16Float` env cube.
-// Run once at startup by the IBL bake, six times (one pass per face).
+// gradient sky with a sun disk. Output is linear HDR into the `Rgba16Float`
+// env cube. Run once at startup by the IBL bake, six times (one pass per face).
+//
+// The sun direction comes from the scene's directional light (stamped into the
+// per-face uniform by the bake), so the sky, the specular reflections, and the
+// shadows all agree on where the light is.
 
 struct FaceBasis {
     // xyz = the face's forward / right / up in world space (w unused). For a
@@ -13,6 +17,9 @@ struct FaceBasis {
     forward: vec4<f32>,
     right: vec4<f32>,
     up: vec4<f32>,
+    // xyz = unit direction **toward** the sun (w unused), taken from the
+    // scene's directional light so the sky agrees with what casts the shadows.
+    sun: vec4<f32>,
 };
 
 @group(0) @binding(0)
@@ -33,20 +40,47 @@ fn vs_main(@builtin(vertex_index) idx: u32) -> VsOut {
     return out;
 }
 
-// Simple gradient sky in linear space: a blue zenith, a bright hazy horizon,
-// and a dim warm ground below. Placeholder environment until an authored HDR
-// map replaces it.
+// Linear-space sky colors. The zenith is a saturated blue and the horizon haze
+// is a narrow bright band, so the gradient reads as sky rather than as flat
+// grey. Placeholder environment until an authored HDR map replaces it.
+const ZENITH: vec3<f32> = vec3<f32>(0.09, 0.22, 0.56);
+const HORIZON: vec3<f32> = vec3<f32>(0.52, 0.60, 0.72);
+const GROUND: vec3<f32> = vec3<f32>(0.16, 0.14, 0.12);
+
+// Sun radiance (linear HDR — far above 1.0, which is the point of baking into
+// `Rgba16Float`) and its warm tint.
+const SUN_COLOR: vec3<f32> = vec3<f32>(1.0, 0.93, 0.80);
+const SUN_INTENSITY: f32 = 22.0;
+// Cosines bounding the disk's soft edge — roughly a 2.6° radius. Larger than
+// the real sun (0.27°), which at this cube resolution would alias to a
+// flickering pixel; this reads as a clean disk and survives the prefilter.
+const SUN_COS_OUTER: f32 = 0.99885;
+const SUN_COS_INNER: f32 = 0.99955;
+
+// Gradient sky with a sun disk, in linear space: a blue zenith, a bright hazy
+// horizon band, a dim warm ground below, and forward-scattered glow around the
+// sun. The exponent < 1 tightens the haze against the horizon so most of the
+// visible sky keeps its blue.
 fn procedural_sky(dir: vec3<f32>) -> vec3<f32> {
-    // Linear values — a moderately bright sky so the indirect (ambient) term
-    // reads clearly on shaded surfaces without washing them out.
-    let zenith = vec3<f32>(0.25, 0.40, 0.70);
-    let horizon = vec3<f32>(0.60, 0.65, 0.72);
-    let ground = vec3<f32>(0.18, 0.16, 0.13);
     let t = dir.y;
+    var color: vec3<f32>;
     if (t >= 0.0) {
-        return mix(horizon, zenith, pow(clamp(t, 0.0, 1.0), 0.5));
+        color = mix(HORIZON, ZENITH, pow(clamp(t, 0.0, 1.0), 0.35));
+    } else {
+        color = mix(HORIZON, GROUND, clamp(-t * 2.5, 0.0, 1.0));
     }
-    return mix(horizon, ground, clamp(-t, 0.0, 1.0));
+
+    // Sun disk + halo, confined to the sky hemisphere so the glow does not
+    // bleed into the ground half of the cube.
+    let mu = dot(dir, normalize(face.sun.xyz));
+    let sky_side = smoothstep(-0.05, 0.05, t);
+    let disk = smoothstep(SUN_COS_OUTER, SUN_COS_INNER, mu);
+    // Tight bloom hugging the disk, plus a broad atmospheric scattering lobe.
+    let bloom = pow(max(mu, 0.0), 320.0) * 1.6;
+    let scatter = pow(max(mu, 0.0), 8.0) * 0.22;
+    color += SUN_COLOR * (disk * SUN_INTENSITY + bloom + scatter) * sky_side;
+
+    return color;
 }
 
 @fragment

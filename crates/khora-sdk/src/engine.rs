@@ -253,6 +253,12 @@ impl<A: EngineApp> EngineCore<A> {
         );
         dcc.register_agent(
             Arc::new(Mutex::new(
+                khora_agents::skybox_agent::SkyboxAgent::default(),
+            )),
+            1.0,
+        );
+        dcc.register_agent(
+            Arc::new(Mutex::new(
                 khora_agents::physics_agent::PhysicsAgent::default(),
             )),
             1.0,
@@ -289,6 +295,7 @@ impl<A: EngineApp> EngineCore<A> {
             khora_core::control::gorna::AgentId::Renderer,
             khora_core::control::gorna::AgentId::ShadowRenderer,
             khora_core::control::gorna::AgentId::Overlay,
+            khora_core::control::gorna::AgentId::Skybox,
             khora_core::control::gorna::AgentId::Physics,
             khora_core::control::gorna::AgentId::Ui,
             khora_core::control::gorna::AgentId::Audio,
@@ -564,19 +571,22 @@ impl<A: EngineApp> EngineCore<A> {
             .map(|arc| (*arc).clone());
 
         // Fold the agents' recorded passes (buffered in the scheduler's deck by
-        // Render/Ui/Overlay instead of locking the shared graph) into the
-        // FrameGraph in a fixed layer order — scene, then UI, then overlay
-        // compositing. This reproduces the previous add_pass insertion order,
-        // so the topological submit order is unchanged.
+        // Render/Skybox/Ui/Overlay instead of locking the shared graph) into the
+        // FrameGraph in a fixed layer order — scene, then the skybox background,
+        // then UI, then overlay compositing. The skybox sits right after the
+        // scene (it loads the scene's depth to reject geometry pixels) and
+        // before the debug overlays. The topological sort refines this via the
+        // declared read/write edges; insertion order is the tie-breaker.
         if let (Some(graph), Some(scheduler)) = (&frame_graph, self.scheduler.as_mut()) {
-            use khora_data::render::{OverlayPassSlot, ScenePassSlot, UiPassSlot};
+            use khora_data::render::{OverlayPassSlot, ScenePassSlot, SkyboxPassSlot, UiPassSlot};
             let deck = scheduler.deck_mut();
             let scene = deck.take::<ScenePassSlot>().0;
+            let skybox = deck.take::<SkyboxPassSlot>().0;
             let ui = deck.take::<UiPassSlot>().0;
             let overlay = deck.take::<OverlayPassSlot>().0;
-            if scene.is_some() || ui.is_some() || overlay.is_some() {
+            if scene.is_some() || skybox.is_some() || ui.is_some() || overlay.is_some() {
                 if let Ok(mut fg) = graph.lock() {
-                    for pass in [scene, ui, overlay].into_iter().flatten() {
+                    for pass in [scene, skybox, ui, overlay].into_iter().flatten() {
                         fg.add_pass(pass.descriptor, pass.command_buffer);
                     }
                 } else {

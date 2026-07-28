@@ -33,6 +33,10 @@ pub enum AgentId {
     /// after `Renderer` in the OUTPUT phase. Lanes activate independently
     /// based on context flags rather than a single budget-driven strategy.
     Overlay,
+    /// Skybox / environment background. Runs after `Renderer` in the OUTPUT
+    /// phase and draws the environment cube behind the scene geometry
+    /// (depth-tested), so the visible sky matches what surfaces reflect.
+    Skybox,
     /// The physics simulation agent.
     Physics,
     /// The ECS/Logic coordination agent.

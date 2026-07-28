@@ -60,12 +60,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // No lighting calculations needed - they ARE the light source
     
     let emissive = material.emissive_color.rgb * material.intensity;
-    
-    // Simple tone mapping for HDR values
+
+    // Simple tone mapping for HDR values. The result stays LINEAR — the
+    // swapchain is an sRGB format, so the hardware gamma-encodes on write;
+    // encoding here too would apply the curve twice and wash the image out.
     let tone_mapped = emissive / (emissive + vec3<f32>(1.0));
-    
-    // Gamma correction
-    let gamma_corrected = pow(tone_mapped, vec3<f32>(1.0 / 2.2));
-    
-    return vec4<f32>(gamma_corrected, material.emissive_color.a);
+
+    return vec4<f32>(tone_mapped, material.emissive_color.a);
 }

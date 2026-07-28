@@ -60,6 +60,10 @@ pub mod offset {
 /// after startup, so the same IDs are bound every frame.
 #[derive(Debug, Clone, Copy)]
 pub struct IblGpuBindings {
+    /// Full-resolution environment cube view (the linear-HDR sky the whole
+    /// bake derives from). Not part of the lit lanes' group-3 IBL block — it is
+    /// consumed only by the skybox background pass, which samples it directly.
+    pub env_cube: TextureViewId,
     /// Diffuse irradiance cube view (cosine-convolved environment).
     pub irradiance_cube: TextureViewId,
     /// Prefiltered specular environment cube view (roughness per mip).
@@ -145,6 +149,7 @@ mod tests {
         for base in [4u32, 8] {
             let layout = ibl_bind_group_layout_entries(base);
             let bindings = IblGpuBindings {
+                env_cube: TextureViewId(5),
                 irradiance_cube: TextureViewId(1),
                 prefiltered_cube: TextureViewId(2),
                 brdf_lut: TextureViewId(3),

@@ -21,14 +21,34 @@
 use std::sync::Arc;
 
 use khora_core::lane::OutputDeck;
+use khora_core::math::Vec3;
+use khora_core::renderer::light::LightType;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 
-use crate::ecs::{DataSystemRegistration, TickPhase, World};
+use crate::ecs::{DataSystemRegistration, GlobalTransform, Light, TickPhase, World};
 use crate::IblBaker;
 
-fn ibl_bake_system(_world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+/// Returns the world-space direction **toward** the scene's first enabled
+/// directional light, or `Vec3::ZERO` when there is none (the bake then falls
+/// back to its own default sun).
+///
+/// The light's travel direction is derived exactly as the render extraction
+/// does it (`rotation * direction`); the sun sits opposite that.
+fn sun_direction(world: &World) -> Vec3 {
+    for (light, transform) in world.query::<(&Light, &GlobalTransform)>() {
+        if !light.enabled {
+            continue;
+        }
+        if let LightType::Directional(dir_light) = &light.light_type {
+            return -(transform.0.rotation() * dir_light.direction);
+        }
+    }
+    Vec3::ZERO
+}
+
+fn ibl_bake_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
     let Some(baker) = runtime.resources.get::<IblBaker>() else {
         return;
     };
@@ -38,7 +58,11 @@ fn ibl_bake_system(_world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck
     let Some(pipeline_system) = runtime.resources.get::<Arc<dyn PipelineSystem>>() else {
         return;
     };
-    baker.ensure_baked(device.as_ref(), pipeline_system.as_ref());
+    baker.ensure_baked(
+        device.as_ref(),
+        pipeline_system.as_ref(),
+        sun_direction(world),
+    );
 }
 
 inventory::submit! {

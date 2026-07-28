@@ -32,7 +32,7 @@
 use std::borrow::Cow;
 use std::sync::OnceLock;
 
-use khora_core::math::{Extent3D, LinearRgba};
+use khora_core::math::{Extent3D, LinearRgba, Vec3};
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType,
     BufferBinding, BufferBindingType, LoadOp, Operations, RenderPassColorAttachment,
@@ -88,42 +88,60 @@ struct FaceBasisUniform {
     forward: [f32; 4],
     right: [f32; 4],
     up: [f32; 4],
+    /// xyz = unit direction **toward** the sun in world space (w unused). Read
+    /// only by the sky bake, which draws the sun disk there so the procedural
+    /// sky agrees with the scene's directional light. The convolution and
+    /// prefilter shaders declare only the first three fields and ignore it (a
+    /// uniform buffer larger than the shader's struct is valid).
+    sun: [f32; 4],
 }
+
+/// Direction **toward** the sun used when the scene has no directional light —
+/// a high afternoon sun, so the default environment still reads as a sky.
+const DEFAULT_SUN_DIRECTION: Vec3 = Vec3::new(0.35, 0.78, 0.52);
 
 /// The six cube faces in wgpu layer order (+X, -X, +Y, -Y, +Z, -Z), each as
 /// `[forward, right, up]`. Chosen so `normalize(forward + ndc.x*right +
 /// ndc.y*up)` reproduces the direction wgpu's cube sampling maps to that
 /// texel, keeping the baked cubes correctly oriented for later sampling.
+/// `sun` is a placeholder here — the bake stamps the real direction into each
+/// copy before upload.
 const FACE_BASES: [FaceBasisUniform; 6] = [
     FaceBasisUniform {
         forward: [1.0, 0.0, 0.0, 0.0],
         right: [0.0, 0.0, -1.0, 0.0],
         up: [0.0, 1.0, 0.0, 0.0],
+        sun: [0.0; 4],
     }, // +X
     FaceBasisUniform {
         forward: [-1.0, 0.0, 0.0, 0.0],
         right: [0.0, 0.0, 1.0, 0.0],
         up: [0.0, 1.0, 0.0, 0.0],
+        sun: [0.0; 4],
     }, // -X
     FaceBasisUniform {
         forward: [0.0, 1.0, 0.0, 0.0],
         right: [1.0, 0.0, 0.0, 0.0],
         up: [0.0, 0.0, -1.0, 0.0],
+        sun: [0.0; 4],
     }, // +Y
     FaceBasisUniform {
         forward: [0.0, -1.0, 0.0, 0.0],
         right: [1.0, 0.0, 0.0, 0.0],
         up: [0.0, 0.0, 1.0, 0.0],
+        sun: [0.0; 4],
     }, // -Y
     FaceBasisUniform {
         forward: [0.0, 0.0, 1.0, 0.0],
         right: [1.0, 0.0, 0.0, 0.0],
         up: [0.0, 1.0, 0.0, 0.0],
+        sun: [0.0; 4],
     }, // +Z
     FaceBasisUniform {
         forward: [0.0, 0.0, -1.0, 0.0],
         right: [-1.0, 0.0, 0.0, 0.0],
         up: [0.0, 1.0, 0.0, 0.0],
+        sun: [0.0; 4],
     }, // -Z
 ];
 
@@ -164,16 +182,31 @@ impl IblBaker {
 
     /// Bakes the IBL resources on the first call; a no-op afterwards.
     /// Idempotent and safe to call every frame.
-    pub fn ensure_baked(&self, device: &dyn GraphicsDevice, pipeline_system: &dyn PipelineSystem) {
+    ///
+    /// `sun_direction` points **toward** the sun in world space — the scene's
+    /// directional light, so the procedural sky's sun disk agrees with the
+    /// light that casts the shadows. A zero/degenerate vector falls back to
+    /// [`DEFAULT_SUN_DIRECTION`]. The bake is one-time, so this captures the
+    /// light as it stands on the first tick.
+    pub fn ensure_baked(
+        &self,
+        device: &dyn GraphicsDevice,
+        pipeline_system: &dyn PipelineSystem,
+        sun_direction: Vec3,
+    ) {
         if self.res.get().is_some() {
             return;
         }
-        match bake(device, pipeline_system) {
+        let sun = normalized_or_default(sun_direction);
+        match bake(device, pipeline_system, sun) {
             Ok(res) => {
                 log::info!(
-                    "IBL: baked environment ({0}x{0}) + diffuse irradiance ({1}x{1}) cubes",
+                    "IBL: baked environment ({0}x{0}) + diffuse irradiance ({1}x{1}) cubes, sun=({2:.2}, {3:.2}, {4:.2})",
                     ENV_FACE_SIZE,
-                    IRRADIANCE_FACE_SIZE
+                    IRRADIANCE_FACE_SIZE,
+                    sun.x,
+                    sun.y,
+                    sun.z
                 );
                 let _ = self.res.set(res);
             }
@@ -185,6 +218,17 @@ impl IblBaker {
     /// the IBL term until it is ready).
     pub fn bindings(&self) -> Option<IblGpuBindings> {
         self.res.get().map(|r| r.bindings)
+    }
+}
+
+/// Normalizes `dir`, falling back to [`DEFAULT_SUN_DIRECTION`] when it is
+/// degenerate (no directional light in the scene, or a zero vector).
+fn normalized_or_default(dir: Vec3) -> Vec3 {
+    let len_sq = dir.length_squared();
+    if len_sq > 1e-6 {
+        dir / len_sq.sqrt()
+    } else {
+        DEFAULT_SUN_DIRECTION.normalize()
     }
 }
 
@@ -254,10 +298,16 @@ fn uniform_entry(binding: u32) -> BindGroupLayoutEntry {
     }
 }
 
-/// Uploads the six per-face basis uniform buffers.
-fn create_face_basis_buffers(device: &dyn GraphicsDevice) -> Result<Vec<BufferId>, RenderError> {
+/// Uploads the six per-face basis uniform buffers, stamping the world-space
+/// direction toward the sun into each (used only by the sky bake).
+fn create_face_basis_buffers(
+    device: &dyn GraphicsDevice,
+    sun: Vec3,
+) -> Result<Vec<BufferId>, RenderError> {
     let mut buffers = Vec::with_capacity(6);
     for (face, basis) in FACE_BASES.iter().enumerate() {
+        let mut b = *basis;
+        b.sun = [sun.x, sun.y, sun.z, 0.0];
         buffers.push(device.create_buffer_with_data(
             &BufferDescriptor {
                 label: Some(Cow::Owned(format!("IBL Face Basis [{face}]"))),
@@ -265,7 +315,7 @@ fn create_face_basis_buffers(device: &dyn GraphicsDevice) -> Result<Vec<BufferId
                 usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
                 mapped_at_creation: false,
             },
-            bytemuck::bytes_of(basis),
+            bytemuck::bytes_of(&b),
         )?);
     }
     Ok(buffers)
@@ -396,6 +446,7 @@ fn create_prefilter_basis_buffers(
 fn bake(
     device: &dyn GraphicsDevice,
     pipeline_system: &dyn PipelineSystem,
+    sun: Vec3,
 ) -> Result<IblResources, RenderError> {
     let env = create_cube(device, ENV_FACE_SIZE, "IBL Env")?;
     let irradiance = create_cube(device, IRRADIANCE_FACE_SIZE, "IBL Irradiance")?;
@@ -415,8 +466,8 @@ fn bake(
         pipeline_system.inline_layout(device, PREFILTER_LAYOUT, &irradiance_layout_entries())?;
     let brdf_pipeline = pipeline_system.pipeline(device, &brdf_pipeline_spec())?;
 
-    let sky_bufs = create_face_basis_buffers(device)?;
-    let irr_bufs = create_face_basis_buffers(device)?;
+    let sky_bufs = create_face_basis_buffers(device, sun)?;
+    let irr_bufs = create_face_basis_buffers(device, sun)?;
 
     // Sky bind groups (uniform only), one per face.
     let mut sky_bgs = Vec::with_capacity(6);
@@ -535,6 +586,7 @@ fn bake(
     }
 
     let bindings = IblGpuBindings {
+        env_cube: env.cube_view,
         irradiance_cube: irradiance.cube_view,
         prefiltered_cube: prefilter_view,
         brdf_lut: brdf_view,
