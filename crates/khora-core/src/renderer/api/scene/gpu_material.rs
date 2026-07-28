@@ -78,6 +78,14 @@ pub struct GpuMaterial {
     /// lit lane selects a no-cull pipeline for it; single-sided materials cull
     /// back faces. Part of the pipeline cache key via [`PipelineKey`].
     pub double_sided: bool,
+    /// Whether the material is alpha-*blended* (`AlphaMode::Blend`).
+    ///
+    /// Blended materials need a different pipeline state (alpha blending on,
+    /// depth writes off) **and** a different draw order: the lit lane defers
+    /// them to a second, back-to-front sorted batch after the opaque draws,
+    /// because blending is order-dependent. `AlphaMode::Mask` is *not* blended
+    /// — it discards in the shader and stays in the opaque batch.
+    pub blend: bool,
 }
 
 impl GpuMaterial {

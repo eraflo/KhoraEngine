@@ -164,6 +164,10 @@ const PIPELINE_MODULES: &[(&str, &str)] = &[
         "khora::pipelines::skybox",
         include_str!("shaders/pipelines/skybox.wgsl"),
     ),
+    (
+        "khora::pipelines::ibl_equirect",
+        include_str!("shaders/pipelines/ibl_equirect.wgsl"),
+    ),
 ];
 
 /// Mutable interior state behind the system's `Mutex`.
@@ -976,6 +980,7 @@ mod tests {
             "khora::pipelines::ibl_prefilter",
             "khora::pipelines::ibl_brdf_lut",
             "khora::pipelines::skybox",
+            "khora::pipelines::ibl_equirect",
         ] {
             let defs = inner.base_defs.clone();
             let source = *inner.pipelines.get(name).expect("ibl bake registered");

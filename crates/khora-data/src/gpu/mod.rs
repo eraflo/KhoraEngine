@@ -27,6 +27,6 @@ pub mod projection;
 pub mod store;
 
 pub use eviction::AssetEviction;
-pub use ibl::IblBaker;
+pub use ibl::{EnvironmentMap, IblBaker};
 pub use projection::ProjectionRegistry;
 pub use store::AssetStore;

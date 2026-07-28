@@ -52,7 +52,7 @@ use khora_core::{
                 TextureDimension, TextureId, TextureUsage, TextureViewDescriptor, TextureViewId,
             },
             scene::{GpuMaterial, GpuMesh, MaterialUniforms, Mesh},
-            util::{IndexFormat, SampleCount, TextureFormat},
+            util::{IndexFormat, SampleCount, TextureColorSpace},
         },
         traits::PipelineSystem,
         GraphicsDevice,
@@ -427,13 +427,14 @@ impl MaterialProjector<'_> {
         // texture aborts the build (no silent fallback). Each slot resolves to
         // the `(texture, view)` pair so the material owns both — the view for
         // binding, the texture so eviction can free it.
-        let base_color = self.resolve_texture(material.base_color_texture(), true, cpu_textures)?;
+        use TextureColorSpace::{Linear, Srgb};
+        let base_color = self.resolve_texture(material.base_color_texture(), Srgb, cpu_textures)?;
         let metallic_roughness =
-            self.resolve_texture(material.metallic_roughness_texture(), false, cpu_textures)?;
-        let normal = self.resolve_texture(material.normal_map(), false, cpu_textures)?;
-        let emissive = self.resolve_texture(material.emissive_texture(), true, cpu_textures)?;
+            self.resolve_texture(material.metallic_roughness_texture(), Linear, cpu_textures)?;
+        let normal = self.resolve_texture(material.normal_map(), Linear, cpu_textures)?;
+        let emissive = self.resolve_texture(material.emissive_texture(), Srgb, cpu_textures)?;
         // AO is a linear data map (red channel = occlusion), never sRGB.
-        let occlusion = self.resolve_texture(material.occlusion_map(), false, cpu_textures)?;
+        let occlusion = self.resolve_texture(material.occlusion_map(), Linear, cpu_textures)?;
 
         let uniform_buffer = self
             .device
@@ -496,6 +497,9 @@ impl MaterialProjector<'_> {
             bind_group,
             variant,
             double_sided: material.double_sided(),
+            // Only `Blend` needs the transparent pipeline + sorted pass; `Mask`
+            // discards in the shader and stays opaque.
+            blend: matches!(material.alpha_mode(), AlphaMode::Blend),
         })
     }
 
@@ -513,7 +517,7 @@ impl MaterialProjector<'_> {
     fn resolve_texture(
         &self,
         slot: Option<AssetUUID>,
-        srgb: bool,
+        color_space: TextureColorSpace,
         cpu_textures: &crate::assets::Assets<CpuTexture>,
     ) -> Option<Option<(TextureId, TextureViewId)>> {
         let Some(uuid) = slot else {
@@ -526,22 +530,28 @@ impl MaterialProjector<'_> {
             );
             return None;
         };
-        let pair = self.upload_texture(cpu, srgb)?;
+        let pair = self.upload_texture(cpu, color_space)?;
         Some(Some(pair))
     }
 
     /// Uploads a decoded [`CpuTexture`] to the GPU and returns the created
-    /// texture together with a sampleable view. `srgb` selects the role-correct
-    /// format family (color maps decode as sRGB, data maps stay linear); the
-    /// texture's own format is ignored so a single decoder output can serve
-    /// either role. The `TextureId` is returned so the owning material can free
-    /// it on eviction — destroying the view alone would leak the texture.
-    fn upload_texture(&self, cpu: &CpuTexture, srgb: bool) -> Option<(TextureId, TextureViewId)> {
-        let format = if srgb {
-            TextureFormat::Rgba8UnormSrgb
-        } else {
-            TextureFormat::Rgba8Unorm
-        };
+    /// texture together with a sampleable view.
+    ///
+    /// The upload format combines what the decoder produced (`cpu.format` — the
+    /// pixel layout, 8-bit or float/HDR) with `color_space`, which the material
+    /// slot supplies (color maps are sRGB, data maps linear). Float layouts keep
+    /// their format regardless, since HDR values are linear by construction. The
+    /// row stride follows the resolved format rather than assuming 4 bytes per
+    /// pixel, so an HDR texture uploads correctly.
+    ///
+    /// The `TextureId` is returned so the owning material can free it on
+    /// eviction — destroying the view alone would leak the texture.
+    fn upload_texture(
+        &self,
+        cpu: &CpuTexture,
+        color_space: TextureColorSpace,
+    ) -> Option<(TextureId, TextureViewId)> {
+        let format = cpu.format.with_color_space(color_space);
         let texture: TextureId = self
             .device
             .create_texture(&TextureDescriptor {
@@ -560,7 +570,7 @@ impl MaterialProjector<'_> {
             .write_texture(
                 texture,
                 &cpu.pixels,
-                Some(4 * cpu.size.width),
+                Some(format.bytes_per_pixel() * cpu.size.width),
                 Origin3D::default(),
                 cpu.size,
             )

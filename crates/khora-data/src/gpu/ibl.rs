@@ -32,6 +32,7 @@
 use std::borrow::Cow;
 use std::sync::OnceLock;
 
+use khora_core::asset::AssetUUID;
 use khora_core::math::{Extent3D, LinearRgba, Vec3};
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType,
@@ -72,6 +73,8 @@ const PREFILTER_MIPS: u32 = 5;
 const BRDF_LUT_SIZE: u32 = 512;
 
 const SKY_SHADER: &str = "khora::pipelines::ibl_sky";
+const EQUIRECT_SHADER: &str = "khora::pipelines::ibl_equirect";
+const EQUIRECT_LAYOUT: &str = "ibl_equirect";
 const IRRADIANCE_SHADER: &str = "khora::pipelines::ibl_irradiance";
 const PREFILTER_SHADER: &str = "khora::pipelines::ibl_prefilter";
 const BRDF_SHADER: &str = "khora::pipelines::ibl_brdf_lut";
@@ -163,6 +166,31 @@ struct IblResources {
     _keep_buffers: Vec<BufferId>,
 }
 
+/// Selects the scene's environment source for the IBL bake.
+///
+/// Registered as a shared resource by the host application. When it names an
+/// equirectangular texture asset (an HDR `.hdr`/`.exr` keeps the dynamic range
+/// that makes reflections read well), the bake projects it onto the environment
+/// cube; absent — or naming an asset that has not been loaded — the procedural
+/// sky is baked instead, so a scene without an authored environment still
+/// lights correctly.
+///
+/// The bake is one-time, so the selection is read on the first tick.
+#[derive(Debug, Default, Clone)]
+pub struct EnvironmentMap {
+    /// Equirectangular environment texture, as a loaded `CpuTexture` asset.
+    pub texture: Option<AssetUUID>,
+}
+
+impl EnvironmentMap {
+    /// Points the environment at an equirectangular texture asset.
+    pub fn from_asset(texture: AssetUUID) -> Self {
+        Self {
+            texture: Some(texture),
+        }
+    }
+}
+
 /// One-time IBL bake service. Registered as a shared resource at bootstrap and
 /// driven by the `ibl_bake` DataSystem, which calls [`ensure_baked`] every
 /// frame; the bake itself runs only on the first call.
@@ -171,13 +199,37 @@ struct IblResources {
 #[derive(Default)]
 pub struct IblBaker {
     res: OnceLock<IblResources>,
+    env_wait: std::sync::atomic::AtomicU32,
 }
+
+/// How many ticks the bake waits for a selected environment asset to finish
+/// loading before falling back to the procedural sky.
+///
+/// The lit lanes skip rendering entirely until the IBL bindings exist, so
+/// waiting forever on an asset that never arrives (a mistyped UUID, a missing
+/// file) would leave the screen black. This bounds the wait and logs loudly.
+const MAX_ENV_WAIT_TICKS: u32 = 120;
 
 impl IblBaker {
     /// Creates an unbaked baker. The bake happens lazily on the first
     /// [`ensure_baked`](Self::ensure_baked) once a device is available.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether the one-time bake has already run.
+    pub fn is_baked(&self) -> bool {
+        self.res.get().is_some()
+    }
+
+    /// Records one tick spent waiting for the scene's environment asset to
+    /// load. Returns `true` while the caller should keep waiting, and `false`
+    /// once the budget is spent and it must bake the procedural sky instead.
+    pub fn wait_for_environment(&self) -> bool {
+        let waited = self
+            .env_wait
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        waited < MAX_ENV_WAIT_TICKS
     }
 
     /// Bakes the IBL resources on the first call; a no-op afterwards.
@@ -188,17 +240,22 @@ impl IblBaker {
     /// light that casts the shadows. A zero/degenerate vector falls back to
     /// [`DEFAULT_SUN_DIRECTION`]. The bake is one-time, so this captures the
     /// light as it stands on the first tick.
+    ///
+    /// `env_source` is an authored equirectangular environment map (see
+    /// [`EnvironmentMap`]); `None` bakes the procedural sky instead. Both fill
+    /// the same env cube, so the rest of the chain is unaffected.
     pub fn ensure_baked(
         &self,
         device: &dyn GraphicsDevice,
         pipeline_system: &dyn PipelineSystem,
         sun_direction: Vec3,
+        env_source: Option<&khora_core::renderer::api::resource::CpuTexture>,
     ) {
         if self.res.get().is_some() {
             return;
         }
         let sun = normalized_or_default(sun_direction);
-        match bake(device, pipeline_system, sun) {
+        match bake(device, pipeline_system, sun, env_source) {
             Ok(res) => {
                 log::info!(
                     "IBL: baked environment ({0}x{0}) + diffuse irradiance ({1}x{1}) cubes, sun=({2:.2}, {3:.2}, {4:.2})",
@@ -440,13 +497,17 @@ fn create_prefilter_basis_buffers(
     Ok(buffers)
 }
 
-/// Runs the full one-time bake: env cube (procedural sky) → diffuse irradiance
-/// cube, plus the shared sampler and the BRDF-LUT stand-in, all in one
-/// standalone submission.
+/// Runs the full one-time bake: env cube → diffuse irradiance cube → prefiltered
+/// specular cube + BRDF LUT, plus the shared sampler.
+///
+/// The env cube is filled either by projecting an authored equirectangular map
+/// (`env_source`) or by the procedural sky. Everything downstream reads the
+/// cube and is identical in both cases.
 fn bake(
     device: &dyn GraphicsDevice,
     pipeline_system: &dyn PipelineSystem,
     sun: Vec3,
+    env_source: Option<&khora_core::renderer::api::resource::CpuTexture>,
 ) -> Result<IblResources, RenderError> {
     let env = create_cube(device, ENV_FACE_SIZE, "IBL Env")?;
     let irradiance = create_cube(device, IRRADIANCE_FACE_SIZE, "IBL Irradiance")?;
@@ -456,8 +517,6 @@ fn bake(
     let sampler = create_ibl_sampler(device)?;
 
     // Pipelines + inline layouts.
-    let sky_pipeline = pipeline_system.pipeline(device, &sky_pipeline_spec())?;
-    let sky_layout = pipeline_system.inline_layout(device, FACE_BASIS_LAYOUT, &[uniform_entry(0)])?;
     let irr_pipeline = pipeline_system.pipeline(device, &irradiance_pipeline_spec())?;
     let irr_layout =
         pipeline_system.inline_layout(device, IRRADIANCE_LAYOUT, &irradiance_layout_entries())?;
@@ -469,19 +528,55 @@ fn bake(
     let sky_bufs = create_face_basis_buffers(device, sun)?;
     let irr_bufs = create_face_basis_buffers(device, sun)?;
 
-    // Sky bind groups (uniform only), one per face.
-    let mut sky_bgs = Vec::with_capacity(6);
-    for buf in &sky_bufs {
-        sky_bgs.push(device.create_bind_group(&BindGroupDescriptor {
-            label: Some("IBL Sky Face BG"),
-            layout: sky_layout,
-            entries: &[uniform_bg_entry(0, *buf)],
-        })?);
-    }
+    // Environment source — an authored equirectangular map when the scene
+    // supplies one, else the procedural sky. Both paths write the same six env
+    // cube faces with the same per-face basis uniforms.
+    let mut equirect_keep: Option<(TextureId, TextureViewId)> = None;
+    let (env_pipeline, env_bgs) = match env_source {
+        Some(cpu) => {
+            let (texture, view) = upload_equirect(device, cpu)?;
+            equirect_keep = Some((texture, view));
+            let equirect_sampler = create_equirect_sampler(device)?;
+            let pipeline = pipeline_system.pipeline(device, &equirect_pipeline_spec())?;
+            let layout =
+                pipeline_system.inline_layout(device, EQUIRECT_LAYOUT, &equirect_layout_entries())?;
+            let mut bgs = Vec::with_capacity(6);
+            for buf in &sky_bufs {
+                bgs.push(sampled_texture_bind_group(
+                    device,
+                    layout,
+                    view,
+                    equirect_sampler,
+                    *buf,
+                )?);
+            }
+            log::info!(
+                "IBL: environment from authored equirectangular map ({}x{}, {:?})",
+                cpu.size.width,
+                cpu.size.height,
+                cpu.format
+            );
+            (pipeline, bgs)
+        }
+        None => {
+            let pipeline = pipeline_system.pipeline(device, &sky_pipeline_spec())?;
+            let layout =
+                pipeline_system.inline_layout(device, FACE_BASIS_LAYOUT, &[uniform_entry(0)])?;
+            let mut bgs = Vec::with_capacity(6);
+            for buf in &sky_bufs {
+                bgs.push(device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("IBL Sky Face BG"),
+                    layout,
+                    entries: &[uniform_bg_entry(0, *buf)],
+                })?);
+            }
+            (pipeline, bgs)
+        }
+    };
     // Irradiance bind groups (env cube + sampler + uniform), one per face.
     let mut irr_bgs = Vec::with_capacity(6);
     for buf in &irr_bufs {
-        irr_bgs.push(cube_sample_bind_group(
+        irr_bgs.push(sampled_texture_bind_group(
             device,
             irr_layout,
             env.cube_view,
@@ -497,7 +592,7 @@ fn bake(
         let roughness = mip as f32 / (PREFILTER_MIPS - 1) as f32;
         let bufs = create_prefilter_basis_buffers(device, roughness)?;
         for buf in &bufs {
-            pre_bgs.push(cube_sample_bind_group(
+            pre_bgs.push(sampled_texture_bind_group(
                 device,
                 pre_layout,
                 env.cube_view,
@@ -513,13 +608,13 @@ fn bake(
     // queue guarantees that (a single encoder would leave the write→read hazard
     // unsynchronised — nothing else in the engine writes then reads a texture
     // within one encoder).
-    let mut sky_encoder = device.create_command_encoder(Some("IBL Sky Bake"));
+    let mut sky_encoder = device.create_command_encoder(Some("IBL Env Bake"));
     record_face_passes(
         &mut *sky_encoder,
-        &sky_pipeline,
+        &env_pipeline,
         &env.face_views,
-        &sky_bgs,
-        "IBL Sky Face",
+        &env_bgs,
+        "IBL Env Face",
     );
     match sky_encoder.finish() {
         Some(cb) => device.submit_command_buffer(cb),
@@ -601,18 +696,25 @@ fn bake(
     ];
     keep_views.extend(env.face_views);
     keep_views.extend(irradiance.face_views);
+    let mut keep_textures = vec![
+        env.texture,
+        irradiance.texture,
+        prefilter_texture,
+        brdf_texture,
+    ];
+    // The equirect source is only read during the bake, but it must outlive the
+    // submission that samples it.
+    if let Some((texture, view)) = equirect_keep {
+        keep_textures.push(texture);
+        keep_views.push(view);
+    }
     let mut keep_buffers = sky_bufs;
     keep_buffers.extend(irr_bufs);
     keep_buffers.extend(pre_bufs);
 
     Ok(IblResources {
         bindings,
-        _keep_textures: vec![
-            env.texture,
-            irradiance.texture,
-            prefilter_texture,
-            brdf_texture,
-        ],
+        _keep_textures: keep_textures,
         _keep_views: keep_views,
         _keep_buffers: keep_buffers,
     })
@@ -666,23 +768,27 @@ fn record_face_passes(
     }
 }
 
-/// A bind group of (env cube @0, sampler @1, per-face basis uniform @2) —
-/// shared by the irradiance convolution and the specular prefilter.
-fn cube_sample_bind_group(
+/// A bind group of (source texture @0, sampler @1, per-face basis uniform @2).
+///
+/// Shared by every bake pass that reads a texture per face: the irradiance
+/// convolution and the specular prefilter (which bind the env **cube**), and
+/// the equirectangular projection (which binds a **2D** lat-long map). Only the
+/// layout's declared view dimension differs; the entry shape is identical.
+fn sampled_texture_bind_group(
     device: &dyn GraphicsDevice,
     layout: khora_core::renderer::api::command::BindGroupLayoutId,
-    cube_view: TextureViewId,
+    source_view: TextureViewId,
     sampler: SamplerId,
     basis_buffer: BufferId,
 ) -> Result<khora_core::renderer::api::command::BindGroupId, RenderError> {
     device
         .create_bind_group(&BindGroupDescriptor {
-            label: Some("IBL Cube-Sample BG"),
+            label: Some("IBL Texture-Sample BG"),
             layout,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(cube_view),
+                    resource: BindingResource::TextureView(source_view),
                     _phantom: std::marker::PhantomData,
                 },
                 BindGroupEntry {
@@ -753,6 +859,107 @@ fn irradiance_layout_entries() -> Vec<BindGroupLayoutEntry> {
     ]
 }
 
+/// The bind-group layout entries for the equirectangular projection: the source
+/// lat-long map at 0 (a **2D** texture, unlike the cube the convolution reads),
+/// its sampler at 1, and the per-face basis at 2.
+fn equirect_layout_entries() -> Vec<BindGroupLayoutEntry> {
+    vec![
+        BindGroupLayoutEntry {
+            binding: 0,
+            visibility: ShaderStageFlags::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: true },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+        },
+        BindGroupLayoutEntry {
+            binding: 1,
+            visibility: ShaderStageFlags::FRAGMENT,
+            ty: BindingType::Sampler(SamplerBindingType::Filtering),
+        },
+        uniform_entry(2),
+    ]
+}
+
+/// The declarative spec for the equirectangular → cube projection pipeline.
+fn equirect_pipeline_spec() -> PipelineSpec {
+    bake_pipeline_spec(
+        "IBL Equirect Bake",
+        EQUIRECT_SHADER,
+        vec![LayoutSpec::Inline {
+            label: EQUIRECT_LAYOUT,
+            entries: Cow::Owned(equirect_layout_entries()),
+        }],
+    )
+}
+
+/// Sampler for the equirectangular source: longitude **wraps** (the map is
+/// seamless in u), latitude clamps at the poles. Linear filtering, mip 0 only.
+fn create_equirect_sampler(device: &dyn GraphicsDevice) -> Result<SamplerId, RenderError> {
+    device
+        .create_sampler(&SamplerDescriptor {
+            label: Some(Cow::Borrowed("ibl_equirect_sampler")),
+            address_mode_u: AddressMode::Repeat,
+            address_mode_v: AddressMode::ClampToEdge,
+            address_mode_w: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            mipmap_filter: MipmapFilterMode::Linear,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: 0.0,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        })
+        .map_err(RenderError::ResourceError)
+}
+
+/// Uploads a decoded equirectangular environment map and returns its texture +
+/// sampleable view.
+///
+/// The source keeps the layout the decoder produced (`Rgba16Float` for an HDR
+/// `.hdr`/`.exr`, 8-bit for an LDR image), and the row stride follows that
+/// format — an HDR row is twice as wide as an 8-bit one.
+fn upload_equirect(
+    device: &dyn GraphicsDevice,
+    cpu: &khora_core::renderer::api::resource::CpuTexture,
+) -> Result<(TextureId, TextureViewId), RenderError> {
+    use khora_core::math::Origin3D;
+
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some(Cow::Borrowed("IBL Equirect Source")),
+        size: cpu.size,
+        mip_level_count: 1,
+        sample_count: SampleCount::X1,
+        dimension: TextureDimension::D2,
+        format: cpu.format,
+        usage: TextureUsage::TEXTURE_BINDING | TextureUsage::COPY_DST,
+        view_formats: Cow::Borrowed(&[]),
+    })?;
+    device.write_texture(
+        texture,
+        &cpu.pixels,
+        Some(cpu.format.bytes_per_pixel() * cpu.size.width),
+        Origin3D::default(),
+        cpu.size,
+    )?;
+    let view = device.create_texture_view(
+        texture,
+        &TextureViewDescriptor {
+            label: Some(Cow::Borrowed("IBL Equirect Source View")),
+            format: Some(cpu.format),
+            dimension: Some(TextureViewDimension::D2),
+            aspect: ImageAspect::All,
+            base_mip_level: 0,
+            mip_level_count: Some(1),
+            base_array_layer: 0,
+            array_layer_count: Some(1),
+        },
+    )?;
+    Ok((texture, view))
+}
+
 /// The declarative spec for the irradiance convolution pipeline.
 fn irradiance_pipeline_spec() -> PipelineSpec {
     bake_pipeline_spec(
@@ -813,6 +1020,43 @@ mod tests {
     fn unbaked_baker_has_no_bindings() {
         let baker = IblBaker::new();
         assert!(baker.bindings().is_none());
+        assert!(!baker.is_baked());
+    }
+
+    #[test]
+    fn environment_wait_is_bounded() {
+        // A selected-but-never-loaded environment must not stall the bake
+        // forever: the lit lanes render nothing until the bindings exist.
+        let baker = IblBaker::new();
+        for _ in 0..MAX_ENV_WAIT_TICKS {
+            assert!(baker.wait_for_environment(), "should still be waiting");
+        }
+        assert!(
+            !baker.wait_for_environment(),
+            "must give up and fall back to the procedural sky"
+        );
+    }
+
+    #[test]
+    fn environment_map_defaults_to_procedural() {
+        assert!(EnvironmentMap::default().texture.is_none());
+        let uuid = AssetUUID::new_v5("test/env.hdr");
+        assert_eq!(EnvironmentMap::from_asset(uuid).texture, Some(uuid));
+    }
+
+    #[test]
+    fn equirect_layout_declares_2d_source_sampler_uniform() {
+        // The equirect source is a 2D lat-long map, unlike the cube the
+        // convolution and prefilter read at the same binding index.
+        let entries = equirect_layout_entries();
+        assert_eq!(entries.len(), 3);
+        assert!(matches!(
+            entries[0].ty,
+            BindingType::Texture {
+                view_dimension: TextureViewDimension::D2,
+                ..
+            }
+        ));
     }
 
     #[test]

@@ -87,12 +87,13 @@ fn pipeline_spec(
     device: &dyn khora_core::renderer::GraphicsDevice,
     variant: ShaderVariantKey,
     double_sided: bool,
+    blend: bool,
 ) -> PipelineSpec {
     use khora_core::renderer::api::pipeline::enums::{
         CompareFunction, CullMode, VertexFormat, VertexStepMode,
     };
     use khora_core::renderer::api::pipeline::state::{
-        ColorWrites, DepthBiasState, StencilFaceState,
+        BlendStateDescriptor, ColorWrites, DepthBiasState, StencilFaceState,
     };
     use khora_core::renderer::api::pipeline::{
         ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
@@ -147,7 +148,11 @@ fn pipeline_spec(
         },
         depth_stencil: Some(DepthStencilStateDescriptor {
             format: TextureFormat::Depth32Float,
-            depth_write_enabled: true,
+            // Transparent surfaces still depth-*test* against the opaque scene
+            // but must not depth-*write*: writing would let a nearer
+            // transparent fragment reject a farther one that should still show
+            // through it.
+            depth_write_enabled: !blend,
             depth_compare: CompareFunction::Less,
             stencil_front: StencilFaceState::default(),
             stencil_back: StencilFaceState::default(),
@@ -159,7 +164,7 @@ fn pipeline_spec(
             format: device
                 .get_surface_format()
                 .unwrap_or(TextureFormat::Rgba8UnormSrgb),
-            blend: None,
+            blend: blend.then(BlendStateDescriptor::alpha_blending),
             write_mask: ColorWrites::ALL,
         }],
         multisample: MultisampleStateDescriptor {
@@ -190,8 +195,10 @@ fn init_gpu_resources(
     // Warm the empty-variant pipeline (untextured materials). Textured
     // variants are compiled lazily in the render path on first use, keyed by
     // `GpuMaterial::variant`.
-    let pipeline_id =
-        pipeline_system.pipeline(device, &pipeline_spec(device, ShaderVariantKey::empty(), false))?;
+    let pipeline_id = pipeline_system.pipeline(
+        device,
+        &pipeline_spec(device, ShaderVariantKey::empty(), false, false),
+    )?;
 
     let _ = lane.camera_layout.set(camera_layout);
     let _ = lane.model_layout.set(model_layout);
@@ -449,7 +456,12 @@ fn render_pbr(
         .copied()
         .unwrap_or(khora_core::renderer::api::pipeline::RenderPipelineId(0));
 
+    // Opaque draws batch by pipeline; blended draws are deferred to a second
+    // batch sorted back-to-front (blending is order-dependent), each carrying
+    // its squared distance to the camera as the sort key.
     let mut draw_commands = Vec::with_capacity(render_world.meshes.len());
+    let mut transparent_draws: Vec<(f32, khora_core::renderer::api::command::DrawCommand)> =
+        Vec::new();
     let mut temp_bind_groups = Vec::new();
 
     // Model transforms go through the per-frame dynamic ring: one buffer,
@@ -484,7 +496,12 @@ fn render_pbr(
             .map(|ps| {
                 ps.pipeline(
                     device,
-                    &pipeline_spec(device, gpu_material.variant.clone(), gpu_material.double_sided),
+                    &pipeline_spec(
+                        device,
+                        gpu_material.variant.clone(),
+                        gpu_material.double_sided,
+                        gpu_material.blend,
+                    ),
                 )
             })
             .transpose()
@@ -511,7 +528,7 @@ fn render_pbr(
         };
         let model_bg = *model_ring.current_bind_group();
 
-        draw_commands.push(khora_core::renderer::api::command::DrawCommand {
+        let command = khora_core::renderer::api::command::DrawCommand {
             pipeline: pipeline_id,
             vertex_buffer: gpu_mesh_handle.vertex_buffer,
             index_buffer: gpu_mesh_handle.index_buffer,
@@ -521,12 +538,24 @@ fn render_pbr(
             model_offset,
             material_bind_group: Some(gpu_material.bind_group),
             material_offset: 0,
-        });
+        };
+        if gpu_material.blend {
+            transparent_draws.push((
+                crate::render_lane::camera_distance_sq(&model_mat, view.position),
+                command,
+            ));
+        } else {
+            draw_commands.push(command);
+        }
     }
 
     // Batch by pipeline (variant) so each pipeline is set once across the
     // pass — avoids per-draw pipeline thrash when materials mix variants.
     draw_commands.sort_by_key(|cmd| cmd.pipeline.0);
+    // Transparent draws sort farthest-first instead: correct compositing
+    // outranks pipeline batching, since each blended fragment must be applied
+    // over everything behind it.
+    transparent_draws.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let color_attachment = RenderPassColorAttachment {
         view: render_ctx.color_target,
@@ -605,8 +634,13 @@ fn render_pbr(
     render_pass.set_bind_group(0, &camera_bind_group, &[]);
     render_pass.set_bind_group(3, &final_lighting_bind_group, &[]);
 
+    // Opaque first — it fills the depth buffer the transparent pass tests
+    // against — then the blended draws, farthest first.
     let mut current_pipeline = None;
-    for cmd in &draw_commands {
+    for cmd in draw_commands
+        .iter()
+        .chain(transparent_draws.iter().map(|(_, cmd)| cmd))
+    {
         if current_pipeline != Some(cmd.pipeline) {
             render_pass.set_pipeline(&cmd.pipeline);
             current_pipeline = Some(cmd.pipeline);

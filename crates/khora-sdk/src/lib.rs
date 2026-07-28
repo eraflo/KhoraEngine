@@ -193,6 +193,10 @@ pub use khora_telemetry::MetricsRegistry;
 // Mesh type (used by editor ops)
 pub use khora_core::renderer::api::scene::mesh::Mesh;
 
+// Scene environment — selects the equirectangular map the IBL bake projects
+// onto the environment cube (absent ⇒ the procedural sky is baked instead).
+pub use khora_data::EnvironmentMap;
+
 /// Renderer sub-modules (used by editor gizmo)
 pub mod renderer {
     pub use khora_core::renderer::api::resource;
@@ -301,8 +305,12 @@ pub mod prelude {
     // Materials
     pub mod materials {
         //! Built-in material types.
+        //!
+        //! [`AlphaMode`] is re-exported alongside them because it is the type of
+        //! `StandardMaterial::alpha_mode`: without it a game could not select
+        //! masked or blended transparency through the SDK.
         pub use khora_core::asset::{
-            EmissiveMaterial, StandardMaterial, UnlitMaterial, WireframeMaterial,
+            AlphaMode, EmissiveMaterial, StandardMaterial, UnlitMaterial, WireframeMaterial,
         };
     }
 

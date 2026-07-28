@@ -610,8 +610,12 @@ impl LitForwardLane {
         // resolve fails; lock-free read via OnceLock.
         let fallback_pipeline = self.pipeline.get().copied().unwrap_or(RenderPipelineId(0));
 
-        // Prepare Draw Commands
+        // Prepare Draw Commands. Opaque draws batch by pipeline; blended draws
+        // go to a second batch sorted back-to-front (blending is
+        // order-dependent), keyed by squared distance to the camera.
         let mut draw_commands = Vec::with_capacity(render_world.meshes.len());
+        let mut transparent_draws: Vec<(f32, khora_core::renderer::api::command::DrawCommand)> =
+            Vec::new();
 
         let mut temp_bind_groups = Vec::new();
 
@@ -647,7 +651,12 @@ impl LitForwardLane {
                 .map(|ps| {
                     ps.pipeline(
                         device,
-                        &pipeline_spec(device, gpu_material.variant.clone(), gpu_material.double_sided),
+                        &pipeline_spec(
+                        device,
+                        gpu_material.variant.clone(),
+                        gpu_material.double_sided,
+                        gpu_material.blend,
+                    ),
                     )
                 })
                 .transpose()
@@ -675,7 +684,7 @@ impl LitForwardLane {
             };
             let model_bg = *model_ring.current_bind_group();
 
-            draw_commands.push(khora_core::renderer::api::command::DrawCommand {
+            let command = khora_core::renderer::api::command::DrawCommand {
                 pipeline: pipeline_id,
                 vertex_buffer: gpu_mesh_handle.vertex_buffer,
                 index_buffer: gpu_mesh_handle.index_buffer,
@@ -685,13 +694,25 @@ impl LitForwardLane {
                 model_offset,
                 material_bind_group: Some(gpu_material.bind_group),
                 material_offset: 0,
-            });
+            };
+            if gpu_material.blend {
+                transparent_draws.push((
+                    crate::render_lane::camera_distance_sq(&model_mat, view.position),
+                    command,
+                ));
+            } else {
+                draw_commands.push(command);
+            }
         }
 
         // Batch by pipeline (variant) so each pipeline is set once across the
         // whole pass — avoids per-draw pipeline thrash when materials mix
         // variants. Stable sort keeps submission order within a variant.
         draw_commands.sort_by_key(|cmd| cmd.pipeline.0);
+        // Transparent draws sort farthest-first instead: correct compositing
+        // outranks pipeline batching.
+        transparent_draws
+            .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
         // Render Pass
         let color_attachment = RenderPassColorAttachment {
@@ -783,9 +804,14 @@ impl LitForwardLane {
         render_pass.set_bind_group(0, &camera_bind_group, &[]);
         render_pass.set_bind_group(3, &final_lighting_bind_group, &[]);
 
+        // Opaque first — it fills the depth buffer the transparent pass tests
+        // against — then the blended draws, farthest first.
         let mut current_pipeline: Option<RenderPipelineId> = None;
 
-        for cmd in &draw_commands {
+        for cmd in draw_commands
+            .iter()
+            .chain(transparent_draws.iter().map(|(_, cmd)| cmd))
+        {
             if current_pipeline != Some(cmd.pipeline) {
                 render_pass.set_pipeline(&cmd.pipeline);
                 current_pipeline = Some(cmd.pipeline);
@@ -885,7 +911,10 @@ impl LitForwardLane {
         // variants are compiled lazily in the render path on first use, keyed
         // by `GpuMaterial::variant`.
         let pipeline_id =
-            pipeline_system.pipeline(device, &pipeline_spec(device, ShaderVariantKey::empty(), false))?;
+            pipeline_system.pipeline(
+                device,
+                &pipeline_spec(device, ShaderVariantKey::empty(), false, false),
+            )?;
 
         // Init-once writes — `set` is lock-free; second call returns Err
         // which we ignore (re-init is a logic bug, not a runtime fault).
@@ -971,12 +1000,13 @@ fn pipeline_spec(
     device: &dyn khora_core::renderer::GraphicsDevice,
     variant: ShaderVariantKey,
     double_sided: bool,
+    blend: bool,
 ) -> PipelineSpec {
     use khora_core::renderer::api::pipeline::enums::{
         CompareFunction, CullMode, VertexFormat, VertexStepMode,
     };
     use khora_core::renderer::api::pipeline::state::{
-        ColorWrites, DepthBiasState, StencilFaceState,
+        BlendStateDescriptor, ColorWrites, DepthBiasState, StencilFaceState,
     };
     use khora_core::renderer::api::pipeline::{
         ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
@@ -1031,7 +1061,9 @@ fn pipeline_spec(
         },
         depth_stencil: Some(DepthStencilStateDescriptor {
             format: TextureFormat::Depth32Float,
-            depth_write_enabled: true,
+            // Transparent surfaces depth-test but never depth-write; see
+            // `StandardPbrLane::pipeline_spec` for the rationale.
+            depth_write_enabled: !blend,
             depth_compare: CompareFunction::Less,
             stencil_front: StencilFaceState::default(),
             stencil_back: StencilFaceState::default(),
@@ -1043,7 +1075,7 @@ fn pipeline_spec(
             format: device
                 .get_surface_format()
                 .unwrap_or(TextureFormat::Rgba8UnormSrgb),
-            blend: None,
+            blend: blend.then(BlendStateDescriptor::alpha_blending),
             write_mask: ColorWrites::ALL,
         }],
         multisample: MultisampleStateDescriptor {

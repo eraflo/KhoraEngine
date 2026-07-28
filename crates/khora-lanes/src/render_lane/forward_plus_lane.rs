@@ -662,8 +662,11 @@ impl ForwardPlusLane {
             compute_pass.dispatch_workgroups(num_tiles_x, num_tiles_y, 1);
         }
 
-        // 5. Prepare Per-Mesh Data (Dynamic Uniforms)
+        // 5. Prepare Per-Mesh Data (Dynamic Uniforms). Opaque draws batch by
+        // pipeline; blended draws are deferred to a back-to-front sorted batch.
         let mut draw_commands = Vec::new();
+        let mut transparent_draws: Vec<(f32, khora_core::renderer::api::command::DrawCommand)> =
+            Vec::new();
 
         if let Some(ref mut ring) = resources.model_ring {
             ring.advance();
@@ -694,6 +697,7 @@ impl ForwardPlusLane {
                                 device,
                                 gpu_material.variant.clone(),
                                 gpu_material.double_sided,
+                                gpu_material.blend,
                             ),
                         )
                     })
@@ -724,7 +728,7 @@ impl ForwardPlusLane {
                     continue;
                 };
 
-                draw_commands.push(khora_core::renderer::api::command::DrawCommand {
+                let command = khora_core::renderer::api::command::DrawCommand {
                     pipeline: pipeline_id,
                     vertex_buffer: gpu_mesh_handle.vertex_buffer,
                     index_buffer: gpu_mesh_handle.index_buffer,
@@ -734,12 +738,24 @@ impl ForwardPlusLane {
                     model_offset,
                     material_bind_group: Some(gpu_material.bind_group),
                     material_offset: 0,
-                });
+                };
+                if gpu_material.blend {
+                    transparent_draws.push((
+                        crate::render_lane::camera_distance_sq(&model_mat, view.position),
+                        command,
+                    ));
+                } else {
+                    draw_commands.push(command);
+                }
             }
         }
 
         // Batch by pipeline (variant): one `set_pipeline` per variant.
         draw_commands.sort_by_key(|cmd| cmd.pipeline.0);
+        // Transparent draws sort farthest-first instead: correct compositing
+        // outranks pipeline batching.
+        transparent_draws
+            .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
         // 6. Render Pass
         let color_attachment = RenderPassColorAttachment {
@@ -868,9 +884,14 @@ impl ForwardPlusLane {
         render_pass.set_bind_group(3, &lighting_bg, &[]);
 
         // Draw Cached Commands — set the pipeline once per variant (commands
-        // are pre-sorted by pipeline above).
+        // are pre-sorted by pipeline above). Opaque first, so it fills the depth
+        // buffer the transparent pass tests against, then blended draws
+        // farthest-first.
         let mut current_pipeline: Option<RenderPipelineId> = None;
-        for cmd in &draw_commands {
+        for cmd in draw_commands
+            .iter()
+            .chain(transparent_draws.iter().map(|(_, cmd)| cmd))
+        {
             if current_pipeline != Some(cmd.pipeline) {
                 render_pass.set_pipeline(&cmd.pipeline);
                 current_pipeline = Some(cmd.pipeline);
@@ -985,7 +1006,7 @@ impl ForwardPlusLane {
         // lazily in the render path keyed by `GpuMaterial::variant`.
         let pipeline_id = pipeline_system.pipeline(
             device,
-            &render_pipeline_spec(device, ShaderVariantKey::empty(), false),
+            &render_pipeline_spec(device, ShaderVariantKey::empty(), false, false),
         )?;
         let culling_pipeline =
             pipeline_system.compute_pipeline(device, &culling_pipeline_spec())?;
@@ -1285,12 +1306,13 @@ fn render_pipeline_spec(
     device: &dyn khora_core::renderer::GraphicsDevice,
     variant: ShaderVariantKey,
     double_sided: bool,
+    blend: bool,
 ) -> PipelineSpec {
     use khora_core::renderer::api::pipeline::enums::{
         CompareFunction, CullMode, VertexFormat, VertexStepMode,
     };
     use khora_core::renderer::api::pipeline::state::{
-        ColorWrites, DepthBiasState, StencilFaceState,
+        BlendStateDescriptor, ColorWrites, DepthBiasState, StencilFaceState,
     };
     use khora_core::renderer::api::pipeline::{
         ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
@@ -1351,7 +1373,9 @@ fn render_pipeline_spec(
         },
         depth_stencil: Some(DepthStencilStateDescriptor {
             format: TextureFormat::Depth32Float,
-            depth_write_enabled: true,
+            // Transparent surfaces depth-test but never depth-write; see
+            // `StandardPbrLane::pipeline_spec` for the rationale.
+            depth_write_enabled: !blend,
             depth_compare: CompareFunction::Less,
             stencil_front: StencilFaceState::default(),
             stencil_back: StencilFaceState::default(),
@@ -1363,7 +1387,7 @@ fn render_pipeline_spec(
             format: device
                 .get_surface_format()
                 .unwrap_or(TextureFormat::Rgba8UnormSrgb),
-            blend: None,
+            blend: blend.then(BlendStateDescriptor::alpha_blending),
             write_mask: ColorWrites::ALL,
         }],
         multisample: MultisampleStateDescriptor {

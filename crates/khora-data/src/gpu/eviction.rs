@@ -250,6 +250,7 @@ mod tests {
             bind_group: BindGroupId(0),
             variant: ShaderVariantKey::empty(),
             double_sided: false,
+            blend: false,
         }
     }
 

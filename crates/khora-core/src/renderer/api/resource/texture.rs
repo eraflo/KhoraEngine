@@ -213,7 +213,71 @@ pub struct CpuTexture {
 
 impl crate::asset::Asset for CpuTexture {}
 
+#[cfg(test)]
+mod cpu_texture_tests {
+    use super::*;
+
+    #[test]
+    fn from_rgba32f_packs_to_half_float() {
+        let rgba = vec![1.0f32; 2 * 2 * 4];
+        let tex = CpuTexture::from_rgba32f(2, 2, &rgba).expect("valid pixel count");
+        assert_eq!(tex.format, TextureFormat::Rgba16Float);
+        // 4 channels x 2 bytes per half.
+        assert_eq!(tex.pixels.len(), 2 * 2 * 4 * 2);
+        assert_eq!(tex.row_size(), 2 * 8);
+    }
+
+    #[test]
+    fn from_rgba32f_preserves_values_above_one() {
+        // HDR is the whole reason this constructor exists: an 8-bit path would
+        // clip this to white.
+        let rgba = vec![8.0f32, 0.5, 0.25, 1.0];
+        let tex = CpuTexture::from_rgba32f(1, 1, &rgba).expect("valid pixel count");
+        let red = u16::from_le_bytes([tex.pixels[0], tex.pixels[1]]);
+        assert_eq!(red, crate::renderer::api::util::f32_to_f16_bits(8.0));
+    }
+
+    #[test]
+    fn from_rgba32f_rejects_a_mismatched_pixel_count() {
+        assert!(CpuTexture::from_rgba32f(2, 2, &[0.0; 4]).is_none());
+    }
+}
+
 impl CpuTexture {
+    /// Builds an HDR texture from linear `f32` RGBA channels, packed to
+    /// `Rgba16Float`.
+    ///
+    /// `rgba` is row-major, 4 channels per pixel, and must hold exactly
+    /// `width * height * 4` values. Half-float keeps values above `1.0` (the
+    /// point of HDR) while staying filterable on every backend, unlike 32-bit
+    /// float. Use for procedurally generated HDR content — an environment map,
+    /// a lookup table — that does not come from a decoded file.
+    ///
+    /// Returns `None` if `rgba`'s length does not match `width * height * 4`.
+    pub fn from_rgba32f(width: u32, height: u32, rgba: &[f32]) -> Option<Self> {
+        let expected = (width as usize) * (height as usize) * 4;
+        if rgba.len() != expected {
+            return None;
+        }
+        let pixels = rgba
+            .iter()
+            .flat_map(|&c| crate::renderer::api::util::f32_to_f16_bits(c).to_le_bytes())
+            .collect();
+        Some(Self {
+            pixels,
+            size: Extent3D {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            format: TextureFormat::Rgba16Float,
+            mip_level_count: 1,
+            sample_count: SampleCount::X1,
+            dimension: TextureDimension::D2,
+            usage: TextureUsage::TEXTURE_BINDING | TextureUsage::COPY_DST,
+        })
+    }
+
     /// Creates a texture descriptor from this CPU texture data
     pub fn to_descriptor<'a>(&self, label: Option<Cow<'a, str>>) -> TextureDescriptor<'a> {
         TextureDescriptor {

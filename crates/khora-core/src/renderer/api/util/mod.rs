@@ -17,11 +17,13 @@
 pub mod dynamic_uniform_buffer;
 pub mod enums;
 pub mod flags;
+pub mod half_float;
 pub mod uniform_ring_buffer;
 
 pub use self::dynamic_uniform_buffer::*;
 pub use self::enums::*;
 pub use self::flags::*;
+pub use self::half_float::*;
 pub use self::uniform_ring_buffer::*;
 
 /// A rect within a texture atlas (UV coordinates).

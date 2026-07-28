@@ -247,6 +247,10 @@ impl PipelineSpec {
             variant: self.variant.clone(),
             color_format: self.color_targets.first().map(|c| c.format),
             cull_mode: self.primitive.cull_mode,
+            blend: self
+                .color_targets
+                .first()
+                .is_some_and(|c| c.blend.is_some()),
         }
     }
 }
@@ -262,6 +266,13 @@ pub struct PipelineKey {
     pub color_format: Option<TextureFormat>,
     /// Face-culling mode (double-sided materials render with `None`).
     pub cull_mode: Option<CullMode>,
+    /// Whether the first color target blends.
+    ///
+    /// A single flag covers the whole transparent state: the lit lanes derive
+    /// both the blend state and `depth_write_enabled` from the material's
+    /// `AlphaMode::Blend`, so two pipelines can never differ in one without
+    /// differing in the other.
+    pub blend: bool,
 }
 
 /// Declarative description of a compute pipeline. Mirrors [`PipelineSpec`] for
@@ -317,11 +328,31 @@ mod tests {
             variant: ShaderVariantKey::empty(),
             color_format: None,
             cull_mode: Some(CullMode::Back),
+            blend: false,
         };
         let double_sided = PipelineKey {
             cull_mode: None,
             ..single_sided.clone()
         };
         assert_ne!(single_sided, double_sided);
+    }
+
+    #[test]
+    fn pipeline_key_distinguishes_blend() {
+        // An opaque and an alpha-blended material share shader + variant +
+        // format + cull mode, but their pipelines differ in blend state and
+        // depth-write, so they must not collide in the cache.
+        let opaque = PipelineKey {
+            shader: "khora::pipelines::standard_pbr",
+            variant: ShaderVariantKey::empty(),
+            color_format: None,
+            cull_mode: Some(CullMode::Back),
+            blend: false,
+        };
+        let blended = PipelineKey {
+            blend: true,
+            ..opaque.clone()
+        };
+        assert_ne!(opaque, blended);
     }
 }
