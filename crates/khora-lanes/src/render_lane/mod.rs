@@ -18,7 +18,6 @@
 //! [`khora_data::render`].  This module exposes the lanes that consume that
 //! data and the UI-scene types specific to the UI render pipeline.
 
-mod emissive_lane;
 mod forward_plus_lane;
 mod gizmo_lane;
 mod grid_lane;
@@ -87,7 +86,6 @@ mod transparency_tests {
     }
 }
 
-pub use emissive_lane::EmissiveLane;
 pub use forward_plus_lane::*;
 pub use gizmo_lane::{GizmoLane, SharedGizmoFrame};
 pub use grid_lane::{GridLane, SharedGridConfig};
@@ -97,4 +95,4 @@ pub use simple_unlit_lane::*;
 pub use skybox_lane::SkyboxLane;
 pub use standard_pbr_lane::StandardPbrLane;
 pub use ui_render_lane::*;
-pub use wireframe_lane::WireframeLane;
+pub use wireframe_lane::{SharedWireframeConfig, WireframeLane};

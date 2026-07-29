@@ -104,6 +104,13 @@ const NAVIGATE_ACTIONS: &[Command] = &[
     },
 ];
 
+const VIEW_ACTIONS: &[Command] = &[Command {
+    label: "Toggle Wireframe",
+    description: "Show scene meshes as edge lines (debug)",
+    action: "toggle_wireframe",
+    icon: Icon::Cube,
+}];
+
 const SECTIONS: &[Section] = &[
     Section {
         title: "Quick Actions",
@@ -116,6 +123,10 @@ const SECTIONS: &[Section] = &[
     Section {
         title: "Navigate",
         items: NAVIGATE_ACTIONS,
+    },
+    Section {
+        title: "View",
+        items: VIEW_ACTIONS,
     },
 ];
 

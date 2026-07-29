@@ -228,6 +228,15 @@ impl Agent for OverlayAgent {
             {
                 ctx.insert(grid_cfg);
             }
+            // Wireframe debug overlay — same opt-in mechanism.
+            if let Some(wireframe_cfg) = context
+                .runtime
+                .resources
+                .get::<khora_lanes::render_lane::SharedWireframeConfig>()
+                .cloned()
+            {
+                ctx.insert(wireframe_cfg);
+            }
 
             for lane in self.lanes.all() {
                 if let Err(e) = lane.execute(&mut ctx) {
@@ -301,10 +310,9 @@ impl Default for OverlayAgent {
     fn default() -> Self {
         let mut lanes = LaneRegistry::new();
         // Order matters — overlays composite in registration order:
-        // grid is the backdrop, emissive is additive over the scene,
-        // wireframe is debug viz, gizmo is the editor handles on top.
+        // grid is the backdrop, wireframe is debug viz, gizmo is the editor
+        // handles on top.
         lanes.register(Box::new(khora_lanes::render_lane::GridLane::default()));
-        lanes.register(Box::new(khora_lanes::render_lane::EmissiveLane::default()));
         lanes.register(Box::new(khora_lanes::render_lane::WireframeLane::default()));
         lanes.register(Box::new(khora_lanes::render_lane::GizmoLane::default()));
 
@@ -324,9 +332,8 @@ mod tests {
     #[test]
     fn overlay_agent_registers_overlay_lanes() {
         let agent = OverlayAgent::default();
-        assert_eq!(agent.lanes.len(), 4);
+        assert_eq!(agent.lanes.len(), 3);
         assert!(agent.lanes.get("Grid").is_some());
-        assert!(agent.lanes.get("Emissive").is_some());
         assert!(agent.lanes.get("Wireframe").is_some());
         assert!(agent.lanes.get("Gizmo").is_some());
     }

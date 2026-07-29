@@ -117,10 +117,6 @@ const PIPELINE_MODULES: &[(&str, &str)] = &[
         include_str!("shaders/pipelines/unlit.wgsl"),
     ),
     (
-        "khora::pipelines::emissive",
-        include_str!("shaders/pipelines/emissive.wgsl"),
-    ),
-    (
         "khora::pipelines::wireframe",
         include_str!("shaders/pipelines/wireframe.wgsl"),
     ),

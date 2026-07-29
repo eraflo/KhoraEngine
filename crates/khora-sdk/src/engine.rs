@@ -132,6 +132,10 @@ impl<A: EngineApp> EngineCore<A> {
         let grid_config: khora_lanes::render_lane::SharedGridConfig =
             Arc::new(Mutex::new(khora_data::render::GridConfig::default()));
         runtime.resources.insert(grid_config);
+        // Wireframe debug overlay — disabled by default; the editor opts in.
+        let wireframe_config: khora_lanes::render_lane::SharedWireframeConfig =
+            Arc::new(Mutex::new(khora_data::render::WireframeConfig::default()));
+        runtime.resources.insert(wireframe_config);
 
         // ── Data-layer GPU resources ─────────────────────────────────────
         // AssetStore: the single engine-wide store of projected GPU assets

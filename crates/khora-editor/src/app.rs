@@ -75,6 +75,10 @@ pub struct EditorApp {
     /// `after_agents` for gizmo rendering.
     last_view_info: Option<ViewInfo>,
     input: InputState,
+    /// Whether the wireframe debug overlay is on. Toggled from the command
+    /// palette ("Toggle Wireframe") and pushed into the shared
+    /// `WireframeConfig` each frame in `before_agents`.
+    wireframe_enabled: bool,
     last_frame_time: Instant,
     /// Editor viewport override — read by `RenderFlow` as fallback when
     /// no active scene `Camera` exists (i.e. Editing mode). Updated each
@@ -117,6 +121,7 @@ impl EngineApp for EditorApp {
             dcc_context: None,
             last_view_info: None,
             input: InputState::default(),
+            wireframe_enabled: false,
             last_frame_time: Instant::now(),
             viewport_override: khora_sdk::khora_data::render::EditorViewportOverride::new(),
             project_vfs: None,
@@ -155,6 +160,17 @@ impl EngineApp for EditorApp {
             &self.camera,
             &self.command_history,
         );
+
+        // Wireframe toggle is editor-view state, not a scene command — handle
+        // it here (flipping our own flag) before the scene-command dispatch so
+        // it does not fall through to the "unhandled action" log. The flag is
+        // pushed into the shared `WireframeConfig` in `before_agents`.
+        if let Ok(mut s) = self.editor_state.lock() {
+            if s.pending_menu_action.as_deref() == Some("toggle_wireframe") {
+                s.pending_menu_action = None;
+                self.wireframe_enabled = !self.wireframe_enabled;
+            }
+        }
 
         commands::process_menu_actions(
             &mut self.project_vfs,
@@ -401,6 +417,17 @@ impl EngineApp for EditorApp {
         {
             if let Ok(mut cfg) = grid_cfg.lock() {
                 cfg.enabled = grid_on;
+            }
+        }
+
+        // Wireframe debug overlay — user-toggled (command palette), and like
+        // the grid it is editor chrome, hidden outside Editing mode.
+        if let Some(wf_cfg) = runtime
+            .resources
+            .get::<khora_sdk::khora_lanes::render_lane::SharedWireframeConfig>()
+        {
+            if let Ok(mut cfg) = wf_cfg.lock() {
+                cfg.enabled = self.wireframe_enabled && grid_on;
             }
         }
 

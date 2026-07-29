@@ -22,8 +22,7 @@
 //!
 //! - `GizmoLane` — editor / debug line gizmos. Data published on the
 //!   `OutputDeck` by the host application (editor, game tooling).
-//! - `WireframeLane` — wireframe debug viz.
-//! - `EmissiveLane` — emissive-only additive pass.
+//! - `WireframeLane` — wireframe debug viz (opt-in via `WireframeConfig`).
 //!
 //! Domain-agnostic by design: the engine never assumes who pushes the
 //! data, only that the data slot type is well-known. This keeps the

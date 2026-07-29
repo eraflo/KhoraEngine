@@ -21,10 +21,13 @@ struct VertexOutput {
     @location(0) barycentric: vec3<f32>,  // For wireframe rendering
 };
 
+// Matches `khora_core::renderer::api::resource::ModelUniforms` — the same
+// per-mesh uniform the lit lanes push through their dynamic ring, so the
+// wireframe lane reuses that machinery. `normal_matrix` is unused here (the
+// wireframe needs only the clip position) but kept so the layout matches.
 struct ModelUniforms {
     model_matrix: mat4x4<f32>,
     normal_matrix: mat4x4<f32>,
-    tint_color: vec4<f32>,
 };
 
 @group(1) @binding(0)

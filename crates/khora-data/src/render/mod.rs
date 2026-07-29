@@ -27,6 +27,7 @@ mod editor_view;
 mod frame_graph;
 mod gizmo;
 mod grid;
+mod wireframe;
 mod world;
 
 pub use editor_view::EditorViewportOverride;
@@ -36,6 +37,7 @@ pub use frame_graph::{
 };
 pub use gizmo::GizmoFrame;
 pub use grid::GridConfig;
+pub use wireframe::WireframeConfig;
 pub use world::{ExtractedLight, ExtractedMesh, ExtractedView, RenderWorld};
 
 // Shadow contract lives in `khora_core::renderer::api::shadow` now.
