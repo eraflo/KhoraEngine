@@ -54,7 +54,7 @@ pub fn apply_theme(ctx: &egui::Context, theme: &UiTheme) {
 
     // ── Selection / hyperlinks ───────────────────────
     visuals.selection.bg_fill = c(theme.primary).gamma_multiply(0.20);
-    visuals.selection.stroke = egui::Stroke::new(1.0, c(theme.primary));
+    visuals.selection.stroke = egui::Stroke::new(1.0_f32, c(theme.primary));
     visuals.hyperlink_color = c(theme.accent_b);
 
     // ── Window chrome ────────────────────────────────
@@ -64,7 +64,7 @@ pub fn apply_theme(ctx: &egui::Context, theme: &UiTheme) {
         spread: 0,
         color: egui::Color32::from_black_alpha(140),
     };
-    visuals.window_stroke = egui::Stroke::new(1.0, c(theme.border));
+    visuals.window_stroke = egui::Stroke::new(1.0_f32, c(theme.border));
     visuals.popup_shadow = egui::Shadow {
         offset: [0, 4],
         blur: 12,
@@ -78,27 +78,27 @@ pub fn apply_theme(ctx: &egui::Context, theme: &UiTheme) {
 
     // ── Widget states ────────────────────────────────
     visuals.widgets.noninteractive.bg_fill = c(theme.surface);
-    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, c(theme.text_dim));
+    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0_f32, c(theme.text_dim));
     visuals.widgets.noninteractive.corner_radius = radius_md;
-    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(0.5, c(theme.separator));
+    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(0.5_f32, c(theme.separator));
 
     visuals.widgets.inactive.bg_fill = c(theme.surface_interactive);
-    visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, c(theme.text));
+    visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, c(theme.text));
     visuals.widgets.inactive.corner_radius = radius_md;
-    visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, c(theme.border));
+    visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, c(theme.border));
 
     visuals.widgets.hovered.bg_fill = c(theme.surface_active);
-    visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, c(theme.text));
+    visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0_f32, c(theme.text));
     visuals.widgets.hovered.corner_radius = radius_md;
-    visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, c(theme.border_strong));
+    visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, c(theme.border_strong));
 
     visuals.widgets.active.bg_fill = c(theme.primary).gamma_multiply(0.32);
-    visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5, c(theme.text));
+    visuals.widgets.active.fg_stroke = egui::Stroke::new(1.5_f32, c(theme.text));
     visuals.widgets.active.corner_radius = radius_md;
-    visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, c(theme.primary));
+    visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, c(theme.primary));
 
     visuals.widgets.open.bg_fill = c(theme.surface_elevated);
-    visuals.widgets.open.fg_stroke = egui::Stroke::new(1.0, c(theme.text));
+    visuals.widgets.open.fg_stroke = egui::Stroke::new(1.0_f32, c(theme.text));
     visuals.widgets.open.corner_radius = radius_md;
 
     // Menu / popup backgrounds use the elevated surface so they pop above

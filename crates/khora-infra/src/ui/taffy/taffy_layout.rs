@@ -211,7 +211,7 @@ impl TaffyLayoutSystem {
         match val {
             UiVal::Px(v) => length(v),
             UiVal::Percent(v) => percent(v / 100.0),
-            UiVal::Auto => length(0.0),
+            UiVal::Auto => length(0.0_f32),
         }
     }
 

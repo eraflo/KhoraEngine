@@ -24,17 +24,23 @@ members = [
 ]
 
 # Shared package metadata inherited by every workspace member via
-# `rust-version.workspace = true`. The MSRV is pinned to 1.91 — the lowest
+# `rust-version.workspace = true`. The MSRV is pinned to 1.95 — the lowest
 # stable toolchain that actually compiles the whole workspace, verified by
-# `cargo +1.91 check --workspace --all-features --all-targets`. The binding
+# `cargo +1.95 check --workspace --all-features --all-targets`. The binding
 # constraints are:
+#   * dependency floor: sysinfo 0.39 requires >= 1.95 — this is the one that
+#     sets the number, and it applies to every 0.39.x including 0.39.1;
+#   * dependency floor: the egui/eframe 0.34 family requires >= 1.92;
 #   * `const fn TypeId::of` used in `const` context by the `#[derive(Component)]`
 #     output in khora-data (stabilized as const in Rust 1.91);
-#   * dependency floors: egui/eframe 0.33 and image 0.25 require >= 1.88;
 #   * first-party `{integer}::is_multiple_of` (1.87) and `Option::is_none_or`
-#     (1.82) sit below this floor.
+#     (1.82) sit well below this floor.
+#
+# The floor is set by dependencies, not by anything first-party, so it can drop
+# again if those crates relax their own. Keep the `MSRV` CI job's toolchain in
+# step with this value — the two are checked against each other by nothing else.
 [workspace.package]
-rust-version = "1.91"
+rust-version = "1.95"
 # The whole workspace ships under Apache-2.0 (see ./LICENSE). Declaring it
 # here and inheriting it per crate makes every manifest self-describe its
 # license, which the cargo-deny licenses check enforces.

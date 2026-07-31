@@ -207,9 +207,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run cargo-deny
-        # Pinned to the v2.0.9 commit SHA. The action bundles a matching
+        # Pinned to the v2.1.1 commit SHA. The action bundles a matching
         # cargo-deny binary, so no separate toolchain/build is needed.
-        uses: EmbarkStudios/cargo-deny-action@d6d27f1b02f0c07f9db6ffc34e7871bba5ab5816 # v2.0.9
+        uses: EmbarkStudios/cargo-deny-action@c3bbe7e4e3f7baeee1a3dd9aec0a3b2aded580fb # v2.1.1
         with:
           command: check
 
@@ -217,7 +217,7 @@ jobs:
   # If a change starts using a newer stdlib/language feature, this fails until
   # the MSRV is bumped deliberately.
   msrv:
-    name: MSRV (cargo check on 1.91)
+    name: MSRV (cargo check on 1.95)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -230,11 +230,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libasound2-dev pkg-config libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
 
-      - name: Install MSRV toolchain (1.91)
+      - name: Install MSRV toolchain (1.95)
         # Pinned to a commit SHA; the exact toolchain comes from `toolchain:`.
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
-          toolchain: "1.91"
+          toolchain: "1.95"
 
       - name: Cache Cargo dependencies
         uses: Swatinem/rust-cache@v2
