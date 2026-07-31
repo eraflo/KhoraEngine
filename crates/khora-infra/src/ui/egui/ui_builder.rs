@@ -590,6 +590,13 @@ impl UiBuilder for EguiUiBuilder<'_> {
         self.ui.ctx().wants_keyboard_input()
     }
 
+    fn raw_key_pressed(&self, key: KeyCode) -> bool {
+        let Some(egui_key) = map_key(key) else {
+            return false;
+        };
+        self.ui.input(|i| i.key_pressed(egui_key))
+    }
+
     fn focus_last_item(&mut self) {
         if let Some(response) = self.last_response.as_ref() {
             response.request_focus();

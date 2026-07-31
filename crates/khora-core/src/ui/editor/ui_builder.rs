@@ -299,6 +299,19 @@ pub trait UiBuilder {
         false
     }
 
+    /// Whether `key` was pressed this frame, **regardless of focus**.
+    ///
+    /// For the widget that *owns* the focused field: a command palette must
+    /// still move its selection with the arrows while the user types in its
+    /// own query box, which is exactly the case [`key_pressed`] refuses to
+    /// serve. Reach for that one by default; this is the deliberate exception.
+    ///
+    /// [`key_pressed`]: Self::key_pressed
+    fn raw_key_pressed(&self, key: KeyCode) -> bool {
+        let _ = key;
+        false
+    }
+
     /// Asks the backend to give the **last** widget keyboard focus.
     ///
     /// Call it on the frame a field appears, not every frame: repeating the

@@ -63,6 +63,12 @@ pub struct SceneTreePanel {
     theme: UiTheme,
     /// How far the entity list is scrolled.
     scroll: khora_tool_ui::widgets::ScrollState,
+    /// Entities whose subtree is folded away.
+    ///
+    /// Stored as the *exception* — collapsed rather than expanded — so a
+    /// freshly loaded scene shows its whole hierarchy, and a newly spawned
+    /// child appears without the user having to open anything.
+    collapsed: std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,
 }
 
 impl SceneTreePanel {
@@ -71,6 +77,7 @@ impl SceneTreePanel {
             state,
             theme,
             scroll: khora_tool_ui::widgets::ScrollState::default(),
+            collapsed: std::collections::HashSet::new(),
         }
     }
 }
@@ -264,7 +271,7 @@ impl EditorPanel for SceneTreePanel {
         // Rows live between the section header and the bottom of the panel.
         let rows_top = section_y + 18.0;
         let rows_area = [px, rows_top, pw, (panel_rect[1] + panel_rect[3] - rows_top).max(0.0)];
-        let content_h = count_scene_nodes(&filtered_roots) as f32 * ROW_HEIGHT;
+        let content_h = count_visible_nodes(&filtered_roots, &self.collapsed) as f32 * ROW_HEIGHT;
         self.scroll.update(ui, rows_area, content_h);
         ui.push_clip_rect(rows_area);
 
@@ -272,6 +279,7 @@ impl EditorPanel for SceneTreePanel {
         for node in &filtered_roots {
             row_y = render_node(
                 ui, node, 0, px, pw, row_y, &selected, &hidden, &theme, &pending, asset_epoch,
+                &self.collapsed,
             );
         }
         ui.pop_clip_rect();
@@ -353,6 +361,11 @@ impl EditorPanel for SceneTreePanel {
                         state_guard.toggle_select(eid);
                     } else {
                         state_guard.select(eid);
+                    }
+                }
+                EditorAction::ToggleCollapse(eid) => {
+                    if !self.collapsed.remove(&eid) {
+                        self.collapsed.insert(eid);
                     }
                 }
                 EditorAction::ToggleVisibility(eid) => {
@@ -469,6 +482,7 @@ fn render_node(
     // Current `EditorState::asset_epoch` — rejects an asset drag whose index
     // was read before a rescan.
     asset_epoch: u64,
+    collapsed: &std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,
 ) -> f32 {
     let row_x = px + 4.0;
     let row_w = pw - 8.0;
@@ -584,9 +598,26 @@ fn render_node(
     let indent_px = ROW_PAD_X + depth as f32 * 14.0;
     let mut cx = row_x + indent_px;
 
-    // Chevron (or empty space for leaves)
+    // Chevron — the fold control, and a hit target of its own so clicking it
+    // folds without also re-selecting the row.
     if !node.children.is_empty() {
-        paint_icon(ui, [cx, y + 7.0], Icon::ChevronDown, 11.0, theme.text_muted);
+        let is_collapsed = collapsed.contains(&node.entity);
+        let chev_rect = [cx - 3.0, y + 4.0, 17.0, 17.0];
+        let chev = ui.interact_rect(&format!("st-chev-{}", node.entity.index), chev_rect);
+        if chev.clicked {
+            pending.set(Some(EditorAction::ToggleCollapse(node.entity)));
+        }
+        let glyph = if is_collapsed {
+            Icon::ChevronRight
+        } else {
+            Icon::ChevronDown
+        };
+        let colour = if chev.hovered {
+            theme.text
+        } else {
+            theme.text_muted
+        };
+        paint_icon(ui, [cx, y + 7.0], glyph, 11.0, colour);
     }
     cx += 14.0;
 
@@ -659,6 +690,9 @@ fn render_node(
     paint_icon(ui, [eye_x + 5.0, y + 7.0], eye_icon, 12.0, eye_color);
 
     let mut next_y = y + ROW_HEIGHT;
+    if collapsed.contains(&node.entity) {
+        return next_y;
+    }
     for child in &node.children {
         next_y = render_node(
             ui,
@@ -672,9 +706,30 @@ fn render_node(
             theme,
             pending,
             asset_epoch,
+            collapsed,
         );
     }
     next_y
+}
+
+/// Counts the rows a forest actually shows, stopping at folded nodes.
+///
+/// Used for the scroll extent: counting the whole tree would let the view
+/// scroll past the end of a mostly-folded hierarchy.
+fn count_visible_nodes(
+    nodes: &[SceneNode],
+    collapsed: &std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,
+) -> usize {
+    nodes
+        .iter()
+        .map(|n| {
+            1 + if collapsed.contains(&n.entity) {
+                0
+            } else {
+                count_visible_nodes(&n.children, collapsed)
+            }
+        })
+        .sum()
 }
 
 /// Packs an `EntityId` into a `u64` for drag-and-drop payloads. Layout:
@@ -710,6 +765,8 @@ pub(crate) fn payload_is_entity(payload: u64) -> bool {
 enum EditorAction {
     Select(khora_sdk::prelude::ecs::EntityId),
     ToggleVisibility(khora_sdk::prelude::ecs::EntityId),
+    /// Fold or unfold this node's subtree.
+    ToggleCollapse(khora_sdk::prelude::ecs::EntityId),
     Rename(khora_sdk::prelude::ecs::EntityId),
     Duplicate(khora_sdk::prelude::ecs::EntityId),
     Delete(khora_sdk::prelude::ecs::EntityId),

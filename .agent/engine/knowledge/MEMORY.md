@@ -8,6 +8,29 @@ Deep history lives in git and `docs/plans/`.
 - **Build**: clean (all crates compile, 0 errors); clippy 0 errors.
 - **Tests**: ~866 passing, ~29 ignored, 0 failures. Treat the live `cargo test --workspace` count as truth.
 
+## Latest work (2026-07-31, suite 4) — Phase 4 (partielle) : fonctionnalités mortes
+- **C4 — pliage de la hiérarchie** : chevron interactif (`ChevronRight`/`ChevronDown`), récursion
+  stoppée sur nœud replié, `count_visible_nodes` pour l'étendue de scroll. L'état est stocké comme
+  l'**exception** (`collapsed`, pas `expanded`) : une scène chargée s'affiche entière et un enfant
+  fraîchement créé apparaît sans rien ouvrir.
+- **C5 — palette** : `focus_last_item()` au 1ᵉʳ frame d'ouverture (verrou `was_open`, sinon le focus
+  est piégé), flèches ↑↓ via le nouveau **`raw_key_pressed`** — `key_pressed` refuse pendant qu'un
+  champ a le focus, or la palette *possède* ce champ, d'où la variante non supprimée.
+- **Débordement de la palette corrigé** : liste clippée dans la modale + défilement qui suit la ligne
+  active. Elle peignait par-dessus le pied de page puis sur le workspace derrière.
+- **C1 — UI d'undo/redo retirée** : `Ctrl+Z`/`Ctrl+Y` et les entrées Edit ▸ Undo/Redo supprimées.
+  `CommandHistory` n'est jamais alimenté ; un undo qui ne fait rien en silence est pire qu'absent —
+  il invite à des éditions destructrices qu'on croit réversibles. `process_events` ne prend plus
+  `command_history`.
+- **E1/E2** — `InputState::release_all()` sur `WindowEvent::Focused(false)` ; les boutons ne s'arment
+  que si le press **commence** dans le viewport.
+- **E3** — `Ctrl+S`, `Ctrl+1`/`Ctrl+2` (workspaces), `Échap` (ferme la palette, puis désélectionne).
+- **E4** — caméra au standard DCC : **milieu = orbit, shift+milieu = pan**, clic droit = orbit aussi.
+- Vérifié à l'écran : palette clippée + focus + flèches (sélection descend) + Échap ferme.
+- **Reste en Phase 4** : C2 (renommage inline), C3 (visibilité réellement branchée), C6 (5 icônes et
+  2 entrées de menu mortes), D2 (remonter les erreurs à l'utilisateur).
+- Vérif : `cargo test --workspace` 974 passed / 0 failed ; clippy clean.
+
 ## Latest work (2026-07-31, suite 3) — Phase 3 : fondations d'API UI
 - **A4 — `last_response` renseigné** (`khora-infra/.../ui_builder.rs`) par `text_edit_singleline`,
   `checkbox`, `drag_value_f32`, `slider_f32`, `vec3_editor`, `color_edit`, `combo_box`. C'était la

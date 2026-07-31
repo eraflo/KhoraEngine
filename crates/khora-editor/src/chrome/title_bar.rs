@@ -140,16 +140,11 @@ impl EditorPanel for TitleBarPanel {
                         m.close_menu();
                     }
                 });
+                // Undo / Redo are absent on purpose: `CommandHistory` is never
+                // fed, so both entries were permanent no-ops. Offering an undo
+                // that silently does nothing is worse than not offering one —
+                // it invites destructive edits the user believes are reversible.
                 ui_inner.menu_button("Edit", &mut |m| {
-                    if m.button("Undo  Ctrl+Z") {
-                        dispatch("undo");
-                        m.close_menu();
-                    }
-                    if m.button("Redo  Ctrl+Y") {
-                        dispatch("redo");
-                        m.close_menu();
-                    }
-                    m.separator();
                     if m.button("Delete  Del") {
                         dispatch("delete");
                         m.close_menu();
