@@ -1426,7 +1426,14 @@ impl EditorPanel for AssetBrowserPanel {
             }
         }
         ui.pop_clip_rect();
-        khora_tool_ui::widgets::scrollbar(ui, &theme, grid_view, grid_content_h, &self.grid_scroll);
+        khora_tool_ui::widgets::scrollbar(
+            ui,
+            &theme,
+            grid_view,
+            grid_content_h,
+            &mut self.grid_scroll,
+            "ab-grid-scroll",
+        );
 
         // Cursor-following drag ghost — painted after the clip is popped so it
         // can follow the cursor outside the grid.

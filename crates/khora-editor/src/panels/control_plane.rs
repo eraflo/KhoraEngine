@@ -533,7 +533,14 @@ impl ControlPlanePanel {
         }
 
         ui.pop_clip_rect();
-        khora_tool_ui::widgets::scrollbar(ui, theme, view, content_h, &self.agents_scroll);
+        khora_tool_ui::widgets::scrollbar(
+            ui,
+            theme,
+            view,
+            content_h,
+            &mut self.agents_scroll,
+            "cp-agents-scroll",
+        );
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -358,7 +358,7 @@ impl EditorPanel for ConsolePanel {
         }
 
         ui.pop_clip_rect();
-        widgets::scrollbar(ui, &t, body, content_h, &self.scroll);
+        widgets::scrollbar(ui, &t, body, content_h, &mut self.scroll, "console-scroll");
     }
 }
 

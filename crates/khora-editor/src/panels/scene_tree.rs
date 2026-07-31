@@ -275,7 +275,14 @@ impl EditorPanel for SceneTreePanel {
             );
         }
         ui.pop_clip_rect();
-        khora_tool_ui::widgets::scrollbar(ui, &theme, rows_area, content_h, &self.scroll);
+        khora_tool_ui::widgets::scrollbar(
+            ui,
+            &theme,
+            rows_area,
+            content_h,
+            &mut self.scroll,
+            "hierarchy-scroll",
+        );
 
         // Below this point `row_y` is a scrolled coordinate; the panel-wide
         // right-click area must sit under the *visible* rows, not the virtual

@@ -142,8 +142,10 @@ pub struct RecordingUiBuilder {
     panel: [f32; 4],
     cursor: [f32; 2],
     /// Wheel delta reported by `scroll_delta_in`, for whatever rect it is
-    /// asked about — the recorder has no pointer to place.
+    /// asked about — the recorder has no real pointer to place.
     scroll: f32,
+    /// Position reported by `pointer_position`.
+    pointer: Option<[f32; 2]>,
 }
 
 impl RecordingUiBuilder {
@@ -156,6 +158,7 @@ impl RecordingUiBuilder {
             panel: [0.0, 0.0, width, height],
             cursor: [0.0, 0.0],
             scroll: 0.0,
+            pointer: None,
         }
     }
 
@@ -163,6 +166,25 @@ impl RecordingUiBuilder {
     pub fn with_scroll(mut self, delta: f32) -> Self {
         self.scroll = delta;
         self
+    }
+
+    /// Scripts the position `pointer_position` will report. Chainable.
+    pub fn with_pointer(mut self, pos: [f32; 2]) -> Self {
+        self.pointer = Some(pos);
+        self
+    }
+
+    /// Scripts a held press (hovered + pressed, not yet released) on the region
+    /// with this `id_salt` — what a drag looks like mid-gesture. Chainable.
+    pub fn with_press(self, id_salt: &str) -> Self {
+        self.with_interaction(
+            id_salt,
+            Interaction {
+                hovered: true,
+                pressed: true,
+                ..Interaction::default()
+            },
+        )
     }
 
     /// Scripts the interaction that [`UiBuilder::interact_rect`] will report
@@ -531,6 +553,10 @@ impl UiBuilder for RecordingUiBuilder {
 
     fn scroll_delta_in(&self, _rect: [f32; 4]) -> f32 {
         self.scroll
+    }
+
+    fn pointer_position(&self) -> Option<[f32; 2]> {
+        self.pointer
     }
 
     fn separator(&mut self) {}

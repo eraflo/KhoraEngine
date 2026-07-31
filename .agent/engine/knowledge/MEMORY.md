@@ -30,18 +30,18 @@ Deep history lives in git and `docs/plans/`.
     place son contenu.
   - **Chips de titre redondants supprimés** (Hierarchy / Inspector / Console / Assets) : l'onglet du
     dock nomme déjà le panneau. Les compteurs vivants (entités, assets) sont conservés seuls.
+  - **Barre de défilement saisissable** : `scrollbar` prend `&mut ScrollState` + un `id_salt` et
+    gère le drag (`ScrollState::drag_to`, le pouce se centre sur le curseur — clic n'importe où sur
+    la piste = saut, glisser = suivi exact). Zone de préhension de 14 px pour une barre peinte de
+    6 px. La molette seule ne suffisait pas.
 - **A3 (graisse/interlettrage) : non fait**, glissé en Phase 5 comme le plan l'autorisait.
 - **Observation console** : les lignes sont en *newest-first* et le moteur logue en continu, donc une
   vue scrollée dérive sous les nouvelles entrées. Le scroll fonctionne (barre + pouce proportionnel
   vérifiés à l'écran) mais l'ordre du journal rend la lecture d'historique frustrante — vrai défaut
   de conception du panneau, antérieur à ce changement, à traiter avec C1/C2 de l'audit.
-- **⚠ Écart non résolu, à vérifier en priorité** : au dernier lancement (processus neuf, aucun clic
-  automatisé), la console s'ouvrait avec l'onglet **Console** actif et les lignes **Debug affichées**.
-  Or `scene_layout()` termine par `activate("khora.editor.asset_browser")` et
-  `LevelFilter::default()` a `debug: false` — les deux devraient donner Asset Browser + « Nothing
-  matches ». Relire le code n'a pas expliqué la contradiction. Tant qu'elle n'est pas élucidée, **le
-  constat C1 de l'audit (« console vide alors que N entrées existent ») est à re-vérifier** : il se
-  peut qu'il dépende d'un état que je n'ai pas identifié plutôt que du défaut décrit.
+  *(Une observation « onglet Console actif + Debug affiché au lancement » a été notée puis levée :
+  c'était l'utilisateur qui avait changé d'onglet et de filtre à la main. Le constat C1 de l'audit
+  reste valide tel qu'il est décrit.)*
 - Vérif : `cargo test --workspace` 972 passed / 0 failed ; clippy clean ; éditeur lancé, scroll et
   barre vérifiés sur 1607 lignes.
 
