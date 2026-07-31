@@ -1,3 +1,10 @@
+## [0.7.2](https://github.com/eraflo/KhoraEngine/compare/v0.7.1...v0.7.2) (2026-07-31)
+
+
+### Bug Fixes
+
+* **ci:** satisfy the 1.97 lint, the real MSRV, and cargo-deny ([6065af3](https://github.com/eraflo/KhoraEngine/commit/6065af39a1e9154780c33337e28e62cf774b4856))
+
 ## [0.6.4](https://github.com/eraflo/KhoraEngine/compare/v0.6.3...v0.6.4) (2026-05-05)
 
 
