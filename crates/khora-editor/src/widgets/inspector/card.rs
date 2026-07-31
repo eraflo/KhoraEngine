@@ -90,7 +90,7 @@ pub fn render_card(
                 khora_sdk::editor_ui::FontFamilyHint::Monospace,
             )[0] + 10.0
         };
-        let mut right = card_x + card_w - 12.0 - tag_w;
+        let right = card_x + card_w - 12.0 - tag_w;
 
         if removable {
             let size = 22.0;
@@ -116,34 +116,20 @@ pub fn render_card(
                     type_name: title.to_string(),
                 });
             }
-            right -= size + 4.0;
         }
 
-        if let Some(on) = enabled {
-            let (tw, th) = (26.0, 14.0);
-            let tx = right - tw;
-            let ty = y + (HEADER_H - th) * 0.5;
-            widgets::fill(
-                ui,
-                [tx, ty, tw, th],
-                if on {
-                    theme.primary
-                } else {
-                    theme.surface_active
-                },
-                th * 0.5,
-            );
-            let knob = if on { tx + tw - 7.0 } else { tx + 7.0 };
-            ui.paint_circle_filled(
-                [knob, ty + th * 0.5],
-                5.0,
-                if on {
-                    theme.text_inverse
-                } else {
-                    theme.text_dim
-                },
-            );
-        }
+        // The component enable/disable switch used to be painted here. It had
+        // no `interact_rect` at all, so it was a picture of a switch; and every
+        // caller passed `enabled: None`, so it never even appeared.
+        //
+        // Turning a component off only means something once the ECS honours it
+        // — every query that consumes the component has to check the flag, or
+        // it is decorative. That is a data-layer feature, not a card one.
+        debug_assert!(
+            enabled.is_none(),
+            "component enable/disable is not implemented; \
+             see the component-activation work before passing Some(_)"
+        );
     }
 
     if head.clicked {

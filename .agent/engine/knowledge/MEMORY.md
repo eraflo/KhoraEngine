@@ -27,8 +27,29 @@ Deep history lives in git and `docs/plans/`.
 - **E3** — `Ctrl+S`, `Ctrl+1`/`Ctrl+2` (workspaces), `Échap` (ferme la palette, puis désélectionne).
 - **E4** — caméra au standard DCC : **milieu = orbit, shift+milieu = pan**, clic droit = orbit aussi.
 - Vérifié à l'écran : palette clippée + focus + flèches (sélection descend) + Échap ferme.
-- **Reste en Phase 4** : C2 (renommage inline), C3 (visibilité réellement branchée), C6 (5 icônes et
-  2 entrées de menu mortes), D2 (remonter les erreurs à l'utilisateur).
+- **C2 — renommage inline** : le champ remplace le libellé **sur place**, amorcé avec le nom courant
+  (renommer, c'est éditer, pas retaper), focus pris une fois. `F2` sur la sélection ou le menu
+  contextuel. La ligne rapporte son rect via un `Cell` et le champ est dessiné après la boucle —
+  ça évite de faire descendre un `&mut String` dans la récursion. Vérifié à l'écran.
+- **C3 — œil de visibilité retiré** (décision utilisateur). Il ne faisait que griser la ligne.
+  `hidden_entities` reste en place comme couture pour un futur modèle d'**activation de composants**
+  — voir ci-dessous.
+- **C6 — contrôles morts supprimés ou branchés** : `+` de la Hierarchy réellement câblé (clic = entité
+  vide, clic droit = même liste que le menu du fond) ; `More`/`Filter` de la Hierarchy et
+  `More`/`Lock` de l'Inspector supprimés ; les 2 entrées « Refresh » de l'asset browser supprimées
+  (leur propre log disait que le pump de hot-reload s'en charge) ; l'interrupteur d'activation des
+  cartes d'Inspector supprimé — il était peint **sans `interact_rect`** et jamais affiché.
+- **Reste en Phase 4** : D2 (remonter les erreurs à l'utilisateur — demande de choisir un hôte de
+  toasts, ce qui relève plutôt de la Phase 5).
+
+## Chantier à ouvrir — activation de composants
+Désactiver un composant (l'œil de la hiérarchie, l'interrupteur des cartes d'Inspector, « éteindre
+cette lumière sans la supprimer ») n'a de sens que si **chaque requête qui le consomme honore le
+drapeau** ; sinon il est décoratif, exactement le défaut qu'avait l'œil. C'est donc une fonctionnalité
+de l'ECS, pas de l'éditeur : il faut choisir le stockage (marqueur par type ? bitset par entité ?)
+puis faire passer tous les `Flow` dessus. Comparable en taille au chantier provenance.
+Précédent utile si on veut un raccourci éditeur-seul en attendant : `RenderFlow` consulte déjà une
+ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la clé de cache.
 - Vérif : `cargo test --workspace` 974 passed / 0 failed ; clippy clean.
 
 ## Latest work (2026-07-31, suite 3) — Phase 3 : fondations d'API UI

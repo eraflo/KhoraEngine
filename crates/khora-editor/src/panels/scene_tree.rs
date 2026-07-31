@@ -12,8 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Scene Tree panel — Hierarchy with Hierarchy/Layers/Tags tabs, search,
-//! sectioned rows with chevron + icon + visibility eye, branded selection bar.
+//! Scene Tree panel — the entity hierarchy: search, foldable rows with a
+//! chevron and a type icon, and the branded gold selection bar.
+//!
+//! `EditorState::hidden_entities` still dims the rows it names, but nothing
+//! populates it: the visibility eye was removed because it only greyed the row
+//! while the object kept rendering. The set is left in place as the seam a
+//! component-activation model would plug into.
 
 use std::sync::{Arc, Mutex};
 
@@ -69,6 +74,25 @@ pub struct SceneTreePanel {
     /// freshly loaded scene shows its whole hierarchy, and a newly spawned
     /// child appears without the user having to open anything.
     collapsed: std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,
+    /// Whether the rename field already took focus for the current rename, so
+    /// it is requested once rather than every frame (which would trap it).
+    rename_focused: bool,
+}
+
+/// Finds an entity's display name in a `SceneNode` forest.
+fn find_node_name(
+    nodes: &[SceneNode],
+    entity: khora_sdk::prelude::ecs::EntityId,
+) -> Option<String> {
+    for node in nodes {
+        if node.entity == entity {
+            return Some(node.name.clone());
+        }
+        if let Some(found) = find_node_name(&node.children, entity) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 impl SceneTreePanel {
@@ -78,6 +102,7 @@ impl SceneTreePanel {
             theme,
             scroll: khora_tool_ui::widgets::ScrollState::default(),
             collapsed: std::collections::HashSet::new(),
+            rename_focused: false,
         }
     }
 }
@@ -126,13 +151,14 @@ impl EditorPanel for SceneTreePanel {
         // Action icons live on the right; we always keep them visible because
         // they hold the only entry point for "+" / filter. Tabs adapt around
         // the remaining space — Layers/Tags drop out first when cramped.
-        let action_icons: &[(Icon, &str)] = &[
-            (Icon::More, "h-act-more"),
-            (Icon::Filter, "h-act-filter"),
-            (Icon::Plus, "h-act-plus"),
-        ];
-        let icons_total_w = action_icons.len() as f32 * 22.0 + 8.0;
+        // Only "+" survives, and it does something. The `More` and `Filter`
+        // icons painted a hover highlight and discarded the click — the search
+        // field below already filters, and `More` duplicated the row context
+        // menu. An icon that lights up and does nothing costs more than it
+        // saves.
+        let icons_total_w = 30.0;
         let icons_left = px + pw - icons_total_w;
+        let spawn_from_menu: std::cell::Cell<Option<String>> = std::cell::Cell::new(None);
 
         let tab_x = px + 6.0;
         let tab_y = py + (HEADER_HEIGHT - 22.0) * 0.5;
@@ -174,17 +200,46 @@ impl EditorPanel for SceneTreePanel {
         );
         let _ = icons_left;
 
-        // ── Action icons (right) ──────────────────────
-        // Inset 12px from the right edge so we don't compete with the
-        // SidePanel resize-handle (8px grab zone).
-        let mut ax = px + pw - 12.0;
-        for (icon, salt) in action_icons {
-            ax -= 22.0;
-            let int = ui.interact_rect(salt, [ax, py + 6.0, 22.0, 22.0]);
-            if int.hovered {
-                ui.paint_rect_filled([ax, py + 6.0], [22.0, 22.0], theme.surface_active, 4.0);
+        // ── Add entity (right) ────────────────────────
+        // Inset 12px from the right edge so we don't compete with the dock
+        // splitter's grab band.
+        let add_rect = [px + pw - 34.0, py + 6.0, 22.0, 22.0];
+        let add_int = ui.interact_rect("h-act-plus", add_rect);
+        if add_int.hovered {
+            ui.paint_rect_filled(
+                [add_rect[0], add_rect[1]],
+                [add_rect[2], add_rect[3]],
+                theme.surface_active,
+                4.0,
+            );
+        }
+        paint_icon(
+            ui,
+            [add_rect[0] + 5.0, add_rect[1] + 5.0],
+            Icon::Plus,
+            13.0,
+            if add_int.hovered {
+                theme.text
+            } else {
+                theme.text_dim
+            },
+        );
+        // Click spawns an empty entity; right-click offers the same list the
+        // panel's background menu does, so the button is a shortcut rather than
+        // a second, divergent way to create things.
+        ui.context_menu_last(&mut |menu| {
+            for kind in ["Empty", "Cube", "Sphere", "Plane", "Light", "Camera"] {
+                if menu.button(kind) {
+                    spawn_from_menu.set(Some(kind.to_owned()));
+                    menu.close_menu();
+                }
             }
-            paint_icon(ui, [ax + 5.0, py + 11.0], *icon, 13.0, theme.text_dim);
+        });
+        if add_int.clicked {
+            spawn_from_menu.set(Some("Empty".to_owned()));
+        }
+        if let Some(kind) = spawn_from_menu.take() {
+            state_guard.pending_spawn = Some(kind);
         }
 
         // ── Search toolbar ────────────────────────────
@@ -266,7 +321,19 @@ impl EditorPanel for SceneTreePanel {
         let selected = state_guard.selection.clone();
         let hidden = state_guard.hidden_entities.clone();
         let asset_epoch = state_guard.asset_epoch;
+        let renaming = state_guard.renaming_entity;
+        let rename_rect: std::cell::Cell<Option<[f32; 4]>> = std::cell::Cell::new(None);
         let pending: std::cell::Cell<Option<EditorAction>> = std::cell::Cell::new(None);
+
+        // F2 starts a rename on the single selected entity, matching the
+        // convention the context menu already advertises.
+        if ui.key_pressed(khora_sdk::KeyCode::F2) {
+            if let Some(entity) = state_guard.single_selected() {
+                let name = find_node_name(&state_guard.scene_roots, entity).unwrap_or_default();
+                state_guard.renaming_entity = Some(entity);
+                state_guard.rename_buffer = name;
+            }
+        }
 
         // Rows live between the section header and the bottom of the panel.
         let rows_top = section_y + 18.0;
@@ -280,8 +347,40 @@ impl EditorPanel for SceneTreePanel {
             row_y = render_node(
                 ui, node, 0, px, pw, row_y, &selected, &hidden, &theme, &pending, asset_epoch,
                 &self.collapsed,
+                renaming,
+                &rename_rect,
             );
         }
+        // The rename field, drawn over the row that asked for it. Inside the
+        // clip so a renamed row scrolled out of view takes its field with it.
+        if let (Some(entity), Some(rect)) = (renaming, rename_rect.get()) {
+            let take_focus = !self.rename_focused;
+            self.rename_focused = true;
+            let event = ui.inline_text_field(
+                rect,
+                "hier-rename",
+                &mut state_guard.rename_buffer,
+                take_focus,
+            );
+            match event {
+                InlineEditEvent::Committed => {
+                    let new_name = state_guard.rename_buffer.trim().to_owned();
+                    if !new_name.is_empty() {
+                        state_guard.push_edit(PropertyEdit::SetName(entity, new_name));
+                    }
+                    state_guard.renaming_entity = None;
+                    self.rename_focused = false;
+                }
+                InlineEditEvent::Cancelled => {
+                    state_guard.renaming_entity = None;
+                    self.rename_focused = false;
+                }
+                _ => {}
+            }
+        } else if renaming.is_none() {
+            self.rename_focused = false;
+        }
+
         ui.pop_clip_rect();
         khora_tool_ui::widgets::scrollbar(
             ui,
@@ -368,17 +467,14 @@ impl EditorPanel for SceneTreePanel {
                         self.collapsed.insert(eid);
                     }
                 }
-                EditorAction::ToggleVisibility(eid) => {
-                    state_guard.pending_visibility_toggle = Some(eid);
-                    if state_guard.hidden_entities.contains(&eid) {
-                        state_guard.hidden_entities.remove(&eid);
-                    } else {
-                        state_guard.hidden_entities.insert(eid);
-                    }
-                }
                 EditorAction::Rename(eid) => {
+                    // Seed with the current name so the field opens on it —
+                    // renaming usually means editing, not retyping.
+                    let current =
+                        find_node_name(&state_guard.scene_roots, eid).unwrap_or_default();
                     state_guard.renaming_entity = Some(eid);
-                    state_guard.rename_buffer.clear();
+                    state_guard.rename_buffer = current;
+                    self.rename_focused = false;
                 }
                 EditorAction::Duplicate(eid) => {
                     state_guard.pending_duplicate = Some(eid);
@@ -483,20 +579,19 @@ fn render_node(
     // was read before a rescan.
     asset_epoch: u64,
     collapsed: &std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,
+    // The entity being renamed, and where its field should go once found.
+    renaming: Option<khora_sdk::prelude::ecs::EntityId>,
+    rename_rect: &std::cell::Cell<Option<[f32; 4]>>,
 ) -> f32 {
     let row_x = px + 4.0;
     let row_w = pw - 8.0;
     let is_selected = selection.contains(&node.entity);
     let is_hidden = hidden.contains(&node.entity);
 
-    // Eye is its own hit-target on the right; the row interaction must NOT
-    // overlap it, otherwise clicking the eye also selects the row (and
-    // worse, both `interact_rect`s race on the same pointer event so neither
-    // fires reliably). We also keep the eye 10px away from the panel edge
-    // so the SidePanel's resize grab handle (8px hot zone) stays free.
-    let eye_size = 22.0;
-    let eye_inset_right = 10.0;
-    let row_click_w = (row_w - eye_size - eye_inset_right - 4.0).max(0.0);
+    // Leave the last 10px of the row unclickable so the dock splitter's grab
+    // band stays reachable — a row that swallows the edge makes the panel feel
+    // unresizable.
+    let row_click_w = (row_w - 10.0).max(0.0);
 
     let interaction = ui.interact_rect(
         &format!("hier-row-{}", node.entity.index),
@@ -656,38 +751,23 @@ fn render_node(
     } else {
         base_label_color
     };
-    paint_text_size(ui, [cx, y + 7.0], &node.name, 12.0, label_color);
-
-    // Eye — own hit target so it can toggle visibility without selecting.
-    let eye_x = row_x + row_w - eye_size - eye_inset_right;
-    let eye_int = ui.interact_rect(
-        &format!("hier-eye-{}", node.entity.index),
-        [eye_x, y, eye_size, ROW_HEIGHT],
-    );
-    if eye_int.clicked {
-        pending.set(Some(EditorAction::ToggleVisibility(node.entity)));
-    }
-    if eye_int.hovered {
-        ui.paint_rect_filled(
-            [eye_x, y + 2.0],
-            [eye_size, ROW_HEIGHT - 4.0],
-            with_alpha(theme.surface_active, 0.5),
-            theme.radius_sm,
-        );
-    }
-    let eye_color = if is_hidden {
-        theme.text_muted
-    } else if eye_int.hovered || interaction.hovered || is_selected {
-        if is_selected {
-            theme.primary
-        } else {
-            theme.text
-        }
+    // While a row is being renamed its label is replaced by a field — drawn by
+    // the caller after the loop, so the recursion doesn't have to carry a
+    // `&mut String` down every level. The row just reports where it goes.
+    if renaming == Some(node.entity) {
+        let field_w = (row_x + row_click_w - cx - 6.0).max(40.0);
+        rename_rect.set(Some([cx - 2.0, y + 3.0, field_w, ROW_HEIGHT - 6.0]));
     } else {
-        with_alpha(theme.text_muted, 0.5)
-    };
-    let eye_icon = if is_hidden { Icon::EyeOff } else { Icon::Eye };
-    paint_icon(ui, [eye_x + 5.0, y + 7.0], eye_icon, 12.0, eye_color);
+        paint_text_size(ui, [cx, y + 7.0], &node.name, 12.0, label_color);
+    }
+
+    // No visibility eye. It used to dim the row and nothing else — the object
+    // kept rendering — because `pending_visibility_toggle` was never consumed.
+    //
+    // Hiding an object belongs to a component activation model (deactivate an
+    // entity's render components), which every consuming `Flow` would have to
+    // honour or the flag is decorative all over again. That is an ECS feature,
+    // not an editor one; until it exists, no eye is better than a fake one.
 
     let mut next_y = y + ROW_HEIGHT;
     if collapsed.contains(&node.entity) {
@@ -707,6 +787,8 @@ fn render_node(
             pending,
             asset_epoch,
             collapsed,
+            renaming,
+            rename_rect,
         );
     }
     next_y
@@ -764,7 +846,6 @@ pub(crate) fn payload_is_entity(payload: u64) -> bool {
 
 enum EditorAction {
     Select(khora_sdk::prelude::ecs::EntityId),
-    ToggleVisibility(khora_sdk::prelude::ecs::EntityId),
     /// Fold or unfold this node's subtree.
     ToggleCollapse(khora_sdk::prelude::ecs::EntityId),
     Rename(khora_sdk::prelude::ecs::EntityId),

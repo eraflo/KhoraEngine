@@ -1022,7 +1022,6 @@ impl EditorPanel for AssetBrowserPanel {
         let mut header_delete_selected = false;
         let mut header_filter_pick: Option<Option<AssetTileKind>> = None;
         let mut header_new_folder = false;
-        let mut header_refresh = false;
         let mut header_reveal_project = false;
         let mut ax = px + pw - 8.0;
         for (icon, salt) in [
@@ -1060,10 +1059,6 @@ impl EditorPanel for AssetBrowserPanel {
                             header_new_folder = true;
                             menu.close_menu();
                         }
-                        if menu.button("Refresh") {
-                            header_refresh = true;
-                            menu.close_menu();
-                        }
                         if menu.button("Reveal Project in Explorer") {
                             header_reveal_project = true;
                             menu.close_menu();
@@ -1087,9 +1082,6 @@ impl EditorPanel for AssetBrowserPanel {
         if header_new_folder {
             let parent = self.current_folder.clone().unwrap_or_default();
             self.queue_new_folder(&parent);
-        }
-        if header_refresh {
-            log::info!("Asset browser: refresh requested (hot-reload pump drives the rescan)");
         }
         if header_reveal_project {
             self.reveal_project();
@@ -1293,7 +1285,6 @@ impl EditorPanel for AssetBrowserPanel {
         // on top) take precedence when the cursor is over a tile.
         let mut bg_new_folder = false;
         let mut bg_reveal_current = false;
-        let mut bg_refresh = false;
         ui.context_menu_last(&mut |menu| {
             if menu.button("New Folder") {
                 bg_new_folder = true;
@@ -1301,10 +1292,6 @@ impl EditorPanel for AssetBrowserPanel {
             }
             if menu.button("Reveal Current Folder") {
                 bg_reveal_current = true;
-                menu.close_menu();
-            }
-            if menu.button("Refresh") {
-                bg_refresh = true;
                 menu.close_menu();
             }
         });
@@ -1316,9 +1303,6 @@ impl EditorPanel for AssetBrowserPanel {
             if bg_reveal_current {
                 self.reveal_in_explorer(&cur, true);
             }
-        }
-        if bg_refresh {
-            log::info!("Asset browser: refresh requested (hot-reload pump drives the rescan)");
         }
 
         let tile_h = TILE_SIZE + 22.0;

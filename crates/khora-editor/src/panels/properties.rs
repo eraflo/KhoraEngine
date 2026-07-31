@@ -30,7 +30,6 @@ use crate::widgets::inspector::asset_pane::{paint_asset_header, render_asset_pan
 use crate::widgets::inspector::display::{pick_icon, pick_type_tag};
 use crate::widgets::inspector::header::paint_inspector_header;
 use crate::widgets::inspector::tabs::{DebugTab, InspectorTab, InspectorTabContext, PropertiesTab};
-use crate::widgets::paint::paint_icon;
 
 const HEADER_HEIGHT: f32 = 34.0;
 const INSPECTOR_HEADER_HEIGHT: f32 = 64.0;
@@ -82,20 +81,12 @@ impl EditorPanel for PropertiesPanel {
         paint_panel_header(ui, panel_rect, HEADER_HEIGHT, &theme);
 
 
-        let action_icons: &[(Icon, &str)] =
-            &[(Icon::More, "p-act-more"), (Icon::Lock, "p-act-lock")];
-
         // No title chip: the dock tab above already names this panel.
-
-        let mut ax = px + pw - 12.0;
-        for (icon, salt) in action_icons {
-            ax -= 22.0;
-            let int = ui.interact_rect(salt, [ax, py + 6.0, 22.0, 22.0]);
-            if int.hovered {
-                ui.paint_rect_filled([ax, py + 6.0], [22.0, 22.0], theme.surface_active, 4.0);
-            }
-            paint_icon(ui, [ax + 5.0, py + 11.0], *icon, 13.0, theme.text_dim);
-        }
+        //
+        // The `More` and `Lock` icons are gone too. Both painted a hover
+        // highlight and discarded the click: `More` had no menu behind it, and
+        // "lock the inspector to this entity" is a real feature nobody had
+        // written. They advertised capability the panel does not have.
 
         // ── Snapshot ─────────────────────────────────
         // The inspector is context-aware: when an asset is selected in
