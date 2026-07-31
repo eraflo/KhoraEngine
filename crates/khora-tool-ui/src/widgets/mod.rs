@@ -67,6 +67,7 @@ pub mod mark;
 pub mod modal;
 pub mod nav;
 pub mod paint;
+pub mod scroll;
 
 pub use buttons::{button, icon_button, Button, ButtonKind};
 pub use chips::{chip, filter_pill, kbd_chip, Pill, Tone};
@@ -90,6 +91,7 @@ pub use nav::{
     StepState,
 };
 pub use paint::{fill, lerp_color, stroke, tint, vertical_gradient, with_alpha};
+pub use scroll::{scrollbar, ScrollState};
 
 /// A rectangle as `[x, y, width, height]` — the same shape
 /// [`UiBuilder::interact_rect`] and [`UiBuilder::allocate_size`] speak.

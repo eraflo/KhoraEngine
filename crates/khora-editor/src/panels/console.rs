@@ -122,6 +122,9 @@ pub struct ConsolePanel {
     theme: UiTheme,
     filter: LevelFilter,
     search: String,
+    /// How far the log is scrolled. Owned by the panel because the rows are
+    /// painted in absolute coordinates — see `khora_tool_ui::widgets::scroll`.
+    scroll: widgets::ScrollState,
 }
 
 impl ConsolePanel {
@@ -132,6 +135,7 @@ impl ConsolePanel {
             theme,
             filter: LevelFilter::default(),
             search: String::new(),
+            scroll: widgets::ScrollState::default(),
         }
     }
 }
@@ -307,9 +311,23 @@ impl EditorPanel for ConsolePanel {
         let msg_w = (widgets::right(body) - 12.0 - msg_x).max(40.0);
         let size = t.font_size_caption;
 
-        let mut y = body[1] + 2.0;
-        for (row_index, e) in visible.into_iter().enumerate() {
-            if y + ROW_H > widgets::bottom(body) {
+        // Scrolling, the whole of it: take the wheel, offset the cursor, clip.
+        // The rows below still paint in absolute coordinates — they just start
+        // higher up, and anything outside `body` is clipped away.
+        let content_h = visible.len() as f32 * ROW_H + 4.0;
+        self.scroll.update(ui, body, content_h);
+        ui.push_clip_rect(body);
+
+        let mut y = body[1] + 2.0 - self.scroll.offset();
+        for (row_index, e) in visible.iter().enumerate() {
+            // Skip rows scrolled off either edge instead of painting them under
+            // the clip: a 2000-line buffer would otherwise cost 2000 paint
+            // calls a frame to show forty.
+            if y + ROW_H < body[1] {
+                y += ROW_H;
+                continue;
+            }
+            if y > widgets::bottom(body) {
                 break;
             }
             let row = [body[0], y, body[2], ROW_H];
@@ -346,6 +364,9 @@ impl EditorPanel for ConsolePanel {
 
             y += ROW_H;
         }
+
+        ui.pop_clip_rect();
+        widgets::scrollbar(ui, &t, body, content_h, &self.scroll);
     }
 }
 

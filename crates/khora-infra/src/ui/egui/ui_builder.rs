@@ -16,6 +16,7 @@
 
 use khora_core::ui::editor::ui_builder::{FontFamilyHint, InlineEditEvent, Interaction, TextAlign};
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
+use khora_core::platform::input::KeyCode;
 use khora_core::ui::editor::UiBuilder;
 use std::collections::HashMap;
 
@@ -44,6 +45,31 @@ pub struct EguiUiBuilder<'a> {
     viewport_textures: &'a HashMap<ViewportTextureHandle, egui::TextureId>,
     /// The last widget response (for context menu / double-click queries).
     last_response: Option<egui::Response>,
+    /// Clip rects saved by `push_clip_rect`, so nesting restores correctly.
+    clip_stack: Vec<egui::Rect>,
+}
+
+/// Maps the engine's [`KeyCode`] to egui's key enum.
+///
+/// Deliberately partial: only the keys the editor's UI actually binds are
+/// listed, so an unmapped key reports "not pressed" instead of silently
+/// matching the wrong one. Extend it as bindings are added.
+fn map_key(key: KeyCode) -> Option<egui::Key> {
+    Some(match key {
+        KeyCode::ArrowUp => egui::Key::ArrowUp,
+        KeyCode::ArrowDown => egui::Key::ArrowDown,
+        KeyCode::ArrowLeft => egui::Key::ArrowLeft,
+        KeyCode::ArrowRight => egui::Key::ArrowRight,
+        KeyCode::Enter => egui::Key::Enter,
+        KeyCode::Escape => egui::Key::Escape,
+        KeyCode::Tab => egui::Key::Tab,
+        KeyCode::Home => egui::Key::Home,
+        KeyCode::End => egui::Key::End,
+        KeyCode::Delete => egui::Key::Delete,
+        KeyCode::Backspace => egui::Key::Backspace,
+        KeyCode::F2 => egui::Key::F2,
+        _ => return None,
+    })
 }
 
 impl<'a> EguiUiBuilder<'a> {
@@ -56,6 +82,7 @@ impl<'a> EguiUiBuilder<'a> {
             ui,
             viewport_textures,
             last_response: None,
+            clip_stack: Vec::new(),
         }
     }
 
@@ -133,26 +160,38 @@ impl UiBuilder for EguiUiBuilder<'_> {
     }
 
     fn checkbox(&mut self, checked: &mut bool, text: &str) -> bool {
-        self.ui.checkbox(checked, text).changed()
+        let r = self.ui.checkbox(checked, text);
+        let changed = r.changed();
+        self.last_response = Some(r);
+        changed
     }
 
     fn drag_value_f32(&mut self, label: &str, value: &mut f32, speed: f32) -> bool {
-        self.ui
-            .horizontal(|ui| {
-                ui.label(label);
-                ui.add(egui::DragValue::new(value).speed(speed)).changed()
-            })
-            .inner
+        let inner = self.ui.horizontal(|ui| {
+            ui.label(label);
+            ui.add(egui::DragValue::new(value).speed(speed))
+        });
+        let changed = inner.inner.changed();
+        self.last_response = Some(inner.inner);
+        changed
     }
 
     fn slider_f32(&mut self, label: &str, value: &mut f32, min: f32, max: f32) -> bool {
-        self.ui
-            .add(egui::Slider::new(value, min..=max).text(label))
-            .changed()
+        let r = self.ui.add(egui::Slider::new(value, min..=max).text(label));
+        let changed = r.changed();
+        self.last_response = Some(r);
+        changed
     }
 
     fn text_edit_singleline(&mut self, text: &mut String) -> bool {
-        self.ui.text_edit_singleline(text).changed()
+        let r = self.ui.text_edit_singleline(text);
+        let changed = r.changed();
+        // Storing the response is what makes `is_last_item_enter_pressed` and
+        // `is_last_item_escape_pressed` work at all: without it they inspect a
+        // `None` and report `false` forever, which is why Enter and Escape did
+        // nothing in the command palette.
+        self.last_response = Some(r);
+        changed
     }
 
     fn vec3_editor(&mut self, label: &str, value: &mut [f32; 3], speed: f32) -> bool {
@@ -183,30 +222,35 @@ impl UiBuilder for EguiUiBuilder<'_> {
             );
         };
 
-        self.ui
-            .horizontal(|ui| {
-                if !label.is_empty() {
-                    ui.label(label);
-                }
-                let mut changed = false;
-                for (i, ch) in ["X", "Y", "Z"].iter().enumerate() {
-                    axis_letter(ui, ch, axes[i]);
-                    changed |= ui
-                        .add(egui::DragValue::new(&mut value[i]).speed(speed))
-                        .changed();
-                }
-                changed
-            })
-            .inner
+        let inner = self.ui.horizontal(|ui| {
+            if !label.is_empty() {
+                ui.label(label);
+            }
+            let mut changed = false;
+            let mut last = None;
+            for (i, ch) in ["X", "Y", "Z"].iter().enumerate() {
+                axis_letter(ui, ch, axes[i]);
+                let r = ui.add(egui::DragValue::new(&mut value[i]).speed(speed));
+                changed |= r.changed();
+                last = Some(r);
+            }
+            (changed, last)
+        });
+        let (changed, last) = inner.inner;
+        // The Z field is the row's "last item" — a context menu or tooltip
+        // attached after the row lands on the field the user ended on.
+        self.last_response = last;
+        changed
     }
 
     fn color_edit(&mut self, label: &str, color: &mut [f32; 4]) -> bool {
-        self.ui
-            .horizontal(|ui| {
-                ui.label(label);
-                ui.color_edit_button_rgba_unmultiplied(color).changed()
-            })
-            .inner
+        let inner = self.ui.horizontal(|ui| {
+            ui.label(label);
+            ui.color_edit_button_rgba_unmultiplied(color)
+        });
+        let changed = inner.inner.changed();
+        self.last_response = Some(inner.inner);
+        changed
     }
 
     fn combo_box(
@@ -222,7 +266,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
         // from the label text, so two combo boxes labelled the same — which the
         // inspector's generic enum walker produces for every switchable enum —
         // shared one popup and one open state.
-        egui::ComboBox::new(("khora_combo", id_salt), label)
+        let out = egui::ComboBox::new(("khora_combo", id_salt), label)
             .selected_text(selected_text)
             .show_ui(self.ui, |ui| {
                 for (i, option) in options.iter().enumerate() {
@@ -232,6 +276,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
                     }
                 }
             });
+        self.last_response = Some(out.response);
         changed
     }
 
@@ -523,9 +568,62 @@ impl UiBuilder for EguiUiBuilder<'_> {
             clicked: response.clicked(),
             pressed: response.is_pointer_button_down_on(),
             double_clicked: response.double_clicked(),
+            focused: response.has_focus(),
         };
         self.last_response = Some(response);
         interaction
+    }
+
+    fn key_pressed(&self, key: KeyCode) -> bool {
+        // A shortcut must not fire while a text field is taking input, or a
+        // panel's single-key bindings would eat the user's typing.
+        if self.ui.ctx().wants_keyboard_input() {
+            return false;
+        }
+        let Some(egui_key) = map_key(key) else {
+            return false;
+        };
+        self.ui.input(|i| i.key_pressed(egui_key))
+    }
+
+    fn keyboard_captured(&self) -> bool {
+        self.ui.ctx().wants_keyboard_input()
+    }
+
+    fn focus_last_item(&mut self) {
+        if let Some(response) = self.last_response.as_ref() {
+            response.request_focus();
+        }
+    }
+
+    fn push_clip_rect(&mut self, rect: [f32; 4]) {
+        let r =
+            egui::Rect::from_min_size(egui::pos2(rect[0], rect[1]), egui::vec2(rect[2], rect[3]));
+        // Intersect rather than replace: a nested clip must never widen the
+        // region its parent already restricted.
+        self.clip_stack.push(self.ui.clip_rect());
+        let clipped = self.ui.clip_rect().intersect(r);
+        self.ui.set_clip_rect(clipped);
+    }
+
+    fn pop_clip_rect(&mut self) {
+        if let Some(previous) = self.clip_stack.pop() {
+            self.ui.set_clip_rect(previous);
+        }
+    }
+
+    fn scroll_delta_in(&self, rect: [f32; 4]) -> f32 {
+        let r =
+            egui::Rect::from_min_size(egui::pos2(rect[0], rect[1]), egui::vec2(rect[2], rect[3]));
+        let inside = self
+            .ui
+            .ctx()
+            .pointer_latest_pos()
+            .is_some_and(|p| r.contains(p));
+        if !inside {
+            return 0.0;
+        }
+        self.ui.input(|i| i.smooth_scroll_delta.y)
     }
 
     fn dnd_attach_drag_payload(&mut self, payload: u64) {

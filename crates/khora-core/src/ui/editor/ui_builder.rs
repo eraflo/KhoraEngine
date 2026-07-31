@@ -19,6 +19,7 @@
 //! each call into the underlying UI library.
 
 use super::viewport_texture::ViewportTextureHandle;
+use crate::platform::input::KeyCode;
 
 /// Result of an [`UiBuilder::interact_rect`] call.
 #[derive(Debug, Clone, Copy, Default)]
@@ -31,6 +32,12 @@ pub struct Interaction {
     pub pressed: bool,
     /// Pointer double-clicked inside the rect this frame.
     pub double_clicked: bool,
+    /// This widget holds keyboard focus.
+    ///
+    /// Without it no widget can draw a focus ring, so a keyboard user has no
+    /// way to see where they are — which is why the editor's keyboard story
+    /// could not be built before this existed.
+    pub focused: bool,
 }
 
 /// Font family hint passed to [`UiBuilder::paint_text_styled`]. Backends map
@@ -266,6 +273,63 @@ pub trait UiBuilder {
     /// see a drag is in progress. Default: `false`.
     fn is_last_item_dragged(&self) -> bool {
         false
+    }
+
+    /// Whether `key` was pressed this frame **and no text field is consuming
+    /// keyboard input**.
+    ///
+    /// The focus condition is the whole point: a panel that drives selection
+    /// with the arrow keys must go quiet while the user is typing in a search
+    /// box, and every caller getting that right by hand is how a shortcut ends
+    /// up eating keystrokes meant for a field.
+    ///
+    /// Default: `false`, so a backend without keyboard support simply reports
+    /// no shortcuts rather than pretending.
+    fn key_pressed(&self, key: KeyCode) -> bool {
+        let _ = key;
+        false
+    }
+
+    /// Whether any widget currently holds keyboard focus — typically a text
+    /// field being typed into.
+    ///
+    /// Panels use it to suppress their own single-key shortcuts. Default:
+    /// `false`.
+    fn keyboard_captured(&self) -> bool {
+        false
+    }
+
+    /// Asks the backend to give the **last** widget keyboard focus.
+    ///
+    /// Call it on the frame a field appears, not every frame: repeating the
+    /// request traps focus so the user can never tab away.
+    fn focus_last_item(&mut self) {}
+
+    /// Restricts painting to `rect` until the matching [`pop_clip_rect`].
+    ///
+    /// The editor's panels paint in absolute window coordinates, so a scrolled
+    /// list has to be clipped explicitly — otherwise its rows draw straight
+    /// over the neighbouring panels.
+    ///
+    /// [`pop_clip_rect`]: Self::pop_clip_rect
+    fn push_clip_rect(&mut self, rect: [f32; 4]) {
+        let _ = rect;
+    }
+
+    /// Restores the clip region saved by [`push_clip_rect`].
+    ///
+    /// [`push_clip_rect`]: Self::push_clip_rect
+    fn pop_clip_rect(&mut self) {}
+
+    /// Accumulated scroll-wheel delta this frame while the pointer is inside
+    /// `rect`, in points. Positive means the content should move **down**
+    /// (the user scrolled towards the top of the list).
+    ///
+    /// Scoped to a rect rather than reported globally so two scrollable panels
+    /// on screen can't both consume the same gesture. Default: `0.0`.
+    fn scroll_delta_in(&self, rect: [f32; 4]) -> f32 {
+        let _ = rect;
+        0.0
     }
 
     /// Shows a right-click context menu on the last widget.

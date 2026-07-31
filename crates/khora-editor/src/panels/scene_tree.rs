@@ -61,11 +61,17 @@ const ROW_PAD_X: f32 = 8.0;
 pub struct SceneTreePanel {
     state: Arc<Mutex<EditorState>>,
     theme: UiTheme,
+    /// How far the entity list is scrolled.
+    scroll: khora_tool_ui::widgets::ScrollState,
 }
 
 impl SceneTreePanel {
     pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
-        Self { state, theme }
+        Self {
+            state,
+            theme,
+            scroll: khora_tool_ui::widgets::ScrollState::default(),
+        }
     }
 }
 
@@ -255,12 +261,26 @@ impl EditorPanel for SceneTreePanel {
         let asset_epoch = state_guard.asset_epoch;
         let pending: std::cell::Cell<Option<EditorAction>> = std::cell::Cell::new(None);
 
-        let mut row_y = section_y + 18.0;
+        // Rows live between the section header and the bottom of the panel.
+        let rows_top = section_y + 18.0;
+        let rows_area = [px, rows_top, pw, (panel_rect[1] + panel_rect[3] - rows_top).max(0.0)];
+        let content_h = count_scene_nodes(&filtered_roots) as f32 * ROW_HEIGHT;
+        self.scroll.update(ui, rows_area, content_h);
+        ui.push_clip_rect(rows_area);
+
+        let mut row_y = rows_top - self.scroll.offset();
         for node in &filtered_roots {
             row_y = render_node(
                 ui, node, 0, px, pw, row_y, &selected, &hidden, &theme, &pending, asset_epoch,
             );
         }
+        ui.pop_clip_rect();
+        khora_tool_ui::widgets::scrollbar(ui, &theme, rows_area, content_h, &self.scroll);
+
+        // Below this point `row_y` is a scrolled coordinate; the panel-wide
+        // right-click area must sit under the *visible* rows, not the virtual
+        // ones, or it would swallow clicks meant for the list.
+        let row_y = row_y.max(rows_top).min(panel_rect[1] + panel_rect[3]);
 
         // ── Panel-wide right-click area ───────────────
         // The remaining empty space below the last row is its own hit

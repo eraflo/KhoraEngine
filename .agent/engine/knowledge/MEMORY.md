@@ -8,6 +8,32 @@ Deep history lives in git and `docs/plans/`.
 - **Build**: clean (all crates compile, 0 errors); clippy 0 errors.
 - **Tests**: ~866 passing, ~29 ignored, 0 failures. Treat the live `cargo test --workspace` count as truth.
 
+## Latest work (2026-07-31, suite 3) — Phase 3 : fondations d'API UI
+- **A4 — `last_response` renseigné** (`khora-infra/.../ui_builder.rs`) par `text_edit_singleline`,
+  `checkbox`, `drag_value_f32`, `slider_f32`, `vec3_editor`, `color_edit`, `combo_box`. C'était la
+  cause racine : `is_last_item_enter_pressed`/`escape_pressed` inspectaient un `None` et renvoyaient
+  `false` à jamais. **`Échap` ferme désormais la palette.**
+- **A2 — API clavier** : `Interaction.focused` (aucun anneau de focus n'était peignable avant), plus
+  `UiBuilder::{key_pressed, keyboard_captured, focus_last_item}`. `key_pressed` **renvoie `false`
+  quand un champ texte a le focus** — c'est le point de la méthode : un panneau qui pilote la
+  sélection aux flèches doit se taire pendant qu'on tape. Réutilise le `KeyCode` moteur
+  (`khora-core/platform/input.rs`) ; `map_key` est volontairement partiel (une touche non mappée
+  répond « pas pressée » au lieu d'en matcher une autre).
+- **A1 — scroll** : `push_clip_rect`/`pop_clip_rect` + `scroll_delta_in(rect)` sur `UiBuilder`
+  (delta borné à un rect, sinon deux panneaux consommeraient le même geste), et
+  `khora_tool_ui::widgets::{ScrollState, scrollbar}`. Le clamp tourne **à chaque frame**, pas
+  seulement sur molette, pour que du contenu qui rétrécit ramène la vue. Barre peinte uniquement en
+  débordement. 4 tests.
+  - **Appliqué : Console + Hierarchy** (~6 lignes chacun). **Reste : Inspector, grille d'assets,
+    colonnes du Control Plane.**
+- **A3 (graisse/interlettrage) : non fait**, glissé en Phase 5 comme le plan l'autorisait.
+- **Observation console** : les lignes sont en *newest-first* et le moteur logue en continu, donc une
+  vue scrollée dérive sous les nouvelles entrées. Le scroll fonctionne (barre + pouce proportionnel
+  vérifiés à l'écran) mais l'ordre du journal rend la lecture d'historique frustrante — vrai défaut
+  de conception du panneau, antérieur à ce changement, à traiter avec C1/C2 de l'audit.
+- Vérif : `cargo test --workspace` 972 passed / 0 failed ; clippy clean ; éditeur lancé, scroll et
+  barre vérifiés sur 1607 lignes.
+
 ## Latest work (2026-07-31, suite 2) — Phase 2 : dock déplaçable
 - **Modèle pur** (`khora-core/src/ui/editor/dock.rs`) : `DockTree` récursif —
   `Tabs { panels, active }` / `Split { id, axis, ratio, first, second }` — plus `insert` (qui

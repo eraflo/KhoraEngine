@@ -141,6 +141,9 @@ pub struct RecordingUiBuilder {
     scripted: HashMap<String, Interaction>,
     panel: [f32; 4],
     cursor: [f32; 2],
+    /// Wheel delta reported by `scroll_delta_in`, for whatever rect it is
+    /// asked about — the recorder has no pointer to place.
+    scroll: f32,
 }
 
 impl RecordingUiBuilder {
@@ -152,7 +155,14 @@ impl RecordingUiBuilder {
             scripted: HashMap::new(),
             panel: [0.0, 0.0, width, height],
             cursor: [0.0, 0.0],
+            scroll: 0.0,
         }
+    }
+
+    /// Scripts the wheel delta `scroll_delta_in` will report. Chainable.
+    pub fn with_scroll(mut self, delta: f32) -> Self {
+        self.scroll = delta;
+        self
     }
 
     /// Scripts the interaction that [`UiBuilder::interact_rect`] will report
@@ -170,8 +180,7 @@ impl RecordingUiBuilder {
             Interaction {
                 hovered: true,
                 clicked: true,
-                pressed: false,
-                double_clicked: false,
+                ..Interaction::default()
             },
         )
     }
@@ -182,9 +191,7 @@ impl RecordingUiBuilder {
             id_salt,
             Interaction {
                 hovered: true,
-                clicked: false,
-                pressed: false,
-                double_clicked: false,
+                ..Interaction::default()
             },
         )
     }
@@ -520,6 +527,10 @@ impl UiBuilder for RecordingUiBuilder {
 
     fn scroll_area(&mut self, _id: &str, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         f(self);
+    }
+
+    fn scroll_delta_in(&self, _rect: [f32; 4]) -> f32 {
+        self.scroll
     }
 
     fn separator(&mut self) {}
