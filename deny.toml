@@ -20,7 +20,12 @@ all-features = true
 # IDs to `ignore` ONLY with a documented justification — never to mask a
 # live vulnerability.
 yanked = "warn"
-unmaintained = "workspace"
+# `unmaintained` is deliberately absent. The key's meaning has changed twice
+# across cargo-deny releases — it was removed in 0.17, reintroduced in 0.18
+# with new values — and the action bundles a version where setting it fails
+# config validation outright, before any dependency is even examined. Leaving
+# it to the tool's default keeps this file valid across versions; specific
+# advisories are silenced by ID in `ignore` below, which every version honours.
 ignore = [
     # RUSTSEC-2025-0141 — bincode 2.x is flagged unmaintained (the maintainer
     # stepped back). This is an UNMAINTAINED notice, not a security
@@ -28,6 +33,31 @@ ignore = [
     # We acknowledge it here rather than fail CI on an informational notice.
     # Revisit if a maintained successor or a real vulnerability appears.
     "RUSTSEC-2025-0141",
+
+    # The entries below are all transitive dependencies this workspace does not
+    # choose and cannot upgrade on its own — each was checked with
+    # `cargo tree --target all -i <crate>` and kept only because the vulnerable
+    # code is not reachable from any input an attacker controls. Re-check when
+    # winit or image bump their own trees.
+
+    # RUSTSEC-2026-0194 / -0195 — quick-xml DoS (quadratic attribute scan,
+    # unbounded namespace allocation). Fixed in 0.41, but quick-xml is pinned
+    # here by `wayland-scanner`, a PROC MACRO: it parses the Wayland protocol
+    # XML shipped inside the crate at BUILD time, on Linux only. There is no
+    # runtime XML path and no attacker-supplied document, so neither denial of
+    # service is reachable. Drop these once winit's Wayland stack moves to 0.41.
+    "RUSTSEC-2026-0194",
+    "RUSTSEC-2026-0195",
+
+    # RUSTSEC-2024-0436 — `paste` is unmaintained, with no successor. Another
+    # proc macro, reached through image -> ravif -> rav1e, so it runs at build
+    # time and ships no code in the binary.
+    "RUSTSEC-2024-0436",
+
+    # RUSTSEC-2026-0192 — `ttf-parser` is unmaintained, no safe upgrade. Comes
+    # in through winit -> sctk-adwaita, which draws client-side window
+    # decorations on Linux/Wayland. An unmaintained notice, not a vulnerability.
+    "RUSTSEC-2026-0192",
 ]
 
 [licenses]
@@ -52,6 +82,10 @@ allow = [
     "CDLA-Permissive-2.0",  # webpki-roots (Community Data License, permissive)
     "OFL-1.1",              # epaint_default_fonts (SIL Open Font License)
     "Ubuntu-font-1.0",      # epaint_default_fonts (Ubuntu Font License)
+    # libbz2-rs-sys, reached through zip -> bzip2. The bzip2 license is a
+    # BSD-style permissive license (no copyleft, no advertising clause), so it
+    # sits with the rest of this list rather than being an exception to it.
+    "bzip2-1.0.6",
 ]
 confidence-threshold = 0.8
 
