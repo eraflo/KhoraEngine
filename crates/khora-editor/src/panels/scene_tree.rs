@@ -81,7 +81,7 @@ fn entity_icon(kind: EntityIcon) -> Icon {
 
 impl EditorPanel for SceneTreePanel {
     fn id(&self) -> &str {
-        "scene_tree"
+        "khora.editor.scene_tree"
     }
     fn title(&self) -> &str {
         "Hierarchy"

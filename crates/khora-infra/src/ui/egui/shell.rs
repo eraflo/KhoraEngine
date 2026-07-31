@@ -38,7 +38,7 @@ use super::theme::apply_theme;
 use super::ui_builder::EguiUiBuilder;
 use khora_core::ui::editor::panel::{EditorPanel, PanelLocation};
 use khora_core::ui::editor::shell::EditorShell;
-use khora_core::ui::editor::state::{EditorMode, EditorState, StatusBarData};
+use khora_core::ui::editor::state::{EditorState, StatusBarData};
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
 use khora_core::ui::fonts::{FontHandle, FontPack, NamedFont};
 use khora_core::ui::UiTheme;
@@ -316,20 +316,11 @@ impl EditorShell for EguiEditorShell {
         let ctx = self.ctx.clone();
         let vt = &self.viewport_textures;
 
-        // The Control Plane workspace ships its own dedicated inspector,
-        // so the Scene-mode right SidePanel would create a visible doublon
-        // when the user switches modes. Read active_mode from editor state
-        // and skip the right side accordingly. (Shell already depends on
-        // EditorState, so this doesn't add a new layer dependency.)
-        let hide_right_panel = self
-            .editor_state
-            .as_ref()
-            .and_then(|s| {
-                s.lock()
-                    .ok()
-                    .map(|g| g.active_mode == EditorMode::ControlPlane)
-            })
-            .unwrap_or(false);
+        // No mode special-case here any more. The application hosts its
+        // working panels in a dock that keeps one layout per workspace, so
+        // switching modes swaps the whole arrangement — the shell used to
+        // reach into `EditorState::active_mode` to hide one slot, which put
+        // application knowledge inside a host that is meant to be generic.
 
         // Compute proportional defaults the FIRST frame we see a real
         // screen rect, then cache them. Recomputing each frame would risk
@@ -483,7 +474,7 @@ impl EditorShell for EguiEditorShell {
         }
 
         // ── Right sidebar (resizable) ─────────────────
-        if !self.right_panels.is_empty() && !hide_right_panel {
+        if !self.right_panels.is_empty() {
             let panel_min = self.right_panels[0].preferred_size().unwrap_or(0.0);
             let default_w = right_default.max(panel_min);
             let panels = &mut self.right_panels;

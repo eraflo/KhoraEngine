@@ -8,6 +8,36 @@ Deep history lives in git and `docs/plans/`.
 - **Build**: clean (all crates compile, 0 errors); clippy 0 errors.
 - **Tests**: ~866 passing, ~29 ignored, 0 failures. Treat the live `cargo test --workspace` count as truth.
 
+## Latest work (2026-07-31, suite 2) — Phase 2 : dock déplaçable
+- **Modèle pur** (`khora-core/src/ui/editor/dock.rs`) : `DockTree` récursif —
+  `Tabs { panels, active }` / `Split { id, axis, ratio, first, second }` — plus `insert` (qui
+  **déplace** si le panneau est déjà là, et renvoie le `SplitId` créé), `remove` (une pile vidée
+  effondre son split), `activate`, `set_ratio`, `layout` et `zone_at`/`ratio_from_pointer`.
+  Sérialisable serde. 15 tests, dont non-chevauchement des panes et aller-retour serde.
+- **Peinture** (`khora-tool-ui/src/widgets/dock.rs`) : bandeau d'onglets (réutilise `nav::panel_tab`),
+  splitters invisibles au repos, overlay de zone de drop qui montre **l'aire résultante**, fantôme de
+  drag. 6 tests. **Pas de bouton de fermeture** : tant que le menu View n'existe pas, fermer un
+  panneau le perdrait définitivement.
+- **`WorkbenchPanel`** (`khora-editor/src/workbench.rs`) : un `EditorPanel` en slot `Center` qui héberge
+  tous les autres, avec **un `DockTree` par `EditorMode`**. Chaque feuille reçoit son rect via
+  `region_at`, donc les panneaux hébergés ignorent tout du dock.
+  - **Écart assumé au plan** : le plan prévoyait d'amincir le shell. Impossible — la peinture du dock
+    vit dans `khora-tool-ui` (marque Khora) et `khora-infra` ne doit pas en dépendre, sinon tout jeu
+    bâti sur le moteur hériterait de la marque. Héberger le dock en panneau `Center` respecte CLAD et
+    touche bien moins de code : **zéro changement au trait `EditorShell`**.
+- **F12 réglé** : l'arbre-par-mode remplace les tests `active_mode` éparpillés (supprimés de
+  `viewport.rs` et `control_plane.rs`) **et** la fuite `hide_right_panel` du shell. Le Control Plane
+  occupe enfin tout le workbench ; la hiérarchie vide et le dock bas inutile ont disparu.
+- **Ids de panneaux normalisés** : `viewport`/`scene_tree`/`properties`/`console`/`asset_browser`
+  étaient nus alors que le reste (`khora.editor.spine`, `khora.editor.control_plane`) est namespacé.
+  Tous en `khora.editor.*` — le dock persiste par id, donc ils doivent être stables.
+- **Reste à faire (Phase 5)** : chaque panneau peint encore son propre chip de titre, désormais
+  redondant avec l'onglet du dock (« Scene Tree » + « Hierarchy », « Properties » + « Inspector »,
+  « Asset Browser » + « Assets »). La bande d'en-tête garde ses icônes d'action, donc seul le chip
+  doit sauter. La **persistance RON** du layout n'est pas encore branchée non plus.
+- Vérif : `cargo test --workspace` 968 passed / 0 failed ; clippy clean ; éditeur lancé, 61 fps,
+  les deux workspaces vérifiés à l'écran.
+
 ## Latest work (2026-07-31, suite) — Phase 1 : corruption d'état de l'éditeur
 - **Arbre de scène déterministe** (`ops::extract_scene_tree`) : reconstruction **descendante depuis
   les racines**, triée par `entity.index` à chaque niveau, avec garde de cycle. L'ancienne passe

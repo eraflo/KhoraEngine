@@ -988,7 +988,7 @@ const SIDEBAR_CATEGORIES: &[(AssetTileKind, &str, Icon)] = &[
 
 impl EditorPanel for AssetBrowserPanel {
     fn id(&self) -> &str {
-        "asset_browser"
+        "khora.editor.asset_browser"
     }
     fn title(&self) -> &str {
         "Assets"

@@ -63,7 +63,7 @@ impl PropertiesPanel {
 
 impl EditorPanel for PropertiesPanel {
     fn id(&self) -> &str {
-        "properties"
+        "khora.editor.properties"
     }
     fn title(&self) -> &str {
         "Inspector"

@@ -19,6 +19,7 @@
 
 pub mod camera;
 pub mod command;
+pub mod dock;
 pub mod gizmo;
 pub mod icons;
 pub mod log_capture;
@@ -30,6 +31,10 @@ pub mod viewport_texture;
 
 pub use camera::EditorCamera;
 pub use command::{CommandHistory, EditorCommand};
+pub use dock::{
+    ratio_from_pointer, zone_at, DockLayout, DockNode, DockRect, DockTree, DropZone, SplitAxis,
+    SplitId, SplitterLayout, TabGroupLayout,
+};
 pub use gizmo::{generate_selection_gizmos, GizmoKind, GizmoLineInstance};
 pub use icons::Icon;
 pub use log_capture::EditorLogCapture;

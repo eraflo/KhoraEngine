@@ -263,7 +263,7 @@ impl ViewportPanel {
 
 impl EditorPanel for ViewportPanel {
     fn id(&self) -> &str {
-        "viewport"
+        "khora.editor.viewport"
     }
     fn title(&self) -> &str {
         "Viewport"
@@ -278,18 +278,8 @@ impl EditorPanel for ViewportPanel {
             state.viewport_screen_rect = None;
         }
 
-        // Yield the central area to the Control Plane workspace when the user
-        // has switched modes via the spine.
-        let in_scene_mode = self
-            .state
-            .lock()
-            .ok()
-            .map(|s| s.active_mode == EditorMode::Scene)
-            .unwrap_or(true);
-        if !in_scene_mode {
-            return;
-        }
-
+        // No mode check here: the workbench keeps a dock layout per workspace,
+        // so this panel is only ever laid out in the one that names it.
         let w = ui.available_width();
         let h = ui.available_height();
         if w > 1.0 && h > 1.0 {

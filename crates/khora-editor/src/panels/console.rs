@@ -148,7 +148,7 @@ fn level_style(level: LogLevel, t: &UiTheme) -> ([f32; 4], Icon) {
 
 impl EditorPanel for ConsolePanel {
     fn id(&self) -> &str {
-        "console"
+        "khora.editor.console"
     }
 
     fn title(&self) -> &str {

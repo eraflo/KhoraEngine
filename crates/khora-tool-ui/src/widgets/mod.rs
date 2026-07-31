@@ -59,6 +59,7 @@ pub mod buttons;
 pub mod chips;
 pub mod containers;
 pub mod disclosure;
+pub mod dock;
 pub mod feedback;
 pub mod fields;
 pub mod indicators;
@@ -71,6 +72,10 @@ pub use buttons::{button, icon_button, Button, ButtonKind};
 pub use chips::{chip, filter_pill, kbd_chip, Pill, Tone};
 pub use containers::{card, card_action_slot};
 pub use disclosure::{group_header, Group};
+pub use dock::{
+    dock_drag_ghost, dock_drop_overlay, dock_splitter, dock_tab_strip, TabStripEvent,
+    DOCK_DRAG_TAG, TAB_STRIP_H,
+};
 pub use feedback::{banner, empty_state, tooltip};
 pub use fields::{
     axis_field, checkbox, error_line, field_label, input_frame, property_row, search_field, Axis,

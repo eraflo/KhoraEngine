@@ -53,7 +53,7 @@ pub enum PlayMode {
 /// Two workspaces ship today: `Scene` (the default 3D dock) and `ControlPlane`
 /// (the DCC / agents inspector). Future authoring workspaces (2D canvas, node
 /// graph, animation, shader graph) will be added as they are built.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum EditorMode {
     /// Default 3D viewport workspace.
     #[default]

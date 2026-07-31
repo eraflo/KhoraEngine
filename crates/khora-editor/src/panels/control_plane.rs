@@ -190,16 +190,8 @@ impl EditorPanel for ControlPlanePanel {
     }
 
     fn ui(&mut self, ui: &mut dyn UiBuilder) {
-        let active = self
-            .state
-            .lock()
-            .ok()
-            .map(|s| s.active_mode == EditorMode::ControlPlane)
-            .unwrap_or(false);
-        if !active {
-            return;
-        }
-
+        // No mode check: the workbench only lays this panel out in the
+        // Control Plane workspace, which is the only tree that names it.
         let theme = self.theme.clone();
         let panel_rect = ui.panel_rect();
         let [px, py, pw, ph] = panel_rect;

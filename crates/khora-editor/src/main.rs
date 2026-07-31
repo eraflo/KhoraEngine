@@ -45,6 +45,7 @@ mod project_vfs;
 mod scene_io;
 mod util;
 mod widgets;
+mod workbench;
 
 fn main() -> anyhow::Result<()> {
     bootstrap::run()
