@@ -114,7 +114,7 @@ impl EditorPanel for TitleBarPanel {
             }
         };
 
-        ui.region_at(menu_region, &mut |ui_inner| {
+        ui.region_at("titlebar-menus", menu_region, &mut |ui_inner| {
             ui_inner.horizontal(&mut |ui_inner| {
                 ui_inner.menu_button("File", &mut |m| {
                     if m.button("New Scene") {

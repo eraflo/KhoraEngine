@@ -33,14 +33,67 @@ fn domain_tag(d: SemanticDomain) -> u8 {
     }
 }
 
+/// Display data for one entity, gathered in the first pass so the tree can be
+/// assembled top-down afterwards without touching the `World` again.
+struct NodeInfo {
+    name: String,
+    icon: EntityIcon,
+    tag_count: usize,
+}
+
+/// Builds the `SceneNode` for `entity` and, recursively, its children.
+///
+/// `visited` guards against a malformed `Parent` chain looping back on itself:
+/// a cycle would otherwise recurse until the stack blew. Returns `None` for an
+/// entity already placed in the tree, which is what breaks the loop.
+fn build_scene_node(
+    entity: EntityId,
+    info: &std::collections::HashMap<EntityId, NodeInfo>,
+    children_of: &std::collections::HashMap<EntityId, Vec<EntityId>>,
+    visited: &mut std::collections::HashSet<EntityId>,
+) -> Option<SceneNode> {
+    if !visited.insert(entity) {
+        return None;
+    }
+    let node_info = info.get(&entity)?;
+    let children = children_of
+        .get(&entity)
+        .map(|ids| {
+            ids.iter()
+                .filter_map(|&child| build_scene_node(child, info, children_of, visited))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Some(SceneNode {
+        entity,
+        name: node_info.name.clone(),
+        icon: node_info.icon,
+        children,
+        tag_count: node_info.tag_count,
+    })
+}
+
 /// Extracts a scene tree snapshot from the ECS world into editor state.
+///
+/// Assembles the tree **top-down from the roots**, in `entity.index` order at
+/// every level. The previous bottom-up pass folded each child into its parent
+/// by draining a `HashMap`, which made the result depend on iteration order —
+/// and `HashMap` re-seeds its hasher per instance, so the order differed every
+/// frame. Two symptoms followed: a grandchild whose parent had already been
+/// moved was re-inserted as a root (so three-level hierarchies lost a level at
+/// random), and siblings reordered continuously, which let a click land on a
+/// different entity than the one aimed at.
 pub fn extract_scene_tree(world: &GameWorld, state: &mut EditorState) {
     let entities: Vec<EntityId> = world.iter_entities().collect();
     state.entity_count = entities.len();
 
-    let mut nodes: std::collections::HashMap<EntityId, SceneNode> =
+    let live: std::collections::HashSet<EntityId> = entities.iter().copied().collect();
+    let mut info: std::collections::HashMap<EntityId, NodeInfo> =
+        std::collections::HashMap::with_capacity(entities.len());
+    let mut children_of: std::collections::HashMap<EntityId, Vec<EntityId>> =
         std::collections::HashMap::new();
-    let mut parent_map: std::collections::HashMap<EntityId, EntityId> =
+    let mut parent_of: std::collections::HashMap<EntityId, EntityId> =
         std::collections::HashMap::new();
 
     for &entity in &entities {
@@ -61,8 +114,14 @@ pub fn extract_scene_tree(world: &GameWorld, state: &mut EditorState) {
             EntityIcon::Empty
         };
 
+        // Trust `Parent` rather than the parent's `Children` list: `Parent` is
+        // the authored edge, `Children` only its derived inverse index.
         if let Some(parent) = world.get_component::<Parent>(entity) {
-            parent_map.insert(entity, parent.0);
+            let parent = parent.0;
+            if live.contains(&parent) && parent != entity {
+                parent_of.insert(entity, parent);
+                children_of.entry(parent).or_default().push(entity);
+            }
         }
 
         let tag_count = world
@@ -70,36 +129,34 @@ pub fn extract_scene_tree(world: &GameWorld, state: &mut EditorState) {
             .map(|t| t.len())
             .unwrap_or(0);
 
-        nodes.insert(
+        info.insert(
             entity,
-            SceneNode {
-                entity,
+            NodeInfo {
                 name,
                 icon,
-                children: Vec::new(),
                 tag_count,
             },
         );
     }
 
-    let child_parent_pairs: Vec<(EntityId, EntityId)> =
-        parent_map.iter().map(|(&c, &p)| (c, p)).collect();
-
-    for (child_id, parent_id) in &child_parent_pairs {
-        if let Some(child_node) = nodes.remove(child_id) {
-            if let Some(parent_node) = nodes.get_mut(parent_id) {
-                parent_node.children.push(child_node);
-            } else {
-                // Parent not found: keep as root.
-                nodes.insert(*child_id, child_node);
-            }
-        }
+    for siblings in children_of.values_mut() {
+        siblings.sort_unstable_by_key(|e| e.index);
     }
 
-    let mut roots: Vec<SceneNode> = nodes.into_values().collect();
-    roots.sort_by_key(|n| n.entity.index);
+    // An entity is a root when it has no parent, or when its parent was
+    // despawned — an orphan must still be reachable in the panel.
+    let mut roots: Vec<EntityId> = entities
+        .iter()
+        .copied()
+        .filter(|e| !parent_of.contains_key(e))
+        .collect();
+    roots.sort_unstable_by_key(|e| e.index);
 
-    state.scene_roots = roots;
+    let mut visited = std::collections::HashSet::with_capacity(entities.len());
+    state.scene_roots = roots
+        .into_iter()
+        .filter_map(|root| build_scene_node(root, &info, &children_of, &mut visited))
+        .collect();
 }
 
 /// Processes pending spawn requests from the scene tree panel.
@@ -596,6 +653,110 @@ mod tests {
         assert!(
             !children.0.contains(&child),
             "former parent must drop the detached child"
+        );
+    }
+
+    /// Spawns `A → B → C` and returns the three ids, in depth order.
+    fn spawn_three_level_chain(
+        world: &mut GameWorld,
+        state: &mut EditorState,
+    ) -> (EntityId, EntityId, EntityId) {
+        let a = world.spawn((
+            Transform::identity(),
+            GlobalTransform::identity(),
+            Name::new("A"),
+        ));
+        let b = world.spawn((
+            Transform::identity(),
+            GlobalTransform::identity(),
+            Name::new("B"),
+        ));
+        let c = world.spawn((
+            Transform::identity(),
+            GlobalTransform::identity(),
+            Name::new("C"),
+        ));
+        state.pending_reparent = Some((b, Some(a)));
+        process_reparents(world, state);
+        state.pending_reparent = Some((c, Some(b)));
+        process_reparents(world, state);
+        (a, b, c)
+    }
+
+    /// A three-level hierarchy must come out as one root with the full chain
+    /// nested under it.
+    ///
+    /// The old bottom-up fold drained a `HashMap`, so when `(B,A)` happened to
+    /// be processed before `(C,B)`, `B` had already been moved into `A` and the
+    /// lookup for `C`'s parent missed — re-rooting `C` at the top level.
+    #[test]
+    fn extract_scene_tree_nests_three_levels() {
+        let mut world = GameWorld::new();
+        let mut state = EditorState::default();
+        let (a, b, c) = spawn_three_level_chain(&mut world, &mut state);
+
+        extract_scene_tree(&world, &mut state);
+
+        assert_eq!(state.scene_roots.len(), 1, "only A is a root");
+        let root = &state.scene_roots[0];
+        assert_eq!(root.entity, a);
+        assert_eq!(root.children.len(), 1, "A owns B");
+        assert_eq!(root.children[0].entity, b);
+        assert_eq!(root.children[0].children.len(), 1, "B owns C");
+        assert_eq!(root.children[0].children[0].entity, c);
+    }
+
+    /// The extracted tree must be identical on every extraction. `HashMap`
+    /// re-seeds its hasher per instance, so an order-dependent build produced a
+    /// different shape each frame — rows visibly jittered and a click could
+    /// land on the wrong entity.
+    #[test]
+    fn extract_scene_tree_is_stable_across_extractions() {
+        let mut world = GameWorld::new();
+        let mut state = EditorState::default();
+        spawn_three_level_chain(&mut world, &mut state);
+
+        // Several root-level siblings exercise sibling ordering too.
+        for _ in 0..4 {
+            let sibling = world.spawn((
+                Transform::identity(),
+                GlobalTransform::identity(),
+                Name::new("Sibling"),
+            ));
+            state.pending_reparent = Some((sibling, None));
+            process_reparents(&mut world, &mut state);
+        }
+
+        let shape = |s: &EditorState| -> Vec<(EntityId, Vec<EntityId>)> {
+            s.scene_roots
+                .iter()
+                .map(|n| (n.entity, n.children.iter().map(|c| c.entity).collect()))
+                .collect()
+        };
+
+        extract_scene_tree(&world, &mut state);
+        let first = shape(&state);
+        for _ in 0..8 {
+            extract_scene_tree(&world, &mut state);
+            assert_eq!(shape(&state), first, "tree shape must not vary per frame");
+        }
+    }
+
+    /// An entity whose parent was despawned must still appear, as a root —
+    /// otherwise it becomes unreachable in the panel.
+    #[test]
+    fn extract_scene_tree_surfaces_orphans_as_roots() {
+        let mut world = GameWorld::new();
+        let mut state = EditorState::default();
+        let (a, b, _c) = spawn_three_level_chain(&mut world, &mut state);
+
+        world.despawn(a);
+        extract_scene_tree(&world, &mut state);
+
+        let roots: Vec<EntityId> = state.scene_roots.iter().map(|n| n.entity).collect();
+        assert!(
+            roots.contains(&b),
+            "B lost its parent and must surface as a root, got {roots:?}"
         );
     }
 

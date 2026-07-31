@@ -261,27 +261,40 @@ fn create_default_scene_in_project(pvfs: &mut ProjectVfs, world: &mut GameWorld,
 /// `<project>/assets/`. Logs a warning so the divergence from VFS-managed
 /// I/O is visible.
 #[allow(dead_code)]
-pub fn save_scene_to_path(world: &GameWorld, path: &str) {
+pub fn save_scene_to_path(world: &GameWorld, path: &str) -> bool {
     save_scene_to_path_with_goal(world, path, SerializationGoal::EditorInterchange)
 }
 
 /// Same as [`save_scene_to_path`] with an explicit serialization goal.
-pub fn save_scene_to_path_with_goal(world: &GameWorld, path: &str, goal: SerializationGoal) {
+pub fn save_scene_to_path_with_goal(
+    world: &GameWorld,
+    path: &str,
+    goal: SerializationGoal,
+) -> bool {
     let agent = SerializationService::new();
     match agent.save_world(world.inner_world(), goal) {
         Ok(scene_file) => {
             let bytes = scene_file.to_bytes();
             match std::fs::write(path, &bytes) {
-                Ok(()) => log::warn!(
-                    "Scene saved to '{}' ({} bytes, goal={:?}) — outside project, not VFS-managed.",
-                    path,
-                    bytes.len(),
-                    goal,
-                ),
-                Err(e) => log::error!("Failed to write scene file '{}': {}", path, e),
+                Ok(()) => {
+                    log::warn!(
+                        "Scene saved to '{}' ({} bytes, goal={:?}) — outside project, not VFS-managed.",
+                        path,
+                        bytes.len(),
+                        goal,
+                    );
+                    true
+                }
+                Err(e) => {
+                    log::error!("Failed to write scene file '{}': {}", path, e);
+                    false
+                }
             }
         }
-        Err(e) => log::error!("Failed to serialize scene: {:?}", e),
+        Err(e) => {
+            log::error!("Failed to serialize scene: {:?}", e);
+            false
+        }
     }
 }
 

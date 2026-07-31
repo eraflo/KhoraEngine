@@ -66,7 +66,7 @@ impl InspectorTab for PropertiesTab {
         let inspected = ctx.inspected.clone();
         let state_arc = ctx.state.clone();
 
-        ui.region_at(body_rect, &mut |ui_inner| {
+        ui.region_at("inspector-properties", body_rect, &mut |ui_inner| {
             let mut state_guard = match state_arc.lock() {
                 Ok(s) => s,
                 Err(_) => return,
@@ -151,7 +151,7 @@ impl InspectorTab for DebugTab {
             .ok()
             .and_then(|h| h.redo_description().map(|s| s.to_owned()))
             .unwrap_or_else(|| "(none)".to_owned());
-        ui.region_at(body_rect, &mut |ui_inner| {
+        ui.region_at("inspector-debug", body_rect, &mut |ui_inner| {
             ui_inner.colored_label(theme.text_dim, "Command history:");
             ui_inner.colored_label(
                 theme.text_muted,

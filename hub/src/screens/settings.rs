@@ -183,6 +183,7 @@ fn local_repo_card(app: &mut HubApp, ui: &mut dyn UiBuilder, t: &UiTheme, rect: 
     let field = [body[0], body[1] + 44.0, body[2] - 108.0, 32.0];
     fill_stroke(ui, field, t.background, t.border_strong, t.radius_md);
     ui.region_at(
+        "settings-local-repo",
         [field[0] + 8.0, field[1] + 6.0, field[2] - 16.0, 20.0],
         &mut |ui| {
             ui.text_edit_singleline(&mut app.settings.local_repo_draft);

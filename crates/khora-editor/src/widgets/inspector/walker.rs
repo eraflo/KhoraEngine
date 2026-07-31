@@ -65,7 +65,11 @@ fn render_object(
                 .iter()
                 .position(|(n, _)| *n == key.as_str())
                 .unwrap_or(0);
-            let combo_changed = ui.combo_box("Variant", &mut current, &names);
+            // Salted by the variant set, which identifies the enum *type* and
+            // stays put when the selection changes — unlike the current
+            // variant name, and unlike the shared "Variant" label.
+            let combo_salt = format!("variant::{}", names.join("|"));
+            let combo_changed = ui.combo_box(&combo_salt, "Variant", &mut current, &names);
             if combo_changed {
                 if let Some((_, Value::Object(new_map))) = variants.get(current) {
                     map.clear();

@@ -146,7 +146,12 @@ impl EngineApp for EditorApp {
             .and_then(|mut s| s.pending_scene_load.take());
         if let Some(path) = pending_load {
             let abs = std::path::PathBuf::from(&path);
-            commands::load_scene_dispatch(self.project_vfs.as_ref(), world, &abs);
+            commands::load_scene_dispatch(
+                self.project_vfs.as_ref(),
+                world,
+                &self.editor_state,
+                &abs,
+            );
             if let Ok(mut state) = self.editor_state.lock() {
                 state.current_scene_path = Some(path);
             }

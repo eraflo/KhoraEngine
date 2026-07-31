@@ -318,6 +318,30 @@ impl EditorState {
         self.selection.clear();
     }
 
+    /// Drops every piece of state that names an [`EntityId`], for use whenever
+    /// the world is replaced wholesale — new scene, scene load, or `Stop`
+    /// restoring the pre-play snapshot.
+    ///
+    /// Those paths rebuild the world with **fresh** ids, so anything still
+    /// holding an old one is not merely stale but actively dangerous: entity
+    /// slots are recycled, and an index+generation pair can come back attached
+    /// to a different entity. A surviving selection then makes `Delete` act on
+    /// something the user never selected.
+    ///
+    /// Card state is keyed by entity too, so it is cleared here rather than
+    /// growing without bound across scene changes.
+    pub fn clear_entity_references(&mut self) {
+        self.selection.clear();
+        self.inspected = None;
+        self.hidden_entities.clear();
+        self.renaming_entity = None;
+        self.rename_buffer.clear();
+        self.inspector_card_open.clear();
+        self.inspector_card_enabled.clear();
+        self.scene_roots.clear();
+        self.entity_count = 0;
+    }
+
     /// Returns the single selected entity, if exactly one is selected.
     pub fn single_selected(&self) -> Option<EntityId> {
         if self.selection.len() == 1 {

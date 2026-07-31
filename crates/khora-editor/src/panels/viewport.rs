@@ -301,17 +301,16 @@ impl EditorPanel for ViewportPanel {
                 // scene-tree reparent flow's `EntityId`-packed payloads. We
                 // dispatch by the asset's declared type.
                 if let Some(payload) = ui.dnd_take_drop_payload() {
-                    if let Some(idx) = crate::panels::asset_browser::unpack_asset_drag(payload) {
-                        // Snapshot the dropped entry without holding the lock
-                        // across the type-specific dispatch below.
-                        let entry = self
-                            .state
-                            .lock()
-                            .ok()
-                            .and_then(|s| s.asset_entries.get(idx as usize).cloned());
-                        if let Some(entry) = entry {
-                            self.dispatch_asset_drop(ui, &entry, min, [w, h]);
-                        }
+                    // Resolve index and epoch under one lock: the payload's
+                    // epoch stamp is only meaningful against the same read of
+                    // `asset_entries` the index will address.
+                    let entry = self.state.lock().ok().and_then(|s| {
+                        let idx =
+                            crate::panels::asset_browser::unpack_asset_drag(payload, s.asset_epoch)?;
+                        s.asset_entries.get(idx as usize).cloned()
+                    });
+                    if let Some(entry) = entry {
+                        self.dispatch_asset_drop(ui, &entry, min, [w, h]);
                     }
                 }
                 let mut show_camera_preview = false;

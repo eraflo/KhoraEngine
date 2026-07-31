@@ -132,7 +132,19 @@ pub trait UiBuilder {
     /// Drop-down combo box picking among string options.
     /// `current` is the index of the currently selected item.
     /// Returns `true` when the selection changed.
-    fn combo_box(&mut self, label: &str, current: &mut usize, options: &[&str]) -> bool;
+    /// Dropdown over `options`, writing the picked index into `current`.
+    ///
+    /// `id_salt` must be stable across frames and unique among sibling combo
+    /// boxes: the backend keys the popup's open state on it. Deriving it from
+    /// `label` is not enough — the inspector's generic enum walker labels every
+    /// switchable enum the same way.
+    fn combo_box(
+        &mut self,
+        id_salt: &str,
+        label: &str,
+        current: &mut usize,
+        options: &[&str],
+    ) -> bool;
 
     // ── Layout ─────────────────────────────────────────
 
@@ -451,11 +463,17 @@ pub trait UiBuilder {
     /// `vec3_editor`, …) lay out within it instead of the parent panel.
     /// Used by composite widgets (inspector cards) that paint their frame
     /// absolutely but want native egui controls inside.
-    fn region_at(&mut self, rect: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+    ///
+    /// `id_salt` must be **stable across frames and unique within the parent**.
+    /// The backend derives the region's widget ids from it, and those ids are
+    /// what carries keyboard focus and text-edit state: a salt that changes
+    /// between frames makes a field being typed into lose focus mid-word, and
+    /// two regions sharing a salt make their contents collide.
+    fn region_at(&mut self, id_salt: &str, rect: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         // Default fallback for backends that don't support sub-regions:
         // do nothing. Concrete backends (egui) MUST override this — calling
         // it on a backend without an override silently no-ops the body.
-        let _ = (rect, f);
+        let _ = (id_salt, rect, f);
     }
 
     /// Returns the current layout cursor in screen-space `(x, y)`. Useful for

@@ -209,10 +209,20 @@ impl UiBuilder for EguiUiBuilder<'_> {
             .inner
     }
 
-    fn combo_box(&mut self, label: &str, current: &mut usize, options: &[&str]) -> bool {
+    fn combo_box(
+        &mut self,
+        id_salt: &str,
+        label: &str,
+        current: &mut usize,
+        options: &[&str],
+    ) -> bool {
         let selected_text = options.get(*current).copied().unwrap_or("");
         let mut changed = false;
-        egui::ComboBox::from_label(label)
+        // Salted explicitly rather than by label: `from_label` derives the id
+        // from the label text, so two combo boxes labelled the same — which the
+        // inspector's generic enum walker produces for every switchable enum —
+        // shared one popup and one open state.
+        egui::ComboBox::new(("khora_combo", id_salt), label)
             .selected_text(selected_text)
             .show_ui(self.ui, |ui| {
                 for (i, option) in options.iter().enumerate() {
@@ -655,11 +665,16 @@ impl UiBuilder for EguiUiBuilder<'_> {
         }
     }
 
-    fn region_at(&mut self, rect: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+    fn region_at(&mut self, id_salt: &str, rect: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let r =
             egui::Rect::from_min_size(egui::pos2(rect[0], rect[1]), egui::vec2(rect[2], rect[3]));
         let vt = self.viewport_textures;
-        let id_salt = ("khora_region", rect[0] as i32, rect[1] as i32);
+        // Salted by name, not by position. Deriving the id from the rect's
+        // screen coordinates meant moving a panel by one pixel — a splitter
+        // drag, a window resize — renumbered every widget inside, so egui
+        // dropped focus and edit state mid-typing; and two regions landing on
+        // the same integer coordinate collided outright.
+        let id_salt = ("khora_region", id_salt);
         let mut child = self.ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(r)

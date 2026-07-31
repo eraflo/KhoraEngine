@@ -36,17 +36,19 @@ use crate::scene_io;
 /// lives under `<project>/assets/`, falls back to direct `std::fs` for
 /// arbitrary out-of-project Save-As destinations. Defaults to the
 /// `EditorInterchange` strategy.
+/// Returns whether the scene reached disk. Failures are logged by the write
+/// paths themselves; the flag lets a caller react instead of assuming success.
 pub fn save_scene_dispatch(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,
     path_str: &str,
-) {
+) -> bool {
     save_scene_dispatch_with_goal(
         project_vfs,
         world,
         path_str,
         SerializationGoal::EditorInterchange,
-    );
+    )
 }
 
 /// Same as [`save_scene_dispatch`] but with an explicit serialization
@@ -57,31 +59,43 @@ pub fn save_scene_dispatch_with_goal(
     world: &GameWorld,
     path_str: &str,
     goal: SerializationGoal,
-) {
+) -> bool {
     let abs = std::path::Path::new(path_str);
     if let Some(pvfs_arc) = project_vfs {
         if let Ok(mut pvfs) = pvfs_arc.lock() {
             let assets_root = pvfs.assets_root.clone();
             if let Some(rel_fwd) = scene_io::rel_inside_project(abs, &assets_root) {
-                let _ = scene_io::save_scene_in_project_with_goal(
+                // `save_scene_in_project_with_goal` logs its own failures; the
+                // flag is propagated so a caller can react to the outcome
+                // rather than assume success.
+                return scene_io::save_scene_in_project_with_goal(
                     &mut pvfs,
                     world,
                     std::path::Path::new(&rel_fwd),
                     goal,
                 );
-                return;
             }
         }
     }
-    scene_io::save_scene_to_path_with_goal(world, path_str, goal);
+    scene_io::save_scene_to_path_with_goal(world, path_str, goal)
 }
 
 /// Load dispatch: same shape as `save_scene_dispatch`.
+/// Loads a scene, clearing every entity reference the editor still holds.
+///
+/// The clearing happens here rather than at each call site: loading always
+/// repopulates the world with fresh ids, so a caller that forgot would leave a
+/// selection naming entities from the previous scene — and once a slot is
+/// recycled, naming *different* ones.
 pub fn load_scene_dispatch(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
     abs: &std::path::Path,
 ) {
+    if let Ok(mut state) = editor_state.lock() {
+        state.clear_entity_references();
+    }
     if let Some(pvfs_arc) = project_vfs {
         if let Ok(mut pvfs) = pvfs_arc.lock() {
             let assets_root = pvfs.assets_root.clone();
@@ -253,10 +267,7 @@ fn apply_new_scene(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>
         for entity in &all {
             world.despawn(*entity);
         }
-        state.clear_selection();
-        state.inspected = None;
-        state.scene_roots.clear();
-        state.entity_count = 0;
+        state.clear_entity_references();
         state.play_mode = PlayMode::Editing;
         state.scene_snapshot = None;
         log::info!("New scene created (cleared {} entities)", all.len());
@@ -328,12 +339,18 @@ fn apply_stop(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>) {
                 drop(state);
                 scene_io::restore_scene(world, &snapshot);
                 if let Ok(mut state) = editor_state.lock() {
+                    // The restore respawns everything with fresh ids, so any
+                    // selection made while playing now names entities that no
+                    // longer exist — or, once a slot is recycled, different
+                    // ones entirely.
+                    state.clear_entity_references();
                     state.play_mode = PlayMode::Editing;
                 }
+                log::info!("Play mode: stopped - scene restored");
             } else {
                 state.play_mode = PlayMode::Editing;
+                log::info!("Play mode: stopped - no snapshot to restore");
             }
-            log::info!("Play mode: stopped - scene restored");
         }
     }
 }
@@ -861,11 +878,9 @@ fn apply_open(
         .pick_file()
     {
         let path_str = path.to_string_lossy().to_string();
-        load_scene_dispatch(project_vfs, world, &path);
+        load_scene_dispatch(project_vfs, world, editor_state, &path);
         if let Ok(mut state) = editor_state.lock() {
             state.current_scene_path = Some(path_str);
-            state.clear_selection();
-            state.inspected = None;
         }
     }
 }

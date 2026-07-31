@@ -224,6 +224,7 @@ impl EditorPanel for SceneTreePanel {
         let input_w = (search_w - 32.0 - count_w).max(40.0);
         let search_filter_ref = &mut state_guard.search_filter;
         ui.region_at(
+            "hierarchy-search",
             [search_x + 24.0, toolbar_y + 6.0, input_w, 20.0],
             &mut |ui_inner| {
                 ui_inner.text_edit_singleline(search_filter_ref);
@@ -251,12 +252,13 @@ impl EditorPanel for SceneTreePanel {
         // ── Rows ──────────────────────────────────────
         let selected = state_guard.selection.clone();
         let hidden = state_guard.hidden_entities.clone();
+        let asset_epoch = state_guard.asset_epoch;
         let pending: std::cell::Cell<Option<EditorAction>> = std::cell::Cell::new(None);
 
         let mut row_y = section_y + 18.0;
         for node in &filtered_roots {
             row_y = render_node(
-                ui, node, 0, px, pw, row_y, &selected, &hidden, &theme, &pending,
+                ui, node, 0, px, pw, row_y, &selected, &hidden, &theme, &pending, asset_epoch,
             );
         }
 
@@ -277,7 +279,9 @@ impl EditorPanel for SceneTreePanel {
                         child: unpack_entity(packed),
                         new_parent: None,
                     }));
-                } else if let Some(idx) = crate::panels::asset_browser::unpack_asset_drag(packed) {
+                } else if let Some(idx) =
+                    crate::panels::asset_browser::unpack_asset_drag(packed, asset_epoch)
+                {
                     pending.set(Some(EditorAction::DropAsset {
                         idx: idx as usize,
                         target: None,
@@ -435,6 +439,9 @@ fn render_node(
     hidden: &std::collections::HashSet<khora_sdk::prelude::ecs::EntityId>,
     theme: &UiTheme,
     pending: &std::cell::Cell<Option<EditorAction>>,
+    // Current `EditorState::asset_epoch` — rejects an asset drag whose index
+    // was read before a rescan.
+    asset_epoch: u64,
 ) -> f32 {
     let row_x = px + 4.0;
     let row_w = pw - 8.0;
@@ -473,7 +480,9 @@ fn render_node(
                     new_parent: Some(node.entity),
                 }));
             }
-        } else if let Some(idx) = crate::panels::asset_browser::unpack_asset_drag(packed) {
+        } else if let Some(idx) =
+            crate::panels::asset_browser::unpack_asset_drag(packed, asset_epoch)
+        {
             pending.set(Some(EditorAction::DropAsset {
                 idx: idx as usize,
                 target: Some(node.entity),
@@ -635,6 +644,7 @@ fn render_node(
             hidden,
             theme,
             pending,
+            asset_epoch,
         );
     }
     next_y
@@ -667,7 +677,7 @@ pub(crate) fn unpack_entity(payload: u64) -> khora_sdk::prelude::ecs::EntityId {
 /// the ASCII-encoded tag constants in
 /// [`crate::panels::asset_browser`].
 pub(crate) fn payload_is_entity(payload: u64) -> bool {
-    crate::panels::asset_browser::unpack_asset_drag(payload).is_none()
+    !crate::panels::asset_browser::is_asset_drag(payload)
 }
 
 enum EditorAction {

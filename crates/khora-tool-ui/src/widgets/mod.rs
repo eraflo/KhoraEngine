@@ -63,6 +63,7 @@ pub mod feedback;
 pub mod fields;
 pub mod indicators;
 pub mod mark;
+pub mod modal;
 pub mod nav;
 pub mod paint;
 
@@ -78,6 +79,7 @@ pub use indicators::{
     health_bar, meter_bar, progress_row, skeleton, sparkline, status_dot, Health,
 };
 pub use mark::{brand_pill, diamond};
+pub use modal::{confirm_modal, Confirm, ModalChoice};
 pub use nav::{
     breadcrumb, nav_item, panel_tab, radio_card, segmented_tabs, selectable_row, step_rail,
     StepState,

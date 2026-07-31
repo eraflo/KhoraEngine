@@ -102,16 +102,45 @@ fn sanitize_for_filename(name: &str) -> String {
     }
 }
 
-pub(crate) fn pack_asset_drag(index: u32) -> u64 {
-    ASSET_DRAG_TAG | index as u64
+/// Number of low bits of `EditorState::asset_epoch` stamped into a drag
+/// payload. Eight is plenty: the stamp only has to survive one drag, and the
+/// epoch would have to advance 256 times mid-gesture to alias.
+const DRAG_EPOCH_BITS: u32 = 8;
+const DRAG_INDEX_MASK: u64 = (1 << (32 - DRAG_EPOCH_BITS)) - 1;
+
+/// Packs an asset-list index plus a stamp of the epoch it was read at.
+///
+/// The index alone is not enough: it points into `EditorState::asset_entries`,
+/// which `hot_reload::pump` rebuilds whenever a file appears, disappears or is
+/// renamed on disk. Without the stamp, a rescan mid-drag silently retargets the
+/// drop at whatever now occupies that slot.
+pub(crate) fn pack_asset_drag(index: u32, epoch: u64) -> u64 {
+    let stamp = (epoch & ((1 << DRAG_EPOCH_BITS) - 1)) << (32 - DRAG_EPOCH_BITS);
+    ASSET_DRAG_TAG | stamp | (index as u64 & DRAG_INDEX_MASK)
 }
 
-pub(crate) fn unpack_asset_drag(payload: u64) -> Option<u32> {
-    if payload & 0xFFFF_FFFF_0000_0000 == ASSET_DRAG_TAG {
-        Some(payload as u32)
-    } else {
-        None
+/// Whether `payload` carries the asset tag, regardless of how stale it is.
+///
+/// Kept separate from [`unpack_asset_drag`] because the two answer different
+/// questions: this one classifies the payload, the other resolves it. Routing
+/// classification through the epoch check would make a stale asset drag look
+/// like a packed `EntityId` and get handled as a reparent.
+pub(crate) fn is_asset_drag(payload: u64) -> bool {
+    payload & 0xFFFF_FFFF_0000_0000 == ASSET_DRAG_TAG
+}
+
+/// Unpacks an asset drag payload, rejecting it when the asset list changed
+/// since the drag started.
+pub(crate) fn unpack_asset_drag(payload: u64, current_epoch: u64) -> Option<u32> {
+    if !is_asset_drag(payload) {
+        return None;
     }
+    let stamp = (payload >> (32 - DRAG_EPOCH_BITS)) & ((1 << DRAG_EPOCH_BITS) - 1);
+    if stamp != current_epoch & ((1 << DRAG_EPOCH_BITS) - 1) {
+        log::debug!("Asset drop ignored: the asset list changed during the drag");
+        return None;
+    }
+    Some((payload & DRAG_INDEX_MASK) as u32)
 }
 
 /// Re-applies the original file's extension to a user-edited name when the
@@ -208,6 +237,12 @@ pub struct AssetBrowserPanel {
     /// Per-folder expand/collapse state. Keys are full paths; missing =
     /// collapsed (root is special-cased to start expanded).
     expanded_folders: std::collections::HashMap<String, bool>,
+    /// Path awaiting the delete confirmation, and whether it names a folder.
+    ///
+    /// Every delete route parks its target here instead of writing
+    /// `EditorState::pending_delete_asset` directly, so the recycle-bin call
+    /// only happens once the user has answered the dialog.
+    confirm_delete: Option<(String, bool)>,
 }
 
 impl AssetBrowserPanel {
@@ -228,6 +263,55 @@ impl AssetBrowserPanel {
             rename_focus_pending: false,
             current_folder: None,
             expanded_folders: std::collections::HashMap::new(),
+            confirm_delete: None,
+        }
+    }
+
+    /// Asks before sending anything to the recycle bin, and only then queues
+    /// the deletion for `commands::process_pending_asset_file_ops`.
+    ///
+    /// Deleting a file is the one action here the editor cannot undo — there is
+    /// no undo history, and the file leaves the project. A folder takes
+    /// everything under it, so its wording says so.
+    fn render_delete_confirmation(
+        &mut self,
+        ui: &mut dyn UiBuilder,
+        panel_rect: [f32; 4],
+        theme: &UiTheme,
+    ) {
+        let Some((rel, is_folder)) = self.confirm_delete.clone() else {
+            return;
+        };
+        let name = rel.rsplit('/').next().unwrap_or(&rel).to_owned();
+        let title = if is_folder {
+            format!("Delete folder “{name}”?")
+        } else {
+            format!("Delete “{name}”?")
+        };
+        let body = if is_folder {
+            "The folder and everything inside it go to the recycle bin."
+        } else {
+            "The file goes to the recycle bin."
+        };
+
+        match khora_tool_ui::widgets::confirm_modal(
+            ui,
+            theme,
+            panel_rect,
+            "ab-delete",
+            khora_tool_ui::widgets::Confirm::danger(&title, body, "Delete"),
+        ) {
+            khora_tool_ui::widgets::ModalChoice::Confirmed => {
+                if let Ok(mut state) = self.state.lock() {
+                    state.pending_delete_asset = Some(rel.clone());
+                }
+                log::info!("Asset browser: deleting '{rel}'");
+                self.confirm_delete = None;
+            }
+            khora_tool_ui::widgets::ModalChoice::Cancelled => {
+                self.confirm_delete = None;
+            }
+            khora_tool_ui::widgets::ModalChoice::Pending => {}
         }
     }
 
@@ -577,10 +661,7 @@ impl AssetBrowserPanel {
             match action {
                 FolderAction::NewFolder(parent) => self.queue_new_folder(&parent),
                 FolderAction::Delete(rel) => {
-                    if let Ok(mut state) = self.state.lock() {
-                        state.pending_delete_asset = Some(rel.clone());
-                    }
-                    log::info!("Asset browser: deleting folder '{rel}'");
+                    self.confirm_delete = Some((rel, true));
                 }
                 FolderAction::Reveal(rel) => self.reveal_in_explorer(&rel, true),
                 FolderAction::StartRename { path, name } => {
@@ -703,7 +784,7 @@ impl AssetBrowserPanel {
             });
         }
         if let Some(payload) = ui.dnd_take_drop_payload() {
-            if let Some(idx) = unpack_asset_drag(payload) {
+            if let Some(idx) = unpack_asset_drag(payload, self.last_epoch.unwrap_or(0)) {
                 actions.push(FolderAction::Move {
                     idx: idx as usize,
                     dest: node.full_path.clone(),
@@ -996,11 +1077,7 @@ impl EditorPanel for AssetBrowserPanel {
         if header_delete_selected {
             match self.selected_index.and_then(|i| self.flat.get(i)) {
                 Some(asset) => {
-                    let rel = asset.rel_path.clone();
-                    if let Ok(mut state) = self.state.lock() {
-                        state.pending_delete_asset = Some(rel.clone());
-                    }
-                    log::info!("Asset browser: deleting '{rel}'");
+                    self.confirm_delete = Some((asset.rel_path.clone(), false));
                 }
                 None => log::info!("Asset browser: nothing selected to delete"),
             }
@@ -1274,7 +1351,12 @@ impl EditorPanel for AssetBrowserPanel {
             // Every tile is a drag source — the low 32 bits carry the index
             // into `EditorState::asset_entries`. The drop sink (viewport /
             // folder tree) dispatches by the asset's type.
-            ui.dnd_attach_drag_payload(pack_asset_drag(*orig_idx as u32));
+            // Stamped with the epoch `flat` was built for — that is the epoch
+            // `orig_idx` is an index into.
+            ui.dnd_attach_drag_payload(pack_asset_drag(
+                *orig_idx as u32,
+                self.last_epoch.unwrap_or(0),
+            ));
             if ui.is_last_item_dragged() {
                 dragging_ghost = Some((asset.name.clone(), asset.asset_type));
             }
@@ -1370,10 +1452,7 @@ impl EditorPanel for AssetBrowserPanel {
             log::info!("Asset browser: duplicating '{rel}'");
         }
         if let Some(rel) = to_delete {
-            if let Ok(mut state) = self.state.lock() {
-                state.pending_delete_asset = Some(rel.clone());
-            }
-            log::info!("Asset browser: deleting '{rel}'");
+            self.confirm_delete = Some((rel, false));
         }
         if let Some(i) = to_select {
             self.selected_index = Some(i);
@@ -1465,10 +1544,14 @@ impl EditorPanel for AssetBrowserPanel {
 
         let search_filter_ref = &mut self.search_filter;
         ui.region_at(
+            "asset-browser-search",
             [search_x + 20.0, search_y, search_w - 22.0, 22.0],
             &mut |ui_inner| {
                 ui_inner.text_edit_singleline(search_filter_ref);
             },
         );
+
+        // Painted last so it sits above the grid it is asking about.
+        self.render_delete_confirmation(ui, panel_rect, &theme);
     }
 }

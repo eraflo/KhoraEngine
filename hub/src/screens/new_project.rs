@@ -78,7 +78,7 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     field_label(ui, &t, [x, y], "Project name");
     y += 18.0;
     let inner = input_frame(ui, &t, [x, y, form_w, ROW], "np-name", name_invalid);
-    ui.region_at(inner, &mut |ui| {
+    ui.region_at("np-name", inner, &mut |ui| {
         ui.text_edit_singleline(&mut app.new_project.name);
     });
     y += ROW + 4.0;
@@ -100,7 +100,7 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     y += 18.0;
     let field_w = form_w - 108.0;
     let inner = input_frame(ui, &t, [x, y, field_w, ROW], "np-path", dir_invalid);
-    ui.region_at(inner, &mut |ui| {
+    ui.region_at("np-path", inner, &mut |ui| {
         ui.text_edit_singleline(&mut app.new_project.path);
     });
     if button(
@@ -205,7 +205,7 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
             field_label(ui, &t, [deep_x, y], "Repository name");
             y += 18.0;
             let inner = input_frame(ui, &t, [deep_x, y, form_w - 52.0, ROW], "np-repo", false);
-            ui.region_at(inner, &mut |ui| {
+            ui.region_at("np-repo", inner, &mut |ui| {
                 ui.text_edit_singleline(&mut app.new_project.remote_repo_name);
             });
             y += ROW + 8.0;

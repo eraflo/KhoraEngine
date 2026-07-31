@@ -257,7 +257,7 @@ impl EditorPanel for ConsolePanel {
                 "Filter…",
             );
             let sref = &mut self.search;
-            ui.region_at([sx + 22.0, fy + 2.0, sw - 30.0, 16.0], &mut |ui| {
+            ui.region_at("console-search", [sx + 22.0, fy + 2.0, sw - 30.0, 16.0], &mut |ui| {
                 ui.text_edit_singleline(sref);
             });
         }
@@ -308,7 +308,7 @@ impl EditorPanel for ConsolePanel {
         let size = t.font_size_caption;
 
         let mut y = body[1] + 2.0;
-        for e in visible {
+        for (row_index, e) in visible.into_iter().enumerate() {
             if y + ROW_H > widgets::bottom(body) {
                 break;
             }
@@ -336,9 +336,13 @@ impl EditorPanel for ConsolePanel {
 
             // The message is clipped, never wrapped into a taller row: rows
             // must stay on the grid for the columns to mean anything.
-            ui.region_at([cx, y, msg_w, ROW_H], &mut |ui| {
-                text(ui, [cx, ty], &e.message, size + 1.0, t.text_dim);
-            });
+            ui.region_at(
+                &format!("console-msg-{row_index}"),
+                [cx, y, msg_w, ROW_H],
+                &mut |ui| {
+                    text(ui, [cx, ty], &e.message, size + 1.0, t.text_dim);
+                },
+            );
 
             y += ROW_H;
         }

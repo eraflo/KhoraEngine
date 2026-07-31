@@ -8,6 +8,34 @@ Deep history lives in git and `docs/plans/`.
 - **Build**: clean (all crates compile, 0 errors); clippy 0 errors.
 - **Tests**: ~866 passing, ~29 ignored, 0 failures. Treat the live `cargo test --workspace` count as truth.
 
+## Latest work (2026-07-31, suite) — Phase 1 : corruption d'état de l'éditeur
+- **Arbre de scène déterministe** (`ops::extract_scene_tree`) : reconstruction **descendante depuis
+  les racines**, triée par `entity.index` à chaque niveau, avec garde de cycle. L'ancienne passe
+  ascendante drainait une `HashMap` — dont le hasher est re-seedé par instance — donc une hiérarchie
+  à 3 niveaux perdait un niveau au hasard et les fratries se réordonnaient à chaque frame. 3 tests.
+- **`EditorState::clear_entity_references`** : purge sélection / inspected / hidden / rename /
+  état des cartes / scene_roots. Appelée par `apply_new_scene`, `apply_stop` (restore) et
+  `load_scene_dispatch` — ces chemins respawnent avec de nouveaux `EntityId`, et un slot recyclé
+  faisait agir `Suppr` sur une *autre* entité. La purge vit dans `load_scene_dispatch` (qui prend
+  désormais `&Arc<Mutex<EditorState>>`) plutôt qu'à chaque site d'appel.
+- **Payload de drag d'asset estampillé** : `pack_asset_drag(index, epoch)` /
+  `unpack_asset_drag(payload, current_epoch)` (8 bits d'epoch + 24 d'index). Un rescan en cours de
+  drag faisait atterrir le drop sur le mauvais asset. `is_asset_drag` (tag seul) est séparé pour la
+  *classification* — sinon un drag périmé serait pris pour un `EntityId` et traité en reparent.
+- **Ids egui stables** : `region_at` prend un `id_salt: &str` (13 sites nommés) au lieu de dériver
+  l'id de la position écran — bouger un panneau d'un pixel faisait perdre le focus en pleine saisie.
+  `combo_box` prend un `id_salt` et utilise `ComboBox::new` au lieu de `from_label` (deux enums
+  homonymes partageaient un popup). Clé des cartes d'Inspector = index **+ génération**.
+- **Widget `modal`** (`khora-tool-ui/src/widgets/modal.rs`) : `confirm_modal` + `Confirm` +
+  `ModalChoice`, il manquait à la charte. Câblé sur les **3** chemins de suppression de l'asset
+  browser (icône poubelle, menu contextuel de tuile, menu de dossier) — ils envoyaient fichiers et
+  dossiers à la corbeille sans rien demander.
+- **`save_scene_dispatch*` renvoie `bool`** au lieu de jeter le résultat. *Correction d'audit : la
+  sauvegarde n'échouait **pas** en silence — `save_scene_in_project_with_goal` loggue ses deux
+  branches d'échec ; c'est l'appelant qui ignorait l'issue.*
+- Vérif : `cargo test --workspace` 945 passed / 0 failed ; clippy clean ; éditeur lancé, 61 fps,
+  aucune régression visuelle.
+
 ## Latest work (2026-07-31) — Audit UI éditeur + provenance des composants
 - **Audit complet de l'UI éditeur** : `docs/research/2026-07-31_editor-ui-audit.md` — 12 sections,
   ~90 constats identifiés (`H1`, `Q2`, `X8`…), menés en lecture de code **et** en exécution réelle à

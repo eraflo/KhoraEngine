@@ -291,7 +291,7 @@ impl EditorPanel for CommandPalettePanel {
             modal_w - pad * 2.0 - 80.0,
             28.0,
         ];
-        ui.region_at(input_rect, &mut |ui_inner| {
+        ui.region_at("cmd-palette-input", input_rect, &mut |ui_inner| {
             ui_inner.text_edit_singleline(query_ref);
             if ui_inner.is_last_item_escape_pressed() {
                 close_after = true;

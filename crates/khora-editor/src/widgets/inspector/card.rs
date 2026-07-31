@@ -61,7 +61,10 @@ pub fn render_card(
     state: &mut EditorState,
     body: &mut dyn FnMut(&mut dyn UiBuilder),
 ) {
-    let card_id = format!("{}::{}", entity.index, title);
+    // Keyed on index AND generation: entity slots are recycled, so a key built
+    // from the index alone would hand a freshly spawned entity the collapse
+    // state of whatever previously occupied that slot.
+    let card_id = format!("{}.{}::{}", entity.index, entity.generation, title);
     let open = *state
         .inspector_card_open
         .entry(card_id.clone())
