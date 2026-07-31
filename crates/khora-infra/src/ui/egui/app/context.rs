@@ -16,12 +16,17 @@ use khora_core::ui::{AppContext, FontPack, UiBuilder, UiTheme};
 use crate::ui::egui::theme::apply_theme;
 use crate::ui::egui::ui_builder::EguiUiBuilder;
 
-/// Wraps an `egui::Context` to implement [`AppContext`].
+/// Wraps the frame's root `egui::Ui` to implement [`AppContext`].
 ///
 /// Constructed once per frame by [`super::run_native`] and handed to
 /// the user's [`khora_core::ui::App::update`] implementation.
+///
+/// Holds a `Ui` rather than a `Context` because eframe hands the app a root
+/// `Ui` to paint *into*; panels nest inside it with `show_inside`. The
+/// `Context` is still reachable through it for the theme, fonts and viewport
+/// commands, which are context-wide rather than panel-local.
 pub struct EguiAppContext<'a> {
-    ctx: &'a egui::Context,
+    ui: &'a mut egui::Ui,
     frame: &'a mut eframe::Frame,
     /// No viewport textures for tool apps — empty map, kept so we can
     /// reuse `EguiUiBuilder::new`.
@@ -30,9 +35,9 @@ pub struct EguiAppContext<'a> {
 
 impl<'a> EguiAppContext<'a> {
     /// Build a context from the per-frame egui handles.
-    pub fn new(ctx: &'a egui::Context, frame: &'a mut eframe::Frame) -> Self {
+    pub fn new(ui: &'a mut egui::Ui, frame: &'a mut eframe::Frame) -> Self {
         Self {
-            ctx,
+            ui,
             frame,
             viewport_textures: HashMap::new(),
         }
@@ -44,14 +49,15 @@ impl AppContext for EguiAppContext<'_> {
         let vt = &self.viewport_textures;
         egui::CentralPanel::default()
             .frame(egui::Frame::new())
-            .show(self.ctx, |ui| {
+            .show_inside(self.ui, |ui| {
                 let mut builder = EguiUiBuilder::new(ui, vt);
                 f(&mut builder);
             });
     }
 
     fn set_theme(&mut self, theme: &UiTheme) {
-        apply_theme(self.ctx, theme);
+        let ctx = self.ui.ctx().clone();
+        apply_theme(&ctx, theme);
     }
 
     fn set_fonts(&mut self, pack: &FontPack) {
@@ -59,6 +65,7 @@ impl AppContext for EguiAppContext<'_> {
             return;
         }
         use std::sync::Arc;
+        let ctx = self.ui.ctx().clone();
         let mut defs = egui::FontDefinitions::default();
         install_family(
             &mut defs,
@@ -101,7 +108,7 @@ impl AppContext for EguiAppContext<'_> {
                 }
             }
         }
-        self.ctx.set_fonts(defs);
+        ctx.set_fonts(defs);
 
         fn install_family(
             defs: &mut egui::FontDefinitions,
@@ -128,21 +135,24 @@ impl AppContext for EguiAppContext<'_> {
 
     fn screen_size(&self) -> [f32; 2] {
         let r = self
-            .ctx
+            .ui
+            .ctx()
             .input(|i| i.viewport().inner_rect.unwrap_or(egui::Rect::ZERO));
         [r.width(), r.height()]
     }
 
     fn pixels_per_point(&self) -> f32 {
-        self.ctx.pixels_per_point()
+        self.ui.ctx().pixels_per_point()
     }
 
     fn request_repaint(&mut self) {
-        self.ctx.request_repaint();
+        self.ui.ctx().request_repaint();
     }
 
     fn request_close(&mut self) {
-        self.ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        self.ui
+            .ctx()
+            .send_viewport_cmd(egui::ViewportCommand::Close);
         let _ = &self.frame; // mark used
     }
 }

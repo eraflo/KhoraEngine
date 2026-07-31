@@ -577,7 +577,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
     fn key_pressed(&self, key: KeyCode) -> bool {
         // A shortcut must not fire while a text field is taking input, or a
         // panel's single-key bindings would eat the user's typing.
-        if self.ui.ctx().wants_keyboard_input() {
+        if self.ui.ctx().egui_wants_keyboard_input() {
             return false;
         }
         let Some(egui_key) = map_key(key) else {
@@ -587,7 +587,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
     }
 
     fn keyboard_captured(&self) -> bool {
-        self.ui.ctx().wants_keyboard_input()
+        self.ui.ctx().egui_wants_keyboard_input()
     }
 
     fn raw_key_pressed(&self, key: KeyCode) -> bool {
@@ -818,8 +818,8 @@ impl UiBuilder for EguiUiBuilder<'_> {
 
     fn top_inset_panel(&mut self, id: &str, height: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let vt = self.viewport_textures;
-        egui::TopBottomPanel::top(egui::Id::new(id.to_owned()))
-            .exact_height(height)
+        egui::Panel::top(egui::Id::new(id.to_owned()))
+            .exact_size(height)
             .resizable(false)
             .frame(egui::Frame::new())
             .show_inside(self.ui, |ui| {
@@ -830,8 +830,8 @@ impl UiBuilder for EguiUiBuilder<'_> {
 
     fn bottom_inset_panel(&mut self, id: &str, height: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let vt = self.viewport_textures;
-        egui::TopBottomPanel::bottom(egui::Id::new(id.to_owned()))
-            .exact_height(height)
+        egui::Panel::bottom(egui::Id::new(id.to_owned()))
+            .exact_size(height)
             .resizable(false)
             .frame(egui::Frame::new())
             .show_inside(self.ui, |ui| {
@@ -842,8 +842,8 @@ impl UiBuilder for EguiUiBuilder<'_> {
 
     fn left_inset_panel(&mut self, id: &str, width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let vt = self.viewport_textures;
-        egui::SidePanel::left(egui::Id::new(id.to_owned()))
-            .exact_width(width)
+        egui::Panel::left(egui::Id::new(id.to_owned()))
+            .exact_size(width)
             .resizable(false)
             .frame(egui::Frame::new())
             .show_inside(self.ui, |ui| {
@@ -854,8 +854,8 @@ impl UiBuilder for EguiUiBuilder<'_> {
 
     fn right_inset_panel(&mut self, id: &str, width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let vt = self.viewport_textures;
-        egui::SidePanel::right(egui::Id::new(id.to_owned()))
-            .exact_width(width)
+        egui::Panel::right(egui::Id::new(id.to_owned()))
+            .exact_size(width)
             .resizable(false)
             .frame(egui::Frame::new())
             .show_inside(self.ui, |ui| {
@@ -953,7 +953,7 @@ impl EguiUiBuilder<'_> {
             .fixed_size([size[0], size[1]])
             .resizable(false)
             .collapsible(false)
-            .frame(egui::Frame::window(&ctx.style()).inner_margin(egui::Margin::same(0)))
+            .frame(egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(0)))
             .show(&ctx, |ui| {
                 let mut nested = EguiUiBuilder::new(ui, &vt_clone);
                 f(&mut nested);

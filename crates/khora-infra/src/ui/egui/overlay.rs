@@ -198,11 +198,11 @@ impl EditorOverlay for EguiOverlay {
     }
 
     fn wants_pointer_input(&self) -> bool {
-        self.ctx.wants_pointer_input()
+        self.ctx.egui_wants_pointer_input()
     }
 
     fn wants_keyboard_input(&self) -> bool {
-        self.ctx.wants_keyboard_input()
+        self.ctx.egui_wants_keyboard_input()
     }
 
     fn as_any(&self) -> &dyn Any {

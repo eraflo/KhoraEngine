@@ -28,11 +28,14 @@ struct AppAdapter {
 }
 
 impl eframe::App for AppAdapter {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        let mut adapter = EguiAppContext::new(ctx, frame);
-
+    // eframe hands the app a root `Ui` to paint into rather than a `Context`
+    // to open panels against.
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         if !self.started {
-            self.inner.on_start(&mut adapter);
+            {
+                let mut adapter = EguiAppContext::new(ui, frame);
+                self.inner.on_start(&mut adapter);
+            }
             self.started = true;
 
             // `on_start` is where the app installs its fonts, but
@@ -43,10 +46,11 @@ impl eframe::App for AppAdapter {
             // not exist yet. So skip drawing this frame and come straight back
             // with the real fonts loaded. One blank frame at startup, and no
             // app has to know about the ordering.
-            ctx.request_repaint();
+            ui.ctx().request_repaint();
             return;
         }
 
+        let mut adapter = EguiAppContext::new(ui, frame);
         self.inner.update(&mut adapter);
     }
 

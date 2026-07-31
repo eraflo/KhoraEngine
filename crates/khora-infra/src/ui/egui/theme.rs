@@ -115,7 +115,7 @@ pub fn apply_theme(ctx: &egui::Context, theme: &UiTheme) {
     ctx.data_mut(|d| d.insert_temp(egui::Id::new(AXIS_COLORS_KEY), axes));
 
     // ── Spacing & sizing ─────────────────────────────
-    let mut style = (*ctx.style()).clone();
+    let mut style = (*ctx.global_style()).clone();
     style.spacing.item_spacing = egui::vec2(theme.pad_row * 0.75, theme.pad_row * 0.5);
     style.spacing.button_padding = egui::vec2(10.0, 4.0);
     style.spacing.indent = 14.0;
@@ -152,5 +152,5 @@ pub fn apply_theme(ctx: &egui::Context, theme: &UiTheme) {
         FontId::new(theme.font_size_body - 0.5, FontFamily::Monospace),
     );
 
-    ctx.set_style(style);
+    ctx.set_global_style(style);
 }
