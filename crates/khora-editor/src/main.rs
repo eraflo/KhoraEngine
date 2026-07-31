@@ -41,6 +41,7 @@ mod mod_agents;
 mod mod_gizmo;
 mod ops;
 mod panels;
+mod picking;
 mod project_vfs;
 mod scene_io;
 mod util;

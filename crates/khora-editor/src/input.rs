@@ -15,11 +15,14 @@
 
 use std::sync::{Arc, Mutex};
 
+use khora_sdk::editor_ui::{pick_handle, GizmoDrag, GizmoTransform};
+use khora_sdk::khora_core::math::Ray;
+use khora_sdk::prelude::ecs::EntityId;
 use khora_sdk::prelude::*;
 use khora_sdk::KeyCode;
 use khora_sdk::{EditorCamera, EditorMode, EditorState, GizmoMode, PlayMode};
 
-use crate::ops;
+use crate::{mod_gizmo, ops};
 
 /// State of modifier keys + button drags that has to outlive a single
 /// frame. Lives on `EditorApp` and is mutated through this module.
@@ -35,6 +38,12 @@ pub struct InputState {
     /// `intercept_window_event` to test whether a `MouseInput` event
     /// (which carries no position) lands inside the 3D viewport rect.
     pub last_cursor_pos: Option<(f32, f32)>,
+    /// The gizmo handle currently being dragged, if any.
+    pub gizmo_drag: Option<GizmoDrag>,
+    /// Transforms the selection had when that drag began. A drag resolves
+    /// against these rather than against the live values, so it cannot
+    /// accumulate drift over a long gesture.
+    pub gizmo_starts: Vec<(EntityId, GizmoTransform)>,
 }
 
 impl InputState {
@@ -51,7 +60,28 @@ impl InputState {
         self.shift_held = false;
         self.ctrl_held = false;
         self.prev_cursor = None;
+        self.end_gizmo_drag();
     }
+
+    /// Drops any manipulation in progress, leaving the entities where the last
+    /// resolved delta put them.
+    fn end_gizmo_drag(&mut self) {
+        self.gizmo_drag = None;
+        self.gizmo_starts.clear();
+    }
+}
+
+/// The cursor ray for a screen position, or `None` when the viewport has not
+/// been laid out yet.
+fn cursor_ray(
+    camera: &Arc<Mutex<EditorCamera>>,
+    cursor: Option<(f32, f32)>,
+    viewport: Option<[f32; 4]>,
+) -> Option<Ray> {
+    let (cx, cy) = cursor?;
+    let [rx, ry, rw, rh] = viewport?;
+    let camera = camera.lock().ok()?;
+    Some(camera.screen_to_ray(cx - rx, cy - ry, rw, rh))
 }
 
 /// Drive the editor camera + global shortcuts off the per-frame input
@@ -94,6 +124,62 @@ pub fn process_events(
                     match button {
                         MouseButton::Middle => state.middle_down = true,
                         MouseButton::Right => state.right_down = true,
+                        // Left click grabs a gizmo handle, or picks. Selection
+                        // is no longer hierarchy-only: `GizmoMode::Select` and
+                        // `screen_to_ray` both existed, but nothing cast a ray
+                        // against the scene, so the viewport was read-only.
+                        MouseButton::Left => {
+                            let ray = cursor_ray(camera, state.last_cursor_pos, viewport_rect);
+                            let view = viewport_rect.and_then(|[_, _, rw, rh]| {
+                                camera.lock().ok().map(|cam| cam.view_info(rw, rh))
+                            });
+
+                            if let (Some(ray), Some(view)) = (ray, view) {
+                                // A handle under the cursor wins over whatever
+                                // is behind it: the manipulator sits on top of
+                                // its own object, so picking first would make
+                                // it impossible to grab.
+                                let grabbed = editor_state.lock().ok().and_then(|s| {
+                                    let frame = mod_gizmo::selection_frame(world, &s, &view)?;
+                                    let axis = pick_handle(
+                                        s.gizmo_mode,
+                                        frame.pivot,
+                                        &frame.basis,
+                                        frame.size,
+                                        &ray,
+                                    )?;
+                                    let drag = GizmoDrag::begin(
+                                        s.gizmo_mode,
+                                        axis,
+                                        frame.pivot,
+                                        &frame.basis,
+                                        frame.size,
+                                        &ray,
+                                    )?;
+                                    Some((drag, mod_gizmo::capture_starts(world, &s)))
+                                });
+
+                                if let Some((drag, starts)) = grabbed {
+                                    state.gizmo_drag = Some(drag);
+                                    state.gizmo_starts = starts;
+                                } else if let Ok(mut s) = editor_state.lock() {
+                                    match crate::picking::pick_entity(world, &ray) {
+                                        // Ctrl extends the selection, the
+                                        // same modifier the hierarchy uses.
+                                        Some(entity) if state.ctrl_held => s.toggle_select(entity),
+                                        Some(entity) => s.select(entity),
+                                        // Clicking empty space deselects —
+                                        // otherwise there is no way to let
+                                        // go of a selection in the viewport.
+                                        None if !state.ctrl_held => {
+                                            s.clear_selection();
+                                            s.inspected = None;
+                                        }
+                                        None => {}
+                                    }
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -107,6 +193,7 @@ pub fn process_events(
                     state.right_down = false;
                     state.prev_cursor = None;
                 }
+                MouseButton::Left => state.end_gizmo_drag(),
                 _ => {}
             },
             InputEvent::KeyPressed { key_code } => {
@@ -118,13 +205,19 @@ pub fn process_events(
                 }
 
                 if !state.ctrl_held {
-                    if let Ok(mut s) = editor_state.lock() {
-                        match key_code {
-                            KeyCode::KeyQ => s.gizmo_mode = GizmoMode::Select,
-                            KeyCode::KeyW => s.gizmo_mode = GizmoMode::Move,
-                            KeyCode::KeyE => s.gizmo_mode = GizmoMode::Rotate,
-                            KeyCode::KeyR => s.gizmo_mode = GizmoMode::Scale,
-                            _ => {}
+                    let tool = match key_code {
+                        KeyCode::KeyQ => Some(GizmoMode::Select),
+                        KeyCode::KeyW => Some(GizmoMode::Move),
+                        KeyCode::KeyE => Some(GizmoMode::Rotate),
+                        KeyCode::KeyR => Some(GizmoMode::Scale),
+                        _ => None,
+                    };
+                    if let Some(tool) = tool {
+                        // A drag belongs to the tool it started with — its
+                        // grabbed parameter means nothing under another one.
+                        state.end_gizmo_drag();
+                        if let Ok(mut s) = editor_state.lock() {
+                            s.gizmo_mode = tool;
                         }
                     }
                 }
@@ -192,6 +285,20 @@ pub fn process_events(
                 }
             }
             InputEvent::MouseMoved { x, y } => {
+                // A manipulation in progress owns the pointer: the camera must
+                // not also move, or the object being dragged slides out from
+                // under the cursor.
+                if state.gizmo_drag.is_some() {
+                    if let Some(ray) = cursor_ray(camera, Some((*x, *y)), viewport_rect) {
+                        let delta = state.gizmo_drag.as_mut().and_then(|d| d.update(&ray));
+                        if let Some(delta) = delta {
+                            mod_gizmo::apply_delta(world, delta, &state.gizmo_starts);
+                        }
+                    }
+                    state.prev_cursor = Some((*x, *y));
+                    continue;
+                }
+
                 if editor_cam_navigable && cursor_in_viewport(*x, *y) {
                     if let Some((px, py)) = state.prev_cursor {
                         let dx = x - px;

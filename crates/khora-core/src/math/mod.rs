@@ -47,6 +47,7 @@ pub mod dimension;
 pub mod geometry;
 pub mod matrix;
 pub mod quaternion;
+pub mod ray;
 pub mod simd;
 pub mod vector;
 
@@ -59,6 +60,7 @@ pub use self::dimension::{Extent1D, Extent2D, Extent3D, Origin2D, Origin3D};
 pub use self::geometry::{Aabb, Rect2D};
 pub use self::matrix::{Mat3, Mat4};
 pub use self::quaternion::{Quat, Quaternion};
+pub use self::ray::Ray;
 pub use self::vector::{Vec2, Vec3, Vec4};
 
 // --- Utility Functions ---

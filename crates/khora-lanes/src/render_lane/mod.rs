@@ -50,6 +50,17 @@ pub(crate) fn camera_distance_sq(
     dx * dx + dy * dy + dz * dz
 }
 
+pub use forward_plus_lane::*;
+pub use gizmo_lane::{GizmoLane, SharedGizmoFrame};
+pub use grid_lane::{GridLane, SharedGridConfig};
+pub use lit_forward_lane::*;
+pub use shadows_lane::{LowResShadowsLane, MediumShadowsLane, StandardShadowsLane};
+pub use simple_unlit_lane::*;
+pub use skybox_lane::SkyboxLane;
+pub use standard_pbr_lane::StandardPbrLane;
+pub use ui_render_lane::*;
+pub use wireframe_lane::{SharedWireframeConfig, WireframeLane};
+
 #[cfg(test)]
 mod transparency_tests {
     use super::camera_distance_sq;
@@ -73,7 +84,7 @@ mod transparency_tests {
     #[test]
     fn sorting_by_descending_distance_is_back_to_front() {
         let camera = Vec3::new(0.0, 0.0, 0.0);
-        let mut draws = vec![
+        let mut draws = [
             ("near", camera_distance_sq(&at(0.0, 0.0, 1.0), camera)),
             ("far", camera_distance_sq(&at(0.0, 0.0, 9.0), camera)),
             ("mid", camera_distance_sq(&at(0.0, 0.0, 4.0), camera)),
@@ -85,14 +96,3 @@ mod transparency_tests {
         assert_eq!(order, ["far", "mid", "near"]);
     }
 }
-
-pub use forward_plus_lane::*;
-pub use gizmo_lane::{GizmoLane, SharedGizmoFrame};
-pub use grid_lane::{GridLane, SharedGridConfig};
-pub use lit_forward_lane::*;
-pub use shadows_lane::{LowResShadowsLane, MediumShadowsLane, StandardShadowsLane};
-pub use simple_unlit_lane::*;
-pub use skybox_lane::SkyboxLane;
-pub use standard_pbr_lane::StandardPbrLane;
-pub use ui_render_lane::*;
-pub use wireframe_lane::{SharedWireframeConfig, WireframeLane};
