@@ -302,3 +302,85 @@ fn find_file_recursive(dir: &std::path::Path, filename: &str) -> Option<PathBuf>
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::extract_zip;
+    use std::io::Write;
+
+    /// A scratch directory that removes itself, so a failing assertion cannot
+    /// leave extracted files behind for the next run to trip over.
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn new(tag: &str) -> Self {
+            let path = std::env::temp_dir().join(format!("khora-hub-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("temp dir is writable");
+            Self(path)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Builds a deflate-compressed archive in memory, holding a nested file and
+    /// a path-traversal entry.
+    ///
+    /// Deflate specifically: it is what real release archives use, and a `zip`
+    /// upgrade that dropped the codec would still *compile* — this is the test
+    /// that would notice.
+    fn sample_archive() -> Vec<u8> {
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            writer
+                .start_file("nested/hello.txt", options)
+                .expect("entry starts");
+            writer.write_all(b"khora").expect("entry is writable");
+            writer
+                .start_file("../escape.txt", options)
+                .expect("entry starts");
+            writer.write_all(b"nope").expect("entry is writable");
+            writer.finish().expect("archive finishes");
+        }
+        cursor.into_inner()
+    }
+
+    #[test]
+    fn extracts_a_nested_deflated_entry() {
+        let scratch = Scratch::new("extract");
+        extract_zip(&sample_archive(), &scratch.0).expect("archive extracts");
+
+        let extracted = scratch.0.join("nested").join("hello.txt");
+        assert!(extracted.is_file(), "missing {}", extracted.display());
+        assert_eq!(
+            std::fs::read_to_string(&extracted).expect("file is readable"),
+            "khora"
+        );
+    }
+
+    /// An entry pointing outside the destination is skipped rather than
+    /// followed — the whole archive still extracts, minus that entry.
+    #[test]
+    fn refuses_to_escape_the_destination() {
+        let scratch = Scratch::new("zipslip");
+        extract_zip(&sample_archive(), &scratch.0).expect("archive extracts");
+
+        let escaped = scratch
+            .0
+            .parent()
+            .expect("temp dir has a parent")
+            .join("escape.txt");
+        assert!(
+            !escaped.exists(),
+            "zip-slip wrote outside the destination: {}",
+            escaped.display()
+        );
+    }
+}
