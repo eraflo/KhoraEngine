@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 
 /// Defines the physical properties of a collider surface.
 #[derive(Debug, Clone, Copy, Component, Serialize, Deserialize)]
+#[component(domain = Physics)]
 pub struct PhysicsMaterial {
     /// Friction coefficient.
     pub friction: f32,

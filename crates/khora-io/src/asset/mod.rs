@@ -16,16 +16,28 @@
 
 mod decoder;
 pub mod decoders;
+mod dependencies;
 mod file;
+mod id_registry;
+mod index_builder;
 mod io;
+mod manifest;
 mod pack;
+mod pack_builder;
 mod registry;
 mod service;
+mod watcher;
 
 pub use decoder::*;
 pub use decoders::*;
+pub use dependencies::*;
 pub use file::*;
+pub use id_registry::*;
+pub use index_builder::*;
 pub use io::*;
+pub use manifest::*;
 pub use pack::*;
+pub use pack_builder::*;
 pub use registry::*;
 pub use service::*;
+pub use watcher::*;

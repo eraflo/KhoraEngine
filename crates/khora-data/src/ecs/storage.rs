@@ -15,11 +15,12 @@
 //! Internal component storage and page management.
 
 use crate::ecs::{
-    page::ComponentPage, registry::ComponentRegistry, ComponentBundle, DomainBitset, DomainStats,
-    SemanticDomain,
+    page::{AnyVec, ComponentPage},
+    registry::ComponentRegistry,
+    ComponentBundle, DomainBitset, DomainStats, SemanticDomain,
 };
 use std::any::TypeId;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Internal manager for component pages, domain bitsets, and archetype caching.
 ///
@@ -38,6 +39,21 @@ pub(crate) struct StorageManager {
     pub(crate) domain_bitsets: HashMap<SemanticDomain, DomainBitset>,
     /// Running statistics for each semantic domain (e.g., entity count, page count).
     pub(crate) domain_stats: HashMap<SemanticDomain, DomainStats>,
+    /// Pages that gained an orphaned row since the last maintenance pass.
+    ///
+    /// A component migration (`add_component` / `remove_component` /
+    /// `remove_component_domain`) repoints the entity's metadata to a new page
+    /// but leaves the old physical row in place. The source page id is recorded
+    /// here so [`EcsMaintenance`](crate::ecs::EcsMaintenance) can compact it
+    /// (drop the fully-dead rows) later in `TickPhase::Maintenance`, without any
+    /// migration call site having to remember to forward the orphan.
+    pub(crate) dirty_pages: HashSet<u32>,
+    /// Slots in [`pages`](Self::pages) whose page became empty after compaction
+    /// and can be recycled. The slot is *not* removed from `pages` (that would
+    /// shift every higher `page_id`, and `page_id`s are stored in entity
+    /// metadata); instead the next allocation reuses it. Safe because an empty
+    /// page is referenced by no entity metadata.
+    pub(crate) free_pages: Vec<u32>,
 }
 
 impl StorageManager {
@@ -49,7 +65,65 @@ impl StorageManager {
             registry,
             domain_bitsets: HashMap::new(),
             domain_stats: HashMap::new(),
+            dirty_pages: HashSet::new(),
+            free_pages: Vec::new(),
         }
+    }
+
+    /// Allocates a page slot for `type_ids` with the given `columns`: recycles a
+    /// freed slot when one is available (no `page_id` churn) and otherwise
+    /// appends. Updates `archetype_map` and the domain page-count. Returns the
+    /// page id.
+    fn alloc_page(&mut self, type_ids: Vec<TypeId>, columns: HashMap<TypeId, Box<dyn AnyVec>>) -> u32 {
+        if let Some(first_type) = type_ids.first() {
+            if let Some(domain) = self.registry.get_domain(*first_type) {
+                self.domain_stats.entry(domain).or_default().page_count += 1;
+            }
+        }
+
+        let page = ComponentPage {
+            type_ids: type_ids.clone(),
+            columns,
+            entities: Vec::new(),
+        };
+
+        let page_id = if let Some(reused) = self.free_pages.pop() {
+            // Reinitialise the freed slot in place — no `page_id` shifts.
+            self.pages[reused as usize] = page;
+            reused
+        } else {
+            let id = self.pages.len() as u32;
+            self.pages.push(page);
+            id
+        };
+
+        self.archetype_map.insert(type_ids, page_id);
+        page_id
+    }
+
+    /// Recycles a now-empty page's slot. Called by `World::compact_page` when
+    /// compaction drops a page's last row: drops the signature's `archetype_map`
+    /// entry and the domain page-count (mirroring [`alloc_page`](Self::alloc_page)),
+    /// then queues the slot for reuse. No-op if the page still holds rows, so a
+    /// live page is never recycled.
+    pub(crate) fn mark_page_free(&mut self, page_id: u32) {
+        let Some(page) = self.pages.get(page_id as usize) else {
+            return;
+        };
+        if !page.entities.is_empty() {
+            return;
+        }
+
+        let type_ids = page.type_ids.clone();
+        if let Some(first_type) = type_ids.first() {
+            if let Some(domain) = self.registry.get_domain(*first_type) {
+                if let Some(stats) = self.domain_stats.get_mut(&domain) {
+                    stats.page_count = stats.page_count.saturating_sub(1);
+                }
+            }
+        }
+        self.archetype_map.remove(&type_ids);
+        self.free_pages.push(page_id);
     }
 
     /// Finds or creates a page suitable for the given component bundle types.
@@ -65,27 +139,8 @@ impl StorageManager {
             return page_id;
         }
 
-        // --- Cache Miss: Create a new page ---
-        let new_page_id = self.pages.len() as u32;
-
-        // Update domain statistics.
-        if let Some(first_type) = bundle_type_ids.first() {
-            if let Some(domain) = self.registry.get_domain(*first_type) {
-                self.domain_stats.entry(domain).or_default().page_count += 1;
-            }
-        }
-
-        let new_page = ComponentPage {
-            type_ids: bundle_type_ids.clone(),
-            columns: B::create_columns(),
-            entities: Vec::new(),
-        };
-
-        // Store the page and update the lookup map.
-        self.pages.push(new_page);
-        self.archetype_map.insert(bundle_type_ids, new_page_id);
-
-        new_page_id
+        // Cache miss: allocate (recycling a freed slot when possible).
+        self.alloc_page(bundle_type_ids, B::create_columns())
     }
 
     /// Finds or creates a page for a specific type signature (sorted TypeIds).
@@ -98,26 +153,8 @@ impl StorageManager {
             return page_id;
         }
 
-        // --- Cache Miss: Create a new page ---
-        let new_page_id = self.pages.len() as u32;
-
-        // Update domain statistics.
-        if let Some(first_type) = signature.first() {
-            if let Some(domain) = self.registry.get_domain(*first_type) {
-                self.domain_stats.entry(domain).or_default().page_count += 1;
-            }
-        }
-
-        let new_page = ComponentPage {
-            type_ids: signature.to_vec(),
-            columns: self.registry.create_columns_for_signature(signature),
-            entities: Vec::new(),
-        };
-
-        // Store the page and update the lookup map.
-        self.pages.push(new_page);
-        self.archetype_map.insert(signature.to_vec(), new_page_id);
-
-        new_page_id
+        // Cache miss: allocate (recycling a freed slot when possible).
+        let columns = self.registry.create_columns_for_signature(signature);
+        self.alloc_page(signature.to_vec(), columns)
     }
 }

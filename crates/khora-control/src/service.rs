@@ -15,13 +15,16 @@
 //! Central service for the Dynamic Context Core.
 
 use crate::budget_channel::BudgetChannel;
-use crate::context::Context;
+use crate::context::{safety_ceiling, Context};
+use crate::cost_model::CostModel;
 use crate::metrics::MetricStore;
 use crate::EngineMode;
 use crossbeam_channel::{Receiver, Sender};
 use khora_core::agent::Agent;
 use khora_core::control::gorna::ResourceBudget;
-use khora_core::telemetry::TelemetryEvent;
+use khora_core::control::pid::{PidConfig, PidController};
+use khora_core::telemetry::{MetricId, TelemetryEvent};
+use khora_data::ecs::layout::{LayoutAdvisor, LayoutRecommendation};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -30,8 +33,75 @@ use std::time::{Duration, Instant};
 use crate::analysis::HeuristicEngine;
 use crate::gorna::GornaArbitrator;
 use crate::registry::AgentRegistry;
-use khora_core::control::gorna::AgentId;
+use khora_core::control::gorna::{
+    AdaptationMode, AgentHints, AgentId, DecisionTrace, EngineHint, TickDecisions,
+};
+use std::collections::HashMap;
 use std::sync::Mutex;
+
+/// Number of recent `(n, time)` samples each per-agent cost model retains.
+const COST_MODEL_CAPACITY: usize = 64;
+
+/// Minimum frame-time samples before the PID acts on the measurement. Below this
+/// the controller holds its current output rather than reacting to thin data.
+const FRAME_TIME_MIN_SAMPLES: usize = 10;
+
+/// How far the PID's budget multiplier must drift from its value at the last
+/// budget issuance before the DCC re-arbitrates on its own. The pressure
+/// heuristics already force negotiation on the way *down*; this is what lets
+/// agents recover (upgrade) once measured frame time settles back under the
+/// setpoint, instead of staying pinned at a degraded strategy.
+const PID_RENEGOTIATE_DELTA: f32 = 0.05;
+
+/// Forecasts the frame's empirical cost (`c·f(n)`) at workload `n`, grouping
+/// agents into concurrent waves: a wave costs its **critical path** (the `max`
+/// of its members), and the frame is the sum over waves.
+///
+/// With an empty `wave_plan` — serial execution, or before the hot path has
+/// published one — every agent is its own singleton wave, so this reduces
+/// exactly to the plain per-agent sum. A model for an agent absent from the
+/// plan is likewise summed as its own singleton (conservative).
+///
+/// Returns `None` until at least one agent has enough distinct-`n` samples to
+/// fit a model — before that the DCC has nothing to anticipate with.
+fn forecast_total_ms(
+    models: &HashMap<AgentId, CostModel>,
+    n: f64,
+    wave_plan: &[Vec<AgentId>],
+) -> Option<f64> {
+    let mut planned: std::collections::HashSet<AgentId> = std::collections::HashSet::new();
+    let mut total = 0.0;
+    let mut any = false;
+
+    for wave in wave_plan {
+        let mut wave_max = 0.0_f64;
+        let mut wave_has = false;
+        for id in wave {
+            planned.insert(*id);
+            if let Some(p) = models.get(id).and_then(|m| m.predict_ms(n)) {
+                wave_max = wave_max.max(p.max(0.0));
+                wave_has = true;
+            }
+        }
+        if wave_has {
+            total += wave_max;
+            any = true;
+        }
+    }
+
+    // Any model not covered by the plan is its own singleton wave.
+    for (id, m) in models {
+        if planned.contains(id) {
+            continue;
+        }
+        if let Some(p) = m.predict_ms(n) {
+            total += p.max(0.0);
+            any = true;
+        }
+    }
+
+    any.then_some(total)
+}
 
 /// Configuration for the DCC Service.
 #[derive(Debug, Clone)]
@@ -44,6 +114,15 @@ pub struct DccConfig {
     /// Timeout for acquiring locks on agents during negotiation.
     /// If an agent lock cannot be acquired within this time, the agent is skipped.
     pub agent_lock_timeout_ms: u64,
+    /// Optional system-RAM budget in bytes. When set, the DCC derives
+    /// [`Context::memory_pressure`] from the tracking allocator's live usage and
+    /// degrades frame budgets as the ceiling approaches. `None` disables the
+    /// signal — chiefly useful on memory-constrained targets.
+    pub memory_budget_bytes: Option<u64>,
+    /// Tuning for the frame-time PID that drives [`Context::global_budget_multiplier`].
+    /// The defaults are conservative gains for the ~20 Hz cold path; expose this
+    /// to retune per target without touching the loop.
+    pub frame_pid: PidConfig,
 }
 
 impl Default for DccConfig {
@@ -52,6 +131,8 @@ impl Default for DccConfig {
             tick_rate: 20,
             telemetry_buffer_size: 1000,
             agent_lock_timeout_ms: 100,
+            memory_budget_bytes: None,
+            frame_pid: PidConfig::default(),
         }
     }
 }
@@ -67,6 +148,25 @@ pub struct DccService {
     running: Arc<AtomicBool>,
     handle: Option<thread::JoinHandle<()>>,
     event_tx: Sender<TelemetryEvent>,
+    /// Per-agent developer-control modes, shared with the cold-path arbitrator.
+    /// Written from any thread (host/editor), read each tick by the DCC loop.
+    adaptation_modes: Arc<std::sync::RwLock<HashMap<AgentId, AdaptationMode>>>,
+    /// Per-agent developer hints (`Cap`, `Prioritize`) that bias arbitration
+    /// without changing game semantics. Written from any thread (host/editor)
+    /// via [`set_hint`](Self::set_hint), read each tick by the DCC loop and fed
+    /// into the arbitrator. The same developer-control axis as `adaptation_modes`.
+    hints: Arc<std::sync::RwLock<HashMap<AgentId, AgentHints>>>,
+    /// Latest read-only layout recommendations per component, derived by the
+    /// DCC from access telemetry via the Data-layer advisor. Glass-box only:
+    /// the DCC *advises*, it never repacks — Data owns its layout (CLAD).
+    layout_recommendations: Arc<std::sync::RwLock<HashMap<String, LayoutRecommendation>>>,
+    /// Whether the DCC is recording GORNA decisions for deterministic replay.
+    decision_recording: Arc<std::sync::RwLock<bool>>,
+    /// The accumulating recorded decision trace (one entry per arbitration tick).
+    recorded_trace: Arc<std::sync::RwLock<DecisionTrace>>,
+    /// When `Some((trace, cursor))`, arbitration replays the trace tick by tick
+    /// instead of negotiating live.
+    replay: Arc<std::sync::RwLock<Option<(DecisionTrace, usize)>>>,
 }
 
 impl DccService {
@@ -81,8 +181,124 @@ impl DccService {
             running: Arc::new(AtomicBool::new(false)),
             handle: None,
             event_tx: tx,
+            adaptation_modes: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            hints: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            layout_recommendations: Arc::new(std::sync::RwLock::new(HashMap::new())),
+            decision_recording: Arc::new(std::sync::RwLock::new(false)),
+            recorded_trace: Arc::new(std::sync::RwLock::new(DecisionTrace::default())),
+            replay: Arc::new(std::sync::RwLock::new(None)),
         };
         (service, rx)
+    }
+
+    /// Sets the [`AdaptationMode`] for an agent — the developer-control surface
+    /// over the adaptive core. Thread-safe; takes effect on the next arbitration
+    /// tick. `Manual(strategy)` pins an agent, `Stable` blocks opportunistic
+    /// upgrades, `Bounded` clamps the range, `Learning` (default) negotiates freely.
+    pub fn set_adaptation_mode(&self, agent_id: AgentId, mode: AdaptationMode) {
+        if let Ok(mut modes) = self.adaptation_modes.write() {
+            modes.insert(agent_id, mode);
+        }
+    }
+
+    /// Returns the [`AdaptationMode`] configured for an agent (default `Learning`).
+    pub fn adaptation_mode(&self, agent_id: AgentId) -> AdaptationMode {
+        self.adaptation_modes
+            .read()
+            .ok()
+            .and_then(|m| m.get(&agent_id).copied())
+            .unwrap_or_default()
+    }
+
+    /// Applies a developer [`EngineHint`] biasing GORNA arbitration — the same
+    /// control axis as [`set_adaptation_mode`](Self::set_adaptation_mode).
+    /// `Cap` bounds an agent's per-frame time budget; `Prioritize` biases its
+    /// negotiation weight. Thread-safe; takes effect on the next arbitration
+    /// tick. Hints persist and accumulate per agent (latest value wins per
+    /// kind) until cleared with [`clear_agent_hints`](Self::clear_agent_hints).
+    /// Advisory only: a `Manual` pin and the death-spiral safety stop still win.
+    pub fn set_hint(&self, hint: EngineHint) {
+        if let Ok(mut hints) = self.hints.write() {
+            hints.entry(hint.agent()).or_default().apply(hint);
+        }
+    }
+
+    /// Clears all developer hints for an agent, restoring engine defaults.
+    /// Thread-safe; takes effect on the next arbitration tick.
+    pub fn clear_agent_hints(&self, agent_id: AgentId) {
+        if let Ok(mut hints) = self.hints.write() {
+            hints.remove(&agent_id);
+        }
+    }
+
+    /// Read-only snapshot of the accumulated per-agent hints (glass-box; safe
+    /// any time), e.g. for the editor's Control-Plane panel.
+    pub fn hints(&self) -> HashMap<AgentId, AgentHints> {
+        self.hints.read().map(|h| h.clone()).unwrap_or_default()
+    }
+
+    /// Read-only snapshot of the per-component layout recommendations the DCC's
+    /// advisor has derived from access telemetry — for the glass-box surface
+    /// (e.g. the editor's Control-Plane panel). Advisory only: the DCC observes
+    /// the Data layer and recommends, it never repacks.
+    pub fn layout_recommendations(&self) -> HashMap<String, LayoutRecommendation> {
+        self.layout_recommendations
+            .read()
+            .map(|m| m.clone())
+            .unwrap_or_default()
+    }
+
+    /// Starts recording GORNA's per-tick decisions into a fresh trace. The
+    /// recording can be replayed later for bit-for-bit reproduction (QA,
+    /// network lockstep, bug repro). Thread-safe; takes effect next tick.
+    pub fn start_decision_recording(&self) {
+        if let Ok(mut rec) = self.decision_recording.write() {
+            *rec = true;
+        }
+        if let Ok(mut trace) = self.recorded_trace.write() {
+            *trace = DecisionTrace::default();
+        }
+    }
+
+    /// Stops recording and returns the captured [`DecisionTrace`].
+    pub fn stop_decision_recording(&self) -> DecisionTrace {
+        if let Ok(mut rec) = self.decision_recording.write() {
+            *rec = false;
+        }
+        self.recorded_decisions()
+    }
+
+    /// A snapshot of the decisions recorded so far (glass-box; safe any time).
+    pub fn recorded_decisions(&self) -> DecisionTrace {
+        self.recorded_trace
+            .read()
+            .map(|t| t.clone())
+            .unwrap_or_default()
+    }
+
+    /// Begins replaying `trace`: each subsequent arbitration tick issues the
+    /// recorded strategies in order (bypassing live fit + `AdaptationMode`)
+    /// until the trace is exhausted, then normal arbitration resumes.
+    pub fn replay_decisions(&self, trace: DecisionTrace) {
+        if let Ok(mut replay) = self.replay.write() {
+            *replay = Some((trace, 0));
+        }
+    }
+
+    /// Stops any in-progress replay, returning to live arbitration.
+    pub fn stop_replay(&self) {
+        if let Ok(mut replay) = self.replay.write() {
+            *replay = None;
+        }
+    }
+
+    /// Whether a replay is currently in progress (trace not yet exhausted).
+    pub fn is_replaying(&self) -> bool {
+        self.replay
+            .read()
+            .ok()
+            .and_then(|r| r.as_ref().map(|(t, c)| *c < t.ticks.len()))
+            .unwrap_or(false)
     }
 
     /// Connects the DCC to the Scheduler's budget channel.
@@ -96,7 +312,7 @@ impl DccService {
     /// Higher priority values mean the agent is updated first in each frame.
     /// The agent is active in all engine modes.
     pub fn register_agent(&self, agent: Arc<std::sync::Mutex<dyn Agent>>, priority: f32) {
-        let mut registry = self.registry.lock().unwrap();
+        let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
         registry.register(agent, priority);
     }
 
@@ -110,7 +326,7 @@ impl DccService {
         priority: f32,
         modes: Vec<EngineMode>,
     ) {
-        let mut registry = self.registry.lock().unwrap();
+        let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
         registry.register_for_mode(agent, priority, modes);
     }
 
@@ -125,14 +341,42 @@ impl DccService {
         let context = Arc::clone(&self.context);
         let registry = Arc::clone(&self.registry);
         let budget_channel = self.budget_channel.clone();
+        let adaptation_modes = Arc::clone(&self.adaptation_modes);
+        let hints = Arc::clone(&self.hints);
+        let layout_recommendations = Arc::clone(&self.layout_recommendations);
+        let decision_recording = Arc::clone(&self.decision_recording);
+        let recorded_trace = Arc::clone(&self.recorded_trace);
+        let replay = Arc::clone(&self.replay);
         let tick_duration = Duration::from_secs_f32(1.0 / self.config.tick_rate as f32);
         let agent_lock_timeout = Duration::from_millis(self.config.agent_lock_timeout_ms);
+        let memory_budget_bytes = self.config.memory_budget_bytes;
+        let frame_pid_cfg = self.config.frame_pid;
 
         let handle = thread::spawn(move || {
             let mut store = MetricStore::new();
             let heuristic_engine = HeuristicEngine;
-            let arbitrator = GornaArbitrator::new(agent_lock_timeout);
+            let mut arbitrator = GornaArbitrator::new(agent_lock_timeout);
             let mut initial_negotiation_done = false;
+            // Per-agent empirical cost models (`c·f(n)`), fed from `AgentCost`
+            // samples and used to forecast budget breaches before they happen.
+            let mut cost_models: HashMap<AgentId, CostModel> = HashMap::new();
+            let mut last_workload_n: f64 = 0.0;
+            // Latest wave plan from the hot path: how agents are grouped for
+            // concurrent execution. Empty until the scheduler publishes one (and
+            // stays empty under serial execution), in which case cost fitting
+            // falls back to summing per-agent costs.
+            let mut latest_wave_plan: Vec<Vec<AgentId>> = Vec::new();
+            // Read-only layout advisor: turns per-component access telemetry into
+            // a recommendation for the glass-box. Stateless (a tuned heuristic).
+            let layout_advisor = LayoutAdvisor::default();
+            // Frame-time PID: regulates the global budget multiplier so measured
+            // frame time tracks the heuristic-suggested latency. Persists across
+            // ticks; `last_tick` gives the real `dt` between updates.
+            let mut frame_pid = PidController::new(frame_pid_cfg);
+            let mut last_tick: Option<Instant> = None;
+            // Multiplier in effect when budgets were last issued — drift beyond
+            // PID_RENEGOTIATE_DELTA re-arbitrates (closes the recovery path).
+            let mut last_issued_multiplier: Option<f32> = None;
 
             log::info!("DCC Service thread started.");
 
@@ -149,13 +393,12 @@ impl DccService {
                         }
                         TelemetryEvent::ResourceReport(_) => {}
                         TelemetryEvent::HardwareReport(report) => {
-                            let mut ctx = context.write().unwrap();
+                            let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
                             ctx.hardware.thermal = report.thermal;
                             ctx.hardware.battery = report.battery;
                             ctx.hardware.cpu_load = report.cpu_load;
                             ctx.hardware.gpu_load = report.gpu_load.unwrap_or(0.0);
                             ctx.hardware.available_vram = report.gpu_timings.as_ref().map(|_| 0);
-                            ctx.refresh_budget_multiplier();
 
                             if let Some(gpu_timings) = report.gpu_timings {
                                 if let Some(frame_time_us) = gpu_timings.frame_total_duration_us() {
@@ -177,7 +420,7 @@ impl DccService {
                             );
                         }
                         TelemetryEvent::PhaseChange(phase_name) => {
-                            let mut ctx = context.write().unwrap();
+                            let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
                             if let Some(new_mode) = EngineMode::from_name(&phase_name) {
                                 log::debug!("DCC Mode: {:?} → {:?}", ctx.mode, new_mode);
                                 ctx.mode = new_mode;
@@ -207,31 +450,211 @@ impl DccService {
                                 report.triangles_rendered as f32,
                             );
                         }
+                        TelemetryEvent::AgentCost { id, n, time_ms } => {
+                            // Feed the per-agent empirical cost model and surface
+                            // the latest time as a glass-box metric.
+                            last_workload_n = n;
+                            cost_models
+                                .entry(id)
+                                .or_insert_with(|| CostModel::new(COST_MODEL_CAPACITY))
+                                .record(n, time_ms);
+                            store.push(
+                                khora_core::telemetry::MetricId::new(
+                                    "agent",
+                                    format!("{id:?}_time_ms"),
+                                ),
+                                time_ms as f32,
+                            );
+                        }
+                        TelemetryEvent::WavePlan { waves } => {
+                            // The hot path republishes this each frame; keep the
+                            // latest so arbitration costs concurrent waves by
+                            // their critical path.
+                            latest_wave_plan = waves;
+                        }
+                        TelemetryEvent::ComponentAccess {
+                            type_name,
+                            size_bytes,
+                            query_count,
+                            rows_scanned,
+                        } => {
+                            // Advise (read-only) which layout this component would
+                            // benefit from, and surface rows-scanned for the
+                            // glass-box. The DCC never repacks — Data owns layout.
+                            let recommendation =
+                                layout_advisor.recommend(size_bytes, query_count, rows_scanned);
+                            if let Ok(mut recs) = layout_recommendations.write() {
+                                recs.insert(type_name.clone(), recommendation);
+                            }
+                            store.push(
+                                khora_core::telemetry::MetricId::new("ecs_access", type_name),
+                                rows_scanned as f32,
+                            );
+                        }
                     }
                 }
 
                 // 2. Perform Analysis & Arbitration
-                let (report, ctx_copy) = {
-                    let mut ctx = context.write().unwrap();
-                    ctx.refresh_budget_multiplier();
+                let (mut report, mut ctx_copy) = {
+                    let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
+                    // Fold the latest tracking-allocator telemetry into the
+                    // context so memory pressure influences the budget alongside
+                    // thermal/battery (the allocator's data drives a decision).
+                    let mem_bytes = store.get_average(&MetricId::new("memory", "current_bytes"));
+                    ctx.hardware.current_ram_bytes = (mem_bytes > 0.0).then_some(mem_bytes as u64);
+                    ctx.hardware.memory_budget_bytes = memory_budget_bytes;
+                    ctx.refresh_memory_pressure();
                     let report = heuristic_engine.analyze(&ctx, &store);
                     (report, ctx.clone())
                 };
+
+                // 2b. Anticipatory budgeting: the empirical per-agent cost models
+                //     forecast the combined frame cost at the current workload. If
+                //     that exceeds the budget, negotiate now and tighten the target
+                //     so GORNA downgrades *before* the frame actually overruns —
+                //     turning the reactive loop predictive (model proposes,
+                //     measurement disposes).
+                if let Some(predicted_ms) =
+                    forecast_total_ms(&cost_models, last_workload_n, &latest_wave_plan)
+                {
+                    if predicted_ms > report.suggested_latency_ms as f64 {
+                        let ratio = (report.suggested_latency_ms as f64 / predicted_ms)
+                            .clamp(0.5, 1.0) as f32;
+                        report.alerts.push(format!(
+                            "Cost-model forecast {:.1}ms > budget {:.1}ms at n={:.0} — tightening to {:.1}ms",
+                            predicted_ms,
+                            report.suggested_latency_ms,
+                            last_workload_n,
+                            report.suggested_latency_ms * ratio
+                        ));
+                        report.suggested_latency_ms *= ratio;
+                        report.needs_negotiation = true;
+                    }
+                }
+
+                // 2b-bis. Frame-time PID: regulate the global budget multiplier so
+                //     the measured frame time tracks the (now-finalized) setpoint
+                //     `report.suggested_latency_ms`. The setpoint already carries
+                //     the thermal/battery/phase modulation; the loop converges the
+                //     multiplier smoothly instead of stepping it. A hard safety
+                //     ceiling (Critical thermal/battery, near-budget memory) caps
+                //     it immediately, independent of loop convergence.
+                let dt = last_tick
+                    .map(|t| start_time.duration_since(t).as_secs_f32())
+                    .unwrap_or_else(|| tick_duration.as_secs_f32());
+                last_tick = Some(start_time);
+
+                let frame_time_id = MetricId::new("renderer", "frame_time");
+                let measured = store.get_average(&frame_time_id);
+                let mut multiplier = if store.get_sample_count(&frame_time_id)
+                    >= FRAME_TIME_MIN_SAMPLES
+                    && measured > 0.0
+                {
+                    frame_pid.update(report.suggested_latency_ms, measured, dt)
+                } else {
+                    frame_pid.output()
+                };
+                multiplier = multiplier.min(safety_ceiling(&ctx_copy));
+                ctx_copy.global_budget_multiplier = multiplier;
+                if let Ok(mut ctx) = context.write() {
+                    ctx.global_budget_multiplier = multiplier;
+                }
+                log::debug!(
+                    "DCC PID: multiplier={:.3} (setpoint={:.2}ms, measured={:.2}ms, dt={:.3}s)",
+                    multiplier,
+                    report.suggested_latency_ms,
+                    measured,
+                    dt
+                );
+
+                // 2b-ter. Re-arbitrate when the PID has moved the effective budget
+                //     significantly since the last issuance — in both directions.
+                //     Pressure heuristics drive downgrades; this drives recovery:
+                //     once measured frame time settles under the setpoint, the
+                //     multiplier climbs back and budgets are re-issued so agents
+                //     can upgrade instead of staying degraded forever.
+                if let Some(last) = last_issued_multiplier {
+                    if (multiplier - last).abs() > PID_RENEGOTIATE_DELTA {
+                        report.needs_negotiation = true;
+                        report.alerts.push(format!(
+                            "PID: budget multiplier {last:.2} → {multiplier:.2} since last issuance — re-arbitrating",
+                        ));
+                    }
+                }
 
                 for alert in &report.alerts {
                     log::info!("DCC Analysis: {}", alert);
                 }
 
+                // 2c. Replay: while a trace is loaded, drive arbitration every
+                //     tick from the recorded decisions (in order) until it is
+                //     exhausted, then fall back to live negotiation.
+                let replay_tick: Option<TickDecisions> = replay
+                    .read()
+                    .ok()
+                    .and_then(|r| r.as_ref().and_then(|(t, c)| t.ticks.get(*c).cloned()));
+                let replaying = replay_tick.is_some();
+
                 // 3. GORNA Negotiation
-                if report.needs_negotiation || !initial_negotiation_done {
-                    let registry_lock = registry.lock().unwrap();
+                if report.needs_negotiation || !initial_negotiation_done || replaying {
+                    let registry_lock = registry.lock().unwrap_or_else(|e| e.into_inner());
                     if !registry_lock.is_empty() {
                         let agents: Vec<_> = registry_lock.iter().cloned().collect();
                         drop(registry_lock);
 
                         let mut agents_slice: Vec<Arc<std::sync::Mutex<dyn Agent>>> = agents;
-                        arbitrator.arbitrate(&ctx_copy, &report, &mut agents_slice);
+                        // Sync developer-control modes into the arbitrator before
+                        // it issues budgets (host may have changed them).
+                        if let Ok(modes) = adaptation_modes.read() {
+                            for (id, mode) in modes.iter() {
+                                arbitrator.set_adaptation_mode(*id, *mode);
+                            }
+                        }
+                        // Snapshot the developer hints for this tick (Cap /
+                        // Prioritize biases). Empty map = no hints = default
+                        // behaviour, so this is bit-identical when unused.
+                        let tick_hints: HashMap<AgentId, AgentHints> =
+                            hints.read().map(|h| h.clone()).unwrap_or_default();
+                        // Per-agent measured costs anchor the agents' self-quoted
+                        // estimates in reality during fitting: prefer the model's
+                        // forecast at the current workload, fall back to the
+                        // latest raw observation when no fit is available yet.
+                        let measured_costs: HashMap<AgentId, f64> = cost_models
+                            .iter()
+                            .filter_map(|(id, m)| {
+                                m.predict_ms(last_workload_n)
+                                    .or_else(|| m.latest_ms())
+                                    .map(|ms| (*id, ms))
+                            })
+                            .collect();
+
+                        // Give the arbitrator the current wave grouping so its
+                        // budget fit costs concurrent waves by their critical
+                        // path (empty plan = serial = sum-of-costs).
+                        arbitrator.set_wave_plan(&latest_wave_plan);
+                        let issued = arbitrator.arbitrate(
+                            &ctx_copy,
+                            &report,
+                            &mut agents_slice,
+                            &measured_costs,
+                            replay_tick.as_ref(),
+                            &tick_hints,
+                        );
                         initial_negotiation_done = true;
+                        last_issued_multiplier = Some(multiplier);
+
+                        // Advance the replay cursor, or record this tick's decisions.
+                        if replaying {
+                            if let Ok(mut r) = replay.write() {
+                                if let Some((_, cursor)) = r.as_mut() {
+                                    *cursor += 1;
+                                }
+                            }
+                        } else if decision_recording.read().map(|b| *b).unwrap_or(false) {
+                            if let Ok(mut trace) = recorded_trace.write() {
+                                trace.ticks.push(issued);
+                            }
+                        }
 
                         // Send budgets through the budget channel to the Scheduler.
                         if let Some(ref budget_channel) = budget_channel {
@@ -287,7 +710,7 @@ impl DccService {
 
     /// Returns the current context.
     pub fn get_context(&self) -> Context {
-        self.context.read().unwrap().clone()
+        self.context.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Returns a shared handle to the live context.
@@ -341,13 +764,13 @@ mod tests {
     use super::*;
     use crate::EngineMode;
     use khora_core::control::gorna::{
-        AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-        StrategyOption,
+        AdaptationMode, AgentId, AgentStatus, NegotiationRequest, NegotiationResponse,
+        ResourceBudget, StrategyId, StrategyOption,
     };
     use khora_core::telemetry::{MetricId, MetricValue};
 
     struct StubAgent {
-        budget_applied: bool,
+        applied: Option<StrategyId>,
     }
 
     impl Agent for StubAgent {
@@ -356,21 +779,28 @@ mod tests {
         }
         fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
             NegotiationResponse {
-                strategies: vec![StrategyOption {
-                    id: StrategyId::Balanced,
-                    estimated_time: Duration::from_millis(8),
-                    estimated_vram: 1024,
-                }],
+                strategies: vec![
+                    StrategyOption {
+                        id: StrategyId::LowPower,
+                        estimated_time: Duration::from_millis(2),
+                        estimated_vram: 1024,
+                    },
+                    StrategyOption {
+                        id: StrategyId::Balanced,
+                        estimated_time: Duration::from_millis(8),
+                        estimated_vram: 1024,
+                    },
+                ],
                 timing_adjustment: None,
             }
         }
-        fn apply_budget(&mut self, _: ResourceBudget) {
-            self.budget_applied = true;
+        fn apply_budget(&mut self, budget: ResourceBudget) {
+            self.applied = Some(budget.strategy_id);
         }
         fn report_status(&self) -> AgentStatus {
             AgentStatus {
                 agent_id: AgentId::Renderer,
-                current_strategy: StrategyId::Balanced,
+                current_strategy: self.applied.unwrap_or(StrategyId::Balanced),
                 health_score: 1.0,
                 is_stalled: false,
                 message: String::new(),
@@ -429,25 +859,360 @@ mod tests {
     }
 
     #[test]
+    fn test_forecast_total_ms_sums_agent_models() {
+        // No models yet → nothing to anticipate.
+        let mut models: HashMap<AgentId, CostModel> = HashMap::new();
+        assert!(forecast_total_ms(&models, 100.0, &[]).is_none());
+
+        // Renderer: linear 3·n; Physics: linear 2·n.
+        let mut renderer = CostModel::new(16);
+        let mut physics = CostModel::new(16);
+        for n in [10.0, 20.0, 40.0] {
+            renderer.record(n, 3.0 * n);
+            physics.record(n, 2.0 * n);
+        }
+        models.insert(AgentId::Renderer, renderer);
+        models.insert(AgentId::Physics, physics);
+
+        // Serial (empty plan): 300 + 200 = 500ms (within fit tolerance).
+        let total = forecast_total_ms(&models, 100.0, &[]).expect("a fit is available");
+        assert!((total - 500.0).abs() < 1.0, "serial forecast = {total}");
+
+        // Concurrent wave [Renderer, Physics]: critical path = max(300, 200).
+        let plan = vec![vec![AgentId::Renderer, AgentId::Physics]];
+        let concurrent = forecast_total_ms(&models, 100.0, &plan).expect("a fit is available");
+        assert!(
+            (concurrent - 300.0).abs() < 1.0,
+            "concurrent forecast = {concurrent}"
+        );
+    }
+
+    #[test]
+    fn test_dcc_ingests_agent_cost_and_component_access() {
+        // Smoke test for the observation-tunnel variants: the DCC must ingest
+        // AgentCost + ComponentAccess without panicking and keep running.
+        let (mut dcc, rx) = DccService::new(DccConfig::default());
+        let tx = dcc.event_sender();
+        dcc.start(rx);
+
+        tx.send(TelemetryEvent::AgentCost {
+            id: AgentId::Renderer,
+            n: 1000.0,
+            time_ms: 4.2,
+        })
+        .unwrap();
+        tx.send(TelemetryEvent::ComponentAccess {
+            type_name: "Transform".to_string(),
+            size_bytes: 40,
+            query_count: 12,
+            rows_scanned: 12_000,
+        })
+        .unwrap();
+
+        thread::sleep(Duration::from_millis(50));
+        assert!(dcc.running.load(Ordering::SeqCst));
+        dcc.stop();
+    }
+
+    #[test]
+    fn test_dcc_layout_advisor_produces_recommendation() {
+        // A lean component swept in large batches → the advisor recommends the
+        // field-SoA/SIMD layout, surfaced read-only via `layout_recommendations`.
+        let (mut dcc, rx) = DccService::new(DccConfig::default());
+        let tx = dcc.event_sender();
+        dcc.start(rx);
+
+        tx.send(TelemetryEvent::ComponentAccess {
+            type_name: "Velocity".to_string(),
+            size_bytes: 40,
+            query_count: 10,
+            rows_scanned: 40_960, // avg 4096 rows/query ≥ large-batch threshold
+        })
+        .unwrap();
+
+        thread::sleep(Duration::from_millis(80));
+        let recs = dcc.layout_recommendations();
+        dcc.stop();
+
+        assert_eq!(
+            recs.get("Velocity"),
+            Some(&LayoutRecommendation::SimdFieldSoa),
+            "advisor should recommend field-SoA for a lean, large-batch component"
+        );
+    }
+
+    #[test]
+    fn test_dcc_records_decisions() {
+        let (mut dcc, rx) = DccService::new(DccConfig {
+            tick_rate: 100,
+            ..Default::default()
+        });
+        let agent = Arc::new(std::sync::Mutex::new(StubAgent { applied: None }));
+        dcc.register_agent(agent, 1.0);
+        dcc.start_decision_recording();
+        dcc.start(rx);
+
+        thread::sleep(Duration::from_millis(150));
+        let trace = dcc.stop_decision_recording();
+        dcc.stop();
+
+        assert!(
+            !trace.ticks.is_empty(),
+            "recording should capture at least one arbitration tick"
+        );
+        assert!(
+            trace
+                .ticks
+                .iter()
+                .all(|tick| tick.iter().any(|(id, _)| *id == AgentId::Renderer)),
+            "every recorded tick should include the registered agent"
+        );
+    }
+
+    #[test]
+    fn test_dcc_replay_flag_control() {
+        let (dcc, _rx) = DccService::new(DccConfig::default());
+        assert!(!dcc.is_replaying());
+
+        let trace = DecisionTrace {
+            ticks: vec![vec![(AgentId::Renderer, StrategyId::LowPower)]],
+        };
+        dcc.replay_decisions(trace);
+        assert!(dcc.is_replaying());
+
+        dcc.stop_replay();
+        assert!(!dcc.is_replaying());
+    }
+
+    #[test]
     fn test_dcc_initial_negotiation_fires_with_agent() {
         let (mut dcc, rx) = DccService::new(DccConfig {
             tick_rate: 100,
             ..Default::default()
         });
-        let agent = Arc::new(std::sync::Mutex::new(StubAgent {
-            budget_applied: false,
-        }));
+        let agent = Arc::new(std::sync::Mutex::new(StubAgent { applied: None }));
         dcc.register_agent(agent.clone(), 1.0);
         dcc.start(rx);
 
         thread::sleep(Duration::from_millis(200));
 
-        let applied = agent.lock().unwrap().budget_applied;
+        let applied = agent.lock().unwrap().applied.is_some();
         dcc.stop();
 
         assert!(
             applied,
             "Initial GORNA negotiation should have called apply_budget"
+        );
+    }
+
+    #[test]
+    fn test_dcc_manual_mode_pins_strategy() {
+        let (mut dcc, rx) = DccService::new(DccConfig {
+            tick_rate: 100,
+            ..Default::default()
+        });
+        let agent = Arc::new(std::sync::Mutex::new(StubAgent { applied: None }));
+        dcc.register_agent(agent.clone(), 1.0);
+        // Developer pins the agent to LowPower. With ample budget, `Learning`
+        // would otherwise pick Balanced (the most expensive offered strategy).
+        dcc.set_adaptation_mode(
+            AgentId::Renderer,
+            AdaptationMode::Manual(StrategyId::LowPower),
+        );
+        dcc.start(rx);
+
+        thread::sleep(Duration::from_millis(200));
+
+        let applied = agent.lock().unwrap().applied;
+        dcc.stop();
+
+        assert_eq!(
+            applied,
+            Some(StrategyId::LowPower),
+            "Manual mode set via DccService should pin the agent's strategy"
+        );
+    }
+
+    #[test]
+    fn test_pid_drives_multiplier_down_under_overrun() {
+        // A sustained frame time well above the 16.66ms target must make the PID
+        // loop pull the global budget multiplier below 1.0 over several ticks.
+        let (mut dcc, rx) = DccService::new(DccConfig {
+            tick_rate: 100,
+            ..Default::default()
+        });
+        let tx = dcc.event_sender();
+        dcc.start(rx);
+
+        let frame_time_id = MetricId::new("renderer", "frame_time");
+        // Feed a steady stream of 40ms frames (≫ the 16.66ms setpoint).
+        for _ in 0..40 {
+            tx.send(TelemetryEvent::MetricUpdate {
+                id: frame_time_id.clone(),
+                value: MetricValue::Gauge(40.0),
+            })
+            .unwrap();
+            thread::sleep(Duration::from_millis(5));
+        }
+        thread::sleep(Duration::from_millis(100));
+
+        let multiplier = dcc.get_context().global_budget_multiplier;
+        dcc.stop();
+
+        assert!(
+            multiplier < 1.0,
+            "sustained overrun should pull the multiplier below 1.0, got {multiplier}"
+        );
+        assert!(
+            multiplier >= 0.3,
+            "multiplier must respect the output floor, got {multiplier}"
+        );
+    }
+
+    /// Stub whose two strategies straddle the frame budget: Balanced (14ms)
+    /// fits the 16.66ms target only when the budget multiplier is near 1.0,
+    /// so a degraded multiplier forces LowPower and a recovered one allows
+    /// the upgrade back — making the recovery path observable.
+    struct RecoveryStubAgent {
+        applied: Option<StrategyId>,
+    }
+
+    impl Agent for RecoveryStubAgent {
+        fn id(&self) -> AgentId {
+            AgentId::Renderer
+        }
+        fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
+            NegotiationResponse {
+                strategies: vec![
+                    StrategyOption {
+                        id: StrategyId::LowPower,
+                        estimated_time: Duration::from_millis(2),
+                        estimated_vram: 0,
+                    },
+                    StrategyOption {
+                        id: StrategyId::Balanced,
+                        estimated_time: Duration::from_millis(14),
+                        estimated_vram: 0,
+                    },
+                ],
+                timing_adjustment: None,
+            }
+        }
+        fn apply_budget(&mut self, budget: ResourceBudget) {
+            self.applied = Some(budget.strategy_id);
+        }
+        fn report_status(&self) -> AgentStatus {
+            AgentStatus {
+                agent_id: AgentId::Renderer,
+                current_strategy: self.applied.unwrap_or(StrategyId::LowPower),
+                health_score: 1.0,
+                is_stalled: false,
+                message: String::new(),
+            }
+        }
+        fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
+
+    #[test]
+    fn test_pid_recovery_reissues_budgets_and_upgrades() {
+        // Once measured frame time settles back under the setpoint, the PID
+        // multiplier climbs and its drift past PID_RENEGOTIATE_DELTA must
+        // re-arbitrate so the agent is upgraded — without this trigger the
+        // agent would stay pinned at the degraded strategy forever (no
+        // pressure heuristic fires when everything is healthy).
+        let (mut dcc, rx) = DccService::new(DccConfig {
+            tick_rate: 100,
+            ..Default::default()
+        });
+        let agent = Arc::new(std::sync::Mutex::new(RecoveryStubAgent { applied: None }));
+        dcc.register_agent(agent.clone(), 1.0);
+        let tx = dcc.event_sender();
+        dcc.start(rx);
+
+        let frame_time_id = MetricId::new("renderer", "frame_time");
+
+        // Phase 1 — sustained overrun (40ms ≫ 16.66ms): the PID pulls the
+        // multiplier down until Balanced (14ms) no longer fits and the agent
+        // is downgraded to LowPower. Poll instead of a fixed sleep.
+        let mut degraded = false;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            tx.send(TelemetryEvent::MetricUpdate {
+                id: frame_time_id.clone(),
+                value: khora_core::telemetry::MetricValue::Gauge(40.0),
+            })
+            .unwrap();
+            thread::sleep(Duration::from_millis(5));
+            if agent.lock().unwrap().applied == Some(StrategyId::LowPower) {
+                degraded = true;
+                break;
+            }
+        }
+        assert!(
+            degraded,
+            "sustained overrun should downgrade the agent to LowPower"
+        );
+
+        // Phase 2 — recovery (5ms ≪ 16.66ms): the averages drop below every
+        // pressure threshold, so only the PID-drift trigger can re-issue
+        // budgets. The multiplier climbs back and the agent must be upgraded.
+        let mut recovered = false;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            tx.send(TelemetryEvent::MetricUpdate {
+                id: frame_time_id.clone(),
+                value: khora_core::telemetry::MetricValue::Gauge(5.0),
+            })
+            .unwrap();
+            thread::sleep(Duration::from_millis(5));
+            if agent.lock().unwrap().applied == Some(StrategyId::Balanced) {
+                recovered = true;
+                break;
+            }
+        }
+        dcc.stop();
+
+        assert!(
+            recovered,
+            "once frame time settles, the PID drift must re-arbitrate and upgrade the agent"
+        );
+    }
+
+    #[test]
+    fn test_critical_thermal_clamps_multiplier() {
+        // A Critical thermal report must clamp the multiplier to the hard safety
+        // ceiling (0.4) immediately, regardless of the PID's current position.
+        let (mut dcc, rx) = DccService::new(DccConfig {
+            tick_rate: 100,
+            ..Default::default()
+        });
+        let tx = dcc.event_sender();
+        dcc.start(rx);
+
+        tx.send(TelemetryEvent::HardwareReport(
+            khora_core::telemetry::monitoring::HardwareReport {
+                thermal: khora_core::platform::ThermalStatus::Critical,
+                battery: khora_core::platform::BatteryLevel::Mains,
+                cpu_load: 0.2,
+                gpu_load: Some(0.2),
+                gpu_timings: None,
+            },
+        ))
+        .unwrap();
+        thread::sleep(Duration::from_millis(120));
+
+        let multiplier = dcc.get_context().global_budget_multiplier;
+        dcc.stop();
+
+        assert!(
+            multiplier <= 0.4 + 1e-3,
+            "Critical thermal must clamp the multiplier to the safety ceiling, got {multiplier}"
         );
     }
 }

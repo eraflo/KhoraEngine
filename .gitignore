@@ -21,3 +21,38 @@ target/
 
 # GitAgent runtime state
 .gitagent/
+
+.codegraph/
+
+# >>> khora-ai (generated) >>>
+# Generated AI provider wrappers — do NOT commit. Regenerate with:
+#   node .agent/<profile>/installer/bin/khora-ai.mjs install all
+/.agent/.khora-ai.json
+/.claude/agents/.impeccable/hook.cache.json
+/.claude/agents/codebase-analyzer.md
+/.claude/agents/codebase-locator.md
+/.claude/agents/codebase-pattern-finder.md
+/.claude/agents/knowledge-locator.md
+/.claude/agents/orchestrator.md
+/.claude/agents/security-auditor.md
+/.claude/settings.json
+/.claude/settings.local.json
+/.claude/skills/add-a-component/SKILL.md
+/.claude/skills/add-a-lane/SKILL.md
+/.claude/skills/add-a-shader/SKILL.md
+/.claude/skills/add-an-agent/SKILL.md
+/.claude/skills/build-and-test/SKILL.md
+/.claude/skills/create-plan/SKILL.md
+/.claude/skills/debug-frame/SKILL.md
+/.claude/skills/impeccable/
+/.claude/skills/implement-plan/SKILL.md
+/.claude/skills/release-checklist/SKILL.md
+/.claude/skills/research-codebase/SKILL.md
+/.claude/skills/run-the-engine/SKILL.md
+/.cursor/skills/impeccable/
+/.gemini/skills/impeccable/
+/.github/skills/impeccable/
+/.khora/
+/AGENTS.md
+/CLAUDE.md
+# <<< khora-ai <<<

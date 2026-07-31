@@ -2,6 +2,8 @@
 name = "khora-agents"
 version = "0.1.1"
 edition = "2021"
+rust-version.workspace = true
+license.workspace = true
 description = "Intelligent wrappers driving the Lanes"
 
 [dependencies]
@@ -25,4 +27,5 @@ tempfile = "3.25.0"
 bincode = { version = "2.0.1", features = ["serde"] }
 
 [dev-dependencies]
+khora-control = { path = "../khora-control" }
 khora-infra = { path = "../khora-infra", features = ["physics"] }

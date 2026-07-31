@@ -17,6 +17,7 @@
 use bincode::{Decode, Encode};
 
 use crate::ecs::{AnyVec, Component};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
     any::{self, TypeId},
     collections::HashMap,
@@ -44,11 +45,141 @@ pub enum SemanticDomain {
     Ui,
 }
 
+impl SemanticDomain {
+    /// Number of semantic domains — sizes fixed per-domain tables such as the
+    /// [`World`](crate::ecs::World)'s change epochs.
+    pub const COUNT: usize = 5;
+
+    /// Dense index of this domain in `0..COUNT`, used to address fixed
+    /// per-domain arrays without a `HashMap` lookup.
+    pub const fn index(self) -> usize {
+        match self {
+            SemanticDomain::Spatial => 0,
+            SemanticDomain::Render => 1,
+            SemanticDomain::Audio => 2,
+            SemanticDomain::Physics => 3,
+            SemanticDomain::Ui => 4,
+        }
+    }
+}
+
+/// Who is allowed to write a component — the axis orthogonal to
+/// [`SemanticDomain`].
+///
+/// `SemanticDomain` answers *which subsystem consumes this data* and drives
+/// change epochs, page grouping and `Flow` gating. It deliberately says nothing
+/// about **authorship**: `Transform` and `GlobalTransform` are both `Spatial`,
+/// yet one is written by a human and the other is recomputed every frame by
+/// `transform_propagation`. `Collider` and `PhysicsDebugData` are both
+/// `Physics`, yet one is an input and the other is debug output.
+///
+/// Without this axis the same intent gets re-encoded ad hoc at every site that
+/// needs it — which component to offer in "Add Component", which to copy when
+/// duplicating an entity, which to write to a scene file. Each such list is
+/// hand-maintained, so none of them covers components defined outside this
+/// crate.
+///
+/// The four variants encode two independent bits:
+///
+/// | variant | offered to the author | copied on duplicate |
+/// |---|---|---|
+/// | [`Authored`](Self::Authored) | yes | yes |
+/// | [`ToolAuthored`](Self::ToolAuthored) | no | yes |
+/// | [`Derived`](Self::Derived) | no | no |
+/// | [`Runtime`](Self::Runtime) | no | no |
+///
+/// Persistence stays a separate question, governed by
+/// `#[component(no_serializable)]` and `#[component(skip)]` — a `ToolAuthored`
+/// component such as `Prefab` must persist even though nobody adds it by hand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ComponentProvenance {
+    /// Written by a human through the editor or by game code. Belongs in a
+    /// scene file, survives duplication, and is offered in "Add Component".
+    /// This is the default for any component that does not say otherwise.
+    #[default]
+    Authored,
+
+    /// Written by a tool action rather than by hand — `Prefab`, whose `source`
+    /// is set by "instantiate prefab". It persists and must survive
+    /// duplication, but adding an empty one by hand is meaningless, so it is
+    /// not offered in the menu.
+    ToolAuthored,
+
+    /// Recomputed by the engine from `Authored` state — `GlobalTransform` from
+    /// `Transform` + `Parent`, or the `HandleComponent<Gpu*>` projections from
+    /// their asset handles. A duplicate must **not** carry a copy: the engine
+    /// regenerates it, and a stale copy would be wrong until it did.
+    Derived,
+
+    /// Per-run transient state that no one authors and nothing recomputes from
+    /// authored data — `PhysicsDebugData`. Never offered, never copied.
+    Runtime,
+}
+
+impl ComponentProvenance {
+    /// Whether the editor should offer this component in "+ Add Component".
+    ///
+    /// Only [`Authored`](Self::Authored) qualifies: everything else is written
+    /// by the engine or by a tool action.
+    pub const fn is_hand_authorable(self) -> bool {
+        matches!(self, ComponentProvenance::Authored)
+    }
+
+    /// Whether duplicating an entity should copy this component verbatim.
+    ///
+    /// `Derived` and `Runtime` are excluded because the engine produces them:
+    /// copying would install a stale value that the next tick overwrites at
+    /// best, and that reads as corrupt state at worst.
+    pub const fn is_copied_on_duplicate(self) -> bool {
+        matches!(
+            self,
+            ComponentProvenance::Authored | ComponentProvenance::ToolAuthored
+        )
+    }
+}
+
+/// How a component column is physically laid out in memory.
+///
+/// **AGDF** (adaptive data *layout*) adapts this per component as Data
+/// self-maintenance, observed by the DCC. The default is plain `Soa`, so this
+/// descriptor is **inert** until an actual repack happens — adding it changes
+/// no behaviour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LayoutPolicy {
+    /// Structure-of-Arrays: one contiguous `Vec<T>` (today's only layout).
+    #[default]
+    Soa,
+    /// Array-of-Structures-of-Arrays: SIMD-friendly tiles of `lanes` elements.
+    AoSoA {
+        /// Tile width in elements (e.g. 8 for AVX2 `f32`).
+        lanes: u8,
+    },
+}
+
+/// Online access-pattern counters for one component type.
+///
+/// Updated **once per query** (off the per-element hot path), read by the DCC /
+/// telemetry to decide whether a memory-layout repack would pay off. Atomics so
+/// they can be recorded through `&self`. One small entry per component *type*
+/// (not per entity): the memory cost is constant, not proportional to the world.
+#[derive(Debug, Default)]
+pub struct AccessCounters {
+    /// Number of queries that touched this component.
+    pub query_count: AtomicU64,
+    /// Cumulative rows visited across those queries.
+    pub rows_scanned: AtomicU64,
+}
+
 /// Stores the set of type-erased functions for a registered component.
 #[derive(Debug)]
 struct ComponentVTable {
     /// The semantic domain this component belongs to.
     domain: SemanticDomain,
+    /// Current physical layout of this component's columns (default `Soa`).
+    layout: LayoutPolicy,
+    /// `size_of::<T>()` — recorded at registration (where `T` is known) so the
+    /// layout advisor can reason about component "fatness" from a `TypeId` alone.
+    size_bytes: usize,
     /// Creates a new, empty `Box<dyn AnyVec>` for this component type.
     create_column: fn() -> Box<dyn AnyVec>,
     /// Copies a single element from a source column to a destination column.
@@ -64,6 +195,8 @@ struct ComponentVTable {
 pub struct ComponentRegistry {
     /// Maps a component's `TypeId` to its VTable of operations.
     mapping: HashMap<TypeId, ComponentVTable>,
+    /// Per-component-type online access-pattern counters (layout adaptation).
+    access: HashMap<TypeId, AccessCounters>,
 }
 
 impl ComponentRegistry {
@@ -73,19 +206,83 @@ impl ComponentRegistry {
             TypeId::of::<T>(),
             ComponentVTable {
                 domain,
-                create_column: || Box::new(Vec::<T>::new()),
-                copy_row: |src_col, src_row, dest_col| unsafe {
-                    let src_vec = src_col.as_any().downcast_ref::<Vec<T>>().unwrap();
-                    let dest_vec = dest_col.as_any_mut().downcast_mut::<Vec<T>>().unwrap();
-                    dest_vec.push(src_vec.get_unchecked(src_row).clone());
-                },
+                layout: LayoutPolicy::Soa,
+                size_bytes: std::mem::size_of::<T>(),
+                // Column creation, row-push, and cross-page row-copy all route
+                // through the `Component` trait hooks, which default to the AoS
+                // `Vec<T>` column and are overridden by field-SoA components.
+                create_column: T::make_column,
+                copy_row: T::copy_row_between,
             },
         );
+        // Ensure an access-counter slot exists for this component type.
+        self.access.entry(TypeId::of::<T>()).or_default();
     }
 
     /// Looks up the `SemanticDomain` for a given `TypeId`.
     pub fn get_domain(&self, type_id: TypeId) -> Option<SemanticDomain> {
         self.mapping.get(&type_id).map(|vtable| vtable.domain)
+    }
+
+    /// Returns the [`LayoutPolicy`] a component is currently stored with.
+    pub fn layout_of(&self, type_id: TypeId) -> Option<LayoutPolicy> {
+        self.mapping.get(&type_id).map(|v| v.layout)
+    }
+
+    /// Sets the intended [`LayoutPolicy`] for a component. The actual repack of
+    /// stored columns is performed by the layout-adaptation pass; this only
+    /// records the target.
+    pub fn set_layout(&mut self, type_id: TypeId, layout: LayoutPolicy) {
+        if let Some(v) = self.mapping.get_mut(&type_id) {
+            v.layout = layout;
+        }
+    }
+
+    /// Records one access: increments the query count and adds `rows` to the
+    /// scanned total for every component in `type_ids`. Lock-free, called once
+    /// per query — never per element.
+    pub fn record_access(&self, type_ids: &[TypeId], rows: u64) {
+        for tid in type_ids {
+            if let Some(c) = self.access.get(tid) {
+                c.query_count.fetch_add(1, Ordering::Relaxed);
+                c.rows_scanned.fetch_add(rows, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// Returns `(query_count, rows_scanned)` for a component, if registered.
+    pub fn access_stats(&self, type_id: TypeId) -> Option<(u64, u64)> {
+        self.access.get(&type_id).map(|c| {
+            (
+                c.query_count.load(Ordering::Relaxed),
+                c.rows_scanned.load(Ordering::Relaxed),
+            )
+        })
+    }
+
+    /// `size_of` for a registered component type, or `None` if unregistered.
+    pub fn size_of(&self, type_id: TypeId) -> Option<usize> {
+        self.mapping.get(&type_id).map(|v| v.size_bytes)
+    }
+
+    /// Snapshot of every registered component's `(type_id, size_bytes,
+    /// query_count, rows_scanned)` — the input the DCC's layout advisor reads
+    /// (read-only; observation tunnel). Allocates a small `Vec` (one entry per
+    /// component *type*), so it is cheap enough to sample off the hot path.
+    pub fn access_snapshot(&self) -> Vec<(TypeId, usize, u64, u64)> {
+        self.access
+            .iter()
+            .filter_map(|(tid, c)| {
+                self.mapping.get(tid).map(|v| {
+                    (
+                        *tid,
+                        v.size_bytes,
+                        c.query_count.load(Ordering::Relaxed),
+                        c.rows_scanned.load(Ordering::Relaxed),
+                    )
+                })
+            })
+            .collect()
     }
 
     /// (Internal) Gets the column constructor function for a given TypeId.
@@ -115,6 +312,20 @@ impl ComponentRegistry {
     }
 }
 
+/// Inventory entry submitted by `#[derive(Component)]` when the type carries a
+/// `#[component(domain = ...)]` attribute.
+///
+/// Each entry registers one concrete component type into a [`crate::ecs::World`]
+/// with its declared [`SemanticDomain`], so domain assignment is a **property of
+/// the type** (single source of truth) instead of a hand-maintained list in
+/// `World::new`. Collected via [`inventory`] and replayed by `World::new`.
+pub struct ComponentDomainRegistration {
+    /// Registers the component into `world` (calls `World::register_component`).
+    pub register: fn(&mut crate::ecs::World),
+}
+
+inventory::collect!(ComponentDomainRegistration);
+
 /// A registry that provides reflection data, like type names.
 #[derive(Debug, Default)]
 pub struct TypeRegistry {
@@ -141,5 +352,40 @@ impl TypeRegistry {
     /// Gets the TypeId for a given string name.
     pub(crate) fn get_id_of(&self, type_name: &str) -> Option<TypeId> {
         self.name_to_id.get(type_name).copied()
+    }
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::ComponentProvenance;
+    use super::ComponentProvenance::*;
+
+    /// Only author-written components reach the "Add Component" menu — the
+    /// whole point of the axis is that engine-written types opt out by
+    /// construction rather than via a hand-maintained denylist.
+    #[test]
+    fn only_authored_is_hand_authorable() {
+        assert!(Authored.is_hand_authorable());
+        assert!(!ToolAuthored.is_hand_authorable());
+        assert!(!Derived.is_hand_authorable());
+        assert!(!Runtime.is_hand_authorable());
+    }
+
+    /// Duplication copies what a human or a tool put there, and lets the
+    /// engine rebuild the rest. `ToolAuthored` is the variant that separates
+    /// the two bits: not offered in the menu, but still copied.
+    #[test]
+    fn engine_written_components_are_not_copied() {
+        assert!(Authored.is_copied_on_duplicate());
+        assert!(ToolAuthored.is_copied_on_duplicate());
+        assert!(!Derived.is_copied_on_duplicate());
+        assert!(!Runtime.is_copied_on_duplicate());
+    }
+
+    /// A component says nothing about provenance unless it opts out, so the
+    /// default has to be the author's data.
+    #[test]
+    fn default_is_authored() {
+        assert_eq!(ComponentProvenance::default(), Authored);
     }
 }

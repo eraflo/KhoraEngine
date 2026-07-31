@@ -17,9 +17,16 @@
 pub mod descriptor;
 pub mod enums;
 pub mod layout;
+pub mod spec;
 pub mod state;
 
 pub use self::descriptor::*;
 pub use self::enums::*;
 pub use self::layout::*;
+pub use self::spec::*;
 pub use self::state::*;
+
+// `ComputePipelineId` is defined alongside the compute command types; re-export
+// it here so compute pipeline specs + the `PipelineSystem` trait can reference
+// it under the `pipeline` module like `RenderPipelineId`.
+pub use crate::renderer::api::command::ComputePipelineId;

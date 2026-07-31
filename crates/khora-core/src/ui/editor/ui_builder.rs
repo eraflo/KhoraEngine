@@ -19,6 +19,7 @@
 //! each call into the underlying UI library.
 
 use super::viewport_texture::ViewportTextureHandle;
+use crate::platform::input::KeyCode;
 
 /// Result of an [`UiBuilder::interact_rect`] call.
 #[derive(Debug, Clone, Copy, Default)]
@@ -31,6 +32,12 @@ pub struct Interaction {
     pub pressed: bool,
     /// Pointer double-clicked inside the rect this frame.
     pub double_clicked: bool,
+    /// This widget holds keyboard focus.
+    ///
+    /// Without it no widget can draw a focus ring, so a keyboard user has no
+    /// way to see where they are — which is why the editor's keyboard story
+    /// could not be built before this existed.
+    pub focused: bool,
 }
 
 /// Font family hint passed to [`UiBuilder::paint_text_styled`]. Backends map
@@ -41,8 +48,25 @@ pub enum FontFamilyHint {
     Proportional,
     /// Monospaced (Geist Mono if installed).
     Monospace,
+    /// Display / serif face for headings and hero numerals (Fraunces if
+    /// installed). Falls back to the proportional family when absent.
+    Display,
     /// Icon font (Lucide if installed). Pass single-char codepoints.
     Icons,
+}
+
+/// Outcome of an [`UiBuilder::inline_text_field`] this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InlineEditEvent {
+    /// Still editing (or backend has no real text field).
+    #[default]
+    Idle,
+    /// The text changed this frame (not yet committed).
+    Changed,
+    /// The user confirmed the edit (Enter, or focus lost without Escape).
+    Committed,
+    /// The user cancelled the edit (Escape).
+    Cancelled,
 }
 
 /// Horizontal alignment for [`UiBuilder::paint_text_styled`].
@@ -115,7 +139,19 @@ pub trait UiBuilder {
     /// Drop-down combo box picking among string options.
     /// `current` is the index of the currently selected item.
     /// Returns `true` when the selection changed.
-    fn combo_box(&mut self, label: &str, current: &mut usize, options: &[&str]) -> bool;
+    /// Dropdown over `options`, writing the picked index into `current`.
+    ///
+    /// `id_salt` must be stable across frames and unique among sibling combo
+    /// boxes: the backend keys the popup's open state on it. Deriving it from
+    /// `label` is not enough — the inspector's generic enum walker labels every
+    /// switchable enum the same way.
+    fn combo_box(
+        &mut self,
+        id_salt: &str,
+        label: &str,
+        current: &mut usize,
+        options: &[&str],
+    ) -> bool;
 
     // ── Layout ─────────────────────────────────────────
 
@@ -139,6 +175,77 @@ pub trait UiBuilder {
     /// Scrollable area.
     fn scroll_area(&mut self, id: &str, f: &mut dyn FnMut(&mut dyn UiBuilder));
 
+    /// Inset panel along the top edge of the current region.
+    ///
+    /// Splits the layout vertically: the closure draws into the top
+    /// `height` pixels, then the rest of the region is left for
+    /// subsequent calls (typically a [`central_inset`](Self::central_inset)).
+    /// Used by tools that want a header bar nested inside a screen
+    /// (the hub does this for its title bar).
+    ///
+    /// Default implementation is a no-op so the trait stays
+    /// object-safe — the egui backend overrides it.
+    fn top_inset_panel(&mut self, id: &str, height: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let _ = (id, height, f);
+    }
+
+    /// Inset panel along the bottom edge — counterpart of
+    /// [`top_inset_panel`](Self::top_inset_panel).
+    fn bottom_inset_panel(&mut self, id: &str, height: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let _ = (id, height, f);
+    }
+
+    /// Inset sidebar on the left edge of the current region.
+    ///
+    /// Splits the layout horizontally: the closure draws into the
+    /// left `width` pixels.
+    fn left_inset_panel(&mut self, id: &str, width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let _ = (id, width, f);
+    }
+
+    /// Inset sidebar on the right edge — counterpart of
+    /// [`left_inset_panel`](Self::left_inset_panel).
+    fn right_inset_panel(&mut self, id: &str, width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let _ = (id, width, f);
+    }
+
+    /// Central region — fills whatever space remains after the inset
+    /// panels above were placed.
+    fn central_inset(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let _ = f;
+    }
+
+    /// Wraps `f` in a visual frame: paints the optional fill / stroke /
+    /// rounded background first, then runs `f` inside the inner
+    /// content rect (after applying `margin`).
+    ///
+    /// Replaces the old `egui::Frame::new().inner_margin(...).show(...)`
+    /// idiom for tool apps that want decorative frames without
+    /// importing a backend type.
+    fn frame_box(
+        &mut self,
+        margin: crate::ui::Margin,
+        fill: Option<crate::math::LinearRgba>,
+        stroke: crate::ui::Stroke,
+        radius: crate::ui::CornerRadius,
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let _ = (margin, fill, stroke, radius, f);
+    }
+
+    /// Open a modal dialog overlaid on top of the current screen.
+    ///
+    /// The dialog is centered, has the requested logical `size`, and
+    /// dims the rest of the screen with a semi-transparent backdrop
+    /// to convey focus. The closure receives a `UiBuilder` scoped to
+    /// the dialog's interior.
+    ///
+    /// Default impl is a no-op so the trait stays object-safe — the
+    /// egui backend overrides.
+    fn modal(&mut self, id: &str, size: [f32; 2], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let _ = (id, size, f);
+    }
+
     // ── Decoration ─────────────────────────────────────
 
     /// Horizontal separator line.
@@ -160,6 +267,83 @@ pub trait UiBuilder {
 
     /// Returns `true` if Escape was pressed while the last widget had focus.
     fn is_last_item_escape_pressed(&self) -> bool;
+
+    /// Returns `true` if the last interacted region is currently being dragged.
+    /// Used by drag sources to paint a cursor-following ghost so the user can
+    /// see a drag is in progress. Default: `false`.
+    fn is_last_item_dragged(&self) -> bool {
+        false
+    }
+
+    /// Whether `key` was pressed this frame **and no text field is consuming
+    /// keyboard input**.
+    ///
+    /// The focus condition is the whole point: a panel that drives selection
+    /// with the arrow keys must go quiet while the user is typing in a search
+    /// box, and every caller getting that right by hand is how a shortcut ends
+    /// up eating keystrokes meant for a field.
+    ///
+    /// Default: `false`, so a backend without keyboard support simply reports
+    /// no shortcuts rather than pretending.
+    fn key_pressed(&self, key: KeyCode) -> bool {
+        let _ = key;
+        false
+    }
+
+    /// Whether any widget currently holds keyboard focus — typically a text
+    /// field being typed into.
+    ///
+    /// Panels use it to suppress their own single-key shortcuts. Default:
+    /// `false`.
+    fn keyboard_captured(&self) -> bool {
+        false
+    }
+
+    /// Whether `key` was pressed this frame, **regardless of focus**.
+    ///
+    /// For the widget that *owns* the focused field: a command palette must
+    /// still move its selection with the arrows while the user types in its
+    /// own query box, which is exactly the case [`key_pressed`] refuses to
+    /// serve. Reach for that one by default; this is the deliberate exception.
+    ///
+    /// [`key_pressed`]: Self::key_pressed
+    fn raw_key_pressed(&self, key: KeyCode) -> bool {
+        let _ = key;
+        false
+    }
+
+    /// Asks the backend to give the **last** widget keyboard focus.
+    ///
+    /// Call it on the frame a field appears, not every frame: repeating the
+    /// request traps focus so the user can never tab away.
+    fn focus_last_item(&mut self) {}
+
+    /// Restricts painting to `rect` until the matching [`pop_clip_rect`].
+    ///
+    /// The editor's panels paint in absolute window coordinates, so a scrolled
+    /// list has to be clipped explicitly — otherwise its rows draw straight
+    /// over the neighbouring panels.
+    ///
+    /// [`pop_clip_rect`]: Self::pop_clip_rect
+    fn push_clip_rect(&mut self, rect: [f32; 4]) {
+        let _ = rect;
+    }
+
+    /// Restores the clip region saved by [`push_clip_rect`].
+    ///
+    /// [`push_clip_rect`]: Self::push_clip_rect
+    fn pop_clip_rect(&mut self) {}
+
+    /// Accumulated scroll-wheel delta this frame while the pointer is inside
+    /// `rect`, in points. Positive means the content should move **down**
+    /// (the user scrolled towards the top of the list).
+    ///
+    /// Scoped to a rect rather than reported globally so two scrollable panels
+    /// on screen can't both consume the same gesture. Default: `0.0`.
+    fn scroll_delta_in(&self, rect: [f32; 4]) -> f32 {
+        let _ = rect;
+        0.0
+    }
 
     /// Shows a right-click context menu on the last widget.
     /// The closure is called to build menu content when the menu is open.
@@ -278,6 +462,73 @@ pub trait UiBuilder {
         None
     }
 
+    /// Current pointer (cursor) position in window-space `[x, y]`, or `None`
+    /// when the pointer is outside the window or unknown. Drop targets use this
+    /// to place a dropped item where the cursor released (e.g. unproject the
+    /// drop point into the 3D scene). Default: `None`.
+    fn pointer_position(&self) -> Option<[f32; 2]> {
+        None
+    }
+
+    /// `true` while any `u64` drag payload is in flight this frame (a drag
+    /// started and hasn't been released). Drop targets use it to show a
+    /// "droppable here" highlight. Default: `false`.
+    fn is_drag_active(&self) -> bool {
+        false
+    }
+
+    /// Draws a single-line text editor at an absolute window-space rect and
+    /// returns its outcome **this frame** (see [`InlineEditEvent`]). Unlike the
+    /// generic [`region_at`](Self::region_at) + response-tracking helpers, this
+    /// is self-contained: it owns the widget's `Response`, so Enter / Escape /
+    /// focus-loss are detected reliably. Pass `request_focus = true` on the
+    /// frame the field first appears so the user can type immediately.
+    /// Default: no-op returning [`InlineEditEvent::Idle`].
+    fn inline_text_field(
+        &mut self,
+        rect: [f32; 4],
+        id_salt: &str,
+        text: &mut String,
+        request_focus: bool,
+    ) -> InlineEditEvent {
+        let _ = (rect, id_salt, text, request_focus);
+        InlineEditEvent::Idle
+    }
+
+    /// Paints a filled rounded rect in an **unclipped top overlay layer**
+    /// (above all panels). For cursor-following affordances like drag ghosts
+    /// that must remain visible outside the current panel's clip rect.
+    /// Default: no-op.
+    fn overlay_rect_filled(&mut self, min: [f32; 2], size: [f32; 2], color: [f32; 4], rounding: f32) {
+        let _ = (min, size, color, rounding);
+    }
+
+    /// Stroked rounded rect in the unclipped overlay layer. See
+    /// [`overlay_rect_filled`](Self::overlay_rect_filled). Default: no-op.
+    fn overlay_rect_stroke(
+        &mut self,
+        min: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        rounding: f32,
+        thickness: f32,
+    ) {
+        let _ = (min, size, color, rounding, thickness);
+    }
+
+    /// Text in the unclipped overlay layer. See
+    /// [`overlay_rect_filled`](Self::overlay_rect_filled). Default: no-op.
+    fn overlay_text(
+        &mut self,
+        pos: [f32; 2],
+        text: &str,
+        size: f32,
+        color: [f32; 4],
+        family: FontFamilyHint,
+    ) {
+        let _ = (pos, text, size, color, family);
+    }
+
     /// Attaches a tooltip to the most recently created widget / interaction.
     fn tooltip_for_last(&mut self, text: &str) {
         let _ = text;
@@ -289,11 +540,17 @@ pub trait UiBuilder {
     /// `vec3_editor`, …) lay out within it instead of the parent panel.
     /// Used by composite widgets (inspector cards) that paint their frame
     /// absolutely but want native egui controls inside.
-    fn region_at(&mut self, rect: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+    ///
+    /// `id_salt` must be **stable across frames and unique within the parent**.
+    /// The backend derives the region's widget ids from it, and those ids are
+    /// what carries keyboard focus and text-edit state: a salt that changes
+    /// between frames makes a field being typed into lose focus mid-word, and
+    /// two regions sharing a salt make their contents collide.
+    fn region_at(&mut self, id_salt: &str, rect: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         // Default fallback for backends that don't support sub-regions:
         // do nothing. Concrete backends (egui) MUST override this — calling
         // it on a backend without an override silently no-ops the body.
-        let _ = (rect, f);
+        let _ = (id_salt, rect, f);
     }
 
     /// Returns the current layout cursor in screen-space `(x, y)`. Useful for
@@ -302,6 +559,26 @@ pub trait UiBuilder {
     fn cursor_pos(&self) -> [f32; 2] {
         let r = self.panel_rect();
         [r[0], r[1]]
+    }
+
+    /// Allocates `[width, height]` of space at the current cursor in
+    /// the active layout direction. Returns the resulting rect as
+    /// `[x, y, w, h]` — feed it to the paint primitives.
+    ///
+    /// Unlike [`interact_rect`](Self::interact_rect), this **reserves
+    /// space in the parent layout** so subsequent widgets don't paint
+    /// on top. Use this when a custom widget paints with
+    /// `paint_rect_filled` etc. so the layout flow stays correct (for
+    /// example inside a `horizontal()` row where the row's height
+    /// must reflect the tallest custom-painted widget).
+    ///
+    /// The returned rect's position matches what the cursor would have
+    /// been just before the call. Default impl falls back to the
+    /// current `cursor_pos()` + the requested size — backends that
+    /// support real layout allocation must override.
+    fn allocate_size(&mut self, size: [f32; 2]) -> [f32; 4] {
+        let p = self.cursor_pos();
+        [p[0], p[1], size[0], size[1]]
     }
 
     /// Measures the rendered size of `text` at `size` points using `family`.

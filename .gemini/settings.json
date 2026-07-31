@@ -1,0 +1,11 @@
+{
+  "context": {
+    "fileName": [
+      "GEMINI.md"
+    ]
+  },
+  "_khoraAi": {
+    "profile": "engine",
+    "source": ".agent/engine/"
+  }
+}

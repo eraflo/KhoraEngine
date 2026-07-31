@@ -17,8 +17,22 @@
 //! Pure functions that generate wireframe line segments for rendering
 //! in the 3D viewport. All math goes through `khora_core::math`.
 
+use super::gizmo_interact::{perpendiculars, GizmoAxis, GizmoBasis};
 use super::state::GizmoMode;
 use crate::math::{Mat4, Vec3};
+use crate::renderer::api::resource::view::ViewInfo;
+
+/// Fraction of the viewport's half-height a manipulator arm spans.
+///
+/// The manipulator is sized in world units but wants a constant *apparent*
+/// size: a fixed world length — what this used to be — swallows the screen when
+/// you zoom in and shrinks below the cursor a few metres out, which is exactly
+/// when you still need to grab it.
+const GIZMO_SCREEN_FRACTION: f32 = 0.32;
+
+/// Segments per rotation ring. Enough that a ring reads as round rather than
+/// as a polygon, at three rings per selected entity.
+const RING_SEGMENTS: u32 = 48;
 
 /// A single line segment for GPU rendering.
 ///
@@ -88,17 +102,136 @@ pub fn wireframe_cube(
 }
 
 /// Generates XYZ axis lines at the given transform.
+///
+/// Directions are normalised, so a scaled entity gets a square set of axes
+/// rather than one stretched along whichever axis it happens to be scaled on.
 pub fn transform_axes(transform: &Mat4, length: f32) -> Vec<GizmoLineInstance> {
     let origin = transform.cols[3].truncate();
-    let right = transform.transform_vector(Vec3::X);
-    let up = transform.transform_vector(Vec3::Y);
-    let forward = transform.transform_vector(Vec3::Z);
 
-    vec![
-        GizmoLineInstance::new(origin, origin + right * length, [0.95, 0.32, 0.28, 1.0]),
-        GizmoLineInstance::new(origin, origin + up * length, [0.34, 0.88, 0.43, 1.0]),
-        GizmoLineInstance::new(origin, origin + forward * length, [0.35, 0.63, 0.97, 1.0]),
-    ]
+    [Vec3::X, Vec3::Y, Vec3::Z]
+        .into_iter()
+        .zip(GizmoAxis::ALL)
+        .map(|(local, axis)| {
+            let direction = transform.transform_vector(local).normalize();
+            GizmoLineInstance::new(origin, origin + direction * length, axis.color())
+        })
+        .collect()
+}
+
+/// World size a manipulator at `origin` needs to occupy a constant fraction of
+/// the viewport, whatever its distance from the camera.
+///
+/// Derived from the projection matrix rather than from a field of view passed
+/// alongside it, so the gizmo cannot drift out of agreement with what is
+/// actually being rendered.
+pub fn gizmo_world_size(view: &ViewInfo, origin: Vec3) -> f32 {
+    // A perspective projection stores `1 / tan(fov_y / 2)` in m11.
+    let focal = view.projection_matrix.cols[1].y;
+    if focal.abs() < 1e-6 {
+        return 1.0;
+    }
+    let distance = (origin - view.camera_position).length().max(1e-3);
+    distance / focal * GIZMO_SCREEN_FRACTION
+}
+
+/// The interactive handles for `mode`, drawn at `pivot` along `basis`.
+///
+/// Empty for [`GizmoMode::Select`]: the pointer tool manipulates nothing, so
+/// drawing grabbable-looking handles for it would be a lie.
+pub fn manipulator(
+    pivot: Vec3,
+    basis: &GizmoBasis,
+    mode: GizmoMode,
+    size: f32,
+) -> Vec<GizmoLineInstance> {
+    match mode {
+        GizmoMode::Select => Vec::new(),
+        GizmoMode::Move => move_handles(pivot, basis, size),
+        GizmoMode::Rotate => rotate_handles(pivot, basis, size),
+        GizmoMode::Scale => scale_handles(pivot, basis, size),
+    }
+}
+
+/// Three arrows: a shaft out to `size` and a four-barbed head at the tip.
+fn move_handles(pivot: Vec3, basis: &GizmoBasis, size: f32) -> Vec<GizmoLineInstance> {
+    let head = size * 0.18;
+    let mut lines = Vec::with_capacity(GizmoAxis::ALL.len() * 5);
+
+    for axis in GizmoAxis::ALL {
+        let direction = basis[axis.index()];
+        let color = axis.color();
+        let tip = pivot + direction * size;
+        let base = tip - direction * head;
+        let (u, v) = perpendiculars(direction);
+
+        lines.push(GizmoLineInstance::new(pivot, tip, color));
+        for barb in [u, -u, v, -v] {
+            lines.push(GizmoLineInstance::new(
+                tip,
+                base + barb * (head * 0.4),
+                color,
+            ));
+        }
+    }
+    lines
+}
+
+/// Three arms, each capped with a small box — the cap is what says "scale"
+/// rather than "move" at a glance.
+fn scale_handles(pivot: Vec3, basis: &GizmoBasis, size: f32) -> Vec<GizmoLineInstance> {
+    let half = size * 0.09;
+    let mut lines = Vec::with_capacity(GizmoAxis::ALL.len() * 13);
+
+    for axis in GizmoAxis::ALL {
+        let direction = basis[axis.index()];
+        let color = axis.color();
+        let tip = pivot + direction * size;
+        let (u, v) = perpendiculars(direction);
+
+        lines.push(GizmoLineInstance::new(pivot, tip, color));
+
+        // Eight corners of the cap, indexed so the low bit walks `direction`,
+        // the middle bit `u`, and the high bit `v`.
+        let corner = |i: usize| {
+            let sign = |bit: usize| if i & (1 << bit) == 0 { -1.0 } else { 1.0 };
+            tip + direction * (half * sign(0)) + u * (half * sign(1)) + v * (half * sign(2))
+        };
+        // Every pair of corners differing by exactly one bit is an edge.
+        for i in 0..8usize {
+            for bit in 0..3 {
+                let j = i | (1 << bit);
+                if j != i {
+                    lines.push(GizmoLineInstance::new(corner(i), corner(j), color));
+                }
+            }
+        }
+    }
+    lines
+}
+
+/// Three rings, one in each plane normal to a handle.
+fn rotate_handles(pivot: Vec3, basis: &GizmoBasis, size: f32) -> Vec<GizmoLineInstance> {
+    let mut lines = Vec::with_capacity(GizmoAxis::ALL.len() * RING_SEGMENTS as usize);
+
+    for axis in GizmoAxis::ALL {
+        let direction = basis[axis.index()];
+        let color = axis.color();
+        let (u, v) = perpendiculars(direction);
+
+        for segment in 0..RING_SEGMENTS {
+            let theta = |s: u32| std::f32::consts::TAU * (s as f32 / RING_SEGMENTS as f32);
+            let point = |s: u32| {
+                let t = theta(s);
+                pivot + u * (size * t.cos()) + v * (size * t.sin())
+            };
+            lines.push(GizmoLineInstance::new(
+                point(segment),
+                point(segment + 1),
+                color,
+            ));
+        }
+    }
+    lines
 }
 
 /// Generates a wireframe camera frustum at the given transform.
@@ -237,14 +370,30 @@ pub fn directional_light_icon(
     ]
 }
 
+/// One selected entity's gizmo request.
+#[derive(Debug, Clone)]
+pub struct SelectionGizmo {
+    /// World transform of the entity.
+    pub transform: Mat4,
+    /// Which outline to draw around it.
+    pub kind: GizmoKind,
+    /// World size of the entity's own axis cross — see [`gizmo_world_size`].
+    pub size: f32,
+}
+
 /// Generates all gizmo lines for a set of selected entities.
 pub fn generate_selection_gizmos(
-    selected_entities: &[(Mat4, GizmoKind)],
+    selected_entities: &[SelectionGizmo],
     gizmo_mode: GizmoMode,
 ) -> Vec<GizmoLineInstance> {
     let mut lines = Vec::new();
 
-    for (transform, kind) in selected_entities {
+    for SelectionGizmo {
+        transform,
+        kind,
+        size,
+    } in selected_entities
+    {
         match kind {
             GizmoKind::Empty => {
                 lines.extend(wireframe_cube(
@@ -295,11 +444,13 @@ pub fn generate_selection_gizmos(
             }
         }
 
-        match gizmo_mode {
-            GizmoMode::Select | GizmoMode::Move => {
-                lines.extend(transform_axes(transform, 0.8));
-            }
-            _ => {}
+        // The pointer tool manipulates nothing, so it shows each entity's own
+        // orientation instead. The three real tools get a single [`manipulator`]
+        // at the selection's shared pivot — drawn by the caller, because one
+        // per entity would stack five identical sets of handles on a
+        // five-entity selection, none of them where a drag actually pivots.
+        if gizmo_mode == GizmoMode::Select {
+            lines.extend(transform_axes(transform, *size));
         }
     }
 

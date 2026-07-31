@@ -23,6 +23,11 @@ use khora_core::scene::{SceneFile, SceneHeader, SerializationGoal};
 use khora_data::ecs::World;
 use std::collections::HashMap;
 
+/// Scene format version produced by today's writers. Bumped whenever
+/// the on-disk layout changes; older payloads run through registered
+/// [`SceneMigration`]s on the way in.
+pub const CURRENT_SCENE_VERSION: u32 = 1;
+
 /// An error that can occur within the `SerializationService`.
 #[derive(Debug)]
 pub enum SerializationServiceError {
@@ -65,6 +70,12 @@ impl SerializationService {
             Box::new(archetype_strategy),
         );
 
+        let messagepack_strategy = MessagePackSerializationStrategy::new();
+        strategies.insert(
+            messagepack_strategy.get_strategy_id().to_string(),
+            Box::new(messagepack_strategy),
+        );
+
         Self { strategies }
     }
 
@@ -82,6 +93,7 @@ impl SerializationService {
                 "KH_RECIPE_V1"
             }
             SerializationGoal::FastestLoad => "KH_ARCHETYPE_V1",
+            SerializationGoal::PortableBinary => "KH_MESSAGEPACK_V1",
         };
 
         let strategy = self
@@ -99,7 +111,7 @@ impl SerializationService {
 
         let header = SceneHeader {
             magic_bytes: khora_core::scene::HEADER_MAGIC_BYTES,
-            format_version: 1,
+            format_version: CURRENT_SCENE_VERSION as u8,
             strategy_id: strategy_id_bytes,
             payload_length: payload.len() as u64,
         };
@@ -117,13 +129,24 @@ impl SerializationService {
             .map_err(|_| SerializationServiceError::InvalidHeader)?
             .trim_end_matches('\0');
 
+        // Apply registered migrations to bring the payload up to the
+        // current scene format version. No migrations are registered
+        // today (format_version = 1 is the only supported scene), but
+        // the seam is here for the next bump.
+        let payload = migrate_payload(
+            file.payload.clone(),
+            file.header.format_version as u32,
+            CURRENT_SCENE_VERSION,
+        )
+        .map_err(|e| SerializationServiceError::ProcessingError(e.to_string()))?;
+
         let strategy = self
             .strategies
             .get(strategy_id)
             .ok_or(SerializationServiceError::StrategyNotFound)?;
 
         strategy
-            .deserialize(&file.payload, world)
+            .deserialize(&payload, world)
             .map_err(|e| SerializationServiceError::ProcessingError(e.to_string()))
     }
 }

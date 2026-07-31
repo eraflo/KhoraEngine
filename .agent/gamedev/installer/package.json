@@ -1,0 +1,16 @@
+{
+  "name": "khora-ai-gamedev",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone installer that generates provider AI wrappers (Claude Code, Cursor, GitHub Copilot, Gemini CLI) from the canonical .agent/gamedev docs for games built with the Khora SDK. Self-contained and publishable into a downstream game project.",
+  "bin": {
+    "khora-ai-gamedev": "bin/khora-ai.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "install:all": "node bin/khora-ai.mjs install all"
+  }
+}

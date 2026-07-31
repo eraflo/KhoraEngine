@@ -28,7 +28,7 @@ use std::sync::{Arc, RwLock};
 use khora_core::asset::font::Font;
 use khora_core::renderer::api::text::TextRenderer;
 use khora_core::renderer::GraphicsDevice;
-use khora_core::ServiceRegistry;
+use khora_core::Runtime;
 
 use crate::assets::Assets;
 use crate::ecs::{SemanticDomain, World};
@@ -38,6 +38,11 @@ use crate::ui::components::{UiBorder, UiColor, UiImage, UiText, UiTransform};
 use crate::ui::{ExtractedUiNode, ExtractedUiText, UiScene};
 
 /// UI presentation Flow.
+///
+/// Deliberately **uncached** (no `cache_key` override): the projection
+/// depends on the surface size (runtime state) and on font assets that can
+/// hot-reload without any change signal the key could fold in, so a cached
+/// `UiScene` could go stale. It re-projects every tick.
 #[derive(Default)]
 pub struct UiFlow;
 
@@ -47,8 +52,9 @@ impl Flow for UiFlow {
     const DOMAIN: SemanticDomain = SemanticDomain::Ui;
     const NAME: &'static str = "ui";
 
-    fn project(&self, world: &World, _sel: &Selection, services: &ServiceRegistry) -> Self::View {
-        let surface_size = services
+    fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
+        let surface_size = runtime
+            .backends
             .get::<Arc<dyn GraphicsDevice>>()
             .map(|d| d.get_surface_size())
             .unwrap_or((0, 0));
@@ -61,8 +67,8 @@ impl Flow for UiFlow {
         extract_nodes(world, &mut scene);
 
         if let (Some(text_renderer), Some(fonts_lock)) = (
-            services.get::<Arc<dyn TextRenderer>>(),
-            services.get::<Arc<RwLock<Assets<Font>>>>(),
+            runtime.backends.get::<Arc<dyn TextRenderer>>(),
+            runtime.resources.get::<Arc<RwLock<Assets<Font>>>>(),
         ) {
             if let Ok(fonts) = fonts_lock.read() {
                 layout_texts(world, text_renderer.as_ref(), &fonts, &mut scene);
@@ -108,7 +114,7 @@ fn layout_texts(
                 text_renderer.layout_text(&text.content, font_handle, text.font, text.size, None);
             scene.texts.push(ExtractedUiText {
                 pos: transform.pos,
-                layout,
+                layout: std::sync::Arc::from(layout),
                 color: text.color,
                 z_index: transform.z_index,
             });

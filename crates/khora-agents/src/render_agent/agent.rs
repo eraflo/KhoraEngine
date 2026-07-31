@@ -21,14 +21,15 @@
 //! the owners of those resources.
 
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use khora_core::agent::{
-    Agent, AgentDependency, AgentImportance, DependencyKind, ExecutionPhase, ExecutionTiming,
+    Agent, AgentAccess, AgentDependency, AgentImportance, DependencyKind, ExecutionPhase,
+    ExecutionTiming,
 };
 use khora_core::control::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-    StrategyOption,
+    measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
+    NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
 use khora_core::lane::{
     ClearColor, ColorTarget, DepthTarget, LaneContext, LaneKind, LaneRegistry, ShadowAtlasView,
@@ -36,15 +37,17 @@ use khora_core::lane::{
 };
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::api::scene::GpuMesh;
+use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::{GraphicsDevice, RenderSystem};
 use khora_core::EngineContext;
 use khora_data::assets::Assets;
 use khora_data::ecs::World;
 use khora_data::render::{
-    extract_active_camera_view, PassDescriptor, RenderWorld, ResourceId, SharedFrameGraph,
+    extract_active_camera_view, PassContribution, PassDescriptor, RenderWorld, ResourceId,
+    ScenePassSlot,
 };
-use khora_data::GpuCache;
-use khora_lanes::render_lane::{ForwardPlusLane, LitForwardLane, SimpleUnlitLane};
+use khora_data::AssetStore;
+use khora_lanes::render_lane::{ForwardPlusLane, LitForwardLane, SimpleUnlitLane, StandardPbrLane};
 
 /// Threshold for switching to Forward+ rendering.
 const FORWARD_PLUS_LIGHT_THRESHOLD: usize = 20;
@@ -61,8 +64,10 @@ pub enum RenderingStrategy {
     /// Simple unlit rendering (vertex colors only).
     #[default]
     Unlit,
-    /// Standard forward rendering with lighting.
+    /// Standard forward rendering with lighting (Blinn-Phong).
     LitForward,
+    /// Full PBR (Cook-Torrance) forward rendering with shadows.
+    StandardPbr,
     /// Forward+ (tiled forward) rendering with compute-based light culling.
     ForwardPlus,
     /// Automatic selection based on scene complexity (light count).
@@ -83,24 +88,29 @@ pub struct RenderAgent {
     current_strategy: StrategyId,
     /// Time budget assigned by GORNA via `apply_budget`.
     time_budget: Duration,
-    /// Duration of the last `execute` call.
-    last_frame_time: Duration,
-    /// Number of draw calls issued in the last frame.
-    draw_call_count: u32,
-    /// Number of triangles rendered in the last frame.
-    triangle_count: u32,
-    /// Total number of frames rendered since agent creation.
-    frame_count: u64,
-    /// Number of lights in the most recently extracted scene (for status).
-    last_light_count: usize,
-    /// Number of `execute` invocations attempted.  Used by `is_stalled` to
-    /// distinguish "never tried" from "tried but produced no frame".
-    execute_attempts: u64,
+    /// Shared, scheduler-written per-agent frame metrics. Read in
+    /// `report_status` to derive `health_score`; the agent stores no
+    /// per-frame counters of its own.
+    frame_status: Option<AgentFrameStatusMap>,
 }
 
 impl Agent for RenderAgent {
     fn id(&self) -> AgentId {
         AgentId::Renderer
+    }
+
+    /// Reads the world read-only (active-camera extraction) and writes shared
+    /// render resources (`RenderSystem`, `FrameGraph`), so it takes the world by
+    /// shared reference. The scheduler may run it concurrently with `Isolated`
+    /// agents (which touch disjoint state), never with another shared-resource
+    /// writer in the same wave.
+    fn access(&self) -> AgentAccess {
+        AgentAccess::SharedWorld
+    }
+
+    /// Buffers its main scene pass into the [`ScenePassSlot`] deck slot.
+    fn deck_writes(&self) -> Vec<std::any::TypeId> {
+        vec![std::any::TypeId::of::<ScenePassSlot>()]
     }
 
     fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
@@ -120,6 +130,7 @@ impl Agent for RenderAgent {
             let (strategy_id, vram_overhead) = match lane.strategy_name() {
                 "SimpleUnlit" => (StrategyId::LowPower, 0u64),
                 "LitForward" => (StrategyId::Balanced, 4096u64),
+                "StandardPbr" => (StrategyId::Custom(1), 4096u64),
                 "ForwardPlus" => (StrategyId::HighPerformance, 4096 + 8 * 1024 * 1024),
                 _ => continue,
             };
@@ -172,9 +183,10 @@ impl Agent for RenderAgent {
             StrategyId::LowPower => self.strategy = RenderingStrategy::Auto,
             StrategyId::Balanced => self.strategy = RenderingStrategy::LitForward,
             StrategyId::HighPerformance => self.strategy = RenderingStrategy::ForwardPlus,
-            StrategyId::Custom(_) => {
+            StrategyId::Custom(1) => self.strategy = RenderingStrategy::StandardPbr,
+            StrategyId::Custom(other) => {
                 log::warn!(
-                    "RenderAgent received unsupported custom strategy. Falling back to Balanced."
+                    "RenderAgent received unsupported custom strategy {other}. Falling back to Balanced."
                 );
                 self.strategy = RenderingStrategy::LitForward;
             }
@@ -185,16 +197,40 @@ impl Agent for RenderAgent {
     }
 
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
+        self.frame_status = context
+            .runtime
+            .resources
+            .get::<AgentFrameStatusMap>()
+            .cloned();
+
         // One-shot lane GPU initialization.  We fetch the device from the
         // service registry, drive lane.on_initialize() once, and drop the
         // device handle — the agent does not store it.
-        let Some(device_arc) = context.services.get::<Arc<dyn GraphicsDevice>>().cloned() else {
+        let Some(device_arc) = context
+            .runtime
+            .backends
+            .get::<Arc<dyn GraphicsDevice>>()
+            .cloned()
+        else {
             log::warn!("RenderAgent: graphics device unavailable in on_initialize");
             return;
         };
 
+        // The PipelineSystem backend — the shader/pipeline machine. Render
+        // lanes resolve their layouts + pipeline through it; it also owns the
+        // canonical Material layout (shared with the material projection's
+        // cached `GpuMaterial` bind groups).
+        let pipeline_system = context
+            .runtime
+            .resources
+            .get::<Arc<dyn PipelineSystem>>()
+            .cloned();
+
         let mut init_ctx = LaneContext::new();
         init_ctx.insert(device_arc);
+        if let Some(ps) = pipeline_system {
+            init_ctx.insert(ps);
+        }
         for lane in self.lanes.all() {
             if let Err(e) = lane.on_initialize(&mut init_ctx) {
                 log::error!(
@@ -207,23 +243,42 @@ impl Agent for RenderAgent {
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
-        self.execute_attempts += 1;
-
         // Look up every dependency from services — the agent owns none of these.
-        let Some(device_arc) = context.services.get::<Arc<dyn GraphicsDevice>>() else {
+        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
             return;
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
 
-        let Some(rs_arc) = context.services.get::<Arc<Mutex<Box<dyn RenderSystem>>>>() else {
+        let Some(rs_arc) = context
+            .runtime
+            .backends
+            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+        else {
             return;
         };
         let render_system: Arc<Mutex<Box<dyn RenderSystem>>> = (*rs_arc).clone();
 
-        let Some(gpu_cache) = context.services.get::<GpuCache>() else {
+        let Some(asset_store) = context.runtime.resources.get::<AssetStore>() else {
             return;
         };
-        let gpu_meshes: Arc<RwLock<Assets<GpuMesh>>> = gpu_cache.inner().clone();
+        let gpu_meshes: Arc<RwLock<Assets<GpuMesh>>> = asset_store.store::<GpuMesh>();
+
+        // PipelineSystem backend — migrated lanes re-fetch their pipeline by
+        // key each frame through this.
+        let pipeline_system = context
+            .runtime
+            .resources
+            .get::<Arc<dyn PipelineSystem>>()
+            .cloned();
+
+        // Image-based lighting bindings — baked once by the `ibl_bake` system
+        // (PreExtract, before this OUTPUT phase). Forwarded into the lane ctx so
+        // lit lanes bind the irradiance/specular/LUT block at group 3.
+        let ibl_bindings = context
+            .runtime
+            .resources
+            .get::<khora_data::IblBaker>()
+            .and_then(|b| b.bindings());
 
         // Render lanes consume the per-frame `RenderWorld` from the LaneBus,
         // populated by `RenderFlow` during the Substrate Pass.
@@ -232,16 +287,11 @@ impl Agent for RenderAgent {
             return;
         };
 
-        let Some(frame_graph) = context.services.get::<SharedFrameGraph>().cloned() else {
-            log::warn!("RenderAgent: no FrameGraph in services");
-            return;
-        };
-
         // The engine inserts ColorTarget/DepthTarget/ClearColor and the shadow
         // atlas data into the per-frame FrameContext after `begin_frame()`.
         // ShadowAgent runs in OBSERVE (before OUTPUT) and publishes its atlas
         // there as well. We just read both.
-        let Some(fctx) = context.services.get::<Arc<FrameContext>>() else {
+        let Some(fctx) = context.runtime.resources.get::<Arc<FrameContext>>() else {
             log::warn!("RenderAgent: no FrameContext in services");
             return;
         };
@@ -258,8 +308,10 @@ impl Agent for RenderAgent {
         let shadow_sampler = fctx.get::<ShadowComparisonSampler>().map(|a| *a);
 
         // Push the active camera view into the render system if present.
-        if let Some(world_any) = context.world.as_deref_mut() {
-            if let Some(world) = world_any.downcast_mut::<World>() {
+        // Camera extraction is read-only, so the agent takes the world by
+        // shared reference (`AgentAccess::SharedWorld`) — never `&mut`.
+        if let Some(world_any) = context.world_ref() {
+            if let Some(world) = world_any.downcast_ref::<World>() {
                 if let Some(view_info) = extract_active_camera_view(world) {
                     if let Ok(mut rs) = render_system.lock() {
                         rs.prepare_frame(&view_info);
@@ -268,7 +320,6 @@ impl Agent for RenderAgent {
             }
         }
 
-        let frame_start = Instant::now();
         let strategy = self.strategy;
         let select_name = lane_name_for_strategy(strategy, render_world);
 
@@ -279,6 +330,9 @@ impl Agent for RenderAgent {
             let mut ctx = LaneContext::new();
             ctx.insert(device.clone());
             ctx.insert(gpu_meshes.clone());
+            if let Some(ps) = pipeline_system.clone() {
+                ctx.insert(ps);
+            }
             // SAFETY: encoder is alive for this whole block; ctx (which holds
             // the slot) is dropped before encoder.finish() consumes it.
             let encoder_slot = Slot::new(encoder.as_mut());
@@ -302,6 +356,9 @@ impl Agent for RenderAgent {
                 ctx.insert(dt);
             }
             ctx.insert(clear_color);
+            if let Some(ibl) = ibl_bindings {
+                ctx.insert(ibl);
+            }
             if let Some(view) = shadow_atlas {
                 ctx.insert(view);
             }
@@ -315,7 +372,13 @@ impl Agent for RenderAgent {
                 }
             }
         }
-        let cmd_buf = encoder.finish();
+        let Some(cmd_buf) = encoder.finish() else {
+            log::error!(
+                "RenderAgent: encoder.finish() returned None — backend reported failure, \
+                 skipping ScenePass submission"
+            );
+            return;
+        };
 
         let mut descriptor = PassDescriptor::new("ScenePass")
             .writes(ResourceId::Color)
@@ -323,44 +386,29 @@ impl Agent for RenderAgent {
         if shadow_atlas.is_some() {
             descriptor = descriptor.reads(ResourceId::ShadowAtlas);
         }
-        frame_graph
-            .lock()
-            .expect("FrameGraph mutex poisoned")
-            .add_pass(descriptor, cmd_buf);
-
-        self.last_frame_time = frame_start.elapsed();
-
-        // Refresh per-frame metrics from the LaneBus's RenderWorld view.
-        self.draw_call_count = render_world.meshes.len() as u32;
-        self.triangle_count = count_triangles(render_world, &gpu_meshes);
-        self.last_light_count = render_world.directional_light_count()
-            + render_world.point_light_count()
-            + render_world.spot_light_count();
-
-        self.frame_count += 1;
+        // Buffer the pass into the deck; the engine folds it into the FrameGraph
+        // (scene → ui → overlay order) after the wave, so the agent never locks
+        // the shared graph.
+        context.deck.slot::<ScenePassSlot>().0 = Some(PassContribution {
+            descriptor,
+            command_buffer: cmd_buf,
+        });
     }
 
     fn report_status(&self) -> AgentStatus {
-        let health_score = if self.time_budget.is_zero() || self.frame_count == 0 {
+        let measured_time_ms = measured_frame_time_ms(&self.frame_status, self.id());
+        let health_score = if self.time_budget.is_zero() || measured_time_ms <= 0.0 {
             1.0
         } else {
-            let ratio =
-                self.time_budget.as_secs_f32() / self.last_frame_time.as_secs_f32().max(0.0001);
-            ratio.min(1.0)
+            (self.time_budget.as_secs_f32() * 1000.0 / measured_time_ms).min(1.0)
         };
 
         AgentStatus {
             agent_id: self.id(),
             health_score,
             current_strategy: self.current_strategy,
-            is_stalled: self.execute_attempts > 0 && self.frame_count == 0,
-            message: format!(
-                "frame_time={:.2}ms draws={} tris={} lights={}",
-                self.last_frame_time.as_secs_f32() * 1000.0,
-                self.draw_call_count,
-                self.triangle_count,
-                self.last_light_count,
-            ),
+            is_stalled: false,
+            message: format!("frame_time={measured_time_ms:.2}ms"),
         }
     }
 
@@ -396,6 +444,7 @@ impl Default for RenderAgent {
         let mut lanes = LaneRegistry::new();
         lanes.register(Box::new(SimpleUnlitLane::new()));
         lanes.register(Box::new(LitForwardLane::new()));
+        lanes.register(Box::new(StandardPbrLane::default()));
         lanes.register(Box::new(ForwardPlusLane::new()));
 
         Self {
@@ -403,12 +452,7 @@ impl Default for RenderAgent {
             strategy: RenderingStrategy::Auto,
             current_strategy: StrategyId::Balanced,
             time_budget: Duration::ZERO,
-            last_frame_time: Duration::ZERO,
-            draw_call_count: 0,
-            triangle_count: 0,
-            frame_count: 0,
-            last_light_count: 0,
-            execute_attempts: 0,
+            frame_status: None,
         }
     }
 }
@@ -421,6 +465,7 @@ fn lane_name_for_strategy(strategy: RenderingStrategy, world: &RenderWorld) -> &
     match strategy {
         RenderingStrategy::Unlit => "SimpleUnlit",
         RenderingStrategy::LitForward => "LitForward",
+        RenderingStrategy::StandardPbr => "StandardPbr",
         RenderingStrategy::ForwardPlus => "ForwardPlus",
         RenderingStrategy::Auto => {
             let total_lights = world.directional_light_count()
@@ -437,25 +482,6 @@ fn lane_name_for_strategy(strategy: RenderingStrategy, world: &RenderWorld) -> &
     }
 }
 
-fn count_triangles(render_world: &RenderWorld, gpu_meshes: &RwLock<Assets<GpuMesh>>) -> u32 {
-    use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
-
-    let Ok(guard) = gpu_meshes.read() else {
-        return 0;
-    };
-    let mut total = 0u32;
-    for mesh in &render_world.meshes {
-        if let Some(gpu_mesh) = guard.get(&mesh.cpu_mesh_uuid) {
-            total += match gpu_mesh.primitive_topology {
-                PrimitiveTopology::TriangleList => gpu_mesh.index_count / 3,
-                PrimitiveTopology::TriangleStrip => gpu_mesh.index_count.saturating_sub(2),
-                _ => 0,
-            };
-        }
-    }
-    total
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -463,7 +489,7 @@ mod tests {
     use khora_core::control::gorna::{NegotiationRequest, ResourceConstraints, StrategyId};
 
     #[test]
-    fn test_negotiate_offers_three_default_strategies() {
+    fn test_negotiate_offers_all_default_strategies() {
         let mut agent = RenderAgent::default();
         let req = NegotiationRequest {
             target_latency: Duration::from_millis(16),
@@ -473,7 +499,8 @@ mod tests {
             agent_timing: ExecutionTiming::default(),
         };
         let res = agent.negotiate(req);
-        assert_eq!(res.strategies.len(), 3);
+        // SimpleUnlit / LitForward / StandardPbr / ForwardPlus.
+        assert_eq!(res.strategies.len(), 4);
     }
 
     #[test]

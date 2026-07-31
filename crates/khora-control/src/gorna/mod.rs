@@ -28,12 +28,32 @@ use crate::analysis::AnalysisReport;
 use crate::context::Context;
 use khora_core::agent::Agent;
 use khora_core::control::gorna::{
-    AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId, StrategyOption,
+    AdaptationMode, AgentHints, AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints,
+    StrategyId, StrategyOption, TickDecisions,
 };
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const MAX_STALLED_AGENTS: usize = 2;
+
+/// Clamp range for the empirical calibration factor applied to agent-quoted
+/// strategy costs. Bounds the correction so one pathological measurement
+/// (a hitch, a cold cache) can't swing the whole fit by orders of magnitude.
+const CALIBRATION_FACTOR_MIN: f64 = 0.25;
+const CALIBRATION_FACTOR_MAX: f64 = 4.0;
+
+/// Ordinal rank of a strategy for clamping (`Bounded` mode):
+/// `LowPower < Balanced < HighPerformance`, with `Custom` ranked above the
+/// standard tiers.
+fn strategy_rank(id: StrategyId) -> u8 {
+    match id {
+        StrategyId::LowPower => 0,
+        StrategyId::Balanced => 1,
+        StrategyId::HighPerformance => 2,
+        StrategyId::Custom(_) => 3,
+    }
+}
 
 fn try_lock_agent_with_timeout<T: ?Sized>(
     mutex: &Mutex<T>,
@@ -65,6 +85,13 @@ fn try_lock_agent_with_timeout<T: ?Sized>(
 ///   within the global frame budget, respecting priorities and VRAM constraints.
 pub struct GornaArbitrator {
     lock_timeout: Duration,
+    /// Per-agent developer-control mode (default `Learning`). Configured by the
+    /// host; consulted at issuance so a `Manual` agent is never overridden.
+    modes: HashMap<AgentId, AdaptationMode>,
+    /// The scheduler's latest wave grouping (agents that run concurrently),
+    /// refreshed by the DCC each tick via [`set_wave_plan`](Self::set_wave_plan).
+    /// Empty means serial execution: budget fitting then sums per-agent costs.
+    wave_plan: Vec<Vec<AgentId>>,
 }
 
 /// A collected negotiation from a single agent, used during the fitting pass.
@@ -88,7 +115,31 @@ impl GornaArbitrator {
     /// during negotiation and budget issuance. Agents that cannot be locked within
     /// this timeout are skipped.
     pub fn new(lock_timeout: Duration) -> Self {
-        Self { lock_timeout }
+        Self {
+            lock_timeout,
+            modes: HashMap::new(),
+            wave_plan: Vec::new(),
+        }
+    }
+
+    /// Sets the scheduler's latest wave plan (how agents are grouped for
+    /// concurrent execution). Budget fitting costs each wave by its critical
+    /// path (`max` of its members); an empty plan means serial execution, so
+    /// fitting falls back to summing per-agent costs — bit-identical to the
+    /// pre-parallel behaviour.
+    pub fn set_wave_plan(&mut self, waves: &[Vec<AgentId>]) {
+        self.wave_plan = waves.to_vec();
+    }
+
+    /// Sets the [`AdaptationMode`] for an agent — the developer-control surface.
+    /// `Manual(strategy)` pins the agent; `Learning` (default) lets GORNA negotiate.
+    pub fn set_adaptation_mode(&mut self, agent_id: AgentId, mode: AdaptationMode) {
+        self.modes.insert(agent_id, mode);
+    }
+
+    /// Returns the [`AdaptationMode`] configured for an agent (default `Learning`).
+    pub fn adaptation_mode(&self, agent_id: AgentId) -> AdaptationMode {
+        self.modes.get(&agent_id).copied().unwrap_or_default()
     }
     /// Performs a full GORNA arbitration round.
     ///
@@ -96,14 +147,31 @@ impl GornaArbitrator {
     /// - `context`: The current DCC situational model (phase, hardware, multiplier).
     /// - `report`: The analysis report from the `HeuristicEngine`.
     /// - `agents`: The registered ISA agents.
+    /// - `measured_costs`: Per-agent measured execution cost in milliseconds
+    ///   (from the DCC's empirical cost models). Used to calibrate the agents'
+    ///   self-quoted strategy estimates against reality; agents without a
+    ///   measurement keep their quotes as-is (cold start).
+    /// - `replay`: When `Some`, issue the recorded strategy per agent instead of
+    ///   the negotiated fit (deterministic replay — bypasses budget fitting and
+    ///   the per-agent `AdaptationMode`). `None` for normal live arbitration.
+    /// - `hints`: Per-agent developer [`AgentHints`] accumulated by the DCC.
+    ///   `Prioritize` biases the negotiation priority (which agents the fit
+    ///   upgrades first); `Cap` clamps the issued strategy to a time ceiling.
+    ///   Advisory only — `replay` and a `Manual` pin both override a hint.
+    ///
+    /// Returns the [`TickDecisions`] actually issued this tick (agent → strategy),
+    /// so the DCC can record them for later replay.
     pub fn arbitrate(
         &self,
         context: &Context,
         report: &AnalysisReport,
         agents: &mut [Arc<Mutex<dyn Agent>>],
-    ) {
+        measured_costs: &HashMap<AgentId, f64>,
+        replay: Option<&TickDecisions>,
+        hints: &HashMap<AgentId, AgentHints>,
+    ) -> TickDecisions {
         if agents.is_empty() {
-            return;
+            return TickDecisions::new();
         }
 
         log::debug!(
@@ -121,8 +189,7 @@ impl GornaArbitrator {
                 Forcing emergency LowPower on all agents.",
                 stalled_count
             );
-            self.emergency_stop(agents);
-            return;
+            return self.emergency_stop(agents);
         }
 
         // ── 1. Compute effective frame budget ────────────────────────────
@@ -151,8 +218,14 @@ impl GornaArbitrator {
                 continue;
             };
             let agent_id = agent.id();
-            let priority = self.get_agent_priority(agent_id);
+            // A `Prioritize` hint overrides the default per-agent priority,
+            // steering which agents the budget fit upgrades first.
+            let priority = hints
+                .get(&agent_id)
+                .and_then(|h| h.priority)
+                .unwrap_or_else(|| self.get_agent_priority(agent_id));
             let timing = agent.execution_timing();
+            let current_strategy = agent.report_status().current_strategy;
 
             let request = NegotiationRequest {
                 target_latency: Duration::from_secs_f64(effective_budget_ms as f64 / 1000.0),
@@ -179,6 +252,38 @@ impl GornaArbitrator {
             let mut strategies = response.strategies;
             strategies.sort_by_key(|s| s.estimated_time);
 
+            // ── 2b. Empirical calibration ────────────────────────────────
+            // Anchor the agent's self-quoted estimates in measured reality:
+            // when the DCC has an observed cost for this agent, rescale every
+            // quoted option so the one matching the agent's *current* strategy
+            // equals the measurement. Relative ordering between options is
+            // preserved — only the absolute scale moves, so the fit reasons
+            // about real milliseconds instead of static worst-case quotes.
+            if let Some(&measured_ms) = measured_costs.get(&agent_id) {
+                let quoted_ms = strategies
+                    .iter()
+                    .find(|s| s.id == current_strategy)
+                    .map(|s| s.estimated_time.as_secs_f64() * 1000.0)
+                    .filter(|ms| *ms > f64::EPSILON);
+                if let Some(quoted_ms) = quoted_ms {
+                    let factor = (measured_ms / quoted_ms)
+                        .clamp(CALIBRATION_FACTOR_MIN, CALIBRATION_FACTOR_MAX);
+                    for s in &mut strategies {
+                        s.estimated_time =
+                            Duration::from_secs_f64(s.estimated_time.as_secs_f64() * factor);
+                    }
+                    log::debug!(
+                        "GORNA: Calibrated {:?} estimates ×{:.2} \
+                         (measured {:.2}ms vs quoted {:.2}ms at {:?})",
+                        agent_id,
+                        factor,
+                        measured_ms,
+                        quoted_ms,
+                        current_strategy
+                    );
+                }
+            }
+
             negotiations.push(AgentNegotiation {
                 agent_index: i,
                 agent_id,
@@ -195,6 +300,7 @@ impl GornaArbitrator {
         let allocations = self.fit_budgets(&negotiations, effective_budget_ms, max_vram);
 
         // ── 4. Issuance Pass ─────────────────────────────────────────────
+        let mut issued: TickDecisions = Vec::with_capacity(allocations.len());
         for alloc in &allocations {
             let Some(mut agent) =
                 try_lock_agent_with_timeout(&agents[alloc.agent_index], self.lock_timeout)
@@ -206,28 +312,80 @@ impl GornaArbitrator {
                 continue;
             };
 
+            let agent_id = agent.id();
+
+            let strategy = if let Some(recorded) = replay {
+                // Replay: issue the recorded strategy for this agent, bypassing
+                // the fit and the AdaptationMode (deterministic reproduction).
+                // Fall back to the fit if the recorded strategy isn't offered.
+                recorded
+                    .iter()
+                    .find(|(id, _)| *id == agent_id)
+                    .and_then(|(_, sid)| self.strategy_for(&negotiations, alloc.agent_index, *sid))
+                    .unwrap_or_else(|| alloc.strategy.clone())
+            } else {
+                // Developer control: a `Manual` agent is pinned to its chosen
+                // strategy — GORNA reports but never overrides it. `Learning`
+                // (default) issues the negotiated fit.
+                match self.adaptation_mode(agent_id) {
+                    AdaptationMode::Manual(pinned) => self
+                        .strategy_for(&negotiations, alloc.agent_index, pinned)
+                        .unwrap_or_else(|| alloc.strategy.clone()),
+                    AdaptationMode::Stable => {
+                        // No opportunistic upgrade: keep the current strategy unless
+                        // the fit is a downgrade (or the current one isn't offered).
+                        let current = agent.report_status().current_strategy;
+                        match self.strategy_for(&negotiations, alloc.agent_index, current) {
+                            Some(cur) if alloc.strategy.estimated_time > cur.estimated_time => cur,
+                            _ => alloc.strategy.clone(),
+                        }
+                    }
+                    AdaptationMode::Bounded { min, max } => self.clamp_strategy(
+                        &negotiations,
+                        alloc.agent_index,
+                        &alloc.strategy,
+                        min,
+                        max,
+                    ),
+                    AdaptationMode::Learning => alloc.strategy.clone(),
+                }
+            };
+
+            // Developer `Cap` hint: clamp the issued strategy down to the time
+            // ceiling. Skipped under replay (deterministic) and for a `Manual`
+            // pin (an explicit strategy choice outranks a budget hint).
+            let strategy = if replay.is_none()
+                && !matches!(self.adaptation_mode(agent_id), AdaptationMode::Manual(_))
+            {
+                self.apply_cap(&negotiations, alloc.agent_index, strategy, hints.get(&agent_id))
+            } else {
+                strategy
+            };
+
             let budget = ResourceBudget {
-                strategy_id: alloc.strategy.id,
-                time_limit: alloc.strategy.estimated_time,
-                memory_limit: Some(alloc.strategy.estimated_vram),
+                strategy_id: strategy.id,
+                time_limit: strategy.estimated_time,
+                memory_limit: Some(strategy.estimated_vram),
                 extra_params: std::collections::HashMap::new(),
             };
 
             log::info!(
                 "GORNA: Issuing budget to {:?} — strategy={:?}, time={:.2}ms, vram={}KB",
-                agent.id(),
+                agent_id,
                 budget.strategy_id,
                 budget.time_limit.as_secs_f64() * 1000.0,
-                alloc.strategy.estimated_vram / 1024
+                strategy.estimated_vram / 1024
             );
 
             agent.apply_budget(budget);
+            issued.push((agent_id, strategy.id));
         }
 
         log::debug!(
             "GORNA: Arbitration complete. {} budgets issued.",
-            allocations.len()
+            issued.len()
         );
+        issued
     }
 
     /// Polls all agents for health status and returns the count of stalled agents.
@@ -263,7 +421,9 @@ impl GornaArbitrator {
     }
 
     /// Forces all agents to their lowest-cost strategy as an emergency measure.
-    fn emergency_stop(&self, agents: &mut [Arc<Mutex<dyn Agent>>]) {
+    /// Returns the issued decisions (all `LowPower`) for recording.
+    fn emergency_stop(&self, agents: &mut [Arc<Mutex<dyn Agent>>]) -> TickDecisions {
+        let mut issued = TickDecisions::with_capacity(agents.len());
         for (i, agent_mutex) in agents.iter_mut().enumerate() {
             let Some(mut agent) = try_lock_agent_with_timeout(agent_mutex, self.lock_timeout)
             else {
@@ -283,7 +443,36 @@ impl GornaArbitrator {
 
             log::warn!("GORNA: Emergency LowPower issued to {:?}.", agent.id());
             agent.apply_budget(budget);
+            issued.push((agent.id(), StrategyId::LowPower));
         }
+        issued
+    }
+
+    /// Maps each negotiation to a wave id from `self.wave_plan`.
+    ///
+    /// Agents named together in a plan wave share its id (they run concurrently);
+    /// any agent the plan does not mention — and every agent when the plan is
+    /// empty — gets a fresh singleton id, so its cost is summed rather than
+    /// folded into a wave `max`.
+    fn assign_waves(&self, negotiations: &[AgentNegotiation]) -> Vec<usize> {
+        let mut wave_of_id: HashMap<AgentId, usize> = HashMap::new();
+        for (w, wave) in self.wave_plan.iter().enumerate() {
+            for id in wave {
+                wave_of_id.entry(*id).or_insert(w);
+            }
+        }
+        let mut next_singleton = self.wave_plan.len();
+        negotiations
+            .iter()
+            .map(|n| match wave_of_id.get(&n.agent_id) {
+                Some(&w) => w,
+                None => {
+                    let w = next_singleton;
+                    next_singleton += 1;
+                    w
+                }
+            })
+            .collect()
     }
 
     /// Runs the global budget fitting algorithm.
@@ -293,6 +482,13 @@ impl GornaArbitrator {
     /// 2. Try to give each agent its most expensive strategy that fits.
     /// 3. If the total exceeds the budget, downgrade lower-priority agents first.
     /// 4. Respect VRAM constraints if specified.
+    ///
+    /// Time is costed along the **critical path**: agents grouped in the same
+    /// wave by `self.wave_plan` run concurrently, so the wave contributes only
+    /// its `max` member time to the frame, and the frame budget is spent against
+    /// the sum over waves. An empty plan (serial execution) makes every agent
+    /// its own wave, so this reduces exactly to the sum-of-costs fit. VRAM is
+    /// always additive (memory does not overlap), so it stays a plain sum.
     fn fit_budgets(
         &self,
         negotiations: &[AgentNegotiation],
@@ -319,16 +515,28 @@ impl GornaArbitrator {
             })
             .collect();
 
-        let total_min_ms: f32 = allocations
-            .iter()
-            .map(|a| a.strategy.estimated_time.as_secs_f32() * 1000.0)
-            .sum();
+        // Assign each negotiation to a wave id. Agents named together in a plan
+        // wave share one; any agent absent from the plan (or when the plan is
+        // empty) becomes its own singleton wave — so its cost is summed, never
+        // hidden under a `max`.
+        let wave_of = self.assign_waves(negotiations);
+        let wave_count = wave_of.iter().copied().max().map_or(0, |m| m + 1);
+
+        // The frame's baseline time is the sum over waves of each wave's slowest
+        // member (its critical path). `wave_max[w]` also stays the invariant
+        // "current max member cost of wave w" through the upgrade loop below.
+        let cost_ms = |a: &AgentAllocation| a.strategy.estimated_time.as_secs_f32() * 1000.0;
+        let mut wave_max = vec![0.0_f32; wave_count];
+        for (i, a) in allocations.iter().enumerate() {
+            wave_max[wave_of[i]] = wave_max[wave_of[i]].max(cost_ms(a));
+        }
+        let total_min_ms: f32 = wave_max.iter().sum();
 
         let total_min_vram: u64 = allocations.iter().map(|a| a.strategy.estimated_vram).sum();
 
         if total_min_ms > total_budget_ms {
             log::warn!(
-                "GORNA: Even minimum strategies ({:.2}ms) exceed budget ({:.2}ms). \
+                "GORNA: Even minimum strategies ({:.2}ms critical path) exceed budget ({:.2}ms). \
                 All agents at LowPower.",
                 total_min_ms,
                 total_budget_ms
@@ -351,13 +559,16 @@ impl GornaArbitrator {
 
         for &idx in &sorted_indices {
             let negotiation = &negotiations[idx];
-            let current_cost_ms = allocations[idx].strategy.estimated_time.as_secs_f32() * 1000.0;
+            let w = wave_of[idx];
             let current_vram_cost = allocations[idx].strategy.estimated_vram;
 
             let mut best_upgrade: Option<&StrategyOption> = None;
             for strategy in negotiation.strategies.iter().rev() {
-                let cost_ms = strategy.estimated_time.as_secs_f32() * 1000.0;
-                let delta_ms = cost_ms - current_cost_ms;
+                let cost = strategy.estimated_time.as_secs_f32() * 1000.0;
+                // Upgrades only raise cost, and `wave_max[w]` already covers this
+                // agent's current cost, so the frame grows only if the agent
+                // overtakes its wave's slowest member.
+                let delta_ms = (cost - wave_max[w]).max(0.0);
                 let delta_vram = strategy.estimated_vram.saturating_sub(current_vram_cost);
 
                 let time_fits = delta_ms <= remaining_ms;
@@ -372,19 +583,21 @@ impl GornaArbitrator {
             }
 
             if let Some(upgrade) = best_upgrade {
-                let old_cost = current_cost_ms;
                 let new_cost = upgrade.estimated_time.as_secs_f32() * 1000.0;
                 let delta_vram = upgrade.estimated_vram.saturating_sub(current_vram_cost);
+                let delta_frame = (new_cost - wave_max[w]).max(0.0);
 
-                remaining_ms -= new_cost - old_cost;
+                remaining_ms -= delta_frame;
+                wave_max[w] = wave_max[w].max(new_cost);
                 current_vram += delta_vram;
                 allocations[idx].strategy = upgrade.clone();
 
                 log::trace!(
-                    "GORNA: Upgraded {:?} from {:.2}ms to {:.2}ms (remaining={:.2}ms, vram={:.2}MB)",
+                    "GORNA: Upgraded {:?} to {:.2}ms (wave {} max={:.2}ms, remaining={:.2}ms, vram={:.2}MB)",
                     negotiation.agent_id,
-                    old_cost,
                     new_cost,
+                    w,
+                    wave_max[w],
                     remaining_ms,
                     current_vram as f64 / (1024.0 * 1024.0)
                 );
@@ -403,6 +616,92 @@ impl GornaArbitrator {
         allocations
     }
 
+    /// Clamps `fitted` into the `[min, max]` strategy range by picking, from the
+    /// agent's offered strategies within range, the one nearest the fit. Honours
+    /// `Bounded` mode.
+    fn clamp_strategy(
+        &self,
+        negotiations: &[AgentNegotiation],
+        agent_index: usize,
+        fitted: &StrategyOption,
+        min: StrategyId,
+        max: StrategyId,
+    ) -> StrategyOption {
+        let (lo, hi) = (strategy_rank(min), strategy_rank(max));
+        let fr = strategy_rank(fitted.id);
+        if fr >= lo && fr <= hi {
+            return fitted.clone();
+        }
+        let Some(n) = negotiations.iter().find(|n| n.agent_index == agent_index) else {
+            return fitted.clone();
+        };
+        let mut best: Option<&StrategyOption> = None;
+        for s in &n.strategies {
+            let sr = strategy_rank(s.id);
+            if sr < lo || sr > hi {
+                continue;
+            }
+            let closer = match best {
+                None => true,
+                Some(b) => {
+                    (sr as i32 - fr as i32).abs() < (strategy_rank(b.id) as i32 - fr as i32).abs()
+                }
+            };
+            if closer {
+                best = Some(s);
+            }
+        }
+        best.cloned().unwrap_or_else(|| fitted.clone())
+    }
+
+    /// Clamps `fitted` down to a developer `Cap` hint: if the fitted strategy's
+    /// estimated cost exceeds `hints.cap_ms`, returns the most expensive offered
+    /// strategy still within the ceiling (or the cheapest, if even that
+    /// exceeds it). No cap, or already within it → `fitted` unchanged.
+    fn apply_cap(
+        &self,
+        negotiations: &[AgentNegotiation],
+        agent_index: usize,
+        fitted: StrategyOption,
+        hints: Option<&AgentHints>,
+    ) -> StrategyOption {
+        let Some(max_ms) = hints.and_then(|h| h.cap_ms) else {
+            return fitted;
+        };
+        if fitted.estimated_time.as_secs_f32() * 1000.0 <= max_ms {
+            return fitted;
+        }
+        let Some(n) = negotiations.iter().find(|n| n.agent_index == agent_index) else {
+            return fitted;
+        };
+        // `strategies` is sorted ascending by estimated_time, so the last option
+        // within the ceiling is the richest one that honours the cap; if none
+        // fit, fall back to the cheapest (index 0) — the closest we can get.
+        let mut chosen = &n.strategies[0];
+        for s in &n.strategies {
+            if s.estimated_time.as_secs_f32() * 1000.0 <= max_ms {
+                chosen = s;
+            } else {
+                break;
+            }
+        }
+        chosen.clone()
+    }
+
+    /// Finds the negotiated [`StrategyOption`] with `id` for the agent at
+    /// `agent_index`, if that agent offered it. Used to honour `Manual` mode.
+    fn strategy_for(
+        &self,
+        negotiations: &[AgentNegotiation],
+        agent_index: usize,
+        id: StrategyId,
+    ) -> Option<StrategyOption> {
+        negotiations
+            .iter()
+            .find(|n| n.agent_index == agent_index)
+            .and_then(|n| n.strategies.iter().find(|s| s.id == id).cloned())
+    }
+
     /// Returns the priority weight for an agent.
     ///
     /// Higher values indicate greater importance. The DCC uses these weights to
@@ -416,6 +715,8 @@ impl GornaArbitrator {
             AgentId::Ui => 0.7,
             AgentId::Audio => 0.6,
             AgentId::Asset => 0.5,
+            AgentId::Overlay => 0.4,
+            AgentId::Skybox => 0.4,
         }
     }
 
@@ -437,8 +738,8 @@ mod tests {
     use crate::EngineMode;
     use khora_core::agent::Agent;
     use khora_core::control::gorna::{
-        AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-        StrategyOption,
+        AdaptationMode, AgentHints, AgentId, AgentStatus, NegotiationRequest, NegotiationResponse,
+        ResourceBudget, StrategyId, StrategyOption, TickDecisions,
     };
     use khora_core::EngineContext;
 
@@ -552,6 +853,41 @@ mod tests {
     }
 
     #[test]
+    fn test_measured_costs_calibrate_fit_downward() {
+        let arbitrator = create_arbitrator();
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let agent = MockAgent::new(AgentId::Renderer);
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
+
+        // The agent quotes Balanced at 8ms but actually measured 24ms (×3).
+        // Calibration rescales the options to 6/24/42ms, so within the 16.66ms
+        // budget only LowPower fits — the fit must downgrade instead of
+        // trusting the optimistic quote (which would have picked HighPerformance).
+        let measured: HashMap<AgentId, f64> = [(AgentId::Renderer, 24.0)].into();
+        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &measured, None, &HashMap::new());
+
+        assert_eq!(issued, vec![(AgentId::Renderer, StrategyId::LowPower)]);
+    }
+
+    #[test]
+    fn test_calibration_factor_is_clamped() {
+        let arbitrator = create_arbitrator();
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let agent = MockAgent::new(AgentId::Renderer);
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
+
+        // A pathological measurement (800ms vs the 8ms quote = ×100) is clamped
+        // to ×4: options become 8/32/56ms. Even the cheapest exceeds nothing —
+        // LowPower (8ms) still fits the 16.66ms budget, but no upgrade does.
+        let measured: HashMap<AgentId, f64> = [(AgentId::Renderer, 800.0)].into();
+        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &measured, None, &HashMap::new());
+
+        assert_eq!(issued, vec![(AgentId::Renderer, StrategyId::LowPower)]);
+    }
+
+    #[test]
     fn test_arbitrate_single_agent_gets_best_strategy() {
         let arbitrator = create_arbitrator();
         let ctx = simulation_ctx();
@@ -559,7 +895,7 @@ mod tests {
         let agent = MockAgent::new(AgentId::Renderer);
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
 
         let lock = agents[0].lock().unwrap();
         let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
@@ -569,6 +905,133 @@ mod tests {
             .expect("Budget should be applied");
         // With 16.66ms total budget and a single agent, it should get HighPerformance (14ms)
         assert_eq!(budget.strategy_id, StrategyId::HighPerformance);
+    }
+
+    #[test]
+    fn test_fit_budgets_costs_concurrent_wave_by_critical_path() {
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let two_agents = || -> Vec<Arc<Mutex<dyn Agent>>> {
+            vec![
+                Arc::new(Mutex::new(MockAgent::new(AgentId::Renderer))),
+                Arc::new(Mutex::new(MockAgent::new(AgentId::Physics))),
+            ]
+        };
+
+        // Serial (no wave plan): 14 + 14ms > 16.66ms budget, so the fit cannot
+        // grant both agents HighPerformance — one is downgraded. This is the
+        // pre-parallel sum-of-costs behaviour, unchanged.
+        let serial = create_arbitrator();
+        let mut agents = two_agents();
+        let issued =
+            serial.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        let hp_serial = issued
+            .iter()
+            .filter(|(_, s)| *s == StrategyId::HighPerformance)
+            .count();
+        assert!(
+            hp_serial < 2,
+            "serial fit must not grant both HighPerformance: {issued:?}"
+        );
+
+        // Concurrent wave [Renderer, Physics]: the wave costs max(14, 14) = 14ms
+        // on the critical path, which fits the budget — so both reach
+        // HighPerformance. This is the win parallel execution unlocks.
+        let mut concurrent = create_arbitrator();
+        concurrent.set_wave_plan(&[vec![AgentId::Renderer, AgentId::Physics]]);
+        let mut agents = two_agents();
+        let issued = concurrent.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
+        let hp_concurrent = issued
+            .iter()
+            .filter(|(_, s)| *s == StrategyId::HighPerformance)
+            .count();
+        assert_eq!(
+            hp_concurrent, 2,
+            "concurrent wave must grant both HighPerformance: {issued:?}"
+        );
+    }
+
+    #[test]
+    fn test_manual_mode_pins_strategy_against_budget() {
+        let mut arbitrator = create_arbitrator();
+        arbitrator.set_adaptation_mode(
+            AgentId::Renderer,
+            AdaptationMode::Manual(StrategyId::LowPower),
+        );
+
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let agent = MockAgent::new(AgentId::Renderer);
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
+
+        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+
+        let lock = agents[0].lock().unwrap();
+        let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+        let budget = mock
+            .applied_budget
+            .as_ref()
+            .expect("Budget should be applied");
+        // The same 16.66ms budget yields HighPerformance under `Learning` (test
+        // above). `Manual` pins the developer's choice instead: LowPower.
+        assert_eq!(budget.strategy_id, StrategyId::LowPower);
+    }
+
+    #[test]
+    fn test_stable_mode_blocks_opportunistic_upgrade() {
+        let mut arbitrator = create_arbitrator();
+        arbitrator.set_adaptation_mode(AgentId::Renderer, AdaptationMode::Stable);
+
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        // MockAgent reports `Balanced` as its current strategy until a budget is
+        // applied. With a 16.66ms budget the fit would upgrade to HighPerformance,
+        // but `Stable` forbids opportunistic upgrades — it stays at Balanced.
+        let agent = MockAgent::new(AgentId::Renderer);
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
+
+        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+
+        let lock = agents[0].lock().unwrap();
+        let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+        assert_eq!(
+            mock.applied_budget.as_ref().unwrap().strategy_id,
+            StrategyId::Balanced
+        );
+    }
+
+    #[test]
+    fn test_bounded_mode_clamps_to_max() {
+        let mut arbitrator = create_arbitrator();
+        arbitrator.set_adaptation_mode(
+            AgentId::Renderer,
+            AdaptationMode::Bounded {
+                min: StrategyId::LowPower,
+                max: StrategyId::Balanced,
+            },
+        );
+
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        // Fit would pick HighPerformance; bounds cap it at Balanced.
+        let agent = MockAgent::new(AgentId::Renderer);
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
+
+        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+
+        let lock = agents[0].lock().unwrap();
+        let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+        assert_eq!(
+            mock.applied_budget.as_ref().unwrap().strategy_id,
+            StrategyId::Balanced
+        );
     }
 
     #[test]
@@ -589,7 +1052,7 @@ mod tests {
             Arc::new(Mutex::new(physics)),
         ];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
 
         // Both should have received budgets
         for agent_mutex in &agents {
@@ -624,7 +1087,9 @@ mod tests {
         let arbitrator = create_arbitrator();
         let mut ctx = simulation_ctx();
         ctx.hardware.thermal = khora_core::platform::ThermalStatus::Throttling;
-        ctx.refresh_budget_multiplier(); // 0.6
+        // The PID owns the multiplier in the live loop; here we pin it directly
+        // to exercise the lever `arbitrate` consumes.
+        ctx.global_budget_multiplier = 0.6;
 
         let mut report = normal_report();
         report.suggested_latency_ms = 33.33; // Heuristic suggestion for throttling
@@ -632,7 +1097,7 @@ mod tests {
         let agent = MockAgent::new(AgentId::Renderer);
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
 
         let lock = agents[0].lock().unwrap();
         let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
@@ -658,7 +1123,7 @@ mod tests {
             Arc::new(Mutex::new(physics)),
         ];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
 
         // Both agents should be forced to LowPower
         for agent_mutex in &agents {
@@ -686,7 +1151,7 @@ mod tests {
             Arc::new(Mutex::new(stalled2)),
         ];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
 
         // Both should be forced to LowPower
         for agent_mutex in &agents {
@@ -708,7 +1173,7 @@ mod tests {
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![];
 
         // Should not panic
-        arbitrator.arbitrate(&ctx, &report, &mut agents);
+        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
     }
 
     #[test]
@@ -727,7 +1192,7 @@ mod tests {
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> =
             vec![Arc::new(Mutex::new(renderer)), Arc::new(Mutex::new(asset))];
 
-        arbitrator.arbitrate(&ctx, &tight_report, &mut agents);
+        arbitrator.arbitrate(&ctx, &tight_report, &mut agents, &HashMap::new(), None, &HashMap::new());
 
         // With 10ms total: both minimum = 2+2=4ms, remaining=6ms.
         // Renderer (priority 1.0) should be upgraded first: +6ms → Balanced (8ms).
@@ -737,6 +1202,180 @@ mod tests {
             unsafe { &*((&*renderer_lock as *const dyn Agent) as *const MockAgent) };
         assert_eq!(
             renderer_mock.applied_budget.as_ref().unwrap().strategy_id,
+            StrategyId::Balanced
+        );
+    }
+
+    #[test]
+    fn test_hint_cap_clamps_issued_strategy() {
+        let arbitrator = create_arbitrator();
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> =
+            vec![Arc::new(Mutex::new(MockAgent::new(AgentId::Renderer)))];
+
+        // Ample budget would fit HighPerformance (14ms), but a 5ms Cap leaves
+        // only LowPower (2ms) within the ceiling — Balanced (8ms) exceeds it.
+        let hints: HashMap<AgentId, AgentHints> = [(
+            AgentId::Renderer,
+            AgentHints {
+                cap_ms: Some(5.0),
+                priority: None,
+            },
+        )]
+        .into();
+        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &hints);
+        assert_eq!(issued, vec![(AgentId::Renderer, StrategyId::LowPower)]);
+    }
+
+    #[test]
+    fn test_hint_cap_allows_richest_within_ceiling() {
+        let arbitrator = create_arbitrator();
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> =
+            vec![Arc::new(Mutex::new(MockAgent::new(AgentId::Renderer)))];
+
+        // A 10ms Cap admits Balanced (8ms) but not HighPerformance (14ms).
+        let hints: HashMap<AgentId, AgentHints> = [(
+            AgentId::Renderer,
+            AgentHints {
+                cap_ms: Some(10.0),
+                priority: None,
+            },
+        )]
+        .into();
+        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &hints);
+        assert_eq!(issued, vec![(AgentId::Renderer, StrategyId::Balanced)]);
+    }
+
+    #[test]
+    fn test_hint_prioritize_reorders_budget_fit() {
+        let arbitrator = create_arbitrator();
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let mut tight_report = report;
+        tight_report.suggested_latency_ms = 10.0;
+
+        // Default priorities upgrade Renderer (1.0) before Asset (0.5). A
+        // Prioritize hint lifting Asset above Renderer flips the fit: Asset
+        // takes the single available upgrade to Balanced, Renderer stays LowPower.
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![
+            Arc::new(Mutex::new(MockAgent::new(AgentId::Renderer))),
+            Arc::new(Mutex::new(MockAgent::new(AgentId::Asset))),
+        ];
+        let hints: HashMap<AgentId, AgentHints> = [(
+            AgentId::Asset,
+            AgentHints {
+                cap_ms: None,
+                priority: Some(2.0),
+            },
+        )]
+        .into();
+
+        arbitrator.arbitrate(&ctx, &tight_report, &mut agents, &HashMap::new(), None, &hints);
+
+        let renderer = agents[0].lock().unwrap();
+        let renderer_mock = unsafe { &*((&*renderer as *const dyn Agent) as *const MockAgent) };
+        let asset = agents[1].lock().unwrap();
+        let asset_mock = unsafe { &*((&*asset as *const dyn Agent) as *const MockAgent) };
+        assert_eq!(
+            asset_mock.applied_budget.as_ref().unwrap().strategy_id,
+            StrategyId::Balanced,
+            "the prioritized agent takes the upgrade"
+        );
+        assert_eq!(
+            renderer_mock.applied_budget.as_ref().unwrap().strategy_id,
+            StrategyId::LowPower,
+            "the deprioritized agent is downgraded"
+        );
+    }
+
+    #[test]
+    fn test_hint_targets_only_its_agent() {
+        // A Cap on a DIFFERENT agent must not touch Renderer: with ample budget
+        // and no Renderer hint, it still reaches HighPerformance (regression-0).
+        let arbitrator = create_arbitrator();
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> =
+            vec![Arc::new(Mutex::new(MockAgent::new(AgentId::Renderer)))];
+        let hints: HashMap<AgentId, AgentHints> = [(
+            AgentId::Audio,
+            AgentHints {
+                cap_ms: Some(1.0),
+                priority: None,
+            },
+        )]
+        .into();
+        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &hints);
+        assert_eq!(issued, vec![(AgentId::Renderer, StrategyId::HighPerformance)]);
+    }
+
+    #[test]
+    fn test_arbitrate_returns_issued_decisions() {
+        let arbitrator = create_arbitrator();
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> =
+            vec![Arc::new(Mutex::new(MockAgent::new(AgentId::Renderer)))];
+
+        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        // Single agent, ample budget → HighPerformance, reported back as issued.
+        assert_eq!(
+            issued,
+            vec![(AgentId::Renderer, StrategyId::HighPerformance)]
+        );
+    }
+
+    #[test]
+    fn test_replay_overrides_fit_with_recorded_decision() {
+        let arbitrator = create_arbitrator();
+        let ctx = simulation_ctx();
+        let report = normal_report();
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> =
+            vec![Arc::new(Mutex::new(MockAgent::new(AgentId::Renderer)))];
+
+        // A recorded decision of LowPower must be issued verbatim, even though
+        // the live fit (ample budget) would pick HighPerformance.
+        let recorded: TickDecisions = vec![(AgentId::Renderer, StrategyId::LowPower)];
+        let replayed = arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), Some(&recorded), &HashMap::new());
+        assert_eq!(replayed, vec![(AgentId::Renderer, StrategyId::LowPower)]);
+
+        let lock = agents[0].lock().unwrap();
+        let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+        assert_eq!(
+            mock.applied_budget.as_ref().unwrap().strategy_id,
+            StrategyId::LowPower
+        );
+    }
+
+    #[test]
+    fn test_vram_budget_caps_upgrade() {
+        let arbitrator = create_arbitrator();
+        let mut ctx = simulation_ctx();
+        let report = normal_report();
+
+        // Ample time budget (16.66ms) would let a lone agent reach
+        // HighPerformance (14ms). But HighPerformance costs 20MB of VRAM,
+        // Balanced 10MB. Cap available VRAM at 15MB: the fit must stop at
+        // Balanced — the time budget is not the binding constraint here.
+        ctx.hardware.available_vram = Some(15 * 1024 * 1024);
+
+        let agent = MockAgent::new(AgentId::Renderer);
+        let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
+
+        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+
+        assert_eq!(
+            issued,
+            vec![(AgentId::Renderer, StrategyId::Balanced)],
+            "VRAM ceiling must block the HighPerformance upgrade"
+        );
+        let lock = agents[0].lock().unwrap();
+        let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
+        assert_eq!(
+            mock.applied_budget.as_ref().unwrap().strategy_id,
             StrategyId::Balanced
         );
     }

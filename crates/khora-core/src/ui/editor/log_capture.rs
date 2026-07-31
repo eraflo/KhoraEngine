@@ -79,6 +79,7 @@ impl log::Log for EditorLogCapture {
             },
             message: record.args().to_string(),
             target: record.target().to_string(),
+            time: wall_clock_hms(),
         };
 
         if let Ok(mut entries) = self.entries.lock() {
@@ -92,4 +93,37 @@ impl log::Log for EditorLogCapture {
     }
 
     fn flush(&self) {}
+}
+
+/// Current wall-clock time of day as `HH:MM:SS` (UTC).
+///
+/// Derived straight from the system clock rather than pulling in a date-time
+/// crate: the console only ever needs the time of day, and the engine has no
+/// other use for calendar handling.
+fn wall_clock_hms() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let day = secs % 86_400;
+    format!("{:02}:{:02}:{:02}", day / 3600, (day % 3600) / 60, day % 60)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wall_clock_hms;
+
+    /// The console aligns its time column by character count, so the format has
+    /// to be fixed-width — and it must never roll past a real clock reading.
+    #[test]
+    fn wall_clock_is_fixed_width_and_in_range() {
+        let s = wall_clock_hms();
+        assert_eq!(s.len(), 8, "HH:MM:SS is always 8 chars: {s}");
+
+        let parts: Vec<u32> = s.split(':').map(|p| p.parse().unwrap()).collect();
+        assert_eq!(parts.len(), 3);
+        assert!(parts[0] < 24, "hours out of range: {s}");
+        assert!(parts[1] < 60, "minutes out of range: {s}");
+        assert!(parts[2] < 60, "seconds out of range: {s}");
+    }
 }

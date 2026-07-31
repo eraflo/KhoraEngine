@@ -14,6 +14,7 @@
 
 //! Event types for engine-wide telemetry.
 
+use crate::control::gorna::AgentId;
 use crate::telemetry::metrics::{MetricId, MetricValue};
 use crate::telemetry::monitoring::{GpuReport, HardwareReport, ResourceUsageReport};
 
@@ -35,4 +36,44 @@ pub enum TelemetryEvent {
     GpuReport(GpuReport),
     /// A change in the execution phase signaled by the engine.
     PhaseChange(String),
+    /// A per-agent execution-cost sample: the workload size `n` an agent
+    /// processed this frame and the wall-clock time it took. The DCC feeds
+    /// these to a per-agent cost model (`c·f(n)`) so it can *forecast* a budget
+    /// breach ("at this growth rate the frame budget breaks at ~N") instead of
+    /// only reacting. Published once per agent per frame from the hot path.
+    AgentCost {
+        /// The agent that produced the sample.
+        id: AgentId,
+        /// Workload size processed this frame (e.g. live entity count).
+        n: f64,
+        /// Wall-clock execution time, in milliseconds.
+        time_ms: f64,
+    },
+    /// The scheduler's per-frame **wave plan**: how the agents will actually be
+    /// grouped for execution. Each inner list is one wave — agents that run
+    /// concurrently (an `Isolated` set plus at most one `SharedWorld` agent);
+    /// a singleton list is a serially-executed agent. Published only when
+    /// parallel execution is enabled (serial execution needs no grouping — the
+    /// DCC then falls back to summing per-agent costs).
+    ///
+    /// The DCC uses it to cost a concurrent wave by its **critical path**
+    /// (`max` of its members) instead of the sum, so budget fitting doesn't
+    /// leave frame time on the table for work that overlaps.
+    WavePlan {
+        /// Agent ids grouped by wave, in execution order.
+        waves: Vec<Vec<AgentId>>,
+    },
+    /// A per-component access-pattern snapshot from the ECS, for the layout
+    /// advisor (AGDF). Cumulative counters, sampled at a low rate (not every
+    /// frame); the DCC turns them into a read-only layout recommendation.
+    ComponentAccess {
+        /// Component type name (for the glass-box report).
+        type_name: String,
+        /// Component size in bytes (`size_of`).
+        size_bytes: usize,
+        /// Cumulative number of queries that touched this component.
+        query_count: u64,
+        /// Cumulative rows scanned across those queries.
+        rows_scanned: u64,
+    },
 }

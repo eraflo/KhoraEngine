@@ -26,11 +26,16 @@ fn test_ecs_maintenance_cleans_up_orphans() {
     world.register_component::<Position>(SemanticDomain::Spatial);
     let mut maintenance = EcsMaintenance::new();
 
-    // Create an orphan by spawning an entity and immediately removing its component domain.
+    // Create an orphan by spawning an entity and immediately removing its
+    // component domain. The migration records the source page in the World's
+    // dirty set automatically — no manual queueing needed.
     let entity_to_remove = world.spawn(Position(10));
-    let orphan_location = world
-        .remove_component_domain::<Position>(entity_to_remove)
-        .expect("Removing component should create an orphan");
+    assert!(
+        world
+            .remove_component_domain::<Position>(entity_to_remove)
+            .is_some(),
+        "Removing component should create an orphan"
+    );
 
     // Create a "witness" entity that shared the page with the orphaned data.
     let witness_entity = world.spawn(Position(20));
@@ -46,11 +51,14 @@ fn test_ecs_maintenance_cleans_up_orphans() {
         "Witness data should be correct before GC"
     );
 
-    // Queue the cleanup task.
-    maintenance.queue_cleanup(orphan_location, SemanticDomain::Spatial);
-
     // --- 2. ACT ---
+    // The maintenance tick compacts the dirty page recorded by the migration.
     maintenance.tick(&mut world);
+    assert_eq!(
+        maintenance.last_compacted_count(),
+        1,
+        "exactly one dirty page should have been compacted"
+    );
 
     // --- 3. ASSERT ---
     let witness_pos = world.get::<Position>(witness_entity);

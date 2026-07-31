@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Khora — design direction (editor)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" rel="stylesheet">
+<style>
+:root{
+  /* ---- Surfaces: deep navy, hue 264, very slightly cooler than before ---- */
+  --bg-0: oklch(0.155 0.020 264);   /* app void (behind everything) */
+  --bg-1: oklch(0.190 0.023 264);   /* panel surface */
+  --bg-2: oklch(0.224 0.026 264);   /* elevated / rows */
+  --bg-3: oklch(0.265 0.029 264);   /* interactive rest */
+  --bg-4: oklch(0.315 0.033 264);   /* interactive active / selected fill */
+
+  /* ---- Hairlines ---- */
+  --line:        oklch(0.34 0.022 264 / 0.65);
+  --line-strong: oklch(0.46 0.028 264 / 0.85);
+
+  /* ---- Brand silver (hue 245, a touch cooler/cleaner) ---- */
+  --silver:      oklch(0.86 0.035 245);
+  --silver-dim:  oklch(0.70 0.040 245);
+
+  /* ---- Accents: one job each ---- */
+  --gold:   oklch(0.82 0.115 84);    /* selection / active only */
+  --green:  oklch(0.78 0.130 152);   /* healthy */
+  --amber:  oklch(0.80 0.135 72);    /* warning */
+  --cyan:   oklch(0.80 0.095 222);   /* info / link */
+  --violet: oklch(0.74 0.130 292);   /* custom agents */
+  --red:    oklch(0.70 0.170 25);    /* error / destructive */
+
+  /* ---- Text: warm silver ramp ---- */
+  --ink-0: oklch(0.965 0.005 250);   /* primary */
+  --ink-1: oklch(0.820 0.010 250);   /* secondary */
+  --ink-2: oklch(0.660 0.013 250);   /* muted */
+  --ink-3: oklch(0.500 0.015 250);   /* disabled */
+
+  /* ---- Type ---- */
+  --sans: "Geist", system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, monospace;
+  --display: "Fraunces", Georgia, serif;
+
+  /* ---- 4px spacing scale ---- */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:24px; --s8:32px; --s10:40px;
+
+  /* ---- Radii ---- */
+  --r-xs:3px; --r-sm:5px; --r-md:7px; --r-lg:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg-0);color:var(--ink-1);font-family:var(--sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+body{padding:var(--s8) var(--s6);max-width:1320px;margin:0 auto}
+h1{font-family:var(--display);font-weight:500;font-size:30px;letter-spacing:-0.02em;color:var(--ink-0);line-height:1.1}
+h2{font-family:var(--display);font-weight:500;font-size:18px;color:var(--ink-0);letter-spacing:-0.01em;margin-bottom:var(--s4)}
+.lede{color:var(--ink-2);font-size:13px;margin-top:var(--s2)}
+.kicker{font-family:var(--mono);font-size:10.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-3);font-weight:500}
+section{margin-top:var(--s10)}
+.hair{height:1px;background:var(--line);border:0;margin:var(--s6) 0}
+
+/* ---------- token strip ---------- */
+.swatches{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:var(--s2)}
+.sw{border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;background:var(--bg-1)}
+.sw .chip{height:46px}
+.sw .meta{padding:var(--s2) var(--s3);font-family:var(--mono);font-size:10.5px;color:var(--ink-2);display:flex;justify-content:space-between;gap:var(--s2)}
+.sw .meta b{color:var(--ink-0);font-weight:500}
+
+.typesc{display:flex;flex-direction:column;gap:var(--s3)}
+.typesc>div{display:flex;align-items:baseline;gap:var(--s4);border-bottom:1px solid var(--line);padding-bottom:var(--s3)}
+.typesc .tag{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);width:120px;flex:none}
+
+/* ---------- component states ---------- */
+.specgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:var(--s4)}
+.card{background:var(--bg-1);border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--s4)}
+.card>.kicker{display:block;margin-bottom:var(--s3)}
+.row{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:center}
+
+.btn{font-family:var(--sans);font-size:12.5px;font-weight:500;border-radius:var(--r-sm);padding:7px 13px;border:1px solid transparent;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:background .12s,border-color .12s}
+.btn-primary{background:var(--silver);color:oklch(0.18 0.02 264)}
+.btn-primary:hover{background:oklch(0.90 0.035 245)}
+.btn-ghost{background:var(--bg-3);color:var(--ink-1);border-color:var(--line)}
+.btn-ghost:hover{background:var(--bg-4);border-color:var(--line-strong)}
+.btn-danger{background:transparent;color:var(--red);border-color:oklch(0.70 0.17 25 / 0.5)}
+.btn-danger:hover{background:oklch(0.70 0.17 25 / 0.12)}
+.btn:disabled,.btn[aria-disabled=true]{background:var(--bg-2);color:var(--ink-3);border-color:var(--line);cursor:not-allowed}
+
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:var(--s3)}
+.field label{font-size:11.5px;color:var(--ink-2);font-weight:500}
+.input{background:var(--bg-0);border:1px solid var(--line-strong);border-radius:var(--r-sm);padding:8px 10px;color:var(--ink-0);font-family:var(--sans);font-size:12.5px;width:100%}
+.input::placeholder{color:var(--ink-3)}
+.input:focus{outline:none;border-color:var(--silver);box-shadow:0 0 0 3px oklch(0.86 0.035 245 / 0.18)}
+.input.invalid{border-color:var(--red)}
+.err{color:var(--red);font-size:11px;display:flex;align-items:center;gap:4px}
+
+.check{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-1);cursor:pointer}
+.box{width:16px;height:16px;border-radius:var(--r-xs);border:1px solid var(--line-strong);background:var(--bg-0);display:grid;place-items:center;flex:none}
+.box.on{background:var(--silver);border-color:var(--silver);color:oklch(0.18 0.02 264)}
+.box svg{width:11px;height:11px}
+
+.chip{font-family:var(--mono);font-size:10.5px;font-weight:500;padding:3px 9px 3px 7px;border-radius:999px;display:inline-flex;align-items:center;gap:5px;border:1px solid transparent}
+.dot{width:6px;height:6px;border-radius:50%}
+.chip.ok{background:oklch(0.78 0.13 152 / 0.14);color:var(--green);border-color:oklch(0.78 0.13 152 / 0.35)}
+.chip.warn{background:oklch(0.80 0.135 72 / 0.14);color:var(--amber);border-color:oklch(0.80 0.135 72 / 0.35)}
+.chip.muted{background:var(--bg-2);color:var(--ink-2);border-color:var(--line)}
+
+.skel{height:11px;border-radius:var(--r-xs);background:linear-gradient(90deg,var(--bg-2),var(--bg-3),var(--bg-2));background-size:200% 100%;animation:sh 1.3s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
+.empty{border:1px dashed var(--line-strong);border-radius:var(--r-lg);padding:var(--s6);text-align:center;color:var(--ink-2)}
+.empty .di{color:var(--silver-dim);font-size:20px;margin-bottom:var(--s2)}
+
+/* ---------- the editor shell ---------- */
+.shell{margin-top:var(--s5);border:1px solid var(--line-strong);border-radius:var(--r-lg);overflow:hidden;background:var(--bg-0);box-shadow:0 24px 60px -30px oklch(0 0 0 / 0.7)}
+.titlebar{height:44px;display:flex;align-items:center;gap:var(--s4);padding:0 var(--s4);background:linear-gradient(var(--bg-2),var(--bg-1));border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px}
+.dia{width:11px;height:11px;background:var(--silver);transform:rotate(45deg);border-radius:1.5px}
+.brand b{font-weight:600;color:var(--ink-0);font-size:13px;letter-spacing:-0.01em}
+.brand .proj{color:var(--ink-2);font-family:var(--mono);font-size:11px;padding-left:8px;margin-left:4px;border-left:1px solid var(--line)}
+.menus{display:flex;gap:2px}
+.menus span{font-size:12px;color:var(--ink-2);padding:4px 9px;border-radius:var(--r-sm)}
+.menus span:hover{background:var(--bg-3);color:var(--ink-0)}
+.tspacer{flex:1}
+.tb-search{background:var(--bg-0);border:1px solid var(--line);border-radius:var(--r-sm);height:26px;display:flex;align-items:center;gap:6px;padding:0 9px;color:var(--ink-3);font-size:11.5px;width:190px}
+
+.body{display:flex;height:560px}
+.spine{width:48px;background:var(--bg-1);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding-top:var(--s3);gap:6px}
+.spine .sbrand{width:18px;height:18px;background:var(--silver);transform:rotate(45deg);border-radius:2px;margin-bottom:var(--s4)}
+.mode{width:34px;height:34px;border-radius:var(--r-md);display:grid;place-items:center;color:var(--ink-2);position:relative;cursor:pointer}
+.mode:hover{background:var(--bg-3);color:var(--ink-0)}
+.mode.active{background:var(--bg-3);color:var(--gold)}
+.mode.active::before{content:"";position:absolute;left:-7px;top:8px;bottom:8px;width:2px;border-radius:2px;background:var(--gold)}
+.mode svg{width:18px;height:18px}
+.spine .sgrow{flex:1}
+
+.panel-l{width:248px;border-right:1px solid var(--line);background:var(--bg-1);display:flex;flex-direction:column}
+.panel-r{width:300px;border-left:1px solid var(--line);background:var(--bg-1);display:flex;flex-direction:column}
+.center{flex:1;display:flex;flex-direction:column;min-width:0}
+.phead{height:34px;display:flex;align-items:center;gap:var(--s2);padding:0 var(--s3);border-bottom:1px solid var(--line);flex:none}
+.phead .t{font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:var(--ink-2)}
+.phead .ct{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--ink-3);background:var(--bg-2);padding:1px 7px;border-radius:999px}
+.ptool{padding:var(--s2) var(--s3);border-bottom:1px solid var(--line)}
+.searchrow{background:var(--bg-0);border:1px solid var(--line);border-radius:var(--r-sm);height:26px;display:flex;align-items:center;gap:6px;padding:0 8px;color:var(--ink-3);font-size:11.5px}
+
+.tree{padding:var(--s2);overflow:auto;flex:1}
+.node{display:flex;align-items:center;gap:7px;height:26px;padding:0 8px;border-radius:var(--r-sm);color:var(--ink-1);font-size:12.5px;position:relative}
+.node .ti{color:var(--ink-2);font-size:14px;width:14px;text-align:center;flex:none}
+.node.sel{background:var(--bg-4);color:var(--ink-0)}
+.node.sel::before{content:"";position:absolute;left:0;top:4px;bottom:4px;width:2px;border-radius:2px;background:var(--gold)}
+.node.child{margin-left:18px}
+.node .tagn{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--ink-3)}
+
+.viewport{flex:1;position:relative;background:
+   radial-gradient(120% 90% at 50% 0%, oklch(0.24 0.03 264) 0%, oklch(0.165 0.022 264) 60%),
+   var(--bg-0);display:grid;place-items:center;overflow:hidden}
+.grid-floor{position:absolute;inset:auto -10% -12% -10%;height:55%;background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:38px 38px;transform:perspective(420px) rotateX(62deg);opacity:0.4}
+.obj{width:142px;height:142px;border-radius:50%;background:radial-gradient(circle at 38% 30%, oklch(0.57 0.03 264), oklch(0.31 0.03 264) 56%, oklch(0.205 0.025 264));border:1px solid var(--line-strong);box-shadow:0 34px 64px -26px oklch(0 0 0 / 0.85), inset -12px -16px 36px oklch(0 0 0 / 0.45);position:relative}
+.gizmo{position:absolute;left:50%;top:50%}
+.gizmo i{position:absolute;left:0;top:0;height:2.5px;border-radius:2px;transform-origin:left center}
+.gizmo i::after{content:"";position:absolute;right:-3px;top:50%;transform:translateY(-50%);width:7px;height:7px;border-radius:50%;background:inherit}
+.ax{width:60px;transform:rotate(10deg)}.ay{width:56px;transform:rotate(-90deg)}.az{width:46px;transform:rotate(152deg)}
+.vp-tools{position:absolute;top:var(--s3);left:var(--s3);display:flex;gap:var(--s1);background:oklch(0.18 0.02 264 / 0.7);border:1px solid var(--line);border-radius:var(--r-md);padding:3px;backdrop-filter:blur(6px)}
+.vp-tools .t{width:28px;height:24px;border-radius:var(--r-sm);display:grid;place-items:center;color:var(--ink-2);font-size:14px}
+.vp-tools .t.on{background:var(--bg-4);color:var(--gold)}
+.vp-stat{position:absolute;top:50px;left:var(--s3);font-family:var(--mono);font-size:10px;color:var(--ink-2);background:oklch(0.18 0.02 264 / 0.7);border:1px solid var(--line);border-radius:var(--r-md);padding:6px 9px;text-align:left;line-height:1.7;backdrop-filter:blur(6px)}
+.vp-stat b{color:var(--ink-0);font-weight:500}
+.viewgizmo{position:absolute;top:var(--s3);right:var(--s3);width:62px;height:62px;border-radius:50%;border:1px solid var(--line);background:oklch(0.18 0.02 264 / 0.55);backdrop-filter:blur(6px)}
+.vg-c{position:absolute;left:50%;top:50%}
+.vg-ax{position:absolute;left:0;top:0;height:2px;border-radius:2px;transform-origin:left center}
+.vg-ax .tip{position:absolute;right:-8px;top:50%;transform:translateY(-50%);width:15px;height:15px;border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-size:8px;font-weight:700;color:oklch(0.16 0.02 264)}
+.vg-ax.neg{opacity:0.5}
+.vg-ax.neg .tip{width:7px;height:7px;background:transparent !important;border:1.5px solid;right:-3px}
+.vg-x{width:20px;transform:rotate(18deg)} .vg-y{width:20px;transform:rotate(-90deg)} .vg-z{width:16px;transform:rotate(155deg)}
+.vg-nx{width:12px;transform:rotate(198deg)} .vg-ny{width:12px;transform:rotate(90deg)} .vg-nz{width:12px;transform:rotate(-25deg)}
+.transport{position:absolute;bottom:var(--s3);left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:var(--s1);background:oklch(0.18 0.02 264 / 0.8);border:1px solid var(--line);border-radius:999px;padding:4px 6px;backdrop-filter:blur(6px)}
+.transport .pb{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:var(--ink-1)}
+.transport .pb.play{background:var(--green);color:oklch(0.18 0.05 152)}
+
+/* inspector — flat & dense, no boxes-in-boxes */
+.insp{flex:1;overflow-y:auto;overflow-x:hidden}
+.insp-head{padding:var(--s3);border-bottom:1px solid var(--line)}
+.insp-head .nm{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink-0);font-weight:500}
+.insp-head .nm .ti{color:var(--silver-dim);font-size:15px}
+.insp-head .id{font-family:var(--mono);font-size:10px;color:var(--ink-3);margin-top:4px}
+.seg{display:flex;background:var(--bg-0);border:1px solid var(--line);border-radius:var(--r-sm);padding:2px;margin:var(--s3) var(--s3) var(--s1)}
+.seg .s{flex:1;text-align:center;font-size:11.5px;color:var(--ink-2);padding:4px 0;border-radius:var(--r-xs);cursor:pointer}
+.seg .s.on{background:var(--bg-3);color:var(--ink-0)}
+.cgroup{border-bottom:1px solid var(--line)}
+.cghead{display:flex;align-items:center;gap:7px;height:32px;padding:0 var(--s3);cursor:pointer}
+.cghead:hover{background:oklch(0.27 0.029 264 / 0.35)}
+.cghead .cv{color:var(--ink-3);font-size:14px}
+.cghead .ci{color:var(--silver-dim);font-size:14px}
+.cghead .cn{font-size:12px;font-weight:600;color:var(--ink-0)}
+.cghead .cd{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--ink-3);text-transform:uppercase;letter-spacing:0.07em}
+.cbody{padding:0 var(--s3) var(--s3) calc(var(--s3) + 21px);display:flex;flex-direction:column;gap:6px}
+.prow{display:grid;grid-template-columns:72px minmax(0,1fr);align-items:center;gap:var(--s2);min-height:23px}
+.prow .pl{font-size:11.5px;color:var(--ink-2)}
+.vec3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+.nf{display:flex;align-items:center;background:var(--bg-0);border:1px solid var(--line);border-radius:var(--r-xs);padding:4px 7px;font-family:var(--mono);font-size:11px;cursor:ew-resize}
+.nf .ax{font-weight:600;font-size:9px;margin-right:6px}
+.nf .v{margin-left:auto;color:var(--ink-0)}
+.nf.x .ax{color:var(--red)} .nf.y .ax{color:var(--green)} .nf.z .ax{color:var(--cyan)}
+.nf.solo{cursor:ew-resize}
+.cswatch{width:22px;height:18px;border-radius:var(--r-xs);border:1px solid var(--line-strong);flex:none}
+.addc{margin:var(--s3);height:30px;border:1px dashed var(--line-strong);border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;gap:6px;color:var(--ink-2);font-size:11.5px;cursor:pointer}
+.addc:hover{border-color:var(--silver-dim);color:var(--ink-1)}
+
+/* bottom dock */
+.dock{height:200px;border-top:1px solid var(--line);background:var(--bg-1);display:flex;flex-direction:column;min-width:0}
+.dock-tabs{display:flex;gap:2px;padding:var(--s2) var(--s3) 0;border-bottom:1px solid var(--line)}
+.dock-tabs .dt{font-size:11.5px;color:var(--ink-2);padding:6px 11px;border-radius:var(--r-sm) var(--r-sm) 0 0;display:flex;align-items:center;gap:6px}
+.dock-tabs .dt.on{background:var(--bg-0);color:var(--ink-0)}
+.dock-filters{display:flex;align-items:center;gap:6px;padding:6px var(--s3);border-bottom:1px solid var(--line);min-width:0}
+.fpill{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--ink-2);background:var(--bg-2);border:1px solid var(--line);border-radius:999px;padding:3px 9px;cursor:pointer}
+.fpill b{color:var(--ink-0);font-weight:500;font-family:var(--mono)}
+.fpill.off{opacity:0.4}
+.fgrow{flex:1}
+.fsearch{background:var(--bg-0);border:1px solid var(--line);border-radius:var(--r-sm);height:24px;display:flex;align-items:center;gap:6px;padding:0 8px;color:var(--ink-3);font-size:11px;width:150px;min-width:0;flex-shrink:1;overflow:hidden}
+.dock-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:var(--s1) 0}
+.lrow{display:grid;grid-template-columns:62px 16px 128px 1fr;align-items:baseline;gap:9px;padding:2.5px var(--s3)}
+.lrow .lt{font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+.lrow .li{font-size:12px;text-align:center}
+.lrow .ls{font-family:var(--mono);font-size:10.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lrow .lm{font-size:11.5px;color:var(--ink-1);min-width:0;overflow-wrap:anywhere}
+.lrow.info .li{color:var(--cyan)} .lrow.ok .li{color:var(--green)} .lrow.warn .li{color:var(--amber)} .lrow.err .li{color:var(--red)}
+.lrow.warn{background:oklch(0.80 0.135 72 / 0.07)} .lrow.err{background:oklch(0.70 0.17 25 / 0.09)}
+
+/* status bar */
+.status{height:26px;display:flex;align-items:center;gap:var(--s3);padding:0 var(--s4);background:var(--bg-1);border-top:1px solid var(--line);font-family:var(--mono);font-size:10.5px;color:var(--ink-2)}
+.status .ssep{width:1px;height:12px;background:var(--line)}
+.status b{color:var(--ink-0);font-weight:500}
+.status .sgrow{flex:1}
+.pulse{width:6px;height:6px;border-radius:50%;background:var(--green)}
+
+.note{margin-top:var(--s4);color:var(--ink-2);font-size:12px;display:flex;gap:var(--s2);align-items:flex-start}
+.note .ti{color:var(--silver-dim);font-size:16px;margin-top:1px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="kicker">Khora · design direction</div>
+  <h1 style="margin-top:8px">Deep&nbsp;Navy · Silver, refined</h1>
+  <p class="lede">Same identity, sharper execution. One spacing scale, one type scale, real component states, gold reserved for selection. Below: the tokens, the components, then the editor shell as the target. Open this file in a browser — it's the reference I'll build the egui against.</p>
+</header>
+
+<section>
+  <div class="kicker">Palette</div>
+  <h2>Surfaces, silver, signals</h2>
+  <div class="swatches">
+    <div class="sw"><div class="chip" style="background:var(--bg-0)"></div><div class="meta"><b>bg-0</b><span>void</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-1)"></div><div class="meta"><b>bg-1</b><span>panel</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-2)"></div><div class="meta"><b>bg-2</b><span>row</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-3)"></div><div class="meta"><b>bg-3</b><span>rest</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-4)"></div><div class="meta"><b>bg-4</b><span>active</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--silver)"></div><div class="meta"><b>silver</b><span>brand</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--gold)"></div><div class="meta"><b>gold</b><span>select</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--green)"></div><div class="meta"><b>green</b><span>healthy</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--amber)"></div><div class="meta"><b>amber</b><span>warn</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--cyan)"></div><div class="meta"><b>cyan</b><span>info</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--violet)"></div><div class="meta"><b>violet</b><span>agents</span></div></div>
+    <div class="sw"><div class="chip" style="background:var(--red)"></div><div class="meta"><b>red</b><span>error</span></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="kicker">Type scale</div>
+  <h2>Fraunces sings, Geist works, Mono measures</h2>
+  <div class="typesc">
+    <div><span class="tag">display / 30</span><span style="font-family:var(--display);font-size:30px;font-weight:500;letter-spacing:-0.02em;color:var(--ink-0)">An engine that thinks</span></div>
+    <div><span class="tag">title / 18</span><span style="font-family:var(--display);font-size:18px;font-weight:500;color:var(--ink-0)">Control Plane</span></div>
+    <div><span class="tag">body / 13</span><span style="font-size:13px;color:var(--ink-1)">Every subsystem negotiates for the frame budget.</span></div>
+    <div><span class="tag">label / 11.5</span><span style="font-size:11.5px;color:var(--ink-2);font-weight:500">Base color</span></div>
+    <div><span class="tag">eyebrow / 10.5</span><span class="kicker">Hierarchy</span></div>
+    <div><span class="tag">mono / 11</span><span style="font-family:var(--mono);font-size:11px;color:var(--ink-1)">14.2ms · 312 draws · vram 1.4G</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="kicker">Components &amp; states</div>
+  <h2>Every control has all its states</h2>
+  <div class="specgrid">
+    <div class="card">
+      <span class="kicker">Buttons</span>
+      <div class="row" style="margin-bottom:8px"><button class="btn btn-primary"><i class="ti ti-player-play" aria-hidden="true"></i>Play</button><button class="btn btn-ghost">Browse…</button></div>
+      <div class="row"><button class="btn btn-danger"><i class="ti ti-trash" aria-hidden="true"></i>Delete</button><button class="btn btn-primary" disabled>Working…</button></div>
+    </div>
+    <div class="card">
+      <span class="kicker">Form fields</span>
+      <div class="field"><label>Project name</label><input class="input" value="Nightfall" /></div>
+      <div class="field" style="margin:0"><label>Parent directory</label><input class="input invalid" value="/x/missing" /><span class="err"><i class="ti ti-alert-triangle" aria-hidden="true"></i>Folder doesn't exist</span></div>
+    </div>
+    <div class="card">
+      <span class="kicker">Checks &amp; chips</span>
+      <label class="check" style="margin-bottom:10px"><span class="box on"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Initialize git repository</label>
+      <label class="check" style="margin-bottom:12px"><span class="box"></span>Create a GitHub repo</label>
+      <div class="row"><span class="chip ok"><span class="dot" style="background:var(--green)"></span>Connected</span><span class="chip warn"><span class="dot" style="background:var(--amber)"></span>Pre-release</span><span class="chip muted"><span class="dot" style="background:var(--ink-2)"></span>Offline</span></div>
+    </div>
+    <div class="card">
+      <span class="kicker">Loading</span>
+      <div style="display:flex;flex-direction:column;gap:9px"><div class="skel" style="width:70%"></div><div class="skel" style="width:90%"></div><div class="skel" style="width:55%"></div></div>
+    </div>
+    <div class="card">
+      <span class="kicker">Empty state</span>
+      <div class="empty"><div class="di"><i class="ti ti-stack-2" aria-hidden="true"></i></div><div style="color:var(--ink-1);font-weight:500;margin-bottom:2px">No projects yet</div><div style="font-size:11.5px">Create one to start building.</div></div>
+    </div>
+    <div class="card">
+      <span class="kicker">Spacing scale · 4px</span>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px"><div style="height:10px;background:var(--silver-dim);width:4px;border-radius:1px"></div><span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-2)">s1 · 4</span></div>
+        <div style="display:flex;align-items:center;gap:8px"><div style="height:10px;background:var(--silver-dim);width:8px;border-radius:1px"></div><span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-2)">s2 · 8</span></div>
+        <div style="display:flex;align-items:center;gap:8px"><div style="height:10px;background:var(--silver-dim);width:16px;border-radius:1px"></div><span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-2)">s4 · 16</span></div>
+        <div style="display:flex;align-items:center;gap:8px"><div style="height:10px;background:var(--silver-dim);width:24px;border-radius:1px"></div><span style="font-family:var(--mono);font-size:10.5px;color:var(--ink-2)">s6 · 24</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="kicker">The editor</div>
+  <h2>Work is hero. Chrome retreats.</h2>
+
+  <div class="shell">
+    <!-- title bar -->
+    <div class="titlebar">
+      <div class="brand"><span class="dia"></span><b>Khora</b><span class="proj">nightfall.kscene</span></div>
+      <div class="menus"><span>File</span><span>Edit</span><span>View</span><span>Help</span></div>
+      <div class="tspacer"></div>
+      <div class="tb-search"><i class="ti ti-search" aria-hidden="true"></i>Search entities…</div>
+    </div>
+
+    <div class="body">
+      <!-- spine -->
+      <div class="spine">
+        <div class="sbrand"></div>
+        <div class="mode active" title="Scene"><i class="ti ti-cube" aria-hidden="true"></i></div>
+        <div class="mode" title="Control Plane"><i class="ti ti-cpu" aria-hidden="true"></i></div>
+        <div class="sgrow"></div>
+        <div class="mode" title="Settings"><i class="ti ti-settings" aria-hidden="true"></i></div>
+      </div>
+
+      <!-- left: hierarchy -->
+      <div class="panel-l">
+        <div class="phead"><span class="t">Hierarchy</span><span class="ct">9</span></div>
+        <div class="ptool"><div class="searchrow"><i class="ti ti-search" aria-hidden="true"></i>Filter…</div></div>
+        <div class="tree">
+          <div class="node"><i class="ti ti-camera"></i>Main Camera</div>
+          <div class="node"><i class="ti ti-sun"></i>Sun</div>
+          <div class="node sel"><i class="ti ti-cube"></i>Sphere<span class="tagn">2 tags</span></div>
+          <div class="node child"><i class="ti ti-cube"></i>Orbiter</div>
+          <div class="node"><i class="ti ti-square"></i>Ground</div>
+          <div class="node"><i class="ti ti-volume"></i>Ambience</div>
+          <div class="node"><i class="ti ti-bulb"></i>Lamp</div>
+          <div class="node"><i class="ti ti-cube"></i>Pillar</div>
+          <div class="node"><i class="ti ti-cube"></i>Pillar.001</div>
+        </div>
+      </div>
+
+      <!-- center: viewport + dock -->
+      <div class="center">
+        <div class="viewport">
+          <div class="grid-floor"></div>
+          <div class="obj">
+            <div class="gizmo">
+              <i class="ax" style="background:var(--red)"></i>
+              <i class="ay" style="background:var(--green)"></i>
+              <i class="az" style="background:var(--cyan)"></i>
+            </div>
+          </div>
+          <div class="vp-tools">
+            <div class="t"><i class="ti ti-pointer" aria-hidden="true"></i></div>
+            <div class="t on"><i class="ti ti-arrows-move" aria-hidden="true"></i></div>
+            <div class="t"><i class="ti ti-rotate" aria-hidden="true"></i></div>
+            <div class="t"><i class="ti ti-resize" aria-hidden="true"></i></div>
+          </div>
+          <div class="vp-stat"><b>14.2</b> ms &nbsp;·&nbsp; <b>312</b> draws<br/><b>58k</b> tris &nbsp;·&nbsp; vram <b>1.4G</b></div>
+          <div class="cam-preview"><div class="cam-label"><i class="ti ti-camera" aria-hidden="true"></i>Main Camera</div></div>
+          <div class="viewgizmo"><div class="vg-c">
+            <i class="vg-ax neg vg-nx" style="background:var(--red)"><span class="tip" style="border-color:var(--red)"></span></i>
+            <i class="vg-ax neg vg-ny" style="background:var(--green)"><span class="tip" style="border-color:var(--green)"></span></i>
+            <i class="vg-ax neg vg-nz" style="background:var(--cyan)"><span class="tip" style="border-color:var(--cyan)"></span></i>
+            <i class="vg-ax vg-x" style="background:var(--red)"><span class="tip" style="background:var(--red)">X</span></i>
+            <i class="vg-ax vg-y" style="background:var(--green)"><span class="tip" style="background:var(--green)">Y</span></i>
+            <i class="vg-ax vg-z" style="background:var(--cyan)"><span class="tip" style="background:var(--cyan)">Z</span></i>
+          </div></div>
+          <div class="transport">
+            <div class="pb play"><i class="ti ti-player-play" aria-hidden="true"></i></div>
+            <div class="pb"><i class="ti ti-player-pause" aria-hidden="true"></i></div>
+            <div class="pb"><i class="ti ti-player-stop" aria-hidden="true"></i></div>
+          </div>
+        </div>
+
+        <!-- bottom dock -->
+        <div class="dock">
+          <div class="dock-tabs">
+            <div class="dt on"><i class="ti ti-terminal-2" aria-hidden="true"></i>Console</div>
+            <div class="dt"><i class="ti ti-folder" aria-hidden="true"></i>Assets</div>
+            <div class="dt"><i class="ti ti-activity" aria-hidden="true"></i>GORNA stream</div>
+          </div>
+          <div class="dock-filters">
+            <span class="fpill"><span class="dot" style="background:var(--cyan)"></span>Info <b>128</b></span>
+            <span class="fpill"><span class="dot" style="background:var(--amber)"></span>Warn <b>3</b></span>
+            <span class="fpill"><span class="dot" style="background:var(--red)"></span>Error <b>0</b></span>
+            <span class="fpill off"><span class="dot" style="background:var(--ink-3)"></span>Debug</span>
+            <div class="fgrow"></div>
+            <div class="fsearch"><i class="ti ti-search" aria-hidden="true"></i>Filter…</div>
+          </div>
+          <div class="dock-body">
+            <div class="lrow info"><span class="lt">12:04:31</span><i class="ti ti-info-circle li" aria-hidden="true"></i><span class="ls">wgpu::device</span><span class="lm">Created render pipeline 'StandardPbr Pipeline' (id 10)</span></div>
+            <div class="lrow ok"><span class="lt">12:04:31</span><i class="ti ti-circle-check li" aria-hidden="true"></i><span class="ls">khora_control</span><span class="lm">RenderAgent → StandardPbr · budget 14.2ms</span></div>
+            <div class="lrow info"><span class="lt">12:04:31</span><i class="ti ti-info-circle li" aria-hidden="true"></i><span class="ls">khora_control</span><span class="lm">ShadowAgent negotiated Medium · 1024² atlas</span></div>
+            <div class="lrow warn"><span class="lt">12:04:32</span><i class="ti ti-alert-triangle li" aria-hidden="true"></i><span class="ls">khora_control</span><span class="lm">frame time elevated 18.1ms · tightening budget</span></div>
+            <div class="lrow info"><span class="lt">12:04:32</span><i class="ti ti-info-circle li" aria-hidden="true"></i><span class="ls">khora_control</span><span class="lm">PID multiplier 0.92 · re-arbitrating</span></div>
+            <div class="lrow ok"><span class="lt">12:04:33</span><i class="ti ti-circle-check li" aria-hidden="true"></i><span class="ls">khora_control</span><span class="lm">recovered · all agents nominal</span></div>
+            <div class="lrow info"><span class="lt">12:04:33</span><i class="ti ti-info-circle li" aria-hidden="true"></i><span class="ls">sandbox</span><span class="lm">Frame 600 · 9 entities</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- right: inspector -->
+      <div class="panel-r">
+        <div class="phead"><span class="t">Inspector</span></div>
+        <div class="insp">
+          <div class="insp-head">
+            <div class="nm"><i class="ti ti-cube" aria-hidden="true"></i>Sphere</div>
+            <div class="id">entity #3 · gen 0 · 3 components</div>
+          </div>
+          <div class="seg"><span class="s on">Properties</span><span class="s">Debug</span></div>
+
+          <div class="cgroup">
+            <div class="cghead"><i class="ti ti-chevron-down cv" aria-hidden="true"></i><i class="ti ti-arrows-move ci" aria-hidden="true"></i><span class="cn">Transform</span><span class="cd">spatial</span></div>
+            <div class="cbody">
+              <div class="prow"><span class="pl">Position</span><div class="vec3"><div class="nf x"><span class="ax">X</span><span class="v">0.0</span></div><div class="nf y"><span class="ax">Y</span><span class="v">1.5</span></div><div class="nf z"><span class="ax">Z</span><span class="v">0.0</span></div></div></div>
+              <div class="prow"><span class="pl">Rotation</span><div class="vec3"><div class="nf x"><span class="ax">X</span><span class="v">0</span></div><div class="nf y"><span class="ax">Y</span><span class="v">32</span></div><div class="nf z"><span class="ax">Z</span><span class="v">0</span></div></div></div>
+              <div class="prow"><span class="pl">Scale</span><div class="vec3"><div class="nf x"><span class="ax">X</span><span class="v">1.0</span></div><div class="nf y"><span class="ax">Y</span><span class="v">1.0</span></div><div class="nf z"><span class="ax">Z</span><span class="v">1.0</span></div></div></div>
+            </div>
+          </div>
+
+          <div class="cgroup">
+            <div class="cghead"><i class="ti ti-chevron-down cv" aria-hidden="true"></i><i class="ti ti-palette ci" aria-hidden="true"></i><span class="cn">MaterialRef</span><span class="cd">render</span></div>
+            <div class="cbody">
+              <div class="prow"><span class="pl">Base color</span><div style="display:flex;align-items:center;gap:7px"><span class="cswatch" style="background:oklch(0.72 0.015 264)"></span><div class="nf solo" style="flex:1"><span class="v">#B3B3B3</span></div></div></div>
+              <div class="prow"><span class="pl">Roughness</span><div class="nf solo"><span class="v">0.80</span></div></div>
+              <div class="prow"><span class="pl">Metallic</span><div class="nf solo"><span class="v">0.00</span></div></div>
+            </div>
+          </div>
+
+          <div class="cgroup">
+            <div class="cghead"><i class="ti ti-chevron-right cv" aria-hidden="true"></i><i class="ti ti-cube ci" aria-hidden="true"></i><span class="cn">MeshRef</span><span class="cd">render</span></div>
+          </div>
+
+          <div class="addc"><i class="ti ti-plus" aria-hidden="true"></i>Add component</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- status bar -->
+    <div class="status">
+      <span class="pulse"></span><span>main</span>
+      <span class="ssep"></span><span>cpu <b>34%</b></span><span>gpu <b>61%</b></span><span>vram <b>1.4G</b></span>
+      <span class="sgrow"></span>
+      <span>Balanced</span><span class="ssep"></span><span><b>60</b> fps · 14.2ms</span><span class="ssep"></span><span style="color:var(--green)">● GORNA nominal</span>
+    </div>
+  </div>
+
+  <div class="note"><i class="ti ti-info-circle" aria-hidden="true"></i><div>Scene mode. Below: the second shipping mode (Control Plane) and the asset browser, in the same language. Colours/spacing are exact — the same OKLCH tokens feed the egui theme; egui paints it natively. Icons here are placeholders for Khora's own glyph set.</div></div>
+</section>
+
+<style>
+/* control plane mode */
+.cam-preview{position:absolute;bottom:54px;right:var(--s3);width:128px;height:80px;border-radius:var(--r-md);border:1px solid var(--line-strong);background:radial-gradient(120% 90% at 50% 0%, oklch(0.26 0.03 264), oklch(0.17 0.022 264));overflow:hidden}
+.cam-label{position:absolute;top:5px;left:6px;font-family:var(--mono);font-size:9px;color:var(--ink-2);display:flex;align-items:center;gap:4px}
+.cp-body{display:flex;flex-direction:column;flex:1;min-width:0}
+.cp-summary{height:84px;border-bottom:1px solid var(--line);background:var(--bg-1);display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line)}
+.metric{background:var(--bg-1);padding:var(--s3) var(--s4);display:flex;flex-direction:column;justify-content:center}
+.metric .ml{font-size:10.5px;color:var(--ink-2);margin-bottom:5px}
+.metric .mv{font-family:var(--display);font-size:24px;font-weight:500;color:var(--ink-0);line-height:1}
+.metric .mv small{font-family:var(--sans);font-size:12px;color:var(--ink-2);font-weight:400}
+.metric .mbar{height:4px;border-radius:2px;background:var(--bg-3);margin-top:8px;overflow:hidden}
+.metric .mbar i{display:block;height:100%;background:var(--green)}
+.cp-cols{flex:1;display:flex;min-height:0}
+.cp-agents{width:280px;border-right:1px solid var(--line);background:var(--bg-1);overflow:auto}
+.cp-sched{flex:1;overflow-y:auto;overflow-x:hidden;min-width:0;padding:var(--s5) var(--s6)}
+.sched-h{margin-bottom:var(--s5)}
+.sched-h .st{font-size:12.5px;font-weight:600;color:var(--ink-0)}
+.sched-h .ss{font-size:11px;color:var(--ink-2);margin-top:3px}
+.pstage{display:flex;gap:var(--s4);align-items:stretch}
+.prail{display:flex;flex-direction:column;align-items:center;width:12px;flex:none}
+.prail .pn{width:10px;height:10px;border-radius:50%;border:2px solid var(--silver-dim);background:var(--bg-0);flex:none;margin-top:1px}
+.prail .pl{flex:1;width:2px;background:var(--line);margin:3px 0}
+.pstage:last-child .prail .pl{display:none}
+.pcol{flex:1;padding-bottom:var(--s5)}
+.pcol .pname{font-family:var(--mono);font-size:10px;letter-spacing:0.09em;color:var(--ink-2);margin:0 0 9px}
+.chips2{display:flex;flex-wrap:wrap;gap:6px}
+.cp-insp{width:300px;border-left:1px solid var(--line);background:var(--bg-1);overflow:auto}
+.grp{font-family:var(--mono);font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-3);padding:var(--s3) var(--s3) var(--s2)}
+.agrow{display:flex;align-items:center;gap:10px;padding:9px var(--s3);cursor:pointer;border-bottom:1px solid var(--line)}
+.agrow:hover{background:var(--bg-2)}
+.agrow.sel{background:var(--bg-3)}
+.agrow.sel .ilet{box-shadow:0 0 0 2px var(--bg-4)}
+.ilet{width:22px;height:22px;border-radius:var(--r-sm);display:grid;place-items:center;font-family:var(--mono);font-size:11px;font-weight:600;flex:none}
+.ilet.c{background:oklch(0.70 0.17 25 / 0.16);color:var(--red)}
+.ilet.i{background:oklch(0.80 0.135 72 / 0.16);color:var(--amber)}
+.ilet.o{background:var(--bg-3);color:var(--ink-2)}
+.aname{font-size:12.5px;color:var(--ink-0);font-weight:500}
+.ameta{font-family:var(--mono);font-size:10px;color:var(--ink-2);margin-top:2px}
+.ahealth{margin-left:auto;width:44px}
+.ahealth .hb{height:4px;border-radius:2px;background:var(--bg-3);overflow:hidden}
+.ahealth .hb i{display:block;height:100%}
+.phase{padding:var(--s4) var(--s4) var(--s2)}
+.phase .ph-t{font-family:var(--mono);font-size:10px;letter-spacing:0.08em;color:var(--ink-2);display:flex;align-items:center;gap:8px;margin-bottom:var(--s2)}
+.phase .ph-t::after{content:"";flex:1;height:1px;background:var(--line)}
+.pchip{display:inline-flex;align-items:center;gap:7px;background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r-sm);padding:6px 10px;margin:0 6px 6px 0;font-size:11.5px;color:var(--ink-1)}
+.pchip .pd{width:6px;height:6px;border-radius:50%}
+.cp-insp .ih{padding:var(--s4) var(--s3);border-bottom:1px solid var(--line)}
+.cp-insp .ih .nm{display:flex;align-items:center;gap:9px;font-size:15px;font-weight:500;color:var(--ink-0)}
+.cp-insp .ih .sub{font-family:var(--mono);font-size:10.5px;color:var(--ink-2);margin-top:4px}
+.istat{display:grid;grid-template-columns:auto 1fr;gap:8px var(--s4);padding:var(--s4) var(--s3)}
+.istat .k{font-size:11.5px;color:var(--ink-2)}
+.istat .v{font-size:11.5px;color:var(--ink-0);text-align:right;font-family:var(--mono)}
+.spark{height:40px;margin:var(--s2) var(--s3);border-radius:var(--r-sm);background:var(--bg-0);border:1px solid var(--line);display:flex;align-items:flex-end;gap:2px;padding:6px}
+.spark i{flex:1;background:var(--silver-dim);border-radius:1px}
+
+/* asset browser */
+.ab-body{display:flex;flex:1;min-height:0}
+.ab-side{width:208px;border-right:1px solid var(--line);background:var(--bg-1);overflow:auto;padding:var(--s2)}
+.ab-folder{display:flex;align-items:center;gap:8px;height:28px;padding:0 9px;border-radius:var(--r-sm);font-size:12px;color:var(--ink-1);cursor:pointer}
+.ab-folder .ti{font-size:14px;color:var(--ink-2)}
+.ab-folder:hover{background:var(--bg-2)}
+.ab-folder.on{background:var(--bg-3);color:var(--ink-0)}
+.ab-folder.on .ti{color:var(--gold)}
+.ab-folder.sub{margin-left:18px}
+.ab-main{flex:1;display:flex;flex-direction:column;min-width:0}
+.ab-bread{height:34px;display:flex;align-items:center;gap:7px;padding:0 var(--s4);border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-2)}
+.ab-bread b{color:var(--ink-0);font-weight:500}
+.ab-bread .ti{font-size:13px;color:var(--ink-3)}
+.ab-grid{flex:1;overflow:auto;padding:var(--s4);display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:var(--s3);align-content:start}
+.tile{cursor:pointer}
+.tile .thumb{aspect-ratio:1;border-radius:var(--r-md);border:1px solid var(--line);background:var(--bg-1);display:grid;place-items:center;color:var(--silver-dim);font-size:30px;position:relative;overflow:hidden}
+.tile .thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.tile:hover .thumb{border-color:var(--line-strong);background:var(--bg-2)}
+.tile.sel .thumb{border-color:var(--gold);box-shadow:0 0 0 2px oklch(0.82 0.115 84 / 0.25)}
+.tile .badge{position:absolute;bottom:5px;right:5px;font-family:var(--mono);font-size:8px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink-2);background:oklch(0.18 0.02 264 / 0.8);padding:1px 5px;border-radius:3px}
+.tile .tn{font-size:11px;color:var(--ink-1);margin-top:6px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+</style>
+
+<section>
+  <div class="kicker">The editor · Control Plane</div>
+  <h2>The engine, watching itself</h2>
+
+  <div class="shell">
+    <div class="titlebar">
+      <div class="brand"><span class="dia"></span><b>Khora</b><span class="proj">nightfall.kscene</span></div>
+      <div class="menus"><span>File</span><span>Edit</span><span>View</span><span>Help</span></div>
+      <div class="tspacer"></div>
+      <div class="tb-search"><i class="ti ti-search" aria-hidden="true"></i>Search agents…</div>
+    </div>
+    <div class="body" style="height:520px">
+      <div class="spine">
+        <div class="sbrand"></div>
+        <div class="mode" title="Scene"><i class="ti ti-cube" aria-hidden="true"></i></div>
+        <div class="mode active" title="Control Plane"><i class="ti ti-cpu" aria-hidden="true"></i></div>
+        <div class="sgrow"></div>
+        <div class="mode" title="Settings"><i class="ti ti-settings" aria-hidden="true"></i></div>
+      </div>
+
+      <div class="cp-body">
+        <div class="cp-summary">
+          <div class="metric"><span class="ml">Frame</span><span class="mv">14.2<small> ms</small></span><div class="mbar"><i style="width:85%"></i></div></div>
+          <div class="metric"><span class="ml">Budget · Balanced</span><span class="mv">16.7<small> ms</small></span><div class="mbar"><i style="width:60%;background:var(--silver-dim)"></i></div></div>
+          <div class="metric"><span class="ml">Heap</span><span class="mv">428<small> MB</small></span><div class="mbar"><i style="width:34%;background:var(--cyan)"></i></div></div>
+          <div class="metric"><span class="ml">PID multiplier</span><span class="mv">0.92</span><div class="mbar"><i style="width:92%;background:var(--amber)"></i></div></div>
+        </div>
+
+        <div class="cp-cols">
+          <div class="cp-agents">
+            <div class="grp">Critical · always run</div>
+            <div class="agrow sel"><span class="ilet c">C</span><div><div class="aname">Renderer</div><div class="ameta">StandardPbr · output</div></div><div class="ahealth"><div class="hb"><i style="width:88%;background:var(--green)"></i></div></div></div>
+            <div class="agrow"><span class="ilet c">C</span><div><div class="aname">Physics</div><div class="ameta">Standard · transform</div></div><div class="ahealth"><div class="hb"><i style="width:96%;background:var(--green)"></i></div></div></div>
+            <div class="grp">Important</div>
+            <div class="agrow"><span class="ilet i">I</span><div><div class="aname">ShadowRenderer</div><div class="ameta">Medium · observe</div></div><div class="ahealth"><div class="hb"><i style="width:72%;background:var(--amber)"></i></div></div></div>
+            <div class="agrow"><span class="ilet i">I</span><div><div class="aname">Ui</div><div class="ameta">Standard · output</div></div><div class="ahealth"><div class="hb"><i style="width:90%;background:var(--green)"></i></div></div></div>
+            <div class="grp">Optional · negotiable</div>
+            <div class="agrow"><span class="ilet o">O</span><div><div class="aname">Audio</div><div class="ameta">Balanced · output</div></div><div class="ahealth"><div class="hb"><i style="width:94%;background:var(--green)"></i></div></div></div>
+            <div class="agrow"><span class="ilet o">O</span><div><div class="aname">Overlay</div><div class="ameta">Gizmos · output</div></div><div class="ahealth"><div class="hb"><i style="width:80%;background:var(--green)"></i></div></div></div>
+          </div>
+
+          <div class="cp-sched">
+            <div class="sched-h"><div class="st">Frame descent</div><div class="ss">Agents execute in CLAD phase order, top to bottom.</div></div>
+            <div class="pstage"><div class="prail"><span class="pn"></span><span class="pl"></span></div><div class="pcol"><div class="pname">OBSERVE</div><div class="chips2"><span class="pchip"><span class="pd" style="background:var(--amber)"></span>ShadowRenderer</span></div></div></div>
+            <div class="pstage"><div class="prail"><span class="pn"></span><span class="pl"></span></div><div class="pcol"><div class="pname">TRANSFORM</div><div class="chips2"><span class="pchip"><span class="pd" style="background:var(--red)"></span>Physics</span></div></div></div>
+            <div class="pstage"><div class="prail"><span class="pn"></span><span class="pl"></span></div><div class="pcol"><div class="pname">OUTPUT</div><div class="chips2"><span class="pchip"><span class="pd" style="background:var(--red)"></span>Renderer</span><span class="pchip"><span class="pd" style="background:var(--amber)"></span>Ui</span><span class="pchip"><span class="pd" style="background:var(--ink-2)"></span>Audio</span><span class="pchip"><span class="pd" style="background:var(--ink-2)"></span>Overlay</span></div></div></div>
+            <div class="pstage"><div class="prail"><span class="pn"></span></div><div class="pcol"><div class="pname">MAINTENANCE</div><div class="chips2"><span class="pchip"><span class="pd" style="background:var(--cyan)"></span>physics writeback</span><span class="pchip"><span class="pd" style="background:var(--cyan)"></span>ecs compaction</span></div></div></div>
+          </div>
+
+          <div class="cp-insp">
+            <div class="ih"><div class="nm"><span class="ilet c">C</span>Renderer</div><div class="sub">khora-agents · priority 1.0</div></div>
+            <div class="istat">
+              <span class="k">Health</span><span class="v" style="color:var(--green)">0.88</span>
+              <span class="k">Strategy</span><span class="v">StandardPbr</span>
+              <span class="k">Phase</span><span class="v">OUTPUT</span>
+              <span class="k">Importance</span><span class="v" style="color:var(--red)">Critical</span>
+              <span class="k">Adaptation</span><span class="v">Learning</span>
+            </div>
+            <div class="grp">Cost · last 32 frames</div>
+            <div class="spark"><i style="height:55%"></i><i style="height:62%"></i><i style="height:48%"></i><i style="height:70%"></i><i style="height:90%"></i><i style="height:66%"></i><i style="height:58%"></i><i style="height:52%"></i><i style="height:60%"></i><i style="height:74%"></i><i style="height:64%"></i><i style="height:50%"></i></div>
+            <div class="istat"><span class="k">Message</span><span class="v" style="text-align:left;color:var(--ink-1)">312 draws · 58k tris</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="status">
+      <span class="pulse"></span><span>main</span><span class="ssep"></span><span>cpu <b>34%</b></span><span>gpu <b>61%</b></span>
+      <span class="sgrow"></span><span>Balanced</span><span class="ssep"></span><span><b>60</b> fps · 14.2ms</span><span class="ssep"></span><span style="color:var(--green)">● GORNA nominal</span>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="kicker">The editor · Asset browser</div>
+  <h2>Everything under <code style="font-family:var(--mono);font-size:15px;color:var(--ink-1)">assets/</code></h2>
+
+  <div class="shell">
+    <div class="titlebar">
+      <div class="brand"><span class="dia"></span><b>Khora</b><span class="proj">nightfall.kscene</span></div>
+      <div class="menus"><span>File</span><span>Edit</span><span>View</span><span>Help</span></div>
+      <div class="tspacer"></div>
+      <div class="tb-search"><i class="ti ti-search" aria-hidden="true"></i>Search assets…</div>
+    </div>
+    <div class="ab-body" style="height:480px">
+      <div class="ab-side">
+        <div class="ab-folder"><i class="ti ti-folder" aria-hidden="true"></i>assets</div>
+        <div class="ab-folder sub"><i class="ti ti-cube" aria-hidden="true"></i>meshes</div>
+        <div class="ab-folder sub on"><i class="ti ti-photo" aria-hidden="true"></i>textures</div>
+        <div class="ab-folder sub"><i class="ti ti-palette" aria-hidden="true"></i>materials</div>
+        <div class="ab-folder sub"><i class="ti ti-volume" aria-hidden="true"></i>audio</div>
+        <div class="ab-folder sub"><i class="ti ti-movie" aria-hidden="true"></i>scenes</div>
+        <div class="ab-folder sub"><i class="ti ti-box-multiple" aria-hidden="true"></i>prefabs</div>
+      </div>
+      <div class="ab-main">
+        <div class="ab-bread"><i class="ti ti-folder" aria-hidden="true"></i>assets<i class="ti ti-chevron-right" aria-hidden="true"></i><b>textures</b><span style="margin-left:auto;font-family:var(--mono);color:var(--ink-3)">6 items</span></div>
+        <div class="ab-grid">
+          <div class="tile sel"><div class="thumb"><img src="https://picsum.photos/seed/khwood/180" alt="wood albedo"><span class="badge">png</span></div><div class="tn">wood_albedo</div></div>
+          <div class="tile"><div class="thumb"><img src="https://picsum.photos/seed/khwoodn/180" alt="wood normal"><span class="badge">png</span></div><div class="tn">wood_normal</div></div>
+          <div class="tile"><div class="thumb"><img src="https://picsum.photos/seed/khmetal/180" alt="metal roughness"><span class="badge">png</span></div><div class="tn">metal_rough</div></div>
+          <div class="tile"><div class="thumb"><img src="https://picsum.photos/seed/khsky/180" alt="sky environment"><span class="badge">hdr</span></div><div class="tn">sky_env</div></div>
+          <div class="tile"><div class="thumb"><img src="https://picsum.photos/seed/khdecal/180" alt="decal"><span class="badge">jpg</span></div><div class="tn">decal_01</div></div>
+          <div class="tile"><div class="thumb"><img src="https://picsum.photos/seed/khui/180" alt="ui atlas"><span class="badge">png</span></div><div class="tn">ui_atlas</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="status">
+      <span class="pulse"></span><span>main</span><span class="sgrow"></span><span>textures/wood_albedo.png</span><span class="ssep"></span><span><b>2048²</b> · 4.1 MB</span>
+    </div>
+  </div>
+
+  <div class="note"><i class="ti ti-info-circle" aria-hidden="true"></i><div>All shipping windows now: Scene, Control Plane, Asset browser (the Console / GORNA-stream / Assets share the bottom dock in Scene mode). Polish continues during the egui build — this is the reference it targets.</div></div>
+</section>
+
+<style>
+/* ---------- states, overlays & interactions ---------- */
+.stage{position:relative;background:
+   radial-gradient(120% 90% at 50% -10%, oklch(0.22 0.026 264) 0%, var(--bg-0) 62%);
+   border:1px solid var(--line);border-radius:var(--r-lg);min-height:172px;display:grid;place-items:center;padding:var(--s5);overflow:hidden}
+.stage.tall{min-height:236px}
+.spec{display:flex;flex-direction:column;gap:var(--s2)}
+.spec .sl{font-family:var(--mono);font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-3)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s4)}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s3)}
+@media(max-width:900px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+
+.kbd{font-family:var(--mono);font-size:9.5px;line-height:1;color:var(--ink-2);background:var(--bg-2);border:1px solid var(--line);border-bottom-width:2px;border-radius:var(--r-xs);padding:3px 5px;min-width:17px;text-align:center;display:inline-block}
+
+/* command palette */
+.palette{width:430px;max-width:100%;background:var(--bg-1);border:1px solid var(--line-strong);border-radius:var(--r-lg);box-shadow:0 34px 80px -34px oklch(0 0 0 / 0.9);overflow:hidden}
+.pal-search{display:flex;align-items:center;gap:10px;padding:13px var(--s4);border-bottom:1px solid var(--line);color:var(--ink-0);font-size:14px}
+.pal-search .ti{color:var(--ink-3);font-size:17px}
+.pal-search .cur{width:1px;height:16px;background:var(--silver);margin-left:-2px;animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.pal-list{padding:var(--s1) 0}
+.pal-gl{font-family:var(--mono);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-3);padding:var(--s2) var(--s4) 4px}
+.pal-row{display:flex;align-items:center;gap:11px;padding:8px var(--s4);position:relative;color:var(--ink-1);font-size:12.5px}
+.pal-row .ti{color:var(--ink-2);font-size:15px;width:16px;text-align:center}
+.pal-row .rt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pal-row .rk{margin-left:auto;display:flex;gap:4px;flex:none}
+.pal-row .rcat{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:0.06em;flex:none}
+.pal-row.on{background:var(--bg-4);color:var(--ink-0)}
+.pal-row.on .ti{color:var(--silver)}
+.pal-row.on::before{content:"";position:absolute;left:0;top:5px;bottom:5px;width:2px;border-radius:2px;background:var(--gold)}
+.pal-foot{display:flex;align-items:center;gap:var(--s4);padding:8px var(--s4);border-top:1px solid var(--line);font-size:10.5px;color:var(--ink-3)}
+.pal-foot .kh{display:flex;align-items:center;gap:6px}
+
+/* context menu + title-bar menu dropdown */
+.ctxmenu{width:186px;background:var(--bg-2);border:1px solid var(--line-strong);border-radius:var(--r-md);box-shadow:0 20px 46px -22px oklch(0 0 0 / 0.85);padding:var(--s1)}
+.ctxmenu .mi{display:flex;align-items:center;gap:10px;padding:6px 9px;border-radius:var(--r-sm);font-size:12px;color:var(--ink-1);cursor:pointer}
+.ctxmenu .mi .ti{font-size:14px;color:var(--ink-2);width:15px;text-align:center;flex:none}
+.ctxmenu .mi .kbd{margin-left:auto}
+.ctxmenu .mi:hover{background:var(--bg-4);color:var(--ink-0)}
+.ctxmenu .mi.danger{color:var(--red)}
+.ctxmenu .mi.danger .ti{color:var(--red)}
+.ctxmenu .mi.danger:hover{background:oklch(0.70 0.17 25 / 0.14)}
+.ctxmenu .msep{height:1px;background:var(--line);margin:var(--s1) 6px}
+
+/* rename in place + drop target */
+.mini-tree{width:230px;background:var(--bg-1);border:1px solid var(--line);border-radius:var(--r-md);padding:var(--s2)}
+.node-rename{display:flex;align-items:center;gap:7px;height:26px;padding:0 8px}
+.node-rename .ti{color:var(--ink-2);font-size:14px;width:14px;text-align:center;flex:none}
+.node-rename input{flex:1;background:var(--bg-0);border:1px solid var(--silver);border-radius:var(--r-xs);box-shadow:0 0 0 3px oklch(0.86 0.035 245 / 0.18);padding:2px 6px;color:var(--ink-0);font-size:12.5px;font-family:var(--sans)}
+.node.drag{opacity:0.45}
+.node.into{background:oklch(0.82 0.115 84 / 0.12);box-shadow:inset 0 0 0 1px oklch(0.82 0.115 84 / 0.45)}
+.node.into .ti{color:var(--gold)}
+.drop-line{height:2px;background:var(--gold);border-radius:2px;margin:1px 8px;position:relative}
+.drop-line::before{content:"";position:absolute;left:-2px;top:-2px;width:6px;height:6px;border-radius:50%;background:var(--gold)}
+
+/* tooltip */
+.tooltip{position:relative;background:var(--bg-3);border:1px solid var(--line-strong);border-radius:var(--r-sm);padding:6px 10px;font-size:11.5px;color:var(--ink-0);box-shadow:0 10px 24px -12px oklch(0 0 0 / 0.85);display:inline-flex;align-items:center}
+.tooltip .kbd{margin-left:8px}
+.tooltip::after{content:"";position:absolute;left:20px;bottom:-5px;width:9px;height:9px;background:var(--bg-3);border-right:1px solid var(--line-strong);border-bottom:1px solid var(--line-strong);transform:rotate(45deg)}
+
+/* transport states */
+.tp-demo{display:flex;flex-direction:column;align-items:center;gap:9px}
+.transport.dm{position:static;transform:none}
+.transport .pb.ready{color:var(--ink-0)}
+.transport .pb.dis{opacity:0.3}
+.transport .pb.paused{background:var(--amber);color:oklch(0.2 0.03 72)}
+.tp-lbl{font-family:var(--mono);font-size:10px;letter-spacing:0.08em;text-transform:uppercase}
+
+/* GORNA stream */
+.gstream{width:100%;background:var(--bg-1);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+.gstream .gh{display:grid;grid-template-columns:58px 116px 1fr 66px;gap:10px;padding:6px var(--s3);border-bottom:1px solid var(--line);font-family:var(--mono);font-size:9px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-3)}
+.grow{display:grid;grid-template-columns:58px 116px 1fr 66px;gap:10px;align-items:baseline;padding:4px var(--s3)}
+.grow .gt{font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+.grow .ga{font-size:11.5px;color:var(--ink-0);display:flex;align-items:center;gap:6px}
+.grow .ga .pd{width:6px;height:6px;border-radius:50%;flex:none}
+.grow .gm{font-family:var(--mono);font-size:10.5px;color:var(--ink-2)}
+.grow .gm b{color:var(--ink-1);font-weight:500}
+.grow .gd{font-family:var(--mono);font-size:10.5px;text-align:right}
+.grow .gd.up{color:var(--green)} .grow .gd.dn{color:var(--amber)} .grow .gd.z{color:var(--ink-3)}
+.grow:nth-child(even){background:oklch(0.224 0.026 264 / 0.4)}
+</style>
+
+<section>
+  <div class="kicker">The editor · states &amp; overlays</div>
+  <h2>Every interaction has a target</h2>
+  <p class="lede" style="margin-bottom:var(--s5)">The pieces that only appear on interaction — the command palette, context menus, rename, drag, empty and loading states, tooltips. Same tokens, same restraint. These are the specs the egui paint code implements state-for-state.</p>
+
+  <!-- command palette -->
+  <div class="grid2">
+    <div class="spec">
+      <span class="sl">Command palette · Ctrl K</span>
+      <div class="stage tall">
+        <div class="palette">
+          <div class="pal-search"><i class="ti ti-search" aria-hidden="true"></i>save<span class="cur"></span></div>
+          <div class="pal-list">
+            <div class="pal-gl">Actions</div>
+            <div class="pal-row on"><i class="ti ti-device-floppy" aria-hidden="true"></i><span class="rt">Save scene</span><span class="rk"><span class="kbd">Ctrl</span><span class="kbd">S</span></span></div>
+            <div class="pal-row"><i class="ti ti-file-export" aria-hidden="true"></i><span class="rt">Save scene as…</span><span class="rk"><span class="kbd">Ctrl</span><span class="kbd">⇧</span><span class="kbd">S</span></span></div>
+            <div class="pal-row"><i class="ti ti-photo" aria-hidden="true"></i><span class="rt">Save viewport screenshot</span><span class="rcat">Scene</span></div>
+            <div class="pal-gl">Go to</div>
+            <div class="pal-row"><i class="ti ti-cube" aria-hidden="true"></i><span class="rt">Sphere</span><span class="rcat">Entity</span></div>
+          </div>
+          <div class="pal-foot"><span class="kh"><span class="kbd">↑</span><span class="kbd">↓</span>navigate</span><span class="kh"><span class="kbd">↵</span>run</span><span class="kh"><span class="kbd">esc</span>close</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="spec">
+      <span class="sl">Palette · no match</span>
+      <div class="stage tall">
+        <div class="palette">
+          <div class="pal-search"><i class="ti ti-search" aria-hidden="true"></i>xyzzy<span class="cur"></span></div>
+          <div class="pal-list"><div class="empty" style="border:0;padding:var(--s6) var(--s4)"><div class="di"><i class="ti ti-command" aria-hidden="true"></i></div><div style="color:var(--ink-1);font-weight:500;margin-bottom:2px">No matching command</div><div style="font-size:11.5px">Try “play”, “save”, or an entity name.</div></div></div>
+          <div class="pal-foot"><span class="kh"><span class="kbd">esc</span>close</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- transport trio -->
+  <div class="spec" style="margin-top:var(--s5)">
+    <span class="sl">Transport · play mode</span>
+    <div class="grid3">
+      <div class="stage">
+        <div class="tp-demo">
+          <div class="transport dm"><div class="pb ready"><i class="ti ti-player-play" aria-hidden="true"></i></div><div class="pb dis"><i class="ti ti-player-pause" aria-hidden="true"></i></div><div class="pb dis"><i class="ti ti-player-stop" aria-hidden="true"></i></div></div>
+          <span class="tp-lbl" style="color:var(--ink-2)">Editing</span>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="tp-demo">
+          <div class="transport dm"><div class="pb play"><i class="ti ti-player-play" aria-hidden="true"></i></div><div class="pb ready"><i class="ti ti-player-pause" aria-hidden="true"></i></div><div class="pb ready"><i class="ti ti-player-stop" aria-hidden="true"></i></div></div>
+          <span class="tp-lbl" style="color:var(--green)">● Playing</span>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="tp-demo">
+          <div class="transport dm"><div class="pb ready"><i class="ti ti-player-play" aria-hidden="true"></i></div><div class="pb paused"><i class="ti ti-player-pause" aria-hidden="true"></i></div><div class="pb ready"><i class="ti ti-player-stop" aria-hidden="true"></i></div></div>
+          <span class="tp-lbl" style="color:var(--amber)">❙❙ Paused</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- tree interactions -->
+  <div class="spec" style="margin-top:var(--s5)">
+    <span class="sl">Hierarchy · context menu · rename · drag</span>
+    <div class="grid3">
+      <div class="stage" style="align-items:start;justify-items:center">
+        <div class="ctxmenu">
+          <div class="mi"><i class="ti ti-pencil" aria-hidden="true"></i>Rename<span class="kbd">F2</span></div>
+          <div class="mi"><i class="ti ti-copy" aria-hidden="true"></i>Duplicate<span class="kbd">Ctrl D</span></div>
+          <div class="mi"><i class="ti ti-plus" aria-hidden="true"></i>Add child</div>
+          <div class="mi"><i class="ti ti-focus-2" aria-hidden="true"></i>Focus in viewport</div>
+          <div class="msep"></div>
+          <div class="mi danger"><i class="ti ti-trash" aria-hidden="true"></i>Delete<span class="kbd">Del</span></div>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="mini-tree">
+          <div class="node"><i class="ti ti-camera"></i>Main Camera</div>
+          <div class="node-rename"><i class="ti ti-cube"></i><input value="Sphere" /></div>
+          <div class="node"><i class="ti ti-square"></i>Ground</div>
+        </div>
+      </div>
+      <div class="stage">
+        <div class="mini-tree">
+          <div class="node drag"><i class="ti ti-cube"></i>Orbiter</div>
+          <div class="node into"><i class="ti ti-cube"></i>Sphere</div>
+          <div class="drop-line"></div>
+          <div class="node"><i class="ti ti-square"></i>Ground</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- empty states -->
+  <div class="spec" style="margin-top:var(--s5)">
+    <span class="sl">Empty states</span>
+    <div class="grid4">
+      <div class="empty"><div class="di"><i class="ti ti-click" aria-hidden="true"></i></div><div style="color:var(--ink-1);font-weight:500;margin-bottom:2px">No selection</div><div style="font-size:11.5px">Select an entity to inspect it.</div></div>
+      <div class="empty"><div class="di"><i class="ti ti-terminal-2" aria-hidden="true"></i></div><div style="color:var(--ink-1);font-weight:500;margin-bottom:2px">Console is clear</div><div style="font-size:11.5px">Engine logs will appear here.</div></div>
+      <div class="empty"><div class="di"><i class="ti ti-folder-off" aria-hidden="true"></i></div><div style="color:var(--ink-1);font-weight:500;margin-bottom:2px">Empty folder</div><div style="font-size:11.5px">Drop assets here to import.</div></div>
+      <div class="empty"><div class="di"><i class="ti ti-cube-off" aria-hidden="true"></i></div><div style="color:var(--ink-1);font-weight:500;margin-bottom:2px">Empty scene</div><div style="font-size:11.5px">Add an entity to begin.</div></div>
+    </div>
+  </div>
+
+  <!-- tooltip + menu + resize -->
+  <div class="spec" style="margin-top:var(--s5)">
+    <span class="sl">Tooltip · title-bar menu · panel resize</span>
+    <div class="grid3">
+      <div class="stage"><div class="tooltip"><i class="ti ti-arrows-move" aria-hidden="true" style="font-size:14px;color:var(--silver-dim);margin-right:7px"></i>Move tool<span class="kbd">W</span></div></div>
+      <div class="stage" style="align-items:start;justify-items:center">
+        <div class="ctxmenu" style="width:172px">
+          <div class="mi"><i class="ti ti-file-plus" aria-hidden="true"></i>New scene<span class="kbd">Ctrl N</span></div>
+          <div class="mi"><i class="ti ti-folder-open" aria-hidden="true"></i>Open scene…<span class="kbd">Ctrl O</span></div>
+          <div class="mi"><i class="ti ti-device-floppy" aria-hidden="true"></i>Save<span class="kbd">Ctrl S</span></div>
+          <div class="msep"></div>
+          <div class="mi"><i class="ti ti-packages" aria-hidden="true"></i>Build game…</div>
+        </div>
+      </div>
+      <div class="stage">
+        <div style="display:flex;height:120px;width:200px;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden">
+          <div style="flex:1;background:var(--bg-1);padding:var(--s3);font-size:10.5px;color:var(--ink-3)">Hierarchy</div>
+          <div style="width:3px;background:var(--gold);cursor:col-resize"></div>
+          <div style="flex:1.4;background:var(--bg-0);padding:var(--s3);font-size:10.5px;color:var(--ink-3)">Viewport</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GORNA stream -->
+  <div class="spec" style="margin-top:var(--s5)">
+    <span class="sl">Dock tab · GORNA stream</span>
+    <div class="gstream">
+      <div class="gh"><span>time</span><span>agent</span><span>negotiation</span><span>Δ cost</span></div>
+      <div class="grow"><span class="gt">12:04:32</span><span class="ga"><span class="pd" style="background:var(--amber)"></span>ShadowRenderer</span><span class="gm">requested <b>High</b> → granted <b>Medium</b> · atlas 1024²</span><span class="gd dn">+1.8ms</span></div>
+      <div class="grow"><span class="gt">12:04:32</span><span class="ga"><span class="pd" style="background:var(--red)"></span>Renderer</span><span class="gm">StandardPbr held · budget <b>14.2ms</b></span><span class="gd z">0.0ms</span></div>
+      <div class="grow"><span class="gt">12:04:32</span><span class="ga"><span class="pd" style="background:var(--ink-2)"></span>Audio</span><span class="gm">yielded <b>2 voices</b> · Balanced → Conservative</span><span class="gd up">−0.4ms</span></div>
+      <div class="grow"><span class="gt">12:04:33</span><span class="ga"><span class="pd" style="background:var(--amber)"></span>ShadowRenderer</span><span class="gm">PID 0.92 · re-arbitrated <b>Medium</b> held</span><span class="gd z">0.0ms</span></div>
+      <div class="grow"><span class="gt">12:04:33</span><span class="ga"><span class="pd" style="background:var(--green)"></span>all</span><span class="gm">frame settled <b>13.6ms</b> · under budget</span><span class="gd up">−0.6ms</span></div>
+    </div>
+  </div>
+
+  <div class="note"><i class="ti ti-info-circle" aria-hidden="true"></i><div>These overlays and states are the interaction spec. The palette is Ctrl K (floating), the context menu / rename / drag live in the hierarchy, empty + loading states cover every panel, and the GORNA stream is the third bottom-dock tab. Every state here maps to a real <code style="font-family:var(--mono);font-size:11px">PlayMode</code> / <code style="font-family:var(--mono);font-size:11px">EditorState</code> value the egui code already tracks.</div></div>
+</section>
+
+</body>
+</html>

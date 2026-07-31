@@ -139,6 +139,30 @@ pub struct BlendStateDescriptor {
     pub alpha: BlendComponentDescriptor,
 }
 
+impl BlendStateDescriptor {
+    /// Standard (non-premultiplied) alpha blending:
+    /// `dst = src.rgb * src.a + dst.rgb * (1 - src.a)`.
+    ///
+    /// The alpha channel accumulates coverage with `One / OneMinusSrcAlpha`, so
+    /// compositing several transparent layers leaves a correct destination
+    /// alpha. This is the curve `AlphaMode::Blend` materials render with; it is
+    /// order-dependent, so the caller must draw those materials back-to-front.
+    pub const fn alpha_blending() -> Self {
+        Self {
+            color: BlendComponentDescriptor {
+                src_factor: BlendFactor::SrcAlpha,
+                dst_factor: BlendFactor::OneMinusSrcAlpha,
+                operation: BlendOperation::Add,
+            },
+            alpha: BlendComponentDescriptor {
+                src_factor: BlendFactor::One,
+                dst_factor: BlendFactor::OneMinusSrcAlpha,
+                operation: BlendOperation::Add,
+            },
+        }
+    }
+}
+
 khora_bitflags! {
     /// A bitmask to enable or disable writes to individual color channels.
     pub struct ColorWrites: u8 {

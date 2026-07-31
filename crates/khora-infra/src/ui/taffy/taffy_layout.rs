@@ -52,16 +52,23 @@ impl LayoutSystem for TaffyLayoutSystem {
         self.taffy.clear();
         self.entity_to_node.clear();
 
+        // Real layout viewport, resolved from the view (falls back to the
+        // trait default when the view has no live surface size).
+        let (viewport_w, viewport_h) = view.viewport_size();
+
         // 1. First pass: Create taffy nodes for all UI entities
         let entities = view.get_all_ui_entities();
         for entity in entities.iter() {
             if let Some(ui_node) = view.get_node(*entity) {
                 let style = self.convert_style(&ui_node);
-                let node = self
-                    .taffy
-                    .new_leaf(style)
-                    .expect("Failed to create layout node");
-                self.entity_to_node.insert(*entity, node);
+                match self.taffy.new_leaf(style) {
+                    Ok(node) => {
+                        self.entity_to_node.insert(*entity, node);
+                    }
+                    Err(e) => {
+                        log::error!("TaffyLayoutSystem: failed to create layout node: {e}");
+                    }
+                }
             }
         }
 
@@ -76,16 +83,18 @@ impl LayoutSystem for TaffyLayoutSystem {
             self.attach_children(entity, view);
         }
 
-        // 3. Compute layout
+        // 3. Compute layout against the real viewport.
         for root in roots {
             if let Some(&root_node) = self.entity_to_node.get(&root) {
-                // Determine root size (could be screen size in real app)
                 let available_space = Size {
-                    width: AvailableSpace::Definite(1920.0), // TODO: Use actual viewport size
-                    height: AvailableSpace::Definite(1080.0),
+                    width: AvailableSpace::Definite(viewport_w as f32),
+                    height: AvailableSpace::Definite(viewport_h as f32),
                 };
 
-                let _ = self.taffy.compute_layout(root_node, available_space);
+                if let Err(e) = self.taffy.compute_layout(root_node, available_space) {
+                    log::error!("TaffyLayoutSystem: compute_layout failed: {e}");
+                    continue;
+                }
                 self.update_transforms(root, view, 0); // 0 Z-Index base
             }
         }
@@ -113,15 +122,18 @@ impl TaffyLayoutSystem {
         if !children.is_empty() {
             let mut taffy_children = Vec::new();
             for &child_id in &children {
-                if self.entity_to_node.contains_key(&child_id) {
+                if let Some(&child_node) = self.entity_to_node.get(&child_id) {
                     self.attach_children(child_id, view);
-                    taffy_children.push(*self.entity_to_node.get(&child_id).unwrap());
+                    taffy_children.push(child_node);
                 }
             }
 
             if !taffy_children.is_empty() {
-                let parent_node = *self.entity_to_node.get(&entity).unwrap();
-                self.taffy.set_children(parent_node, &taffy_children).ok();
+                if let Some(&parent_node) = self.entity_to_node.get(&entity) {
+                    if let Err(e) = self.taffy.set_children(parent_node, &taffy_children) {
+                        log::error!("TaffyLayoutSystem: failed to set children: {e}");
+                    }
+                }
             }
         }
     }

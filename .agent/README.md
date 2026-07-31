@@ -1,108 +1,94 @@
-# Khora Engine — Agent Index
+# Khora Engine — AI Documentation
 
-Single source of truth for AI coding agents working on Khora Engine.
+This tree is the **single source of truth** for every AI coding agent that works in this repository.
+It is provider-agnostic: you author the docs once here, then an installer generates the per-provider
+wrappers (Claude Code, Cursor, GitHub Copilot, Gemini CLI) and keeps them in sync — without ever
+duplicating the docs into git.
 
-- Document — Khora Agent Index v1.0
-- Status — Active
-- Date — May 2026
-
----
-
-## Read this first
-
-You are working on **Khora Engine**, an experimental Rust game engine built on a **Symbiotic Adaptive Architecture (SAA)** with **CLAD** layering (Control / Lanes / Agents / Data). The engine is a Cargo workspace of eleven crates, uses **wgpu 28.0** for rendering, **CRPECS** for ECS, **Rapier3D** for physics, **CPAL** for audio, **Taffy** for UI layout, and a per-frame **GORNA** negotiation protocol that lets subsystems trade resource budgets in real time.
-
-This index is the entry point. Everything else lives one click away.
+All content is written in **English**.
 
 ---
 
-## Map
+## Two profiles
 
-| File | Purpose |
-|---|---|
-| [`rules.md`](./rules.md) | Must Always / Must Never. Read before any code change. |
-| [`conventions.md`](./conventions.md) | Naming, code patterns, file layout, git conventions. |
-| [`architecture.md`](./architecture.md) | CLAD dependency graph, crate responsibilities, trait map, standard components. |
-| [`personas/`](./personas/) | Eight specialist personas — invoke when a task is squarely in their domain. |
-| [`hooks/`](./hooks/) | Session bootstrap, teardown, and hook configuration. |
-| [`index.yaml`](./index.yaml) | Machine-readable index for context loaders. |
+| Profile | For | Lives in |
+|---|---|---|
+| **engine** | Developing the Khora Engine **itself** (contributors). Internals: CLAD, GORNA, crates, lanes, agents. | [`engine/`](./engine/index.md) → start at [`engine/index.md`](./engine/index.md) |
+| **gamedev** | Building a **game with** the engine (SDK users). Public `khora-sdk` surface only. Standalone / publishable into downstream game projects. | [`gamedev/`](./gamedev/index.md) → start at [`gamedev/index.md`](./gamedev/index.md) |
 
-External references:
+Each profile contains:
 
-| File | Purpose |
-|---|---|
-| [`../CLAUDE.md`](../CLAUDE.md) | Claude Code provider entry. |
-| [`../AGENTS.md`](../AGENTS.md) | Codex / Aider / Cursor provider entry. |
-| [`../docs/src/`](../docs/src/) | Full mdBook documentation — philosophy, architecture, subsystems, SDK guide. |
-| [`../docs/src/design/editor.md`](../docs/src/design/editor.md) | Editor design system (visual language, panels, voice). |
-
----
-
-## Personas
-
-Eight specialist personas are available in [`personas/`](./personas/). Use one when the task falls squarely in its domain:
-
-| Persona | Domain |
-|---|---|
-| `graphics-rendering-expert` | wgpu, WGSL, render pipelines, PBR, shadow techniques |
-| `physics-expert` | Rigid bodies, constraints, CCD, Rapier3D internals |
-| `math-expert` | Linear algebra, geometric algebra, numerical methods |
-| `audio-expert` | (See `physics-expert.md` style — none yet for audio specifically) |
-| `editor-ui-ux` | khora-editor panels, gizmos, dock layouts |
-| `api-ux-expert` | SDK ergonomics, builder patterns, type-state |
-| `documentation-expert` | mdBook, rustdoc, ADRs, Mermaid diagrams |
-| `security-auditor` | unsafe blocks, supply chain, input validation |
-| `deprecation-cleaner` | API modernization, dead code elimination |
-
-For all general work, do not invoke a persona — work as the default Khora engineer described below.
+- `SOUL.md` — the base **orchestrator** agent (identity, global map, routing).
+- `RULES.md` — hard constraints, boundaries (do-not-touch), permission model.
+- `index.md` / `index.yaml` — human + machine index (progressive disclosure — load on demand).
+- domain docs (`conventions.md`, `architecture.md` / `sdk-guide.md`, `security-privacy.md`).
+- `knowledge/` — persistent memory.
+- `agents/` — specialist sub-agents (scoped tools).
+- `skills/` — task workflows (SKILL.md).
+- `hooks/` — doc-change, bootstrap, teardown, secret-scan.
+- `installer/` — the Node CLI for that profile.
 
 ---
 
-## Default identity
+## Install the provider wrappers
 
-Precise, technical, concise. Short answers backed by code references and line numbers. Idiomatic Rust — type system, ownership, zero-cost abstractions. Architectural decisions reference the specific CLAD layer or SAA concept involved. Respond in the user's language (French or English).
+Run from the repo root. The profile is derived from the installer's path.
 
-### Values
-- **Correctness first** — unsafe code, undefined behavior, and data races are unacceptable.
-- **Performance by design** — cache-friendly data layouts, minimal allocations, zero-copy where possible.
-- **Architecture integrity** — respect the CLAD layering: Control → Agents → Lanes → Data / Core.
-- **Minimal changes** — fix what's asked, don't over-engineer or refactor adjacent code.
-- **Test everything** — changes must compile cleanly and pass all ~470 workspace tests.
+### Engine (contributors)
+```bash
+node .agent/engine/installer/bin/khora-ai.mjs install claude     # Claude Code
+node .agent/engine/installer/bin/khora-ai.mjs install cursor     # Cursor
+node .agent/engine/installer/bin/khora-ai.mjs install copilot    # GitHub Copilot
+node .agent/engine/installer/bin/khora-ai.mjs install gemini     # Gemini CLI
+node .agent/engine/installer/bin/khora-ai.mjs install all        # all four
+node .agent/engine/installer/bin/khora-ai.mjs install all --no-tools   # skip tooling bootstrap
+```
 
----
+### Gamedev (game developers)
+```bash
+node .agent/gamedev/installer/bin/khora-ai.mjs install claude    # …cursor | copilot | gemini | all
+node .agent/gamedev/installer/bin/khora-ai.mjs install all
+```
 
-## Workflow
+Also available: `npx khora-ai-engine install all` (via each installer's `package.json` bin), and
+`cargo xtask ai install all` (convenience wrapper that shells out to node).
 
-When asked to make a change:
-
-1. Read the relevant source files first.
-2. Make minimal, focused edits.
-3. Run `cargo build` to verify compilation.
-4. Run `cargo test --workspace` to check for regressions.
-5. Summarize what changed, which files were modified, which tests are affected.
-
-When investigating a bug:
-
-1. Investigate the relevant code paths.
-2. Identify the root cause before writing any fix.
-3. Apply the fix, verify with build + test.
-4. Explain the root cause and the fix concisely.
-
----
-
-## Quick commands
-
-| Command | Purpose |
-|---|---|
-| `cargo build` | Build all crates |
-| `cargo test --workspace` | Run ~470 workspace tests |
-| `cargo run -p sandbox` | Launch the demo application |
-| `cargo run -p khora-editor` | Launch the editor |
-| `cargo xtask all` | Full CI pipeline (fmt + clippy + test + doc) |
-| `cargo clippy --workspace` | Lint the workspace |
-| `mdbook build docs/` | Build the documentation |
-| `mdbook serve docs/ --open` | Serve docs locally |
+### Other commands
+```bash
+node .agent/<profile>/installer/bin/khora-ai.mjs sync            # regenerate installed providers
+node .agent/<profile>/installer/bin/khora-ai.mjs uninstall all   # remove wrappers + gitignore/hook entries
+node .agent/<profile>/installer/bin/khora-ai.mjs list            # show install state
+```
 
 ---
 
-*End of index.*
+## What the installer does
+
+1. **Generates** thin per-provider routers (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`,
+   `.github/copilot-instructions.md`) that carry basic identity + a few hard rules and **route into the
+   profile index** — plus **copies** the skills/agents/docs into each provider's discovery folder
+   (`.claude/`, `.cursor/rules/`, `.gemini/`, `.github/instructions/`).
+2. **Wires hooks** into each provider:
+   - a **doc-change** hook — editing `.agent/<profile>/**` re-runs that profile's installer (in-session via
+     the provider's `PostToolUse`, cross-editor via a `git pre-commit` block);
+   - a **secret-scan** `pre-commit` hook — blocks commits containing secrets.
+3. **Bootstraps tooling** (best-effort, `--no-tools` to skip): **rtk** (Rust Token Killer — detected, or
+   installed from [rtk-ai/rtk](https://github.com/rtk-ai/rtk) and added to PATH if missing), **codegraph**,
+   and **impeccable** (the `/impeccable` design authority). Project-local tool state lives in a gitignored
+   `.khora/` folder.
+4. **Gitignores every generated artifact** via a managed block in `.gitignore`, and records the install in
+   `.agent/.khora-ai.json` (per-machine, gitignored).
+
+**The only committed AI docs are under `.agent/`.** Everything a provider needs is generated locally and
+gitignored — so the docs are never duplicated across providers in git. After cloning, run the installer for
+your provider(s).
+
+> **Never edit the generated wrappers** (`CLAUDE.md`, `.claude/`, `.cursor/`, …). Edit the canonical source
+> in `.agent/<profile>/`; the doc-change hook regenerates the rest.
+
+### Notes
+- This repo primarily uses the **engine** profile. The **gamedev** profile is self-contained and meant to be
+  copied/seeded into downstream game projects (where it owns the root routers). Installing both profiles in
+  one repo means the root routers and `.claude/` reflect the most recently synced profile.
+- The doc-change hook is **scoped per profile**: engine wrappers regenerate only on `.agent/engine/**`
+  changes, gamedev only on `.agent/gamedev/**`.

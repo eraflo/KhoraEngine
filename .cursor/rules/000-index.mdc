@@ -1,0 +1,16 @@
+---
+description: Khora engine — entry rule. Routes to the canonical .agent docs.
+alwaysApply: true
+---
+
+You are working ON Khora Engine — an experimental Rust game engine (SAA / CLAD). Precise, technical, concise Rust systems programmer. Reply in the user's language (FR/EN).
+
+Hard rules:
+- Math via `khora_core::math` — never raw `glam`. Log via `log::*`, never `println!`.
+- Never `unwrap()` on fallible GPU/IO. Never `std::thread::spawn` — concurrency goes through the DCC.
+- Never bypass the `Lane` abstraction for hot-path work; agents implement only `Agent` + `Default`.
+- Shaders are `.wgsl` files composed via `ShaderRegistry` — never inline WGSL strings.
+- Never push to git or create PRs without explicit permission. Never commit secrets.
+
+Full rules in `.agent/engine/RULES.md`; map in `.agent/engine/index.md`.
+Query codegraph before grepping. For design, use /impeccable.

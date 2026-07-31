@@ -40,6 +40,7 @@ use crate::widgets::brand::paint_diamond_filled;
 use crate::widgets::chrome::{paint_panel_header, paint_status_dot, panel_tab};
 use crate::widgets::controls::paint_meter_bar;
 use crate::widgets::paint::{paint_hairline_h, paint_icon, paint_text_size, with_alpha};
+use khora_tool_ui::widgets::Health;
 
 const SUMMARY_BAR_HEIGHT: f32 = 88.0;
 const AGENTS_PANEL_WIDTH: f32 = 280.0;
@@ -72,7 +73,7 @@ impl AgentSnapshot {
         }
     }
 
-    fn importance_color(&self, theme: &EditorTheme) -> [f32; 4] {
+    fn importance_color(&self, theme: &UiTheme) -> [f32; 4] {
         match self.importance {
             AgentImportance::Critical => theme.error,
             AgentImportance::Important => theme.warning,
@@ -98,6 +99,8 @@ fn crate_for_id(id: AgentId) -> &'static str {
     match id {
         AgentId::Renderer
         | AgentId::ShadowRenderer
+        | AgentId::Overlay
+        | AgentId::Skybox
         | AgentId::Physics
         | AgentId::Ecs
         | AgentId::Ui
@@ -106,18 +109,28 @@ fn crate_for_id(id: AgentId) -> &'static str {
     }
 }
 
+/// How many recent frame-time samples the summary sparkline keeps.
+const FRAME_HISTORY: usize = 48;
+
 pub struct ControlPlanePanel {
     state: Arc<Mutex<EditorState>>,
-    theme: EditorTheme,
+    theme: UiTheme,
     registry: Option<Arc<Mutex<AgentRegistry>>>,
     dcc_context: Option<Arc<std::sync::RwLock<DccContext>>>,
     selected_idx: usize,
+    /// Recent frame-time samples (ms), oldest first. The DCC's aggregate cost
+    /// is the frame budget itself, and it *is* recorded every frame — unlike
+    /// per-agent cost, which the engine doesn't yet expose — so this is the
+    /// one sparkline the Control Plane can draw truthfully today.
+    frame_history: std::collections::VecDeque<f32>,
+    /// How far the agents column is scrolled.
+    agents_scroll: khora_tool_ui::widgets::ScrollState,
 }
 
 impl ControlPlanePanel {
     pub fn new(
         state: Arc<Mutex<EditorState>>,
-        theme: EditorTheme,
+        theme: UiTheme,
         registry: Option<Arc<Mutex<AgentRegistry>>>,
         dcc_context: Option<Arc<std::sync::RwLock<DccContext>>>,
     ) -> Self {
@@ -127,7 +140,17 @@ impl ControlPlanePanel {
             registry,
             dcc_context,
             selected_idx: 0,
+            frame_history: std::collections::VecDeque::with_capacity(FRAME_HISTORY),
+            agents_scroll: khora_tool_ui::widgets::ScrollState::default(),
         }
+    }
+
+    /// Records one frame-time sample, keeping the buffer bounded.
+    fn push_frame_sample(&mut self, ms: f32) {
+        if self.frame_history.len() == FRAME_HISTORY {
+            self.frame_history.pop_front();
+        }
+        self.frame_history.push_back(ms);
     }
 
     /// Snapshots all agents for this frame. Returns an empty Vec if the
@@ -170,16 +193,8 @@ impl EditorPanel for ControlPlanePanel {
     }
 
     fn ui(&mut self, ui: &mut dyn UiBuilder) {
-        let active = self
-            .state
-            .lock()
-            .ok()
-            .map(|s| s.active_mode == EditorMode::ControlPlane)
-            .unwrap_or(false);
-        if !active {
-            return;
-        }
-
+        // No mode check: the workbench only lays this panel out in the
+        // Control Plane workspace, which is the only tree that names it.
         let theme = self.theme.clone();
         let panel_rect = ui.panel_rect();
         let [px, py, pw, ph] = panel_rect;
@@ -227,6 +242,10 @@ impl EditorPanel for ControlPlanePanel {
                 snap.5 = vram_used;
             }
         }
+        // Record this frame's time before drawing, so the budget sparkline
+        // includes the current sample.
+        self.push_frame_sample(snap.1);
+        let frame_samples: Vec<f32> = self.frame_history.iter().copied().collect();
         self.paint_summary_bar(
             ui,
             [px + 8.0, py + 8.0, pw - 16.0, SUMMARY_BAR_HEIGHT],
@@ -234,6 +253,7 @@ impl EditorPanel for ControlPlanePanel {
             dcc_snap.as_ref(),
             agents.len(),
             &theme,
+            &frame_samples,
         );
 
         // ── 2. Body grid: agents | schedule | inspector
@@ -267,6 +287,7 @@ impl EditorPanel for ControlPlanePanel {
 }
 
 impl ControlPlanePanel {
+    #[allow(clippy::too_many_arguments)] // A paint helper; the args are all data it draws.
     fn paint_summary_bar(
         &self,
         ui: &mut dyn UiBuilder,
@@ -274,7 +295,8 @@ impl ControlPlanePanel {
         snap: (f32, f32, f32, f32, f32, f32),
         dcc: Option<&DccContext>,
         agent_count: usize,
-        theme: &EditorTheme,
+        theme: &UiTheme,
+        frame_samples: &[f32],
     ) {
         let [x, y, w, h] = rect;
         ui.paint_rect_filled([x, y], [w, h], theme.surface, theme.radius_lg);
@@ -418,7 +440,18 @@ impl ControlPlanePanel {
                 FontFamilyHint::Monospace,
                 TextAlign::Left,
             );
-            paint_meter_bar(ui, [cx, y + 56.0], cell_w - 16.0, *frac, *color, theme);
+            // The frame budget shows a trend (it's the DCC's real cost signal);
+            // the other cells are instantaneous, so a single bar fits them.
+            if i == 0 && frame_samples.len() >= 4 {
+                khora_tool_ui::widgets::sparkline(
+                    ui,
+                    theme,
+                    [cx, y + 44.0, cell_w - 16.0, 22.0],
+                    frame_samples,
+                );
+            } else {
+                paint_meter_bar(ui, [cx, y + 56.0], cell_w - 16.0, *frac, *color, theme);
+            }
         }
     }
 
@@ -427,7 +460,7 @@ impl ControlPlanePanel {
         ui: &mut dyn UiBuilder,
         rect: [f32; 4],
         agents: &[AgentSnapshot],
-        theme: &EditorTheme,
+        theme: &UiTheme,
     ) {
         let [x, y, w, h] = rect;
         ui.paint_rect_filled([x, y], [w, h], theme.surface, theme.radius_lg);
@@ -463,7 +496,22 @@ impl ControlPlanePanel {
         }
 
         // Group by crate (built-in vs user-plugin) for the section headers.
-        let mut row_y = y + 40.0;
+        //
+        // The list scrolls: it used to run straight off the bottom of the panel
+        // with no bound at all, so past roughly eight agents the rows painted
+        // outside their pane and became unclickable.
+        let rows_top = y + 40.0;
+        let view = [x, rows_top, w, (y + h - rows_top).max(0.0)];
+        let sections = agents
+            .iter()
+            .map(|a| a.crate_name)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len() as f32;
+        let content_h = agents.len() as f32 * (AGENT_ROW_HEIGHT + 2.0) + sections * 14.0;
+        self.agents_scroll.update(ui, view, content_h);
+        ui.push_clip_rect(view);
+
+        let mut row_y = rows_top - self.agents_scroll.offset();
         let mut current_section: Option<&str> = None;
         for (i, agent) in agents.iter().enumerate() {
             if Some(agent.crate_name) != current_section {
@@ -478,9 +526,21 @@ impl ControlPlanePanel {
                 row_y += 14.0;
                 current_section = Some(agent.crate_name);
             }
-            self.paint_agent_row(ui, x + 6.0, row_y, w - 12.0, agent, i, theme);
+            if row_y + AGENT_ROW_HEIGHT >= view[1] && row_y <= view[1] + view[3] {
+                self.paint_agent_row(ui, x + 6.0, row_y, w - 12.0, agent, i, theme);
+            }
             row_y += AGENT_ROW_HEIGHT + 2.0;
         }
+
+        ui.pop_clip_rect();
+        khora_tool_ui::widgets::scrollbar(
+            ui,
+            theme,
+            view,
+            content_h,
+            &mut self.agents_scroll,
+            "cp-agents-scroll",
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -492,7 +552,7 @@ impl ControlPlanePanel {
         w: f32,
         agent: &AgentSnapshot,
         idx: usize,
-        theme: &EditorTheme,
+        theme: &UiTheme,
     ) {
         let active = self.selected_idx == idx;
         let interaction =
@@ -561,15 +621,11 @@ impl ControlPlanePanel {
             TextAlign::Left,
         );
 
-        // Health meter (real value: 0..1 from report_status)
+        // Health meter (real value: 0..1 from report_status). The thresholds
+        // live in the shared `Health` type so the bar, the dot and the
+        // "healthy / degraded" label can never disagree about the same agent.
         let health = agent.status.health_score.clamp(0.0, 1.0);
-        let bar_color = if health > 0.7 {
-            theme.success
-        } else if health > 0.4 {
-            theme.warning
-        } else {
-            theme.error
-        };
+        let bar_color = Health::from_ratio(health).color(theme);
         paint_meter_bar(ui, [x + 38.0, y + 40.0], w - 56.0, health, bar_color, theme);
 
         // Foot: phase + priority
@@ -596,7 +652,7 @@ impl ControlPlanePanel {
         ui: &mut dyn UiBuilder,
         rect: [f32; 4],
         agents: &[AgentSnapshot],
-        theme: &EditorTheme,
+        theme: &UiTheme,
     ) {
         let [x, y, w, h] = rect;
         ui.paint_rect_filled([x, y], [w, h], theme.surface, theme.radius_lg);
@@ -721,7 +777,7 @@ impl ControlPlanePanel {
         ui: &mut dyn UiBuilder,
         rect: [f32; 4],
         agent: Option<&AgentSnapshot>,
-        theme: &EditorTheme,
+        theme: &UiTheme,
     ) {
         let [x, y, w, h] = rect;
         ui.paint_rect_filled([x, y], [w, h], theme.surface, theme.radius_lg);
@@ -785,13 +841,16 @@ impl ControlPlanePanel {
             TextAlign::Center,
         );
 
-        // Status pill
+        // Status pill — same thresholds as the health bar (see `Health`), so
+        // the word and the bar always agree.
         let (status_label, status_color) = if agent.status.is_stalled {
             ("stalled", theme.error)
-        } else if agent.status.health_score < 0.5 {
-            ("degraded", theme.warning)
         } else {
-            ("healthy", theme.success)
+            match Health::from_ratio(agent.status.health_score) {
+                Health::Good => ("healthy", theme.success),
+                Health::Degraded => ("degraded", theme.warning),
+                Health::Bad => ("failing", theme.error),
+            }
         };
         let pill_x = x + 58.0 + tag_w + 8.0;
         let pill_label_w =
@@ -883,13 +942,7 @@ impl ControlPlanePanel {
             theme,
         );
         cy += 22.0;
-        let bar_color = if agent.status.health_score > 0.7 {
-            theme.success
-        } else if agent.status.health_score > 0.4 {
-            theme.warning
-        } else {
-            theme.error
-        };
+        let bar_color = Health::from_ratio(agent.status.health_score).color(theme);
         paint_meter_bar(
             ui,
             [x + 18.0, cy + 4.0],
@@ -956,7 +1009,7 @@ impl AgentSnapshot {
     }
 }
 
-fn phase_color_for(phase: ExecutionPhase, theme: &EditorTheme) -> [f32; 4] {
+fn phase_color_for(phase: ExecutionPhase, theme: &UiTheme) -> [f32; 4] {
     if phase == ExecutionPhase::INIT {
         theme.text_muted
     } else if phase == ExecutionPhase::OBSERVE {
@@ -981,7 +1034,7 @@ fn paint_card_box(
     w: f32,
     title: &str,
     icon: Icon,
-    theme: &EditorTheme,
+    theme: &UiTheme,
 ) -> f32 {
     let header_h = 26.0;
     ui.paint_rect_filled(
@@ -997,7 +1050,7 @@ fn paint_card_box(
 
 /// Render a key/value row with the key left-aligned and the value
 /// right-aligned within `[x, x+w]`.
-fn kv(ui: &mut dyn UiBuilder, x: f32, y: f32, w: f32, key: &str, value: &str, theme: &EditorTheme) {
+fn kv(ui: &mut dyn UiBuilder, x: f32, y: f32, w: f32, key: &str, value: &str, theme: &UiTheme) {
     paint_text_size(ui, [x, y], key, 11.0, theme.text_dim);
     ui.paint_text_styled(
         [x + w - 4.0, y],

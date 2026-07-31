@@ -42,12 +42,26 @@ impl<T: Any> AsAny for T {
     }
 }
 
+/// Supertrait that gives every material a `clone_box` without making `Material`
+/// itself depend on the non-object-safe `Clone`. The blanket impl below covers
+/// every `T: Material + Clone`, so concrete materials implement nothing extra.
+pub trait MaterialClone {
+    /// Clones `self` into a new boxed `dyn Material`.
+    fn clone_box(&self) -> Box<dyn Material>;
+}
+
+impl<T: Material + Clone + 'static> MaterialClone for T {
+    fn clone_box(&self) -> Box<dyn Material> {
+        Box::new(self.clone())
+    }
+}
+
 /// A trait for types that can be used as a material.
 ///
 /// A material defines the surface properties of an object being rendered,
 /// influencing how it interacts with light and determining which shader
 /// (`RenderPipeline`) is used to draw it.
-pub trait Material: Asset + AsAny {
+pub trait Material: Asset + AsAny + MaterialClone {
     /// Returns the base color (albedo or diffuse) of the material.
     /// Default implementation is White.
     fn base_color(&self) -> crate::math::LinearRgba {
@@ -71,6 +85,63 @@ pub trait Material: Asset + AsAny {
     fn ambient_color(&self) -> crate::math::LinearRgba {
         crate::math::LinearRgba::new(0.1, 0.1, 0.1, 0.0)
     }
+
+    /// Returns the metallic factor (0.0 = dielectric, 1.0 = metal).
+    /// Default implementation is 0.0.
+    fn metallic(&self) -> f32 {
+        0.0
+    }
+
+    /// Returns the roughness factor (0.0 = smooth, 1.0 = rough).
+    /// Default implementation is 1.0.
+    fn roughness(&self) -> f32 {
+        1.0
+    }
+
+    /// Returns the UUID of the base-color (albedo) texture, if any.
+    /// Default implementation is `None` (untextured).
+    fn base_color_texture(&self) -> Option<crate::asset::AssetUUID> {
+        None
+    }
+
+    /// Returns the UUID of the metallic-roughness texture, if any
+    /// (glTF convention: B=metallic, G=roughness).
+    /// Default implementation is `None`.
+    fn metallic_roughness_texture(&self) -> Option<crate::asset::AssetUUID> {
+        None
+    }
+
+    /// Returns the UUID of the tangent-space normal map, if any.
+    /// Default implementation is `None`.
+    fn normal_map(&self) -> Option<crate::asset::AssetUUID> {
+        None
+    }
+
+    /// Returns the UUID of the emissive texture, if any.
+    /// Default implementation is `None`.
+    fn emissive_texture(&self) -> Option<crate::asset::AssetUUID> {
+        None
+    }
+
+    /// Returns the UUID of the ambient-occlusion map, if any (red channel).
+    /// Attenuates the indirect (ambient/IBL) term only, never direct light.
+    /// Default implementation is `None`.
+    fn occlusion_map(&self) -> Option<crate::asset::AssetUUID> {
+        None
+    }
+
+    /// Returns the material's alpha (transparency) mode. For [`AlphaMode::Mask`]
+    /// the contained value is the alpha-cutoff threshold: fragments below it are
+    /// discarded. Default implementation is [`AlphaMode::Opaque`].
+    fn alpha_mode(&self) -> AlphaMode {
+        AlphaMode::Opaque
+    }
+
+    /// Whether the material is rendered double-sided (back faces not culled).
+    /// `false` (the default) culls back faces for correctly-wound meshes.
+    fn double_sided(&self) -> bool {
+        false
+    }
 }
 
 /// This is the key to our type-erased material handle system.
@@ -78,3 +149,9 @@ pub trait Material: Asset + AsAny {
 /// object can itself be treated as a valid Asset. This allows it to be
 /// stored inside an AssetHandle.
 impl Asset for Box<dyn Material> {}
+
+impl Clone for Box<dyn Material> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}

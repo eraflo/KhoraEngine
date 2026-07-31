@@ -1,0 +1,82 @@
+# Machine-readable index for the engine profile.
+# Context loaders use `load` to decide what enters context up front vs. on demand.
+# Progressive disclosure: keep `always` tiny; pull `on_demand` only when a task matches.
+
+profile: engine
+description: AI documentation for developing the Khora Engine itself (contributors).
+
+docs:
+  - path: SOUL.md
+    load: always
+    tags: [identity, orchestrator, map, routing]
+  - path: RULES.md
+    load: always
+    tags: [rules, constraints, boundaries, permissions]
+  - path: index.md
+    load: always
+    tags: [index, navigation]
+  - path: workflow-rpi.md
+    load: always
+    tags: [workflow, rpi, research, plan, implement, context-engineering]
+  - path: conventions.md
+    load: on_demand
+    tags: [style, naming, patterns, file-layout, bind-groups]
+  - path: architecture.md
+    load: on_demand
+    tags: [clad, crates, traits, components, file-locations, codegraph]
+  - path: security-privacy.md
+    load: on_demand
+    tags: [security, privacy, secrets, unsafe]
+
+knowledge:
+  - path: knowledge/MEMORY.md
+    load: on_demand
+    tags: [state, current-work, known-issues]
+  - path: knowledge/decisions.md
+    load: on_demand
+    tags: [architecture-decisions, rationale]
+  - path: knowledge/context.md
+    load: on_demand
+    tags: [project, workspace, build-commands]
+
+# Research subagents — read-only context-control workers; dispatch during the Research phase.
+agents:
+  - { path: agents/orchestrator.md,             when: default front door / routing / drive the RPI loop }
+  - { path: agents/codebase-locator.md,         when: find WHERE files / symbols / modules live }
+  - { path: agents/codebase-analyzer.md,        when: understand HOW a mechanism works (file:line + CLAD flow) }
+  - { path: agents/codebase-pattern-finder.md,  when: find an existing example / pattern to mirror }
+  - { path: agents/knowledge-locator.md,        when: find prior research / plans / decisions }
+  - { path: agents/security-auditor.md,         when: unsafe audit / supply chain / secrets / pre-push }
+
+# Domain reference — on-demand knowledge (scope, key files, hard rules) per domain.
+reference:
+  - { path: reference/graphics-rendering.md, load: on_demand, tags: [wgpu, wgsl, pbr, shadows, bind-groups] }
+  - { path: reference/physics.md,            load: on_demand, tags: [rapier, rigid-body, colliders, ccd] }
+  - { path: reference/audio.md,              load: on_demand, tags: [cpal, spatial-mixing, mix-bus] }
+  - { path: reference/math.md,               load: on_demand, tags: [khora-math, simd, numerics] }
+  - { path: reference/ecs-data.md,           load: on_demand, tags: [crpecs, storage, soa, agdf, components] }
+  - { path: reference/control-gorna.md,      load: on_demand, tags: [dcc, gorna, cost-model, pid, budgets] }
+  - { path: reference/editor-ui-ux.md,       load: on_demand, tags: [editor, panels, gizmos, dock, impeccable] }
+  - { path: reference/api-ux.md,             load: on_demand, tags: [sdk, ergonomics, builder, facade] }
+  - { path: reference/documentation.md,      load: on_demand, tags: [mdbook, rustdoc, diagrams] }
+  - { path: reference/deprecation.md,        load: on_demand, tags: [modernization, dead-code, cleanup] }
+
+# Task skills — run when the recurring task matches.
+skills:
+  - { path: skills/research-codebase/SKILL.md, when: RPI phase 1 — understand a problem → docs/research/ }
+  - { path: skills/create-plan/SKILL.md,       when: RPI phase 2 — write a phase-by-phase plan → docs/plans/ }
+  - { path: skills/implement-plan/SKILL.md,    when: RPI phase 3 — execute a plan, compact per phase }
+  - { path: skills/build-and-test/SKILL.md,   when: validate a change }
+  - { path: skills/add-a-lane/SKILL.md,       when: add a Lane }
+  - { path: skills/add-an-agent/SKILL.md,     when: add an Agent }
+  - { path: skills/add-a-component/SKILL.md,  when: add/register an ECS component }
+  - { path: skills/add-a-shader/SKILL.md,     when: add a WGSL shader + pipeline }
+  - { path: skills/run-the-engine/SKILL.md,   when: launch editor or sandbox }
+  - { path: skills/debug-frame/SKILL.md,      when: investigate a frame / GORNA decision }
+  - { path: skills/release-checklist/SKILL.md, when: pre-push gate }
+
+hooks:
+  - { path: hooks/doc-change.md,  event: on AI-doc change → reinstall wrappers }
+  - { path: hooks/bootstrap.md,   event: session start }
+  - { path: hooks/teardown.md,    event: session end }
+  - { path: hooks/secret-scan.md, event: pre-commit secret scan }

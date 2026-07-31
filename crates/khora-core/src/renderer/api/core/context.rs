@@ -27,9 +27,11 @@ pub struct RenderContext<'a> {
     pub depth_target: Option<&'a TextureViewId>,
     /// The color to clear the framebuffer with.
     pub clear_color: LinearRgba,
-    /// The shadow atlas texture view (array texture).
+    /// The 2D shadow atlas texture view (D2Array — directional / spot).
     pub shadow_atlas: Option<&'a TextureViewId>,
-    /// The comparison sampler for shadows.
+    /// The cubemap shadow atlas texture view (CubeArray — point lights).
+    pub shadow_cube_atlas: Option<&'a TextureViewId>,
+    /// The comparison sampler for shadows (shared by both atlases).
     pub shadow_sampler: Option<&'a SamplerId>,
 }
 
@@ -51,6 +53,7 @@ impl<'a> RenderContext<'a> {
             depth_target,
             clear_color,
             shadow_atlas: None,
+            shadow_cube_atlas: None,
             shadow_sampler: None,
         }
     }

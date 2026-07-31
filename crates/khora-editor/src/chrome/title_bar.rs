@@ -40,16 +40,16 @@ const SEARCH_PREFERRED_W: f32 = 320.0;
 const SEARCH_HEIGHT: f32 = 28.0;
 /// Below this width we collapse the pill into a single search icon.
 const SEARCH_COLLAPSE_THRESHOLD: f32 = 120.0;
-const MENU_REGION_WIDTH: f32 = 200.0;
+const MENU_REGION_WIDTH: f32 = 240.0;
 
 /// Top-bar branded strip.
 pub struct TitleBarPanel {
     state: Arc<Mutex<EditorState>>,
-    theme: EditorTheme,
+    theme: UiTheme,
 }
 
 impl TitleBarPanel {
-    pub fn new(state: Arc<Mutex<EditorState>>, theme: EditorTheme) -> Self {
+    pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self { state, theme }
     }
 
@@ -114,7 +114,7 @@ impl EditorPanel for TitleBarPanel {
             }
         };
 
-        ui.region_at(menu_region, &mut |ui_inner| {
+        ui.region_at("titlebar-menus", menu_region, &mut |ui_inner| {
             ui_inner.horizontal(&mut |ui_inner| {
                 ui_inner.menu_button("File", &mut |m| {
                     if m.button("New Scene") {
@@ -140,18 +140,19 @@ impl EditorPanel for TitleBarPanel {
                         m.close_menu();
                     }
                 });
+                // Undo / Redo are absent on purpose: `CommandHistory` is never
+                // fed, so both entries were permanent no-ops. Offering an undo
+                // that silently does nothing is worse than not offering one —
+                // it invites destructive edits the user believes are reversible.
                 ui_inner.menu_button("Edit", &mut |m| {
-                    if m.button("Undo  Ctrl+Z") {
-                        dispatch("undo");
-                        m.close_menu();
-                    }
-                    if m.button("Redo  Ctrl+Y") {
-                        dispatch("redo");
-                        m.close_menu();
-                    }
-                    m.separator();
                     if m.button("Delete  Del") {
                         dispatch("delete");
+                        m.close_menu();
+                    }
+                });
+                ui_inner.menu_button("Build", &mut |m| {
+                    if m.button("Build Game…") {
+                        dispatch("build_game");
                         m.close_menu();
                     }
                 });

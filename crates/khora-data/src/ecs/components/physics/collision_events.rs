@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 /// A component that stores collision events for the current frame.
 /// Typically attached to a singleton entity or used as a resource.
 #[derive(Debug, Clone, Default, Component, Serialize, Deserialize)]
+#[component(domain = Physics)]
 pub struct CollisionEvents {
     /// List of events that occurred in the last physics step.
     pub events: Vec<CollisionEvent>,

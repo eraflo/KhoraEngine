@@ -15,3 +15,4 @@
 //! Control system interfaces (GORNA, DCC).
 
 pub mod gorna;
+pub mod pid;

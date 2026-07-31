@@ -184,8 +184,10 @@ pub struct GpuLight {
     pub shadow_bias: f32,
     /// Shadow normal bias.
     pub shadow_normal_bias: f32,
-    /// Padding/Reserved.
-    pub _unused: f32,
+    /// Far plane of the per-face shadow projection (point lights only —
+    /// matches `ShadowEntry::Cube.far_plane`). Unused for directional
+    /// and spot lights; left at `0.0` in that case.
+    pub shadow_far_plane: f32,
 }
 
 impl GpuLight {
@@ -215,7 +217,7 @@ impl GpuLight {
                 shadow_map_index: -1,
                 shadow_bias: l.shadow_bias,
                 shadow_normal_bias: l.shadow_normal_bias,
-                _unused: 0.0,
+                shadow_far_plane: 0.0,
             },
             super::light::LightType::Point(l) => Self {
                 position,
@@ -229,7 +231,7 @@ impl GpuLight {
                 shadow_map_index: -1,
                 shadow_bias: l.shadow_bias,
                 shadow_normal_bias: l.shadow_normal_bias,
-                _unused: 0.0,
+                shadow_far_plane: 0.0,
             },
             super::light::LightType::Spot(l) => Self {
                 position,
@@ -243,7 +245,7 @@ impl GpuLight {
                 shadow_map_index: -1,
                 shadow_bias: l.shadow_bias,
                 shadow_normal_bias: l.shadow_normal_bias,
-                _unused: 0.0,
+                shadow_far_plane: 0.0,
             },
         }
     }
@@ -263,7 +265,7 @@ impl Default for GpuLight {
             shadow_map_index: -1,
             shadow_bias: 0.01,
             shadow_normal_bias: 0.0,
-            _unused: 0.0,
+            shadow_far_plane: 0.0,
         }
     }
 }
@@ -349,7 +351,7 @@ mod tests {
     #[test]
     fn test_gpu_light_size_and_alignment() {
         // GpuLight should be exactly 72 bytes (18 x 4-byte fields)
-        // Updated from 64 after shadow fields (shadow_map_index, shadow_bias, shadow_normal_bias, _padding) were added.
+        // Updated from 64 after shadow fields (shadow_map_index, shadow_bias, shadow_normal_bias, shadow_far_plane) were added.
         assert_eq!(std::mem::size_of::<GpuLight>(), 72);
     }
 

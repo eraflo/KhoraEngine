@@ -13,12 +13,20 @@
 // limitations under the License.
 
 //! Brand-mark painters — the Khora "diamond" shape and its containing pills.
+//!
+//! The diamond itself is defined once in `khora_tool_ui::widgets`; the helpers
+//! here adapt it to the editor's `(cx, cy, half_extent)` convention and add the
+//! editor-only outline + brand-pill composite.
 
-use khora_sdk::editor_ui::{EditorTheme, FontFamilyHint, TextAlign, UiBuilder};
+use khora_sdk::editor_ui::{FontFamilyHint, TextAlign, UiBuilder, UiTheme};
 
 use super::paint::with_alpha;
 
 /// Paints a 4-point diamond (rotated square) outline centered at `(cx, cy)`.
+///
+/// Editor-only: the shared library ships a filled diamond, not an outlined one
+/// (the empty-state used to draw it, but that now uses the shared `empty_state`
+/// widget). Kept here for the few chrome call sites that still want the ring.
 pub fn paint_diamond_outline(
     ui: &mut dyn UiBuilder,
     cx: f32,
@@ -37,15 +45,11 @@ pub fn paint_diamond_outline(
     ui.paint_line(left, top, color, thickness);
 }
 
-/// Paints a filled 4-point diamond using a closed polygon path.
+/// Paints a filled 4-point diamond centred at `(cx, cy)` with half-extent
+/// `size`. Adapter over [`khora_tool_ui::widgets::diamond`] (whose `size` is
+/// the full width), so the geometry is defined in exactly one place.
 pub fn paint_diamond_filled(ui: &mut dyn UiBuilder, cx: f32, cy: f32, size: f32, color: [f32; 4]) {
-    let pts = [
-        [cx, cy - size],
-        [cx + size, cy],
-        [cx, cy + size],
-        [cx - size, cy],
-    ];
-    ui.paint_path_filled(&pts, color);
+    khora_tool_ui::widgets::diamond(ui, [cx, cy], size * 2.0, color);
 }
 
 /// Paints the editor's branded "pill" (rounded 999 background containing a
@@ -59,7 +63,7 @@ pub fn paint_brand_pill(
     height: f32,
     engine_name: &str,
     project_name: &str,
-    theme: &EditorTheme,
+    theme: &UiTheme,
 ) -> f32 {
     // Real font measurement (Phase 3 — replaces the previous 7px-per-char
     // guess that broke at large font sizes / non-ASCII names).

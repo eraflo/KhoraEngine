@@ -50,22 +50,14 @@ pub enum PlayMode {
 
 /// The active editing workspace, switched via the left "spine" mode bar.
 ///
-/// Most modes are placeholders for now — the working ones in Phase 2 are
-/// `Scene` (the default 3D dock) and `ControlPlane` (the DCC / agents
-/// inspector, when implemented).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// Two workspaces ship today: `Scene` (the default 3D dock) and `ControlPlane`
+/// (the DCC / agents inspector). Future authoring workspaces (2D canvas, node
+/// graph, animation, shader graph) will be added as they are built.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum EditorMode {
     /// Default 3D viewport workspace.
     #[default]
     Scene,
-    /// 2D canvas / UI authoring (placeholder).
-    Canvas2D,
-    /// Visual node-graph editor (placeholder).
-    NodeGraph,
-    /// Animation / timeline editor (placeholder).
-    Animation,
-    /// Shader graph editor (placeholder).
-    Shader,
     /// Dynamic Context Core / agents control workspace.
     ControlPlane,
 }
@@ -84,6 +76,9 @@ pub struct SceneNode {
     pub icon: EntityIcon,
     /// Direct children in the scene hierarchy (from the `Children` component).
     pub children: Vec<SceneNode>,
+    /// Number of tags carried by the entity (`Tag` component). The scene
+    /// tree paints a small tag glyph next to the row when this is non-zero.
+    pub tag_count: usize,
 }
 
 /// Icon hint for the scene tree.
@@ -167,6 +162,11 @@ pub struct EditorState {
     pub gizmo_mode: GizmoMode,
     /// Index of the currently selected asset in the asset browser (if any).
     pub selected_asset: Option<usize>,
+    /// Forward-slash relative path (under `<project>/assets/`) of the
+    /// asset selected in the browser, or `None`. When set, the
+    /// Inspector switches to asset-metadata mode (Phase 5). Cleared
+    /// when an entity selection is made.
+    pub inspected_asset_path: Option<String>,
     /// Pending menu action (e.g. "new_scene", "save", "quit").
     pub pending_menu_action: Option<String>,
     /// Currently set project folder (used for asset scanning).
@@ -226,6 +226,72 @@ pub struct EditorState {
     /// pops this each frame and applies it to the engine (when an engine
     /// `Visible` component lands; for now it just flips `hidden_entities`).
     pub pending_visibility_toggle: Option<EntityId>,
+
+    // ── Prefab workflow ────────────────────────────────
+    /// Set when the user picks "Save as Prefab" in the scene tree
+    /// context menu. The editor consumes this next frame, opens a
+    /// file dialog, calls `serialize_subtree`, and writes the resulting
+    /// `.kprefab` file.
+    pub pending_save_as_prefab: Option<EntityId>,
+    /// Same payload as `pending_save_as_prefab`, but with a pre-chosen
+    /// destination forward-slash relative path under `<project>/assets/`
+    /// — set by drag-and-drop (e.g. dragging an entity onto the asset
+    /// browser's current folder). The dispatcher writes directly with
+    /// no file dialog and reuses the entity name as the file stem when
+    /// the path ends in `/`.
+    pub pending_save_as_prefab_at: Option<(EntityId, String)>,
+    /// Set when the user drops a `.kprefab` tile onto the viewport / hierarchy
+    /// (or activates one from the asset browser). Holds the forward-slash
+    /// relative path under `<project>/assets/` plus an optional parent entity
+    /// (the hierarchy row it was dropped on) so the instantiated root is
+    /// parented under it. Consumed next frame to load the recipe via the asset
+    /// service and call `instantiate_subtree`.
+    pub pending_prefab_spawn: Option<(String, Option<EntityId>)>,
+
+    // ── Material authoring workflow ─────────────────────
+    /// Set when the user picks "Save Material as .kmat" on an entity that
+    /// carries a `MaterialRef::Inline`. Holds the entity plus the chosen
+    /// material name (file stem). The editor consumes this next frame:
+    /// serializes the inline material to RON under
+    /// `assets/materials/<name>.kmat`, reindexes, and rewrites the entity's
+    /// component to `MaterialRef::Asset(uuid)` so it now references the
+    /// shared, reloadable asset.
+    pub pending_save_as_material: Option<(EntityId, String)>,
+    /// Set when the user assigns a `.kmat` from the asset browser to the
+    /// current selection. Holds the forward-slash relative path of the
+    /// `.kmat` under `<project>/assets/`. Consumed next frame: each
+    /// selected entity's `MaterialRef` is set to `Asset(uuid)`.
+    pub pending_assign_material: Option<String>,
+
+    // ── Asset explorer: file operations & scene drop ───
+    /// Every directory under `assets/` (forward-slash, relative), so the asset
+    /// browser can show empty folders the file-only VFS can't. Refreshed with
+    /// `asset_entries`.
+    pub asset_dirs: Vec<String>,
+    /// Bumped whenever `asset_entries`/`asset_dirs` change. The asset browser
+    /// rescans its flattened cache on epoch change instead of on entry-count
+    /// change (a modified-in-place file used to be missed).
+    pub asset_epoch: u64,
+    /// Create an empty folder at this forward-slash relative path under
+    /// `assets/`. Consumed next frame.
+    pub pending_create_folder: Option<String>,
+    /// Rename/move an asset: `(old_rel, new_rel)`, both forward-slash under
+    /// `assets/`. The identity registry freezes the UUID so references survive.
+    pub pending_rename_asset: Option<(String, String)>,
+    /// Move an asset into a folder: `(src_rel, dest_dir)` (dest_dir `""` = root).
+    pub pending_move_asset: Option<(String, String)>,
+    /// Send an asset to the OS recycle bin: forward-slash relative path.
+    pub pending_delete_asset: Option<String>,
+    /// Duplicate an asset next to itself: forward-slash relative path.
+    pub pending_duplicate_asset: Option<String>,
+    /// Spawn a mesh asset into the scene: `(rel_path, [x,y,z] world point,
+    /// optional parent entity)`. Set by dragging a mesh tile onto the viewport
+    /// (parent `None`) or a hierarchy row (parent = that entity); drained into a
+    /// `MeshRef::Asset` entity spawn, parented under the target when present.
+    pub pending_spawn_mesh_asset: Option<(String, [f32; 3], Option<EntityId>)>,
+    /// Assign a texture/material asset to a specific entity (drag onto an entity
+    /// in the viewport): `(rel_path, entity)`.
+    pub pending_assign_texture: Option<(String, EntityId)>,
 }
 
 impl EditorState {
@@ -250,6 +316,30 @@ impl EditorState {
     /// Clear the selection entirely.
     pub fn clear_selection(&mut self) {
         self.selection.clear();
+    }
+
+    /// Drops every piece of state that names an [`EntityId`], for use whenever
+    /// the world is replaced wholesale — new scene, scene load, or `Stop`
+    /// restoring the pre-play snapshot.
+    ///
+    /// Those paths rebuild the world with **fresh** ids, so anything still
+    /// holding an old one is not merely stale but actively dangerous: entity
+    /// slots are recycled, and an index+generation pair can come back attached
+    /// to a different entity. A surviving selection then makes `Delete` act on
+    /// something the user never selected.
+    ///
+    /// Card state is keyed by entity too, so it is cleared here rather than
+    /// growing without bound across scene changes.
+    pub fn clear_entity_references(&mut self) {
+        self.selection.clear();
+        self.inspected = None;
+        self.hidden_entities.clear();
+        self.renaming_entity = None;
+        self.rename_buffer.clear();
+        self.inspector_card_open.clear();
+        self.inspector_card_enabled.clear();
+        self.scene_roots.clear();
+        self.entity_count = 0;
     }
 
     /// Returns the single selected entity, if exactly one is selected.
@@ -351,6 +441,12 @@ pub struct LogEntry {
     pub level: LogLevel,
     pub message: String,
     pub target: String,
+    /// Wall-clock time the entry was captured, as `HH:MM:SS`.
+    ///
+    /// Formatted at capture rather than stored as an instant: the console is
+    /// the only consumer, it always renders it, and doing it once at capture
+    /// keeps the paint path free of formatting work.
+    pub time: String,
 }
 
 /// Log severity matching `log::Level`.

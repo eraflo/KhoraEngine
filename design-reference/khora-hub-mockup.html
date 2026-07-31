@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Khora — design direction (hub)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,500&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css" rel="stylesheet">
+<style>
+:root{
+  --bg-0: oklch(0.155 0.020 264); --bg-1: oklch(0.190 0.023 264); --bg-2: oklch(0.224 0.026 264);
+  --bg-3: oklch(0.265 0.029 264); --bg-4: oklch(0.315 0.033 264);
+  --line: oklch(0.34 0.022 264 / 0.65); --line-strong: oklch(0.46 0.028 264 / 0.85);
+  --silver: oklch(0.86 0.035 245); --silver-dim: oklch(0.70 0.040 245);
+  --gold: oklch(0.82 0.115 84); --green: oklch(0.78 0.130 152); --amber: oklch(0.80 0.135 72);
+  --cyan: oklch(0.80 0.095 222); --violet: oklch(0.74 0.130 292); --red: oklch(0.70 0.170 25);
+  --ink-0: oklch(0.965 0.005 250); --ink-1: oklch(0.820 0.010 250); --ink-2: oklch(0.660 0.013 250); --ink-3: oklch(0.500 0.015 250);
+  --sans:"Geist",system-ui,sans-serif; --mono:"Geist Mono",ui-monospace,monospace; --display:"Fraunces",Georgia,serif;
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:20px;--s6:24px;--s8:32px;
+  --r-xs:3px;--r-sm:5px;--r-md:7px;--r-lg:10px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg-0);color:var(--ink-1);font-family:var(--sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+body{padding:var(--s8) var(--s6);max-width:1180px;margin:0 auto}
+h1{font-family:var(--display);font-weight:500;font-size:30px;letter-spacing:-0.02em;color:var(--ink-0);line-height:1.1}
+.lede{color:var(--ink-2);font-size:13px;margin-top:var(--s2)}
+.kicker{font-family:var(--mono);font-size:10.5px;letter-spacing:0.14em;text-transform:uppercase;color:var(--ink-3);font-weight:500}
+section{margin-top:var(--s8)}
+.cap{margin-bottom:var(--s3)}
+
+/* window frame */
+.win{border:1px solid var(--line-strong);border-radius:var(--r-lg);overflow:hidden;background:var(--bg-0);box-shadow:0 24px 60px -34px oklch(0 0 0 / 0.7)}
+.topbar{height:44px;display:flex;align-items:center;gap:var(--s4);padding:0 var(--s4);background:linear-gradient(var(--bg-2),var(--bg-1));border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:8px}
+.dia{width:12px;height:12px;background:var(--silver);transform:rotate(45deg);border-radius:2px}
+.brand b{font-weight:600;color:var(--ink-0);letter-spacing:-0.01em}
+.brand .ctx{color:var(--ink-2);font-family:var(--mono);font-size:11px;padding-left:9px;margin-left:5px;border-left:1px solid var(--line)}
+.tgrow{flex:1}
+.statusbar{height:26px;display:flex;align-items:center;gap:var(--s3);padding:0 var(--s4);background:var(--bg-1);border-top:1px solid var(--line);font-family:var(--mono);font-size:10.5px;color:var(--ink-2)}
+.statusbar b{color:var(--ink-0);font-weight:500}.statusbar .sg{flex:1}.statusbar .ssep{width:1px;height:12px;background:var(--line)}
+.pulse{width:6px;height:6px;border-radius:50%;background:var(--green)}
+
+/* chips & buttons */
+.chip{font-family:var(--mono);font-size:10px;font-weight:500;padding:3px 8px;border-radius:999px;display:inline-flex;align-items:center;gap:5px;border:1px solid transparent}
+.dot{width:6px;height:6px;border-radius:50%}
+.chip.ok{background:oklch(0.78 0.13 152 / 0.14);color:var(--green);border-color:oklch(0.78 0.13 152 / 0.35)}
+.chip.warn{background:oklch(0.80 0.135 72 / 0.14);color:var(--amber);border-color:oklch(0.80 0.135 72 / 0.35)}
+.chip.muted{background:var(--bg-2);color:var(--ink-2);border-color:var(--line)}
+.chip.ver{background:var(--bg-2);color:var(--ink-1);border-color:var(--line)}
+.btn{font-family:var(--sans);font-size:12.5px;font-weight:500;border-radius:var(--r-sm);padding:7px 13px;border:1px solid transparent;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--silver);color:oklch(0.18 0.02 264)}
+.btn-ghost{background:var(--bg-3);color:var(--ink-1);border-color:var(--line)}
+.btn-ghost:hover{background:var(--bg-4);border-color:var(--line-strong)}
+.btn-icon{width:30px;height:30px;padding:0;justify-content:center;background:transparent;color:var(--ink-2);border-color:var(--line)}
+.btn-icon:hover{background:var(--bg-3);color:var(--ink-0)}
+.btn:disabled{background:var(--bg-2);color:var(--ink-3);border-color:var(--line);cursor:not-allowed}
+
+/* ---------- HOME ---------- */
+.home{display:flex;height:560px}
+.side{width:228px;background:linear-gradient(var(--bg-1),var(--bg-0));border-right:1px solid var(--line);display:flex;flex-direction:column;padding:var(--s4)}
+.side .lab{font-family:var(--mono);font-size:9.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--ink-3);margin:var(--s4) 0 var(--s2)}
+.side .lab:first-child{margin-top:0}
+.nav{display:flex;align-items:center;gap:9px;height:32px;padding:0 10px;border-radius:var(--r-sm);color:var(--ink-1);font-size:12.5px;cursor:pointer}
+.nav .ti{font-size:15px;color:var(--ink-2);width:16px;text-align:center}
+.nav:hover{background:oklch(0.265 0.029 264 / 0.5)}
+.nav.on{background:oklch(0.86 0.035 245 / 0.14);color:var(--ink-0)}
+.nav.on .ti{color:var(--silver)}
+.side .sg{flex:1}
+.ghchip{display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border:1px solid var(--line);border-radius:var(--r-sm);font-size:12px;color:var(--ink-1)}
+.ghchip .dot{margin-left:auto}
+
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.mhead{display:flex;align-items:center;gap:var(--s3);padding:var(--s5) var(--s6) var(--s3)}
+.mhead h2{font-family:var(--display);font-weight:500;font-size:19px;color:var(--ink-0)}
+.mhead .srch{margin-left:auto;background:var(--bg-0);border:1px solid var(--line-strong);border-radius:var(--r-sm);height:30px;display:flex;align-items:center;gap:7px;padding:0 10px;color:var(--ink-3);font-size:12px;width:220px}
+.mbody{flex:1;overflow:auto;padding:var(--s2) var(--s6) var(--s6)}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(252px,1fr));gap:var(--s3)}
+.pcard{background:var(--bg-1);border:1px solid var(--line);border-radius:var(--r-md);padding:var(--s4);cursor:pointer;transition:border-color .12s,background .12s}
+.pcard:hover{border-color:var(--line-strong);background:var(--bg-2)}
+.pcard .ph{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.pdia{width:14px;height:14px;background:var(--silver-dim);transform:rotate(45deg);border-radius:2px;flex:none}
+.pcard:hover .pdia{background:var(--silver)}
+.pcard .pn{font-size:13.5px;font-weight:600;color:var(--ink-0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcard .pp{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:var(--s4)}
+.pcard .pf{display:flex;align-items:center;gap:var(--s2)}
+.pcard .pt{font-size:10.5px;color:var(--ink-2);margin-left:auto;font-family:var(--mono)}
+.opn{font-size:11.5px;color:var(--silver);font-weight:500;display:flex;align-items:center;gap:5px}
+
+/* ---------- form (New Project) ---------- */
+.formwrap{display:flex;height:560px}
+.fmain{flex:1;overflow:auto;padding:var(--s6) 0}
+.fhold{max-width:520px;margin:0 auto;padding:0 var(--s6)}
+.back{display:inline-flex;align-items:center;gap:6px;color:var(--ink-2);font-size:12px;margin-bottom:var(--s4);cursor:pointer}
+.fhold h2{font-family:var(--display);font-weight:500;font-size:22px;color:var(--ink-0)}
+.fsub{color:var(--ink-2);font-size:12.5px;margin-top:4px;margin-bottom:var(--s6)}
+.fgroup{margin-bottom:var(--s5)}
+.fgl{font-family:var(--mono);font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:var(--s3);display:block}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:var(--s3)}
+.field label{font-size:11.5px;color:var(--ink-2);font-weight:500}
+.field .hint{font-size:10.5px;color:var(--ink-3)}
+.input{background:var(--bg-0);border:1px solid var(--line-strong);border-radius:var(--r-sm);padding:9px 11px;color:var(--ink-0);font-family:var(--sans);font-size:12.5px;width:100%}
+.input::placeholder{color:var(--ink-3)}
+.input:focus{outline:none;border-color:var(--silver);box-shadow:0 0 0 3px oklch(0.86 0.035 245 / 0.18)}
+.inrow{display:flex;gap:var(--s2)}
+.engrid{display:flex;flex-direction:column;gap:var(--s2)}
+.eng{display:flex;align-items:center;gap:11px;border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 12px;cursor:pointer}
+.eng:hover{border-color:var(--line-strong);background:var(--bg-1)}
+.eng.on{border-color:var(--silver);background:oklch(0.86 0.035 245 / 0.08)}
+.radio{width:15px;height:15px;border-radius:50%;border:1px solid var(--line-strong);display:grid;place-items:center;flex:none}
+.eng.on .radio{border-color:var(--silver)}
+.eng.on .radio::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--silver)}
+.eng .ev{font-size:12.5px;color:var(--ink-0);font-weight:500}
+.eng .em{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-2)}
+.check{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--ink-1);cursor:pointer;padding:5px 0}
+.box{width:16px;height:16px;border-radius:var(--r-xs);border:1px solid var(--line-strong);background:var(--bg-0);display:grid;place-items:center;flex:none}
+.box.on{background:var(--silver);border-color:var(--silver);color:oklch(0.18 0.02 264)}
+.box svg{width:11px;height:11px}
+.nest{margin-left:25px;padding-left:var(--s3);border-left:1px solid var(--line);margin-top:4px}
+.factions{display:flex;gap:var(--s2);align-items:center;margin-top:var(--s6);padding-top:var(--s4);border-top:1px solid var(--line)}
+.faside{width:280px;border-left:1px solid var(--line);background:var(--bg-1);padding:var(--s6) var(--s5)}
+.faside .at{font-size:12px;font-weight:600;color:var(--ink-0);margin-bottom:var(--s3)}
+.step{display:flex;gap:10px;align-items:flex-start;margin-bottom:var(--s4);font-size:12px;color:var(--ink-2)}
+.step .si{width:20px;height:20px;border-radius:50%;border:1px solid var(--line-strong);display:grid;place-items:center;font-size:11px;color:var(--ink-2);flex:none}
+.step.done .si{background:var(--green);border-color:var(--green);color:oklch(0.18 0.05 152)}
+.step.now .si{border-color:var(--silver);color:var(--silver)}
+.step b{color:var(--ink-1);font-weight:500;display:block}
+
+/* ---------- engine manager / settings rows ---------- */
+.scn{display:flex;height:480px}
+.scn-main{flex:1;overflow:auto;padding:var(--s6)}
+.scn-hold{max-width:760px;margin:0 auto}
+.panelcard{border:1px solid var(--line);border-radius:var(--r-md);background:var(--bg-1);margin-bottom:var(--s4);overflow:hidden}
+.pc-h{display:flex;align-items:center;gap:9px;padding:var(--s3) var(--s4);border-bottom:1px solid var(--line)}
+.pc-h .ti{font-size:15px;color:var(--silver-dim)}
+.pc-h .pt{font-size:13px;font-weight:600;color:var(--ink-0)}
+.pc-h .pa{margin-left:auto}
+.pc-b{padding:var(--s4)}
+.erow{display:flex;align-items:center;gap:11px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-sm);margin-bottom:var(--s2)}
+.erow .ev{font-family:var(--mono);font-size:12px;color:var(--ink-0)}
+.erow .es{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-2)}
+.bar{height:5px;border-radius:3px;background:var(--bg-3);overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;background:var(--silver);width:62%}
+.skel{height:11px;border-radius:var(--r-xs);background:linear-gradient(90deg,var(--bg-2),var(--bg-3),var(--bg-2));background-size:200% 100%;animation:sh 1.3s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
+.note{margin-top:var(--s4);color:var(--ink-2);font-size:12px;display:flex;gap:var(--s2);align-items:flex-start}
+.note .ti{color:var(--silver-dim);font-size:16px;margin-top:1px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="kicker">Khora · design direction</div>
+  <h1 style="margin-top:8px">The Hub</h1>
+  <p class="lede">Same language as the editor — one spacing scale, styled form controls, real states. No side-accent stripes (the current cards lean on them); the brand diamond and clean borders carry it instead.</p>
+</header>
+
+<!-- ============ HOME ============ -->
+<section>
+  <div class="kicker cap">Home</div>
+  <div class="win">
+    <div class="topbar">
+      <div class="brand"><span class="dia"></span><b>Khora</b><span class="ctx">Hub</span></div>
+      <div class="tgrow"></div>
+      <span class="chip ok"><span class="dot" style="background:var(--green)"></span>GitHub · eraflo</span>
+    </div>
+
+    <div class="home">
+      <aside class="side">
+        <div class="lab">Projects</div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;margin-bottom:var(--s2)"><i class="ti ti-plus" aria-hidden="true"></i>New project</button>
+        <button class="btn btn-ghost" style="width:100%;justify-content:center"><i class="ti ti-folder-open" aria-hidden="true"></i>Open folder…</button>
+        <div class="lab">View</div>
+        <div class="nav on"><i class="ti ti-stack-2" aria-hidden="true"></i>Recent</div>
+        <div class="nav"><i class="ti ti-cpu" aria-hidden="true"></i>Engines</div>
+        <div class="nav"><i class="ti ti-settings" aria-hidden="true"></i>Settings</div>
+        <div class="sg"></div>
+        <div class="ghchip"><i class="ti ti-brand-github" aria-hidden="true"></i>Connected<span class="dot" style="background:var(--green)"></span></div>
+      </aside>
+
+      <div class="main">
+        <div class="mhead">
+          <h2>Recent projects</h2>
+          <div class="srch"><i class="ti ti-search" aria-hidden="true"></i>Filter projects…</div>
+        </div>
+        <div class="mbody">
+          <div class="pgrid">
+            <div class="pcard">
+              <div class="ph"><span class="pdia"></span><span class="pn">Nightfall</span><span class="chip ver" style="margin-left:auto">0.7.0</span></div>
+              <div class="pp">~/dev/games/nightfall</div>
+              <div class="pf"><span class="opn"><i class="ti ti-player-play" aria-hidden="true"></i>Open</span><span class="pt">2h ago</span></div>
+            </div>
+            <div class="pcard">
+              <div class="ph"><span class="pdia"></span><span class="pn">Orbital</span><span class="chip ver" style="margin-left:auto">0.7.0</span></div>
+              <div class="pp">~/dev/games/orbital</div>
+              <div class="pf"><span class="opn"><i class="ti ti-player-play" aria-hidden="true"></i>Open</span><span class="pt">yesterday</span></div>
+            </div>
+            <div class="pcard">
+              <div class="ph"><span class="pdia"></span><span class="pn">Test Bench</span><span class="chip ver" style="margin-left:auto">0.6.3</span></div>
+              <div class="pp">~/dev/khora/bench</div>
+              <div class="pf"><span class="chip warn"><span class="dot" style="background:var(--amber)"></span>engine 0.6.3</span><span class="pt">3d ago</span></div>
+            </div>
+            <div class="pcard">
+              <div class="ph"><span class="pdia"></span><span class="pn">Prototype 04</span><span class="chip ver" style="margin-left:auto">0.7.0</span></div>
+              <div class="pp">~/scratch/proto04</div>
+              <div class="pf"><span class="opn"><i class="ti ti-player-play" aria-hidden="true"></i>Open</span><span class="pt">1w ago</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="statusbar">
+      <span class="pulse"></span><span><b>4</b> projects</span><span class="ssep"></span><span><b>2</b> engines</span>
+      <span class="sg"></span><span>hub <b>v0.7.0</b></span><span class="ssep"></span><span style="color:var(--green)">● GitHub connected</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ NEW PROJECT ============ -->
+<section>
+  <div class="kicker cap">New project · the form</div>
+  <div class="win">
+    <div class="topbar"><div class="brand"><span class="dia"></span><b>Khora</b><span class="ctx">New project</span></div></div>
+    <div class="formwrap">
+      <div class="fmain">
+        <div class="fhold">
+          <div class="back"><i class="ti ti-arrow-left" aria-hidden="true"></i>Back</div>
+          <h2>Create a project</h2>
+          <p class="fsub">A new Khora project with an engine version pinned and, optionally, a git repository.</p>
+
+          <div class="fgroup">
+            <span class="fgl">Basics</span>
+            <div class="field"><label>Project name</label><input class="input" value="Nightfall" /></div>
+            <div class="field"><label>Parent directory</label><div class="inrow"><input class="input" value="~/dev/games" /><button class="btn btn-ghost">Browse…</button></div><span class="hint">Creates ~/dev/games/nightfall</span></div>
+          </div>
+
+          <div class="fgroup">
+            <span class="fgl">Engine</span>
+            <div class="engrid">
+              <label class="eng on"><span class="radio"></span><span class="ev">0.7.0</span><span class="em">installed</span></label>
+              <label class="eng"><span class="radio"></span><span class="ev">0.6.3</span><span class="em">installed</span></label>
+              <label class="eng"><span class="radio"></span><span class="ev">0.7.1-rc.1</span><span class="em">download · 48 MB</span></label>
+            </div>
+          </div>
+
+          <div class="fgroup">
+            <span class="fgl">Source control</span>
+            <label class="check"><span class="box on"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Initialize a git repository</label>
+            <div class="nest">
+              <label class="check"><span class="box on"><svg viewBox="0 0 12 12"><path d="M2 6l3 3 5-6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Create a GitHub repository</label>
+              <div class="nest" style="margin-top:8px">
+                <div class="field"><label>Repository name</label><input class="input" value="nightfall" /></div>
+                <label class="check"><span class="box"></span>Private repository</label>
+              </div>
+            </div>
+          </div>
+
+          <div class="factions">
+            <button class="btn btn-primary"><i class="ti ti-plus" aria-hidden="true"></i>Create project</button>
+            <button class="btn btn-ghost">Cancel</button>
+          </div>
+        </div>
+      </div>
+      <aside class="faside">
+        <div class="at">What happens</div>
+        <div class="step done"><span class="si"><i class="ti ti-check" aria-hidden="true"></i></span><div><b>Scaffold</b>project files + assets/</div></div>
+        <div class="step done"><span class="si"><i class="ti ti-check" aria-hidden="true"></i></span><div><b>Pin engine</b>0.7.0</div></div>
+        <div class="step now"><span class="si">3</span><div><b>git init</b>+ GitHub remote</div></div>
+        <div class="step"><span class="si">4</span><div><b>Open</b>in the editor</div></div>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<!-- ============ ENGINE MANAGER + SETTINGS ============ -->
+<section>
+  <div class="kicker cap">Engine manager · loading &amp; states</div>
+  <div class="win">
+    <div class="topbar"><div class="brand"><span class="dia"></span><b>Khora</b><span class="ctx">Engines</span></div></div>
+    <div class="scn">
+      <div class="scn-main">
+        <div class="scn-hold">
+          <div class="panelcard">
+            <div class="pc-h"><i class="ti ti-flask" aria-hidden="true"></i><span class="pt">Local dev engine</span><span class="chip ok pa"><span class="dot" style="background:var(--green)"></span>detected</span></div>
+            <div class="pc-b"><div style="font-family:var(--mono);font-size:11px;color:var(--ink-2)">~/dev/KhoraEngine · target/release/khora-editor</div></div>
+          </div>
+
+          <div class="panelcard">
+            <div class="pc-h"><i class="ti ti-download" aria-hidden="true"></i><span class="pt">Available releases</span><button class="btn btn-ghost pa" style="padding:5px 10px"><i class="ti ti-refresh" aria-hidden="true"></i>Refresh</button></div>
+            <div class="pc-b">
+              <div class="erow"><span style="font-family:var(--mono);font-size:11px;color:var(--ink-1);flex:1">Fetching releases…</span></div>
+              <div style="display:flex;flex-direction:column;gap:9px;padding:6px 4px"><div class="skel" style="width:80%"></div><div class="skel" style="width:60%"></div></div>
+            </div>
+          </div>
+
+          <div class="panelcard">
+            <div class="pc-h"><i class="ti ti-package" aria-hidden="true"></i><span class="pt">Installed</span></div>
+            <div class="pc-b">
+              <div class="erow"><span class="ev">0.7.0</span><span class="chip ok"><span class="dot" style="background:var(--green)"></span>current</span><span class="es">142 MB</span><button class="btn btn-icon" aria-label="Uninstall"><i class="ti ti-trash" aria-hidden="true"></i></button></div>
+              <div class="erow"><span class="ev">0.7.1-rc.1</span><span class="chip warn"><span class="dot" style="background:var(--amber)"></span>pre-release</span><span class="es" style="margin-left:auto"></span>
+                <div style="flex:1"><div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px;color:var(--ink-2)"><span>downloading</span><span>62%</span></div><div class="bar"><i></i></div></div></div>
+              <div class="erow"><span class="ev">0.6.3</span><span class="es">138 MB</span><button class="btn btn-icon" aria-label="Uninstall"><i class="ti ti-trash" aria-hidden="true"></i></button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SETTINGS ============ -->
+<section>
+  <div class="kicker cap">Settings</div>
+  <div class="win">
+    <div class="topbar"><div class="brand"><span class="dia"></span><b>Khora</b><span class="ctx">Settings</span></div></div>
+    <div class="scn">
+      <div class="scn-main">
+        <div class="scn-hold" style="max-width:620px">
+          <div class="back"><i class="ti ti-arrow-left" aria-hidden="true"></i>Back</div>
+
+          <div class="panelcard">
+            <div class="pc-h"><i class="ti ti-brand-github" aria-hidden="true"></i><span class="pt">GitHub</span><span class="chip ok pa"><span class="dot" style="background:var(--green)"></span>connected</span></div>
+            <div class="pc-b">
+              <div style="display:flex;align-items:center;gap:11px">
+                <div style="width:34px;height:34px;border-radius:50%;background:var(--bg-3);display:grid;place-items:center;font-family:var(--mono);font-size:13px;color:var(--silver);font-weight:500">ef</div>
+                <div><div style="font-size:13px;color:var(--ink-0);font-weight:500">eraflo</div><div style="font-family:var(--mono);font-size:10.5px;color:var(--ink-2)">Device-flow token · stored 0600</div></div>
+                <button class="btn btn-ghost" style="margin-left:auto">Disconnect</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="panelcard">
+            <div class="pc-h"><i class="ti ti-flask" aria-hidden="true"></i><span class="pt">Local engine repository</span></div>
+            <div class="pc-b">
+              <p style="font-size:12px;color:var(--ink-2);margin-bottom:var(--s3)">Path to a local clone, used as the “dev” engine for new projects.</p>
+              <div class="field"><label>Repository path</label><div class="inrow"><input class="input" value="~/dev/KhoraEngine" /><button class="btn btn-ghost">Browse…</button></div></div>
+              <div style="display:flex;gap:var(--s2);margin-top:var(--s3)"><button class="btn btn-primary">Save path</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+/* ---------- feedback, errors & confirmations ---------- */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)}
+@media(max-width:840px){.grid2{grid-template-columns:1fr}}
+.cap2{font-family:var(--mono);font-size:9.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:var(--s2)}
+.stage{position:relative;background:var(--bg-0);border:1px solid var(--line);border-radius:var(--r-lg);padding:var(--s5);min-height:150px;display:grid;place-items:center}
+
+.chip.err{background:oklch(0.70 0.17 25 / 0.14);color:var(--red);border-color:oklch(0.70 0.17 25 / 0.4)}
+.input.invalid{border-color:var(--red)}
+.input.invalid:focus{box-shadow:0 0 0 3px oklch(0.70 0.17 25 / 0.16)}
+.errline{color:var(--red);font-size:11px;display:flex;align-items:center;gap:5px;margin-top:6px}
+.errline .ti{font-size:13px}
+
+.empty{border:1px dashed var(--line-strong);border-radius:var(--r-lg);padding:var(--s8) var(--s6);text-align:center;color:var(--ink-2);max-width:340px}
+.empty .di{color:var(--silver-dim);font-size:26px;margin-bottom:var(--s3)}
+.empty .et{color:var(--ink-0);font-weight:600;font-size:14px;margin-bottom:3px}
+
+/* toast / banner */
+.toast{display:flex;align-items:flex-start;gap:10px;padding:11px 13px;border-radius:var(--r-md);border:1px solid;font-size:12.5px;width:100%;box-shadow:0 16px 40px -24px oklch(0 0 0 / 0.7)}
+.toast .ti{font-size:16px;margin-top:1px;flex:none}
+.toast b{color:var(--ink-0);font-weight:600;display:block;margin-bottom:1px}
+.toast .tx{color:var(--ink-2)}
+.toast .tact{margin-top:7px;display:flex;gap:var(--s2)}
+.toast .tclose{margin-left:auto;color:var(--ink-3);cursor:pointer;font-size:15px}
+.toast.info{background:oklch(0.80 0.095 222 / 0.1);border-color:oklch(0.80 0.095 222 / 0.38)}
+.toast.info>.ti{color:var(--cyan)}
+.toast.err{background:oklch(0.70 0.17 25 / 0.1);border-color:oklch(0.70 0.17 25 / 0.4)}
+.toast.err>.ti{color:var(--red)}
+.link{color:var(--silver);font-weight:500;font-size:12px;cursor:pointer;background:none;border:0;padding:0}
+
+/* confirm modal */
+.modal-stage{position:relative;background:
+   radial-gradient(120% 90% at 50% -10%, oklch(0.22 0.026 264), var(--bg-0) 60%);
+   border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;min-height:250px;display:grid;place-items:center;padding:var(--s6)}
+.modal-stage::before{content:"";position:absolute;inset:0;background:oklch(0.12 0.02 264 / 0.5)}
+.modal{position:relative;width:388px;max-width:100%;background:var(--bg-1);border:1px solid var(--line-strong);border-radius:var(--r-lg);box-shadow:0 40px 90px -40px oklch(0 0 0 / 0.9);overflow:hidden}
+.modal-h{display:flex;align-items:center;gap:11px;padding:var(--s4)}
+.modal-h .ic{width:32px;height:32px;border-radius:var(--r-sm);display:grid;place-items:center;flex:none;background:oklch(0.70 0.17 25 / 0.16);color:var(--red);font-size:17px}
+.modal-h .mt{font-size:14px;font-weight:600;color:var(--ink-0)}
+.modal-b{padding:0 var(--s4) var(--s4);font-size:12.5px;color:var(--ink-2);line-height:1.6}
+.modal-b b{color:var(--ink-0);font-weight:600}
+.modal-b .mono{font-family:var(--mono);font-size:11.5px;color:var(--ink-1)}
+.modal-f{display:flex;justify-content:flex-end;gap:var(--s2);padding:var(--s3) var(--s4);border-top:1px solid var(--line);background:var(--bg-0)}
+.btn-danger{background:var(--red);color:oklch(0.98 0.012 25);border-color:transparent}
+.btn-danger:hover{background:oklch(0.66 0.17 25)}
+
+/* github device-flow */
+.dflow{text-align:center;padding:var(--s3) 0}
+.dcode{font-family:var(--mono);font-size:19px;letter-spacing:0.22em;color:var(--ink-0);background:var(--bg-0);border:1px solid var(--line-strong);border-radius:var(--r-sm);padding:10px 16px;display:inline-block;margin:var(--s2) 0}
+.dwait{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:10.5px;color:var(--amber);margin-top:var(--s2)}
+.dwait .w{width:8px;height:8px;border-radius:50%;background:var(--amber);animation:pf 1.2s ease-in-out infinite}
+@keyframes pf{0%,100%{opacity:0.35}50%{opacity:1}}
+</style>
+
+<section>
+  <div class="kicker cap">Feedback · errors · confirmations</div>
+
+  <div class="grid2">
+    <div>
+      <div class="cap2">Toasts · info + error</div>
+      <div class="stage" style="align-content:center;gap:var(--s3);grid-auto-flow:row">
+        <div class="toast info"><i class="ti ti-info-circle" aria-hidden="true"></i><div><b>Engine 0.7.1-rc.1 installed</b><span class="tx">Ready to use in new projects.</span></div><i class="ti ti-x tclose" aria-hidden="true"></i></div>
+        <div class="toast err"><i class="ti ti-alert-triangle" aria-hidden="true"></i><div><b>Download failed</b><span class="tx">Couldn't reach github.com — check your connection.</span><div class="tact"><button class="link">Retry</button></div></div><i class="ti ti-x tclose" aria-hidden="true"></i></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="cap2">Uninstall · confirm modal</div>
+      <div class="modal-stage">
+        <div class="modal">
+          <div class="modal-h"><span class="ic"><i class="ti ti-trash" aria-hidden="true"></i></span><span class="mt">Uninstall engine 0.6.3?</span></div>
+          <div class="modal-b">This removes <span class="mono">~/.khora/engines/0.6.3</span> (<b>138 MB</b>). Projects pinned to 0.6.3 will report a missing engine until you reinstall or re-pin.</div>
+          <div class="modal-f"><button class="btn btn-ghost">Cancel</button><button class="btn btn-danger"><i class="ti ti-trash" aria-hidden="true"></i>Uninstall</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2" style="margin-top:var(--s4)">
+    <div>
+      <div class="cap2">Engine rows · error &amp; fetch failure</div>
+      <div class="panelcard" style="margin:0">
+        <div class="pc-h"><i class="ti ti-download" aria-hidden="true"></i><span class="pt">Available releases</span><button class="btn btn-ghost pa" style="padding:5px 10px"><i class="ti ti-refresh" aria-hidden="true"></i>Refresh</button></div>
+        <div class="pc-b">
+          <div class="erow" style="border-color:oklch(0.70 0.17 25 / 0.35)"><i class="ti ti-alert-triangle" aria-hidden="true" style="color:var(--red);font-size:15px"></i><span style="font-size:11.5px;color:var(--ink-1)">Couldn't fetch releases</span><span class="chip err" style="margin-left:auto"><span class="dot" style="background:var(--red)"></span>network</span><button class="btn btn-ghost" style="padding:5px 10px">Retry</button></div>
+          <div class="erow"><span class="ev">0.7.1-rc.1</span><span class="chip err"><span class="dot" style="background:var(--red)"></span>failed</span><span class="es" style="margin-left:auto">at 62%</span><button class="btn btn-ghost" style="padding:5px 10px"><i class="ti ti-refresh" aria-hidden="true"></i>Retry</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="cap2">Home · no projects</div>
+      <div class="stage"><div class="empty"><div class="di"><i class="ti ti-stack-2" aria-hidden="true"></i></div><div class="et">No projects yet</div><div style="font-size:12px;margin-bottom:var(--s4)">Create your first Khora project or open an existing folder.</div><div style="display:flex;gap:var(--s2);justify-content:center"><button class="btn btn-primary"><i class="ti ti-plus" aria-hidden="true"></i>New project</button><button class="btn btn-ghost">Open folder…</button></div></div></div>
+    </div>
+  </div>
+
+  <div class="grid2" style="margin-top:var(--s4)">
+    <div>
+      <div class="cap2">GitHub · disconnected &amp; device-flow</div>
+      <div class="panelcard" style="margin:0">
+        <div class="pc-h"><i class="ti ti-brand-github" aria-hidden="true"></i><span class="pt">GitHub</span><span class="chip muted pa"><span class="dot" style="background:var(--ink-3)"></span>not connected</span></div>
+        <div class="pc-b">
+          <div class="dflow">
+            <div style="font-size:12px;color:var(--ink-2)">Enter this code at <span style="color:var(--ink-1)">github.com/login/device</span></div>
+            <div class="dcode">WDJB-MJHT</div>
+            <div class="dwait"><span class="w"></span>Waiting for authorization…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="cap2">New project · validation</div>
+      <div class="panelcard" style="margin:0"><div class="pc-b">
+        <div class="field"><label>Project name</label><input class="input invalid" value="Nightfall" /><span class="errline"><i class="ti ti-alert-triangle" aria-hidden="true"></i>A folder named “nightfall” already exists here</span></div>
+        <div class="field" style="margin-bottom:0"><label>Parent directory</label><input class="input invalid" value="~/dev/missing" /><span class="errline"><i class="ti ti-alert-triangle" aria-hidden="true"></i>Directory doesn't exist</span></div>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<div class="note"><i class="ti ti-info-circle" aria-hidden="true"></i><div>Hub screens covered: Home, New project, Engine manager, Settings — matching what the app ships today (plus the per-project “add native code” / remove actions and the delete-confirm modal, which reuse these same controls). The hub and editor share one token set, extracted into <code style="font-family:var(--mono);font-size:11px">khora-sdk::tool_ui</code> so they can't drift. Next, once you're happy, I translate both into the egui paint code. Icons are placeholders for Khora's own glyphs.</div></div>
+
+</body>
+</html>

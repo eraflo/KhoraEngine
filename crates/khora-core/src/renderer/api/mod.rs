@@ -25,8 +25,14 @@
 
 pub mod command;
 pub mod core;
+pub mod ibl;
+pub mod material;
 pub mod pipeline;
 pub mod resource;
 pub mod scene;
+pub mod shader_defs;
+pub mod shadow;
 pub mod text;
 pub mod util;
+
+pub use shader_defs::ShaderDefs;

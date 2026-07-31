@@ -98,6 +98,20 @@ pub enum Icon {
     Cpu,
     Memory,
 
+    // Confirmation / dismissal
+    Check,
+    Close,
+
+    // Files / source control
+    FolderOpen,
+    Save,
+    Copy,
+    Pencil,
+    Download,
+    Refresh,
+    Github,
+    ArrowLeft,
+
     // Misc
     Box,
     Dot,
@@ -183,11 +197,119 @@ impl Icon {
             Self::Cpu => "\u{e0ad}",
             Self::Memory => "\u{e449}",
 
+            // Confirmation / dismissal
+            Self::Check => "\u{e070}",
+            Self::Close => "\u{e1b1}", // x
+
+            // Files / source control
+            Self::FolderOpen => "\u{e246}",
+            Self::Save => "\u{e150}",
+            Self::Copy => "\u{e0a2}",
+            Self::Pencil => "\u{e1f8}",
+            Self::Download => "\u{e0b6}",
+            Self::Refresh => "\u{e148}", // refresh-cw
+            Self::Github => "\u{e0e9}",
+            Self::ArrowLeft => "\u{e04c}",
+
             // Misc
             Self::Box => "\u{e065}",
             Self::Dot => "\u{e453}",
             Self::Circle => "\u{e07a}",
             Self::CheckCircle => "\u{e225}",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Icon;
+
+    /// Every glyph is a single character in the Private Use Area — an icon
+    /// font maps one codepoint per icon, so anything else means a typo'd
+    /// escape that would silently render as tofu.
+    #[test]
+    fn every_glyph_is_one_pua_codepoint() {
+        const ALL: &[Icon] = &[
+            Icon::Search,
+            Icon::ChevronDown,
+            Icon::ChevronRight,
+            Icon::ArrowRight,
+            Icon::Cube,
+            Icon::Light,
+            Icon::Camera,
+            Icon::Folder,
+            Icon::Layers,
+            Icon::Globe,
+            Icon::Axes,
+            Icon::Grid,
+            Icon::Sparkles,
+            Icon::Package,
+            Icon::Play,
+            Icon::Pause,
+            Icon::Stop,
+            Icon::StepForward,
+            Icon::Eye,
+            Icon::EyeOff,
+            Icon::Lock,
+            Icon::Plus,
+            Icon::More,
+            Icon::Filter,
+            Icon::Trash,
+            Icon::Bell,
+            Icon::Settings,
+            Icon::Share,
+            Icon::Hammer,
+            Icon::Branch,
+            Icon::Menu,
+            Icon::Tag,
+            Icon::Move,
+            Icon::Rotate,
+            Icon::Scale,
+            Icon::Hand,
+            Icon::Crosshair,
+            Icon::Database,
+            Icon::Film,
+            Icon::Terminal,
+            Icon::Code,
+            Icon::Image,
+            Icon::Music,
+            Icon::Pen,
+            Icon::Info,
+            Icon::Warn,
+            Icon::Error,
+            Icon::Zap,
+            Icon::Command,
+            Icon::Wifi,
+            Icon::Cpu,
+            Icon::Memory,
+            Icon::Check,
+            Icon::Close,
+            Icon::FolderOpen,
+            Icon::Save,
+            Icon::Copy,
+            Icon::Pencil,
+            Icon::Download,
+            Icon::Refresh,
+            Icon::Github,
+            Icon::ArrowLeft,
+            Icon::Box,
+            Icon::Dot,
+            Icon::Circle,
+            Icon::CheckCircle,
+        ];
+
+        for icon in ALL {
+            let g = icon.glyph();
+            let mut chars = g.chars();
+            let c = chars.next().expect("glyph must not be empty");
+            assert!(
+                chars.next().is_none(),
+                "{icon:?} maps to more than one char"
+            );
+            assert!(
+                ('\u{e000}'..='\u{f8ff}').contains(&c),
+                "{icon:?} is outside the Private Use Area — the icon font won't have it"
+            );
         }
     }
 }

@@ -19,21 +19,29 @@
 
 pub mod camera;
 pub mod command;
-pub mod fonts;
+pub mod dock;
 pub mod gizmo;
+pub mod gizmo_interact;
 pub mod icons;
 pub mod log_capture;
 pub mod panel;
 pub mod shell;
 pub mod state;
-pub mod theme;
 pub mod ui_builder;
 pub mod viewport_texture;
 
 pub use camera::EditorCamera;
 pub use command::{CommandHistory, EditorCommand};
-pub use fonts::{FontHandle, FontPack, NamedFont};
-pub use gizmo::{generate_selection_gizmos, GizmoKind, GizmoLineInstance};
+pub use dock::{
+    ratio_from_pointer, zone_at, DockLayout, DockNode, DockRect, DockTree, DropZone, SplitAxis,
+    SplitId, SplitterLayout, TabGroupLayout,
+};
+pub use gizmo::{
+    generate_selection_gizmos, gizmo_world_size, GizmoKind, GizmoLineInstance, SelectionGizmo,
+};
+pub use gizmo_interact::{
+    gizmo_basis, pick_handle, GizmoAxis, GizmoBasis, GizmoDelta, GizmoDrag, GizmoTransform,
+};
 pub use icons::Icon;
 pub use log_capture::EditorLogCapture;
 pub use panel::{EditorPanel, PanelLocation};
@@ -42,6 +50,5 @@ pub use state::{
     AssetEntry, ComponentJson, EditorMode, EditorState, EntityIcon, GizmoMode, InspectedEntity,
     LogEntry, LogLevel, PlayMode, PropertyEdit, SceneNode, StatusBarData,
 };
-pub use theme::EditorTheme;
-pub use ui_builder::{FontFamilyHint, Interaction, TextAlign, UiBuilder};
+pub use ui_builder::{FontFamilyHint, InlineEditEvent, Interaction, TextAlign, UiBuilder};
 pub use viewport_texture::ViewportTextureHandle;

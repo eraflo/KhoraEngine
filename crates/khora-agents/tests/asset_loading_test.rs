@@ -13,13 +13,23 @@
 // limitations under the License.
 
 use anyhow::Result;
-use khora_core::asset::{Asset, AssetMetadata, AssetSource, AssetUUID};
-use khora_io::asset::{AssetDecoder, AssetService, PackLoader};
+use khora_core::asset::{Asset, AssetMetadata, AssetSource, AssetUUID, CompressionKind};
+use khora_io::asset::{AssetDecoder, AssetService, PackHeader, PackLoader};
 
 use khora_telemetry::MetricsRegistry;
 use std::sync::Arc;
 use std::{collections::HashMap, error::Error, fs::File};
 use tempfile::tempdir;
+
+/// Writes a v2 `data.pack` (24-byte header + raw asset bytes) to `path`.
+/// Tests use this so they don't have to know the header byte layout.
+fn write_test_pack(path: &std::path::Path, asset_count: u32, payload: &[u8]) -> Result<()> {
+    let mut bytes = Vec::with_capacity(24 + payload.len());
+    bytes.extend_from_slice(&PackHeader::v2(asset_count, 0).to_bytes());
+    bytes.extend_from_slice(payload);
+    std::fs::write(path, &bytes)?;
+    Ok(())
+}
 
 // --- Test Setup: Dummy Asset and Loader (reste identique) ---
 #[derive(Debug, PartialEq)]
@@ -53,6 +63,8 @@ fn test_load_asset_from_pack() -> Result<()> {
         AssetSource::Packed {
             offset: 0,
             size: texture_data.len() as u64,
+            uncompressed_size: texture_data.len() as u64,
+            compression: CompressionKind::None,
         },
     );
     let metadata = AssetMetadata {
@@ -71,15 +83,16 @@ fn test_load_asset_from_pack() -> Result<()> {
 
     // Write the temporary files to disk.
     std::fs::write(&index_path, &index_bytes)?;
-    std::fs::write(&data_path, &data_bytes)?;
+    write_test_pack(&data_path, 1, &data_bytes)?;
 
     // --- 2. Initialize the AssetService with REAL files ---
     let data_file = File::open(&data_path)?;
     let metrics_registry = Arc::new(MetricsRegistry::new());
     let mut asset_service = AssetService::new(
         &index_bytes,
-        Box::new(PackLoader::new(data_file)),
+        Box::new(PackLoader::new(data_file)?),
         metrics_registry,
+        None,
     )?;
 
     // --- 3. Register the loader ---
@@ -130,6 +143,8 @@ fn test_load_texture_from_pack() -> Result<()> {
         AssetSource::Packed {
             offset: 0,
             size: png_data.len() as u64,
+            uncompressed_size: png_data.len() as u64,
+            compression: CompressionKind::None,
         },
     );
     let metadata = AssetMetadata {
@@ -147,15 +162,16 @@ fn test_load_texture_from_pack() -> Result<()> {
 
     // Write the temporary files to disk
     std::fs::write(&index_path, &index_bytes)?;
-    std::fs::write(&data_path, &png_data)?;
+    write_test_pack(&data_path, 1, &png_data)?;
 
     // --- 2. Initialize the AssetService with REAL files ---
     let data_file = File::open(&data_path)?;
     let metrics_registry = Arc::new(MetricsRegistry::new());
     let mut asset_service = AssetService::new(
         &index_bytes,
-        Box::new(PackLoader::new(data_file)),
+        Box::new(PackLoader::new(data_file)?),
         metrics_registry,
+        None,
     )?;
 
     // --- 3. Register the texture loader ---
@@ -168,9 +184,12 @@ fn test_load_texture_from_pack() -> Result<()> {
     assert_eq!(texture_handle.pixels.len(), 16); // 2x2 RGBA = 16 bytes
     assert_eq!(texture_handle.size.width, 2);
     assert_eq!(texture_handle.size.height, 2);
+    // The decoder reports the pixel *layout* only. Whether these bytes are read
+    // as sRGB or linear is the role of the material slot binding them, applied
+    // later via `TextureFormat::with_color_space`.
     assert_eq!(
         texture_handle.format,
-        khora_core::renderer::api::util::TextureFormat::Rgba8UnormSrgb
+        khora_core::renderer::api::util::TextureFormat::Rgba8Unorm
     );
 
     println!("Texture loading test passed: PNG texture loaded and decoded correctly");
@@ -193,6 +212,8 @@ fn test_asset_caching_and_shared_ownership() -> Result<()> {
         AssetSource::Packed {
             offset: 0,
             size: texture_data.len() as u64,
+            uncompressed_size: texture_data.len() as u64,
+            compression: CompressionKind::None,
         },
     );
     let metadata = AssetMetadata {
@@ -206,14 +227,15 @@ fn test_asset_caching_and_shared_ownership() -> Result<()> {
 
     let index_bytes = bincode::serde::encode_to_vec(vec![metadata], bincode::config::standard())?;
     std::fs::write(&index_path, &index_bytes)?;
-    std::fs::write(&data_path, texture_data)?;
+    write_test_pack(&data_path, 1, &texture_data)?;
 
     let data_file = File::open(&data_path)?;
     let metrics_registry = Arc::new(MetricsRegistry::new());
     let mut asset_service = AssetService::new(
         &index_bytes,
-        Box::new(PackLoader::new(data_file)),
+        Box::new(PackLoader::new(data_file)?),
         metrics_registry,
+        None,
     )?;
     asset_service.register_decoder("texture", TestTextureLoader);
 

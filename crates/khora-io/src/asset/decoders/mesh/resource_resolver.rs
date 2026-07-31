@@ -54,3 +54,31 @@ impl GltfResourceResolver for FileSystemResolver {
             .map_err(|e| format!("Failed to read external image from '{:?}': {}", path, e).into())
     }
 }
+
+/// Resolver that fails on every external URI lookup. Suitable as a default
+/// for self-contained `.glb` files (which embed all buffers + images) and
+/// as a placeholder when no project context is available.
+///
+/// `MeshDispatcher::default` uses this. For `.gltf` files referencing
+/// external `.bin` / texture buffers, construct
+/// [`MeshDispatcher::new(Arc::new(FileSystemResolver::new(...)))`] instead.
+pub struct NoOpResourceResolver;
+
+impl GltfResourceResolver for NoOpResourceResolver {
+    fn resolve_buffer(&self, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+        Err(format!(
+            "NoOpResourceResolver cannot fetch external buffer '{}'; \
+             use FileSystemResolver for .gltf files with external buffers.",
+            uri
+        )
+        .into())
+    }
+    fn resolve_image(&self, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+        Err(format!(
+            "NoOpResourceResolver cannot fetch external image '{}'; \
+             use FileSystemResolver for .gltf files with external textures.",
+            uri
+        )
+        .into())
+    }
+}

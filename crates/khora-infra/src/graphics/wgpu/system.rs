@@ -20,6 +20,9 @@ use super::backend::WgpuBackendSelector;
 use super::context::WgpuGraphicsContext;
 use super::device::WgpuDevice;
 use super::profiler::WgpuTimestampProfiler;
+use super::resilience::{
+    classify_acquire, surface_is_renderable, AcquireAction, SurfaceAcquireStatus,
+};
 use khora_core::math::LinearRgba;
 use khora_core::platform::window::{KhoraWindow, KhoraWindowHandle};
 use khora_core::renderer::api::command::{
@@ -100,20 +103,9 @@ pub struct WgpuRenderSystem {
     /// When true, `begin_frame` returns viewport targets instead of the swapchain
     /// and the engine skips its own present (caller manages the viewport).
     render_to_viewport: bool,
-
-    // --- Grid Pipeline ---
-    grid_pipeline: Option<wgpu::RenderPipeline>,
-    grid_camera_bind_group_layout: Option<wgpu::BindGroupLayout>,
-    grid_camera_bind_group: Option<wgpu::BindGroup>,
-    grid_camera_buffer: Option<wgpu::Buffer>,
-
-    // --- Gizmo Pipeline ---
-    gizmo_pipeline: Option<wgpu::RenderPipeline>,
-    gizmo_camera_bind_group_layout: Option<wgpu::BindGroupLayout>,
-    gizmo_storage_bind_group_layout: Option<wgpu::BindGroupLayout>,
-    gizmo_camera_buffer: Option<wgpu::Buffer>,
-    gizmo_storage_buffer: Option<wgpu::Buffer>,
-    gizmo_line_capacity: usize,
+    // Grid + gizmo rendering moved to the engine-side `GridLane` /
+    // `GizmoLane` (under `OverlayAgent`) — the backend owns no
+    // render-strategy pipelines.
 }
 
 impl fmt::Debug for WgpuRenderSystem {
@@ -193,16 +185,6 @@ impl WgpuRenderSystem {
             viewport_color_view_id: None,
             viewport_depth_view_id: None,
             render_to_viewport: false,
-            grid_pipeline: None,
-            grid_camera_bind_group_layout: None,
-            grid_camera_bind_group: None,
-            grid_camera_buffer: None,
-            gizmo_pipeline: None,
-            gizmo_camera_bind_group_layout: None,
-            gizmo_storage_bind_group_layout: None,
-            gizmo_camera_buffer: None,
-            gizmo_storage_buffer: None,
-            gizmo_line_capacity: 2048,
         }
     }
 
@@ -622,437 +604,9 @@ impl WgpuRenderSystem {
         Ok(())
     }
 
-    /// Initialises the grid render pipeline.
-    ///
-    /// Must be called after `create_viewport_target` so the surface
-    /// format is known.
-    pub fn init_grid_pipeline(&mut self, shader_source: &str) -> Result<(), RenderError> {
-        let gc = self
-            .graphics_context_shared
-            .as_ref()
-            .ok_or(RenderError::NotInitialized)?
-            .lock()
-            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
-
-        // Must match the viewport texture format from create_viewport_target.
-        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
-        let device = &gc.device;
-
-        // Camera uniform buffer (mat4 + vec4 = 80 bytes).
-        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("grid_camera_ubo"),
-            size: 80,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("grid_camera_bgl"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("grid_camera_bg"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-        });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("grid_pipeline_layout"),
-            bind_group_layouts: &[Some(&bind_group_layout)],
-            immediate_size: 0,
-        });
-
-        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("grid_shader"),
-            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(shader_source)),
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("grid_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader_module,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader_module,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None, // fullscreen, no culling
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::LessEqual),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-
-        self.grid_pipeline = Some(pipeline);
-        self.grid_camera_bind_group_layout = Some(bind_group_layout);
-        self.grid_camera_bind_group = Some(bind_group);
-        self.grid_camera_buffer = Some(camera_buffer);
-
-        log::info!("Grid pipeline initialised.");
-        Ok(())
-    }
-
     /// Returns the current viewport dimensions `(width, height)` in pixels.
     pub fn viewport_size(&self) -> (u32, u32) {
         (self.viewport_width, self.viewport_height)
-    }
-
-    /// Renders the viewport: clear + grid + (future) 3D content.
-    ///
-    /// `view_info` supplies the camera matrices for grid rendering.
-    pub fn render_viewport(
-        &mut self,
-        clear_color: LinearRgba,
-        view_info: &ViewInfo,
-    ) -> Result<(), RenderError> {
-        let color_view = self
-            .viewport_view
-            .as_ref()
-            .ok_or(RenderError::NotInitialized)?;
-        let depth_view = self
-            .viewport_depth_view
-            .as_ref()
-            .ok_or(RenderError::NotInitialized)?;
-
-        let gc = self
-            .graphics_context_shared
-            .as_ref()
-            .ok_or(RenderError::NotInitialized)?
-            .lock()
-            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
-
-        // Upload camera uniforms for the grid (VP matrix + camera pos).
-        if let Some(buf) = &self.grid_camera_buffer {
-            let vp = view_info.view_projection_matrix();
-            let cam_pos = view_info.camera_position;
-            // Layout: mat4x4<f32>(64 bytes) + vec4<f32>(16 bytes) = 80 bytes
-            let mut data = [0u8; 80];
-            data[..64].copy_from_slice(bytemuck::bytes_of(&vp));
-            let pos_arr = [cam_pos.x, cam_pos.y, cam_pos.z, 1.0f32];
-            data[64..80].copy_from_slice(bytemuck::cast_slice(&pos_arr));
-            gc.queue.write_buffer(buf, 0, &data);
-        }
-
-        let mut encoder = gc
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("viewport_encoder"),
-            });
-
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("viewport_render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: clear_color.r as f64,
-                            g: clear_color.g as f64,
-                            b: clear_color.b as f64,
-                            a: clear_color.a as f64,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-
-            // Draw the infinite grid.
-            if let (Some(pipeline), Some(bg)) = (&self.grid_pipeline, &self.grid_camera_bind_group)
-            {
-                pass.set_pipeline(pipeline);
-                pass.set_bind_group(0, bg, &[]);
-                pass.draw(0..6, 0..1);
-            }
-        }
-
-        gc.queue.submit(std::iter::once(encoder.finish()));
-        Ok(())
-    }
-
-    /// Renders editor gizmos (selection overlays) to the viewport texture.
-    ///
-    /// Called after agent rendering, using `LoadOp::Load` to overlay on top
-    /// of the existing scene content. Gizmos are rendered as wireframe lines
-    /// with alpha blending.
-    pub fn render_gizmos(
-        &mut self,
-        view_info: &ViewInfo,
-        lines: &[khora_core::ui::editor::GizmoLineInstance],
-    ) -> Result<usize, RenderError> {
-        if lines.is_empty() {
-            return Ok(0);
-        }
-
-        let (Some(pipeline), Some(cam_bgl), Some(storage_bgl), Some(cam_buf), Some(storage_buf)) = (
-            &self.gizmo_pipeline,
-            &self.gizmo_camera_bind_group_layout,
-            &self.gizmo_storage_bind_group_layout,
-            &self.gizmo_camera_buffer,
-            &self.gizmo_storage_buffer,
-        ) else {
-            return Ok(0);
-        };
-
-        let color_view = self
-            .viewport_view
-            .as_ref()
-            .ok_or(RenderError::NotInitialized)?;
-        let depth_view = self
-            .viewport_depth_view
-            .as_ref()
-            .ok_or(RenderError::NotInitialized)?;
-
-        let gc = self
-            .graphics_context_shared
-            .as_ref()
-            .ok_or(RenderError::NotInitialized)?
-            .lock()
-            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
-
-        let lines_to_render = lines.len().min(self.gizmo_line_capacity);
-
-        // Upload camera uniforms (same layout as grid: mat4 + vec4 = 80 bytes).
-        let vp = view_info.view_projection_matrix();
-        let cam_pos = view_info.camera_position;
-        let mut cam_data = [0u8; 80];
-        cam_data[..64].copy_from_slice(bytemuck::bytes_of(&vp));
-        let pos_arr = [cam_pos.x, cam_pos.y, cam_pos.z, 1.0f32];
-        cam_data[64..80].copy_from_slice(bytemuck::cast_slice(&pos_arr));
-        gc.queue.write_buffer(cam_buf, 0, &cam_data);
-
-        // Upload gizmo line data.
-        let gizmo_bytes = bytemuck::cast_slice(&lines[..lines_to_render]);
-        gc.queue.write_buffer(storage_buf, 0, gizmo_bytes);
-
-        // Create bind groups.
-        let camera_bind_group = gc.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("gizmo_camera_bg"),
-            layout: cam_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: cam_buf.as_entire_binding(),
-            }],
-        });
-
-        let gizmo_bind_group = gc.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("gizmo_data_bg"),
-            layout: storage_bgl,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: storage_buf.as_entire_binding(),
-            }],
-        });
-
-        let mut encoder = gc
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("gizmo_encoder"),
-            });
-
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("gizmo_render_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: color_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-
-            pass.set_pipeline(pipeline);
-            pass.set_bind_group(0, &camera_bind_group, &[]);
-            pass.set_bind_group(1, &gizmo_bind_group, &[]);
-            pass.draw(0..(lines_to_render as u32 * 2), 0..1);
-        }
-
-        gc.queue.submit(std::iter::once(encoder.finish()));
-        Ok(lines_to_render)
-    }
-
-    /// Initializes the gizmo render pipeline.
-    ///
-    /// Must be called after `create_viewport_target` so the surface format is known.
-    pub fn init_gizmo_pipeline(&mut self, shader_source: &str) -> Result<(), RenderError> {
-        let gc = self
-            .graphics_context_shared
-            .as_ref()
-            .ok_or(RenderError::NotInitialized)?
-            .lock()
-            .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
-
-        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
-        let device = &gc.device;
-
-        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("gizmo_camera_ubo"),
-            size: 80,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("gizmo_storage_buffer"),
-            size: (self.gizmo_line_capacity
-                * std::mem::size_of::<khora_core::ui::editor::GizmoLineInstance>())
-                as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        let camera_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("gizmo_camera_bgl"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
-
-        let storage_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("gizmo_storage_bgl"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: true },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
-
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("gizmo_pipeline_layout"),
-            bind_group_layouts: &[
-                Some(&camera_bind_group_layout),
-                Some(&storage_bind_group_layout),
-            ],
-            immediate_size: 0,
-        });
-
-        let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("gizmo_shader"),
-            source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(shader_source)),
-        });
-
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("gizmo_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader_module,
-                entry_point: Some("vs_main"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader_module,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::LineList,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::Always),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-
-        self.gizmo_pipeline = Some(pipeline);
-        self.gizmo_camera_bind_group_layout = Some(camera_bind_group_layout);
-        self.gizmo_storage_bind_group_layout = Some(storage_bind_group_layout);
-        self.gizmo_camera_buffer = Some(camera_buffer);
-        self.gizmo_storage_buffer = Some(storage_buffer);
-
-        log::info!(
-            "Gizmo pipeline initialised (capacity: {} lines).",
-            self.gizmo_line_capacity
-        );
-        Ok(())
     }
 
     /// Creates an [`EguiOverlay`] backed by the current wgpu graphics context.
@@ -1089,8 +643,7 @@ impl WgpuRenderSystem {
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
         shader_source: &str,
-        grid_shader_source: &str,
-        theme: khora_core::ui::editor::EditorTheme,
+        theme: khora_core::ui::UiTheme,
         viewport_handle: khora_core::ui::editor::viewport_texture::ViewportTextureHandle,
     ) -> Result<
         (
@@ -1104,23 +657,136 @@ impl WgpuRenderSystem {
         // Create an offscreen viewport target (initial 800×600).
         let egui_id = self.create_viewport_target(800, 600, &mut overlay)?;
 
-        // Initialise the infinite grid pipeline.
-        self.init_grid_pipeline(grid_shader_source)?;
-
-        // Initialise the gizmo rendering pipeline.
-        if let Ok(gizmo_source) = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../khora-lanes/src/render_lane/shaders/gizmo.wgsl"),
-        ) {
-            let _ = self.init_gizmo_pipeline(&gizmo_source);
-        } else {
-            log::warn!("Gizmo shader not found; gizmo rendering disabled.");
-        }
+        // Grid + gizmo rendering are owned by the engine-side `GridLane`
+        // / `GizmoLane` (under `OverlayAgent`) — no render-strategy
+        // pipeline is created on the backend.
 
         let mut shell = crate::ui::egui::shell::EguiEditorShell::new(overlay.context(), theme);
         shell.register_viewport_texture(viewport_handle, egui_id);
 
         Ok((overlay, shell))
+    }
+
+    /// Checks the device-health flags raised by the wgpu error callbacks.
+    ///
+    /// Returns a fatal, non-panicking [`RenderError`] when the device has been
+    /// lost or has run out of memory so the host can tear down cleanly. The
+    /// frame loop calls this before any GPU submission; once a fatal condition
+    /// is observed the system stops acquiring/submitting work.
+    fn check_device_health(&self) -> Result<(), RenderError> {
+        let Some(device) = self.wgpu_device.as_ref() else {
+            return Ok(());
+        };
+        if device.is_device_out_of_memory() {
+            return Err(RenderError::DeviceOutOfMemory(
+                "device reported out-of-memory via wgpu error callback".to_string(),
+            ));
+        }
+        if device.is_device_lost() {
+            return Err(RenderError::DeviceLost);
+        }
+        Ok(())
+    }
+
+    /// Acquires the swapchain texture with full resilience.
+    ///
+    /// Covers every [`wgpu::CurrentSurfaceTexture`] outcome via the pure
+    /// [`classify_acquire`] policy:
+    /// - `Success`/`Suboptimal` → return the texture.
+    /// - `Lost`/`Outdated` with a valid size → reconfigure and retry in-frame.
+    /// - `Lost`/`Outdated` at zero size, `Timeout`, `Occluded` → skip the frame
+    ///   (returns `Ok(None)`), no error spam.
+    /// - `Validation`/unknown → non-fatal [`RenderError::SurfaceAcquisitionFailed`].
+    ///
+    /// `Ok(None)` means "skip this frame, retry next frame"; the caller must
+    /// not treat it as an error.
+    fn acquire_surface_texture(
+        &mut self,
+        gc: &Arc<Mutex<WgpuGraphicsContext>>,
+    ) -> Result<Option<wgpu::SurfaceTexture>, RenderError> {
+        // A zero-size (minimized) window has no renderable surface. Skip the
+        // frame silently rather than churning reconfigure/acquire every tick.
+        if !surface_is_renderable(self.current_width, self.current_height) {
+            log::debug!(
+                "WgpuRenderSystem: surface not renderable ({}x{}); skipping frame.",
+                self.current_width,
+                self.current_height
+            );
+            return Ok(None);
+        }
+
+        // Bounded retry: at most one in-frame reconfigure for a lost/outdated
+        // surface, then a single re-acquire. Avoids any unbounded spin.
+        let max_attempts = 2;
+        for attempt in 0..max_attempts {
+            let mut gc_guard = gc
+                .lock()
+                .map_err(|_| RenderError::Internal("graphics context lock poisoned".into()))?;
+
+            let (status, texture) = match gc_guard.get_current_texture() {
+                wgpu::CurrentSurfaceTexture::Success(t)
+                | wgpu::CurrentSurfaceTexture::Suboptimal(t) => {
+                    (SurfaceAcquireStatus::Usable, Some(t))
+                }
+                wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated => {
+                    (SurfaceAcquireStatus::LostOrOutdated, None)
+                }
+                wgpu::CurrentSurfaceTexture::Timeout => (SurfaceAcquireStatus::Timeout, None),
+                wgpu::CurrentSurfaceTexture::Occluded => (SurfaceAcquireStatus::Occluded, None),
+                wgpu::CurrentSurfaceTexture::Validation => (SurfaceAcquireStatus::Validation, None),
+                // Forward-compat: should wgpu add a swapchain-status variant in
+                // a future release, classify it as a non-fatal unknown hiccup
+                // rather than failing to compile or panicking. Unreachable today
+                // because the enum is currently exhaustive.
+                #[allow(unreachable_patterns)]
+                _ => (SurfaceAcquireStatus::Unknown, None),
+            };
+
+            let has_valid_size = surface_is_renderable(self.current_width, self.current_height);
+            match classify_acquire(status, has_valid_size) {
+                AcquireAction::Proceed => {
+                    // `texture` is `Some` exactly for the `Usable` status.
+                    return Ok(texture);
+                }
+                AcquireAction::ReconfigureAndRetry => {
+                    log::warn!(
+                        "WgpuRenderSystem: surface lost/outdated; reconfiguring to {}x{} (attempt {}).",
+                        self.current_width,
+                        self.current_height,
+                        attempt + 1
+                    );
+                    gc_guard.resize(self.current_width, self.current_height);
+                    drop(gc_guard);
+                    self.last_surface_config = Some(Instant::now());
+                    self.pending_resize = false;
+                    // Loop to re-acquire on the next iteration.
+                    continue;
+                }
+                AcquireAction::SkipFrame => {
+                    log::debug!(
+                        "WgpuRenderSystem: acquire status {:?} — skipping frame.",
+                        status
+                    );
+                    return Ok(None);
+                }
+                AcquireAction::NonFatalError => {
+                    log::error!(
+                        "WgpuRenderSystem: non-fatal surface acquire failure ({:?}).",
+                        status
+                    );
+                    return Err(RenderError::SurfaceAcquisitionFailed(format!("{status:?}")));
+                }
+            }
+        }
+
+        // Exhausted the in-frame reconfigure budget without a usable texture.
+        // Skip this frame; the next frame retries from a freshly configured
+        // surface rather than erroring out.
+        log::warn!(
+            "WgpuRenderSystem: surface still unavailable after {} acquire attempts; skipping frame.",
+            max_attempts
+        );
+        Ok(None)
     }
 }
 
@@ -1221,6 +887,9 @@ impl RenderSystem for WgpuRenderSystem {
             .clone()
             .ok_or(RenderError::NotInitialized)?;
 
+        // Bail out early (non-panicking) on a lost / out-of-memory device.
+        self.check_device_health()?;
+
         // Poll the device to process any pending GPU-to-CPU callbacks, such as
         // those from the profiler's `map_async` calls. This is crucial.
         device.poll_device_non_blocking();
@@ -1277,58 +946,14 @@ impl RenderSystem for WgpuRenderSystem {
             }
         }
 
-        // --- 1. Acquire Frame from Swap Chain ---
+        // --- 1. Acquire Frame from Swap Chain (resilient) ---
         device.wait_for_last_submission();
-        let output_surface_texture = loop {
-            let mut gc_guard = gc.lock().unwrap();
-            match gc_guard.get_current_texture() {
-                wgpu::CurrentSurfaceTexture::Success(texture) => break texture,
-                wgpu::CurrentSurfaceTexture::Suboptimal(texture) => {
-                    log::debug!(
-                        "WgpuRenderSystem: Acquired suboptimal swapchain frame; using it but a reconfigure may be needed soon."
-                    );
-                    break texture;
-                }
-                status @ (wgpu::CurrentSurfaceTexture::Lost
-                | wgpu::CurrentSurfaceTexture::Outdated) => {
-                    if self.current_width > 0 && self.current_height > 0 {
-                        log::warn!(
-                            "WgpuRenderSystem: Swapchain surface lost or outdated ({:?}). Reconfiguring with current dimensions: W={}, H={}",
-                            status,
-                            self.current_width,
-                            self.current_height
-                        );
-                        gc_guard.resize(self.current_width, self.current_height);
-                        self.last_surface_config = Some(Instant::now());
-                        self.pending_resize = false; // reset pending state after forced reconfigure
-                    } else {
-                        log::error!(
-                            "WgpuRenderSystem: Swapchain lost/outdated ({:?}), but current stored size is zero ({},{}). Cannot reconfigure. Waiting for valid resize event.",
-                            status,
-                            self.current_width,
-                            self.current_height
-                        );
-                        return Err(RenderError::SurfaceAcquisitionFailed(format!(
-                            "Surface Lost/Outdated ({status:?}) and current size is zero",
-                        )));
-                    }
-                }
-                wgpu::CurrentSurfaceTexture::Timeout => {
-                    log::warn!("WgpuRenderSystem: Swapchain Timeout acquiring frame.");
-                    return Err(RenderError::SurfaceAcquisitionFailed("Timeout".to_string()));
-                }
-                wgpu::CurrentSurfaceTexture::Occluded => {
-                    log::debug!("WgpuRenderSystem: Surface occluded; skipping frame.");
-                    return Err(RenderError::SurfaceAcquisitionFailed(
-                        "Occluded".to_string(),
-                    ));
-                }
-                wgpu::CurrentSurfaceTexture::Validation => {
-                    log::error!("WgpuRenderSystem: Surface validation error during acquisition.");
-                    return Err(RenderError::SurfaceAcquisitionFailed(
-                        "Validation error".to_string(),
-                    ));
-                }
+        let output_surface_texture = match self.acquire_surface_texture(&gc)? {
+            Some(texture) => texture,
+            None => {
+                // Transient skip — return last frame's stats unchanged so the
+                // caller treats this as a no-op frame, not a hard failure.
+                return Ok(self.last_frame_stats.clone());
             }
         };
 
@@ -1360,7 +985,9 @@ impl RenderSystem for WgpuRenderSystem {
 
         // --- 5. Main Render Pass (drawing all objects) ---
         {
-            let gc_guard = gc.lock().unwrap();
+            let gc_guard = gc
+                .lock()
+                .map_err(|_| RenderError::Internal("graphics context lock poisoned".into()))?;
             let wgpu_color = gc_guard.get_clear_color();
             let clear_color = LinearRgba::new(
                 wgpu_color.r as f32,
@@ -1377,6 +1004,7 @@ impl RenderSystem for WgpuRenderSystem {
                     store: StoreOp::Store,
                 },
                 base_array_layer: 0,
+                base_mip_level: 0,
             };
 
             // Create depth/stencil attachment if depth texture is available
@@ -1435,9 +1063,18 @@ impl RenderSystem for WgpuRenderSystem {
 
         // --- 7. Finalize and Submit Commands ---
         let submission_timer = Stopwatch::new();
-        let command_buffer = command_encoder.finish();
-        device.submit_command_buffer(command_buffer);
-        let submission_ms = submission_timer.elapsed_ms().unwrap_or(0);
+        let submission_ms = match command_encoder.finish() {
+            Some(command_buffer) => {
+                device.submit_command_buffer(command_buffer);
+                submission_timer.elapsed_ms().unwrap_or(0)
+            }
+            None => {
+                log::error!(
+                    "WgpuRenderSystem: command_encoder.finish() returned None — skipping submit"
+                );
+                0
+            }
+        };
 
         if settings.enable_gpu_timestamps {
             if let Some(p) = self.gpu_profiler.as_mut() {
@@ -1472,6 +1109,10 @@ impl RenderSystem for WgpuRenderSystem {
             .wgpu_device
             .clone()
             .ok_or(RenderError::NotInitialized)?;
+
+        // Bail out early (non-panicking) if the device was reported lost or
+        // out-of-memory: there is no point acquiring or submitting any work.
+        self.check_device_health()?;
 
         // Process any pending GPU-to-CPU callbacks (profiler map_async, etc.).
         device.poll_device_non_blocking();
@@ -1519,23 +1160,16 @@ impl RenderSystem for WgpuRenderSystem {
             }
         }
 
-        // --- Acquire swapchain texture ---
-        let output_surface_texture = loop {
-            let mut gc_guard = gc.lock().unwrap();
-            match gc_guard.get_current_texture() {
-                wgpu::CurrentSurfaceTexture::Success(texture)
-                | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => break texture,
-                status @ (wgpu::CurrentSurfaceTexture::Lost
-                | wgpu::CurrentSurfaceTexture::Outdated) => {
-                    if self.current_width > 0 && self.current_height > 0 {
-                        gc_guard.resize(self.current_width, self.current_height);
-                        continue;
-                    }
-                    return Err(RenderError::SurfaceAcquisitionFailed(format!("{status:?}")));
-                }
-                status => {
-                    return Err(RenderError::SurfaceAcquisitionFailed(format!("{status:?}")));
-                }
+        // --- Acquire swapchain texture (resilient: see acquire_surface_texture) ---
+        let output_surface_texture = match self.acquire_surface_texture(&gc)? {
+            Some(texture) => texture,
+            None => {
+                // Transient skip (minimized / timeout / occluded / reconfigure
+                // in flight). Not an error — report a non-fatal acquisition
+                // failure so the engine skips this frame and retries next one.
+                return Err(RenderError::SurfaceAcquisitionFailed(
+                    "frame skipped (surface not ready)".to_string(),
+                ));
             }
         };
 
@@ -1565,6 +1199,14 @@ impl RenderSystem for WgpuRenderSystem {
     }
 
     fn end_frame(&mut self) -> Result<RenderStats, RenderError> {
+        // If the device went down between acquire and present, surface a fatal
+        // error instead of presenting a texture from a dead device.
+        self.check_device_health()?;
+
+        // `SurfaceTexture::present()` is infallible in this wgpu version: if a
+        // present fails internally it is reported through the device error
+        // callback (handled by `check_device_health`), and an un-presented
+        // texture is discarded on drop rather than panicking.
         if let Some(texture) = self.active_frame_texture.take() {
             texture.present();
         }
@@ -1692,9 +1334,17 @@ impl RenderSystem for WgpuRenderSystem {
     }
 
     fn graphics_device(&self) -> Arc<dyn GraphicsDevice> {
-        self.wgpu_device
-            .clone()
-            .expect("WgpuRenderSystem: No WgpuDevice available.")
+        // Invariant: `wgpu_device` is populated during render-system
+        // initialization (adapter + device creation) and is only cleared on
+        // shutdown. The bootstrap path calls `graphics_device()` exactly once,
+        // right after a successful init and long before shutdown — so the
+        // device is always present here. The trait returns a bare
+        // `Arc<dyn GraphicsDevice>` (no fallible variant), and there is no
+        // sound placeholder device to substitute, so a `None` at this point is
+        // an init-ordering bug rather than a recoverable runtime condition.
+        self.wgpu_device.clone().expect(
+            "WgpuRenderSystem::graphics_device called before initialization or after shutdown",
+        )
     }
 }
 

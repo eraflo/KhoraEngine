@@ -50,9 +50,26 @@ enum Commands {
     /// Run all CI tasks (build, test, check, format, clippy).
     All,
 
+    /// Pre-build editor + runtime in debug, then run the hub in release.
+    /// Convenience wrapper for the typical contributor dev loop — also
+    /// available via the `cargo hub-dev` alias from `.cargo/config.toml`.
+    HubDev,
+
     /// Commands for asset pipeline management.
     #[clap(subcommand)]
     Assets(AssetCommand),
+
+    /// Generate the per-provider AI wrappers from `.agent/<profile>/`.
+    /// Forwards to the Node installer, e.g. `cargo xtask ai install all`
+    /// or `cargo xtask ai --profile gamedev install all`.
+    Ai {
+        /// Which documentation profile to install ("engine" or "gamedev").
+        #[clap(long, default_value = "engine")]
+        profile: String,
+        /// Arguments forwarded to the installer (install <provider|all>, sync, …).
+        #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -73,9 +90,13 @@ fn main() -> Result<()> {
             Commands::Clippy => commands::ci::clippy()?,
             Commands::All => commands::ci::all()?,
 
+            Commands::HubDev => commands::dev::hub_dev()?,
+
             Commands::Assets(command) => match command {
                 AssetCommand::Pack => commands::assets::pack()?,
             },
+
+            Commands::Ai { profile, args } => commands::ai::run(&profile, &args)?,
         }
     } else {
         helpers::print_custom_help();

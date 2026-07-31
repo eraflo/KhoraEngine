@@ -237,8 +237,29 @@ pub enum RenderError {
     /// The graphics device was lost (e.g., GPU driver crashed or was updated).
     /// This is a catastrophic error that typically requires reinitialization.
     DeviceLost,
+    /// The graphics device or surface ran out of memory.
+    ///
+    /// This is fatal but non-panicking: the frame loop surfaces it so the host
+    /// can decide to shut down cleanly rather than crashing mid-frame.
+    DeviceOutOfMemory(String),
     /// An unexpected or internal error occurred.
     Internal(String),
+}
+
+impl RenderError {
+    /// Whether this error is fatal — i.e. the render system cannot make
+    /// progress on subsequent frames and the host should tear down or
+    /// reinitialize rather than retry.
+    ///
+    /// Transient acquisition failures (surface lost/outdated/timeout, occluded
+    /// or zero-size windows) are **not** fatal: the loop skips the frame and
+    /// retries. Device loss and out-of-memory **are** fatal.
+    pub fn is_fatal(&self) -> bool {
+        matches!(
+            self,
+            RenderError::DeviceLost | RenderError::DeviceOutOfMemory(_)
+        )
+    }
 }
 
 impl fmt::Display for RenderError {
@@ -263,6 +284,9 @@ impl fmt::Display for RenderError {
                 f,
                 "The graphics device was lost and needs to be reinitialized."
             ),
+            RenderError::DeviceOutOfMemory(msg) => {
+                write!(f, "The graphics device ran out of memory: {msg}")
+            }
             RenderError::Internal(msg) => {
                 write!(f, "An internal or unexpected error occurred: {msg}")
             }
@@ -339,5 +363,27 @@ mod tests {
         );
         assert!(render_err.source().is_some());
         assert!(render_err.source().unwrap().source().is_some());
+    }
+
+    #[test]
+    fn render_error_is_fatal_classification() {
+        // Fatal: device loss and out-of-memory require host teardown.
+        assert!(RenderError::DeviceLost.is_fatal());
+        assert!(RenderError::DeviceOutOfMemory("vk OOM".to_string()).is_fatal());
+
+        // Non-fatal: transient acquisition / lifecycle errors are retried.
+        assert!(!RenderError::NotInitialized.is_fatal());
+        assert!(!RenderError::SurfaceAcquisitionFailed("Timeout".to_string()).is_fatal());
+        assert!(!RenderError::RenderingFailed("pass".to_string()).is_fatal());
+        assert!(!RenderError::Internal("misc".to_string()).is_fatal());
+    }
+
+    #[test]
+    fn device_out_of_memory_display() {
+        let err = RenderError::DeviceOutOfMemory("allocation failed".to_string());
+        assert_eq!(
+            format!("{err}"),
+            "The graphics device ran out of memory: allocation failed"
+        );
     }
 }

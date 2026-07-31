@@ -23,25 +23,26 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
-//! // Create a cube at a specific position
-//! let cube = world.spawn_at(Vec3::new(0.0, 0.5, -5.0))
-//!     .as_cube(1.0)
-//!     .build();
+//! ```rust
+//! use khora_sdk::{GameWorld, Vessel};
+//! use khora_sdk::prelude::ecs::Camera;
+//! use khora_sdk::prelude::math::{Quaternion, Vec3};
 //!
-//! // Create a camera
-//! let camera = world.spawn_at(Vec3::new(0.0, 2.0, 10.0))
-//!     .as_camera_perspective(45.0, 16.0/9.0, 0.1, 1000.0)
+//! let mut world = GameWorld::new();
+//!
+//! // Spawn a camera at a position, rotated to face the scene.
+//! let camera = Camera::new_perspective(
+//!     std::f32::consts::FRAC_PI_4, 16.0 / 9.0, 0.1, 1000.0,
+//! );
+//! let _entity = Vessel::at(&mut world, Vec3::new(0.0, 2.0, 10.0))
+//!     .with_component(camera)
+//!     .with_rotation(Quaternion::from_axis_angle(Vec3::Y, std::f32::consts::PI))
 //!     .build();
 //! ```
 
 use khora_core::ecs::entity::EntityId;
-use khora_core::math::{Aabb, Vec2, Vec3};
-use khora_core::renderer::api::{
-    pipeline::{PrimitiveTopology, VertexAttributeDescriptor, VertexFormat},
-    scene::Mesh,
-};
-use khora_data::ecs::{GlobalTransform, Transform};
+use khora_core::math::Vec3;
+use khora_data::ecs::{GlobalTransform, MeshRef, ProceduralMeshKind, Transform};
 
 use crate::GameWorld;
 
@@ -54,6 +55,26 @@ use crate::GameWorld;
 /// Every Vessel is guaranteed to have:
 /// - Transform (local position/rotation/scale)
 /// - GlobalTransform (world-space transform for rendering)
+///
+/// # Examples
+///
+/// ```rust
+/// use khora_sdk::{GameWorld, Vessel};
+/// use khora_sdk::prelude::ecs::Name;
+/// use khora_sdk::prelude::math::Vec3;
+///
+/// let mut world = GameWorld::new();
+///
+/// // `at(..)` spawns the entity; chained calls configure it; `build()` finalizes.
+/// let entity = Vessel::at(&mut world, Vec3::new(1.0, 0.0, -3.0))
+///     .with_scale(Vec3::ONE * 2.0)
+///     .with_component(Name::new("crate"))
+///     .build();
+///
+/// // The entity exists and carries the position we set.
+/// let transform = world.get_transform(entity).unwrap();
+/// assert_eq!(transform.translation, Vec3::new(1.0, 0.0, -3.0));
+/// ```
 pub struct Vessel<'a> {
     world: &'a mut GameWorld,
     entity: EntityId,
@@ -148,317 +169,39 @@ impl<'a> Vessel<'a> {
     }
 }
 
+
 /// Creates a Vessel with a plane mesh at the origin.
+///
+/// Attaches an authored [`MeshRef::Procedural`]; the asset resolver rebuilds
+/// the plane geometry and mints the runtime `HandleComponent<Mesh>` before the
+/// GPU mesh projection runs.
 pub fn spawn_plane<'a>(world: &'a mut GameWorld, size: f32, y: f32) -> Vessel<'a> {
-    let mesh = create_plane(size, y);
-    let handle = world.add_mesh(mesh);
-    Vessel::new(world).with_component(handle)
+    let mesh_ref = MeshRef::procedural(ProceduralMeshKind::Plane, [size, y, 0.0, 0.0]);
+    Vessel::new(world).with_component(mesh_ref)
 }
 
 /// Creates a Vessel with a cube mesh at a specific position.
+///
+/// Attaches an authored [`MeshRef::Procedural`]; see [`spawn_plane`] for the
+/// resolution flow.
 pub fn spawn_cube_at<'a>(world: &'a mut GameWorld, position: Vec3, size: f32) -> Vessel<'a> {
-    let mesh = create_cube(size);
-    let handle = world.add_mesh(mesh);
-    Vessel::at(world, position).with_component(handle)
+    let mesh_ref = MeshRef::procedural(ProceduralMeshKind::Cube, [size, 0.0, 0.0, 0.0]);
+    Vessel::at(world, position).with_component(mesh_ref)
 }
 
 /// Creates a Vessel with a sphere mesh at the origin.
+///
+/// Attaches an authored [`MeshRef::Procedural`]; see [`spawn_plane`] for the
+/// resolution flow.
 pub fn spawn_sphere<'a>(
     world: &'a mut GameWorld,
     radius: f32,
     segments: u32,
     rings: u32,
 ) -> Vessel<'a> {
-    let mesh = create_sphere(radius, segments, rings);
-    let handle = world.add_mesh(mesh);
-    Vessel::new(world).with_component(handle)
-}
-
-// =============================================================================
-// Primitive Mesh Generation (internal)
-// =============================================================================
-
-/// Creates a plane mesh on the XZ plane.
-fn create_plane(size: f32, y: f32) -> Mesh {
-    let half = size / 2.0;
-
-    let positions = vec![
-        Vec3::new(-half, y, -half),
-        Vec3::new(half, y, -half),
-        Vec3::new(half, y, half),
-        Vec3::new(-half, y, half),
-    ];
-
-    let normals = vec![
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-    ];
-
-    let tex_coords = vec![
-        Vec2::new(0.0, 0.0),
-        Vec2::new(1.0, 0.0),
-        Vec2::new(1.0, 1.0),
-        Vec2::new(0.0, 1.0),
-    ];
-
-    let indices = vec![0u32, 1, 2, 0, 2, 3];
-
-    // Layout: Position (0), Normal (1), UV (2)
-    let vertex_layout = vec![
-        VertexAttributeDescriptor {
-            shader_location: 0,
-            format: VertexFormat::Float32x3,
-            offset: 0,
-        },
-        VertexAttributeDescriptor {
-            shader_location: 1,
-            format: VertexFormat::Float32x3,
-            offset: 12,
-        },
-        VertexAttributeDescriptor {
-            shader_location: 2,
-            format: VertexFormat::Float32x2,
-            offset: 24,
-        },
-    ];
-
-    Mesh {
-        positions,
-        normals: Some(normals),
-        tex_coords: Some(tex_coords),
-        tangents: None,
-        colors: None,
-        indices: Some(indices),
-        primitive_type: PrimitiveTopology::TriangleList,
-        bounding_box: Aabb::from_min_max(Vec3::new(-half, y, -half), Vec3::new(half, y, half)),
-        vertex_layout,
-    }
-}
-
-/// Creates a cube mesh centered at origin.
-fn create_cube(size: f32) -> Mesh {
-    let half = size / 2.0;
-
-    // 24 vertices (4 per face, 6 faces)
-    let positions = vec![
-        // Front face (+Z)
-        Vec3::new(-half, -half, half),
-        Vec3::new(half, -half, half),
-        Vec3::new(half, half, half),
-        Vec3::new(-half, half, half),
-        // Back face (-Z)
-        Vec3::new(half, -half, -half),
-        Vec3::new(-half, -half, -half),
-        Vec3::new(-half, half, -half),
-        Vec3::new(half, half, -half),
-        // Right face (+X)
-        Vec3::new(half, -half, half),
-        Vec3::new(half, -half, -half),
-        Vec3::new(half, half, -half),
-        Vec3::new(half, half, half),
-        // Left face (-X)
-        Vec3::new(-half, -half, -half),
-        Vec3::new(-half, -half, half),
-        Vec3::new(-half, half, half),
-        Vec3::new(-half, half, -half),
-        // Top face (+Y)
-        Vec3::new(-half, half, half),
-        Vec3::new(half, half, half),
-        Vec3::new(half, half, -half),
-        Vec3::new(-half, half, -half),
-        // Bottom face (-Y)
-        Vec3::new(-half, -half, -half),
-        Vec3::new(half, -half, -half),
-        Vec3::new(half, -half, half),
-        Vec3::new(-half, -half, half),
-    ];
-
-    let normals = vec![
-        // Front
-        Vec3::new(0.0, 0.0, 1.0),
-        Vec3::new(0.0, 0.0, 1.0),
-        Vec3::new(0.0, 0.0, 1.0),
-        Vec3::new(0.0, 0.0, 1.0),
-        // Back
-        Vec3::new(0.0, 0.0, -1.0),
-        Vec3::new(0.0, 0.0, -1.0),
-        Vec3::new(0.0, 0.0, -1.0),
-        Vec3::new(0.0, 0.0, -1.0),
-        // Right
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(1.0, 0.0, 0.0),
-        // Left
-        Vec3::new(-1.0, 0.0, 0.0),
-        Vec3::new(-1.0, 0.0, 0.0),
-        Vec3::new(-1.0, 0.0, 0.0),
-        Vec3::new(-1.0, 0.0, 0.0),
-        // Top
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        // Bottom
-        Vec3::new(0.0, -1.0, 0.0),
-        Vec3::new(0.0, -1.0, 0.0),
-        Vec3::new(0.0, -1.0, 0.0),
-        Vec3::new(0.0, -1.0, 0.0),
-    ];
-
-    let tex_coords = vec![
-        [0.0, 0.0],
-        [1.0, 0.0],
-        [1.0, 1.0],
-        [0.0, 1.0],
-        [0.0, 0.0],
-        [1.0, 0.0],
-        [1.0, 1.0],
-        [0.0, 1.0],
-        [0.0, 0.0],
-        [1.0, 0.0],
-        [1.0, 1.0],
-        [0.0, 1.0],
-        [0.0, 0.0],
-        [1.0, 0.0],
-        [1.0, 1.0],
-        [0.0, 1.0],
-        [0.0, 0.0],
-        [1.0, 0.0],
-        [1.0, 1.0],
-        [0.0, 1.0],
-        [0.0, 0.0],
-        [1.0, 0.0],
-        [1.0, 1.0],
-        [0.0, 1.0],
-    ]
-    .into_iter()
-    .map(|uv| Vec2::new(uv[0], uv[1]))
-    .collect();
-
-    // Indices for all 6 faces (2 triangles per face)
-    let indices = vec![
-        // Front
-        0u32, 1, 2, 0, 2, 3, // Back
-        4, 5, 6, 4, 6, 7, // Right
-        8, 9, 10, 8, 10, 11, // Left
-        12, 13, 14, 12, 14, 15, // Top
-        16, 17, 18, 16, 18, 19, // Bottom
-        20, 21, 22, 20, 22, 23,
-    ];
-
-    // Layout: Position (0), Normal (1), UV (2)
-    let vertex_layout = vec![
-        VertexAttributeDescriptor {
-            shader_location: 0,
-            format: VertexFormat::Float32x3,
-            offset: 0,
-        },
-        VertexAttributeDescriptor {
-            shader_location: 1,
-            format: VertexFormat::Float32x3,
-            offset: 12,
-        },
-        VertexAttributeDescriptor {
-            shader_location: 2,
-            format: VertexFormat::Float32x2,
-            offset: 24,
-        },
-    ];
-
-    Mesh {
-        positions,
-        normals: Some(normals),
-        tex_coords: Some(tex_coords),
-        tangents: None,
-        colors: None,
-        indices: Some(indices),
-        primitive_type: PrimitiveTopology::TriangleList,
-        bounding_box: Aabb::from_min_max(
-            Vec3::new(-half, -half, -half),
-            Vec3::new(half, half, half),
-        ),
-        vertex_layout,
-    }
-}
-
-/// Creates a sphere mesh.
-fn create_sphere(radius: f32, segments: u32, rings: u32) -> Mesh {
-    let mut positions = Vec::new();
-    let mut normals = Vec::new();
-    let mut tex_coords = Vec::new();
-
-    // Generate vertices
-    for ring in 0..=rings {
-        let phi = std::f32::consts::PI * (ring as f32 / rings as f32);
-        let y = radius * phi.cos();
-        let ring_radius = radius * phi.sin();
-
-        for segment in 0..=segments {
-            let theta = 2.0 * std::f32::consts::PI * (segment as f32 / segments as f32);
-            let x = ring_radius * theta.cos();
-            let z = ring_radius * theta.sin();
-
-            positions.push(Vec3::new(x, y, z));
-            normals.push(Vec3::new(x / radius, y / radius, z / radius));
-            tex_coords.push(Vec2::new(
-                segment as f32 / segments as f32,
-                ring as f32 / rings as f32,
-            ));
-        }
-    }
-
-    // Generate indices
-    let mut indices = Vec::new();
-    for ring in 0..rings {
-        for segment in 0..segments {
-            let current = ring * (segments + 1) + segment;
-            let next = current + segments + 1;
-
-            // Two triangles per quad
-            indices.push(current);
-            indices.push(next);
-            indices.push(current + 1);
-
-            indices.push(current + 1);
-            indices.push(next);
-            indices.push(next + 1);
-        }
-    }
-
-    // Layout: Position (0), Normal (1), UV (2)
-    let vertex_layout = vec![
-        VertexAttributeDescriptor {
-            shader_location: 0,
-            format: VertexFormat::Float32x3,
-            offset: 0,
-        },
-        VertexAttributeDescriptor {
-            shader_location: 1,
-            format: VertexFormat::Float32x3,
-            offset: 12,
-        },
-        VertexAttributeDescriptor {
-            shader_location: 2,
-            format: VertexFormat::Float32x2,
-            offset: 24,
-        },
-    ];
-
-    Mesh {
-        positions,
-        normals: Some(normals),
-        tex_coords: Some(tex_coords),
-        tangents: None,
-        colors: None,
-        indices: Some(indices),
-        primitive_type: PrimitiveTopology::TriangleList,
-        bounding_box: Aabb::from_min_max(
-            Vec3::new(-radius, -radius, -radius),
-            Vec3::new(radius, radius, radius),
-        ),
-        vertex_layout,
-    }
+    let mesh_ref = MeshRef::procedural(
+        ProceduralMeshKind::Sphere,
+        [radius, segments as f32, rings as f32, 0.0],
+    );
+    Vessel::new(world).with_component(mesh_ref)
 }

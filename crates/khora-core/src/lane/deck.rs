@@ -89,6 +89,28 @@ impl OutputDeck {
     pub fn clear(&mut self) {
         self.slots.clear();
     }
+
+    /// Moves every slot from `other` into `self`.
+    ///
+    /// Used by the parallel executor to fold a worker's private deck shard back
+    /// into the shared deck after a concurrent wave. The merged shards are
+    /// expected to write **disjoint** slot types (guaranteed by the executor's
+    /// [`AgentAccess::Isolated`](crate::agent::AgentAccess::Isolated) eligibility
+    /// rules). A colliding `TypeId` is therefore a scheduling bug: the existing
+    /// slot is kept and the collision logged, rather than silently dropping one
+    /// side's outputs.
+    pub fn merge_from(&mut self, other: OutputDeck) {
+        for (type_id, value) in other.slots {
+            if self.slots.contains_key(&type_id) {
+                log::error!(
+                    "OutputDeck::merge_from: colliding slot {type_id:?} across parallel deck \
+                     shards — keeping the existing entry (parallel-eligibility bug)"
+                );
+                continue;
+            }
+            self.slots.insert(type_id, value);
+        }
+    }
 }
 
 impl Default for OutputDeck {
@@ -142,5 +164,31 @@ mod tests {
         deck.slot::<Vec<u8>>().push(2);
         assert_eq!(deck.take::<Vec<u32>>(), vec![1]);
         assert_eq!(deck.take::<Vec<u8>>(), vec![2]);
+    }
+
+    #[test]
+    fn merge_from_folds_disjoint_shards() {
+        let mut main = OutputDeck::new();
+        main.slot::<Vec<u32>>().push(1);
+
+        let mut shard = OutputDeck::new();
+        shard.slot::<Vec<u8>>().extend([7, 8]);
+
+        main.merge_from(shard);
+        assert_eq!(main.take::<Vec<u32>>(), vec![1]);
+        assert_eq!(main.take::<Vec<u8>>(), vec![7, 8]);
+    }
+
+    #[test]
+    fn merge_from_keeps_existing_on_collision() {
+        let mut main = OutputDeck::new();
+        main.slot::<Vec<u32>>().push(1);
+
+        let mut shard = OutputDeck::new();
+        shard.slot::<Vec<u32>>().push(99);
+
+        // Colliding slot type: the existing entry is kept (defensive).
+        main.merge_from(shard);
+        assert_eq!(main.take::<Vec<u32>>(), vec![1]);
     }
 }

@@ -2,6 +2,8 @@
 name = "khora-io"
 version = "0.1.0"
 edition = "2021"
+rust-version.workspace = true
+license.workspace = true
 description = "I/O services for asset loading, VFS, and scene serialization"
 
 [dependencies]
@@ -13,6 +15,9 @@ log = "0.4"
 anyhow = "1.0"
 thiserror = "2.0.18"
 serde = { version = "1.0", features = ["derive"] }
+# Bridge for the `.kmat` decoder: RON → serde_json::Value → MaterialRegistration
+# (which dispatches through `deserialize_json`). Matches khora-data's version.
+serde_json = "1.0"
 bincode = { version = "2.0.1", features = ["serde"] }
 ron = "0.12.0"
 ahash = "0.8"
@@ -29,6 +34,20 @@ gltf = { version = "1.0", features = ["import"] }
 # Audio
 hound = "3.5"
 symphonia = { version = "0.5", features = ["all-formats", "all-codecs"] }
+
+# Asset auto-registration via inventory (mirrors MaterialRegistration in khora-data)
+inventory = "0.3"
+
+# Filesystem watching for hot-reload (cross-platform: inotify/FSEvents/RDCW)
+notify = "6"
+crossbeam-channel = "0.5"
+
+# Stable sorting / hashing helpers used by IndexBuilder (forward-slash rel paths)
+walkdir = "2.5"
+
+# Pack v2: per-entry LZ4 compression + BLAKE3 manifest hashes
+lz4_flex = { version = "0.11", default-features = false, features = ["safe-encode", "safe-decode", "std"] }
+blake3 = "1.5"
 
 [dev-dependencies]
 tempfile = "3.25.0"

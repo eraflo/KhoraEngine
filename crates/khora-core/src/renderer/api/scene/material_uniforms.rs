@@ -27,6 +27,11 @@ pub struct ModelUniforms {
 }
 
 /// Data for a material's properties, formatted for the standard Lit Shader.
+///
+/// Mirrors the WGSL `MaterialUniforms` struct in
+/// `khora-lanes/src/render_lane/shaders/lib/std/material.wgsl`
+/// (`#[repr(C)]`); changing the field order or types here MUST be
+/// mirrored WGSL-side in lockstep.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct MaterialUniforms {
@@ -36,4 +41,19 @@ pub struct MaterialUniforms {
     pub emissive: LinearRgba,
     /// Ambient color (rgb) and Padding (a).
     pub ambient: LinearRgba,
+    /// PBR scalar factors, packed as `[metallic, roughness, alpha_cutoff, _reserved]`.
+    ///
+    /// The metallic-roughness texture (when present) is multiplied by
+    /// `metallic`/`roughness`; with the white fallback texture these
+    /// factors pass through unchanged.
+    pub pbr_factors: [f32; 4],
+}
+
+impl MaterialUniforms {
+    /// Index into [`pbr_factors`](Self::pbr_factors) for the metallic factor.
+    pub const METALLIC: usize = 0;
+    /// Index into [`pbr_factors`](Self::pbr_factors) for the roughness factor.
+    pub const ROUGHNESS: usize = 1;
+    /// Index into [`pbr_factors`](Self::pbr_factors) for the alpha-cutoff threshold.
+    pub const ALPHA_CUTOFF: usize = 2;
 }

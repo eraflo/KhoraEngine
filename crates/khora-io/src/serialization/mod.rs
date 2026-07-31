@@ -22,7 +22,9 @@ mod service;
 
 // Re-export strategies from khora-data for convenience.
 pub use khora_data::scene::{
-    ArchetypeSerializationStrategy, DefinitionSerializationStrategy, DeserializationError,
-    RecipeSerializationStrategy, SerializationError, SerializationStrategy,
+    migrate_payload, ArchetypeSerializationStrategy, DefinitionSerializationStrategy,
+    DeserializationError, MessagePackSerializationStrategy, MigrationError,
+    RecipeSerializationStrategy, SceneMigration, SceneMigrationRegistration, SerializationError,
+    SerializationStrategy,
 };
 pub use service::*;

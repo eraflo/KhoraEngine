@@ -30,6 +30,7 @@ pub struct PlaybackState {
 
 /// An ECS component that makes an entity an emitter of sound.
 #[derive(Debug, Clone, Component)]
+#[component(domain = Audio)]
 pub struct AudioSource {
     /// A handle to the sound data to be played.
     #[component(skip)]

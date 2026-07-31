@@ -1,0 +1,41 @@
+---
+description: "Khora engine skill"
+alwaysApply: false
+---
+
+---
+name: create-plan
+description: Phase 2 of the RPI workflow — turn a research artifact into a precise, phase-by-phase implementation plan under docs/plans/. The plan is the source of truth the implementation follows and the second (high-leverage) human review point. Use after research-codebase, before writing code.
+---
+
+# Create an implementation plan
+
+The **Plan** phase of [`../../workflow-rpi.md`](../../workflow-rpi.md). Goal: a plan precise enough that
+implementation is mechanical and a reviewer can catch mistakes by reading ~200 lines instead of ~2000
+lines of diff.
+
+## Steps
+1. **Consume the research.** Start from the `docs/research/AAAA-MM-JJ_topic.md` artifact. If a needed fact
+   is missing, dispatch a research subagent to fill the gap — don't guess.
+2. **Design the change** against Khora's constraints (`RULES.md`, the relevant `reference/*.md`). Name the
+   CLAD layers touched and confirm the change respects the descent (no cycles, HOW-not-WHAT, Lane/Agent
+   boundaries).
+3. **Break into verifiable phases.** Each phase is independently compilable and testable.
+4. **Write the plan artifact** and surface it for review.
+
+## Output artifact
+Write `docs/plans/descriptive-name.md` containing:
+- **Context** — why this change; the problem and intended outcome (link the research artifact).
+- **Phases** — ordered; for each: the exact files to edit, the specific edits, new symbols/signatures,
+  and the **verification** for that phase (`cargo test -p <crate>` / `cargo test --workspace` / a sandbox
+  run for GPU work).
+- **Out of scope** — what this change deliberately does not do.
+- **Status** — a checklist the implementation phase updates in place (intentional compaction).
+
+## Rules
+- This phase writes **only** the plan artifact — no source edits yet.
+- Reuse existing patterns the research surfaced (cite the precedent `file:line`); prefer the matching
+  `add-a-*` skill over inventing a new shape.
+- **Minimal changes** — plan the fix that was asked for; don't fold in adjacent refactors.
+- **Human review gate**: get the plan reviewed before implementing. Corrections here are cheap.
+- Implement with [`../implement-plan/SKILL.md`](../implement-plan/SKILL.md).

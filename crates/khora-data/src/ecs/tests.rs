@@ -38,7 +38,62 @@ impl Component for NonCopyableComponent {}
 struct RenderTag;
 impl Component for RenderTag {}
 
+// A value-carrying Render-domain component, used to prove that a survivor's
+// Render data is intact (not merely present) after a despawn in another row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RenderId(i32);
+impl Component for RenderId {}
+
 // --- TESTS ---
+
+#[test]
+fn derived_components_auto_register_their_domain() {
+    use crate::ecs::{Camera, RigidBody};
+    use std::any::TypeId;
+
+    // `World::new` replays the `#[component(domain = ...)]` inventory — no manual list.
+    let world = World::new();
+    assert_eq!(
+        world.component_domain(TypeId::of::<Camera>()),
+        Some(SemanticDomain::Render)
+    );
+    assert_eq!(
+        world.component_domain(TypeId::of::<RigidBody>()),
+        Some(SemanticDomain::Physics)
+    );
+}
+
+#[test]
+fn layout_defaults_to_soa_and_access_is_recorded() {
+    use crate::ecs::{Camera, LayoutPolicy};
+    use std::any::TypeId;
+
+    let mut world = World::new();
+
+    // Every component defaults to the `Soa` layout (inert descriptor).
+    assert_eq!(
+        world.component_layout(TypeId::of::<Camera>()),
+        Some(LayoutPolicy::Soa)
+    );
+
+    // Access counters exist once a component is registered.
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.spawn(Position(1));
+    world.spawn(Position(2));
+
+    // Baseline (spawn paths may or may not query), then two explicit scans.
+    let (q0, r0) = world
+        .component_access_stats(TypeId::of::<Position>())
+        .expect("Position is registered");
+    let _ = world.query::<&Position>().count();
+    let _ = world.query::<&Position>().count();
+    let (q1, r1) = world
+        .component_access_stats(TypeId::of::<Position>())
+        .unwrap();
+
+    assert_eq!(q1 - q0, 2, "two queries recorded");
+    assert_eq!(r1 - r0, 4, "2 rows scanned per query × 2 queries");
+}
 
 #[test]
 fn test_spawn_single_entity() {
@@ -990,5 +1045,534 @@ fn test_get_many_mut() {
         };
         let [p1] = world.get_many_mut::<Position, 1>([invalid_id]);
         assert!(p1.is_none());
+    }
+}
+
+// --- DOMAIN CHANGE EPOCHS ---
+
+#[test]
+fn world_instances_have_unique_ids() {
+    let a = World::new();
+    let b = World::new();
+    assert_ne!(a.instance_id(), b.instance_id());
+}
+
+#[test]
+fn spawn_bumps_only_the_spawned_domains() {
+    let mut world = World::new();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+
+    let spatial = world.domain_epoch(SemanticDomain::Spatial);
+    let render = world.domain_epoch(SemanticDomain::Render);
+
+    world.spawn(Position(1));
+
+    assert!(
+        world.domain_epoch(SemanticDomain::Spatial) > spatial,
+        "spawn must bump the spawned component's domain"
+    );
+    assert_eq!(
+        world.domain_epoch(SemanticDomain::Render),
+        render,
+        "spawn must not bump unrelated domains"
+    );
+}
+
+#[test]
+fn despawn_bumps_the_entity_domains() {
+    let mut world = World::new();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    let entity = world.spawn(Position(1));
+
+    let spatial = world.domain_epoch(SemanticDomain::Spatial);
+    assert!(world.despawn(entity));
+    assert!(world.domain_epoch(SemanticDomain::Spatial) > spatial);
+}
+
+#[test]
+fn add_and_remove_component_bump_that_component_domain() {
+    let mut world = World::new();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<RenderTag>(SemanticDomain::Render);
+    let entity = world.spawn(Position(1));
+
+    let render = world.domain_epoch(SemanticDomain::Render);
+    world
+        .add_component(entity, RenderTag)
+        .expect("add_component");
+    let after_add = world.domain_epoch(SemanticDomain::Render);
+    assert!(after_add > render, "add_component must bump");
+
+    world
+        .remove_component::<RenderTag>(entity)
+        .expect("remove_component");
+    assert!(
+        world.domain_epoch(SemanticDomain::Render) > after_add,
+        "remove_component must bump"
+    );
+}
+
+#[test]
+fn get_mut_bumps_but_get_does_not() {
+    let mut world = World::new();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    let entity = world.spawn(Position(1));
+
+    let baseline = world.domain_epoch(SemanticDomain::Spatial);
+    assert!(world.get::<Position>(entity).is_some());
+    assert_eq!(
+        world.domain_epoch(SemanticDomain::Spatial),
+        baseline,
+        "shared access must not bump"
+    );
+
+    assert!(world.get_mut::<Position>(entity).is_some());
+    assert!(
+        world.domain_epoch(SemanticDomain::Spatial) > baseline,
+        "mutable access must bump"
+    );
+}
+
+#[test]
+fn set_component_bumps_the_domain() {
+    let mut world = World::new();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    let entity = world.spawn(Position(1));
+
+    let baseline = world.domain_epoch(SemanticDomain::Spatial);
+    assert!(world.set_component(entity, Position(2)));
+    assert!(world.domain_epoch(SemanticDomain::Spatial) > baseline);
+}
+
+#[test]
+fn mutable_query_bumps_only_mutably_accessed_domains() {
+    let mut world = World::new();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<RenderTag>(SemanticDomain::Render);
+    let entity = world.spawn(Position(1));
+    world
+        .add_component(entity, RenderTag)
+        .expect("add_component");
+
+    let spatial = world.domain_epoch(SemanticDomain::Spatial);
+    let render = world.domain_epoch(SemanticDomain::Render);
+
+    // `&Position` is a read-only term; only `&mut RenderTag` may write.
+    let _ = world
+        .query_mut::<(&Position, &mut RenderTag)>()
+        .count();
+
+    assert_eq!(
+        world.domain_epoch(SemanticDomain::Spatial),
+        spatial,
+        "read-only query terms must not bump their domain"
+    );
+    assert!(
+        world.domain_epoch(SemanticDomain::Render) > render,
+        "`&mut` query terms must bump their domain"
+    );
+}
+
+#[test]
+fn read_only_query_does_not_bump() {
+    let mut world = World::new();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.spawn(Position(1));
+
+    let baseline = world.domain_epoch(SemanticDomain::Spatial);
+    let _ = world.query::<&Position>().count();
+    assert_eq!(world.domain_epoch(SemanticDomain::Spatial), baseline);
+}
+
+// --- MULTI-DOMAIN DESPAWN REGRESSION TESTS ---
+//
+// A mixed-domain bundle (e.g. `(Position, RenderId)` with the two components in
+// different semantic domains) is stored in one page but registered under several
+// domain keys, all addressing the same `(page_id, row_index)`. Despawning an
+// entity must `swap_remove` that physical row exactly once; doing it per domain
+// key destroyed the moved survivor's data.
+
+/// Registers `Position`/`Velocity` (Spatial) and `RenderId` (Render) so a single
+/// bundle spans two domains within one page.
+fn multi_domain_world() -> World {
+    let mut world = World::new();
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    world.register_component::<Velocity>(SemanticDomain::Spatial);
+    world.register_component::<RenderId>(SemanticDomain::Render);
+    world
+}
+
+#[test]
+fn despawn_first_preserves_multi_domain_survivor() {
+    let mut world = multi_domain_world();
+
+    let a = world.spawn((Position(1), RenderId(10)));
+    let b = world.spawn((Position(2), RenderId(20)));
+
+    assert!(world.despawn(a));
+
+    // The survivor must keep both its Spatial and Render data.
+    assert_eq!(
+        world.get::<Position>(b).copied(),
+        Some(Position(2)),
+        "survivor lost its Spatial component"
+    );
+    assert_eq!(
+        world.get::<RenderId>(b).copied(),
+        Some(RenderId(20)),
+        "survivor lost its Render component"
+    );
+
+    // The despawned entity must be fully gone.
+    assert!(world.get::<Position>(a).is_none());
+    assert!(world.get::<RenderId>(a).is_none());
+
+    // Queries in both domains see exactly the survivor.
+    assert_eq!(world.query::<&Position>().count(), 1);
+    assert_eq!(world.query::<&RenderId>().count(), 1);
+}
+
+#[test]
+fn despawn_last_preserves_multi_domain_survivor() {
+    let mut world = multi_domain_world();
+
+    let a = world.spawn((Position(1), RenderId(10)));
+    let b = world.spawn((Position(2), RenderId(20)));
+
+    // Despawning the last row exercises the "nothing moved" branch.
+    assert!(world.despawn(b));
+
+    assert_eq!(world.get::<Position>(a).copied(), Some(Position(1)));
+    assert_eq!(world.get::<RenderId>(a).copied(), Some(RenderId(10)));
+    assert!(world.get::<Position>(b).is_none());
+    assert!(world.get::<RenderId>(b).is_none());
+
+    assert_eq!(world.query::<&Position>().count(), 1);
+    assert_eq!(world.query::<&RenderId>().count(), 1);
+
+    // Despawning the remaining entity empties the page cleanly.
+    assert!(world.despawn(a));
+    assert_eq!(world.query::<&Position>().count(), 0);
+    assert_eq!(world.query::<&RenderId>().count(), 0);
+}
+
+#[test]
+fn despawn_middle_of_three_preserves_both_survivors() {
+    let mut world = multi_domain_world();
+
+    let a = world.spawn((Position(1), RenderId(10)));
+    let b = world.spawn((Position(2), RenderId(20)));
+    let c = world.spawn((Position(3), RenderId(30)));
+
+    // Removing the middle row swap-moves `c` into `b`'s slot across both domains.
+    assert!(world.despawn(b));
+
+    assert_eq!(world.get::<Position>(a).copied(), Some(Position(1)));
+    assert_eq!(world.get::<RenderId>(a).copied(), Some(RenderId(10)));
+    assert_eq!(world.get::<Position>(c).copied(), Some(Position(3)));
+    assert_eq!(world.get::<RenderId>(c).copied(), Some(RenderId(30)));
+
+    assert!(world.get::<Position>(b).is_none());
+    assert!(world.get::<RenderId>(b).is_none());
+
+    assert_eq!(world.query::<&Position>().count(), 2);
+    assert_eq!(world.query::<&RenderId>().count(), 2);
+}
+
+#[test]
+fn despawn_with_asymmetric_pages_preserves_all_domains() {
+    let mut world = multi_domain_world();
+
+    // `x` lives only in the Spatial domain; `a` and `b` span Spatial + Render.
+    // The Spatial and Render pages therefore hold different entity sets, so the
+    // swap-remove moves a *different* entity in each page.
+    let x = world.spawn(Position(7));
+    let a = world.spawn((Position(1), RenderId(10)));
+    let b = world.spawn((Position(2), RenderId(20)));
+
+    assert!(world.despawn(a));
+
+    // `b` intact in both domains.
+    assert_eq!(world.get::<Position>(b).copied(), Some(Position(2)));
+    assert_eq!(world.get::<RenderId>(b).copied(), Some(RenderId(20)));
+
+    // The Spatial-only entity is untouched.
+    assert_eq!(world.get::<Position>(x).copied(), Some(Position(7)));
+
+    assert!(world.get::<Position>(a).is_none());
+    assert!(world.get::<RenderId>(a).is_none());
+
+    assert_eq!(world.query::<&Position>().count(), 2);
+    assert_eq!(world.query::<&RenderId>().count(), 1);
+}
+
+#[test]
+fn respawn_after_despawn_reuses_slot_without_corrupting_survivor() {
+    let mut world = multi_domain_world();
+
+    let a = world.spawn((Position(1), RenderId(10)));
+    let b = world.spawn((Position(2), RenderId(20)));
+
+    assert!(world.despawn(a));
+
+    // Re-spawn into the freed page slot.
+    let c = world.spawn((Position(3), RenderId(30)));
+
+    // The survivor of the despawn is still intact across both domains.
+    assert_eq!(world.get::<Position>(b).copied(), Some(Position(2)));
+    assert_eq!(world.get::<RenderId>(b).copied(), Some(RenderId(20)));
+
+    // The new entity has its own correct data.
+    assert_eq!(world.get::<Position>(c).copied(), Some(Position(3)));
+    assert_eq!(world.get::<RenderId>(c).copied(), Some(RenderId(30)));
+
+    assert_eq!(world.query::<&Position>().count(), 2);
+    assert_eq!(world.query::<&RenderId>().count(), 2);
+}
+
+#[test]
+fn despawn_multi_domain_bumps_every_domain_epoch() {
+    let mut world = multi_domain_world();
+
+    let a = world.spawn((Position(1), RenderId(10)));
+    let _b = world.spawn((Position(2), RenderId(20)));
+
+    let spatial = world.domain_epoch(SemanticDomain::Spatial);
+    let render = world.domain_epoch(SemanticDomain::Render);
+
+    assert!(world.despawn(a));
+
+    assert!(
+        world.domain_epoch(SemanticDomain::Spatial) > spatial,
+        "despawn must bump the Spatial epoch"
+    );
+    assert!(
+        world.domain_epoch(SemanticDomain::Render) > render,
+        "despawn must bump the Render epoch"
+    );
+}
+
+// --- PAGE COMPACTION (ORPHAN-ROW RECLAMATION) REGRESSION TESTS ---
+//
+// A component migration repoints one domain's location to a new page but leaves
+// the old physical row in place. `World::run_compaction` (driven each frame by
+// `EcsMaintenance`) reclaims the rows no live entity references, while
+// preserving partial orphans (rows still live for another domain in a
+// multi-domain page) and repairing every domain of a moved survivor.
+
+/// `multi_domain_world` + a second Render component so a migration
+/// (`add_component`) can move an entity between Render pages.
+fn compaction_world() -> World {
+    let mut world = multi_domain_world(); // Position/Velocity (Spatial), RenderId (Render)
+    world.register_component::<RenderTag>(SemanticDomain::Render);
+    world
+}
+
+/// Total physical rows across every page — equals the number of live
+/// `(entity, domain)` occupancies once all orphans are reclaimed.
+fn total_rows(world: &World) -> usize {
+    world.storage.pages.iter().map(|p| p.entities.len()).sum()
+}
+
+#[test]
+fn compaction_reclaims_fully_dead_single_domain_row() {
+    let mut world = compaction_world();
+
+    // Single-domain (Render) entity in its own page {RenderId}. Adding another
+    // Render component migrates the whole signature to a new page, leaving the
+    // old row fully dead (no domain references it).
+    let e = world.spawn(RenderId(10));
+    world.add_component(e, RenderTag).expect("add_component");
+
+    // The query is already correct (orphan rows are skipped) but the dead row
+    // still occupies storage.
+    assert_eq!(world.query::<&RenderId>().count(), 1);
+    assert_eq!(total_rows(&world), 2, "orphan row present before compaction");
+
+    let compacted = world.run_compaction(16);
+    assert!(compacted >= 1, "the dirty page must be compacted");
+
+    assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(10)));
+    assert_eq!(world.query::<&RenderId>().count(), 1);
+    assert_eq!(total_rows(&world), 1, "the dead row was reclaimed");
+}
+
+#[test]
+fn compaction_preserves_partial_orphan_in_multi_domain_page() {
+    let mut world = compaction_world();
+
+    // Multi-domain entity in one page {Position, RenderId}. Dropping the Spatial
+    // domain (without migrating the rest) leaves the row still live for Render —
+    // a PARTIAL orphan (dead Position column, live RenderId) that compaction must
+    // NOT remove.
+    let e = world.spawn((Position(1), RenderId(10)));
+    assert!(world.remove_component_domain::<Position>(e).is_some());
+
+    let _ = world.run_compaction(16);
+
+    assert!(
+        world.get::<Position>(e).is_none(),
+        "the Spatial component was removed"
+    );
+    assert_eq!(
+        world.get::<RenderId>(e).copied(),
+        Some(RenderId(10)),
+        "the row was still live for Render and must not be reclaimed"
+    );
+    assert_eq!(world.query::<&RenderId>().count(), 1);
+}
+
+#[test]
+fn compaction_repoints_all_domains_of_moved_survivor() {
+    let mut world = compaction_world();
+
+    let a = world.spawn((Position(1), RenderId(10))); // P0 row 0
+    let b = world.spawn((Position(2), RenderId(20))); // P0 row 1
+
+    // Migrating `a` moves its WHOLE archetype row (both its Spatial and Render
+    // locations, faithful to the CRPECS archetype model) to a new page, so
+    // (P0, 0) becomes fully dead. `b` (P0, 1) stays live for both domains.
+    world.add_component(a, RenderTag).expect("migrate a");
+
+    let _ = world.run_compaction(16);
+
+    // b was swap-moved into (P0, 0); BOTH its domain locations must be repaired.
+    assert_eq!(world.get::<Position>(b).copied(), Some(Position(2)));
+    assert_eq!(world.get::<RenderId>(b).copied(), Some(RenderId(20)));
+    // a's whole archetype lives, co-located, in its new page.
+    assert_eq!(world.get::<Position>(a).copied(), Some(Position(1)));
+    assert_eq!(world.get::<RenderId>(a).copied(), Some(RenderId(10)));
+
+    assert_eq!(world.query::<&Position>().count(), 2);
+    assert_eq!(world.query::<&RenderId>().count(), 2);
+}
+
+#[test]
+fn migrating_a_multi_domain_entity_keeps_it_co_located_without_dead_columns() {
+    let mut world = compaction_world();
+
+    // Spawn a multi-domain entity, then add a component in an EXISTING domain
+    // (Render) — the whole archetype migrates. After compaction the entity must
+    // occupy exactly one live row and leave no dead columns behind.
+    let e = world.spawn((Position(1), RenderId(10)));
+    world.add_component(e, RenderTag).expect("add_component");
+
+    while world.run_compaction(16) > 0 {}
+
+    // Both domains resolve to the SAME (page, row): the entity stayed co-located.
+    let loc_spatial = *world
+        .entities
+        .get(e.index as usize)
+        .and_then(|(_, m)| m.as_ref())
+        .unwrap()
+        .locations
+        .get(&SemanticDomain::Spatial)
+        .unwrap();
+    let loc_render = *world
+        .entities
+        .get(e.index as usize)
+        .and_then(|(_, m)| m.as_ref())
+        .unwrap()
+        .locations
+        .get(&SemanticDomain::Render)
+        .unwrap();
+    assert_eq!(
+        loc_spatial, loc_render,
+        "a migrated multi-domain entity must stay in one page"
+    );
+
+    // Exactly one physical row remains (no leftover partial-orphan spawn row).
+    assert_eq!(total_rows(&world), 1);
+    assert_eq!(world.get::<Position>(e).copied(), Some(Position(1)));
+    assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(10)));
+}
+
+#[test]
+fn compaction_bumps_page_domains_only_when_a_row_is_removed() {
+    let mut world = compaction_world();
+    let e = world.spawn(RenderId(10));
+    world.add_component(e, RenderTag).expect("add_component"); // dirties the Render page
+
+    let render_before = world.domain_epoch(SemanticDomain::Render);
+    let spatial_before = world.domain_epoch(SemanticDomain::Spatial);
+
+    assert_eq!(world.run_compaction(16), 1);
+
+    assert!(
+        world.domain_epoch(SemanticDomain::Render) > render_before,
+        "removing a Render-page row must bump the Render epoch"
+    );
+    assert_eq!(
+        world.domain_epoch(SemanticDomain::Spatial),
+        spatial_before,
+        "a Render-only page must not bump the Spatial epoch"
+    );
+
+    // A second pass has no dirty pages — a no-op that bumps nothing.
+    let render_after = world.domain_epoch(SemanticDomain::Render);
+    assert_eq!(world.run_compaction(16), 0);
+    assert_eq!(world.domain_epoch(SemanticDomain::Render), render_after);
+}
+
+#[test]
+fn run_compaction_respects_budget_and_drains_dirty_pages() {
+    let mut world = compaction_world();
+
+    // Two distinct dirty pages (different archetypes → different source pages).
+    let a = world.spawn(Position(1)); // Spatial page {Position}
+    let b = world.spawn(RenderId(2)); // Render page {RenderId}
+    world.add_component(a, Velocity(3)).expect("add_component");
+    world.add_component(b, RenderTag).expect("add_component");
+
+    // A budget of 1 compacts one page per call and leaves the rest queued.
+    assert_eq!(world.run_compaction(1), 1);
+    assert_eq!(world.run_compaction(1), 1);
+    assert_eq!(world.run_compaction(1), 0, "dirty set drained");
+}
+
+#[test]
+fn churn_then_compaction_leaves_no_orphan_rows() {
+    let mut world = compaction_world();
+
+    let entities: Vec<_> = (0..8).map(|i| world.spawn(RenderId(i))).collect();
+    for &e in &entities {
+        world.add_component(e, RenderTag).expect("add_component");
+    }
+
+    while world.run_compaction(16) > 0 {}
+
+    // Every live entity now occupies exactly one Render row; no orphans linger.
+    assert_eq!(total_rows(&world), entities.len());
+    for (i, &e) in entities.iter().enumerate() {
+        assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(i as i32)));
+    }
+}
+
+#[test]
+fn emptied_page_slot_is_recycled() {
+    let mut world = compaction_world();
+
+    // Churn a single-domain cohort so its shared spawn page empties out.
+    let es: Vec<_> = (0..4).map(|i| world.spawn(RenderId(i))).collect();
+    for &e in &es {
+        world.add_component(e, RenderTag).expect("add_component");
+    }
+    while world.run_compaction(16) > 0 {}
+
+    let pages_before = world.storage.pages.len();
+
+    // The emptied {RenderId} page slot is now free. A brand-new archetype must
+    // recycle it rather than grow the pages vec.
+    let p = world.spawn(Position(1));
+    assert_eq!(
+        world.storage.pages.len(),
+        pages_before,
+        "a freed page slot must be recycled, not appended"
+    );
+
+    // The recycled page serves its new occupant correctly, and prior data is intact.
+    assert_eq!(world.get::<Position>(p).copied(), Some(Position(1)));
+    for (i, &e) in es.iter().enumerate() {
+        assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(i as i32)));
     }
 }

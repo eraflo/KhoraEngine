@@ -14,49 +14,102 @@
 
 //! Defines the ShadowAgent — owns `LaneKind::Shadow` lanes only.
 //!
-//! Per CLAD, an Agent owns exactly one `LaneKind` and stores **only** its
-//! own GORNA/strategy state.  The graphics device, the GPU mesh cache,
-//! the per-frame `RenderWorld`, and the `FrameContext` are all looked up
-//! from the [`ServiceRegistry`] each frame — agents are not the owners.
+//! Per CLAD an Agent owns exactly one `LaneKind` and stores **only** its
+//! own GORNA / strategy state. The agent registers all available shadow
+//! strategies as separate lanes; per-frame it selects **one** lane based
+//! on the budget GORNA assigned via `apply_budget`.
+//!
+//! Strategies:
+//!
+//! - [`StandardShadowsLane`] — full quality, 2048² 2D atlas + 512² cube atlas.
+//! - [`MediumShadowsLane`] — same algorithm, half resolution (1024² + 256²),
+//!   the `Balanced` middle rung.
+//! - [`LowResShadowsLane`] — same algorithm, quarter resolution (512² + 128²)
+//!   for tight time / VRAM budgets.
+//!
+//! All produce the same `ShadowGpuBindings` + `ShadowEntries` contract;
+//! lit consumer lanes are agnostic about which one ran.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
 use khora_core::control::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-    StrategyOption,
+    measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
+    NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
-use khora_core::lane::{
-    LaneContext, LaneKind, LaneRegistry, Ref, ShadowAtlasView, ShadowComparisonSampler, Slot,
-};
+use khora_core::lane::{LaneContext, LaneRegistry, Ref, Slot};
 use khora_core::renderer::api::core::FrameContext;
+use khora_core::renderer::api::scene::GpuMesh;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 use khora_data::render::RenderWorld;
-use khora_data::GpuCache;
-use khora_lanes::render_lane::ShadowPassLane;
+use khora_data::AssetStore;
+use khora_lanes::render_lane::shadows_lane::{
+    LOW_RES_STRATEGY_NAME, MEDIUM_STRATEGY_NAME, STANDARD_STRATEGY_NAME,
+};
+use khora_lanes::render_lane::{LowResShadowsLane, MediumShadowsLane, StandardShadowsLane};
 
 const COST_TO_MS_SCALE: f32 = 5.0;
+
+/// Strategy slot mirroring the `Lane` family registered on the agent.
+///
+/// One value = one fully-featured shadow pipeline. The agent stores the
+/// currently-selected variant so `execute()` knows which lane to invoke
+/// (the registry holds them both, but only one runs per frame).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShadowStrategy {
+    /// Full-quality pipeline: 2048² × 4-layer 2D atlas + 512² × 4-cube
+    /// cube atlas. Maps to [`StandardShadowsLane`].
+    Standard,
+    /// Half resolution (1024² × 4-layer + 256² × 4-cube) — the `Balanced`
+    /// middle rung. Maps to [`MediumShadowsLane`].
+    Medium,
+    /// Quarter resolution (512² × 4-layer + 128² × 4-cube).
+    /// Maps to [`LowResShadowsLane`].
+    LowRes,
+}
+
+impl ShadowStrategy {
+    /// Returns the stable strategy name advertised by the matching lane.
+    pub fn lane_name(self) -> &'static str {
+        match self {
+            ShadowStrategy::Standard => STANDARD_STRATEGY_NAME,
+            ShadowStrategy::Medium => MEDIUM_STRATEGY_NAME,
+            ShadowStrategy::LowRes => LOW_RES_STRATEGY_NAME,
+        }
+    }
+
+    /// Maps a GORNA-issued [`StrategyId`] onto a concrete shadow strategy.
+    /// Each tier gets a genuinely different pipeline so budget changes are
+    /// observable in quality and cost.
+    fn from_strategy_id(id: StrategyId) -> Self {
+        match id {
+            StrategyId::HighPerformance => ShadowStrategy::Standard,
+            StrategyId::Balanced => ShadowStrategy::Medium,
+            StrategyId::LowPower => ShadowStrategy::LowRes,
+            StrategyId::Custom(_) => ShadowStrategy::Standard,
+        }
+    }
+}
 
 /// The agent responsible for shadow map rendering (`LaneKind::Shadow`).
 ///
 /// Holds **only** its own strategy state — every other dependency
-/// (`GraphicsDevice`, `GpuCache`, `RenderWorldStore`, `FrameContext`)
-/// is fetched from `EngineContext::services` per frame.
+/// (`GraphicsDevice`, `GpuCache`, `RenderWorld`, `FrameContext`) is
+/// fetched from `EngineContext::services` per frame.
 pub struct ShadowAgent {
-    /// Shadow lanes — the agent's strategies.
+    /// Registered strategies — one lane per [`ShadowStrategy`] value.
     lanes: LaneRegistry,
+    /// Strategy currently selected by GORNA.
+    strategy: ShadowStrategy,
     /// Time budget assigned by GORNA via `apply_budget`.
     time_budget: Duration,
-    /// Duration of the last shadow pass.
-    last_frame_time: Duration,
-    /// Total number of shadow frames rendered.
-    frame_count: u64,
     /// Current GORNA strategy ID applied via `apply_budget`.
     current_strategy: StrategyId,
-    /// Number of `execute` invocations attempted.
-    execute_attempts: u64,
+    /// Shared, scheduler-written per-agent frame metrics, read in
+    /// `report_status`; the agent holds no per-frame counters.
+    frame_status: Option<AgentFrameStatusMap>,
 }
 
 impl Agent for ShadowAgent {
@@ -73,38 +126,53 @@ impl Agent for ShadowAgent {
         let mut ctx = LaneContext::new();
         ctx.insert(Ref::new(&stub_world));
 
-        let cost = self
-            .lanes
-            .find_by_kind(LaneKind::Shadow)
-            .first()
-            .map(|lane| lane.estimate_cost(&ctx))
-            .unwrap_or(1.0);
-        let estimated_time = Duration::from_secs_f32((cost * COST_TO_MS_SCALE).max(0.1) / 1000.0);
+        let lane_time = |name: &str, default_cost: f32| {
+            let cost = self
+                .lanes
+                .get(name)
+                .map(|lane| lane.estimate_cost(&ctx))
+                .unwrap_or(default_cost);
+            Duration::from_secs_f32((cost * COST_TO_MS_SCALE).max(0.1) / 1000.0)
+        };
 
-        // 2048×2048×4 layers @ Depth32Float = 64 MB for the atlas.
-        let estimated_vram = 64u64 * 1024 * 1024;
+        // Per-tier VRAM at Depth32Float: 2D atlas (res² × 4 layers × 4B) +
+        // cube atlas (face² × 24 layers × 4B).
+        //   Standard: 64 + 24 MiB · Medium: 16 + 6 MiB · LowRes: 4 + 1.5 MiB
+        let std_vram = (64 + 24) * 1024 * 1024_u64;
+        let med_vram = (16 + 6) * 1024 * 1024_u64;
+        let low_vram = 4 * 1024 * 1024 + 3 * 512 * 1024_u64;
+
+        let fits = |vram: u64| {
+            request
+                .constraints
+                .max_vram_bytes
+                .map(|max| vram <= max)
+                .unwrap_or(true)
+        };
 
         let mut strategies = Vec::new();
-        let fits_constraint = request
-            .constraints
-            .max_vram_bytes
-            .map(|max| estimated_vram <= max)
-            .unwrap_or(true);
-        if fits_constraint {
+        if fits(std_vram) {
             strategies.push(StrategyOption {
                 id: StrategyId::HighPerformance,
-                estimated_time,
-                estimated_vram,
+                estimated_time: lane_time(STANDARD_STRATEGY_NAME, 1.0),
+                estimated_vram: std_vram,
+            });
+        }
+        if fits(med_vram) {
+            strategies.push(StrategyOption {
+                id: StrategyId::Balanced,
+                estimated_time: lane_time(MEDIUM_STRATEGY_NAME, 0.75),
+                estimated_vram: med_vram,
             });
         }
 
-        if strategies.is_empty() {
-            strategies.push(StrategyOption {
-                id: StrategyId::LowPower,
-                estimated_time: Duration::from_millis(1),
-                estimated_vram: 0,
-            });
-        }
+        // LowRes is always offered so the agent never returns an empty
+        // strategy set — it is the floor GORNA can fall back to.
+        strategies.push(StrategyOption {
+            id: StrategyId::LowPower,
+            estimated_time: lane_time(LOW_RES_STRATEGY_NAME, 0.5),
+            estimated_vram: low_vram,
+        });
 
         NegotiationResponse {
             strategies,
@@ -115,22 +183,44 @@ impl Agent for ShadowAgent {
     fn apply_budget(&mut self, budget: ResourceBudget) {
         self.time_budget = budget.time_limit;
         self.current_strategy = budget.strategy_id;
+        self.strategy = ShadowStrategy::from_strategy_id(budget.strategy_id);
     }
 
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
-        // One-shot lane GPU initialization.  Fetch the device, drive
-        // lane.on_initialize() once, then drop — the agent does not store it.
-        let Some(device_arc) = context.services.get::<Arc<dyn GraphicsDevice>>().cloned() else {
+        self.frame_status = context
+            .runtime
+            .resources
+            .get::<AgentFrameStatusMap>()
+            .cloned();
+
+        // One-shot lane GPU initialization for every registered strategy.
+        // Strategies are cheap to keep idle — only the selected lane
+        // executes per frame, but each one needs its own resources ready
+        // when the agent eventually picks it.
+        let Some(device_arc) = context
+            .runtime
+            .backends
+            .get::<Arc<dyn GraphicsDevice>>()
+            .cloned()
+        else {
             log::warn!("ShadowAgent: graphics device unavailable in on_initialize");
             return;
         };
+        let pipeline_system = context
+            .runtime
+            .resources
+            .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .cloned();
 
         let mut init_ctx = LaneContext::new();
         init_ctx.insert(device_arc);
+        if let Some(ps) = pipeline_system {
+            init_ctx.insert(ps);
+        }
         for lane in self.lanes.all() {
             if let Err(e) = lane.on_initialize(&mut init_ctx) {
                 log::error!(
-                    "ShadowAgent: Failed to initialize lane {}: {}",
+                    "ShadowAgent: failed to initialize lane {}: {}",
                     lane.strategy_name(),
                     e
                 );
@@ -139,27 +229,27 @@ impl Agent for ShadowAgent {
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
-        self.execute_attempts += 1;
-        let frame_start = Instant::now();
-
         // Look up everything from services — the agent owns none of it.
-        let Some(device_arc) = context.services.get::<Arc<dyn GraphicsDevice>>() else {
+        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
             return;
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
 
-        let Some(gpu_cache) = context.services.get::<GpuCache>() else {
+        let Some(asset_store) = context.runtime.resources.get::<AssetStore>() else {
             return;
         };
-        let gpu_meshes = gpu_cache.inner().clone();
+        let gpu_meshes = asset_store.store::<GpuMesh>();
 
-        // Read the per-frame RenderWorld from the LaneBus (RenderFlow).
         let Some(render_world): Option<&RenderWorld> = context.bus.get() else {
             log::warn!("ShadowAgent: no RenderWorld in LaneBus (RenderFlow not run?)");
             return;
         };
 
-        let frame_ctx = context.services.get::<Arc<FrameContext>>().cloned();
+        let frame_ctx = context
+            .runtime
+            .resources
+            .get::<Arc<FrameContext>>()
+            .cloned();
 
         // Encode shadow passes into a standalone command buffer.
         let mut encoder = device.create_command_encoder(Some("Shadow Command Encoder"));
@@ -176,11 +266,7 @@ impl Agent for ShadowAgent {
                     Slot<dyn khora_core::renderer::traits::CommandEncoder>,
                 >(encoder_slot)
             });
-            // SAFETY: render_world is borrowed from LaneBus, alive for this
-            // entire frame and read-only.
             ctx.insert(Ref::new(render_world));
-            // ShadowFlow's pre-computed view-projection matrices, indexed
-            // by light position in `RenderWorld.lights`.
             if let Some(shadow_view) = context.bus.get::<khora_data::flow::ShadowView>() {
                 ctx.insert(Ref::new(shadow_view));
             }
@@ -189,7 +275,11 @@ impl Agent for ShadowAgent {
             // before the slot is dropped.
             ctx.insert(Slot::new(&mut *context.deck));
 
-            for lane in self.lanes.find_by_kind(LaneKind::Shadow) {
+            // Pick exactly one lane (the strategy GORNA selected) and run
+            // it. The unselected lanes stay idle for this frame — their
+            // resources remain allocated but nothing renders into them.
+            let lane_name = self.strategy.lane_name();
+            if let Some(lane) = self.lanes.get(lane_name) {
                 if let Err(e) = lane.execute(&mut ctx) {
                     log::error!(
                         "ShadowAgent: shadow lane {} failed: {}",
@@ -197,45 +287,42 @@ impl Agent for ShadowAgent {
                         e
                     );
                 }
+            } else {
+                log::error!(
+                    "ShadowAgent: selected strategy {:?} has no registered lane",
+                    self.strategy
+                );
             }
 
-            // Hoist atlas view + comparison sampler from the lane's local
-            // ctx into the FrameContext so RenderAgent can read them.
-            // Cross-agent ordering is now enforced by the scheduler's
-            // AgentCompletionMap (RenderAgent declares Hard(ShadowRenderer)).
-            if let Some(fctx) = &frame_ctx {
-                if let Some(view) = ctx.get::<ShadowAtlasView>().cloned() {
-                    fctx.insert(view);
-                }
-                if let Some(sampler) = ctx.get::<ShadowComparisonSampler>().cloned() {
-                    fctx.insert(sampler);
-                }
-            }
+            // No `FrameContext` hoist — the lane has already published
+            // a `ShadowFrame` slot into the per-frame `OutputDeck`.
+            // Consumer lit lanes read `deck.slot::<ShadowFrame>()`
+            // directly. This is the only cross-agent channel for
+            // shadow data and complies with CLAD (input via Bus, output
+            // via Deck, no side-channels).
         }
-        device.submit_command_buffer(encoder.finish());
-
-        self.last_frame_time = frame_start.elapsed();
-        self.frame_count += 1;
+        let _ = frame_ctx; // kept for any future per-frame resource use
+        if let Some(cmd_buf) = encoder.finish() {
+            device.submit_command_buffer(cmd_buf);
+        } else {
+            log::error!("ShadowAgent: encoder.finish() returned None — skipping shadow submission");
+        }
     }
 
     fn report_status(&self) -> AgentStatus {
-        let health_score = if self.time_budget.is_zero() || self.frame_count == 0 {
+        let measured_time_ms = measured_frame_time_ms(&self.frame_status, self.id());
+        let health_score = if self.time_budget.is_zero() || measured_time_ms <= 0.0 {
             1.0
         } else {
-            let ratio =
-                self.time_budget.as_secs_f32() / self.last_frame_time.as_secs_f32().max(0.0001);
-            ratio.min(1.0)
+            (self.time_budget.as_secs_f32() * 1000.0 / measured_time_ms).min(1.0)
         };
 
         AgentStatus {
             agent_id: self.id(),
             health_score,
             current_strategy: self.current_strategy,
-            is_stalled: self.execute_attempts > 0 && self.frame_count == 0,
-            message: format!(
-                "shadow_time={:.2}ms",
-                self.last_frame_time.as_secs_f32() * 1000.0,
-            ),
+            is_stalled: false,
+            message: format!("shadow_strategy={:?} time={measured_time_ms:.2}ms", self.strategy),
         }
     }
 
@@ -262,15 +349,145 @@ impl Agent for ShadowAgent {
 impl Default for ShadowAgent {
     fn default() -> Self {
         let mut lanes = LaneRegistry::new();
-        lanes.register(Box::new(ShadowPassLane::default()));
+        lanes.register(Box::new(StandardShadowsLane::default()));
+        lanes.register(Box::new(MediumShadowsLane::default()));
+        lanes.register(Box::new(LowResShadowsLane::default()));
 
         Self {
             lanes,
+            // Default to full quality; GORNA can step down to Budget on
+            // pressure via `apply_budget`.
+            strategy: ShadowStrategy::Standard,
             time_budget: Duration::ZERO,
-            last_frame_time: Duration::ZERO,
-            frame_count: 0,
             current_strategy: StrategyId::HighPerformance,
-            execute_attempts: 0,
+            frame_status: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::control::gorna::ResourceBudget;
+    use std::collections::HashMap;
+
+    fn budget(strategy_id: StrategyId) -> ResourceBudget {
+        ResourceBudget {
+            strategy_id,
+            time_limit: Duration::from_millis(8),
+            memory_limit: None,
+            extra_params: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn from_strategy_id_maps_low_power_to_low_res() {
+        assert_eq!(
+            ShadowStrategy::from_strategy_id(StrategyId::LowPower),
+            ShadowStrategy::LowRes
+        );
+    }
+
+    #[test]
+    fn from_strategy_id_maps_each_tier_to_a_distinct_strategy() {
+        assert_eq!(
+            ShadowStrategy::from_strategy_id(StrategyId::HighPerformance),
+            ShadowStrategy::Standard
+        );
+        assert_eq!(
+            ShadowStrategy::from_strategy_id(StrategyId::Balanced),
+            ShadowStrategy::Medium
+        );
+        assert_eq!(
+            ShadowStrategy::from_strategy_id(StrategyId::LowPower),
+            ShadowStrategy::LowRes
+        );
+    }
+
+    #[test]
+    fn apply_budget_low_power_selects_low_res_lane() {
+        let mut agent = ShadowAgent::default();
+        agent.apply_budget(budget(StrategyId::LowPower));
+        assert_eq!(agent.strategy, ShadowStrategy::LowRes);
+        assert_eq!(agent.strategy.lane_name(), LOW_RES_STRATEGY_NAME);
+        assert_eq!(agent.report_status().current_strategy, StrategyId::LowPower);
+    }
+
+    #[test]
+    fn apply_budget_high_performance_selects_standard_lane() {
+        let mut agent = ShadowAgent::default();
+        agent.apply_budget(budget(StrategyId::HighPerformance));
+        assert_eq!(agent.strategy, ShadowStrategy::Standard);
+        assert_eq!(agent.strategy.lane_name(), STANDARD_STRATEGY_NAME);
+        assert_eq!(
+            agent.report_status().current_strategy,
+            StrategyId::HighPerformance
+        );
+    }
+
+    #[test]
+    fn apply_budget_balanced_selects_medium_lane() {
+        let mut agent = ShadowAgent::default();
+        agent.apply_budget(budget(StrategyId::Balanced));
+        assert_eq!(agent.strategy, ShadowStrategy::Medium);
+        assert_eq!(agent.strategy.lane_name(), MEDIUM_STRATEGY_NAME);
+    }
+
+    #[test]
+    fn registered_lanes_match_strategy_names() {
+        let agent = ShadowAgent::default();
+        assert!(agent.lanes.get(STANDARD_STRATEGY_NAME).is_some());
+        assert!(agent.lanes.get(MEDIUM_STRATEGY_NAME).is_some());
+        assert!(agent.lanes.get(LOW_RES_STRATEGY_NAME).is_some());
+    }
+
+    #[test]
+    fn negotiate_offers_three_distinct_tiers() {
+        let mut agent = ShadowAgent::default();
+        let response = agent.negotiate(NegotiationRequest {
+            target_latency: Duration::from_millis(16),
+            priority_weight: 1.0,
+            constraints: Default::default(),
+            current_mode: khora_core::agent::mode::EngineMode::Playing,
+            agent_timing: agent.execution_timing(),
+        });
+
+        let ids: Vec<StrategyId> = response.strategies.iter().map(|s| s.id).collect();
+        assert!(ids.contains(&StrategyId::HighPerformance));
+        assert!(ids.contains(&StrategyId::Balanced));
+        assert!(ids.contains(&StrategyId::LowPower));
+
+        // VRAM quotes must be strictly decreasing across the tiers — three
+        // genuinely different pipelines, not relabeled copies.
+        let vram = |id: StrategyId| {
+            response
+                .strategies
+                .iter()
+                .find(|s| s.id == id)
+                .map(|s| s.estimated_vram)
+                .unwrap()
+        };
+        assert!(vram(StrategyId::HighPerformance) > vram(StrategyId::Balanced));
+        assert!(vram(StrategyId::Balanced) > vram(StrategyId::LowPower));
+        assert!(vram(StrategyId::LowPower) > 0, "LowRes still has real atlases");
+    }
+
+    #[test]
+    fn negotiate_under_vram_pressure_drops_expensive_tiers() {
+        let mut agent = ShadowAgent::default();
+        let response = agent.negotiate(NegotiationRequest {
+            target_latency: Duration::from_millis(16),
+            priority_weight: 1.0,
+            constraints: khora_core::control::gorna::ResourceConstraints {
+                // Below Medium's 22 MiB but above LowRes's ~5.5 MiB.
+                max_vram_bytes: Some(8 * 1024 * 1024),
+                ..Default::default()
+            },
+            current_mode: khora_core::agent::mode::EngineMode::Playing,
+            agent_timing: agent.execution_timing(),
+        });
+
+        let ids: Vec<StrategyId> = response.strategies.iter().map(|s| s.id).collect();
+        assert_eq!(ids, vec![StrategyId::LowPower]);
     }
 }

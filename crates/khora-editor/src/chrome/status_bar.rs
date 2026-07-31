@@ -12,27 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Status bar — branded bottom strip with mono metrics + colored dots.
+//! Status bar — one monospace strip of live facts.
+//!
+//! Every value here changes every frame, so every value is monospace: numbers
+//! stay in their columns instead of jittering as digits change width. The
+//! colours are semantic — a red frame time means the frame is late, not that
+//! red looked nice there.
 
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
+use khora_tool_ui::widgets::{
+    self,
+    paint::{icon, mono},
+    status_dot, Health,
+};
 
-use crate::widgets::brand::paint_diamond_filled;
-use crate::widgets::chrome::paint_status_dot;
-use crate::widgets::paint::{paint_icon, with_alpha};
+/// Height of the status bar.
+pub const STATUS_HEIGHT: f32 = 26.0;
 
-const STATUS_HEIGHT: f32 = 24.0;
-
-/// Branded status bar — 24px tall.
+/// The bottom status strip.
 pub struct StatusBarPanel {
     state: Arc<Mutex<EditorState>>,
-    theme: EditorTheme,
+    theme: UiTheme,
 }
 
 impl StatusBarPanel {
     /// Creates a new status bar.
-    pub fn new(state: Arc<Mutex<EditorState>>, theme: EditorTheme) -> Self {
+    pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self { state, theme }
     }
 }
@@ -51,205 +58,96 @@ impl EditorPanel for StatusBarPanel {
     }
 
     fn ui(&mut self, ui: &mut dyn UiBuilder) {
-        let theme = &self.theme;
-        let snapshot = match self.state.lock() {
-            Ok(s) => Snapshot {
-                fps: s.status.fps,
-                frame_time_ms: s.status.frame_time_ms,
-                memory_used_mb: s.status.memory_used_mb,
-                cpu_load: s.status.cpu_load,
-                vram_mb: s.status.vram_mb,
-                project: s.project_name.clone(),
-                git_branch: s.current_git_branch.clone(),
-                engine_version: s.project_engine_version.clone(),
-            },
-            Err(_) => return,
-        };
+        let t = &self.theme;
+        let Ok(s) = self.state.lock() else { return };
+        let snap = Snapshot::from(&*s);
+        drop(s);
 
-        let rect = ui.panel_rect();
-        let [x, y, w, h] = rect;
-        ui.paint_rect_filled([x, y], [w, h], theme.surface, 0.0);
-        ui.paint_line([x, y], [x + w, y], with_alpha(theme.separator, 0.55), 1.0);
+        let r = ui.panel_rect();
+        ui.paint_rect_filled([r[0], r[1]], [r[2], r[3]], t.surface, 0.0);
+        ui.paint_line([r[0], r[1]], [widgets::right(r), r[1]], t.border, 1.0);
 
-        let cy = y + h * 0.5;
-        let text_y = y + (h - 11.5) * 0.5;
-        let label_color = theme.text_dim;
+        let size = t.font_size_caption;
+        let y = widgets::text_y(r, size);
+        let cy = r[1] + r[3] * 0.5;
 
-        // ── Left cluster ──────────────────────────────
-        let mut cursor = x + 14.0;
-        // Brand mark
-        paint_diamond_filled(ui, cursor, cy, 4.0, theme.primary);
-        cursor += 14.0;
-        // Ready dot + label
-        paint_status_dot(ui, [cursor, cy], theme.success);
-        cursor += 12.0;
-        ui.paint_text_styled(
-            [cursor, text_y],
-            "Ready",
-            11.0,
-            theme.text,
-            FontFamilyHint::Proportional,
-            TextAlign::Left,
-        );
-        cursor += 44.0;
+        // ── Left: is it alive, and where are we ──
+        let mut x = r[0] + 14.0;
+        status_dot(ui, t, [x, cy], Health::from_ratio(snap.health()));
+        x += 12.0;
 
-        // Git branch — only painted if available. Wired in Phase 2.5.
-        if let Some(branch) = snapshot.git_branch.as_deref() {
-            cursor = vsep(ui, cursor, y, h, theme);
-            paint_icon(ui, [cursor, text_y - 1.0], Icon::Branch, 12.0, label_color);
-            cursor += 16.0;
-            ui.paint_text_styled(
-                [cursor, text_y],
-                branch,
-                11.0,
-                label_color,
-                FontFamilyHint::Monospace,
-                TextAlign::Left,
-            );
-            let advance =
-                ui.measure_text(branch, 11.0, FontFamilyHint::Monospace)[0].max(40.0) + 12.0;
-            cursor += advance;
-        }
-        let _ = cursor;
-
-        // ── Right cluster ─────────────────────────────
-        let project_label = format!(
-            "{} · Khora v{}",
-            snapshot.project.as_deref().unwrap_or("untitled"),
-            snapshot.engine_version.as_deref().unwrap_or("dev"),
-        );
-        let mut rx = x + w - 14.0;
-        // Version + project right-aligned
-        ui.paint_text_styled(
-            [rx, text_y],
-            &project_label,
-            11.0,
-            theme.text_muted,
-            FontFamilyHint::Monospace,
-            TextAlign::Right,
-        );
-        rx -= ui.measure_text(&project_label, 11.0, FontFamilyHint::Monospace)[0] + 14.0;
-        rx = vsep_right(ui, rx, y, h, theme);
-
-        // CPU — real value (Phase 2.1) coloured amber if hot
-        let cpu_pct = (snapshot.cpu_load * 100.0).clamp(0.0, 100.0);
-        let cpu_color = if cpu_pct > 70.0 {
-            theme.warning
-        } else {
-            label_color
-        };
-        let cpu_label = format!("{:>3.0}%", cpu_pct);
-        ui.paint_text_styled(
-            [rx, text_y],
-            &cpu_label,
-            11.0,
-            cpu_color,
-            FontFamilyHint::Monospace,
-            TextAlign::Right,
-        );
-        rx -= ui.measure_text(&cpu_label, 11.0, FontFamilyHint::Monospace)[0] + 6.0;
-        paint_icon(ui, [rx - 14.0, text_y - 1.0], Icon::Cpu, 12.0, label_color);
-        rx -= 26.0;
-        rx = vsep_right(ui, rx, y, h, theme);
-
-        // VRAM (only if known)
-        if snapshot.vram_mb > 0.0 {
-            let vram_label = format!("{:.1} GB", snapshot.vram_mb / 1024.0);
-            let vram_w = ui.measure_text(&vram_label, 11.0, FontFamilyHint::Monospace)[0];
-            ui.paint_text_styled(
-                [rx, text_y],
-                &vram_label,
-                11.0,
-                label_color,
-                FontFamilyHint::Monospace,
-                TextAlign::Right,
-            );
-            rx -= vram_w + 4.0;
-            paint_icon(
-                ui,
-                [rx - 14.0, text_y - 1.0],
-                Icon::Image,
-                12.0,
-                label_color,
-            );
-            rx -= 26.0;
-            rx = vsep_right(ui, rx, y, h, theme);
+        if let Some(branch) = snap.git_branch.as_deref() {
+            mono(ui, [x, y], branch, size, t.text_dim);
+            x += ui.measure_text(branch, size, FontFamilyHint::Monospace)[0] + 14.0;
+            x = vsep(ui, t, x, r);
         }
 
-        // RAM heap
-        let mem_label = format!("{:.0} MB", snapshot.memory_used_mb);
-        let mem_w = ui.measure_text(&mem_label, 11.0, FontFamilyHint::Monospace)[0];
-        ui.paint_text_styled(
-            [rx, text_y],
-            &mem_label,
-            11.0,
-            label_color,
-            FontFamilyHint::Monospace,
-            TextAlign::Right,
-        );
-        rx -= mem_w + 4.0;
-        paint_icon(
+        // Load: cpu, then the two memory pools.
+        let cpu = (snap.cpu_load * 100.0).clamp(0.0, 100.0);
+        let cpu_label = format!("cpu {cpu:.0}%");
+        mono(
             ui,
-            [rx - 14.0, text_y - 1.0],
-            Icon::Memory,
-            12.0,
-            label_color,
+            [x, y],
+            &cpu_label,
+            size,
+            if cpu > 70.0 { t.warning } else { t.text_dim },
         );
-        rx -= 26.0;
-        rx = vsep_right(ui, rx, y, h, theme);
+        x += ui.measure_text(&cpu_label, size, FontFamilyHint::Monospace)[0] + 12.0;
 
-        // Frame
-        let frame_label = format!("{:>5.2} ms", snapshot.frame_time_ms);
-        ui.paint_text_styled(
-            [rx, text_y],
-            &frame_label,
-            11.0,
-            label_color,
-            FontFamilyHint::Monospace,
-            TextAlign::Right,
+        let heap = format!("heap {:.0}M", snap.memory_used_mb);
+        mono(ui, [x, y], &heap, size, t.text_dim);
+        x += ui.measure_text(&heap, size, FontFamilyHint::Monospace)[0] + 12.0;
+
+        if snap.vram_mb > 0.0 {
+            let vram = format!("vram {:.1}G", snap.vram_mb / 1024.0);
+            mono(ui, [x, y], &vram, size, t.text_dim);
+        }
+
+        // ── Right: what we are editing, and how fast ──
+        let mut rx = widgets::right(r) - 14.0;
+
+        let project = format!(
+            "{} · v{}",
+            snap.project.as_deref().unwrap_or("untitled"),
+            snap.engine_version.as_deref().unwrap_or("dev"),
         );
-        rx -= ui.measure_text(&frame_label, 11.0, FontFamilyHint::Monospace)[0] + 12.0;
-        rx = vsep_right(ui, rx, y, h, theme);
+        rx -= ui.measure_text(&project, size, FontFamilyHint::Monospace)[0];
+        mono(ui, [rx, y], &project, size, t.text_muted);
+        rx -= 14.0;
+        rx = vsep_left(ui, t, rx, r);
 
-        // FPS (greenish if good)
-        let fps_color = if snapshot.fps > 55.0 {
-            theme.success
-        } else if snapshot.fps > 30.0 {
-            theme.warning
+        // The frame budget, in the colour of whether we are meeting it.
+        let frame = format!("{:.0} fps · {:.1}ms", snap.fps, snap.frame_time_ms);
+        let frame_color = if snap.fps > 55.0 {
+            t.success
+        } else if snap.fps > 30.0 {
+            t.warning
         } else {
-            theme.error
+            t.error
         };
-        let fps_label = format!("{:>5.1} fps", snapshot.fps);
-        ui.paint_text_styled(
-            [rx, text_y],
-            &fps_label,
-            11.0,
-            fps_color,
-            FontFamilyHint::Monospace,
-            TextAlign::Right,
-        );
+        rx -= ui.measure_text(&frame, size, FontFamilyHint::Monospace)[0];
+        mono(ui, [rx, y], &frame, size, frame_color);
+        rx -= 8.0;
 
-        let _ = vsep_right; // keep helper available
+        icon(
+            ui,
+            [rx - 13.0, y - 1.0],
+            Icon::Zap,
+            size + 1.0,
+            t.text_disabled,
+        );
     }
 }
 
-fn vsep(ui: &mut dyn UiBuilder, x: f32, y: f32, h: f32, theme: &EditorTheme) -> f32 {
-    ui.paint_line(
-        [x, y + 6.0],
-        [x, y + h - 6.0],
-        with_alpha(theme.separator, 0.55),
-        1.0,
-    );
+/// A vertical rule; returns the x cursor past it.
+fn vsep(ui: &mut dyn UiBuilder, t: &UiTheme, x: f32, r: [f32; 4]) -> f32 {
+    ui.paint_line([x, r[1] + 7.0], [x, r[1] + r[3] - 7.0], t.separator, 1.0);
     x + 14.0
 }
 
-fn vsep_right(ui: &mut dyn UiBuilder, x: f32, y: f32, h: f32, theme: &EditorTheme) -> f32 {
-    ui.paint_line(
-        [x, y + 6.0],
-        [x, y + h - 6.0],
-        with_alpha(theme.separator, 0.55),
-        1.0,
-    );
+/// A vertical rule laid out right-to-left; returns the x cursor left of it.
+fn vsep_left(ui: &mut dyn UiBuilder, t: &UiTheme, x: f32, r: [f32; 4]) -> f32 {
+    ui.paint_line([x, r[1] + 7.0], [x, r[1] + r[3] - 7.0], t.separator, 1.0);
     x - 14.0
 }
 
@@ -262,4 +160,27 @@ struct Snapshot {
     project: Option<String>,
     git_branch: Option<String>,
     engine_version: Option<String>,
+}
+
+impl Snapshot {
+    /// How healthy the frame loop is, as a `0..=1` ratio — drives the liveness
+    /// dot through the same thresholds every other health indicator uses.
+    fn health(&self) -> f32 {
+        (self.fps / 60.0).clamp(0.0, 1.0)
+    }
+}
+
+impl From<&EditorState> for Snapshot {
+    fn from(s: &EditorState) -> Self {
+        Self {
+            fps: s.status.fps,
+            frame_time_ms: s.status.frame_time_ms,
+            memory_used_mb: s.status.memory_used_mb,
+            cpu_load: s.status.cpu_load,
+            vram_mb: s.status.vram_mb,
+            project: s.project_name.clone(),
+            git_branch: s.current_git_branch.clone(),
+            engine_version: s.project_engine_version.clone(),
+        }
+    }
 }

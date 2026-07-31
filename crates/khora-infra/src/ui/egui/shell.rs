@@ -36,12 +36,12 @@
 
 use super::theme::apply_theme;
 use super::ui_builder::EguiUiBuilder;
-use khora_core::ui::editor::fonts::{FontHandle, FontPack, NamedFont};
 use khora_core::ui::editor::panel::{EditorPanel, PanelLocation};
 use khora_core::ui::editor::shell::EditorShell;
-use khora_core::ui::editor::state::{EditorMode, EditorState, StatusBarData};
-use khora_core::ui::editor::theme::EditorTheme;
+use khora_core::ui::editor::state::{EditorState, StatusBarData};
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
+use khora_core::ui::fonts::{FontHandle, FontPack, NamedFont};
+use khora_core::ui::UiTheme;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -60,6 +60,26 @@ fn install_named(defs: &mut egui::FontDefinitions, family: egui::FontFamily, lis
             .entry(family.clone())
             .or_default()
             .insert(0, key);
+    }
+}
+
+/// Appends `fallback`'s font keys after whatever was installed for the named
+/// family, so requesting `FontFamily::Name(name)` always resolves to glyphs
+/// even when no dedicated face was supplied for it.
+fn ensure_family_fallback(
+    defs: &mut egui::FontDefinitions,
+    name: &str,
+    fallback: &egui::FontFamily,
+) {
+    let fallback_keys = defs.families.get(fallback).cloned().unwrap_or_default();
+    let entry = defs
+        .families
+        .entry(egui::FontFamily::Name(name.into()))
+        .or_default();
+    for key in fallback_keys {
+        if !entry.contains(&key) {
+            entry.push(key);
+        }
     }
 }
 
@@ -115,7 +135,7 @@ pub struct EguiEditorShell {
     status_panels: Vec<Box<dyn EditorPanel>>,
     center_panels: Vec<Box<dyn EditorPanel>>,
     floating_panels: Vec<FloatingEntry>,
-    theme: EditorTheme,
+    theme: UiTheme,
     theme_applied: bool,
     active_bottom_tab: usize,
     /// Maps abstract viewport handles to egui texture IDs.
@@ -129,7 +149,7 @@ pub struct EguiEditorShell {
 
 impl EguiEditorShell {
     /// Creates a new shell using the given egui context (shared with `EguiOverlay`).
-    pub fn new(ctx: egui::Context, theme: EditorTheme) -> Self {
+    pub fn new(ctx: egui::Context, theme: UiTheme) -> Self {
         Self {
             ctx,
             top_panels: Vec::new(),
@@ -226,7 +246,7 @@ impl EditorShell for EguiEditorShell {
         false
     }
 
-    fn set_theme(&mut self, theme: EditorTheme) {
+    fn set_theme(&mut self, theme: UiTheme) {
         self.theme = theme;
         self.theme_applied = false;
     }
@@ -249,9 +269,20 @@ impl EditorShell for EguiEditorShell {
         );
         install_named(
             &mut definitions,
+            egui::FontFamily::Name("display".into()),
+            fonts.display,
+        );
+        install_named(
+            &mut definitions,
             egui::FontFamily::Name("icons".into()),
             fonts.icons,
         );
+        // Both named families must always resolve: epaint *panics* when text
+        // asks for a `FontFamily::Name` bound to no fonts. The proportional
+        // fallback means a missing Fraunces degrades to Geist and a missing
+        // icon font degrades to tofu — never to a crash.
+        ensure_family_fallback(&mut definitions, "display", &egui::FontFamily::Proportional);
+        ensure_family_fallback(&mut definitions, "icons", &egui::FontFamily::Proportional);
         self.ctx.set_fonts(definitions);
     }
 
@@ -280,25 +311,34 @@ impl EditorShell for EguiEditorShell {
             self.theme_applied = true;
         }
 
-        // Cheap Arc clone — avoids borrow conflicts between `ctx.show()` and
+        // Cheap Arc clone — avoids borrow conflicts between the panel calls and
         // `&mut self` field accesses.
         let ctx = self.ctx.clone();
         let vt = &self.viewport_textures;
 
-        // The Control Plane workspace ships its own dedicated inspector,
-        // so the Scene-mode right SidePanel would create a visible doublon
-        // when the user switches modes. Read active_mode from editor state
-        // and skip the right side accordingly. (Shell already depends on
-        // EditorState, so this doesn't add a new layer dependency.)
-        let hide_right_panel = self
-            .editor_state
-            .as_ref()
-            .and_then(|s| {
-                s.lock()
-                    .ok()
-                    .map(|g| g.active_mode == EditorMode::ControlPlane)
-            })
-            .unwrap_or(false);
+        // Panels nest inside a `Ui`; there is no top-level-against-a-`Context`
+        // form any more. `Context::run_ui` builds this root for apps that let
+        // egui drive the pass, but this overlay drives `begin_pass` /
+        // `end_pass` itself so the wgpu render can sit between them — so we
+        // build the same root here, exactly as `run_ui` does.
+        let mut root_ui = egui::Ui::new(
+            ctx.clone(),
+            egui::Id::new((ctx.viewport_id(), "__top_ui")),
+            egui::UiBuilder::new()
+                .layer_id(egui::LayerId::background())
+                // `content_rect`, not the deprecated `available_rect`: the
+                // former is the area safe to draw content in (it excludes OS
+                // notches and status bars), and it is what the proportional
+                // panel defaults below already measure against.
+                .max_rect(ctx.content_rect()),
+        );
+        let root_ui = &mut root_ui;
+
+        // No mode special-case here any more. The application hosts its
+        // working panels in a dock that keeps one layout per workspace, so
+        // switching modes swaps the whole arrangement — the shell used to
+        // reach into `EditorState::active_mode` to hide one slot, which put
+        // application knowledge inside a host that is meant to be generic.
 
         // Compute proportional defaults the FIRST frame we see a real
         // screen rect, then cache them. Recomputing each frame would risk
@@ -329,10 +369,10 @@ impl EditorShell for EguiEditorShell {
         for (idx, panel) in self.top_panels.iter_mut().enumerate() {
             let height = panel.preferred_size().unwrap_or(DEFAULT_TOPBAR_HEIGHT);
             let panel_id = format!("editor_topbar_{}_{}", idx, panel.id());
-            egui::TopBottomPanel::top(panel_id)
-                .exact_height(height)
+            egui::Panel::top(panel_id)
+                .exact_size(height)
                 .resizable(false)
-                .show(&ctx, |ui| {
+                .show_inside(root_ui, |ui| {
                     let mut builder = EguiUiBuilder::new(ui, vt);
                     panel.ui(&mut builder);
                 });
@@ -344,10 +384,10 @@ impl EditorShell for EguiEditorShell {
         for (idx, panel) in self.status_panels.iter_mut().enumerate() {
             let height = panel.preferred_size().unwrap_or(DEFAULT_STATUSBAR_HEIGHT);
             let panel_id = format!("editor_statusbar_{}_{}", idx, panel.id());
-            egui::TopBottomPanel::bottom(panel_id)
-                .exact_height(height)
+            egui::Panel::bottom(panel_id)
+                .exact_size(height)
                 .resizable(false)
-                .show(&ctx, |ui| {
+                .show_inside(root_ui, |ui| {
                     let mut builder = EguiUiBuilder::new(ui, vt);
                     panel.ui(&mut builder);
                 });
@@ -361,10 +401,10 @@ impl EditorShell for EguiEditorShell {
             let width = self.spine_panels[0]
                 .preferred_size()
                 .unwrap_or(DEFAULT_SPINE_WIDTH);
-            egui::SidePanel::left("editor_spine")
-                .exact_width(width)
+            egui::Panel::left("editor_spine")
+                .exact_size(width)
                 .resizable(false)
-                .show(&ctx, |ui| {
+                .show_inside(root_ui, |ui| {
                     for panel in &mut self.spine_panels {
                         let mut builder = EguiUiBuilder::new(ui, vt);
                         panel.ui(&mut builder);
@@ -382,12 +422,12 @@ impl EditorShell for EguiEditorShell {
             let panel_min = panels[0].preferred_size().unwrap_or(0.0);
             let default_h = bottom_default.max(panel_min);
 
-            egui::TopBottomPanel::bottom("editor_bottom")
-                .default_height(default_h)
-                .min_height(BOTTOM_MIN)
-                .max_height(bottom_max.max(default_h + 1.0))
+            egui::Panel::bottom("editor_bottom")
+                .default_size(default_h)
+                .min_size(BOTTOM_MIN)
+                .max_size(bottom_max.max(default_h + 1.0))
                 .resizable(true)
-                .show(&ctx, |ui| {
+                .show_inside(root_ui, |ui| {
                     // Force the inner UI to span the full panel rect —
                     // otherwise our paint-only panels (no cursor allocation)
                     // make `inner_response.response.rect` shrink to
@@ -433,12 +473,12 @@ impl EditorShell for EguiEditorShell {
             let panel_min = self.left_panels[0].preferred_size().unwrap_or(0.0);
             let default_w = left_default.max(panel_min);
             let panels = &mut self.left_panels;
-            egui::SidePanel::left("editor_left")
-                .default_width(default_w)
-                .min_width(LEFT_MIN)
-                .max_width(left_max.max(default_w + 1.0))
+            egui::Panel::left("editor_left")
+                .default_size(default_w)
+                .min_size(LEFT_MIN)
+                .max_size(left_max.max(default_w + 1.0))
                 .resizable(true)
-                .show(&ctx, |ui| {
+                .show_inside(root_ui, |ui| {
                     // See the bottom panel above for the rationale —
                     // without `set_min_size` the resize drag is reverted on
                     // mouse release because PanelState stores the painted
@@ -452,16 +492,16 @@ impl EditorShell for EguiEditorShell {
         }
 
         // ── Right sidebar (resizable) ─────────────────
-        if !self.right_panels.is_empty() && !hide_right_panel {
+        if !self.right_panels.is_empty() {
             let panel_min = self.right_panels[0].preferred_size().unwrap_or(0.0);
             let default_w = right_default.max(panel_min);
             let panels = &mut self.right_panels;
-            egui::SidePanel::right("editor_right")
-                .default_width(default_w)
-                .min_width(RIGHT_MIN)
-                .max_width(right_max.max(default_w + 1.0))
+            egui::Panel::right("editor_right")
+                .default_size(default_w)
+                .min_size(RIGHT_MIN)
+                .max_size(right_max.max(default_w + 1.0))
                 .resizable(true)
-                .show(&ctx, |ui| {
+                .show_inside(root_ui, |ui| {
                     // Same rationale as the left panel above.
                     ui.set_min_size(ui.max_rect().size());
                     for panel in panels.iter_mut() {
@@ -472,7 +512,7 @@ impl EditorShell for EguiEditorShell {
         }
 
         // ── Central area ──────────────────────────────
-        egui::CentralPanel::default().show(&ctx, |ui| {
+        egui::CentralPanel::default().show_inside(root_ui, |ui| {
             if self.center_panels.is_empty() {
                 ui.centered_and_justified(|ui| {
                     ui.label("");
@@ -490,6 +530,9 @@ impl EditorShell for EguiEditorShell {
         // panel is responsible for all its own positioning / sizing.
         for entry in &mut self.floating_panels {
             let area_id = egui::Id::new(("editor_floating", entry.panel.id()));
+            // `Area` is not a panel: it floats in its own layer above the
+            // layout rather than carving space out of a parent `Ui`, so it
+            // still takes the context directly.
             egui::Area::new(area_id)
                 .order(egui::Order::Foreground)
                 .interactable(true)

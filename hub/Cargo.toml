@@ -2,6 +2,8 @@
 name = "khora-hub"
 version = "0.1.0"
 edition = "2024"
+rust-version.workspace = true
+license.workspace = true
 description = "Khora Engine Hub — project manager and engine launcher"
 
 [[bin]]
@@ -9,17 +11,12 @@ name = "khora-hub"
 path = "src/main.rs"
 
 [dependencies]
-# UI framework (standalone egui app — completely independent of the engine)
-eframe = { version = "0.34", default-features = false, features = [
-    "default_fonts",
-    "wgpu",
-    # Required so winit gets its Linux backends; without these, building on
-    # Linux CI fails with "The platform you're compiling for is not supported
-    # by winit". No-op on Windows/macOS.
-    "wayland",
-    "x11",
-] }
-egui = "0.34"
+# Engine SDK — the hub reaches the egui+eframe backend exclusively
+# through `khora_sdk::tool_ui::*`. No direct dep on egui/eframe.
+khora-sdk = { path = "../crates/khora-sdk" }
+# Look (brand palette + shared widgets), shared with the editor so the two
+# tools cannot drift. Kept out of khora-sdk so games don't compile the brand.
+khora-tool-ui = { path = "../crates/khora-tool-ui" }
 
 # HTTP client for GitHub releases API
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
@@ -43,7 +40,7 @@ rfd = "0.17"
 open = "5"
 
 # Zip extraction for engine downloads
-zip = "2"
+zip = "8"
 
 # Image decoding (for window icon from PNG)
 image = { version = "0.25", default-features = false, features = ["png"] }

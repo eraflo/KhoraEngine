@@ -2,6 +2,8 @@
 name = "khora-core"
 version = "0.2.2"
 edition = "2021"
+rust-version.workspace = true
+license.workspace = true
 description = "Foundational crate with traits, core types, and interface contracts"
 
 [features]
@@ -13,6 +15,11 @@ bytemuck = { version = "1.25.0", features = ["derive"] }
 
 # Math and approximation
 approx = "0.5"
+
+# Portable, stable-Rust explicit SIMD for the batched transform kernels
+# (the AGDF compute-heavy "hot loop" lever). `f32x8` maps 1:1 to an 8-wide
+# AoSoA tile; see `math::simd`.
+wide = "0.7"
 
 # Error handling
 anyhow = "1.0"

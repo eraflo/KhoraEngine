@@ -162,6 +162,24 @@ impl WgpuCommandEncoder {
     }
 }
 
+/// Mutable access to the live `wgpu::CommandEncoder` held in `slot`.
+///
+/// Invariant: the encoder is `Some` for the whole lifetime of a
+/// `WgpuCommandEncoder` and only becomes `None` inside `finish()`, which
+/// consumes the boxed encoder (`self: Box<Self>`). No `&mut self` method can
+/// therefore observe a consumed encoder: once `finish()` has taken the encoder
+/// there is no value left to call its methods on. This is an internal backend
+/// invariant, not user input, so a violation is a programming bug rather than a
+/// recoverable runtime condition.
+///
+/// Takes the field directly (not `&mut self`) so the disjoint borrow leaves
+/// the encoder's sibling `device` field free for the returned render/compute
+/// pass to borrow.
+fn encoder_mut(slot: &mut Option<wgpu::CommandEncoder>) -> &mut wgpu::CommandEncoder {
+    slot.as_mut()
+        .expect("command encoder used after finish() — passes must be created before finish()")
+}
+
 impl CommandEncoder for WgpuCommandEncoder {
     fn begin_render_pass<'encoder>(
         &'encoder mut self,
@@ -181,6 +199,8 @@ impl CommandEncoder for WgpuCommandEncoder {
                             label: Some("Temp Layer View (Color)"),
                             base_array_layer: att.base_array_layer,
                             array_layer_count: Some(1),
+                            base_mip_level: att.base_mip_level,
+                            mip_level_count: Some(1),
                             dimension: Some(wgpu::TextureViewDimension::D2),
                             ..Default::default()
                         });
@@ -270,11 +290,7 @@ impl CommandEncoder for WgpuCommandEncoder {
             multiview_mask: None,
         };
 
-        let pass = self
-            .encoder
-            .as_mut()
-            .unwrap()
-            .begin_render_pass(&wgpu_descriptor);
+        let pass = encoder_mut(&mut self.encoder).begin_render_pass(&wgpu_descriptor);
 
         Box::new(WgpuRenderPass {
             pass,
@@ -287,13 +303,13 @@ impl CommandEncoder for WgpuCommandEncoder {
         descriptor: &ComputePassDescriptor<'encoder>,
     ) -> Box<dyn ComputePass<'encoder> + 'encoder> {
         let pass =
-            self.encoder
-                .as_mut()
-                .unwrap()
-                .begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: descriptor.label,
-                    timestamp_writes: None, // TODO
-                });
+            encoder_mut(&mut self.encoder).begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: descriptor.label,
+                // No timestamp writes on the abstract compute-pass entry point.
+                // GPU timing is opt-in via `begin_profiler_compute_pass`, which
+                // supplies a profiler's `ComputePassTimestampWrites`.
+                timestamp_writes: None,
+            });
 
         Box::new(WgpuComputePass {
             pass,
@@ -315,17 +331,19 @@ impl CommandEncoder for WgpuCommandEncoder {
         let timestamp_writes = match pass_index {
             0 => concrete_profiler.compute_pass_a_timestamp_writes(),
             1 => concrete_profiler.compute_pass_b_timestamp_writes(),
-            _ => panic!("Invalid profiler pass index"),
+            other => {
+                log::error!(
+                    "begin_profiler_compute_pass: invalid profiler pass index {other}, defaulting to pass A"
+                );
+                concrete_profiler.compute_pass_a_timestamp_writes()
+            }
         };
 
         let pass =
-            self.encoder
-                .as_mut()
-                .unwrap()
-                .begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label,
-                    timestamp_writes: Some(timestamp_writes),
-                });
+            encoder_mut(&mut self.encoder).begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label,
+                timestamp_writes: Some(timestamp_writes),
+            });
 
         Box::new(WgpuComputePass {
             pass,
@@ -345,7 +363,7 @@ impl CommandEncoder for WgpuCommandEncoder {
             self.device.get_wgpu_buffer(*source),
             self.device.get_wgpu_buffer(*destination),
         ) {
-            self.encoder.as_mut().unwrap().copy_buffer_to_buffer(
+            encoder_mut(&mut self.encoder).copy_buffer_to_buffer(
                 &source_buffer,
                 source_offset,
                 &destination_buffer,
@@ -355,8 +373,8 @@ impl CommandEncoder for WgpuCommandEncoder {
         }
     }
 
-    fn finish(mut self: Box<Self>) -> CommandBufferId {
-        let finished_encoder = self.encoder.take().unwrap();
+    fn finish(mut self: Box<Self>) -> Option<CommandBufferId> {
+        let finished_encoder = self.encoder.take()?;
         self.device
             .register_command_buffer(finished_encoder.finish())
     }

@@ -13,10 +13,13 @@
 // limitations under the License.
 
 //! Font decoder: TTF/OTF bytes → `Font`.
+//!
+//! Auto-registered via [`inventory::submit!`] under the canonical `"font"`
+//! slot. Single canonical implementation — no swap needed.
 
 use khora_core::asset::font::Font;
 
-use crate::asset::AssetDecoder;
+use crate::asset::{AssetDecoder, DecoderRegistration};
 
 /// Decodes TTF/OTF font files into a `Font` asset.
 ///
@@ -34,5 +37,14 @@ impl AssetDecoder<Font> for FontDecoder {
             name: "Unknown Font".to_string(),
             data: bytes.to_vec(),
         })
+    }
+}
+
+inventory::submit! {
+    DecoderRegistration {
+        type_name: "font",
+        register: |svc| {
+            svc.register_decoder::<Font>("font", FontDecoder);
+        },
     }
 }

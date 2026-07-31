@@ -90,6 +90,10 @@ impl CameraUniformData {
 
     /// Returns the data as a byte slice suitable for uploading to a GPU buffer.
     pub fn as_bytes(&self) -> &[u8] {
+        // SAFETY: `CameraUniformData` is `#[repr(C)]` and `bytemuck::Pod`, so it
+        // contains no padding-as-uninit bytes and every bit pattern is valid;
+        // reading `size_of::<Self>()` bytes from `&self` is fully initialised and
+        // in bounds. The returned slice borrows `self`, so it cannot outlive it.
         unsafe {
             std::slice::from_raw_parts(
                 self as *const Self as *const u8,

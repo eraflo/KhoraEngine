@@ -83,6 +83,40 @@ struct RecordedPass {
     command_buffer: CommandBufferId,
 }
 
+/// A render pass an agent contributes for this frame.
+///
+/// Instead of locking the shared [`SharedFrameGraph`] to `add_pass` directly,
+/// a recording agent writes its contribution into a per-layer slot on its
+/// [`OutputDeck`](khora_core::lane::OutputDeck) ([`ScenePassSlot`],
+/// [`UiPassSlot`], [`OverlayPassSlot`]). The engine folds those slots into the
+/// graph in a fixed layer order (scene → ui → overlay) after the agent wave —
+/// preserving the previous insertion order while freeing the agents from the
+/// `Mutex<FrameGraph>`, so they can run concurrently.
+pub struct PassContribution {
+    /// The pass's resource read/write declaration.
+    pub descriptor: PassDescriptor,
+    /// The finished command buffer recorded for the pass.
+    pub command_buffer: CommandBufferId,
+}
+
+/// Deck slot carrying the main scene pass, written by `RenderAgent`.
+#[derive(Default)]
+pub struct ScenePassSlot(pub Option<PassContribution>);
+
+/// Deck slot carrying the UI pass, written by `UiAgent`.
+#[derive(Default)]
+pub struct UiPassSlot(pub Option<PassContribution>);
+
+/// Deck slot carrying the skybox / environment-background pass, written by
+/// `SkyboxAgent`. Folded in after the scene pass and before overlays, so the
+/// sky sits behind the geometry (depth-tested) and under the debug overlays.
+#[derive(Default)]
+pub struct SkyboxPassSlot(pub Option<PassContribution>);
+
+/// Deck slot carrying the overlay / debug-viz pass, written by `OverlayAgent`.
+#[derive(Default)]
+pub struct OverlayPassSlot(pub Option<PassContribution>);
+
 /// Per-frame collection of recorded passes.
 ///
 /// Agents append passes during `execute()`. `submit_frame_graph` drains the

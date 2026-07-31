@@ -263,11 +263,21 @@ impl EguiWgpuRenderer {
         device: &wgpu::Device,
         view: &wgpu::TextureView,
     ) -> TextureId {
-        let texture_bgl = self
-            .texture_bind_group_layout
-            .as_ref()
-            .expect("Renderer not initialized");
-        let sampler = self.sampler.as_ref().expect("Renderer not initialized");
+        let (Some(texture_bgl), Some(sampler)) = (
+            self.texture_bind_group_layout.as_ref(),
+            self.sampler.as_ref(),
+        ) else {
+            // Hand back a fresh, unique id with no backing bind group; `render`
+            // already skips (and logs) ids whose texture is missing, so this
+            // degrades to a non-drawn widget instead of crashing the frame.
+            let id = TextureId::User(self.next_user_texture_id);
+            self.next_user_texture_id += 1;
+            log::error!(
+                "EguiWgpuRenderer: register_external_texture called before initialize(); \
+                 returning unbacked texture id {id:?}"
+            );
+            return id;
+        };
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("egui_external_texture_bg"),
@@ -318,11 +328,15 @@ impl EguiWgpuRenderer {
         id: TextureId,
         view: &wgpu::TextureView,
     ) {
-        let texture_bgl = self
-            .texture_bind_group_layout
-            .as_ref()
-            .expect("Renderer not initialized");
-        let sampler = self.sampler.as_ref().expect("Renderer not initialized");
+        let (Some(texture_bgl), Some(sampler)) = (
+            self.texture_bind_group_layout.as_ref(),
+            self.sampler.as_ref(),
+        ) else {
+            log::error!(
+                "EguiWgpuRenderer: update_external_texture called before initialize(); skipping"
+            );
+            return;
+        };
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("egui_external_texture_bg_updated"),
@@ -359,8 +373,17 @@ impl EguiWgpuRenderer {
             }
         };
 
-        let screen_bg = self.screen_bind_group.as_ref().unwrap();
-        let screen_buf = self.screen_uniform_buffer.as_ref().unwrap();
+        // The pipeline check above already proves `initialize()` ran; the
+        // screen bind group and uniform buffer are created in the same call, so
+        // they are present whenever the pipeline is. Guard defensively anyway
+        // rather than unwrap on a GPU resource.
+        let (Some(screen_bg), Some(screen_buf)) = (
+            self.screen_bind_group.as_ref(),
+            self.screen_uniform_buffer.as_ref(),
+        ) else {
+            log::error!("EguiWgpuRenderer: screen resources missing despite initialized pipeline");
+            return;
+        };
 
         // Update screen size uniform
         let screen_size = [state.width_px as f32, state.height_px as f32];
@@ -580,11 +603,15 @@ impl EguiWgpuRenderer {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let texture_bgl = self
-            .texture_bind_group_layout
-            .as_ref()
-            .expect("Renderer not initialized");
-        let sampler = self.sampler.as_ref().expect("Renderer not initialized");
+        let (Some(texture_bgl), Some(sampler)) = (
+            self.texture_bind_group_layout.as_ref(),
+            self.sampler.as_ref(),
+        ) else {
+            log::error!(
+                "EguiWgpuRenderer: set_texture called before initialize(); skipping upload"
+            );
+            return;
+        };
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some(&format!("egui_texture_bg_{id:?}")),

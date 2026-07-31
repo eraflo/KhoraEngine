@@ -14,10 +14,29 @@
 
 //! Concrete [`UiBuilder`] backed by `egui::Ui`.
 
-use khora_core::ui::editor::ui_builder::{FontFamilyHint, Interaction, TextAlign};
+use khora_core::ui::editor::ui_builder::{FontFamilyHint, InlineEditEvent, Interaction, TextAlign};
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
+use khora_core::platform::input::KeyCode;
 use khora_core::ui::editor::UiBuilder;
 use std::collections::HashMap;
+
+use super::theme::AXIS_COLORS_KEY;
+
+/// Maps a backend-neutral [`FontFamilyHint`] to an egui [`FontId`](egui::FontId).
+///
+/// `Display` and `Icons` resolve to named families installed by `set_fonts`;
+/// both fall back to the proportional family (via egui's own family fallback)
+/// when their face wasn't provided.
+fn font_id_for(family: FontFamilyHint, size: f32) -> egui::FontId {
+    match family {
+        FontFamilyHint::Proportional => egui::FontId::proportional(size),
+        FontFamilyHint::Monospace => egui::FontId::monospace(size),
+        FontFamilyHint::Display => {
+            egui::FontId::new(size, egui::FontFamily::Name("display".into()))
+        }
+        FontFamilyHint::Icons => egui::FontId::new(size, egui::FontFamily::Name("icons".into())),
+    }
+}
 
 /// Wraps `&mut egui::Ui` to implement the abstract [`UiBuilder`] trait.
 pub struct EguiUiBuilder<'a> {
@@ -26,6 +45,31 @@ pub struct EguiUiBuilder<'a> {
     viewport_textures: &'a HashMap<ViewportTextureHandle, egui::TextureId>,
     /// The last widget response (for context menu / double-click queries).
     last_response: Option<egui::Response>,
+    /// Clip rects saved by `push_clip_rect`, so nesting restores correctly.
+    clip_stack: Vec<egui::Rect>,
+}
+
+/// Maps the engine's [`KeyCode`] to egui's key enum.
+///
+/// Deliberately partial: only the keys the editor's UI actually binds are
+/// listed, so an unmapped key reports "not pressed" instead of silently
+/// matching the wrong one. Extend it as bindings are added.
+fn map_key(key: KeyCode) -> Option<egui::Key> {
+    Some(match key {
+        KeyCode::ArrowUp => egui::Key::ArrowUp,
+        KeyCode::ArrowDown => egui::Key::ArrowDown,
+        KeyCode::ArrowLeft => egui::Key::ArrowLeft,
+        KeyCode::ArrowRight => egui::Key::ArrowRight,
+        KeyCode::Enter => egui::Key::Enter,
+        KeyCode::Escape => egui::Key::Escape,
+        KeyCode::Tab => egui::Key::Tab,
+        KeyCode::Home => egui::Key::Home,
+        KeyCode::End => egui::Key::End,
+        KeyCode::Delete => egui::Key::Delete,
+        KeyCode::Backspace => egui::Key::Backspace,
+        KeyCode::F2 => egui::Key::F2,
+        _ => return None,
+    })
 }
 
 impl<'a> EguiUiBuilder<'a> {
@@ -38,7 +82,18 @@ impl<'a> EguiUiBuilder<'a> {
             ui,
             viewport_textures,
             last_response: None,
+            clip_stack: Vec::new(),
         }
+    }
+
+    /// A painter on the top foreground layer, clipped only to the whole screen.
+    /// Used for overlay affordances (drag ghosts) that must stay visible when
+    /// the cursor leaves the current panel's clip rect.
+    fn overlay_painter(&self) -> egui::Painter {
+        self.ui.ctx().layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("khora_overlay"),
+        ))
     }
 }
 
@@ -105,83 +160,113 @@ impl UiBuilder for EguiUiBuilder<'_> {
     }
 
     fn checkbox(&mut self, checked: &mut bool, text: &str) -> bool {
-        self.ui.checkbox(checked, text).changed()
+        let r = self.ui.checkbox(checked, text);
+        let changed = r.changed();
+        self.last_response = Some(r);
+        changed
     }
 
     fn drag_value_f32(&mut self, label: &str, value: &mut f32, speed: f32) -> bool {
-        self.ui
-            .horizontal(|ui| {
-                ui.label(label);
-                ui.add(egui::DragValue::new(value).speed(speed)).changed()
-            })
-            .inner
+        let inner = self.ui.horizontal(|ui| {
+            ui.label(label);
+            ui.add(egui::DragValue::new(value).speed(speed))
+        });
+        let changed = inner.inner.changed();
+        self.last_response = Some(inner.inner);
+        changed
     }
 
     fn slider_f32(&mut self, label: &str, value: &mut f32, min: f32, max: f32) -> bool {
-        self.ui
-            .add(egui::Slider::new(value, min..=max).text(label))
-            .changed()
+        let r = self.ui.add(egui::Slider::new(value, min..=max).text(label));
+        let changed = r.changed();
+        self.last_response = Some(r);
+        changed
     }
 
     fn text_edit_singleline(&mut self, text: &mut String) -> bool {
-        self.ui.text_edit_singleline(text).changed()
+        let r = self.ui.text_edit_singleline(text);
+        let changed = r.changed();
+        // Storing the response is what makes `is_last_item_enter_pressed` and
+        // `is_last_item_escape_pressed` work at all: without it they inspect a
+        // `None` and report `false` forever, which is why Enter and Escape did
+        // nothing in the command palette.
+        self.last_response = Some(r);
+        changed
     }
 
     fn vec3_editor(&mut self, label: &str, value: &mut [f32; 3], speed: f32) -> bool {
-        // Unity-style: filled colored X/Y/Z badges before each drag value.
-        // Red = X, green = Y, blue = Z.
-        const X_COLOR: egui::Color32 = egui::Color32::from_rgb(214, 75, 64);
-        const Y_COLOR: egui::Color32 = egui::Color32::from_rgb(96, 178, 81);
-        const Z_COLOR: egui::Color32 = egui::Color32::from_rgb(78, 132, 222);
+        // The axis colour rides on the *letter*, not on a filled badge behind
+        // it. Three saturated badges per row turn a transform-heavy inspector
+        // into a rainbow; a tinted letter says the same thing and lets the
+        // numbers stay the loudest part of the row.
+        //
+        // Colours come from the active theme (stashed by `apply_theme`), so
+        // the inspector's X/Y/Z always match the viewport gizmo's.
+        let axes = self
+            .ui
+            .ctx()
+            .data(|d| d.get_temp::<[egui::Color32; 3]>(egui::Id::new(AXIS_COLORS_KEY)))
+            .unwrap_or([
+                egui::Color32::from_rgb(246, 109, 103),
+                egui::Color32::from_rgb(114, 207, 142),
+                egui::Color32::from_rgb(115, 204, 234),
+            ]);
 
-        let axis_badge = |ui: &mut egui::Ui, ch: &str, color: egui::Color32| {
-            egui::Frame::new()
-                .fill(color)
-                .corner_radius(egui::CornerRadius::same(3))
-                .inner_margin(egui::Margin::symmetric(5, 1))
-                .show(ui, |ui| {
-                    ui.label(
-                        egui::RichText::new(ch)
-                            .color(egui::Color32::WHITE)
-                            .strong()
-                            .monospace(),
-                    );
-                });
+        let axis_letter = |ui: &mut egui::Ui, ch: &str, color: egui::Color32| {
+            ui.label(
+                egui::RichText::new(ch)
+                    .color(color)
+                    .strong()
+                    .monospace()
+                    .size(10.0),
+            );
         };
 
-        self.ui
-            .horizontal(|ui| {
+        let inner = self.ui.horizontal(|ui| {
+            if !label.is_empty() {
                 ui.label(label);
-                axis_badge(ui, "X", X_COLOR);
-                let x = ui
-                    .add(egui::DragValue::new(&mut value[0]).speed(speed))
-                    .changed();
-                axis_badge(ui, "Y", Y_COLOR);
-                let y = ui
-                    .add(egui::DragValue::new(&mut value[1]).speed(speed))
-                    .changed();
-                axis_badge(ui, "Z", Z_COLOR);
-                let z = ui
-                    .add(egui::DragValue::new(&mut value[2]).speed(speed))
-                    .changed();
-                x || y || z
-            })
-            .inner
+            }
+            let mut changed = false;
+            let mut last = None;
+            for (i, ch) in ["X", "Y", "Z"].iter().enumerate() {
+                axis_letter(ui, ch, axes[i]);
+                let r = ui.add(egui::DragValue::new(&mut value[i]).speed(speed));
+                changed |= r.changed();
+                last = Some(r);
+            }
+            (changed, last)
+        });
+        let (changed, last) = inner.inner;
+        // The Z field is the row's "last item" — a context menu or tooltip
+        // attached after the row lands on the field the user ended on.
+        self.last_response = last;
+        changed
     }
 
     fn color_edit(&mut self, label: &str, color: &mut [f32; 4]) -> bool {
-        self.ui
-            .horizontal(|ui| {
-                ui.label(label);
-                ui.color_edit_button_rgba_unmultiplied(color).changed()
-            })
-            .inner
+        let inner = self.ui.horizontal(|ui| {
+            ui.label(label);
+            ui.color_edit_button_rgba_unmultiplied(color)
+        });
+        let changed = inner.inner.changed();
+        self.last_response = Some(inner.inner);
+        changed
     }
 
-    fn combo_box(&mut self, label: &str, current: &mut usize, options: &[&str]) -> bool {
+    fn combo_box(
+        &mut self,
+        id_salt: &str,
+        label: &str,
+        current: &mut usize,
+        options: &[&str],
+    ) -> bool {
         let selected_text = options.get(*current).copied().unwrap_or("");
         let mut changed = false;
-        egui::ComboBox::from_label(label)
+        // Salted explicitly rather than by label: `from_label` derives the id
+        // from the label text, so two combo boxes labelled the same — which the
+        // inspector's generic enum walker produces for every switchable enum —
+        // shared one popup and one open state.
+        let out = egui::ComboBox::new(("khora_combo", id_salt), label)
             .selected_text(selected_text)
             .show_ui(self.ui, |ui| {
                 for (i, option) in options.iter().enumerate() {
@@ -191,6 +276,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
                     }
                 }
             });
+        self.last_response = Some(out.response);
         changed
     }
 
@@ -448,13 +534,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
             TextAlign::Center => egui::Align2::CENTER_TOP,
             TextAlign::Right => egui::Align2::RIGHT_TOP,
         };
-        let font_id = match family {
-            FontFamilyHint::Proportional => egui::FontId::proportional(size),
-            FontFamilyHint::Monospace => egui::FontId::monospace(size),
-            FontFamilyHint::Icons => {
-                egui::FontId::new(size, egui::FontFamily::Name("icons".into()))
-            }
-        };
+        let font_id = font_id_for(family, size);
         self.ui.painter().text(
             egui::pos2(pos[0], pos[1]),
             egui_align,
@@ -488,9 +568,69 @@ impl UiBuilder for EguiUiBuilder<'_> {
             clicked: response.clicked(),
             pressed: response.is_pointer_button_down_on(),
             double_clicked: response.double_clicked(),
+            focused: response.has_focus(),
         };
         self.last_response = Some(response);
         interaction
+    }
+
+    fn key_pressed(&self, key: KeyCode) -> bool {
+        // A shortcut must not fire while a text field is taking input, or a
+        // panel's single-key bindings would eat the user's typing.
+        if self.ui.ctx().egui_wants_keyboard_input() {
+            return false;
+        }
+        let Some(egui_key) = map_key(key) else {
+            return false;
+        };
+        self.ui.input(|i| i.key_pressed(egui_key))
+    }
+
+    fn keyboard_captured(&self) -> bool {
+        self.ui.ctx().egui_wants_keyboard_input()
+    }
+
+    fn raw_key_pressed(&self, key: KeyCode) -> bool {
+        let Some(egui_key) = map_key(key) else {
+            return false;
+        };
+        self.ui.input(|i| i.key_pressed(egui_key))
+    }
+
+    fn focus_last_item(&mut self) {
+        if let Some(response) = self.last_response.as_ref() {
+            response.request_focus();
+        }
+    }
+
+    fn push_clip_rect(&mut self, rect: [f32; 4]) {
+        let r =
+            egui::Rect::from_min_size(egui::pos2(rect[0], rect[1]), egui::vec2(rect[2], rect[3]));
+        // Intersect rather than replace: a nested clip must never widen the
+        // region its parent already restricted.
+        self.clip_stack.push(self.ui.clip_rect());
+        let clipped = self.ui.clip_rect().intersect(r);
+        self.ui.set_clip_rect(clipped);
+    }
+
+    fn pop_clip_rect(&mut self) {
+        if let Some(previous) = self.clip_stack.pop() {
+            self.ui.set_clip_rect(previous);
+        }
+    }
+
+    fn scroll_delta_in(&self, rect: [f32; 4]) -> f32 {
+        let r =
+            egui::Rect::from_min_size(egui::pos2(rect[0], rect[1]), egui::vec2(rect[2], rect[3]));
+        let inside = self
+            .ui
+            .ctx()
+            .pointer_latest_pos()
+            .is_some_and(|p| r.contains(p));
+        if !inside {
+            return 0.0;
+        }
+        self.ui.input(|i| i.smooth_scroll_delta.y)
     }
 
     fn dnd_attach_drag_payload(&mut self, payload: u64) {
@@ -511,17 +651,135 @@ impl UiBuilder for EguiUiBuilder<'_> {
             .map(|payload| *payload)
     }
 
+    fn pointer_position(&self) -> Option<[f32; 2]> {
+        self.ui
+            .ctx()
+            .pointer_interact_pos()
+            .map(|p| [p.x, p.y])
+    }
+
+    fn is_last_item_dragged(&self) -> bool {
+        self.last_response
+            .as_ref()
+            .map(|r| r.dragged())
+            .unwrap_or(false)
+    }
+
+    fn is_drag_active(&self) -> bool {
+        self.ui.ctx().dragged_id().is_some()
+    }
+
+    fn inline_text_field(
+        &mut self,
+        rect: [f32; 4],
+        id_salt: &str,
+        text: &mut String,
+        request_focus: bool,
+    ) -> InlineEditEvent {
+        let r =
+            egui::Rect::from_min_size(egui::pos2(rect[0], rect[1]), egui::vec2(rect[2], rect[3]));
+        let mut child = self.ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(r)
+                .id_salt(("khora_inline", id_salt))
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        let field_id = egui::Id::new(("khora_inline_edit", id_salt));
+        let resp = child.add(
+            egui::TextEdit::singleline(text)
+                .id(field_id)
+                .desired_width(rect[2]),
+        );
+        if request_focus {
+            resp.request_focus();
+        }
+        if resp.lost_focus() {
+            // Escape cancels; Enter or a click elsewhere commits (commit-on-blur
+            // — the standard file-explorer rename behaviour, and it avoids a
+            // stuck field if the user clicks away).
+            let escaped = child.input(|i| i.key_pressed(egui::Key::Escape));
+            return if escaped {
+                InlineEditEvent::Cancelled
+            } else {
+                InlineEditEvent::Committed
+            };
+        }
+        if resp.changed() {
+            InlineEditEvent::Changed
+        } else {
+            InlineEditEvent::Idle
+        }
+    }
+
+    fn overlay_rect_filled(
+        &mut self,
+        min: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        rounding: f32,
+    ) {
+        let painter = self.overlay_painter();
+        let rect =
+            egui::Rect::from_min_size(egui::pos2(min[0], min[1]), egui::vec2(size[0], size[1]));
+        let corner = egui::CornerRadius::same(rounding.clamp(0.0, 255.0) as u8);
+        painter.rect_filled(rect, corner, color_to_egui(color));
+    }
+
+    fn overlay_rect_stroke(
+        &mut self,
+        min: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        rounding: f32,
+        thickness: f32,
+    ) {
+        let painter = self.overlay_painter();
+        let rect =
+            egui::Rect::from_min_size(egui::pos2(min[0], min[1]), egui::vec2(size[0], size[1]));
+        let corner = egui::CornerRadius::same(rounding.clamp(0.0, 255.0) as u8);
+        painter.rect_stroke(
+            rect,
+            corner,
+            egui::Stroke::new(thickness, color_to_egui(color)),
+            egui::epaint::StrokeKind::Inside,
+        );
+    }
+
+    fn overlay_text(
+        &mut self,
+        pos: [f32; 2],
+        text: &str,
+        size: f32,
+        color: [f32; 4],
+        family: FontFamilyHint,
+    ) {
+        let painter = self.overlay_painter();
+        let font_id = font_id_for(family, size);
+        painter.text(
+            egui::pos2(pos[0], pos[1]),
+            egui::Align2::LEFT_TOP,
+            text,
+            font_id,
+            color_to_egui(color),
+        );
+    }
+
     fn tooltip_for_last(&mut self, text: &str) {
         if let Some(response) = self.last_response.as_ref() {
             response.clone().on_hover_text(text);
         }
     }
 
-    fn region_at(&mut self, rect: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+    fn region_at(&mut self, id_salt: &str, rect: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let r =
             egui::Rect::from_min_size(egui::pos2(rect[0], rect[1]), egui::vec2(rect[2], rect[3]));
         let vt = self.viewport_textures;
-        let id_salt = ("khora_region", rect[0] as i32, rect[1] as i32);
+        // Salted by name, not by position. Deriving the id from the rect's
+        // screen coordinates meant moving a panel by one pixel — a splitter
+        // drag, a window resize — renumbered every widget inside, so egui
+        // dropped focus and edit state mid-typing; and two regions landing on
+        // the same integer coordinate collided outright.
+        let id_salt = ("khora_region", id_salt);
         let mut child = self.ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(r)
@@ -537,14 +795,15 @@ impl UiBuilder for EguiUiBuilder<'_> {
         [p.x, p.y]
     }
 
+    fn allocate_size(&mut self, size: [f32; 2]) -> [f32; 4] {
+        let (rect, _) = self
+            .ui
+            .allocate_exact_size(egui::vec2(size[0], size[1]), egui::Sense::hover());
+        [rect.min.x, rect.min.y, rect.width(), rect.height()]
+    }
+
     fn measure_text(&self, text: &str, size: f32, family: FontFamilyHint) -> [f32; 2] {
-        let font_id = match family {
-            FontFamilyHint::Proportional => egui::FontId::proportional(size),
-            FontFamilyHint::Monospace => egui::FontId::monospace(size),
-            FontFamilyHint::Icons => {
-                egui::FontId::new(size, egui::FontFamily::Name("icons".into()))
-            }
-        };
+        let font_id = font_id_for(family, size);
         // Use the painter's helper to lay out text — handles fonts atlas
         // mutability internally in egui 0.33.
         let galley =
@@ -553,5 +812,151 @@ impl UiBuilder for EguiUiBuilder<'_> {
                 .layout_no_wrap(text.to_owned(), font_id, egui::Color32::WHITE);
         let r = galley.rect;
         [r.width(), r.height()]
+    }
+
+    // ── Inset panels (Phase 7) ─────────────────────────
+
+    fn top_inset_panel(&mut self, id: &str, height: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let vt = self.viewport_textures;
+        egui::Panel::top(egui::Id::new(id.to_owned()))
+            .exact_size(height)
+            .resizable(false)
+            .frame(egui::Frame::new())
+            .show_inside(self.ui, |ui| {
+                let mut nested = EguiUiBuilder::new(ui, vt);
+                f(&mut nested);
+            });
+    }
+
+    fn bottom_inset_panel(&mut self, id: &str, height: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let vt = self.viewport_textures;
+        egui::Panel::bottom(egui::Id::new(id.to_owned()))
+            .exact_size(height)
+            .resizable(false)
+            .frame(egui::Frame::new())
+            .show_inside(self.ui, |ui| {
+                let mut nested = EguiUiBuilder::new(ui, vt);
+                f(&mut nested);
+            });
+    }
+
+    fn left_inset_panel(&mut self, id: &str, width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let vt = self.viewport_textures;
+        egui::Panel::left(egui::Id::new(id.to_owned()))
+            .exact_size(width)
+            .resizable(false)
+            .frame(egui::Frame::new())
+            .show_inside(self.ui, |ui| {
+                let mut nested = EguiUiBuilder::new(ui, vt);
+                f(&mut nested);
+            });
+    }
+
+    fn right_inset_panel(&mut self, id: &str, width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let vt = self.viewport_textures;
+        egui::Panel::right(egui::Id::new(id.to_owned()))
+            .exact_size(width)
+            .resizable(false)
+            .frame(egui::Frame::new())
+            .show_inside(self.ui, |ui| {
+                let mut nested = EguiUiBuilder::new(ui, vt);
+                f(&mut nested);
+            });
+    }
+
+    fn central_inset(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let vt = self.viewport_textures;
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new())
+            .show_inside(self.ui, |ui| {
+                let mut nested = EguiUiBuilder::new(ui, vt);
+                f(&mut nested);
+            });
+    }
+
+    fn modal(&mut self, id: &str, size: [f32; 2], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        self.show_modal_dialog(id, size, f);
+    }
+
+    fn frame_box(
+        &mut self,
+        margin: khora_core::ui::Margin,
+        fill: Option<khora_core::math::LinearRgba>,
+        stroke: khora_core::ui::Stroke,
+        radius: khora_core::ui::CornerRadius,
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let mut frame = egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: margin.left as i8,
+                right: margin.right as i8,
+                top: margin.top as i8,
+                bottom: margin.bottom as i8,
+            })
+            .corner_radius(egui::CornerRadius {
+                nw: radius.nw as u8,
+                ne: radius.ne as u8,
+                sw: radius.sw as u8,
+                se: radius.se as u8,
+            });
+        if let Some(fill_color) = fill {
+            frame = frame.fill(linear_to_color(fill_color));
+        }
+        if stroke.width > 0.0 {
+            frame = frame.stroke(egui::Stroke::new(
+                stroke.width,
+                linear_to_color(stroke.color),
+            ));
+        }
+        let vt = self.viewport_textures;
+        frame.show(self.ui, |ui| {
+            let mut nested = EguiUiBuilder::new(ui, vt);
+            f(&mut nested);
+        });
+    }
+}
+
+fn linear_to_color(c: khora_core::math::LinearRgba) -> egui::Color32 {
+    color_to_egui([c.r, c.g, c.b, c.a])
+}
+
+impl EguiUiBuilder<'_> {
+    /// Modal implementation lives outside the `UiBuilder` impl block so
+    /// `Self::ui` can be re-borrowed across the egui `Window::show`
+    /// call without colliding with the trait method's generics.
+    fn show_modal_dialog(
+        &mut self,
+        id: &str,
+        size: [f32; 2],
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
+        let ctx = self.ui.ctx().clone();
+        let vt_clone = self.viewport_textures.clone();
+
+        // Backdrop: dim the whole screen with a foreground-layer
+        // painter. The egui Window itself sits in `Order::Foreground`
+        // so the backdrop must be just *under* it; we use
+        // `Order::Middle` so other content sinks below.
+        let screen = ctx.input(|i| i.viewport().inner_rect.unwrap_or(egui::Rect::ZERO));
+        let layer = egui::LayerId::new(
+            egui::Order::Middle,
+            egui::Id::new(format!("{}_backdrop", id)),
+        );
+        let painter = egui::Painter::new(ctx.clone(), layer, screen);
+        painter.rect_filled(screen, 0.0, egui::Color32::from_black_alpha(140));
+
+        let window_id = egui::Id::new(format!("{}_modal", id));
+        egui::Window::new("")
+            .id(window_id)
+            .title_bar(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .fixed_size([size[0], size[1]])
+            .resizable(false)
+            .collapsible(false)
+            .frame(egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(0)))
+            .show(&ctx, |ui| {
+                let mut nested = EguiUiBuilder::new(ui, &vt_clone);
+                f(&mut nested);
+            });
     }
 }

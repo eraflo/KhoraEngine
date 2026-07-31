@@ -12,12 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the abstract `AudioDevice` trait.
+//! Defines the abstract [`AudioDevice`] / [`AudioStream`] traits.
+//!
+//! An `AudioDevice` is a *factory* for an output stream: call
+//! [`AudioDevice::open`] once and you get a long-lived [`AudioStream`]
+//! handle whose `Drop` stops the stream. The device itself is consumed
+//! during opening — it has no state worth keeping after the stream is
+//! live.
+//!
+//! The backend's hardware callback drains samples from the
+//! [`AudioMixBus`](super::mix_bus::AudioMixBus) provided to `open`. Audio
+//! lanes write into the same bus from the main thread; the bus is the
+//! sole synchronisation boundary between the two worlds.
+
+use std::sync::Arc;
 
 use anyhow::Result;
 
-/// A type alias for the audio mixing callback function.
-type MixCallback = Box<dyn FnMut(&mut [f32], &StreamInfo) + Send>;
+use super::mix_bus::AudioMixBus;
 
 /// A struct providing information about the audio stream.
 #[derive(Debug, Clone, Copy)]
@@ -28,27 +40,23 @@ pub struct StreamInfo {
     pub sample_rate: u32,
 }
 
-/// The abstract contract for a hardware audio device backend.
+/// Factory for an audio output stream.
 ///
-/// This trait is the boundary between the engine's audio logic (mixing, spatialization)
-/// and the platform-specific infrastructure that actually communicates with the sound card.
-/// Its design is callback-driven: the engine provides a function that the backend
-/// calls whenever it needs more audio data.
+/// The device is consumed during [`AudioDevice::open`] — backends store
+/// their hardware handles inside the returned [`AudioStream`].
 pub trait AudioDevice: Send + Sync {
-    /// Initializes and starts the audio stream.
+    /// Opens the output stream. The backend's audio callback will pull
+    /// samples from `mix_bus` on a dedicated real-time thread.
     ///
-    /// This method consumes the `AudioDevice` as it typically runs for the lifetime
-    /// of the application.
-    ///
-    /// # Arguments
-    ///
-    /// * `on_mix_needed`: A closure that will be called repeatedly by the audio backend
-    ///   on a dedicated audio thread. This closure is responsible for filling the
-    ///   provided `output_buffer` with the next chunk of audio samples. The samples
-    ///   should be interleaved for multi-channel audio (e.g., `[L, R, L, R, ...]`).
-    ///
-    /// # Returns
-    ///
-    /// A `Result` indicating success or failure in initializing the audio stream.
-    fn start(self: Box<Self>, on_mix_needed: MixCallback) -> Result<()>;
+    /// The returned handle keeps the stream alive for as long as it
+    /// exists. Dropping the handle stops the stream.
+    fn open(self: Box<Self>, mix_bus: Arc<dyn AudioMixBus>) -> Result<Box<dyn AudioStream>>;
+}
+
+/// Live audio stream handle. Drop = stop.
+pub trait AudioStream: Send + Sync {
+    /// Channel count and sample rate of the stream as actually opened by
+    /// the backend (may differ from the bus's nominal info if the
+    /// hardware imposed a different format).
+    fn stream_info(&self) -> StreamInfo;
 }

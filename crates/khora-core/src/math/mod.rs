@@ -42,20 +42,25 @@ pub const RAD_TO_DEG: f32 = 180.0 / PI;
 
 pub mod affine_transform;
 pub mod color;
+pub mod cube;
 pub mod dimension;
 pub mod geometry;
 pub mod matrix;
 pub mod quaternion;
+pub mod ray;
+pub mod simd;
 pub mod vector;
 
 // --- Re-export Principal Types ---
 
 pub use self::affine_transform::AffineTransform;
 pub use self::color::LinearRgba;
+pub use self::cube::CubeFace;
 pub use self::dimension::{Extent1D, Extent2D, Extent3D, Origin2D, Origin3D};
-pub use self::geometry::Aabb;
+pub use self::geometry::{Aabb, Rect2D};
 pub use self::matrix::{Mat3, Mat4};
 pub use self::quaternion::{Quat, Quaternion};
+pub use self::ray::Ray;
 pub use self::vector::{Vec2, Vec3, Vec4};
 
 // --- Utility Functions ---

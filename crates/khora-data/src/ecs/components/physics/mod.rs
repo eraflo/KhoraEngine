@@ -15,7 +15,6 @@
 mod active_events;
 mod collider;
 mod collision_events;
-mod collision_pairs;
 mod kinematic_character_controller;
 mod physics_debug_data;
 mod physics_material;
@@ -24,7 +23,6 @@ mod rigid_body;
 pub use active_events::*;
 pub use collider::*;
 pub use collision_events::*;
-pub use collision_pairs::*;
 pub use kinematic_character_controller::*;
 pub use physics_debug_data::*;
 pub use physics_material::*;

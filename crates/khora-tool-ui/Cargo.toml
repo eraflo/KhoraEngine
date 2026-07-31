@@ -1,0 +1,13 @@
+[package]
+name = "khora-tool-ui"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+license.workspace = true
+description = "Khora's first-party tool design system — brand tokens and shared widgets for the editor, the hub, and future tools"
+
+[dependencies]
+# The neutral UI contract: `UiTheme`, `UiBuilder`, `FontPack`, `Icon`.
+# This crate supplies the *values* and the *widgets*; khora-core owns the
+# *contracts*. No backend (egui) dependency — widgets paint through `UiBuilder`.
+khora-core = { path = "../khora-core" }

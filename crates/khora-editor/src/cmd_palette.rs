@@ -21,6 +21,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
+use khora_sdk::KeyCode;
 
 use crate::widgets::brand::paint_diamond_filled;
 use crate::widgets::chrome::paint_kbd_chip;
@@ -104,6 +105,13 @@ const NAVIGATE_ACTIONS: &[Command] = &[
     },
 ];
 
+const VIEW_ACTIONS: &[Command] = &[Command {
+    label: "Toggle Wireframe",
+    description: "Show scene meshes as edge lines (debug)",
+    action: "toggle_wireframe",
+    icon: Icon::Cube,
+}];
+
 const SECTIONS: &[Section] = &[
     Section {
         title: "Quick Actions",
@@ -117,23 +125,34 @@ const SECTIONS: &[Section] = &[
         title: "Navigate",
         items: NAVIGATE_ACTIONS,
     },
+    Section {
+        title: "View",
+        items: VIEW_ACTIONS,
+    },
 ];
 
 /// Floating modal command palette.
 pub struct CommandPalettePanel {
     state: Arc<Mutex<EditorState>>,
-    theme: EditorTheme,
+    theme: UiTheme,
     query: String,
     active: usize,
+    /// Whether the palette was already open last frame, so focus is requested
+    /// exactly once per opening rather than every frame (which would trap it).
+    was_open: bool,
+    /// Points the result list is scrolled down by, tracking the active row.
+    list_scroll: f32,
 }
 
 impl CommandPalettePanel {
-    pub fn new(state: Arc<Mutex<EditorState>>, theme: EditorTheme) -> Self {
+    pub fn new(state: Arc<Mutex<EditorState>>, theme: UiTheme) -> Self {
         Self {
             state,
             theme,
             query: String::new(),
             active: 0,
+            was_open: false,
+            list_scroll: 0.0,
         }
     }
 }
@@ -164,6 +183,13 @@ impl EditorPanel for CommandPalettePanel {
             .map(|s| s.command_palette_open)
             .unwrap_or(false);
         if !is_open {
+            // Reset the one-shot focus latch so the next open takes focus
+            // again, and clear the query so the palette doesn't reopen showing
+            // the last search.
+            self.was_open = false;
+            self.list_scroll = 0.0;
+            self.query.clear();
+            self.active = 0;
             return;
         }
 
@@ -267,6 +293,29 @@ impl EditorPanel for CommandPalettePanel {
             modal_h - header_h - 56.0,
         ];
 
+        // ── Keyboard navigation ──────────────────────
+        // Read before the field is drawn: the arrows must move the selection
+        // even while the query field holds focus, which is the whole point of
+        // a palette. `key_pressed` would refuse (it suppresses shortcuts while
+        // a field is focused), so the arrows go through the raw key state.
+        if ui.raw_key_pressed(KeyCode::ArrowDown) && total > 0 {
+            self.active = (self.active + 1) % total;
+        }
+        if ui.raw_key_pressed(KeyCode::ArrowUp) && total > 0 {
+            self.active = (self.active + total - 1) % total;
+        }
+
+        // Focus the field on the frame the palette opens, once. Requesting it
+        // every frame would trap focus; never requesting it — the old
+        // behaviour — meant the user had to click the box before typing, and
+        // meanwhile every keystroke fell through to the editor's shortcuts.
+        let take_focus = !self.was_open;
+        self.was_open = true;
+
+        // Snapshot before the field borrows it: the row loop below may move the
+        // selection on hover, but the scroll must follow where it is *now*.
+        let active_now = self.active;
+        let list_scroll_prev = self.list_scroll;
         let query_ref = &mut self.query;
         let active_ref = &mut self.active;
         let mut to_dispatch: Option<&'static str> = None;
@@ -280,8 +329,11 @@ impl EditorPanel for CommandPalettePanel {
             modal_w - pad * 2.0 - 80.0,
             28.0,
         ];
-        ui.region_at(input_rect, &mut |ui_inner| {
+        ui.region_at("cmd-palette-input", input_rect, &mut |ui_inner| {
             ui_inner.text_edit_singleline(query_ref);
+            if take_focus {
+                ui_inner.focus_last_item();
+            }
             if ui_inner.is_last_item_escape_pressed() {
                 close_after = true;
             }
@@ -301,9 +353,54 @@ impl EditorPanel for CommandPalettePanel {
             }
         });
 
-        // List
+        // List — clipped to the modal body and scrolled to keep the active row
+        // in view.
+        //
+        // It used to run past the modal's bottom edge: the last rows painted
+        // over the footer and then straight onto the workspace behind, so the
+        // dialog looked like it had burst. The list is short today, but it is a
+        // list — its length is not a constant.
+        let row_pitch = 36.0 + 2.0;
+        let content_h = visible
+            .iter()
+            .map(|(_, items)| 18.0 + items.len() as f32 * row_pitch)
+            .sum::<f32>()
+            + 8.0;
+        // Follow the keyboard selection rather than the wheel: the palette is
+        // driven from the keyboard, so the view must track the active row.
+        let active_top = {
+            let mut y = 8.0;
+            let mut seen = 0usize;
+            for (_, items) in &visible {
+                y += 18.0;
+                for _ in items.iter() {
+                    if seen == active_now {
+                        break;
+                    }
+                    seen += 1;
+                    y += row_pitch;
+                }
+                if seen == active_now {
+                    break;
+                }
+            }
+            y
+        };
+        let view_h = body_rect[3];
+        let scroll = if content_h <= view_h {
+            0.0
+        } else {
+            // Keep the active row inside the viewport, nudging only as much as
+            // needed so the list doesn't jump on every arrow press.
+            let want_min = (active_top + row_pitch - view_h).max(0.0);
+            let want_max = active_top;
+            list_scroll_prev.clamp(want_min, want_max).min(content_h - view_h)
+        };
+        self.list_scroll = scroll;
+
+        ui.push_clip_rect(body_rect);
         let mut idx = 0usize;
-        let mut row_y = body_rect[1] + 8.0;
+        let mut row_y = body_rect[1] + 8.0 - scroll;
         for (section, items) in &visible {
             // Section header
             ui.paint_text_styled(
@@ -321,35 +418,32 @@ impl EditorPanel for CommandPalettePanel {
                 let row_x = modal_x + pad - 4.0;
                 let row_w = modal_w - pad * 2.0 + 8.0;
                 let row_h = 36.0;
+
+                // The highlighted row carries the gold selection bar, exactly
+                // like a selected entity or asset — one selection language
+                // across the whole editor. The icon sits bare: a filled plate
+                // per row turns the list into a grid of buttons.
                 if active {
                     ui.paint_rect_filled(
                         [row_x, row_y],
                         [row_w, row_h],
-                        with_alpha(theme.primary, 0.12),
+                        theme.surface_active,
                         theme.radius_md,
+                    );
+                    khora_tool_ui::widgets::paint::selection_bar(
+                        ui,
+                        [row_x, row_y, row_w, row_h],
+                        theme.accent_c,
                     );
                 }
 
-                // Icon box
-                let icon_box_x = row_x + 8.0;
-                let icon_box_y = row_y + 4.0;
-                ui.paint_rect_filled(
-                    [icon_box_x, icon_box_y],
-                    [28.0, 28.0],
-                    if active {
-                        theme.primary
-                    } else {
-                        theme.surface_active
-                    },
-                    6.0,
-                );
                 paint_icon(
                     ui,
-                    [icon_box_x + 7.0, icon_box_y + 7.0],
+                    [row_x + 15.0, row_y + 11.0],
                     cmd.icon,
                     14.0,
                     if active {
-                        theme.background
+                        theme.accent_c
                     } else {
                         theme.primary_dim
                     },
@@ -391,6 +485,7 @@ impl EditorPanel for CommandPalettePanel {
                 TextAlign::Center,
             );
         }
+        ui.pop_clip_rect();
 
         // ── Footer ───────────────────────────────────
         let footer_y = modal_y + modal_h - 40.0;

@@ -24,4 +24,5 @@ use khora_macros::Component;
 /// like panning and attenuation.
 #[derive(Debug, Default, Clone, Copy, Component)]
 #[component(no_serializable)]
+#[component(domain = Audio)]
 pub struct AudioListener;

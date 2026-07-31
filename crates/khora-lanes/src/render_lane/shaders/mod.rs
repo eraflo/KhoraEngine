@@ -14,170 +14,44 @@
 
 //! Built-in shader sources for the Khora Engine rendering system.
 //!
-//! This module provides compile-time embedded shader source code for the core
-//! rendering strategies. These shaders are part of the "Strategies" layer in
-//! the SAA/CLAD architecture, representing the GPU execution paths for various
-//! render lanes.
+//! Rendering lanes consume shaders through the `PipelineSystem` backend
+//! (`khora-infra`, naga_oil composer + validation). This module exposes
+//! the two remaining `include_str!` constants still required by
+//! infra-side consumers (the egui editor overlay and the text renderer)
+//! — they take raw WGSL strings, not pipeline handles.
 //!
-//! # Available Shaders
-//!
-//! - [`LIT_FORWARD_WGSL`] - Multi-light forward rendering with Blinn-Phong lighting
-//! - [`STANDARD_PBR_WGSL`] - Physically-based rendering with metallic-roughness workflow
-//! - [`UNLIT_WGSL`] - Simple unlit rendering with vertex colors
-//! - [`EMISSIVE_WGSL`] - Self-illuminating materials
-//! - [`WIREFRAME_WGSL`] - Debug wireframe visualization
-//!
-//! # Usage
-//!
-//! ```ignore
-//! use khora_lanes::shaders::LIT_FORWARD_WGSL;
-//! use khora_core::renderer::{ShaderModuleDescriptor, ShaderSourceData};
-//! use std::borrow::Cow;
-//!
-//! let descriptor = ShaderModuleDescriptor {
-//!     label: Some("lit_forward"),
-//!     source: ShaderSourceData::Wgsl(Cow::Borrowed(LIT_FORWARD_WGSL)),
-//! };
-//! ```
+//! New lanes / pipelines should be added to the backend's pipeline
+//! module table and looked up by name; no new `_WGSL` constants should
+//! appear here.
 
-/// Lit forward rendering shader with multi-light Blinn-Phong lighting.
-///
-/// Supports:
-/// - Up to 4 directional lights
-/// - Up to 16 point lights
-/// - Up to 8 spot lights
-///
-/// Uses Blinn-Phong BRDF with Reinhard tone mapping.
-pub const LIT_FORWARD_WGSL: &str = include_str!("lit_forward.wgsl");
+/// Shader for text rendering. Consumed by
+/// `khora_infra::StandardTextRenderer::new` as a raw `String`.
+pub const TEXT_WGSL: &str = include_str!("pipelines/text.wgsl");
 
-/// Standard PBR (Physically-Based Rendering) shader.
-///
-/// Implements the metallic-roughness workflow with Cook-Torrance BRDF:
-/// - GGX/Trowbridge-Reitz normal distribution
-/// - Schlick-GGX geometry function
-/// - Fresnel-Schlick approximation
-pub const STANDARD_PBR_WGSL: &str = include_str!("standard_pbr.wgsl");
+/// Shader for the egui editor overlay. Consumed by
+/// `khora_infra::WgpuRenderSystem::create_editor_overlay_and_shell`
+/// as a raw `&str`.
+pub const EGUI_WGSL: &str = include_str!("pipelines/egui.wgsl");
 
-/// Simple unlit shader for vertex-colored objects.
-///
-/// Outputs interpolated vertex colors directly without any lighting
-/// calculations. Useful for debug visualization and UI elements.
-pub const UNLIT_WGSL: &str = include_str!("unlit.wgsl");
-
-/// Emissive material shader for self-illuminating objects.
-///
-/// Outputs color multiplied by an intensity factor with HDR support.
-/// Includes tone mapping and gamma correction.
-pub const EMISSIVE_WGSL: &str = include_str!("emissive.wgsl");
-
-/// Wireframe debug visualization shader.
-///
-/// Renders mesh edges using barycentric coordinates to calculate
-/// edge distances. Useful for debugging mesh topology.
-pub const WIREFRAME_WGSL: &str = include_str!("wireframe.wgsl");
-
-/// Light culling compute shader for Forward+ rendering.
-///
-/// Performs tile-based light culling by:
-/// - Computing frustum planes for each 16x16 pixel tile
-/// - Testing each light against the tile frustum
-/// - Building a per-tile light index list
-///
-/// Outputs:
-/// - `light_index_list`: Indices of lights affecting each tile
-/// - `light_grid`: (offset, count) pairs per tile
-pub const LIGHT_CULLING_WGSL: &str = include_str!("light_culling.wgsl");
-
-/// Forward+ rendering shader with tile-based light lookup.
-///
-/// Uses pre-computed light culling data to only iterate over lights
-/// that actually affect the current pixel's tile. Implements Blinn-Phong
-/// lighting with the same quality as [`LIT_FORWARD_WGSL`] but with
-/// O(lights_per_tile) complexity instead of O(all_lights).
-pub const FORWARD_PLUS_WGSL: &str = include_str!("forward_plus.wgsl");
-
-/// Minimal depth-only shader for shadow map generation.
-pub const SHADOW_PASS_WGSL: &str = include_str!("shadow_pass.wgsl");
-
-/// Shader for UI elements (quads, text, icons).
-pub const UI_WGSL: &str = include_str!("ui.wgsl");
-
-/// Shader for text rendering.
-pub const TEXT_WGSL: &str = include_str!("text.wgsl");
-
-/// Shader for the egui editor overlay (textured + vertex-colored quads with scissor).
-pub const EGUI_WGSL: &str = include_str!("egui.wgsl");
-
-/// Infinite XZ ground grid with antialiased lines and colored axes.
-///
-/// Renders a fullscreen quad and intersects with Y=0 in the fragment
-/// shader. Provides two grid scales (1m, 10m) with distance fade-out.
-pub const GRID_WGSL: &str = include_str!("grid.wgsl");
+// NOTE — the grid and gizmo shaders are NOT exposed as `_WGSL`
+// constants: grid / gizmo rendering is owned by the engine-side
+// `GridLane` / `GizmoLane`, which resolve `khora::pipelines::grid` /
+// `khora::pipelines::gizmo` through the `PipelineSystem` backend like
+// every other render lane.
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_lit_forward_shader_valid() {
-        assert!(LIT_FORWARD_WGSL.contains("@vertex"));
-        assert!(LIT_FORWARD_WGSL.contains("@fragment"));
-    }
-
-    #[test]
-    fn test_standard_pbr_shader_valid() {
-        assert!(STANDARD_PBR_WGSL.contains("@vertex"));
-        assert!(STANDARD_PBR_WGSL.contains("@fragment"));
-    }
-
-    #[test]
-    fn test_unlit_shader_valid() {
-        assert!(UNLIT_WGSL.contains("@vertex"));
-        assert!(UNLIT_WGSL.contains("@fragment"));
-    }
-
-    #[test]
-    fn test_emissive_shader_valid() {
-        assert!(EMISSIVE_WGSL.contains("@vertex"));
-        assert!(EMISSIVE_WGSL.contains("@fragment"));
-    }
-
-    #[test]
-    fn test_wireframe_shader_valid() {
-        assert!(WIREFRAME_WGSL.contains("@vertex"));
-        assert!(WIREFRAME_WGSL.contains("@fragment"));
-    }
-
-    #[test]
-    fn test_light_culling_shader_valid() {
-        assert!(LIGHT_CULLING_WGSL.contains("@compute"));
-        assert!(LIGHT_CULLING_WGSL.contains("@workgroup_size"));
-    }
-
-    #[test]
-    fn test_forward_plus_shader_valid() {
-        assert!(FORWARD_PLUS_WGSL.contains("@vertex"));
-        assert!(FORWARD_PLUS_WGSL.contains("@fragment"));
-        assert!(FORWARD_PLUS_WGSL.contains("light_grid"));
-    }
-
-    #[test]
-    fn test_shadow_pass_shader_valid() {
-        assert!(SHADOW_PASS_WGSL.contains("@vertex"));
-        assert!(SHADOW_PASS_WGSL.contains("view_projection"));
-    }
-
-    #[test]
-    fn test_ui_shader_valid() {
-        assert!(UI_WGSL.contains("@vertex"));
-        assert!(UI_WGSL.contains("@fragment"));
-        assert!(UI_WGSL.contains("instances"));
-    }
-
-    #[test]
-    fn test_text_shader_valid() {
+    fn text_shader_valid() {
         assert!(TEXT_WGSL.contains("@vertex"));
         assert!(TEXT_WGSL.contains("@fragment"));
-        assert!(TEXT_WGSL.contains("globals"));
+    }
+
+    #[test]
+    fn egui_shader_valid() {
+        assert!(EGUI_WGSL.contains("@vertex"));
+        assert!(EGUI_WGSL.contains("@fragment"));
     }
 }

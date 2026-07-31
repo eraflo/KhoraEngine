@@ -81,8 +81,9 @@ pub trait AgentProvider {
     /// Use `dcc.register_agent(agent, priority)` for agents active in all modes.
     /// Use `dcc.register_agent_for_mode(agent, priority, modes)` for mode-specific agents.
     ///
-    /// The `services` registry provides access to engine services that agents may need.
-    fn register_agents(&self, dcc: &DccService, services: &mut khora_core::ServiceRegistry);
+    /// The `runtime` bundle provides access to engine services / backends /
+    /// resources that agents may need.
+    fn register_agents(&self, dcc: &DccService, runtime: &mut khora_core::Runtime);
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -124,6 +125,49 @@ pub trait PhaseProvider {
 /// - `setup(&mut self, world: &mut GameWorld)`
 /// - `update(&mut self, world: &mut GameWorld, inputs: &[InputEvent])`
 /// - `on_shutdown(&mut self)`
+///
+/// # Examples
+///
+/// A minimal application. `setup` populates the world once; `update` runs every
+/// frame. The optional hooks (`on_shutdown`, `before_frame`, …) keep their
+/// no-op defaults.
+///
+/// ```rust,no_run
+/// use khora_sdk::prelude::*;
+/// use khora_sdk::{
+///     AgentProvider, DccService, EngineApp, GameWorld, PhaseProvider, Runtime,
+///     WindowConfig,
+/// };
+///
+/// struct MyGame {
+///     frame: u64,
+/// }
+///
+/// impl EngineApp for MyGame {
+///     fn window_config() -> WindowConfig {
+///         WindowConfig::default()
+///     }
+///     fn new() -> Self {
+///         MyGame { frame: 0 }
+///     }
+///     fn setup(&mut self, world: &mut GameWorld, _runtime: &Runtime) {
+///         world.spawn_camera(ecs::Camera::new_perspective(
+///             std::f32::consts::FRAC_PI_4,
+///             16.0 / 9.0,
+///             0.1,
+///             1000.0,
+///         ));
+///     }
+///     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {
+///         self.frame += 1;
+///     }
+/// }
+///
+/// impl AgentProvider for MyGame {
+///     fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
+/// }
+/// impl PhaseProvider for MyGame {}
+/// ```
 pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync {
     /// Returns the window configuration for the application.
     fn window_config() -> WindowConfig
@@ -136,7 +180,7 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync {
         Self: Sized;
 
     /// Called once during engine initialization to set up the game world.
-    fn setup(&mut self, world: &mut GameWorld, services: &khora_core::ServiceRegistry);
+    fn setup(&mut self, world: &mut GameWorld, runtime: &khora_core::Runtime);
 
     /// Called every frame to update game logic.
     fn update(&mut self, world: &mut GameWorld, inputs: &[InputEvent]);
@@ -163,7 +207,7 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync {
     fn before_frame(
         &mut self,
         _world: &mut GameWorld,
-        _services: &khora_core::ServiceRegistry,
+        _runtime: &khora_core::Runtime,
         _window: &dyn KhoraWindow,
     ) {
     }
@@ -171,11 +215,11 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync {
     /// Optional: called after the renderer's `begin_frame` and before the
     /// scheduler dispatches agents. Use to switch the renderer to an offscreen
     /// viewport target (e.g., `set_render_to_viewport(true)`).
-    fn before_agents(&mut self, _world: &mut GameWorld, _services: &khora_core::ServiceRegistry) {}
+    fn before_agents(&mut self, _world: &mut GameWorld, _runtime: &khora_core::Runtime) {}
 
     /// Optional: called after agent execution and `submit_frame_graph`, but
     /// BEFORE the renderer's `end_frame`. Use to render gizmos to the offscreen
     /// viewport, switch back to the swapchain (`set_render_to_viewport(false)`),
     /// and present a UI overlay (`render_overlay`).
-    fn after_agents(&mut self, _world: &mut GameWorld, _services: &khora_core::ServiceRegistry) {}
+    fn after_agents(&mut self, _world: &mut GameWorld, _runtime: &khora_core::Runtime) {}
 }

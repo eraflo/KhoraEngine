@@ -6,13 +6,9 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! New Project screen — create a new Khora Engine project.
-//!
-//! Features:
-//! - Engine combo merging installed engines (incl. dev) and remote releases.
-//! - Optional Git initialization (local + optional GitHub remote).
-//! - When a remote engine is selected, the project is created only after the
-//!   download completes (orchestrated by `HubApp::finalize_new_project_creation`).
+//! New project — the form, and a rail that says what pressing Create will do.
+
+use std::path::PathBuf;
 
 use crate::EngineChoice;
 use crate::HubApp;
@@ -20,353 +16,467 @@ use crate::Screen;
 use crate::download;
 use crate::github;
 use crate::project;
-use crate::theme::pal;
-use crate::widgets::*;
-use eframe::egui;
-use std::path::PathBuf;
+use khora_sdk::tool_ui::{Icon, UiBuilder, UiTheme};
+use khora_tool_ui::brand::khora_dark;
+use khora_tool_ui::widgets::{
+    self, Button, ButtonKind, StepState, button, checkbox, error_line, field_label, input_frame,
+    paint::{display, mono, text},
+    progress_row, radio_card, step_rail,
+};
 
-pub fn show_new_project(app: &mut HubApp, parent_ui: &mut egui::Ui) {
-    // Kick off a release fetch on first visit so the combo is populated.
+const FORM_W: f32 = 520.0;
+const RAIL_W: f32 = 260.0;
+const ROW: f32 = 32.0;
+
+/// Renders the new-project screen.
+pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     if !app.new_project.has_fetched_once && app.new_project.fetch_rx.is_none() {
-        let (tx, rx) = std::sync::mpsc::channel();
-        app.new_project.fetch_rx = Some(rx);
-        std::thread::spawn(move || {
-            let r = github::fetch_releases().map_err(|e| e.to_string());
-            let _ = tx.send(r);
-        });
+        app.new_project.fetch_rx = Some(github::fetch_releases_async());
     }
 
-    egui::CentralPanel::default().show_inside(parent_ui, |ui| {
-        ui.add_space(28.0);
-        ui.horizontal(|ui| {
-            ui.add_space(32.0);
-            ui.vertical(|ui| {
-                if ui
-                    .add(
-                        egui::Button::new(
-                            egui::RichText::new("< Back")
-                                .size(12.0)
-                                .color(pal::TEXT_DIM),
-                        )
-                        .fill(egui::Color32::TRANSPARENT)
-                        .stroke(egui::Stroke::NONE),
-                    )
-                    .clicked()
-                {
-                    app.screen = Screen::Home;
-                    app.new_project.status = None;
-                }
-                ui.add_space(16.0);
+    let t = khora_dark();
+    let r = ui.panel_rect();
+    let pad = 24.0;
 
-                ui.label(
-                    egui::RichText::new("New Project")
-                        .strong()
-                        .size(22.0)
-                        .color(pal::TEXT),
-                );
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new("Configure your project and create it in one click.")
-                        .size(12.0)
-                        .color(pal::TEXT_MUTED),
-                );
-                ui.add_space(20.0);
+    let total = FORM_W + 40.0 + RAIL_W;
+    let x = r[0] + ((r[2] - total) * 0.5).max(pad);
+    let form_w = FORM_W.min(r[2] - pad * 2.0);
 
-                // ── Form card ──────────────────────────────────────
-                egui::Frame::new()
-                    .fill(pal::SURFACE2)
-                    .stroke(egui::Stroke::new(1.0, pal::BORDER))
-                    .corner_radius(egui::CornerRadius::same(10))
-                    .inner_margin(egui::Margin {
-                        left: 20,
-                        right: 20,
-                        top: 18,
-                        bottom: 18,
-                    })
-                    .show(ui, |ui| {
-                        ui.set_min_width(520.0);
-                        ui.set_max_width(640.0);
+    let mut y = r[1] + 20.0;
 
-                        let busy = app.new_project.creating_after_download
-                            || app.new_project.download_progress.is_some();
+    if button(
+        ui,
+        &t,
+        [x, y, 80.0, 26.0],
+        "np-back",
+        Button::new("Back", ButtonKind::Ghost).icon(Icon::ArrowLeft),
+    )
+    .clicked
+    {
+        app.screen = Screen::Home;
+    }
+    y += 26.0 + 16.0;
 
-                        ui.add_enabled_ui(!busy, |ui| form_body(app, ui));
-
-                        if let Some((done, total)) = app.new_project.download_progress {
-                            ui.add_space(12.0);
-                            let pct = if total > 0 {
-                                done as f32 / total as f32
-                            } else {
-                                0.0
-                            };
-                            ui.add(
-                                egui::ProgressBar::new(pct)
-                                    .text(format!(
-                                        "Downloading engine… {:.1} / {:.1} MB",
-                                        done as f64 / 1_048_576.0,
-                                        total as f64 / 1_048_576.0
-                                    ))
-                                    .desired_width(f32::INFINITY),
-                            );
-                        }
-
-                        if let Some(status) = app.new_project.status.clone() {
-                            ui.add_space(12.0);
-                            let (bg, fg) = if app.new_project.success {
-                                (egui::Color32::from_rgb(18, 48, 30), pal::SUCCESS)
-                            } else {
-                                (egui::Color32::from_rgb(60, 20, 18), pal::ERROR)
-                            };
-                            egui::Frame::new()
-                                .fill(bg)
-                                .stroke(egui::Stroke::new(1.0, fg.gamma_multiply(0.4)))
-                                .corner_radius(egui::CornerRadius::same(5))
-                                .inner_margin(egui::Margin {
-                                    left: 10,
-                                    right: 10,
-                                    top: 6,
-                                    bottom: 6,
-                                })
-                                .show(ui, |ui| {
-                                    ui.label(egui::RichText::new(&status).size(11.0).color(fg));
-                                });
-                        }
-                    });
-            });
-        });
-    });
-}
-
-fn form_body(app: &mut HubApp, ui: &mut egui::Ui) {
-    field_label(ui, "Project Name");
-    ui.add_space(4.0);
-    ui.add(
-        egui::TextEdit::singleline(&mut app.new_project.name)
-            .hint_text("e.g. MyGame")
-            .desired_width(f32::INFINITY),
+    display(ui, [x, y], "Create a project", 22.0, t.text);
+    y += 30.0;
+    text(
+        ui,
+        [x, y],
+        "A new Khora project with an engine version pinned and, optionally, a git repository.",
+        t.font_size_body,
+        t.text_muted,
     );
-    ui.add_space(12.0);
+    y += 28.0;
 
-    field_label(ui, "Location");
-    ui.add_space(4.0);
-    ui.horizontal(|ui| {
-        ui.add(
-            egui::TextEdit::singleline(&mut app.new_project.path)
-                .desired_width(380.0)
-                .font(egui::TextStyle::Monospace),
-        );
-        ui.add_space(4.0);
-        if ghost_button(ui, "Browse", [80.0, 28.0]).clicked()
-            && let Some(path) = rfd::FileDialog::new().pick_folder()
-        {
-            app.new_project.path = path.to_string_lossy().to_string();
-        }
+    // ── Basics ──
+    eyebrow(ui, &t, [x, y], "Basics");
+    y += 20.0;
+
+    let name_invalid = !app.new_project.name.trim().is_empty()
+        && project_dir(app).map(|p| p.exists()).unwrap_or(false);
+
+    field_label(ui, &t, [x, y], "Project name");
+    y += 18.0;
+    let inner = input_frame(ui, &t, [x, y, form_w, ROW], "np-name", name_invalid);
+    ui.region_at("np-name", inner, &mut |ui| {
+        ui.text_edit_singleline(&mut app.new_project.name);
     });
+    y += ROW + 4.0;
+    if name_invalid {
+        error_line(
+            ui,
+            &t,
+            [x, y],
+            "A folder with that name already exists here",
+        );
+        y += 18.0;
+    }
+    y += 8.0;
+
+    let parent = PathBuf::from(app.new_project.path.trim());
+    let dir_invalid = !app.new_project.path.trim().is_empty() && !parent.is_dir();
+
+    field_label(ui, &t, [x, y], "Parent directory");
+    y += 18.0;
+    let field_w = form_w - 108.0;
+    let inner = input_frame(ui, &t, [x, y, field_w, ROW], "np-path", dir_invalid);
+    ui.region_at("np-path", inner, &mut |ui| {
+        ui.text_edit_singleline(&mut app.new_project.path);
+    });
+    if button(
+        ui,
+        &t,
+        [x + field_w + 8.0, y, 100.0, ROW],
+        "np-browse",
+        Button::new("Browse…", ButtonKind::Ghost).icon(Icon::FolderOpen),
+    )
+    .clicked
+        && let Some(path) = rfd::FileDialog::new().pick_folder()
+    {
+        app.new_project.path = path.to_string_lossy().to_string();
+    }
+    y += ROW + 4.0;
+    if dir_invalid {
+        error_line(ui, &t, [x, y], "That directory doesn't exist");
+        y += 18.0;
+    } else if let Some(dest) = project_dir(app) {
+        mono(
+            ui,
+            [x, y],
+            &format!("Creates {}", dest.display()),
+            t.font_size_caption,
+            t.text_disabled,
+        );
+        y += 16.0;
+    }
+    y += 12.0;
+
+    // ── Engine ──
+    eyebrow(ui, &t, [x, y], "Engine");
+    y += 20.0;
 
     let choices = app.engine_choices();
-    ui.add_space(12.0);
-    field_label(ui, "Engine Version");
-    ui.add_space(4.0);
-    if choices.is_empty() {
-        if app.new_project.fetch_rx.is_some() {
-            ui.horizontal(|ui| {
-                ui.add(egui::Spinner::new());
-                ui.label(
-                    egui::RichText::new("Fetching available engine versions…")
-                        .size(11.0)
-                        .color(pal::TEXT_MUTED),
-                );
-            });
-        } else {
-            warning_inline(
-                ui,
-                "No engine available. Configure a local repo or check Engine Manager.",
-            );
+    for (i, choice) in choices.iter().enumerate() {
+        let (label, meta) = match choice {
+            EngineChoice::Installed(e) => (e.version.clone(), "installed".to_owned()),
+            EngineChoice::Remote { version, size, .. } => (
+                version.clone(),
+                format!("download · {} MB", size / 1_000_000),
+            ),
+        };
+        if radio_card(
+            ui,
+            &t,
+            [x, y, form_w, 38.0],
+            &format!("np-engine-{i}"),
+            &label,
+            &meta,
+            i == app.new_project.engine_idx,
+        )
+        .clicked
+        {
+            app.new_project.engine_idx = i;
         }
-    } else {
-        let safe_idx = app.new_project.engine_idx.min(choices.len() - 1);
-        let selected = &choices[safe_idx];
-        let selected_label = engine_choice_label(selected);
-        egui::ComboBox::from_id_salt("np_engine")
-            .selected_text(selected_label)
-            .width(360.0)
-            .show_ui(ui, |ui| {
-                for (i, c) in choices.iter().enumerate() {
-                    ui.selectable_value(&mut app.new_project.engine_idx, i, engine_choice_label(c));
-                }
-            });
+        y += 38.0 + 6.0;
+    }
+    y += 8.0;
 
-        if matches!(selected, EngineChoice::Remote { .. }) {
-            ui.add_space(4.0);
-            status_chip(
-                ui,
-                "Selected version will be downloaded before the project is created.",
-                pal::ACCENT_CYAN,
-            );
+    // ── Source control ──
+    eyebrow(ui, &t, [x, y], "Source control");
+    y += 20.0;
+
+    if checkbox(
+        ui,
+        &t,
+        [x, y, form_w, 24.0],
+        "np-git",
+        "Initialize a git repository",
+        app.new_project.git_init,
+    )
+    .clicked
+    {
+        app.new_project.git_init = !app.new_project.git_init;
+    }
+    y += 28.0;
+
+    if app.new_project.git_init {
+        // Nesting is shown with a left rule, not indentation alone — it makes
+        // the dependency between the options visible.
+        let nest_x = x + 26.0;
+        let nest_top = y;
+
+        if checkbox(
+            ui,
+            &t,
+            [nest_x, y, form_w - 26.0, 24.0],
+            "np-git-remote",
+            "Create a GitHub repository",
+            app.new_project.git_remote,
+        )
+        .clicked
+        {
+            app.new_project.git_remote = !app.new_project.git_remote;
         }
-    }
+        y += 28.0;
 
-    if !app.new_project.name.is_empty() && !app.new_project.path.is_empty() {
-        ui.add_space(10.0);
-        let preview = PathBuf::from(&app.new_project.path)
-            .join(&app.new_project.name)
-            .to_string_lossy()
-            .to_string();
-        ui.label(
-            egui::RichText::new(format!("→ {preview}"))
-                .size(11.0)
-                .color(pal::TEXT_MUTED)
-                .monospace(),
-        );
-    }
-
-    ui.add_space(16.0);
-    paint_separator(ui, pal::BORDER);
-    ui.add_space(12.0);
-
-    // ── Git options ────────────────────────────────────────────────
-    section_header(ui, "Version control");
-    ui.add_space(6.0);
-    ui.checkbox(&mut app.new_project.git_init, "Initialize Git repository");
-
-    let connected = app.settings.auth.is_connected();
-    ui.add_enabled_ui(app.new_project.git_init && connected, |ui| {
-        ui.checkbox(
-            &mut app.new_project.git_remote,
-            "Create on GitHub and add as origin",
-        );
         if app.new_project.git_remote {
-            ui.indent("git_remote_opts", |ui| {
-                ui.horizontal(|ui| {
-                    field_label(ui, "Repo name");
-                    if app.new_project.remote_repo_name.is_empty() {
-                        app.new_project.remote_repo_name = app.new_project.name.clone();
-                    }
-                    ui.add(
-                        egui::TextEdit::singleline(&mut app.new_project.remote_repo_name)
-                            .desired_width(220.0),
-                    );
-                });
-                ui.checkbox(&mut app.new_project.remote_private, "Private repository");
-                ui.checkbox(&mut app.new_project.remote_push, "Push initial commit");
+            let deep_x = nest_x + 26.0;
+
+            field_label(ui, &t, [deep_x, y], "Repository name");
+            y += 18.0;
+            let inner = input_frame(ui, &t, [deep_x, y, form_w - 52.0, ROW], "np-repo", false);
+            ui.region_at("np-repo", inner, &mut |ui| {
+                ui.text_edit_singleline(&mut app.new_project.remote_repo_name);
             });
+            y += ROW + 8.0;
+
+            if checkbox(
+                ui,
+                &t,
+                [deep_x, y, form_w - 52.0, 24.0],
+                "np-private",
+                "Private repository",
+                app.new_project.remote_private,
+            )
+            .clicked
+            {
+                app.new_project.remote_private = !app.new_project.remote_private;
+            }
+            y += 26.0;
+
+            if checkbox(
+                ui,
+                &t,
+                [deep_x, y, form_w - 52.0, 24.0],
+                "np-push",
+                "Push the initial commit",
+                app.new_project.remote_push,
+            )
+            .clicked
+            {
+                app.new_project.remote_push = !app.new_project.remote_push;
+            }
+            y += 26.0;
+
+            if !app.settings.auth.is_connected() {
+                error_line(
+                    ui,
+                    &t,
+                    [deep_x, y],
+                    "Not connected to GitHub — this will fall back to local-only",
+                );
+                y += 20.0;
+            }
         }
-    });
-    if !connected {
-        ui.add_space(4.0);
-        ui.label(
-            egui::RichText::new("Connect GitHub in Settings to enable remote creation.")
-                .size(11.0)
-                .color(pal::TEXT_MUTED),
-        );
+
+        ui.paint_line([x + 12.0, nest_top], [x + 12.0, y - 6.0], t.border, 1.0);
+    }
+    y += 12.0;
+
+    // ── Progress / status ──
+    if let Some((done, total_bytes)) = app.new_project.download_progress {
+        let ratio = if total_bytes == 0 {
+            0.0
+        } else {
+            done as f32 / total_bytes as f32
+        };
+        progress_row(ui, &t, [x, y, form_w, 22.0], "Downloading engine", ratio);
+        y += 30.0;
+    }
+    if let Some(status) = app.new_project.status.as_ref() {
+        let color = if app.new_project.success {
+            t.success
+        } else {
+            t.warning
+        };
+        text(ui, [x, y], status, t.font_size_caption + 1.0, color);
+        y += 20.0;
     }
 
-    ui.add_space(16.0);
-    paint_separator(ui, pal::BORDER);
-    ui.add_space(12.0);
+    // ── Actions ──
+    y += 6.0;
+    ui.paint_line([x, y], [x + form_w, y], t.separator, 1.0);
+    y += 16.0;
 
-    let can_create =
-        !app.new_project.name.is_empty() && !app.new_project.path.is_empty() && !choices.is_empty();
+    let busy = app.new_project.creating_after_download || app.new_project.download_rx.is_some();
+    if button(
+        ui,
+        &t,
+        [x, y, 150.0, ROW],
+        "np-create",
+        Button::new(
+            if busy { "Working…" } else { "Create project" },
+            ButtonKind::Primary,
+        )
+        .icon(Icon::Plus)
+        .enabled(!busy),
+    )
+    .clicked
+    {
+        handle_create(app, &choices);
+    }
+    if button(
+        ui,
+        &t,
+        [x + 158.0, y, 90.0, ROW],
+        "np-cancel",
+        Button::new("Cancel", ButtonKind::Ghost),
+    )
+    .clicked
+    {
+        app.screen = Screen::Home;
+    }
 
-    ui.add_enabled_ui(can_create, |ui| {
-        if primary_button(ui, "Create Project", [180.0, 36.0]).clicked() {
-            handle_create(app, &choices);
-        }
-    });
-}
-
-fn engine_choice_label(c: &EngineChoice) -> String {
-    match c {
-        EngineChoice::Installed(e) => format!("[installed] {} ({})", e.version, e.source),
-        EngineChoice::Remote { version, size, .. } => {
-            let mb = *size as f64 / 1_048_576.0;
-            format!("[download]  {version} (remote, {mb:.1} MB)")
-        }
+    // ── The rail: what pressing Create actually does ──
+    let rail_x = x + form_w + 40.0;
+    if widgets::right(r) - rail_x >= RAIL_W {
+        show_rail(app, ui, &t, [rail_x, r[1] + 96.0, RAIL_W, 200.0]);
     }
 }
 
-fn warning_inline(ui: &mut egui::Ui, text: &str) {
-    egui::Frame::new()
-        .fill(egui::Color32::from_rgb(50, 38, 18))
-        .stroke(egui::Stroke::new(1.0, pal::WARNING.gamma_multiply(0.4)))
-        .corner_radius(egui::CornerRadius::same(5))
-        .inner_margin(egui::Margin {
-            left: 10,
-            right: 10,
-            top: 6,
-            bottom: 6,
+fn show_rail(app: &HubApp, ui: &mut dyn UiBuilder, t: &UiTheme, rect: [f32; 4]) {
+    text(
+        ui,
+        [rect[0], rect[1]],
+        "What happens",
+        t.font_size_body,
+        t.text,
+    );
+
+    let named = !app.new_project.name.trim().is_empty();
+    let git = app.new_project.git_init;
+
+    let engine = app
+        .engine_choices()
+        .get(app.new_project.engine_idx)
+        .map(|c| match c {
+            EngineChoice::Installed(e) => e.version.clone(),
+            EngineChoice::Remote { version, .. } => version.clone(),
         })
-        .show(ui, |ui| {
-            ui.label(egui::RichText::new(text).size(11.0).color(pal::WARNING));
-        });
+        .unwrap_or_else(|| "—".to_owned());
+
+    let steps: Vec<(&str, String, StepState)> = vec![
+        (
+            "Scaffold",
+            "project files + assets/".to_owned(),
+            if named {
+                StepState::Done
+            } else {
+                StepState::Current
+            },
+        ),
+        (
+            "Pin engine",
+            engine,
+            if named {
+                StepState::Done
+            } else {
+                StepState::Pending
+            },
+        ),
+        (
+            "git init",
+            if git {
+                "+ GitHub remote".to_owned()
+            } else {
+                "skipped".to_owned()
+            },
+            if git {
+                StepState::Current
+            } else {
+                StepState::Pending
+            },
+        ),
+        ("Open", "in the editor".to_owned(), StepState::Pending),
+    ];
+
+    let borrowed: Vec<(&str, &str, StepState)> =
+        steps.iter().map(|(a, b, c)| (*a, b.as_str(), *c)).collect();
+
+    step_rail(
+        ui,
+        t,
+        [rect[0], rect[1] + 26.0, rect[2], rect[3]],
+        &borrowed,
+    );
+}
+
+fn eyebrow(ui: &mut dyn UiBuilder, t: &UiTheme, pos: [f32; 2], label: &str) {
+    mono(
+        ui,
+        pos,
+        &label.to_uppercase(),
+        t.font_size_caption - 1.0,
+        t.text_disabled,
+    );
+}
+
+/// The folder that would be created, if both fields are filled in.
+fn project_dir(app: &HubApp) -> Option<PathBuf> {
+    let name = app.new_project.name.trim();
+    let parent = app.new_project.path.trim();
+    if name.is_empty() || parent.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(parent).join(name.to_lowercase()))
 }
 
 fn handle_create(app: &mut HubApp, choices: &[EngineChoice]) {
-    let idx = app
-        .new_project
-        .engine_idx
-        .min(choices.len().saturating_sub(1));
-    let choice = match choices.get(idx) {
-        Some(c) => c.clone(),
-        None => {
-            app.new_project.success = false;
-            app.new_project.status = Some("No engine selected.".to_owned());
-            return;
-        }
+    if app.new_project.name.trim().is_empty() {
+        app.new_project.success = false;
+        app.new_project.status = Some("Give the project a name.".into());
+        return;
+    }
+    if app.new_project.path.trim().is_empty() {
+        app.new_project.success = false;
+        app.new_project.status = Some("Pick a parent directory.".into());
+        return;
+    }
+    let Some(choice) = choices.get(app.new_project.engine_idx).cloned() else {
+        app.new_project.success = false;
+        app.new_project.status = Some("Pick an engine.".into());
+        return;
     };
 
     match choice {
-        EngineChoice::Installed(engine) => {
-            let git = app.build_git_init();
-            match project::create_project(
-                &app.new_project.name,
-                &PathBuf::from(&app.new_project.path),
-                &engine.version,
-                &git,
-            ) {
-                Ok(root) => {
-                    app.new_project.success = true;
-                    app.new_project.status =
-                        Some(format!("Project created at: {}", root.display()));
-                    app.config
-                        .push_recent(&app.new_project.name, &root, &engine.version);
-                    let _ = app.config.save();
-
-                    match project::launch_editor(&engine.editor_binary, &root) {
-                        Ok(()) => {
-                            app.banner = Some(crate::Banner::info("Editor launched!"));
-                        }
-                        Err(e) => {
-                            app.banner = Some(crate::Banner::error(format!(
-                                "Project created but could not launch editor: {e}"
-                            )));
-                        }
-                    }
-                    app.screen = Screen::Home;
-                }
-                Err(e) => {
-                    app.new_project.success = false;
-                    app.new_project.status = Some(format!("Error: {e}"));
-                }
-            }
-        }
+        EngineChoice::Installed(engine) => create_with_engine(app, engine),
         EngineChoice::Remote {
             version,
             download_url,
             size,
+            runtime_url,
+            runtime_size,
         } => {
-            // Trigger an engine download; the project will be created in
-            // `HubApp::finalize_new_project_creation` once the engine is ready.
-            let asset = github::GithubAsset {
+            let editor_asset = github::GithubAsset {
                 name: format!("khora-engine-{version}"),
                 browser_download_url: download_url,
                 size,
             };
+            let runtime_asset = runtime_url.map(|u| github::GithubAsset {
+                name: format!("khora-runtime-{version}"),
+                browser_download_url: u,
+                size: runtime_size.unwrap_or(0),
+            });
             app.new_project.creating_after_download = true;
             app.new_project.download_progress = Some((0, size));
-            app.new_project.download_rx = Some(download::start_download(&asset, &version));
-            app.new_project.status = Some(format!("Downloading engine {version}…"));
+            app.new_project.download_rx = Some(download::start_download(
+                &editor_asset,
+                runtime_asset.as_ref(),
+                &version,
+            ));
+            app.new_project.status = Some("Downloading engine…".into());
+        }
+    }
+}
+
+fn create_with_engine(app: &mut HubApp, engine: crate::config::EngineInstall) {
+    let git = app.build_git_init();
+    let parent = PathBuf::from(&app.new_project.path);
+    match project::create_project(&app.new_project.name, &parent, &engine.version, &git) {
+        Ok(root) => {
             app.new_project.success = true;
+            app.new_project.status = Some(format!("Created at {}", root.display()));
+            app.config
+                .push_recent(&app.new_project.name, &root, &engine.version);
+            let _ = app.config.save();
+            match project::launch_editor(&engine.editor_binary, &root) {
+                Ok(()) => {
+                    app.banner = Some(crate::Banner::info("Editor launched."));
+                    app.screen = Screen::Home;
+                }
+                Err(e) => {
+                    app.banner = Some(crate::Banner::error(format!(
+                        "Project created, but the editor didn't launch: {e}"
+                    )));
+                }
+            }
+        }
+        Err(e) => {
+            app.new_project.success = false;
+            app.new_project.status = Some(format!("Error: {e}"));
+            app.banner = Some(crate::Banner::error(format!(
+                "Couldn't create project: {e}"
+            )));
         }
     }
 }

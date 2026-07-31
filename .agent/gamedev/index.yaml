@@ -1,0 +1,46 @@
+# Machine-readable index for the gamedev profile (building games with the SDK).
+profile: gamedev
+description: AI documentation for developing games WITH the Khora Engine (khora-sdk only).
+
+docs:
+  - { path: SOUL.md,            load: always,    tags: [identity, orchestrator, sdk-map, routing] }
+  - { path: RULES.md,           load: always,    tags: [rules, constraints, sdk-only, boundaries] }
+  - { path: index.md,           load: always,    tags: [index, navigation] }
+  - { path: workflow-rpi.md,    load: always,    tags: [workflow, rpi, research, plan, implement, context-engineering] }
+  - { path: sdk-guide.md,       load: on_demand, tags: [sdk, api, vessel, engineapp, input, scene] }
+  - { path: conventions.md,     load: on_demand, tags: [style, game-structure, patterns] }
+  - { path: security-privacy.md, load: on_demand, tags: [security, privacy, secrets, builds] }
+
+knowledge:
+  - { path: knowledge/context.md, load: on_demand, tags: [project, sdk-surface, commands] }
+  - { path: knowledge/MEMORY.md,  load: on_demand, tags: [game-state, notes] }
+
+# Research subagents — read-only context-control workers; dispatch during the Research phase.
+agents:
+  - { path: agents/orchestrator.md,           when: default front door / routing / drive the RPI loop }
+  - { path: agents/codebase-locator.md,       when: find WHERE game files / SDK calls live }
+  - { path: agents/codebase-analyzer.md,      when: understand HOW a mechanism works (file:line) }
+  - { path: agents/codebase-pattern-finder.md, when: find an existing example to mirror (often the sandbox) }
+  - { path: agents/knowledge-locator.md,      when: find prior research / plans / notes }
+  - { path: agents/security-auditor.md,       when: no secrets in builds, safe SDK usage }
+
+# Domain reference — on-demand knowledge (scope, key API, rules) per domain.
+reference:
+  - { path: reference/gameplay.md,     load: on_demand, tags: [entities, vessel, engineapp, input, components] }
+  - { path: reference/scene-design.md, load: on_demand, tags: [scene, lighting, materials, ui, impeccable] }
+
+skills:
+  - { path: skills/research-codebase/SKILL.md, when: RPI phase 1 — understand a problem → docs/research/ }
+  - { path: skills/create-plan/SKILL.md,       when: RPI phase 2 — write a phase-by-phase plan → docs/plans/ }
+  - { path: skills/implement-plan/SKILL.md,    when: RPI phase 3 — execute a plan, compact per phase }
+  - { path: skills/start-a-game/SKILL.md,   when: scaffold a new game on the SDK }
+  - { path: skills/spawn-entity/SKILL.md,   when: spawn entities via Vessel }
+  - { path: skills/setup-input/SKILL.md,    when: bind input actions }
+  - { path: skills/load-scene/SKILL.md,     when: load/serialize a scene }
+  - { path: skills/pack-and-ship/SKILL.md,  when: build + pack + ship a game }
+
+hooks:
+  - { path: hooks/doc-change.md,  event: on AI-doc change → reinstall wrappers }
+  - { path: hooks/bootstrap.md,   event: session start }
+  - { path: hooks/teardown.md,    event: session end }
+  - { path: hooks/secret-scan.md, event: pre-commit secret scan }

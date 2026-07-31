@@ -207,9 +207,13 @@ impl IntoWgpu<wgpu::TextureFormat> for TextureFormat {
 }
 
 /// Converts a WGPU texture format into its Khora equivalent.
-/// This is a free function because we cannot implement `From` due to orphan rules.
-pub fn from_wgpu_texture_format(format: wgpu::TextureFormat) -> TextureFormat {
-    match format {
+///
+/// This is a free function because we cannot implement `From` due to orphan
+/// rules. Returns `None` for any `wgpu::TextureFormat` Khora does not model
+/// (compressed, packed, and exotic formats are intentionally unsupported);
+/// callers decide how to degrade rather than crashing the frame loop.
+pub fn from_wgpu_texture_format(format: wgpu::TextureFormat) -> Option<TextureFormat> {
+    let mapped = match format {
         wgpu::TextureFormat::R8Unorm => TextureFormat::R8Unorm,
         wgpu::TextureFormat::Rg8Unorm => TextureFormat::Rg8Unorm,
         wgpu::TextureFormat::Rgba8Unorm => TextureFormat::Rgba8Unorm,
@@ -226,11 +230,14 @@ pub fn from_wgpu_texture_format(format: wgpu::TextureFormat) -> TextureFormat {
         wgpu::TextureFormat::Depth32Float => TextureFormat::Depth32Float,
         wgpu::TextureFormat::Depth24PlusStencil8 => TextureFormat::Depth24PlusStencil8,
         wgpu::TextureFormat::Depth32FloatStencil8 => TextureFormat::Depth32FloatStencil8,
-        _ => unimplemented!(
-            "Conversion from wgpu::TextureFormat::{:?} to khora::TextureFormat is not implemented",
-            format
-        ),
-    }
+        other => {
+            log::error!(
+                "from_wgpu_texture_format: unsupported wgpu::TextureFormat {other:?} has no khora::TextureFormat equivalent"
+            );
+            return None;
+        }
+    };
+    Some(mapped)
 }
 
 impl IntoWgpu<u32> for SampleCount {
@@ -642,6 +649,28 @@ mod tests {
         assert_eq!(
             wgpu::TextureFormat::Depth32Float,
             TextureFormat::Depth32Float.into_wgpu()
+        );
+    }
+
+    #[test]
+    fn test_from_wgpu_texture_format_known() {
+        assert_eq!(
+            from_wgpu_texture_format(wgpu::TextureFormat::Rgba8UnormSrgb),
+            Some(TextureFormat::Rgba8UnormSrgb)
+        );
+        assert_eq!(
+            from_wgpu_texture_format(wgpu::TextureFormat::Depth32Float),
+            Some(TextureFormat::Depth32Float)
+        );
+    }
+
+    #[test]
+    fn test_from_wgpu_texture_format_unsupported_returns_none() {
+        // A compressed format Khora does not model must degrade to `None`
+        // rather than panicking on the GPU path.
+        assert_eq!(
+            from_wgpu_texture_format(wgpu::TextureFormat::Bc1RgbaUnorm),
+            None
         );
     }
 

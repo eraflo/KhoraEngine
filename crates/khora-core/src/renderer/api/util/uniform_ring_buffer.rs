@@ -344,8 +344,8 @@ mod tests {
         ) {
         }
 
-        fn finish(self: Box<Self>) -> CommandBufferId {
-            CommandBufferId(0)
+        fn finish(self: Box<Self>) -> Option<CommandBufferId> {
+            Some(CommandBufferId(0))
         }
 
         fn as_any_mut(&mut self) -> &mut dyn std::any::Any {

@@ -27,7 +27,7 @@ impl EventHandler for RapierEventHandler {
         event: CollisionEvent,
         _contact_pair: Option<&ContactPair>,
     ) {
-        let mut events = self.events.lock().unwrap();
+        let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
         match event {
             CollisionEvent::Started(h1, h2, _) => {
                 events.push(khora_core::physics::CollisionEvent::Started(

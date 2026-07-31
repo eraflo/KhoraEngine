@@ -19,12 +19,12 @@
 //! the [`ServiceRegistry`] each frame — agents are not the owners.
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
 use khora_core::control::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-    StrategyOption,
+    measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
+    NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
 use khora_core::lane::PhysicsDeltaTime;
 use khora_core::lane::{LaneContext, LaneRegistry, Slot};
@@ -36,6 +36,14 @@ use khora_lanes::physics_lane::StandardPhysicsLane;
 const COST_TO_MS_SCALE: f32 = 3.0;
 
 /// Strategies for physics simulation.
+///
+/// Debug-overlay extraction was previously a third variant here, but it
+/// is not a *strategy* of the same mission ("step the simulation") — it
+/// is a side-channel projection of provider state into the `World`.
+/// That work now lives in the
+/// [`physics_debug_extraction`](khora_data::ecs::systems::physics_debug_extraction)
+/// `DataSystem` so the simulation continues to step regardless of whether
+/// the debug overlay is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PhysicsStrategy {
     /// Standard high-precision physics.
@@ -43,8 +51,6 @@ pub enum PhysicsStrategy {
     Standard,
     /// Simplified physics for low-power mode.
     Simplified,
-    /// Debug visualization mode.
-    Debug,
 }
 
 /// The agent responsible for managing the physics simulation.
@@ -58,16 +64,13 @@ pub struct PhysicsAgent {
     strategy: PhysicsStrategy,
     /// Current GORNA strategy ID.
     current_strategy: StrategyId,
-    /// Duration of the last physics step.
-    last_step_time: Duration,
     /// Time budget allocated by GORNA.
     time_budget: Duration,
-    /// Total frames simulated.
-    frame_count: u64,
     /// Fixed timestep for physics simulation.
     fixed_timestep: f32,
-    /// Number of `execute` invocations attempted.
-    execute_attempts: u64,
+    /// Shared, scheduler-written per-agent frame metrics, read in
+    /// `report_status`; the agent holds no per-frame counters.
+    frame_status: Option<AgentFrameStatusMap>,
 }
 
 impl Agent for PhysicsAgent {
@@ -143,12 +146,19 @@ impl Agent for PhysicsAgent {
         self.time_budget = budget.time_limit;
     }
 
-    fn execute(&mut self, context: &mut EngineContext<'_>) {
-        self.execute_attempts += 1;
+    fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
+        self.frame_status = context
+            .runtime
+            .resources
+            .get::<AgentFrameStatusMap>()
+            .cloned();
+    }
 
+    fn execute(&mut self, context: &mut EngineContext<'_>) {
         // Look up the physics provider from services every frame.
         let Some(provider_arc) = context
-            .services
+            .runtime
+            .backends
             .get::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()
         else {
             log::debug!("PhysicsAgent: no physics provider registered, skipping step");
@@ -156,14 +166,12 @@ impl Agent for PhysicsAgent {
         };
         let provider_arc: Arc<Mutex<Box<dyn PhysicsProvider>>> = (*provider_arc).clone();
 
-        let Some(world_any) = context.world.as_deref_mut() else {
+        let Some(world_any) = context.world_mut() else {
             return;
         };
         let Some(world) = world_any.downcast_mut::<World>() else {
             return;
         };
-
-        let start = Instant::now();
 
         let mut provider_guard = match provider_arc.lock() {
             Ok(g) => g,
@@ -177,40 +185,37 @@ impl Agent for PhysicsAgent {
         ctx.insert(PhysicsDeltaTime(self.fixed_timestep));
         ctx.insert(Slot::new(world));
         ctx.insert(Slot::new(provider_guard.as_mut()));
+        // Forward the per-frame `OutputDeck` so the lane can publish a
+        // `PhysicsStepResult` marker that `physics_world_writeback` reads
+        // during Maintenance.
+        ctx.insert(Slot::new(&mut *context.deck));
 
-        let lane_name = match self.strategy {
-            PhysicsStrategy::Standard | PhysicsStrategy::Simplified => "StandardPhysics",
-            PhysicsStrategy::Debug => "PhysicsDebug",
-        };
+        // Both strategies dispatch the same lane today; LowPower simply
+        // tightens the fixed_timestep via apply_budget. A future
+        // `SimplifiedPhysicsLane` strategy could fork here.
+        let lane_name = "StandardPhysics";
 
         if let Some(lane) = self.lanes.get(lane_name) {
             if let Err(e) = lane.execute(&mut ctx) {
                 log::error!("Physics lane {} failed: {}", lane.strategy_name(), e);
             }
         }
-
-        self.last_step_time = start.elapsed();
-        self.frame_count += 1;
     }
 
     fn report_status(&self) -> AgentStatus {
-        let health_score = if self.time_budget.is_zero() || self.frame_count == 0 {
+        let measured_time_ms = measured_frame_time_ms(&self.frame_status, self.id());
+        let health_score = if self.time_budget.is_zero() || measured_time_ms <= 0.0 {
             1.0
         } else {
-            let ratio =
-                self.time_budget.as_secs_f32() / self.last_step_time.as_secs_f32().max(0.0001);
-            ratio.min(1.0)
+            (self.time_budget.as_secs_f32() * 1000.0 / measured_time_ms).min(1.0)
         };
 
         AgentStatus {
             agent_id: self.id(),
             health_score,
             current_strategy: self.current_strategy,
-            is_stalled: self.execute_attempts > 0 && self.frame_count == 0,
-            message: format!(
-                "step_time={:.2}ms",
-                self.last_step_time.as_secs_f32() * 1000.0,
-            ),
+            is_stalled: false,
+            message: format!("step_time={measured_time_ms:.2}ms"),
         }
     }
 
@@ -238,17 +243,18 @@ impl Default for PhysicsAgent {
     fn default() -> Self {
         let mut lanes = LaneRegistry::new();
         lanes.register(Box::new(StandardPhysicsLane::new()));
-        lanes.register(Box::new(khora_lanes::physics_lane::PhysicsDebugLane::new()));
+        // PhysicsDebugLane was previously registered here; debug overlay
+        // extraction now lives in the `physics_debug_extraction` DataSystem
+        // (PostSimulation phase), running alongside the sim instead of
+        // replacing it.
 
         Self {
             lanes,
             strategy: PhysicsStrategy::Standard,
             current_strategy: StrategyId::Balanced,
-            last_step_time: Duration::ZERO,
             time_budget: Duration::ZERO,
-            frame_count: 0,
             fixed_timestep: 1.0 / 60.0,
-            execute_attempts: 0,
+            frame_status: None,
         }
     }
 }

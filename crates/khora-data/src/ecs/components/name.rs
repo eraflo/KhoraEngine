@@ -19,6 +19,7 @@ use khora_macros::Component;
 /// Used by the editor scene tree and debug utilities to display entities
 /// with meaningful identifiers instead of raw `EntityId` values.
 #[derive(Debug, Clone, PartialEq, Eq, Component, Default)]
+#[component(domain = Spatial)]
 pub struct Name(pub String);
 
 impl Name {

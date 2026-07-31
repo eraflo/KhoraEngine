@@ -21,8 +21,12 @@
 //! Both are registered into the [`ServiceRegistry`] during bootstrap and
 //! must not be held as local fields inside agents.
 
-pub mod cache;
+pub mod eviction;
+pub mod ibl;
 pub mod projection;
+pub mod store;
 
-pub use cache::GpuCache;
+pub use eviction::AssetEviction;
+pub use ibl::{EnvironmentMap, IblBaker};
 pub use projection::ProjectionRegistry;
+pub use store::AssetStore;

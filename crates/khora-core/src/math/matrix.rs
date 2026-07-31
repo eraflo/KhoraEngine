@@ -314,6 +314,28 @@ impl IndexMut<usize> for Mat3 {
 /// scale) in 3D space. It is also used for camera view and projection matrices.
 /// The memory layout is column-major, which is compatible with modern graphics APIs
 /// like Vulkan, Metal, and DirectX.
+///
+/// # Examples
+///
+/// ```rust
+/// use khora_core::math::{Mat4, Quaternion, Vec3};
+/// use std::f32::consts::FRAC_PI_2;
+///
+/// // The identity matrix leaves a point unchanged.
+/// assert_eq!(Mat4::IDENTITY.transform_point(Vec3::ONE), Vec3::ONE);
+///
+/// // Compose translation ∘ rotation ∘ scale by multiplying matrices
+/// // (applied right-to-left).
+/// let model = Mat4::from_translation(Vec3::new(0.0, 1.0, 0.0))
+///     * Mat4::from_quat(Quaternion::from_axis_angle(Vec3::Y, FRAC_PI_2))
+///     * Mat4::from_scale(Vec3::ONE * 2.0);
+/// let moved = model.transform_point(Vec3::ZERO);
+/// assert!((moved - Vec3::new(0.0, 1.0, 0.0)).length() < 1e-5);
+///
+/// // A perspective projection for a 16:9 viewport.
+/// let proj = Mat4::perspective_rh_zo(FRAC_PI_2, 16.0 / 9.0, 0.1, 1000.0);
+/// assert!(proj != Mat4::IDENTITY);
+/// ```
 #[derive(
     Debug,
     Clone,
@@ -626,6 +648,41 @@ impl Mat4 {
             Vec4::new(s.z, u.z, -f.z, 0.0),
             Vec4::new(-eye.dot(s), -eye.dot(u), eye.dot(f), 1.0),
         ))
+    }
+
+    /// View-projection matrix for one face of an omnidirectional cubemap
+    /// rendered from `position`.
+    ///
+    /// Builds a 90°-FOV perspective with `[NEAR, far]` depth range, then a
+    /// look-at matrix using [`CubeFace::forward`](crate::math::CubeFace::forward)
+    /// and [`CubeFace::up`](crate::math::CubeFace::up) in the wgpu cubemap
+    /// convention. The near plane is fixed at `0.1` — the matching
+    /// shader-side depth recompute (used in omnidirectional shadow sampling)
+    /// assumes the same constant.
+    ///
+    /// `far` should be the light's effective range in world units.
+    pub fn cube_face_view_proj(
+        position: crate::math::Vec3,
+        face: crate::math::CubeFace,
+        far: f32,
+    ) -> Mat4 {
+        const NEAR: f32 = 0.1;
+        let proj = Mat4::perspective_rh_zo(crate::math::FRAC_PI_2, 1.0, NEAR, far);
+        let view = Mat4::look_at_rh(position, position + face.forward(), face.up())
+            .unwrap_or(Mat4::IDENTITY);
+        proj * view
+    }
+
+    /// Six view-projection matrices, one per cube face, in
+    /// [`CubeFace::ALL`](crate::math::CubeFace::ALL) order
+    /// (`[+X, -X, +Y, -Y, +Z, -Z]`).
+    ///
+    /// Equivalent to:
+    /// ```ignore
+    /// CubeFace::ALL.map(|f| Mat4::cube_face_view_proj(position, f, far))
+    /// ```
+    pub fn cube_face_view_projs(position: crate::math::Vec3, far: f32) -> [Mat4; 6] {
+        crate::math::CubeFace::ALL.map(|f| Mat4::cube_face_view_proj(position, f, far))
     }
 
     /// Returns the transpose of the matrix, where rows and columns are swapped.
@@ -1279,6 +1336,120 @@ mod tests {
 
         // This should panic or return None (depending on implementation)
         assert!(Mat4::look_at_rh(eye, target, up).is_none());
+    }
+
+    // --- Cubemap helpers -----------------------------------------------
+
+    /// Helper: clip-space depth (z/w) of a world-space point through a
+    /// view-projection matrix.
+    fn clip_depth(view_proj: &Mat4, world: Vec3) -> f32 {
+        let clip = *view_proj * crate::math::Vec4::new(world.x, world.y, world.z, 1.0);
+        clip.z / clip.w
+    }
+
+    #[test]
+    fn cube_face_view_projs_returns_six_in_wgpu_order() {
+        let m = Mat4::cube_face_view_projs(Vec3::ZERO, 100.0);
+        assert_eq!(m.len(), 6);
+        // The six matrices are pairwise distinct (different views).
+        for i in 0..6 {
+            for j in (i + 1)..6 {
+                let same = (0..16).all(|k| {
+                    let row = k / 4;
+                    let col = k % 4;
+                    let a = m[i].cols[col][row];
+                    let b = m[j].cols[col][row];
+                    crate::math::approx_eq(a, b)
+                });
+                assert!(!same, "faces {i} and {j} produced identical matrices");
+            }
+        }
+    }
+
+    #[test]
+    fn cube_face_matrices_project_axis_aligned_points_into_correct_face() {
+        // For each face, a point one unit away along that face's forward
+        // direction must land *in front of* the camera (z/w in [0, 1] under
+        // RH-ZO) and roughly at the centre of the screen (x/w ≈ y/w ≈ 0).
+        let pos = Vec3::ZERO;
+        let far = 100.0;
+        for face in crate::math::CubeFace::ALL {
+            let vp = Mat4::cube_face_view_proj(pos, face, far);
+            let target = pos + face.forward() * 5.0; // safely between near (0.1) and far (100)
+            let clip = vp * crate::math::Vec4::new(target.x, target.y, target.z, 1.0);
+            assert!(
+                clip.w > 0.0,
+                "face {face:?}: target should be in front (w>0), got w = {}",
+                clip.w
+            );
+            let z_norm = clip.z / clip.w;
+            assert!(
+                (0.0..=1.0).contains(&z_norm),
+                "face {face:?}: target z/w {z_norm} not in [0, 1]"
+            );
+            let x_norm = clip.x / clip.w;
+            let y_norm = clip.y / clip.w;
+            assert!(
+                x_norm.abs() < 1e-3 && y_norm.abs() < 1e-3,
+                "face {face:?}: axis-aligned point should be near screen centre, got ({x_norm}, {y_norm})"
+            );
+        }
+    }
+
+    #[test]
+    fn cube_far_plane_maps_to_one() {
+        let pos = Vec3::ZERO;
+        let far = 50.0;
+        for face in crate::math::CubeFace::ALL {
+            let vp = Mat4::cube_face_view_proj(pos, face, far);
+            let z = clip_depth(&vp, pos + face.forward() * far);
+            assert!(
+                (z - 1.0).abs() < 1e-4,
+                "face {face:?}: z at far plane should be ≈ 1.0, got {z}"
+            );
+        }
+    }
+
+    #[test]
+    fn cube_near_plane_maps_to_zero() {
+        let pos = Vec3::ZERO;
+        let far = 50.0;
+        // The near constant inside `cube_face_view_proj` is 0.1.
+        for face in crate::math::CubeFace::ALL {
+            let vp = Mat4::cube_face_view_proj(pos, face, far);
+            let z = clip_depth(&vp, pos + face.forward() * 0.1);
+            assert!(
+                z.abs() < 1e-4,
+                "face {face:?}: z at near plane should be ≈ 0.0, got {z}"
+            );
+        }
+    }
+
+    #[test]
+    fn cube_face_view_proj_idempotent_with_explicit_lookat() {
+        // Regression: ensure the helper produces the same matrix as the
+        // unfolded (proj * look_at_rh) sequence.
+        let pos = Vec3::new(1.0, 2.0, 3.0);
+        let far = 80.0;
+        for face in crate::math::CubeFace::ALL {
+            let helper = Mat4::cube_face_view_proj(pos, face, far);
+            let proj = Mat4::perspective_rh_zo(crate::math::FRAC_PI_2, 1.0, 0.1, far);
+            let view = Mat4::look_at_rh(pos, pos + face.forward(), face.up())
+                .expect("non-degenerate basis");
+            let expected = proj * view;
+            for col in 0..4 {
+                for row in 0..4 {
+                    assert!(
+                        crate::math::approx_eq_eps(
+                            helper.cols[col][row],
+                            expected.cols[col][row],
+                            1e-5,
+                        ),
+                        "face {face:?}: mismatch at col {col} row {row}"
+                    );
+                }
+            }
+        }
     }
 
     // --- End of Tests For Mat4 ---

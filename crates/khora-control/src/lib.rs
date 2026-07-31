@@ -40,6 +40,7 @@
 pub mod analysis;
 pub mod budget_channel;
 pub mod context;
+pub mod cost_model;
 pub mod gorna;
 pub mod metrics;
 pub mod plugin;
@@ -47,6 +48,7 @@ pub mod registry;
 pub mod scheduler;
 pub mod service;
 pub mod substrate;
+pub mod worker_pool;
 
 pub use analysis::AnalysisReport;
 pub use context::{BatteryLevel, Context, EngineMode, HardwareState, ThermalStatus};

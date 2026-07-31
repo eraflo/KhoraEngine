@@ -69,7 +69,7 @@ impl BudgetChannel {
     /// Hot thread: syncs all pending budgets at the start of each frame.
     /// Drains all channels and keeps only the last budget per agent.
     pub fn sync(&self) {
-        let mut current = self.inner.current.write().unwrap();
+        let mut current = self.inner.current.write().unwrap_or_else(|e| e.into_inner());
         for (&agent_id, rx) in &self.inner.receivers {
             while let Ok(budget) = rx.try_recv() {
                 current.insert(agent_id, budget);
@@ -79,6 +79,11 @@ impl BudgetChannel {
 
     /// Hot thread: reads the current budget for an agent.
     pub fn get(&self, agent_id: AgentId) -> Option<ResourceBudget> {
-        self.inner.current.read().unwrap().get(&agent_id).cloned()
+        self.inner
+            .current
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&agent_id)
+            .cloned()
     }
 }

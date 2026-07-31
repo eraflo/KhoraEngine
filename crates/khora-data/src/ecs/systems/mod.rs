@@ -20,8 +20,15 @@
 //! `inventory`; nothing else needs to know about a new system except its
 //! own file.
 
+pub mod asset_eviction;
+pub mod audio_playback_writeback;
+pub mod capture_previous_transform;
 pub mod ecs_maintenance;
+pub mod gpu_material_sync;
 pub mod gpu_mesh_sync;
+pub mod ibl_bake;
+pub mod physics_debug_extraction;
+pub mod physics_world_writeback;
 pub mod transform_propagation;
 
 pub use transform_propagation::transform_propagation_system;

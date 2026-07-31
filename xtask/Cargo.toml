@@ -2,6 +2,8 @@
 name = "xtask"
 version = "0.1.0"
 edition = "2021"
+rust-version.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "xtask"
@@ -9,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 khora-core = { path = "../crates/khora-core" }
+khora-io = { path = "../crates/khora-io" }
 khora-sdk = { path = "../crates/khora-sdk" }
 
 clap = { version = "4.5.60", features = ["derive", "cargo"] }

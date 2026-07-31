@@ -26,11 +26,13 @@
 mod backend_selector;
 mod command_recorder;
 mod graphics_device;
+mod pipeline_system;
 mod profiler;
 mod render_system;
 
 pub use self::backend_selector::GraphicsBackendSelector;
 pub use self::command_recorder::*;
 pub use self::graphics_device::GraphicsDevice;
+pub use self::pipeline_system::PipelineSystem;
 pub use self::profiler::*;
 pub use self::render_system::{FrameTargets, RenderSystem};

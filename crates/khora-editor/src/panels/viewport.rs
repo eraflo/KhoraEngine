@@ -14,6 +14,7 @@
 
 //! 3D Viewport panel — displays the offscreen render texture.
 
+use std::path::{Path, MAIN_SEPARATOR_STR};
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
@@ -23,7 +24,7 @@ pub struct ViewportPanel {
     handle: ViewportTextureHandle,
     state: Arc<Mutex<EditorState>>,
     camera: Arc<Mutex<EditorCamera>>,
-    theme: EditorTheme,
+    theme: UiTheme,
 }
 
 /// Snapshot of the few status fields the stats card paints, copied while
@@ -43,7 +44,7 @@ impl ViewportPanel {
         handle: ViewportTextureHandle,
         state: Arc<Mutex<EditorState>>,
         camera: Arc<Mutex<EditorCamera>>,
-        theme: EditorTheme,
+        theme: UiTheme,
     ) -> Self {
         Self {
             handle,
@@ -148,24 +149,30 @@ impl ViewportPanel {
         viewport_min: [f32; 2],
         viewport_size: [f32; 2],
     ) {
+        let theme = &self.theme;
         let min_dim = viewport_size[0].min(viewport_size[1]);
         let scale = (min_dim / 700.0).clamp(0.75, 1.55);
-        // Compass-style gizmo anchored to the top-right corner *below* the
-        // transport pill (top edge of pill = viewport_min.y + 12, height 32,
-        // so we push the gizmo to viewport_min.y + 56 to clear it).
-        let plate_half = 36.0 * scale;
-        let length = 24.0 * scale;
-        let transport_clear = 56.0; // pill_y(12) + pill_h(32) + 12 breathing
-        let margin_right = 12.0 * scale;
+
+        // Top-right corner. This is where every 3D tool puts the view-
+        // orientation gizmo, and muscle memory is worth more here than
+        // novelty. The transport lives at the bottom centre, so nothing
+        // competes for the corner.
+        let plate_half = 34.0 * scale;
+        let length = 22.0 * scale;
+        let margin = 12.0 * scale;
         let center = [
-            viewport_min[0] + viewport_size[0] - margin_right - plate_half,
-            viewport_min[1] + transport_clear + plate_half,
+            viewport_min[0] + viewport_size[0] - margin - plate_half,
+            viewport_min[1] + margin + plate_half,
         ];
 
-        // Round backplate so the gizmo reads as a "navigation puck" (mockup
-        // calls for a circular widget with X/Y/Z labels around the rim).
-        ui.paint_circle_filled(center, plate_half, [0.04, 0.06, 0.10, 0.78]);
-        ui.paint_circle_stroke(center, plate_half, [0.32, 0.38, 0.52, 0.55], 1.0);
+        // A translucent puck so the gizmo stays legible over any scene without
+        // hiding it.
+        ui.paint_circle_filled(
+            center,
+            plate_half,
+            khora_tool_ui::widgets::paint::tint(theme.background, 0.7),
+        );
+        ui.paint_circle_stroke(center, plate_half, theme.border, 1.0);
 
         let (right, up) = if let Ok(cam) = self.camera.lock() {
             (cam.right(), cam.up())
@@ -256,7 +263,7 @@ impl ViewportPanel {
 
 impl EditorPanel for ViewportPanel {
     fn id(&self) -> &str {
-        "viewport"
+        "khora.editor.viewport"
     }
     fn title(&self) -> &str {
         "Viewport"
@@ -271,23 +278,31 @@ impl EditorPanel for ViewportPanel {
             state.viewport_screen_rect = None;
         }
 
-        // Yield the central area to the Control Plane workspace when the user
-        // has switched modes via the spine.
-        let in_scene_mode = self
-            .state
-            .lock()
-            .ok()
-            .map(|s| s.active_mode == EditorMode::Scene)
-            .unwrap_or(true);
-        if !in_scene_mode {
-            return;
-        }
-
+        // No mode check here: the workbench keeps a dock layout per workspace,
+        // so this panel is only ever laid out in the one that names it.
         let w = ui.available_width();
         let h = ui.available_height();
         if w > 1.0 && h > 1.0 {
             if let Some(min) = ui.viewport_image(self.handle, [w, h]) {
                 let hovered = ui.is_last_item_hovered();
+                // Drop target: any asset tile dragged onto the viewport. The
+                // asset browser tags its drag payload with `ASSET_DRAG_TAG`
+                // (high 32 bits) so we can tell our drops apart from the
+                // scene-tree reparent flow's `EntityId`-packed payloads. We
+                // dispatch by the asset's declared type.
+                if let Some(payload) = ui.dnd_take_drop_payload() {
+                    // Resolve index and epoch under one lock: the payload's
+                    // epoch stamp is only meaningful against the same read of
+                    // `asset_entries` the index will address.
+                    let entry = self.state.lock().ok().and_then(|s| {
+                        let idx =
+                            crate::panels::asset_browser::unpack_asset_drag(payload, s.asset_epoch)?;
+                        s.asset_entries.get(idx as usize).cloned()
+                    });
+                    if let Some(entry) = entry {
+                        self.dispatch_asset_drop(ui, &entry, min, [w, h]);
+                    }
+                }
                 let mut show_camera_preview = false;
                 if let Ok(mut state) = self.state.lock() {
                     state.viewport_hovered = hovered;
@@ -387,114 +402,131 @@ impl ViewportPanel {
         let _ = cx; // Local/World toggle removed until it's actually wired.
     }
 
+    /// The transport — play, pause, stop — floating at the bottom centre.
+    ///
+    /// Each button's *state* is derived from `PlayMode`, so the control always
+    /// tells the truth about what the engine is doing: a disabled Stop while
+    /// editing means there is genuinely nothing to stop. Buttons that cannot
+    /// act are dimmed and swallow their clicks rather than silently no-op.
     fn paint_transport_pill(
         &self,
         ui: &mut dyn UiBuilder,
         viewport_min: [f32; 2],
         viewport_size: [f32; 2],
     ) {
+        use khora_tool_ui::widgets::paint::{fill_stroke, icon_centered, tint};
+
         let theme = &self.theme;
-        let play_mode = self
+        let mode = self
             .state
             .lock()
             .ok()
             .map(|s| s.play_mode)
             .unwrap_or(PlayMode::Editing);
 
-        // Pill = Play/Pause + Stop only. The "step back/forward" chevrons
-        // were unwired decorations; removed until the editor actually
-        // supports per-frame stepping.
-        let pill_w = 156.0;
-        let pill_x = viewport_min[0] + viewport_size[0] - pill_w - 12.0;
-        let pill_y = viewport_min[1] + 12.0;
-        let pill_h = 32.0;
+        let playing = mode == PlayMode::Playing;
+        let paused = mode == PlayMode::Paused;
+        let running = playing || paused;
 
-        ui.paint_rect_filled(
-            [pill_x, pill_y],
-            [pill_w, pill_h],
-            crate::widgets::paint::with_alpha(theme.surface_elevated, 0.92),
-            999.0,
-        );
-        ui.paint_rect_stroke(
-            [pill_x, pill_y],
-            [pill_w, pill_h],
-            crate::widgets::paint::with_alpha(theme.separator, 0.6),
-            999.0,
-            1.0,
-        );
+        let btn = 26.0;
+        let gap = 4.0;
+        let pad = 6.0;
+        let pill_w = btn * 3.0 + gap * 2.0 + pad * 2.0;
+        let pill_h = btn + pad * 2.0;
+        let pill_x = viewport_min[0] + (viewport_size[0] - pill_w) * 0.5;
+        let pill_y = viewport_min[1] + viewport_size[1] - pill_h - 12.0;
 
-        let mut cx = pill_x + 6.0;
-
-        // Play / Pause / Resume button (bigger, primary look)
-        let is_playing = play_mode == PlayMode::Playing;
-        let is_paused = play_mode == PlayMode::Paused;
-
-        let play_w = 90.0;
-        let play_r = [cx, pill_y + 3.0, play_w, pill_h - 6.0];
-        let play_int = ui.interact_rect("vp-play", play_r);
-        let play_bg = if is_playing {
-            theme.warning
-        } else {
-            theme.success
-        };
-        ui.paint_rect_filled(
-            [play_r[0], play_r[1]],
-            [play_r[2], play_r[3]],
-            play_bg,
-            999.0,
-        );
-        let label = if is_paused {
-            "Resume"
-        } else if is_playing {
-            "Pause"
-        } else {
-            "Play"
-        };
-        let icon = if is_playing { Icon::Pause } else { Icon::Play };
-        crate::widgets::paint::paint_icon(
-            ui,
-            [play_r[0] + 14.0, play_r[1] + 6.0],
-            icon,
-            13.0,
-            theme.background,
-        );
-        crate::widgets::paint::paint_text_size(
-            ui,
-            [play_r[0] + 36.0, play_r[1] + 6.0],
-            label,
-            12.0,
-            theme.background,
-        );
-        if play_int.clicked {
-            if let Ok(mut s) = self.state.lock() {
-                if is_playing {
-                    s.pending_menu_action = Some("pause".to_owned());
-                } else {
-                    s.pending_menu_action = Some("play".to_owned());
-                }
-            }
+        if viewport_size[0] < pill_w + 24.0 || viewport_size[1] < 80.0 {
+            return;
         }
-        cx += play_w + 4.0;
 
-        // Stop
-        let stop_r = [cx, pill_y + 4.0, 28.0, pill_h - 8.0];
-        let stop_int = ui.interact_rect("vp-stop", stop_r);
-        let stop_color = if is_playing || is_paused {
-            theme.error
-        } else {
-            theme.text_muted
-        };
-        crate::widgets::paint::paint_icon(
+        fill_stroke(
             ui,
-            [stop_r[0] + 7.0, stop_r[1] + 5.0],
+            [pill_x, pill_y, pill_w, pill_h],
+            tint(theme.surface_elevated, 0.92),
+            theme.border,
+            pill_h * 0.5,
+        );
+
+        let mut x = pill_x + pad;
+        let cy = pill_y + pad;
+
+        // ── Play / resume ──
+        // While playing, this is the "running" indicator rather than an action.
+        let play_rect = [x, cy, btn, btn];
+        let play_hit = ui.interact_rect("vp-play", play_rect);
+        if playing {
+            ui.paint_circle_filled([x + btn * 0.5, cy + btn * 0.5], btn * 0.5, theme.success);
+        }
+        icon_centered(
+            ui,
+            play_rect,
+            Icon::Play,
+            13.0,
+            if playing {
+                theme.text_inverse
+            } else if play_hit.hovered {
+                theme.success
+            } else {
+                theme.text
+            },
+        );
+        if play_hit.clicked && !playing {
+            self.dispatch("play");
+        }
+        x += btn + gap;
+
+        // ── Pause ── only meaningful while something is running.
+        let pause_rect = [x, cy, btn, btn];
+        let pause_hit = ui.interact_rect("vp-pause", pause_rect);
+        if paused {
+            ui.paint_circle_filled([x + btn * 0.5, cy + btn * 0.5], btn * 0.5, theme.warning);
+        }
+        icon_centered(
+            ui,
+            pause_rect,
+            Icon::Pause,
+            13.0,
+            if paused {
+                theme.text_inverse
+            } else if !running {
+                theme.text_disabled
+            } else if pause_hit.hovered {
+                theme.warning
+            } else {
+                theme.text
+            },
+        );
+        if pause_hit.clicked && playing {
+            self.dispatch("pause");
+        }
+        x += btn + gap;
+
+        // ── Stop ──
+        let stop_rect = [x, cy, btn, btn];
+        let stop_hit = ui.interact_rect("vp-stop", stop_rect);
+        icon_centered(
+            ui,
+            stop_rect,
             Icon::Stop,
             13.0,
-            stop_color,
+            if !running {
+                theme.text_disabled
+            } else if stop_hit.hovered {
+                theme.error
+            } else {
+                theme.text
+            },
         );
-        if stop_int.clicked && (is_playing || is_paused) {
-            if let Ok(mut s) = self.state.lock() {
-                s.pending_menu_action = Some("stop".to_owned());
-            }
+        if stop_hit.clicked && running {
+            self.dispatch("stop");
+        }
+    }
+
+    /// Queues a menu action for the app to pick up next tick.
+    fn dispatch(&self, action: &str) {
+        if let Ok(mut s) = self.state.lock() {
+            s.pending_menu_action = Some(action.to_owned());
         }
     }
 
@@ -659,6 +691,115 @@ impl ViewportPanel {
             FontFamilyHint::Proportional,
             TextAlign::Center,
         );
+    }
+
+    /// Routes a dropped asset by its declared type. Prefabs/scenes spawn or
+    /// load; a mesh materialises at the unprojected drop point; a texture or
+    /// material is assigned to the current selection.
+    fn dispatch_asset_drop(
+        &self,
+        ui: &dyn UiBuilder,
+        entry: &AssetEntry,
+        viewport_min: [f32; 2],
+        viewport_size: [f32; 2],
+    ) {
+        let rel = entry.source_path.clone();
+        match entry.asset_type.as_str() {
+            "prefab" => {
+                if let Ok(mut state) = self.state.lock() {
+                    state.pending_prefab_spawn = Some((rel, None));
+                    log::info!("Viewport: prefab '{}' dropped — spawning", entry.name);
+                }
+            }
+            "scene" => {
+                let abs = self
+                    .state
+                    .lock()
+                    .ok()
+                    .and_then(|s| s.project_folder.clone())
+                    .map(|pf| {
+                        Path::new(&pf)
+                            .join("assets")
+                            .join(rel.replace('/', MAIN_SEPARATOR_STR))
+                            .to_string_lossy()
+                            .to_string()
+                    });
+                match abs {
+                    Some(abs) => {
+                        if let Ok(mut state) = self.state.lock() {
+                            state.pending_scene_load = Some(abs);
+                            log::info!("Viewport: scene '{}' dropped — loading", entry.name);
+                        }
+                    }
+                    None => log::warn!(
+                        "Viewport: cannot load scene '{}' — no project folder set",
+                        rel
+                    ),
+                }
+            }
+            "mesh" => {
+                let point = self.compute_drop_point(ui, viewport_min, viewport_size);
+                if let Ok(mut state) = self.state.lock() {
+                    state.pending_spawn_mesh_asset = Some((rel, point, None));
+                    log::info!(
+                        "Viewport: mesh '{}' dropped at [{:.2}, {:.2}, {:.2}]",
+                        entry.name,
+                        point[0],
+                        point[1],
+                        point[2]
+                    );
+                }
+            }
+            "texture" | "material" => {
+                if let Ok(mut state) = self.state.lock() {
+                    match state.selection.iter().copied().next() {
+                        Some(target) => {
+                            state.pending_assign_texture = Some((rel, target));
+                            log::info!(
+                                "Viewport: '{}' dropped — assigning to selected entity",
+                                entry.name
+                            );
+                        }
+                        None => log::warn!(
+                            "Viewport: select an entity to assign '{}' to",
+                            entry.name
+                        ),
+                    }
+                }
+            }
+            other => log::info!("Viewport: dropped asset type '{other}' is not droppable here"),
+        }
+    }
+
+    /// Unprojects the drop point onto the ground plane (`y = 0`). Falls back to
+    /// a fixed distance along the ray when the ray is parallel to the ground or
+    /// the pointer position is unavailable (uses the viewport centre then).
+    fn compute_drop_point(
+        &self,
+        ui: &dyn UiBuilder,
+        viewport_min: [f32; 2],
+        viewport_size: [f32; 2],
+    ) -> [f32; 3] {
+        let [w, h] = viewport_size;
+        let (local_x, local_y) = match ui.pointer_position() {
+            Some([px, py]) => (px - viewport_min[0], py - viewport_min[1]),
+            None => (w * 0.5, h * 0.5),
+        };
+        let ray = match self.camera.lock() {
+            Ok(cam) => cam.screen_to_ray(local_x, local_y, w, h),
+            Err(_) => return [0.0, 0.0, 0.0],
+        };
+        let point = if ray.direction.y.abs() > 1e-4 {
+            let t = -ray.origin.y / ray.direction.y;
+            if t > 0.0 {
+                ray.origin + ray.direction * t
+            } else {
+                ray.origin + ray.direction * 10.0
+            }
+        } else {
+            ray.origin + ray.direction * 10.0
+        };
+        [point.x, point.y, point.z]
     }
 
     fn paint_diamond_watermark(

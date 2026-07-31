@@ -198,13 +198,11 @@ pub enum CollisionEvent {
 }
 
 /// A ray in 3D space.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
-pub struct Ray {
-    /// Origin point.
-    pub origin: Vec3,
-    /// Direction vector (should be normalized).
-    pub direction: Vec3,
-}
+///
+/// Re-exported from [`crate::math`], where it lives alongside the intersection
+/// tests: physics is only one of its callers — editor picking and gizmo
+/// manipulation cast the same rays and must not reinvent the math.
+pub use crate::math::Ray;
 
 /// Information about a raycast hit.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]

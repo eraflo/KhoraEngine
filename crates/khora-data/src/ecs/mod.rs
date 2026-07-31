@@ -30,6 +30,7 @@ pub mod component;
 mod components;
 mod entity;
 mod entity_store;
+pub mod layout;
 pub mod maintenance;
 mod page;
 mod planner;
@@ -37,10 +38,12 @@ mod query;
 mod query_plan;
 mod registry;
 mod serialization;
+pub mod soa;
 mod storage;
 pub mod system;
 pub mod systems;
 mod world;
+mod world_ext;
 
 pub use bitset::DomainBitset;
 pub use bundle::ComponentBundle;
@@ -52,8 +55,10 @@ pub use page::*;
 pub use query::*;
 pub use query_plan::{QueryMode, QueryPlan};
 pub use registry::*;
+pub use soa::{FieldSoaColumn, SoaLayout};
 pub use system::{DataSystemRegistration, TickPhase};
 pub use world::*;
+pub use world_ext::{entities_with_all_tags, entities_with_any_tag, entities_with_tag};
 
 #[cfg(test)]
 mod tests;

@@ -49,4 +49,10 @@ pub enum SerializationGoal {
     /// Prioritizes a flexible, structured format suitable for editor
     /// operations, prefabs, and tool interchange.
     EditorInterchange,
+
+    /// A portable, schema-less binary format (MessagePack). Useful for
+    /// interop with non-Rust tools that need to consume scene data
+    /// without bincode internals. Slightly larger than `EditorInterchange`
+    /// but readable by every language with a MessagePack library.
+    PortableBinary,
 }

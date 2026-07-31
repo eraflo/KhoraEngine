@@ -15,10 +15,61 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
+    fmt,
 };
 
 use bincode::{Decode, Encode};
 use khora_core::ecs::entity::EntityId;
+
+/// Upper bound on the byte payload accepted by [`AnyVec::set_from_bytes`] for a
+/// single component column.
+///
+/// Deserialization feeds this length straight into a `Vec` reservation, so an
+/// untrusted scene/pack file could otherwise request an arbitrarily large
+/// allocation and abort the process with an OOM. Real component columns are
+/// small (transforms, handles, a few scalars per entity); even a million
+/// entities of a 256-byte component is 256 MiB, so this ceiling comfortably
+/// covers legitimate scenes while rejecting hostile inputs before any
+/// allocation happens.
+pub const MAX_COLUMN_PAYLOAD_BYTES: usize = 256 * 1024 * 1024;
+
+/// Error returned when raw column bytes fail validation in
+/// [`AnyVec::set_from_bytes`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SetFromBytesError {
+    /// The byte length is not an exact multiple of the column's element size,
+    /// so it cannot describe a whole number of elements.
+    MisalignedLength {
+        /// Length of the supplied byte buffer.
+        len: usize,
+        /// Size of a single element in the column.
+        elem_size: usize,
+    },
+    /// The byte length exceeds [`MAX_COLUMN_PAYLOAD_BYTES`].
+    PayloadTooLarge {
+        /// Length of the supplied byte buffer.
+        len: usize,
+        /// The maximum accepted payload size.
+        max: usize,
+    },
+}
+
+impl fmt::Display for SetFromBytesError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SetFromBytesError::MisalignedLength { len, elem_size } => write!(
+                f,
+                "column byte length {len} is not a multiple of element size {elem_size}"
+            ),
+            SetFromBytesError::PayloadTooLarge { len, max } => write!(
+                f,
+                "column byte length {len} exceeds the maximum payload size {max}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SetFromBytesError {}
 
 /// An internal helper trait to perform vector operations on a type-erased `Box<dyn Any>`.
 ///
@@ -31,19 +82,32 @@ pub trait AnyVec: Any + Send + Sync {
     /// Casts the trait object to `&mut dyn Any`.
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
-    /// Performs a `swap_remove` on the underlying `Vec`, removing the element at `index`.
+    /// Performs a `swap_remove` on the underlying column, removing the element at `index`.
     fn swap_remove_any(&mut self, index: usize);
 
-    /// # Safety
-    /// Returns the raw byte slice of the underlying `Vec<T>`.
-    /// The caller must ensure that this byte representation is handled correctly.
-    unsafe fn as_bytes(&self) -> &[u8];
+    /// Serialises the column to an owned byte buffer.
+    ///
+    /// Returns an *owned* `Vec<u8>` (not a borrowed slice) so that columns whose
+    /// data is not a single contiguous buffer — e.g. a field-split SoA column —
+    /// can materialise their bytes. The format is the column's own concern; the
+    /// only contract is that [`set_from_bytes`](AnyVec::set_from_bytes) on the
+    /// same column type reverses it.
+    fn to_bytes(&self) -> Vec<u8>;
 
+    /// Replaces the column contents from bytes previously produced by
+    /// [`to_bytes`](AnyVec::to_bytes) **on the same column type**.
+    ///
+    /// The length is validated against the column's element size and against
+    /// [`MAX_COLUMN_PAYLOAD_BYTES`] before any allocation, so untrusted input
+    /// cannot force an out-of-memory abort; a malformed length returns
+    /// [`SetFromBytesError`] and leaves the column unchanged.
+    ///
     /// # Safety
-    /// Replaces the contents of the `Vec<T>` with the given raw bytes.
-    /// The caller must guarantee that the bytes represent a valid sequence of `T`
-    /// with the correct size and alignment.
-    unsafe fn set_from_bytes(&mut self, bytes: &[u8]);
+    /// The caller must guarantee the bytes match this column's element *type*,
+    /// element size, and alignment. Length validation alone cannot detect a
+    /// type mismatch, so feeding bytes produced by a different column type is
+    /// still undefined behaviour.
+    unsafe fn set_from_bytes(&mut self, bytes: &[u8]) -> Result<(), SetFromBytesError>;
 }
 
 // We implement this trait for any `Vec<T>` where T is `'static`.
@@ -60,33 +124,55 @@ impl<T: 'static + Send + Sync> AnyVec for Vec<T> {
         self.swap_remove(index);
     }
 
-    unsafe fn as_bytes(&self) -> &[u8] {
-        std::slice::from_raw_parts(
-            self.as_ptr() as *const u8,
-            self.len() * std::mem::size_of::<T>(),
-        )
+    fn to_bytes(&self) -> Vec<u8> {
+        // SAFETY: reads `len * size_of::<T>()` initialised bytes from the Vec's
+        // buffer and copies them into an owned `Vec<u8>`.
+        unsafe {
+            std::slice::from_raw_parts(
+                self.as_ptr() as *const u8,
+                self.len() * std::mem::size_of::<T>(),
+            )
+            .to_vec()
+        }
     }
 
-    unsafe fn set_from_bytes(&mut self, bytes: &[u8]) {
+    unsafe fn set_from_bytes(&mut self, bytes: &[u8]) -> Result<(), SetFromBytesError> {
         let elem_size = std::mem::size_of::<T>();
         if elem_size == 0 {
-            return; // Correctly handle Zero-Sized Types.
+            return Ok(()); // Correctly handle Zero-Sized Types.
         }
-        assert_eq!(
-            bytes.len() % elem_size,
-            0,
-            "Byte slice length is not a multiple of element size"
-        );
+
+        // Validate the untrusted length *before* reserving, so a hostile scene
+        // file cannot trigger a huge allocation or a partial copy.
+        if !bytes.len().is_multiple_of(elem_size) {
+            return Err(SetFromBytesError::MisalignedLength {
+                len: bytes.len(),
+                elem_size,
+            });
+        }
+        if bytes.len() > MAX_COLUMN_PAYLOAD_BYTES {
+            return Err(SetFromBytesError::PayloadTooLarge {
+                len: bytes.len(),
+                max: MAX_COLUMN_PAYLOAD_BYTES,
+            });
+        }
 
         // Calculate the new length and resize the Vec accordingly.
         let new_len = bytes.len() / elem_size;
         self.clear();
         self.reserve(new_len);
 
-        // Perform the copy directly into the Vec's allocated memory.
+        // SAFETY: `reserve(new_len)` guaranteed capacity for `new_len` elements,
+        // i.e. `new_len * elem_size == bytes.len()` initialised bytes (the length
+        // was validated as an exact multiple above). The source and destination
+        // are distinct, non-overlapping allocations, so `copy_nonoverlapping` of
+        // exactly `bytes.len()` bytes is in-bounds; `set_len(new_len)` then marks
+        // those bytes initialised. Element *type* correctness is the documented
+        // obligation of the caller.
         let ptr = self.as_mut_ptr() as *mut u8;
         std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len());
         self.set_len(new_len);
+        Ok(())
     }
 }
 
@@ -94,7 +180,7 @@ impl<T: 'static + Send + Sync> AnyVec for Vec<T> {
 ///
 /// This struct is the core of the relational aspect of our ECS. It decouples an entity's
 /// identity from the physical storage of its data by acting as a coordinate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct PageIndex {
     /// The unique identifier of the `ComponentPage` that stores the component data.
     pub page_id: u32,
@@ -173,5 +259,68 @@ impl ComponentPage {
     #[allow(dead_code)]
     pub(crate) fn row_count(&self) -> usize {
         self.entities.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_from_bytes_valid_roundtrip() {
+        let original: Vec<u32> = vec![1, 2, 3, 4];
+        let bytes = original.to_bytes();
+        let mut restored: Vec<u32> = Vec::new();
+        // SAFETY: `bytes` was produced by `to_bytes` on a `Vec<u32>`, matching
+        // the element type, size, and alignment of `restored`.
+        unsafe { restored.set_from_bytes(&bytes) }.expect("valid bytes must round-trip");
+        assert_eq!(restored, original);
+    }
+
+    #[test]
+    fn set_from_bytes_misaligned_length_errs() {
+        // 5 bytes is not a multiple of size_of::<u32>() == 4.
+        let bytes = [0u8; 5];
+        let mut col: Vec<u32> = vec![42];
+        // SAFETY: the call validates length before touching memory; we only
+        // assert it rejects a misaligned buffer.
+        let result = unsafe { col.set_from_bytes(&bytes) };
+        assert!(matches!(
+            result,
+            Err(SetFromBytesError::MisalignedLength { len: 5, elem_size: 4 })
+        ));
+        // The column must be left untouched on error.
+        assert_eq!(col, vec![42]);
+    }
+
+    #[test]
+    fn set_from_bytes_oversized_payload_errs() {
+        // A length that is a valid multiple of the element size but exceeds the
+        // ceiling. We build a fake slice header without allocating the bytes.
+        let elem_size = std::mem::size_of::<u8>();
+        let oversized_len = MAX_COLUMN_PAYLOAD_BYTES + elem_size;
+        // SAFETY: we never read through this pointer — `set_from_bytes`
+        // validates the length and returns `Err` before any access. The dangling
+        // pointer is only used to construct a slice whose length triggers the
+        // ceiling check.
+        let fake = unsafe {
+            std::slice::from_raw_parts(std::ptr::NonNull::<u8>::dangling().as_ptr(), oversized_len)
+        };
+        let mut col: Vec<u8> = Vec::new();
+        // SAFETY: as above — the oversized length short-circuits with an error
+        // before the slice contents are ever touched.
+        let result = unsafe { col.set_from_bytes(fake) };
+        assert!(matches!(
+            result,
+            Err(SetFromBytesError::PayloadTooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn set_from_bytes_zero_sized_type_is_noop() {
+        let mut col: Vec<()> = Vec::new();
+        // SAFETY: ZST columns carry no byte payload; the call returns early.
+        let result = unsafe { col.set_from_bytes(&[]) };
+        assert!(result.is_ok());
     }
 }

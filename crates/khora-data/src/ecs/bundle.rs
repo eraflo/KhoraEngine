@@ -93,10 +93,9 @@ impl<C1: Component> ComponentBundle for C1 {
 
     fn create_columns() -> HashMap<TypeId, Box<dyn AnyVec>> {
         let mut columns: HashMap<TypeId, Box<dyn AnyVec>> = HashMap::new();
-        columns.insert(
-            TypeId::of::<C1>(),
-            Box::new(Vec::<C1>::new()) as Box<dyn AnyVec>,
-        );
+        // Route through the component's layout hook (AoS by default, field-SoA
+        // when opted in) — the column type is the component's choice.
+        columns.insert(TypeId::of::<C1>(), C1::make_column());
         columns
     }
 
@@ -114,14 +113,8 @@ impl<C1: Component> ComponentBundle for C1 {
     }
 
     unsafe fn add_to_page(self, page: &mut ComponentPage) {
-        // Get the column and push the single component.
-        page.columns
-            .get_mut(&TypeId::of::<C1>())
-            .unwrap()
-            .as_any_mut()
-            .downcast_mut::<Vec<C1>>()
-            .unwrap()
-            .push(self);
+        let column = page.columns.get_mut(&TypeId::of::<C1>()).unwrap().as_mut();
+        self.push_into_column(column);
     }
 }
 
@@ -141,7 +134,7 @@ macro_rules! impl_bundle_tuple {
             fn create_columns() -> HashMap<TypeId, Box<dyn AnyVec>> {
                 let mut columns: HashMap<TypeId, Box<dyn AnyVec>> = HashMap::new();
                 $(
-                    columns.insert(TypeId::of::<$C>(), Box::new(Vec::<$C>::new()) as Box<dyn AnyVec>);
+                    columns.insert(TypeId::of::<$C>(), $C::make_column());
                 )*
                 columns
             }
@@ -160,13 +153,8 @@ macro_rules! impl_bundle_tuple {
 
             unsafe fn add_to_page(self, page: &mut ComponentPage) {
                 $(
-                    page.columns
-                        .get_mut(&TypeId::of::<$C>())
-                        .unwrap()
-                        .as_any_mut()
-                        .downcast_mut::<Vec<$C>>()
-                        .unwrap()
-                        .push(self.$idx);
+                    let column = page.columns.get_mut(&TypeId::of::<$C>()).unwrap().as_mut();
+                    self.$idx.push_into_column(column);
                 )*
             }
         }

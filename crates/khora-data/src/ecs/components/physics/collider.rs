@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Component representing a collider attached to an entity.
 #[derive(Debug, Clone, Component, Serialize, Deserialize)]
+#[component(domain = Physics)]
 pub struct Collider {
     /// Opaque handle used by the physics provider.
     #[component(skip)]

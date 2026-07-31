@@ -16,7 +16,8 @@ use crate::commands::assets_config::AssetManifest;
 use crate::helpers::*;
 use anyhow::{Context, Result};
 use bincode;
-use khora_core::asset::{AssetMetadata, AssetSource, AssetUUID};
+use khora_core::asset::{AssetMetadata, AssetSource, AssetUUID, CompressionKind};
+use khora_io::asset::PackLoader;
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
@@ -69,6 +70,12 @@ fn build_packfiles(asset_files: &[PathBuf], dest_dir: &Path) -> Result<()> {
     let mut data_file = File::create(&data_path)
         .with_context(|| format!("Failed to create data pack at '{}'", data_path.display()))?;
 
+    // Write the v2 header up front; offsets recorded below are relative
+    // to the start of the asset region (i.e. PackLoader skips the header
+    // automatically).
+    PackLoader::write_header(&mut data_file, asset_files.len() as u32, 0)
+        .context("Failed to write pack header")?;
+
     let mut final_metadata = Vec::new();
     let mut current_offset = 0;
 
@@ -97,6 +104,8 @@ fn build_packfiles(asset_files: &[PathBuf], dest_dir: &Path) -> Result<()> {
             AssetSource::Packed {
                 offset: current_offset,
                 size,
+                uncompressed_size: size,
+                compression: CompressionKind::None,
             },
         );
 

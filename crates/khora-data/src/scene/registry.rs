@@ -18,7 +18,7 @@
 //! at link time via `inventory`. The Definition and Recipe strategies
 //! iterate these registrations to handle all component types.
 
-use crate::ecs::World;
+use crate::ecs::{ComponentProvenance, World};
 use khora_core::ecs::entity::EntityId;
 use std::any::TypeId;
 
@@ -40,6 +40,14 @@ pub struct ComponentRegistration {
 
     /// A human-readable name for the component (e.g., "Camera", "Light").
     pub type_name: &'static str,
+
+    /// Who writes this component — see [`ComponentProvenance`].
+    ///
+    /// Lets any consumer ask "is this the author's data, or the engine's?"
+    /// instead of keeping its own hand-maintained list of type names. The
+    /// editor's "Add Component" menu and `duplicate_entity` both read it, so
+    /// components declared outside this crate are handled correctly too.
+    pub provenance: ComponentProvenance,
 
     /// Serializes the component from the world into a Recipe command's
     /// component_data bytes. Returns `None` if the entity doesn't have
@@ -74,16 +82,277 @@ pub struct ComponentRegistration {
 
 inventory::collect!(ComponentRegistration);
 
-/// Helper function to serialize a component from a world.
+/// Serializes every component of `entity` that belongs to the author.
 ///
-/// Tries each registered component type to find one that matches
-/// and can serialize the given entity's component.
+/// Skips [`ComponentProvenance::Derived`] and [`ComponentProvenance::Runtime`]
+/// components, because every caller — scene files, `.kprefab` extraction and
+/// entity duplication — wants the data a human or a tool put there, not what
+/// the engine computed from it.
+///
+/// Emitting them would be actively wrong, not merely wasteful: `Children`
+/// holds the *source* entity's `EntityId`s, so a copy would claim the
+/// original's children, and `GlobalTransform` would land stale until the next
+/// `transform_propagation` tick. Hierarchy is rebuilt from the recipe's
+/// `SetParent` commands instead, which remap ids properly.
 pub fn serialize_all_components(world: &World, entity: EntityId) -> Vec<(String, Vec<u8>)> {
     let mut results = Vec::new();
     for reg in inventory::iter::<ComponentRegistration> {
+        if !reg.provenance.is_copied_on_duplicate() {
+            continue;
+        }
         if let Some(data) = (reg.serialize_recipe)(world, entity) {
             results.push((reg.type_name.to_string(), data));
         }
     }
     results
+}
+
+/// Links `child` under `parent`, maintaining **both** halves of the hierarchy
+/// edge — the `Parent` back-reference and the parent's `Children` list.
+///
+/// Every `SceneCommand::SetParent` handler goes through this. They used to add
+/// only `Parent` and rely on a serialized `Children` component to supply the
+/// forward list, which quietly loaded the *source* world's entity ids; now that
+/// `Children` is `Derived` and no longer persisted, the inverse index has to be
+/// rebuilt here instead. Mirrors the invariant `GameWorld::set_parent` enforces
+/// for live edits.
+pub fn link_parent_child(world: &mut World, child: EntityId, parent: EntityId) {
+    if let Some(existing) = world.get_mut::<crate::ecs::Parent>(child) {
+        *existing = crate::ecs::Parent(parent);
+    } else {
+        world.add_component(child, crate::ecs::Parent(parent)).ok();
+    }
+
+    if let Some(children) = world.get_mut::<crate::ecs::Children>(parent) {
+        if !children.0.contains(&child) {
+            children.0.push(child);
+        }
+    } else {
+        world
+            .add_component(parent, crate::ecs::Children(vec![child]))
+            .ok();
+    }
+}
+
+/// Looks up the registered provenance of a component by its `type_name`.
+///
+/// Returns `None` for a type that never registered — the generic
+/// `HandleComponent<T>` instantiations and anything tagged
+/// `#[component(no_serializable)]`, neither of which participates in
+/// serialization, duplication or the "Add Component" menu.
+pub fn provenance_of(type_name: &str) -> Option<ComponentProvenance> {
+    inventory::iter::<ComponentRegistration>
+        .into_iter()
+        .find(|reg| reg.type_name == type_name)
+        .map(|reg| reg.provenance)
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::*;
+
+    /// Locks the classification of the components whose provenance is not the
+    /// default. Each of these was previously encoded in a hand-maintained list
+    /// somewhere else in the workspace; if one silently reverts to `Authored`
+    /// it would reappear in "Add Component" and be copied on duplicate.
+    #[test]
+    fn engine_written_components_are_classified() {
+        // Recomputed by `transform_propagation` from Transform + Parent.
+        assert_eq!(
+            provenance_of("GlobalTransform"),
+            Some(ComponentProvenance::Derived)
+        );
+        // Inverse index of `Parent`, maintained by `GameWorld::set_parent`.
+        // Copying it would make a duplicate claim the original's children.
+        assert_eq!(
+            provenance_of("Children"),
+            Some(ComponentProvenance::Derived)
+        );
+        // Written by "instantiate prefab"; persists and must survive a
+        // duplicate, but adding an empty one by hand is meaningless.
+        assert_eq!(
+            provenance_of("Prefab"),
+            Some(ComponentProvenance::ToolAuthored)
+        );
+        // Debug output of the physics writeback.
+        assert_eq!(
+            provenance_of("PhysicsDebugData"),
+            Some(ComponentProvenance::Runtime)
+        );
+    }
+
+    /// The components a user actually authors keep the default, including the
+    /// two whose registration is hand-written rather than derive-generated.
+    #[test]
+    fn authored_components_keep_the_default() {
+        for name in ["Transform", "Camera", "Light", "Tag", "MeshRef", "MaterialRef"] {
+            assert_eq!(
+                provenance_of(name),
+                Some(ComponentProvenance::Authored),
+                "{name} should be author-written"
+            );
+        }
+    }
+
+    /// The two halves of the hierarchy edge are classified differently, and
+    /// the asymmetry is the point.
+    ///
+    /// `Parent` is written by the reparent action, so it persists and a
+    /// duplicate keeps it — but nobody adds one from a menu, hence
+    /// `ToolAuthored`. `Children` is merely the inverse index rebuilt from it,
+    /// so it is `Derived` and must never be copied verbatim.
+    #[test]
+    fn parent_and_children_are_classified_asymmetrically() {
+        let parent = provenance_of("Parent").expect("Parent is registered");
+        let children = provenance_of("Children").expect("Children is registered");
+
+        assert!(!parent.is_hand_authorable());
+        assert!(parent.is_copied_on_duplicate());
+
+        assert!(!children.is_hand_authorable());
+        assert!(!children.is_copied_on_duplicate());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ecs::component::Component;
+    use crate::ecs::{
+        AudioSource, Camera, Children, GlobalTransform, Light, Name, Parent, SemanticDomain, Tag,
+        Transform,
+    };
+    use khora_core::math::Vec3;
+
+    /// A test-only anchor component. A fresh round-trip target entity is
+    /// spawned carrying only this, so it exists in the world without already
+    /// owning any component the round-trip is about to add — every
+    /// `from_json` / `deserialize_recipe` exercises the real "add" path.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct Anchor;
+    impl Component for Anchor {}
+
+    /// Spawns the round-trip target: a live entity carrying only [`Anchor`],
+    /// in a world where `Anchor` is registered (its own page domain) so adding
+    /// any real component triggers a genuine migration.
+    fn spawn_anchor_target(world: &mut World) -> EntityId {
+        world.register_component::<Anchor>(SemanticDomain::Ui);
+        world.spawn(Anchor)
+    }
+
+    /// Spawns one entity carrying a broad, representative instance of every
+    /// commonly-authored component, with non-default field values where the
+    /// type allows it. The returned entity is the JSON/recipe round-trip
+    /// fixture for [`json_roundtrip_covers_every_present_component`] and
+    /// [`recipe_roundtrip_covers_every_present_component`].
+    ///
+    /// Components reached here are exercised end-to-end: the entity *has* them,
+    /// so `to_json` / `serialize_recipe` return `Some` and the parallel
+    /// `from_json` / `deserialize_recipe` paths are driven on a fresh entity.
+    fn spawn_representative_entity(world: &mut World) -> EntityId {
+        // A second entity so `Parent`/`Children` carry real ids.
+        let other = world.spawn((Transform::identity(), GlobalTransform::identity()));
+
+        let mut tags = Tag::new();
+        tags.insert("enemy");
+        tags.insert("boss");
+
+        world.spawn((
+            Transform::from_translation(Vec3::new(1.5, -2.0, 3.25)),
+            GlobalTransform::at_position(Vec3::new(1.5, -2.0, 3.25)),
+            Name::new("Fixture"),
+            Camera::new_perspective(std::f32::consts::FRAC_PI_3, 1.5, 0.05, 500.0),
+            Light::point(),
+            AudioSource::default(),
+            tags,
+            Parent(other),
+            Children(vec![other]),
+        ))
+    }
+
+    /// The editor inspector round-trip: for every registered component the
+    /// fixture entity carries, `to_json` must yield a value, and feeding that
+    /// value to `from_json` on a fresh entity in a fresh world must re-create
+    /// the component with the same JSON shape. This one test catches macro
+    /// `to_json`/`from_json` generation bugs, registry wiring gaps, and serde
+    /// breakage across the whole component set in a single pass.
+    #[test]
+    fn json_roundtrip_covers_every_present_component() {
+        let mut src = World::new();
+        let entity = spawn_representative_entity(&mut src);
+
+        let mut covered = 0usize;
+        for reg in inventory::iter::<ComponentRegistration> {
+            let Some(json) = (reg.to_json)(&src, entity) else {
+                // The fixture entity doesn't carry this component — nothing to
+                // assert for it here.
+                continue;
+            };
+            covered += 1;
+
+            // Fresh world + fresh entity: `from_json` must reconstruct the
+            // component from the captured JSON alone.
+            let mut dst = World::new();
+            let target = spawn_anchor_target(&mut dst);
+            (reg.from_json)(&mut dst, target, &json).unwrap_or_else(|e| {
+                panic!("from_json failed for {}: {}", reg.type_name, e);
+            });
+
+            let restored = (reg.to_json)(&dst, target).unwrap_or_else(|| {
+                panic!(
+                    "{} missing after from_json — component was not added",
+                    reg.type_name
+                )
+            });
+            assert_eq!(
+                restored, json,
+                "{} JSON did not round-trip through from_json",
+                reg.type_name
+            );
+        }
+
+        // Sanity: the fixture must reach a meaningful slice of the registry,
+        // otherwise a silent registration regression could make this test
+        // pass vacuously.
+        assert!(
+            covered >= 6,
+            "expected the fixture to cover at least 6 components, got {covered}"
+        );
+    }
+
+    /// The scene-file round-trip: the bincode recipe path mirrors the JSON
+    /// path through the same `Serializable<Type>` mirror. For every component
+    /// the fixture carries, `serialize_recipe` must yield bytes and
+    /// `deserialize_recipe` must re-add the component on a fresh entity, with
+    /// the JSON view matching afterwards.
+    #[test]
+    fn recipe_roundtrip_covers_every_present_component() {
+        let mut src = World::new();
+        let entity = spawn_representative_entity(&mut src);
+
+        for reg in inventory::iter::<ComponentRegistration> {
+            let Some(bytes) = (reg.serialize_recipe)(&src, entity) else {
+                continue;
+            };
+            let before = (reg.to_json)(&src, entity);
+
+            let mut dst = World::new();
+            let target = spawn_anchor_target(&mut dst);
+            (reg.deserialize_recipe)(&mut dst, target, &bytes).unwrap_or_else(|e| {
+                panic!("deserialize_recipe failed for {}: {}", reg.type_name, e);
+            });
+
+            let after = (reg.to_json)(&dst, target);
+            assert!(
+                after.is_some(),
+                "{} missing after deserialize_recipe",
+                reg.type_name
+            );
+            assert_eq!(
+                after, before,
+                "{} did not round-trip through the recipe path",
+                reg.type_name
+            );
+        }
+    }
 }

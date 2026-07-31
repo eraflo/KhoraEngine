@@ -80,9 +80,14 @@ pub fn transform_propagation_system(world: &mut World) {
 }
 
 /// Wrapper to match the `DataSystemRegistration::run` signature
-/// `fn(&mut World, &ServiceRegistry)`. Transform propagation needs no
-/// services, so the second arg is unused.
-fn transform_propagation_entry(world: &mut World, _services: &khora_core::ServiceRegistry) {
+/// `fn(&mut World, &Runtime, &mut OutputDeck)`. Transform propagation
+/// needs neither the runtime containers nor the output deck, so the
+/// trailing args are unused.
+fn transform_propagation_entry(
+    world: &mut World,
+    _runtime: &khora_core::Runtime,
+    _deck: &mut khora_core::lane::OutputDeck,
+) {
     transform_propagation_system(world);
 }
 

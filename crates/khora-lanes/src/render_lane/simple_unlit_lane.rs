@@ -36,7 +36,7 @@ use khora_core::{
             },
             core::RenderContext,
             pipeline::enums::PrimitiveTopology,
-            pipeline::RenderPipelineId,
+            pipeline::{LayoutKey, LayoutSpec, PipelineSpec, RenderPipelineId, ShaderVariantKey},
             scene::GpuMesh,
         },
         traits::CommandEncoder,
@@ -44,7 +44,7 @@ use khora_core::{
 };
 use khora_data::assets::Assets;
 use khora_data::render::RenderWorld;
-use std::sync::RwLock;
+use std::sync::{OnceLock, RwLock};
 
 /// A lane that implements a simple, unlit forward rendering strategy.
 ///
@@ -58,17 +58,22 @@ use std::sync::RwLock;
 /// - **Minimal state changes** (one pipeline bind per material, ideally)
 /// - **Suitable for**: High frame rates, simple scenes, or as a debug/fallback renderer
 pub struct SimpleUnlitLane {
-    pipeline: std::sync::Mutex<Option<RenderPipelineId>>,
-    camera_layout: std::sync::Mutex<Option<khora_core::renderer::api::command::BindGroupLayoutId>>,
-    model_layout: std::sync::Mutex<Option<khora_core::renderer::api::command::BindGroupLayoutId>>,
+    // Init-once handles (set in `on_initialize`, read every frame).
+    // `OnceLock` gives lock-free reads after the one-time write — no
+    // per-frame Mutex contention on the hot path.
+    pipeline: OnceLock<RenderPipelineId>,
+    camera_layout: OnceLock<khora_core::renderer::api::command::BindGroupLayoutId>,
+    model_layout: OnceLock<khora_core::renderer::api::command::BindGroupLayoutId>,
+    material_layout: OnceLock<khora_core::renderer::api::command::BindGroupLayoutId>,
+
+    // Per-frame mutated ring buffers — `Mutex` is required for exclusive
+    // access during `advance` / `write` / `push`.
     camera_ring: std::sync::Mutex<
         Option<khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer>,
     >,
     model_ring: std::sync::Mutex<
         Option<khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer>,
     >,
-    material_layout:
-        std::sync::Mutex<Option<khora_core::renderer::api::command::BindGroupLayoutId>>,
     material_ring: std::sync::Mutex<
         Option<khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer>,
     >,
@@ -84,12 +89,12 @@ impl SimpleUnlitLane {
     /// Creates a new `SimpleUnlitLane`.
     pub fn new() -> Self {
         Self {
-            pipeline: std::sync::Mutex::new(None),
-            camera_layout: std::sync::Mutex::new(None),
-            model_layout: std::sync::Mutex::new(None),
+            pipeline: OnceLock::new(),
+            camera_layout: OnceLock::new(),
+            model_layout: OnceLock::new(),
+            material_layout: OnceLock::new(),
             camera_ring: std::sync::Mutex::new(None),
             model_ring: std::sync::Mutex::new(None),
-            material_layout: std::sync::Mutex::new(None),
             material_ring: std::sync::Mutex::new(None),
         }
     }
@@ -129,8 +134,15 @@ impl khora_core::lane::Lane for SimpleUnlitLane {
             .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
             .ok_or(khora_core::lane::LaneError::missing(
                 "Arc<dyn GraphicsDevice>",
-            ))?;
-        self.on_gpu_init(device.as_ref())
+            ))?
+            .clone();
+        let pipeline_system = ctx
+            .get::<std::sync::Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .ok_or(khora_core::lane::LaneError::missing(
+                "Arc<dyn PipelineSystem>",
+            ))?
+            .clone();
+        self.on_gpu_init(device.as_ref(), pipeline_system.as_ref())
             .map_err(|e| khora_core::lane::LaneError::InitializationFailed(Box::new(e)))
     }
 
@@ -216,8 +228,9 @@ impl SimpleUnlitLane {
         &self,
         _material: Option<&khora_core::asset::AssetHandle<Box<dyn Material>>>,
     ) -> RenderPipelineId {
-        // Return the stored pipeline, or 0 if not initialized.
-        self.pipeline.lock().unwrap().unwrap_or(RenderPipelineId(0))
+        // Lock-free read — `OnceLock::get()` returns a borrow without
+        // any synchronization once the cell has been initialized.
+        self.pipeline.get().copied().unwrap_or(RenderPipelineId(0))
     }
 
     fn render(
@@ -243,6 +256,7 @@ impl SimpleUnlitLane {
                     store: StoreOp::Store,
                 },
                 base_array_layer: 0,
+                base_mip_level: 0,
             };
             let clear_desc = RenderPassDescriptor {
                 label: Some("Simple Unlit Clear-Only Pass"),
@@ -272,7 +286,10 @@ impl SimpleUnlitLane {
         };
 
         let camera_bind_group = {
-            let mut lock = self.camera_ring.lock().unwrap();
+            let mut lock = crate::lock_or_log!(
+                self.camera_ring.lock(),
+                "SimpleUnlitLane::render camera_ring"
+            );
             let ring = match lock.as_mut() {
                 Some(r) => r,
                 None => {
@@ -289,7 +306,8 @@ impl SimpleUnlitLane {
         };
 
         // Lock the model ring buffer and advance it for this frame
-        let mut model_ring_lock = self.model_ring.lock().unwrap();
+        let mut model_ring_lock =
+            crate::lock_or_log!(self.model_ring.lock(), "SimpleUnlitLane::render model_ring");
         let model_ring = match model_ring_lock.as_mut() {
             Some(mr) => {
                 mr.advance();
@@ -298,7 +316,10 @@ impl SimpleUnlitLane {
             None => return,
         };
 
-        let mut material_ring_lock = self.material_ring.lock().unwrap();
+        let mut material_ring_lock = crate::lock_or_log!(
+            self.material_ring.lock(),
+            "SimpleUnlitLane::render material_ring"
+        );
         let material_ring = match material_ring_lock.as_mut() {
             Some(mr) => {
                 mr.advance();
@@ -308,7 +329,8 @@ impl SimpleUnlitLane {
         };
 
         // Acquire read locks on the caches
-        let gpu_mesh_assets = gpu_meshes.read().unwrap();
+        let gpu_mesh_assets =
+            crate::lock_or_log!(gpu_meshes.read(), "SimpleUnlitLane::render gpu_meshes");
 
         // 3. Prepare Draw Commands
         let mut draw_commands = Vec::with_capacity(render_world.meshes.len());
@@ -348,6 +370,7 @@ impl SimpleUnlitLane {
                     base_color,
                     emissive: khora_core::math::LinearRgba::BLACK,
                     ambient: khora_core::math::LinearRgba::BLACK,
+                    pbr_factors: [0.0, 1.0, 0.5, 0.0],
                 };
 
                 let mat_offset =
@@ -380,6 +403,7 @@ impl SimpleUnlitLane {
                 store: StoreOp::Store,
             },
             base_array_layer: 0,
+            base_mip_level: 0,
         };
 
         let render_pass_desc = RenderPassDescriptor {
@@ -432,7 +456,11 @@ impl SimpleUnlitLane {
         render_world: &RenderWorld,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) -> f32 {
-        let gpu_mesh_assets = gpu_meshes.read().unwrap();
+        let gpu_mesh_assets = crate::lock_or_log!(
+            gpu_meshes.read(),
+            "SimpleUnlitLane::estimate_render_cost",
+            0.0
+        );
 
         let mut total_triangles = 0u32;
         let mut draw_call_count = 0u32;
@@ -471,176 +499,42 @@ impl SimpleUnlitLane {
     fn on_gpu_init(
         &self,
         device: &dyn khora_core::renderer::GraphicsDevice,
+        pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
-        use crate::render_lane::shaders::UNLIT_WGSL;
         use khora_core::renderer::api::{
-            command::{
-                BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingType, BufferBindingType,
-            },
-            core::{ShaderModuleDescriptor, ShaderSourceData},
-            pipeline::enums::{CompareFunction, VertexFormat, VertexStepMode},
-            pipeline::state::{ColorWrites, DepthBiasState, StencilFaceState},
-            pipeline::{
-                ColorTargetStateDescriptor, DepthStencilStateDescriptor,
-                MultisampleStateDescriptor, PrimitiveStateDescriptor, RenderPipelineDescriptor,
-                VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
-            },
-            resource::CameraUniformData,
-            scene::ModelUniforms,
+            resource::CameraUniformData, scene::ModelUniforms,
             util::uniform_ring_buffer::UniformRingBuffer,
-            util::{SampleCount, ShaderStageFlags},
         };
-        use std::borrow::Cow;
 
         log::info!("SimpleUnlitLane: Initializing GPU resources...");
 
-        // 1. Create Bind Group Layouts
+        // The camera layout is the canonical engine layout (shared with the
+        // lit lanes); the model + material layouts are bespoke to this unlit
+        // strategy (single dynamic-offset uniforms, no PBR textures), resolved
+        // as inline layouts so the ring buffers + pipeline share one id.
+        let variant = ShaderVariantKey::empty();
+        let camera_layout = pipeline_system.layout(device, LayoutKey::Camera, &variant)?;
+        let model_layout = pipeline_system.inline_layout(
+            device,
+            UNLIT_MODEL_LAYOUT_LABEL,
+            &unlit_model_layout_entries(),
+        )?;
+        let material_layout = pipeline_system.inline_layout(
+            device,
+            UNLIT_MATERIAL_LAYOUT_LABEL,
+            &unlit_material_layout_entries(),
+        )?;
 
-        let camera_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("simple_unlit_camera_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                }],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        // Pipeline (compiled + cached by the backend).
+        let pipeline_id = pipeline_system.pipeline(device, &pipeline_spec(device))?;
 
-        let model_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("simple_unlit_model_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::VERTEX,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: std::num::NonZeroU64::new(
-                            std::mem::size_of::<ModelUniforms>() as u64,
-                        ),
-                    },
-                }],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        let material_layout = device
-            .create_bind_group_layout(&BindGroupLayoutDescriptor {
-                label: Some("simple_unlit_material_layout"),
-                entries: &[BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::FRAGMENT, // Material uniforms primarily in FS
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: true,
-                        min_binding_size: std::num::NonZeroU64::new(std::mem::size_of::<
-                            khora_core::renderer::api::scene::MaterialUniforms,
-                        >()
-                            as u64),
-                    },
-                }],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        *self.camera_layout.lock().unwrap() = Some(camera_layout);
-        *self.model_layout.lock().unwrap() = Some(model_layout);
-        *self.material_layout.lock().unwrap() = Some(material_layout);
-
-        // 2. Create Shader Module
-        let shader_src = UNLIT_WGSL.to_string();
-        let shader_module = device
-            .create_shader_module(&ShaderModuleDescriptor {
-                label: Some("simple_unlit_shader"),
-                source: ShaderSourceData::Wgsl(Cow::Owned(shader_src)),
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // 3. Define Vertex Layout (matching our standard vertex buffer)
-        // Attribute 0: Position (vec3<f32>)
-        // Attribute 1: Normal (vec3<f32>)
-        // Attribute 2: UV (vec2<f32>)
-        let vertex_attributes = vec![
-            VertexAttributeDescriptor {
-                format: VertexFormat::Float32x3,
-                offset: 0,
-                shader_location: 0,
-            },
-            VertexAttributeDescriptor {
-                format: VertexFormat::Float32x3,
-                offset: 12, // 3 * size_of<f32>
-                shader_location: 1,
-            },
-            VertexAttributeDescriptor {
-                format: VertexFormat::Float32x2,
-                offset: 24, // 6 * size_of<f32>
-                shader_location: 2,
-            },
-        ];
-
-        let vertex_layout = VertexBufferLayoutDescriptor {
-            array_stride: 32, // 3*4 + 3*4 + 2*4
-            step_mode: VertexStepMode::Vertex,
-            attributes: Cow::Owned(vertex_attributes),
-        };
-
-        // 4. Create Pipeline Layout
-        let pipeline_layout_ids = vec![camera_layout, model_layout, material_layout];
-        let pipeline_layout_desc = khora_core::renderer::api::pipeline::PipelineLayoutDescriptor {
-            label: Some(Cow::Borrowed("SimpleUnlit Pipeline Layout")),
-            bind_group_layouts: &pipeline_layout_ids,
-        };
-
-        let pipeline_layout_id = device
-            .create_pipeline_layout(&pipeline_layout_desc)
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // 5. Create Render Pipeline
-        let pipeline_desc = RenderPipelineDescriptor {
-            label: Some(Cow::Borrowed("SimpleUnlit Pipeline")),
-            vertex_shader_module: shader_module,
-            vertex_entry_point: Cow::Borrowed("vs_main"),
-            fragment_shader_module: Some(shader_module),
-            fragment_entry_point: Some(Cow::Borrowed("fs_main")),
-            vertex_buffers_layout: Cow::Owned(vec![vertex_layout]),
-            layout: Some(pipeline_layout_id),
-            primitive_state: PrimitiveStateDescriptor {
-                topology: PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil_state: Some(DepthStencilStateDescriptor {
-                format: khora_core::renderer::api::util::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: CompareFunction::Less,
-                stencil_front: StencilFaceState::default(),
-                stencil_back: StencilFaceState::default(),
-                stencil_read_mask: 0,
-                stencil_write_mask: 0,
-                bias: DepthBiasState::default(),
-            }),
-            color_target_states: Cow::Owned(vec![ColorTargetStateDescriptor {
-                format: device
-                    .get_surface_format()
-                    .unwrap_or(khora_core::renderer::api::util::TextureFormat::Rgba8UnormSrgb),
-                blend: None, // REPLACE
-                write_mask: ColorWrites::ALL,
-            }]),
-            multisample_state: MultisampleStateDescriptor {
-                count: SampleCount::X1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-        };
-
-        let pipeline_id = device
-            .create_render_pipeline(&pipeline_desc)
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        let mut pipeline_lock = self.pipeline.lock().unwrap();
-        *pipeline_lock = Some(pipeline_id);
+        // Init-once writes — `set` returns Err if already initialized,
+        // which we ignore: a second `on_initialize` is a logic bug
+        // upstream, not a runtime failure.
+        let _ = self.camera_layout.set(camera_layout);
+        let _ = self.model_layout.set(model_layout);
+        let _ = self.material_layout.set(material_layout);
+        let _ = self.pipeline.set(pipeline_id);
 
         let camera_ring = UniformRingBuffer::new(
             device,
@@ -651,7 +545,10 @@ impl SimpleUnlitLane {
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *self.camera_ring.lock().unwrap() = Some(camera_ring);
+        *crate::render_lane::util::lock::mutex_lock_render(
+            &self.camera_ring,
+            "SimpleUnlit init.camera_ring",
+        )? = Some(camera_ring);
 
         let model_ring =
             khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::new(
@@ -665,7 +562,10 @@ impl SimpleUnlitLane {
             )
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *self.model_ring.lock().unwrap() = Some(model_ring);
+        *crate::render_lane::util::lock::mutex_lock_render(
+            &self.model_ring,
+            "SimpleUnlit init.model_ring",
+        )? = Some(model_ring);
 
         let material_ring =
             khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::new(
@@ -679,25 +579,159 @@ impl SimpleUnlitLane {
             )
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *self.material_ring.lock().unwrap() = Some(material_ring);
+        *crate::render_lane::util::lock::mutex_lock_render(
+            &self.material_ring,
+            "SimpleUnlit init.material_ring",
+        )? = Some(material_ring);
 
         Ok(())
     }
 
     fn on_gpu_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
-        if let Some(ring) = self.camera_ring.lock().unwrap().take() {
+        // Ring buffers own their GPU buffers + bind groups; the pipeline and
+        // bind-group layouts are owned + cached by the `PipelineSystem`
+        // backend, so the lane must not destroy them here.
+        if let Some(ring) = self.camera_ring.lock().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
-        if let Some(ring) = self.model_ring.lock().unwrap().take() {
+        if let Some(ring) = self.model_ring.lock().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
-        if let Some(ring) = self.material_ring.lock().unwrap().take() {
+        if let Some(ring) = self.material_ring.lock().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
-        let mut pipeline_lock = self.pipeline.lock().unwrap();
-        if let Some(id) = pipeline_lock.take() {
-            let _ = device.destroy_render_pipeline(id);
-        }
+    }
+}
+
+// ─── Free functions (CLAD: declarative pipeline spec + bespoke layouts) ───
+
+/// Stable cache label for the unlit per-draw model layout.
+const UNLIT_MODEL_LAYOUT_LABEL: &str = "simple_unlit_model_layout";
+/// Stable cache label for the unlit per-draw material layout.
+const UNLIT_MATERIAL_LAYOUT_LABEL: &str = "simple_unlit_material_layout";
+
+/// Bespoke group-1 (model) layout: a single dynamic-offset uniform buffer.
+fn unlit_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
+    use khora_core::renderer::api::command::{
+        BindGroupLayoutEntry, BindingType, BufferBindingType,
+    };
+    use khora_core::renderer::api::scene::ModelUniforms;
+    use khora_core::renderer::api::util::ShaderStageFlags;
+    vec![BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStageFlags::VERTEX,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Uniform,
+            has_dynamic_offset: true,
+            min_binding_size: std::num::NonZeroU64::new(std::mem::size_of::<ModelUniforms>() as u64),
+        },
+    }]
+}
+
+/// Bespoke group-2 (material) layout: a single dynamic-offset uniform buffer
+/// (unlit has no PBR textures, so it does not use the canonical material
+/// layout).
+fn unlit_material_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry>
+{
+    use khora_core::renderer::api::command::{
+        BindGroupLayoutEntry, BindingType, BufferBindingType,
+    };
+    use khora_core::renderer::api::scene::MaterialUniforms;
+    use khora_core::renderer::api::util::ShaderStageFlags;
+    vec![BindGroupLayoutEntry {
+        binding: 0,
+        visibility: ShaderStageFlags::FRAGMENT,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Uniform,
+            has_dynamic_offset: true,
+            min_binding_size: std::num::NonZeroU64::new(
+                std::mem::size_of::<MaterialUniforms>() as u64
+            ),
+        },
+    }]
+}
+
+/// The declarative pipeline spec for SimpleUnlit — built each call, deduped by
+/// the `PipelineSystem`. Camera is the canonical layout; model + material are
+/// bespoke inline layouts shared with the lane's ring buffers.
+fn pipeline_spec(device: &dyn khora_core::renderer::GraphicsDevice) -> PipelineSpec {
+    use khora_core::renderer::api::pipeline::enums::{
+        CompareFunction, VertexFormat, VertexStepMode,
+    };
+    use khora_core::renderer::api::pipeline::state::{
+        ColorWrites, DepthBiasState, StencilFaceState,
+    };
+    use khora_core::renderer::api::pipeline::{
+        ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
+        PrimitiveStateDescriptor, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
+    };
+    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
+    use std::borrow::Cow;
+
+    PipelineSpec {
+        label: "SimpleUnlit Pipeline",
+        shader: "khora::pipelines::unlit",
+        variant: ShaderVariantKey::empty(),
+        bind_group_layouts: vec![
+            LayoutSpec::Named(LayoutKey::Camera),
+            LayoutSpec::Inline {
+                label: UNLIT_MODEL_LAYOUT_LABEL,
+                entries: Cow::Owned(unlit_model_layout_entries()),
+            },
+            LayoutSpec::Inline {
+                label: UNLIT_MATERIAL_LAYOUT_LABEL,
+                entries: Cow::Owned(unlit_material_layout_entries()),
+            },
+        ],
+        vertex_buffers: vec![VertexBufferLayoutDescriptor {
+            array_stride: 32,
+            step_mode: VertexStepMode::Vertex,
+            attributes: Cow::Owned(vec![
+                VertexAttributeDescriptor {
+                    format: VertexFormat::Float32x3,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                VertexAttributeDescriptor {
+                    format: VertexFormat::Float32x3,
+                    offset: 12,
+                    shader_location: 1,
+                },
+                VertexAttributeDescriptor {
+                    format: VertexFormat::Float32x2,
+                    offset: 24,
+                    shader_location: 2,
+                },
+            ]),
+        }],
+        vs_entry: "vs_main",
+        fs_entry: Some("fs_main"),
+        primitive: PrimitiveStateDescriptor {
+            topology: PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: Some(DepthStencilStateDescriptor {
+            format: TextureFormat::Depth32Float,
+            depth_write_enabled: true,
+            depth_compare: CompareFunction::Less,
+            stencil_front: StencilFaceState::default(),
+            stencil_back: StencilFaceState::default(),
+            stencil_read_mask: 0,
+            stencil_write_mask: 0,
+            bias: DepthBiasState::default(),
+        }),
+        color_targets: vec![ColorTargetStateDescriptor {
+            format: device
+                .get_surface_format()
+                .unwrap_or(TextureFormat::Rgba8UnormSrgb),
+            blend: None,
+            write_mask: ColorWrites::ALL,
+        }],
+        multisample: MultisampleStateDescriptor {
+            count: SampleCount::X1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
     }
 }
 
@@ -761,6 +795,7 @@ mod tests {
             cpu_mesh_uuid: mesh_uuid,
             gpu_mesh: gpu_mesh_handle,
             material: None,
+            gpu_material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -798,6 +833,7 @@ mod tests {
             cpu_mesh_uuid: mesh_uuid,
             gpu_mesh: gpu_mesh_handle,
             material: None,
+            gpu_material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -848,12 +884,14 @@ mod tests {
             cpu_mesh_uuid: line_uuid,
             gpu_mesh: line_mesh_handle,
             material: None,
+            gpu_material: None,
         });
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
             cpu_mesh_uuid: point_uuid,
             gpu_mesh: point_mesh_handle,
             material: None,
+            gpu_material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -912,18 +950,21 @@ mod tests {
             cpu_mesh_uuid: mesh1_uuid,
             gpu_mesh: AssetHandle::new(create_test_mesh(600)),
             material: None,
+            gpu_material: None,
         });
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
             cpu_mesh_uuid: mesh2_uuid,
             gpu_mesh: AssetHandle::new(create_test_mesh(102)),
             material: None,
+            gpu_material: None,
         });
         render_world.meshes.push(ExtractedMesh {
             transform: Default::default(),
             cpu_mesh_uuid: mesh3_uuid,
             gpu_mesh: AssetHandle::new(create_test_mesh(150)),
             material: None,
+            gpu_material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -963,6 +1004,7 @@ mod tests {
             cpu_mesh_uuid: AssetUUID::new(),
             gpu_mesh: AssetHandle::new(create_test_mesh(300)),
             material: None,
+            gpu_material: None,
         });
 
         let cost = lane.estimate_render_cost(&render_world, &gpu_meshes);
@@ -997,6 +1039,7 @@ mod tests {
             cpu_mesh_uuid: mesh_uuid,
             gpu_mesh: handle,
             material: None,
+            gpu_material: None,
         });
 
         let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));

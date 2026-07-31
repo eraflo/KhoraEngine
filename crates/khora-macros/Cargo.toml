@@ -2,6 +2,8 @@
 name = "khora-macros"
 version = "0.1.0"
 edition = "2021"
+rust-version.workspace = true
+license.workspace = true
 
 [lib]
 proc-macro = true

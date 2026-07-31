@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod ai;
 pub mod assets;
 pub mod assets_config;
 pub mod ci;
+pub mod dev;

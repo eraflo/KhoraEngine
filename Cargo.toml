@@ -12,16 +12,49 @@ members = [
     "crates/khora-telemetry",
     "crates/khora-editor",
     "crates/khora-plugins",
+    "crates/khora-runtime",
     "crates/khora-sdk",
+    # First-party tool design system (brand + widgets). Not an engine crate:
+    # khora-sdk does not depend on it, so games never compile Khora's brand.
+    "crates/khora-tool-ui",
     # Examples and tools
     "examples/sandbox",
     "xtask",
     "hub",
 ]
 
+# Shared package metadata inherited by every workspace member via
+# `rust-version.workspace = true`. The MSRV is pinned to 1.91 — the lowest
+# stable toolchain that actually compiles the whole workspace, verified by
+# `cargo +1.91 check --workspace --all-features --all-targets`. The binding
+# constraints are:
+#   * `const fn TypeId::of` used in `const` context by the `#[derive(Component)]`
+#     output in khora-data (stabilized as const in Rust 1.91);
+#   * dependency floors: egui/eframe 0.33 and image 0.25 require >= 1.88;
+#   * first-party `{integer}::is_multiple_of` (1.87) and `Option::is_none_or`
+#     (1.82) sit below this floor.
+[workspace.package]
+rust-version = "1.91"
+# The whole workspace ships under Apache-2.0 (see ./LICENSE). Declaring it
+# here and inheriting it per crate makes every manifest self-describe its
+# license, which the cargo-deny licenses check enforces.
+license = "Apache-2.0"
+
 
 [profile.dev]
 opt-level = 1 # Enable minimal optimization even in dev
+# Drop full debuginfo from dev builds. With `line-tables-only` we still get
+# stack traces (file + line numbers in panics, RUST_BACKTRACE=1, profiler
+# samples) but skip the per-symbol type tables that account for the bulk
+# of `target/` size on Windows MSVC and Linux gcc/clang. Saves ~30-50% on
+# disk per profile, with no observable effect on debugging unless you're
+# stepping through values in a debugger (in which case temporarily set
+# debug = 2 in your local Cargo.toml override).
+debug = "line-tables-only"
+# Strip debuginfo from dependencies so re-fetching crates doesn't re-bloat
+# target/. Workspace crates keep their `debug` setting from above.
+[profile.dev.package."*"]
+debug = "line-tables-only"
 
 [profile.release]
 lto = true      # Link-Time Optimization for release

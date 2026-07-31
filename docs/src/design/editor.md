@@ -41,7 +41,7 @@ Khora is built on a self-optimizing architecture (GORNA). The editor must surfac
 Engine editors fail by hiding everything in nested menus or by drowning the user in chips. We use a **Spine** (mode rail) and **Pills** (compact groups) so dense information stays scannable.
 
 ### 4. Mode-first, not panel-first
-Unity and Unreal let you arrange panels freely — and most users keep the default forever. We commit to opinionated layouts per Mode (Scene, Canvas, Graph, Animation, Shader, Control Plane). Power users can still customize, but the default is excellent.
+Unity and Unreal let you arrange panels freely — and most users keep the default forever. We commit to opinionated layouts per Mode. Two workspaces ship today — **Scene** (3D dock) and **Control Plane** (DCC / agents) — with further authoring workspaces (2D canvas, node graph, animation, shader graph) added as they are built. Power users can still customize, but the default is excellent.
 
 ### 5. Calm color, loud signal
 The base palette is near-monochrome (deep blue-black + warm silver). Color is reserved for **state** — gold for the active selection, green for healthy telemetry, amber for warnings. When something is colorful, it matters.
@@ -148,7 +148,7 @@ Most engine editors waste 220 px on a left sidebar that simply switches workspac
 
 ### Anatomy
 - **Title bar** — 44 px. Brand pill (logo + project), centered window controls, account.
-- **Spine** — 48 px wide, full height. Six modes as icon buttons; active mode lit gold.
+- **Spine** — 48 px wide, full height. Mode icon buttons (Scene, Control Plane today); active mode lit gold.
 - **Workbench** — everything to the right of the Spine. Layout determined by current Mode.
 - **Status bar** — 28 px. Engine state, FPS, build status, GORNA pulse.
 

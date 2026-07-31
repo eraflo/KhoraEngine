@@ -10,6 +10,7 @@ default-theme = "ayu"
 preferred-dark-theme = "ayu"
 additional-css = ["theme/custom.css"]
 git-repository-url = "https://github.com/eraflo/KhoraEngine"
+edit-url-template = "https://github.com/eraflo/KhoraEngine/edit/main/docs/{path}"
 
 [output.html.fold]
 enable = true
