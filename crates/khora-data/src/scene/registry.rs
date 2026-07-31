@@ -18,7 +18,7 @@
 //! at link time via `inventory`. The Definition and Recipe strategies
 //! iterate these registrations to handle all component types.
 
-use crate::ecs::World;
+use crate::ecs::{ComponentProvenance, World};
 use khora_core::ecs::entity::EntityId;
 use std::any::TypeId;
 
@@ -40,6 +40,14 @@ pub struct ComponentRegistration {
 
     /// A human-readable name for the component (e.g., "Camera", "Light").
     pub type_name: &'static str,
+
+    /// Who writes this component — see [`ComponentProvenance`].
+    ///
+    /// Lets any consumer ask "is this the author's data, or the engine's?"
+    /// instead of keeping its own hand-maintained list of type names. The
+    /// editor's "Add Component" menu and `duplicate_entity` both read it, so
+    /// components declared outside this crate are handled correctly too.
+    pub provenance: ComponentProvenance,
 
     /// Serializes the component from the world into a Recipe command's
     /// component_data bytes. Returns `None` if the entity doesn't have
@@ -74,18 +82,136 @@ pub struct ComponentRegistration {
 
 inventory::collect!(ComponentRegistration);
 
-/// Helper function to serialize a component from a world.
+/// Serializes every component of `entity` that belongs to the author.
 ///
-/// Tries each registered component type to find one that matches
-/// and can serialize the given entity's component.
+/// Skips [`ComponentProvenance::Derived`] and [`ComponentProvenance::Runtime`]
+/// components, because every caller — scene files, `.kprefab` extraction and
+/// entity duplication — wants the data a human or a tool put there, not what
+/// the engine computed from it.
+///
+/// Emitting them would be actively wrong, not merely wasteful: `Children`
+/// holds the *source* entity's `EntityId`s, so a copy would claim the
+/// original's children, and `GlobalTransform` would land stale until the next
+/// `transform_propagation` tick. Hierarchy is rebuilt from the recipe's
+/// `SetParent` commands instead, which remap ids properly.
 pub fn serialize_all_components(world: &World, entity: EntityId) -> Vec<(String, Vec<u8>)> {
     let mut results = Vec::new();
     for reg in inventory::iter::<ComponentRegistration> {
+        if !reg.provenance.is_copied_on_duplicate() {
+            continue;
+        }
         if let Some(data) = (reg.serialize_recipe)(world, entity) {
             results.push((reg.type_name.to_string(), data));
         }
     }
     results
+}
+
+/// Links `child` under `parent`, maintaining **both** halves of the hierarchy
+/// edge — the `Parent` back-reference and the parent's `Children` list.
+///
+/// Every `SceneCommand::SetParent` handler goes through this. They used to add
+/// only `Parent` and rely on a serialized `Children` component to supply the
+/// forward list, which quietly loaded the *source* world's entity ids; now that
+/// `Children` is `Derived` and no longer persisted, the inverse index has to be
+/// rebuilt here instead. Mirrors the invariant `GameWorld::set_parent` enforces
+/// for live edits.
+pub fn link_parent_child(world: &mut World, child: EntityId, parent: EntityId) {
+    if let Some(existing) = world.get_mut::<crate::ecs::Parent>(child) {
+        *existing = crate::ecs::Parent(parent);
+    } else {
+        world.add_component(child, crate::ecs::Parent(parent)).ok();
+    }
+
+    if let Some(children) = world.get_mut::<crate::ecs::Children>(parent) {
+        if !children.0.contains(&child) {
+            children.0.push(child);
+        }
+    } else {
+        world
+            .add_component(parent, crate::ecs::Children(vec![child]))
+            .ok();
+    }
+}
+
+/// Looks up the registered provenance of a component by its `type_name`.
+///
+/// Returns `None` for a type that never registered — the generic
+/// `HandleComponent<T>` instantiations and anything tagged
+/// `#[component(no_serializable)]`, neither of which participates in
+/// serialization, duplication or the "Add Component" menu.
+pub fn provenance_of(type_name: &str) -> Option<ComponentProvenance> {
+    inventory::iter::<ComponentRegistration>
+        .into_iter()
+        .find(|reg| reg.type_name == type_name)
+        .map(|reg| reg.provenance)
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::*;
+
+    /// Locks the classification of the components whose provenance is not the
+    /// default. Each of these was previously encoded in a hand-maintained list
+    /// somewhere else in the workspace; if one silently reverts to `Authored`
+    /// it would reappear in "Add Component" and be copied on duplicate.
+    #[test]
+    fn engine_written_components_are_classified() {
+        // Recomputed by `transform_propagation` from Transform + Parent.
+        assert_eq!(
+            provenance_of("GlobalTransform"),
+            Some(ComponentProvenance::Derived)
+        );
+        // Inverse index of `Parent`, maintained by `GameWorld::set_parent`.
+        // Copying it would make a duplicate claim the original's children.
+        assert_eq!(
+            provenance_of("Children"),
+            Some(ComponentProvenance::Derived)
+        );
+        // Written by "instantiate prefab"; persists and must survive a
+        // duplicate, but adding an empty one by hand is meaningless.
+        assert_eq!(
+            provenance_of("Prefab"),
+            Some(ComponentProvenance::ToolAuthored)
+        );
+        // Debug output of the physics writeback.
+        assert_eq!(
+            provenance_of("PhysicsDebugData"),
+            Some(ComponentProvenance::Runtime)
+        );
+    }
+
+    /// The components a user actually authors keep the default, including the
+    /// two whose registration is hand-written rather than derive-generated.
+    #[test]
+    fn authored_components_keep_the_default() {
+        for name in ["Transform", "Camera", "Light", "Tag", "MeshRef", "MaterialRef"] {
+            assert_eq!(
+                provenance_of(name),
+                Some(ComponentProvenance::Authored),
+                "{name} should be author-written"
+            );
+        }
+    }
+
+    /// The two halves of the hierarchy edge are classified differently, and
+    /// the asymmetry is the point.
+    ///
+    /// `Parent` is written by the reparent action, so it persists and a
+    /// duplicate keeps it — but nobody adds one from a menu, hence
+    /// `ToolAuthored`. `Children` is merely the inverse index rebuilt from it,
+    /// so it is `Derived` and must never be copied verbatim.
+    #[test]
+    fn parent_and_children_are_classified_asymmetrically() {
+        let parent = provenance_of("Parent").expect("Parent is registered");
+        let children = provenance_of("Children").expect("Children is registered");
+
+        assert!(!parent.is_hand_authorable());
+        assert!(parent.is_copied_on_duplicate());
+
+        assert!(!children.is_hand_authorable());
+        assert!(!children.is_copied_on_duplicate());
+    }
 }
 
 #[cfg(test)]

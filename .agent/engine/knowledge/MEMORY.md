@@ -8,7 +8,42 @@ Deep history lives in git and `docs/plans/`.
 - **Build**: clean (all crates compile, 0 errors); clippy 0 errors.
 - **Tests**: ~866 passing, ~29 ignored, 0 failures. Treat the live `cargo test --workspace` count as truth.
 
-## Latest work (2026-07-18) — Audit remediation (robustness + dead-code sweep)
+## Latest work (2026-07-31) — Audit UI éditeur + provenance des composants
+- **Audit complet de l'UI éditeur** : `docs/research/2026-07-31_editor-ui-audit.md` — 12 sections,
+  ~90 constats identifiés (`H1`, `Q2`, `X8`…), menés en lecture de code **et** en exécution réelle à
+  trois largeurs de fenêtre. Plan de correction en 7 phases. Défauts structurels : aucun panneau ne
+  scrolle (`scroll_area` a zéro appelant), `Interaction` n'a pas de `focused` et `UiBuilder` aucune
+  API clavier, `last_response` non renseigné par les champs de saisie (⇒ `Entrée`/`Échap` morts dans
+  la palette), 22 des 33 widgets de `khora-tool-ui` sans appelant.
+- **`ComponentProvenance` (nouvel axe, `khora-data/src/ecs/registry.rs`)** — orthogonal à
+  `SemanticDomain` : celui-ci dit *qui consomme* la donnée, la provenance dit *qui a le droit de
+  l'écrire*. 4 variantes encodant deux bits (offert à l'auteur / copié à la duplication) :
+  `Authored` (défaut) · `ToolAuthored` (`Prefab`, `Parent`) · `Derived` (`GlobalTransform`,
+  `Children`) · `Runtime` (`PhysicsDebugData`). Déclaré via `#[component(provenance = …)]`.
+  Remplace quatre encodages ad hoc concurrents (`no_serializable`, `#[component(skip)]`,
+  `INHERENT_COMPONENTS`, la liste en dur de `duplicate_entity`).
+- **`serialize_all_components` filtre désormais sur la provenance**, et les **4 chemins de
+  sérialisation** (subtree/prefab, recipe monde, messagepack, definition) passent par lui — ils
+  itéraient l'inventaire en direct. Conséquence corrigée : les `.kprefab` et les scènes
+  embarquaient `Children`/`GlobalTransform` avec les **EntityId de la source**.
+- **`link_parent_child`** (`scene/registry.rs`) : les 3 gestionnaires `SceneCommand::SetParent`
+  n'ajoutaient que `Parent` ; l'index inverse `Children` venait du composant sérialisé (donc faux).
+  Ils maintiennent maintenant les deux côtés, comme `GameWorld::set_parent`.
+- **`duplicate_entity` réécrit** (`khora-editor/src/ops.rs`) : passe par le round-trip
+  `serialize_subtree`/`instantiate_subtree` au lieu d'une liste de 8 composants en dur. Corrige la
+  perte de `Tag`, des composants utilisateur, du `Parent` et de tout le sous-arbre. 2 tests de
+  régression.
+- **« + Add Component » / cartes Inspector** : filtrage via `is_author_facing` (provenance + domaine
+  `Ui` masqué hors workspace Canvas) au lieu de la liste de chaînes `INHERENT_COMPONENTS`.
+  Vérifié à l'écran : les buckets `UI` et `Other` (où vivait `Prefab`) ont disparu.
+- **Bug de macro corrigé** (`khora-macros`) : `parse_nested_meta` avortait sur la première clé
+  `key = value` non consommée et l'erreur était avalée par `let _ =`, donc une seconde clé n'était
+  jamais lue. Les parseurs `domain`/`provenance` sont fusionnés en une passe et `no_serializable`
+  est durci.
+- Vérif : `cargo test --workspace` 940 passed / 0 failed ; `cargo clippy --workspace` clean ;
+  éditeur lancé plusieurs fois, sortie propre (code 0), aucun panic.
+
+## Earlier work (2026-07-18) — Audit remediation (robustness + dead-code sweep)
 - Plan/recherche : `docs/plans/2026-07-18_codebase-audit-remediation.md`, `docs/research/2026-07-18_codebase-audit.md`.
 - **Results faillibles jetés** (`let _ =`) désormais gérés : `write_buffer` (`forward_plus_lane`, pattern
   `if let Err → log::error`), `add_component` (`game_world`, `asset_resolver`, `projection` → logués),

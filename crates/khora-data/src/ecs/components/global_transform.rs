@@ -25,7 +25,7 @@ use khora_macros::Component;
 /// This acts as a cache to avoid re-calculating the full transform hierarchy every time
 /// it's needed.
 #[derive(Debug, Clone, Copy, PartialEq, Component)]
-#[component(domain = Spatial)]
+#[component(domain = Spatial, provenance = Derived)]
 pub struct GlobalTransform(pub AffineTransform);
 
 impl GlobalTransform {

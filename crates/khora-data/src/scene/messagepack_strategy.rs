@@ -63,14 +63,14 @@ impl SerializationStrategy for MessagePackSerializationStrategy {
 
         for entity_id in sorted_entities {
             commands.push(SceneCommand::Spawn { id: entity_id });
-            for reg in inventory::iter::<ComponentRegistration> {
-                if let Some(data) = (reg.serialize_recipe)(world, entity_id) {
-                    commands.push(SceneCommand::AddComponent {
-                        entity_id,
-                        component_type: reg.type_name.to_string(),
-                        component_data: data,
-                    });
-                }
+            for (component_type, component_data) in
+                crate::scene::serialize_all_components(world, entity_id)
+            {
+                commands.push(SceneCommand::AddComponent {
+                    entity_id,
+                    component_type,
+                    component_data,
+                });
             }
             if let Some(parent) = world.get::<crate::ecs::Parent>(entity_id) {
                 commands.push(SceneCommand::SetParent {
@@ -140,7 +140,7 @@ impl SerializationStrategy for MessagePackSerializationStrategy {
                             parent_id
                         ))
                     })?;
-                    let _ = world.add_component(child, crate::ecs::Parent(parent));
+                    crate::scene::link_parent_child(world, child, parent);
                 }
             }
         }

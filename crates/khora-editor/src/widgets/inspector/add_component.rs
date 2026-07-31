@@ -18,16 +18,43 @@ use khora_sdk::prelude::ecs::EntityId;
 
 use super::display::category_label_for_tag;
 
-/// Components that are inherent to a vessel (auto-managed by the engine
-/// or surfaced elsewhere) — never offered in the "+ Add Component" menu
-/// nor rendered as a card. `Name` lives in the inspector header instead.
-pub const INHERENT_COMPONENTS: &[&str] = &[
-    "GlobalTransform",
-    "Parent",
-    "Children",
-    "HandleComponent<GpuMesh>",
-    "Name",
-];
+/// Components the editor renders somewhere other than as an inspector card,
+/// so offering them in "+ Add Component" would be redundant.
+///
+/// This is a **presentation** concern, not an authorship one: `Name` is very
+/// much the author's data, it simply lives in the inspector header. Whether a
+/// component may be authored at all is answered by
+/// [`ComponentProvenance`](khora_sdk::khora_data::ecs::ComponentProvenance),
+/// which is declared on the component itself — so engine-written types are
+/// excluded by construction, including ones defined outside this workspace.
+pub const SURFACED_ELSEWHERE: &[&str] = &["Name"];
+
+/// `SemanticDomain::Ui` as the small integer tag the editor carries in
+/// [`ComponentJson::domain`] (see `ops::domain_tag`).
+///
+/// The `Ui*` family drives the in-world Taffy UI, which is authored in a
+/// canvas, not on a 3D scene entity — dropping a `UiNode` on a mesh yields a
+/// component nothing lays out. Scene mode therefore hides the whole domain.
+/// This is a **workspace** filter, not an authorship one: the day a Canvas
+/// workspace ships, it shows this domain and hides the others rather than
+/// removing the rule.
+const UI_DOMAIN_TAG: u8 = 4;
+
+/// Whether the inspector should treat `type_name` as the author's own data —
+/// offering it in "+ Add Component" and rendering it as an editable card.
+///
+/// The single source of truth for both surfaces, so the menu and the card list
+/// cannot drift apart. Returns `false` for anything the engine writes
+/// (`GlobalTransform`, `Children`, `PhysicsDebugData`…), for tool-written
+/// components nobody adds by hand (`Parent`, `Prefab`), for the ones rendered
+/// elsewhere, and for unregistered types.
+pub fn is_author_facing(type_name: &str) -> bool {
+    if SURFACED_ELSEWHERE.contains(&type_name) {
+        return false;
+    }
+    khora_sdk::khora_data::scene::provenance_of(type_name)
+        .is_some_and(|p| p.is_hand_authorable())
+}
 
 /// Render the "+ Add Component" menu button. Selecting a component
 /// queues `EditorState::pending_add_component` for the next frame.
@@ -48,13 +75,16 @@ pub fn render_add_component(
         .collect();
 
     for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
-        if INHERENT_COMPONENTS.contains(&reg.type_name) {
+        if !is_author_facing(reg.type_name) {
             continue;
         }
         if already_present.contains(reg.type_name) {
             continue;
         }
         let domain_tag = state.component_domain_registry.get(reg.type_name).copied();
+        if domain_tag == Some(UI_DOMAIN_TAG) {
+            continue;
+        }
 
         if let Some(tag) = domain_tag {
             buckets

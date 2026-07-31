@@ -24,5 +24,5 @@ use khora_macros::Component;
 /// Note: This component should be managed by a dedicated hierarchy maintenance
 /// system to ensure it stays in sync with `Parent` components on child entities.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Component)]
-#[component(domain = Spatial)]
+#[component(domain = Spatial, provenance = Derived)]
 pub struct Children(pub Vec<EntityId>);

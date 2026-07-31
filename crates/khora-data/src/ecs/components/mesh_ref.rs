@@ -214,6 +214,7 @@ inventory::submit! {
     crate::scene::ComponentRegistration {
         type_id: std::any::TypeId::of::<MeshRef>(),
         type_name: "MeshRef",
+        provenance: crate::ecs::ComponentProvenance::Authored,
         serialize_recipe: serialize_mesh_ref,
         deserialize_recipe: deserialize_mesh_ref,
         create_default: |world, entity| {
