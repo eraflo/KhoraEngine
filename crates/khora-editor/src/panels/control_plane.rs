@@ -123,6 +123,8 @@ pub struct ControlPlanePanel {
     /// per-agent cost, which the engine doesn't yet expose — so this is the
     /// one sparkline the Control Plane can draw truthfully today.
     frame_history: std::collections::VecDeque<f32>,
+    /// How far the agents column is scrolled.
+    agents_scroll: khora_tool_ui::widgets::ScrollState,
 }
 
 impl ControlPlanePanel {
@@ -139,6 +141,7 @@ impl ControlPlanePanel {
             dcc_context,
             selected_idx: 0,
             frame_history: std::collections::VecDeque::with_capacity(FRAME_HISTORY),
+            agents_scroll: khora_tool_ui::widgets::ScrollState::default(),
         }
     }
 
@@ -493,7 +496,22 @@ impl ControlPlanePanel {
         }
 
         // Group by crate (built-in vs user-plugin) for the section headers.
-        let mut row_y = y + 40.0;
+        //
+        // The list scrolls: it used to run straight off the bottom of the panel
+        // with no bound at all, so past roughly eight agents the rows painted
+        // outside their pane and became unclickable.
+        let rows_top = y + 40.0;
+        let view = [x, rows_top, w, (y + h - rows_top).max(0.0)];
+        let sections = agents
+            .iter()
+            .map(|a| a.crate_name)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len() as f32;
+        let content_h = agents.len() as f32 * (AGENT_ROW_HEIGHT + 2.0) + sections * 14.0;
+        self.agents_scroll.update(ui, view, content_h);
+        ui.push_clip_rect(view);
+
+        let mut row_y = rows_top - self.agents_scroll.offset();
         let mut current_section: Option<&str> = None;
         for (i, agent) in agents.iter().enumerate() {
             if Some(agent.crate_name) != current_section {
@@ -508,9 +526,14 @@ impl ControlPlanePanel {
                 row_y += 14.0;
                 current_section = Some(agent.crate_name);
             }
-            self.paint_agent_row(ui, x + 6.0, row_y, w - 12.0, agent, i, theme);
+            if row_y + AGENT_ROW_HEIGHT >= view[1] && row_y <= view[1] + view[3] {
+                self.paint_agent_row(ui, x + 6.0, row_y, w - 12.0, agent, i, theme);
+            }
             row_y += AGENT_ROW_HEIGHT + 2.0;
         }
+
+        ui.pop_clip_rect();
+        khora_tool_ui::widgets::scrollbar(ui, theme, view, content_h, &self.agents_scroll);
     }
 
     #[allow(clippy::too_many_arguments)]

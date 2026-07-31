@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
 
-use crate::widgets::chrome::{paint_panel_header, panel_tab};
+use crate::widgets::chrome::paint_panel_header;
 use crate::widgets::paint::{paint_hairline_h, paint_icon, paint_text_size, with_alpha};
 
 /// Filters a `SceneNode` against a lowercase needle. Returns `Some(node)`
@@ -156,14 +156,14 @@ impl EditorPanel for SceneTreePanel {
             format!("{}", total_count)
         };
 
-        let _ = panel_tab(
+        // Only the count: the dock tab above already says "Scene Tree", and a
+        // second title 20px below it was the same word twice.
+        paint_text_size(
             ui,
-            "h-tab-hierarchy",
-            [tab_x, tab_y],
-            "Hierarchy",
-            Some(&badge),
-            true,
-            &theme,
+            [tab_x, tab_y + 5.0],
+            &badge,
+            theme.font_size_caption,
+            theme.text_muted,
         );
         let _ = icons_left;
 

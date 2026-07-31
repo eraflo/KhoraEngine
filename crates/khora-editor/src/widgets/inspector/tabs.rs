@@ -66,61 +66,67 @@ impl InspectorTab for PropertiesTab {
         let inspected = ctx.inspected.clone();
         let state_arc = ctx.state.clone();
 
-        ui.region_at("inspector-properties", body_rect, &mut |ui_inner| {
-            let mut state_guard = match state_arc.lock() {
-                Ok(s) => s,
-                Err(_) => return,
-            };
-            let panel_rect_inner = ui_inner.panel_rect();
-            let card_x = panel_rect_inner[0];
-            let card_w = panel_rect_inner[2];
+        // Component cards flow with the egui cursor rather than being placed at
+        // absolute rects, so the stock scroll area is the right tool here —
+        // unlike the Console and the Hierarchy, which paint into computed rects
+        // and use the cursor-offset helper instead.
+        ui.region_at("inspector-properties", body_rect, &mut |ui_region| {
+            ui_region.scroll_area("inspector-cards", &mut |ui_inner| {
+                let mut state_guard = match state_arc.lock() {
+                    Ok(s) => s,
+                    Err(_) => return,
+                };
+                let panel_rect_inner = ui_inner.panel_rect();
+                let card_x = panel_rect_inner[0];
+                let card_w = panel_rect_inner[2];
 
-            let mut edits: Vec<PropertyEdit> = Vec::new();
+                let mut edits: Vec<PropertyEdit> = Vec::new();
 
-            for cj in inspected.components_json.iter() {
-                if !is_author_facing(&cj.type_name) {
-                    continue;
-                }
-                let title = cj.type_name.clone();
-                let mut value = cj.value.clone();
-                let icon = icon_for_domain_tag(cj.domain);
-                let mut changed = false;
-                render_card(
-                    ui_inner,
-                    entity,
-                    &title,
-                    icon,
-                    None,
-                    true, // removable — `is_author_facing` already filtered
-                    card_x,
-                    card_w,
-                    &theme,
-                    &mut state_guard,
-                    &mut |ui_b| {
-                        // Tag has a custom chip renderer — the generic JSON
-                        // walker would render it as `[0] = "alpha", …` rows.
-                        if cj.type_name == "Tag" {
-                            changed = render_tag_chips(ui_b, entity, &mut value);
-                        } else {
-                            changed = render_value(ui_b, &mut value, &theme);
-                        }
-                    },
-                );
-                if changed {
-                    edits.push(PropertyEdit::SetComponentJson {
+                for cj in inspected.components_json.iter() {
+                    if !is_author_facing(&cj.type_name) {
+                        continue;
+                    }
+                    let title = cj.type_name.clone();
+                    let mut value = cj.value.clone();
+                    let icon = icon_for_domain_tag(cj.domain);
+                    let mut changed = false;
+                    render_card(
+                        ui_inner,
                         entity,
-                        type_name: cj.type_name.clone(),
-                        value,
-                    });
+                        &title,
+                        icon,
+                        None,
+                        true, // removable — `is_author_facing` already filtered
+                        card_x,
+                        card_w,
+                        &theme,
+                        &mut state_guard,
+                        &mut |ui_b| {
+                            // Tag has a custom chip renderer — the generic JSON
+                            // walker would render it as `[0] = "alpha", …` rows.
+                            if cj.type_name == "Tag" {
+                                changed = render_tag_chips(ui_b, entity, &mut value);
+                            } else {
+                                changed = render_value(ui_b, &mut value, &theme);
+                            }
+                        },
+                    );
+                    if changed {
+                        edits.push(PropertyEdit::SetComponentJson {
+                            entity,
+                            type_name: cj.type_name.clone(),
+                            value,
+                        });
+                    }
                 }
-            }
 
-            ui_inner.spacing(8.0);
-            render_add_component(ui_inner, entity, &inspected, &mut state_guard);
+                ui_inner.spacing(8.0);
+                render_add_component(ui_inner, entity, &inspected, &mut state_guard);
 
-            for e in edits.drain(..) {
-                state_guard.push_edit(e);
-            }
+                for e in edits.drain(..) {
+                    state_guard.push_edit(e);
+                }
+            });
         });
     }
 }

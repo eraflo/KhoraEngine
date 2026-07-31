@@ -179,15 +179,7 @@ impl EditorPanel for ConsolePanel {
             t.separator,
             1.0,
         );
-        widgets::panel_tab(
-            ui,
-            &t,
-            [r[0] + 8.0, r[1] + 6.0, 92.0, HEADER_H - 6.0],
-            "c-tab-console",
-            Some(Icon::Terminal),
-            "Console",
-            true,
-        );
+        // No title chip: the dock tab above already names this panel.
 
         // ── Filters ──
         let fy = r[1] + HEADER_H + 5.0;

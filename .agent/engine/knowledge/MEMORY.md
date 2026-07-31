@@ -24,13 +24,24 @@ Deep history lives in git and `docs/plans/`.
   `khora_tool_ui::widgets::{ScrollState, scrollbar}`. Le clamp tourne **à chaque frame**, pas
   seulement sur molette, pour que du contenu qui rétrécit ramène la vue. Barre peinte uniquement en
   débordement. 4 tests.
-  - **Appliqué : Console + Hierarchy** (~6 lignes chacun). **Reste : Inspector, grille d'assets,
-    colonnes du Control Plane.**
+  - **Appliqué aux 5 panneaux** : Console, Hierarchy, grille d'assets et colonne d'agents du Control
+    Plane via `ScrollState` (contenu peint en rects absolus) ; **Inspector via `scroll_area`**, car
+    ses cartes suivent le curseur egui — deux mécanismes, choisis selon la façon dont le panneau
+    place son contenu.
+  - **Chips de titre redondants supprimés** (Hierarchy / Inspector / Console / Assets) : l'onglet du
+    dock nomme déjà le panneau. Les compteurs vivants (entités, assets) sont conservés seuls.
 - **A3 (graisse/interlettrage) : non fait**, glissé en Phase 5 comme le plan l'autorisait.
 - **Observation console** : les lignes sont en *newest-first* et le moteur logue en continu, donc une
   vue scrollée dérive sous les nouvelles entrées. Le scroll fonctionne (barre + pouce proportionnel
   vérifiés à l'écran) mais l'ordre du journal rend la lecture d'historique frustrante — vrai défaut
   de conception du panneau, antérieur à ce changement, à traiter avec C1/C2 de l'audit.
+- **⚠ Écart non résolu, à vérifier en priorité** : au dernier lancement (processus neuf, aucun clic
+  automatisé), la console s'ouvrait avec l'onglet **Console** actif et les lignes **Debug affichées**.
+  Or `scene_layout()` termine par `activate("khora.editor.asset_browser")` et
+  `LevelFilter::default()` a `debug: false` — les deux devraient donner Asset Browser + « Nothing
+  matches ». Relire le code n'a pas expliqué la contradiction. Tant qu'elle n'est pas élucidée, **le
+  constat C1 de l'audit (« console vide alors que N entrées existent ») est à re-vérifier** : il se
+  peut qu'il dépende d'un état que je n'ai pas identifié plutôt que du défaut décrit.
 - Vérif : `cargo test --workspace` 972 passed / 0 failed ; clippy clean ; éditeur lancé, scroll et
   barre vérifiés sur 1607 lignes.
 

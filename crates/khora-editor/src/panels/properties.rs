@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
 
-use crate::widgets::chrome::{paint_panel_header, panel_tab};
+use crate::widgets::chrome::paint_panel_header;
 use crate::widgets::inspector::asset_pane::{paint_asset_header, render_asset_pane};
 use crate::widgets::inspector::display::{pick_icon, pick_type_tag};
 use crate::widgets::inspector::header::paint_inspector_header;
@@ -80,20 +80,12 @@ impl EditorPanel for PropertiesPanel {
 
         // ── Panel header strip ────────────────────────
         paint_panel_header(ui, panel_rect, HEADER_HEIGHT, &theme);
-        let tab_y = py + (HEADER_HEIGHT - 22.0) * 0.5;
+
 
         let action_icons: &[(Icon, &str)] =
             &[(Icon::More, "p-act-more"), (Icon::Lock, "p-act-lock")];
 
-        let _ = panel_tab(
-            ui,
-            "p-tab-inspector",
-            [px + 6.0, tab_y],
-            "Inspector",
-            None,
-            true,
-            &theme,
-        );
+        // No title chip: the dock tab above already names this panel.
 
         let mut ax = px + pw - 12.0;
         for (icon, salt) in action_icons {

@@ -38,7 +38,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
 
-use crate::widgets::chrome::{paint_panel_header, panel_tab};
+use crate::widgets::chrome::paint_panel_header;
 use crate::widgets::paint::{paint_icon, paint_text_size, with_alpha};
 use crate::widgets::tile::{paint_asset_tile, AssetTileKind};
 
@@ -243,6 +243,8 @@ pub struct AssetBrowserPanel {
     /// `EditorState::pending_delete_asset` directly, so the recycle-bin call
     /// only happens once the user has answered the dialog.
     confirm_delete: Option<(String, bool)>,
+    /// How far the tile grid is scrolled.
+    grid_scroll: khora_tool_ui::widgets::ScrollState,
 }
 
 impl AssetBrowserPanel {
@@ -264,6 +266,7 @@ impl AssetBrowserPanel {
             current_folder: None,
             expanded_folders: std::collections::HashMap::new(),
             confirm_delete: None,
+            grid_scroll: khora_tool_ui::widgets::ScrollState::default(),
         }
     }
 
@@ -1004,14 +1007,13 @@ impl EditorPanel for AssetBrowserPanel {
         paint_panel_header(ui, panel_rect, HEADER_HEIGHT, &theme);
         let tab_y = py + (HEADER_HEIGHT - 22.0) * 0.5;
         let badge = format!("{}", self.flat.len());
-        let _ = panel_tab(
+        // Only the count: the dock tab above already says "Asset Browser".
+        paint_text_size(
             ui,
-            "ab-tab-assets",
-            [px + 6.0, tab_y],
-            "Assets",
-            Some(&badge),
-            true,
-            &theme,
+            [px + 6.0, tab_y + 5.0],
+            &badge,
+            theme.font_size_caption,
+            theme.text_muted,
         );
 
         // Header action buttons. Trash deletes the current selection; Filter
@@ -1332,11 +1334,26 @@ impl EditorPanel for AssetBrowserPanel {
         let mut dragging_ghost: Option<(String, AssetTileKind)> = None;
         // A scene-tree entity dropped onto a tile → save it as a prefab here.
         let mut entity_drop: Option<khora_sdk::prelude::ecs::EntityId> = None;
+        // Tiles are placed at computed rects, so the grid scrolls by offsetting
+        // its own origin and clipping — same shape as the Console and the
+        // Hierarchy.
+        let grid_view = [grid_inner_x, grid_inner_y, grid_inner_w, drop_h];
+        let rows_total = visible.len().div_ceil(cols.max(1)) as f32;
+        let grid_content_h = rows_total * (tile_h + TILE_GAP);
+        self.grid_scroll.update(ui, grid_view, grid_content_h);
+        ui.push_clip_rect(grid_view);
+        let grid_origin_y = grid_inner_y - self.grid_scroll.offset();
+
         for (i, (orig_idx, asset)) in visible.iter().enumerate() {
             let col = i % cols;
             let row = i / cols;
             let tx = grid_inner_x + col as f32 * (TILE_SIZE + TILE_GAP);
-            let ty = grid_inner_y + row as f32 * (tile_h + TILE_GAP);
+            let ty = grid_origin_y + row as f32 * (tile_h + TILE_GAP);
+            // Skip whole rows scrolled out of view rather than painting them
+            // under the clip.
+            if ty + tile_h < grid_view[1] || ty > grid_view[1] + grid_view[3] {
+                continue;
+            }
             let selected = self.selected_index == Some(*orig_idx);
             let interaction = paint_asset_tile(
                 ui,
@@ -1408,7 +1425,11 @@ impl EditorPanel for AssetBrowserPanel {
                 to_select = Some(*orig_idx);
             }
         }
-        // Cursor-following drag ghost — painted after the grid so it sits on top.
+        ui.pop_clip_rect();
+        khora_tool_ui::widgets::scrollbar(ui, &theme, grid_view, grid_content_h, &self.grid_scroll);
+
+        // Cursor-following drag ghost — painted after the clip is popped so it
+        // can follow the cursor outside the grid.
         if let Some((name, kind)) = dragging_ghost {
             if let Some(pos) = ui.pointer_position() {
                 self.paint_drag_ghost(ui, pos, &name, kind, &theme);
