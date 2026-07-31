@@ -265,8 +265,10 @@ impl ProjectionRegistry {
                         .insert(uuid, AssetHandle::new(gpu_material));
                 }
 
-                if let Some(handle) =
-                    material_cache.read().unwrap_or_else(|e| e.into_inner()).get(&uuid)
+                if let Some(handle) = material_cache
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .get(&uuid)
                 {
                     pending.insert(
                         entity_id,

@@ -80,7 +80,6 @@ impl EditorPanel for PropertiesPanel {
         // ── Panel header strip ────────────────────────
         paint_panel_header(ui, panel_rect, HEADER_HEIGHT, &theme);
 
-
         // No title chip: the dock tab above already names this panel.
         //
         // The `More` and `Lock` icons are gone too. Both painted a hover

@@ -357,7 +357,12 @@ impl GornaArbitrator {
             let strategy = if replay.is_none()
                 && !matches!(self.adaptation_mode(agent_id), AdaptationMode::Manual(_))
             {
-                self.apply_cap(&negotiations, alloc.agent_index, strategy, hints.get(&agent_id))
+                self.apply_cap(
+                    &negotiations,
+                    alloc.agent_index,
+                    strategy,
+                    hints.get(&agent_id),
+                )
             } else {
                 strategy
             };
@@ -865,7 +870,8 @@ mod tests {
         // budget only LowPower fits — the fit must downgrade instead of
         // trusting the optimistic quote (which would have picked HighPerformance).
         let measured: HashMap<AgentId, f64> = [(AgentId::Renderer, 24.0)].into();
-        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &measured, None, &HashMap::new());
+        let issued =
+            arbitrator.arbitrate(&ctx, &report, &mut agents, &measured, None, &HashMap::new());
 
         assert_eq!(issued, vec![(AgentId::Renderer, StrategyId::LowPower)]);
     }
@@ -882,7 +888,8 @@ mod tests {
         // to ×4: options become 8/32/56ms. Even the cheapest exceeds nothing —
         // LowPower (8ms) still fits the 16.66ms budget, but no upgrade does.
         let measured: HashMap<AgentId, f64> = [(AgentId::Renderer, 800.0)].into();
-        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &measured, None, &HashMap::new());
+        let issued =
+            arbitrator.arbitrate(&ctx, &report, &mut agents, &measured, None, &HashMap::new());
 
         assert_eq!(issued, vec![(AgentId::Renderer, StrategyId::LowPower)]);
     }
@@ -895,7 +902,14 @@ mod tests {
         let agent = MockAgent::new(AgentId::Renderer);
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        arbitrator.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
 
         let lock = agents[0].lock().unwrap();
         let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
@@ -923,8 +937,14 @@ mod tests {
         // pre-parallel sum-of-costs behaviour, unchanged.
         let serial = create_arbitrator();
         let mut agents = two_agents();
-        let issued =
-            serial.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        let issued = serial.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
         let hp_serial = issued
             .iter()
             .filter(|(_, s)| *s == StrategyId::HighPerformance)
@@ -971,7 +991,14 @@ mod tests {
         let agent = MockAgent::new(AgentId::Renderer);
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        arbitrator.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
 
         let lock = agents[0].lock().unwrap();
         let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
@@ -997,7 +1024,14 @@ mod tests {
         let agent = MockAgent::new(AgentId::Renderer);
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        arbitrator.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
 
         let lock = agents[0].lock().unwrap();
         let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
@@ -1024,7 +1058,14 @@ mod tests {
         let agent = MockAgent::new(AgentId::Renderer);
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        arbitrator.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
 
         let lock = agents[0].lock().unwrap();
         let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
@@ -1052,7 +1093,14 @@ mod tests {
             Arc::new(Mutex::new(physics)),
         ];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        arbitrator.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
 
         // Both should have received budgets
         for agent_mutex in &agents {
@@ -1097,7 +1145,14 @@ mod tests {
         let agent = MockAgent::new(AgentId::Renderer);
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        arbitrator.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
 
         let lock = agents[0].lock().unwrap();
         let mock = unsafe { &*((&*lock as *const dyn Agent) as *const MockAgent) };
@@ -1123,7 +1178,14 @@ mod tests {
             Arc::new(Mutex::new(physics)),
         ];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        arbitrator.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
 
         // Both agents should be forced to LowPower
         for agent_mutex in &agents {
@@ -1151,7 +1213,14 @@ mod tests {
             Arc::new(Mutex::new(stalled2)),
         ];
 
-        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        arbitrator.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
 
         // Both should be forced to LowPower
         for agent_mutex in &agents {
@@ -1173,7 +1242,14 @@ mod tests {
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![];
 
         // Should not panic
-        arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        arbitrator.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
     }
 
     #[test]
@@ -1192,7 +1268,14 @@ mod tests {
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> =
             vec![Arc::new(Mutex::new(renderer)), Arc::new(Mutex::new(asset))];
 
-        arbitrator.arbitrate(&ctx, &tight_report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        arbitrator.arbitrate(
+            &ctx,
+            &tight_report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
 
         // With 10ms total: both minimum = 2+2=4ms, remaining=6ms.
         // Renderer (priority 1.0) should be upgraded first: +6ms → Balanced (8ms).
@@ -1224,7 +1307,8 @@ mod tests {
             },
         )]
         .into();
-        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &hints);
+        let issued =
+            arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &hints);
         assert_eq!(issued, vec![(AgentId::Renderer, StrategyId::LowPower)]);
     }
 
@@ -1245,7 +1329,8 @@ mod tests {
             },
         )]
         .into();
-        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &hints);
+        let issued =
+            arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &hints);
         assert_eq!(issued, vec![(AgentId::Renderer, StrategyId::Balanced)]);
     }
 
@@ -1273,7 +1358,14 @@ mod tests {
         )]
         .into();
 
-        arbitrator.arbitrate(&ctx, &tight_report, &mut agents, &HashMap::new(), None, &hints);
+        arbitrator.arbitrate(
+            &ctx,
+            &tight_report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &hints,
+        );
 
         let renderer = agents[0].lock().unwrap();
         let renderer_mock = unsafe { &*((&*renderer as *const dyn Agent) as *const MockAgent) };
@@ -1308,8 +1400,12 @@ mod tests {
             },
         )]
         .into();
-        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &hints);
-        assert_eq!(issued, vec![(AgentId::Renderer, StrategyId::HighPerformance)]);
+        let issued =
+            arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &hints);
+        assert_eq!(
+            issued,
+            vec![(AgentId::Renderer, StrategyId::HighPerformance)]
+        );
     }
 
     #[test]
@@ -1320,7 +1416,14 @@ mod tests {
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> =
             vec![Arc::new(Mutex::new(MockAgent::new(AgentId::Renderer)))];
 
-        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        let issued = arbitrator.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
         // Single agent, ample budget → HighPerformance, reported back as issued.
         assert_eq!(
             issued,
@@ -1339,7 +1442,14 @@ mod tests {
         // A recorded decision of LowPower must be issued verbatim, even though
         // the live fit (ample budget) would pick HighPerformance.
         let recorded: TickDecisions = vec![(AgentId::Renderer, StrategyId::LowPower)];
-        let replayed = arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), Some(&recorded), &HashMap::new());
+        let replayed = arbitrator.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            Some(&recorded),
+            &HashMap::new(),
+        );
         assert_eq!(replayed, vec![(AgentId::Renderer, StrategyId::LowPower)]);
 
         let lock = agents[0].lock().unwrap();
@@ -1365,7 +1475,14 @@ mod tests {
         let agent = MockAgent::new(AgentId::Renderer);
         let mut agents: Vec<Arc<Mutex<dyn Agent>>> = vec![Arc::new(Mutex::new(agent))];
 
-        let issued = arbitrator.arbitrate(&ctx, &report, &mut agents, &HashMap::new(), None, &HashMap::new());
+        let issued = arbitrator.arbitrate(
+            &ctx,
+            &report,
+            &mut agents,
+            &HashMap::new(),
+            None,
+            &HashMap::new(),
+        );
 
         assert_eq!(
             issued,

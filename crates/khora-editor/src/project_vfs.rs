@@ -213,8 +213,13 @@ impl ProjectVfs {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create {}", parent.display()))?;
         }
-        std::fs::rename(&old_abs, &new_abs)
-            .with_context(|| format!("Failed to move {} → {}", old_abs.display(), new_abs.display()))?;
+        std::fs::rename(&old_abs, &new_abs).with_context(|| {
+            format!(
+                "Failed to move {} → {}",
+                old_abs.display(),
+                new_abs.display()
+            )
+        })?;
 
         // Freeze identity across the move, then persist. In-memory update must
         // precede `rebuild_index` so the new path resolves to the frozen UUID.

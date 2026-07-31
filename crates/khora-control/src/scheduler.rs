@@ -1288,7 +1288,10 @@ mod concurrent_exec_tests {
         );
         let mut world = World::new();
         let runtime = Arc::new(Runtime::new());
-        let completion = Arc::new(AgentCompletionMap::new(&[AgentId::Renderer, AgentId::Audio]));
+        let completion = Arc::new(AgentCompletionMap::new(&[
+            AgentId::Renderer,
+            AgentId::Audio,
+        ]));
         let bus = Arc::new(LaneBus::new());
         let mut deck = OutputDeck::new();
 
@@ -1315,7 +1318,14 @@ mod concurrent_exec_tests {
             ),
         ];
 
-        scheduler.execute_agents_parallel(agents, &mut world, &runtime, &completion, &bus, &mut deck);
+        scheduler.execute_agents_parallel(
+            agents,
+            &mut world,
+            &runtime,
+            &completion,
+            &bus,
+            &mut deck,
+        );
 
         assert!(
             deck.take::<SharedSaw>().0,

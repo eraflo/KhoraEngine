@@ -223,7 +223,11 @@ mod tests {
         let mut wb = WorkbenchPanel::new(state, khora_tool_ui::khora_dark());
 
         let mut tree = DockTree::single("khora.editor.viewport");
-        tree.insert("khora.editor.console", Some("khora.editor.viewport"), DropZone::Bottom);
+        tree.insert(
+            "khora.editor.console",
+            Some("khora.editor.viewport"),
+            DropZone::Bottom,
+        );
         wb.set_layout(EditorMode::Scene, tree);
 
         let shown = wb.trees[&EditorMode::Scene].panels();

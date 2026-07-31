@@ -414,7 +414,13 @@ mod tests {
     /// happens to pass near the origin of.
     #[test]
     fn ray_over_an_arm_picks_that_arm() {
-        let hit = pick_handle(GizmoMode::Move, Vec3::ZERO, &WORLD, 1.0, &from_front(0.5, 0.0));
+        let hit = pick_handle(
+            GizmoMode::Move,
+            Vec3::ZERO,
+            &WORLD,
+            1.0,
+            &from_front(0.5, 0.0),
+        );
         assert_eq!(hit, Some(GizmoAxis::X));
     }
 
@@ -422,7 +428,13 @@ mod tests {
     /// not unbounded.
     #[test]
     fn ray_clear_of_the_gizmo_picks_nothing() {
-        let hit = pick_handle(GizmoMode::Move, Vec3::ZERO, &WORLD, 1.0, &from_front(0.5, 0.5));
+        let hit = pick_handle(
+            GizmoMode::Move,
+            Vec3::ZERO,
+            &WORLD,
+            1.0,
+            &from_front(0.5, 0.5),
+        );
         assert_eq!(hit, None);
     }
 
@@ -430,7 +442,13 @@ mod tests {
     /// its tip must miss.
     #[test]
     fn ray_past_the_arm_tip_picks_nothing() {
-        let hit = pick_handle(GizmoMode::Move, Vec3::ZERO, &WORLD, 1.0, &from_front(4.0, 0.0));
+        let hit = pick_handle(
+            GizmoMode::Move,
+            Vec3::ZERO,
+            &WORLD,
+            1.0,
+            &from_front(4.0, 0.0),
+        );
         assert_eq!(hit, None);
     }
 
@@ -462,7 +480,9 @@ mod tests {
         )
         .expect("the ray is perpendicular to X, so the grab resolves");
 
-        let delta = drag.update(&from_front(2.0, 0.0)).expect("still perpendicular");
+        let delta = drag
+            .update(&from_front(2.0, 0.0))
+            .expect("still perpendicular");
 
         let GizmoDelta::Translate(offset) = delta else {
             panic!("Move must yield a translation, got {delta:?}");
@@ -585,7 +605,11 @@ mod tests {
             .update(&from_front(2.0, 0.0))
             .expect("grab resolves")
             .apply(identity());
-        assert!((result.scale.x - 2.0).abs() < 1e-4, "got {:?}", result.scale);
+        assert!(
+            (result.scale.x - 2.0).abs() < 1e-4,
+            "got {:?}",
+            result.scale
+        );
         assert_eq!(result.scale.y, 1.0);
         assert_eq!(result.scale.z, 1.0);
     }
@@ -666,7 +690,12 @@ mod tests {
     /// fixed seed degenerate.
     #[test]
     fn perpendiculars_stay_orthonormal_on_every_axis() {
-        for axis in [Vec3::X, Vec3::Y, Vec3::Z, Vec3::new(1.0, 1.0, 1.0).normalize()] {
+        for axis in [
+            Vec3::X,
+            Vec3::Y,
+            Vec3::Z,
+            Vec3::new(1.0, 1.0, 1.0).normalize(),
+        ] {
             let (u, v) = perpendiculars(axis);
             assert!((u.length() - 1.0).abs() < 1e-4, "u not unit for {axis:?}");
             assert!((v.length() - 1.0).abs() < 1e-4, "v not unit for {axis:?}");

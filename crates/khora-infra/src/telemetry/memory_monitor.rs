@@ -60,7 +60,10 @@ impl MemoryMonitor {
     /// Resets the peak usage counter to the current memory usage.
     pub fn reset_peak_usage(&self) {
         let current_usage = get_currently_allocated_bytes();
-        let mut peak = self.peak_usage_bytes.lock().unwrap_or_else(|e| e.into_inner());
+        let mut peak = self
+            .peak_usage_bytes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         *peak = current_usage;
     }
 
@@ -70,13 +73,19 @@ impl MemoryMonitor {
         let extended_stats = get_extended_memory_stats();
 
         // Update peak tracking
-        let mut peak = self.peak_usage_bytes.lock().unwrap_or_else(|e| e.into_inner());
+        let mut peak = self
+            .peak_usage_bytes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if current_usage > *peak {
             *peak = current_usage;
         }
 
         // Calculate allocation delta
-        let mut last_alloc = self.last_allocation_bytes.lock().unwrap_or_else(|e| e.into_inner());
+        let mut last_alloc = self
+            .last_allocation_bytes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let allocation_delta = current_usage.saturating_sub(*last_alloc);
         *last_alloc = current_usage;
 
@@ -122,7 +131,10 @@ impl ResourceMonitor for MemoryMonitor {
 
     fn get_usage_report(&self) -> ResourceUsageReport {
         let current_usage = get_currently_allocated_bytes();
-        let peak_usage = *self.peak_usage_bytes.lock().unwrap_or_else(|e| e.into_inner());
+        let peak_usage = *self
+            .peak_usage_bytes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         ResourceUsageReport {
             current_bytes: current_usage as u64,

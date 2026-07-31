@@ -191,7 +191,10 @@ mod tests {
         let mut bus = LaneBus::new();
         super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
         assert_eq!(flow.projections.load(Ordering::Relaxed), 1);
-        assert_eq!(bus.get::<CountedView>(), Some(&CountedView { projections: 1 }));
+        assert_eq!(
+            bus.get::<CountedView>(),
+            Some(&CountedView { projections: 1 })
+        );
 
         // Nothing mutated the world: the second run must republish the
         // cached view instead of projecting again.
@@ -230,7 +233,10 @@ mod tests {
             2,
             "a mutated domain must invalidate the cached view"
         );
-        assert_eq!(bus.get::<CountedView>(), Some(&CountedView { projections: 2 }));
+        assert_eq!(
+            bus.get::<CountedView>(),
+            Some(&CountedView { projections: 2 })
+        );
     }
 
     #[test]
@@ -244,7 +250,10 @@ mod tests {
             let mut bus = LaneBus::new();
             super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
             assert_eq!(flow.projections.load(Ordering::Relaxed), expected);
-            assert!(cache.is_none(), "a `None` key must never populate the cache");
+            assert!(
+                cache.is_none(),
+                "a `None` key must never populate the cache"
+            );
         }
     }
 

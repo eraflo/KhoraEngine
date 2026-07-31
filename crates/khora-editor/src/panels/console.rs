@@ -253,9 +253,13 @@ impl EditorPanel for ConsolePanel {
                 "Filter…",
             );
             let sref = &mut self.search;
-            ui.region_at("console-search", [sx + 22.0, fy + 2.0, sw - 30.0, 16.0], &mut |ui| {
-                ui.text_edit_singleline(sref);
-            });
+            ui.region_at(
+                "console-search",
+                [sx + 22.0, fy + 2.0, sw - 30.0, 16.0],
+                &mut |ui| {
+                    ui.text_edit_singleline(sref);
+                },
+            );
         }
 
         // ── Rows ──

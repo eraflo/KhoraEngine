@@ -347,8 +347,14 @@ impl EngineApp for SandboxGame {
         // scene behind shows through both. Overlapping them is the actual test
         // — a single transparent object would look right even unsorted.
         for (offset, tint) in [
-            (0.0_f32, khora_sdk::prelude::math::LinearRgba::new(0.25, 0.85, 0.55, 0.35)),
-            (1.1, khora_sdk::prelude::math::LinearRgba::new(0.95, 0.55, 0.25, 0.35)),
+            (
+                0.0_f32,
+                khora_sdk::prelude::math::LinearRgba::new(0.25, 0.85, 0.55, 0.35),
+            ),
+            (
+                1.1,
+                khora_sdk::prelude::math::LinearRgba::new(0.95, 0.55, 0.25, 0.35),
+            ),
         ] {
             let glass = khora_sdk::prelude::materials::StandardMaterial {
                 base_color: tint,

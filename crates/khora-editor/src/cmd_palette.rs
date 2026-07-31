@@ -394,7 +394,9 @@ impl EditorPanel for CommandPalettePanel {
             // needed so the list doesn't jump on every arrow press.
             let want_min = (active_top + row_pitch - view_h).max(0.0);
             let want_max = active_top;
-            list_scroll_prev.clamp(want_min, want_max).min(content_h - view_h)
+            list_scroll_prev
+                .clamp(want_min, want_max)
+                .min(content_h - view_h)
         };
         self.list_scroll = scroll;
 

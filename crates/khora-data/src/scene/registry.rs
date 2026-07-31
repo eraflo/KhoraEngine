@@ -185,7 +185,14 @@ mod provenance_tests {
     /// two whose registration is hand-written rather than derive-generated.
     #[test]
     fn authored_components_keep_the_default() {
-        for name in ["Transform", "Camera", "Light", "Tag", "MeshRef", "MaterialRef"] {
+        for name in [
+            "Transform",
+            "Camera",
+            "Light",
+            "Tag",
+            "MeshRef",
+            "MaterialRef",
+        ] {
             assert_eq!(
                 provenance_of(name),
                 Some(ComponentProvenance::Authored),

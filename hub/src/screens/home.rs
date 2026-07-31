@@ -311,15 +311,19 @@ fn project_card(
     );
 
     let name_w = (widgets::right(rect) - pad - ver_w - 8.0 - name_x).max(0.0);
-    ui.region_at("project-card-name", [name_x, cy - 8.0, name_w, 16.0], &mut |ui| {
-        text(
-            ui,
-            [name_x, cy - 7.0],
-            &proj.name,
-            t.font_size_title,
-            t.text,
-        );
-    });
+    ui.region_at(
+        "project-card-name",
+        [name_x, cy - 8.0, name_w, 16.0],
+        &mut |ui| {
+            text(
+                ui,
+                [name_x, cy - 7.0],
+                &proj.name,
+                t.font_size_title,
+                t.text,
+            );
+        },
+    );
 
     // Path — data, so monospace.
     mono(

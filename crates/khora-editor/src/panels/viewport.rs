@@ -295,8 +295,10 @@ impl EditorPanel for ViewportPanel {
                     // epoch stamp is only meaningful against the same read of
                     // `asset_entries` the index will address.
                     let entry = self.state.lock().ok().and_then(|s| {
-                        let idx =
-                            crate::panels::asset_browser::unpack_asset_drag(payload, s.asset_epoch)?;
+                        let idx = crate::panels::asset_browser::unpack_asset_drag(
+                            payload,
+                            s.asset_epoch,
+                        )?;
                         s.asset_entries.get(idx as usize).cloned()
                     });
                     if let Some(entry) = entry {
@@ -760,10 +762,9 @@ impl ViewportPanel {
                                 entry.name
                             );
                         }
-                        None => log::warn!(
-                            "Viewport: select an entity to assign '{}' to",
-                            entry.name
-                        ),
+                        None => {
+                            log::warn!("Viewport: select an entity to assign '{}' to", entry.name)
+                        }
                     }
                 }
             }

@@ -20,7 +20,6 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, Ref, Slot};
 use khora_core::math::{Mat4, Vec4};
-use khora_core::renderer::GraphicsDevice;
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutEntry, BindGroupLayoutId,
     BindingResource, BindingType, BufferBinding, BufferBindingType, LoadOp, Operations,
@@ -35,6 +34,7 @@ use khora_core::renderer::api::resource::{
 };
 use khora_core::renderer::api::text::TextRenderer;
 use khora_core::renderer::api::util::{SampleCount, ShaderStageFlags, TextureFormat};
+use khora_core::renderer::GraphicsDevice;
 use khora_data::ui::UiScene;
 
 /// Data for a single UI instance sent to the GPU.

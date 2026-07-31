@@ -1158,9 +1158,7 @@ fn mutable_query_bumps_only_mutably_accessed_domains() {
     let render = world.domain_epoch(SemanticDomain::Render);
 
     // `&Position` is a read-only term; only `&mut RenderTag` may write.
-    let _ = world
-        .query_mut::<(&Position, &mut RenderTag)>()
-        .count();
+    let _ = world.query_mut::<(&Position, &mut RenderTag)>().count();
 
     assert_eq!(
         world.domain_epoch(SemanticDomain::Spatial),
@@ -1387,7 +1385,11 @@ fn compaction_reclaims_fully_dead_single_domain_row() {
     // The query is already correct (orphan rows are skipped) but the dead row
     // still occupies storage.
     assert_eq!(world.query::<&RenderId>().count(), 1);
-    assert_eq!(total_rows(&world), 2, "orphan row present before compaction");
+    assert_eq!(
+        total_rows(&world),
+        2,
+        "orphan row present before compaction"
+    );
 
     let compacted = world.run_compaction(16);
     assert!(compacted >= 1, "the dirty page must be compacted");

@@ -52,8 +52,7 @@ pub fn is_author_facing(type_name: &str) -> bool {
     if SURFACED_ELSEWHERE.contains(&type_name) {
         return false;
     }
-    khora_sdk::khora_data::scene::provenance_of(type_name)
-        .is_some_and(|p| p.is_hand_authorable())
+    khora_sdk::khora_data::scene::provenance_of(type_name).is_some_and(|p| p.is_hand_authorable())
 }
 
 /// Render the "+ Add Component" menu button. Selecting a component

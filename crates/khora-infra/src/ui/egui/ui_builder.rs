@@ -14,9 +14,9 @@
 
 //! Concrete [`UiBuilder`] backed by `egui::Ui`.
 
+use khora_core::platform::input::KeyCode;
 use khora_core::ui::editor::ui_builder::{FontFamilyHint, InlineEditEvent, Interaction, TextAlign};
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
-use khora_core::platform::input::KeyCode;
 use khora_core::ui::editor::UiBuilder;
 use std::collections::HashMap;
 
@@ -652,10 +652,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
     }
 
     fn pointer_position(&self) -> Option<[f32; 2]> {
-        self.ui
-            .ctx()
-            .pointer_interact_pos()
-            .map(|p| [p.x, p.y])
+        self.ui.ctx().pointer_interact_pos().map(|p| [p.x, p.y])
     }
 
     fn is_last_item_dragged(&self) -> bool {

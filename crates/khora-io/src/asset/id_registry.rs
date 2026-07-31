@@ -109,11 +109,7 @@ impl AssetIdRegistry {
         let path = project_root.join(REGISTRY_DIR).join(REGISTRY_FILE);
         let by_path = match std::fs::read_to_string(&path) {
             Ok(text) => match ron::from_str::<RegistryFile>(&text) {
-                Ok(file) => file
-                    .entries
-                    .into_iter()
-                    .map(|e| (e.path, e.uuid))
-                    .collect(),
+                Ok(file) => file.entries.into_iter().map(|e| (e.path, e.uuid)).collect(),
                 Err(e) => {
                     log::warn!(
                         "Asset registry at {} is malformed ({e}); treating as empty.",

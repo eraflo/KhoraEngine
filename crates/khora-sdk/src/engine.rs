@@ -708,10 +708,7 @@ impl<A: EngineApp> EngineCore<A> {
         khora_core::control::gorna::AgentId,
         khora_core::control::gorna::AgentHints,
     > {
-        self.dcc
-            .as_ref()
-            .map(|d| d.hints())
-            .unwrap_or_default()
+        self.dcc.as_ref().map(|d| d.hints()).unwrap_or_default()
     }
 
     /// Shuts down the engine, calling `app.on_shutdown()`.

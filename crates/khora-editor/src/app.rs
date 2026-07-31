@@ -25,6 +25,7 @@ use std::time::Instant;
 use khora_sdk::editor_ui::{viewport_texture::ViewportTextureHandle, AssetEntry};
 use khora_sdk::khora_core::platform::KhoraWindow;
 use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
+use khora_sdk::khora_core::ui::editor::dock::{DockTree, DropZone};
 use khora_sdk::khora_core::ui::{EditorOverlay, OverlayScreenDescriptor};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::*;
@@ -33,7 +34,6 @@ use khora_sdk::RenderSystem;
 use khora_sdk::WgpuRenderSystem;
 use khora_sdk::{AgentProvider, EngineApp, GameWorld, InputEvent, Runtime};
 use khora_sdk::{CommandHistory, DccService, PlayMode};
-use khora_sdk::khora_core::ui::editor::dock::{DockTree, DropZone};
 use khora_sdk::{
     EditorCamera, EditorLogCapture, EditorMode, EditorShell, EditorState, LogEntry, PanelLocation,
 };
@@ -566,7 +566,11 @@ impl EditorApp {
         // being much larger than the sliver of screen the inspector gets.
         let hierarchy = t.insert("khora.editor.scene_tree", Some(VIEWPORT), DropZone::Left);
         let inspector = t.insert("khora.editor.properties", Some(VIEWPORT), DropZone::Right);
-        let bottom = t.insert("khora.editor.asset_browser", Some(VIEWPORT), DropZone::Bottom);
+        let bottom = t.insert(
+            "khora.editor.asset_browser",
+            Some(VIEWPORT),
+            DropZone::Bottom,
+        );
         t.insert(
             "khora.editor.console",
             Some("khora.editor.asset_browser"),

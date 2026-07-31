@@ -483,7 +483,12 @@ impl AssetBrowserPanel {
 
     /// Opens the project root in the OS file explorer.
     fn reveal_project(&self) {
-        match self.state.lock().ok().and_then(|s| s.project_folder.clone()) {
+        match self
+            .state
+            .lock()
+            .ok()
+            .and_then(|s| s.project_folder.clone())
+        {
             Some(folder) => {
                 if let Err(e) = open::that(&folder) {
                     log::warn!("Asset browser: failed to reveal project folder: {e}");
@@ -544,8 +549,19 @@ impl AssetBrowserPanel {
             with_alpha(theme.background, 0.45),
             theme.radius_md,
         );
-        ui.overlay_rect_filled([x, y], [w, h], with_alpha(theme.surface, 0.98), theme.radius_md);
-        ui.overlay_rect_stroke([x, y], [w, h], with_alpha(accent, 0.9), theme.radius_md, 1.0);
+        ui.overlay_rect_filled(
+            [x, y],
+            [w, h],
+            with_alpha(theme.surface, 0.98),
+            theme.radius_md,
+        );
+        ui.overlay_rect_stroke(
+            [x, y],
+            [w, h],
+            with_alpha(accent, 0.9),
+            theme.radius_md,
+            1.0,
+        );
         ui.overlay_text(
             [x + pad, y + 6.0],
             kind.icon().glyph(),
@@ -853,7 +869,12 @@ impl AssetBrowserPanel {
         if is_renaming {
             // Leave the label blank and hand its rect to the caller, which
             // overlays a text field there once `&mut self` is available.
-            *rename_rect = Some([icon_x + 12.0, *y + 2.0, row_w - (icon_x - row_x) - 24.0, 18.0]);
+            *rename_rect = Some([
+                icon_x + 12.0,
+                *y + 2.0,
+                row_w - (icon_x - row_x) - 24.0,
+                18.0,
+            ]);
         } else {
             paint_text_size(
                 ui,
@@ -1509,13 +1530,16 @@ impl EditorPanel for AssetBrowserPanel {
         // tile's label. Committed on Enter, cancelled on Escape (the builder
         // doesn't surface focus-loss, so those two keys are the commit path).
         if let Some(rename_idx) = self.renaming_index {
-            let slot = visible.iter().position(|(oi, _)| *oi == rename_idx).map(|pos| {
-                let col = pos % cols;
-                let row = pos / cols;
-                let tx = grid_inner_x + col as f32 * (TILE_SIZE + TILE_GAP);
-                let ty = grid_inner_y + row as f32 * (tile_h + TILE_GAP);
-                [tx + 3.0, ty + TILE_SIZE - 2.0, TILE_SIZE - 6.0, 20.0]
-            });
+            let slot = visible
+                .iter()
+                .position(|(oi, _)| *oi == rename_idx)
+                .map(|pos| {
+                    let col = pos % cols;
+                    let row = pos / cols;
+                    let tx = grid_inner_x + col as f32 * (TILE_SIZE + TILE_GAP);
+                    let ty = grid_inner_y + row as f32 * (tile_h + TILE_GAP);
+                    [tx + 3.0, ty + TILE_SIZE - 2.0, TILE_SIZE - 6.0, 20.0]
+                });
             // Snapshot the asset before taking the `&mut` buffer borrow.
             let asset = self.flat.get(rename_idx).cloned();
             match (slot, asset) {

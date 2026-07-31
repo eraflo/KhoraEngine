@@ -154,7 +154,10 @@ pub fn collect_gizmo_lines(
 /// A drag resolves against these rather than against the live values, so the
 /// entity always ends up where the cursor says it should be instead of
 /// integrating a chain of per-frame deltas.
-pub fn capture_starts(world: &GameWorld, editor_state: &EditorState) -> Vec<(EntityId, GizmoTransform)> {
+pub fn capture_starts(
+    world: &GameWorld,
+    editor_state: &EditorState,
+) -> Vec<(EntityId, GizmoTransform)> {
     editor_state
         .selection
         .iter()

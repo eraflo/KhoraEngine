@@ -105,7 +105,6 @@ pub struct DomainStats {
     pub page_count: u32,
 }
 
-
 /// The central container for the entire ECS, holding all entities, components, and metadata.
 pub struct World {
     /// Manages entity IDs and metadata.
@@ -191,8 +190,7 @@ impl World {
             planner: QueryPlanner::new(),
             type_registry: TypeRegistry::default(),
             domain_epochs: [0; SemanticDomain::COUNT],
-            instance_id: WORLD_INSTANCE_COUNTER
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            instance_id: WORLD_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         };
         // Generic and hand-implemented components can't self-register via the
         // derive (generics have no single `TypeId`; `MaterialRef` holds a trait
@@ -350,8 +348,7 @@ impl World {
             // Views. Inline field access: `metadata` still borrows
             // `self.entities`, so `bump_domain_epoch(&mut self)` can't be
             // called here.
-            self.domain_epochs[domain.index()] =
-                self.domain_epochs[domain.index()].wrapping_add(1);
+            self.domain_epochs[domain.index()] = self.domain_epochs[domain.index()].wrapping_add(1);
         }
 
         entity_id
@@ -451,13 +448,21 @@ impl World {
         // 1. Try to fetch the strategy plan from the cache.
         // We cache the execution logic (Native vs Transversal), not the page indices.
         let plan = {
-            let cache = self.planner.query_cache.read().unwrap_or_else(|e| e.into_inner());
+            let cache = self
+                .planner
+                .query_cache
+                .read()
+                .unwrap_or_else(|e| e.into_inner());
             if let Some(plan) = cache.get(&type_ids) {
                 plan.clone()
             } else {
                 drop(cache);
                 let new_plan = self.analyze_query(&type_ids);
-                let mut cache = self.planner.query_cache.write().unwrap_or_else(|e| e.into_inner());
+                let mut cache = self
+                    .planner
+                    .query_cache
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner());
                 cache.insert(type_ids.clone(), new_plan.clone());
                 new_plan
             }
@@ -491,13 +496,21 @@ impl World {
 
         // 1. Get strategy from cache
         let plan = {
-            let cache = self.planner.query_cache.read().unwrap_or_else(|e| e.into_inner());
+            let cache = self
+                .planner
+                .query_cache
+                .read()
+                .unwrap_or_else(|e| e.into_inner());
             if let Some(plan) = cache.get(&type_ids) {
                 plan.clone()
             } else {
                 drop(cache);
                 let new_plan = self.analyze_query(&type_ids);
-                let mut cache = self.planner.query_cache.write().unwrap_or_else(|e| e.into_inner());
+                let mut cache = self
+                    .planner
+                    .query_cache
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner());
                 cache.insert(type_ids.clone(), new_plan.clone());
                 new_plan
             }
@@ -1272,10 +1285,7 @@ impl World {
     /// Deserializes and completely replaces the World state from a memory layout.
     ///
     /// This method is highly unsafe as it writes raw bytes into component vectors.
-    pub fn deserialize_archetype(
-        &mut self,
-        data: &[u8],
-    ) -> Result<(), DeserializeArchetypeError> {
+    pub fn deserialize_archetype(&mut self, data: &[u8]) -> Result<(), DeserializeArchetypeError> {
         let (layout, _): (SceneMemoryLayout, _) =
             bincode::decode_from_slice(data, config::standard())?;
 
@@ -1304,10 +1314,9 @@ impl World {
             };
 
             for (type_name, bytes) in &serialized_page.columns {
-                let type_id = self
-                    .type_registry
-                    .get_id_of(type_name)
-                    .ok_or_else(|| DeserializeArchetypeError::UnknownComponent(type_name.clone()))?;
+                let type_id = self.type_registry.get_id_of(type_name).ok_or_else(|| {
+                    DeserializeArchetypeError::UnknownComponent(type_name.clone())
+                })?;
                 let constructor = self
                     .storage
                     .registry

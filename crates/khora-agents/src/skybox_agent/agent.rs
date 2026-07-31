@@ -30,7 +30,9 @@ use khora_core::lane::{ColorTarget, DepthTarget, LaneContext, LaneRegistry, Slot
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
-use khora_data::render::{PassContribution, PassDescriptor, RenderWorld, ResourceId, SkyboxPassSlot};
+use khora_data::render::{
+    PassContribution, PassDescriptor, RenderWorld, ResourceId, SkyboxPassSlot,
+};
 
 /// The agent responsible for the skybox / environment-background pass.
 ///
@@ -247,9 +249,7 @@ impl Agent for SkyboxAgent {
 impl Default for SkyboxAgent {
     fn default() -> Self {
         let mut lanes = LaneRegistry::new();
-        lanes.register(Box::new(
-            khora_lanes::render_lane::SkyboxLane::default(),
-        ));
+        lanes.register(Box::new(khora_lanes::render_lane::SkyboxLane::default()));
         Self {
             lanes,
             time_budget: Duration::ZERO,

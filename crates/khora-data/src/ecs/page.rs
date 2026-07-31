@@ -287,7 +287,10 @@ mod tests {
         let result = unsafe { col.set_from_bytes(&bytes) };
         assert!(matches!(
             result,
-            Err(SetFromBytesError::MisalignedLength { len: 5, elem_size: 4 })
+            Err(SetFromBytesError::MisalignedLength {
+                len: 5,
+                elem_size: 4
+            })
         ));
         // The column must be left untouched on error.
         assert_eq!(col, vec![42]);

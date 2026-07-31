@@ -91,9 +91,7 @@ impl ScrollState {
             return viewport[3];
         }
         let visible_frac = (viewport[3] / content_height).clamp(0.0, 1.0);
-        (viewport[3] * visible_frac)
-            .max(MIN_THUMB)
-            .min(viewport[3])
+        (viewport[3] * visible_frac).max(MIN_THUMB).min(viewport[3])
     }
 
     /// Whether the content overflows its viewport.
@@ -124,10 +122,7 @@ pub fn scrollbar(
     let [x, y, w, h] = viewport;
     let bar_x = x + w - BAR_W - 2.0;
 
-    let hit = ui.interact_rect(
-        id_salt,
-        [bar_x - (HIT_W - BAR_W) * 0.5, y, HIT_W, h],
-    );
+    let hit = ui.interact_rect(id_salt, [bar_x - (HIT_W - BAR_W) * 0.5, y, HIT_W, h]);
     if hit.pressed {
         if let Some(p) = ui.pointer_position() {
             state.drag_to(p[1], viewport, content_height);
@@ -172,7 +167,11 @@ mod tests {
 
         let before = ui.rects_filled().len();
         scrollbar(&mut ui, &theme(), VIEWPORT, 80.0, &mut state, "s");
-        assert_eq!(ui.rects_filled().len(), before, "no bar when nothing to scroll");
+        assert_eq!(
+            ui.rects_filled().len(),
+            before,
+            "no bar when nothing to scroll"
+        );
     }
 
     #[test]

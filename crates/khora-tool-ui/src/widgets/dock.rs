@@ -156,7 +156,9 @@ pub fn dock_splitter(
     }
 
     if out.pressed {
-        return ui.pointer_position().map(|p| ratio_from_pointer(splitter, p));
+        return ui
+            .pointer_position()
+            .map(|p| ratio_from_pointer(splitter, p));
     }
     None
 }
@@ -166,12 +168,7 @@ pub fn dock_splitter(
 ///
 /// Showing the resulting area rather than an arrow answers the question the
 /// user actually has — *where will it go* — before they commit.
-pub fn dock_drop_overlay(
-    ui: &mut dyn UiBuilder,
-    theme: &UiTheme,
-    rect: DockRect,
-    zone: DropZone,
-) {
+pub fn dock_drop_overlay(ui: &mut dyn UiBuilder, theme: &UiTheme, rect: DockRect, zone: DropZone) {
     let [x, y, w, h] = rect;
     let target: Rect = match zone {
         DropZone::Center => [x, y, w, h],
@@ -180,7 +177,12 @@ pub fn dock_drop_overlay(
         DropZone::Top => [x, y, w, h * 0.5],
         DropZone::Bottom => [x, y + h * 0.5, w, h * 0.5],
     };
-    fill(ui, target, with_alpha(theme.accent_c, 0.16), theme.radius_sm);
+    fill(
+        ui,
+        target,
+        with_alpha(theme.accent_c, 0.16),
+        theme.radius_sm,
+    );
     super::paint::stroke(ui, target, tint(theme.accent_c, 0.7), theme.radius_sm, 2.0);
 }
 
@@ -189,7 +191,13 @@ pub fn dock_drag_ghost(ui: &mut dyn UiBuilder, theme: &UiTheme, label: &str, poi
     let size = theme.font_size_caption + 1.0;
     let w = tab_width(ui, label, size);
     let rect: Rect = [pointer[0] + 10.0, pointer[1] + 10.0, w, 22.0];
-    super::paint::fill_stroke(ui, rect, theme.surface_elevated, theme.accent_c, theme.radius_sm);
+    super::paint::fill_stroke(
+        ui,
+        rect,
+        theme.surface_elevated,
+        theme.accent_c,
+        theme.radius_sm,
+    );
     super::paint::text(
         ui,
         [rect[0] + 12.0, super::text_y(rect, size)],
@@ -259,7 +267,12 @@ mod tests {
     #[test]
     fn single_tab_still_draws_a_strip() {
         let mut ui = RecordingUiBuilder::new(400.0, 300.0);
-        dock_tab_strip(&mut ui, &theme(), &group(&["khora.editor.viewport"], 0), "g0");
+        dock_tab_strip(
+            &mut ui,
+            &theme(),
+            &group(&["khora.editor.viewport"], 0),
+            "g0",
+        );
         assert!(ui.painted_text("Viewport"));
     }
 
@@ -302,7 +315,12 @@ mod tests {
     #[test]
     fn centre_drop_overlay_covers_the_whole_group() {
         let mut ui = RecordingUiBuilder::new(400.0, 300.0);
-        dock_drop_overlay(&mut ui, &theme(), [0.0, 0.0, 400.0, 300.0], DropZone::Center);
+        dock_drop_overlay(
+            &mut ui,
+            &theme(),
+            [0.0, 0.0, 400.0, 300.0],
+            DropZone::Center,
+        );
         assert!(filled_widths(&ui).iter().any(|w| (w - 400.0).abs() < 0.01));
     }
 

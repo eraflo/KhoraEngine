@@ -34,11 +34,11 @@ use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, Ref, Slot};
 use khora_core::renderer::api::command::{BindGroupId, BindGroupLayoutId};
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::BufferId;
+use khora_core::renderer::api::scene::GpuMesh;
 use khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer;
 use khora_core::renderer::traits::CommandEncoder;
 use khora_data::assets::Assets;
 use khora_data::render::{RenderWorld, WireframeConfig};
-use khora_core::renderer::api::scene::GpuMesh;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 /// Shared wireframe-overlay config — the host app enables it, `WireframeLane`
@@ -82,10 +82,10 @@ fn init_gpu_resources(
     };
     use khora_core::renderer::api::pipeline::{LayoutKey, ShaderVariantKey};
     use khora_core::renderer::api::resource::{BufferDescriptor, BufferUsage, CameraUniformData};
+    use khora_core::renderer::api::scene::ModelUniforms;
     use khora_core::renderer::api::util::dynamic_uniform_buffer::{
         DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
     };
-    use khora_core::renderer::api::scene::ModelUniforms;
     use khora_core::renderer::api::util::ShaderStageFlags;
     use std::borrow::Cow;
 
@@ -304,13 +304,20 @@ fn render_wireframe(
     use khora_core::renderer::api::resource::CameraUniformData;
     use khora_core::renderer::api::scene::ModelUniforms;
 
-    let (Some(pipeline), Some(camera_buffer), Some(camera_bg), Some(material_buffer), Some(material_bg)) = (
+    let (
+        Some(pipeline),
+        Some(camera_buffer),
+        Some(camera_bg),
+        Some(material_buffer),
+        Some(material_bg),
+    ) = (
         lane.pipeline.get().copied(),
         lane.camera_buffer.get().copied(),
         lane.camera_bind_group.get().copied(),
         lane.material_buffer.get().copied(),
         lane.material_bind_group.get().copied(),
-    ) else {
+    )
+    else {
         log::warn!("WireframeLane: GPU resources not initialized, skipping");
         return;
     };
@@ -335,12 +342,14 @@ fn render_wireframe(
         line_width: config.line_width,
         _padding: [0.0; 3],
     };
-    if let Err(e) = device.write_buffer(material_buffer, 0, bytemuck::bytes_of(&material_uniforms)) {
+    if let Err(e) = device.write_buffer(material_buffer, 0, bytemuck::bytes_of(&material_uniforms))
+    {
         log::error!("WireframeLane: material buffer write failed: {:?}", e);
         return;
     }
 
-    let gpu_mesh_assets = crate::lock_or_log!(gpu_meshes.read(), "WireframeLane::render gpu_meshes");
+    let gpu_mesh_assets =
+        crate::lock_or_log!(gpu_meshes.read(), "WireframeLane::render gpu_meshes");
     let mut model_ring_lock =
         crate::lock_or_log!(lane.model_ring.lock(), "WireframeLane::render model_ring");
     let model_ring = match model_ring_lock.as_mut() {
@@ -362,7 +371,10 @@ fn render_wireframe(
             continue;
         };
         let model_mat = extracted_mesh.transform.to_matrix();
-        let normal_mat = model_mat.inverse().map(|inv| inv.transpose()).unwrap_or(model_mat);
+        let normal_mat = model_mat
+            .inverse()
+            .map(|inv| inv.transpose())
+            .unwrap_or(model_mat);
         let model_uniforms = ModelUniforms {
             model_matrix: model_mat.to_cols_array_2d(),
             normal_matrix: normal_mat.to_cols_array_2d(),

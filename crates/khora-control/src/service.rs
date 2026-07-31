@@ -710,7 +710,10 @@ impl DccService {
 
     /// Returns the current context.
     pub fn get_context(&self) -> Context {
-        self.context.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.context
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// Returns a shared handle to the live context.

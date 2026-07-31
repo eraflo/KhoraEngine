@@ -83,8 +83,11 @@ fn init_gpu_resources(
     use khora_core::renderer::api::resource::{BufferDescriptor, BufferUsage};
     use std::borrow::Cow;
 
-    let sky_layout =
-        pipeline_system.inline_layout(device, SKY_UNIFORM_LAYOUT_LABEL, &sky_uniform_layout_entries())?;
+    let sky_layout = pipeline_system.inline_layout(
+        device,
+        SKY_UNIFORM_LAYOUT_LABEL,
+        &sky_uniform_layout_entries(),
+    )?;
     let env_layout =
         pipeline_system.inline_layout(device, SKY_ENV_LAYOUT_LABEL, &env_layout_entries())?;
 
@@ -126,7 +129,9 @@ fn init_gpu_resources(
 /// Group-0 layout: a single uniform buffer (fragment-only — the vertex shader
 /// derives clip positions from `vertex_index`).
 fn sky_uniform_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
-    use khora_core::renderer::api::command::{BindGroupLayoutEntry, BindingType, BufferBindingType};
+    use khora_core::renderer::api::command::{
+        BindGroupLayoutEntry, BindingType, BufferBindingType,
+    };
     use khora_core::renderer::api::util::ShaderStageFlags;
     vec![BindGroupLayoutEntry {
         binding: 0,

@@ -833,7 +833,10 @@ mod tests {
 
         t.set_ratio(sp.id, ratio);
         let l = t.layout(AREA);
-        assert!((l.groups[0].rect[2] - 247.0).abs() < 4.0, "left pane follows");
+        assert!(
+            (l.groups[0].rect[2] - 247.0).abs() < 4.0,
+            "left pane follows"
+        );
     }
 
     /// A target that vanished (its group collapsed as part of the same move)

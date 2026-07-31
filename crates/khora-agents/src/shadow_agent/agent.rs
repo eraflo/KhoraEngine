@@ -322,7 +322,10 @@ impl Agent for ShadowAgent {
             health_score,
             current_strategy: self.current_strategy,
             is_stalled: false,
-            message: format!("shadow_strategy={:?} time={measured_time_ms:.2}ms", self.strategy),
+            message: format!(
+                "shadow_strategy={:?} time={measured_time_ms:.2}ms",
+                self.strategy
+            ),
         }
     }
 
@@ -469,7 +472,10 @@ mod tests {
         };
         assert!(vram(StrategyId::HighPerformance) > vram(StrategyId::Balanced));
         assert!(vram(StrategyId::Balanced) > vram(StrategyId::LowPower));
-        assert!(vram(StrategyId::LowPower) > 0, "LowRes still has real atlases");
+        assert!(
+            vram(StrategyId::LowPower) > 0,
+            "LowRes still has real atlases"
+        );
     }
 
     #[test]

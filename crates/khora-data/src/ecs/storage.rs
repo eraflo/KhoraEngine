@@ -74,7 +74,11 @@ impl StorageManager {
     /// freed slot when one is available (no `page_id` churn) and otherwise
     /// appends. Updates `archetype_map` and the domain page-count. Returns the
     /// page id.
-    fn alloc_page(&mut self, type_ids: Vec<TypeId>, columns: HashMap<TypeId, Box<dyn AnyVec>>) -> u32 {
+    fn alloc_page(
+        &mut self,
+        type_ids: Vec<TypeId>,
+        columns: HashMap<TypeId, Box<dyn AnyVec>>,
+    ) -> u32 {
         if let Some(first_type) = type_ids.first() {
             if let Some(domain) = self.registry.get_domain(*first_type) {
                 self.domain_stats.entry(domain).or_default().page_count += 1;

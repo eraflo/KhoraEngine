@@ -145,7 +145,10 @@ mod tests {
     fn material_without_textures_yields_empty() {
         let material = StandardMaterial::default();
         let deps = extract_dependencies("material", &material_to_kmat(&material));
-        assert!(deps.is_empty(), "an untextured material has no dependencies");
+        assert!(
+            deps.is_empty(),
+            "an untextured material has no dependencies"
+        );
     }
 
     #[test]

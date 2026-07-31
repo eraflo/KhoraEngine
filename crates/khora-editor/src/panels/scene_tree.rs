@@ -337,7 +337,12 @@ impl EditorPanel for SceneTreePanel {
 
         // Rows live between the section header and the bottom of the panel.
         let rows_top = section_y + 18.0;
-        let rows_area = [px, rows_top, pw, (panel_rect[1] + panel_rect[3] - rows_top).max(0.0)];
+        let rows_area = [
+            px,
+            rows_top,
+            pw,
+            (panel_rect[1] + panel_rect[3] - rows_top).max(0.0),
+        ];
         let content_h = count_visible_nodes(&filtered_roots, &self.collapsed) as f32 * ROW_HEIGHT;
         self.scroll.update(ui, rows_area, content_h);
         ui.push_clip_rect(rows_area);
@@ -345,7 +350,17 @@ impl EditorPanel for SceneTreePanel {
         let mut row_y = rows_top - self.scroll.offset();
         for node in &filtered_roots {
             row_y = render_node(
-                ui, node, 0, px, pw, row_y, &selected, &hidden, &theme, &pending, asset_epoch,
+                ui,
+                node,
+                0,
+                px,
+                pw,
+                row_y,
+                &selected,
+                &hidden,
+                &theme,
+                &pending,
+                asset_epoch,
                 &self.collapsed,
                 renaming,
                 &rename_rect,
@@ -470,8 +485,7 @@ impl EditorPanel for SceneTreePanel {
                 EditorAction::Rename(eid) => {
                     // Seed with the current name so the field opens on it —
                     // renaming usually means editing, not retyping.
-                    let current =
-                        find_node_name(&state_guard.scene_roots, eid).unwrap_or_default();
+                    let current = find_node_name(&state_guard.scene_roots, eid).unwrap_or_default();
                     state_guard.renaming_entity = Some(eid);
                     state_guard.rename_buffer = current;
                     self.rename_focused = false;
@@ -525,7 +539,11 @@ fn dispatch_asset_drop(
             log::info!(
                 "Hierarchy: mesh '{}' dropped — spawning{}",
                 entry.name,
-                if target.is_some() { " as child" } else { " at root" }
+                if target.is_some() {
+                    " as child"
+                } else {
+                    " at root"
+                }
             );
         }
         "prefab" => {
@@ -533,7 +551,11 @@ fn dispatch_asset_drop(
             log::info!(
                 "Hierarchy: prefab '{}' dropped — instantiating{}",
                 entry.name,
-                if target.is_some() { " as child" } else { " at root" }
+                if target.is_some() {
+                    " as child"
+                } else {
+                    " at root"
+                }
             );
         }
         "scene" => {
@@ -547,18 +569,13 @@ fn dispatch_asset_drop(
                 log::warn!("Hierarchy: cannot load scene '{}' — no project folder", rel);
             }
         }
-        "texture" | "material" => {
-            match target.or_else(|| state.selection.iter().copied().next()) {
-                Some(entity) => {
-                    state.pending_assign_texture = Some((rel, entity));
-                    log::info!("Hierarchy: '{}' dropped — assigning to entity", entry.name);
-                }
-                None => log::warn!(
-                    "Hierarchy: drop '{}' on an entity to assign it",
-                    entry.name
-                ),
+        "texture" | "material" => match target.or_else(|| state.selection.iter().copied().next()) {
+            Some(entity) => {
+                state.pending_assign_texture = Some((rel, entity));
+                log::info!("Hierarchy: '{}' dropped — assigning to entity", entry.name);
             }
-        }
+            None => log::warn!("Hierarchy: drop '{}' on an entity to assign it", entry.name),
+        },
         other => log::info!("Hierarchy: asset type '{other}' is not droppable here"),
     }
 }

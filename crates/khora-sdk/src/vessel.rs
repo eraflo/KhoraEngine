@@ -169,7 +169,6 @@ impl<'a> Vessel<'a> {
     }
 }
 
-
 /// Creates a Vessel with a plane mesh at the origin.
 ///
 /// Attaches an authored [`MeshRef::Procedural`]; the asset resolver rebuilds

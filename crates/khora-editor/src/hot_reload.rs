@@ -60,7 +60,11 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
     for rel in &modified {
         let uuid = pvfs.resolve_uuid(rel);
         let dropped = pvfs.asset_service.invalidate(&uuid);
-        log::info!("Hot reload: Modified '{}' (cache dropped: {})", rel, dropped);
+        log::info!(
+            "Hot reload: Modified '{}' (cache dropped: {})",
+            rel,
+            dropped
+        );
     }
 
     if !needs_reindex {

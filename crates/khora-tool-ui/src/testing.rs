@@ -411,7 +411,12 @@ impl UiBuilder for RecordingUiBuilder {
         self.scripted.get(id_salt).copied().unwrap_or_default()
     }
 
-    fn region_at(&mut self, _id_salt: &str, _rect: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+    fn region_at(
+        &mut self,
+        _id_salt: &str,
+        _rect: [f32; 4],
+        f: &mut dyn FnMut(&mut dyn UiBuilder),
+    ) {
         f(self);
     }
 

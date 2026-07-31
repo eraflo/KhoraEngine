@@ -406,7 +406,10 @@ mod tests {
         let MaterialRef::Asset(restored_uuid) = restored else {
             panic!("expected an asset material ref");
         };
-        assert_eq!(*restored_uuid, uuid, "asset uuid must be preserved verbatim");
+        assert_eq!(
+            *restored_uuid, uuid,
+            "asset uuid must be preserved verbatim"
+        );
     }
 
     /// Builds the parent's `Children` component manually since the

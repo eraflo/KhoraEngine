@@ -36,16 +36,14 @@
 
 use khora_core::lane::LaneBus;
 use khora_core::math::{Mat4, Quaternion, Vec3};
-use khora_core::renderer::api::scene::GpuMesh;
-use khora_core::renderer::api::util::IndexFormat;
 use khora_core::renderer::api::pipeline::PrimitiveTopology;
 use khora_core::renderer::api::resource::BufferId;
+use khora_core::renderer::api::scene::GpuMesh;
+use khora_core::renderer::api::util::IndexFormat;
 use khora_core::renderer::light::{DirectionalLight, LightType, PointLight};
 use khora_core::Runtime;
 
-use khora_data::ecs::{
-    Camera, GlobalTransform, HandleComponent, Light, Parent, Transform, World,
-};
+use khora_data::ecs::{Camera, GlobalTransform, HandleComponent, Light, Parent, Transform, World};
 use khora_data::flow::{AudioView, ShadowMatrices, ShadowView};
 use khora_data::render::RenderWorld;
 
@@ -257,7 +255,11 @@ fn mutation_across_frames_reprojects_not_stale() {
         "the moved mesh's new position must surface in the re-projected view (not stale)"
     );
     assert_eq!(rw.lights.len(), 1, "the added light appears in frame 2");
-    assert_eq!(rw.point_light_count(), 1, "the added light is a point light");
+    assert_eq!(
+        rw.point_light_count(),
+        1,
+        "the added light is a point light"
+    );
 }
 
 /// Despawning an entity surfaces in the next frame's view. Uses a
@@ -392,7 +394,10 @@ fn multi_domain_views_are_coherent() {
 
     // Same light, two views.
     assert_eq!(rw.lights.len(), 1, "RenderWorld sees the light");
-    assert_eq!(sv.light_count, 1, "ShadowView counts the same enabled light");
+    assert_eq!(
+        sv.light_count, 1,
+        "ShadowView counts the same enabled light"
+    );
 
     // Light index 0 (first enabled light) casts a single (directional) matrix.
     match sv.matrices.get(&0) {

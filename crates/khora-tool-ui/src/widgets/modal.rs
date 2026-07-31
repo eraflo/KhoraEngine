@@ -189,7 +189,11 @@ mod tests {
             &theme(),
             [0.0, 0.0, 800.0, 600.0],
             "del",
-            Confirm::danger("Delete 3 assets?", "This moves them to the recycle bin.", "Delete"),
+            Confirm::danger(
+                "Delete 3 assets?",
+                "This moves them to the recycle bin.",
+                "Delete",
+            ),
         );
         assert!(ui.painted_text("Delete 3 assets?"));
         assert!(ui.painted_text("This moves them to the recycle bin."));

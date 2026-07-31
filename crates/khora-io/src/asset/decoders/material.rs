@@ -186,7 +186,10 @@ mod tests {
             .load(kmat.as_bytes())
             .expect("EmissiveMaterial .kmat should decode");
         assert!(
-            material.as_any().downcast_ref::<EmissiveMaterial>().is_some(),
+            material
+                .as_any()
+                .downcast_ref::<EmissiveMaterial>()
+                .is_some(),
             "decoded material should dispatch to EmissiveMaterial"
         );
     }

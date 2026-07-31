@@ -26,9 +26,7 @@
 
 use khora_sdk::khora_core::math::{Aabb, Mat4, Ray, Vec3};
 use khora_sdk::khora_core::renderer::api::scene::mesh::Mesh;
-use khora_sdk::prelude::ecs::{
-    AudioSource, Camera, EntityId, GlobalTransform, Light, Transform,
-};
+use khora_sdk::prelude::ecs::{AudioSource, Camera, EntityId, GlobalTransform, Light, Transform};
 use khora_sdk::{GameWorld, HandleComponent};
 
 /// Half-extent of the clickable box given to entities that have no mesh.
@@ -140,7 +138,10 @@ mod tests {
         let entity = spawn_at(&mut world, Vec3::ZERO, "target");
         // `GlobalTransform::identity()` is what a freshly spawned entity has
         // before propagation runs, which is exactly the state a click sees.
-        let hit = pick_entity(&world, &ray_from(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)));
+        let hit = pick_entity(
+            &world,
+            &ray_from(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)),
+        );
         assert_eq!(hit, Some(entity));
     }
 
@@ -177,7 +178,10 @@ mod tests {
         let mut world = GameWorld::new();
         let far = spawn_at(&mut world, Vec3::new(0.0, 0.0, -10.0), "far");
         let near = spawn_at(&mut world, Vec3::new(0.0, 0.0, 0.0), "near");
-        let hit = pick_entity(&world, &ray_from(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)));
+        let hit = pick_entity(
+            &world,
+            &ray_from(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)),
+        );
         assert_eq!(hit, Some(near), "expected the near entity, not {far:?}");
     }
 
@@ -191,7 +195,10 @@ mod tests {
             *g = GlobalTransform::new(Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0)));
         }
 
-        let miss = pick_entity(&world, &ray_from(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)));
+        let miss = pick_entity(
+            &world,
+            &ray_from(Vec3::new(0.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0)),
+        );
         assert_eq!(miss, None, "nothing sits at the origin any more");
 
         let hit = pick_entity(

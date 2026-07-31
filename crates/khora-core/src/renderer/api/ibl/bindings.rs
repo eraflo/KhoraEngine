@@ -120,8 +120,14 @@ pub fn fill_ibl_bind_group_entries<'a>(
         resource: BindingResource::TextureView(view),
         _phantom: std::marker::PhantomData,
     };
-    entries.push(texture(base + offset::IRRADIANCE_CUBE, bindings.irradiance_cube));
-    entries.push(texture(base + offset::PREFILTERED_CUBE, bindings.prefiltered_cube));
+    entries.push(texture(
+        base + offset::IRRADIANCE_CUBE,
+        bindings.irradiance_cube,
+    ));
+    entries.push(texture(
+        base + offset::PREFILTERED_CUBE,
+        bindings.prefiltered_cube,
+    ));
     entries.push(texture(base + offset::BRDF_LUT, bindings.brdf_lut));
     entries.push(BindGroupEntry {
         binding: base + offset::SAMPLER,

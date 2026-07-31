@@ -167,7 +167,10 @@ fn take_orphans<A: khora_core::asset::Asset>(
     }
 
     let mut guard = cache.write().unwrap_or_else(|e| e.into_inner());
-    orphans.iter().filter_map(|uuid| guard.remove(uuid)).collect()
+    orphans
+        .iter()
+        .filter_map(|uuid| guard.remove(uuid))
+        .collect()
 }
 
 /// Frees the wgpu resources a [`GpuMaterial`] exclusively owns: its bind group,
@@ -226,9 +229,9 @@ fn destroy_gpu_mesh(mesh: &GpuMesh, device: &dyn GraphicsDevice) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use khora_core::renderer::api::command::BindGroupId;
     use khora_core::renderer::api::pipeline::{PrimitiveTopology, ShaderVariantKey};
     use khora_core::renderer::api::resource::{BufferId, SamplerId};
-    use khora_core::renderer::api::command::BindGroupId;
     use khora_core::renderer::api::util::IndexFormat;
 
     /// A cache-only `GpuMaterial` stub (no real GPU resources) — enough to
@@ -373,7 +376,11 @@ mod tests {
         // No live refs → all 5 are orphans, but the budget caps the batch.
         let removed = take_orphans::<GpuMaterial>(&store, &world, 2);
         assert_eq!(removed.len(), 2);
-        assert_eq!(material_count(&store), 3, "leftover orphans stay for next frame");
+        assert_eq!(
+            material_count(&store),
+            3,
+            "leftover orphans stay for next frame"
+        );
     }
 
     #[test]

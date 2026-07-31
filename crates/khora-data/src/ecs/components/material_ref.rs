@@ -184,8 +184,7 @@ fn material_ref_from_json(
     value: &serde_json::Value,
 ) -> Result<(), String> {
     let mref = if let Some(asset) = value.get("asset") {
-        let uuid: AssetUUID =
-            serde_json::from_value(asset.clone()).map_err(|e| e.to_string())?;
+        let uuid: AssetUUID = serde_json::from_value(asset.clone()).map_err(|e| e.to_string())?;
         MaterialRef::Asset(uuid)
     } else {
         let (handle, _uuid) = material_from_json(value)?;

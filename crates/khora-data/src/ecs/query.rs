@@ -16,7 +16,8 @@ use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::{
     page::{AnyVec, ComponentPage},
-    Component, DomainBitset, FieldSoaColumn, QueryMode, QueryPlan, SemanticDomain, SoaLayout, World,
+    Component, DomainBitset, FieldSoaColumn, QueryMode, QueryPlan, SemanticDomain, SoaLayout,
+    World,
 };
 use std::{any::TypeId, marker::PhantomData};
 

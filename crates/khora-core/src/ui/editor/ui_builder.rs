@@ -499,7 +499,13 @@ pub trait UiBuilder {
     /// (above all panels). For cursor-following affordances like drag ghosts
     /// that must remain visible outside the current panel's clip rect.
     /// Default: no-op.
-    fn overlay_rect_filled(&mut self, min: [f32; 2], size: [f32; 2], color: [f32; 4], rounding: f32) {
+    fn overlay_rect_filled(
+        &mut self,
+        min: [f32; 2],
+        size: [f32; 2],
+        color: [f32; 4],
+        rounding: f32,
+    ) {
         let _ = (min, size, color, rounding);
     }
 

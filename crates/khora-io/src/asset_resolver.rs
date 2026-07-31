@@ -225,8 +225,7 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime) {
     // changed (or has no handle yet).
     let mut pending: Vec<ResolvedMesh> = Vec::new();
     {
-        let query =
-            world.query::<(EntityId, &MeshRef, Option<&HandleComponent<Mesh>>)>();
+        let query = world.query::<(EntityId, &MeshRef, Option<&HandleComponent<Mesh>>)>();
 
         for (entity, mesh_ref, current) in query {
             let expected = mesh_ref.uuid();
@@ -470,7 +469,9 @@ mod tests {
             .uuid;
 
         // Simulate the GPU projection having run for material A.
-        world.add_component(entity, gpu_material_stub(uuid_a)).unwrap();
+        world
+            .add_component(entity, gpu_material_stub(uuid_a))
+            .unwrap();
 
         // The developer/editor swaps in a different inline material.
         let mat_b = StandardMaterial {
@@ -489,11 +490,12 @@ mod tests {
             .get::<HandleComponent<Box<dyn Material>>>(entity)
             .expect("material B resolves")
             .uuid;
-        assert_ne!(uuid_a, uuid_b, "different material content => different uuid");
+        assert_ne!(
+            uuid_a, uuid_b,
+            "different material content => different uuid"
+        );
         assert!(
-            world
-                .get::<HandleComponent<GpuMaterial>>(entity)
-                .is_none(),
+            world.get::<HandleComponent<GpuMaterial>>(entity).is_none(),
             "the stale GpuMaterial handle must be removed so the projection rebuilds"
         );
     }
@@ -516,7 +518,9 @@ mod tests {
             .expect("resolves")
             .uuid;
 
-        world.add_component(entity, gpu_material_stub(uuid)).unwrap();
+        world
+            .add_component(entity, gpu_material_stub(uuid))
+            .unwrap();
 
         // No ref change: the resolver must not touch either handle.
         asset_resolver_system(&mut world, &runtime, &mut deck);
@@ -720,7 +724,10 @@ mod tests {
 
         let ua = world.get::<HandleComponent<Mesh>>(a).unwrap().uuid;
         let ub = world.get::<HandleComponent<Mesh>>(b).unwrap().uuid;
-        assert_eq!(ua, ub, "identical procedural meshes must share a content uuid");
+        assert_eq!(
+            ua, ub,
+            "identical procedural meshes must share a content uuid"
+        );
     }
 
     /// End-to-end: a `MeshRef::Asset` referencing a tiny `.obj` in the VFS is

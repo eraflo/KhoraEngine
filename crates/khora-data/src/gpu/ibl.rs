@@ -46,9 +46,9 @@ use khora_core::renderer::api::pipeline::{
     PrimitiveStateDescriptor, ShaderVariantKey,
 };
 use khora_core::renderer::api::resource::{
-    AddressMode, BufferDescriptor, BufferId, BufferUsage, FilterMode, ImageAspect, MipmapFilterMode,
-    SamplerDescriptor, SamplerId, TextureDescriptor, TextureDimension, TextureId, TextureUsage,
-    TextureViewDescriptor, TextureViewId,
+    AddressMode, BufferDescriptor, BufferId, BufferUsage, FilterMode, ImageAspect,
+    MipmapFilterMode, SamplerDescriptor, SamplerId, TextureDescriptor, TextureDimension, TextureId,
+    TextureUsage, TextureViewDescriptor, TextureViewId,
 };
 use khora_core::renderer::api::util::{SampleCount, ShaderStageFlags, TextureFormat};
 use khora_core::renderer::error::RenderError;
@@ -291,7 +291,11 @@ fn normalized_or_default(dir: Vec3) -> Vec3 {
 
 /// Creates a color cubemap (6 layers) with a `Cube` sampling view and one `D2`
 /// render-target view per face.
-fn create_cube(device: &dyn GraphicsDevice, face_size: u32, label: &str) -> Result<Cube, RenderError> {
+fn create_cube(
+    device: &dyn GraphicsDevice,
+    face_size: u32,
+    label: &str,
+) -> Result<Cube, RenderError> {
     let texture = device.create_texture(&TextureDescriptor {
         label: Some(Cow::Owned(format!("{label} Texture"))),
         size: Extent3D {
@@ -486,7 +490,9 @@ fn create_prefilter_basis_buffers(
         b.forward[3] = roughness;
         buffers.push(device.create_buffer_with_data(
             &BufferDescriptor {
-                label: Some(Cow::Owned(format!("IBL Prefilter Basis [r={roughness:.2} f={face}]"))),
+                label: Some(Cow::Owned(format!(
+                    "IBL Prefilter Basis [r={roughness:.2} f={face}]"
+                ))),
                 size: std::mem::size_of::<FaceBasisUniform>() as u64,
                 usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
                 mapped_at_creation: false,
@@ -538,8 +544,11 @@ fn bake(
             equirect_keep = Some((texture, view));
             let equirect_sampler = create_equirect_sampler(device)?;
             let pipeline = pipeline_system.pipeline(device, &equirect_pipeline_spec())?;
-            let layout =
-                pipeline_system.inline_layout(device, EQUIRECT_LAYOUT, &equirect_layout_entries())?;
+            let layout = pipeline_system.inline_layout(
+                device,
+                EQUIRECT_LAYOUT,
+                &equirect_layout_entries(),
+            )?;
             let mut bgs = Vec::with_capacity(6);
             for buf in &sky_bufs {
                 bgs.push(sampled_texture_bind_group(

@@ -49,7 +49,10 @@ impl MonitorRegistry {
 
     /// Returns a clone of all registered monitors.
     pub fn get_all_monitors(&self) -> Vec<Arc<dyn ResourceMonitor>> {
-        self.monitors.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.monitors
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 }
 

@@ -187,7 +187,8 @@ mod tests {
 
     #[test]
     fn intersect_aabb_misses_what_it_misses() {
-        let elsewhere = Aabb::from_min_max(Vec3::new(10.0, 10.0, 10.0), Vec3::new(11.0, 11.0, 11.0));
+        let elsewhere =
+            Aabb::from_min_max(Vec3::new(10.0, 10.0, 10.0), Vec3::new(11.0, 11.0, 11.0));
         assert_eq!(toward_origin().intersect_aabb(&elsewhere), None);
     }
 
@@ -259,7 +260,10 @@ mod tests {
     fn closest_point_on_segment_clamps_to_the_ends() {
         let ray = Ray::new(Vec3::new(9.0, 0.0, 5.0), Vec3::new(0.0, 0.0, -1.0));
         let point = ray.closest_point_on_segment(Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0));
-        assert!((point - Vec3::new(1.0, 0.0, 0.0)).length() < 1e-4, "got {point:?}");
+        assert!(
+            (point - Vec3::new(1.0, 0.0, 0.0)).length() < 1e-4,
+            "got {point:?}"
+        );
     }
 
     /// A degenerate segment has one point, and asking for the closest one must

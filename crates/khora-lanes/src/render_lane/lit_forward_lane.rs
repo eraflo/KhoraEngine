@@ -652,11 +652,11 @@ impl LitForwardLane {
                     ps.pipeline(
                         device,
                         &pipeline_spec(
-                        device,
-                        gpu_material.variant.clone(),
-                        gpu_material.double_sided,
-                        gpu_material.blend,
-                    ),
+                            device,
+                            gpu_material.variant.clone(),
+                            gpu_material.double_sided,
+                            gpu_material.blend,
+                        ),
                     )
                 })
                 .transpose()
@@ -910,11 +910,10 @@ impl LitForwardLane {
         // Warm the empty-variant pipeline (untextured materials). Textured
         // variants are compiled lazily in the render path on first use, keyed
         // by `GpuMaterial::variant`.
-        let pipeline_id =
-            pipeline_system.pipeline(
-                device,
-                &pipeline_spec(device, ShaderVariantKey::empty(), false, false),
-            )?;
+        let pipeline_id = pipeline_system.pipeline(
+            device,
+            &pipeline_spec(device, ShaderVariantKey::empty(), false, false),
+        )?;
 
         // Init-once writes — `set` is lock-free; second call returns Err
         // which we ignore (re-init is a logic bug, not a runtime fault).

@@ -458,8 +458,8 @@ pub fn create_sphere(radius: f32, segments: u32, rings: u32) -> Mesh {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scene::registry::ComponentRegistration;
     use crate::ecs::World;
+    use crate::scene::registry::ComponentRegistration;
 
     /// `MeshRef::Procedural` survives a recipe serialize → deserialize cycle.
     #[test]
