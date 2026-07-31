@@ -176,7 +176,12 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         (component_impl, quote! {})
     };
 
-    // Check for #[component(no_serializable)] attribute
+    // Check for #[component(no_serializable)] attribute.
+    //
+    // The `else if` branch consumes unknown `key = value` metas (`domain`,
+    // `provenance`, `layout`) so the walk reaches this flag whatever the order
+    // the keys were written in — without it, `parse_nested_meta` aborts on the
+    // first unconsumed value and the discarded error makes the miss silent.
     let no_serializable = input.attrs.iter().any(|attr| {
         if !attr.path().is_ident("component") {
             return false;
@@ -185,29 +190,51 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         let _ = attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("no_serializable") {
                 no = true;
+            } else if meta.input.peek(syn::Token![=]) {
+                let _ = meta.value()?.parse::<syn::Expr>()?;
             }
             Ok(())
         });
         no
     });
 
-    // Parse optional `#[component(domain = <SemanticDomain variant>)]`. When present,
-    // the component self-registers its domain into `World` via `inventory`, so the
-    // domain lives on the type instead of a hand-maintained list in `World::new`.
-    let domain_ident: Option<syn::Ident> = {
-        let mut found = None;
+    // Parse the type-level `#[component(...)]` keys that carry a value:
+    //
+    // * `domain = <SemanticDomain variant>` — the component self-registers its
+    //   domain into `World` via `inventory`, so the domain lives on the type
+    //   instead of a hand-maintained list in `World::new`.
+    // * `provenance = <ComponentProvenance variant>` — who writes the component.
+    //   Absent means `Authored`: a component is the author's data unless it says
+    //   otherwise, so engine-written types opt out explicitly rather than every
+    //   authored type having to opt in.
+    //
+    // Both keys are read in ONE pass. `parse_nested_meta` requires every meta it
+    // walks to be fully consumed, so a closure that recognises only one key
+    // aborts on the other's `= value` — and because the result is discarded, the
+    // failure is silent and the second key is simply never seen. Hence the
+    // trailing branch that consumes unknown `key = value` pairs (`layout = ...`)
+    // so parsing continues past them.
+    let (domain_ident, provenance_ident): (Option<syn::Ident>, syn::Ident) = {
+        let mut domain = None;
+        let mut provenance = None;
         for attr in &input.attrs {
             if !attr.path().is_ident("component") {
                 continue;
             }
             let _ = attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("domain") {
-                    found = Some(meta.value()?.parse::<syn::Ident>()?);
+                    domain = Some(meta.value()?.parse::<syn::Ident>()?);
+                } else if meta.path.is_ident("provenance") {
+                    provenance = Some(meta.value()?.parse::<syn::Ident>()?);
+                } else if meta.input.peek(syn::Token![=]) {
+                    let _ = meta.value()?.parse::<syn::Expr>()?;
                 }
                 Ok(())
             });
         }
-        found
+        let provenance = provenance
+            .unwrap_or_else(|| syn::Ident::new("Authored", proc_macro::Span::call_site().into()));
+        (domain, provenance)
     };
 
     let domain_registration = match &domain_ident {
@@ -432,6 +459,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
             crate::scene::ComponentRegistration {
                 type_id: std::any::TypeId::of::<#name>(),
                 type_name: stringify!(#name),
+                provenance: crate::ecs::ComponentProvenance::#provenance_ident,
                 serialize_recipe: |world, entity| {
                     // By value so it works for any column layout (AoS or field-SoA).
                     world.clone_component::<#name>(entity).map(|c| {

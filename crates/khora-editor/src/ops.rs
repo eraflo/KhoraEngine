@@ -213,46 +213,48 @@ pub fn process_reparents(world: &mut GameWorld, state: &mut EditorState) {
     }
 }
 
-/// Duplicates one entity by cloning known components.
+/// Duplicates an entity and everything below it.
+///
+/// Goes through the same subtree recipe round-trip as "Save as Prefab" rather
+/// than copying a hand-listed set of components, so the copy carries `Tag`,
+/// every user-defined component and the whole descendant subtree — none of
+/// which a fixed list could know about. `serialize_all_components` filters out
+/// engine-written components, so `GlobalTransform` and `Children` are rebuilt
+/// for the copy instead of being cloned with the original's entity ids.
+///
+/// `serialize_subtree` deliberately drops the root's own parent edge (a
+/// `.kprefab` has to be self-contained), so the copy is re-parented here to
+/// land as a sibling of the original.
 pub fn duplicate_entity(world: &mut GameWorld, entity: EntityId, state: &mut EditorState) {
-    let name = world
+    let recipe = match khora_sdk::serialize_subtree(world.inner_world(), entity) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            log::error!("Duplicate failed: could not read {entity:?}: {e}");
+            return;
+        }
+    };
+
+    let original_parent = world.get_component::<Parent>(entity).map(|p: &Parent| p.0);
+    let copy_name = world
         .get_component::<Name>(entity)
-        .map(|n: &Name| format!("{} (Copy)", n.as_str()));
-    let transform = world.get_component::<Transform>(entity).copied();
-    let camera = world.get_component::<Camera>(entity).cloned();
-    let light = world.get_component::<Light>(entity).cloned();
-    let rigid_body = world.get_component::<RigidBody>(entity).cloned();
-    let collider = world.get_component::<Collider>(entity).cloned();
-    let audio_source = world.get_component::<AudioSource>(entity).cloned();
-    let mesh_ref = world.get_component::<MeshRef>(entity).cloned();
-    let material_ref = world.get_component::<MaterialRef>(entity).cloned();
+        .map(|n: &Name| format!("{} (Copy)", n.as_str()))
+        .unwrap_or_else(|| "Copy".to_owned());
 
-    let new_entity = world.spawn((
-        transform.unwrap_or_else(Transform::identity),
-        GlobalTransform::identity(),
-        Name::new(name.unwrap_or_else(|| "Copy".to_owned())),
-    ));
+    let new_entity = match khora_sdk::instantiate_subtree(world.inner_world_mut(), &recipe) {
+        Ok(id) => id,
+        Err(e) => {
+            log::error!("Duplicate failed: could not rebuild {entity:?}: {e}");
+            return;
+        }
+    };
 
-    if let Some(cam) = camera {
-        world.add_component(new_entity, cam);
+    if let Some(name) = world.get_component_mut::<Name>(new_entity) {
+        *name = Name::new(copy_name);
+    } else {
+        world.add_component(new_entity, Name::new(copy_name));
     }
-    if let Some(light) = light {
-        world.add_component(new_entity, light);
-    }
-    if let Some(rb) = rigid_body {
-        world.add_component(new_entity, rb);
-    }
-    if let Some(col) = collider {
-        world.add_component(new_entity, col);
-    }
-    if let Some(audio) = audio_source {
-        world.add_component(new_entity, audio);
-    }
-    if let Some(mesh) = mesh_ref {
-        world.add_component(new_entity, mesh);
-    }
-    if let Some(material) = material_ref {
-        world.add_component(new_entity, material);
+    if let Some(parent) = original_parent {
+        world.set_parent(new_entity, Some(parent));
     }
 
     state.select(new_entity);
@@ -594,6 +596,97 @@ mod tests {
         assert!(
             !children.0.contains(&child),
             "former parent must drop the detached child"
+        );
+    }
+
+    /// Duplication must carry everything the author put on the entity, not a
+    /// fixed list of component types. `Tag` was the component the old
+    /// hand-written list forgot; the subtree recipe path covers it — and any
+    /// component a game crate defines — without naming it.
+    #[test]
+    fn duplicate_entity_copies_authored_components() {
+        let mut world = GameWorld::new();
+        let mut state = EditorState::default();
+
+        let source = world.spawn((
+            Transform::from_translation(khora_sdk::prelude::math::Vec3::new(4.0, 5.0, 6.0)),
+            GlobalTransform::identity(),
+            Name::new("Original"),
+        ));
+        world.add_component(source, Tag::from_iter(["enemy", "spawner"]));
+
+        duplicate_entity(&mut world, source, &mut state);
+        let copy = *state
+            .selection
+            .iter()
+            .next()
+            .expect("the copy becomes the selection");
+        assert_ne!(copy, source, "duplicate must be a distinct entity");
+
+        assert_eq!(
+            world.get_component::<Name>(copy).map(|n: &Name| n.as_str()),
+            Some("Original (Copy)")
+        );
+        assert_eq!(
+            world
+                .get_component::<Transform>(copy)
+                .map(|t: &Transform| t.translation),
+            world
+                .get_component::<Transform>(source)
+                .map(|t: &Transform| t.translation),
+            "the transform must survive duplication"
+        );
+        let tag = world
+            .get_component::<Tag>(copy)
+            .expect("Tag must survive duplication");
+        assert!(tag.contains("enemy") && tag.contains("spawner"));
+    }
+
+    /// Duplicating a parent must rebuild its subtree rather than copy the
+    /// `Children` list verbatim: a cloned list would hold the *source's* entity
+    /// ids, so the copy would claim the original's children and both would
+    /// render the same subtree.
+    #[test]
+    fn duplicate_entity_rebuilds_the_subtree_without_stealing_children() {
+        let mut world = GameWorld::new();
+        let mut state = EditorState::default();
+
+        let parent = world.spawn((
+            Transform::identity(),
+            GlobalTransform::identity(),
+            Name::new("Root"),
+        ));
+        let child = world.spawn((
+            Transform::identity(),
+            GlobalTransform::identity(),
+            Name::new("Child"),
+        ));
+        state.pending_reparent = Some((child, Some(parent)));
+        process_reparents(&mut world, &mut state);
+
+        duplicate_entity(&mut world, parent, &mut state);
+        let copy = *state
+            .selection
+            .iter()
+            .next()
+            .expect("the copy becomes the selection");
+
+        let copied_children = world
+            .get_component::<Children>(copy)
+            .expect("the copy owns a subtree")
+            .0
+            .clone();
+        assert_eq!(copied_children.len(), 1, "the child must be duplicated too");
+        assert_ne!(
+            copied_children[0], child,
+            "the copy must own a fresh child, not point at the original's"
+        );
+
+        let original_children = world.get_component::<Children>(parent).unwrap();
+        assert_eq!(
+            original_children.0.as_slice(),
+            &[child],
+            "the original must keep exactly its own child"
         );
     }
 

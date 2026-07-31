@@ -76,14 +76,13 @@ impl SerializationStrategy for DefinitionSerializationStrategy {
         for entity_id in world.iter_entities() {
             let mut component_defs = Vec::new();
 
-            // Iterate ALL registered components via inventory.
-            for reg in inventory::iter::<ComponentRegistration> {
-                if let Some(data) = (reg.serialize_recipe)(world, entity_id) {
-                    component_defs.push(ComponentDefinition {
-                        type_name: reg.type_name.to_string(),
-                        data_base64: base64_encode(&data),
-                    });
-                }
+            // Every author-owned component; engine-written ones are rebuilt on
+            // load, so persisting them would only bake in stale entity ids.
+            for (type_name, data) in crate::scene::serialize_all_components(world, entity_id) {
+                component_defs.push(ComponentDefinition {
+                    type_name,
+                    data_base64: base64_encode(&data),
+                });
             }
 
             if !component_defs.is_empty() {

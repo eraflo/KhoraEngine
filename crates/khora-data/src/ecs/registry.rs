@@ -63,6 +63,81 @@ impl SemanticDomain {
     }
 }
 
+/// Who is allowed to write a component — the axis orthogonal to
+/// [`SemanticDomain`].
+///
+/// `SemanticDomain` answers *which subsystem consumes this data* and drives
+/// change epochs, page grouping and `Flow` gating. It deliberately says nothing
+/// about **authorship**: `Transform` and `GlobalTransform` are both `Spatial`,
+/// yet one is written by a human and the other is recomputed every frame by
+/// `transform_propagation`. `Collider` and `PhysicsDebugData` are both
+/// `Physics`, yet one is an input and the other is debug output.
+///
+/// Without this axis the same intent gets re-encoded ad hoc at every site that
+/// needs it — which component to offer in "Add Component", which to copy when
+/// duplicating an entity, which to write to a scene file. Each such list is
+/// hand-maintained, so none of them covers components defined outside this
+/// crate.
+///
+/// The four variants encode two independent bits:
+///
+/// | variant | offered to the author | copied on duplicate |
+/// |---|---|---|
+/// | [`Authored`](Self::Authored) | yes | yes |
+/// | [`ToolAuthored`](Self::ToolAuthored) | no | yes |
+/// | [`Derived`](Self::Derived) | no | no |
+/// | [`Runtime`](Self::Runtime) | no | no |
+///
+/// Persistence stays a separate question, governed by
+/// `#[component(no_serializable)]` and `#[component(skip)]` — a `ToolAuthored`
+/// component such as `Prefab` must persist even though nobody adds it by hand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ComponentProvenance {
+    /// Written by a human through the editor or by game code. Belongs in a
+    /// scene file, survives duplication, and is offered in "Add Component".
+    /// This is the default for any component that does not say otherwise.
+    #[default]
+    Authored,
+
+    /// Written by a tool action rather than by hand — `Prefab`, whose `source`
+    /// is set by "instantiate prefab". It persists and must survive
+    /// duplication, but adding an empty one by hand is meaningless, so it is
+    /// not offered in the menu.
+    ToolAuthored,
+
+    /// Recomputed by the engine from `Authored` state — `GlobalTransform` from
+    /// `Transform` + `Parent`, or the `HandleComponent<Gpu*>` projections from
+    /// their asset handles. A duplicate must **not** carry a copy: the engine
+    /// regenerates it, and a stale copy would be wrong until it did.
+    Derived,
+
+    /// Per-run transient state that no one authors and nothing recomputes from
+    /// authored data — `PhysicsDebugData`. Never offered, never copied.
+    Runtime,
+}
+
+impl ComponentProvenance {
+    /// Whether the editor should offer this component in "+ Add Component".
+    ///
+    /// Only [`Authored`](Self::Authored) qualifies: everything else is written
+    /// by the engine or by a tool action.
+    pub const fn is_hand_authorable(self) -> bool {
+        matches!(self, ComponentProvenance::Authored)
+    }
+
+    /// Whether duplicating an entity should copy this component verbatim.
+    ///
+    /// `Derived` and `Runtime` are excluded because the engine produces them:
+    /// copying would install a stale value that the next tick overwrites at
+    /// best, and that reads as corrupt state at worst.
+    pub const fn is_copied_on_duplicate(self) -> bool {
+        matches!(
+            self,
+            ComponentProvenance::Authored | ComponentProvenance::ToolAuthored
+        )
+    }
+}
+
 /// How a component column is physically laid out in memory.
 ///
 /// **AGDF** (adaptive data *layout*) adapts this per component as Data
@@ -277,5 +352,40 @@ impl TypeRegistry {
     /// Gets the TypeId for a given string name.
     pub(crate) fn get_id_of(&self, type_name: &str) -> Option<TypeId> {
         self.name_to_id.get(type_name).copied()
+    }
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::ComponentProvenance;
+    use super::ComponentProvenance::*;
+
+    /// Only author-written components reach the "Add Component" menu — the
+    /// whole point of the axis is that engine-written types opt out by
+    /// construction rather than via a hand-maintained denylist.
+    #[test]
+    fn only_authored_is_hand_authorable() {
+        assert!(Authored.is_hand_authorable());
+        assert!(!ToolAuthored.is_hand_authorable());
+        assert!(!Derived.is_hand_authorable());
+        assert!(!Runtime.is_hand_authorable());
+    }
+
+    /// Duplication copies what a human or a tool put there, and lets the
+    /// engine rebuild the rest. `ToolAuthored` is the variant that separates
+    /// the two bits: not offered in the menu, but still copied.
+    #[test]
+    fn engine_written_components_are_not_copied() {
+        assert!(Authored.is_copied_on_duplicate());
+        assert!(ToolAuthored.is_copied_on_duplicate());
+        assert!(!Derived.is_copied_on_duplicate());
+        assert!(!Runtime.is_copied_on_duplicate());
+    }
+
+    /// A component says nothing about provenance unless it opts out, so the
+    /// default has to be the author's data.
+    #[test]
+    fn default_is_authored() {
+        assert_eq!(ComponentProvenance::default(), Authored);
     }
 }

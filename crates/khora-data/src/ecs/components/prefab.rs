@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 /// the recipe stored in the .kprefab file is what actually shapes the
 /// instantiated subtree.
 #[derive(Debug, Clone, PartialEq, Eq, Component, Default, Serialize, Deserialize)]
+#[component(provenance = ToolAuthored)]
 pub struct Prefab {
     /// Forward-slash relative path of the source `.kprefab` asset.
     /// Example: `prefabs/crate.kprefab`.

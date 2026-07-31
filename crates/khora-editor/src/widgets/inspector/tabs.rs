@@ -19,7 +19,7 @@ use khora_sdk::editor_ui::{EditorState, InspectedEntity, PropertyEdit, UiBuilder
 use khora_sdk::prelude::ecs::EntityId;
 use khora_sdk::CommandHistory;
 
-use super::add_component::{render_add_component, INHERENT_COMPONENTS};
+use super::add_component::{is_author_facing, render_add_component};
 use super::card::render_card;
 use super::display::icon_for_domain_tag;
 use super::tag_chips::render_tag_chips;
@@ -78,7 +78,7 @@ impl InspectorTab for PropertiesTab {
             let mut edits: Vec<PropertyEdit> = Vec::new();
 
             for cj in inspected.components_json.iter() {
-                if INHERENT_COMPONENTS.contains(&cj.type_name.as_str()) {
+                if !is_author_facing(&cj.type_name) {
                     continue;
                 }
                 let title = cj.type_name.clone();
@@ -91,7 +91,7 @@ impl InspectorTab for PropertiesTab {
                     &title,
                     icon,
                     None,
-                    true, // removable — INHERENT_COMPONENTS already filtered
+                    true, // removable — `is_author_facing` already filtered
                     card_x,
                     card_w,
                     &theme,

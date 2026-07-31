@@ -203,6 +203,7 @@ inventory::submit! {
     crate::scene::ComponentRegistration {
         type_id: std::any::TypeId::of::<MaterialRef>(),
         type_name: "MaterialRef",
+        provenance: crate::ecs::ComponentProvenance::Authored,
         serialize_recipe: serialize_material_ref,
         deserialize_recipe: deserialize_material_ref,
         create_default: |world, entity| {

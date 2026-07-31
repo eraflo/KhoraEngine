@@ -78,14 +78,14 @@ pub fn serialize_subtree(
     let mut commands = Vec::with_capacity(order.len() * 4);
     for entity_id in &order {
         commands.push(SceneCommand::Spawn { id: *entity_id });
-        for reg in inventory::iter::<ComponentRegistration> {
-            if let Some(data) = (reg.serialize_recipe)(world, *entity_id) {
-                commands.push(SceneCommand::AddComponent {
-                    entity_id: *entity_id,
-                    component_type: reg.type_name.to_string(),
-                    component_data: data,
-                });
-            }
+        for (component_type, component_data) in
+            crate::scene::serialize_all_components(world, *entity_id)
+        {
+            commands.push(SceneCommand::AddComponent {
+                entity_id: *entity_id,
+                component_type,
+                component_data,
+            });
         }
         if let Some(parent) = world.get::<crate::ecs::Parent>(*entity_id) {
             // Drop the root's incoming parent edge — by definition it lives
@@ -157,9 +157,7 @@ pub fn instantiate_subtree(
                 if let (Some(&new_child), Some(&new_parent)) =
                     (id_map.get(&child_id), id_map.get(&parent_id))
                 {
-                    world
-                        .add_component(new_child, crate::ecs::Parent(new_parent))
-                        .ok();
+                    crate::scene::link_parent_child(world, new_child, new_parent);
                 }
             }
         }
@@ -198,14 +196,14 @@ impl SerializationStrategy for RecipeSerializationStrategy {
         for entity_id in sorted_entities {
             commands.push(SceneCommand::Spawn { id: entity_id });
 
-            for reg in inventory::iter::<ComponentRegistration> {
-                if let Some(data) = (reg.serialize_recipe)(world, entity_id) {
-                    commands.push(SceneCommand::AddComponent {
-                        entity_id,
-                        component_type: reg.type_name.to_string(),
-                        component_data: data,
-                    });
-                }
+            for (component_type, component_data) in
+                crate::scene::serialize_all_components(world, entity_id)
+            {
+                commands.push(SceneCommand::AddComponent {
+                    entity_id,
+                    component_type,
+                    component_data,
+                });
             }
 
             // Emit SetParent command for hierarchy reconstruction.
@@ -260,9 +258,7 @@ impl SerializationStrategy for RecipeSerializationStrategy {
                     if let (Some(&new_child), Some(&new_parent)) =
                         (id_map.get(&child_id), id_map.get(&parent_id))
                     {
-                        world
-                            .add_component(new_child, crate::ecs::Parent(new_parent))
-                            .ok();
+                        crate::scene::link_parent_child(world, new_child, new_parent);
                     }
                 }
             }
