@@ -31,256 +31,11 @@
 //! skips, and keeps going — one run should report every lexical problem in the
 //! file, not send the author back for another round after each one.
 
+use super::token::{Keyword, Token, TokenKind};
+use super::Lexed;
 use crate::diagnostics::{Diagnostic, Span};
 
-/// A lexed token: what it is, and where it came from.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Token {
-    /// The token itself.
-    pub kind: TokenKind,
-    /// Its position in the source.
-    pub span: Span,
-}
-
-/// Every token Ergon recognises.
-#[derive(Debug, Clone, PartialEq)]
-pub enum TokenKind {
-    // ── Literals ──────────────────────────────────────
-    /// Whole number: `42`, `0x2A`, `1_000`.
-    Int(i64),
-    /// Fractional number: `2.0`, `1e-3`. No `f` suffix.
-    Float(f32),
-    /// `"text"`.
-    Str(String),
-    /// A duration, **normalised to seconds**: `2s`, `500ms`, `1.5min`.
-    ///
-    /// Normalising at lex time means the rest of the compiler never has to know
-    /// which spelling was used.
-    Duration(f32),
-    /// An angle, **normalised to radians**: `90deg`, `1.57rad`.
-    Angle(f32),
-
-    // ── Names ─────────────────────────────────────────
-    /// An identifier that is not a keyword.
-    Ident(String),
-    /// A reserved word.
-    Keyword(Keyword),
-
-    // ── Punctuation and operators ─────────────────────
-    /// `(`
-    LParen,
-    /// `)`
-    RParen,
-    /// `{`
-    LBrace,
-    /// `}`
-    RBrace,
-    /// `[`
-    LBracket,
-    /// `]`
-    RBracket,
-    /// `,`
-    Comma,
-    /// `;`
-    Semi,
-    /// `.`
-    Dot,
-    /// `:`
-    Colon,
-    /// `=`
-    Assign,
-    /// `=>` — arrow-bodied members and transitions.
-    FatArrow,
-    /// `+`
-    Plus,
-    /// `-`
-    Minus,
-    /// `*`
-    Star,
-    /// `/`
-    Slash,
-    /// `%`
-    Percent,
-    /// `+=`
-    PlusAssign,
-    /// `-=`
-    MinusAssign,
-    /// `*=`
-    StarAssign,
-    /// `/=`
-    SlashAssign,
-    /// `==`
-    Eq,
-    /// `!=`
-    NotEq,
-    /// `<`
-    Less,
-    /// `<=`
-    LessEq,
-    /// `>`
-    Greater,
-    /// `>=`
-    GreaterEq,
-    /// `&&`
-    AndAnd,
-    /// `||`
-    OrOr,
-    /// `!`
-    Bang,
-    /// `?` — introduces an optional type, and the ternary.
-    Question,
-    /// `??`
-    QuestionQuestion,
-    /// `?.`
-    QuestionDot,
-    /// `@` — attribute marker in `[Critical]`-style positions is `[`, but `@`
-    /// stays reserved so it cannot be used as an identifier later.
-    At,
-
-    /// End of input. Emitted once, so the parser can report "unexpected end"
-    /// with a real span instead of an absence.
-    Eof,
-}
-
-/// Reserved words.
-///
-/// `int`, `float`, `bool` and `string` are **not** here: they are ordinary
-/// identifiers resolved by the type checker. That keeps `Vec3` and `Health` on
-/// exactly the same footing as the built-ins, so a user type is never a
-/// second-class citizen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Keyword {
-    /// `behavior`
-    Behavior,
-    /// `state`
-    State,
-    /// `become`
-    Become,
-    /// `on`
-    On,
-    /// `every`
-    Every,
-    /// `after`
-    After,
-    /// `async`
-    Async,
-    /// `await`
-    Await,
-    /// `import`
-    Import,
-    /// `as`
-    As,
-    /// `struct`
-    Struct,
-    /// `fn`
-    Fn,
-    /// `var`
-    Var,
-    /// `void`
-    Void,
-    /// `static`
-    Static,
-    /// `operator`
-    Operator,
-    /// `new`
-    New,
-    /// `if`
-    If,
-    /// `else`
-    Else,
-    /// `while`
-    While,
-    /// `for`
-    For,
-    /// `foreach`
-    Foreach,
-    /// `in`
-    In,
-    /// `match`
-    Match,
-    /// `return`
-    Return,
-    /// `break`
-    Break,
-    /// `continue`
-    Continue,
-    /// `true`
-    True,
-    /// `false`
-    False,
-    /// `null`
-    Null,
-    /// `this`
-    This,
-}
-
-impl Keyword {
-    /// The keyword `word` spells, if it is one.
-    fn from_word(word: &str) -> Option<Self> {
-        Some(match word {
-            "behavior" => Self::Behavior,
-            "state" => Self::State,
-            "become" => Self::Become,
-            "on" => Self::On,
-            "every" => Self::Every,
-            "after" => Self::After,
-            "async" => Self::Async,
-            "await" => Self::Await,
-            "import" => Self::Import,
-            "as" => Self::As,
-            "struct" => Self::Struct,
-            "fn" => Self::Fn,
-            "var" => Self::Var,
-            "void" => Self::Void,
-            "static" => Self::Static,
-            "operator" => Self::Operator,
-            "new" => Self::New,
-            "if" => Self::If,
-            "else" => Self::Else,
-            "while" => Self::While,
-            "for" => Self::For,
-            "foreach" => Self::Foreach,
-            "in" => Self::In,
-            "match" => Self::Match,
-            "return" => Self::Return,
-            "break" => Self::Break,
-            "continue" => Self::Continue,
-            "true" => Self::True,
-            "false" => Self::False,
-            "null" => Self::Null,
-            "this" => Self::This,
-            _ => return None,
-        })
-    }
-}
-
-/// What a run of lexing produced.
-///
-/// Tokens *and* diagnostics: a file with errors still yields the tokens it
-/// managed to read, so later stages can report more than the first problem.
-#[derive(Debug, Clone)]
-pub struct Lexed {
-    /// The tokens, always ending with [`TokenKind::Eof`].
-    pub tokens: Vec<Token>,
-    /// Problems found. Empty means the file lexed cleanly.
-    pub diagnostics: Vec<Diagnostic>,
-}
-
-impl Lexed {
-    /// Whether any diagnostic is an error.
-    pub fn has_errors(&self) -> bool {
-        self.diagnostics
-            .iter()
-            .any(|d| d.severity == crate::diagnostics::Severity::Error)
-    }
-}
-
-/// Turns `source` into tokens.
-pub fn lex(source: &str) -> Lexed {
-    Lexer::new(source).run()
-}
-
-struct Lexer<'a> {
+pub(super) struct Lexer<'a> {
     source: &'a str,
     bytes: &'a [u8],
     offset: usize,
@@ -289,7 +44,7 @@ struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    fn new(source: &'a str) -> Self {
+    pub(super) fn new(source: &'a str) -> Self {
         Self {
             source,
             bytes: source.as_bytes(),
@@ -299,7 +54,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn run(mut self) -> Lexed {
+    pub(super) fn run(mut self) -> Lexed {
         loop {
             self.skip_trivia();
             let start = self.offset;
@@ -764,6 +519,7 @@ fn utf8_len(first: u8) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lexer::lex;
 
     /// The token kinds, with `Eof` dropped — every test would repeat it.
     fn kinds(source: &str) -> Vec<TokenKind> {
