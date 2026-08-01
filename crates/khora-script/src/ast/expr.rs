@@ -167,6 +167,21 @@ pub enum Expr {
         /// The whole expression.
         span: Span,
     },
+    /// `var name = expr`, used as a condition.
+    ///
+    /// The narrowing form: it binds, tests the value for presence, and gives
+    /// the branch a non-optional `name`. A distinct node rather than an
+    /// `Assign` because the two mean different things — one introduces a name
+    /// and tests it, the other overwrites an existing one — and conflating them
+    /// would make the checker guess which was intended.
+    Binding {
+        /// The name introduced, non-optional inside the branch.
+        name: String,
+        /// The optional being tested.
+        value: Box<Expr>,
+        /// The whole binding.
+        span: Span,
+    },
     /// `await expr`
     ///
     /// Only legal inside an `async` member — enforced by the type checker, not
@@ -209,6 +224,7 @@ impl Expr {
             | Self::Index { span, .. }
             | Self::Ternary { span, .. }
             | Self::New { span, .. }
+            | Self::Binding { span, .. }
             | Self::Await { span, .. }
             | Self::Cast { span, .. } => *span,
             Self::Null(span) | Self::This(span) => *span,

@@ -49,10 +49,12 @@ pub mod ast;
 pub mod diagnostics;
 pub mod lexer;
 pub mod parser;
+pub mod types;
 pub mod vm;
 
 pub use ast::{BehaviorDecl, Expr, Item, Module, Stmt, TypeRef};
 pub use diagnostics::{Diagnostic, Severity, SourceFile, Span};
 pub use lexer::{lex, Keyword, Lexed, Token, TokenKind};
 pub use parser::{parse, Parsed};
+pub use types::{check, Checked, Ty};
 pub use vm::{Instruction, Machine, Run, Suspension, Value};

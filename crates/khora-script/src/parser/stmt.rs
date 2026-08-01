@@ -142,7 +142,7 @@ impl Parser {
         let start = self.span();
         self.advance(); // `if`
         self.expect(TokenKind::LParen, "`(` after `if`")?;
-        let condition = self.parse_expr()?;
+        let condition = self.parse_condition()?;
         self.expect(TokenKind::RParen, "`)` after the condition")?;
 
         let then_branch = self.parse_block_or_statement()?;
@@ -186,7 +186,7 @@ impl Parser {
         let start = self.span();
         self.advance();
         self.expect(TokenKind::LParen, "`(` after `while`")?;
-        let condition = self.parse_expr()?;
+        let condition = self.parse_condition()?;
         self.expect(TokenKind::RParen, "`)` after the condition")?;
         let body = self.parse_block_or_statement()?;
         let span = start.to(body.span);

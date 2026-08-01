@@ -31,6 +31,35 @@ impl Parser {
         self.parse_assignment()
     }
 
+    /// An expression that may be the narrowing form `var name = value`.
+    ///
+    /// Only conditions accept it: `if (var enemy = SeeEnemy())` reads as one
+    /// thought, whereas allowing it anywhere would let a declaration hide in
+    /// the middle of an arithmetic expression.
+    pub(super) fn parse_condition(&mut self) -> Parse<Expr> {
+        if !self.check_keyword(Keyword::Var) {
+            return self.parse_expr();
+        }
+        let start = self.span();
+        self.advance();
+
+        let (name, _) = self.expect_ident("a name to bind the value to")?;
+        if !self.eat(&TokenKind::Assign) {
+            return Err(self.error_with_note(
+                "expected `=` after the bound name",
+                "this form tests an optional and names it: `if (var enemy = SeeEnemy())`",
+            ));
+        }
+
+        let value = self.parse_expr()?;
+        let span = start.to(value.span());
+        Ok(Expr::Binding {
+            name,
+            value: Box::new(value),
+            span,
+        })
+    }
+
     pub(super) fn parse_assignment(&mut self) -> Parse<Expr> {
         let target = self.parse_ternary()?;
 
