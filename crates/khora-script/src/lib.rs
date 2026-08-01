@@ -45,6 +45,10 @@
 
 #![warn(missing_docs)]
 
+pub mod diagnostics;
+pub mod lexer;
 pub mod vm;
 
+pub use diagnostics::{Diagnostic, Severity, SourceFile, Span};
+pub use lexer::{lex, Keyword, Lexed, Token, TokenKind};
 pub use vm::{Instruction, Machine, Run, Suspension, Value};
