@@ -45,6 +45,7 @@
 
 #![warn(missing_docs)]
 
+pub mod arena;
 pub mod ast;
 pub mod bytecode;
 pub mod diagnostics;
@@ -54,6 +55,7 @@ pub mod parser;
 pub mod types;
 pub mod vm;
 
+pub use arena::{Arena, ArenaRef, Object, PersistentStore};
 pub use ast::{BehaviorDecl, Expr, Item, Module, Stmt, TypeRef};
 pub use bytecode::{compile, Compiled};
 pub use diagnostics::{Diagnostic, Severity, SourceFile, Span};
