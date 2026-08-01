@@ -1,0 +1,20 @@
+[package]
+name = "khora-script"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+license.workspace = true
+description = "Ergon — the Khora scripting language: compiler and interruptible virtual machine"
+
+[dependencies]
+# Only khora-core, and only for `math`. This crate knows nothing about the ECS,
+# agents or lanes: the language is designed to be testable without an engine.
+khora-core = { path = "../khora-core" }
+
+# The suspended state of the VM has to survive a frame boundary and a scene
+# save, so it is serialisable from the very first prototype rather than
+# retrofitted later.
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1.0"

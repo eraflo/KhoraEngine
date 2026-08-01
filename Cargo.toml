@@ -10,6 +10,9 @@ members = [
     "crates/khora-agents",
     "crates/khora-infra",
     "crates/khora-telemetry",
+    # Ergon — the scripting language. Depends only on khora-core (math), so the
+    # compiler and VM stay testable without booting an engine.
+    "crates/khora-script",
     "crates/khora-editor",
     "crates/khora-plugins",
     "crates/khora-runtime",

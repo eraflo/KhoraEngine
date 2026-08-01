@@ -2818,6 +2818,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "khora-script"
+version = "0.1.0"
+dependencies = [
+ "khora-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "khora-sdk"
 version = "0.3.0"
 dependencies = [
