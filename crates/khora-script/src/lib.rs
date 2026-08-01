@@ -46,6 +46,7 @@
 #![warn(missing_docs)]
 
 pub mod ast;
+pub mod bytecode;
 pub mod diagnostics;
 pub mod lexer;
 pub mod parser;
@@ -53,8 +54,9 @@ pub mod types;
 pub mod vm;
 
 pub use ast::{BehaviorDecl, Expr, Item, Module, Stmt, TypeRef};
+pub use bytecode::{compile, Compiled};
 pub use diagnostics::{Diagnostic, Severity, SourceFile, Span};
 pub use lexer::{lex, Keyword, Lexed, Token, TokenKind};
 pub use parser::{parse, Parsed};
 pub use types::{check, Checked, Ty};
-pub use vm::{Instruction, Machine, Run, Suspension, Value};
+pub use vm::{Function, Instruction, Machine, Program, Run, Suspension, Value};
