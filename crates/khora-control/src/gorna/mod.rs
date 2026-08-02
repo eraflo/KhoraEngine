@@ -722,6 +722,10 @@ impl GornaArbitrator {
             AgentId::Asset => 0.5,
             AgentId::Overlay => 0.4,
             AgentId::Skybox => 0.4,
+            // Above rendering polish and below simulation: gameplay decides
+            // what the frame is about, but a frame that skipped a tick of it
+            // is recoverable in a way a missed physics step is not.
+            AgentId::Script => 0.9,
         }
     }
 

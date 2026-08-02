@@ -22,6 +22,7 @@ pub mod audio_agent;
 pub mod overlay_agent;
 pub mod physics_agent;
 pub mod render_agent;
+pub mod script_agent;
 pub mod shadow_agent;
 pub mod skybox_agent;
 pub mod ui_agent;

@@ -203,6 +203,8 @@ pub enum LaneKind {
     Ecs,
     /// User interface layout and interaction
     Ui,
+    /// Gameplay scripts
+    Script,
 }
 
 impl std::fmt::Display for LaneKind {
@@ -216,6 +218,7 @@ impl std::fmt::Display for LaneKind {
             LaneKind::Scene => write!(f, "Scene"),
             LaneKind::Ecs => write!(f, "ECS"),
             LaneKind::Ui => write!(f, "UI"),
+            LaneKind::Script => write!(f, "Script"),
         }
     }
 }

@@ -130,10 +130,15 @@ pub fn handles(program: &Program, behavior: &str, event: &str) -> bool {
 /// it first — [`PersistentStore::with_slots`] — and reads it back afterwards.
 ///
 /// [`PersistentStore::with_slots`]: crate::arena::PersistentStore::with_slots
-pub fn initialise(program: &Program, behavior: &str, host: &mut Host, fuel: u64) -> Option<Run> {
+pub fn initialise(
+    program: &Program,
+    behavior: &str,
+    host: &mut Host,
+    fuel: u64,
+) -> Option<(Run, u64)> {
     let name = crate::bytecode::init_name(behavior);
     let mut machine = Machine::new(program, &name, &[])?;
-    Some(machine.run(program, host, fuel))
+    Some(machine.run_counting(program, host, fuel))
 }
 
 /// Runs the handler for `event`, if the behavior declares one.
@@ -150,7 +155,7 @@ pub fn deliver(
     host: &mut Host,
     fuel: u64,
     alive: impl Fn(EntityId) -> bool,
-) -> Result<Run, NotDelivered> {
+) -> Result<(Run, u64), NotDelivered> {
     if !alive(event.target) {
         return Err(NotDelivered::NoSuchEntity(event.target));
     }
@@ -188,7 +193,7 @@ pub fn deliver(
             expected: handler.arity,
             found: args.len(),
         })?;
-    Ok(machine.run(program, host, fuel))
+    Ok(machine.run_counting(program, host, fuel))
 }
 
 /// The register value an event argument becomes.

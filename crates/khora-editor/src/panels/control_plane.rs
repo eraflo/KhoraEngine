@@ -105,6 +105,7 @@ fn crate_for_id(id: AgentId) -> &'static str {
         | AgentId::Ecs
         | AgentId::Ui
         | AgentId::Audio
+        | AgentId::Script
         | AgentId::Asset => "khora-agents",
     }
 }

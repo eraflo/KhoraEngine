@@ -47,6 +47,12 @@ pub enum AgentId {
     Audio,
     /// The asset management agent (highest priority in Boot).
     Asset,
+    /// The gameplay scripting agent.
+    ///
+    /// Negotiates like any other consumer, which is the reason scripting has an
+    /// agent at all: a language that could not be told "you have 0.4ms, hand
+    /// back control" would make the frame budget a suggestion.
+    Script,
 }
 
 impl std::fmt::Display for AgentId {

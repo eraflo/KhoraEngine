@@ -21,3 +21,4 @@
 pub mod audio_lane;
 pub mod physics_lane;
 pub mod render_lane;
+pub mod script_lane;

@@ -151,7 +151,7 @@ fn an_event_reaches_its_handler_and_changes_a_field() {
     )
     .expect("delivered");
 
-    assert_eq!(outcome, Run::Completed);
+    assert_eq!(outcome.0, Run::Completed);
     assert_eq!(health(&host), 70);
 }
 
@@ -476,7 +476,7 @@ fn a_slot_the_store_does_not_have_is_not_quietly_a_number() {
     .expect("delivered");
 
     assert!(
-        matches!(outcome, Run::Faulted(_)),
+        matches!(outcome.0, Run::Faulted(_)),
         "adding to an unset field must not produce a number: {outcome:?}"
     );
     assert_eq!(
@@ -513,7 +513,7 @@ fn initialising_gives_an_instance_the_defaults_its_behavior_declares() {
     .with_fields(PersistentStore::with_slots(3));
 
     assert_eq!(
-        initialise(&program, "Counter", &mut host, u64::MAX),
+        initialise(&program, "Counter", &mut host, u64::MAX).map(|(run, _)| run),
         Some(Run::Completed)
     );
     assert_eq!(host.fields.get(0), Some(&Persisted::Scalar(Value::Int(5))));

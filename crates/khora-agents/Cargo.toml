@@ -11,6 +11,7 @@ khora-core = { path = "../khora-core" }
 khora-data = { path = "../khora-data" }
 khora-io = { path = "../khora-io" }
 khora-lanes = { path = "../khora-lanes" }
+khora-script = { path = "../khora-script" }
 khora-telemetry = { path = "../khora-telemetry" }
 
 bytemuck = { version = "1.25.0", features = ["derive"] }

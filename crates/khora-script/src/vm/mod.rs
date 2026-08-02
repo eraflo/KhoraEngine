@@ -234,10 +234,26 @@ impl Machine {
     /// gets serialised with the scene and the host is what belongs to the
     /// frame — a machine that owned its host could not be saved.
     pub fn run(&mut self, program: &Program, host: &mut Host, fuel: u64) -> Run {
+        self.run_counting(program, host, fuel).0
+    }
+
+    /// Runs, and reports how much fuel was actually spent.
+    ///
+    /// A caller sharing one budget across many programs needs the second number:
+    /// without it, it can only count *calls*, and a call is not a unit of work —
+    /// one handler is a dozen instructions and another is a thousand. Counting
+    /// calls would hand the same slice to both and call that a budget.
+    pub fn run_counting(&mut self, program: &Program, host: &mut Host, fuel: u64) -> (Run, u64) {
+        let mut remaining = fuel;
+        let outcome = self.run_inner(program, host, &mut remaining);
+        (outcome, fuel.saturating_sub(remaining))
+    }
+
+    /// The run loop. `remaining` is left holding what was not spent.
+    fn run_inner(&mut self, program: &Program, host: &mut Host, remaining: &mut u64) -> Run {
         if self.finished {
             return Run::Completed;
         }
-        let mut remaining = fuel;
 
         loop {
             let Some(frame) = self.frames.last() else {
@@ -278,10 +294,10 @@ impl Machine {
                 },
                 _ => instruction.cost(),
             };
-            if remaining < cost {
+            if *remaining < cost {
                 return Run::Suspended(Suspension::OutOfFuel);
             }
-            remaining -= cost;
+            *remaining -= cost;
 
             match self.step(&instruction, program, host, function.code.len()) {
                 Ok(Step::Next) => self.program_counter += 1,
