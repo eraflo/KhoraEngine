@@ -179,6 +179,31 @@ impl Compiler {
         self.diagnostics.push(Diagnostic::error(message, span));
     }
 
+    /// Records a function's index and return shape, refusing a name twice.
+    ///
+    /// Two declarations compiling to one name is not a shadowing rule waiting to
+    /// be chosen — it is unrepresentable. A direct call resolves through
+    /// [`signatures`](Self::signatures), which would hold the *last*, while a
+    /// dispatch resolves through [`Program::index_of`], which finds the
+    /// **first**: the same name would mean two different bodies depending on how
+    /// it was reached. `void Update()` beside `on Update()` is the way an author
+    /// meets this without meaning to, since a member's kind is not part of its
+    /// compiled name.
+    ///
+    /// The first declaration is kept, matching what a dispatch would have found,
+    /// so the diagnostics that follow describe one coherent program.
+    fn declare(&mut self, name: String, returns: Shape, index: usize, span: Span) {
+        if self.signatures.contains_key(&name) {
+            self.error(
+                format!("`{name}` is declared more than once — rename one of the two"),
+                span,
+            );
+            return;
+        }
+        self.signatures.insert(name.clone(), index);
+        self.returns.insert(name, returns);
+    }
+
     /// Records the registry's indices, which the emitted code addresses.
     fn collect_natives(&mut self, natives: &crate::native::NativeRegistry) {
         for (index, native) in natives.iter().enumerate() {
@@ -205,16 +230,18 @@ impl Compiler {
         for item in &module.items {
             match item {
                 Item::Function(decl) => {
-                    self.signatures.insert(decl.name.clone(), index);
-                    self.returns
-                        .insert(decl.name.clone(), shape_of(&decl.return_ty));
+                    self.declare(
+                        decl.name.clone(),
+                        shape_of(&decl.return_ty),
+                        index,
+                        decl.name_span,
+                    );
                     index += 1;
                 }
                 Item::Behavior(decl) => {
                     // The field initialiser is emitted first, so it takes the
                     // index before any member.
-                    self.signatures.insert(init_name(&decl.name), index);
-                    self.returns.insert(init_name(&decl.name), Shape::Other);
+                    self.declare(init_name(&decl.name), Shape::Other, index, decl.name_span);
                     index += 1;
 
                     for member in &decl.members {
@@ -224,24 +251,23 @@ impl Compiler {
                         // index after it named a different function.
                         if let BehaviorMember::State(state) = member {
                             for inner in &state.members {
-                                let Some((name, returns)) =
+                                let Some((name, returns, span)) =
                                     member_signature(&decl.name, Some(&state.name), inner)
                                 else {
                                     continue;
                                 };
-                                self.signatures.insert(name.clone(), index);
-                                self.returns.insert(name, returns);
+                                self.declare(name, returns, index, span);
                                 index += 1;
                             }
                             continue;
                         }
 
-                        let Some((name, returns)) = member_signature(&decl.name, None, member)
+                        let Some((name, returns, span)) =
+                            member_signature(&decl.name, None, member)
                         else {
                             continue;
                         };
-                        self.signatures.insert(name.clone(), index);
-                        self.returns.insert(name, returns);
+                        self.declare(name, returns, index, span);
                         index += 1;
                     }
 
@@ -252,9 +278,15 @@ impl Compiler {
                         if !matches!(member, BehaviorMember::Every(_) | BehaviorMember::After(_)) {
                             continue;
                         }
-                        let name = timer_name(&decl.name, position);
-                        self.signatures.insert(name.clone(), index);
-                        self.returns.insert(name, Shape::Other);
+                        // Keyed by position, so these cannot collide with each
+                        // other; `declare` still guards them against an author's
+                        // own `__timer0`.
+                        self.declare(
+                            timer_name(&decl.name, position),
+                            Shape::Other,
+                            index,
+                            member.span(),
+                        );
                         index += 1;
                     }
                 }
@@ -351,22 +383,22 @@ impl Compiler {
         self.compile_field_defaults(decl);
 
         for member in &decl.members {
-            match member {
-                BehaviorMember::Method(method) => {
-                    let name = format!("{}.{}", decl.name, method.name);
-                    self.compile_body(&name, &method.params, &method.body);
-                }
-                BehaviorMember::Handler(handler) => {
-                    let name = format!("{}.{}", decl.name, handler.event);
-                    self.compile_body(&name, &handler.params, &handler.body);
-                }
-                BehaviorMember::State(state) => self.compile_state(&decl.name, state),
-                BehaviorMember::Field(_) => {}
-                // A scheduled body is a function of no arguments; what makes it
-                // scheduled is the countdown the layout records, not anything
-                // about the code.
-                BehaviorMember::Every(_) | BehaviorMember::After(_) => {}
+            if let BehaviorMember::State(state) = member {
+                self.compile_state(&decl.name, state);
+                continue;
             }
+            // Through the same pair `collect_signatures` used, so the name a
+            // body is emitted under is by construction the name an index was
+            // counted for. Fields fall out here, and a scheduled body is a
+            // function of no arguments emitted below — what makes it scheduled
+            // is the countdown the layout records, not anything about the code.
+            let Some((name, _, _)) = member_signature(&decl.name, None, member) else {
+                continue;
+            };
+            let Some((params, body)) = member_body(member) else {
+                continue;
+            };
+            self.compile_body(&name, params, body);
         }
 
         // Emitted after the members, in the order `collect_signatures` counted.
@@ -412,20 +444,17 @@ impl Compiler {
             self.fields.insert(slot.clone(), (absolute, shape));
         }
 
+        // A state inside a state is not in the grammar, and the rest waits for
+        // the timer half — both fall out of the pair below rather than needing
+        // an arm of their own.
         for member in &decl.members {
-            match member {
-                BehaviorMember::Method(method) => {
-                    let name = format!("{behavior}.{}.{}", decl.name, method.name);
-                    self.compile_body(&name, &method.params, &method.body);
-                }
-                BehaviorMember::Handler(handler) => {
-                    let name = format!("{behavior}.{}.{}", decl.name, handler.event);
-                    self.compile_body(&name, &handler.params, &handler.body);
-                }
-                // A state inside a state is not in the grammar, and the rest
-                // waits for the timer half.
-                _ => {}
-            }
+            let Some((name, _, _)) = member_signature(behavior, Some(&decl.name), member) else {
+                continue;
+            };
+            let Some((params, body)) = member_body(member) else {
+                continue;
+            };
+            self.compile_body(&name, params, body);
         }
 
         self.fields = outer;
@@ -670,26 +699,47 @@ fn shape_of_state_slot(decl: &crate::ast::StateDecl, slot: &str) -> Shape {
     Shape::Other
 }
 
-/// The compiled name and return shape of a behavior member.
+/// The compiled name, return shape and source span of a behavior member.
 ///
-/// One place, because `collect_signatures` and `compile_behavior` both spell it
+/// One place, because `collect_signatures` and `compile_behavior` both need it
 /// and two spellings of the same convention would fail silently — a handler
 /// registered under one name and emitted under another simply never fires.
+///
+/// The span is the *name* rather than the whole declaration: it is what a
+/// duplicate report has to point at for the author to see which two collided.
 fn member_signature(
     behavior: &str,
     state: Option<&str>,
     member: &BehaviorMember,
-) -> Option<(String, Shape)> {
+) -> Option<(String, Shape, Span)> {
     let qualify = |name: &str| match state {
         Some(state) => format!("{behavior}.{state}.{name}"),
         None => format!("{behavior}.{name}"),
     };
 
     match member {
-        BehaviorMember::Method(method) => {
-            Some((qualify(&method.name), shape_of(&method.return_ty)))
+        BehaviorMember::Method(method) => Some((
+            qualify(&method.name),
+            shape_of(&method.return_ty),
+            method.name_span,
+        )),
+        BehaviorMember::Handler(handler) => {
+            Some((qualify(&handler.event), Shape::Other, handler.event_span))
         }
-        BehaviorMember::Handler(handler) => Some((qualify(&handler.event), Shape::Other)),
+        _ => None,
+    }
+}
+
+/// The parameters and body of a member that compiles to a function.
+///
+/// Answers `Some` for exactly the members [`member_signature`] names, so the two
+/// cannot disagree about which members become functions — the disagreement would
+/// show up as an index counted for a body never emitted, and every function
+/// after it resolving to its neighbour.
+fn member_body(member: &BehaviorMember) -> Option<(&[crate::ast::Param], &crate::ast::Block)> {
+    match member {
+        BehaviorMember::Method(method) => Some((&method.params, &method.body)),
+        BehaviorMember::Handler(handler) => Some((&handler.params, &handler.body)),
         _ => None,
     }
 }

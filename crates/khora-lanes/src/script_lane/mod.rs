@@ -205,11 +205,9 @@ pub fn run_behaviors(
             // to fix, and both are reported by whatever failed to supply it.
             continue;
         };
-        // Cloned because the runtime is borrowed mutably below for the
-        // instance's fields. A `Program` is compiled once and read many times,
-        // so the shape to change if this shows up in a profile is to hold it
-        // behind an `Arc`, not to reach around the borrow.
-        let compiled = compiled.clone();
+        // A handle, not the program: the runtime is borrowed mutably below for
+        // the instance's fields, and a thousand guards share one `Guard`.
+        let compiled = std::sync::Arc::clone(compiled);
 
         // What a saved scene left: applied once, when the entity first appears.
         // The initialiser still runs — the fields the save did not carry take

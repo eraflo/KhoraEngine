@@ -349,3 +349,75 @@ fn a_long_function_does_not_grow_its_frame_per_statement() {
         function.registers
     );
 }
+
+// ─── One name, one function ─────────────────────────────────────────────────
+
+/// Compiles without insisting it succeeds, for the cases where the point is
+/// that it does not.
+fn errors(source: &str) -> Vec<String> {
+    let parsed = parse(lex(source).tokens);
+    compile(&parsed.module)
+        .diagnostics
+        .into_iter()
+        .map(|d| d.message)
+        .collect()
+}
+
+/// **The one an author meets without meaning to.** A member's kind is not part
+/// of its compiled name, so `void Update()` and `on Update()` are one name. A
+/// direct call would reach the last and a dispatch the first, which is a program
+/// whose behavior depends on how it was entered.
+#[test]
+fn a_method_and_a_handler_of_the_same_name_are_refused() {
+    let found = errors(
+        "behavior Guard {
+             void Update(float dt) { }
+             on Update(float dt) { }
+         }",
+    );
+
+    assert!(
+        found.iter().any(|m| m.contains("`Guard.Update`")),
+        "the collision should name the function: {found:?}"
+    );
+}
+
+/// The same rule for two plain functions — the collision is about the name, not
+/// about behaviors.
+#[test]
+fn a_free_function_declared_twice_is_refused() {
+    let found = errors("fn int F() { return 1; } fn int F() { return 2; }");
+
+    assert!(
+        found.iter().any(|m| m.contains("`F`")),
+        "expected a duplicate report: {found:?}"
+    );
+}
+
+/// A state scopes the name, which is the whole point of writing a handler
+/// inside one: `on Lost` while chasing is not `on Lost` while patrolling.
+#[test]
+fn the_same_handler_in_two_states_is_not_a_collision() {
+    let found = errors(
+        "behavior Guard {
+             state Patrol { on Lost(int by) { } }
+             state Chase  { on Lost(int by) { } }
+         }",
+    );
+
+    assert!(found.is_empty(), "states scope their members: {found:?}");
+}
+
+/// And a state's handler may shadow the behavior's own — that pair is what
+/// makes the fallback in `resolve_handler` mean something.
+#[test]
+fn a_state_handler_may_share_a_name_with_the_behaviors_own() {
+    let found = errors(
+        "behavior Guard {
+             on Damaged(int by) { }
+             state Chase { on Damaged(int by) { } }
+         }",
+    );
+
+    assert!(found.is_empty(), "the two are distinct names: {found:?}");
+}

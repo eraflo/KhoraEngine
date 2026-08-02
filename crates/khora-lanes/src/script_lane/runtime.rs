@@ -28,6 +28,7 @@
 //! [`AgentAccess::Isolated`]: khora_core::agent::AgentAccess::Isolated
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use khora_core::ecs::entity::EntityId;
 use khora_script::arena::{Persisted, PersistentStore};
@@ -152,9 +153,15 @@ pub fn restore_carried(fields: &mut PersistentStore, carried: &PersistentStore) 
 }
 
 /// Compiled programs and live instances.
+///
+/// A program is held behind an [`Arc`] because a thousand guards run *one*
+/// `Guard`: the lane needs the program while the runtime is borrowed mutably for
+/// the instance's fields, and cloning a `Vec<Instruction>` per instance per
+/// frame to get it would make the frame cost scale with the code's size for no
+/// reason. The reference count is the whole cost instead.
 #[derive(Debug, Default)]
 pub struct ScriptRuntime {
-    programs: HashMap<String, Program>,
+    programs: HashMap<String, Arc<Program>>,
     instances: HashMap<(EntityId, String), Instance>,
 }
 
@@ -166,7 +173,7 @@ impl ScriptRuntime {
 
     /// Registers a compiled module under the path it came from.
     pub fn add_program(&mut self, module: impl Into<String>, program: Program) {
-        self.programs.insert(module.into(), program);
+        self.programs.insert(module.into(), Arc::new(program));
     }
 
     /// Replaces a module, carrying every live instance's state across.
@@ -240,12 +247,16 @@ impl ScriptRuntime {
             reports.push(report);
         }
 
-        self.programs.insert(module.to_owned(), program);
+        self.programs.insert(module.to_owned(), Arc::new(program));
         reports
     }
 
     /// The program compiled from `module`.
-    pub fn program(&self, module: &str) -> Option<&Program> {
+    ///
+    /// Handed out as the `Arc` rather than a borrow so a caller can keep it
+    /// while the runtime is borrowed again for an instance's fields — which is
+    /// the ordinary shape of running a behavior, not an unusual one.
+    pub fn program(&self, module: &str) -> Option<&Arc<Program>> {
         self.programs.get(module)
     }
 

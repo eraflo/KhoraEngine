@@ -45,7 +45,7 @@ use khora_core::control::gorna::{
     StrategyOption,
 };
 use khora_core::lane::{LaneContext, LaneRegistry, Ref, Slot};
-use khora_core::script::{CommandBuffer, EventQueue};
+use khora_core::script::{CommandBuffer, EventQueue, ScriptStateWriteback};
 use khora_core::{EngineContext, Stopwatch};
 use khora_data::flow::{ScriptReloadView, ScriptView};
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
@@ -237,7 +237,15 @@ impl Agent for ScriptingAgent {
     }
 
     fn deck_writes(&self) -> Vec<TypeId> {
-        vec![TypeId::of::<CommandBuffer>()]
+        // Both slots the lane fills, not just the interesting one. The
+        // scheduler checks these against the other agents in a concurrent wave
+        // and folds each shard back afterwards; a slot written but not declared
+        // is one the check cannot see, so the collision it exists to catch
+        // would surface as a lost writeback during the merge instead.
+        vec![
+            TypeId::of::<CommandBuffer>(),
+            TypeId::of::<ScriptStateWriteback>(),
+        ]
     }
 
     fn execution_timing(&self) -> ExecutionTiming {
