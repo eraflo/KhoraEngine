@@ -80,8 +80,9 @@ pub fn asset_type_for_extension(ext: &str) -> Option<String> {
         "kscene" | "scene" => Some("scene"),
         // Material formats
         "kmat" | "mat" => Some("material"),
-        // Script formats — data, hot-reloadable, future custom language
-        "kscript" => Some("script"),
+        // Script formats. `.erg` is Ergon, the engine's own language; `kscript`
+        // predates it and is kept so a project that used it still indexes.
+        "erg" | "kscript" => Some("script"),
         // Prefab formats (Phase 5 — instanced via SerializationService)
         "kprefab" => Some("prefab"),
         _ => None,
@@ -219,7 +220,7 @@ impl<'a> IndexBuilder<'a> {
             // builder's stat-only fast path and avoids a per-file I/O cliff.
             let dependencies = if type_has_dependency_extractor(&type_name) {
                 match std::fs::read(&abs_path) {
-                    Ok(bytes) => extract_dependencies(&type_name, &bytes),
+                    Ok(bytes) => extract_dependencies(&type_name, &rel_fwd, &bytes),
                     Err(e) => {
                         log::warn!(
                             "asset index: failed to read '{}' for dependency extraction: {e}",

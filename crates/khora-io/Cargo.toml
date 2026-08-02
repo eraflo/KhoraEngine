@@ -11,6 +11,10 @@ khora-core = { path = "../khora-core" }
 khora-data = { path = "../khora-data" }
 khora-telemetry = { path = "../khora-telemetry" }
 
+# The `.erg` decoder lists a module's imports, which means parsing it — a text
+# search for the word would load files nobody asked for.
+khora-script = { path = "../khora-script" }
+
 log = "0.4"
 anyhow = "1.0"
 thiserror = "2.0.18"

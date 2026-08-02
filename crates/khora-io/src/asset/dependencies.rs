@@ -48,7 +48,27 @@ use crate::asset::decoders::decode_material;
 /// references. Keep this in sync with the populated arms of
 /// [`extract_dependencies`].
 pub fn type_has_dependency_extractor(asset_type: &str) -> bool {
-    matches!(asset_type, "material")
+    matches!(asset_type, "material" | "script")
+}
+
+/// The script root a `.erg` file lives under, as a prefix to join imports to.
+///
+/// An `import` is written relative to the project's script root, not to the
+/// importing file — `"combat/damage.erg"` means the same thing wherever it is
+/// written, which is what lets a file be moved without rewriting the files that
+/// import it.
+///
+/// The root is taken to be the **first path segment** of the script's own
+/// location: `scripts/ai/guard.erg` is rooted at `scripts/`, and its imports
+/// resolve under that. Derived rather than configured, because a configured
+/// root is one more thing that can disagree with where the files actually are —
+/// and a project that keeps its scripts directly under `assets/` gets an empty
+/// root, which is the right answer for it.
+fn script_root(path: &str) -> &str {
+    match path.find('/') {
+        Some(index) => &path[..=index],
+        None => "",
+    }
 }
 
 /// Extracts the direct asset dependencies encoded in `bytes`, dispatching on
@@ -59,9 +79,13 @@ pub fn type_has_dependency_extractor(asset_type: &str) -> bool {
 /// this is the extensible seam (see the module docs). A decode failure on a
 /// handled type also yields an empty list (logged at `warn`): a single corrupt
 /// asset must never abort the whole index build.
-pub fn extract_dependencies(asset_type: &str, bytes: &[u8]) -> Vec<AssetUUID> {
+pub fn extract_dependencies(asset_type: &str, path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
     let mut deps = match asset_type {
         "material" => material_dependencies(bytes),
+        // An `import` names a path, and a path becomes a UUID only against the
+        // root it is relative to — which is why this needs the importing file's
+        // own location and the other extractors do not.
+        "script" => script_dependencies(path, bytes),
         // Scenes reference entities/prefabs/meshes, but the scene schema is
         // still evolving; their references are not extracted yet.
         "scene" => Vec::new(),
@@ -70,13 +94,38 @@ pub fn extract_dependencies(asset_type: &str, bytes: &[u8]) -> Vec<AssetUUID> {
         // Meshes (glTF/glb/obj) embed or reference textures and materials;
         // format-specific parsing is not done yet.
         "mesh" => Vec::new(),
-        // Leaf assets (textures, audio, shaders, fonts, scripts, blobs) have no
-        // outbound asset references.
+        // Leaf assets (textures, audio, shaders, fonts, blobs) have no outbound
+        // asset references.
         _ => Vec::new(),
     };
     deps.sort();
     deps.dedup();
     deps
+}
+
+/// Collects the module UUIDs a `.erg` script imports.
+///
+/// This is what makes hot-reload correct rather than merely fast: editing a
+/// module has to recompile the files that import it, and the asset system
+/// already knows how to walk a dependency edge backwards. Without the edge, a
+/// script would be reloaded when its own file changed and left stale when the
+/// file it depends on did — which is the half of hot-reload that produces a
+/// game running code the author has already replaced.
+///
+/// Bytes that are not UTF-8 contribute nothing: the decoder will refuse them
+/// too, and reporting it twice would put the same message in the log for one
+/// mistake.
+fn script_dependencies(path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
+    let Ok(source) = std::str::from_utf8(bytes) else {
+        log::warn!("asset index: script '{path}' is not valid UTF-8");
+        return Vec::new();
+    };
+
+    let root = script_root(path);
+    crate::asset::decoders::script::imports_of(source)
+        .into_iter()
+        .map(|import| AssetUUID::new_v5(&format!("{root}{import}")))
+        .collect()
 }
 
 /// Collects the texture UUIDs referenced by a `.kmat` material.
@@ -132,7 +181,8 @@ mod tests {
             ..Default::default()
         };
 
-        let deps = extract_dependencies("material", &material_to_kmat(&material));
+        let deps =
+            extract_dependencies("material", "materials/m.kmat", &material_to_kmat(&material));
 
         let mut expected = vec![base, normal];
         expected.sort();
@@ -144,7 +194,8 @@ mod tests {
     #[test]
     fn material_without_textures_yields_empty() {
         let material = StandardMaterial::default();
-        let deps = extract_dependencies("material", &material_to_kmat(&material));
+        let deps =
+            extract_dependencies("material", "materials/m.kmat", &material_to_kmat(&material));
         assert!(
             deps.is_empty(),
             "an untextured material has no dependencies"
@@ -153,15 +204,91 @@ mod tests {
 
     #[test]
     fn corrupt_material_yields_empty_without_panic() {
-        let deps = extract_dependencies("material", b"this is not a valid kmat");
+        let deps = extract_dependencies("material", "a/b.dat", b"this is not a valid kmat");
         assert!(deps.is_empty(), "a corrupt material contributes no deps");
     }
 
     #[test]
     fn unhandled_type_yields_empty() {
         // Textures, scenes, etc. are not parsed for outbound references.
-        assert!(extract_dependencies("texture", b"\x89PNG\r\n").is_empty());
-        assert!(extract_dependencies("scene", b"(entities: [])").is_empty());
-        assert!(extract_dependencies("mesh", b"glTF binary").is_empty());
+        assert!(extract_dependencies("texture", "a/b.dat", b"\x89PNG\r\n").is_empty());
+        assert!(extract_dependencies("scene", "a/b.dat", b"(entities: [])").is_empty());
+        assert!(extract_dependencies("mesh", "a/b.dat", b"glTF binary").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod script_tests {
+    use super::*;
+
+    #[test]
+    fn a_script_is_a_type_with_an_extractor() {
+        assert!(type_has_dependency_extractor("script"));
+        assert!(!type_has_dependency_extractor("texture"));
+    }
+
+    /// **The edge hot-reload walks backwards.** Without it a script would be
+    /// reloaded when its own file changed and left stale when the file it
+    /// depends on did.
+    #[test]
+    fn an_import_becomes_the_uuid_of_the_file_it_names() {
+        let source = br#"import "combat/damage.erg";
+                         fn void Main() { }"#;
+        let deps = extract_dependencies("script", "scripts/ai/guard.erg", source);
+
+        assert_eq!(deps, vec![AssetUUID::new_v5("scripts/combat/damage.erg")]);
+    }
+
+    /// An import means the same thing wherever it is written, which is what
+    /// lets a file be moved without rewriting the files that import it.
+    #[test]
+    fn an_import_is_relative_to_the_root_not_to_the_importing_file() {
+        let source = br#"import "shared.erg"; fn void Main() { }"#;
+
+        let shallow = extract_dependencies("script", "scripts/a.erg", source);
+        let deep = extract_dependencies("script", "scripts/very/deep/b.erg", source);
+
+        assert_eq!(shallow, deep, "the same import names the same module");
+        assert_eq!(shallow, vec![AssetUUID::new_v5("scripts/shared.erg")]);
+    }
+
+    /// A project keeping its scripts directly under `assets/` has an empty
+    /// root, which is the right answer for it.
+    #[test]
+    fn a_script_at_the_top_level_roots_at_nothing() {
+        let source = br#"import "helper.erg"; fn void Main() { }"#;
+        let deps = extract_dependencies("script", "guard.erg", source);
+
+        assert_eq!(deps, vec![AssetUUID::new_v5("helper.erg")]);
+    }
+
+    #[test]
+    fn a_script_with_no_imports_has_no_dependencies() {
+        let deps = extract_dependencies("script", "scripts/leaf.erg", b"fn void Main() { }");
+        assert!(deps.is_empty());
+    }
+
+    /// Deduplicated and sorted, like every other extractor — the index
+    /// builder's contract is byte-determinism.
+    #[test]
+    fn dependencies_come_back_sorted_and_deduplicated() {
+        let source = br#"import "b.erg";
+                         import "a.erg";
+                         import "b.erg";
+                         fn void Main() { }"#;
+        let deps = extract_dependencies("script", "scripts/main.erg", source);
+
+        assert_eq!(deps.len(), 2);
+        let mut sorted = deps.clone();
+        sorted.sort();
+        assert_eq!(deps, sorted);
+    }
+
+    /// Reported once, by the decoder — putting the same message in the log
+    /// twice for one mistake helps nobody.
+    #[test]
+    fn bytes_that_are_not_text_contribute_nothing() {
+        let deps = extract_dependencies("script", "scripts/broken.erg", &[0xff, 0xfe]);
+        assert!(deps.is_empty());
     }
 }

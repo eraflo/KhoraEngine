@@ -32,12 +32,15 @@ pub mod font;
 mod handle;
 mod materials;
 mod metadata;
+/// Ergon script modules, as the asset system holds them.
+pub mod script;
 mod uuid;
 
 pub use handle::AssetHandle as Handle;
 pub use handle::*;
 pub use materials::*;
 pub use metadata::*;
+pub use script::ScriptModule;
 pub use uuid::*;
 
 /// A marker trait for types that can be managed by the asset system.
