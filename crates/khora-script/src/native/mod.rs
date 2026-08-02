@@ -54,7 +54,7 @@ pub use ty::NativeTy;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::CommandBuffer;
 
-use crate::arena::Arena;
+use crate::arena::{Arena, PersistentStore};
 use crate::vm::{StrError, Value};
 
 /// Why a native call failed.
@@ -136,6 +136,13 @@ pub struct Host {
     pub commands: CommandBuffer,
     /// Frame memory.
     pub arena: Arena,
+    /// The running behavior's fields.
+    ///
+    /// Swapped in per behavior instance rather than owned by the machine: the
+    /// machine is the *call*, and a field outlives every call made on the
+    /// entity. This is also what a scene save writes out, which is why it is a
+    /// [`PersistentStore`] and not more registers.
+    pub fields: PersistentStore,
     /// The entity the running behavior belongs to.
     pub entity: Option<EntityId>,
 }
@@ -153,8 +160,19 @@ impl Host {
             natives: NativeRegistry::with_builtins(),
             commands: CommandBuffer::new(),
             arena: Arena::new(),
+            fields: PersistentStore::new(),
             entity: None,
         }
+    }
+
+    /// Names the behavior instance whose fields are in play.
+    ///
+    /// Swapping the store rather than the host is what lets one host serve
+    /// every behavior in a frame: the arena, the command buffer and the
+    /// registry are the frame's, while the fields belong to one entity.
+    pub fn with_fields(mut self, fields: PersistentStore) -> Self {
+        self.fields = fields;
+        self
     }
 
     /// A host exposing nothing at all, for a program that must call nothing.

@@ -231,6 +231,25 @@ pub enum Instruction {
         src: Reg,
     },
 
+    /// Reads one of the running behavior's fields.
+    ///
+    /// Fields do not live in registers: a register file belongs to a call, and
+    /// a field outlives every call made on the entity. They live in the
+    /// behavior's persistent store, which is what a scene save writes out.
+    LoadField {
+        /// Where the value goes.
+        dst: Reg,
+        /// Which field, by declaration order.
+        slot: u16,
+    },
+    /// Writes one of the running behavior's fields.
+    StoreField {
+        /// Which field, by declaration order.
+        slot: u16,
+        /// The value.
+        src: Reg,
+    },
+
     /// Loads a string literal from the program's constant table.
     ///
     /// Names the literal rather than copying it, which is what keeps a literal

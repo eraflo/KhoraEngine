@@ -38,12 +38,23 @@ impl Compiler {
             Expr::Null(_) => self.constant(Value::Null, Shape::Other),
             Expr::Str { value, .. } => self.string_constant(value),
 
+            // A local first, then a field. Never the reverse: a parameter named
+            // like a field must win inside the member that declared it, which
+            // is what every other language with fields does and what an author
+            // will expect.
             Expr::Ident { name, span } => match self.lookup_local(name) {
                 Some((register, shape)) => (register, shape),
-                None => {
-                    self.error(format!("`{name}` has no register"), *span);
-                    self.constant(Value::Unit, Shape::Other)
-                }
+                None => match self.fields.get(name).copied() {
+                    Some((slot, shape)) => {
+                        let dst = self.registers.temp();
+                        self.emit(Instruction::LoadField { dst, slot });
+                        (dst, shape)
+                    }
+                    None => {
+                        self.error(format!("`{name}` has no register"), *span);
+                        self.constant(Value::Unit, Shape::Other)
+                    }
+                },
             },
 
             Expr::Binary { op, lhs, rhs, .. } => self.compile_binary(*op, lhs, rhs),
@@ -61,8 +72,13 @@ impl Compiler {
                     return self.constant(Value::Unit, Shape::Other);
                 };
                 let Some((slot, shape)) = self.lookup_local(name) else {
-                    self.error(format!("`{name}` has no register"), *span);
-                    return self.constant(Value::Unit, Shape::Other);
+                    return match self.fields.get(name).copied() {
+                        Some((field, shape)) => self.assign_field(field, shape, *op, value),
+                        None => {
+                            self.error(format!("`{name}` has no register"), *span);
+                            self.constant(Value::Unit, Shape::Other)
+                        }
+                    };
                 };
 
                 match op {
@@ -117,8 +133,42 @@ impl Compiler {
         }
     }
 
+    /// Writes a behavior field, reading it first for the `+=` forms.
+    ///
+    /// The read has to be explicit: a field is not in a register, so `health -=
+    /// amount` is a load, an arithmetic and a store rather than the single
+    /// in-place operation the local case compiles to.
+    fn assign_field(
+        &mut self,
+        slot: u16,
+        shape: Shape,
+        op: Option<BinaryOp>,
+        value: &Expr,
+    ) -> (Reg, Shape) {
+        let mark = self.registers.mark();
+
+        let src = match op {
+            Some(op) => {
+                let current = self.registers.temp();
+                self.emit(Instruction::LoadField { dst: current, slot });
+                let (rhs, rhs_shape) = self.compile_expr(value);
+                self.arithmetic(op, current, shape, rhs, rhs_shape)
+            }
+            None => self.compile_expr(value).0,
+        };
+        self.emit(Instruction::StoreField { slot, src });
+
+        // The result of an assignment is the value assigned. Reading the field
+        // back keeps that true without depending on the temporary surviving the
+        // release below.
+        self.registers.release_to(mark);
+        let dst = self.registers.temp();
+        self.emit(Instruction::LoadField { dst, slot });
+        (dst, shape)
+    }
+
     /// Loads a constant into a fresh register.
-    fn constant(&mut self, value: Value, shape: Shape) -> (Reg, Shape) {
+    pub(super) fn constant(&mut self, value: Value, shape: Shape) -> (Reg, Shape) {
         let dst = self.registers.temp();
         self.emit(Instruction::LoadConst { dst, value });
         (dst, shape)
@@ -129,7 +179,7 @@ impl Compiler {
     /// Deduplicated: the same text written in twenty places is one entry. A
     /// literal is immutable, so sharing one is indistinguishable from twenty
     /// copies — except in the size of the program.
-    fn string_constant(&mut self, text: &str) -> (Reg, Shape) {
+    pub(super) fn string_constant(&mut self, text: &str) -> (Reg, Shape) {
         let index = match self.program.strings.iter().position(|known| known == text) {
             Some(index) => index,
             None => {

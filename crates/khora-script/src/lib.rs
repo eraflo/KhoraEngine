@@ -55,6 +55,9 @@ pub mod arena;
 pub mod ast;
 pub mod bytecode;
 pub mod diagnostics;
+pub mod dispatch;
+#[cfg(test)]
+mod dispatch_tests;
 pub mod lexer;
 pub mod modules;
 pub mod native;
@@ -66,6 +69,7 @@ pub use arena::{Arena, ArenaRef, Object, PersistentStore};
 pub use ast::{BehaviorDecl, Expr, Item, Module, Stmt, TypeRef};
 pub use bytecode::{compile, Compiled};
 pub use diagnostics::{Diagnostic, Severity, SourceFile, Span};
+pub use dispatch::{deliver, handles, NotDelivered};
 pub use khora_macros::ergon_fn;
 pub use lexer::{lex, Keyword, Lexed, Token, TokenKind};
 pub use modules::{resolve, MemoryLoader, Resolved, SourceLoader};

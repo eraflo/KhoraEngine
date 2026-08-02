@@ -32,10 +32,15 @@
 //!
 //! # Scope
 //!
-//! Free functions today. Behaviors, states and `await` arrive with the
-//! execution model, which needs the ECS bridge to mean anything — compiling
-//! `become` before there is somewhere for the state to live would be inventing
-//! a target.
+//! Free functions and behavior members. A member is not special at run time: it
+//! is a function named `Guard.Damaged`, compiled with the behavior's field
+//! table in scope. Fields do not become registers — a register file belongs to
+//! a call, and a field outlives every call made on the entity — so they compile
+//! to `LoadField`/`StoreField` against the persistent store.
+//!
+//! `state`, `every`, `after` and `await` arrive with the rest of the execution
+//! model: each needs somewhere for a suspension or a state to live, and
+//! compiling `become` before that exists would be inventing a target.
 
 pub mod expr;
 pub mod registers;
@@ -48,7 +53,7 @@ pub use registers::Registers;
 
 use std::collections::HashMap;
 
-use crate::ast::{Item, Module, TypeRef};
+use crate::ast::{BehaviorMember, Item, Module, TypeRef};
 use crate::diagnostics::{Diagnostic, Span};
 use crate::vm::{Function, Instruction, Program, Reg};
 
@@ -136,6 +141,12 @@ pub struct Compiler {
     pub returns: HashMap<String, Shape>,
     /// Engine function name to its index in the registry, and its result shape.
     pub natives: HashMap<String, (usize, Shape)>,
+    /// Fields of the behavior being compiled, by name.
+    ///
+    /// Empty while compiling a free function, which is what makes a stray
+    /// field name there an ordinary "no such variable" rather than a silent
+    /// read of slot zero.
+    pub fields: HashMap<String, (u16, Shape)>,
     /// Instructions of the function being compiled.
     pub code: Vec<Instruction>,
     /// Register allocation for the current function.
@@ -152,6 +163,7 @@ impl Compiler {
             signatures: HashMap::new(),
             returns: HashMap::new(),
             natives: HashMap::new(),
+            fields: HashMap::new(),
             code: Vec::new(),
             registers: Registers::new(0),
             locals: Vec::new(),
@@ -178,61 +190,208 @@ impl Compiler {
     }
 
     /// Assigns an index to every function before compiling any body.
+    ///
+    /// Walks the items in **the order the bodies will be emitted**, behavior
+    /// members included. Counting only free functions would be right until a
+    /// behavior sat above one in the file, at which point every index after it
+    /// would name a different function than the caller meant — the kind of
+    /// mistake that produces a working program and a wrong one.
     fn collect_signatures(&mut self, module: &Module) {
+        let mut index = 0;
         for item in &module.items {
-            if let Item::Function(decl) = item {
-                let index = self.signatures.len();
-                self.signatures.insert(decl.name.clone(), index);
-                self.returns
-                    .insert(decl.name.clone(), shape_of(&decl.return_ty));
+            match item {
+                Item::Function(decl) => {
+                    self.signatures.insert(decl.name.clone(), index);
+                    self.returns
+                        .insert(decl.name.clone(), shape_of(&decl.return_ty));
+                    index += 1;
+                }
+                Item::Behavior(decl) => {
+                    // The field initialiser is emitted first, so it takes the
+                    // index before any member.
+                    self.signatures.insert(init_name(&decl.name), index);
+                    self.returns.insert(init_name(&decl.name), Shape::Other);
+                    index += 1;
+
+                    for member in &decl.members {
+                        let (name, returns) = match member {
+                            BehaviorMember::Method(method) => (
+                                format!("{}.{}", decl.name, method.name),
+                                shape_of(&method.return_ty),
+                            ),
+                            BehaviorMember::Handler(handler) => {
+                                (format!("{}.{}", decl.name, handler.event), Shape::Other)
+                            }
+                            _ => continue,
+                        };
+                        self.signatures.insert(name.clone(), index);
+                        self.returns.insert(name, returns);
+                        index += 1;
+                    }
+                }
+                Item::Struct(_) => {}
             }
         }
     }
 
     fn compile_functions(&mut self, module: &Module) {
         for item in &module.items {
-            let Item::Function(decl) = item else {
-                // Behaviors need the execution model; skipping them keeps the
-                // program well-formed rather than half-compiled.
+            match item {
+                Item::Function(decl) => {
+                    self.compile_body(&decl.name, &decl.params, &decl.body);
+                }
+                Item::Behavior(decl) => self.compile_behavior(decl),
+                Item::Struct(_) => {}
+            }
+        }
+    }
+
+    /// Compiles a behavior's members, each as a function of its own.
+    ///
+    /// A member is not special at run time: `on Damaged(int amount)` becomes a
+    /// function taking an `int`, named `Guard.Damaged` so the dispatcher can
+    /// find it. What makes it a *member* is the field table in scope while it
+    /// compiles — which is why the fields are assigned slots first, before any
+    /// body is read, so a member can name a field declared below it.
+    fn compile_behavior(&mut self, decl: &crate::ast::BehaviorDecl) {
+        self.fields.clear();
+        for member in &decl.members {
+            if let BehaviorMember::Field(field) = member {
+                let slot = self.fields.len() as u16;
+                self.fields
+                    .insert(field.name.clone(), (slot, shape_of(&field.ty)));
+            }
+        }
+
+        self.compile_field_defaults(decl);
+
+        for member in &decl.members {
+            match member {
+                BehaviorMember::Method(method) => {
+                    let name = format!("{}.{}", decl.name, method.name);
+                    self.compile_body(&name, &method.params, &method.body);
+                }
+                BehaviorMember::Handler(handler) => {
+                    let name = format!("{}.{}", decl.name, handler.event);
+                    self.compile_body(&name, &handler.params, &handler.body);
+                }
+                // `state`, `every` and `after` need the parts of the execution
+                // model that are not built yet — becoming a state, and waking on
+                // a schedule. Skipping them keeps the program well-formed rather
+                // than half-compiled.
+                BehaviorMember::Field(_)
+                | BehaviorMember::State(_)
+                | BehaviorMember::Every(_)
+                | BehaviorMember::After(_) => {}
+            }
+        }
+
+        self.fields.clear();
+    }
+
+    /// Emits the function that gives a fresh instance its field values.
+    ///
+    /// A default is an *expression* — `float speed = 3.0;`, but also
+    /// `Sqrt(2.0)` — so only compiled code can produce it. Without this a
+    /// declared default would be decoration: the store would hand out unset
+    /// slots and the first arithmetic would fault.
+    ///
+    /// A field with no written default gets its type's zero rather than staying
+    /// unset, because `int health;` reads as a number that happens to start at
+    /// nothing, not as a hole.
+    fn compile_field_defaults(&mut self, decl: &crate::ast::BehaviorDecl) {
+        self.code = Vec::new();
+        self.locals = Vec::new();
+        self.registers = Registers::new(0);
+
+        for member in &decl.members {
+            let BehaviorMember::Field(field) = member else {
+                continue;
+            };
+            let Some((slot, _)) = self.fields.get(&field.name).copied() else {
                 continue;
             };
 
-            self.code = Vec::new();
-            self.locals = Vec::new();
-            self.registers = Registers::new(decl.params.len());
+            let mark = self.registers.mark();
+            let src = match &field.default {
+                Some(expr) => self.compile_expr(expr).0,
+                None => {
+                    let zero = match shape_of(&field.ty) {
+                        Shape::Int => crate::vm::Value::Int(0),
+                        Shape::Float => crate::vm::Value::Float(0.0),
+                        // A string with no default is the empty one, which the
+                        // constant table already deduplicates.
+                        Shape::Str => {
+                            let (register, _) = self.string_constant("");
+                            self.emit(Instruction::StoreField {
+                                slot,
+                                src: register,
+                            });
+                            self.registers.release_to(mark);
+                            continue;
+                        }
+                        Shape::Other => crate::vm::Value::Unit,
+                    };
+                    self.constant(zero, Shape::Other).0
+                }
+            };
+            self.emit(Instruction::StoreField { slot, src });
+            self.registers.release_to(mark);
+        }
 
-            // Parameters already own registers `0..n` — that is where the VM's
-            // calling convention leaves them — so they are recorded rather than
-            // allocated. `Registers::new` reserved the slots.
-            for (index, param) in decl.params.iter().enumerate() {
-                self.locals.push(Local {
-                    name: param.name.clone(),
-                    register: index as Reg,
-                    shape: shape_of(&param.ty),
-                });
-            }
+        let unit = self.registers.temp();
+        self.emit(Instruction::LoadConst {
+            dst: unit,
+            value: crate::vm::Value::Unit,
+        });
+        self.emit(Instruction::Return { src: unit });
 
-            for statement in &decl.body.statements {
-                self.compile_stmt(statement);
-            }
+        let code = std::mem::take(&mut self.code);
+        self.program.functions.push(Function {
+            name: init_name(&decl.name),
+            arity: 0,
+            registers: self.registers.frame_size(),
+            code,
+        });
+    }
 
-            // A function that falls off its end returns nothing. The VM handles
-            // that, but emitting it makes the intent explicit in a disassembly.
-            let unit = self.registers.temp();
-            self.emit(Instruction::LoadConst {
-                dst: unit,
-                value: crate::vm::Value::Unit,
-            });
-            self.emit(Instruction::Return { src: unit });
+    /// Compiles one body into a function of the program.
+    fn compile_body(&mut self, name: &str, params: &[crate::ast::Param], body: &crate::ast::Block) {
+        self.code = Vec::new();
+        self.locals = Vec::new();
+        self.registers = Registers::new(params.len());
 
-            let code = std::mem::take(&mut self.code);
-            self.program.functions.push(Function {
-                name: decl.name.clone(),
-                arity: decl.params.len(),
-                registers: self.registers.frame_size(),
-                code,
+        // Parameters already own registers `0..n` — that is where the VM's
+        // calling convention leaves them — so they are recorded rather than
+        // allocated. `Registers::new` reserved the slots.
+        for (index, param) in params.iter().enumerate() {
+            self.locals.push(Local {
+                name: param.name.clone(),
+                register: index as Reg,
+                shape: shape_of(&param.ty),
             });
         }
+
+        for statement in &body.statements {
+            self.compile_stmt(statement);
+        }
+
+        // A function that falls off its end returns nothing. The VM handles
+        // that, but emitting it makes the intent explicit in a disassembly.
+        let unit = self.registers.temp();
+        self.emit(Instruction::LoadConst {
+            dst: unit,
+            value: crate::vm::Value::Unit,
+        });
+        self.emit(Instruction::Return { src: unit });
+
+        let code = std::mem::take(&mut self.code);
+        self.program.functions.push(Function {
+            name: name.to_owned(),
+            arity: params.len(),
+            registers: self.registers.frame_size(),
+            code,
+        });
     }
 
     /// Appends an instruction, returning its index.
@@ -299,6 +458,15 @@ impl Compiler {
             .find(|local| local.name == name)
             .map(|local| (local.register, local.shape))
     }
+}
+
+/// The function that fills a fresh instance's fields.
+///
+/// One place, because the compiler writes the name and the loader reads it, and
+/// two spellings of the same convention would fail silently — an instance whose
+/// fields simply never got their defaults.
+pub fn init_name(behavior: &str) -> String {
+    format!("{behavior}.__fields")
 }
 
 /// The numeric shape a written type compiles to.

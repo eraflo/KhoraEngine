@@ -50,6 +50,7 @@ pub use value::{resolve_str, StrError, StrRef, Value};
 
 use serde::{Deserialize, Serialize};
 
+use crate::arena::{Object, Persisted};
 use crate::native::Host;
 
 /// Why a program stopped before finishing.
@@ -423,6 +424,41 @@ impl Machine {
                 // decided by `run`, which checks whether any frame is left.
                 self.pop_frame(value);
                 Ok(Step::Returned)
+            }
+
+            Instruction::LoadField { dst, slot } => {
+                let value = match host.fields.get(slot as usize) {
+                    Some(Persisted::Scalar(value)) => *value,
+                    // Text kept in a field is stored by value, so reading it
+                    // brings a copy into the frame arena — where everything the
+                    // running code can name lives.
+                    Some(Persisted::Owned(object)) => {
+                        let copy = object.clone();
+                        let reference = host.arena.alloc(copy).map_err(|_| Fault::ArenaFull)?;
+                        Value::Str(StrRef::Arena(reference))
+                    }
+                    // A slot the instance does not have yet: a script that
+                    // gained a field since this entity was saved. Unset rather
+                    // than a fault — hot-reload is meant to survive that.
+                    None => Value::Unit,
+                };
+                self.write(dst, value)?;
+                Ok(Step::Next)
+            }
+            Instruction::StoreField { slot, src } => {
+                let value = self.read(src)?;
+                let stored = match value {
+                    // Stored by value, not by reference: an arena handle would
+                    // be stale by the next frame, and a field is exactly what
+                    // has to outlive one.
+                    Value::Str(_) => {
+                        let text = self.resolve_str(value, program, host)?.to_owned();
+                        Persisted::Owned(Object::Str(text))
+                    }
+                    other => Persisted::Scalar(other),
+                };
+                host.fields.set(slot as usize, stored);
+                Ok(Step::Next)
             }
 
             Instruction::LoadStr { dst, index } => {
