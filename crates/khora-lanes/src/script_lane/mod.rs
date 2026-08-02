@@ -240,6 +240,11 @@ pub fn run_behaviors(
         }
 
         host.entity = Some(instance.entity);
+        // The read side, from the projection rather than the `World`. Set
+        // alongside the entity because they name the same subject: a position
+        // left from the previous behavior would answer `Position()` with
+        // somebody else's.
+        host.position = Some(instance.translation);
         host.fields = std::mem::take(&mut state.fields);
         let was_initialised = state.initialised;
         let was_spawned = state.spawned;
@@ -686,6 +691,11 @@ fn farewell_departed(
         };
 
         host.entity = Some(entity);
+        // The entity has already left the view, so there is no pose to give it.
+        // `Position()` faults rather than answering with where it used to be —
+        // the other half of why a script that despawns itself is told at the
+        // moment it decides, while its pose is still there.
+        host.position = None;
         host.fields = std::mem::take(&mut runtime.instance(entity, &behavior).fields);
         report.spent += say_goodbye(&program, &behavior, host, left.min(FUEL_PER_BEHAVIOR));
         host.fields = khora_script::arena::PersistentStore::new();

@@ -38,6 +38,15 @@ impl Compiler {
             Expr::Null(_) => self.constant(Value::Null, Shape::Other),
             Expr::Str { value, .. } => self.string_constant(value),
 
+            // Read from the host at run time rather than baked in: the same
+            // compiled `Guard` runs for a thousand entities, so the subject
+            // cannot be a constant in the program.
+            Expr::This(_) => {
+                let dst = self.registers.temp();
+                self.emit(Instruction::LoadSelf { dst });
+                (dst, Shape::Other)
+            }
+
             // A local first, then a field. Never the reverse: a parameter named
             // like a field must win inside the member that declared it, which
             // is what every other language with fields does and what an author

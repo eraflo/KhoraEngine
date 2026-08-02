@@ -324,6 +324,17 @@ pub enum Instruction {
         dst: Reg,
     },
 
+    /// Loads the entity the running behavior is attached to — `this`.
+    ///
+    /// An instruction rather than a native, because it reads nothing and can
+    /// fail in only one way: a free function has no entity, and the checker
+    /// already refuses `this` there. It is the address of the subject, which is
+    /// what every effect a script asks for has to be aimed at.
+    LoadSelf {
+        /// Where it goes.
+        dst: Reg,
+    },
+
     /// Suspends voluntarily, for no stated reason.
     Yield,
     /// Stops the program.

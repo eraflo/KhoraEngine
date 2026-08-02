@@ -51,7 +51,26 @@ impl Checker {
             // optional of the error type gets that for free.
             Expr::Null(_) => Ty::Optional(Box::new(Ty::Error)),
 
-            Expr::This(_) => Ty::Behavior(String::new()),
+            // `this` is the entity, not an object. A behavior is a component on
+            // an entity and has no identity apart from it, so there is nothing
+            // else `this` could usefully be — and typing it as the entity is
+            // what makes `Despawn(this)` and `SetParent(this, …)` read the way
+            // the API is written, without a conversion nobody would expect to
+            // need.
+            Expr::This(span) => {
+                if context.owner.is_none() {
+                    // A free function has no subject. Refused here rather than
+                    // faulting at run time, which is the difference between a
+                    // message naming the line and a behavior that stops.
+                    self.error_note(
+                        "`this` names the entity a behavior is attached to",
+                        *span,
+                        "a free function has no entity — take an `Entity` parameter instead",
+                    );
+                    return Ty::Error;
+                }
+                Ty::Entity
+            }
 
             Expr::Ident { name, span } => match self.scopes.type_of(name) {
                 Some(ty) => ty,

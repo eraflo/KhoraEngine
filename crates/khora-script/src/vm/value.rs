@@ -47,6 +47,17 @@ pub enum Value {
     Entity(EntityId),
     /// Text, wherever it lives.
     Str(StrRef),
+    /// A position, direction or scale.
+    ///
+    /// Inline like [`Entity`](Self::Entity) rather than through the arena: it is
+    /// three floats, which a register already holds, and gameplay computes
+    /// vectors constantly — an arena allocation per intermediate would make the
+    /// commonest arithmetic in a game the most expensive thing in the frame.
+    ///
+    /// The only engine type a register carries today. `Quat` and `Color` follow
+    /// the same road when something needs them; adding them for symmetry alone
+    /// would widen every register for values nothing produces.
+    Vec3(khora_core::math::Vec3),
     /// Absent optional.
     Null,
 }
@@ -154,6 +165,14 @@ impl Value {
         }
     }
 
+    /// The vector inside, or `None`.
+    pub fn as_vec3(self) -> Option<khora_core::math::Vec3> {
+        match self {
+            Self::Vec3(v) => Some(v),
+            _ => None,
+        }
+    }
+
     /// The string reference inside, or `None`.
     ///
     /// A *reference*, not the text: resolving it needs the program and the
@@ -179,6 +198,7 @@ impl Value {
             Self::Bool(_) => "bool",
             Self::Entity(_) => "Entity",
             Self::Str(_) => "string",
+            Self::Vec3(_) => "Vec3",
             Self::Null => "null",
         }
     }

@@ -110,6 +110,23 @@ impl ScriptType for EntityId {
     }
 }
 
+/// The one engine type a register carries.
+///
+/// No arena involved either way, which is what makes it usable in the places
+/// gameplay actually uses vectors — inside a loop, as an intermediate, as an
+/// argument built at the call site.
+impl ScriptType for khora_core::math::Vec3 {
+    const TY: NativeTy = NativeTy::Engine("Vec3");
+
+    fn from_value(value: Value, _: &NativeContext<'_>) -> Result<Self, NativeError> {
+        value.as_vec3().ok_or_else(|| mismatch("a Vec3", value))
+    }
+
+    fn to_value(self, _: &mut NativeContext<'_>) -> Result<Value, NativeError> {
+        Ok(Value::Vec3(self))
+    }
+}
+
 /// Text handed to or from an engine function.
 ///
 /// Owned rather than borrowed, and that is the honest shape rather than a

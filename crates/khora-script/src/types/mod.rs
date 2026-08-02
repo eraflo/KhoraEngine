@@ -140,6 +140,11 @@ pub struct Context {
     pub in_loop: bool,
     /// States reachable by `become`, empty outside a behavior.
     pub states: Vec<String>,
+    /// The behavior this member belongs to, or `None` in a free function.
+    ///
+    /// What decides whether `this` means anything: a behavior is a component on
+    /// an entity, so its members have a subject and a free function does not.
+    pub owner: Option<String>,
 }
 
 impl Context {
@@ -151,6 +156,7 @@ impl Context {
             returns,
             in_loop: false,
             states: Vec::new(),
+            owner: None,
         }
     }
 }
@@ -506,7 +512,8 @@ impl Checker {
                 BehaviorMember::Field(field) => {
                     if let Some(default) = &field.default {
                         let declared = self.resolve(&field.ty);
-                        let context = Context::sync(owner, Ty::Void);
+                        let mut context = Context::sync(owner, Ty::Void);
+                        context.owner = Some(owner.to_owned());
                         let actual = self.check_expr(default, &context);
                         self.expect_assignable(&declared, &actual, default.span());
                     }
@@ -525,6 +532,7 @@ impl Checker {
                         returns,
                         in_loop: false,
                         states: states.to_vec(),
+                        owner: Some(owner.to_owned()),
                     };
                     self.check_block(&method.body, &context);
                     self.scopes.pop();
@@ -541,6 +549,7 @@ impl Checker {
                         returns: Ty::Void,
                         in_loop: false,
                         states: states.to_vec(),
+                        owner: Some(owner.to_owned()),
                     };
                     self.check_block(&handler.body, &context);
                     self.scopes.pop();
@@ -552,6 +561,7 @@ impl Checker {
                         returns: Ty::Void,
                         in_loop: false,
                         states: states.to_vec(),
+                        owner: Some(owner.to_owned()),
                     };
                     let interval = self.check_expr(&every.interval, &context);
                     self.expect_duration(&interval, every.interval.span(), "every");
@@ -564,6 +574,7 @@ impl Checker {
                         returns: Ty::Void,
                         in_loop: false,
                         states: states.to_vec(),
+                        owner: Some(owner.to_owned()),
                     };
                     let delay = self.check_expr(&after.delay, &context);
                     self.expect_duration(&delay, after.delay.span(), "after");

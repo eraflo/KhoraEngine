@@ -234,29 +234,13 @@ fn a_hot_reload_does_not_spawn_the_entity_again() {
 
 // ─── OnDespawn ──────────────────────────────────────────────────────────────
 
-/// Queues this entity's despawn.
-///
-/// A stand-in for the engine's own `Despawn`, which arrives with the rest of the
-/// command-producing surface. The lane's farewell logic does not care which
-/// native queued the command, only that one did — and testing it against a
-/// real command now beats testing it later.
-///
-/// Named `probe_*` because `#[ergon_fn]` submits to `inventory`, and a plain
-/// name would reserve it across the whole test binary.
-#[khora_script::ergon_fn]
-fn probe_despawn(context: &mut khora_script::native::NativeContext<'_>) {
-    if let Some(entity) = context.entity {
-        context.commands.push(WorldCommand::Despawn { entity });
-    }
-}
-
-/// A guard that says goodbye by queueing something the frame can see.
+/// A guard that removes itself when it is hurt.
 const DYING: &str = r#"
 behavior Guard {
     int health = 100;
 
     on Damaged(int amount) {
-        ProbeDespawn();
+        Despawn(this);
     }
 
     void OnDespawn() {

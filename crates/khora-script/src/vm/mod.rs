@@ -109,6 +109,12 @@ pub enum Fault {
     BadString,
     /// A frame allocated more text than the arena holds.
     ArenaFull,
+    /// `this` was reached with no entity in play.
+    ///
+    /// The checker refuses `this` outside a behavior, so reaching this means the
+    /// caller ran a behavior's member without naming whose it was — a wiring
+    /// mistake in the host, reported rather than aimed at entity zero.
+    NoSubject,
     /// An engine function refused.
     NativeFailed {
         /// Which one.
@@ -502,6 +508,11 @@ impl Machine {
                 Ok(Step::Next)
             }
 
+            Instruction::LoadSelf { dst } => {
+                let entity = host.entity.ok_or(Fault::NoSubject)?;
+                self.write(dst, Value::Entity(entity))?;
+                Ok(Step::Next)
+            }
             Instruction::LoadStr { dst, index } => {
                 if program.string(index).is_none() {
                     return Err(Fault::BadString);

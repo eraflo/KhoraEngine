@@ -32,9 +32,10 @@
 //!
 //! # What a field can be
 //!
-//! What a register holds, plus text. A `Vec3` field is not representable yet —
-//! and a conversion that silently dropped one would put a guard at the origin
-//! after a reload with nothing said, so it is refused loudly instead.
+//! What a register holds, plus text. That now includes `Vec3`, so a patrol
+//! target survives a save. What it still does not include is an array or a
+//! `Quat`, and a conversion that silently dropped one would put a guard at the
+//! origin after a reload with nothing said — so those are refused loudly.
 //!
 //! [`Script`]: khora_data::ecs::Script
 
@@ -97,6 +98,7 @@ fn to_persisted(value: &ScriptValue) -> Option<Persisted> {
         ScriptValue::Int(number) => Persisted::Scalar(Value::Int(*number)),
         ScriptValue::Float(number) => Persisted::Scalar(Value::Float(*number)),
         ScriptValue::Entity(id) => Persisted::Scalar(Value::Entity(*id)),
+        ScriptValue::Vec3(v) => Persisted::Scalar(Value::Vec3(*v)),
         // By value, like every other string a field holds: an arena handle
         // would be stale by the next frame, let alone across a save.
         ScriptValue::Str(text) => Persisted::Owned(Object::Str(text.clone())),
@@ -116,6 +118,7 @@ fn to_script_value(value: &Persisted) -> Option<ScriptValue> {
         Persisted::Scalar(Value::Int(number)) => ScriptValue::Int(*number),
         Persisted::Scalar(Value::Float(number)) => ScriptValue::Float(*number),
         Persisted::Scalar(Value::Entity(id)) => ScriptValue::Entity(*id),
+        Persisted::Scalar(Value::Vec3(v)) => ScriptValue::Vec3(*v),
         // A string in a register is a *reference* into the program or the
         // arena, and neither survives the frame — which is why a field's text
         // is kept owned, and why only the owned form is readable here.
@@ -278,14 +281,33 @@ mod tests {
 
     // ─── What cannot travel ─────────────────────────────────────────────────
 
+    /// A `Vec3` travels now that a register holds one, which is what makes a
+    /// patrol target survive a save rather than resetting to the origin.
+    #[test]
+    fn a_vector_field_round_trips() {
+        let layout = layout(&["target"]);
+        let target = khora_core::math::Vec3::new(3.0, 0.0, -4.0);
+        let store = store_from_fields(&layout, &saved(&[("target", ScriptValue::Vec3(target))]));
+
+        assert_eq!(store.get(0), Some(&Persisted::Scalar(Value::Vec3(target))));
+        assert_eq!(
+            fields_from_store(&layout, &store),
+            vec![("target".to_owned(), ScriptValue::Vec3(target))]
+        );
+    }
+
     /// Refused loudly rather than dropped: a guard silently back at the origin
-    /// after a reload is far harder to trace than a warning.
+    /// after a reload is far harder to trace than a warning. An array is the
+    /// case still waiting for a representation.
     #[test]
     fn a_value_that_cannot_be_stored_is_refused_rather_than_dropped() {
-        let layout = layout(&["position"]);
+        let layout = layout(&["waypoints"]);
         let store = store_from_fields(
             &layout,
-            &saved(&[("position", ScriptValue::Vec3(khora_core::math::Vec3::ONE))]),
+            &saved(&[(
+                "waypoints",
+                ScriptValue::Array(vec![ScriptValue::Int(1), ScriptValue::Int(2)]),
+            )]),
         );
 
         assert_eq!(

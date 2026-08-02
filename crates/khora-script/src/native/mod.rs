@@ -43,13 +43,17 @@
 pub mod builtins;
 pub mod convert;
 pub mod ty;
+pub mod world;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod world_tests;
 
 pub use builtins::builtins;
 pub use convert::ScriptType;
 pub use ty::NativeTy;
+pub use world::world;
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::CommandBuffer;
@@ -103,6 +107,16 @@ pub struct NativeContext<'a> {
     /// arena, and the value only says which — so resolving one needs both, and
     /// a native that takes a `string` would otherwise have no way to read it.
     pub strings: &'a [String],
+    /// Where the calling behavior's entity is, as the frame projected it.
+    ///
+    /// The read side, and deliberately only the subject's own: a lane may not
+    /// query the `World`, so anything readable here had to be projected into the
+    /// view first. One entity's pose costs nothing to carry; a lookup table for
+    /// every entity would be built each frame whether or not a script asked, and
+    /// nothing yet asks.
+    ///
+    /// `None` outside a behavior, or for an entity the view did not place.
+    pub position: Option<khora_core::math::Vec3>,
 }
 
 impl NativeContext<'_> {
@@ -151,6 +165,12 @@ pub struct Host {
     pub awaiting: Option<f32>,
     /// The entity the running behavior belongs to.
     pub entity: Option<EntityId>,
+    /// Where that entity is, from the frame's view.
+    ///
+    /// Swapped in per behavior alongside [`entity`](Self::entity): they name the
+    /// same subject, and a position left over from the previous behavior would
+    /// be worse than none at all.
+    pub position: Option<khora_core::math::Vec3>,
 }
 
 impl Default for Host {
@@ -174,6 +194,7 @@ impl Host {
             fields: PersistentStore::new(),
             awaiting: None,
             entity: None,
+            position: None,
         }
     }
 
@@ -223,6 +244,7 @@ impl Host {
             arena: &mut self.arena,
             entity: self.entity,
             strings,
+            position: self.position,
         }
     }
 }
