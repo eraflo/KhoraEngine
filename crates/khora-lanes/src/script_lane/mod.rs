@@ -39,6 +39,7 @@
 //! [`CommandBuffer`] slot on the deck. Not the `World` — which is what makes
 //! the whole thing schedulable in parallel.
 
+pub mod persistence;
 pub mod runtime;
 
 #[cfg(test)]
@@ -46,6 +47,7 @@ mod reload_tests;
 #[cfg(test)]
 mod tests;
 
+pub use persistence::{fields_from_store, store_from_fields};
 pub use runtime::{Instance, ReloadReport, ScriptRuntime};
 
 use std::any::Any;
@@ -201,9 +203,23 @@ pub fn run_behaviors(
         // behind an `Arc`, not to reach around the borrow.
         let compiled = compiled.clone();
 
+        // What a saved scene left: applied once, when the entity first appears.
+        // The initialiser still runs — the fields the save did not carry take
+        // the defaults their author wrote — and these go back on top, which is
+        // exactly the road a reload already takes.
+        let carried_from_scene = instance.authored.as_ref().and_then(|authored| {
+            let layout = compiled.layout(&program.behavior)?;
+            Some(persistence::store_from_fields(layout, authored))
+        });
+
         let state = runtime.instance(instance.entity, &program.behavior);
         if state.disabled {
             continue;
+        }
+        if let Some(from_scene) = carried_from_scene {
+            state.fields = from_scene.clone();
+            state.initialised = false;
+            state.carried = Some(from_scene);
         }
 
         host.entity = Some(instance.entity);

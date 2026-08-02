@@ -266,3 +266,78 @@ fn a_reload_re_enables_a_behavior_that_had_faulted() {
     assert_eq!(fixed.faulted, 0);
     assert_eq!(fixed.completed, 1, "it runs again without a restart");
 }
+
+// ─── A saved scene ──────────────────────────────────────────────────────────
+
+/// **What a save is for.** A guard saved at forty health loads at forty, not at
+/// the hundred its author typed.
+#[test]
+fn a_scene_value_seeds_the_instance_rather_than_the_declared_default() {
+    use khora_core::script::ScriptValue;
+    use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
+
+    let view = ScriptView {
+        programs: vec![ScriptProgram {
+            module: MODULE.to_owned(),
+            behavior: "Guard".to_owned(),
+        }],
+        instances: vec![ScriptInstance {
+            entity: entity(0),
+            program: 0,
+            authored: Some(vec![("health".to_owned(), ScriptValue::Int(40))]),
+            translation: khora_core::math::Vec3::ZERO,
+            rotation: khora_core::math::Quaternion::IDENTITY,
+            scale: khora_core::math::Vec3::ONE,
+        }],
+    };
+
+    let mut runtime = runtime_with_guard();
+    let mut host = Host::new();
+    run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
+
+    assert_eq!(
+        health(&runtime, 0),
+        Some(40),
+        "the saved value, not the declared default"
+    );
+}
+
+/// And what the scene did not carry takes the default its author wrote — the
+/// initialiser still runs, the saved values simply go back on top.
+#[test]
+fn a_field_the_scene_did_not_save_takes_its_declared_default() {
+    use khora_core::script::ScriptValue;
+    use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
+
+    let mut runtime = ScriptRuntime::new();
+    runtime.add_program(MODULE, compile(EDITED));
+    let mut host = Host::new();
+
+    let view = ScriptView {
+        programs: vec![ScriptProgram {
+            module: MODULE.to_owned(),
+            behavior: "Guard".to_owned(),
+        }],
+        instances: vec![ScriptInstance {
+            entity: entity(0),
+            program: 0,
+            // A save from before `armour` and `rage` existed.
+            authored: Some(vec![("health".to_owned(), ScriptValue::Int(40))]),
+            translation: khora_core::math::Vec3::ZERO,
+            rotation: khora_core::math::Quaternion::IDENTITY,
+            scale: khora_core::math::Vec3::ONE,
+        }],
+    };
+    run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
+
+    assert_eq!(
+        slot(&runtime, 0),
+        Some(Persisted::Scalar(Value::Int(5))),
+        "armour took its declared default"
+    );
+    assert_eq!(
+        slot(&runtime, 1),
+        Some(Persisted::Scalar(Value::Int(40))),
+        "and the saved health went back on top"
+    );
+}

@@ -31,8 +31,11 @@
 //!
 //! [`script_commands`]: crate::ecs::systems::script_commands
 
+use std::collections::HashSet;
+
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Quaternion, Vec3};
+use khora_core::script::ScriptValue;
 use khora_core::Runtime;
 
 use crate::ecs::{Script, SemanticDomain, Transform, World};
@@ -56,6 +59,15 @@ pub struct ScriptInstance {
 
     /// Index into [`ScriptView::programs`].
     pub program: u32,
+
+    /// The authored field values, **only the first frame this entity appears**.
+    ///
+    /// This is how a saved scene reaches the lane: a guard saved at forty health
+    /// has to start at forty, not at the hundred its author typed. After that
+    /// the lane holds the live state and the component is only a record, so
+    /// sending the fields again every frame would clone a string per field per
+    /// entity to deliver something nobody reads.
+    pub authored: Option<Vec<(String, ScriptValue)>>,
 
     /// Where the entity is, this frame.
     ///
@@ -97,12 +109,38 @@ impl ScriptView {
 
 /// Projects the scene's scripts into a [`ScriptView`].
 #[derive(Default)]
-pub struct ScriptFlow;
+pub struct ScriptFlow {
+    /// Entities whose authored fields have already been handed over.
+    ///
+    /// The flow is the only place that can know this: it sees every frame's
+    /// entity set, and the lane sees only what it is given. Keeping it here is
+    /// what turns "send the fields once" into something the projection can
+    /// actually decide.
+    seen: HashSet<EntityId>,
+    /// Entities appearing for the first time, computed in `select` for
+    /// `project` — which is `&self` and cannot work it out itself.
+    newcomers: HashSet<EntityId>,
+}
 
 impl Flow for ScriptFlow {
     type View = ScriptView;
     const DOMAIN: SemanticDomain = SemanticDomain::Script;
     const NAME: &'static str = "script";
+
+    fn select(&mut self, world: &World, _runtime: &Runtime) -> Selection {
+        let live: HashSet<EntityId> = world
+            .iter_entities()
+            .filter(|entity| world.get::<Script>(*entity).is_some())
+            .collect();
+
+        self.newcomers = live.difference(&self.seen).copied().collect();
+        // Replaced rather than extended, so a despawned entity is forgotten and
+        // an index that comes back — with a new generation — is a newcomer
+        // again. Growing forever would also be a leak in a scene that spawns.
+        self.seen = live;
+
+        Selection::new()
+    }
 
     fn project(&self, world: &World, _sel: &Selection, _runtime: &Runtime) -> Self::View {
         let mut view = ScriptView::default();
@@ -127,10 +165,16 @@ impl Flow for ScriptFlow {
                 }
             };
 
+            let authored = self
+                .newcomers
+                .contains(&entity)
+                .then(|| script.fields.clone());
+
             let transform = world.get::<Transform>(entity).copied();
             view.instances.push(ScriptInstance {
                 entity,
                 program: index as u32,
+                authored,
                 // An entity with a behavior but no `Transform` is legitimate —
                 // a game-state manager has nowhere to be. Identity keeps the
                 // lane branch-free rather than making every read an `Option`.
@@ -155,8 +199,13 @@ mod tests {
     use super::*;
     use khora_core::script::ScriptValue;
 
+    /// Runs both stages, the way the registration trampoline does — `select`
+    /// is where the flow works out which entities are new, so a test that
+    /// skipped it would never see an authored field.
     fn project(world: &World) -> ScriptView {
-        ScriptFlow.project(world, &Selection::new(), &Runtime::default())
+        let mut flow = ScriptFlow::default();
+        let selection = flow.select(world, &Runtime::default());
+        flow.project(world, &selection, &Runtime::default())
     }
 
     #[test]
