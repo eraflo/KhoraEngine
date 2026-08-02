@@ -196,9 +196,9 @@ impl Agent for ScriptingAgent {
         }
         let elapsed = clock.elapsed();
 
-        if let Some(report) = ctx.get::<ScriptRunReport>().copied() {
+        if let Some(report) = ctx.get::<ScriptRunReport>().cloned() {
             if let Some(elapsed) = elapsed {
-                self.observe(report, elapsed);
+                self.observe(&report, elapsed);
             }
             self.last = report;
         }
@@ -268,7 +268,7 @@ impl ScriptingAgent {
     ///
     /// Private and not part of the `Agent` trait, which `RULES.md` §8 requires:
     /// an agent's public surface is the trait and nothing else.
-    fn observe(&mut self, report: ScriptRunReport, elapsed: Duration) {
+    fn observe(&mut self, report: &ScriptRunReport, elapsed: Duration) {
         let millis = elapsed.as_secs_f64() * 1_000.0;
         // A run too short to time says nothing: the clock's own resolution
         // would dominate, and a rate read from noise is worse than the last

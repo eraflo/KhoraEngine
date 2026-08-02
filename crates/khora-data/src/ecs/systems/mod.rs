@@ -30,6 +30,7 @@ pub mod ibl_bake;
 pub mod physics_debug_extraction;
 pub mod physics_world_writeback;
 pub mod script_commands;
+pub mod script_state;
 pub mod transform_propagation;
 
 pub use transform_propagation::transform_propagation_system;

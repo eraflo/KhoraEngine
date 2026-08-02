@@ -53,7 +53,7 @@ pub use runtime::{Instance, ReloadReport, ScriptRuntime};
 use std::any::Any;
 
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, OutputDeck, Ref, Slot};
-use khora_core::script::{CommandBuffer, EventQueue};
+use khora_core::script::{CommandBuffer, EventQueue, ScriptStateUpdate, ScriptStateWriteback};
 use khora_data::flow::ScriptView;
 use khora_script::dispatch::{deliver, initialise, NotDelivered};
 use khora_script::native::Host;
@@ -71,7 +71,7 @@ const FUEL_PER_BEHAVIOR: u64 = 100_000;
 /// Returned through the context rather than logged, so the agent can report a
 /// truthful status — an agent that says "healthy" while half its behaviors were
 /// deferred is worse than one that says nothing.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct ScriptRunReport {
     /// Behaviors that ran to completion.
     pub completed: usize,
@@ -81,6 +81,12 @@ pub struct ScriptRunReport {
     pub faulted: usize,
     /// Fuel actually spent.
     pub spent: u64,
+    /// State for the scene to record, for the instances that did work.
+    ///
+    /// Carried in the report rather than written to the deck inside the loop so
+    /// the run is one thing and its delivery another — which is also what lets
+    /// [`run_behaviors`] be tested without a deck to write into.
+    pub state: Vec<ScriptStateUpdate>,
 }
 
 /// Runs each entity's behavior until the frame's fuel is gone.
@@ -138,6 +144,8 @@ impl Lane for BudgetedScriptLane {
             // Handed over together with the arena reset, so no command can
             // outlive the frame memory it might have referred to.
             deck.slot::<CommandBuffer>().extend(host.end_frame());
+            deck.slot::<ScriptStateWriteback>()
+                .extend(report.state.iter().cloned());
             report
         };
 
@@ -247,6 +255,20 @@ pub fn run_behaviors(
         state.fields = std::mem::take(&mut host.fields);
         state.initialised = true;
 
+        // A behavior that spent no fuel handled no event and ran no code, so
+        // its fields are what they were and the scene already records them.
+        // That is what makes writing back every frame affordable: a quiet frame
+        // writes nothing at all.
+        if outcome.spent() > 0 {
+            if let Some(layout) = compiled.layout(&program.behavior) {
+                report.state.push(ScriptStateUpdate {
+                    entity: instance.entity,
+                    behavior: program.behavior.clone(),
+                    fields: persistence::fields_from_store(layout, &state.fields),
+                });
+            }
+        }
+
         match outcome {
             Outcome::Completed { spent } => {
                 report.completed += 1;
@@ -278,6 +300,17 @@ enum Outcome {
     Completed { spent: u64 },
     Deferred { spent: u64 },
     Faulted { spent: u64, reason: String },
+}
+
+impl Outcome {
+    /// What it cost, however it ended.
+    fn spent(&self) -> u64 {
+        match self {
+            Self::Completed { spent } | Self::Deferred { spent } | Self::Faulted { spent, .. } => {
+                *spent
+            }
+        }
+    }
 }
 
 /// Everything one behavior's turn needs, other than the host it runs against.

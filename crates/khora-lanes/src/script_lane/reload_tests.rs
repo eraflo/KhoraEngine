@@ -341,3 +341,79 @@ fn a_field_the_scene_did_not_save_takes_its_declared_default() {
         "and the saved health went back on top"
     );
 }
+
+/// **The round trip.** What the lane made of a guard reaches the scene, and a
+/// scene loaded from it starts the guard where it left off.
+#[test]
+fn a_frames_state_travels_to_the_scene_and_back() {
+    use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
+
+    // A guard hurt to sixty.
+    let (runtime, _) = hurt_one_guard();
+    assert_eq!(health(&runtime, 0), Some(60));
+
+    // The lane hands that to the scene.
+    let mut runtime = runtime_with_guard();
+    let mut host = Host::new();
+    let report = run_behaviors(
+        &view_of(1),
+        &damage_all(1, 40),
+        &mut runtime,
+        &mut host,
+        u64::MAX,
+    );
+    assert_eq!(report.state.len(), 1, "the guard did work, so it was sent");
+    let saved = report.state[0].fields.clone();
+
+    // A fresh session loads it.
+    let view = ScriptView {
+        programs: vec![ScriptProgram {
+            module: MODULE.to_owned(),
+            behavior: "Guard".to_owned(),
+        }],
+        instances: vec![ScriptInstance {
+            entity: entity(0),
+            program: 0,
+            authored: Some(saved),
+            translation: khora_core::math::Vec3::ZERO,
+            rotation: khora_core::math::Quaternion::IDENTITY,
+            scale: khora_core::math::Vec3::ONE,
+        }],
+    };
+    let mut loaded = runtime_with_guard();
+    let mut host = Host::new();
+    run_behaviors(&view, &EventQueue::new(), &mut loaded, &mut host, u64::MAX);
+
+    assert_eq!(health(&loaded, 0), Some(60), "it resumed where it left off");
+}
+
+/// **Why writing back every frame is affordable.** A behavior that handled no
+/// event ran no code and changed nothing, so a quiet frame sends nothing.
+#[test]
+fn a_quiet_frame_sends_no_state() {
+    let mut runtime = runtime_with_guard();
+    let mut host = Host::new();
+
+    // The first frame initialises, which is work.
+    let first = run_behaviors(
+        &view_of(1),
+        &EventQueue::new(),
+        &mut runtime,
+        &mut host,
+        u64::MAX,
+    );
+    assert_eq!(first.state.len(), 1, "the defaults are worth recording");
+
+    // The second has nothing to do.
+    let second = run_behaviors(
+        &view_of(1),
+        &EventQueue::new(),
+        &mut runtime,
+        &mut host,
+        u64::MAX,
+    );
+    assert!(
+        second.state.is_empty(),
+        "nothing happened, nothing was sent"
+    );
+}
