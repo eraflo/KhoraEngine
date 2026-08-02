@@ -47,7 +47,7 @@ use khora_core::control::gorna::{
 use khora_core::lane::{LaneContext, LaneRegistry, Ref, Slot};
 use khora_core::script::{CommandBuffer, EventQueue};
 use khora_core::{EngineContext, Stopwatch};
-use khora_data::flow::ScriptView;
+use khora_data::flow::{ScriptReloadView, ScriptView};
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
 use khora_script::vm::Program;
 
@@ -154,6 +154,13 @@ impl Agent for ScriptingAgent {
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
+        // Applied before anything runs, so a frame never executes the version
+        // the author has just replaced. Arriving through the bus rather than
+        // from a shared cache is what keeps `access` honest.
+        if let Some(reloads) = context.bus.get::<ScriptReloadView>() {
+            apply_reloads(&mut self.runtime, reloads);
+        }
+
         let Some(view): Option<&ScriptView> = context.bus.get() else {
             // The flow has not run, or the scene holds no scripts.
             return;
@@ -272,6 +279,31 @@ impl ScriptingAgent {
 
         let observed = report.spent as f64 / millis;
         self.rate = self.rate * (1.0 - RATE_BLEND) + observed * RATE_BLEND;
+    }
+}
+
+/// Applies the modules recompiled this frame, reporting what each cost.
+///
+/// The reporting is the point of doing it here rather than inside the runtime:
+/// a rename drops a field's value, and an author who is not told is left to
+/// discover it in whatever the guard does next.
+fn apply_reloads(runtime: &mut ScriptRuntime, view: &ScriptReloadView) {
+    for reload in &view.reloaded {
+        for report in runtime.reload(&reload.module, reload.program.clone()) {
+            if report.lost_anything() {
+                log::warn!(
+                    "hot-reload: `{}` lost {} — a renamed field keeps no value",
+                    report.behavior,
+                    report.dropped.join(", ")
+                );
+            } else {
+                log::info!(
+                    "hot-reload: `{}` kept {} field(s)",
+                    report.behavior,
+                    report.kept.len()
+                );
+            }
+        }
     }
 }
 

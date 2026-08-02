@@ -21,6 +21,8 @@
 pub mod asset;
 pub mod asset_resolver;
 pub mod sandbox_fs;
+pub mod script_compile;
+pub mod script_hot_reload;
 pub mod serialization;
 pub mod shader_hot_reload;
 pub mod vfs;
