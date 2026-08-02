@@ -42,9 +42,11 @@
 pub mod runtime;
 
 #[cfg(test)]
+mod reload_tests;
+#[cfg(test)]
 mod tests;
 
-pub use runtime::{Instance, ScriptRuntime};
+pub use runtime::{Instance, ReloadReport, ScriptRuntime};
 
 use std::any::Any;
 
@@ -207,16 +209,20 @@ pub fn run_behaviors(
         host.entity = Some(instance.entity);
         host.fields = std::mem::take(&mut state.fields);
         let was_initialised = state.initialised;
+        let carried = state.carried.take();
 
         let slice = remaining.min(FUEL_PER_BEHAVIOR);
         let outcome = run_one(
-            &compiled,
-            &program.behavior,
-            instance.entity,
-            events,
+            Invocation {
+                program: &compiled,
+                behavior: &program.behavior,
+                entity: instance.entity,
+                events,
+                fuel: slice,
+                initialised: was_initialised,
+                carried: carried.as_ref(),
+            },
             host,
-            slice,
-            was_initialised,
         );
 
         // The fields go back whatever happened, so a fault does not lose the
@@ -258,20 +264,45 @@ enum Outcome {
     Faulted { spent: u64, reason: String },
 }
 
-fn run_one(
-    program: &khora_script::vm::Program,
-    behavior: &str,
+/// Everything one behavior's turn needs, other than the host it runs against.
+///
+/// Grouped rather than passed loose: they describe a single invocation and
+/// always travel together, so a call site cannot get two of them out of order.
+struct Invocation<'a> {
+    program: &'a khora_script::vm::Program,
+    behavior: &'a str,
     entity: khora_core::ecs::entity::EntityId,
-    events: &EventQueue,
-    host: &mut Host,
+    events: &'a EventQueue,
     fuel: u64,
+    /// Whether the instance has already had its declared defaults produced.
     initialised: bool,
-) -> Outcome {
+    /// Values to restore after the initialiser, when this follows a reload.
+    carried: Option<&'a khora_script::arena::PersistentStore>,
+}
+
+fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
+    let Invocation {
+        program,
+        behavior,
+        entity,
+        events,
+        fuel,
+        initialised,
+        carried,
+    } = call;
     let mut spent = 0;
 
     if !initialised {
         match initialise(program, behavior, host, fuel) {
-            Some((Run::Completed, cost)) => spent += cost,
+            Some((Run::Completed, cost)) => {
+                spent += cost;
+                // After the defaults, not before: the initialiser writes every
+                // slot, so anything carried across a reload has to go back on
+                // top of what it just produced.
+                if let Some(carried) = carried {
+                    runtime::restore_carried(&mut host.fields, carried);
+                }
+            }
             Some((Run::Faulted(fault), cost)) => {
                 return Outcome::Faulted {
                     spent: spent + cost,

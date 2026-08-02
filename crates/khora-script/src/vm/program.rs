@@ -35,11 +35,38 @@ pub struct Function {
     pub code: Vec<Instruction>,
 }
 
+/// A behavior's field slots, in the order the compiler assigned them.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct BehaviorLayout {
+    /// The behavior's name.
+    pub name: String,
+    /// Field names, index = slot.
+    pub fields: Vec<String>,
+}
+
+impl BehaviorLayout {
+    /// The slot a field name occupies.
+    pub fn slot_of(&self, field: &str) -> Option<usize> {
+        self.fields.iter().position(|known| known == field)
+    }
+}
+
 /// A whole compiled module.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Program {
     /// Functions, addressed by index.
     pub functions: Vec<Function>,
+    /// What each behavior's field slots are called.
+    ///
+    /// The running code addresses a field by slot, which is right — a name
+    /// lookup per access would be paid on every frame for something fixed at
+    /// compile time. But a slot is only meaningful against the program that
+    /// assigned it, and hot-reload replaces exactly that: after an edit, slot 1
+    /// may be a different field, or the same field moved. Matching the old
+    /// layout to the new one by name is what lets an instance keep the values
+    /// that still mean something, and the names have to be recorded here for
+    /// that comparison to be possible at all.
+    pub behaviors: Vec<BehaviorLayout>,
     /// Every string literal the program contains, deduplicated.
     ///
     /// Held once for the whole program rather than per function, and named by
@@ -57,6 +84,11 @@ impl Program {
     /// The literal at `index`.
     pub fn string(&self, index: u32) -> Option<&str> {
         self.strings.get(index as usize).map(String::as_str)
+    }
+
+    /// The field layout of the named behavior.
+    pub fn layout(&self, behavior: &str) -> Option<&BehaviorLayout> {
+        self.behaviors.iter().find(|b| b.name == behavior)
     }
 
     /// The function named `name`.
@@ -82,6 +114,7 @@ mod tests {
     fn functions_resolve_by_name_to_an_index() {
         let program = Program {
             strings: Vec::new(),
+            behaviors: Vec::new(),
             functions: vec![empty("First"), empty("Second")],
         };
         assert_eq!(program.index_of("Second"), Some(1));

@@ -255,13 +255,22 @@ impl Compiler {
     /// body is read, so a member can name a field declared below it.
     fn compile_behavior(&mut self, decl: &crate::ast::BehaviorDecl) {
         self.fields.clear();
+        let mut layout = crate::vm::BehaviorLayout {
+            name: decl.name.clone(),
+            fields: Vec::new(),
+        };
         for member in &decl.members {
             if let BehaviorMember::Field(field) = member {
                 let slot = self.fields.len() as u16;
                 self.fields
                     .insert(field.name.clone(), (slot, shape_of(&field.ty)));
+                layout.fields.push(field.name.clone());
             }
         }
+        // Recorded even when empty: a behavior that declares no fields still has
+        // to be findable, or a reload would treat "no layout" and "no fields" as
+        // the same thing and reset an instance that had nothing to lose.
+        self.program.behaviors.push(layout);
 
         self.compile_field_defaults(decl);
 

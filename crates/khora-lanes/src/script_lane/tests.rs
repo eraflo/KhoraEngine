@@ -27,10 +27,10 @@ use khora_script::vm::Program;
 
 use super::{run_behaviors, ScriptRuntime};
 
-const MODULE: &str = "ai/guard.erg";
+pub(super) const MODULE: &str = "ai/guard.erg";
 
 /// A guard whose health falls when it is hurt.
-const GUARD: &str = r#"
+pub(super) const GUARD: &str = r#"
 behavior Guard {
     int health = 100;
 
@@ -40,7 +40,7 @@ behavior Guard {
 }
 "#;
 
-fn compile(source: &str) -> Program {
+pub(super) fn compile(source: &str) -> Program {
     let lexed = khora_script::lex(source);
     assert!(lexed.diagnostics.is_empty(), "{:?}", lexed.diagnostics);
 
@@ -59,7 +59,7 @@ fn compile(source: &str) -> Program {
     compiled.program
 }
 
-fn entity(index: u32) -> EntityId {
+pub(super) fn entity(index: u32) -> EntityId {
     EntityId {
         index,
         generation: 1,
@@ -67,7 +67,7 @@ fn entity(index: u32) -> EntityId {
 }
 
 /// A view of `count` guards, entities 0..count.
-fn view_of(count: u32) -> ScriptView {
+pub(super) fn view_of(count: u32) -> ScriptView {
     ScriptView {
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
@@ -85,14 +85,14 @@ fn view_of(count: u32) -> ScriptView {
     }
 }
 
-fn runtime_with_guard() -> ScriptRuntime {
+pub(super) fn runtime_with_guard() -> ScriptRuntime {
     let mut runtime = ScriptRuntime::new();
     runtime.add_program(MODULE, compile(GUARD));
     runtime
 }
 
 /// `Damaged(amount)` for every entity in the view.
-fn damage_all(count: u32, amount: i64) -> EventQueue {
+pub(super) fn damage_all(count: u32, amount: i64) -> EventQueue {
     let mut queue = EventQueue::new();
     for index in 0..count {
         queue.push(ScriptEvent::new(entity(index), "Damaged").with(ScriptValue::Int(amount)));
@@ -100,7 +100,7 @@ fn damage_all(count: u32, amount: i64) -> EventQueue {
     queue
 }
 
-fn health(runtime: &ScriptRuntime, index: u32) -> Option<i64> {
+pub(super) fn health(runtime: &ScriptRuntime, index: u32) -> Option<i64> {
     match runtime.peek(entity(index), "Guard")?.fields.get(0)? {
         Persisted::Scalar(value) => value.as_int(),
         _ => None,

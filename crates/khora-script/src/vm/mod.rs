@@ -45,7 +45,7 @@ pub mod value;
 mod tests;
 
 pub use instruction::{Instruction, Reg};
-pub use program::{Function, Program};
+pub use program::{BehaviorLayout, Function, Program};
 pub use value::{resolve_str, StrError, StrRef, Value};
 
 use serde::{Deserialize, Serialize};
