@@ -151,7 +151,7 @@ fn an_event_reaches_its_handler_and_changes_a_field() {
     )
     .expect("delivered");
 
-    assert_eq!(outcome.0, Run::Completed);
+    assert_eq!(outcome.outcome, Run::Completed);
     assert_eq!(health(&host), 70);
 }
 
@@ -297,8 +297,8 @@ fn a_handler_stops_firing_once_the_entity_is_gone() {
     // The engine applied that command; the entity is no longer alive.
     let after = ScriptEvent::new(target, "Damaged").with(ScriptValue::Int(5));
     assert_eq!(
-        deliver(&program, "Guard", &after, &mut host, u64::MAX, living(&[])),
-        Err(NotDelivered::NoSuchEntity(target))
+        deliver(&program, "Guard", &after, &mut host, u64::MAX, living(&[])).err(),
+        Some(NotDelivered::NoSuchEntity(target))
     );
     assert_eq!(health(&host), -10, "unchanged by the second event");
 }
@@ -476,7 +476,7 @@ fn a_slot_the_store_does_not_have_is_not_quietly_a_number() {
     .expect("delivered");
 
     assert!(
-        matches!(outcome.0, Run::Faulted(_)),
+        matches!(outcome.outcome, Run::Faulted(_)),
         "adding to an unset field must not produce a number: {outcome:?}"
     );
     assert_eq!(
@@ -880,7 +880,7 @@ mod states {
             living(&[target]),
         )
         .expect("delivered");
-        assert_eq!(outcome.0, Run::Completed);
+        assert_eq!(outcome.outcome, Run::Completed);
     }
 }
 

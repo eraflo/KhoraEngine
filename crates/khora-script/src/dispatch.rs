@@ -269,7 +269,7 @@ pub fn deliver(
     host: &mut Host,
     fuel: u64,
     alive: impl Fn(EntityId) -> bool,
-) -> Result<(Run, u64), NotDelivered> {
+) -> Result<Delivered, NotDelivered> {
     if !alive(event.target) {
         return Err(NotDelivered::NoSuchEntity(event.target));
     }
@@ -312,7 +312,32 @@ pub fn deliver(
             expected: handler.arity,
             found: args.len(),
         })?;
-    Ok(machine.run_counting(program, host, fuel))
+    let (outcome, spent) = machine.run_counting(program, host, fuel);
+
+    // A handler that suspended hands its machine back rather than dropping it.
+    // Dropping it would make `await` a statement that silently ends the member:
+    // the code after it would never run and nothing would say why.
+    let suspended = matches!(outcome, Run::Suspended(_)).then_some(machine);
+
+    Ok(Delivered {
+        outcome,
+        spent,
+        suspended,
+    })
+}
+
+/// What delivering an event did.
+#[derive(Debug)]
+pub struct Delivered {
+    /// How the handler ended.
+    pub outcome: Run,
+    /// What it cost.
+    pub spent: u64,
+    /// The frozen machine, when it stopped part-way.
+    ///
+    /// The caller keeps it and resumes it; the wait it asked for is on the
+    /// host, in [`awaiting`](Host::awaiting).
+    pub suspended: Option<Machine>,
 }
 
 /// The register value an event argument becomes.

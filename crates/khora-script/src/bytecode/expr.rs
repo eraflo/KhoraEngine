@@ -108,6 +108,20 @@ impl Compiler {
 
             Expr::Call { callee, args, span } => self.compile_call(callee, args, *span),
 
+            // The duration is evaluated *before* suspending, so what is waited
+            // for is what the expression meant at the moment `await` was
+            // reached — not what it would mean when the machine resumes, by
+            // which time the field it read may have changed.
+            Expr::Await { operand, .. } => {
+                let mark = self.registers.mark();
+                let (seconds, _) = self.compile_expr(operand);
+                self.registers.release_to(mark);
+
+                let dst = self.registers.temp();
+                self.emit(Instruction::Await { seconds, dst });
+                (dst, Shape::Other)
+            }
+
             Expr::Cast { ty, operand, .. } => {
                 // int and float share a register representation, and the VM
                 // widens an int wherever a float is read. The cast therefore
@@ -410,6 +424,19 @@ impl Compiler {
             self.error("only named functions can be called yet", span);
             return self.constant(Value::Unit, Shape::Other);
         };
+        // A member calls its siblings by their bare name — `Riposte()`, not
+        // `Guard.Riposte()`, which is not even syntax. Resolved first, so a
+        // behavior's own method wins over a free function of the same name:
+        // inside `Guard`, `Attack()` means the guard's.
+        let sibling = self
+            .behavior
+            .as_ref()
+            .map(|layout| format!("{}.{name}", layout.name))
+            .and_then(|qualified| self.signatures.get(&qualified).copied());
+        if let Some(index) = sibling {
+            return self.emit_call(CallTarget::Script(index), name, args);
+        }
+
         // The script's own functions first, matching the checker: whichever it
         // resolved the call against is the one that must be emitted.
         let target = match self.signatures.get(name).copied() {
@@ -423,6 +450,15 @@ impl Compiler {
             },
         };
 
+        self.emit_call(target, name, args)
+    }
+
+    /// Places the arguments and emits the call.
+    ///
+    /// Split out because a sibling call resolves differently but is emitted
+    /// identically — duplicating the argument placement is exactly how the two
+    /// would drift apart.
+    fn emit_call(&mut self, target: CallTarget, name: &str, args: &[Expr]) -> (Reg, Shape) {
         // Arguments must land in *consecutive* registers: the callee's frame
         // starts at the first of them, so its parameters need no copying.
         //

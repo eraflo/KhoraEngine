@@ -420,3 +420,182 @@ fn a_quiet_frame_sends_no_state() {
         "nothing happened, nothing was sent"
     );
 }
+
+// ─── await ──────────────────────────────────────────────────────────────────
+
+mod awaiting {
+    use super::*;
+    use khora_core::script::{ScriptEvent, ScriptValue};
+    use khora_data::flow::ScriptView;
+
+    /// A guard whose riposte lands half a second after it is hurt.
+    const RIPOSTE: &str = r#"
+    behavior Guard {
+        int health = 100;
+        int hits = 0;
+
+        on Damaged(int amount) {
+            health -= amount;
+            Riposte();
+        }
+
+        async void Riposte() {
+            await 0.5s;
+            hits += 1;
+        }
+    }
+    "#;
+
+    fn view_at(delta: f32) -> ScriptView {
+        let mut view = view_of(1);
+        view.delta_seconds = delta;
+        view
+    }
+
+    fn hits(runtime: &ScriptRuntime) -> Option<i64> {
+        match runtime.peek(entity(0), "Guard")?.fields.get(1)? {
+            Persisted::Scalar(Value::Int(n)) => Some(*n),
+            _ => None,
+        }
+    }
+
+    fn hurt_once() -> EventQueue {
+        let mut queue = EventQueue::new();
+        queue.push(ScriptEvent::new(entity(0), "Damaged").with(ScriptValue::Int(30)));
+        queue
+    }
+
+    /// **What `await` is for.** The code before it runs now; the code after it
+    /// runs later, in the same call, with the same locals.
+    #[test]
+    fn the_code_after_an_await_runs_when_the_wait_elapses() {
+        let mut runtime = ScriptRuntime::new();
+        runtime.add_program(MODULE, compile(RIPOSTE));
+        let mut host = Host::new();
+
+        run_behaviors(
+            &view_at(0.0),
+            &hurt_once(),
+            &mut runtime,
+            &mut host,
+            u64::MAX,
+        );
+        assert_eq!(health(&runtime, 0), Some(70), "the first half ran");
+        assert_eq!(hits(&runtime), Some(0), "the second half has not");
+
+        // Half a second of play.
+        for _ in 0..30 {
+            run_behaviors(
+                &view_at(1.0 / 60.0),
+                &EventQueue::new(),
+                &mut runtime,
+                &mut host,
+                u64::MAX,
+            );
+        }
+        assert_eq!(hits(&runtime), Some(1), "and now it has");
+    }
+
+    /// A behavior mid-sequence is busy: nothing else it declares starts while
+    /// it owes a continuation.
+    #[test]
+    fn a_waiting_behavior_holds_its_machine() {
+        let mut runtime = ScriptRuntime::new();
+        runtime.add_program(MODULE, compile(RIPOSTE));
+        let mut host = Host::new();
+
+        run_behaviors(
+            &view_at(0.0),
+            &hurt_once(),
+            &mut runtime,
+            &mut host,
+            u64::MAX,
+        );
+
+        let instance = runtime.peek(entity(0), "Guard").expect("still there");
+        assert!(instance.pending.is_some(), "the machine was kept");
+        assert!(
+            instance.pending.as_ref().unwrap().remaining > 0.4,
+            "with roughly the half second it asked for"
+        );
+    }
+
+    /// **The promise from before any syntax existed.** A suspended machine
+    /// survives leaving the process — so a scene saved mid-sequence loads
+    /// mid-sequence.
+    #[test]
+    fn a_pending_sequence_survives_serialization() {
+        let mut runtime = ScriptRuntime::new();
+        runtime.add_program(MODULE, compile(RIPOSTE));
+        let mut host = Host::new();
+
+        run_behaviors(
+            &view_at(0.0),
+            &hurt_once(),
+            &mut runtime,
+            &mut host,
+            u64::MAX,
+        );
+        let pending = runtime
+            .peek(entity(0), "Guard")
+            .and_then(|i| i.pending.clone())
+            .expect("a suspended sequence");
+
+        let json = serde_json::to_string(&pending).expect("serialises");
+        let revived: crate::script_lane::Pending =
+            serde_json::from_str(&json).expect("deserialises");
+
+        assert_eq!(revived, pending, "the round trip is lossless");
+    }
+
+    /// It does not resume early, and it does not resume twice.
+    #[test]
+    fn a_wait_elapses_once() {
+        let mut runtime = ScriptRuntime::new();
+        runtime.add_program(MODULE, compile(RIPOSTE));
+        let mut host = Host::new();
+
+        run_behaviors(
+            &view_at(0.0),
+            &hurt_once(),
+            &mut runtime,
+            &mut host,
+            u64::MAX,
+        );
+
+        // A quarter second: too soon.
+        run_behaviors(
+            &view_at(0.25),
+            &EventQueue::new(),
+            &mut runtime,
+            &mut host,
+            u64::MAX,
+        );
+        assert_eq!(hits(&runtime), Some(0));
+
+        // Past the half second.
+        run_behaviors(
+            &view_at(0.4),
+            &EventQueue::new(),
+            &mut runtime,
+            &mut host,
+            u64::MAX,
+        );
+        assert_eq!(hits(&runtime), Some(1));
+
+        // And it is done.
+        run_behaviors(
+            &view_at(1.0),
+            &EventQueue::new(),
+            &mut runtime,
+            &mut host,
+            u64::MAX,
+        );
+        assert_eq!(hits(&runtime), Some(1), "not resumed a second time");
+        assert!(runtime
+            .peek(entity(0), "Guard")
+            .expect("still there")
+            .pending
+            .is_none());
+    }
+}

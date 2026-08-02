@@ -143,6 +143,12 @@ pub struct Host {
     /// entity. This is also what a scene save writes out, which is why it is a
     /// [`PersistentStore`] and not more registers.
     pub fields: PersistentStore,
+    /// How long the running program asked to wait, set by `await`.
+    ///
+    /// Cleared by whoever acts on it. Left here rather than returned from
+    /// `run`, because a suspension for fuel and a suspension for time are the
+    /// same stop — what differs is only what the caller should do next.
+    pub awaiting: Option<f32>,
     /// The entity the running behavior belongs to.
     pub entity: Option<EntityId>,
 }
@@ -161,6 +167,7 @@ impl Host {
             commands: CommandBuffer::new(),
             arena: Arena::new(),
             fields: PersistentStore::new(),
+            awaiting: None,
             entity: None,
         }
     }

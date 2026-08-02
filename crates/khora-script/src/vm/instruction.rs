@@ -311,7 +311,20 @@ pub enum Instruction {
         dst: Reg,
     },
 
-    /// Suspends voluntarily. Stands in for `await` until it is wired up.
+    /// Suspends until `seconds` of game time have passed.
+    ///
+    /// The same suspension the fuel budget uses — the machine stops on an
+    /// instruction boundary and can be resumed. Only the *reason* differs, and
+    /// the reason is what the caller reads to decide when to come back.
+    Await {
+        /// Register holding the duration, in seconds.
+        seconds: Reg,
+        /// Where the awaited value goes. `Unit` for a duration: it is the
+        /// waiting that matters, not what it produces.
+        dst: Reg,
+    },
+
+    /// Suspends voluntarily, for no stated reason.
     Yield,
     /// Stops the program.
     Halt,

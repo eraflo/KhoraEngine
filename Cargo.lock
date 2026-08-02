@@ -2622,6 +2622,7 @@ dependencies = [
  "khora-infra",
  "khora-io",
  "khora-lanes",
+ "khora-script",
  "khora-telemetry",
  "log",
  "tempfile",
@@ -2668,6 +2669,7 @@ dependencies = [
  "inventory",
  "khora-core",
  "khora-macros",
+ "khora-script",
  "log",
  "rmp-serde",
  "ron",
@@ -2758,6 +2760,7 @@ dependencies = [
  "inventory",
  "khora-core",
  "khora-data",
+ "khora-script",
  "khora-telemetry",
  "log",
  "lz4_flex",
@@ -2783,9 +2786,11 @@ dependencies = [
  "khora-core",
  "khora-data",
  "khora-io",
+ "khora-script",
  "log",
  "ron",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2821,7 +2826,10 @@ dependencies = [
 name = "khora-script"
 version = "0.1.0"
 dependencies = [
+ "inventory",
  "khora-core",
+ "khora-macros",
+ "log",
  "serde",
  "serde_json",
 ]

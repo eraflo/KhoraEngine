@@ -32,7 +32,8 @@ use std::collections::HashMap;
 use khora_core::ecs::entity::EntityId;
 use khora_script::arena::{Persisted, PersistentStore};
 use khora_script::vm::Value;
-use khora_script::vm::{BehaviorLayout, Program};
+use khora_script::vm::{BehaviorLayout, Machine, Program};
+use serde::{Deserialize, Serialize};
 
 /// One behavior instance's state.
 #[derive(Debug, Default)]
@@ -51,6 +52,19 @@ pub struct Instance {
     /// and spend the budget doing it.
     pub disabled: bool,
 
+    /// A member stopped part-way through an `await`, and when to resume it.
+    ///
+    /// The machine is kept whole rather than the continuation being rebuilt:
+    /// what a suspension captured is a program counter, a register file and a
+    /// call stack, and re-deriving those would mean knowing where the code had
+    /// got to — which is exactly what the machine already records.
+    ///
+    /// One per instance, not one per call. A behavior can be part-way through
+    /// one sequence at a time; a second `await` starting while the first is
+    /// pending would mean two answers to "where is this behavior", and the
+    /// language has no syntax for asking which.
+    pub pending: Option<Pending>,
+
     /// Values carried across a reload, to be restored **after** the new
     /// program's initialiser has run.
     ///
@@ -60,6 +74,20 @@ pub struct Instance {
     /// values the reload just carried. So they are set aside and put back on
     /// top — the new field gets its default, the old ones keep what they had.
     pub carried: Option<PersistentStore>,
+}
+
+/// A suspended member and how long is left of its wait.
+///
+/// Serialisable, which is what makes saving a scene mid-sequence possible: an
+/// `async` attack half-way through its wind-up loads half-way through it. That
+/// was proven of the machine before any syntax existed; this is where the
+/// promise is finally kept.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Pending {
+    /// The frozen machine.
+    pub machine: Machine,
+    /// Seconds still to wait — a countdown, for the reason a timer's is.
+    pub remaining: f32,
 }
 
 /// What a reload did to one behavior's instances.

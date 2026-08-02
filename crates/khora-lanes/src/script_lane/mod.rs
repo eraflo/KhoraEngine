@@ -48,7 +48,7 @@ mod reload_tests;
 mod tests;
 
 pub use persistence::{fields_from_store, store_from_fields};
-pub use runtime::{Instance, ReloadReport, ScriptRuntime};
+pub use runtime::{Instance, Pending, ReloadReport, ScriptRuntime};
 
 use std::any::Any;
 
@@ -234,6 +234,7 @@ pub fn run_behaviors(
         host.fields = std::mem::take(&mut state.fields);
         let was_initialised = state.initialised;
         let carried = state.carried.take();
+        let pending = state.pending.take();
 
         let slice = remaining.min(FUEL_PER_BEHAVIOR);
         let outcome = run_one(
@@ -246,6 +247,7 @@ pub fn run_behaviors(
                 initialised: was_initialised,
                 carried: carried.as_ref(),
                 delta: view.delta_seconds,
+                resuming: pending,
             },
             host,
         );
@@ -279,6 +281,16 @@ pub fn run_behaviors(
                 report.deferred += 1;
                 report.spent += spent;
             }
+            // Neither completed nor deferred: the behavior is mid-sequence and
+            // will carry on when its wait elapses. Counted as completed because
+            // it did exactly what it meant to — reporting it as deferred would
+            // make the agent's health score fall for a script working as
+            // written.
+            Outcome::Awaiting { spent, pending } => {
+                runtime.instance(instance.entity, &program.behavior).pending = pending;
+                report.completed += 1;
+                report.spent += spent;
+            }
             Outcome::Faulted { spent, reason } => {
                 log::error!(
                     "script `{}` on entity {}v{} faulted and was disabled: {reason}",
@@ -298,18 +310,31 @@ pub fn run_behaviors(
 
 /// What running one behavior did.
 enum Outcome {
-    Completed { spent: u64 },
-    Deferred { spent: u64 },
-    Faulted { spent: u64, reason: String },
+    /// Part-way through an `await`, with the machine kept for next frame.
+    Awaiting {
+        spent: u64,
+        pending: Option<Pending>,
+    },
+    Completed {
+        spent: u64,
+    },
+    Deferred {
+        spent: u64,
+    },
+    Faulted {
+        spent: u64,
+        reason: String,
+    },
 }
 
 impl Outcome {
     /// What it cost, however it ended.
     fn spent(&self) -> u64 {
         match self {
-            Self::Completed { spent } | Self::Deferred { spent } | Self::Faulted { spent, .. } => {
-                *spent
-            }
+            Self::Completed { spent }
+            | Self::Deferred { spent }
+            | Self::Awaiting { spent, .. }
+            | Self::Faulted { spent, .. } => *spent,
         }
     }
 }
@@ -328,6 +353,8 @@ struct Invocation<'a> {
     initialised: bool,
     /// The seconds since the previous frame, for the countdowns.
     delta: f32,
+    /// A member part-way through an `await`, if there is one.
+    resuming: Option<Pending>,
     /// Values to restore after the initialiser, when this follows a reload.
     carried: Option<&'a khora_script::arena::PersistentStore>,
 }
@@ -342,6 +369,7 @@ fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
         initialised,
         carried,
         delta,
+        resuming,
     } = call;
     let mut spent = 0;
 
@@ -369,6 +397,44 @@ fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
         }
     }
 
+    // A member part-way through an `await` resumes before anything else runs.
+    // Before the timers and the events, because it is *already* the behavior's
+    // turn — it never finished — and letting a new event start while an old
+    // sequence is still owed its continuation would interleave two answers to
+    // what the behavior is doing.
+    if let Some(mut pending) = resuming {
+        pending.remaining -= delta;
+        if pending.remaining > 0.0 {
+            // Still waiting. Nothing else runs either: the behavior is busy.
+            return Outcome::Awaiting {
+                spent,
+                pending: Some(pending),
+            };
+        }
+
+        let (outcome, cost) =
+            pending
+                .machine
+                .run_counting(program, host, fuel.saturating_sub(spent));
+        spent += cost;
+
+        match outcome {
+            Run::Completed => {}
+            Run::Suspended(_) => {
+                return Outcome::Awaiting {
+                    spent,
+                    pending: Some(waiting_again(pending.machine, host)),
+                }
+            }
+            Run::Faulted(fault) => {
+                return Outcome::Faulted {
+                    spent,
+                    reason: format!("{fault:?}"),
+                }
+            }
+        }
+    }
+
     // Before the events, so a `become` a timer performs decides which state
     // hears what arrives this frame — the schedule is what the behavior does on
     // its own, and an event is what happens to it.
@@ -391,18 +457,31 @@ fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
         }
 
         match deliver(program, behavior, event, host, left, |_| true) {
-            Ok((Run::Completed, cost)) => spent += cost,
-            Ok((Run::Suspended(_), cost)) => {
-                return Outcome::Deferred {
-                    spent: spent + cost,
+            Ok(done) if matches!(done.outcome, Run::Completed) => spent += done.spent,
+            Ok(done) => match done.outcome {
+                Run::Suspended(_) => {
+                    spent += done.spent;
+                    return match done.suspended {
+                        // `await`: the machine is kept and resumed when the
+                        // wait elapses.
+                        Some(machine) => Outcome::Awaiting {
+                            spent,
+                            pending: Some(waiting_again(machine, host)),
+                        },
+                        // Out of fuel with nothing to keep: the handler is
+                        // retried whole next frame, which is what deferring
+                        // has always meant.
+                        None => Outcome::Deferred { spent },
+                    };
                 }
-            }
-            Ok((Run::Faulted(fault), cost)) => {
-                return Outcome::Faulted {
-                    spent: spent + cost,
-                    reason: format!("{fault:?}"),
+                Run::Faulted(fault) => {
+                    return Outcome::Faulted {
+                        spent: spent + done.spent,
+                        reason: format!("{fault:?}"),
+                    }
                 }
-            }
+                Run::Completed => unreachable!("matched above"),
+            },
             // A behavior that does not handle this event is the normal case,
             // not a mistake — a guard hears `Damaged` and ignores `Opened`.
             Err(NotDelivered::NoHandler { .. }) => {}
@@ -416,4 +495,15 @@ fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
     }
 
     Outcome::Completed { spent }
+}
+
+/// Packages a machine that has just suspended, with what it asked to wait.
+///
+/// A suspension with no stated wait resumes next frame: the machine stopped for
+/// fuel, not for time, and the budget is the thing that will have changed.
+fn waiting_again(machine: khora_script::vm::Machine, host: &mut Host) -> Pending {
+    Pending {
+        machine,
+        remaining: host.awaiting.take().unwrap_or(0.0),
+    }
 }

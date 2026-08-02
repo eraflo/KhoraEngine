@@ -532,6 +532,22 @@ impl Machine {
                 dst,
             } => self.native_call(program, host, function, base, argc, dst),
 
+            Instruction::Await { seconds, dst } => {
+                let value = self.read(seconds)?;
+                let wait = value.as_float().ok_or(Fault::TypeMismatch {
+                    expected: "Duration",
+                    found: value.type_name(),
+                })?;
+                // Written before suspending, so resuming finds it already there
+                // and does not have to know an `await` was in progress.
+                self.write(dst, Value::Unit)?;
+                // The caller reads this to decide when to come back. Left on the
+                // host rather than returned, because the suspension itself is
+                // the same one the budget produces — only the reason differs.
+                host.awaiting = Some(wait.max(0.0));
+                Ok(Step::Yield)
+            }
+
             Instruction::Yield => Ok(Step::Yield),
             Instruction::Halt => Ok(Step::Halt),
         }
