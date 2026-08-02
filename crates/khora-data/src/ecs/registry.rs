@@ -43,12 +43,20 @@ pub enum SemanticDomain {
     Physics,
     /// For components driving the in-world UI subsystem (UiNode, UiText, etc).
     Ui,
+    /// For gameplay logic attached to entities — which behavior an entity runs
+    /// and the state that behavior keeps.
+    ///
+    /// Its own domain rather than a corner of `Spatial` because the two change
+    /// on different clocks: a transform moves every frame, while which script an
+    /// entity runs changes when a designer edits the scene. Sharing an epoch
+    /// would mean one invalidates the other's cached projection for no reason.
+    Script,
 }
 
 impl SemanticDomain {
     /// Number of semantic domains — sizes fixed per-domain tables such as the
     /// [`World`](crate::ecs::World)'s change epochs.
-    pub const COUNT: usize = 5;
+    pub const COUNT: usize = 6;
 
     /// Dense index of this domain in `0..COUNT`, used to address fixed
     /// per-domain arrays without a `HashMap` lookup.
@@ -59,6 +67,7 @@ impl SemanticDomain {
             SemanticDomain::Audio => 2,
             SemanticDomain::Physics => 3,
             SemanticDomain::Ui => 4,
+            SemanticDomain::Script => 5,
         }
     }
 }
@@ -90,7 +99,7 @@ impl SemanticDomain {
 ///
 /// Persistence stays a separate question, governed by
 /// `#[component(no_serializable)]` and `#[component(skip)]` — a `ToolAuthored`
-/// component such as `Prefab` must persist even though nobody adds it by hand.
+/// component such as `Parent` must persist even though nobody adds it by hand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ComponentProvenance {
     /// Written by a human through the editor or by game code. Belongs in a
@@ -99,8 +108,8 @@ pub enum ComponentProvenance {
     #[default]
     Authored,
 
-    /// Written by a tool action rather than by hand — `Prefab`, whose `source`
-    /// is set by "instantiate prefab". It persists and must survive
+    /// Written by a tool action rather than by hand — `Parent`, whose edge is
+    /// set by dragging in the scene tree. It persists and must survive
     /// duplication, but adding an empty one by hand is meaningless, so it is
     /// not offered in the menu.
     ToolAuthored,

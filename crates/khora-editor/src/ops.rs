@@ -23,14 +23,13 @@ use khora_sdk::GameWorld;
 /// in [`ComponentJson::domain`]. Kept here so `khora-core` doesn't have to
 /// know about `khora-data`'s domain enum — the inspector reads the tag and
 /// dispatches to category labels.
+///
+/// The numbering is [`SemanticDomain::index`] rather than a table of its own:
+/// that index already has to be dense and stable to address the `World`'s
+/// per-domain arrays, and a second listing would only be somewhere for the two
+/// to disagree.
 fn domain_tag(d: SemanticDomain) -> u8 {
-    match d {
-        SemanticDomain::Spatial => 0,
-        SemanticDomain::Render => 1,
-        SemanticDomain::Audio => 2,
-        SemanticDomain::Physics => 3,
-        SemanticDomain::Ui => 4,
-    }
+    d.index() as u8
 }
 
 /// Display data for one entity, gathered in the first pass so the tree can be

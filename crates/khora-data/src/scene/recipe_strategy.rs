@@ -489,4 +489,63 @@ mod tests {
         // Sanity: source still untouched.
         let _ = (child_a, child_b, grandchild, outsider);
     }
+
+    /// Instantiating a prefab into a scene that already has a hierarchy must
+    /// leave that hierarchy alone.
+    ///
+    /// Not a hypothetical: `Parent` is `ToolAuthored`, so a recipe carries one
+    /// for each child, and the id inside it belongs to the **source** world.
+    /// Entity indices start small and are recycled, so that id routinely names
+    /// a live — and unrelated — entity in the destination.
+    ///
+    /// What makes reading it harmless is that `Children` is `Derived` and
+    /// therefore *not* serialized: a freshly instantiated entity appears in no
+    /// `Children` list until its own `SetParent` runs, so detaching it from
+    /// whatever the stale id happens to name can only be a no-op. This test
+    /// exists because that reasoning is the kind that stops holding quietly the
+    /// day `Children` becomes persisted again.
+    #[test]
+    fn instantiating_into_a_populated_scene_leaves_its_hierarchy_alone() {
+        let mut src = World::new();
+        let root = src.spawn(Transform::default());
+        let child = src.spawn(Transform::default());
+        link_parent_child(&mut src, root, child);
+        let bytes = serialize_subtree(&src, root).expect("serialize_subtree");
+
+        // A destination whose own entities occupy the same low indices the
+        // source used, so a stale id lands on a real entity here.
+        let mut dst = World::new();
+        let existing_parent = dst.spawn(Transform::default());
+        let existing_child = dst.spawn(Transform::default());
+        assert!(dst.set_parent(existing_child, Some(existing_parent)));
+
+        let new_root = instantiate_subtree(&mut dst, &bytes).expect("instantiate_subtree");
+
+        assert_eq!(
+            dst.get::<Parent>(existing_child).map(|p| p.0),
+            Some(existing_parent),
+            "the scene's own child kept its parent"
+        );
+        assert_eq!(
+            dst.get::<Children>(existing_parent).map(|c| c.0.clone()),
+            Some(vec![existing_child]),
+            "and the parent still lists it"
+        );
+
+        // And the prefab itself came in correctly rather than being sacrificed
+        // to keep the scene intact.
+        let instantiated: Vec<EntityId> = dst
+            .iter_entities()
+            .filter(|e| dst.get::<Parent>(*e).map(|p| p.0) == Some(new_root))
+            .collect();
+        assert_eq!(
+            instantiated.len(),
+            1,
+            "the prefab's child is under its root"
+        );
+        assert_eq!(
+            dst.get::<Children>(new_root).map(|c| c.0.clone()),
+            Some(instantiated),
+        );
+    }
 }

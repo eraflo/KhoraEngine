@@ -46,7 +46,7 @@ const UI_DOMAIN_TAG: u8 = 4;
 /// The single source of truth for both surfaces, so the menu and the card list
 /// cannot drift apart. Returns `false` for anything the engine writes
 /// (`GlobalTransform`, `Children`, `PhysicsDebugData`…), for tool-written
-/// components nobody adds by hand (`Parent`, `Prefab`), for the ones rendered
+/// components nobody adds by hand (`Parent`), for the ones rendered
 /// elsewhere, and for unregistered types.
 pub fn is_author_facing(type_name: &str) -> bool {
     if SURFACED_ELSEWHERE.contains(&type_name) {

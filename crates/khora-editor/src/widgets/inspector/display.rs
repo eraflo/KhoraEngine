@@ -61,6 +61,7 @@ pub fn icon_for_domain_tag(tag: Option<u8>) -> Icon {
         Some(2) => Icon::Music,  // Audio
         Some(3) => Icon::Zap,    // Physics
         Some(4) => Icon::Layers, // UI
+        Some(5) => Icon::Code,   // Script
         _ => Icon::More,
     }
 }
@@ -73,6 +74,7 @@ pub fn category_label_for_tag(tag: Option<u8>) -> &'static str {
         Some(2) => "Audio",
         Some(3) => "Physics",
         Some(4) => "UI",
+        Some(5) => "Script",
         _ => "Other",
     }
 }

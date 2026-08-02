@@ -37,6 +37,7 @@ pub mod platform;
 pub mod renderer;
 pub mod runtime;
 pub mod scene;
+pub mod script;
 pub mod telemetry;
 pub mod time;
 pub mod ui;

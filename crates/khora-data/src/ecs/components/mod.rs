@@ -24,7 +24,7 @@ mod mesh_ref;
 mod name;
 mod parent;
 mod physics;
-mod prefab;
+mod script;
 mod tag;
 mod transform;
 
@@ -40,6 +40,6 @@ pub use mesh_ref::*;
 pub use name::*;
 pub use parent::*;
 pub use physics::*;
-pub use prefab::*;
+pub use script::*;
 pub use tag::*;
 pub use transform::*;

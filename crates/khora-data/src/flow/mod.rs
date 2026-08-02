@@ -44,6 +44,7 @@ pub mod audio;
 pub mod physics;
 mod registration;
 pub mod render;
+pub mod script;
 mod selection;
 pub mod shadow;
 pub mod ui;
@@ -54,6 +55,7 @@ pub use audio::{
 pub use physics::{PhysicsFlow, PhysicsStepResult, PhysicsView};
 pub use registration::*;
 pub use render::RenderFlow;
+pub use script::{ScriptFlow, ScriptInstance, ScriptProgram, ScriptView};
 pub use selection::Selection;
 pub use shadow::{ShadowFlow, ShadowMatrices, ShadowView};
 pub use ui::UiFlow;

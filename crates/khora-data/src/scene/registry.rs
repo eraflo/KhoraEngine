@@ -107,31 +107,31 @@ pub fn serialize_all_components(world: &World, entity: EntityId) -> Vec<(String,
     results
 }
 
-/// Links `child` under `parent`, maintaining **both** halves of the hierarchy
-/// edge — the `Parent` back-reference and the parent's `Children` list.
+/// Links `child` under `parent` while loading a scene.
 ///
 /// Every `SceneCommand::SetParent` handler goes through this. They used to add
 /// only `Parent` and rely on a serialized `Children` component to supply the
 /// forward list, which quietly loaded the *source* world's entity ids; now that
 /// `Children` is `Derived` and no longer persisted, the inverse index has to be
-/// rebuilt here instead. Mirrors the invariant `GameWorld::set_parent` enforces
-/// for live edits.
+/// rebuilt as the scene loads.
+///
+/// The edge itself belongs to [`World::set_parent`], which is where both halves
+/// are written together — this is the scene loader's name for it, not a second
+/// implementation.
 pub fn link_parent_child(world: &mut World, child: EntityId, parent: EntityId) {
-    if let Some(existing) = world.get_mut::<crate::ecs::Parent>(child) {
-        *existing = crate::ecs::Parent(parent);
-    } else {
-        world.add_component(child, crate::ecs::Parent(parent)).ok();
-    }
+    world.set_parent(child, Some(parent));
+}
 
-    if let Some(children) = world.get_mut::<crate::ecs::Children>(parent) {
-        if !children.0.contains(&child) {
-            children.0.push(child);
-        }
-    } else {
-        world
-            .add_component(parent, crate::ecs::Children(vec![child]))
-            .ok();
-    }
+/// Looks up the registration of a component by its `type_name`.
+///
+/// The generic script-command path resolves a component this way rather than
+/// carrying a second registry of its own: `#[derive(Component)]` already emits
+/// everything needed to create, patch and drop a component without per-type
+/// code, and a parallel table would be one more thing to keep in step.
+pub fn registration_of(type_name: &str) -> Option<&'static ComponentRegistration> {
+    inventory::iter::<ComponentRegistration>
+        .into_iter()
+        .find(|reg| reg.type_name == type_name)
 }
 
 /// Looks up the registered provenance of a component by its `type_name`.
@@ -162,16 +162,16 @@ mod provenance_tests {
             provenance_of("GlobalTransform"),
             Some(ComponentProvenance::Derived)
         );
-        // Inverse index of `Parent`, maintained by `GameWorld::set_parent`.
+        // Inverse index of `Parent`, maintained by `World::set_parent`.
         // Copying it would make a duplicate claim the original's children.
         assert_eq!(
             provenance_of("Children"),
             Some(ComponentProvenance::Derived)
         );
-        // Written by "instantiate prefab"; persists and must survive a
+        // Set by dragging in the scene tree; persists and must survive a
         // duplicate, but adding an empty one by hand is meaningless.
         assert_eq!(
-            provenance_of("Prefab"),
+            provenance_of("Parent"),
             Some(ComponentProvenance::ToolAuthored)
         );
         // Debug output of the physics writeback.

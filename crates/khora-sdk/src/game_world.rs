@@ -23,8 +23,8 @@ use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::ecs::entity::EntityId;
 use khora_core::renderer::api::scene::Mesh;
 use khora_data::ecs::{
-    Camera, Children, Component, ComponentBundle, GlobalTransform, HandleComponent, Parent, Query,
-    QueryMut, Transform, World, WorldQuery,
+    Camera, Component, ComponentBundle, GlobalTransform, HandleComponent, Query, QueryMut,
+    Transform, World, WorldQuery,
 };
 
 /// A high-level facade over the internal ECS `World` and `Assets` registry.
@@ -350,72 +350,15 @@ impl GameWorld {
     ///
     /// Maintains both the `Parent` component on `child` and the `Children`
     /// list on the involved parents. Refuses cycles silently (a no-op).
+    ///
+    /// The edge is written by [`World::set_parent`], which every other route
+    /// into the hierarchy — scene loading, script commands — also takes. Two
+    /// implementations of an invariant stored in two components is two chances
+    /// for them to disagree.
     pub fn set_parent(&mut self, child: EntityId, new_parent: Option<EntityId>) {
-        // Refuse cycles: new_parent must not be a descendant of child.
-        if let Some(np) = new_parent {
-            if np == child || self.is_descendant_of(np, child) {
-                log::warn!(
-                    "set_parent: refused cycle (child={:?}, new_parent={:?})",
-                    child,
-                    np
-                );
-                return;
-            }
+        if !self.world.set_parent(child, new_parent) {
+            log::warn!("set_parent: refused (child={child:?}, new_parent={new_parent:?})");
         }
-
-        // 1. Remove `child` from its previous parent's `Children`, if any.
-        let old_parent = self.world.get::<Parent>(child).map(|p| p.0);
-        if let Some(old) = old_parent {
-            if let Some(children) = self.world.get_mut::<Children>(old) {
-                children.0.retain(|c| *c != child);
-            }
-        }
-
-        // 2. Update `Parent` on `child` (set or remove).
-        match new_parent {
-            Some(np) => {
-                if let Some(existing) = self.world.get_mut::<Parent>(child) {
-                    existing.0 = np;
-                } else {
-                    self.add_component(child, Parent(np));
-                }
-            }
-            None => {
-                // Surgical: drop only the `Parent` component, keep the
-                // entity's other Spatial components (Transform,
-                // GlobalTransform, Name, …) intact.
-                self.remove_component::<Parent>(child);
-            }
-        }
-
-        // 3. Add `child` to the new parent's `Children` (creating it if needed).
-        if let Some(np) = new_parent {
-            if let Some(children) = self.world.get_mut::<Children>(np) {
-                if !children.0.contains(&child) {
-                    children.0.push(child);
-                }
-            } else {
-                self.add_component(np, Children(vec![child]));
-            }
-        }
-    }
-
-    /// Returns whether `candidate` is a descendant of `ancestor` in the
-    /// scene hierarchy. Used by `set_parent` to refuse cycle-creating reparents.
-    fn is_descendant_of(&self, candidate: EntityId, ancestor: EntityId) -> bool {
-        let mut current = candidate;
-        // Bound the traversal to avoid infinite loops on a malformed hierarchy.
-        for _ in 0..1024 {
-            let Some(parent) = self.world.get::<Parent>(current) else {
-                return false;
-            };
-            if parent.0 == ancestor {
-                return true;
-            }
-            current = parent.0;
-        }
-        log::warn!("is_descendant_of: hierarchy traversal exceeded depth bound");
-        false
     }
 
     /// Builds an authored, inline material reference to attach to entities.
