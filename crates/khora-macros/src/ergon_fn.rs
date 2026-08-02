@@ -155,7 +155,12 @@ fn expand(function: &ItemFn, options: &Options) -> syn::Result<TokenStream> {
                 },
             };
 
-        ::inventory::submit! {
+        // Through `khora_script`'s re-export rather than `::inventory`, so a
+        // crate exposing a function to Ergon needs the one dependency it already
+        // has. Naming the collector crate directly would make `#[ergon_fn]` fail
+        // to compile for the exact reason nobody would guess: a transitive
+        // dependency that has to be declared again to be nameable.
+        ::khora_script::inventory::submit! {
             ::khora_script::native::NativeRegistration(&#declaration)
         }
     }

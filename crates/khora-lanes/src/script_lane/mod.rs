@@ -43,6 +43,8 @@ pub mod persistence;
 pub mod runtime;
 
 #[cfg(test)]
+mod lifecycle_tests;
+#[cfg(test)]
 mod reload_tests;
 #[cfg(test)]
 mod tests;
@@ -53,11 +55,14 @@ pub use runtime::{Instance, Pending, ReloadReport, ScriptRuntime};
 use std::any::Any;
 
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, OutputDeck, Ref, Slot};
-use khora_core::script::{CommandBuffer, EventQueue, ScriptStateUpdate, ScriptStateWriteback};
+use khora_core::script::{
+    CommandBuffer, EventQueue, ScriptStateUpdate, ScriptStateWriteback, WorldCommand,
+};
 use khora_data::flow::ScriptView;
-use khora_script::dispatch::{deliver, initialise, tick_timers, NotDelivered};
+use khora_script::dispatch::{deliver, initialise, invoke, tick_timers, NotDelivered};
+use khora_script::lifecycle;
 use khora_script::native::Host;
-use khora_script::vm::Run;
+use khora_script::vm::{Run, Value};
 
 /// How much of the frame's fuel one behavior may spend.
 ///
@@ -181,12 +186,17 @@ pub fn run_behaviors(
     host: &mut Host,
     fuel: u64,
 ) -> ScriptRunReport {
-    // A despawned entity's fields go here, derived from the view rather than
-    // from a despawn anyone had to report.
     let live: std::collections::HashSet<_> = view.instances.iter().map(|i| i.entity).collect();
-    runtime.retain_live(|entity| live.contains(&entity));
 
     let mut report = ScriptRunReport::default();
+
+    // Farewells first, so an entity removed by something other than a script —
+    // the editor, another system — still gets its `OnDespawn`, and so whatever
+    // that queues is in the frame's commands alongside everything else. Then the
+    // instances are dropped, which is how a despawned entity's fields are
+    // released without anyone having to report the despawn.
+    farewell_departed(&live, runtime, host, fuel, &mut report);
+    runtime.retain_live(|entity| live.contains(&entity));
 
     for instance in &view.instances {
         let Some(program) = view.program_of(instance) else {
@@ -222,6 +232,7 @@ pub fn run_behaviors(
         if state.disabled {
             continue;
         }
+        state.module.clone_from(&program.module);
         if let Some(from_scene) = carried_from_scene {
             state.fields = from_scene.clone();
             state.initialised = false;
@@ -231,8 +242,13 @@ pub fn run_behaviors(
         host.entity = Some(instance.entity);
         host.fields = std::mem::take(&mut state.fields);
         let was_initialised = state.initialised;
+        let was_spawned = state.spawned;
         let carried = state.carried.take();
         let pending = state.pending.take();
+
+        // Where this behavior's own commands start, so a `Despawn(this)` it
+        // queues can be told from one an earlier behavior queued.
+        let commands_before = host.commands.len();
 
         let slice = remaining.min(FUEL_PER_BEHAVIOR);
         let outcome = run_one(
@@ -243,6 +259,7 @@ pub fn run_behaviors(
                 events,
                 fuel: slice,
                 initialised: was_initialised,
+                spawned: was_spawned,
                 carried: carried.as_ref(),
                 delta: view.delta_seconds,
                 resuming: pending,
@@ -250,17 +267,31 @@ pub fn run_behaviors(
             host,
         );
 
+        // Its farewell belongs to the frame that *decided* the despawn, not to
+        // the one that notices the entity gone: here the entity is still in the
+        // view and still readable, and a frame later it is neither.
+        let leaving = despawns_itself(&host.commands, commands_before, instance.entity);
+        let farewell = leaving.then(|| {
+            let left = slice.saturating_sub(outcome.spent());
+            say_goodbye(&compiled, &program.behavior, host, left)
+        });
+
         // The fields go back whatever happened, so a fault does not lose the
         // state the behavior had before it.
         let state = runtime.instance(instance.entity, &program.behavior);
         state.fields = std::mem::take(&mut host.fields);
         state.initialised = true;
+        state.spawned = true;
+        state.farewelled |= leaving;
+
+        let farewell_cost = farewell.unwrap_or(0);
+        report.spent += farewell_cost;
 
         // A behavior that spent no fuel handled no event and ran no code, so
         // its fields are what they were and the scene already records them.
         // That is what makes writing back every frame affordable: a quiet frame
         // writes nothing at all.
-        if outcome.spent() > 0 {
+        if outcome.spent() + farewell_cost > 0 {
             if let Some(layout) = compiled.layout(&program.behavior) {
                 report.state.push(ScriptStateUpdate {
                     entity: instance.entity,
@@ -349,6 +380,8 @@ struct Invocation<'a> {
     fuel: u64,
     /// Whether the instance has already had its declared defaults produced.
     initialised: bool,
+    /// Whether it has already announced itself through `OnSpawn`.
+    spawned: bool,
     /// The seconds since the previous frame, for the countdowns.
     delta: f32,
     /// A member part-way through an `await`, if there is one.
@@ -365,6 +398,7 @@ fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
         events,
         fuel,
         initialised,
+        spawned,
         carried,
         delta,
         resuming,
@@ -392,6 +426,30 @@ fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
             // with no fields has nothing to initialise.
             Some((_, cost)) => spent += cost,
             None => {}
+        }
+    }
+
+    // Once per entity, after the defaults exist and before anything else can
+    // observe the instance. A hot-reload clears `initialised` but not this: an
+    // edit to the script is not a new entity, and a guard should not announce
+    // itself again because its author changed a number.
+    if !spawned {
+        match call_hook(
+            program,
+            behavior,
+            &lifecycle::ON_SPAWN,
+            &[],
+            host,
+            fuel - spent,
+        ) {
+            Hook::Ran(cost) => spent += cost,
+            Hook::Absent => {}
+            Hook::Faulted { cost, reason } => {
+                return Outcome::Faulted {
+                    spent: spent + cost,
+                    reason,
+                }
+            }
         }
     }
 
@@ -492,7 +550,146 @@ fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
         }
     }
 
+    // Last, so it sees this frame's consequences rather than predicting them: a
+    // guard that was hurt and then thinks should think with the health it now
+    // has, and a `become` an event performed should decide which state's
+    // `Update` runs.
+    let left = fuel.saturating_sub(spent);
+    if left == 0 {
+        return Outcome::Deferred { spent };
+    }
+    match call_hook(
+        program,
+        behavior,
+        &lifecycle::UPDATE,
+        &[Value::Float(delta)],
+        host,
+        left,
+    ) {
+        Hook::Ran(cost) => spent += cost,
+        Hook::Absent => {}
+        Hook::Faulted { cost, reason } => {
+            return Outcome::Faulted {
+                spent: spent + cost,
+                reason,
+            }
+        }
+    }
+
     Outcome::Completed { spent }
+}
+
+/// What running an engine-invoked member did.
+///
+/// [`Absent`](Self::Absent) is the ordinary case and not a mistake — most
+/// behaviors declare a handler or two and no `Update` at all — so it is a
+/// variant rather than an error a caller has to remember to ignore.
+enum Hook {
+    /// It ran to completion, at this cost.
+    Ran(u64),
+    /// The behavior declares no such member.
+    Absent,
+    /// It faulted.
+    Faulted { cost: u64, reason: String },
+}
+
+/// Calls a lifecycle member, if the behavior declares one.
+///
+/// A suspension is treated as completion rather than kept: `await` is refused in
+/// `Update` by the checker ([`types::expr`]), and out-of-fuel here means the
+/// budget ran out on the last thing the frame does — retrying it whole next
+/// frame is what deferring has always meant.
+///
+/// [`types::expr`]: khora_script::types
+fn call_hook(
+    program: &khora_script::vm::Program,
+    behavior: &str,
+    hook: &lifecycle::Lifecycle,
+    args: &[Value],
+    host: &mut Host,
+    fuel: u64,
+) -> Hook {
+    match invoke(program, behavior, hook.name, args, host, fuel) {
+        Ok(done) => match done.outcome {
+            Run::Faulted(fault) => Hook::Faulted {
+                cost: done.spent,
+                reason: format!("{fault:?}"),
+            },
+            _ => Hook::Ran(done.spent),
+        },
+        Err(NotDelivered::NoHandler { .. }) => Hook::Absent,
+        Err(other) => Hook::Faulted {
+            cost: 0,
+            reason: other.to_string(),
+        },
+    }
+}
+
+/// Runs `OnDespawn`, returning what it cost.
+///
+/// Called at the point the despawn is decided rather than performed, which is
+/// the only moment the entity is both doomed and still there. A fault is logged
+/// rather than returned: disabling a behavior that is about to stop existing
+/// would be a status nobody reads.
+fn say_goodbye(
+    program: &khora_script::vm::Program,
+    behavior: &str,
+    host: &mut Host,
+    fuel: u64,
+) -> u64 {
+    match call_hook(program, behavior, &lifecycle::ON_DESPAWN, &[], host, fuel) {
+        Hook::Ran(cost) => cost,
+        Hook::Absent => 0,
+        Hook::Faulted { cost, reason } => {
+            log::error!("script `{behavior}` faulted in `OnDespawn`: {reason}");
+            cost
+        }
+    }
+}
+
+/// Whether the commands this behavior queued include its own despawn.
+///
+/// Scanned from where its turn began, so an earlier behavior despawning it does
+/// not read as this one deciding to go — the farewell belongs to the entity, but
+/// the *moment* belongs to whoever asked.
+fn despawns_itself(
+    commands: &CommandBuffer,
+    from: usize,
+    entity: khora_core::ecs::entity::EntityId,
+) -> bool {
+    commands.as_slice().iter().skip(from).any(
+        |command| matches!(command, WorldCommand::Despawn { entity: target } if *target == entity),
+    )
+}
+
+/// Runs `OnDespawn` for every instance whose entity has left the view.
+///
+/// The other half of the farewell: a script that despawns itself is told at the
+/// moment it decides, and everything else — an editor deletion, another system's
+/// despawn — is noticed here, one frame later. That lateness is not an oversight
+/// but the earliest a lane reading a projection can know, and it is why the
+/// script-initiated path exists at all.
+fn farewell_departed(
+    live: &std::collections::HashSet<khora_core::ecs::entity::EntityId>,
+    runtime: &mut ScriptRuntime,
+    host: &mut Host,
+    fuel: u64,
+    report: &mut ScriptRunReport,
+) {
+    for (entity, behavior, module) in runtime.departed(|entity| live.contains(&entity)) {
+        let left = fuel.saturating_sub(report.spent);
+        if left == 0 {
+            return;
+        }
+        let Some(program) = runtime.program(&module).cloned() else {
+            continue;
+        };
+
+        host.entity = Some(entity);
+        host.fields = std::mem::take(&mut runtime.instance(entity, &behavior).fields);
+        report.spent += say_goodbye(&program, &behavior, host, left.min(FUEL_PER_BEHAVIOR));
+        host.fields = khora_script::arena::PersistentStore::new();
+    }
 }
 
 /// Packages a machine that has just suspended, with what it asked to wait.

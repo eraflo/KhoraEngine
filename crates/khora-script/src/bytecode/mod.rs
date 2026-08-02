@@ -80,7 +80,7 @@ impl Compiled {
 /// Passing a module that failed type checking is a caller mistake: the compiler
 /// trusts what the checker proved and will emit nonsense rather than diagnose.
 pub fn compile(module: &Module) -> Compiled {
-    compile_with(module, &crate::native::NativeRegistry::with_builtins())
+    compile_with(module, &crate::native::NativeRegistry::discovered())
 }
 
 /// Compiles a module against a specific set of engine functions.

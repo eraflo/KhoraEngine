@@ -39,6 +39,12 @@ use serde::{Deserialize, Serialize};
 /// One behavior instance's state.
 #[derive(Debug, Default)]
 pub struct Instance {
+    /// The module its behavior was compiled from.
+    ///
+    /// Recorded because an entity that leaves the view still has an `OnDespawn`
+    /// to run, and by then the view no longer says which program to run it
+    /// from — the instance has to carry the answer with it.
+    pub module: String,
     /// Its fields.
     pub fields: PersistentStore,
     /// Whether its declared defaults have been applied.
@@ -46,6 +52,19 @@ pub struct Instance {
     /// A default is an expression, so it takes a run to produce; this is what
     /// stops that run happening again every frame.
     pub initialised: bool,
+    /// Whether `OnSpawn` has run.
+    ///
+    /// Deliberately not [`initialised`](Self::initialised), which a hot-reload
+    /// clears so the new program's defaults are produced. An edit to a script is
+    /// not a new entity: a guard that has already announced itself should not do
+    /// it again because its author changed a number.
+    pub spawned: bool,
+    /// Whether `OnDespawn` has run.
+    ///
+    /// A script that despawns itself gets its farewell in the same frame, while
+    /// the entity is still there to read; the sweep that notices it left the view
+    /// happens a frame later and must not repeat it.
+    pub farewelled: bool,
     /// Whether the instance has faulted and stopped being called.
     ///
     /// A faulty script must not take the frame down, and must not be retried
@@ -275,6 +294,23 @@ impl ScriptRuntime {
         self.instances
             .entry((entity, behavior.to_owned()))
             .or_default()
+    }
+
+    /// Instances whose entity the predicate no longer keeps, and which have not
+    /// yet said goodbye.
+    ///
+    /// Returned as `(entity, behavior, module)` rather than acted on here: the
+    /// farewell is a *run*, which needs a host and a budget, and neither belongs
+    /// to a store of state. The caller runs them and then calls
+    /// [`retain_live`](Self::retain_live) to drop them.
+    pub fn departed(&self, alive: impl Fn(EntityId) -> bool) -> Vec<(EntityId, String, String)> {
+        self.instances
+            .iter()
+            .filter(|((entity, _), instance)| !instance.farewelled && !alive(*entity))
+            .map(|((entity, behavior), instance)| {
+                (*entity, behavior.clone(), instance.module.clone())
+            })
+            .collect()
     }
 
     /// The state of one entity's behavior, if it has any.

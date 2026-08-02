@@ -59,11 +59,18 @@ pub mod dispatch;
 #[cfg(test)]
 mod dispatch_tests;
 pub mod lexer;
+pub mod lifecycle;
 pub mod modules;
 pub mod native;
 pub mod parser;
 pub mod types;
 pub mod vm;
+
+// Re-exported for `#[ergon_fn]`, whose expansion submits through it. A crate
+// exposing a function to Ergon should need `khora-script` and nothing else;
+// without this it would have to declare `inventory` too, for a reason visible
+// only in a macro's output.
+pub use inventory;
 
 pub use arena::{Arena, ArenaRef, Object, PersistentStore};
 pub use ast::{BehaviorDecl, Expr, Item, Module, Stmt, TypeRef};

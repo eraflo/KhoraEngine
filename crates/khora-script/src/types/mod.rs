@@ -68,7 +68,7 @@ impl Checked {
 
 /// Type-checks a parsed module.
 pub fn check(module: &Module) -> Checked {
-    check_with(module, &crate::native::NativeRegistry::with_builtins())
+    check_with(module, &crate::native::NativeRegistry::discovered())
 }
 
 /// Checks a module against a specific set of engine functions.
@@ -436,6 +436,55 @@ impl Checker {
         }
     }
 
+    /// Holds an engine-invoked member to the shape the engine will call it with.
+    ///
+    /// The mistake this exists for is `void Update()` where `void Update(float
+    /// dt)` was meant. Dispatch is by name, so the wrong signature does not
+    /// produce a call that fails — it produces a body that never runs, and an
+    /// author left watching nothing happen has nothing to search for.
+    fn check_lifecycle(&mut self, method: &crate::ast::MethodDecl) {
+        let Some(hook) = crate::lifecycle::of(&method.name) else {
+            return;
+        };
+
+        if !hook.called {
+            self.diagnostics
+                .push(crate::diagnostics::Diagnostic::warning(
+                    format!(
+                        "`{}` is reserved but the engine does not call it yet",
+                        hook.name
+                    ),
+                    method.name_span,
+                ));
+        }
+
+        let returns = self.resolve(&method.return_ty);
+        if returns != Ty::Void {
+            self.error_note(
+                format!("`{}` must return nothing", hook.name),
+                method.name_span,
+                "the engine calls it and has nowhere to put a result",
+            );
+        }
+
+        let found: Vec<Ty> = method.params.iter().map(|p| self.resolve(&p.ty)).collect();
+        if found != hook.params {
+            let expected = hook
+                .params
+                .iter()
+                .map(Ty::name)
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.error_note(
+                format!("`{}` must take ({expected})", hook.name),
+                method.name_span,
+                "the engine calls this member itself, so its shape is fixed — a \
+                 different one is not an error at the call site, it is a body that \
+                 never runs",
+            );
+        }
+    }
+
     fn declare_fields(&mut self, members: &[BehaviorMember]) {
         for member in members {
             if let BehaviorMember::Field(field) = member {
@@ -463,6 +512,7 @@ impl Checker {
                     }
                 }
                 BehaviorMember::Method(method) => {
+                    self.check_lifecycle(method);
                     self.scopes.push();
                     for param in &method.params {
                         let ty = self.resolve(&param.ty);

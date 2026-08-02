@@ -602,8 +602,13 @@ mod macro_tests {
     use khora_script::ergon_fn;
 
     /// A pure function: no context, one argument, one result.
+    ///
+    /// Named `probe_*` rather than `double`, because `#[ergon_fn]` submits to
+    /// `inventory` and the whole test binary shares one collection: a plain name
+    /// here reserves it for every other test's scripts, which is the engine
+    /// surface doing exactly what it should — to somebody who did not ask.
     #[ergon_fn]
-    fn double(x: f32) -> f32 {
+    fn probe_double(x: f32) -> f32 {
         x * 2.0
     }
 
@@ -639,7 +644,7 @@ mod macro_tests {
     fn registry() -> NativeRegistry {
         let mut natives = NativeRegistry::with_builtins();
         for function in [
-            &ERGON_DOUBLE,
+            &ERGON_PROBE_DOUBLE,
             &ERGON_HALF_OF,
             &ERGON_HYPOTENUSE,
             &ERGON_SHOVE,
@@ -655,7 +660,7 @@ mod macro_tests {
     #[test]
     fn an_annotated_function_is_callable_from_a_script() {
         let natives = registry();
-        let program = build("fn float Main() { return Double(21.0); }", &natives);
+        let program = build("fn float Main() { return ProbeDouble(21.0); }", &natives);
 
         let mut host = Host {
             natives,
@@ -748,7 +753,7 @@ mod macro_tests {
     /// adds to it rather than replacing it.
     #[test]
     fn the_function_is_still_callable_from_rust() {
-        assert_eq!(double(4.0), 8.0);
+        assert_eq!(probe_double(4.0), 8.0);
         assert_eq!(hypotenuse(3.0, 4.0), 5.0);
     }
 
@@ -756,7 +761,7 @@ mod macro_tests {
     /// say so, and the macro will not guess on its behalf.
     #[test]
     fn the_default_cost_is_one_instruction() {
-        assert_eq!(registry().get("Double").expect("registered").cost, 1);
+        assert_eq!(registry().get("ProbeDouble").expect("registered").cost, 1);
     }
 
     /// Annotating is the whole registration — the function reaches the registry
@@ -765,7 +770,7 @@ mod macro_tests {
     fn an_annotated_function_is_discovered_without_being_listed() {
         let discovered = NativeRegistry::discovered();
 
-        for name in ["Double", "HalfOf", "Hypot", "Shove", "Subject"] {
+        for name in ["ProbeDouble", "HalfOf", "Hypot", "Shove", "Subject"] {
             assert!(
                 discovered.get(name).is_some(),
                 "`{name}` was annotated but not discovered"

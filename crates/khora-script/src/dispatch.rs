@@ -147,20 +147,29 @@ pub fn current_state<'a>(program: &'a Program, behavior: &str, host: &Host) -> O
         .map(|state| state.name.as_str())
 }
 
-/// The handler an event resolves to, preferring the current state's.
+/// The member a name resolves to, preferring the current state's.
 ///
-/// A state's handler wins over the behavior's, which is what makes `on Lost`
+/// A state's member wins over the behavior's, which is what makes `on Lost`
 /// inside `Chase` mean "while chasing" — the whole point of writing it there.
 /// The behavior's own is the fallback, so `on Damaged` written once applies in
 /// every state without being repeated in each.
-fn resolve_handler(program: &Program, behavior: &str, event: &str, host: &Host) -> Option<String> {
+///
+/// The same rule for `Update`: a state that defines one is patrolling or chasing
+/// rather than doing both, and a behavior-level `Update` still runs for the
+/// states that define none.
+pub fn resolve_member(
+    program: &Program,
+    behavior: &str,
+    member: &str,
+    host: &Host,
+) -> Option<String> {
     if let Some(state) = current_state(program, behavior, host) {
-        let scoped = state_handler_name(behavior, state, event);
+        let scoped = state_handler_name(behavior, state, member);
         if program.index_of(&scoped).is_some() {
             return Some(scoped);
         }
     }
-    let plain = handler_name(behavior, event);
+    let plain = handler_name(behavior, member);
     program.index_of(&plain).is_some().then_some(plain)
 }
 
@@ -274,27 +283,6 @@ pub fn deliver(
         return Err(NotDelivered::NoSuchEntity(event.target));
     }
 
-    let name = resolve_handler(program, behavior, &event.name, host).ok_or_else(|| {
-        NotDelivered::NoHandler {
-            behavior: behavior.to_owned(),
-            event: event.name.clone(),
-        }
-    })?;
-    let handler = program
-        .function(&name)
-        .ok_or_else(|| NotDelivered::NoHandler {
-            behavior: behavior.to_owned(),
-            event: event.name.clone(),
-        })?;
-
-    if handler.arity != event.args.len() {
-        return Err(NotDelivered::WrongArity {
-            handler: name,
-            expected: handler.arity,
-            found: event.args.len(),
-        });
-    }
-
     let args = event
         .args
         .iter()
@@ -306,15 +294,51 @@ pub fn deliver(
     // acts on the right subject.
     host.entity = Some(event.target);
 
+    invoke(program, behavior, &event.name, &args, host, fuel)
+}
+
+/// Runs a member of the behavior, if it declares one under that name.
+///
+/// The engine calls [`Update`] and its siblings through here, and [`deliver`]
+/// funnels into it once an event's arguments are in registers. One path,
+/// because the difference between "something happened to this behavior" and
+/// "the frame advanced" is entirely in how the arguments were obtained — after
+/// that it is the same lookup, the same state preference, and the same machine.
+///
+/// [`Update`]: crate::lifecycle::UPDATE
+pub fn invoke(
+    program: &Program,
+    behavior: &str,
+    member: &str,
+    args: &[Value],
+    host: &mut Host,
+    fuel: u64,
+) -> Result<Delivered, NotDelivered> {
+    let absent = || NotDelivered::NoHandler {
+        behavior: behavior.to_owned(),
+        event: member.to_owned(),
+    };
+
+    let name = resolve_member(program, behavior, member, host).ok_or_else(absent)?;
+    let function = program.function(&name).ok_or_else(absent)?;
+
+    if function.arity != args.len() {
+        return Err(NotDelivered::WrongArity {
+            handler: name,
+            expected: function.arity,
+            found: args.len(),
+        });
+    }
+
     let mut machine =
-        Machine::new(program, &name, &args).ok_or_else(|| NotDelivered::WrongArity {
+        Machine::new(program, &name, args).ok_or_else(|| NotDelivered::WrongArity {
             handler: name.clone(),
-            expected: handler.arity,
+            expected: function.arity,
             found: args.len(),
         })?;
     let (outcome, spent) = machine.run_counting(program, host, fuel);
 
-    // A handler that suspended hands its machine back rather than dropping it.
+    // A member that suspended hands its machine back rather than dropping it.
     // Dropping it would make `await` a statement that silently ends the member:
     // the code after it would never run and nothing would say why.
     let suspended = matches!(outcome, Run::Suspended(_)).then_some(machine);

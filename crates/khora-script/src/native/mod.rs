@@ -160,10 +160,15 @@ impl Default for Host {
 }
 
 impl Host {
-    /// A host exposing the language's built-ins and nothing else.
+    /// A host exposing everything the engine registered.
+    ///
+    /// [`NativeRegistry::discovered`] rather than just the built-ins, and it has
+    /// to match what the program was compiled against — which is why
+    /// [`compile`](crate::compile) and [`check`](crate::check) take the same
+    /// one.
     pub fn new() -> Self {
         Self {
-            natives: NativeRegistry::with_builtins(),
+            natives: NativeRegistry::discovered(),
             commands: CommandBuffer::new(),
             arena: Arena::new(),
             fields: PersistentStore::new(),
@@ -284,24 +289,39 @@ impl NativeRegistry {
 
     /// The built-ins plus everything `#[ergon_fn]` has registered.
     ///
-    /// The submissions are sorted by name before being added. `inventory`
-    /// yields them in link order, which is not stable across builds — and a
-    /// program addresses a native by index, so an unstable order would make a
-    /// call mean one function today and its neighbour after a relink. Sorting
-    /// costs one pass at start-up and removes the whole class.
+    /// **This is the registry the engine runs on.** The compiler, the type
+    /// checker and the [`Host`] all take it, which is not a convenience: a
+    /// program addresses a native by index, so a registry assembled differently
+    /// on two sides would resolve the same call to two different functions.
+    ///
+    /// The submissions are sorted by name before being added. `inventory` yields
+    /// them in link order, which is not stable across builds — and an unstable
+    /// order would make a call mean one function today and its neighbour after a
+    /// relink. Sorting costs one pass and removes the whole class.
+    ///
+    /// The discovery itself happens once. What each caller pays is a vector of
+    /// pointers, not another walk of the submissions.
     pub fn discovered() -> Self {
-        let mut registry = Self::with_builtins();
+        static DISCOVERED: std::sync::OnceLock<Vec<&'static NativeFn>> = std::sync::OnceLock::new();
 
-        let mut submitted: Vec<&'static NativeFn> = inventory::iter::<NativeRegistration>
-            .into_iter()
-            .map(|registration| registration.0)
-            .collect();
-        submitted.sort_by_key(|function| function.name);
+        let functions = DISCOVERED.get_or_init(|| {
+            let mut registry = Self::with_builtins();
 
-        for function in submitted {
-            registry.register(function);
+            let mut submitted: Vec<&'static NativeFn> = inventory::iter::<NativeRegistration>
+                .into_iter()
+                .map(|registration| registration.0)
+                .collect();
+            submitted.sort_by_key(|function| function.name);
+
+            for function in submitted {
+                registry.register(function);
+            }
+            registry.functions
+        });
+
+        Self {
+            functions: functions.clone(),
         }
-        registry
     }
 
     /// Adds a function, returning its index.

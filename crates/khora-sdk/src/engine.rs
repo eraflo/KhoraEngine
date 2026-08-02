@@ -275,6 +275,16 @@ impl<A: EngineApp> EngineCore<A> {
             Arc::new(Mutex::new(khora_agents::audio_agent::AudioAgent::default())),
             1.0,
         );
+        // Gameplay. Registered like any other consumer, which is the point of
+        // giving scripting an agent at all: the DCC can tell it "you have
+        // 0.4ms, hand back control", and Ergon is the only scripting language
+        // in reach that can be told that.
+        dcc.register_agent(
+            Arc::new(Mutex::new(
+                khora_agents::script_agent::ScriptingAgent::default(),
+            )),
+            1.0,
+        );
 
         // Initialize agents with the full runtime so on_initialize() can
         // find Arc<dyn GraphicsDevice>, Arc<Mutex<Box<dyn RenderSystem>>>,
@@ -303,6 +313,7 @@ impl<A: EngineApp> EngineCore<A> {
             khora_core::control::gorna::AgentId::Physics,
             khora_core::control::gorna::AgentId::Ui,
             khora_core::control::gorna::AgentId::Audio,
+            khora_core::control::gorna::AgentId::Script,
         ];
 
         let registry = dcc.agent_registry().clone();
