@@ -55,7 +55,7 @@ use std::any::Any;
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, OutputDeck, Ref, Slot};
 use khora_core::script::{CommandBuffer, EventQueue, ScriptStateUpdate, ScriptStateWriteback};
 use khora_data::flow::ScriptView;
-use khora_script::dispatch::{deliver, initialise, NotDelivered};
+use khora_script::dispatch::{deliver, initialise, tick_timers, NotDelivered};
 use khora_script::native::Host;
 use khora_script::vm::Run;
 
@@ -245,6 +245,7 @@ pub fn run_behaviors(
                 fuel: slice,
                 initialised: was_initialised,
                 carried: carried.as_ref(),
+                delta: view.delta_seconds,
             },
             host,
         );
@@ -325,6 +326,8 @@ struct Invocation<'a> {
     fuel: u64,
     /// Whether the instance has already had its declared defaults produced.
     initialised: bool,
+    /// The seconds since the previous frame, for the countdowns.
+    delta: f32,
     /// Values to restore after the initialiser, when this follows a reload.
     carried: Option<&'a khora_script::arena::PersistentStore>,
 }
@@ -338,6 +341,7 @@ fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
         fuel,
         initialised,
         carried,
+        delta,
     } = call;
     let mut spent = 0;
 
@@ -362,6 +366,21 @@ fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
             // with no fields has nothing to initialise.
             Some((_, cost)) => spent += cost,
             None => {}
+        }
+    }
+
+    // Before the events, so a `become` a timer performs decides which state
+    // hears what arrives this frame — the schedule is what the behavior does on
+    // its own, and an event is what happens to it.
+    if delta > 0.0 {
+        let left = fuel.saturating_sub(spent);
+        let (fault, cost) = tick_timers(program, behavior, host, delta, left);
+        spent += cost;
+        if let Some(fault) = fault {
+            return Outcome::Faulted {
+                spent,
+                reason: format!("{fault:?}"),
+            };
         }
     }
 

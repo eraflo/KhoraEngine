@@ -883,3 +883,171 @@ mod states {
         assert_eq!(outcome.0, Run::Completed);
     }
 }
+
+// ─── Declarative time ───────────────────────────────────────────────────────
+
+mod timers {
+    use super::{build, registry_with_despawn};
+    use crate::arena::{Persisted, PersistentStore};
+    use crate::dispatch::{initialise, tick_timers};
+    use crate::native::Host;
+    use crate::vm::{Program, Value};
+
+    /// A guard that counts its own scans, and gives up once.
+    const GUARD: &str = r#"
+    behavior Guard {
+        int scans = 0;
+        int gave_up = 0;
+
+        every 0.5s {
+            scans += 1;
+        }
+
+        after 2s {
+            gave_up = 1;
+        }
+    }
+    "#;
+
+    fn host_of(program: &Program) -> Host {
+        let layout = program.layout("Guard").expect("a layout");
+        let mut host = Host {
+            natives: registry_with_despawn(),
+            ..Host::new()
+        }
+        .with_fields(PersistentStore::with_slots(layout.slot_count()));
+        initialise(program, "Guard", &mut host, u64::MAX).expect("an initialiser");
+        host
+    }
+
+    fn count(host: &Host, slot: usize) -> i64 {
+        match host.fields.get(slot) {
+            Some(Persisted::Scalar(Value::Int(n))) => *n,
+            other => panic!("expected an int at {slot}, found {other:?}"),
+        }
+    }
+
+    /// Sixty frames of a sixtieth of a second — one second of play.
+    fn play(program: &Program, host: &mut Host, frames: usize) {
+        for _ in 0..frames {
+            let (fault, _) = tick_timers(program, "Guard", host, 1.0 / 60.0, u64::MAX);
+            assert!(fault.is_none(), "{fault:?}");
+        }
+    }
+
+    /// **The layout.** Each timer gets a countdown after the states.
+    #[test]
+    fn each_timer_gets_a_countdown_slot() {
+        let program = build(GUARD);
+        let layout = program.layout("Guard").expect("a layout");
+
+        assert_eq!(layout.timers.len(), 2);
+        assert_eq!(layout.timers[0].seconds, 0.5);
+        assert_eq!(layout.timers[1].seconds, 2.0);
+        assert_eq!(layout.slot_count(), 4, "two fields and two countdowns");
+    }
+
+    /// **What `every 0.5s` says.** It fires half a second in, not on the frame
+    /// the entity appeared.
+    #[test]
+    fn an_interval_does_not_fire_on_the_first_frame() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+
+        play(&program, &mut host, 1);
+        assert_eq!(count(&host, 0), 0);
+    }
+
+    #[test]
+    fn an_interval_fires_once_it_elapses() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+
+        play(&program, &mut host, 30); // half a second
+        assert_eq!(count(&host, 0), 1);
+    }
+
+    /// **It repeats, and it does not drift.** One second is two half-seconds,
+    /// whatever the frame rate — the overshoot carries into the next interval
+    /// rather than being dropped.
+    #[test]
+    fn an_interval_repeats_without_drifting() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+
+        play(&program, &mut host, 120); // two seconds
+        assert_eq!(count(&host, 0), 4, "four half-seconds");
+    }
+
+    /// A long frame is still one interval's worth, not none.
+    #[test]
+    fn one_long_frame_still_fires() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+
+        tick_timers(&program, "Guard", &mut host, 0.6, u64::MAX);
+        assert_eq!(count(&host, 0), 1);
+    }
+
+    /// **`after` fires once.** A deadline that kept firing would be an
+    /// `every` written by mistake.
+    #[test]
+    fn a_delay_fires_exactly_once() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+
+        play(&program, &mut host, 130); // past two seconds: `after 2s` is due
+        assert_eq!(count(&host, 1), 1);
+
+        // And stays fired.
+        let layout = program.layout("Guard").expect("a layout");
+        let slot = layout.timer_slot(1);
+        assert_eq!(
+            host.fields.get(slot),
+            Some(&Persisted::Scalar(Value::Unit)),
+            "its countdown is spent, not merely large"
+        );
+
+        play(&program, &mut host, 240);
+        assert_eq!(count(&host, 1), 1, "four more seconds changed nothing");
+    }
+
+    /// A countdown is what is *left*, which is why a save resumes mid-interval
+    /// rather than restarting it or firing immediately.
+    #[test]
+    fn a_countdown_holds_the_time_remaining() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+        let slot = program.layout("Guard").expect("a layout").timer_slot(0);
+
+        play(&program, &mut host, 15); // a quarter second
+        match host.fields.get(slot) {
+            Some(Persisted::Scalar(Value::Float(left))) => {
+                assert!((left - 0.25).abs() < 0.01, "expected ~0.25, got {left}")
+            }
+            other => panic!("expected a countdown, found {other:?}"),
+        }
+    }
+
+    /// A field-driven interval cannot be scheduled before the expression is
+    /// evaluated, and a schedule decides whether to fire before it runs
+    /// anything. Refusing beats scheduling a guess.
+    #[test]
+    fn a_non_literal_interval_is_refused() {
+        let lexed = crate::lex(
+            r#"
+            behavior Guard {
+                Duration pace = 1s;
+                every pace { }
+            }
+            "#,
+        );
+        let parsed = crate::parse(lexed.tokens);
+        let compiled = crate::compile(&parsed.module);
+
+        assert!(compiled
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("literal duration")));
+    }
+}

@@ -38,9 +38,9 @@
 //! a call, and a field outlives every call made on the entity — so they compile
 //! to `LoadField`/`StoreField` against the persistent store.
 //!
-//! `state`, `every`, `after` and `await` arrive with the rest of the execution
-//! model: each needs somewhere for a suspension or a state to live, and
-//! compiling `become` before that exists would be inventing a target.
+//! `await` arrives with the suspension half of the execution model: a suspended
+//! machine has to be kept per instance, which the schedule below does not need.
+//! `state`, `become`, `every` and `after` are here.
 
 pub mod expr;
 pub mod registers;
@@ -244,6 +244,19 @@ impl Compiler {
                         self.returns.insert(name, returns);
                         index += 1;
                     }
+
+                    // Scheduled bodies are emitted last, so they are counted
+                    // last — the order here and in `compile_behavior` is the
+                    // one contract this pair has.
+                    for (position, member) in decl.members.iter().enumerate() {
+                        if !matches!(member, BehaviorMember::Every(_) | BehaviorMember::After(_)) {
+                            continue;
+                        }
+                        let name = timer_name(&decl.name, position);
+                        self.signatures.insert(name.clone(), index);
+                        self.returns.insert(name, Shape::Other);
+                        index += 1;
+                    }
                 }
                 Item::Struct(_) => {}
             }
@@ -275,6 +288,7 @@ impl Compiler {
             name: decl.name.clone(),
             fields: Vec::new(),
             states: Vec::new(),
+            timers: Vec::new(),
         };
         for member in &decl.members {
             if let BehaviorMember::Field(field) = member {
@@ -283,6 +297,29 @@ impl Compiler {
                     .insert(field.name.clone(), (slot, shape_of(&field.ty)));
                 layout.fields.push(field.name.clone());
             }
+        }
+
+        for (index, member) in decl.members.iter().enumerate() {
+            let (kind, interval) = match member {
+                BehaviorMember::Every(every) => (crate::vm::TimerKind::Every, &every.interval),
+                BehaviorMember::After(after) => (crate::vm::TimerKind::After, &after.delay),
+                _ => continue,
+            };
+            let Some(seconds) = literal_seconds(interval) else {
+                // A field-driven interval needs the expression evaluated per
+                // instance, which the schedule cannot do before it decides
+                // whether to fire. Refusing beats scheduling a guess.
+                self.error(
+                    "an `every` or `after` interval must be a literal duration for now",
+                    interval.span(),
+                );
+                continue;
+            };
+            layout.timers.push(crate::vm::TimerLayout {
+                kind,
+                seconds,
+                member: timer_name(&decl.name, index),
+            });
         }
 
         // States before any body: `become Chase(…)` written inside `Patrol`
@@ -324,11 +361,23 @@ impl Compiler {
                     self.compile_body(&name, &handler.params, &handler.body);
                 }
                 BehaviorMember::State(state) => self.compile_state(&decl.name, state),
-                // `every` and `after` wake on a schedule, which needs the timer
-                // half of the execution model. Skipping them keeps the program
-                // well-formed rather than half-compiled.
-                BehaviorMember::Field(_) | BehaviorMember::Every(_) | BehaviorMember::After(_) => {}
+                BehaviorMember::Field(_) => {}
+                // A scheduled body is a function of no arguments; what makes it
+                // scheduled is the countdown the layout records, not anything
+                // about the code.
+                BehaviorMember::Every(_) | BehaviorMember::After(_) => {}
             }
+        }
+
+        // Emitted after the members, in the order `collect_signatures` counted.
+        for (index, member) in decl.members.iter().enumerate() {
+            let body = match member {
+                BehaviorMember::Every(every) => &every.body,
+                BehaviorMember::After(after) => &after.body,
+                _ => continue,
+            };
+            let name = timer_name(&decl.name, index);
+            self.compile_body(&name, &[], body);
         }
 
         self.fields.clear();
@@ -436,11 +485,22 @@ impl Compiler {
         // an instance would be in *no* state, and every handler written inside
         // one would silently never fire — a state machine that compiles and
         // does nothing.
-        if let Some(layout) = &self.behavior {
+        if let Some(layout) = self.behavior.clone() {
             if !layout.states.is_empty() {
                 let slot = layout.state_slot() as u16;
                 let mark = self.registers.mark();
                 let (src, _) = self.constant(crate::vm::Value::Int(0), Shape::Int);
+                self.emit(Instruction::StoreField { slot, src });
+                self.registers.release_to(mark);
+            }
+
+            // Each countdown starts at its full interval, so `every 0.5s` first
+            // fires half a second in rather than on the frame the entity
+            // appeared — which is what "every half second" says.
+            for (index, timer) in layout.timers.iter().enumerate() {
+                let slot = layout.timer_slot(index) as u16;
+                let mark = self.registers.mark();
+                let (src, _) = self.constant(crate::vm::Value::Float(timer.seconds), Shape::Float);
                 self.emit(Instruction::StoreField { slot, src });
                 self.registers.release_to(mark);
             }
@@ -630,6 +690,29 @@ fn member_signature(
             Some((qualify(&method.name), shape_of(&method.return_ty)))
         }
         BehaviorMember::Handler(handler) => Some((qualify(&handler.event), Shape::Other)),
+        _ => None,
+    }
+}
+
+/// The function a scheduled body compiles to.
+///
+/// Keyed by the member's position rather than by a name the author wrote,
+/// because `every` and `after` have none. The position is stable within one
+/// compilation, which is all a schedule needs — a reload rebuilds both the
+/// layout and the code together.
+pub fn timer_name(behavior: &str, position: usize) -> String {
+    format!("{behavior}.__timer{position}")
+}
+
+/// The seconds a literal duration expression denotes.
+///
+/// The lexer has already normalised `500ms` and `2s` to seconds, so this only
+/// has to recognise that the expression *is* a literal — a field-driven interval
+/// would need evaluating per instance, which a schedule cannot do before
+/// deciding whether to fire.
+fn literal_seconds(expr: &crate::ast::Expr) -> Option<f32> {
+    match expr {
+        crate::ast::Expr::Duration { value, .. } => Some(*value),
         _ => None,
     }
 }

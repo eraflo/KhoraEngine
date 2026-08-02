@@ -84,6 +84,12 @@ pub struct ScriptInstance {
 /// Everything the script lane may read this frame.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct ScriptView {
+    /// The seconds since the previous frame.
+    ///
+    /// Carried here rather than read by the lane, for the same reason a
+    /// transform is: the lane has no `Runtime` to read it from. It is what
+    /// `every` and `after` count down.
+    pub delta_seconds: f32,
     /// The distinct behaviors in the scene, referenced by index.
     pub programs: Vec<ScriptProgram>,
     /// Every entity running one, in a stable order.
@@ -142,8 +148,15 @@ impl Flow for ScriptFlow {
         Selection::new()
     }
 
-    fn project(&self, world: &World, _sel: &Selection, _runtime: &Runtime) -> Self::View {
-        let mut view = ScriptView::default();
+    fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
+        let mut view = ScriptView {
+            delta_seconds: runtime
+                .resources
+                .get::<khora_core::time::SharedTime>()
+                .and_then(|time| time.read().ok().map(|time| time.delta_seconds))
+                .unwrap_or(0.0),
+            ..Default::default()
+        };
 
         for entity in world.iter_entities() {
             let Some(script) = world.get::<Script>(entity) else {

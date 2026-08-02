@@ -135,6 +135,7 @@ mod tests {
             name: "Guard".to_owned(),
             fields: fields.iter().map(|f| (*f).to_owned()).collect(),
             states: Vec::new(),
+            timers: Vec::new(),
         }
     }
 

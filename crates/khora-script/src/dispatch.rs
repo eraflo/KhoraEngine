@@ -39,7 +39,7 @@ use khora_core::script::{ScriptEvent, ScriptValue};
 
 use crate::arena::Persisted;
 use crate::native::Host;
-use crate::vm::{Machine, Program, Run, Value};
+use crate::vm::{Fault, Machine, Program, Run, TimerKind, Value};
 
 /// Why an event was not delivered.
 ///
@@ -184,6 +184,75 @@ pub fn initialise(
     let name = crate::bytecode::init_name(behavior);
     let mut machine = Machine::new(program, &name, &[])?;
     Some(machine.run_counting(program, host, fuel))
+}
+
+/// Advances the behavior's countdowns and runs whichever came due.
+///
+/// Called once per frame with the time that passed. A countdown rather than a
+/// deadline, for the reason [`TimerLayout`] gives: what is left survives a save
+/// exactly, where an absolute time would resume either instantly or after the
+/// whole gap depending on how long the game was closed.
+///
+/// Returns what was spent, so the caller's budget accounting stays whole — a
+/// scheduled body costs fuel like anything else.
+///
+/// [`TimerLayout`]: crate::vm::TimerLayout
+pub fn tick_timers(
+    program: &Program,
+    behavior: &str,
+    host: &mut Host,
+    delta: f32,
+    fuel: u64,
+) -> (Option<Fault>, u64) {
+    let Some(layout) = program.layout(behavior).cloned() else {
+        return (None, 0);
+    };
+    let mut spent = 0;
+
+    for (index, timer) in layout.timers.iter().enumerate() {
+        let slot = layout.timer_slot(index);
+        let Some(Persisted::Scalar(Value::Float(remaining))) = host.fields.get(slot) else {
+            // Unset, or already spent by an `after` that fired. Either way there
+            // is nothing counting down.
+            continue;
+        };
+        let remaining = *remaining - delta;
+
+        if remaining > 0.0 {
+            host.fields
+                .set(slot, Persisted::Scalar(Value::Float(remaining)));
+            continue;
+        }
+
+        // What is left of the budget, so one timer cannot spend a frame's fuel
+        // and leave the next with none.
+        let left = fuel.saturating_sub(spent);
+        let Some(mut machine) = Machine::new(program, &timer.member, &[]) else {
+            continue;
+        };
+        let (outcome, cost) = machine.run_counting(program, host, left);
+        spent += cost;
+
+        // Rearmed *after* the body, because the body may have written the slot
+        // itself — a `become` that leaves the state owning this timer, for
+        // instance, should not be undone by the schedule.
+        let next = match timer.kind {
+            // The overshoot carries into the next interval rather than being
+            // dropped: a frame that ran long must not make `every 0.5s` drift
+            // slower than half a second.
+            TimerKind::Every => Value::Float(timer.seconds + remaining),
+            // `after` fires once. `Unit` rather than a large number, so nothing
+            // has to reason about how large is large enough.
+            TimerKind::After => Value::Unit,
+        };
+        host.fields.set(slot, Persisted::Scalar(next));
+
+        if let Run::Faulted(fault) = outcome {
+            return (Some(fault), spent);
+        }
+    }
+
+    (None, spent)
 }
 
 /// Runs the handler for `event`, if the behavior declares one.

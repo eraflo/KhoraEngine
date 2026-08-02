@@ -48,6 +48,32 @@ pub struct StateLayout {
     pub slots: Vec<String>,
 }
 
+/// Whether a scheduled member repeats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TimerKind {
+    /// `every 0.5s { … }` — fires again each interval.
+    Every,
+    /// `after 10s => … ` — fires once, then never.
+    After,
+}
+
+/// One `every` or `after` a behavior declares.
+///
+/// The slot holds the time **remaining**, not a deadline. An absolute deadline
+/// would need a clock the engine does not keep, and would be wrong across a save:
+/// a guard half-way through its half-second would resume either immediately or
+/// after the whole gap, depending on how long the game was closed. Counting down
+/// what is left resumes exactly where it stopped.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TimerLayout {
+    /// Whether it repeats.
+    pub kind: TimerKind,
+    /// The interval, in seconds.
+    pub seconds: f32,
+    /// The function its body compiled to.
+    pub member: String,
+}
+
 /// A behavior's field slots, in the order the compiler assigned them.
 ///
 /// # The layout, and why states share their slots
@@ -64,7 +90,7 @@ pub struct StateLayout {
 /// there to read. In C# those variables sit on the class and are always in
 /// scope, which is what makes a state machine written that way so easy to get
 /// subtly wrong.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct BehaviorLayout {
     /// The behavior's name.
     pub name: String,
@@ -72,6 +98,8 @@ pub struct BehaviorLayout {
     pub fields: Vec<String>,
     /// Its states, in declaration order — the index is the discriminant.
     pub states: Vec<StateLayout>,
+    /// Its `every` and `after` members, in declaration order.
+    pub timers: Vec<TimerLayout>,
 }
 
 impl BehaviorLayout {
@@ -90,16 +118,26 @@ impl BehaviorLayout {
     }
 
     /// Where a state's own data begins.
+    ///
+    /// A behavior with no states reserves no discriminant: there is nothing to
+    /// record, and a slot held for a state that cannot exist would be one more
+    /// thing a reload has to carry across for no reason.
     pub fn state_data_slot(&self) -> usize {
-        self.fields.len() + 1
+        self.fields.len() + usize::from(!self.states.is_empty())
+    }
+
+    /// Where the timers' countdowns begin, after the widest state.
+    pub fn timer_slot(&self, index: usize) -> usize {
+        let widest = self.states.iter().map(|s| s.slots.len()).max().unwrap_or(0);
+        self.state_data_slot() + widest + index
     }
 
     /// How many slots an instance of this behavior needs.
     ///
-    /// Sized for the largest state, since only one is ever live.
+    /// Sized for the largest state, since only one is ever live, plus one
+    /// countdown per timer.
     pub fn slot_count(&self) -> usize {
-        let widest = self.states.iter().map(|s| s.slots.len()).max().unwrap_or(0);
-        self.state_data_slot() + widest
+        self.timer_slot(self.timers.len())
     }
 
     /// The discriminant a state name compiles to.
