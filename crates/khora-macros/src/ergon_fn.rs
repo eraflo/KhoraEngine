@@ -110,9 +110,20 @@ fn expand(function: &ItemFn, options: &Options) -> syn::Result<TokenStream> {
         .collect();
     let slots: Vec<_> = (0..params.len()).map(|i| format_ident!("arg{i}")).collect();
 
-    let result_ty = match &function.sig.output {
-        ReturnType::Default => quote!(()),
-        ReturnType::Type(_, ty) => quote!(#ty),
+    // A native that can refuse says so by returning `Result`, and the generated
+    // trampoline propagates it — which is what lets one be written with `?`
+    // instead of by hand.
+    //
+    // Recognised by the name of the return type, which is the one place this
+    // macro does look at a written token. It is safe here in a way it would not
+    // be for a parameter: a wrong guess produces a compile error on the very
+    // next line, because the generated call would not type-check.
+    let (result_ty, produced) = match &function.sig.output {
+        ReturnType::Default => (quote!(()), quote!(let produced = ())),
+        ReturnType::Type(_, ty) => match unwrap_result(ty) {
+            Some(ok) => (quote!(#ok), quote!(let produced = __outcome?)),
+            None => (quote!(#ty), quote!(let produced = __outcome)),
+        },
     };
 
     let forwarded = if wants_context {
@@ -138,7 +149,8 @@ fn expand(function: &ItemFn, options: &Options) -> syn::Result<TokenStream> {
                 cost: #cost,
                 call: |context, args| {
                     #(#bindings)*
-                    let produced = #ident(#forwarded);
+                    let __outcome = #ident(#forwarded);
+                    #produced;
                     ::khora_script::native::ScriptType::to_value(produced, context)
                 },
             };
@@ -184,6 +196,25 @@ fn split_params(function: &ItemFn) -> syn::Result<(bool, Params<'_>)> {
     }
 
     Ok((wants_context, params))
+}
+
+/// The `T` of a `Result<T, _>` return type, if that is what it is.
+fn unwrap_result(ty: &Type) -> Option<&Type> {
+    let Type::Path(path) = ty else {
+        return None;
+    };
+    let segment = path.path.segments.last()?;
+    if segment.ident != "Result" {
+        return None;
+    }
+
+    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return None;
+    };
+    arguments.args.first().and_then(|argument| match argument {
+        syn::GenericArgument::Type(inner) => Some(inner),
+        _ => None,
+    })
 }
 
 /// Whether a parameter is the native context.

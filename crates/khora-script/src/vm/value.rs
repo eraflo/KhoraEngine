@@ -26,7 +26,7 @@
 use khora_core::ecs::entity::EntityId;
 use serde::{Deserialize, Serialize};
 
-use crate::arena::ArenaRef;
+use crate::arena::{Arena, ArenaRef, Object};
 
 /// A runtime value.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -70,6 +70,50 @@ pub enum StrRef {
     Const(u32),
     /// Text built while running, in the frame arena.
     Arena(ArenaRef),
+}
+
+/// Why a string reference did not resolve.
+///
+/// Deliberately not a [`Fault`](crate::vm::Fault) or a
+/// [`NativeError`](crate::native::NativeError): the lookup is one thing, but its
+/// two callers report to different audiences — the VM faults a behavior, an
+/// engine function tells its author. Each maps this to its own, and the lookup
+/// itself exists once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrError {
+    /// The value is not a string at all.
+    NotAString(&'static str),
+    /// A constant index the running program does not have.
+    NotInProgram,
+    /// Arena text that no longer exists — from an earlier frame.
+    Gone,
+}
+
+/// The text a string value stands for.
+///
+/// Needs the literals *and* the arena because a string lives in one or the
+/// other and the value only says which.
+pub fn resolve_str<'a>(
+    value: Value,
+    strings: &'a [String],
+    arena: &'a Arena,
+) -> Result<&'a str, StrError> {
+    let reference = value
+        .as_str_ref()
+        .ok_or(StrError::NotAString(value.type_name()))?;
+
+    match reference {
+        StrRef::Const(index) => strings
+            .get(index as usize)
+            .map(String::as_str)
+            .ok_or(StrError::NotInProgram),
+        // A string from an earlier frame does not read as whatever landed at
+        // its index: the arena's generation catches it.
+        StrRef::Arena(handle) => match arena.get(handle) {
+            Ok(Object::Str(text)) => Ok(text),
+            _ => Err(StrError::Gone),
+        },
+    }
 }
 
 impl Value {

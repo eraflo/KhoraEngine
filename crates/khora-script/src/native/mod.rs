@@ -54,8 +54,8 @@ pub use ty::NativeTy;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::CommandBuffer;
 
-use crate::arena::{Arena, Object};
-use crate::vm::{StrRef, Value};
+use crate::arena::Arena;
+use crate::vm::{StrError, Value};
 
 /// Why a native call failed.
 ///
@@ -108,28 +108,16 @@ pub struct NativeContext<'a> {
 impl NativeContext<'_> {
     /// The text a string value stands for.
     pub fn string(&self, value: Value) -> Result<&str, NativeError> {
-        let reference = value.as_str_ref().ok_or_else(|| {
-            NativeError::new(format!(
-                "an engine function expected a string but the call supplied {}",
-                value.type_name()
-            ))
-        })?;
-
-        match reference {
-            StrRef::Const(index) => self
-                .strings
-                .get(index as usize)
-                .map(String::as_str)
-                .ok_or_else(|| NativeError::new("this text is not in the running program")),
-            StrRef::Arena(handle) => match self.arena.get(handle) {
-                Ok(Object::Str(text)) => Ok(text),
-                Ok(other) => Err(NativeError::new(format!(
-                    "expected text, found {}",
-                    other.type_name()
-                ))),
-                Err(error) => Err(NativeError::new(error.message())),
-            },
-        }
+        crate::vm::resolve_str(value, self.strings, self.arena).map_err(|error| match error {
+            StrError::NotAString(found) => NativeError::new(format!(
+                "an engine function expected a string but the call supplied {found}"
+            )),
+            StrError::NotInProgram => NativeError::new("this text is not in the running program"),
+            StrError::Gone => NativeError::new(
+                "this text was made in an earlier frame and no longer exists — \
+                 to keep one, put it in a behavior field",
+            ),
+        })
     }
 }
 

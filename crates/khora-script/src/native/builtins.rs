@@ -14,89 +14,51 @@
 
 //! The functions every Ergon program can call.
 //!
-//! Scalar maths, and only that for now. Not an arbitrary stopping point: a
-//! native can only take and return what a register can hold, and [`Value`]
-//! carries numbers, booleans and null. `Log`, `Spawn` and `Raycast` need a
-//! string, an entity handle and an engine struct respectively, none of which is
-//! representable yet — so they are absent rather than half-present.
+//! Written with `#[ergon_fn]`, the same attribute a game uses. The language's
+//! own built-ins are therefore the macro's first consumer: a signature it gets
+//! wrong breaks `Abs` before it breaks anyone's project.
 //!
-//! Each of these is one arithmetic operation, so each costs what a VM
-//! instruction costs. A native whose work is not constant — a raycast, an asset
-//! load — must declare what it actually spends, or the budget stops meaning
-//! anything.
+//! Scalar maths and text, which is what a register can hold today. `Spawn` and
+//! `Raycast` need an engine struct, so they are absent rather than
+//! half-present.
+//!
+//! Each of these does about as much as one instruction and is priced that way.
+//! A native whose work is not constant — a raycast, an asset load — must
+//! declare what it actually spends, or the budget stops meaning anything.
 
-use super::{NativeContext, NativeError, NativeFn, NativeTy};
-use crate::vm::Value;
+use khora_macros::ergon_fn;
 
-/// The cost of a native that does about as much as one instruction.
-const TRIVIAL: u64 = 1;
+use super::{NativeError, NativeFn};
 
-/// Reads argument `index` as a float, widening an integer.
-///
-/// The checker has already proved the argument well-typed, so a failure here is
-/// an engine bug rather than an author's mistake — which is why the message
-/// says so instead of blaming the script.
-fn float_at(args: &[Value], index: usize, name: &str) -> Result<f32, NativeError> {
-    args.get(index)
-        .and_then(|value| value.as_float())
-        .ok_or_else(|| {
-            NativeError::new(format!(
-                "`{name}` was called with a value it cannot use — the argument \
-                 did not survive as a number"
-            ))
-        })
+// ─── Numbers ────────────────────────────────────────────────────────────────
+
+/// Magnitude, without the sign.
+#[ergon_fn]
+fn abs(x: f32) -> f32 {
+    x.abs()
 }
 
-macro_rules! unary_float {
-    ($konst:ident, $name:literal, $doc:literal, $body:expr) => {
-        #[doc = $doc]
-        pub static $konst: NativeFn = NativeFn {
-            name: $name,
-            params: &[NativeTy::Float],
-            result: NativeTy::Float,
-            cost: TRIVIAL,
-            call: |_: &mut NativeContext<'_>, args: &[Value]| {
-                let x = float_at(args, 0, $name)?;
-                let f: fn(f32) -> f32 = $body;
-                Ok(Value::Float(f(x)))
-            },
-        };
-    };
+/// The largest whole number no greater.
+#[ergon_fn]
+fn floor(x: f32) -> f32 {
+    x.floor()
 }
 
-macro_rules! binary_float {
-    ($konst:ident, $name:literal, $doc:literal, $body:expr) => {
-        #[doc = $doc]
-        pub static $konst: NativeFn = NativeFn {
-            name: $name,
-            params: &[NativeTy::Float, NativeTy::Float],
-            result: NativeTy::Float,
-            cost: TRIVIAL,
-            call: |_: &mut NativeContext<'_>, args: &[Value]| {
-                let a = float_at(args, 0, $name)?;
-                let b = float_at(args, 1, $name)?;
-                let f: fn(f32, f32) -> f32 = $body;
-                Ok(Value::Float(f(a, b)))
-            },
-        };
-    };
+/// The smallest whole number no less.
+#[ergon_fn]
+fn ceil(x: f32) -> f32 {
+    x.ceil()
 }
 
-unary_float!(ABS, "Abs", "Magnitude, without the sign.", f32::abs);
-unary_float!(
-    FLOOR,
-    "Floor",
-    "The largest whole number no greater.",
-    f32::floor
-);
-unary_float!(
-    CEIL,
-    "Ceil",
-    "The smallest whole number no less.",
-    f32::ceil
-);
-unary_float!(ROUND, "Round", "The nearest whole number.", f32::round);
-unary_float!(SIGN, "Sign", "`-1`, `0` or `1`.", |x| {
+/// The nearest whole number.
+#[ergon_fn]
+fn round(x: f32) -> f32 {
+    x.round()
+}
+
+/// `-1`, `0` or `1`.
+#[ergon_fn]
+fn sign(x: f32) -> f32 {
     // `f32::signum` answers 1.0 for +0.0 and -1.0 for -0.0, which reads as a
     // direction where there is none. Gameplay asking for the sign of zero wants
     // "neither way".
@@ -105,67 +67,56 @@ unary_float!(SIGN, "Sign", "`-1`, `0` or `1`.", |x| {
     } else {
         x.signum()
     }
-});
+}
 
-binary_float!(MIN, "Min", "The smaller of two.", f32::min);
-binary_float!(MAX, "Max", "The larger of two.", f32::max);
+/// The smaller of two.
+#[ergon_fn]
+fn min(a: f32, b: f32) -> f32 {
+    a.min(b)
+}
+
+/// The larger of two.
+#[ergon_fn]
+fn max(a: f32, b: f32) -> f32 {
+    a.max(b)
+}
 
 /// The non-negative square root.
 ///
 /// Negative input is a fault rather than a `NaN`. A `NaN` propagates silently
 /// through every later calculation and surfaces as an entity that has vanished
 /// from the world; the fault names the call that produced it.
-pub static SQRT: NativeFn = NativeFn {
-    name: "Sqrt",
-    params: &[NativeTy::Float],
-    result: NativeTy::Float,
-    cost: TRIVIAL,
-    call: |_, args| {
-        let x = float_at(args, 0, "Sqrt")?;
-        if x < 0.0 {
-            return Err(NativeError::new(format!(
-                "`Sqrt` cannot take the root of {x}"
-            )));
-        }
-        Ok(Value::Float(x.sqrt()))
-    },
-};
+#[ergon_fn]
+fn sqrt(x: f32) -> Result<f32, NativeError> {
+    if x < 0.0 {
+        return Err(NativeError::new(format!(
+            "`Sqrt` cannot take the root of {x}"
+        )));
+    }
+    Ok(x.sqrt())
+}
 
 /// Confines a value to a range.
-pub static CLAMP: NativeFn = NativeFn {
-    name: "Clamp",
-    params: &[NativeTy::Float, NativeTy::Float, NativeTy::Float],
-    result: NativeTy::Float,
-    cost: TRIVIAL,
-    call: |_, args| {
-        let value = float_at(args, 0, "Clamp")?;
-        let low = float_at(args, 1, "Clamp")?;
-        let high = float_at(args, 2, "Clamp")?;
-        if low > high {
-            return Err(NativeError::new(format!(
-                "`Clamp` was given the range {low}..{high}, which is empty"
-            )));
-        }
-        Ok(Value::Float(value.clamp(low, high)))
-    },
-};
+#[ergon_fn]
+fn clamp(value: f32, low: f32, high: f32) -> Result<f32, NativeError> {
+    if low > high {
+        return Err(NativeError::new(format!(
+            "`Clamp` was given the range {low}..{high}, which is empty"
+        )));
+    }
+    Ok(value.clamp(low, high))
+}
 
 /// Blends between two values.
 ///
 /// Unclamped on purpose: `Lerp(a, b, 1.5)` overshooting is how a spring or an
 /// ease-out is written, and clamping here would quietly remove that.
-pub static LERP: NativeFn = NativeFn {
-    name: "Lerp",
-    params: &[NativeTy::Float, NativeTy::Float, NativeTy::Float],
-    result: NativeTy::Float,
-    cost: TRIVIAL,
-    call: |_, args| {
-        let from = float_at(args, 0, "Lerp")?;
-        let to = float_at(args, 1, "Lerp")?;
-        let t = float_at(args, 2, "Lerp")?;
-        Ok(Value::Float(from + (to - from) * t))
-    },
-};
+#[ergon_fn]
+fn lerp(from: f32, to: f32, t: f32) -> f32 {
+    from + (to - from) * t
+}
+
+// ─── Text ───────────────────────────────────────────────────────────────────
 
 /// Reports to the editor's Console.
 ///
@@ -173,13 +124,13 @@ pub static LERP: NativeFn = NativeFn {
 /// lands wherever the engine's already does — the editor panel while playing,
 /// the terminal for a headless run, a file if the host configured one. A
 /// separate channel would have to be plumbed to each of those again.
-#[khora_macros::ergon_fn]
+#[ergon_fn]
 fn log(message: String) {
     log::info!("[script] {message}");
 }
 
 /// Reports something the author should look at.
-#[khora_macros::ergon_fn]
+#[ergon_fn]
 fn warn(message: String) {
     log::warn!("[script] {message}");
 }
@@ -189,7 +140,7 @@ fn warn(message: String) {
 /// Does **not** stop the behavior. A script reporting a problem it handled is
 /// not the same as one that faulted, and conflating them would make the second
 /// impossible to see.
-#[khora_macros::ergon_fn]
+#[ergon_fn]
 fn error(message: String) {
     log::error!("[script] {message}");
 }
@@ -198,31 +149,32 @@ fn error(message: String) {
 ///
 /// Characters, not bytes: it is what an author can count, and what the arena's
 /// own length already reports.
-#[khora_macros::ergon_fn]
+#[ergon_fn]
 fn length(text: String) -> i64 {
     text.chars().count() as i64
 }
 
 /// Every built-in, in the order they are registered.
 ///
-/// A slice rather than a lazily-built map: the order decides the index compiled
-/// bytecode addresses, so it has to be something written down once rather than
-/// whatever an iteration produced.
+/// A written list rather than the `inventory` submissions these also make: the
+/// order decides the index compiled bytecode addresses, and the built-ins are
+/// the part of the registry that must not move when a game adds a function of
+/// its own.
 pub fn builtins() -> &'static [&'static NativeFn] {
     BUILTINS
 }
 
 static BUILTINS: &[&NativeFn] = &[
-    &ABS,
-    &FLOOR,
-    &CEIL,
-    &ROUND,
-    &SIGN,
-    &MIN,
-    &MAX,
-    &SQRT,
-    &CLAMP,
-    &LERP,
+    &ERGON_ABS,
+    &ERGON_FLOOR,
+    &ERGON_CEIL,
+    &ERGON_ROUND,
+    &ERGON_SIGN,
+    &ERGON_MIN,
+    &ERGON_MAX,
+    &ERGON_SQRT,
+    &ERGON_CLAMP,
+    &ERGON_LERP,
     &ERGON_LOG,
     &ERGON_WARN,
     &ERGON_ERROR,

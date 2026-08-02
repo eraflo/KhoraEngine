@@ -228,14 +228,9 @@ fn set_component(
         entity,
         component: component.to_owned(),
     })?;
-    let patch = encode(component, value)?;
+    let patch = to_json(value).map_err(rejected_by(component))?;
 
-    (registration.from_json)(world, entity, &merge(current, patch)).map_err(|reason| {
-        ApplyError::Rejected {
-            component: component.to_owned(),
-            reason,
-        }
-    })
+    (registration.from_json)(world, entity, &merge(current, patch)).map_err(rejected_by(component))
 }
 
 fn add_component(
@@ -254,10 +249,7 @@ fn add_component(
 
     // Start from the component's own default so a script only has to name the
     // fields it cares about, then apply its value as a patch over that.
-    (registration.create_default)(world, entity).map_err(|reason| ApplyError::Rejected {
-        component: component.to_owned(),
-        reason,
-    })?;
+    (registration.create_default)(world, entity).map_err(rejected_by(component))?;
 
     if matches!(value, ScriptValue::Unit) {
         return Ok(());
@@ -271,10 +263,7 @@ fn remove_component(
     component: &str,
 ) -> Result<(), ApplyError> {
     let registration = lookup(world, entity, component)?;
-    (registration.remove)(world, entity).map_err(|reason| ApplyError::Rejected {
-        component: component.to_owned(),
-        reason,
-    })
+    (registration.remove)(world, entity).map_err(rejected_by(component))
 }
 
 fn lookup(
@@ -288,9 +277,14 @@ fn lookup(
     registration_of(component).ok_or_else(|| ApplyError::UnknownComponent(component.to_owned()))
 }
 
-fn encode(component: &str, value: &ScriptValue) -> Result<serde_json::Value, ApplyError> {
-    to_json(value).map_err(|reason| ApplyError::Rejected {
+/// Attributes a failure to the component that refused it.
+///
+/// Every step of a generic component write can fail with a reason the component
+/// itself produced, and none of them carries the name — so the name is attached
+/// in one place rather than at each `map_err`.
+fn rejected_by(component: &str) -> impl Fn(String) -> ApplyError + '_ {
+    move |reason| ApplyError::Rejected {
         component: component.to_owned(),
         reason,
-    })
+    }
 }

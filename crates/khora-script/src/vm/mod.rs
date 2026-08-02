@@ -46,7 +46,7 @@ mod tests;
 
 pub use instruction::{Instruction, Reg};
 pub use program::{Function, Program};
-pub use value::{StrRef, Value};
+pub use value::{resolve_str, StrError, StrRef, Value};
 
 use serde::{Deserialize, Serialize};
 
@@ -472,21 +472,13 @@ impl Machine {
         program: &'a Program,
         host: &'a Host,
     ) -> Result<&'a str, Fault> {
-        let reference = value.as_str_ref().ok_or(Fault::TypeMismatch {
-            expected: "string",
-            found: value.type_name(),
-        })?;
-
-        match reference {
-            StrRef::Const(index) => program.string(index).ok_or(Fault::BadString),
-            StrRef::Arena(handle) => match host.arena.get(handle) {
-                // A string from an earlier frame does not read as whatever
-                // landed at its index: the arena's generation catches it, and
-                // the fault says so rather than returning the wrong text.
-                Ok(crate::arena::Object::Str(text)) => Ok(text),
-                _ => Err(Fault::BadString),
+        value::resolve_str(value, &program.strings, &host.arena).map_err(|error| match error {
+            StrError::NotAString(found) => Fault::TypeMismatch {
+                expected: "string",
+                found,
             },
-        }
+            StrError::NotInProgram | StrError::Gone => Fault::BadString,
+        })
     }
 
     /// Runs an engine function and writes its result back.
