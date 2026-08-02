@@ -134,6 +134,7 @@ mod tests {
         BehaviorLayout {
             name: "Guard".to_owned(),
             fields: fields.iter().map(|f| (*f).to_owned()).collect(),
+            states: Vec::new(),
         }
     }
 

@@ -231,6 +231,26 @@ pub enum Instruction {
         src: Reg,
     },
 
+    /// Enters a state, with its arguments already in `base..base + argc`.
+    ///
+    /// Writes which state the behavior is in, then the values it was entered
+    /// with. It does **not** jump: a transition ends the current member's turn
+    /// rather than redirecting it, and the next dispatch finds the new state.
+    /// Jumping would mean the rest of the statement that said `become` ran
+    /// inside a state it had just left.
+    Become {
+        /// The state's discriminant.
+        state: u16,
+        /// First argument register.
+        base: Reg,
+        /// Argument count.
+        argc: u8,
+        /// The slot holding which state the behavior is in.
+        state_slot: u16,
+        /// Where the state's own data begins.
+        data_slot: u16,
+    },
+
     /// Reads one of the running behavior's fields.
     ///
     /// Fields do not live in registers: a register file belongs to a call, and

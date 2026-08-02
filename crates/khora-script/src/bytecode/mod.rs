@@ -141,6 +141,9 @@ pub struct Compiler {
     pub returns: HashMap<String, Shape>,
     /// Engine function name to its index in the registry, and its result shape.
     pub natives: HashMap<String, (usize, Shape)>,
+    /// The layout of the behavior being compiled, so `become` can resolve a
+    /// state name to the discriminant it writes.
+    pub behavior: Option<crate::vm::BehaviorLayout>,
     /// Fields of the behavior being compiled, by name.
     ///
     /// Empty while compiling a free function, which is what makes a stray
@@ -163,6 +166,7 @@ impl Compiler {
             signatures: HashMap::new(),
             returns: HashMap::new(),
             natives: HashMap::new(),
+            behavior: None,
             fields: HashMap::new(),
             code: Vec::new(),
             registers: Registers::new(0),
@@ -214,15 +218,27 @@ impl Compiler {
                     index += 1;
 
                     for member in &decl.members {
-                        let (name, returns) = match member {
-                            BehaviorMember::Method(method) => (
-                                format!("{}.{}", decl.name, method.name),
-                                shape_of(&method.return_ty),
-                            ),
-                            BehaviorMember::Handler(handler) => {
-                                (format!("{}.{}", decl.name, handler.event), Shape::Other)
+                        // A state's members are functions too, emitted after
+                        // the behavior's own. Counting only the behavior's was
+                        // right until a state appeared, at which point every
+                        // index after it named a different function.
+                        if let BehaviorMember::State(state) = member {
+                            for inner in &state.members {
+                                let Some((name, returns)) =
+                                    member_signature(&decl.name, Some(&state.name), inner)
+                                else {
+                                    continue;
+                                };
+                                self.signatures.insert(name.clone(), index);
+                                self.returns.insert(name, returns);
+                                index += 1;
                             }
-                            _ => continue,
+                            continue;
+                        }
+
+                        let Some((name, returns)) = member_signature(&decl.name, None, member)
+                        else {
+                            continue;
                         };
                         self.signatures.insert(name.clone(), index);
                         self.returns.insert(name, returns);
@@ -258,6 +274,7 @@ impl Compiler {
         let mut layout = crate::vm::BehaviorLayout {
             name: decl.name.clone(),
             fields: Vec::new(),
+            states: Vec::new(),
         };
         for member in &decl.members {
             if let BehaviorMember::Field(field) = member {
@@ -267,10 +284,32 @@ impl Compiler {
                 layout.fields.push(field.name.clone());
             }
         }
+
+        // States before any body: `become Chase(…)` written inside `Patrol`
+        // has to resolve a state declared below it, and a file's order should
+        // not decide what compiles.
+        for member in &decl.members {
+            if let BehaviorMember::State(state) = member {
+                layout.states.push(crate::vm::StateLayout {
+                    name: state.name.clone(),
+                    slots: state
+                        .params
+                        .iter()
+                        .map(|param| param.name.clone())
+                        .chain(state.members.iter().filter_map(|member| match member {
+                            BehaviorMember::Field(field) => Some(field.name.clone()),
+                            _ => None,
+                        }))
+                        .collect(),
+                });
+            }
+        }
+
         // Recorded even when empty: a behavior that declares no fields still has
         // to be findable, or a reload would treat "no layout" and "no fields" as
         // the same thing and reset an instance that had nothing to lose.
-        self.program.behaviors.push(layout);
+        self.program.behaviors.push(layout.clone());
+        self.behavior = Some(layout);
 
         self.compile_field_defaults(decl);
 
@@ -284,18 +323,63 @@ impl Compiler {
                     let name = format!("{}.{}", decl.name, handler.event);
                     self.compile_body(&name, &handler.params, &handler.body);
                 }
-                // `state`, `every` and `after` need the parts of the execution
-                // model that are not built yet — becoming a state, and waking on
-                // a schedule. Skipping them keeps the program well-formed rather
-                // than half-compiled.
-                BehaviorMember::Field(_)
-                | BehaviorMember::State(_)
-                | BehaviorMember::Every(_)
-                | BehaviorMember::After(_) => {}
+                BehaviorMember::State(state) => self.compile_state(&decl.name, state),
+                // `every` and `after` wake on a schedule, which needs the timer
+                // half of the execution model. Skipping them keeps the program
+                // well-formed rather than half-compiled.
+                BehaviorMember::Field(_) | BehaviorMember::Every(_) | BehaviorMember::After(_) => {}
             }
         }
 
         self.fields.clear();
+        self.behavior = None;
+    }
+
+    /// Compiles a state's members, with its own data in scope alongside the
+    /// behavior's.
+    ///
+    /// A state's member is a function like any other, named
+    /// `Guard.Patrol.Update` so dispatch can prefer it over the behavior's own.
+    /// What makes it a *state's* member is only which slots it can name — which
+    /// is the containment `state` exists to give.
+    fn compile_state(&mut self, behavior: &str, decl: &crate::ast::StateDecl) {
+        let Some(layout) = self.behavior.clone() else {
+            return;
+        };
+        let Some(state) = layout
+            .state_index(&decl.name)
+            .and_then(|i| layout.state_at(i))
+        else {
+            return;
+        };
+
+        // Added on top of the behavior's fields rather than replacing them: a
+        // state can read `health` while patrolling, and only the patrol's own
+        // data is confined.
+        let outer = self.fields.clone();
+        for (offset, slot) in state.slots.iter().enumerate() {
+            let absolute = (layout.state_data_slot() + offset) as u16;
+            let shape = shape_of_state_slot(decl, slot);
+            self.fields.insert(slot.clone(), (absolute, shape));
+        }
+
+        for member in &decl.members {
+            match member {
+                BehaviorMember::Method(method) => {
+                    let name = format!("{behavior}.{}.{}", decl.name, method.name);
+                    self.compile_body(&name, &method.params, &method.body);
+                }
+                BehaviorMember::Handler(handler) => {
+                    let name = format!("{behavior}.{}.{}", decl.name, handler.event);
+                    self.compile_body(&name, &handler.params, &handler.body);
+                }
+                // A state inside a state is not in the grammar, and the rest
+                // waits for the timer half.
+                _ => {}
+            }
+        }
+
+        self.fields = outer;
     }
 
     /// Emits the function that gives a fresh instance its field values.
@@ -346,6 +430,20 @@ impl Compiler {
             };
             self.emit(Instruction::StoreField { slot, src });
             self.registers.release_to(mark);
+        }
+
+        // A behavior with states starts in the one declared first. Left unset,
+        // an instance would be in *no* state, and every handler written inside
+        // one would silently never fire — a state machine that compiles and
+        // does nothing.
+        if let Some(layout) = &self.behavior {
+            if !layout.states.is_empty() {
+                let slot = layout.state_slot() as u16;
+                let mark = self.registers.mark();
+                let (src, _) = self.constant(crate::vm::Value::Int(0), Shape::Int);
+                self.emit(Instruction::StoreField { slot, src });
+                self.registers.release_to(mark);
+            }
         }
 
         let unit = self.registers.temp();
@@ -490,5 +588,48 @@ pub fn shape_of(ty: &TypeRef) -> Shape {
             _ => Shape::Other,
         },
         _ => Shape::Other,
+    }
+}
+
+/// The numeric shape of a state slot — a parameter's or a field's declared type.
+///
+/// Looked up by name rather than tracked alongside, because the slot list is
+/// what the layout records and the layout is what a reload compares. Two
+/// parallel lists would be two things to keep in step.
+fn shape_of_state_slot(decl: &crate::ast::StateDecl, slot: &str) -> Shape {
+    if let Some(param) = decl.params.iter().find(|param| param.name == slot) {
+        return shape_of(&param.ty);
+    }
+    for member in &decl.members {
+        if let BehaviorMember::Field(field) = member {
+            if field.name == slot {
+                return shape_of(&field.ty);
+            }
+        }
+    }
+    Shape::Other
+}
+
+/// The compiled name and return shape of a behavior member.
+///
+/// One place, because `collect_signatures` and `compile_behavior` both spell it
+/// and two spellings of the same convention would fail silently — a handler
+/// registered under one name and emitted under another simply never fires.
+fn member_signature(
+    behavior: &str,
+    state: Option<&str>,
+    member: &BehaviorMember,
+) -> Option<(String, Shape)> {
+    let qualify = |name: &str| match state {
+        Some(state) => format!("{behavior}.{state}.{name}"),
+        None => format!("{behavior}.{name}"),
+    };
+
+    match member {
+        BehaviorMember::Method(method) => {
+            Some((qualify(&method.name), shape_of(&method.return_ty)))
+        }
+        BehaviorMember::Handler(handler) => Some((qualify(&handler.event), Shape::Other)),
+        _ => None,
     }
 }

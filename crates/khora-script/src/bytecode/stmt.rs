@@ -34,7 +34,8 @@
 
 use super::{Compiler, Shape};
 use crate::ast::{Block, Expr, Stmt};
-use crate::vm::{Instruction, Value};
+use crate::diagnostics::Span;
+use crate::vm::{Instruction, Reg, Value};
 
 impl Compiler {
     /// Compiles a block in its own scope.
@@ -138,9 +139,11 @@ impl Compiler {
 
             Stmt::Block(block) => self.compile_block(block),
 
-            // `break`, `continue`, `become` and `match` need either loop
-            // context threading or the execution model. Reporting is better
-            // than emitting a jump to nowhere.
+            Stmt::Become { state, args, span } => self.compile_become(state, args, *span),
+
+            // `break`, `continue` and `match` need loop context threading or
+            // exhaustiveness lowering. Reporting is better than emitting a jump
+            // to nowhere.
             other => {
                 self.error("this statement cannot be compiled yet", other.span());
             }
@@ -227,5 +230,55 @@ impl Compiler {
             self.patch_to_here(exit);
         }
         self.close_scope(scope);
+    }
+}
+
+impl Compiler {
+    /// Compiles `become Chase(prey);`.
+    ///
+    /// The arguments land in consecutive registers before the instruction runs,
+    /// the same convention a call uses — and for the same reason: the values are
+    /// copied into the state's slots in one pass, so they have to be adjacent
+    /// when it starts.
+    fn compile_become(&mut self, state: &str, args: &[Expr], span: Span) {
+        let Some(layout) = self.behavior.clone() else {
+            self.error("`become` is only meaningful inside a behavior", span);
+            return;
+        };
+        let Some(index) = layout.state_index(state) else {
+            // The checker has already reported an unknown state; emitting
+            // nothing here avoids a second message for one mistake.
+            return;
+        };
+
+        let mark = self.registers.mark();
+        // Every slot reserved before any argument is compiled: compiling one
+        // takes temporaries of its own, so reserving as we go would leave the
+        // next slot no longer adjacent.
+        let base = self.registers.temp();
+        let slots: Vec<Reg> = std::iter::once(base)
+            .chain((1..args.len()).map(|_| self.registers.temp()))
+            .collect();
+
+        for (argument, slot) in args.iter().zip(slots) {
+            let inner = self.registers.mark();
+            let (value, _) = self.compile_expr(argument);
+            if value != slot {
+                self.emit(Instruction::Move {
+                    dst: slot,
+                    src: value,
+                });
+            }
+            self.registers.release_to(inner);
+        }
+
+        self.emit(Instruction::Become {
+            state: index as u16,
+            base,
+            argc: args.len() as u8,
+            state_slot: layout.state_slot() as u16,
+            data_slot: layout.state_data_slot() as u16,
+        });
+        self.registers.release_to(mark);
     }
 }

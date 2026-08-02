@@ -35,19 +35,81 @@ pub struct Function {
     pub code: Vec<Instruction>,
 }
 
+/// One `state` of a behavior, and the slots its own data occupies.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct StateLayout {
+    /// The state's name.
+    pub name: String,
+    /// Its parameters then its fields, in declaration order.
+    ///
+    /// Named together because `become Chase(prey)` fills the first and the
+    /// state's own `int missed = 0;` fills the rest, and once entered a member
+    /// reads both the same way.
+    pub slots: Vec<String>,
+}
+
 /// A behavior's field slots, in the order the compiler assigned them.
+///
+/// # The layout, and why states share their slots
+///
+/// ```text
+/// [0 .. fields.len())      the behavior's own fields — always readable
+/// [fields.len()]           which state it is in
+/// [fields.len() + 1 ..)    the current state's data
+/// ```
+///
+/// Every state's data occupies the **same** region, because a state's data only
+/// exists while the behavior is in it. That is not a saving, it is the point:
+/// a patrol's waypoint index cannot be read while chasing because it is not
+/// there to read. In C# those variables sit on the class and are always in
+/// scope, which is what makes a state machine written that way so easy to get
+/// subtly wrong.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct BehaviorLayout {
     /// The behavior's name.
     pub name: String,
     /// Field names, index = slot.
     pub fields: Vec<String>,
+    /// Its states, in declaration order — the index is the discriminant.
+    pub states: Vec<StateLayout>,
 }
 
 impl BehaviorLayout {
     /// The slot a field name occupies.
     pub fn slot_of(&self, field: &str) -> Option<usize> {
         self.fields.iter().position(|known| known == field)
+    }
+
+    /// The slot holding which state the behavior is in.
+    ///
+    /// Sits between the behavior's fields and the state's, so adding a field
+    /// moves it — which is exactly why a reload matches by name and never by
+    /// position.
+    pub fn state_slot(&self) -> usize {
+        self.fields.len()
+    }
+
+    /// Where a state's own data begins.
+    pub fn state_data_slot(&self) -> usize {
+        self.fields.len() + 1
+    }
+
+    /// How many slots an instance of this behavior needs.
+    ///
+    /// Sized for the largest state, since only one is ever live.
+    pub fn slot_count(&self) -> usize {
+        let widest = self.states.iter().map(|s| s.slots.len()).max().unwrap_or(0);
+        self.state_data_slot() + widest
+    }
+
+    /// The discriminant a state name compiles to.
+    pub fn state_index(&self, name: &str) -> Option<usize> {
+        self.states.iter().position(|state| state.name == name)
+    }
+
+    /// The state a discriminant names.
+    pub fn state_at(&self, index: usize) -> Option<&StateLayout> {
+        self.states.get(index)
     }
 }
 

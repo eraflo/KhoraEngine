@@ -663,3 +663,223 @@ fn a_string_field_is_kept_by_value() {
         ))),
     );
 }
+
+// ─── States ─────────────────────────────────────────────────────────────────
+
+mod states {
+    use super::{build, entity, living, registry_with_despawn};
+    use crate::arena::{Persisted, PersistentStore};
+    use crate::dispatch::{current_state, deliver, handles, initialise};
+    use crate::native::Host;
+    use crate::vm::{Program, Run, Value};
+    use khora_core::script::{ScriptEvent, ScriptValue};
+
+    /// A guard that patrols until it is hurt, then chases whoever hurt it.
+    const GUARD: &str = r#"
+    behavior Guard {
+        int health = 100;
+
+        state Patrol {
+            int steps = 0;
+
+            on Damaged(int amount) {
+                health -= amount;
+                become Chase(amount);
+            }
+        }
+
+        state Chase(int fury) {
+            on Damaged(int amount) {
+                health -= amount;
+                fury += amount;
+            }
+        }
+
+        on Healed(int amount) {
+            health += amount;
+        }
+    }
+    "#;
+
+    fn host_of(program: &Program) -> Host {
+        let layout = program.layout("Guard").expect("Guard has a layout");
+        let mut host = Host {
+            natives: registry_with_despawn(),
+            ..Host::new()
+        }
+        .with_fields(PersistentStore::with_slots(layout.slot_count()));
+
+        initialise(program, "Guard", &mut host, u64::MAX).expect("an initialiser");
+        host
+    }
+
+    fn hurt(program: &Program, host: &mut Host, amount: i64) {
+        let target = entity(0);
+        let event = ScriptEvent::new(target, "Damaged").with(ScriptValue::Int(amount));
+        deliver(program, "Guard", &event, host, u64::MAX, living(&[target])).expect("delivered");
+    }
+
+    fn slot(host: &Host, index: usize) -> Option<Persisted> {
+        host.fields.get(index).cloned()
+    }
+
+    /// **The layout.** A state's data sits after the discriminant, and every
+    /// state shares that region — only one is ever live.
+    #[test]
+    fn the_layout_puts_the_state_after_the_behaviors_own_fields() {
+        let program = build(GUARD);
+        let layout = program.layout("Guard").expect("a layout");
+
+        assert_eq!(layout.fields, vec!["health"]);
+        assert_eq!(layout.state_slot(), 1);
+        assert_eq!(layout.state_data_slot(), 2);
+        assert_eq!(layout.states.len(), 2);
+        // Sized for the widest state: Patrol has `steps`, Chase has `fury`.
+        assert_eq!(layout.slot_count(), 3);
+    }
+
+    /// **The transition.** `become` writes which state it is now in.
+    #[test]
+    fn become_moves_the_behavior_to_the_named_state() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+
+        assert_eq!(current_state(&program, "Guard", &host), Some("Patrol"));
+        hurt(&program, &mut host, 30);
+        assert_eq!(current_state(&program, "Guard", &host), Some("Chase"));
+    }
+
+    /// And the values it was entered with land in the state's own slots.
+    #[test]
+    fn become_carries_its_arguments_into_the_state() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+
+        hurt(&program, &mut host, 30);
+        assert_eq!(
+            slot(&host, 2),
+            Some(Persisted::Scalar(Value::Int(30))),
+            "Chase was entered with the fury that caused it"
+        );
+    }
+
+    /// **What `state` is for.** The handler that runs is the current state's,
+    /// so `on Damaged` written inside `Chase` means "while chasing".
+    #[test]
+    fn the_current_states_handler_is_the_one_that_runs() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+
+        hurt(&program, &mut host, 30); // Patrol: hurt, then become Chase(30)
+        hurt(&program, &mut host, 5); // Chase: hurt, and fury grows
+
+        assert_eq!(
+            slot(&host, 0),
+            Some(Persisted::Scalar(Value::Int(65))),
+            "both hits landed on health"
+        );
+        assert_eq!(
+            slot(&host, 2),
+            Some(Persisted::Scalar(Value::Int(35))),
+            "and the second went to Chase's fury, not to Patrol's steps"
+        );
+        assert_eq!(
+            current_state(&program, "Guard", &host),
+            Some("Chase"),
+            "it did not become Chase a second time"
+        );
+    }
+
+    /// A behavior's own handler is the fallback, so `on Healed` written once
+    /// applies in every state without being repeated in each.
+    #[test]
+    fn a_behaviors_own_handler_applies_in_every_state() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+        let target = entity(0);
+
+        for _ in 0..2 {
+            let event = ScriptEvent::new(target, "Healed").with(ScriptValue::Int(5));
+            deliver(
+                &program,
+                "Guard",
+                &event,
+                &mut host,
+                u64::MAX,
+                living(&[target]),
+            )
+            .expect("delivered");
+        }
+        hurt(&program, &mut host, 30);
+        let event = ScriptEvent::new(target, "Healed").with(ScriptValue::Int(5));
+        deliver(
+            &program,
+            "Guard",
+            &event,
+            &mut host,
+            u64::MAX,
+            living(&[target]),
+        )
+        .expect("delivered in Chase too");
+
+        assert_eq!(
+            slot(&host, 0),
+            Some(Persisted::Scalar(Value::Int(85))),
+            "100 + 5 + 5 - 30 + 5"
+        );
+    }
+
+    /// A behavior with states starts in the first one declared — a discriminant
+    /// of zero is the state written first, which is what an author means by
+    /// writing it there.
+    #[test]
+    fn a_fresh_instance_starts_in_the_first_state() {
+        let program = build(GUARD);
+        let host = host_of(&program);
+        assert_eq!(current_state(&program, "Guard", &host), Some("Patrol"));
+    }
+
+    #[test]
+    fn a_behavior_reports_the_events_its_states_handle() {
+        let program = build(GUARD);
+
+        assert!(handles(&program, "Guard", "Damaged"), "declared in a state");
+        assert!(handles(&program, "Guard", "Healed"), "declared outside one");
+        assert!(!handles(&program, "Guard", "Opened"));
+    }
+
+    /// A behavior with no states has no discriminant to read, and its handlers
+    /// resolve the way they always did.
+    #[test]
+    fn a_behavior_without_states_is_unaffected() {
+        let program = build(
+            r#"
+            behavior Simple {
+                int health = 100;
+                on Damaged(int amount) { health -= amount; }
+            }
+            "#,
+        );
+        let mut host = Host {
+            natives: registry_with_despawn(),
+            ..Host::new()
+        }
+        .with_fields(PersistentStore::with_slots(1));
+        initialise(&program, "Simple", &mut host, u64::MAX).expect("an initialiser");
+
+        assert_eq!(current_state(&program, "Simple", &host), None);
+
+        let target = entity(0);
+        let event = ScriptEvent::new(target, "Damaged").with(ScriptValue::Int(10));
+        let outcome = deliver(
+            &program,
+            "Simple",
+            &event,
+            &mut host,
+            u64::MAX,
+            living(&[target]),
+        )
+        .expect("delivered");
+        assert_eq!(outcome.0, Run::Completed);
+    }
+}

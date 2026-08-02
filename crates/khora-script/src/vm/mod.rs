@@ -45,7 +45,7 @@ pub mod value;
 mod tests;
 
 pub use instruction::{Instruction, Reg};
-pub use program::{BehaviorLayout, Function, Program};
+pub use program::{BehaviorLayout, Function, Program, StateLayout};
 pub use value::{resolve_str, StrError, StrRef, Value};
 
 use serde::{Deserialize, Serialize};
@@ -440,6 +440,31 @@ impl Machine {
                 // decided by `run`, which checks whether any frame is left.
                 self.pop_frame(value);
                 Ok(Step::Returned)
+            }
+
+            Instruction::Become {
+                state,
+                base,
+                argc,
+                state_slot,
+                data_slot,
+            } => {
+                // The arguments first, while the old state's data is still
+                // there: an argument may have been read out of it, and writing
+                // the discriminant early would only matter if this could fail
+                // part-way, which it cannot.
+                for offset in 0..argc {
+                    let value = self.read(base + offset)?;
+                    host.fields.set(
+                        data_slot as usize + offset as usize,
+                        Persisted::Scalar(value),
+                    );
+                }
+                host.fields.set(
+                    state_slot as usize,
+                    Persisted::Scalar(Value::Int(state as i64)),
+                );
+                Ok(Step::Next)
             }
 
             Instruction::LoadField { dst, slot } => {

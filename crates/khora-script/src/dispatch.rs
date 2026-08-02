@@ -37,6 +37,7 @@
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{ScriptEvent, ScriptValue};
 
+use crate::arena::Persisted;
 use crate::native::Host;
 use crate::vm::{Machine, Program, Run, Value};
 
@@ -114,9 +115,53 @@ pub fn handler_name(behavior: &str, event: &str) -> String {
     format!("{behavior}.{event}")
 }
 
-/// Whether a behavior handles an event.
+/// Whether a behavior handles an event, in any state or outside them.
 pub fn handles(program: &Program, behavior: &str, event: &str) -> bool {
     program.index_of(&handler_name(behavior, event)).is_some()
+        || program.layout(behavior).is_some_and(|layout| {
+            layout.states.iter().any(|state| {
+                program
+                    .index_of(&state_handler_name(behavior, &state.name, event))
+                    .is_some()
+            })
+        })
+}
+
+/// The name a state's handler compiles to.
+pub fn state_handler_name(behavior: &str, state: &str, event: &str) -> String {
+    format!("{behavior}.{state}.{event}")
+}
+
+/// Which state an instance is in, if its behavior has any.
+///
+/// Read from the store rather than remembered beside it: the discriminant *is*
+/// the state, it travels with a save, and a second copy would be a second thing
+/// to keep in step.
+pub fn current_state<'a>(program: &'a Program, behavior: &str, host: &Host) -> Option<&'a str> {
+    let layout = program.layout(behavior)?;
+    let Persisted::Scalar(Value::Int(index)) = host.fields.get(layout.state_slot())? else {
+        return None;
+    };
+    layout
+        .state_at(usize::try_from(*index).ok()?)
+        .map(|state| state.name.as_str())
+}
+
+/// The handler an event resolves to, preferring the current state's.
+///
+/// A state's handler wins over the behavior's, which is what makes `on Lost`
+/// inside `Chase` mean "while chasing" — the whole point of writing it there.
+/// The behavior's own is the fallback, so `on Damaged` written once applies in
+/// every state without being repeated in each.
+fn resolve_handler(program: &Program, behavior: &str, event: &str, host: &Host) -> Option<String> {
+    if let Some(state) = current_state(program, behavior, host) {
+        let scoped = state_handler_name(behavior, state, event);
+        if program.index_of(&scoped).is_some() {
+            return Some(scoped);
+        }
+    }
+    let plain = handler_name(behavior, event);
+    program.index_of(&plain).is_some().then_some(plain)
 }
 
 /// Gives a fresh instance the field values its behavior declares.
@@ -160,7 +205,12 @@ pub fn deliver(
         return Err(NotDelivered::NoSuchEntity(event.target));
     }
 
-    let name = handler_name(behavior, &event.name);
+    let name = resolve_handler(program, behavior, &event.name, host).ok_or_else(|| {
+        NotDelivered::NoHandler {
+            behavior: behavior.to_owned(),
+            event: event.name.clone(),
+        }
+    })?;
     let handler = program
         .function(&name)
         .ok_or_else(|| NotDelivered::NoHandler {
