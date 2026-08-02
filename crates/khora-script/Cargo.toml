@@ -17,6 +17,10 @@ khora-core = { path = "../khora-core" }
 # retrofitted later.
 serde = { version = "1.0", features = ["derive"] }
 
+# The built-in `Log` reports through the engine's own sink, so a script's output
+# lands wherever the rest of the engine's does.
+log = "0.4"
+
 # Engine functions register themselves next to their definition, the same way
 # components and flows already do.
 inventory = "0.3"

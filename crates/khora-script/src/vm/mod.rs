@@ -46,7 +46,7 @@ mod tests;
 
 pub use instruction::{Instruction, Reg};
 pub use program::{Function, Program};
-pub use value::Value;
+pub use value::{StrRef, Value};
 
 use serde::{Deserialize, Serialize};
 
@@ -100,6 +100,14 @@ pub enum Fault {
         /// The offending index.
         index: usize,
     },
+    /// A string reference that no longer resolves.
+    ///
+    /// A constant index outside the program, or arena text from an earlier
+    /// frame — the second is the case the arena's generation counter exists to
+    /// catch, surfacing here rather than reading whatever landed at that index.
+    BadString,
+    /// A frame allocated more text than the arena holds.
+    ArenaFull,
     /// An engine function refused.
     NativeFailed {
         /// Which one.
@@ -356,6 +364,13 @@ impl Machine {
                     (Value::Int(x), Value::Float(y)) | (Value::Float(y), Value::Int(x)) => {
                         x as f32 == y
                     }
+                    // Two strings are equal when their *text* is. Comparing the
+                    // references would answer no for a literal and a computed
+                    // string spelling the same thing, which is the one case a
+                    // script most often means to compare.
+                    (Value::Str(_), Value::Str(_)) => {
+                        self.resolve_str(a, program, host)? == self.resolve_str(b, program, host)?
+                    }
                     _ => a == b,
                 };
                 self.write(dst, Value::Bool(equal))?;
@@ -410,15 +425,67 @@ impl Machine {
                 Ok(Step::Returned)
             }
 
+            Instruction::LoadStr { dst, index } => {
+                if program.string(index).is_none() {
+                    return Err(Fault::BadString);
+                }
+                self.write(dst, Value::Str(StrRef::Const(index)))?;
+                Ok(Step::Next)
+            }
+            Instruction::Concat { dst, lhs, rhs } => {
+                let left = self.read(lhs)?;
+                let right = self.read(rhs)?;
+                let joined = format!(
+                    "{}{}",
+                    self.resolve_str(left, program, host)?,
+                    self.resolve_str(right, program, host)?
+                );
+                let reference = host
+                    .arena
+                    .alloc(crate::arena::Object::Str(joined))
+                    .map_err(|_| Fault::ArenaFull)?;
+                self.write(dst, Value::Str(StrRef::Arena(reference)))?;
+                Ok(Step::Next)
+            }
+
             Instruction::NativeCall {
                 function,
                 base,
                 argc,
                 dst,
-            } => self.native_call(host, function, base, argc, dst),
+            } => self.native_call(program, host, function, base, argc, dst),
 
             Instruction::Yield => Ok(Step::Yield),
             Instruction::Halt => Ok(Step::Halt),
+        }
+    }
+
+    /// The text a string value stands for.
+    ///
+    /// Needs both the program and the arena because a string can live in
+    /// either, and the value itself carries only which. Borrows both for the
+    /// call rather than copying the text, so comparing two strings costs no
+    /// allocation.
+    pub fn resolve_str<'a>(
+        &self,
+        value: Value,
+        program: &'a Program,
+        host: &'a Host,
+    ) -> Result<&'a str, Fault> {
+        let reference = value.as_str_ref().ok_or(Fault::TypeMismatch {
+            expected: "string",
+            found: value.type_name(),
+        })?;
+
+        match reference {
+            StrRef::Const(index) => program.string(index).ok_or(Fault::BadString),
+            StrRef::Arena(handle) => match host.arena.get(handle) {
+                // A string from an earlier frame does not read as whatever
+                // landed at its index: the arena's generation catches it, and
+                // the fault says so rather than returning the wrong text.
+                Ok(crate::arena::Object::Str(text)) => Ok(text),
+                _ => Err(Fault::BadString),
+            },
         }
     }
 
@@ -429,6 +496,7 @@ impl Machine {
     /// cannot be suspended part-way — the call either completes or faults.
     fn native_call(
         &mut self,
+        program: &Program,
         host: &mut Host,
         function: usize,
         base: Reg,
@@ -448,7 +516,7 @@ impl Machine {
             args.push(self.read(base + offset)?);
         }
 
-        let mut context = host.context();
+        let mut context = host.context(&program.strings);
         let result = (native.call)(&mut context, &args).map_err(|error| Fault::NativeFailed {
             name: native.name,
             message: error.message,

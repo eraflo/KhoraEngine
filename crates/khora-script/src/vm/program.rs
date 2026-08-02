@@ -40,12 +40,23 @@ pub struct Function {
 pub struct Program {
     /// Functions, addressed by index.
     pub functions: Vec<Function>,
+    /// Every string literal the program contains, deduplicated.
+    ///
+    /// Held once for the whole program rather than per function, and named by
+    /// index: a literal then costs a register write wherever it appears, so
+    /// `Log("hit")` inside a loop does not allocate once per iteration.
+    pub strings: Vec<String>,
 }
 
 impl Program {
     /// The index of the function named `name`.
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.functions.iter().position(|f| f.name == name)
+    }
+
+    /// The literal at `index`.
+    pub fn string(&self, index: u32) -> Option<&str> {
+        self.strings.get(index as usize).map(String::as_str)
     }
 
     /// The function named `name`.
@@ -70,6 +81,7 @@ mod tests {
     #[test]
     fn functions_resolve_by_name_to_an_index() {
         let program = Program {
+            strings: Vec::new(),
             functions: vec![empty("First"), empty("Second")],
         };
         assert_eq!(program.index_of("Second"), Some(1));

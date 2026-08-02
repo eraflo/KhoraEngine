@@ -419,6 +419,178 @@ fn ending_a_frame_releases_the_arena_and_yields_the_commands() {
     assert_ne!(host.arena.generation(), generation, "the arena was freed");
 }
 
+// ─── Strings ────────────────────────────────────────────────────────────────
+
+mod strings {
+    use super::{build, Host, NativeRegistry};
+    use crate::vm::{Fault, Machine, Program, Run, StrRef, Value};
+
+    /// Runs `Main` and hands back both the machine and the host, so a test can
+    /// resolve the string it produced.
+    fn run(source: &str) -> (Program, Machine, Host) {
+        let natives = NativeRegistry::with_builtins();
+        let program = build(source, &natives);
+
+        let mut host = Host::new();
+        let mut machine = Machine::new(&program, "Main", &[]).expect("Main exists");
+        assert_eq!(machine.run(&program, &mut host, u64::MAX), Run::Completed);
+        (program, machine, host)
+    }
+
+    fn text(source: &str) -> String {
+        let (program, machine, host) = run(source);
+        machine
+            .resolve_str(machine.result(), &program, &host)
+            .expect("a string came back")
+            .to_owned()
+    }
+
+    fn truth(source: &str) -> bool {
+        let (_, machine, _) = run(source);
+        machine.result().as_bool().expect("a bool came back")
+    }
+
+    /// **The milestone.** A literal travels from source to a value and back.
+    #[test]
+    fn a_literal_reaches_the_result() {
+        assert_eq!(text(r#"fn string Main() { return "hello"; }"#), "hello");
+    }
+
+    #[test]
+    fn escapes_and_non_ascii_survive() {
+        assert_eq!(text(r#"fn string Main() { return "a\nb"; }"#), "a\nb");
+        assert_eq!(text(r#"fn string Main() { return "héllo →"; }"#), "héllo →");
+    }
+
+    /// A literal is a *reference* into the program, so it costs nothing to name
+    /// — which is what keeps one inside a loop from allocating per iteration.
+    #[test]
+    fn a_literal_stays_in_the_program_rather_than_the_arena() {
+        let (_, machine, _) = run(r#"fn string Main() { return "hello"; }"#);
+        assert!(matches!(
+            machine.result().as_str_ref(),
+            Some(StrRef::Const(_))
+        ));
+    }
+
+    /// The same text written twice is one entry. A literal is immutable, so
+    /// sharing one is indistinguishable from two copies — except in size.
+    #[test]
+    fn the_same_literal_is_stored_once() {
+        let (program, _, _) = run(r#"fn string Main() { return "hit"; }
+               fn string Again() { return "hit"; }
+               fn string Other() { return "miss"; }"#);
+        assert_eq!(program.strings.len(), 2, "{:?}", program.strings);
+    }
+
+    /// **Joining is not adding.** `+` on two strings allocates, so it compiles
+    /// to its own instruction rather than to arithmetic that would fault.
+    #[test]
+    fn two_strings_join() {
+        assert_eq!(text(r#"fn string Main() { return "a" + "b"; }"#), "ab");
+        assert_eq!(
+            text(r#"fn string Main() { return "pv: " + "100" + "!"; }"#),
+            "pv: 100!"
+        );
+    }
+
+    /// Joined text did not exist when the program was compiled, so unlike a
+    /// literal it lives in the arena — and lasts one frame, like everything
+    /// else there.
+    #[test]
+    fn joined_text_lives_in_the_arena() {
+        let (_, machine, _) = run(r#"fn string Main() { return "a" + "b"; }"#);
+        assert!(matches!(
+            machine.result().as_str_ref(),
+            Some(StrRef::Arena(_))
+        ));
+    }
+
+    /// **What makes two representations workable.** A literal and a computed
+    /// string spelling the same thing are equal — comparing the references
+    /// would answer no, which is the case a script most often means to test.
+    #[test]
+    fn a_literal_equals_the_same_text_built_at_runtime() {
+        assert!(truth(r#"fn bool Main() { return "ab" == "a" + "b"; }"#));
+        assert!(truth(r#"fn bool Main() { return "a" + "b" == "ab"; }"#));
+    }
+
+    #[test]
+    fn different_text_is_not_equal() {
+        assert!(!truth(r#"fn bool Main() { return "a" == "b"; }"#));
+        assert!(truth(r#"fn bool Main() { return "a" != "b"; }"#));
+    }
+
+    #[test]
+    fn a_string_passes_through_a_local() {
+        assert_eq!(
+            text(r#"fn string Main() { var greeting = "hi"; return greeting + "!"; }"#),
+            "hi!"
+        );
+    }
+
+    /// A string reaches an engine function, which is what `Log` needs.
+    #[test]
+    fn a_string_reaches_a_native() {
+        let (_, machine, _) = run(r#"fn int Main() { return Length("héllo"); }"#);
+        assert_eq!(machine.result().as_int(), Some(5), "characters, not bytes");
+    }
+
+    #[test]
+    fn joined_text_reaches_a_native_too() {
+        let (_, machine, _) = run(r#"fn int Main() { return Length("ab" + "cde"); }"#);
+        assert_eq!(machine.result().as_int(), Some(5));
+    }
+
+    #[test]
+    fn logging_a_string_runs() {
+        let (_, machine, _) = run(r#"fn void Main() { Log("a script said this"); }"#);
+        assert!(machine.is_finished());
+    }
+
+    /// **The guard the arena exists for.** Text from a previous frame does not
+    /// read as whatever landed at its index — the generation catches it.
+    #[test]
+    fn text_from_a_previous_frame_is_refused() {
+        let (program, machine, mut host) = run(r#"fn string Main() { return "a" + "b"; }"#);
+        let stale = machine.result();
+
+        host.end_frame();
+        assert!(matches!(
+            machine.resolve_str(stale, &program, &host),
+            Err(Fault::BadString)
+        ));
+    }
+
+    /// A string is not a number, and the checker says so rather than the VM
+    /// finding out.
+    #[test]
+    fn arithmetic_on_a_string_is_refused_at_compile_time() {
+        let natives = NativeRegistry::with_builtins();
+        let found = super::errors(r#"fn string Main() { return "a" - "b"; }"#, &natives);
+        assert!(!found.is_empty(), "subtraction is not defined on text");
+    }
+
+    #[test]
+    fn a_string_where_a_number_belongs_is_refused() {
+        let natives = NativeRegistry::with_builtins();
+        let found = super::errors(r#"fn float Main() { return Abs("a"); }"#, &natives);
+        assert!(!found.is_empty());
+    }
+
+    /// A machine mid-run is saved with its program, so a string reference in a
+    /// register has to survive the trip.
+    #[test]
+    fn a_string_value_survives_serialization() {
+        let value = Value::Str(StrRef::Const(3));
+        let json = serde_json::to_string(&value).expect("serialises");
+        assert_eq!(
+            serde_json::from_str::<Value>(&json).expect("deserialises"),
+            value
+        );
+    }
+}
+
 // ─── The macro ──────────────────────────────────────────────────────────────
 
 mod macro_tests {

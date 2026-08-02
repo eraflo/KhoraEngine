@@ -54,8 +54,8 @@ pub use ty::NativeTy;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::CommandBuffer;
 
-use crate::arena::Arena;
-use crate::vm::Value;
+use crate::arena::{Arena, Object};
+use crate::vm::{StrRef, Value};
 
 /// Why a native call failed.
 ///
@@ -97,6 +97,40 @@ pub struct NativeContext<'a> {
     /// `None` while running a free function that no entity owns — a native that
     /// needs a subject must say so rather than assume one.
     pub entity: Option<EntityId>,
+    /// The running program's string literals.
+    ///
+    /// Needed because a string argument can live in either the program or the
+    /// arena, and the value only says which — so resolving one needs both, and
+    /// a native that takes a `string` would otherwise have no way to read it.
+    pub strings: &'a [String],
+}
+
+impl NativeContext<'_> {
+    /// The text a string value stands for.
+    pub fn string(&self, value: Value) -> Result<&str, NativeError> {
+        let reference = value.as_str_ref().ok_or_else(|| {
+            NativeError::new(format!(
+                "an engine function expected a string but the call supplied {}",
+                value.type_name()
+            ))
+        })?;
+
+        match reference {
+            StrRef::Const(index) => self
+                .strings
+                .get(index as usize)
+                .map(String::as_str)
+                .ok_or_else(|| NativeError::new("this text is not in the running program")),
+            StrRef::Arena(handle) => match self.arena.get(handle) {
+                Ok(Object::Str(text)) => Ok(text),
+                Ok(other) => Err(NativeError::new(format!(
+                    "expected text, found {}",
+                    other.type_name()
+                ))),
+                Err(error) => Err(NativeError::new(error.message())),
+            },
+        }
+    }
 }
 
 /// Everything a running program needs from outside itself.
@@ -161,11 +195,16 @@ impl Host {
     }
 
     /// The narrow view a native gets.
-    pub fn context(&mut self) -> NativeContext<'_> {
+    ///
+    /// `strings` comes from the program rather than the host: the same host
+    /// runs whatever program the frame hands it, and a string constant belongs
+    /// to the program it was compiled into.
+    pub fn context<'a>(&'a mut self, strings: &'a [String]) -> NativeContext<'a> {
         NativeContext {
             commands: &mut self.commands,
             arena: &mut self.arena,
             entity: self.entity,
+            strings,
         }
     }
 }

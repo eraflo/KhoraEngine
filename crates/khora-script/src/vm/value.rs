@@ -26,6 +26,8 @@
 use khora_core::ecs::entity::EntityId;
 use serde::{Deserialize, Serialize};
 
+use crate::arena::ArenaRef;
+
 /// A runtime value.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Value {
@@ -43,8 +45,31 @@ pub enum Value {
     /// and a register already holds more than that — and because an entity
     /// outlives the frame that named it, which the arena's contents do not.
     Entity(EntityId),
+    /// Text, wherever it lives.
+    Str(StrRef),
     /// Absent optional.
     Null,
+}
+
+/// Where a string's characters actually are.
+///
+/// Two places, because literals and computed text have nothing in common but
+/// their type. A literal is fixed when the program is compiled, so it lives in
+/// the program and costs nothing to name — a `"hit"` inside a loop must not
+/// allocate once per iteration. Text a program *builds* did not exist at
+/// compile time and has to go somewhere that can grow, which is the frame
+/// arena.
+///
+/// The consequence to keep in mind: two `StrRef`s comparing unequal says
+/// nothing about their text. `==` on strings resolves both sides first — see
+/// [`Machine::resolve_str`](crate::vm::Machine::resolve_str) — which is why
+/// string equality is not simply `Value == Value`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum StrRef {
+    /// A literal, in the program's constant table.
+    Const(u32),
+    /// Text built while running, in the frame arena.
+    Arena(ArenaRef),
 }
 
 impl Value {
@@ -85,6 +110,17 @@ impl Value {
         }
     }
 
+    /// The string reference inside, or `None`.
+    ///
+    /// A *reference*, not the text: resolving it needs the program and the
+    /// arena, which a value on its own does not carry.
+    pub fn as_str_ref(self) -> Option<StrRef> {
+        match self {
+            Self::Str(reference) => Some(reference),
+            _ => None,
+        }
+    }
+
     /// Whether this is the absent optional.
     pub fn is_null(self) -> bool {
         matches!(self, Self::Null)
@@ -98,6 +134,7 @@ impl Value {
             Self::Float(_) => "float",
             Self::Bool(_) => "bool",
             Self::Entity(_) => "Entity",
+            Self::Str(_) => "string",
             Self::Null => "null",
         }
     }

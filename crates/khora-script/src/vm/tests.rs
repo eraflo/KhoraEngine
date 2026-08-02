@@ -41,6 +41,7 @@ fn function(name: &str, arity: usize, registers: usize, code: Vec<Instruction>) 
 /// ```
 fn counting_program(limit: i64) -> Program {
     Program {
+        strings: Vec::new(),
         functions: vec![function(
             "Count",
             0,
@@ -79,6 +80,7 @@ fn counting_program(limit: i64) -> Program {
 /// `Double(n) = n * 2`, and `Main() = Double(21)`.
 fn calling_program() -> Program {
     Program {
+        strings: Vec::new(),
         functions: vec![
             function(
                 "Main",
@@ -239,6 +241,7 @@ fn the_wrong_argument_count_is_refused_up_front() {
 #[test]
 fn float_arithmetic_works_and_stays_float() {
     let program = Program {
+        strings: Vec::new(),
         functions: vec![function(
             "Half",
             0,
@@ -270,6 +273,7 @@ fn float_arithmetic_works_and_stays_float() {
 #[test]
 fn integer_division_by_zero_faults_but_float_does_not() {
     let int_program = Program {
+        strings: Vec::new(),
         functions: vec![function(
             "Bad",
             0,
@@ -298,6 +302,7 @@ fn integer_division_by_zero_faults_but_float_does_not() {
     );
 
     let float_program = Program {
+        strings: Vec::new(),
         functions: vec![function(
             "Inf",
             0,
@@ -333,6 +338,7 @@ fn integer_division_by_zero_faults_but_float_does_not() {
 fn large_integers_compare_exactly() {
     let a = (1i64 << 53) + 1;
     let program = Program {
+        strings: Vec::new(),
         functions: vec![function(
             "Compare",
             0,
@@ -367,6 +373,7 @@ fn large_integers_compare_exactly() {
 #[test]
 fn unbounded_recursion_faults_instead_of_exhausting_memory() {
     let program = Program {
+        strings: Vec::new(),
         functions: vec![function(
             "Forever",
             0,
@@ -392,6 +399,7 @@ fn unbounded_recursion_faults_instead_of_exhausting_memory() {
 #[test]
 fn yield_suspends_once_and_moves_on() {
     let program = Program {
+        strings: Vec::new(),
         functions: vec![function(
             "Pause",
             0,
@@ -430,6 +438,7 @@ fn yield_suspends_once_and_moves_on() {
 #[test]
 fn falling_off_the_end_completes() {
     let program = Program {
+        strings: Vec::new(),
         functions: vec![function(
             "Empty",
             0,
@@ -467,6 +476,7 @@ fn a_finished_machine_does_not_restart() {
 #[test]
 fn faults_report_instead_of_panicking() {
     let bad_register = Program {
+        strings: Vec::new(),
         functions: vec![function(
             "Bad",
             0,
@@ -482,6 +492,7 @@ fn faults_report_instead_of_panicking() {
     assert!(machine.is_finished(), "a faulted machine is not resumed");
 
     let bad_jump = Program {
+        strings: Vec::new(),
         functions: vec![function(
             "Bad",
             0,
@@ -496,6 +507,7 @@ fn faults_report_instead_of_panicking() {
     );
 
     let bad_type = Program {
+        strings: Vec::new(),
         functions: vec![function(
             "Bad",
             0,
@@ -541,6 +553,7 @@ fn zero_fuel_suspends_without_progress() {
 #[test]
 fn a_callee_starts_with_clean_registers() {
     let program = Program {
+        strings: Vec::new(),
         functions: vec![
             function(
                 "Main",

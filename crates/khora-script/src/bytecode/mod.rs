@@ -108,6 +108,9 @@ pub enum Shape {
     Int,
     /// Floating-point arithmetic, including durations and angles.
     Float,
+    /// Text. Its own shape because `+` on two strings is not an addition — it
+    /// allocates, and the compiler has to know before it picks an instruction.
+    Str,
     /// Not a number: bool, null, a struct, void.
     Other,
 }
@@ -306,6 +309,7 @@ pub fn shape_of(ty: &TypeRef) -> Shape {
             // Durations and angles are floats at run time: the checker has
             // already proved the units agree, so the arithmetic is the same.
             "float" | "Duration" | "Angle" => Shape::Float,
+            "string" => Shape::Str,
             _ => Shape::Other,
         },
         _ => Shape::Other,

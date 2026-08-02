@@ -36,6 +36,7 @@ impl Compiler {
             }
             Expr::Bool { value, .. } => self.constant(Value::Bool(*value), Shape::Other),
             Expr::Null(_) => self.constant(Value::Null, Shape::Other),
+            Expr::Str { value, .. } => self.string_constant(value),
 
             Expr::Ident { name, span } => match self.lookup_local(name) {
                 Some((register, shape)) => (register, shape),
@@ -123,6 +124,28 @@ impl Compiler {
         (dst, shape)
     }
 
+    /// Interns a string literal and loads a reference to it.
+    ///
+    /// Deduplicated: the same text written in twenty places is one entry. A
+    /// literal is immutable, so sharing one is indistinguishable from twenty
+    /// copies — except in the size of the program.
+    fn string_constant(&mut self, text: &str) -> (Reg, Shape) {
+        let index = match self.program.strings.iter().position(|known| known == text) {
+            Some(index) => index,
+            None => {
+                self.program.strings.push(text.to_owned());
+                self.program.strings.len() - 1
+            }
+        };
+
+        let dst = self.registers.temp();
+        self.emit(Instruction::LoadStr {
+            dst,
+            index: index as u32,
+        });
+        (dst, Shape::Str)
+    }
+
     fn compile_binary(&mut self, op: BinaryOp, lhs: &Expr, rhs: &Expr) -> (Reg, Shape) {
         match op {
             // Short-circuiting cannot be expressed as two evaluated operands,
@@ -181,6 +204,19 @@ impl Compiler {
                         };
                         self.emit(instruction);
                         (dst, Shape::Other)
+                    }
+                    // `"a" + "b"` is not an addition. The checker has already
+                    // proved both sides are text; joining them allocates, so it
+                    // gets its own instruction rather than a numeric one that
+                    // would fault at run time.
+                    BinaryOp::Add if left_shape == Shape::Str || right_shape == Shape::Str => {
+                        let dst = self.registers.temp();
+                        self.emit(Instruction::Concat {
+                            dst,
+                            lhs: left,
+                            rhs: right,
+                        });
+                        (dst, Shape::Str)
                     }
                     _ => {
                         let register = self.arithmetic(op, left, left_shape, right, right_shape);

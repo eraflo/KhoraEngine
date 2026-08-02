@@ -167,6 +167,42 @@ pub static LERP: NativeFn = NativeFn {
     },
 };
 
+/// Reports to the editor's Console.
+///
+/// Through `log::*` rather than any console of its own, so a script's output
+/// lands wherever the engine's already does — the editor panel while playing,
+/// the terminal for a headless run, a file if the host configured one. A
+/// separate channel would have to be plumbed to each of those again.
+#[khora_macros::ergon_fn]
+fn log(message: String) {
+    log::info!("[script] {message}");
+}
+
+/// Reports something the author should look at.
+#[khora_macros::ergon_fn]
+fn warn(message: String) {
+    log::warn!("[script] {message}");
+}
+
+/// Reports something that went wrong.
+///
+/// Does **not** stop the behavior. A script reporting a problem it handled is
+/// not the same as one that faulted, and conflating them would make the second
+/// impossible to see.
+#[khora_macros::ergon_fn]
+fn error(message: String) {
+    log::error!("[script] {message}");
+}
+
+/// How many characters a string holds.
+///
+/// Characters, not bytes: it is what an author can count, and what the arena's
+/// own length already reports.
+#[khora_macros::ergon_fn]
+fn length(text: String) -> i64 {
+    text.chars().count() as i64
+}
+
 /// Every built-in, in the order they are registered.
 ///
 /// A slice rather than a lazily-built map: the order decides the index compiled
@@ -177,5 +213,18 @@ pub fn builtins() -> &'static [&'static NativeFn] {
 }
 
 static BUILTINS: &[&NativeFn] = &[
-    &ABS, &FLOOR, &CEIL, &ROUND, &SIGN, &MIN, &MAX, &SQRT, &CLAMP, &LERP,
+    &ABS,
+    &FLOOR,
+    &CEIL,
+    &ROUND,
+    &SIGN,
+    &MIN,
+    &MAX,
+    &SQRT,
+    &CLAMP,
+    &LERP,
+    &ERGON_LOG,
+    &ERGON_WARN,
+    &ERGON_ERROR,
+    &ERGON_LENGTH,
 ];

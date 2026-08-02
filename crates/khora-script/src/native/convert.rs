@@ -40,7 +40,7 @@ pub trait ScriptType: Sized {
     /// The checker has already proved the call well-typed, so a mismatch here
     /// means the registry and the program disagree — an engine fault, not the
     /// author's mistake, and the message says so.
-    fn from_value(value: Value) -> Result<Self, NativeError>;
+    fn from_value(value: Value, context: &NativeContext<'_>) -> Result<Self, NativeError>;
 
     /// Turns a result into a value the VM can hold.
     ///
@@ -61,7 +61,7 @@ fn mismatch(expected: &str, found: Value) -> NativeError {
 impl ScriptType for f32 {
     const TY: NativeTy = NativeTy::Float;
 
-    fn from_value(value: Value) -> Result<Self, NativeError> {
+    fn from_value(value: Value, _: &NativeContext<'_>) -> Result<Self, NativeError> {
         value.as_float().ok_or_else(|| mismatch("a float", value))
     }
 
@@ -73,7 +73,7 @@ impl ScriptType for f32 {
 impl ScriptType for i64 {
     const TY: NativeTy = NativeTy::Int;
 
-    fn from_value(value: Value) -> Result<Self, NativeError> {
+    fn from_value(value: Value, _: &NativeContext<'_>) -> Result<Self, NativeError> {
         // Not `as_float().round()`: the language has no implicit narrowing, and
         // a native must not invent one where the checker refused it.
         value.as_int().ok_or_else(|| mismatch("an int", value))
@@ -87,7 +87,7 @@ impl ScriptType for i64 {
 impl ScriptType for bool {
     const TY: NativeTy = NativeTy::Bool;
 
-    fn from_value(value: Value) -> Result<Self, NativeError> {
+    fn from_value(value: Value, _: &NativeContext<'_>) -> Result<Self, NativeError> {
         value.as_bool().ok_or_else(|| mismatch("a bool", value))
     }
 
@@ -99,7 +99,7 @@ impl ScriptType for bool {
 impl ScriptType for EntityId {
     const TY: NativeTy = NativeTy::Entity;
 
-    fn from_value(value: Value) -> Result<Self, NativeError> {
+    fn from_value(value: Value, _: &NativeContext<'_>) -> Result<Self, NativeError> {
         value
             .as_entity()
             .ok_or_else(|| mismatch("an Entity", value))
@@ -110,10 +110,34 @@ impl ScriptType for EntityId {
     }
 }
 
+/// Text handed to or from an engine function.
+///
+/// Owned rather than borrowed, and that is the honest shape rather than a
+/// missed optimisation: a borrow would have to name the lifetime of *either*
+/// the program or the arena depending on where the string happened to live, and
+/// a native's signature cannot depend on that. Reading a string into a native
+/// therefore copies it. Returning one allocates in the frame arena, so it lasts
+/// one frame like everything else there.
+impl ScriptType for String {
+    const TY: NativeTy = NativeTy::Str;
+
+    fn from_value(value: Value, context: &NativeContext<'_>) -> Result<Self, NativeError> {
+        context.string(value).map(str::to_owned)
+    }
+
+    fn to_value(self, context: &mut NativeContext<'_>) -> Result<Value, NativeError> {
+        let reference = context
+            .arena
+            .alloc(crate::arena::Object::Str(self))
+            .map_err(|error| NativeError::new(error.message()))?;
+        Ok(Value::Str(crate::vm::StrRef::Arena(reference)))
+    }
+}
+
 impl ScriptType for () {
     const TY: NativeTy = NativeTy::Void;
 
-    fn from_value(_: Value) -> Result<Self, NativeError> {
+    fn from_value(_: Value, _: &NativeContext<'_>) -> Result<Self, NativeError> {
         Ok(())
     }
 
@@ -126,11 +150,11 @@ impl ScriptType for () {
 impl<T: ScriptType> ScriptType for Option<T> {
     const TY: NativeTy = NativeTy::Optional(&T::TY);
 
-    fn from_value(value: Value) -> Result<Self, NativeError> {
+    fn from_value(value: Value, context: &NativeContext<'_>) -> Result<Self, NativeError> {
         if value.is_null() {
             return Ok(None);
         }
-        T::from_value(value).map(Some)
+        T::from_value(value, context).map(Some)
     }
 
     fn to_value(self, context: &mut NativeContext<'_>) -> Result<Value, NativeError> {
@@ -145,17 +169,38 @@ impl<T: ScriptType> ScriptType for Option<T> {
 mod tests {
     use super::*;
 
-    fn round_trip<T: ScriptType + PartialEq + std::fmt::Debug + Copy>(value: T) {
-        let mut commands = khora_core::script::CommandBuffer::new();
-        let mut arena = crate::arena::Arena::new();
-        let mut context = NativeContext {
-            commands: &mut commands,
-            arena: &mut arena,
-            entity: None,
-        };
+    /// A host and a program's literals, so a test can build a context.
+    struct Fixture {
+        host: crate::native::Host,
+        strings: Vec<String>,
+    }
 
-        let encoded = value.to_value(&mut context).expect("encodes");
-        assert_eq!(T::from_value(encoded).expect("decodes"), value);
+    impl Fixture {
+        fn new() -> Self {
+            Self {
+                host: crate::native::Host::new(),
+                strings: Vec::new(),
+            }
+        }
+
+        fn with_literal(text: &str) -> Self {
+            Self {
+                host: crate::native::Host::new(),
+                strings: vec![text.to_owned()],
+            }
+        }
+
+        fn context(&mut self) -> NativeContext<'_> {
+            self.host.context(&self.strings)
+        }
+    }
+
+    fn round_trip<T: ScriptType + PartialEq + std::fmt::Debug + Clone>(value: T) {
+        let mut fixture = Fixture::new();
+        let mut context = fixture.context();
+
+        let encoded = value.clone().to_value(&mut context).expect("encodes");
+        assert_eq!(T::from_value(encoded, &context).expect("decodes"), value);
     }
 
     #[test]
@@ -167,6 +212,35 @@ mod tests {
             index: 7,
             generation: 2,
         });
+    }
+
+    /// Text returned by a native lands in the frame arena, and reads back from
+    /// there — the round trip crosses the arena rather than skipping it.
+    #[test]
+    fn a_string_round_trips_through_the_arena() {
+        round_trip("héllo".to_owned());
+    }
+
+    /// A literal resolves from the program, so a native reads it without the
+    /// arena being involved at all.
+    #[test]
+    fn a_literal_resolves_from_the_program() {
+        let mut fixture = Fixture::with_literal("hit");
+        let context = fixture.context();
+
+        let value = Value::Str(crate::vm::StrRef::Const(0));
+        assert_eq!(String::from_value(value, &context).as_deref(), Ok("hit"));
+    }
+
+    /// A constant index the program does not have is refused rather than
+    /// answering with a neighbouring literal.
+    #[test]
+    fn a_literal_from_another_program_is_refused() {
+        let mut fixture = Fixture::with_literal("hit");
+        let context = fixture.context();
+
+        let value = Value::Str(crate::vm::StrRef::Const(9));
+        assert!(String::from_value(value, &context).is_err());
     }
 
     /// The whole point of the associated constant: a signature can be written
@@ -187,22 +261,32 @@ mod tests {
 
     #[test]
     fn an_absent_optional_reads_back_as_none() {
-        assert_eq!(<Option<f32>>::from_value(Value::Null), Ok(None));
-        assert_eq!(<Option<f32>>::from_value(Value::Float(1.0)), Ok(Some(1.0)));
+        let mut fixture = Fixture::new();
+        let context = fixture.context();
+
+        assert_eq!(<Option<f32>>::from_value(Value::Null, &context), Ok(None));
+        assert_eq!(
+            <Option<f32>>::from_value(Value::Float(1.0), &context),
+            Ok(Some(1.0))
+        );
     }
 
     /// The language has no implicit narrowing, so a native must not invent one
     /// where the checker refused it.
     #[test]
     fn a_float_does_not_arrive_as_an_int() {
-        assert!(i64::from_value(Value::Float(1.9)).is_err());
+        let mut fixture = Fixture::new();
+        let context = fixture.context();
+        assert!(i64::from_value(Value::Float(1.9), &context).is_err());
     }
 
     /// An integer *does* widen, matching the one implicit conversion the
     /// language allows.
     #[test]
     fn an_int_arrives_as_a_float() {
-        assert_eq!(f32::from_value(Value::Int(3)), Ok(3.0));
+        let mut fixture = Fixture::new();
+        let context = fixture.context();
+        assert_eq!(f32::from_value(Value::Int(3), &context), Ok(3.0));
     }
 
     /// The message blames the engine, not the author: the checker already
@@ -210,7 +294,10 @@ mod tests {
     /// not match the program.
     #[test]
     fn a_mismatch_names_the_real_culprit() {
-        let error = EntityId::from_value(Value::Int(1)).expect_err("not an entity");
+        let mut fixture = Fixture::new();
+        let context = fixture.context();
+
+        let error = EntityId::from_value(Value::Int(1), &context).expect_err("not an entity");
         assert!(error.message.contains("Entity"), "got: {error}");
         assert!(error.message.contains("disagree"), "got: {error}");
     }

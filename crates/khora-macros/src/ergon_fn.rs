@@ -102,7 +102,8 @@ fn expand(function: &ItemFn, options: &Options) -> syn::Result<TokenStream> {
             let slot = format_ident!("arg{index}");
             quote! {
                 let #slot = <#ty as ::khora_script::native::ScriptType>::from_value(
-                    args.get(#index).copied().unwrap_or(::khora_script::vm::Value::Unit)
+                    args.get(#index).copied().unwrap_or(::khora_script::vm::Value::Unit),
+                    context,
                 )?;
             }
         })

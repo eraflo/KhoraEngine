@@ -231,6 +231,29 @@ pub enum Instruction {
         src: Reg,
     },
 
+    /// Loads a string literal from the program's constant table.
+    ///
+    /// Names the literal rather than copying it, which is what keeps a literal
+    /// inside a loop free.
+    LoadStr {
+        /// Where it goes.
+        dst: Reg,
+        /// Index into [`Program::strings`](crate::vm::Program::strings).
+        index: u32,
+    },
+    /// Joins two strings, allocating the result in the frame arena.
+    ///
+    /// The result is new text, so unlike a literal it has nowhere to live but
+    /// the arena — and therefore lasts one frame, like everything else there.
+    Concat {
+        /// Where the joined text goes.
+        dst: Reg,
+        /// Left operand.
+        lhs: Reg,
+        /// Right operand.
+        rhs: Reg,
+    },
+
     /// Calls an engine function, with arguments in `base..base + argc`.
     ///
     /// Separate from [`Self::Call`] because nothing about it is a frame: there
