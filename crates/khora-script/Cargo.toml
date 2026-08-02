@@ -7,14 +7,20 @@ license.workspace = true
 description = "Ergon — the Khora scripting language: compiler and interruptible virtual machine"
 
 [dependencies]
-# Only khora-core, and only for `math`. This crate knows nothing about the ECS,
-# agents or lanes: the language is designed to be testable without an engine.
+# Engine-side types only: `math`, `EntityId`, and the script command vocabulary.
+# This crate still knows nothing about the ECS, agents or lanes — the language
+# is designed to be testable without an engine.
 khora-core = { path = "../khora-core" }
 
 # The suspended state of the VM has to survive a frame boundary and a scene
 # save, so it is serialisable from the very first prototype rather than
 # retrofitted later.
 serde = { version = "1.0", features = ["derive"] }
+
+# Engine functions register themselves next to their definition, the same way
+# components and flows already do.
+inventory = "0.3"
+khora-macros = { path = "../khora-macros" }
 
 [dev-dependencies]
 serde_json = "1.0"

@@ -20,6 +20,7 @@
 //! middle of a call stack is exactly what a frame budget produces.
 
 use super::*;
+use crate::native::Host;
 
 fn function(name: &str, arity: usize, registers: usize, code: Vec<Instruction>) -> Function {
     Function {
@@ -120,7 +121,10 @@ fn calling_program() -> Program {
 
 fn run_to_completion(program: &Program, entry: &str) -> Value {
     let mut machine = Machine::new(program, entry, &[]).expect("the entry point exists");
-    assert_eq!(machine.run(program, u64::MAX), Run::Completed);
+    assert_eq!(
+        machine.run(program, &mut Host::new(), u64::MAX),
+        Run::Completed
+    );
     machine.result()
 }
 
@@ -145,10 +149,14 @@ fn interrupting_anywhere_changes_nothing() {
 
     for slice in 1..=40u64 {
         let mut machine = Machine::new(&program, "Count", &[]).expect("entry exists");
+        // One host for the whole run, not one per slice: the host holds the
+        // frame's arena and queued effects, and a fresh one between two pieces
+        // of the same execution would discard what the first piece produced.
+        let mut host = Host::new();
         let mut rounds = 0;
 
         loop {
-            match machine.run(&program, slice) {
+            match machine.run(&program, &mut host, slice) {
                 Run::Completed => break,
                 Run::Suspended(Suspension::OutOfFuel) => {
                     rounds += 1;
@@ -176,7 +184,8 @@ fn interrupting_inside_a_call_changes_nothing() {
 
     for slice in 1..=12u64 {
         let mut machine = Machine::new(&program, "Main", &[]).expect("entry exists");
-        while machine.run(&program, slice) != Run::Completed {}
+        let mut host = Host::new();
+        while machine.run(&program, &mut host, slice) != Run::Completed {}
         assert_eq!(
             machine.result(),
             expected,
@@ -193,7 +202,7 @@ fn a_suspended_machine_survives_serialization() {
 
     let mut machine = Machine::new(&program, "Main", &[]).expect("entry exists");
     assert_eq!(
-        machine.run(&program, 2),
+        machine.run(&program, &mut Host::new(), 2),
         Run::Suspended(Suspension::OutOfFuel),
         "two instructions is not enough to finish"
     );
@@ -202,7 +211,8 @@ fn a_suspended_machine_survives_serialization() {
     let mut revived: Machine = serde_json::from_str(&json).expect("machine deserialises");
     assert_eq!(revived, machine, "the round trip must be lossless");
 
-    while revived.run(&program, 3) != Run::Completed {}
+    let mut host = Host::new();
+    while revived.run(&program, &mut host, 3) != Run::Completed {}
     assert_eq!(revived.result(), Value::Int(42));
 }
 
@@ -210,7 +220,10 @@ fn a_suspended_machine_survives_serialization() {
 fn arguments_arrive_in_the_first_registers() {
     let program = calling_program();
     let mut machine = Machine::new(&program, "Double", &[Value::Int(5)]).expect("entry exists");
-    assert_eq!(machine.run(&program, u64::MAX), Run::Completed);
+    assert_eq!(
+        machine.run(&program, &mut Host::new(), u64::MAX),
+        Run::Completed
+    );
     assert_eq!(machine.result(), Value::Int(10));
 }
 
@@ -280,7 +293,7 @@ fn integer_division_by_zero_faults_but_float_does_not() {
     };
     let mut machine = Machine::new(&int_program, "Bad", &[]).expect("entry exists");
     assert_eq!(
-        machine.run(&int_program, u64::MAX),
+        machine.run(&int_program, &mut Host::new(), u64::MAX),
         Run::Faulted(Fault::DivideByZero)
     );
 
@@ -371,7 +384,7 @@ fn unbounded_recursion_faults_instead_of_exhausting_memory() {
     };
     let mut machine = Machine::new(&program, "Forever", &[]).expect("entry exists");
     assert_eq!(
-        machine.run(&program, u64::MAX),
+        machine.run(&program, &mut Host::new(), u64::MAX),
         Run::Faulted(Fault::StackOverflow)
     );
 }
@@ -400,12 +413,15 @@ fn yield_suspends_once_and_moves_on() {
 
     let mut machine = Machine::new(&program, "Pause", &[]).expect("entry exists");
     assert_eq!(
-        machine.run(&program, u64::MAX),
+        machine.run(&program, &mut Host::new(), u64::MAX),
         Run::Suspended(Suspension::Awaiting)
     );
     assert_eq!(machine.register(0), Some(Value::Int(7)));
 
-    assert_eq!(machine.run(&program, u64::MAX), Run::Completed);
+    assert_eq!(
+        machine.run(&program, &mut Host::new(), u64::MAX),
+        Run::Completed
+    );
     assert_eq!(machine.result(), Value::Int(9));
 }
 
@@ -425,7 +441,10 @@ fn falling_off_the_end_completes() {
         )],
     };
     let mut machine = Machine::new(&program, "Empty", &[]).expect("entry exists");
-    assert_eq!(machine.run(&program, u64::MAX), Run::Completed);
+    assert_eq!(
+        machine.run(&program, &mut Host::new(), u64::MAX),
+        Run::Completed
+    );
     assert!(machine.is_finished());
 }
 
@@ -434,8 +453,14 @@ fn falling_off_the_end_completes() {
 fn a_finished_machine_does_not_restart() {
     let program = counting_program(3);
     let mut machine = Machine::new(&program, "Count", &[]).expect("entry exists");
-    assert_eq!(machine.run(&program, u64::MAX), Run::Completed);
-    assert_eq!(machine.run(&program, u64::MAX), Run::Completed);
+    assert_eq!(
+        machine.run(&program, &mut Host::new(), u64::MAX),
+        Run::Completed
+    );
+    assert_eq!(
+        machine.run(&program, &mut Host::new(), u64::MAX),
+        Run::Completed
+    );
     assert_eq!(machine.result(), Value::Int(3), "not recomputed");
 }
 
@@ -451,7 +476,7 @@ fn faults_report_instead_of_panicking() {
     };
     let mut machine = Machine::new(&bad_register, "Bad", &[]).expect("entry exists");
     assert!(matches!(
-        machine.run(&bad_register, u64::MAX),
+        machine.run(&bad_register, &mut Host::new(), u64::MAX),
         Run::Faulted(Fault::BadRegister { .. })
     ));
     assert!(machine.is_finished(), "a faulted machine is not resumed");
@@ -466,7 +491,7 @@ fn faults_report_instead_of_panicking() {
     };
     let mut machine = Machine::new(&bad_jump, "Bad", &[]).expect("entry exists");
     assert_eq!(
-        machine.run(&bad_jump, u64::MAX),
+        machine.run(&bad_jump, &mut Host::new(), u64::MAX),
         Run::Faulted(Fault::BadJump { target: 99 })
     );
 
@@ -490,7 +515,7 @@ fn faults_report_instead_of_panicking() {
     };
     let mut machine = Machine::new(&bad_type, "Bad", &[]).expect("entry exists");
     assert_eq!(
-        machine.run(&bad_type, u64::MAX),
+        machine.run(&bad_type, &mut Host::new(), u64::MAX),
         Run::Faulted(Fault::TypeMismatch {
             expected: "int",
             found: "bool",
@@ -505,7 +530,7 @@ fn zero_fuel_suspends_without_progress() {
     let program = counting_program(5);
     let mut machine = Machine::new(&program, "Count", &[]).expect("entry exists");
     assert_eq!(
-        machine.run(&program, 0),
+        machine.run(&program, &mut Host::new(), 0),
         Run::Suspended(Suspension::OutOfFuel)
     );
     assert_eq!(machine.program_counter(), 0);

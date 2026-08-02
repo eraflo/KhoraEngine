@@ -324,9 +324,17 @@ impl Compiler {
             self.error("only named functions can be called yet", span);
             return self.constant(Value::Unit, Shape::Other);
         };
-        let Some(index) = self.signatures.get(name).copied() else {
-            self.error(format!("`{name}` is not a compiled function"), span);
-            return self.constant(Value::Unit, Shape::Other);
+        // The script's own functions first, matching the checker: whichever it
+        // resolved the call against is the one that must be emitted.
+        let target = match self.signatures.get(name).copied() {
+            Some(index) => CallTarget::Script(index),
+            None => match self.natives.get(name).copied() {
+                Some((index, _)) => CallTarget::Native(index),
+                None => {
+                    self.error(format!("`{name}` is not a compiled function"), span);
+                    return self.constant(Value::Unit, Shape::Other);
+                }
+            },
         };
 
         // Arguments must land in *consecutive* registers: the callee's frame
@@ -355,14 +363,43 @@ impl Compiler {
         }
 
         let dst = self.registers.temp();
-        self.emit(Instruction::Call {
-            function: index,
-            base,
-            argc: args.len() as u8,
-            dst,
-        });
-
-        let shape = self.returns.get(name).copied().unwrap_or(Shape::Other);
+        let argc = args.len() as u8;
+        let shape = match target {
+            CallTarget::Script(function) => {
+                self.emit(Instruction::Call {
+                    function,
+                    base,
+                    argc,
+                    dst,
+                });
+                self.returns.get(name).copied().unwrap_or(Shape::Other)
+            }
+            CallTarget::Native(function) => {
+                self.emit(Instruction::NativeCall {
+                    function,
+                    base,
+                    argc,
+                    dst,
+                });
+                self.natives
+                    .get(name)
+                    .map(|(_, shape)| *shape)
+                    .unwrap_or(Shape::Other)
+            }
+        };
         (dst, shape)
     }
+}
+
+/// Which kind of call a name resolved to.
+///
+/// The two are indistinguishable in the source and must not be at the point of
+/// emission: they address different tables, and a script function's index used
+/// as a native's would call whatever sits at that slot in the registry.
+#[derive(Debug, Clone, Copy)]
+enum CallTarget {
+    /// A function compiled from this program.
+    Script(usize),
+    /// A function the host exposes.
+    Native(usize),
 }

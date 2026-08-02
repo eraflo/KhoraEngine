@@ -14,9 +14,46 @@
 
 //! This crate provides procedural macros for the Khora Engine.
 
+mod ergon_fn;
+
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
+
+/// Exposes a Rust function to Ergon scripts.
+///
+/// The annotated function keeps working as ordinary Rust; the macro adds the
+/// signature the type checker reads, the trampoline that unpacks a call, and
+/// the registration that puts it in the registry. A function is callable from a
+/// script by being annotated — there is no second list to keep in step.
+///
+/// ```ignore
+/// #[ergon_fn]
+/// fn despawn(context: &mut NativeContext<'_>, entity: EntityId) {
+///     context.commands.push(WorldCommand::Despawn { entity });
+/// }
+///
+/// #[ergon_fn(name = "Distance", cost = 4)]
+/// fn distance(a: f32, b: f32) -> f32 { (a - b).abs() }
+/// ```
+///
+/// The script name defaults to the function's, in `PascalCase`. `cost` is what
+/// one call spends from the frame's fuel budget, and defaults to the price of a
+/// single VM instruction — a function that does real work should say so, or the
+/// budget stops meaning anything.
+///
+/// Parameter and return types are translated through
+/// `khora_script::native::ScriptType`, so a type alias works, and a crate can
+/// expose its own type by implementing that trait rather than by this macro
+/// learning about it.
+///
+/// A leading `&mut NativeContext<'_>` parameter is passed through rather than
+/// taken from the script, which is how a function reaches the command buffer
+/// and the frame arena.
+#[proc_macro_attribute]
+pub fn ergon_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
+    ergon_fn::ergon_fn(attr, item)
+}
 
 /// A derive macro that implements the `khora_data::ecs::Component` trait
 /// and generates a serializable mirror struct with `From` conversions.

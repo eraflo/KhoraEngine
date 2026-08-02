@@ -45,12 +45,19 @@
 
 #![warn(missing_docs)]
 
+// `#[ergon_fn]` writes `::khora_script::…` paths, which have to resolve inside
+// this crate too — the built-ins are declared with the same macro a game uses,
+// so the macro is exercised by the language's own code rather than only by its
+// consumers.
+extern crate self as khora_script;
+
 pub mod arena;
 pub mod ast;
 pub mod bytecode;
 pub mod diagnostics;
 pub mod lexer;
 pub mod modules;
+pub mod native;
 pub mod parser;
 pub mod types;
 pub mod vm;
@@ -59,8 +66,12 @@ pub use arena::{Arena, ArenaRef, Object, PersistentStore};
 pub use ast::{BehaviorDecl, Expr, Item, Module, Stmt, TypeRef};
 pub use bytecode::{compile, Compiled};
 pub use diagnostics::{Diagnostic, Severity, SourceFile, Span};
+pub use khora_macros::ergon_fn;
 pub use lexer::{lex, Keyword, Lexed, Token, TokenKind};
 pub use modules::{resolve, MemoryLoader, Resolved, SourceLoader};
+pub use native::{
+    Host, NativeContext, NativeError, NativeFn, NativeRegistry, NativeTy, ScriptType,
+};
 pub use parser::{parse, Parsed};
 pub use types::{check, Checked, Ty};
 pub use vm::{Function, Instruction, Machine, Program, Run, Suspension, Value};

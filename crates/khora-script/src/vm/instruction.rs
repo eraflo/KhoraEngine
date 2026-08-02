@@ -231,6 +231,24 @@ pub enum Instruction {
         src: Reg,
     },
 
+    /// Calls an engine function, with arguments in `base..base + argc`.
+    ///
+    /// Separate from [`Self::Call`] because nothing about it is a frame: there
+    /// is no callee to give registers to and nothing to return into. The whole
+    /// call happens inside one instruction, which is also why it is the one
+    /// place a script cannot be suspended mid-way — a native either completes
+    /// or faults.
+    NativeCall {
+        /// Index into the [`NativeRegistry`](crate::native::NativeRegistry).
+        function: usize,
+        /// First argument register.
+        base: Reg,
+        /// Argument count.
+        argc: u8,
+        /// Where the result goes.
+        dst: Reg,
+    },
+
     /// Suspends voluntarily. Stands in for `await` until it is wired up.
     Yield,
     /// Stops the program.

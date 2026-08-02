@@ -25,6 +25,7 @@
 
 use super::compile;
 use crate::lexer::lex;
+use crate::native::Host;
 use crate::parser::parse;
 use crate::types::check;
 use crate::vm::{Machine, Program, Run, Suspension, Value};
@@ -73,7 +74,7 @@ fn build(source: &str) -> Program {
 fn run(source: &str, entry: &str) -> Value {
     let program = build(source);
     let mut machine = Machine::new(&program, entry, &[]).expect("the entry point exists");
-    match machine.run(&program, 100_000) {
+    match machine.run(&program, &mut Host::new(), 100_000) {
         Run::Completed => machine.result(),
         other => panic!("expected completion, got {other:?}"),
     }
@@ -282,15 +283,21 @@ fn a_compiled_program_survives_interruption_anywhere() {
     );
 
     let mut reference = Machine::new(&program, "F", &[]).expect("entry exists");
-    assert_eq!(reference.run(&program, u64::MAX), Run::Completed);
+    assert_eq!(
+        reference.run(&program, &mut Host::new(), u64::MAX),
+        Run::Completed
+    );
     let expected = reference.result();
     assert_eq!(expected, Value::Int(20));
 
     for slice in 1..=60u64 {
         let mut machine = Machine::new(&program, "F", &[]).expect("entry exists");
+        // One host across the whole run — see the note in the VM's own
+        // resumption test.
+        let mut host = Host::new();
         let mut rounds = 0;
         loop {
-            match machine.run(&program, slice) {
+            match machine.run(&program, &mut host, slice) {
                 Run::Completed => break,
                 Run::Suspended(Suspension::OutOfFuel) => {
                     rounds += 1;
@@ -315,7 +322,7 @@ fn an_infinite_loop_suspends_rather_than_hanging() {
     let program = build("fn void F() { while (true) { } }");
     let mut machine = Machine::new(&program, "F", &[]).expect("entry exists");
     assert_eq!(
-        machine.run(&program, 1000),
+        machine.run(&program, &mut Host::new(), 1000),
         Run::Suspended(Suspension::OutOfFuel)
     );
     assert!(!machine.is_finished(), "it can still be resumed");

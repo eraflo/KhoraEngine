@@ -50,6 +50,8 @@ pub use value::Value;
 
 use serde::{Deserialize, Serialize};
 
+use crate::native::Host;
+
 /// Why a program stopped before finishing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Suspension {
@@ -89,6 +91,22 @@ pub enum Fault {
     DivideByZero,
     /// The call stack grew past its limit.
     StackOverflow,
+    /// A call to an engine function the host does not expose.
+    ///
+    /// Means the program was compiled against a different registry than the one
+    /// running it — the indices no longer line up, so continuing would call
+    /// whatever now sits at that slot.
+    UnknownNative {
+        /// The offending index.
+        index: usize,
+    },
+    /// An engine function refused.
+    NativeFailed {
+        /// Which one.
+        name: &'static str,
+        /// What it said.
+        message: String,
+    },
 }
 
 /// The outcome of one [`Machine::run`] call.
@@ -201,7 +219,12 @@ impl Machine {
     /// Call again to resume — the machine holds everything needed and does not
     /// care how long it was left alone, or whether it was serialised in
     /// between.
-    pub fn run(&mut self, program: &Program, fuel: u64) -> Run {
+    ///
+    /// `host` is what the program can reach outside itself. It is borrowed for
+    /// the run rather than held by the machine, because the machine is what
+    /// gets serialised with the scene and the host is what belongs to the
+    /// frame — a machine that owned its host could not be saved.
+    pub fn run(&mut self, program: &Program, host: &mut Host, fuel: u64) -> Run {
         if self.finished {
             return Run::Completed;
         }
@@ -234,13 +257,24 @@ impl Machine {
             // an instruction boundary. Landing mid-instruction would mean
             // capturing partial results, which is what the register machine
             // was chosen to avoid.
-            let cost = instruction.cost();
+            //
+            // A native is charged what it declares rather than the flat
+            // instruction cost: a raycast is not a `Move`, and billing it as
+            // one would let a behavior spend a frame inside a single call while
+            // the counter reported it had barely started.
+            let cost = match instruction {
+                Instruction::NativeCall { function, .. } => match host.natives.at(function) {
+                    Some(native) => native.cost,
+                    None => return self.fault(Fault::UnknownNative { index: function }),
+                },
+                _ => instruction.cost(),
+            };
             if remaining < cost {
                 return Run::Suspended(Suspension::OutOfFuel);
             }
             remaining -= cost;
 
-            match self.step(&instruction, program, function.code.len()) {
+            match self.step(&instruction, program, host, function.code.len()) {
                 Ok(Step::Next) => self.program_counter += 1,
                 Ok(Step::Jumped) => {}
                 Ok(Step::Halt) => {
@@ -274,6 +308,7 @@ impl Machine {
         &mut self,
         instruction: &Instruction,
         program: &Program,
+        host: &mut Host,
         code_len: usize,
     ) -> Result<Step, Fault> {
         match *instruction {
@@ -375,9 +410,52 @@ impl Machine {
                 Ok(Step::Returned)
             }
 
+            Instruction::NativeCall {
+                function,
+                base,
+                argc,
+                dst,
+            } => self.native_call(host, function, base, argc, dst),
+
             Instruction::Yield => Ok(Step::Yield),
             Instruction::Halt => Ok(Step::Halt),
         }
+    }
+
+    /// Runs an engine function and writes its result back.
+    ///
+    /// No frame is pushed: a native has no bytecode to give registers to, and
+    /// nothing to return into. That is also why it is the one place a run
+    /// cannot be suspended part-way — the call either completes or faults.
+    fn native_call(
+        &mut self,
+        host: &mut Host,
+        function: usize,
+        base: Reg,
+        argc: u8,
+        dst: Reg,
+    ) -> Result<Step, Fault> {
+        let native = host
+            .natives
+            .at(function)
+            .ok_or(Fault::UnknownNative { index: function })?;
+
+        // Copied out rather than borrowed: the native takes the host mutably,
+        // and the arguments live in the machine's register file, so holding a
+        // slice across the call would borrow both at once.
+        let mut args = Vec::with_capacity(argc as usize);
+        for offset in 0..argc {
+            args.push(self.read(base + offset)?);
+        }
+
+        let mut context = host.context();
+        let result = (native.call)(&mut context, &args).map_err(|error| Fault::NativeFailed {
+            name: native.name,
+            message: error.message,
+        })?;
+
+        self.write(dst, result)?;
+        Ok(Step::Next)
     }
 
     fn call(

@@ -437,10 +437,17 @@ impl Checker {
     }
 
     fn check_call(&mut self, callee: &Expr, args: &[Expr], span: Span, context: &Context) -> Ty {
-        // Only free functions are callable by name for now; methods on engine
-        // objects arrive with the engine API in phase 2.
+        // Free functions and engine functions are callable by name; methods on
+        // engine objects arrive with the script lane.
         if let Expr::Ident { name, .. } = callee {
-            if let Some(info) = self.functions.get(name).cloned() {
+            // The script's own first, so a host that later exposes a name a
+            // script already uses cannot change what that script means.
+            let known = self
+                .functions
+                .get(name)
+                .or_else(|| self.natives.get(name))
+                .cloned();
+            if let Some(info) = known {
                 if info.params.len() != args.len() {
                     self.error(
                         format!(

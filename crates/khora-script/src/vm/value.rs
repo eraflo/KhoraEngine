@@ -23,6 +23,7 @@
 //! once the units have been proved to agree, carrying the distinction into
 //! every arithmetic instruction would cost something and prove nothing.
 
+use khora_core::ecs::entity::EntityId;
 use serde::{Deserialize, Serialize};
 
 /// A runtime value.
@@ -36,6 +37,12 @@ pub enum Value {
     Float(f32),
     /// Boolean.
     Bool(bool),
+    /// An ECS entity handle.
+    ///
+    /// Carried inline rather than through the arena because it is two `u32`s
+    /// and a register already holds more than that — and because an entity
+    /// outlives the frame that named it, which the arena's contents do not.
+    Entity(EntityId),
     /// Absent optional.
     Null,
 }
@@ -70,6 +77,14 @@ impl Value {
         }
     }
 
+    /// The entity inside, or `None`.
+    pub fn as_entity(self) -> Option<EntityId> {
+        match self {
+            Self::Entity(id) => Some(id),
+            _ => None,
+        }
+    }
+
     /// Whether this is the absent optional.
     pub fn is_null(self) -> bool {
         matches!(self, Self::Null)
@@ -82,6 +97,7 @@ impl Value {
             Self::Int(_) => "int",
             Self::Float(_) => "float",
             Self::Bool(_) => "bool",
+            Self::Entity(_) => "Entity",
             Self::Null => "null",
         }
     }

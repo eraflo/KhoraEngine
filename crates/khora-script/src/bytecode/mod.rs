@@ -75,7 +75,19 @@ impl Compiled {
 /// Passing a module that failed type checking is a caller mistake: the compiler
 /// trusts what the checker proved and will emit nonsense rather than diagnose.
 pub fn compile(module: &Module) -> Compiled {
+    compile_with(module, &crate::native::NativeRegistry::with_builtins())
+}
+
+/// Compiles a module against a specific set of engine functions.
+///
+/// The resulting program addresses a native **by index**, so it is only valid
+/// against a registry built the same way. Pass the same one here and to
+/// [`check_with`](crate::types::check_with), and hand the same one to the
+/// [`Host`](crate::native::Host) that runs the program — a registry assembled
+/// differently would resolve a call to whatever now sits at that slot.
+pub fn compile_with(module: &Module, natives: &crate::native::NativeRegistry) -> Compiled {
     let mut compiler = Compiler::new();
+    compiler.collect_natives(natives);
     compiler.collect_signatures(module);
     compiler.compile_functions(module);
     Compiled {
@@ -119,6 +131,8 @@ pub struct Compiler {
     pub signatures: HashMap<String, usize>,
     /// Return shape per function, to pick the right comparison at a call site.
     pub returns: HashMap<String, Shape>,
+    /// Engine function name to its index in the registry, and its result shape.
+    pub natives: HashMap<String, (usize, Shape)>,
     /// Instructions of the function being compiled.
     pub code: Vec<Instruction>,
     /// Register allocation for the current function.
@@ -134,6 +148,7 @@ impl Compiler {
             diagnostics: Vec::new(),
             signatures: HashMap::new(),
             returns: HashMap::new(),
+            natives: HashMap::new(),
             code: Vec::new(),
             registers: Registers::new(0),
             locals: Vec::new(),
@@ -143,6 +158,20 @@ impl Compiler {
     /// Records a problem the compiler cannot work around.
     pub fn error(&mut self, message: impl Into<String>, span: Span) {
         self.diagnostics.push(Diagnostic::error(message, span));
+    }
+
+    /// Records the registry's indices, which the emitted code addresses.
+    fn collect_natives(&mut self, natives: &crate::native::NativeRegistry) {
+        for (index, native) in natives.iter().enumerate() {
+            let shape = match native.result {
+                crate::native::NativeTy::Int => Shape::Int,
+                crate::native::NativeTy::Float
+                | crate::native::NativeTy::Duration
+                | crate::native::NativeTy::Angle => Shape::Float,
+                _ => Shape::Other,
+            };
+            self.natives.insert(native.name.to_owned(), (index, shape));
+        }
     }
 
     /// Assigns an index to every function before compiling any body.

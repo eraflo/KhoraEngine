@@ -68,7 +68,21 @@ impl Checked {
 
 /// Type-checks a parsed module.
 pub fn check(module: &Module) -> Checked {
+    check_with(module, &crate::native::NativeRegistry::with_builtins())
+}
+
+/// Checks a module against a specific set of engine functions.
+///
+/// The registry is a parameter because it is part of what "well-typed" means: a
+/// program calling `Raycast` is correct against a host that exposes it and
+/// wrong against one that does not, and the compiler must be told which. Passing
+/// the same registry here and to [`compile`](crate::bytecode::compile) is what
+/// keeps a call's index meaning the same thing on both sides.
+///
+/// [`compile`]: crate::bytecode::compile
+pub fn check_with(module: &Module, natives: &crate::native::NativeRegistry) -> Checked {
     let mut checker = Checker::new();
+    checker.collect_natives(natives);
     checker.collect(module);
     checker.check_bodies(module);
     Checked {
@@ -147,6 +161,13 @@ pub struct Checker {
     pub structs: HashMap<String, StructInfo>,
     /// Free functions by name.
     pub functions: HashMap<String, FnInfo>,
+    /// Engine functions by name.
+    ///
+    /// Kept apart from [`functions`](Self::functions) rather than merged into
+    /// it for two reasons: the compiler emits a different instruction for each,
+    /// and a script declaring a function that shadows an engine one deserves to
+    /// be told which name it collided with rather than "declared twice".
+    pub natives: HashMap<String, FnInfo>,
     /// Behavior names, so `this` and `become` can be validated.
     pub behaviors: Vec<String>,
     /// Accumulated problems.
@@ -160,6 +181,7 @@ impl Checker {
         Self {
             structs: HashMap::new(),
             functions: HashMap::new(),
+            natives: HashMap::new(),
             behaviors: Vec::new(),
             diagnostics: Vec::new(),
             scopes: Scopes::new(),
@@ -304,6 +326,19 @@ impl Checker {
         }
     }
 
+    /// Records what the host exposes, before any declaration is read.
+    fn collect_natives(&mut self, natives: &crate::native::NativeRegistry) {
+        for native in natives.iter() {
+            self.natives.insert(
+                native.name.to_owned(),
+                FnInfo {
+                    params: native.params.iter().map(|p| p.to_ty()).collect(),
+                    result: native.result.to_ty(),
+                },
+            );
+        }
+    }
+
     fn collect_function(&mut self, decl: &FunctionDecl) {
         let params = decl.params.iter().map(|p| self.resolve(&p.ty)).collect();
         let result = self.resolve(&decl.return_ty);
@@ -311,6 +346,18 @@ impl Checker {
             self.error(
                 format!("function `{}` is declared twice", decl.name),
                 decl.name_span,
+            );
+            return;
+        }
+        if self.natives.contains_key(&decl.name) {
+            // Shadowing would compile — the checker would simply prefer the
+            // script's — and that is exactly the problem: every existing call
+            // to the engine function would quietly start meaning something
+            // else.
+            self.error_note(
+                format!("`{}` is already an engine function", decl.name),
+                decl.name_span,
+                "rename this one; a script cannot replace what the engine exposes",
             );
             return;
         }
