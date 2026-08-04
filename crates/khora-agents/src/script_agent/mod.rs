@@ -47,7 +47,7 @@ use khora_core::control::gorna::{
 use khora_core::lane::{LaneContext, LaneRegistry, Ref, Slot};
 use khora_core::script::{CommandBuffer, EventQueue, ScriptStateWriteback};
 use khora_core::{EngineContext, Stopwatch};
-use khora_data::flow::{ScriptReloadView, ScriptView};
+use khora_data::flow::{ScriptEventView, ScriptReloadView, ScriptView};
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
 use khora_script::vm::Program;
 
@@ -80,6 +80,13 @@ pub struct ScriptingAgent {
     rate: f64,
     /// What the last run did, for [`Agent::report_status`].
     last: ScriptRunReport,
+    /// What the previous frame raised, waiting to be delivered.
+    ///
+    /// Kept by the agent rather than routed through the `World` and back: an
+    /// event from one behavior to another never leaves scripting, and the round
+    /// trip would cost two frames of latency and a deck slot nothing else reads.
+    /// Engine-raised events take the other road, through the bus.
+    inbox: EventQueue,
 }
 
 impl Default for ScriptingAgent {
@@ -95,6 +102,7 @@ impl Default for ScriptingAgent {
             fuel: 0,
             rate: INITIAL_RATE,
             last: ScriptRunReport::default(),
+            inbox: EventQueue::new(),
         }
     }
 }
@@ -161,6 +169,16 @@ impl Agent for ScriptingAgent {
             apply_reloads(&mut self.runtime, reloads);
         }
 
+        // Taken before anything can return early. The flow drains its queue into
+        // the view whether or not this agent gets as far as running, so an event
+        // read later than here would be one the engine raised and nobody ever
+        // heard.
+        if let Some(raised) = context.bus.get::<ScriptEventView>() {
+            for event in &raised.events {
+                self.inbox.push(event.clone());
+            }
+        }
+
         let Some(view): Option<&ScriptView> = context.bus.get() else {
             // The flow has not run, or the scene holds no scripts.
             return;
@@ -181,7 +199,12 @@ impl Agent for ScriptingAgent {
         // SAFETY: `deck` is borrowed from EngineContext for this call.
         ctx.insert(Slot::new(&mut *context.deck));
 
-        let events: EventQueue = EventQueue::new();
+        // One queue, two producers: what scripts raised last frame, and what the
+        // engine raised through the bus. Neither is delivered in the frame it
+        // was produced — an event handled where it was raised opens a cascade
+        // with no bound, and a budget that cannot bound the work is not a
+        // budget.
+        let events = std::mem::take(&mut self.inbox);
         ctx.insert(Ref::new(&events));
 
         let Some(lane) = self.lanes.get(self.current_lane) else {
@@ -196,10 +219,13 @@ impl Agent for ScriptingAgent {
         }
         let elapsed = clock.elapsed();
 
-        if let Some(report) = ctx.get::<ScriptRunReport>().cloned() {
+        if let Some(mut report) = ctx.get::<ScriptRunReport>().cloned() {
             if let Some(elapsed) = elapsed {
                 self.observe(&report, elapsed);
             }
+            // Held for the next frame. Taken out of the report so a status read
+            // does not carry a queue of events around with it.
+            self.inbox = std::mem::take(&mut report.raised);
             self.last = report;
         }
     }

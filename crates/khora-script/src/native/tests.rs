@@ -236,6 +236,7 @@ fn a_native_is_charged_its_own_cost() {
         params: &[],
         result: NativeTy::Float,
         cost: 5_000,
+        variadic: false,
         call: |_, _| Ok(Value::Float(1.0)),
     };
 
@@ -281,6 +282,7 @@ fn replacing_a_function_leaves_every_other_index_alone() {
         params: &[NativeTy::Float],
         result: NativeTy::Float,
         cost: 1,
+        variadic: false,
         call: |_, _| Ok(Value::Float(99.0)),
     };
 
@@ -334,6 +336,7 @@ fn a_native_can_queue_an_effect() {
         params: &[],
         result: NativeTy::Void,
         cost: 1,
+        variadic: false,
         call: |context: &mut NativeContext<'_>, _| {
             let entity = context
                 .entity
@@ -373,6 +376,7 @@ fn a_native_needing_an_entity_says_so_when_there_is_none() {
         params: &[],
         result: NativeTy::Void,
         cost: 1,
+        variadic: false,
         call: |context: &mut NativeContext<'_>, _| {
             context
                 .entity

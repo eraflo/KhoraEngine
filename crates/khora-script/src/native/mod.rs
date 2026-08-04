@@ -42,6 +42,7 @@
 
 pub mod builtins;
 pub mod convert;
+pub mod events;
 pub mod ty;
 pub mod world;
 
@@ -52,11 +53,12 @@ mod world_tests;
 
 pub use builtins::builtins;
 pub use convert::ScriptType;
+pub use events::ERGON_RAISE;
 pub use ty::NativeTy;
 pub use world::world;
 
 use khora_core::ecs::entity::EntityId;
-use khora_core::script::CommandBuffer;
+use khora_core::script::{CommandBuffer, EventQueue};
 
 use crate::arena::{Arena, PersistentStore};
 use crate::vm::{StrError, Value};
@@ -117,6 +119,14 @@ pub struct NativeContext<'a> {
     ///
     /// `None` outside a behavior, or for an entity the view did not place.
     pub position: Option<khora_core::math::Vec3>,
+    /// Events raised for the *next* frame to deliver.
+    ///
+    /// Not this one. An event delivered in the frame it was raised opens a
+    /// cascade with no bound — A tells B, B tells A — and a budget that cannot
+    /// bound the work is not a budget. Deferring makes each frame deliver
+    /// exactly what the previous one produced, which is finite by construction
+    /// and the same rule a `WorldCommand` already follows.
+    pub events: &'a mut EventQueue,
 }
 
 impl NativeContext<'_> {
@@ -171,6 +181,12 @@ pub struct Host {
     /// same subject, and a position left over from the previous behavior would
     /// be worse than none at all.
     pub position: Option<khora_core::math::Vec3>,
+    /// What this frame's scripts raised, for the next frame to deliver.
+    ///
+    /// The frame's, like [`commands`](Self::commands) — one behavior can raise
+    /// an event another will hear, and both are collected here until whoever
+    /// owns the frame takes them.
+    pub outbox: EventQueue,
 }
 
 impl Default for Host {
@@ -195,6 +211,7 @@ impl Host {
             awaiting: None,
             entity: None,
             position: None,
+            outbox: EventQueue::new(),
         }
     }
 
@@ -233,6 +250,14 @@ impl Host {
         std::mem::take(&mut self.commands)
     }
 
+    /// Takes the events this frame raised, for the next one to deliver.
+    ///
+    /// Separate from [`end_frame`](Self::end_frame) because they go to different
+    /// places: commands leave for the `World`, events come back to scripting.
+    pub fn take_events(&mut self) -> EventQueue {
+        std::mem::take(&mut self.outbox)
+    }
+
     /// The narrow view a native gets.
     ///
     /// `strings` comes from the program rather than the host: the same host
@@ -245,6 +270,7 @@ impl Host {
             entity: self.entity,
             strings,
             position: self.position,
+            events: &mut self.outbox,
         }
     }
 }
@@ -254,11 +280,26 @@ pub struct NativeFn {
     /// The name a script calls it by.
     pub name: &'static str,
     /// What it takes.
+    ///
+    /// The exact list, unless [`variadic`](Self::variadic) — then the minimum.
     pub params: &'static [NativeTy],
     /// What it gives back.
     pub result: NativeTy,
     /// What one call costs against the frame's fuel.
     pub cost: u64,
+    /// Whether it accepts arguments beyond the declared ones.
+    ///
+    /// Almost nothing should. It exists for the calls whose payload the *callee*
+    /// defines rather than the caller — `Raise(e, "Damaged", 10)` carries
+    /// whatever the handler declares, and the checker cannot know which handler
+    /// that will be, because the answer depends on the state the entity is in
+    /// when the event arrives. Those arguments are therefore checked at
+    /// delivery, where the handler is finally known, rather than pretended to be
+    /// checked here.
+    ///
+    /// A native written with `#[ergon_fn]` is never variadic: the macro derives
+    /// its signature from typed Rust parameters, which is the whole point.
+    pub variadic: bool,
     /// The implementation.
     pub call: fn(&mut NativeContext<'_>, &[Value]) -> Result<Value, NativeError>,
 }

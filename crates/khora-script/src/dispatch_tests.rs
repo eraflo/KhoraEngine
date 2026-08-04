@@ -98,6 +98,7 @@ fn registry_with_despawn() -> crate::native::NativeRegistry {
         params: &[],
         result: NativeTy::Void,
         cost: 1,
+        variadic: false,
         call: |context, _| {
             let entity = context
                 .entity

@@ -467,10 +467,16 @@ impl Checker {
                 .or_else(|| self.natives.get(name))
                 .cloned();
             if let Some(info) = known {
-                if info.params.len() != args.len() {
+                let wrong_arity = if info.variadic {
+                    args.len() < info.params.len()
+                } else {
+                    args.len() != info.params.len()
+                };
+                if wrong_arity {
                     self.error(
                         format!(
-                            "`{name}` takes {} argument{}, found {}",
+                            "`{name}` takes {}{} argument{}, found {}",
+                            if info.variadic { "at least " } else { "" },
                             info.params.len(),
                             if info.params.len() == 1 { "" } else { "s" },
                             args.len()

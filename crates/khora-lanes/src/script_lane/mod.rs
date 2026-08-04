@@ -43,6 +43,8 @@ pub mod persistence;
 pub mod runtime;
 
 #[cfg(test)]
+mod event_tests;
+#[cfg(test)]
 mod lifecycle_tests;
 #[cfg(test)]
 mod reload_tests;
@@ -86,6 +88,12 @@ pub struct ScriptRunReport {
     pub faulted: usize,
     /// Fuel actually spent.
     pub spent: u64,
+    /// What this frame's scripts raised, for the next frame to deliver.
+    ///
+    /// Carried out rather than written to the deck: an event between two
+    /// behaviors never leaves scripting, and routing it through the `World` and
+    /// back would add two frames of latency and a slot nothing else reads.
+    pub raised: EventQueue,
     /// State for the scene to record, for the instances that did work.
     ///
     /// Carried in the report rather than written to the deck inside the loop so
@@ -144,7 +152,8 @@ impl Lane for BudgetedScriptLane {
             let events = ctx.get::<Ref<EventQueue>>().map_or(&empty, Ref::get);
 
             let mut host = Host::new();
-            let report = run_behaviors(view, events, runtime, &mut host, fuel.0);
+            let mut report = run_behaviors(view, events, runtime, &mut host, fuel.0);
+            report.raised = host.take_events();
 
             // Handed over together with the arena reset, so no command can
             // outlive the frame memory it might have referred to.

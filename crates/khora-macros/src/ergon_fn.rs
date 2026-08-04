@@ -147,6 +147,11 @@ fn expand(function: &ItemFn, options: &Options) -> syn::Result<TokenStream> {
                 ],
                 result: <#result_ty as ::khora_script::native::ScriptType>::TY,
                 cost: #cost,
+                // Never, and not an oversight: the macro's reason to exist is
+                // that a native's signature comes from typed Rust parameters.
+                // A variadic one is hand-written, where its looseness is
+                // visible.
+                variadic: false,
                 call: |context, args| {
                     #(#bindings)*
                     let __outcome = #ident(#forwarded);

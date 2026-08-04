@@ -118,9 +118,17 @@ pub struct OperatorInfo {
 #[derive(Debug, Clone)]
 pub struct FnInfo {
     /// Parameter types.
+    ///
+    /// The exact list, unless [`variadic`](Self::variadic) — then the minimum.
     pub params: Vec<Ty>,
     /// Return type.
     pub result: Ty,
+    /// Whether extra arguments are allowed.
+    ///
+    /// Only an engine function can be: a script's own always declares exactly
+    /// what it takes. See [`NativeFn::variadic`](crate::native::NativeFn::variadic)
+    /// for why one would be.
+    pub variadic: bool,
 }
 
 /// Where the checker currently is, which decides what is legal.
@@ -340,6 +348,7 @@ impl Checker {
                 FnInfo {
                     params: native.params.iter().map(|p| p.to_ty()).collect(),
                     result: native.result.to_ty(),
+                    variadic: native.variadic,
                 },
             );
         }
@@ -367,8 +376,14 @@ impl Checker {
             );
             return;
         }
-        self.functions
-            .insert(decl.name.clone(), FnInfo { params, result });
+        self.functions.insert(
+            decl.name.clone(),
+            FnInfo {
+                params,
+                result,
+                variadic: false,
+            },
+        );
     }
 
     // ── Pass two: bodies ──────────────────────────────
@@ -433,8 +448,14 @@ impl Checker {
                 BehaviorMember::Method(method) => {
                     let params = method.params.iter().map(|p| self.resolve(&p.ty)).collect();
                     let result = self.resolve(&method.return_ty);
-                    self.functions
-                        .insert(method.name.clone(), FnInfo { params, result });
+                    self.functions.insert(
+                        method.name.clone(),
+                        FnInfo {
+                            params,
+                            result,
+                            variadic: false,
+                        },
+                    );
                 }
                 BehaviorMember::State(state) => self.collect_methods(&state.members),
                 _ => {}
