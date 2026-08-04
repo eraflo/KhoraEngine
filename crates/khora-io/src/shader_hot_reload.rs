@@ -65,7 +65,7 @@ fn shader_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
     let Some(watcher) = runtime.resources.get::<Arc<AssetWatcher>>() else {
         return; // No assets dir → embedded sources, nothing to pump.
     };
-    let events = watcher.poll();
+    let events = watcher.poll_for("shader_hot_reload");
     if events.is_empty() {
         return;
     }

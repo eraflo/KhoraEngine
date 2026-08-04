@@ -128,11 +128,72 @@ fn importers_of(root: &Path, changed: &BTreeSet<String>) -> BTreeSet<String> {
     affected
 }
 
+/// Compiles every module under `script_root` and queues them all.
+///
+/// The pump reacts to *changes*, which leaves the first frame with no programs
+/// at all — a game whose scripts only start working once their author saves a
+/// file. This is the initial load, and it takes the same road a reload does so
+/// there is one way a program reaches the runtime rather than two.
+///
+/// Returns how many compiled. A module that does not compile is reported and
+/// skipped: one broken script should not stop the others from running.
+pub fn load_all(script_root: &Path, pending: &PendingScriptReloads) -> usize {
+    let loader = DiskLoader::new(script_root);
+    let mut loaded = 0;
+
+    for module in modules_under(script_root) {
+        let compiled = compile_module(&loader, &module);
+        match compiled.program {
+            Some(program) => {
+                pending.push(ScriptReload { module, program });
+                loaded += 1;
+            }
+            None => {
+                for diagnostic in &compiled.diagnostics {
+                    log::error!("{module}: {}", diagnostic.message);
+                }
+            }
+        }
+    }
+    loaded
+}
+
+/// Every `.erg` file under `root`, as module paths relative to it.
+fn modules_under(root: &Path) -> BTreeSet<String> {
+    let mut found = BTreeSet::new();
+    let mut stack = vec![root.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if !path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("erg"))
+            {
+                continue;
+            }
+            if let Ok(relative) = path.strip_prefix(root) {
+                // Forward slashes, because that is how an `import` writes a
+                // path and how a module is named everywhere else.
+                found.insert(relative.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    found
+}
+
 fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
     let Some(watcher) = runtime.resources.get::<Arc<AssetWatcher>>() else {
         return; // No assets dir → no hot-reload, which is the shipping path.
     };
-    let events = watcher.poll();
+    let events = watcher.poll_for("script_hot_reload");
     if events.is_empty() {
         return;
     }
@@ -283,5 +344,82 @@ mod tests {
 
         let affected = importers_of(dir.path(), &BTreeSet::from(["a.erg".to_owned()]));
         assert_eq!(affected.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod load_tests {
+    use super::*;
+
+    /// **Without this the first frame has no programs.** The pump reacts to
+    /// changes, so a game would sit inert until its author happened to save.
+    #[test]
+    fn every_module_under_the_root_is_compiled_at_startup() {
+        let dir = tempfile::TempDir::new().expect("a temp dir");
+        std::fs::create_dir_all(dir.path().join("ai")).expect("makes a subdir");
+        std::fs::write(
+            dir.path().join("ai/guard.erg"),
+            "behavior Guard { int health = 100; }",
+        )
+        .expect("writes");
+        std::fs::write(
+            dir.path().join("rules.erg"),
+            "fn int Double(int n) { return n * 2; }",
+        )
+        .expect("writes");
+
+        let pending = PendingScriptReloads::new();
+        assert_eq!(load_all(dir.path(), &pending), 2);
+
+        let queued: Vec<String> = pending.drain().into_iter().map(|r| r.module).collect();
+        assert!(queued.contains(&"ai/guard.erg".to_owned()), "{queued:?}");
+        assert!(queued.contains(&"rules.erg".to_owned()), "{queued:?}");
+    }
+
+    /// A module written with forward slashes is how an `import` names it, so
+    /// that is how it has to be queued — on Windows too.
+    #[test]
+    fn a_nested_module_is_named_with_forward_slashes() {
+        let dir = tempfile::TempDir::new().expect("a temp dir");
+        std::fs::create_dir_all(dir.path().join("combat/melee")).expect("makes subdirs");
+        std::fs::write(
+            dir.path().join("combat/melee/sword.erg"),
+            "fn void Swing() { }",
+        )
+        .expect("writes");
+
+        let pending = PendingScriptReloads::new();
+        load_all(dir.path(), &pending);
+
+        assert_eq!(
+            pending.drain().first().map(|r| r.module.clone()),
+            Some("combat/melee/sword.erg".to_owned())
+        );
+    }
+
+    /// One broken script must not stop the others: a project mid-edit usually
+    /// has one, and refusing to load anything would make the engine unusable
+    /// exactly when it is being worked on.
+    #[test]
+    fn a_module_that_does_not_compile_is_skipped_not_fatal() {
+        let dir = tempfile::TempDir::new().expect("a temp dir");
+        std::fs::write(dir.path().join("good.erg"), "fn void A() { }").expect("writes");
+        std::fs::write(dir.path().join("broken.erg"), "behavior {{{").expect("writes");
+
+        let pending = PendingScriptReloads::new();
+        assert_eq!(load_all(dir.path(), &pending), 1);
+        assert_eq!(
+            pending.drain().first().map(|r| r.module.clone()),
+            Some("good.erg".to_owned())
+        );
+    }
+
+    #[test]
+    fn an_empty_root_loads_nothing_and_does_not_fail() {
+        let dir = tempfile::TempDir::new().expect("a temp dir");
+        let pending = PendingScriptReloads::new();
+
+        assert_eq!(load_all(dir.path(), &pending), 0);
+        assert!(pending.is_empty());
     }
 }

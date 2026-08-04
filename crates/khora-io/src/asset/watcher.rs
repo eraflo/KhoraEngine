@@ -18,9 +18,10 @@
 //! FSEvents on macOS, ReadDirectoryChangesW on Windows) and translates raw
 //! events into [`AssetChangeEvent`]s with pre-computed UUIDs.
 //!
-//! The editor's frame loop calls [`AssetWatcher::poll`] each frame to drain
-//! pending events and feed them into `AssetService::invalidate` /
-//! `reindex` — see the editor's `before_agents` hot-reload pump.
+//! Each consumer calls [`AssetWatcher::poll_for`] with its own name and reads
+//! the same stream from its own position — the editor's reindex pump, the
+//! shader pipeline, and the script runtime all watch one directory and must all
+//! see what happened in it.
 //!
 //! # Threading
 //!
@@ -29,15 +30,16 @@
 //! never call `std::thread::spawn` from this crate, so the workspace
 //! convention "no `std::thread::spawn` in user code" is respected. The
 //! crossbeam channel is bounded only by the internal handler closure; the
-//! consumer side is non-blocking via [`AssetWatcher::poll`].
+//! consumer side is non-blocking via [`AssetWatcher::poll_for`].
 
 use anyhow::{Context, Result};
 use crossbeam_channel::{Receiver, Sender};
 use khora_core::asset::AssetUUID;
 use notify::{recommended_watcher, RecommendedWatcher, RecursiveMode, Watcher};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 use super::index_builder::should_skip_file;
@@ -80,11 +82,12 @@ pub struct AssetWatcher {
     _watcher: RecommendedWatcher,
     receiver: Receiver<AssetChangeEvent>,
     assets_root: PathBuf,
+    backlog: Mutex<Backlog>,
 }
 
 impl AssetWatcher {
     /// Starts watching `assets_root` recursively. Future writes / creates /
-    /// removes under that tree produce events drained via [`Self::poll`].
+    /// removes under that tree produce events read via [`Self::poll_for`].
     ///
     /// Returns an error if `notify` fails to construct a recommended watcher
     /// or to register the path (e.g. the path doesn't exist or the OS denies
@@ -120,6 +123,7 @@ impl AssetWatcher {
             _watcher: watcher,
             receiver: rx,
             assets_root,
+            backlog: Mutex::new(Backlog::default()),
         })
     }
 
@@ -128,27 +132,107 @@ impl AssetWatcher {
         &self.assets_root
     }
 
-    /// Drains all pending events without blocking.
+    /// Everything `subscriber` has not yet seen.
     ///
-    /// Coalesces repeated `Modified` events on the same path within the same
-    /// drain — `notify` v6 fires multiple Modified for one save on Windows.
-    /// The order of distinct events is preserved for events on different
-    /// paths.
-    pub fn poll(&self) -> Vec<AssetChangeEvent> {
-        let mut out: Vec<AssetChangeEvent> = Vec::new();
+    /// **Named, because there is more than one reader.** The shader pipeline
+    /// wants `.wgsl` changes and the script runtime wants `.erg` ones, and both
+    /// watch the same directory. A single drained channel gives every event to
+    /// whichever system runs first and nothing to the second — a hot-reload that
+    /// silently never fires, which is worse than one that is absent. Each
+    /// subscriber therefore reads the same stream from its own position.
+    ///
+    /// Coalesces repeated `Modified` events on the same path within one ingest —
+    /// `notify` v6 fires several for a single save on Windows. The order of
+    /// distinct events is preserved.
+    ///
+    /// A name seen for the first time starts at the oldest retained event, so a
+    /// system registered a frame late still hears what happened.
+    pub fn poll_for(&self, subscriber: &'static str) -> Vec<AssetChangeEvent> {
+        let Ok(mut backlog) = self.backlog.lock() else {
+            log::error!("the asset watcher's backlog is poisoned; {subscriber} hears nothing");
+            return Vec::new();
+        };
+
+        self.ingest(&mut backlog);
+        backlog.read(subscriber)
+    }
+
+    /// Moves whatever the watcher thread has produced into the backlog.
+    fn ingest(&self, backlog: &mut Backlog) {
         let mut seen_modified: HashSet<String> = HashSet::new();
         while let Ok(event) = self.receiver.try_recv() {
             if matches!(event.kind, AssetChangeKind::Modified)
                 && !seen_modified.insert(event.rel_path.clone())
             {
-                // Already emitted a Modified for this path in this drain.
+                // Already taken a Modified for this path in this ingest.
                 continue;
             }
-            out.push(event);
+            backlog.events.push_back(event);
         }
-        out
     }
 }
+
+/// The shared event stream, and where each subscriber has read to.
+#[derive(Default)]
+struct Backlog {
+    events: VecDeque<AssetChangeEvent>,
+    /// The position of `events[0]` in the stream as a whole.
+    ///
+    /// Counted rather than reset, so a cursor stays meaningful after a trim.
+    base: u64,
+    cursors: HashMap<&'static str, u64>,
+}
+
+impl Backlog {
+    /// Everything `subscriber` has not read, advancing its cursor past it.
+    ///
+    /// Separate from [`AssetWatcher::poll_for`] so the part with the arithmetic
+    /// in it can be tested without a filesystem and a watcher thread — the
+    /// bookkeeping is what has to be right, and it does not need either.
+    fn read(&mut self, subscriber: &'static str) -> Vec<AssetChangeEvent> {
+        let base = self.base;
+        let end = base + self.events.len() as u64;
+        let cursor = self.cursors.entry(subscriber).or_insert(base);
+        let from = (*cursor).max(base);
+        *cursor = end;
+
+        let unread: Vec<AssetChangeEvent> = self
+            .events
+            .iter()
+            .skip((from - base) as usize)
+            .cloned()
+            .collect();
+
+        self.trim();
+        unread
+    }
+
+    /// Keeps the backlog bounded, oldest first.
+    ///
+    /// **Not "drop what every subscriber has read".** The backlog cannot know
+    /// who the subscribers are: the first reader is the only cursor that exists
+    /// when it reads, so trimming to the minimum cursor would discard every
+    /// event before the second reader ever asked — which is the exact bug this
+    /// whole mechanism was written to fix, reintroduced one layer down.
+    ///
+    /// A window instead. Every subscriber sees everything as long as it polls
+    /// within [`RETAINED`] events of the change, which a per-frame system does
+    /// by several orders of magnitude, and a subscriber that stopped polling
+    /// cannot grow this without bound.
+    fn trim(&mut self) {
+        while self.events.len() > RETAINED {
+            self.events.pop_front();
+            self.base += 1;
+        }
+    }
+}
+
+/// How many changes the backlog keeps for readers that have not caught up.
+///
+/// Far more than a frame produces — a project-wide reformat is hundreds — and
+/// small enough that the memory is irrelevant. It is a backstop against a
+/// subscriber that stops reading, not a tuning knob.
+const RETAINED: usize = 4096;
 
 /// Maps a raw `notify::EventKind` + absolute path to one of our
 /// [`AssetChangeEvent`]s. Returns `None` if the path isn't a recognized
@@ -226,7 +310,7 @@ mod tests {
         let mut events = Vec::new();
         let deadline = std::time::Instant::now() + MAX_WAIT;
         while std::time::Instant::now() < deadline {
-            events.extend(watcher.poll());
+            events.extend(watcher.poll_for("test"));
             if events.iter().any(|e| e.rel_path == "textures/foo.png") {
                 break;
             }
@@ -237,6 +321,114 @@ mod tests {
             events.iter().any(|e| e.rel_path == "textures/foo.png"),
             "expected at least one event for textures/foo.png; got {:?}",
             events
+        );
+    }
+}
+
+#[cfg(test)]
+mod backlog_tests {
+    use super::*;
+
+    fn change(path: &str) -> AssetChangeEvent {
+        AssetChangeEvent {
+            kind: AssetChangeKind::Modified,
+            rel_path: path.to_owned(),
+            uuid: AssetUUID::new_v5(path),
+        }
+    }
+
+    fn with(paths: &[&str]) -> Backlog {
+        Backlog {
+            events: paths.iter().map(|path| change(path)).collect(),
+            ..Backlog::default()
+        }
+    }
+
+    fn paths(events: &[AssetChangeEvent]) -> Vec<&str> {
+        events.iter().map(|e| e.rel_path.as_str()).collect()
+    }
+
+    /// **The bug this exists for.** One drained channel gave every event to
+    /// whichever system ran first, so the shader pump ate the script pump's
+    /// `.erg` changes and script hot-reload silently never fired.
+    #[test]
+    fn two_subscribers_each_see_everything() {
+        let mut backlog = with(&["shaders/pbr.wgsl", "scripts/guard.erg"]);
+
+        assert_eq!(
+            paths(&backlog.read("shaders")),
+            ["shaders/pbr.wgsl", "scripts/guard.erg"]
+        );
+        assert_eq!(
+            paths(&backlog.read("scripts")),
+            ["shaders/pbr.wgsl", "scripts/guard.erg"],
+            "reading did not consume it for anybody else"
+        );
+    }
+
+    /// And each sees it once. A hot-reload that re-fired every frame would
+    /// recompile the same module forever.
+    #[test]
+    fn a_subscriber_does_not_see_the_same_event_twice() {
+        let mut backlog = with(&["scripts/guard.erg"]);
+
+        assert_eq!(backlog.read("scripts").len(), 1);
+        assert!(backlog.read("scripts").is_empty());
+    }
+
+    /// **What made the first attempt at this wrong.** Trimming to the minimum
+    /// cursor discards everything as soon as the *first* reader has read,
+    /// because it is the only cursor that exists yet — reintroducing the very
+    /// bug one layer down. A reader that has not asked yet still gets to.
+    #[test]
+    fn reading_once_does_not_discard_what_nobody_else_has_seen() {
+        let mut backlog = with(&["a.erg", "b.erg"]);
+
+        backlog.read("shaders");
+        assert_eq!(backlog.events.len(), 2, "still there for the other reader");
+        assert_eq!(paths(&backlog.read("scripts")), ["a.erg", "b.erg"]);
+    }
+
+    /// It stays bounded, so a subscriber that stops polling cannot grow it
+    /// without end.
+    #[test]
+    fn the_backlog_is_bounded() {
+        let mut backlog = Backlog::default();
+        for index in 0..RETAINED + 10 {
+            backlog.events.push_back(change(&format!("{index}.erg")));
+        }
+        backlog.trim();
+
+        assert_eq!(backlog.events.len(), RETAINED);
+        assert_eq!(backlog.base, 10, "the oldest ten went");
+    }
+
+    /// A cursor left behind by a trim reads from what remains rather than
+    /// panicking on a position that no longer exists.
+    #[test]
+    fn a_cursor_the_trim_outran_starts_from_what_remains() {
+        let mut backlog = with(&["a.erg"]);
+        backlog.read("shaders");
+
+        // A trim that overtook the cursor, as a long silence would produce.
+        backlog.events.clear();
+        backlog.base = 99;
+        backlog.events.push_back(change("late.erg"));
+
+        assert_eq!(paths(&backlog.read("shaders")), ["late.erg"]);
+    }
+
+    /// A subscriber that arrives late starts from what is still retained.
+    #[test]
+    fn a_late_subscriber_starts_from_what_remains() {
+        let mut backlog = with(&["a.erg"]);
+        backlog.read("shaders");
+        backlog.events.push_back(change("c.erg"));
+
+        assert_eq!(
+            paths(&backlog.read("editor")),
+            ["a.erg", "c.erg"],
+            "it was not listening before, but what is retained is fair game"
         );
     }
 }

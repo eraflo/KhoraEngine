@@ -424,28 +424,57 @@ pub fn run_default() -> Result<()> {
             }
         }
 
-        // `.wgsl` hot-reload: when running against a loose `assets/shaders`
-        // tree, watch it so edits recompose shader modules and rebuild cached
-        // pipelines in place (the `shader_hot_reload` data system pumps the
-        // watcher each tick). With no such directory — packed runtime — no
-        // watcher is created and the backend serves its embedded sources.
-        let shader_dir = exe_dir.join("assets").join("shaders");
-        if shader_dir.is_dir() {
-            match AssetWatcher::new(&shader_dir) {
+        // Hot-reload, for both `.wgsl` and `.erg`: when running against a loose
+        // `assets/` tree, watch the whole thing so edits recompose shader
+        // modules and recompile script modules in place. The two data systems
+        // read the same stream from their own cursors — one drained channel
+        // would give every event to whichever ran first.
+        //
+        // The whole tree rather than `assets/shaders`, because scripts live
+        // beside shaders and one watcher covering both is one OS handle. With no
+        // such directory — a packed runtime — nothing is watched and the
+        // backends serve their embedded sources.
+        let assets_dir = exe_dir.join("assets");
+        if assets_dir.is_dir() {
+            match AssetWatcher::new(&assets_dir) {
                 Ok(watcher) => {
                     runtime.resources.insert(Arc::new(watcher));
                     log::info!(
-                        "khora-sdk run_default: watching {} for shader hot-reload",
-                        shader_dir.display()
+                        "khora-sdk run_default: watching {} for hot-reload",
+                        assets_dir.display()
                     );
                 }
                 Err(e) => log::warn!(
-                    "khora-sdk run_default: shader hot-reload disabled ({}): {:#}",
-                    shader_dir.display(),
+                    "khora-sdk run_default: hot-reload disabled ({}): {:#}",
+                    assets_dir.display(),
                     e
                 ),
             }
         }
+
+        // Where recompiled modules wait for the frame that applies them. Shared
+        // between the pump that writes and the flow that drains, which is why it
+        // is a resource rather than a field on either.
+        let pending_scripts = khora_data::flow::PendingScriptReloads::new();
+
+        // The initial load. The pump reacts to *changes*, so without this a game
+        // starts with no programs and its scripts only begin working once their
+        // author saves a file. It takes the same road a reload does, so a
+        // program reaches the runtime one way rather than two.
+        let script_dir = assets_dir.join("scripts");
+        if script_dir.is_dir() {
+            let loaded = khora_io::script_hot_reload::load_all(&script_dir, &pending_scripts);
+            log::info!("khora-sdk run_default: compiled {loaded} script module(s)");
+        }
+        runtime.resources.insert(pending_scripts);
+
+        // Where the engine raises events for scripts. Inserted whether or not
+        // anything raises one yet, so a producer only has to `push` — a queue
+        // that has to be created before it can be written to is a queue somebody
+        // forgets to create.
+        runtime
+            .resources
+            .insert(khora_data::flow::PendingScriptEvents::new());
     })?;
     Ok(())
 }

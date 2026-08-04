@@ -337,6 +337,6 @@ impl ProjectVfs {
     /// Drains pending hot-reload events. Convenience wrapper so callers
     /// don't need to reach through `pvfs.watcher`.
     pub fn poll_changes(&self) -> Vec<AssetChangeEvent> {
-        self.watcher.poll()
+        self.watcher.poll_for("editor_vfs")
     }
 }
