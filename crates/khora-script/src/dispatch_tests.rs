@@ -1005,8 +1005,10 @@ mod timers {
         let slot = layout.timer_slot(1);
         assert_eq!(
             host.fields.get(slot),
-            Some(&Persisted::Scalar(Value::Unit)),
-            "its countdown is spent, not merely large"
+            Some(&Persisted::Scalar(Value::Null)),
+            "its countdown is spent — and `Null` rather than `Unit`, which is \
+             what an unset slot holds, so a reload cannot mistake one for the \
+             other and arm it again"
         );
 
         play(&program, &mut host, 240);

@@ -35,7 +35,7 @@ use std::collections::HashSet;
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Quaternion, Vec3};
-use khora_core::script::ScriptValue;
+use khora_core::script::ScriptSnapshot;
 use khora_core::Runtime;
 
 use crate::ecs::{Script, SemanticDomain, Transform, World};
@@ -60,14 +60,21 @@ pub struct ScriptInstance {
     /// Index into [`ScriptView::programs`].
     pub program: u32,
 
-    /// The authored field values, **only the first frame this entity appears**.
+    /// What the scene holds for this instance, **only the first frame it
+    /// appears**.
     ///
     /// This is how a saved scene reaches the lane: a guard saved at forty health
-    /// has to start at forty, not at the hundred its author typed. After that
-    /// the lane holds the live state and the component is only a record, so
-    /// sending the fields again every frame would clone a string per field per
-    /// entity to deliver something nobody reads.
-    pub authored: Option<Vec<(String, ScriptValue)>>,
+    /// mid-chase has to start at forty and chasing, not at the hundred its
+    /// author typed with no state at all. After that the lane holds the live
+    /// state and the component is only a record, so sending it again every frame
+    /// would clone a string per field per entity to deliver something nobody
+    /// reads.
+    ///
+    /// The designer's authored `fields` and whatever the game last made of them
+    /// are merged here, the observed values winning: an entity that has run is
+    /// restored to where it got to, and one that never has takes what was
+    /// authored.
+    pub authored: Option<ScriptSnapshot>,
 
     /// Where the entity is, this frame.
     ///
@@ -178,10 +185,7 @@ impl Flow for ScriptFlow {
                 }
             };
 
-            let authored = self
-                .newcomers
-                .contains(&entity)
-                .then(|| script.fields.clone());
+            let authored = self.newcomers.contains(&entity).then(|| restored(script));
 
             let transform = world.get::<Transform>(entity).copied();
             view.instances.push(ScriptInstance {
@@ -203,6 +207,30 @@ impl Flow for ScriptFlow {
     // entity's `Transform`, which changes every frame the game is not paused —
     // a cache key folding the Spatial epoch would miss on essentially every
     // frame while still costing the hash.
+}
+
+/// What the scene holds for one instance, as one snapshot.
+///
+/// The designer's authored starting values, with whatever the game last made of
+/// them written on top. Observed wins where both have a field, which is what
+/// makes reloading a save restore where the guard *got to* rather than where its
+/// author started it — and leaves a freshly authored entity, which has run
+/// nothing, taking exactly what was typed.
+fn restored(script: &Script) -> ScriptSnapshot {
+    let mut snapshot = ScriptSnapshot {
+        fields: script.fields.clone(),
+        ..ScriptSnapshot::default()
+    };
+    for (name, value) in &script.runtime.fields {
+        snapshot = snapshot.with_field(name.clone(), value.clone());
+    }
+    ScriptSnapshot {
+        fields: snapshot.fields,
+        state: script.runtime.state.clone(),
+        state_fields: script.runtime.state_fields.clone(),
+        timers: script.runtime.timers.clone(),
+        pending: script.runtime.pending.clone(),
+    }
 }
 
 register_flow!(ScriptFlow);

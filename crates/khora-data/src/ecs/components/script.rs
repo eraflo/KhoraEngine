@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use khora_core::script::ScriptValue;
+use khora_core::script::{ScriptSnapshot, ScriptValue};
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
@@ -23,11 +23,10 @@ use serde::{Deserialize, Serialize};
 /// models the world — a second hierarchy inside the language would work against
 /// it.
 ///
-/// # Why the fields are values, not a compiled state blob
+/// # Why values, not a compiled state blob
 ///
-/// [`fields`](Self::fields) holds what a designer authored in the inspector
-/// *and* what the behavior has since accumulated, in one name-keyed list. Two
-/// things fall out of that shape rather than needing machinery:
+/// Everything here is name-keyed `ScriptValue`, and two things fall out of that
+/// shape rather than needing machinery:
 ///
 /// - **Hot-reload keeps what still makes sense.** A script that gains or loses a
 ///   field is matched by name, so the fields that survived the edit keep their
@@ -36,10 +35,18 @@ use serde::{Deserialize, Serialize};
 ///   same thing a component write carries, so the editor renders and edits these
 ///   the way it renders anything else.
 ///
-/// The *running* VM state — program counter, registers, a suspended
-/// continuation — is deliberately not here. It belongs to the script lane, which
-/// is the only thing that may mutate it during a frame; it is written back here
-/// when the scene is saved.
+/// # Authored, and observed
+///
+/// [`fields`](Self::fields) is what a **designer** set: the starting values for
+/// this entity, edited in the inspector and written to the scene file by hand.
+/// [`runtime`](Self::runtime) is what the **lane** made of it since — which
+/// state it is in, how far its countdowns have run, a sequence stopped at an
+/// `await`. Both are restored on load; only the second is overwritten while the
+/// game runs.
+///
+/// Keeping them apart is what lets a designer retune a starting value without
+/// their edit being erased by the next frame's writeback, and what lets the
+/// inspector show the authored surface without a serialized machine in it.
 #[derive(Debug, Clone, PartialEq, Component, Default, Serialize, Deserialize)]
 #[component(domain = Script)]
 pub struct Script {
@@ -54,8 +61,17 @@ pub struct Script {
     /// has to parse the other out.
     pub behavior: String,
 
-    /// The behavior's fields, by name.
+    /// The starting values a designer authored, by name.
     pub fields: Vec<(String, ScriptValue)>,
+
+    /// What the behavior has become: state, countdowns, a suspended sequence.
+    ///
+    /// Empty for an entity that has never run. Written by the lane through the
+    /// deck every frame the instance did work, so a save taken at any moment
+    /// finds it current — the editor's save is synchronous, and waiting for a
+    /// "save is coming" signal would put the answer one frame behind the
+    /// question.
+    pub runtime: ScriptSnapshot,
 }
 
 impl Script {
@@ -66,6 +82,7 @@ impl Script {
             module: module.into(),
             behavior: behavior.into(),
             fields: Vec::new(),
+            runtime: ScriptSnapshot::default(),
         }
     }
 

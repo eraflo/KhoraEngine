@@ -41,17 +41,17 @@
 
 use crate::ecs::entity::EntityId;
 
-use super::ScriptValue;
+use super::ScriptSnapshot;
 
-/// One instance's fields, as the scene should record them.
+/// One instance's state, as the scene should record it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScriptStateUpdate {
     /// Which entity.
     pub entity: EntityId,
     /// Which behavior on it — an entity may carry several.
     pub behavior: String,
-    /// Its fields, by name.
-    pub fields: Vec<(String, ScriptValue)>,
+    /// Everything it is: fields, state, countdowns, a suspended sequence.
+    pub snapshot: ScriptSnapshot,
 }
 
 /// Instance state waiting to be recorded in the scene.

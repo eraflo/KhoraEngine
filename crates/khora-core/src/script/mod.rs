@@ -37,6 +37,7 @@
 pub mod buffer;
 pub mod command;
 pub mod event;
+pub mod snapshot;
 pub mod value;
 pub mod writeback;
 
@@ -46,5 +47,6 @@ mod tests;
 pub use buffer::{CommandBuffer, Conflict};
 pub use command::{ComponentName, WorldCommand, WriteTarget};
 pub use event::{EventQueue, ScriptEvent};
+pub use snapshot::{PendingSequence, ScriptSnapshot, TimerRemaining};
 pub use value::ScriptValue;
 pub use writeback::{ScriptStateUpdate, ScriptStateWriteback};

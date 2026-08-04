@@ -49,9 +49,11 @@ mod lifecycle_tests;
 #[cfg(test)]
 mod reload_tests;
 #[cfg(test)]
+mod save_tests;
+#[cfg(test)]
 mod tests;
 
-pub use persistence::{fields_from_store, store_from_fields};
+pub use persistence::{snapshot_from_store, store_from_snapshot};
 pub use runtime::{Instance, Pending, ReloadReport, ScriptRuntime};
 
 use std::any::Any;
@@ -229,12 +231,15 @@ pub fn run_behaviors(
         let compiled = std::sync::Arc::clone(compiled);
 
         // What a saved scene left: applied once, when the entity first appears.
-        // The initialiser still runs — the fields the save did not carry take
-        // the defaults their author wrote — and these go back on top, which is
+        // The initialiser still runs — the slots the save did not carry take the
+        // defaults their author wrote — and these go back on top, which is
         // exactly the road a reload already takes.
         let carried_from_scene = instance.authored.as_ref().and_then(|authored| {
             let layout = compiled.layout(&program.behavior)?;
-            Some(persistence::store_from_fields(layout, authored))
+            Some((
+                persistence::store_from_snapshot(layout, authored),
+                persistence::resume(authored, &compiled),
+            ))
         });
 
         let state = runtime.instance(instance.entity, &program.behavior);
@@ -242,10 +247,17 @@ pub fn run_behaviors(
             continue;
         }
         state.module.clone_from(&program.module);
-        if let Some(from_scene) = carried_from_scene {
+        if let Some((from_scene, resumed)) = carried_from_scene {
             state.fields = from_scene.clone();
             state.initialised = false;
             state.carried = Some(from_scene);
+            // A sequence the save caught mid-`await`. It is not initialisation
+            // and must not be cleared by one: the guard was half-way through an
+            // attack, and loading should leave it half-way through the attack.
+            state.pending = resumed;
+            // Already announced itself in the run that was saved. Loading a save
+            // is not spawning.
+            state.spawned = true;
         }
 
         host.entity = Some(instance.entity);
@@ -300,20 +312,7 @@ pub fn run_behaviors(
 
         let farewell_cost = farewell.unwrap_or(0);
         report.spent += farewell_cost;
-
-        // A behavior that spent no fuel handled no event and ran no code, so
-        // its fields are what they were and the scene already records them.
-        // That is what makes writing back every frame affordable: a quiet frame
-        // writes nothing at all.
-        if outcome.spent() + farewell_cost > 0 {
-            if let Some(layout) = compiled.layout(&program.behavior) {
-                report.state.push(ScriptStateUpdate {
-                    entity: instance.entity,
-                    behavior: program.behavior.clone(),
-                    fields: persistence::fields_from_store(layout, &state.fields),
-                });
-            }
-        }
+        let outcome_cost = outcome.spent();
 
         match outcome {
             Outcome::Completed { spent } => {
@@ -346,9 +345,57 @@ pub fn run_behaviors(
                 report.spent += spent;
             }
         }
+
+        // Last, because a suspended machine is only known after the match — and
+        // a save taken this frame has to record the guard mid-attack, not the
+        // guard about to start one.
+        //
+        // A behavior that spent no fuel handled no event and ran no code, so its
+        // state is what it was. That is what makes writing back every frame
+        // affordable: a quiet frame writes nothing at all.
+        //
+        // Except for a countdown, which moves without costing anything — the
+        // clock is not the behavior's work. A behavior with an `every` therefore
+        // has no quiet frames, and that is the price of an `after 10s` that
+        // still has ten seconds left when the game is loaded rather than
+        // whenever it was last hurt.
+        let ticked = delta_moved_a_countdown(&compiled, &program.behavior, view.delta_seconds);
+        if outcome_cost + farewell_cost > 0 || ticked {
+            if let Some(layout) = compiled.layout(&program.behavior) {
+                let held = runtime.instance(instance.entity, &program.behavior);
+                let mut snapshot = persistence::snapshot_from_store(layout, &held.fields);
+                snapshot.pending = held
+                    .pending
+                    .as_ref()
+                    .and_then(|pending| persistence::suspend(pending, &compiled));
+
+                report.state.push(ScriptStateUpdate {
+                    entity: instance.entity,
+                    behavior: program.behavior.clone(),
+                    snapshot,
+                });
+            }
+        }
     }
 
     report
+}
+
+/// Whether this frame advanced any of the behavior's countdowns.
+///
+/// Its own question because a countdown is the one part of an instance that
+/// changes without the behavior running: `tick_timers` decrements what is armed
+/// whether or not anything comes due, so fuel spent is not the whole test of
+/// "did this instance change".
+fn delta_moved_a_countdown(
+    program: &khora_script::vm::Program,
+    behavior: &str,
+    delta: f32,
+) -> bool {
+    delta > 0.0
+        && program
+            .layout(behavior)
+            .is_some_and(|layout| !layout.timers.is_empty())
 }
 
 /// What running one behavior did.

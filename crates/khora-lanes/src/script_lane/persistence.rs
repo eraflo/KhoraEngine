@@ -39,55 +39,253 @@
 //!
 //! [`Script`]: khora_data::ecs::Script
 
-use khora_core::script::ScriptValue;
+use khora_core::script::{PendingSequence, ScriptSnapshot, ScriptValue, TimerRemaining};
 use khora_script::arena::{Object, Persisted, PersistentStore};
-use khora_script::vm::{BehaviorLayout, Value};
+use khora_script::vm::{BehaviorLayout, Program, TimerKind, Value};
+
+use super::Pending;
 
 /// Builds an instance's store from what a scene saved.
 ///
 /// Fields the layout does not declare are ignored — the script dropped them
 /// since the save. Fields the layout declares but the save lacks are left
 /// unset, for the behavior's initialiser to fill with its declared default.
-pub fn store_from_fields(
-    layout: &BehaviorLayout,
-    saved: &[(String, ScriptValue)],
-) -> PersistentStore {
-    let mut store = PersistentStore::with_slots(layout.fields.len());
+///
+/// The same for a state the script no longer has and a schedule it no longer
+/// declares: what is gone is gone, and what is new takes what the new script
+/// says. Neither is an error — that is simply a scene older than its script,
+/// which is the normal condition of a project between two edits.
+pub fn store_from_snapshot(layout: &BehaviorLayout, saved: &ScriptSnapshot) -> PersistentStore {
+    let mut store = PersistentStore::with_slots(layout.slot_count());
 
-    for (name, value) in saved {
+    for (name, value) in &saved.fields {
         let Some(slot) = layout.slot_of(name) else {
             log::debug!("scene holds `{name}`, which the script no longer declares");
             continue;
         };
-        match to_persisted(value) {
-            Some(persisted) => store.set(slot, persisted),
+        set(&mut store, slot, name, value);
+    }
+
+    // The state before its data, because the data is only meaningful once the
+    // discriminant says which state it belongs to — a save whose state vanished
+    // must not pour its data into whichever state now sits at that index.
+    if let Some(name) = &saved.state {
+        match layout.state_index(name) {
+            Some(index) => {
+                store.set(
+                    layout.state_slot(),
+                    Persisted::Scalar(Value::Int(index as i64)),
+                );
+                restore_state_fields(&mut store, layout, index, &saved.state_fields);
+            }
             None => log::warn!(
-                "field `{name}` is a {} and cannot be restored yet",
-                value.type_name()
+                "scene has `{}` in state `{name}`, which the script no longer declares — \
+                 it starts over",
+                layout.name
             ),
         }
     }
+
+    for saved in &saved.timers {
+        let Some(index) = timer_index(layout, saved) else {
+            log::debug!(
+                "scene holds a countdown the script no longer declares, on `{}`",
+                layout.name
+            );
+            continue;
+        };
+        // `None` is a spent `after`, which the running form writes as `Null` —
+        // not as zero, which would be a countdown due right now, and not as
+        // `Unit`, which is an unset slot the initialiser is free to arm.
+        let value = match saved.remaining {
+            Some(seconds) => Value::Float(seconds),
+            None => Value::Null,
+        };
+        store.set(layout.timer_slot(index), Persisted::Scalar(value));
+    }
+
     store
 }
 
-/// Reads an instance's store back into named fields, for a scene to save.
+/// Writes the current state's own data, by the names that state declares.
+fn restore_state_fields(
+    store: &mut PersistentStore,
+    layout: &BehaviorLayout,
+    index: usize,
+    saved: &[(String, ScriptValue)],
+) {
+    let Some(state) = layout.state_at(index) else {
+        return;
+    };
+    for (name, value) in saved {
+        let Some(offset) = state.slots.iter().position(|slot| slot == name) else {
+            log::debug!("state `{}` no longer declares `{name}`", state.name);
+            continue;
+        };
+        set(store, layout.state_data_slot() + offset, name, value);
+    }
+}
+
+/// The schedule a saved countdown belongs to.
+///
+/// Matched on what the author wrote — `every 0.5s` — and then on which one,
+/// among schedules written identically. Position alone would swap two
+/// countdowns when a schedule is inserted above another; the interval alone
+/// cannot tell two `every 0.5s` apart, and both of them exist.
+fn timer_index(layout: &BehaviorLayout, saved: &TimerRemaining) -> Option<usize> {
+    layout
+        .timers
+        .iter()
+        .enumerate()
+        .filter(|(_, timer)| {
+            matches!(timer.kind, TimerKind::Every) == saved.repeating
+                && timer.seconds == saved.interval
+        })
+        .nth(saved.ordinal as usize)
+        .map(|(index, _)| index)
+}
+
+/// Writes one value, saying so when it is of a kind that cannot travel.
+fn set(store: &mut PersistentStore, slot: usize, name: &str, value: &ScriptValue) {
+    match to_persisted(value) {
+        Some(persisted) => store.set(slot, persisted),
+        None => log::warn!(
+            "field `{name}` is a {} and cannot be restored yet",
+            value.type_name()
+        ),
+    }
+}
+
+/// Reads an instance's store back out, for a scene to record.
 ///
 /// Only the slots the layout names: a store may be longer than the layout after
 /// a script lost a field, and writing the orphan back would resurrect it in the
 /// scene file the next time it was loaded.
-pub fn fields_from_store(
-    layout: &BehaviorLayout,
+///
+/// [`pending`](ScriptSnapshot::pending) is left empty — a suspended machine is
+/// held by the instance, not by the store, and only the caller has both.
+pub fn snapshot_from_store(layout: &BehaviorLayout, store: &PersistentStore) -> ScriptSnapshot {
+    let state_index = match store.get(layout.state_slot()) {
+        Some(Persisted::Scalar(Value::Int(index))) => usize::try_from(*index).ok(),
+        _ => None,
+    };
+    let state = state_index.and_then(|index| layout.state_at(index));
+
+    ScriptSnapshot {
+        fields: named(layout.fields.iter().enumerate(), store, 0),
+        state: state.map(|state| state.name.clone()),
+        // Only the state it is *in*: every state shares these slots, so reading
+        // them against another state's names would report one state's data under
+        // another's labels.
+        state_fields: state
+            .map(|state| {
+                named(
+                    state.slots.iter().enumerate(),
+                    store,
+                    layout.state_data_slot(),
+                )
+            })
+            .unwrap_or_default(),
+        timers: countdowns(layout, store),
+        pending: None,
+    }
+}
+
+/// Reads a run of named slots, skipping the ones nothing has written.
+fn named<'a>(
+    names: impl Iterator<Item = (usize, &'a String)>,
     store: &PersistentStore,
+    base: usize,
 ) -> Vec<(String, ScriptValue)> {
-    layout
-        .fields
-        .iter()
-        .enumerate()
-        .filter_map(|(slot, name)| {
-            let value = to_script_value(store.get(slot)?)?;
+    names
+        .filter_map(|(offset, name)| {
+            let value = to_script_value(store.get(base + offset)?)?;
             Some((name.clone(), value))
         })
         .collect()
+}
+
+/// Reads every countdown, keyed by what its author wrote.
+fn countdowns(layout: &BehaviorLayout, store: &PersistentStore) -> Vec<TimerRemaining> {
+    let mut seen: Vec<(bool, f32)> = Vec::new();
+
+    layout
+        .timers
+        .iter()
+        .enumerate()
+        .filter_map(|(index, timer)| {
+            let repeating = matches!(timer.kind, TimerKind::Every);
+            let key = (repeating, timer.seconds);
+            let ordinal = seen.iter().filter(|held| **held == key).count() as u32;
+            seen.push(key);
+
+            // An unset slot is a schedule that has never been armed, which only
+            // happens before the initialiser has run. Nothing to record.
+            let remaining = match store.get(layout.timer_slot(index))? {
+                Persisted::Scalar(Value::Float(seconds)) => Some(*seconds),
+                // Spent: an `after` that fired. Recorded as such rather than
+                // omitted, so loading does not re-arm it.
+                Persisted::Scalar(Value::Null) => None,
+                _ => return None,
+            };
+
+            Some(TimerRemaining {
+                repeating,
+                interval: timer.seconds,
+                ordinal,
+                remaining,
+            })
+        })
+        .collect()
+}
+
+/// Writes a suspended sequence down, so a save can hold it.
+///
+/// Records what the program's code looked like alongside the machine, because a
+/// machine is a *position* in that code — see [`resume`] for what that buys.
+/// `None` when the machine cannot be encoded, which loses the sequence rather
+/// than the save.
+pub fn suspend(pending: &Pending, program: &Program) -> Option<PendingSequence> {
+    let machine = bincode::serde::encode_to_vec(&pending.machine, bincode::config::standard())
+        .map_err(|error| log::error!("a suspended sequence could not be saved: {error}"))
+        .ok()?;
+
+    Some(PendingSequence {
+        fingerprint: program.fingerprint(),
+        remaining: pending.remaining,
+        machine,
+    })
+}
+
+/// Reads a suspended sequence back, if the code it stopped in is still there.
+///
+/// **The fingerprint is a refusal, not a formality.** A machine holds a function
+/// index, a program counter and a frame sized for that function. If the script
+/// was edited between the save and the load, those name something else, and
+/// resuming would run whatever now sits at that address — arbitrary code, chosen
+/// by an edit nobody connected to it. So a mismatch abandons the sequence and
+/// says so: the guard forgets it was attacking, which is recoverable, instead of
+/// doing something no author wrote.
+pub fn resume(saved: &ScriptSnapshot, program: &Program) -> Option<Pending> {
+    let sequence = saved.pending.as_ref()?;
+
+    if sequence.fingerprint != program.fingerprint() {
+        log::warn!(
+            "a sequence saved mid-`await` was abandoned: the script has been edited since, \
+             so where it stopped no longer means the same thing"
+        );
+        return None;
+    }
+
+    let (machine, _) =
+        bincode::serde::decode_from_slice(&sequence.machine, bincode::config::standard())
+            .map_err(|error| log::error!("a suspended sequence could not be restored: {error}"))
+            .ok()?;
+
+    Some(Pending {
+        machine,
+        remaining: sequence.remaining,
+    })
 }
 
 /// The stored form of a scene value.
@@ -142,11 +340,13 @@ mod tests {
         }
     }
 
-    fn saved(pairs: &[(&str, ScriptValue)]) -> Vec<(String, ScriptValue)> {
+    /// A scene snapshot holding just these fields.
+    fn saved(pairs: &[(&str, ScriptValue)]) -> ScriptSnapshot {
         pairs
             .iter()
-            .map(|(name, value)| ((*name).to_owned(), value.clone()))
-            .collect()
+            .fold(ScriptSnapshot::default(), |snapshot, (name, value)| {
+                snapshot.with_field(*name, value.clone())
+            })
     }
 
     /// **The point of all of it.** A guard saved at forty health loads at
@@ -154,7 +354,7 @@ mod tests {
     #[test]
     fn a_saved_value_reaches_the_slot_that_holds_it() {
         let layout = layout(&["speed", "health"]);
-        let store = store_from_fields(
+        let store = store_from_snapshot(
             &layout,
             &saved(&[
                 ("health", ScriptValue::Int(40)),
@@ -172,14 +372,14 @@ mod tests {
     fn the_order_the_scene_wrote_them_in_does_not_matter() {
         let layout = layout(&["speed", "health"]);
 
-        let forwards = store_from_fields(
+        let forwards = store_from_snapshot(
             &layout,
             &saved(&[
                 ("speed", ScriptValue::Float(3.0)),
                 ("health", ScriptValue::Int(40)),
             ]),
         );
-        let backwards = store_from_fields(
+        let backwards = store_from_snapshot(
             &layout,
             &saved(&[
                 ("health", ScriptValue::Int(40)),
@@ -200,8 +400,8 @@ mod tests {
             ("speed", ScriptValue::Float(2.5)),
         ]);
 
-        let store = store_from_fields(&layout, &original);
-        assert_eq!(fields_from_store(&layout, &store), original);
+        let store = store_from_snapshot(&layout, &original);
+        assert_eq!(snapshot_from_store(&layout, &store).fields, original.fields);
     }
 
     #[test]
@@ -212,10 +412,11 @@ mod tests {
             generation: 2,
         };
 
-        let store = store_from_fields(&layout, &saved(&[("target", ScriptValue::Entity(target))]));
+        let store =
+            store_from_snapshot(&layout, &saved(&[("target", ScriptValue::Entity(target))]));
         assert_eq!(
-            fields_from_store(&layout, &store),
-            saved(&[("target", ScriptValue::Entity(target))])
+            snapshot_from_store(&layout, &store).fields,
+            saved(&[("target", ScriptValue::Entity(target))]).fields
         );
     }
 
@@ -225,7 +426,7 @@ mod tests {
     #[test]
     fn a_saved_field_the_script_dropped_is_ignored() {
         let layout = layout(&["health"]);
-        let store = store_from_fields(
+        let store = store_from_snapshot(
             &layout,
             &saved(&[
                 ("health", ScriptValue::Int(40)),
@@ -242,7 +443,7 @@ mod tests {
     #[test]
     fn a_field_the_save_lacks_is_left_for_the_initialiser() {
         let layout = layout(&["health", "rage"]);
-        let store = store_from_fields(&layout, &saved(&[("health", ScriptValue::Int(40))]));
+        let store = store_from_snapshot(&layout, &saved(&[("health", ScriptValue::Int(40))]));
 
         assert_eq!(store.len(), 2, "the slot exists");
         assert_eq!(
@@ -262,7 +463,7 @@ mod tests {
         store.set(0, Persisted::Scalar(Value::Int(40)));
         store.set(1, Persisted::Scalar(Value::Int(99)));
 
-        let fields = fields_from_store(&layout, &store);
+        let fields = snapshot_from_store(&layout, &store);
         assert_eq!(fields, saved(&[("health", ScriptValue::Int(40))]));
     }
 
@@ -274,9 +475,13 @@ mod tests {
         let mut store = PersistentStore::with_slots(2);
         store.set(0, Persisted::Scalar(Value::Int(40)));
 
-        let fields = fields_from_store(&layout, &store);
-        assert_eq!(fields.len(), 1, "only the one that has a value: {fields:?}");
-        assert_eq!(fields[0].0, "health");
+        let fields = snapshot_from_store(&layout, &store);
+        assert_eq!(
+            fields.fields.len(),
+            1,
+            "only the one that has a value: {fields:?}"
+        );
+        assert_eq!(fields.fields[0].0, "health");
     }
 
     // ─── What cannot travel ─────────────────────────────────────────────────
@@ -287,11 +492,11 @@ mod tests {
     fn a_vector_field_round_trips() {
         let layout = layout(&["target"]);
         let target = khora_core::math::Vec3::new(3.0, 0.0, -4.0);
-        let store = store_from_fields(&layout, &saved(&[("target", ScriptValue::Vec3(target))]));
+        let store = store_from_snapshot(&layout, &saved(&[("target", ScriptValue::Vec3(target))]));
 
         assert_eq!(store.get(0), Some(&Persisted::Scalar(Value::Vec3(target))));
         assert_eq!(
-            fields_from_store(&layout, &store),
+            snapshot_from_store(&layout, &store).fields,
             vec![("target".to_owned(), ScriptValue::Vec3(target))]
         );
     }
@@ -302,7 +507,7 @@ mod tests {
     #[test]
     fn a_value_that_cannot_be_stored_is_refused_rather_than_dropped() {
         let layout = layout(&["waypoints"]);
-        let store = store_from_fields(
+        let store = store_from_snapshot(
             &layout,
             &saved(&[(
                 "waypoints",
@@ -319,8 +524,8 @@ mod tests {
 
     #[test]
     fn an_empty_layout_produces_an_empty_store() {
-        let store = store_from_fields(&layout(&[]), &saved(&[("gone", ScriptValue::Int(1))]));
+        let store = store_from_snapshot(&layout(&[]), &saved(&[("gone", ScriptValue::Int(1))]));
         assert!(store.is_empty());
-        assert!(fields_from_store(&layout(&[]), &store).is_empty());
+        assert!(snapshot_from_store(&layout(&[]), &store).is_empty());
     }
 }

@@ -56,7 +56,10 @@ fn script_state_writeback(world: &mut World, _runtime: &Runtime, deck: &mut Outp
         if script.behavior != update.behavior {
             continue;
         }
-        script.fields = update.fields;
+        // Only the observed half. `fields` is the designer's authored starting
+        // values, and overwriting those with what the game has since made of
+        // them would erase an edit the moment the entity ran once.
+        script.runtime = update.snapshot;
     }
 }
 
@@ -76,7 +79,7 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::script::{ScriptStateUpdate, ScriptValue};
+    use khora_core::script::{ScriptSnapshot, ScriptStateUpdate, ScriptValue};
 
     fn update(
         entity: khora_core::ecs::entity::EntityId,
@@ -86,7 +89,7 @@ mod tests {
         ScriptStateUpdate {
             entity,
             behavior: behavior.to_owned(),
-            fields: vec![("health".to_owned(), ScriptValue::Int(health))],
+            snapshot: ScriptSnapshot::default().with_field("health", ScriptValue::Int(health)),
         }
     }
 
@@ -97,7 +100,7 @@ mod tests {
     }
 
     /// **What a save needs to be true.** The component holds what the lane has
-    /// made of the behavior, not what its author typed.
+    /// made of the behavior, not only what its author typed.
     #[test]
     fn live_state_reaches_the_component() {
         let mut world = World::new();
@@ -107,9 +110,30 @@ mod tests {
         script_state_writeback(&mut world, &Runtime::default(), &mut deck);
 
         assert_eq!(
-            world.get::<Script>(entity).and_then(|s| s.field("health")),
+            world
+                .get::<Script>(entity)
+                .and_then(|s| s.runtime.field("health")),
             Some(&ScriptValue::Int(40))
         );
+    }
+
+    /// **And the authored half is left alone.** A designer who typed 100 and
+    /// then watched the guard drop to 40 has not changed their mind about where
+    /// it starts; overwriting `fields` would erase the edit the moment the
+    /// entity ran once, and the next reset would begin at 40.
+    #[test]
+    fn the_authored_values_are_not_overwritten() {
+        let mut world = World::new();
+        let entity = world.spawn(
+            Script::new("ai/guard.erg", "Guard").with_field("health", ScriptValue::Int(100)),
+        );
+        let mut deck = deck_with(vec![update(entity, "Guard", 40)]);
+
+        script_state_writeback(&mut world, &Runtime::default(), &mut deck);
+
+        let script = world.get::<Script>(entity).expect("still there");
+        assert_eq!(script.field("health"), Some(&ScriptValue::Int(100)));
+        assert_eq!(script.runtime.field("health"), Some(&ScriptValue::Int(40)));
     }
 
     /// An entity may carry several behaviors, and an update belongs to one.
@@ -124,8 +148,8 @@ mod tests {
         script_state_writeback(&mut world, &Runtime::default(), &mut deck);
 
         assert_eq!(
-            world.get::<Script>(entity).map(|s| s.fields.len()),
-            Some(0),
+            world.get::<Script>(entity).map(|s| s.runtime.is_empty()),
+            Some(true),
             "the chest kept its own state"
         );
     }

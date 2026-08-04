@@ -250,9 +250,12 @@ pub fn tick_timers(
             // dropped: a frame that ran long must not make `every 0.5s` drift
             // slower than half a second.
             TimerKind::Every => Value::Float(timer.seconds + remaining),
-            // `after` fires once. `Unit` rather than a large number, so nothing
-            // has to reason about how large is large enough.
-            TimerKind::After => Value::Unit,
+            // `after` fires once. `Null` — "there is no next time" — rather
+            // than a large number, so nothing has to reason about how large is
+            // large enough, and deliberately not `Unit`: an unset slot is also
+            // `Unit`, and a reload restoring defaults over a spent schedule
+            // would arm it again and fire it twice.
+            TimerKind::After => Value::Null,
         };
         host.fields.set(slot, Persisted::Scalar(next));
 

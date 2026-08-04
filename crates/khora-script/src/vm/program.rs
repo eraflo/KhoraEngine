@@ -195,6 +195,33 @@ impl Program {
     pub fn function(&self, name: &str) -> Option<&Function> {
         self.functions.iter().find(|f| f.name == name)
     }
+
+    /// A number identifying this program's **code shape**.
+    ///
+    /// What a suspended machine holds is a position: a function index, a
+    /// program counter, a register file sized for that function's frame. None of
+    /// those survives an edit that moves code around, and resuming into a
+    /// program where they now mean something else would run whatever happens to
+    /// sit there. So a saved sequence records this, and is abandoned rather than
+    /// resumed when it no longer matches.
+    ///
+    /// Shape, deliberately, and not the code itself: changing `health = 100` to
+    /// `health = 120` leaves every instruction where it was, so a machine
+    /// suspended in that function resumes correctly and should not be thrown
+    /// away for a number the author retuned. Inserting a statement moves
+    /// everything after it, and does change this.
+    pub fn fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for function in &self.functions {
+            function.name.hash(&mut hasher);
+            function.arity.hash(&mut hasher);
+            function.registers.hash(&mut hasher);
+            function.code.len().hash(&mut hasher);
+        }
+        hasher.finish()
+    }
 }
 
 #[cfg(test)]

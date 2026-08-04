@@ -285,7 +285,10 @@ fn a_scene_value_seeds_the_instance_rather_than_the_declared_default() {
         instances: vec![ScriptInstance {
             entity: entity(0),
             program: 0,
-            authored: Some(vec![("health".to_owned(), ScriptValue::Int(40))]),
+            authored: Some(
+                khora_core::script::ScriptSnapshot::default()
+                    .with_field("health", ScriptValue::Int(40)),
+            ),
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
@@ -324,7 +327,10 @@ fn a_field_the_scene_did_not_save_takes_its_declared_default() {
             entity: entity(0),
             program: 0,
             // A save from before `armour` and `rage` existed.
-            authored: Some(vec![("health".to_owned(), ScriptValue::Int(40))]),
+            authored: Some(
+                khora_core::script::ScriptSnapshot::default()
+                    .with_field("health", ScriptValue::Int(40)),
+            ),
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
@@ -365,7 +371,7 @@ fn a_frames_state_travels_to_the_scene_and_back() {
         u64::MAX,
     );
     assert_eq!(report.state.len(), 1, "the guard did work, so it was sent");
-    let saved = report.state[0].fields.clone();
+    let saved = report.state[0].snapshot.clone();
 
     // A fresh session loads it.
     let view = ScriptView {
