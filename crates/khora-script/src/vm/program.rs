@@ -72,6 +72,14 @@ pub struct TimerLayout {
     pub seconds: f32,
     /// The function its body compiled to.
     pub member: String,
+    /// The state that owns it, by discriminant.
+    ///
+    /// `None` for a schedule written at behavior level, which runs whatever the
+    /// behavior is doing. A state's own runs only while it is in that state and
+    /// is re-armed on entry — `every 0.5s { Scan(); }` inside `Patrol` means
+    /// "every half-second **while patrolling**", which is the whole reason to
+    /// write it there rather than beside it.
+    pub state: Option<usize>,
 }
 
 /// A behavior's field slots, in the order the compiler assigned them.

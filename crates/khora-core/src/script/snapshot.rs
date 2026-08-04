@@ -55,7 +55,13 @@ pub struct TimerRemaining {
     pub repeating: bool,
     /// The interval the author declared, in seconds.
     pub interval: f32,
-    /// Which one, among schedules declared identically.
+    /// The state that owns it, by name.
+    ///
+    /// `None` for a schedule written at behavior level. Part of the key because
+    /// `every 0.5s` inside `Patrol` and `every 0.5s` beside it are two different
+    /// schedules that an author can tell apart, so a save has to as well.
+    pub state: Option<String>,
+    /// Which one, among schedules declared identically *and* in the same place.
     pub ordinal: u32,
     /// Seconds still to wait.
     ///
@@ -182,6 +188,7 @@ mod tests {
         let spent = TimerRemaining {
             repeating: false,
             interval: 10.0,
+            state: None,
             ordinal: 0,
             remaining: None,
         };

@@ -272,6 +272,11 @@ impl Compiler {
             self.registers.release_to(inner);
         }
 
+        // Everything else entering the state implies, written before the
+        // discriminant moves so the instance is never briefly in a state whose
+        // data has not arrived.
+        self.emit_state_entry(state);
+
         self.emit(Instruction::Become {
             state: index as u16,
             base,
@@ -279,6 +284,46 @@ impl Compiler {
             state_slot: layout.state_slot() as u16,
             data_slot: layout.state_data_slot() as u16,
         });
+        self.registers.release_to(mark);
+    }
+
+    /// Writes a state's declared defaults and arms its schedules.
+    ///
+    /// Emitted wherever a state is entered — every `become`, and the initialiser
+    /// for the state a fresh instance starts in — because entering is what makes
+    /// those true, not the file the state was declared in. Without it `state
+    /// Chase { int missed = 7; }` left `missed` unset and every `every` inside a
+    /// state resumed a countdown from the last visit.
+    ///
+    /// Every default is evaluated into a register *before* any of them is
+    /// stored, so a default that suspends cannot leave the state half-written.
+    pub fn emit_state_entry(&mut self, state: &str) {
+        let Some(entry) = self.entries.get(state).cloned() else {
+            return;
+        };
+
+        let mark = self.registers.mark();
+        let mut writes: Vec<(u16, Reg)> = Vec::new();
+
+        for (slot, default, shape) in &entry.fields {
+            let register = match default {
+                Some(expr) => self.compile_expr(expr).0,
+                // Its type's zero rather than unset, for the reason a
+                // behavior's field with no written default gets one: `int
+                // missed;` reads as a number that starts at nothing.
+                None => self.zero_of(*shape),
+            };
+            writes.push((*slot, register));
+        }
+
+        for (slot, seconds) in &entry.timers {
+            let register = self.constant(Value::Float(*seconds), Shape::Float).0;
+            writes.push((*slot, register));
+        }
+
+        for (slot, src) in writes {
+            self.emit(Instruction::StoreField { slot, src });
+        }
         self.registers.release_to(mark);
     }
 }

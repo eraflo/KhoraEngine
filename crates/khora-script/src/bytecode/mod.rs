@@ -120,6 +120,21 @@ pub enum Shape {
     Other,
 }
 
+/// What entering a state has to write into the instance.
+///
+/// Entering is a real event, not just a change of discriminant: the state's own
+/// data starts at whatever its author declared, and its schedules start over.
+/// `every 0.5s` inside `Patrol` that resumed a half-spent countdown from the
+/// last time the guard patrolled would fire at a moment nothing decided.
+#[derive(Debug, Clone, Default)]
+pub struct StateEntry {
+    /// Its declared fields — the slots after the parameters — and their
+    /// defaults. `None` where the author wrote no default.
+    pub fields: Vec<(u16, Option<crate::ast::Expr>, Shape)>,
+    /// Its countdown slots, and what each is armed to.
+    pub timers: Vec<(u16, f32)>,
+}
+
 /// A local variable, and the register holding it.
 #[derive(Debug, Clone)]
 struct Local {
@@ -150,6 +165,13 @@ pub struct Compiler {
     /// field name there an ordinary "no such variable" rather than a silent
     /// read of slot zero.
     pub fields: HashMap<String, (u16, Shape)>,
+    /// What entering each state of the behavior being compiled has to write.
+    ///
+    /// Collected once per behavior and emitted at every `become`, and again in
+    /// the initialiser for the state a fresh instance starts in. Without it a
+    /// state's declared defaults were decoration — `Become` wrote the arguments
+    /// it was handed and nothing else, so `int missed = 7;` left an unset slot.
+    pub entries: HashMap<String, StateEntry>,
     /// Instructions of the function being compiled.
     pub code: Vec<Instruction>,
     /// Register allocation for the current function.
@@ -168,6 +190,7 @@ impl Compiler {
             natives: HashMap::new(),
             behavior: None,
             fields: HashMap::new(),
+            entries: HashMap::new(),
             code: Vec::new(),
             registers: Registers::new(0),
             locals: Vec::new(),
@@ -259,6 +282,23 @@ impl Compiler {
                                 self.declare(name, returns, index, span);
                                 index += 1;
                             }
+                            // Then its scheduled bodies, which `compile_state`
+                            // emits in the same place.
+                            for (position, inner) in state.members.iter().enumerate() {
+                                if !matches!(
+                                    inner,
+                                    BehaviorMember::Every(_) | BehaviorMember::After(_)
+                                ) {
+                                    continue;
+                                }
+                                self.declare(
+                                    state_timer_name(&decl.name, &state.name, position),
+                                    Shape::Other,
+                                    index,
+                                    inner.span(),
+                                );
+                                index += 1;
+                            }
                             continue;
                         }
 
@@ -331,28 +371,7 @@ impl Compiler {
             }
         }
 
-        for (index, member) in decl.members.iter().enumerate() {
-            let (kind, interval) = match member {
-                BehaviorMember::Every(every) => (crate::vm::TimerKind::Every, &every.interval),
-                BehaviorMember::After(after) => (crate::vm::TimerKind::After, &after.delay),
-                _ => continue,
-            };
-            let Some(seconds) = literal_seconds(interval) else {
-                // A field-driven interval needs the expression evaluated per
-                // instance, which the schedule cannot do before it decides
-                // whether to fire. Refusing beats scheduling a guess.
-                self.error(
-                    "an `every` or `after` interval must be a literal duration for now",
-                    interval.span(),
-                );
-                continue;
-            };
-            layout.timers.push(crate::vm::TimerLayout {
-                kind,
-                seconds,
-                member: timer_name(&decl.name, index),
-            });
-        }
+        self.collect_timers(&mut layout, &decl.name, None, &decl.members);
 
         // States before any body: `become Chase(…)` written inside `Patrol`
         // has to resolve a state declared below it, and a file's order should
@@ -374,10 +393,30 @@ impl Compiler {
             }
         }
 
+        // A state's own schedules, after its slots exist so the discriminant is
+        // known. `every 0.5s` written inside `Patrol` was collected by nobody
+        // before this, so it compiled and never fired.
+        for member in &decl.members {
+            let BehaviorMember::State(state) = member else {
+                continue;
+            };
+            let Some(index) = layout.state_index(&state.name) else {
+                continue;
+            };
+            let name = state.name.clone();
+            self.collect_timers(
+                &mut layout,
+                &decl.name,
+                Some((index, &name)),
+                &state.members,
+            );
+        }
+
         // Recorded even when empty: a behavior that declares no fields still has
         // to be findable, or a reload would treat "no layout" and "no fields" as
         // the same thing and reset an instance that had nothing to lose.
         self.program.behaviors.push(layout.clone());
+        self.collect_entries(&layout, decl);
         self.behavior = Some(layout);
 
         self.compile_field_defaults(decl);
@@ -444,9 +483,8 @@ impl Compiler {
             self.fields.insert(slot.clone(), (absolute, shape));
         }
 
-        // A state inside a state is not in the grammar, and the rest waits for
-        // the timer half — both fall out of the pair below rather than needing
-        // an arm of their own.
+        // A state inside a state is not in the grammar, and a field is not a
+        // function — both fall out of the pair below rather than needing an arm.
         for member in &decl.members {
             let Some((name, _, _)) = member_signature(behavior, Some(&decl.name), member) else {
                 continue;
@@ -455,6 +493,19 @@ impl Compiler {
                 continue;
             };
             self.compile_body(&name, params, body);
+        }
+
+        // Its scheduled bodies last, in the order `collect_signatures` counted
+        // them — the one contract that pair has, and the same one the
+        // behavior's own timers keep.
+        for (index, member) in decl.members.iter().enumerate() {
+            let body = match member {
+                BehaviorMember::Every(every) => &every.body,
+                BehaviorMember::After(after) => &after.body,
+                _ => continue,
+            };
+            let name = state_timer_name(behavior, &decl.name, index);
+            self.compile_body(&name, &[], body);
         }
 
         self.fields = outer;
@@ -470,6 +521,98 @@ impl Compiler {
     /// A field with no written default gets its type's zero rather than staying
     /// unset, because `int health;` reads as a number that happens to start at
     /// nothing, not as a hole.
+    /// Records what entering each of the behavior's states has to write.
+    ///
+    /// Read from the layout rather than recomputed, so the slots here are by
+    /// construction the slots the running code reads.
+    fn collect_entries(
+        &mut self,
+        layout: &crate::vm::BehaviorLayout,
+        decl: &crate::ast::BehaviorDecl,
+    ) {
+        self.entries.clear();
+
+        for member in &decl.members {
+            let BehaviorMember::State(state) = member else {
+                continue;
+            };
+            let Some(index) = layout.state_index(&state.name) else {
+                continue;
+            };
+
+            // The parameters come first in the state's slots and are written by
+            // `become` itself; only what the state *declares* needs a default.
+            let base = layout.state_data_slot() + state.params.len();
+            let fields = state
+                .members
+                .iter()
+                .filter_map(|member| match member {
+                    BehaviorMember::Field(field) => Some(field),
+                    _ => None,
+                })
+                .enumerate()
+                .map(|(offset, field)| {
+                    (
+                        (base + offset) as u16,
+                        field.default.clone(),
+                        shape_of(&field.ty),
+                    )
+                })
+                .collect();
+
+            let timers = layout
+                .timers
+                .iter()
+                .enumerate()
+                .filter(|(_, timer)| timer.state == Some(index))
+                .map(|(slot, timer)| (layout.timer_slot(slot) as u16, timer.seconds))
+                .collect();
+
+            self.entries
+                .insert(state.name.clone(), StateEntry { fields, timers });
+        }
+    }
+
+    /// Records every `every` and `after` among `members` in the layout.
+    ///
+    /// One walk for both levels, because a schedule is the same thing wherever
+    /// it is written — what differs is only whose lifetime it follows, which is
+    /// what `state` carries.
+    fn collect_timers(
+        &mut self,
+        layout: &mut crate::vm::BehaviorLayout,
+        behavior: &str,
+        state: Option<(usize, &str)>,
+        members: &[BehaviorMember],
+    ) {
+        for (index, member) in members.iter().enumerate() {
+            let (kind, interval) = match member {
+                BehaviorMember::Every(every) => (crate::vm::TimerKind::Every, &every.interval),
+                BehaviorMember::After(after) => (crate::vm::TimerKind::After, &after.delay),
+                _ => continue,
+            };
+            let Some(seconds) = literal_seconds(interval) else {
+                // A field-driven interval needs the expression evaluated per
+                // instance, which the schedule cannot do before it decides
+                // whether to fire. Refusing beats scheduling a guess.
+                self.error(
+                    "an `every` or `after` interval must be a literal duration for now",
+                    interval.span(),
+                );
+                continue;
+            };
+            layout.timers.push(crate::vm::TimerLayout {
+                kind,
+                seconds,
+                member: match state {
+                    Some((_, name)) => state_timer_name(behavior, name, index),
+                    None => timer_name(behavior, index),
+                },
+                state: state.map(|(index, _)| index),
+            });
+        }
+    }
+
     fn compile_field_defaults(&mut self, decl: &crate::ast::BehaviorDecl) {
         self.code = Vec::new();
         self.locals = Vec::new();
@@ -486,25 +629,7 @@ impl Compiler {
             let mark = self.registers.mark();
             let src = match &field.default {
                 Some(expr) => self.compile_expr(expr).0,
-                None => {
-                    let zero = match shape_of(&field.ty) {
-                        Shape::Int => crate::vm::Value::Int(0),
-                        Shape::Float => crate::vm::Value::Float(0.0),
-                        // A string with no default is the empty one, which the
-                        // constant table already deduplicates.
-                        Shape::Str => {
-                            let (register, _) = self.string_constant("");
-                            self.emit(Instruction::StoreField {
-                                slot,
-                                src: register,
-                            });
-                            self.registers.release_to(mark);
-                            continue;
-                        }
-                        Shape::Other => crate::vm::Value::Unit,
-                    };
-                    self.constant(zero, Shape::Other).0
-                }
+                None => self.zero_of(shape_of(&field.ty)),
             };
             self.emit(Instruction::StoreField { slot, src });
             self.registers.release_to(mark);
@@ -532,6 +657,13 @@ impl Compiler {
                 let (src, _) = self.constant(crate::vm::Value::Float(timer.seconds), Shape::Float);
                 self.emit(Instruction::StoreField { slot, src });
                 self.registers.release_to(mark);
+            }
+
+            // The first state is entered, not merely selected: its declared
+            // data has to be there before anything reads it, exactly as a
+            // `become` into it would leave things.
+            if let Some(first) = layout.states.first().map(|state| state.name.clone()) {
+                self.emit_state_entry(&first);
             }
         }
 
@@ -752,6 +884,14 @@ fn member_body(member: &BehaviorMember) -> Option<(&[crate::ast::Param], &crate:
 /// layout and the code together.
 pub fn timer_name(behavior: &str, position: usize) -> String {
     format!("{behavior}.__timer{position}")
+}
+
+/// The function a state's scheduled body compiles to.
+///
+/// Qualified by the state, so two states may each write `every 0.5s` without
+/// one's body being emitted under the other's name.
+pub fn state_timer_name(behavior: &str, state: &str, position: usize) -> String {
+    format!("{behavior}.{state}.__timer{position}")
 }
 
 /// The seconds a literal duration expression denotes.

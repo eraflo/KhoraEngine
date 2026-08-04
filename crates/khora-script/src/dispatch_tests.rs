@@ -1054,3 +1054,196 @@ mod timers {
             .any(|d| d.message.contains("literal duration")));
     }
 }
+
+// ─── Time and data inside a state ───────────────────────────────────────────
+
+/// The half of `state` that compiled and did nothing.
+///
+/// A schedule written inside a state was collected by nobody, so it never
+/// fired; and `Become` wrote the arguments it was handed and nothing else, so a
+/// state's declared fields stayed unset. The canonical Guard of the design has
+/// both — `state Patrol { every 0.5s { … } }` — and neither worked.
+mod state_scoped {
+    use super::{build, registry_with_despawn};
+    use crate::arena::{Persisted, PersistentStore};
+    use crate::dispatch::{deliver, initialise, tick_timers};
+    use crate::native::Host;
+    use crate::vm::{Program, Value};
+    use khora_core::ecs::entity::EntityId;
+    use khora_core::script::{ScriptEvent, ScriptValue};
+
+    /// A guard that scans while patrolling and closes while chasing, with a
+    /// counter of its own in each.
+    const GUARD: &str = r#"
+    behavior Guard {
+        int scans = 0;
+        int closes = 0;
+
+        state Patrol {
+            int laps = 3;
+
+            every 0.5s {
+                scans += 1;
+            }
+        }
+
+        state Chase {
+            int missed = 7;
+
+            every 0.25s {
+                closes += 1;
+            }
+        }
+
+        on Spotted(int by) { become Chase; }
+        on Lost(int by) { become Patrol; }
+    }
+    "#;
+
+    fn host_of(program: &Program) -> Host {
+        let layout = program.layout("Guard").expect("a layout");
+        let mut host = Host {
+            natives: registry_with_despawn(),
+            ..Host::new()
+        }
+        .with_fields(PersistentStore::with_slots(layout.slot_count()));
+        host.entity = Some(EntityId {
+            index: 0,
+            generation: 1,
+        });
+        initialise(program, "Guard", &mut host, u64::MAX).expect("an initialiser");
+        host
+    }
+
+    fn count(host: &Host, slot: usize) -> i64 {
+        match host.fields.get(slot) {
+            Some(Persisted::Scalar(Value::Int(n))) => *n,
+            other => panic!("expected an int at {slot}, found {other:?}"),
+        }
+    }
+
+    fn play(program: &Program, host: &mut Host, frames: usize) {
+        for _ in 0..frames {
+            let (fault, _) = tick_timers(program, "Guard", host, 1.0 / 60.0, u64::MAX);
+            assert!(fault.is_none(), "{fault:?}");
+        }
+    }
+
+    fn raise(program: &Program, host: &mut Host, event: &str) {
+        let event =
+            ScriptEvent::new(host.entity.expect("a subject"), event).with(ScriptValue::Int(1));
+        deliver(program, "Guard", &event, host, u64::MAX, |_| true).expect("delivered");
+    }
+
+    /// The state's data starts where its author declared, which is what makes
+    /// `state` a place to put data rather than a label.
+    #[test]
+    fn a_states_declared_field_gets_its_default() {
+        let program = build(GUARD);
+        let layout = program.layout("Guard").expect("a layout");
+        let mut host = host_of(&program);
+
+        // `laps` is `Patrol`'s only slot, and `Patrol` is where a fresh
+        // instance starts.
+        assert_eq!(count(&host, layout.state_data_slot()), 3);
+
+        raise(&program, &mut host, "Spotted");
+        assert_eq!(
+            count(&host, layout.state_data_slot()),
+            7,
+            "entering `Chase` wrote its own declared default over the patrol's"
+        );
+    }
+
+    /// **`every 0.5s` inside `Patrol` means "while patrolling".** Before this
+    /// it meant nothing at all.
+    #[test]
+    fn a_schedule_inside_a_state_fires_while_in_it() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+
+        play(&program, &mut host, 40); // two thirds of a second
+        assert_eq!(count(&host, 0), 1, "the patrol scanned");
+        assert_eq!(count(&host, 1), 0, "and the chase did not close");
+    }
+
+    /// And stops when the behavior leaves. A patrol's schedule still firing
+    /// while the guard is chasing is the bug `state` exists to prevent.
+    #[test]
+    fn a_schedule_stops_when_its_state_is_left() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+
+        play(&program, &mut host, 40);
+        assert_eq!(count(&host, 0), 1);
+
+        raise(&program, &mut host, "Spotted");
+        play(&program, &mut host, 120); // two seconds of chasing
+
+        assert_eq!(count(&host, 0), 1, "the patrol's scan did not fire again");
+        assert!(
+            count(&host, 1) >= 7,
+            "and the chase's did: {}",
+            count(&host, 1)
+        );
+    }
+
+    /// Re-entering a state starts its schedule over. Resuming a half-spent
+    /// countdown from the previous visit would fire at a moment nothing
+    /// decided — least of all the author, who wrote an interval.
+    #[test]
+    fn re_entering_a_state_re_arms_its_schedule() {
+        let program = build(GUARD);
+        let mut host = host_of(&program);
+
+        // Almost due, then leave and come straight back.
+        play(&program, &mut host, 29);
+        assert_eq!(count(&host, 0), 0, "not yet");
+
+        raise(&program, &mut host, "Spotted");
+        raise(&program, &mut host, "Lost");
+
+        play(&program, &mut host, 29);
+        assert_eq!(
+            count(&host, 0),
+            0,
+            "the countdown started over rather than resuming where it was"
+        );
+
+        play(&program, &mut host, 2);
+        assert_eq!(count(&host, 0), 1, "and then it came due");
+    }
+
+    /// A behavior-level schedule runs whatever the behavior is doing — that is
+    /// what makes writing one inside a state a choice.
+    #[test]
+    fn a_behavior_level_schedule_runs_in_every_state() {
+        let program = build(
+            r#"
+            behavior Guard {
+                int ticks = 0;
+
+                every 0.25s { ticks += 1; }
+
+                state Patrol { }
+                state Chase { }
+
+                on Spotted(int by) { become Chase; }
+            }
+            "#,
+        );
+        let mut host = host_of(&program);
+
+        play(&program, &mut host, 20);
+        let while_patrolling = count(&host, 0);
+        assert!(while_patrolling >= 1);
+
+        raise(&program, &mut host, "Spotted");
+        play(&program, &mut host, 20);
+
+        assert!(
+            count(&host, 0) > while_patrolling,
+            "it kept ticking through the transition"
+        );
+    }
+}

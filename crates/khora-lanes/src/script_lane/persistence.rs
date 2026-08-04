@@ -128,10 +128,11 @@ fn restore_state_fields(
 
 /// The schedule a saved countdown belongs to.
 ///
-/// Matched on what the author wrote — `every 0.5s` — and then on which one,
-/// among schedules written identically. Position alone would swap two
-/// countdowns when a schedule is inserted above another; the interval alone
-/// cannot tell two `every 0.5s` apart, and both of them exist.
+/// Matched on what the author wrote — `every 0.5s`, and where they wrote it —
+/// then on which one among schedules written identically. Position alone would
+/// swap two countdowns when a schedule is inserted above another; the interval
+/// alone cannot tell `every 0.5s` inside `Patrol` from `every 0.5s` beside it,
+/// and those are two different schedules.
 fn timer_index(layout: &BehaviorLayout, saved: &TimerRemaining) -> Option<usize> {
     layout
         .timers
@@ -140,9 +141,18 @@ fn timer_index(layout: &BehaviorLayout, saved: &TimerRemaining) -> Option<usize>
         .filter(|(_, timer)| {
             matches!(timer.kind, TimerKind::Every) == saved.repeating
                 && timer.seconds == saved.interval
+                && owner(layout, timer) == saved.state
         })
         .nth(saved.ordinal as usize)
         .map(|(index, _)| index)
+}
+
+/// The name of the state a schedule belongs to, if any.
+fn owner(layout: &BehaviorLayout, timer: &khora_script::vm::TimerLayout) -> Option<String> {
+    timer
+        .state
+        .and_then(|index| layout.state_at(index))
+        .map(|state| state.name.clone())
 }
 
 /// Writes one value, saying so when it is of a kind that cannot travel.
@@ -207,7 +217,7 @@ fn named<'a>(
 
 /// Reads every countdown, keyed by what its author wrote.
 fn countdowns(layout: &BehaviorLayout, store: &PersistentStore) -> Vec<TimerRemaining> {
-    let mut seen: Vec<(bool, f32)> = Vec::new();
+    let mut seen: Vec<(bool, f32, Option<String>)> = Vec::new();
 
     layout
         .timers
@@ -215,7 +225,8 @@ fn countdowns(layout: &BehaviorLayout, store: &PersistentStore) -> Vec<TimerRema
         .enumerate()
         .filter_map(|(index, timer)| {
             let repeating = matches!(timer.kind, TimerKind::Every);
-            let key = (repeating, timer.seconds);
+            let state = owner(layout, timer);
+            let key = (repeating, timer.seconds, state.clone());
             let ordinal = seen.iter().filter(|held| **held == key).count() as u32;
             seen.push(key);
 
@@ -232,6 +243,7 @@ fn countdowns(layout: &BehaviorLayout, store: &PersistentStore) -> Vec<TimerRema
             Some(TimerRemaining {
                 repeating,
                 interval: timer.seconds,
+                state,
                 ordinal,
                 remaining,
             })

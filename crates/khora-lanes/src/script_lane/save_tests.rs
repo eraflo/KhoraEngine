@@ -24,20 +24,9 @@
 //! was. A fresh runtime is the point: sharing one would prove nothing about what
 //! actually travels.
 //!
-//! # Two gaps these tests do not paper over
-//!
-//! Writing them turned up two things `state` does not yet do, both in the
-//! language rather than here:
-//!
-//! - A state's **declared field defaults** are never produced. `Become` writes
-//!   the arguments it was given and nothing else, so `state Chase { int missed =
-//!   7; }` leaves `missed` unset.
-//! - An `every` or `after` written **inside a state** is never collected, so it
-//!   never fires. Only a behavior's own schedules are.
-//!
-//! The scripts below therefore use state *parameters* and behavior-level
-//! schedules. Persisting what the language cannot produce would be a test of
-//! nothing.
+//! The guard below is the one from the design — a state with its own data and
+//! its own schedule — because that is the shape a real behavior has, and a
+//! persistence test against a simpler one proves less than it appears to.
 
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
@@ -47,27 +36,26 @@ use khora_script::native::Host;
 use super::tests::{compile, entity, MODULE};
 use super::{run_behaviors, ScriptRuntime};
 
-/// A guard with two states and a countdown.
-///
-/// `Chase` takes its data as a **parameter** rather than declaring a field with
-/// a default, and the countdown sits at behavior level rather than inside a
-/// state, because neither of those two things works yet — see the module note
-/// on `state`. What is under test here is persistence, so it tests it against
-/// what the language actually does today.
+/// The guard from the design: two states, each with its own data, and a
+/// schedule that belongs to the patrol rather than to the guard.
 const GUARD: &str = r#"
 behavior Guard {
     int health = 100;
 
-    every 0.5s {
-        health -= 1;
+    state Patrol {
+        int laps = 0;
+
+        every 0.5s {
+            laps += 1;
+        }
     }
 
-    state Patrol { }
-
-    state Chase(int missed) { }
+    state Chase {
+        int missed = 7;
+    }
 
     on Spotted(int by) {
-        become Chase(7);
+        become Chase;
     }
 }
 "#;

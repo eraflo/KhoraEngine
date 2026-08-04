@@ -197,6 +197,21 @@ impl Compiler {
         (dst, shape)
     }
 
+    /// The value a slot of this shape starts at when nothing was written.
+    ///
+    /// Zero rather than unset, because `int missed;` reads as a number that
+    /// starts at nothing — and an unset slot faults on the first arithmetic
+    /// instead.
+    pub(super) fn zero_of(&mut self, shape: Shape) -> Reg {
+        match shape {
+            Shape::Int => self.constant(Value::Int(0), Shape::Int).0,
+            Shape::Float => self.constant(Value::Float(0.0), Shape::Float).0,
+            // The empty string, which the constant table already deduplicates.
+            Shape::Str => self.string_constant("").0,
+            Shape::Other => self.constant(Value::Unit, Shape::Other).0,
+        }
+    }
+
     /// Interns a string literal and loads a reference to it.
     ///
     /// Deduplicated: the same text written in twenty places is one entry. A

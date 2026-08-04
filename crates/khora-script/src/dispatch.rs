@@ -218,7 +218,19 @@ pub fn tick_timers(
     };
     let mut spent = 0;
 
+    // Which state's schedules are the behavior's own right now. A state's
+    // `every` means "while in this state", so one belonging to a state the
+    // behavior has left neither counts down nor fires — it waits for the
+    // behavior to come back, and `become` re-arms it on the way in.
+    let live_state = match host.fields.get(layout.state_slot()) {
+        Some(Persisted::Scalar(Value::Int(index))) => usize::try_from(*index).ok(),
+        _ => None,
+    };
+
     for (index, timer) in layout.timers.iter().enumerate() {
+        if timer.state.is_some() && timer.state != live_state {
+            continue;
+        }
         let slot = layout.timer_slot(index);
         let Some(Persisted::Scalar(Value::Float(remaining))) = host.fields.get(slot) else {
             // Unset, or already spent by an `after` that fired. Either way there
