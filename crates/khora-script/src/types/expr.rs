@@ -528,10 +528,23 @@ impl Checker {
             Ty::Duration if name == "Seconds" => Ty::Float,
             Ty::Angle if name == "Radians" => Ty::Float,
             Ty::Angle if name == "Degrees" => Ty::Float,
-            // Engine types and `this` are opened up in phase 2, when the API
-            // surface is declared. Until then anything on them is accepted
-            // rather than wrongly rejected.
-            Ty::Engine(_) | Ty::Behavior(_) | Ty::Entity => Ty::Error,
+            // A component of an engine type resolves to the accessor declared
+            // for it — `v.x` is `Vec3.x`, a name no source can spell. The
+            // registry is the single source: a type exposes exactly the
+            // components its declaration listed.
+            Ty::Engine(engine) => {
+                let accessor = crate::native::accessor_name(engine, name);
+                match self.natives.get(&accessor) {
+                    Some(info) => info.result.clone(),
+                    None => {
+                        self.error(format!("`{engine}` has no `{name}`"), span);
+                        Ty::Error
+                    }
+                }
+            }
+            // `this` is the entity, and an entity's components are reached
+            // through the engine surface rather than through a field.
+            Ty::Behavior(_) | Ty::Entity => Ty::Error,
             other if optional => {
                 self.error(format!("`{}` has no field `{name}`", other.name()), span);
                 Ty::Error

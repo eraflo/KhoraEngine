@@ -116,6 +116,12 @@ pub enum Shape {
     /// Text. Its own shape because `+` on two strings is not an addition — it
     /// allocates, and the compiler has to know before it picks an instruction.
     Str,
+    /// An engine type, by the name a script writes.
+    ///
+    /// Carried rather than folded into [`Other`](Self::Other) because `v.x` has
+    /// to find the accessor that belongs to *this* type — the compiler works in
+    /// shapes, so the shape is where the answer has to be.
+    Engine(&'static str),
     /// Not a number: bool, null, a struct, void.
     Other,
 }
@@ -235,6 +241,8 @@ impl Compiler {
                 crate::native::NativeTy::Float
                 | crate::native::NativeTy::Duration
                 | crate::native::NativeTy::Angle => Shape::Float,
+                crate::native::NativeTy::Str => Shape::Str,
+                crate::native::NativeTy::Engine(name) => Shape::Engine(name),
                 _ => Shape::Other,
             };
             self.natives.insert(native.name.to_owned(), (index, shape));
@@ -806,7 +814,12 @@ pub fn shape_of(ty: &TypeRef) -> Shape {
             // already proved the units agree, so the arithmetic is the same.
             "float" | "Duration" | "Angle" => Shape::Float,
             "string" => Shape::Str,
-            _ => Shape::Other,
+            // Borrowed from the checker's list so the name is `'static`, which
+            // is what lets a shape carry it.
+            other => crate::types::ty::ENGINE_TYPES
+                .iter()
+                .find(|known| **known == other)
+                .map_or(Shape::Other, |known| Shape::Engine(known)),
         },
         _ => Shape::Other,
     }

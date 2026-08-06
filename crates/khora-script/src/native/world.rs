@@ -23,6 +23,9 @@
 //! agent declare `AgentAccess::Isolated` and run beside the others on the worker
 //! pool: a lane holding a `&mut World` never could.
 //!
+//! The engine types these take — `Vec3` and the rest — are declared in
+//! [`engine_types`](super::engine_types), constructors and all.
+//!
 //! # Reading is narrower than writing, on purpose
 //!
 //! A script may write any entity it has a handle to, and may read only its own
@@ -40,17 +43,7 @@ use khora_macros::ergon_fn;
 
 use super::{NativeContext, NativeError, NativeFn};
 
-// ─── Vectors ────────────────────────────────────────────────────────────────
-
-/// Builds a vector.
-///
-/// A function rather than a literal syntax, which keeps the parser and the
-/// compiler out of it: `Vec3(1, 0, 0)` is already a call, and every engine type
-/// that follows arrives the same way instead of each needing grammar.
-#[ergon_fn]
-fn vec3(x: f32, y: f32, z: f32) -> Vec3 {
-    Vec3::new(x, y, z)
-}
+// ─── Reading ────────────────────────────────────────────────────────────────
 
 /// Where this entity is, as the frame projected it.
 ///
@@ -153,7 +146,6 @@ pub fn world() -> &'static [&'static NativeFn] {
 }
 
 static WORLD: &[&NativeFn] = &[
-    &ERGON_VEC3,
     &ERGON_POSITION,
     &ERGON_TRANSLATE,
     &ERGON_SET_POSITION,

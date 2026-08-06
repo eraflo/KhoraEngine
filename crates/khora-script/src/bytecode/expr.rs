@@ -21,6 +21,7 @@
 
 use super::{Compiler, Shape};
 use crate::ast::{BinaryOp, Expr, UnaryOp};
+use crate::diagnostics::Span;
 use crate::vm::{Instruction, Reg, Value};
 
 impl Compiler {
@@ -117,6 +118,12 @@ impl Compiler {
 
             Expr::Call { callee, args, span } => self.compile_call(callee, args, *span),
 
+            // `v.x` is a call to the accessor the type declared. Lowered here
+            // rather than given its own instruction: a component read is an
+            // engine function like any other, and giving it a second mechanism
+            // would mean a second thing to keep in step with the declaration.
+            Expr::Field { object, name, span } => self.compile_field(object, name, *span),
+
             // The duration is evaluated *before* suspending, so what is waited
             // for is what the expression meant at the moment `await` was
             // reached — not what it would mean when the machine resumes, by
@@ -197,6 +204,51 @@ impl Compiler {
         (dst, shape)
     }
 
+    /// Compiles `v.x` into a call to the accessor `v`'s type declared.
+    ///
+    /// The receiver's shape is what says *which* accessor, which is why
+    /// [`Shape::Engine`] carries the type name: the checker has already proved
+    /// the component exists, but the compiler works in shapes and would
+    /// otherwise have no way to ask.
+    fn compile_field(&mut self, object: &Expr, name: &str, span: Span) -> (Reg, Shape) {
+        let mark = self.registers.mark();
+        let (receiver, shape) = self.compile_expr(object);
+
+        let Shape::Engine(engine) = shape else {
+            // Struct fields and component reads need the ECS bridge to address.
+            // The checker reports the ones that are genuinely wrong; this is
+            // the shapes it accepts and the compiler cannot yet emit.
+            self.error("only an engine type's components can be read yet", span);
+            self.registers.release_to(mark);
+            return self.constant(Value::Unit, Shape::Other);
+        };
+
+        let accessor = crate::native::accessor_name(engine, name);
+        let Some((index, result)) = self.natives.get(&accessor).copied() else {
+            self.error(format!("`{engine}` has no `{name}`"), span);
+            self.registers.release_to(mark);
+            return self.constant(Value::Unit, Shape::Other);
+        };
+
+        // The accessor takes one argument, so the receiver has to sit in a slot
+        // of its own — `NativeCall` reads `base..base + argc`.
+        let base = self.registers.temp();
+        if receiver != base {
+            self.emit(Instruction::Move {
+                dst: base,
+                src: receiver,
+            });
+        }
+        let dst = self.registers.temp();
+        self.emit(Instruction::NativeCall {
+            function: index,
+            base,
+            argc: 1,
+            dst,
+        });
+        (dst, result)
+    }
+
     /// The value a slot of this shape starts at when nothing was written.
     ///
     /// Zero rather than unset, because `int missed;` reads as a number that
@@ -208,7 +260,11 @@ impl Compiler {
             Shape::Float => self.constant(Value::Float(0.0), Shape::Float).0,
             // The empty string, which the constant table already deduplicates.
             Shape::Str => self.string_constant("").0,
-            Shape::Other => self.constant(Value::Unit, Shape::Other).0,
+            // An engine type has no zero the compiler may invent: `Vec3::ZERO`
+            // is a position, and a rotation's identity is not four zeroes. The
+            // slot stays unset, and the first read of it faults rather than
+            // silently placing something at the origin.
+            Shape::Engine(_) | Shape::Other => self.constant(Value::Unit, Shape::Other).0,
         }
     }
 

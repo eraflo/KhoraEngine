@@ -42,10 +42,13 @@
 
 pub mod builtins;
 pub mod convert;
+pub mod engine_types;
 pub mod events;
 pub mod ty;
 pub mod world;
 
+#[cfg(test)]
+mod engine_types_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -62,6 +65,18 @@ use khora_core::script::{CommandBuffer, EventQueue};
 
 use crate::arena::{Arena, PersistentStore};
 use crate::vm::{StrError, Value};
+
+/// The engine function a component of an engine type reads.
+///
+/// One place, because the declaration writes it and both the checker and the
+/// compiler look it up — and two spellings of the same convention would fail
+/// silently, as a field that simply has no accessor.
+///
+/// The `.` is deliberate: it makes the name unspellable from source, so an
+/// accessor can never collide with a function a game declares.
+pub fn accessor_name(engine_type: &str, field: &str) -> String {
+    format!("{engine_type}.{field}")
+}
 
 /// Why a native call failed.
 ///
