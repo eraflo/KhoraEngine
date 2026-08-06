@@ -24,8 +24,8 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use khora_core::agent::{
-    Agent, AgentAccess, AgentDependency, AgentImportance, DependencyKind, ExecutionPhase,
-    ExecutionTiming,
+    Agent, AgentAccess, AgentDependency, AgentImportance, Contention, DependencyKind,
+    ExecutionPhase, ExecutionTiming,
 };
 use khora_core::control::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
@@ -109,8 +109,16 @@ impl Agent for RenderAgent {
     }
 
     /// Buffers its main scene pass into the [`ScenePassSlot`] deck slot.
-    fn deck_writes(&self) -> Vec<std::any::TypeId> {
-        vec![std::any::TypeId::of::<ScenePassSlot>()]
+    fn contention(&self) -> Contention {
+        Contention::none()
+            .writing_deck([std::any::TypeId::of::<ScenePassSlot>()])
+            .reading::<AssetStore>()
+            .reading::<Arc<FrameContext>>()
+            .reading::<AgentFrameStatusMap>()
+            .reading::<Arc<dyn PipelineSystem>>()
+            .reading::<khora_data::IblBaker>()
+            .reading::<Arc<dyn GraphicsDevice>>()
+            .locking::<Arc<Mutex<Box<dyn RenderSystem>>>>()
     }
 
     fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
@@ -197,21 +205,12 @@ impl Agent for RenderAgent {
     }
 
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
-        self.frame_status = context
-            .runtime
-            .resources
-            .get::<AgentFrameStatusMap>()
-            .cloned();
+        self.frame_status = context.resource::<AgentFrameStatusMap>().cloned();
 
         // One-shot lane GPU initialization.  We fetch the device from the
         // service registry, drive lane.on_initialize() once, and drop the
         // device handle — the agent does not store it.
-        let Some(device_arc) = context
-            .runtime
-            .backends
-            .get::<Arc<dyn GraphicsDevice>>()
-            .cloned()
-        else {
+        let Some(device_arc) = context.resource::<Arc<dyn GraphicsDevice>>().cloned() else {
             log::warn!("RenderAgent: graphics device unavailable in on_initialize");
             return;
         };
@@ -220,11 +219,7 @@ impl Agent for RenderAgent {
         // lanes resolve their layouts + pipeline through it; it also owns the
         // canonical Material layout (shared with the material projection's
         // cached `GpuMaterial` bind groups).
-        let pipeline_system = context
-            .runtime
-            .resources
-            .get::<Arc<dyn PipelineSystem>>()
-            .cloned();
+        let pipeline_system = context.resource::<Arc<dyn PipelineSystem>>().cloned();
 
         let mut init_ctx = LaneContext::new();
         init_ctx.insert(device_arc);
@@ -244,40 +239,30 @@ impl Agent for RenderAgent {
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
         // Look up every dependency from services — the agent owns none of these.
-        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
+        let Some(device_arc) = context.resource::<Arc<dyn GraphicsDevice>>() else {
             return;
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
 
-        let Some(rs_arc) = context
-            .runtime
-            .backends
-            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
-        else {
+        let Some(rs_arc) = context.locked::<Arc<Mutex<Box<dyn RenderSystem>>>>() else {
             return;
         };
         let render_system: Arc<Mutex<Box<dyn RenderSystem>>> = (*rs_arc).clone();
 
-        let Some(asset_store) = context.runtime.resources.get::<AssetStore>() else {
+        let Some(asset_store) = context.resource::<AssetStore>() else {
             return;
         };
         let gpu_meshes: Arc<RwLock<Assets<GpuMesh>>> = asset_store.store::<GpuMesh>();
 
         // PipelineSystem backend — migrated lanes re-fetch their pipeline by
         // key each frame through this.
-        let pipeline_system = context
-            .runtime
-            .resources
-            .get::<Arc<dyn PipelineSystem>>()
-            .cloned();
+        let pipeline_system = context.resource::<Arc<dyn PipelineSystem>>().cloned();
 
         // Image-based lighting bindings — baked once by the `ibl_bake` system
         // (PreExtract, before this OUTPUT phase). Forwarded into the lane ctx so
         // lit lanes bind the irradiance/specular/LUT block at group 3.
         let ibl_bindings = context
-            .runtime
-            .resources
-            .get::<khora_data::IblBaker>()
+            .resource::<khora_data::IblBaker>()
             .and_then(|b| b.bindings());
 
         // Render lanes consume the per-frame `RenderWorld` from the LaneBus,
@@ -291,7 +276,7 @@ impl Agent for RenderAgent {
         // atlas data into the per-frame FrameContext after `begin_frame()`.
         // ShadowAgent runs in OBSERVE (before OUTPUT) and publishes its atlas
         // there as well. We just read both.
-        let Some(fctx) = context.runtime.resources.get::<Arc<FrameContext>>() else {
+        let Some(fctx) = context.resource::<Arc<FrameContext>>() else {
             log::warn!("RenderAgent: no FrameContext in services");
             return;
         };

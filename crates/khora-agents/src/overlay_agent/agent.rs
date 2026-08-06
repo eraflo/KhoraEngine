@@ -28,8 +28,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use khora_core::agent::{
-    Agent, AgentAccess, AgentDependency, AgentImportance, DependencyKind, ExecutionPhase,
-    ExecutionTiming,
+    Agent, AgentAccess, AgentDependency, AgentImportance, Contention, DependencyKind,
+    ExecutionPhase, ExecutionTiming,
 };
 use khora_core::control::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
@@ -79,8 +79,17 @@ impl Agent for OverlayAgent {
     }
 
     /// Buffers its pass into the [`OverlayPassSlot`] deck slot.
-    fn deck_writes(&self) -> Vec<std::any::TypeId> {
-        vec![std::any::TypeId::of::<OverlayPassSlot>()]
+    fn contention(&self) -> Contention {
+        Contention::none()
+            .writing_deck([std::any::TypeId::of::<OverlayPassSlot>()])
+            .reading::<AssetStore>()
+            .reading::<Arc<FrameContext>>()
+            .reading::<AgentFrameStatusMap>()
+            .reading::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .reading::<khora_lanes::render_lane::SharedGizmoFrame>()
+            .reading::<khora_lanes::render_lane::SharedGridConfig>()
+            .reading::<khora_lanes::render_lane::SharedWireframeConfig>()
+            .reading::<Arc<dyn GraphicsDevice>>()
     }
 
     fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
@@ -105,25 +114,14 @@ impl Agent for OverlayAgent {
     }
 
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
-        self.frame_status = context
-            .runtime
-            .resources
-            .get::<AgentFrameStatusMap>()
-            .cloned();
+        self.frame_status = context.resource::<AgentFrameStatusMap>().cloned();
 
-        let Some(device_arc) = context
-            .runtime
-            .backends
-            .get::<Arc<dyn GraphicsDevice>>()
-            .cloned()
-        else {
+        let Some(device_arc) = context.resource::<Arc<dyn GraphicsDevice>>().cloned() else {
             log::warn!("OverlayAgent: graphics device unavailable in on_initialize");
             return;
         };
         let pipeline_system = context
-            .runtime
-            .resources
-            .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .resource::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
             .cloned();
 
         let mut init_ctx = LaneContext::new();
@@ -149,12 +147,12 @@ impl Agent for OverlayAgent {
             return;
         }
 
-        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
+        let Some(device_arc) = context.resource::<Arc<dyn GraphicsDevice>>() else {
             return;
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
 
-        let Some(asset_store) = context.runtime.resources.get::<AssetStore>() else {
+        let Some(asset_store) = context.resource::<AssetStore>() else {
             return;
         };
         let gpu_meshes: Arc<RwLock<Assets<GpuMesh>>> = asset_store.store::<GpuMesh>();
@@ -164,7 +162,7 @@ impl Agent for OverlayAgent {
         // Read frame targets — overlay lanes draw into the same color
         // target as the main render and use the existing depth buffer
         // read-only.
-        let Some(fctx) = context.runtime.resources.get::<Arc<FrameContext>>() else {
+        let Some(fctx) = context.resource::<Arc<FrameContext>>() else {
             log::warn!("OverlayAgent: no FrameContext in services");
             return;
         };
@@ -211,9 +209,7 @@ impl Agent for OverlayAgent {
             // editor stays a pure consumer of engine APIs (no
             // engine-internal `EditorAgent`).
             if let Some(gizmos) = context
-                .runtime
-                .resources
-                .get::<khora_lanes::render_lane::SharedGizmoFrame>()
+                .resource::<khora_lanes::render_lane::SharedGizmoFrame>()
                 .cloned()
             {
                 ctx.insert(gizmos);
@@ -221,18 +217,14 @@ impl Agent for OverlayAgent {
             // Editor-grid opt-in — same mechanism: the host app enables
             // it, `GridLane` consumes it; absent ⇒ no grid.
             if let Some(grid_cfg) = context
-                .runtime
-                .resources
-                .get::<khora_lanes::render_lane::SharedGridConfig>()
+                .resource::<khora_lanes::render_lane::SharedGridConfig>()
                 .cloned()
             {
                 ctx.insert(grid_cfg);
             }
             // Wireframe debug overlay — same opt-in mechanism.
             if let Some(wireframe_cfg) = context
-                .runtime
-                .resources
-                .get::<khora_lanes::render_lane::SharedWireframeConfig>()
+                .resource::<khora_lanes::render_lane::SharedWireframeConfig>()
                 .cloned()
             {
                 ctx.insert(wireframe_cfg);

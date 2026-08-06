@@ -66,12 +66,18 @@ fn step_n(agent: &mut PhysicsAgent, world: &mut World, runtime: &Arc<Runtime>, n
         substrate::run_flows(world, &mut bus, runtime);
 
         // CLAD descent — agent invokes the lane (provider.step(dt)).
-        let mut ctx = EngineContext {
-            world: khora_core::WorldAccess::Exclusive(world as &mut dyn std::any::Any),
-            runtime: Arc::clone(runtime),
-            bus: &bus,
-            deck: &mut deck,
-        };
+        // The agent's own declaration, exactly as the scheduler would stamp
+        // it — a test that granted more would be testing a context the engine
+        // never builds.
+        let permit = agent.contention();
+        let mut ctx = EngineContext::for_agent(
+            khora_core::WorldAccess::Exclusive(world as &mut dyn std::any::Any),
+            Arc::clone(runtime),
+            &bus,
+            &mut deck,
+            &permit,
+            Some(agent.id()),
+        );
         agent.execute(&mut ctx);
 
         // Maintenance — physics_world_writeback pulls provider state
@@ -93,13 +99,22 @@ fn make_init_ctx<'a>(
     bus: &'a khora_core::lane::LaneBus,
     deck: &'a mut khora_core::lane::OutputDeck,
 ) -> EngineContext<'a> {
-    EngineContext {
-        world: khora_core::WorldAccess::Exclusive(world as &mut dyn std::any::Any),
-        runtime: Arc::clone(runtime),
+    EngineContext::for_agent(
+        khora_core::WorldAccess::Exclusive(world as &mut dyn std::any::Any),
+        Arc::clone(runtime),
         bus,
         deck,
-    }
+        NOTHING,
+        None,
+    )
 }
+
+/// `on_initialize` reaches backends, which are outside the contract.
+static NOTHING: &khora_core::agent::Contention = &khora_core::agent::Contention {
+    deck: Vec::new(),
+    reads: Vec::new(),
+    writes: Vec::new(),
+};
 
 #[test]
 fn test_physics_gravity_influence() {

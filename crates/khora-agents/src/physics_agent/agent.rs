@@ -21,7 +21,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::control::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
     NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
@@ -76,6 +76,12 @@ pub struct PhysicsAgent {
 impl Agent for PhysicsAgent {
     fn id(&self) -> AgentId {
         AgentId::Physics
+    }
+
+    fn contention(&self) -> Contention {
+        Contention::none()
+            .reading::<AgentFrameStatusMap>()
+            .locking::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()
     }
 
     fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
@@ -147,20 +153,12 @@ impl Agent for PhysicsAgent {
     }
 
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
-        self.frame_status = context
-            .runtime
-            .resources
-            .get::<AgentFrameStatusMap>()
-            .cloned();
+        self.frame_status = context.resource::<AgentFrameStatusMap>().cloned();
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
         // Look up the physics provider from services every frame.
-        let Some(provider_arc) = context
-            .runtime
-            .backends
-            .get::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()
-        else {
+        let Some(provider_arc) = context.locked::<Arc<Mutex<Box<dyn PhysicsProvider>>>>() else {
             log::debug!("PhysicsAgent: no physics provider registered, skipping step");
             return;
         };

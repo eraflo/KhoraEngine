@@ -30,7 +30,9 @@ use std::any::Any;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{
+    Agent, AgentAccess, AgentImportance, Contention, ExecutionPhase, ExecutionTiming,
+};
 use khora_core::context::EngineContext;
 use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
@@ -78,8 +80,15 @@ impl Agent for UiAgent {
     }
 
     /// Buffers its pass into the [`UiPassSlot`] deck slot.
-    fn deck_writes(&self) -> Vec<std::any::TypeId> {
-        vec![std::any::TypeId::of::<UiPassSlot>()]
+    fn contention(&self) -> Contention {
+        Contention::none()
+            .writing_deck([std::any::TypeId::of::<UiPassSlot>()])
+            .reading::<Arc<FrameContext>>()
+            .reading::<Arc<UiImageAtlas>>()
+            .reading::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .reading::<Arc<RwLock<Assets<khora_core::renderer::api::resource::CpuTexture>>>>()
+            .reading::<Arc<dyn GraphicsDevice>>()
+            .reading::<Arc<dyn TextRenderer>>()
     }
 
     fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
@@ -107,20 +116,14 @@ impl Agent for UiAgent {
         }
         if let (Some(lane), Some(device)) = (
             self.render_lane.as_ref(),
-            context
-                .runtime
-                .backends
-                .get::<Arc<dyn GraphicsDevice>>()
-                .cloned(),
+            context.resource::<Arc<dyn GraphicsDevice>>().cloned(),
         ) {
             let mut init_ctx = LaneContext::new();
             init_ctx.insert(device);
             // Forward the PipelineSystem backend so the UI lane can resolve its
             // bespoke layouts + pipeline through it.
             if let Some(ps) = context
-                .runtime
-                .resources
-                .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+                .resource::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
                 .cloned()
             {
                 init_ctx.insert(ps);
@@ -133,16 +136,8 @@ impl Agent for UiAgent {
         // Lazily allocate the GPU texture atlas inside the UiImageAtlas
         // resource (one-shot, idempotent).
         if let (Some(atlas_res), Some(device)) = (
-            context
-                .runtime
-                .resources
-                .get::<Arc<UiImageAtlas>>()
-                .cloned(),
-            context
-                .runtime
-                .backends
-                .get::<Arc<dyn GraphicsDevice>>()
-                .cloned(),
+            context.resource::<Arc<UiImageAtlas>>().cloned(),
+            context.resource::<Arc<dyn GraphicsDevice>>().cloned(),
         ) {
             atlas_res.ensure_atlas(device.as_ref());
         }
@@ -150,7 +145,7 @@ impl Agent for UiAgent {
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
         // Look up everything from services every frame.
-        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
+        let Some(device_arc) = context.resource::<Arc<dyn GraphicsDevice>>() else {
             return;
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
@@ -161,7 +156,7 @@ impl Agent for UiAgent {
             return;
         };
 
-        let Some(fctx) = context.runtime.resources.get::<Arc<FrameContext>>() else {
+        let Some(fctx) = context.resource::<Arc<FrameContext>>() else {
             log::warn!("UiAgent: no FrameContext in services");
             return;
         };
@@ -172,15 +167,11 @@ impl Agent for UiAgent {
 
         let textures: Option<Arc<RwLock<Assets<khora_core::renderer::api::resource::CpuTexture>>>> =
             context
-                .runtime
-                .resources
-                .get::<Arc<RwLock<Assets<khora_core::renderer::api::resource::CpuTexture>>>>()
+                .resource::<Arc<RwLock<Assets<khora_core::renderer::api::resource::CpuTexture>>>>()
                 .map(|arc| (*arc).clone());
 
         let text_renderer: Option<Arc<dyn TextRenderer>> = context
-            .runtime
-            .backends
-            .get::<Arc<dyn TextRenderer>>()
+            .resource::<Arc<dyn TextRenderer>>()
             .map(|arc| (*arc).clone());
 
         // The persistent `AssetUUID → AtlasRect` cache and the GPU
@@ -189,11 +180,8 @@ impl Agent for UiAgent {
         // so the same `&mut TextureAtlas` is visible to both the
         // per-image upload loop below and the render lane via
         // `LaneContext`.
-        let atlas_resource: Option<Arc<UiImageAtlas>> = context
-            .runtime
-            .resources
-            .get::<Arc<UiImageAtlas>>()
-            .cloned();
+        let atlas_resource: Option<Arc<UiImageAtlas>> =
+            context.resource::<Arc<UiImageAtlas>>().cloned();
         let mut atlas_guard = atlas_resource.as_ref().and_then(|r| r.lock_atlas());
 
         // Resolve per-frame atlas rects for any UI images that aren't yet

@@ -27,7 +27,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::audio::AudioMixBus;
 use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
@@ -69,6 +69,10 @@ impl Default for AudioAgent {
 impl Agent for AudioAgent {
     fn id(&self) -> AgentId {
         AgentId::Audio
+    }
+
+    fn contention(&self) -> Contention {
+        Contention::none().reading::<Arc<dyn AudioMixBus>>()
     }
 
     fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
@@ -122,12 +126,7 @@ impl Agent for AudioAgent {
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
-        let Some(mix_bus) = context
-            .runtime
-            .resources
-            .get::<Arc<dyn AudioMixBus>>()
-            .cloned()
-        else {
+        let Some(mix_bus) = context.resource::<Arc<dyn AudioMixBus>>().cloned() else {
             log::debug!("AudioAgent: no AudioMixBus in resources, skipping mix");
             return;
         };

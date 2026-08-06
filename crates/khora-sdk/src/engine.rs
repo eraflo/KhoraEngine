@@ -292,12 +292,11 @@ impl<A: EngineApp> EngineCore<A> {
         {
             let init_bus = khora_core::lane::LaneBus::new();
             let mut init_deck = khora_core::lane::OutputDeck::new();
-            let mut init_ctx = khora_core::EngineContext {
-                world: khora_core::WorldAccess::None,
-                runtime: Arc::clone(&runtime_arc),
-                bus: &init_bus,
-                deck: &mut init_deck,
-            };
+            let mut init_ctx = khora_core::EngineContext::for_initialisation(
+                Arc::clone(&runtime_arc),
+                &init_bus,
+                &mut init_deck,
+            );
             dcc.initialize_agents(&mut init_ctx);
         }
         // Start the DCC background thread AFTER agents are initialized

@@ -33,7 +33,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::control::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
     NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
@@ -117,6 +117,15 @@ impl Agent for ShadowAgent {
         AgentId::ShadowRenderer
     }
 
+    fn contention(&self) -> Contention {
+        Contention::none()
+            .reading::<AssetStore>()
+            .reading::<Arc<FrameContext>>()
+            .reading::<AgentFrameStatusMap>()
+            .reading::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .reading::<Arc<dyn GraphicsDevice>>()
+    }
+
     fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
         // Estimate cost from a stub LaneContext. The real RenderWorld lives
         // in the LaneBus at execute time; negotiation runs on the DCC thread
@@ -187,29 +196,18 @@ impl Agent for ShadowAgent {
     }
 
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
-        self.frame_status = context
-            .runtime
-            .resources
-            .get::<AgentFrameStatusMap>()
-            .cloned();
+        self.frame_status = context.resource::<AgentFrameStatusMap>().cloned();
 
         // One-shot lane GPU initialization for every registered strategy.
         // Strategies are cheap to keep idle — only the selected lane
         // executes per frame, but each one needs its own resources ready
         // when the agent eventually picks it.
-        let Some(device_arc) = context
-            .runtime
-            .backends
-            .get::<Arc<dyn GraphicsDevice>>()
-            .cloned()
-        else {
+        let Some(device_arc) = context.resource::<Arc<dyn GraphicsDevice>>().cloned() else {
             log::warn!("ShadowAgent: graphics device unavailable in on_initialize");
             return;
         };
         let pipeline_system = context
-            .runtime
-            .resources
-            .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .resource::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
             .cloned();
 
         let mut init_ctx = LaneContext::new();
@@ -230,12 +228,12 @@ impl Agent for ShadowAgent {
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
         // Look up everything from services — the agent owns none of it.
-        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
+        let Some(device_arc) = context.resource::<Arc<dyn GraphicsDevice>>() else {
             return;
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
 
-        let Some(asset_store) = context.runtime.resources.get::<AssetStore>() else {
+        let Some(asset_store) = context.resource::<AssetStore>() else {
             return;
         };
         let gpu_meshes = asset_store.store::<GpuMesh>();
@@ -245,11 +243,7 @@ impl Agent for ShadowAgent {
             return;
         };
 
-        let frame_ctx = context
-            .runtime
-            .resources
-            .get::<Arc<FrameContext>>()
-            .cloned();
+        let frame_ctx = context.resource::<Arc<FrameContext>>().cloned();
 
         // Encode shadow passes into a standalone command buffer.
         let mut encoder = device.create_command_encoder(Some("Shadow Command Encoder"));

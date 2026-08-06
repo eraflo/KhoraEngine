@@ -24,6 +24,7 @@ use crossbeam_channel::Sender;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::timing::AgentImportance;
+use khora_core::agent::Contention;
 use khora_core::agent::{AgentAccess, AgentDependency, EngineMode, ExecutionPhase};
 use khora_core::control::gorna::{AgentFrameStatus, AgentFrameStatusMap, AgentId};
 use khora_core::graph::topological_sort;
@@ -175,7 +176,7 @@ pub struct ExecutionScheduler {
     parallel_execution: bool,
     /// Persistent worker pool for concurrent waves. Spawned once here and
     /// joined on drop; runs a wave's `Isolated` agents as `'static` jobs while
-    /// the lone `SharedWorld` agent runs inline. See [`WorkerPool`].
+    /// its `SharedWorld` agents run inline. See [`WorkerPool`].
     pool: WorkerPool,
 }
 
@@ -624,12 +625,18 @@ impl ExecutionScheduler {
 
             // Build EngineContext and execute (CLAD descent: the agent
             // chooses and invokes its lane internally).
-            let mut engine_ctx = EngineContext {
-                world: WorldAccess::Exclusive(world as &mut dyn std::any::Any),
-                runtime: Arc::clone(runtime),
+            // The same declaration the agent will be held to when it reaches a
+            // resource — read here rather than assumed empty, so the serial path
+            // enforces exactly what the concurrent one does.
+            let permit = agent.lock().map(|a| a.contention()).unwrap_or_default();
+            let mut engine_ctx = EngineContext::for_agent(
+                WorldAccess::Exclusive(world as &mut dyn std::any::Any),
+                Arc::clone(runtime),
                 bus,
                 deck,
-            };
+                &permit,
+                Some(agent_id),
+            );
 
             let started = Instant::now();
             if let Ok(mut a) = agent.lock() {
@@ -661,9 +668,9 @@ impl ExecutionScheduler {
     ///
     /// In a concurrent wave the `Isolated` agents run as `'static` jobs on the
     /// persistent [`WorkerPool`], each with a private `OutputDeck` shard and a
-    /// cloned `Arc<LaneBus>` (`WorldAccess::None`); the wave's lone `SharedWorld`
-    /// agent, if any, runs **inline on this thread** with a shared `&World` and
-    /// writes straight into the shared deck. The `World` never crosses a thread
+    /// cloned `Arc<LaneBus>` (`WorldAccess::None`); the wave's `SharedWorld`
+    /// agents run **inline on this thread** with a shared `&World` and write
+    /// straight into the shared deck. The `World` never crosses a thread
     /// boundary (no `unsafe`, no lifetime transmute). The pooled shards are
     /// folded back into the shared deck in wave (index) order once collected,
     /// keeping outputs deterministic. Singleton waves run inline with exclusive
@@ -735,12 +742,15 @@ impl ExecutionScheduler {
                 if !gate(id, *importance, deps) {
                     continue;
                 }
-                let mut engine_ctx = EngineContext {
-                    world: WorldAccess::Exclusive(world as &mut dyn std::any::Any),
-                    runtime: Arc::clone(runtime),
-                    bus: bus_ref,
+                let permit = metas[idx].contention.clone();
+                let mut engine_ctx = EngineContext::for_agent(
+                    WorldAccess::Exclusive(world as &mut dyn std::any::Any),
+                    Arc::clone(runtime),
+                    bus_ref,
                     deck,
-                };
+                    &permit,
+                    Some(id),
+                );
                 let started = Instant::now();
                 if let Ok(mut a) = agent.lock() {
                     a.execute(&mut engine_ctx);
@@ -752,18 +762,18 @@ impl ExecutionScheduler {
                 continue;
             }
 
-            // Verify the wave's members write disjoint deck slots before we run
-            // them into private shards (declared via `Agent::deck_writes`). A
+            // Verify the wave's members contend for nothing in common before we
+            // run them into private shards (declared via `Agent::contention`). A
             // collision is a parallel-eligibility bug: the shards would clash on
             // merge — surface it here, naming the agents, not later on a raw TypeId.
-            check_wave_deck_disjoint(&wave, &metas);
+            check_wave_disjoint(&wave, &metas);
 
             // Concurrent wave. Gate on this thread, then split the survivors:
             // the `Isolated` agents (world-free) run as `'static` jobs on the
             // persistent pool, reaching their inputs through `Arc<LaneBus>` /
-            // `Arc<Runtime>`; the wave's lone `SharedWorld` agent (if any) runs
-            // inline here with a shared `&World`. The `World` therefore never
-            // crosses a thread boundary — no `unsafe`, no lifetime transmute.
+            // `Arc<Runtime>`; the `SharedWorld` agents run inline here with a
+            // shared `&World`. The `World` therefore never crosses a thread
+            // boundary — no `unsafe`, no lifetime transmute.
             let runnable: Vec<usize> = wave
                 .into_iter()
                 .filter(|&idx| match metas[idx].id {
@@ -790,18 +800,23 @@ impl ExecutionScheduler {
                 let runtime = Arc::clone(runtime);
                 let bus = Arc::clone(bus);
                 let tx = tx.clone();
+                // Moved into the job: the closure is `'static`, so the permit
+                // cannot be borrowed from the wave that outlives it.
+                let permit = metas[idx].contention.clone();
                 isolated_count += 1;
                 self.pool.submit(move || {
                     let bus_ref: &LaneBus = &bus;
                     let mut shard = OutputDeck::new();
                     let started = Instant::now();
                     {
-                        let mut ctx = EngineContext {
-                            world: WorldAccess::None,
+                        let mut ctx = EngineContext::for_agent(
+                            WorldAccess::None,
                             runtime,
-                            bus: bus_ref,
-                            deck: &mut shard,
-                        };
+                            bus_ref,
+                            &mut shard,
+                            &permit,
+                            Some(id),
+                        );
                         if let Ok(mut a) = agent.lock() {
                             a.execute(&mut ctx);
                         }
@@ -814,20 +829,27 @@ impl ExecutionScheduler {
             // jobs (the only remaining senders) have all reported.
             drop(tx);
 
-            // Run the lone `SharedWorld` agent inline on this thread. It reads
-            // `&World` and writes its slot straight into the shared deck (its
-            // slot type is disjoint from the pooled shards, checked above).
+            // Run the wave's `SharedWorld` agents inline on this thread. They
+            // read `&World` and write straight into the shared deck (their slots
+            // are disjoint from each other and from the pooled shards, checked
+            // above). They are serial with respect to *each other* — the gain of
+            // admitting several into one wave is that the pooled `Isolated` work
+            // above overlaps all of them, instead of one wave per `SharedWorld`
+            // agent each paying its own round-trip.
             for &idx in runnable
                 .iter()
                 .filter(|&&idx| metas[idx].access == AgentAccess::SharedWorld)
             {
                 let id = metas[idx].id.expect("gated runnable has an id");
-                let mut ctx = EngineContext {
-                    world: WorldAccess::Shared(&*world as &dyn std::any::Any),
-                    runtime: Arc::clone(runtime),
-                    bus: bus_ref,
+                let permit = metas[idx].contention.clone();
+                let mut ctx = EngineContext::for_agent(
+                    WorldAccess::Shared(&*world as &dyn std::any::Any),
+                    Arc::clone(runtime),
+                    bus_ref,
                     deck,
-                };
+                    &permit,
+                    Some(id),
+                );
                 let started = Instant::now();
                 if let Ok(mut a) = agents[idx].0.lock() {
                     a.execute(&mut ctx);
@@ -930,9 +952,10 @@ struct WaveMeta {
     access: AgentAccess,
     /// Ids this agent hard-depends on (must run in an earlier wave).
     hard_dep_targets: Vec<AgentId>,
-    /// `OutputDeck` slot types this agent writes (from [`Agent::deck_writes`]),
-    /// used to verify co-wave agents write disjoint slots before dispatch.
-    deck_writes: Vec<std::any::TypeId>,
+    /// What this agent competes for (from [`Agent::contention`]), used to verify
+    /// co-wave agents do not collide before dispatch, and stamped onto the
+    /// context so an undeclared reach is refused at the point of access.
+    contention: Contention,
 }
 
 /// Worker-pool size: one thread per available core minus two (reserved for the
@@ -944,18 +967,22 @@ fn default_pool_size() -> usize {
         .clamp(1, 16)
 }
 
-/// Reads each agent's id, access footprint, and declared deck writes once,
+/// Reads each agent's id, access footprint, and declared contention once,
 /// building the [`WaveMeta`] the wave partitioner + disjointness check need. A
 /// failed lock yields `id: None` → an always-singleton, always-skipped slot.
+///
+/// Once, and reused: the context is stamped with the same `Contention` the wave
+/// was built from, so what the scheduler checked and what the agent is held to
+/// cannot be two different answers.
 fn build_wave_metas(agents: &[AgentSlot]) -> Vec<WaveMeta> {
     agents
         .iter()
         .map(|(agent, _, _, deps)| {
-            let (id, access, deck_writes) = agent
+            let (id, access, contention) = agent
                 .lock()
                 .ok()
-                .map(|a| (Some(a.id()), a.access(), a.deck_writes()))
-                .unwrap_or((None, AgentAccess::Exclusive, Vec::new()));
+                .map(|a| (Some(a.id()), a.access(), a.contention()))
+                .unwrap_or((None, AgentAccess::Exclusive, Contention::none()));
             WaveMeta {
                 id,
                 access,
@@ -964,7 +991,7 @@ fn build_wave_metas(agents: &[AgentSlot]) -> Vec<WaveMeta> {
                     .filter(|d| matches!(d.kind, DependencyKind::Hard))
                     .map(|d| d.target)
                     .collect(),
-                deck_writes,
+                contention,
             }
         })
         .collect()
@@ -991,11 +1018,16 @@ fn partition_waves(metas: &[WaveMeta]) -> Vec<Vec<usize>> {
                     && !meta.hard_dep_targets.iter().any(|target| {
                         wave.iter().any(|&j| metas[j].id == Some(*target))
                     })
-                    // … and the wave holds no other SharedWorld agent.
-                    && !(meta.access == AgentAccess::SharedWorld
-                        && wave
-                            .iter()
-                            .any(|&j| metas[j].access == AgentAccess::SharedWorld))
+                    // … and nothing it declared collides with a member's.
+                    //
+                    // This once refused a second `SharedWorld` outright, because
+                    // such an agent "may write shared resources" and nobody
+                    // could say which. Now they say, so `RenderAgent` and
+                    // `UiAgent` may share a wave when their declarations are
+                    // disjoint — parallelism gained by removing a constraint.
+                    && wave.iter().all(|&j| {
+                        metas[j].contention.conflicts_with(&meta.contention).is_empty()
+                    })
             });
         if joins_current {
             waves.last_mut().expect("checked non-empty").push(i);
@@ -1006,25 +1038,32 @@ fn partition_waves(metas: &[WaveMeta]) -> Vec<Vec<usize>> {
     waves
 }
 
-/// Logs an error for every `OutputDeck` slot type written by more than one
-/// agent in the same concurrent `wave`.
+/// Logs an error for every surface two agents in the same concurrent `wave`
+/// would fight over.
 ///
-/// Co-wave agents run into private deck shards that are folded back together
-/// afterwards, so they must write disjoint slots (guaranteed in principle by
-/// the [`AgentAccess`] eligibility rules). Declaring writes via
-/// [`Agent::deck_writes`](khora_core::agent::Agent::deck_writes) lets the
-/// scheduler catch a violation here — naming the offending agents — rather than
-/// discovering it defensively during the shard merge on a bare `TypeId`.
+/// A deck slot written twice loses one of the two when the private shards are
+/// folded back; a resource locked twice serialises the pair the wave existed to
+/// run at once; a resource locked by one and read by another shows the reader a
+/// half-written state. Reading the same thing is not a conflict, which is the
+/// whole point of declaring it.
+///
+/// [`Agent::contention`](khora_core::agent::Agent::contention) is what makes
+/// this checkable at wave-formation time — naming the offending agents — rather
+/// than discovered defensively at the merge, or not at all.
 ///
 /// Returns the number of collisions detected (0 = disjoint, the expected case).
-fn check_wave_deck_disjoint(wave: &[usize], metas: &[WaveMeta]) -> usize {
-    let mut seen: std::collections::HashMap<std::any::TypeId, AgentId> =
-        std::collections::HashMap::new();
+fn check_wave_disjoint(wave: &[usize], metas: &[WaveMeta]) -> usize {
     let mut collisions = 0;
-    for &idx in wave {
+    for (position, &idx) in wave.iter().enumerate() {
         let Some(id) = metas[idx].id else { continue };
-        for &slot in &metas[idx].deck_writes {
-            if let Some(prev) = seen.insert(slot, id) {
+        for &other in &wave[position + 1..] {
+            let Some(prev) = metas[other].id else {
+                continue;
+            };
+            for slot in metas[idx]
+                .contention
+                .conflicts_with(&metas[other].contention)
+            {
                 collisions += 1;
                 log::error!(
                     "Scheduler: agents {prev:?} and {id:?} share a concurrent wave but both write \
@@ -1056,8 +1095,9 @@ fn are_hard_dependencies_completed(
 
 #[cfg(test)]
 mod wave_tests {
-    use super::{check_wave_deck_disjoint, partition_waves, WaveMeta};
+    use super::{check_wave_disjoint, partition_waves, WaveMeta};
     use khora_core::agent::AgentAccess;
+    use khora_core::agent::Contention;
     use khora_core::control::gorna::AgentId;
 
     fn meta(id: AgentId, access: AgentAccess, deps: &[AgentId]) -> WaveMeta {
@@ -1065,7 +1105,7 @@ mod wave_tests {
             id: Some(id),
             access,
             hard_dep_targets: deps.to_vec(),
-            deck_writes: Vec::new(),
+            contention: Contention::none(),
         }
     }
 
@@ -1123,15 +1163,18 @@ mod wave_tests {
         assert_eq!(partition_waves(&metas), vec![vec![0, 1, 2]]);
     }
 
+    /// **This used to assert the opposite**, and the reason it did is the reason
+    /// it no longer can: two `SharedWorld` agents were split because they "may
+    /// write shared resources" and nobody could say which. Now they say, so two
+    /// that declare nothing in common share a wave. What separates them is
+    /// contention, asserted just below.
     #[test]
-    fn two_shared_world_agents_split_into_separate_waves() {
-        // Two SharedWorld agents may each write shared resources, so at most one
-        // runs per wave.
+    fn two_shared_world_agents_that_declare_nothing_share_a_wave() {
         let metas = vec![
             meta(AgentId::Renderer, AgentAccess::SharedWorld, &[]),
             meta(AgentId::Overlay, AgentAccess::SharedWorld, &[]),
         ];
-        assert_eq!(partition_waves(&metas), vec![vec![0], vec![1]]);
+        assert_eq!(partition_waves(&metas), vec![vec![0, 1]]);
     }
 
     #[test]
@@ -1146,11 +1189,15 @@ mod wave_tests {
     }
 
     fn meta_writes(id: AgentId, access: AgentAccess, writes: &[std::any::TypeId]) -> WaveMeta {
+        meta_declaring(id, access, Contention::none().writing_deck(writes.to_vec()))
+    }
+
+    fn meta_declaring(id: AgentId, access: AgentAccess, contention: Contention) -> WaveMeta {
         WaveMeta {
             id: Some(id),
             access,
             hard_dep_targets: Vec::new(),
-            deck_writes: writes.to_vec(),
+            contention,
         }
     }
 
@@ -1169,7 +1216,104 @@ mod wave_tests {
                 &[std::any::TypeId::of::<u64>()],
             ),
         ];
-        assert_eq!(check_wave_deck_disjoint(&[0, 1], &metas), 0);
+        assert_eq!(check_wave_disjoint(&[0, 1], &metas), 0);
+    }
+
+    /// **The gain the whole contract exists for.** `RenderAgent` and `UiAgent`
+    /// are both `SharedWorld` and both in `OUTPUT`, and a rule that refused a
+    /// second `SharedWorld` outright kept them apart — not because they contend,
+    /// but because nobody could say whether they did. Declared and disjoint,
+    /// they share a wave.
+    ///
+    /// This is also the **only** assertion a too-broad declaration fails. A test
+    /// that checked collisions alone is satisfied by an agent that declares
+    /// everything — and over-declaring fails silently in the direction of
+    /// slowness: nothing breaks, everything serialises, the engine is just
+    /// slower.
+    #[test]
+    fn two_shared_world_agents_share_a_wave_when_disjoint() {
+        struct Draws;
+        struct Overlays;
+
+        let metas = vec![
+            meta_declaring(
+                AgentId::Renderer,
+                AgentAccess::SharedWorld,
+                Contention::none().writing_deck([std::any::TypeId::of::<Draws>()]),
+            ),
+            meta_declaring(
+                AgentId::Ui,
+                AgentAccess::SharedWorld,
+                Contention::none().writing_deck([std::any::TypeId::of::<Overlays>()]),
+            ),
+        ];
+
+        assert_eq!(partition_waves(&metas), vec![vec![0, 1]]);
+    }
+
+    /// And they are kept apart when they *do* contend — the rule that was
+    /// removed is replaced by one that knows what it is refusing.
+    #[test]
+    fn agents_that_contend_are_split_into_separate_waves() {
+        struct Atlas;
+
+        let metas = vec![
+            meta_declaring(
+                AgentId::Renderer,
+                AgentAccess::SharedWorld,
+                Contention::none().locking::<Atlas>(),
+            ),
+            meta_declaring(
+                AgentId::Ui,
+                AgentAccess::Isolated,
+                Contention::none().reading::<Atlas>(),
+            ),
+        ];
+
+        assert_eq!(partition_waves(&metas), vec![vec![0], vec![1]]);
+    }
+
+    /// Two readers of one resource stay together, which is what makes declaring
+    /// a read worth doing at all.
+    #[test]
+    fn two_readers_of_one_resource_share_a_wave() {
+        struct Input;
+
+        let metas = vec![
+            meta_declaring(
+                AgentId::Ui,
+                AgentAccess::Isolated,
+                Contention::none().reading::<Input>(),
+            ),
+            meta_declaring(
+                AgentId::Script,
+                AgentAccess::Isolated,
+                Contention::none().reading::<Input>(),
+            ),
+        ];
+
+        assert_eq!(partition_waves(&metas), vec![vec![0, 1]]);
+    }
+
+    /// A locked resource is reported, and both agents are named.
+    #[test]
+    fn a_contended_resource_is_detected() {
+        struct Queue;
+
+        let metas = vec![
+            meta_declaring(
+                AgentId::Ui,
+                AgentAccess::Isolated,
+                Contention::none().locking::<Queue>(),
+            ),
+            meta_declaring(
+                AgentId::Script,
+                AgentAccess::Isolated,
+                Contention::none().locking::<Queue>(),
+            ),
+        ];
+
+        assert_eq!(check_wave_disjoint(&[0, 1], &metas), 1);
     }
 
     #[test]
@@ -1187,7 +1331,7 @@ mod wave_tests {
                 &[std::any::TypeId::of::<u32>()],
             ),
         ];
-        assert_eq!(check_wave_deck_disjoint(&[0, 1], &metas), 1);
+        assert_eq!(check_wave_disjoint(&[0, 1], &metas), 1);
     }
 }
 

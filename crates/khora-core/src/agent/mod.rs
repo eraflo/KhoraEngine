@@ -15,6 +15,7 @@
 //! Traits for autonomous engine subsystems (Agents).
 
 pub mod completion;
+pub mod contention;
 pub mod dependency;
 pub mod execution_phase;
 pub mod mode;
@@ -26,6 +27,7 @@ use crate::EngineContext;
 use std::any::Any;
 
 pub use completion::{AgentCompletionMap, AgentDone, CompletionOutcome};
+pub use contention::Contention;
 pub use dependency::{AgentDependency, DependencyCondition, DependencyKind};
 pub use execution_phase::ExecutionPhase;
 pub use mode::EngineMode;
@@ -143,20 +145,24 @@ pub trait Agent: Send + Sync {
         AgentAccess::Exclusive
     }
 
-    /// Declares the [`OutputDeck`](crate::lane::OutputDeck) slot types this agent
-    /// writes during [`execute`](Self::execute), by [`TypeId`](std::any::TypeId).
+    /// Declares what this agent competes with the others for: the deck slots it
+    /// writes, and the runtime resources it reads or locks.
     ///
-    /// The scheduler uses this at wave-formation time: two concurrency-eligible
-    /// agents grouped into the same wave write into private deck shards that are
-    /// folded back together afterwards, so they **must** write disjoint slot
-    /// types. Declaring the written slots lets the scheduler catch a collision
-    /// when the wave is built — naming the offending agents — instead of only
-    /// discovering it defensively during the shard merge.
+    /// The scheduler reads it at wave-formation time. Two agents in one
+    /// concurrent wave must not write the same deck slot (their private shards
+    /// would collide at the merge), must not lock the same resource (they would
+    /// serialise on it), and must not have one locking what another reads.
+    /// Reading the same thing is fine — that is the point of saying so.
     ///
-    /// Defaults to empty: an agent that writes no deck slot (or only runs
-    /// `Exclusive`, i.e. never in a concurrent wave) need not override it.
-    fn deck_writes(&self) -> Vec<std::any::TypeId> {
-        Vec::new()
+    /// It is also **enforced**, not merely compared: an agent reaches a runtime
+    /// resource through [`EngineContext::resource`](crate::EngineContext::resource)
+    /// or [`locked`](crate::EngineContext::locked), which refuse what this did
+    /// not declare.
+    ///
+    /// Defaults to nothing, which is right for an agent that touches only its
+    /// own state and the bus.
+    fn contention(&self) -> Contention {
+        Contention::none()
     }
 
     /// Allows downcasting to concrete agent types.
@@ -186,11 +192,15 @@ pub enum AgentAccess {
     /// and a private deck shard, folded back into the shared deck after the
     /// concurrent wave. Any number may run in the same wave.
     Isolated,
-    /// Reads the `World` immutably (never mutates it) and may write shared
-    /// engine resources. The scheduler runs it with a shared
-    /// [`WorldAccess::Shared`](crate::WorldAccess::Shared) reference so many
-    /// world-readers execute concurrently. Because it may write shared
-    /// resources whose ordering matters, **at most one `SharedWorld` agent runs
-    /// per wave** (alongside any number of `Isolated` agents).
+    /// Reads the `World` immutably, never mutates it. The scheduler runs it
+    /// with a shared [`WorldAccess::Shared`](crate::WorldAccess::Shared)
+    /// reference, inline on the calling thread so the `World` never crosses a
+    /// thread boundary.
+    ///
+    /// Any number may share a wave, provided their
+    /// [`Contention`](super::Contention)s are disjoint. That used to be capped
+    /// at one, because a `SharedWorld` agent "may write shared resources" and
+    /// nothing said *which* — the cap stood in for an answer nobody could give.
+    /// Now they say, so the cap is gone.
     SharedWorld,
 }

@@ -19,8 +19,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use khora_core::agent::{
-    Agent, AgentAccess, AgentDependency, AgentImportance, DependencyKind, ExecutionPhase,
-    ExecutionTiming,
+    Agent, AgentAccess, AgentDependency, AgentImportance, Contention, DependencyKind,
+    ExecutionPhase, ExecutionTiming,
 };
 use khora_core::control::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
@@ -68,8 +68,14 @@ impl Agent for SkyboxAgent {
     }
 
     /// Buffers its pass into the [`SkyboxPassSlot`] deck slot.
-    fn deck_writes(&self) -> Vec<std::any::TypeId> {
-        vec![std::any::TypeId::of::<SkyboxPassSlot>()]
+    fn contention(&self) -> Contention {
+        Contention::none()
+            .writing_deck([std::any::TypeId::of::<SkyboxPassSlot>()])
+            .reading::<Arc<FrameContext>>()
+            .reading::<AgentFrameStatusMap>()
+            .reading::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .reading::<khora_data::IblBaker>()
+            .reading::<Arc<dyn GraphicsDevice>>()
     }
 
     fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
@@ -92,25 +98,14 @@ impl Agent for SkyboxAgent {
     }
 
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
-        self.frame_status = context
-            .runtime
-            .resources
-            .get::<AgentFrameStatusMap>()
-            .cloned();
+        self.frame_status = context.resource::<AgentFrameStatusMap>().cloned();
 
-        let Some(device_arc) = context
-            .runtime
-            .backends
-            .get::<Arc<dyn GraphicsDevice>>()
-            .cloned()
-        else {
+        let Some(device_arc) = context.resource::<Arc<dyn GraphicsDevice>>().cloned() else {
             log::warn!("SkyboxAgent: graphics device unavailable in on_initialize");
             return;
         };
         let pipeline_system = context
-            .runtime
-            .resources
-            .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
+            .resource::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
             .cloned();
 
         let mut init_ctx = LaneContext::new();
@@ -130,7 +125,7 @@ impl Agent for SkyboxAgent {
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
-        let Some(device_arc) = context.runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
+        let Some(device_arc) = context.resource::<Arc<dyn GraphicsDevice>>() else {
             return;
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
@@ -138,9 +133,7 @@ impl Agent for SkyboxAgent {
         // The env cube published by the IBL bake. Absent until the bake has run
         // (first frames) ⇒ no background yet; the scene's clear color shows.
         let ibl = context
-            .runtime
-            .resources
-            .get::<khora_data::IblBaker>()
+            .resource::<khora_data::IblBaker>()
             .and_then(|baker| baker.bindings());
         let Some(ibl) = ibl else {
             return;
@@ -150,7 +143,7 @@ impl Agent for SkyboxAgent {
 
         // Frame targets — the skybox draws into the same color target as the
         // main render and depth-tests against the existing depth buffer.
-        let Some(fctx) = context.runtime.resources.get::<Arc<FrameContext>>() else {
+        let Some(fctx) = context.resource::<Arc<FrameContext>>() else {
             log::warn!("SkyboxAgent: no FrameContext in services");
             return;
         };

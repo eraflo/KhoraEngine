@@ -39,7 +39,9 @@
 use std::any::TypeId;
 use std::time::Duration;
 
-use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{
+    Agent, AgentAccess, AgentImportance, Contention, ExecutionPhase, ExecutionTiming,
+};
 use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
@@ -262,16 +264,14 @@ impl Agent for ScriptingAgent {
         AgentAccess::Isolated
     }
 
-    fn deck_writes(&self) -> Vec<TypeId> {
-        // Both slots the lane fills, not just the interesting one. The
-        // scheduler checks these against the other agents in a concurrent wave
-        // and folds each shard back afterwards; a slot written but not declared
-        // is one the check cannot see, so the collision it exists to catch
-        // would surface as a lost writeback during the merge instead.
-        vec![
+    fn contention(&self) -> Contention {
+        // Both slots the lane fills, not just the interesting one. A slot
+        // written but not declared is one the check cannot see, so the collision
+        // it exists to catch would surface as a lost writeback at the merge.
+        Contention::none().writing_deck([
             TypeId::of::<CommandBuffer>(),
             TypeId::of::<ScriptStateWriteback>(),
-        ]
+        ])
     }
 
     fn execution_timing(&self) -> ExecutionTiming {

@@ -51,7 +51,7 @@ pub enum TelemetryEvent {
     },
     /// The scheduler's per-frame **wave plan**: how the agents will actually be
     /// grouped for execution. Each inner list is one wave — agents that run
-    /// concurrently (an `Isolated` set plus at most one `SharedWorld` agent);
+    /// concurrently — any agents whose declared contentions are disjoint;
     /// a singleton list is a serially-executed agent. Published only when
     /// parallel execution is enabled (serial execution needs no grouping — the
     /// DCC then falls back to summing per-agent costs).
