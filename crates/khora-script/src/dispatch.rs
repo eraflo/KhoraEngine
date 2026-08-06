@@ -35,7 +35,7 @@
 //! this.
 
 use khora_core::ecs::entity::EntityId;
-use khora_core::script::{ScriptEvent, ScriptValue};
+use khora_core::script::ScriptEvent;
 
 use crate::arena::Persisted;
 use crate::native::Host;
@@ -298,11 +298,21 @@ pub fn deliver(
         return Err(NotDelivered::NoSuchEntity(event.target));
     }
 
+    // Through the one bridge, and with the arena, so a handler receives exactly
+    // what a raise can carry. The two were separate translations once, and the
+    // pair that did not agree is what disabled a behavior for good.
     let args = event
         .args
         .iter()
         .enumerate()
-        .map(|(index, value)| to_register(value, index))
+        .map(|(index, value)| {
+            crate::bridge::to_register(value, &mut host.arena).map_err(|_| {
+                NotDelivered::UnsupportedArgument {
+                    index,
+                    kind: value.type_name(),
+                }
+            })
+        })
         .collect::<Result<Vec<_>, _>>()?;
 
     // The handler runs for the entity the event named, so a native it calls
@@ -377,23 +387,4 @@ pub struct Delivered {
     /// The caller keeps it and resumes it; the wait it asked for is on the
     /// host, in [`awaiting`](Host::awaiting).
     pub suspended: Option<Machine>,
-}
-
-/// The register value an event argument becomes.
-///
-/// Only what a register holds. A `Vec3` or an array would have to be put
-/// somewhere first, and an event that silently dropped one would be worse than
-/// an event that says it cannot carry it.
-fn to_register(value: &ScriptValue, index: usize) -> Result<Value, NotDelivered> {
-    match value {
-        ScriptValue::Unit => Ok(Value::Unit),
-        ScriptValue::Bool(flag) => Ok(Value::Bool(*flag)),
-        ScriptValue::Int(number) => Ok(Value::Int(*number)),
-        ScriptValue::Float(number) => Ok(Value::Float(*number)),
-        ScriptValue::Entity(id) => Ok(Value::Entity(*id)),
-        other => Err(NotDelivered::UnsupportedArgument {
-            index,
-            kind: other.type_name(),
-        }),
-    }
 }

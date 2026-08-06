@@ -32,15 +32,17 @@
 //!
 //! # What a field can be
 //!
-//! What a register holds, plus text. That now includes `Vec3`, so a patrol
-//! target survives a save. What it still does not include is an array or a
-//! `Quat`, and a conversion that silently dropped one would put a guard at the
-//! origin after a reload with nothing said — so those are refused loudly.
+//! Whatever [`bridge`] says — this module no longer decides. It once carried its
+//! own translation of a value, which is how the engine ended up with four of
+//! them and how two of them stopped agreeing. A list is still refused, and
+//! refused **loudly**: a conversion that silently dropped one would put a guard
+//! at the origin after a reload with nothing said.
 //!
 //! [`Script`]: khora_data::ecs::Script
+//! [`bridge`]: khora_script::bridge
 
 use khora_core::script::{PendingSequence, ScriptSnapshot, ScriptValue, TimerRemaining};
-use khora_script::arena::{Object, Persisted, PersistentStore};
+use khora_script::arena::{Persisted, PersistentStore};
 use khora_script::vm::{BehaviorLayout, Program, TimerKind, Value};
 
 use super::Pending;
@@ -157,12 +159,9 @@ fn owner(layout: &BehaviorLayout, timer: &khora_script::vm::TimerLayout) -> Opti
 
 /// Writes one value, saying so when it is of a kind that cannot travel.
 fn set(store: &mut PersistentStore, slot: usize, name: &str, value: &ScriptValue) {
-    match to_persisted(value) {
-        Some(persisted) => store.set(slot, persisted),
-        None => log::warn!(
-            "field `{name}` is a {} and cannot be restored yet",
-            value.type_name()
-        ),
+    match khora_script::bridge::to_persisted(value) {
+        Ok(persisted) => store.set(slot, persisted),
+        Err(why) => log::warn!("field `{name}` was not restored: {why}"),
     }
 }
 
@@ -209,7 +208,11 @@ fn named<'a>(
 ) -> Vec<(String, ScriptValue)> {
     names
         .filter_map(|(offset, name)| {
-            let value = to_script_value(store.get(base + offset)?)?;
+            let value = khora_script::bridge::from_persisted(store.get(base + offset)?)
+                .unwrap_or_else(|why| {
+                    log::warn!("field `{name}` was not recorded: {why}");
+                    None
+                })?;
             Some((name.clone(), value))
         })
         .collect()
@@ -297,44 +300,6 @@ pub fn resume(saved: &ScriptSnapshot, program: &Program) -> Option<Pending> {
     Some(Pending {
         machine,
         remaining: sequence.remaining,
-    })
-}
-
-/// The stored form of a scene value.
-fn to_persisted(value: &ScriptValue) -> Option<Persisted> {
-    Some(match value {
-        ScriptValue::Unit => Persisted::Scalar(Value::Unit),
-        ScriptValue::Bool(flag) => Persisted::Scalar(Value::Bool(*flag)),
-        ScriptValue::Int(number) => Persisted::Scalar(Value::Int(*number)),
-        ScriptValue::Float(number) => Persisted::Scalar(Value::Float(*number)),
-        ScriptValue::Entity(id) => Persisted::Scalar(Value::Entity(*id)),
-        ScriptValue::Vec3(v) => Persisted::Scalar(Value::Vec3(*v)),
-        // By value, like every other string a field holds: an arena handle
-        // would be stale by the next frame, let alone across a save.
-        ScriptValue::Str(text) => Persisted::Owned(Object::Str(text.clone())),
-        _ => return None,
-    })
-}
-
-/// The scene form of a stored value.
-///
-/// An unset slot yields `None` rather than a `void` field: a scene that recorded
-/// "this field has no value" would load it as such and shadow the default the
-/// initialiser is meant to give it.
-fn to_script_value(value: &Persisted) -> Option<ScriptValue> {
-    Some(match value {
-        Persisted::Scalar(Value::Unit) => return None,
-        Persisted::Scalar(Value::Bool(flag)) => ScriptValue::Bool(*flag),
-        Persisted::Scalar(Value::Int(number)) => ScriptValue::Int(*number),
-        Persisted::Scalar(Value::Float(number)) => ScriptValue::Float(*number),
-        Persisted::Scalar(Value::Entity(id)) => ScriptValue::Entity(*id),
-        Persisted::Scalar(Value::Vec3(v)) => ScriptValue::Vec3(*v),
-        // A string in a register is a *reference* into the program or the
-        // arena, and neither survives the frame — which is why a field's text
-        // is kept owned, and why only the owned form is readable here.
-        Persisted::Scalar(Value::Str(_)) | Persisted::Scalar(Value::Null) => return None,
-        Persisted::Owned(Object::Str(text)) => ScriptValue::Str(text.clone()),
-        Persisted::Owned(Object::Array(_)) => return None,
     })
 }
 

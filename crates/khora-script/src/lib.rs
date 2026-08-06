@@ -53,6 +53,7 @@ extern crate self as khora_script;
 
 pub mod arena;
 pub mod ast;
+pub mod bridge;
 pub mod bytecode;
 pub mod diagnostics;
 pub mod dispatch;

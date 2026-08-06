@@ -38,6 +38,7 @@ pub mod buffer;
 pub mod command;
 pub mod event;
 pub mod snapshot;
+pub mod table;
 pub mod value;
 pub mod writeback;
 

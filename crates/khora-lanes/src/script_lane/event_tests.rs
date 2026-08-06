@@ -260,3 +260,100 @@ fn two_behaviors_share_a_module() {
     assert!(program.layout("Attacker").is_some());
     assert!(program.layout("Guard").is_some());
 }
+
+// ─── Ce qu'un événement peut porter ─────────────────────────────────────────
+
+/// Reads a field expected to hold a vector.
+fn vector(runtime: &ScriptRuntime, slot: usize) -> Option<khora_core::math::Vec3> {
+    match runtime.peek(entity(0), "Guard")?.fields.get(slot)? {
+        Persisted::Scalar(value) => value.as_vec3(),
+        _ => None,
+    }
+}
+
+/// Reads a field expected to hold text.
+fn text(runtime: &ScriptRuntime, slot: usize) -> Option<String> {
+    match runtime.peek(entity(0), "Guard")?.fields.get(slot)? {
+        khora_script::arena::Persisted::Owned(khora_script::arena::Object::Str(s)) => {
+            Some(s.clone())
+        }
+        _ => None,
+    }
+}
+
+/// **The bug a single value bridge exists to make impossible.**
+///
+/// `Raise` *can* carry a `Vec3` — the emitting side maps it. The delivery side
+/// cannot take one, because its conversion was written without that arm. The
+/// mismatch is not a dropped event: it is an `UnsupportedArgument`, which the
+/// lane reads as a fault, which disables the target behavior **for good**.
+///
+/// Two halves of one translation, written weeks apart, that never agreed.
+#[test]
+fn an_event_can_carry_a_vector() {
+    let view = one_guard();
+    let mut runtime = runtime_of(
+        r#"
+        behavior Guard {
+            Vec3 hit;
+            int hits = 0;
+
+            void OnSpawn() {
+                Raise(this, "Hit", Vec3(1.0, 2.0, 3.0));
+            }
+
+            on Hit(Vec3 where) {
+                hit = where;
+                hits += 1;
+            }
+        }
+        "#,
+    );
+    let mut host = Host::new();
+
+    run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
+    let raised = host.take_events();
+    let report = run_behaviors(&view, &raised, &mut runtime, &mut host, u64::MAX);
+
+    assert_eq!(report.faulted, 0, "the delivery refused the payload");
+    assert_eq!(field(&runtime, "Guard", 1), Some(1), "the handler ran");
+    assert_eq!(
+        vector(&runtime, 0),
+        Some(khora_core::math::Vec3::new(1.0, 2.0, 3.0)),
+        "and the vector arrived intact"
+    );
+}
+
+/// The same for text, and the same cause. A string reaching a register has to be
+/// allocated somewhere — which is precisely why the old conversion refused it
+/// rather than doing it.
+#[test]
+fn an_event_can_carry_text() {
+    let view = one_guard();
+    let mut runtime = runtime_of(
+        r#"
+        behavior Guard {
+            string last;
+            int hits = 0;
+
+            void OnSpawn() {
+                Raise(this, "Named", "boss");
+            }
+
+            on Named(string who) {
+                last = who;
+                hits += 1;
+            }
+        }
+        "#,
+    );
+    let mut host = Host::new();
+
+    run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
+    let raised = host.take_events();
+    let report = run_behaviors(&view, &raised, &mut runtime, &mut host, u64::MAX);
+
+    assert_eq!(report.faulted, 0, "the delivery refused the payload");
+    assert_eq!(field(&runtime, "Guard", 1), Some(1), "the handler ran");
+    assert_eq!(text(&runtime, 0).as_deref(), Some("boss"));
+}

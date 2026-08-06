@@ -38,7 +38,7 @@
 //! delivery, against the handler finally resolved, which is the only place the
 //! check can be real.
 
-use khora_core::script::{ScriptEvent, ScriptValue};
+use khora_core::script::ScriptEvent;
 
 use super::{NativeContext, NativeError, NativeFn, NativeTy};
 use crate::vm::Value;
@@ -73,35 +73,15 @@ fn raise(context: &mut NativeContext<'_>, args: &[Value]) -> Result<Value, Nativ
 
     let mut event = ScriptEvent::new(target, name);
     for value in payload {
-        event = event.with(carried(*value, context)?);
+        // Through the one bridge, so what an event can carry is exactly what a
+        // handler can receive. Two tables were how a `Vec3` became an event the
+        // delivery refused.
+        let carried = crate::bridge::from_register(*value, context.strings, context.arena)
+            .map_err(|why| NativeError::new(format!("`Raise` cannot carry it: {why}")))?;
+        event = event.with(carried);
     }
     context.events.push(event);
     Ok(Value::Unit)
-}
-
-/// The boundary value a register value becomes when an event carries it.
-///
-/// The mirror of `dispatch::to_register`, which unpacks it again at delivery.
-/// Text is copied rather than referenced: the arena it might live in is freed at
-/// the end of this frame, and the event is delivered in the next one.
-fn carried(value: Value, context: &NativeContext<'_>) -> Result<ScriptValue, NativeError> {
-    Ok(match value {
-        Value::Unit => ScriptValue::Unit,
-        Value::Bool(flag) => ScriptValue::Bool(flag),
-        Value::Int(number) => ScriptValue::Int(number),
-        Value::Float(number) => ScriptValue::Float(number),
-        Value::Entity(id) => ScriptValue::Entity(id),
-        Value::Vec3(vector) => ScriptValue::Vec3(vector),
-        Value::Str(_) => ScriptValue::Str(context.string(value)?.to_owned()),
-        // `null` is the absence of an optional, and an event argument that was
-        // absent would arrive as a value the handler's parameter cannot be. The
-        // handler declares `int amount`, not `int? amount`.
-        Value::Null => {
-            return Err(NativeError::new(
-                "`Raise` cannot carry `null` — an event argument has to be a value",
-            ))
-        }
-    })
 }
 
 // Submitted like anything `#[ergon_fn]` writes, so the discovered registry

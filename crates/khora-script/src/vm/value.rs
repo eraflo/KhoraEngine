@@ -47,17 +47,29 @@ pub enum Value {
     Entity(EntityId),
     /// Text, wherever it lives.
     Str(StrRef),
+    /// A 2D vector.
+    Vec2(khora_core::math::Vec2),
     /// A position, direction or scale.
     ///
-    /// Inline like [`Entity`](Self::Entity) rather than through the arena: it is
-    /// three floats, which a register already holds, and gameplay computes
-    /// vectors constantly — an arena allocation per intermediate would make the
-    /// commonest arithmetic in a game the most expensive thing in the frame.
-    ///
-    /// The only engine type a register carries today. `Quat` and `Color` follow
-    /// the same road when something needs them; adding them for symmetry alone
-    /// would widen every register for values nothing produces.
+    /// Inline like [`Entity`](Self::Entity) rather than through the arena:
+    /// gameplay computes vectors constantly, and an arena allocation per
+    /// intermediate would make the commonest arithmetic in a game the most
+    /// expensive thing in the frame.
     Vec3(khora_core::math::Vec3),
+    /// A 4D vector.
+    Vec4(khora_core::math::Vec4),
+    /// A rotation.
+    Quat(khora_core::math::Quaternion),
+    /// A linear colour.
+    ///
+    /// These five widen a register to the largest of them — sixteen bytes plus
+    /// the tag. That is the price of the table in
+    /// [`script_value_table`](khora_core::script_value_table) covering every
+    /// engine type at once, and it is the right price: the alternative was a
+    /// register that carried only what someone had needed so far, which is
+    /// exactly the asymmetry that let an event carry a vector the delivery then
+    /// refused.
+    Color(khora_core::math::LinearRgba),
     /// Absent optional.
     Null,
 }
@@ -165,7 +177,7 @@ impl Value {
         }
     }
 
-    /// The vector inside, or `None`.
+    /// The 3D vector inside, or `None`.
     pub fn as_vec3(self) -> Option<khora_core::math::Vec3> {
         match self {
             Self::Vec3(v) => Some(v),
@@ -198,7 +210,11 @@ impl Value {
             Self::Bool(_) => "bool",
             Self::Entity(_) => "Entity",
             Self::Str(_) => "string",
+            Self::Vec2(_) => "Vec2",
             Self::Vec3(_) => "Vec3",
+            Self::Vec4(_) => "Vec4",
+            Self::Quat(_) => "Quat",
+            Self::Color(_) => "Color",
             Self::Null => "null",
         }
     }

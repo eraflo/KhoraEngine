@@ -363,8 +363,14 @@ fn an_event_with_the_wrong_arity_is_refused() {
     assert_eq!(health(&host), 100, "nothing ran");
 }
 
-/// An argument a register cannot hold is refused rather than dropped: an event
-/// that silently lost its payload would be far harder to see.
+/// An argument a register genuinely cannot hold is refused rather than dropped:
+/// an event that silently lost its payload would be far harder to see.
+///
+/// This once asserted that a `Vec3` was such a case. It was not — it was one
+/// half of a translation written twice, where the raising side knew about
+/// vectors and the delivery side did not. A single bridge removed the asymmetry,
+/// so the example had to become something that is *actually* unrepresentable: a
+/// list, which a register cannot name.
 #[test]
 fn an_argument_a_register_cannot_hold_is_refused() {
     let program = build(GUARD);
@@ -372,7 +378,7 @@ fn an_argument_a_register_cannot_hold_is_refused() {
     let mut host = guard_host(100);
 
     let event =
-        ScriptEvent::new(target, "Damaged").with(ScriptValue::Vec3(khora_core::math::Vec3::ONE));
+        ScriptEvent::new(target, "Damaged").with(ScriptValue::Array(vec![ScriptValue::Int(1)]));
     let refused = deliver(
         &program,
         "Guard",
@@ -381,13 +387,47 @@ fn an_argument_a_register_cannot_hold_is_refused() {
         u64::MAX,
         living(&[target]),
     )
-    .expect_err("a Vec3 does not fit a register yet");
+    .expect_err("a list does not fit a register");
 
     assert!(matches!(
         refused,
         NotDelivered::UnsupportedArgument { index: 0, .. }
     ));
-    assert!(refused.to_string().contains("Vec3"));
+}
+
+/// And a `Vec3` **does** fit one — the case this file used to get backwards.
+#[test]
+fn a_vector_argument_reaches_the_handler() {
+    let program = build(
+        r#"
+        behavior Guard {
+            int health = 100;
+            Vec3 hit;
+
+            on Damaged(Vec3 where) { hit = where; }
+        }
+        "#,
+    );
+    let target = entity(1);
+    let mut host = guard_host(100);
+
+    let event =
+        ScriptEvent::new(target, "Damaged").with(ScriptValue::Vec3(khora_core::math::Vec3::ONE));
+    let delivered = deliver(
+        &program,
+        "Guard",
+        &event,
+        &mut host,
+        u64::MAX,
+        living(&[target]),
+    )
+    .expect("a Vec3 fits a register");
+
+    assert_eq!(delivered.outcome, Run::Completed);
+    assert_eq!(
+        host.fields.get(1),
+        Some(&Persisted::Scalar(Value::Vec3(khora_core::math::Vec3::ONE)))
+    );
 }
 
 // ─── The queue ──────────────────────────────────────────────────────────────
