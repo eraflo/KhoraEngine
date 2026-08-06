@@ -53,6 +53,11 @@ pub struct ScriptEvent {
     pub args: Vec<ScriptValue>,
 }
 
+impl crate::script::Supersedes for ScriptEvent {
+    // The default — nothing. Two collisions in one frame are two events, and a
+    // producer that meant to send one should send one.
+}
+
 impl ScriptEvent {
     /// An event carrying nothing.
     pub fn new(target: EntityId, name: impl Into<String>) -> Self {

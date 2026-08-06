@@ -43,11 +43,19 @@ use std::path::Path;
 use std::sync::Arc;
 
 use khora_core::lane::OutputDeck;
+use khora_core::script::Pending;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
-use khora_data::flow::{PendingScriptReloads, ScriptReload};
+use khora_script::reload::ScriptReload;
 
 use crate::asset::decoders::script::imports_of;
+
+/// Where this pump leaves what it recompiled, for the scripting agent to drain.
+///
+/// Named here rather than spelled out at each use: the pump is the only writer,
+/// so the queue's identity belongs beside it — and it saves the engine wiring a
+/// dependency on `khora-script` just to name the element type.
+pub type PendingReloads = Pending<ScriptReload>;
 use crate::asset::AssetWatcher;
 use crate::script_compile::{compile_module, DiskLoader};
 
@@ -137,7 +145,7 @@ fn importers_of(root: &Path, changed: &BTreeSet<String>) -> BTreeSet<String> {
 ///
 /// Returns how many compiled. A module that does not compile is reported and
 /// skipped: one broken script should not stop the others from running.
-pub fn load_all(script_root: &Path, pending: &PendingScriptReloads) -> usize {
+pub fn load_all(script_root: &Path, pending: &Pending<ScriptReload>) -> usize {
     let loader = DiskLoader::new(script_root);
     let mut loaded = 0;
 
@@ -197,7 +205,7 @@ fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
     if events.is_empty() {
         return;
     }
-    let Some(pending) = runtime.resources.get::<PendingScriptReloads>() else {
+    let Some(pending) = runtime.resources.get::<Pending<ScriptReload>>() else {
         return;
     };
 
@@ -368,7 +376,7 @@ mod load_tests {
         )
         .expect("writes");
 
-        let pending = PendingScriptReloads::new();
+        let pending = Pending::<ScriptReload>::new();
         assert_eq!(load_all(dir.path(), &pending), 2);
 
         let queued: Vec<String> = pending.drain().into_iter().map(|r| r.module).collect();
@@ -388,7 +396,7 @@ mod load_tests {
         )
         .expect("writes");
 
-        let pending = PendingScriptReloads::new();
+        let pending = Pending::<ScriptReload>::new();
         load_all(dir.path(), &pending);
 
         assert_eq!(
@@ -406,7 +414,7 @@ mod load_tests {
         std::fs::write(dir.path().join("good.erg"), "fn void A() { }").expect("writes");
         std::fs::write(dir.path().join("broken.erg"), "behavior {{{").expect("writes");
 
-        let pending = PendingScriptReloads::new();
+        let pending = Pending::<ScriptReload>::new();
         assert_eq!(load_all(dir.path(), &pending), 1);
         assert_eq!(
             pending.drain().first().map(|r| r.module.clone()),
@@ -417,7 +425,7 @@ mod load_tests {
     #[test]
     fn an_empty_root_loads_nothing_and_does_not_fail() {
         let dir = tempfile::TempDir::new().expect("a temp dir");
-        let pending = PendingScriptReloads::new();
+        let pending = Pending::<ScriptReload>::new();
 
         assert_eq!(load_all(dir.path(), &pending), 0);
         assert!(pending.is_empty());

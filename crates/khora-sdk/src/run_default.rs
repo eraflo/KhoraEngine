@@ -453,9 +453,9 @@ pub fn run_default() -> Result<()> {
         }
 
         // Where recompiled modules wait for the frame that applies them. Shared
-        // between the pump that writes and the flow that drains, which is why it
-        // is a resource rather than a field on either.
-        let pending_scripts = khora_data::flow::PendingScriptReloads::new();
+        // between the pump that writes and the agent that drains, which is why
+        // it is a resource rather than a field on either.
+        let pending_scripts = khora_io::script_hot_reload::PendingReloads::new();
 
         // The initial load. The pump reacts to *changes*, so without this a game
         // starts with no programs and its scripts only begin working once their
@@ -474,7 +474,7 @@ pub fn run_default() -> Result<()> {
         // forgets to create.
         runtime
             .resources
-            .insert(khora_data::flow::PendingScriptEvents::new());
+            .insert(khora_core::script::Pending::<khora_core::script::ScriptEvent>::new());
     })?;
     Ok(())
 }

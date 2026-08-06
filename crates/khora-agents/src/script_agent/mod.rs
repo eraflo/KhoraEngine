@@ -47,10 +47,11 @@ use khora_core::control::gorna::{
     StrategyOption,
 };
 use khora_core::lane::{LaneContext, LaneRegistry, Ref, Slot};
-use khora_core::script::{CommandBuffer, EventQueue, ScriptStateWriteback};
+use khora_core::script::{CommandBuffer, EventQueue, Pending, ScriptEvent, ScriptStateWriteback};
 use khora_core::{EngineContext, Stopwatch};
-use khora_data::flow::{ScriptEventView, ScriptReloadView, ScriptView};
+use khora_data::flow::ScriptView;
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
+use khora_script::reload::ScriptReload;
 use khora_script::vm::Program;
 
 /// Instructions per millisecond, before anything has been measured.
@@ -87,7 +88,12 @@ pub struct ScriptingAgent {
     /// Kept by the agent rather than routed through the `World` and back: an
     /// event from one behavior to another never leaves scripting, and the round
     /// trip would cost two frames of latency and a deck slot nothing else reads.
-    /// Engine-raised events take the other road, through the bus.
+    /// Engine-raised events arrive the other way, through
+    /// [`Pending<ScriptEvent>`](Pending) — a queue the engine fills and this
+    /// agent drains. The two stay apart on purpose: putting script-to-script
+    /// traffic in a shared resource would move the agent's own state somewhere
+    /// anything could reach it, which is the opposite of what makes its
+    /// isolation claim true.
     inbox: EventQueue,
 }
 
@@ -167,17 +173,16 @@ impl Agent for ScriptingAgent {
         // Applied before anything runs, so a frame never executes the version
         // the author has just replaced. Arriving through the bus rather than
         // from a shared cache is what keeps `access` honest.
-        if let Some(reloads) = context.bus.get::<ScriptReloadView>() {
-            apply_reloads(&mut self.runtime, reloads);
+        if let Some(pending) = context.locked::<Pending<ScriptReload>>() {
+            apply_reloads(&mut self.runtime, &pending.drain());
         }
 
-        // Taken before anything can return early. The flow drains its queue into
-        // the view whether or not this agent gets as far as running, so an event
-        // read later than here would be one the engine raised and nobody ever
-        // heard.
-        if let Some(raised) = context.bus.get::<ScriptEventView>() {
-            for event in &raised.events {
-                self.inbox.push(event.clone());
+        // Drained before anything can return early. An event left in the queue
+        // because this agent bailed out below would be one the engine raised and
+        // nobody ever heard.
+        if let Some(pending) = context.locked::<Pending<ScriptEvent>>() {
+            for event in pending.drain() {
+                self.inbox.push(event);
             }
         }
 
@@ -268,10 +273,17 @@ impl Agent for ScriptingAgent {
         // Both slots the lane fills, not just the interesting one. A slot
         // written but not declared is one the check cannot see, so the collision
         // it exists to catch would surface as a lost writeback at the merge.
-        Contention::none().writing_deck([
-            TypeId::of::<CommandBuffer>(),
-            TypeId::of::<ScriptStateWriteback>(),
-        ])
+        //
+        // The two queues are `locking` rather than `reading` because draining
+        // is a write: a second agent reading one of them beside this drain
+        // would see events this agent has already taken.
+        Contention::none()
+            .writing_deck([
+                TypeId::of::<CommandBuffer>(),
+                TypeId::of::<ScriptStateWriteback>(),
+            ])
+            .locking::<Pending<ScriptReload>>()
+            .locking::<Pending<ScriptEvent>>()
     }
 
     fn execution_timing(&self) -> ExecutionTiming {
@@ -321,8 +333,8 @@ impl ScriptingAgent {
 /// The reporting is the point of doing it here rather than inside the runtime:
 /// a rename drops a field's value, and an author who is not told is left to
 /// discover it in whatever the guard does next.
-fn apply_reloads(runtime: &mut ScriptRuntime, view: &ScriptReloadView) {
-    for reload in &view.reloaded {
+fn apply_reloads(runtime: &mut ScriptRuntime, reloads: &[ScriptReload]) {
+    for reload in reloads {
         for report in runtime.reload(&reload.module, reload.program.clone()) {
             if report.lost_anything() {
                 log::warn!(

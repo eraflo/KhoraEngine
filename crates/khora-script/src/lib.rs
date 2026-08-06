@@ -64,6 +64,7 @@ pub mod lifecycle;
 pub mod modules;
 pub mod native;
 pub mod parser;
+pub mod reload;
 pub mod types;
 pub mod vm;
 

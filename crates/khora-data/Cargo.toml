@@ -10,8 +10,6 @@ description = "Data layouts, allocators, and streaming systems"
 khora-core = { path = "../khora-core" }
 
 # The reload flow carries a compiled `Program` across to the script agent.
-# khora-script depends only on khora-core, so this does not invert the descent.
-khora-script = { path = "../khora-script" }
 khora-macros = { path = "../khora-macros" }
 
 log = "0.4"

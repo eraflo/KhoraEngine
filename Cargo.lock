@@ -2669,7 +2669,6 @@ dependencies = [
  "inventory",
  "khora-core",
  "khora-macros",
- "khora-script",
  "log",
  "rmp-serde",
  "ron",
