@@ -18,10 +18,14 @@
 
 use std::collections::{HashMap, VecDeque};
 
-use khora_core::{ecs::entity::EntityId, math::Mat4};
+use khora_core::{
+    ecs::entity::EntityId,
+    math::{AffineTransform, Mat4},
+};
 
 use crate::ecs::{
-    DataSystemRegistration, GlobalTransform, Parent, TickPhase, Transform, Without, World,
+    DataSystemRegistration, GlobalTransform, Parent, SimulatedTransform, TickPhase, Transform,
+    Without, World,
 };
 
 /// Propagates local `Transform` changes through the scene hierarchy to
@@ -30,13 +34,30 @@ use crate::ecs::{
 /// Performs a Breadth-First Search (BFS) traversal: parent transforms are
 /// computed before their children, ensuring correctness in a single pass.
 pub fn transform_propagation_system(world: &mut World) {
+    // Whose pose the simulation owns this frame.
+    //
+    // Collected first because the queries below take the world mutably, and
+    // consulted at every step because a simulated pose is **taken whole**: it
+    // is already a world pose, so composing it with a parent would apply that
+    // parent's transform twice. That is precisely what used to happen — the
+    // writeback wrote the provider's world pose into the *local* `Transform`
+    // and this system then multiplied it by the parent again, so a parented
+    // body drifted by its parent's transform every single frame.
+    let simulated: HashMap<EntityId, AffineTransform> = world
+        .query::<(EntityId, &SimulatedTransform)>()
+        .map(|(id, pose)| (id, pose.0))
+        .collect();
+
     // Stage 1: initialize the work queue with all root entities.
     // A root has `Transform` and `GlobalTransform` but no `Parent`.
     let mut queue: VecDeque<EntityId> = VecDeque::new();
     for (id, transform, global_transform, _) in
         world.query::<(EntityId, &Transform, &mut GlobalTransform, Without<Parent>)>()
     {
-        global_transform.0 = transform.to_mat4().into();
+        global_transform.0 = match simulated.get(&id) {
+            Some(pose) => *pose,
+            None => transform.to_mat4().into(),
+        };
         queue.push_back(id);
     }
 
@@ -67,12 +88,16 @@ pub fn transform_propagation_system(world: &mut World) {
             let Some(local_transform) = world.get::<Transform>(child_id) else {
                 continue;
             };
-            let child_matrix = Mat4::from(parent_matrix) * local_transform.to_mat4();
+            let child_matrix = match simulated.get(&child_id) {
+                // The solver placed it in the world; the parent has no say.
+                Some(pose) => *pose,
+                None => (Mat4::from(parent_matrix) * local_transform.to_mat4()).into(),
+            };
             // Only enqueue children whose `GlobalTransform` we successfully
             // wrote — that's the invariant the next iteration of this loop
             // relies on. Transform-only children stay out of the queue.
             if let Some(global_transform) = world.get_mut::<GlobalTransform>(child_id) {
-                global_transform.0 = child_matrix.into();
+                global_transform.0 = child_matrix;
                 queue.push_back(child_id);
             }
         }
@@ -105,7 +130,7 @@ inventory::submit! {
 mod tests {
     use super::*;
     use crate::ecs::{Children, GlobalTransform, Parent, SemanticDomain, Transform, World};
-    use khora_core::math::{Mat4, Vec3, EPSILON};
+    use khora_core::math::{AffineTransform, Mat4, Vec3, EPSILON};
 
     fn assert_matrix_approx_eq(a: Mat4, b: Mat4) {
         for i in 0..4 {
@@ -157,5 +182,83 @@ mod tests {
 
         let expected_matrix = Mat4::from_translation(Vec3::new(10.0, 2.0, 0.0));
         assert_matrix_approx_eq(child_global_transform.0.into(), expected_matrix);
+    }
+
+    /// **The bug a parented rigid body had, every single frame.**
+    ///
+    /// A solver places a body in the world. The old writeback wrote that world
+    /// pose into the *local* `Transform`, and this system then multiplied it by
+    /// the parent again — so the entity drifted by its parent's transform on
+    /// every frame, and the physics sync's "teleport detection" fired each time
+    /// and snapped it back. A simulated pose is taken whole.
+    #[test]
+    fn a_simulated_child_ignores_its_parents_transform() {
+        let mut world = World::new();
+        let parent = world.spawn((
+            Transform::from_translation(Vec3::new(100.0, 0.0, 0.0)),
+            GlobalTransform::identity(),
+        ));
+        let child = world.spawn((
+            Transform::from_translation(Vec3::new(5.0, 0.0, 0.0)),
+            GlobalTransform::identity(),
+            Parent(parent),
+            SimulatedTransform::from_parts(
+                Vec3::new(1.0, 2.0, 3.0),
+                khora_core::math::Quat::IDENTITY,
+            ),
+        ));
+
+        transform_propagation_system(&mut world);
+
+        let global = world.get::<GlobalTransform>(child).unwrap();
+        assert_matrix_approx_eq(
+            global.0.into(),
+            Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0)),
+        );
+    }
+
+    /// A root the simulation owns takes its pose whole too, rather than being
+    /// recomputed from a placement the author has not touched since.
+    #[test]
+    fn a_simulated_root_takes_the_simulated_pose() {
+        let mut world = World::new();
+        let entity = world.spawn((
+            Transform::from_translation(Vec3::new(0.0, 10.0, 0.0)),
+            GlobalTransform::identity(),
+            SimulatedTransform::from_parts(
+                Vec3::new(0.0, 4.0, 0.0),
+                khora_core::math::Quat::IDENTITY,
+            ),
+        ));
+
+        transform_propagation_system(&mut world);
+
+        assert_matrix_approx_eq(
+            world.get::<GlobalTransform>(entity).unwrap().0.into(),
+            Mat4::from_translation(Vec3::new(0.0, 4.0, 0.0)),
+        );
+    }
+
+    /// And an entity nothing simulates still composes with its parent — the
+    /// preference is a preference, not a replacement.
+    #[test]
+    fn an_unsimulated_child_still_composes() {
+        let mut world = World::new();
+        let parent = world.spawn((
+            Transform::from_translation(Vec3::new(100.0, 0.0, 0.0)),
+            GlobalTransform::identity(),
+        ));
+        let child = world.spawn((
+            Transform::from_translation(Vec3::new(5.0, 0.0, 0.0)),
+            GlobalTransform::identity(),
+            Parent(parent),
+        ));
+
+        transform_propagation_system(&mut world);
+
+        assert_matrix_approx_eq(
+            world.get::<GlobalTransform>(child).unwrap().0.into(),
+            Mat4::from_translation(Vec3::new(105.0, 0.0, 0.0)),
+        );
     }
 }
