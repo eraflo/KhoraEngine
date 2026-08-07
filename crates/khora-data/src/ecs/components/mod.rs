@@ -25,6 +25,7 @@ mod name;
 mod parent;
 mod physics;
 mod script;
+mod simulated_transform;
 mod tag;
 mod transform;
 
@@ -41,5 +42,6 @@ pub use name::*;
 pub use parent::*;
 pub use physics::*;
 pub use script::*;
+pub use simulated_transform::*;
 pub use tag::*;
 pub use transform::*;

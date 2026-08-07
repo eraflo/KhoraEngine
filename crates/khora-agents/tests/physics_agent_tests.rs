@@ -101,6 +101,19 @@ fn step_n(agent: &mut PhysicsAgent, world: &mut World, runtime: &Arc<Runtime>, n
     }
 }
 
+/// Where the simulation put an entity, which is what these tests are about.
+///
+/// Not `Transform`: that is the author's placement, and the physics writeback
+/// stopped overwriting it. A test that read it would be asking where the
+/// designer put the thing, not where it fell to.
+fn simulated_y(world: &World, entity: khora_core::ecs::entity::EntityId) -> f32 {
+    world
+        .get::<khora_data::ecs::SimulatedTransform>(entity)
+        .expect("the body is simulated, so it has a simulated pose")
+        .translation()
+        .y
+}
+
 /// Helper to build a fresh `EngineContext` for `on_initialize` calls in tests.
 /// Bus and deck are owned by the caller's stack frame.
 fn make_init_ctx<'a>(
@@ -160,10 +173,18 @@ fn test_physics_gravity_influence() {
     // wide enough for the integrator's details and narrow enough to fail on
     // what was actually happening — one step's worth (~0.003 m) repeated
     // forever, which the old `y < 10.0` accepted without complaint.
-    let fallen = 10.0 - world.get::<Transform>(entity).unwrap().translation.y;
+    // Read from the **simulated** pose, not from `Transform`. `Transform` is
+    // the author's placement now and stays at 10.0 for the whole run — which is
+    // the point of the split, and what the assertion below double-checks.
+    let fallen = 10.0 - simulated_y(&world, entity);
     assert!(
         (0.10..0.20).contains(&fallen),
         "ten steps of gravity should fall about 0.15 m; fell {fallen}"
+    );
+    assert_eq!(
+        world.get::<Transform>(entity).unwrap().translation.y,
+        10.0,
+        "the authored placement is untouched by the simulation"
     );
 }
 
@@ -258,13 +279,11 @@ fn test_physics_kcc_grounding() {
         "Character should be grounded after moving down"
     );
 
-    let transform = world.get::<Transform>(char_id).unwrap();
-    // Sphere radius 0.3 + ground top 0.1 → sphere centre at ~0.4.
-    assert!(
-        transform.translation.y > 0.39 && transform.translation.y < 0.45,
-        "Unexpected KCC Y: {}",
-        transform.translation.y
-    );
+    // Sphere radius 0.3 + ground top 0.1 → sphere centre at ~0.4. The
+    // controller's resolved movement is simulation output, so it lands in the
+    // simulated pose like a body's.
+    let y = simulated_y(&world, char_id);
+    assert!(y > 0.39 && y < 0.45, "Unexpected KCC Y: {y}");
 }
 
 /// **What a scene load leaves behind, and why physics stopped after one.**
@@ -308,7 +327,7 @@ fn an_entity_loaded_without_a_global_transform_is_still_simulated() {
 
     step_n(&mut agent, &mut world, &runtime, 10);
 
-    let fallen = 10.0 - world.get::<Transform>(entity).unwrap().translation.y;
+    let fallen = 10.0 - simulated_y(&world, entity);
     assert!(
         fallen > 0.10,
         "a loaded body must fall like any other; fell {fallen}"

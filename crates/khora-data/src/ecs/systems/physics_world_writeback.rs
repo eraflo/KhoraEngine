@@ -29,8 +29,8 @@ use khora_core::physics::{CharacterControllerOptions, PhysicsProvider};
 use khora_core::Runtime;
 
 use crate::ecs::{
-    Collider, DataSystemRegistration, KinematicCharacterController, RigidBody, TickPhase,
-    Transform, World,
+    Collider, DataSystemRegistration, KinematicCharacterController, RigidBody, SimulatedTransform,
+    TickPhase, Transform, World,
 };
 use crate::flow::PhysicsStepResult;
 
@@ -64,13 +64,36 @@ fn physics_world_writeback(world: &mut World, runtime: &Runtime, deck: &mut Outp
     resolve_characters(world, provider);
 }
 
-/// Pull body transforms from the provider into Transform / RigidBody.
+/// Pull body poses from the provider into [`SimulatedTransform`].
+///
+/// **Not into `Transform`**, which it used to overwrite every frame.
+/// `Transform` is `Authored` — `ComponentProvenance` says an author writes it —
+/// so a designer's placement survived exactly until the first frame of physics.
+/// Saving mid-play recorded the fallen pose over it, the inspector showed a
+/// number nobody typed, and a gizmo anchored wherever gravity had left the body.
 fn sync_from_provider(world: &mut World, provider: &dyn PhysicsProvider) {
-    for (transform, rb) in world.query_mut::<(&mut Transform, &mut RigidBody)>() {
-        if let Some(handle) = rb.handle {
+    // Read first, write after: adding a component is a structural change, and
+    // an entity simulated for the first time has no `SimulatedTransform` yet.
+    let poses: Vec<(EntityId, SimulatedTransform)> = world
+        .query::<(EntityId, &RigidBody)>()
+        .filter_map(|(entity, rb)| {
+            let handle = rb.handle?;
             let (pos, rot) = provider.get_body_transform(handle);
-            transform.translation = pos;
-            transform.rotation = rot;
+            Some((entity, SimulatedTransform::from_parts(pos, rot)))
+        })
+        .collect();
+
+    for (entity, pose) in poses {
+        set_simulated(world, entity, pose);
+    }
+}
+
+/// Writes an entity's simulated pose, giving it one if this is its first frame.
+fn set_simulated(world: &mut World, entity: EntityId, pose: SimulatedTransform) {
+    match world.get_mut::<SimulatedTransform>(entity) {
+        Some(existing) => *existing = pose,
+        None => {
+            let _ = world.add_component(entity, pose);
         }
     }
 }
@@ -97,12 +120,29 @@ fn resolve_characters(world: &mut World, provider: &dyn PhysicsProvider) {
     }
 
     for (id, m, g) in results {
+        // The controller's resolved movement is simulation output like any
+        // other, so it lands where the body pose lands. Seeded from the
+        // authored placement on the first frame, because a character with no
+        // rigid body has nothing else to start from.
+        let from = world
+            .get::<SimulatedTransform>(id)
+            .map(|pose| (pose.translation(), pose.rotation()))
+            .or_else(|| {
+                world
+                    .get::<Transform>(id)
+                    .map(|placed| (placed.translation, placed.rotation))
+            });
+        if let Some((translation, rotation)) = from {
+            set_simulated(
+                world,
+                id,
+                SimulatedTransform::from_parts(translation + m, rotation),
+            );
+        }
+
         if let Some(kcc) = world.get_mut::<KinematicCharacterController>(id) {
             kcc.is_grounded = g;
             kcc.desired_translation = khora_core::math::Vec3::ZERO;
-        }
-        if let Some(transform) = world.get_mut::<Transform>(id) {
-            transform.translation = transform.translation + m;
         }
     }
 }
