@@ -167,8 +167,9 @@ impl<A: EngineApp> EngineCore<A> {
 
         // InputMap — engine-wide action / binding map. Inserted BEFORE
         // `app.setup` so apps can bind actions and cache the handle during
-        // setup (e.g. the sandbox's PlayerController). The engine ticks it
-        // each frame from `drain_inputs`.
+        // setup (e.g. the sandbox's PlayerController). The `input_map_update`
+        // data system derives it from the channel below, once per frame in
+        // `PreSimulation`.
         runtime
             .resources
             .insert(Arc::new(Mutex::new(khora_core::platform::InputMap::new())));
@@ -451,28 +452,17 @@ impl<A: EngineApp> EngineCore<A> {
         if let Some(telemetry) = self.telemetry.as_mut() {
             let _ = telemetry.tick();
         }
-        // Read rather than drained: the app hook is one reader among however
-        // many declare the channel, and taking the events would leave the
-        // others with a stream that empties itself depending on who ran first —
-        // the exact bug the asset watcher's subscriber cursors were written to
-        // fix.
-        let drained: Vec<InputEvent> = self.input_events.read_for("engine_frame");
-
-        // Tick the InputMap with this frame's events. Lock is short — only
-        // held for the duration of `update`. App code that needs the map
-        // (e.g. `runtime.resources.get::<Arc<Mutex<InputMap>>>()`) sees the
-        // updated state on its next lock.
-        if let Some(map_arc) = self
-            .runtime
-            .resources
-            .get::<Arc<Mutex<khora_core::platform::InputMap>>>()
-        {
-            if let Ok(mut map) = map_arc.lock() {
-                map.update(&drained);
-            }
-        }
-
-        drained
+        // Read rather than drained: this is one reader among however many
+        // declare the channel — the `input_map_update` system derives the
+        // action map from the same events — and taking them would leave a
+        // stream that empties itself depending on who ran first.
+        //
+        // Deriving `InputMap` is **not** done here. It is a tick invariant, so
+        // it is a registered `DataSystem` in `PreSimulation`
+        // (`khora_data::ecs::systems::input_map_update`), which is what
+        // `RULES.md` §3 requires of engine-tick wiring and what the phase is
+        // documented for.
+        self.input_events.read_for("engine_frame")
     }
 
     /// Stage 2 — run `app.update`, ECS maintenance, mesh sync, and scene/UI
