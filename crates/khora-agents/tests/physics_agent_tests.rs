@@ -34,6 +34,9 @@ fn make_runtime(
 ) -> Arc<Runtime> {
     let mut runtime = Runtime::new();
     runtime.backends.insert(Arc::clone(provider));
+    runtime
+        .resources
+        .insert(khora_core::physics::collision_channel());
     Arc::new(runtime)
 }
 
@@ -80,8 +83,9 @@ fn step_n(agent: &mut PhysicsAgent, world: &mut World, runtime: &Arc<Runtime>, n
         );
         agent.execute(&mut ctx);
 
-        // Maintenance — physics_world_writeback pulls provider state
-        // back into Transform / KCC / CollisionEvents.
+        // Maintenance — physics_world_writeback pulls provider state back into
+        // Transform / KCC, then collision_dispatch moves the lane's contacts
+        // from the deck to the collision channel.
         substrate::run_data_systems(
             world,
             runtime,

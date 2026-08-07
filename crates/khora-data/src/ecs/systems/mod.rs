@@ -23,6 +23,7 @@
 pub mod asset_eviction;
 pub mod audio_playback_writeback;
 pub mod capture_previous_transform;
+pub mod collision_dispatch;
 pub mod ecs_maintenance;
 pub mod gpu_material_sync;
 pub mod gpu_mesh_sync;

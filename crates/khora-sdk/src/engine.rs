@@ -181,6 +181,15 @@ impl<A: EngineApp> EngineCore<A> {
         // The engine's own handle is a clone of this one.
         runtime.resources.insert(self.input_events.clone());
 
+        // Where the physics lane's contacts land, for anything that listens.
+        // Inserted whether or not a consumer exists yet: a channel somebody has
+        // to create before writing to it is a channel somebody forgets to
+        // create, and the dispatch would then drop a frame of contacts with
+        // nothing to say about it.
+        runtime
+            .resources
+            .insert(khora_core::physics::collision_channel());
+
         // Frame graph — per-frame collection of render passes recorded by
         // agents during OUTPUT; `tick_with_services()` drains + submits it.
         let frame_graph: SharedFrameGraph = Arc::new(Mutex::new(FrameGraph::new()));

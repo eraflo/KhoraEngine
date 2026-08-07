@@ -359,22 +359,29 @@ pub(super) fn from_rapier_cl_handle(handle: rapier3d::geometry::ColliderHandle) 
     ColliderHandle(Slot { index, generation }.pack())
 }
 
+/// Set when the low 64 bits hold an entity.
+///
+/// A flag rather than treating zero as absent: `EntityId { index: 0,
+/// generation: 0 }` is the first entity a fresh `World` hands out, and it packs
+/// to zero. Reading that back as "no owner" made the first entity in a scene
+/// the one a collision could never name — silently, and only that one.
+const OWNED: u128 = 1 << 64;
+
 /// Packs an entity into the `u128` Rapier carries on every collider.
 ///
 /// The identity travels **with the collider**, so there is no index to keep in
 /// step with the world and nothing to invalidate when an entity dies: the
-/// collider dies with it. Zero means "no owner", which no live entity can
-/// collide with since a real one always has a generation of at least one.
+/// collider dies with it.
 fn stamp_owner(entity: Option<khora_core::ecs::entity::EntityId>) -> u128 {
     match entity {
-        Some(entity) => ((entity.generation as u128) << 32) | entity.index as u128,
+        Some(entity) => OWNED | ((entity.generation as u128) << 32) | entity.index as u128,
         None => 0,
     }
 }
 
 /// Reads back what [`stamp_owner`] wrote.
 pub(super) fn stamped_owner(user_data: u128) -> Option<khora_core::ecs::entity::EntityId> {
-    if user_data == 0 {
+    if user_data & OWNED == 0 {
         return None;
     }
     Some(khora_core::ecs::entity::EntityId {
@@ -430,6 +437,20 @@ mod owner_tests {
         assert_eq!(world.entity_of(new), Some(entity(4, 1)));
     }
 
+    /// **The first entity a `World` hands out is `{ index: 0, generation: 0 }`,
+    /// which packs to zero.** Treating zero as "no owner" made that one entity
+    /// the one a collision could never name — and only that one, so a scene
+    /// whose floor happened to be spawned first lost every contact with it.
+    #[test]
+    fn the_zeroth_entity_is_still_an_entity() {
+        let mut world = RapierPhysicsWorld::default();
+        let first = entity(0, 0);
+
+        let handle = world.add_collider(a_box(Some(first)));
+
+        assert_eq!(world.entity_of(handle), Some(first));
+    }
+
     /// A collider the ECS did not make — a query volume, a tool — answers
     /// nothing rather than answering entity zero.
     #[test]
@@ -451,5 +472,43 @@ mod owner_tests {
         world.remove_collider(handle);
 
         assert_eq!(world.entity_of(handle), None);
+    }
+
+    /// Isolates the provider: an overlapping pair that asked for events should
+    /// produce one.
+    ///
+    /// The ball needs a dynamic parent body. Rapier generates no contact
+    /// between two colliders that both count as fixed, and a collider with no
+    /// parent counts as fixed — so a test written without one measures that
+    /// rule rather than the event wiring.
+    #[test]
+    fn two_overlapping_colliders_report_a_contact() {
+        use khora_core::physics::{BodyType, RigidBodyDesc};
+
+        let mut world = RapierPhysicsWorld::default();
+
+        let mut floor = a_box(Some(entity(0, 0)));
+        floor.shape = ColliderShape::Box(Vec3::new(10.0, 0.5, 10.0));
+        world.add_collider(floor);
+
+        let body = world.add_body(RigidBodyDesc {
+            body_type: BodyType::Dynamic,
+            position: Vec3::new(0.0, 0.8, 0.0),
+            rotation: Quat::IDENTITY,
+            linear_velocity: Vec3::ZERO,
+            angular_velocity: Vec3::ZERO,
+            mass: 1.0,
+            ccd_enabled: false,
+        });
+        let mut ball = a_box(Some(entity(1, 0)));
+        ball.parent_body = Some(body);
+        world.add_collider(ball);
+
+        world.step(1.0 / 60.0);
+
+        assert!(
+            !world.take_collision_events().is_empty(),
+            "the overlap should have been reported"
+        );
     }
 }

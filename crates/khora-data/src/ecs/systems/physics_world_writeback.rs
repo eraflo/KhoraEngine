@@ -29,8 +29,8 @@ use khora_core::physics::{CharacterControllerOptions, PhysicsProvider};
 use khora_core::Runtime;
 
 use crate::ecs::{
-    Collider, CollisionEvents, DataSystemRegistration, KinematicCharacterController, RigidBody,
-    TickPhase, Transform, World,
+    Collider, DataSystemRegistration, KinematicCharacterController, RigidBody, TickPhase,
+    Transform, World,
 };
 use crate::flow::PhysicsStepResult;
 
@@ -62,7 +62,6 @@ fn physics_world_writeback(world: &mut World, runtime: &Runtime, deck: &mut Outp
 
     sync_from_provider(world, provider);
     resolve_characters(world, provider);
-    dispatch_collision_events(world, provider);
 }
 
 /// Pull body transforms from the provider into Transform / RigidBody.
@@ -104,19 +103,6 @@ fn resolve_characters(world: &mut World, provider: &dyn PhysicsProvider) {
         }
         if let Some(transform) = world.get_mut::<Transform>(id) {
             transform.translation = transform.translation + m;
-        }
-    }
-}
-
-/// Mirror the provider's collision-event buffer into every entity that
-/// declared a `CollisionEvents` component.
-fn dispatch_collision_events(world: &mut World, provider: &dyn PhysicsProvider) {
-    let events = provider.take_collision_events();
-    for (_, buffer) in world.query_mut::<(EntityId, &mut CollisionEvents)>() {
-        if events.is_empty() {
-            buffer.events.clear();
-        } else {
-            buffer.events = events.clone();
         }
     }
 }

@@ -28,7 +28,9 @@
 //!    new transforms, kinematic results, and collision events back into
 //!    the World during the `Maintenance` phase.
 
-use khora_core::physics::PhysicsProvider;
+use khora_core::physics::{
+    Collision, CollisionEvent, CollisionKind, ContactBatch, PhysicsProvider,
+};
 
 /// The standard physics lane for industrial-grade simulation.
 #[derive(Debug, Default)]
@@ -67,16 +69,44 @@ impl khora_core::lane::Lane for StandardPhysicsLane {
 
         provider.step(dt);
 
+        // Resolved here, while the provider is in hand. A contact leaves the
+        // backend naming two colliders; everything downstream wants two
+        // entities, and asking the provider is `O(1)` per handle because the
+        // owner is stamped on the collider itself. Leaving it to a consumer
+        // would mean handing raw backend handles across the deck and hoping
+        // they still resolve by the time somebody asks.
+        let contacts: Vec<Collision> = provider
+            .take_collision_events()
+            .into_iter()
+            .filter_map(|event| {
+                let (kind, first, second) = match event {
+                    CollisionEvent::Started(a, b) => (CollisionKind::Started, a, b),
+                    CollisionEvent::Stopped(a, b) => (CollisionKind::Stopped, a, b),
+                };
+                // A contact involving a collider the ECS does not own — a query
+                // volume, a tool's probe — has no entity to name and is not a
+                // gameplay event. Dropped rather than reported half-resolved.
+                Some(Collision {
+                    kind,
+                    a: provider.entity_of(first)?,
+                    b: provider.entity_of(second)?,
+                })
+            })
+            .collect();
+
         // Mark the simulation as having advanced this frame. The
         // `physics_world_writeback` DataSystem checks this slot and only
         // pulls fresh transforms from the provider when it's present —
         // unifying the Lane → Deck → DataSystem pattern across audio and
         // physics, and avoiding stale writebacks when the agent is paused.
         if let Some(deck_slot) = ctx.get::<Slot<OutputDeck>>() {
-            *deck_slot
-                .get()
-                .slot::<khora_data::flow::PhysicsStepResult>() =
+            let deck = deck_slot.get();
+            *deck.slot::<khora_data::flow::PhysicsStepResult>() =
                 khora_data::flow::PhysicsStepResult { dt };
+            // Extended, not replaced: the agent runs this lane once per fixed
+            // sub-step and there may be five in a frame, each with contacts of
+            // its own. Replacing would keep only the last sub-step's.
+            deck.slot::<ContactBatch>().contacts.extend(contacts);
         }
         Ok(())
     }
