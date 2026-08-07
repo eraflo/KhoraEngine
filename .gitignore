@@ -56,3 +56,8 @@ target/
 /AGENTS.md
 /CLAUDE.md
 # <<< khora-ai <<<
+
+# RPI working artefacts — scratch, emptied when the work lands (see docs/research/README.md)
+docs/research/*.md
+docs/plans/*.md
+!docs/research/README.md

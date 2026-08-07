@@ -11,7 +11,12 @@ code is written.
   e.g. `2026-07-18_lanebus-view-publishing.md`.
 - Produced by the [`research-codebase`](../../.agent/engine/skills/research-codebase/SKILL.md) skill,
   which distills the read-only research subagents' reports.
-- **Committed** to git — research is reviewable and reusable; `knowledge-locator` searches here first.
+- **Not committed.** These are working scratch: they describe a moment, not the system. Once the
+  work lands, the code and its comments are the truth, and a committed artefact becomes a second,
+  stale description that a later reader — or agent — mistakes for current intent. Delete the file
+  when the chantier it served is done.
+- A finding that outlives the work belongs in the code's own comments, or in
+  [`knowledge/`](../../.agent/engine/knowledge/MEMORY.md) — not in a file under this directory.
 - Structure: Question · Answer/summary · Relevant files (`path:line`) · How it works · Constraints ·
   Open questions.
 
