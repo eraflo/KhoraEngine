@@ -285,10 +285,6 @@ impl ScriptRuntime {
     }
 
     /// Whether none are.
-    pub fn is_empty(&self) -> bool {
-        self.programs.is_empty()
-    }
-
     /// The state of one entity's behavior, created empty if it is new.
     pub fn instance(&mut self, entity: EntityId, behavior: &str) -> &mut Instance {
         self.instances

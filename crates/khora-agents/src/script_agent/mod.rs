@@ -52,7 +52,6 @@ use khora_core::{EngineContext, Stopwatch};
 use khora_data::flow::ScriptView;
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
 use khora_script::reload::ScriptReload;
-use khora_script::vm::Program;
 
 /// Instructions per millisecond, before anything has been measured.
 ///
@@ -351,13 +350,4 @@ fn apply_reloads(runtime: &mut ScriptRuntime, reloads: &[ScriptReload]) {
             }
         }
     }
-}
-
-/// Gives the agent a compiled module to run.
-///
-/// A free function rather than a method, because `RULES.md` §8 keeps an agent's
-/// surface to the `Agent` trait — this is how the asset side hands over what it
-/// decoded without the agent growing an API of its own.
-pub fn load_module(agent: &mut ScriptingAgent, module: impl Into<String>, program: Program) {
-    agent.runtime.add_program(module, program);
 }

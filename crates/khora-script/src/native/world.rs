@@ -41,7 +41,7 @@ use khora_core::math::Vec3;
 use khora_core::script::WorldCommand;
 use khora_macros::ergon_fn;
 
-use super::{NativeContext, NativeError, NativeFn};
+use super::{NativeContext, NativeError};
 
 // ─── Reading ────────────────────────────────────────────────────────────────
 
@@ -136,21 +136,3 @@ fn detach(context: &mut NativeContext<'_>, entity: EntityId) {
         parent: None,
     });
 }
-
-/// Every world function, for a host that wants them without `inventory`.
-///
-/// The registry discovers these through `#[ergon_fn]` like any other, so this is
-/// for tests and for a host assembling a deliberately narrow surface.
-pub fn world() -> &'static [&'static NativeFn] {
-    WORLD
-}
-
-static WORLD: &[&NativeFn] = &[
-    &ERGON_POSITION,
-    &ERGON_TRANSLATE,
-    &ERGON_SET_POSITION,
-    &ERGON_SET_SCALE,
-    &ERGON_DESPAWN,
-    &ERGON_SET_PARENT,
-    &ERGON_DETACH,
-];

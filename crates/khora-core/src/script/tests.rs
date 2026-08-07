@@ -70,49 +70,6 @@ fn draining_empties_the_buffer() {
     assert!(buffer.is_empty());
 }
 
-/// **The determinism guarantee.** A parallel lane produces one buffer per
-/// worker, and worker completion order is not reproducible. Merging by an
-/// explicit key means the applied order comes from the scene instead.
-#[test]
-fn merging_follows_the_key_not_the_order_the_parts_arrive_in() {
-    let part = |index: u32| {
-        let mut buffer = CommandBuffer::new();
-        buffer.push(place(index, index as f32));
-        buffer
-    };
-
-    let in_order = CommandBuffer::merge_ordered(vec![(0, part(1)), (1, part(2)), (2, part(3))]);
-    // The same parts, handed over as if three workers had finished backwards.
-    let shuffled = CommandBuffer::merge_ordered(vec![(2, part(3)), (0, part(1)), (1, part(2))]);
-
-    assert_eq!(
-        in_order, shuffled,
-        "the merge must not observe arrival order"
-    );
-    assert_eq!(
-        in_order.as_slice(),
-        &[place(1, 1.0), place(2, 2.0), place(3, 3.0)]
-    );
-}
-
-#[test]
-fn merging_nothing_yields_nothing() {
-    assert!(CommandBuffer::merge_ordered(Vec::new()).is_empty());
-}
-
-#[test]
-fn appending_preserves_both_orders_and_empties_the_source() {
-    let mut first = CommandBuffer::new();
-    first.push(place(1, 1.0));
-    let mut second = CommandBuffer::new();
-    second.push(place(2, 2.0));
-
-    first.append(&mut second);
-
-    assert_eq!(first.as_slice(), &[place(1, 1.0), place(2, 2.0)]);
-    assert!(second.is_empty(), "the source was moved, not copied");
-}
-
 /// **The reporting guarantee.** Last-one-wins is a defensible rule and an awful
 /// thing to debug in silence, so the discarded write is named.
 #[test]

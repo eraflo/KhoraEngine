@@ -58,7 +58,6 @@ pub use builtins::builtins;
 pub use convert::ScriptType;
 pub use events::ERGON_RAISE;
 pub use ty::NativeTy;
-pub use world::world;
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{CommandBuffer, EventQueue};
@@ -435,16 +434,17 @@ impl NativeRegistry {
         self.functions.get(index).copied()
     }
 
+    /// Whether none are exposed.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// How many functions are exposed.
     pub fn len(&self) -> usize {
         self.functions.len()
     }
 
     /// Whether nothing is exposed.
-    pub fn is_empty(&self) -> bool {
-        self.functions.is_empty()
-    }
-
     /// Every function, in index order.
     pub fn iter(&self) -> impl Iterator<Item = &'static NativeFn> + '_ {
         self.functions.iter().copied()

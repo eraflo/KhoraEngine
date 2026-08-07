@@ -19,12 +19,12 @@
 //!
 //! # Order is a guarantee, not an accident
 //!
-//! Commands apply in the order they were emitted. If the lane runs behaviors in
-//! parallel, "the order they were emitted" stops being well defined — worker
-//! completion order is not reproducible, and a replay or a networked client
-//! would diverge from the same inputs. [`CommandBuffer::merge_ordered`] therefore
-//! merges per-worker buffers by an explicit key rather than by whoever finished
-//! first.
+//! Commands apply in the order they were emitted, and a `Vec` is enough for
+//! that only because the lane runs behaviors one after another
+//! (`script_lane::frame`). A lane that ran them on workers would lose the
+//! ordering to whoever finished first, and a replay or a networked client would
+//! diverge from the same inputs — so parallelising the lane means giving this
+//! type a merge keyed on something the scene decides, not adding a `join`.
 //!
 //! # Lost writes are reported, not discovered
 //!
@@ -77,12 +77,6 @@ impl CommandBuffer {
     }
 
     /// An empty buffer with room for `capacity` commands.
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            commands: Vec::with_capacity(capacity),
-        }
-    }
-
     /// Queues a command.
     pub fn push(&mut self, command: WorldCommand) {
         self.commands.push(command);
@@ -118,34 +112,12 @@ impl CommandBuffer {
     }
 
     /// Discards every command.
-    pub fn clear(&mut self) {
-        self.commands.clear();
-    }
-
     /// Moves `other`'s commands onto the end of this buffer, emptying it.
-    pub fn append(&mut self, other: &mut Self) {
-        self.commands.append(&mut other.commands);
-    }
-
     /// Merges buffers by an explicit order key.
     ///
     /// The key is what makes a parallel lane reproducible: sorting by it means
     /// the applied order depends on the scene, not on which worker finished
     /// first. Behavior declaration order is the intended key.
-    pub fn merge_ordered(parts: impl IntoIterator<Item = (u64, CommandBuffer)>) -> Self {
-        let mut parts: Vec<_> = parts.into_iter().collect();
-        // Stable, so two parts sharing a key keep the order they were handed in
-        // rather than being permuted by the sort itself.
-        parts.sort_by_key(|(key, _)| *key);
-
-        let total = parts.iter().map(|(_, buffer)| buffer.len()).sum();
-        let mut merged = Self::with_capacity(total);
-        for (_, mut buffer) in parts {
-            merged.append(&mut buffer);
-        }
-        merged
-    }
-
     /// Finds the writes that will be silently lost when this buffer is applied.
     ///
     /// Returned in a fixed order so a test — or a log a user is comparing across

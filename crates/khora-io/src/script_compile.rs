@@ -27,7 +27,7 @@
 //! hot-reload to get. Editing is iterative and most intermediate states do not
 //! compile.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use khora_script::diagnostics::Diagnostic;
 use khora_script::modules::SourceLoader;
@@ -46,11 +46,6 @@ impl DiskLoader {
     /// A loader rooted at `root`.
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
-    }
-
-    /// The directory it reads from.
-    pub fn root(&self) -> &Path {
-        &self.root
     }
 }
 

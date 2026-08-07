@@ -62,30 +62,14 @@ pub struct ScriptStateWriteback {
 
 impl ScriptStateWriteback {
     /// An empty writeback.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Queues one instance's state.
     pub fn push(&mut self, update: ScriptStateUpdate) {
         self.updates.push(update);
     }
 
     /// How many instances are queued.
-    pub fn len(&self) -> usize {
-        self.updates.len()
-    }
-
     /// Whether none are.
-    pub fn is_empty(&self) -> bool {
-        self.updates.is_empty()
-    }
-
     /// The queued updates.
-    pub fn as_slice(&self) -> &[ScriptStateUpdate] {
-        &self.updates
-    }
-
     /// Takes every update, leaving the allocation intact for the next frame.
     pub fn drain(&mut self) -> std::vec::Drain<'_, ScriptStateUpdate> {
         self.updates.drain(..)

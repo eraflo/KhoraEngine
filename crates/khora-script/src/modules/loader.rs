@@ -49,11 +49,6 @@ impl MemoryLoader {
         self.sources.insert(path.into(), source.into());
         self
     }
-
-    /// Adds a module in place.
-    pub fn insert(&mut self, path: impl Into<String>, source: impl Into<String>) {
-        self.sources.insert(path.into(), source.into());
-    }
 }
 
 impl SourceLoader for MemoryLoader {
