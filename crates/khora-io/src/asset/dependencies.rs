@@ -64,7 +64,13 @@ pub fn type_has_dependency_extractor(asset_type: &str) -> bool {
 /// root is one more thing that can disagree with where the files actually are —
 /// and a project that keeps its scripts directly under `assets/` gets an empty
 /// root, which is the right answer for it.
-fn script_root(path: &str) -> &str {
+///
+/// **The trailing slash is part of the answer**, so the result concatenates
+/// straight onto an import. The hot-reload pump wants the same segment as a
+/// directory name and trims it; that trim is the whole difference between the
+/// two uses, and it is one character in one place rather than a second copy of
+/// this rule that can drift from it.
+pub(crate) fn script_root(path: &str) -> &str {
     match path.find('/') {
         Some(index) => &path[..=index],
         None => "",

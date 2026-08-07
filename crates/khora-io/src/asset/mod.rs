@@ -16,7 +16,7 @@
 
 mod decoder;
 pub mod decoders;
-mod dependencies;
+pub(crate) mod dependencies;
 mod file;
 mod id_registry;
 mod index_builder;

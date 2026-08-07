@@ -25,8 +25,20 @@
 //! running code built against the previous version — the half of hot-reload that
 //! produces a game whose behaviour depends on which file was saved last.
 //!
-//! The set of importers is derived from the same import lists the asset index
-//! already extracts, so nothing here maintains a second graph.
+//! # Why not the asset index
+//!
+//! The index records each script's imports, so walking that edge backwards
+//! looks like the obvious way to find importers. It is not: editing an `.erg`
+//! file in place never reindexes it — the editor drops the cached handle and
+//! leaves the edges alone, and nothing in the runtime path reindexes at all. So
+//! the index's imports are the ones the file had at the last **create or
+//! delete**, and an author who adds an `import` and saves would get an edge the
+//! index has never seen. Reading the tree is slower and right; reading the
+//! index would be faster and wrong.
+//!
+//! What *is* shared is the parser: [`imports_of`] answers the same question for
+//! the index builder and for this pump, so there is one definition of what an
+//! import is even though there are two ways of collecting them.
 //!
 //! # Nothing is replaced until it compiles
 //!
@@ -38,7 +50,7 @@
 //! nothing — hot-reload is a development affordance, and its absence is the
 //! shipping path.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -62,17 +74,14 @@ use crate::script_compile::{compile_module, DiskLoader};
 /// The extension the pump reacts to.
 const ERGON_EXTENSION: &str = ".erg";
 
-/// The script root, relative to the assets directory.
+/// The script root as a directory name, relative to the assets directory.
 ///
-/// A convention rather than a setting, and the same one the asset index applies
-/// when it turns an import into a UUID — the two have to agree, so they agree by
-/// both being derived from where the file is rather than from a value someone
-/// can set in one place and forget in the other.
+/// The same rule the asset index applies when it turns an import into a UUID,
+/// borrowed rather than restated: a second copy of a convention is a convention
+/// that can drift. The index concatenates its answer onto an import and wants
+/// the trailing slash; this joins it as a path component and does not.
 fn script_root_of(rel_path: &str) -> &str {
-    match rel_path.find('/') {
-        Some(index) => &rel_path[..index],
-        None => "",
-    }
+    crate::asset::dependencies::script_root(rel_path).trim_end_matches('/')
 }
 
 /// The module path an `.erg` file is known by: its path under the script root.
@@ -87,47 +96,33 @@ fn module_path_of(rel_path: &str) -> Option<&str> {
     rel_path.strip_prefix(root)?.strip_prefix('/')
 }
 
-/// Every module under `root` that imports one of `changed`, transitively.
+/// Every module in `imports` that reaches one of `changed`, transitively.
 ///
 /// Walked outward from the edit rather than recompiling everything: a project
 /// with two hundred scripts should not pay for all of them because one changed.
 /// Bounded by the number of modules, since a module already in the set is not
 /// expanded twice — which is also what stops a cyclic import from looping here,
 /// even though the compiler will refuse it later.
-fn importers_of(root: &Path, changed: &BTreeSet<String>) -> BTreeSet<String> {
+///
+/// Takes the graph rather than a directory, and that is the point: the previous
+/// version re-walked the tree and re-read **every** file on each round of the
+/// fixpoint. Handing it a map read once makes the repetition impossible instead
+/// of merely avoided.
+fn importers_of(
+    imports: &BTreeMap<String, Vec<String>>,
+    changed: &BTreeSet<String>,
+) -> BTreeSet<String> {
     let mut affected = changed.clone();
     let mut grew = true;
 
     while grew {
         grew = false;
-        let Ok(entries) = walkdir::WalkDir::new(root)
-            .follow_links(false)
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()
-        else {
-            break;
-        };
-
-        for entry in entries {
-            if !entry.file_type().is_file() {
+        for (module, imported) in imports {
+            if affected.contains(module) {
                 continue;
             }
-            let Ok(relative) = entry.path().strip_prefix(root) else {
-                continue;
-            };
-            let module = relative.to_string_lossy().replace('\\', "/");
-            if !module.ends_with(ERGON_EXTENSION) || affected.contains(&module) {
-                continue;
-            }
-
-            let Ok(source) = std::fs::read_to_string(entry.path()) else {
-                continue;
-            };
-            if imports_of(&source)
-                .iter()
-                .any(|import| affected.contains(import))
-            {
-                affected.insert(module);
+            if imported.iter().any(|import| affected.contains(import)) {
+                affected.insert(module.clone());
                 grew = true;
             }
         }
@@ -149,7 +144,7 @@ pub fn load_all(script_root: &Path, pending: &Pending<ScriptReload>) -> usize {
     let loader = DiskLoader::new(script_root);
     let mut loaded = 0;
 
-    for module in modules_under(script_root) {
+    for module in modules_under(script_root).into_keys() {
         let compiled = compile_module(&loader, &module);
         match compiled.program {
             Some(program) => {
@@ -166,35 +161,40 @@ pub fn load_all(script_root: &Path, pending: &Pending<ScriptReload>) -> usize {
     loaded
 }
 
-/// Every `.erg` file under `root`, as module paths relative to it.
-fn modules_under(root: &Path) -> BTreeSet<String> {
-    let mut found = BTreeSet::new();
-    let mut stack = vec![root.to_path_buf()];
-
-    while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-                continue;
-            }
-            if !path
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("erg"))
-            {
-                continue;
-            }
-            if let Ok(relative) = path.strip_prefix(root) {
-                // Forward slashes, because that is how an `import` writes a
-                // path and how a module is named everywhere else.
-                found.insert(relative.to_string_lossy().replace('\\', "/"));
-            }
-        }
-    }
-    found
+/// Every `.erg` module under `root`, each with what it imports.
+///
+/// One walk and one read per file, serving both callers: the initial load wants
+/// the module names, and the pump wants the edges between them. Two walks lived
+/// seventy lines apart here — one on `read_dir`, one on `walkdir` — which is one
+/// walk more than there are questions to answer, and the surviving one is the
+/// same `walkdir` the index builder uses so there is one way to cross a tree.
+///
+/// A file that cannot be read contributes its name with no imports rather than
+/// vanishing: it still needs compiling, and the compiler is where an unreadable
+/// file gets its diagnostic.
+fn modules_under(root: &Path) -> BTreeMap<String, Vec<String>> {
+    walkdir::WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry.file_type().is_file()
+                && entry
+                    .path()
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("erg"))
+        })
+        .filter_map(|entry| {
+            let relative = entry.path().strip_prefix(root).ok()?;
+            // Forward slashes, because that is how an `import` writes a path
+            // and how a module is named everywhere else.
+            let module = relative.to_string_lossy().replace('\\', "/");
+            let imports = std::fs::read_to_string(entry.path())
+                .map(|source| imports_of(&source))
+                .unwrap_or_default();
+            Some((module, imports))
+        })
+        .collect()
 }
 
 fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
@@ -226,7 +226,7 @@ fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
     }
 
     let script_root = watcher.assets_root().join(root.unwrap_or_default());
-    let affected = importers_of(&script_root, &changed);
+    let affected = importers_of(&modules_under(&script_root), &changed);
     let loader = DiskLoader::new(&script_root);
 
     for module in affected {
@@ -295,7 +295,7 @@ mod tests {
         .expect("writes");
 
         let changed = BTreeSet::from(["shared.erg".to_owned()]);
-        let affected = importers_of(dir.path(), &changed);
+        let affected = importers_of(&modules_under(dir.path()), &changed);
 
         assert!(affected.contains("shared.erg"));
         assert!(affected.contains("guard.erg"), "the importer came too");
@@ -318,7 +318,10 @@ mod tests {
         )
         .expect("writes");
 
-        let affected = importers_of(dir.path(), &BTreeSet::from(["base.erg".to_owned()]));
+        let affected = importers_of(
+            &modules_under(dir.path()),
+            &BTreeSet::from(["base.erg".to_owned()]),
+        );
         assert_eq!(affected.len(), 3, "{affected:?}");
     }
 
@@ -330,7 +333,10 @@ mod tests {
         std::fs::write(dir.path().join("changed.erg"), "fn void A() { }").expect("writes");
         std::fs::write(dir.path().join("unrelated.erg"), "fn void B() { }").expect("writes");
 
-        let affected = importers_of(dir.path(), &BTreeSet::from(["changed.erg".to_owned()]));
+        let affected = importers_of(
+            &modules_under(dir.path()),
+            &BTreeSet::from(["changed.erg".to_owned()]),
+        );
         assert_eq!(affected.len(), 1);
         assert!(!affected.contains("unrelated.erg"));
     }
@@ -350,8 +356,96 @@ mod tests {
         )
         .expect("writes");
 
-        let affected = importers_of(dir.path(), &BTreeSet::from(["a.erg".to_owned()]));
+        let affected = importers_of(
+            &modules_under(dir.path()),
+            &BTreeSet::from(["a.erg".to_owned()]),
+        );
         assert_eq!(affected.len(), 2);
+    }
+
+    // ─── The closure, without a disk ────────────────────────────────────────
+    //
+    // These need no temp directory, which is the point of `importers_of` taking
+    // the graph: what it computes is a reachability question, and a question
+    // about a graph is answered fastest by being asked about a graph.
+
+    /// Builds an import graph without touching a filesystem.
+    fn graph(edges: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
+        edges
+            .iter()
+            .map(|(module, imports)| {
+                (
+                    (*module).to_owned(),
+                    imports.iter().map(|i| (*i).to_owned()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    /// **A chain propagates in one direction only.** `top` imports `middle`
+    /// imports `base`: editing `base` affects both, and editing `top` affects
+    /// nobody. The old shape passed this too, but only by re-reading three
+    /// files three times to find out.
+    #[test]
+    fn the_closure_follows_imports_upward_and_not_down() {
+        let imports = graph(&[
+            ("base.erg", &[]),
+            ("middle.erg", &["base.erg"]),
+            ("top.erg", &["middle.erg"]),
+        ]);
+
+        let from_base = importers_of(&imports, &BTreeSet::from(["base.erg".to_owned()]));
+        assert_eq!(from_base.len(), 3, "{from_base:?}");
+
+        let from_top = importers_of(&imports, &BTreeSet::from(["top.erg".to_owned()]));
+        assert_eq!(from_top, BTreeSet::from(["top.erg".to_owned()]));
+    }
+
+    /// A diamond delivers each importer once, not once per path that reaches
+    /// it — recompiling a module twice is wasted work, and queuing it twice
+    /// would make the second reload undo the first one's field values.
+    #[test]
+    fn a_module_reached_by_two_paths_appears_once() {
+        let imports = graph(&[
+            ("base.erg", &[]),
+            ("left.erg", &["base.erg"]),
+            ("right.erg", &["base.erg"]),
+            ("top.erg", &["left.erg", "right.erg"]),
+        ]);
+
+        let affected = importers_of(&imports, &BTreeSet::from(["base.erg".to_owned()]));
+        assert_eq!(affected.len(), 4, "{affected:?}");
+    }
+
+    /// An import naming a module that is not there — deleted, or mistyped —
+    /// leaves the graph alone. The compiler is where that gets its diagnostic;
+    /// the closure's job is not to have an opinion about it.
+    #[test]
+    fn an_import_of_a_missing_module_affects_nothing() {
+        let imports = graph(&[("guard.erg", &["gone.erg"])]);
+
+        let affected = importers_of(&imports, &BTreeSet::from(["other.erg".to_owned()]));
+        assert_eq!(affected, BTreeSet::from(["other.erg".to_owned()]));
+    }
+
+    /// Several files saved at once is one closure, not one per file.
+    #[test]
+    fn two_changed_modules_bring_both_their_importers() {
+        let imports = graph(&[
+            ("a.erg", &[]),
+            ("b.erg", &[]),
+            ("uses_a.erg", &["a.erg"]),
+            ("uses_b.erg", &["b.erg"]),
+            ("uses_neither.erg", &[]),
+        ]);
+
+        let affected = importers_of(
+            &imports,
+            &BTreeSet::from(["a.erg".to_owned(), "b.erg".to_owned()]),
+        );
+
+        assert_eq!(affected.len(), 4, "{affected:?}");
+        assert!(!affected.contains("uses_neither.erg"));
     }
 }
 

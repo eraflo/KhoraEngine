@@ -403,6 +403,43 @@ les dépendances que l'index connaît ; ne garder qu'un parcours de répertoire
 (`modules_under` en `read_dir` manuel et `importers_of` en `walkdir` coexistent
 à 70 lignes d'écart).
 
+> **Corrigé à l'implémentation — la marche arrière sur l'index n'est pas
+> faisable.** Vérification faite, l'index ne connaît pas ces arêtes au moment
+> utile : éditer un `.erg` en place ne le réindexe **jamais**. L'éditeur traite
+> un `Modified` par `AssetService::invalidate` seul (`hot_reload.rs:60`) et ne
+> reconstruit que sur `Created`/`Removed` ; côté runtime, `reindex` n'a qu'un
+> seul appelant dans tout le dépôt, et c'est l'éditeur. Les imports que l'index
+> porte sont donc ceux du dernier create/delete — un auteur qui **ajoute** un
+> `import` et sauvegarde produit une arête que l'index n'a jamais vue, et son
+> importateur ne recompilerait pas. Lire l'arbre est plus lent et juste ; lire
+> l'index serait plus rapide et faux.
+>
+> L'erreur vient d'avoir cru une doc plutôt que le câblage : `dependencies.rs`
+> annonce « this is what makes hot-reload correct rather than merely fast », et
+> `script_hot_reload.rs` affirmait « derived from the same import lists the asset
+> index already extracts ». Les deux décrivaient une intention jamais branchée.
+> C'est la deuxième fois dans ce plan (cf. §0) qu'un diagnostic tiré d'un
+> commentaire s'avère faux — **la doc dit l'intention, le câblage dit l'état.**
+>
+> Ce qui a effectivement été fait, sans l'index :
+>
+> - `importers_of` devient **pure** — elle prend le graphe, plus un répertoire.
+>   L'ancienne re-parcourait l'arbre et relisait *chaque* fichier à **chaque
+>   tour** du point fixe ; passer une carte lue une fois rend la répétition
+>   impossible au lieu de simplement l'éviter. La fermeture se teste désormais
+>   sans disque.
+> - `modules_under` rend le graphe complet (module → imports) et sert les deux
+>   appelants ; le second parcours disparaît, et le survivant est le `walkdir`
+>   qu'utilise déjà l'index builder.
+> - `script_root_of` n'est plus une seconde implémentation : il appelle
+>   `dependencies::script_root` et retire la barre finale, la seule différence
+>   entre les deux usages.
+>
+> **Découvert au passage, hors périmètre :** le hot-reload `.erg` est inerte dans
+> l'éditeur — `script_hot_reload_system` exige un `Arc<AssetWatcher>` dans
+> `runtime.resources`, et l'éditeur n'en insère aucun (le sien est un champ de
+> `ProjectVfs`). Il ne fonctionne aujourd'hui que sous `run_default`.
+
 ## §7 — Découper `script_lane/mod.rs`
 
 770 lignes : le `Lane`, le rapport, `Fuel`, `run_behaviors` (197 l.), `run_one`
