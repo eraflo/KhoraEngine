@@ -293,6 +293,10 @@ fn build_collider_desc(
     }
 
     ColliderDesc {
+        // The entity travels with the collider into the backend, so a contact
+        // can name who touched whom without anything here keeping an index of
+        // handles in step with the world.
+        owner: Some(entity_id),
         parent_body: parent_handle,
         position: pos,
         rotation: rot,

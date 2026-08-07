@@ -31,14 +31,14 @@ impl EventHandler for RapierEventHandler {
         match event {
             CollisionEvent::Started(h1, h2, _) => {
                 events.push(khora_core::physics::CollisionEvent::Started(
-                    khora_core::physics::ColliderHandle(h1.into_raw_parts().0 as u64),
-                    khora_core::physics::ColliderHandle(h2.into_raw_parts().0 as u64),
+                    super::from_rapier_cl_handle(h1),
+                    super::from_rapier_cl_handle(h2),
                 ));
             }
             CollisionEvent::Stopped(h1, h2, _) => {
                 events.push(khora_core::physics::CollisionEvent::Stopped(
-                    khora_core::physics::ColliderHandle(h1.into_raw_parts().0 as u64),
-                    khora_core::physics::ColliderHandle(h2.into_raw_parts().0 as u64),
+                    super::from_rapier_cl_handle(h1),
+                    super::from_rapier_cl_handle(h2),
                 ));
             }
         }

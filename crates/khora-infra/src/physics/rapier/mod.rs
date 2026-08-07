@@ -21,7 +21,7 @@ mod events;
 use khora_core::math::{Quat, Vec3};
 use khora_core::physics::{
     BodyType, CharacterControllerOptions, ColliderDesc, ColliderHandle, ColliderShape,
-    CollisionEvent, PhysicsProvider, Ray, RaycastHit, RigidBodyDesc, RigidBodyHandle,
+    CollisionEvent, PhysicsProvider, Ray, RaycastHit, RigidBodyDesc, RigidBodyHandle, Slot,
 };
 use rapier3d::control::*;
 use rapier3d::prelude::*;
@@ -110,7 +110,7 @@ impl PhysicsProvider for RapierPhysicsWorld {
             .build();
 
         let handle = self.rigid_body_set.insert(rigid_body);
-        RigidBodyHandle(handle.into_raw_parts().0 as u64)
+        from_rapier_rb_handle(handle)
     }
 
     fn remove_body(&mut self, handle: RigidBodyHandle) {
@@ -142,6 +142,7 @@ impl PhysicsProvider for RapierPhysicsWorld {
             })
             .friction(desc.friction)
             .restitution(desc.restitution)
+            .user_data(stamp_owner(desc.owner))
             .build();
 
         let handle = if let Some(parent_handle) = desc.parent_body {
@@ -152,7 +153,7 @@ impl PhysicsProvider for RapierPhysicsWorld {
             self.collider_set.insert(collider)
         };
 
-        ColliderHandle(handle.into_raw_parts().0 as u64)
+        from_rapier_cl_handle(handle)
     }
 
     fn remove_collider(&mut self, handle: ColliderHandle) {
@@ -187,14 +188,14 @@ impl PhysicsProvider for RapierPhysicsWorld {
     fn get_all_bodies(&self) -> Vec<RigidBodyHandle> {
         self.rigid_body_set
             .iter()
-            .map(|(handle, _)| RigidBodyHandle(handle.into_raw_parts().0 as u64))
+            .map(|(handle, _)| from_rapier_rb_handle(handle))
             .collect()
     }
 
     fn get_all_colliders(&self) -> Vec<ColliderHandle> {
         self.collider_set
             .iter()
-            .map(|(handle, _)| ColliderHandle(handle.into_raw_parts().0 as u64))
+            .map(|(handle, _)| from_rapier_cl_handle(handle))
             .collect()
     }
 
@@ -260,14 +261,23 @@ impl PhysicsProvider for RapierPhysicsWorld {
         let hit_pos = rapier_ray.point_at(intersection.time_of_impact);
 
         Some(RaycastHit {
-            collider: ColliderHandle(handle.into_raw_parts().0 as u64),
+            collider: from_rapier_cl_handle(handle),
             distance: intersection.time_of_impact,
             normal: from_rapier_vec(intersection.normal),
             position: from_rapier_vec(hit_pos),
         })
     }
 
-    fn get_collision_events(&self) -> Vec<CollisionEvent> {
+    fn entity_of(&self, collider: ColliderHandle) -> Option<khora_core::ecs::entity::EntityId> {
+        // Asked of the collider itself, not of an index kept beside the world.
+        // A handle whose slot has been recycled does not resolve at all, which
+        // is the answer — the collider it named is gone, and so is its entity.
+        self.collider_set
+            .get(to_rapier_cl_handle(collider))
+            .and_then(|collider| stamped_owner(collider.user_data))
+    }
+
+    fn take_collision_events(&self) -> Vec<CollisionEvent> {
         let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
         std::mem::take(&mut *events)
     }
@@ -321,10 +331,125 @@ impl PhysicsProvider for RapierPhysicsWorld {
 
 // --- Internal Helpers ---
 
+/// Both directions carry Rapier's generation, which they used to drop.
+///
+/// `from_raw_parts(index, 0)` resolved a handle to whatever now sits in the
+/// slot: a stale handle moved somebody else's body instead of failing, and only
+/// once Rapier had recycled that slot — so never in a short session and
+/// reliably in a long one.
 fn to_rapier_rb_handle(handle: RigidBodyHandle) -> rapier3d::dynamics::RigidBodyHandle {
-    rapier3d::dynamics::RigidBodyHandle::from_raw_parts(handle.0 as u32, 0)
+    let slot = handle.slot();
+    rapier3d::dynamics::RigidBodyHandle::from_raw_parts(slot.index, slot.generation)
+}
+
+pub(super) fn from_rapier_rb_handle(
+    handle: rapier3d::dynamics::RigidBodyHandle,
+) -> RigidBodyHandle {
+    let (index, generation) = handle.into_raw_parts();
+    RigidBodyHandle(Slot { index, generation }.pack())
 }
 
 fn to_rapier_cl_handle(handle: ColliderHandle) -> rapier3d::geometry::ColliderHandle {
-    rapier3d::geometry::ColliderHandle::from_raw_parts(handle.0 as u32, 0)
+    let slot = handle.slot();
+    rapier3d::geometry::ColliderHandle::from_raw_parts(slot.index, slot.generation)
+}
+
+pub(super) fn from_rapier_cl_handle(handle: rapier3d::geometry::ColliderHandle) -> ColliderHandle {
+    let (index, generation) = handle.into_raw_parts();
+    ColliderHandle(Slot { index, generation }.pack())
+}
+
+/// Packs an entity into the `u128` Rapier carries on every collider.
+///
+/// The identity travels **with the collider**, so there is no index to keep in
+/// step with the world and nothing to invalidate when an entity dies: the
+/// collider dies with it. Zero means "no owner", which no live entity can
+/// collide with since a real one always has a generation of at least one.
+fn stamp_owner(entity: Option<khora_core::ecs::entity::EntityId>) -> u128 {
+    match entity {
+        Some(entity) => ((entity.generation as u128) << 32) | entity.index as u128,
+        None => 0,
+    }
+}
+
+/// Reads back what [`stamp_owner`] wrote.
+pub(super) fn stamped_owner(user_data: u128) -> Option<khora_core::ecs::entity::EntityId> {
+    if user_data == 0 {
+        return None;
+    }
+    Some(khora_core::ecs::entity::EntityId {
+        index: user_data as u32,
+        generation: (user_data >> 32) as u32,
+    })
+}
+
+#[cfg(test)]
+mod owner_tests {
+    use super::*;
+    use khora_core::ecs::entity::EntityId;
+    use khora_core::physics::ColliderShape;
+
+    fn entity(index: u32, generation: u32) -> EntityId {
+        EntityId { index, generation }
+    }
+
+    fn a_box(owner: Option<EntityId>) -> ColliderDesc {
+        ColliderDesc {
+            owner,
+            parent_body: None,
+            position: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            shape: ColliderShape::Sphere(1.0),
+            active_events: true,
+            friction: 0.5,
+            restitution: 0.0,
+        }
+    }
+
+    /// **What unblocks a collision anybody can act on.** A contact names two
+    /// colliders; this is what turns one back into the entity gameplay knows.
+    #[test]
+    fn a_collider_remembers_the_entity_that_made_it() {
+        let mut world = RapierPhysicsWorld::default();
+        let owner = entity(12, 3);
+
+        let handle = world.add_collider(a_box(Some(owner)));
+
+        assert_eq!(world.entity_of(handle), Some(owner));
+    }
+
+    /// The generation is carried, so two entities that reused one index are
+    /// told apart — the same recycling problem as the slot, one level up.
+    #[test]
+    fn a_recycled_entity_index_is_not_mistaken_for_the_old_one() {
+        let mut world = RapierPhysicsWorld::default();
+        let old = world.add_collider(a_box(Some(entity(4, 0))));
+        let new = world.add_collider(a_box(Some(entity(4, 1))));
+
+        assert_eq!(world.entity_of(old), Some(entity(4, 0)));
+        assert_eq!(world.entity_of(new), Some(entity(4, 1)));
+    }
+
+    /// A collider the ECS did not make — a query volume, a tool — answers
+    /// nothing rather than answering entity zero.
+    #[test]
+    fn a_collider_with_no_owner_names_nobody() {
+        let mut world = RapierPhysicsWorld::default();
+
+        let handle = world.add_collider(a_box(None));
+
+        assert_eq!(world.entity_of(handle), None);
+    }
+
+    /// A handle whose collider is gone resolves to nothing, which is the
+    /// answer: what it named does not exist, so neither does its entity.
+    #[test]
+    fn a_removed_colliders_handle_names_nobody() {
+        let mut world = RapierPhysicsWorld::default();
+        let handle = world.add_collider(a_box(Some(entity(1, 0))));
+
+        world.remove_collider(handle);
+
+        assert_eq!(world.entity_of(handle), None);
+    }
 }

@@ -111,7 +111,7 @@ fn resolve_characters(world: &mut World, provider: &dyn PhysicsProvider) {
 /// Mirror the provider's collision-event buffer into every entity that
 /// declared a `CollisionEvents` component.
 fn dispatch_collision_events(world: &mut World, provider: &dyn PhysicsProvider) {
-    let events = provider.get_collision_events();
+    let events = provider.take_collision_events();
     for (_, buffer) in world.query_mut::<(EntityId, &mut CollisionEvents)>() {
         if events.is_empty() {
             buffer.events.clear();
