@@ -21,6 +21,7 @@
 //! The app owns: window, renderer, agents, phases, game logic.
 
 use khora_control::{substrate, DccConfig, DccService, EngineMode};
+use khora_core::event::Channel;
 use khora_core::lane::{ClearColor, ColorTarget, DepthTarget};
 use khora_core::renderer::traits::RenderSystem;
 use khora_core::renderer::GraphicsDevice;
@@ -28,7 +29,6 @@ use khora_core::Runtime;
 use khora_data::ecs::TickPhase;
 use khora_data::render::{submit_frame_graph, FrameGraph, SharedFrameGraph};
 use khora_telemetry::TelemetryService;
-use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -56,7 +56,13 @@ pub struct EngineCore<A: EngineApp> {
     scheduler: Option<khora_control::ExecutionScheduler>,
     context: Arc<RwLock<khora_control::Context>>,
     runtime: Arc<Runtime>,
-    input_events: VecDeque<InputEvent>,
+    /// This frame's OS input, and the frames before it that nobody read.
+    ///
+    /// A clone of what sits in `runtime.resources`, so a `DataSystem` or an
+    /// agent that declares it reads the same stream the app hook does — each
+    /// from its own position, none taking events from the others. It replaced
+    /// an unbounded `VecDeque` that only this struct could reach.
+    input_events: Channel<InputEvent>,
     simulation_started: bool,
 }
 
@@ -76,7 +82,7 @@ impl<A: EngineApp> EngineCore<A> {
                 memory_pressure: 0.0,
             })),
             runtime: Arc::new(Runtime::new()),
-            input_events: VecDeque::new(),
+            input_events: khora_core::platform::input_channel(),
             simulation_started: false,
         }
     }
@@ -166,6 +172,13 @@ impl<A: EngineApp> EngineCore<A> {
         runtime
             .resources
             .insert(Arc::new(Mutex::new(khora_core::platform::InputMap::new())));
+
+        // The raw stream `InputMap` is derived from, published so the descent
+        // can reach it. `InputMap` answers "is jump held"; a consumer that
+        // needs the order of two clicks, a double-tap, or the cursor's motion
+        // needs the events, which the map's three `HashSet`s cannot express.
+        // The engine's own handle is a clone of this one.
+        runtime.resources.insert(self.input_events.clone());
 
         // Frame graph — per-frame collection of render passes recorded by
         // agents during OUTPUT; `tick_with_services()` drains + submits it.
@@ -357,7 +370,7 @@ impl<A: EngineApp> EngineCore<A> {
 
     /// Queues an input event to be processed on the next tick.
     pub fn feed_input(&mut self, event: InputEvent) {
-        self.input_events.push_back(event);
+        self.input_events.send(event);
     }
 
     /// Executes one frame: app update, ECS maintenance, scheduler.
@@ -438,7 +451,12 @@ impl<A: EngineApp> EngineCore<A> {
         if let Some(telemetry) = self.telemetry.as_mut() {
             let _ = telemetry.tick();
         }
-        let drained: Vec<InputEvent> = self.input_events.drain(..).collect();
+        // Read rather than drained: the app hook is one reader among however
+        // many declare the channel, and taking the events would leave the
+        // others with a stream that empties itself depending on who ran first —
+        // the exact bug the asset watcher's subscriber cursors were written to
+        // fix.
+        let drained: Vec<InputEvent> = self.input_events.read_for("engine_frame");
 
         // Tick the InputMap with this frame's events. Lock is short — only
         // held for the duration of `update`. App code that needs the map

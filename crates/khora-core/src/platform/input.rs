@@ -58,6 +58,14 @@ pub enum InputEvent {
         /// Vertical scroll delta.
         delta_y: f32,
     },
+    /// The window stopped receiving input.
+    ///
+    /// The OS stops reporting a key that was held when focus left, so nothing
+    /// will ever release it. Without this event an action stays held forever:
+    /// alt-tab away mid-sprint and the character sprints in an unfocused
+    /// window, then keeps sprinting when focus comes back. Whoever derives
+    /// state from this stream has to let go of everything on it.
+    FocusLost,
 }
 
 /// An engine-internal representation of a mouse button.
@@ -285,4 +293,26 @@ pub enum KeyCode {
     /// any of the variants above. The platform adapter logs a one-shot
     /// warning the first time it produces this value so the gap is visible.
     Unidentified,
+}
+
+/// How much OS input is kept for readers that have not caught up.
+///
+/// A frame of a fast typist is tens of events, so this is several seconds of
+/// backlog. What it guards against is a reader that stopped reading — the
+/// window minimised, a system that ran once and never again — where the queue
+/// used to be an unbounded `VecDeque` that nothing ever trimmed.
+pub const INPUT_BACKLOG: usize = 2048;
+
+/// A channel for the OS input of the frames nobody has read yet.
+///
+/// Dropping the oldest, because input is a stream where the recent matters and
+/// the stale is worth less than the stall that keeping it would cost.
+pub fn input_channel() -> crate::event::Channel<InputEvent> {
+    crate::event::Channel::bounded(INPUT_BACKLOG, crate::event::WhenFull::DropOldest)
+}
+
+impl crate::event::Supersedes for InputEvent {
+    // Nothing coalesces. A key pressed twice is two presses, and collapsing
+    // them is how a double-tap reads as a single one — the failure `InputMap`'s
+    // `HashSet`s already have and this stream exists to avoid.
 }

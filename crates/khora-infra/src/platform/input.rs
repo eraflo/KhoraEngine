@@ -77,6 +77,10 @@ pub fn translate_winit_input(event: &WindowEvent) -> Option<InputEvent> {
                 None
             }
         }
+        // Only the loss. Regaining focus says nothing about what is held —
+        // the OS reports the next press either way — so translating it would
+        // give consumers an event with nothing to do.
+        WindowEvent::Focused(false) => Some(InputEvent::FocusLost),
         _ => None,
     }
 }

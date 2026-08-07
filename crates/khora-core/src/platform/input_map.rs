@@ -184,6 +184,15 @@ impl InputMap {
                 InputEvent::MouseButtonReleased { button } => {
                     self.fire_release(InputBinding::Mouse(*button));
                 }
+                // Everything held is let go, and reported as released: a
+                // consumer watching for the release of a key it saw pressed
+                // gets one, rather than waiting for an event the OS will never
+                // send now that the window is not listening.
+                InputEvent::FocusLost => {
+                    for action in std::mem::take(&mut self.pressed) {
+                        self.just_released.insert(action);
+                    }
+                }
                 _ => {} // mouse motion / wheel don't drive actions today
             }
         }
@@ -292,5 +301,54 @@ mod tests {
             key_code: KeyCode::Space,
         }]);
         assert!(!m.is_pressed("jump"));
+    }
+
+    /// **The bug this event exists for.** The OS stops reporting a key that was
+    /// held when focus left, so the release never arrives: alt-tab away
+    /// mid-sprint and the action stays held forever, in an unfocused window and
+    /// then in a focused one.
+    #[test]
+    fn losing_focus_lets_go_of_everything_held() {
+        let mut m = InputMap::new();
+        m.bind("sprint", InputBinding::Key(KeyCode::ShiftLeft));
+        m.update(&[InputEvent::KeyPressed {
+            key_code: KeyCode::ShiftLeft,
+        }]);
+        assert!(m.is_pressed("sprint"));
+
+        m.update(&[InputEvent::FocusLost]);
+
+        assert!(
+            !m.is_pressed("sprint"),
+            "focus went, so the key went with it"
+        );
+    }
+
+    /// Reported as released, not merely forgotten: a consumer watching for the
+    /// release of a key it saw pressed gets one, rather than waiting for an
+    /// event the OS will never send now that the window is not listening.
+    #[test]
+    fn losing_focus_reports_the_release() {
+        let mut m = InputMap::new();
+        m.bind("sprint", InputBinding::Key(KeyCode::ShiftLeft));
+        m.update(&[InputEvent::KeyPressed {
+            key_code: KeyCode::ShiftLeft,
+        }]);
+
+        m.update(&[InputEvent::FocusLost]);
+
+        assert!(m.just_released("sprint"));
+    }
+
+    /// Nothing held, nothing to let go of — and no phantom release for an
+    /// action the user was not using.
+    #[test]
+    fn losing_focus_with_nothing_held_reports_nothing() {
+        let mut m = InputMap::new();
+        m.bind("sprint", InputBinding::Key(KeyCode::ShiftLeft));
+
+        m.update(&[InputEvent::FocusLost]);
+
+        assert!(!m.just_released("sprint"));
     }
 }

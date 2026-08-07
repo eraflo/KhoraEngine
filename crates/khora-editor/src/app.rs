@@ -268,13 +268,6 @@ impl EngineApp for EditorApp {
             self.input.last_cursor_pos = Some((position.x as f32, position.y as f32));
         }
 
-        // Losing focus swallows the release events, so drop every held button
-        // and modifier here rather than waiting for a release that will never
-        // arrive.
-        if matches!(we, WindowEvent::Focused(false)) {
-            self.input.release_all();
-        }
-
         let is_pointer_event = matches!(
             we,
             WindowEvent::MouseInput { .. }

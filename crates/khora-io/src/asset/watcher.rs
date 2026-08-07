@@ -34,13 +34,9 @@
 
 use anyhow::{Context, Result};
 use khora_core::asset::AssetUUID;
-use khora_core::event::{Channel, Cursor, Supersedes, WhenFull};
+use khora_core::event::{Channel, Supersedes, WhenFull};
 use notify::{recommended_watcher, RecommendedWatcher, RecursiveMode, Watcher};
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    sync::Mutex,
-};
+use std::path::{Path, PathBuf};
 
 use super::index_builder::should_skip_file;
 
@@ -88,13 +84,6 @@ pub struct AssetWatcher {
     /// forever if the backlog's lock was ever poisoned — `poll_for` returned
     /// before draining it. One bounded channel has no in-front.
     changes: Channel<AssetChangeEvent>,
-    /// A cursor for each named subscriber.
-    ///
-    /// A [`Cursor`] belongs to its reader, which is what lets several read at
-    /// once. But the two hot-reload readers are `DataSystem`s — free functions
-    /// with nowhere to keep one — so the watcher keeps theirs, by name. Ten
-    /// lines of adapter rather than a second mechanism.
-    cursors: Mutex<HashMap<&'static str, Cursor>>,
 }
 
 /// How many changes are kept for readers that have not caught up.
@@ -163,7 +152,6 @@ impl AssetWatcher {
             _watcher: watcher,
             assets_root,
             changes,
-            cursors: Mutex::new(HashMap::new()),
         })
     }
 
@@ -184,12 +172,7 @@ impl AssetWatcher {
     /// A name seen for the first time starts at the oldest retained change, so
     /// a system registered a frame late still hears what happened.
     pub fn poll_for(&self, subscriber: &'static str) -> Vec<AssetChangeEvent> {
-        let Ok(mut cursors) = self.cursors.lock() else {
-            log::error!("the asset watcher's cursors are poisoned; {subscriber} hears nothing");
-            return Vec::new();
-        };
-        let cursor = cursors.entry(subscriber).or_default();
-        self.changes.read(cursor)
+        self.changes.read_for(subscriber)
     }
 
     /// How many changes were dropped because nobody read them in time.

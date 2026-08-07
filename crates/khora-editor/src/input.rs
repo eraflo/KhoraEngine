@@ -112,6 +112,11 @@ pub fn process_events(
 
     for input in inputs {
         match input {
+            // The engine reports this now, so the editor no longer has to read
+            // raw winit events to notice it. Losing focus swallows every
+            // release, so whatever is held has to be let go here or it stays
+            // held until the user happens to press and release it again.
+            InputEvent::FocusLost => state.release_all(),
             InputEvent::MouseButtonPressed { button } => {
                 // Only arm camera navigation when the press *starts* in the
                 // viewport. Pressing on the inspector and dragging across used

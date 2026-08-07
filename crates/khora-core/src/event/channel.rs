@@ -49,8 +49,8 @@
 //! read — a queue that discards in silence is a queue whose failure nobody can
 //! see.
 
-use std::collections::VecDeque;
-use std::sync::{Arc, RwLock};
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Arc, Mutex, RwLock};
 
 /// Whether a newly sent item makes an already-queued one obsolete.
 ///
@@ -102,6 +102,11 @@ pub struct Cursor(u64);
 /// A typed stream: someone sends, one or several read later.
 pub struct Channel<T> {
     ring: Arc<RwLock<Ring<T>>>,
+    /// A cursor for each reader that has nowhere to keep one.
+    ///
+    /// Behind its own lock, not the ring's, so naming a cursor never delays a
+    /// read of the stream: several readers still take `ring` shared.
+    named: Arc<Mutex<HashMap<&'static str, Cursor>>>,
 }
 
 struct Ring<T> {
@@ -119,6 +124,7 @@ impl<T> Clone for Channel<T> {
     fn clone(&self) -> Self {
         Self {
             ring: Arc::clone(&self.ring),
+            named: Arc::clone(&self.named),
         }
     }
 }
@@ -138,6 +144,7 @@ impl<T: Supersedes> Channel<T> {
                 when_full,
                 dropped: 0,
             })),
+            named: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -203,6 +210,30 @@ impl<T: Supersedes> Channel<T> {
             .skip((from - ring.base) as usize)
             .cloned()
             .collect()
+    }
+
+    /// Everything `reader` has not seen, remembering its position by name.
+    ///
+    /// For a reader with nowhere to keep a [`Cursor`] — a `DataSystem` is a
+    /// free function, and so is a hot-reload pump. Prefer [`read`](Self::read)
+    /// wherever the reader is a struct: this one takes a second lock to find
+    /// the cursor, and two callers under the same name would share a position
+    /// and starve each other.
+    pub fn read_for(&self, reader: &'static str) -> Vec<T>
+    where
+        T: Clone,
+    {
+        let Ok(mut named) = self.named.lock() else {
+            log::error!(
+                "the {} channel's cursors are poisoned; {reader} hears nothing",
+                std::any::type_name::<T>()
+            );
+            return Vec::new();
+        };
+        let mut cursor = *named.entry(reader).or_default();
+        let unread = self.read(&mut cursor);
+        named.insert(reader, cursor);
+        unread
     }
 
     /// Takes everything, leaving the channel empty.
