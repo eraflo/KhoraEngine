@@ -27,8 +27,20 @@ use std::hint::black_box;
 
 /// A contact: appends, never coalesces. The heavy case.
 #[derive(Clone)]
-struct Contact(u64, u64);
+struct Contact {
+    a: u64,
+    b: u64,
+}
 impl Supersedes for Contact {}
+
+/// Touches what was read, so the clone is not optimised away and the number
+/// measures moving the data rather than discarding it.
+fn consume(contacts: &[Contact]) -> u64 {
+    contacts
+        .iter()
+        .map(|c| c.a ^ c.b)
+        .fold(0, u64::wrapping_add)
+}
 
 /// A recompiled module: coalesces by name, so every send scans.
 #[derive(Clone)]
@@ -48,7 +60,7 @@ const CONTACTS: u64 = 512;
 fn filled(capacity: usize) -> Channel<Contact> {
     let channel = Channel::bounded(capacity, WhenFull::DropOldest);
     for i in 0..CONTACTS {
-        channel.send(Contact(i, i + 1));
+        channel.send(Contact { a: i, b: i + 1 });
     }
     channel
 }
@@ -61,7 +73,7 @@ fn sending(c: &mut Criterion) {
             || Channel::<Contact>::bounded(1024, WhenFull::DropOldest),
             |channel| {
                 for i in 0..CONTACTS {
-                    channel.send(Contact(i, i + 1));
+                    channel.send(Contact { a: i, b: i + 1 });
                 }
                 black_box(channel.len())
             },
@@ -95,7 +107,7 @@ fn reading(c: &mut Criterion) {
         let channel = filled(1024);
         b.iter(|| {
             let mut cursor = Cursor::default();
-            black_box(channel.read(&mut cursor).len())
+            black_box(consume(&channel.read(&mut cursor)))
         });
     });
 
@@ -109,7 +121,7 @@ fn reading(c: &mut Criterion) {
             let mut total = 0;
             for _ in 0..3 {
                 let mut cursor = Cursor::default();
-                total += channel.read(&mut cursor).len();
+                total += consume(&channel.read(&mut cursor));
             }
             black_box(total)
         });
@@ -119,7 +131,7 @@ fn reading(c: &mut Criterion) {
         let channel = filled(1024);
         let mut cursor = Cursor::default();
         channel.read(&mut cursor);
-        b.iter(|| black_box(channel.read(&mut cursor.clone()).len()));
+        b.iter(|| black_box(consume(&channel.read(&mut cursor.clone()))));
     });
 
     group.finish();
@@ -129,7 +141,7 @@ fn draining(c: &mut Criterion) {
     c.bench_function("channel/drain 512 contacts", |b| {
         b.iter_batched(
             || filled(1024),
-            |channel| black_box(channel.drain().len()),
+            |channel| black_box(consume(&channel.drain())),
             BatchSize::SmallInput,
         );
     });
