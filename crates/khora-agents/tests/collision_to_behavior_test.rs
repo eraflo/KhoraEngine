@@ -72,6 +72,7 @@ fn entity(index: u32) -> EntityId {
 fn a_scene_with_a_guard() -> ScriptView {
     ScriptView {
         delta_seconds: 0.0,
+        input: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: "Guard".to_owned(),

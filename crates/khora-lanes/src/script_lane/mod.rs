@@ -118,6 +118,9 @@ impl Lane for BudgetedScriptLane {
             let events = ctx.get::<Ref<EventQueue>>().map_or(&empty, Ref::get);
 
             let mut host = Host::new();
+            // Once for the frame, not once per behavior: input is a fact about
+            // the frame, and every behavior in it must see the same one.
+            host.input = view.input.clone();
             let mut report = run_behaviors(view, events, runtime, &mut host, fuel.0);
             report.raised = host.take_events();
 

@@ -49,6 +49,7 @@ behavior Guard {
 fn frame(delta: f32) -> ScriptView {
     ScriptView {
         delta_seconds: delta,
+        input: Default::default(),
         ..view_of(1)
     }
 }
@@ -285,6 +286,7 @@ fn a_farewell_already_said_is_not_said_again() {
     // The boundary applied the despawn, so the next view no longer lists it.
     let empty = ScriptView {
         delta_seconds: 0.016,
+        input: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: "Guard".to_owned(),

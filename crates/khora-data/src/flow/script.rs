@@ -101,6 +101,14 @@ pub struct ScriptView {
     pub programs: Vec<ScriptProgram>,
     /// Every entity running one, in a stable order.
     pub instances: Vec<ScriptInstance>,
+    /// What the player is holding, this frame.
+    ///
+    /// Projected rather than read, for the same reason a transform is: the lane
+    /// is `Isolated` and reaches no `Runtime`, so it cannot ask the `InputMap`
+    /// anything. A `Flow` is exactly the thing that turns engine state into
+    /// something a lane may read, and until this field `InputMap` was published
+    /// every frame with no consumer anywhere in the CLAD descent.
+    pub input: khora_core::platform::InputSnapshot,
 }
 
 impl ScriptView {
@@ -162,6 +170,14 @@ impl Flow for ScriptFlow {
                 .get::<khora_core::time::SharedTime>()
                 .and_then(|time| time.read().ok().map(|time| time.delta_seconds))
                 .unwrap_or(0.0),
+            // Snapshotted under the lock and released: the lane may run on a
+            // pool thread, and handing it anything that borrows the map would
+            // hold the lock for the length of a frame's scripting.
+            input: runtime
+                .resources
+                .get::<std::sync::Arc<std::sync::Mutex<khora_core::platform::InputMap>>>()
+                .and_then(|map| map.lock().ok().map(|map| map.snapshot()))
+                .unwrap_or_default(),
             ..Default::default()
         };
 

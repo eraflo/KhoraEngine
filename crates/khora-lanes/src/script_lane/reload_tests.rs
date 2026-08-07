@@ -278,6 +278,7 @@ fn a_scene_value_seeds_the_instance_rather_than_the_declared_default() {
 
     let view = ScriptView {
         delta_seconds: 0.0,
+        input: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: "Guard".to_owned(),
@@ -319,6 +320,7 @@ fn a_field_the_scene_did_not_save_takes_its_declared_default() {
 
     let view = ScriptView {
         delta_seconds: 0.0,
+        input: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: "Guard".to_owned(),
@@ -376,6 +378,7 @@ fn a_frames_state_travels_to_the_scene_and_back() {
     // A fresh session loads it.
     let view = ScriptView {
         delta_seconds: 0.0,
+        input: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: "Guard".to_owned(),

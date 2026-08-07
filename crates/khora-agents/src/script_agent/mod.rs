@@ -400,6 +400,7 @@ mod tests {
     fn a_scene_with_one_script() -> ScriptView {
         ScriptView {
             delta_seconds: 0.0,
+            input: Default::default(),
             programs: vec![ScriptProgram {
                 module: "ai/guard.erg".to_owned(),
                 behavior: "Guard".to_owned(),

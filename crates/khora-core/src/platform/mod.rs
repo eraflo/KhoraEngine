@@ -23,7 +23,7 @@ pub mod input_map;
 pub mod window;
 
 pub use input::{input_channel, InputEvent, KeyCode, MouseButton, INPUT_BACKLOG};
-pub use input_map::{Action, InputBinding, InputMap};
+pub use input_map::{Action, InputBinding, InputMap, InputSnapshot};
 pub use window::{KhoraWindow, KhoraWindowHandle, WindowHandle};
 
 /// Represents the thermal state of the device.

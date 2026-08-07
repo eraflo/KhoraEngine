@@ -44,6 +44,7 @@ pub mod builtins;
 pub mod convert;
 pub mod engine_types;
 pub mod events;
+pub mod input;
 pub mod ty;
 pub mod world;
 
@@ -117,6 +118,8 @@ pub struct NativeContext<'a> {
     /// `None` while running a free function that no entity owns — a native that
     /// needs a subject must say so rather than assume one.
     pub entity: Option<EntityId>,
+    /// What the player is holding this frame, projected by `ScriptFlow`.
+    pub input: &'a khora_core::platform::InputSnapshot,
     /// The running program's string literals.
     ///
     /// Needed because a string argument can live in either the program or the
@@ -181,6 +184,14 @@ pub struct Host {
     /// entity. This is also what a scene save writes out, which is why it is a
     /// [`PersistentStore`] and not more registers.
     pub fields: PersistentStore,
+    /// What the player is holding, for the whole frame.
+    ///
+    /// Set once by the lane from the view, not per behavior: input is a fact
+    /// about the frame rather than about an entity, and every behavior in it
+    /// sees the same one. A behavior that read it halfway through a frame in
+    /// which another behavior had "changed" it would be reading something no
+    /// player did.
+    pub input: khora_core::platform::InputSnapshot,
     /// How long the running program asked to wait, set by `await`.
     ///
     /// Cleared by whoever acts on it. Left here rather than returned from
@@ -225,6 +236,7 @@ impl Host {
             awaiting: None,
             entity: None,
             position: None,
+            input: Default::default(),
             outbox: EventQueue::new(),
         }
     }
@@ -284,6 +296,7 @@ impl Host {
             entity: self.entity,
             strings,
             position: self.position,
+            input: &self.input,
             events: &mut self.outbox,
         }
     }

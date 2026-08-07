@@ -64,6 +64,7 @@ behavior Guard {
 fn view(delta: f32, saved: Option<ScriptSnapshot>) -> ScriptView {
     ScriptView {
         delta_seconds: delta,
+        input: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: "Guard".to_owned(),

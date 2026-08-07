@@ -77,6 +77,7 @@ pub(super) fn entity(index: u32) -> EntityId {
 pub(super) fn view_of(count: u32) -> ScriptView {
     ScriptView {
         delta_seconds: 0.0,
+        input: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: "Guard".to_owned(),
@@ -288,6 +289,7 @@ fn a_recycled_index_does_not_inherit_the_old_instances_state() {
     };
     let view = ScriptView {
         delta_seconds: 0.0,
+        input: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: "Guard".to_owned(),
@@ -338,6 +340,7 @@ fn a_faulting_behavior_is_disabled_rather_than_retried() {
 
     let view = ScriptView {
         delta_seconds: 0.0,
+        input: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: "Divider".to_owned(),
