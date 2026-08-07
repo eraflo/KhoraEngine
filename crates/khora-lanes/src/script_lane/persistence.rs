@@ -136,17 +136,31 @@ fn restore_state_fields(
 /// alone cannot tell `every 0.5s` inside `Patrol` from `every 0.5s` beside it,
 /// and those are two different schedules.
 fn timer_index(layout: &BehaviorLayout, saved: &TimerRemaining) -> Option<usize> {
+    let wanted = (saved.repeating, saved.interval, saved.state.clone());
     layout
         .timers
         .iter()
         .enumerate()
-        .filter(|(_, timer)| {
-            matches!(timer.kind, TimerKind::Every) == saved.repeating
-                && timer.seconds == saved.interval
-                && owner(layout, timer) == saved.state
-        })
+        .filter(|(_, timer)| identity_of(layout, timer) == wanted)
         .nth(saved.ordinal as usize)
         .map(|(index, _)| index)
+}
+
+/// What makes one schedule the same schedule as another across a save.
+///
+/// One definition for both directions. The two sides used to spell it out
+/// separately — the reader as a three-way comparison, the writer as a tuple —
+/// and a fourth component added to one and not the other would not fail to
+/// compile. It would quietly hand a saved countdown to the wrong schedule.
+fn identity_of(
+    layout: &BehaviorLayout,
+    timer: &khora_script::vm::TimerLayout,
+) -> (bool, f32, Option<String>) {
+    (
+        matches!(timer.kind, TimerKind::Every),
+        timer.seconds,
+        owner(layout, timer),
+    )
 }
 
 /// The name of the state a schedule belongs to, if any.
@@ -227,10 +241,9 @@ fn countdowns(layout: &BehaviorLayout, store: &PersistentStore) -> Vec<TimerRema
         .iter()
         .enumerate()
         .filter_map(|(index, timer)| {
-            let repeating = matches!(timer.kind, TimerKind::Every);
-            let state = owner(layout, timer);
-            let key = (repeating, timer.seconds, state.clone());
+            let key = identity_of(layout, timer);
             let ordinal = seen.iter().filter(|held| **held == key).count() as u32;
+            let (repeating, _, state) = key.clone();
             seen.push(key);
 
             // An unset slot is a schedule that has never been armed, which only

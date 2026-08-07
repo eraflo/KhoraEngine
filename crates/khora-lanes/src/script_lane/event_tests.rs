@@ -23,7 +23,7 @@ use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_script::arena::Persisted;
 use khora_script::native::Host;
 
-use super::tests::{compile, entity, MODULE};
+use super::tests::{compile, entity, runtime_of, MODULE};
 use super::{run_behaviors, ScriptRuntime};
 
 /// An attacker that hits entity 1 once, and a guard that feels it.
@@ -67,12 +67,6 @@ behavior Guard {
     }
 }
 "#;
-
-fn runtime_of(source: &str) -> ScriptRuntime {
-    let mut runtime = ScriptRuntime::new();
-    runtime.add_program(MODULE, compile(source));
-    runtime
-}
 
 /// One guard on entity 0.
 fn one_guard() -> ScriptView {

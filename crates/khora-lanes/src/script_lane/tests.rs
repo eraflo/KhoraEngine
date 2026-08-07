@@ -59,6 +59,13 @@ pub(super) fn compile(source: &str) -> Program {
     compiled.program
 }
 
+/// A runtime holding `source` compiled as the one module the tests name.
+pub(super) fn runtime_of(source: &str) -> ScriptRuntime {
+    let mut runtime = ScriptRuntime::new();
+    runtime.add_program(MODULE, compile(source));
+    runtime
+}
+
 pub(super) fn entity(index: u32) -> EntityId {
     EntityId {
         index,

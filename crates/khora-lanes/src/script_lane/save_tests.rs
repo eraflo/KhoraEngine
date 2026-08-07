@@ -33,7 +33,7 @@ use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_script::arena::Persisted;
 use khora_script::native::Host;
 
-use super::tests::{compile, entity, MODULE};
+use super::tests::{entity, runtime_of, MODULE};
 use super::{run_behaviors, ScriptRuntime};
 
 /// The guard from the design: two states, each with its own data, and a
@@ -59,12 +59,6 @@ behavior Guard {
     }
 }
 "#;
-
-fn runtime_of(source: &str) -> ScriptRuntime {
-    let mut runtime = ScriptRuntime::new();
-    runtime.add_program(MODULE, compile(source));
-    runtime
-}
 
 /// One guard, restored from `saved` if there is anything to restore.
 fn view(delta: f32, saved: Option<ScriptSnapshot>) -> ScriptView {
