@@ -348,6 +348,18 @@ impl ExecutionScheduler {
         .min(MAX_FRAME_DELTA_SECONDS);
         self.last_frame_instant = Some(now);
 
+        // The simulated world's clock, which is the wall clock times whatever
+        // the game asked for. At `0.0` the accumulator below never fills, so
+        // `sim_steps` is zero: no body integrates, no script timer counts down,
+        // and the renderer carries on at real time because it does not read
+        // this. That is what a pause menu is, what a slow-motion hit is — and
+        // what the editor sets while nobody has pressed Play.
+        //
+        // Applied here rather than per agent: an agent deciding for itself
+        // whether time passes would be a dozen places to disagree about what
+        // "paused" means.
+        let dt = dt * simulation_scale(&runtime);
+
         // With no fixed-timestep agent, the simulation isn't decoupled: run
         // everything exactly once (legacy behaviour) and report alpha 0.
         let (sim_steps, fixed_delta_for_time) = match fixed_delta {
@@ -997,12 +1009,24 @@ fn build_wave_metas(agents: &[AgentSlot]) -> Vec<WaveMeta> {
         .collect()
 }
 
+/// How fast the simulated world should run this frame.
+///
+/// Defaults to real time when nothing holds a [`Time`](khora_core::time::Time)
+/// — a headless host that never installed one is not a paused one.
+fn simulation_scale(runtime: &Runtime) -> f32 {
+    runtime
+        .resources
+        .get::<khora_core::time::SharedTime>()
+        .and_then(|shared| shared.read().ok().map(|time| time.scale()))
+        .unwrap_or(1.0)
+}
+
 /// Groups agents (already in `sort_agents` order) into execution waves.
 ///
 /// A wave is a maximal run of consecutive concurrency-eligible agents
 /// ([`AgentAccess::Isolated`] or [`AgentAccess::SharedWorld`]) in which no
-/// member hard-depends on another member and **at most one** is `SharedWorld`
-/// (that agent may write shared resources, so two of them could race). Any
+/// member hard-depends on another member and no member's
+/// [`Contention`](khora_core::agent::Contention) overlaps another's. Any
 /// [`AgentAccess::Exclusive`] agent is its own singleton wave. Because the input
 /// is already topologically ordered by hard deps, and a dependent never shares
 /// a wave with its target, running the waves in order preserves the exact
@@ -1497,6 +1521,65 @@ mod sim_step_tests {
     use super::{compute_sim_steps, MAX_SIM_STEPS};
 
     const FIXED: f32 = 1.0 / 60.0;
+
+    use super::simulation_scale;
+    use khora_core::time::{SharedTime, Time};
+    use khora_core::Runtime;
+
+    /// The whole of "the editor pauses the simulation": scaled to zero, the
+    /// accumulator never fills, so the fixed-step loop asks for no sub-steps and
+    /// `PhysicsProvider::step` is never reached. Nothing had to learn what a
+    /// mode is.
+    #[test]
+    fn a_scale_of_zero_produces_no_sub_steps() {
+        let dt = 4.0 * FIXED;
+
+        let r = compute_sim_steps(0.0, dt * 0.0, FIXED, MAX_SIM_STEPS);
+
+        assert_eq!(r.steps, 0);
+        assert_eq!(r.new_accumulator, 0.0);
+    }
+
+    /// And the same frame at full scale does step — otherwise the test above
+    /// would pass on a `dt` that was already zero.
+    #[test]
+    fn the_same_frame_at_full_scale_steps() {
+        let dt = 4.0 * FIXED;
+
+        let r = compute_sim_steps(0.0, dt * 1.0, FIXED, MAX_SIM_STEPS);
+
+        assert_eq!(r.steps, 4);
+    }
+
+    /// Half scale is half the sub-steps, which is what makes this a clock and
+    /// not a switch: slow motion falls out of the same arithmetic as pause.
+    #[test]
+    fn half_scale_halves_the_sub_steps() {
+        let dt = 4.0 * FIXED;
+
+        let r = compute_sim_steps(0.0, dt * 0.5, FIXED, MAX_SIM_STEPS);
+
+        assert_eq!(r.steps, 2);
+    }
+
+    /// A host that never installed a clock is not a paused host.
+    #[test]
+    fn a_runtime_without_a_clock_runs_at_real_time() {
+        let runtime = Runtime::new();
+
+        assert_eq!(simulation_scale(&runtime), 1.0);
+    }
+
+    #[test]
+    fn the_scheduler_reads_the_scale_the_editor_wrote() {
+        let mut runtime = Runtime::new();
+        let mut time = Time::default();
+        time.set_scale(0.0);
+        let shared: SharedTime = std::sync::Arc::new(std::sync::RwLock::new(time));
+        runtime.resources.insert(shared);
+
+        assert_eq!(simulation_scale(&runtime), 0.0);
+    }
 
     #[test]
     fn exact_multiple_runs_whole_steps_no_remainder() {

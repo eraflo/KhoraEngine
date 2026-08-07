@@ -136,7 +136,7 @@ inventory::submit! {
 mod tests {
     use super::*;
     use crate::ecs::{Children, GlobalTransform, Parent, SemanticDomain, Transform, World};
-    use khora_core::math::{AffineTransform, Mat4, Vec3, EPSILON};
+    use khora_core::math::{Mat4, Vec3, EPSILON};
 
     fn assert_matrix_approx_eq(a: Mat4, b: Mat4) {
         for i in 0..4 {

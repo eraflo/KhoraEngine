@@ -143,7 +143,9 @@ The model, per frame:
    a debugger break, an asset hitch, a window drag — is truncated so the
    accumulator never demands an unbounded catch-up. This is the classic
    *spiral-of-death* guard.
-2. **Accumulate.** Add the clamped delta to the accumulator.
+2. **Scale, then accumulate.** Multiply the clamped delta by `Time::scale` and
+   add it to the accumulator. See *[The simulation clock](#the-simulation-clock)*
+   below.
 3. **Consume whole steps.** With the fixed step `fixed_delta` (the smallest
    `fixed_timestep` any agent declares — in practice the physics agent's, default
    1/60 s), compute `steps = floor(accumulator / fixed_delta)`, capped at
@@ -154,6 +156,25 @@ The model, per frame:
    sub-loop, each iteration a full agent invocation), then run the regular phase
    loop **once**, excluding those agents so they are not stepped twice. So
    physics integrates *N* discrete sub-steps while the render fires exactly once.
+
+### The simulation clock
+
+The delta that reaches the accumulator is the wall-clock one **times
+`Time::scale`**. At `0.0` the accumulator never fills, so `steps` is zero: no
+body integrates, no script timer counts down, and rendering carries on at real
+time because it reads `interpolation_alpha`, not this. Between the two it is
+slow motion; above it, fast forward.
+
+That one number is how the editor stops the world while nobody has pressed
+Play. `PlayMode` stays inside `khora-editor` and never becomes engine
+vocabulary — the editor writes a scale, exactly as a pause menu or a cutscene
+would, and is one caller among several rather than a case the engine knows
+about. `Time::scale` is private and reachable only through `set_scale`, which
+clamps at zero: running a solver backwards is not a slower forward, and every
+integrator here assumes time moves one way.
+
+Applied once, in the scheduler. An agent deciding for itself whether time
+passes would be a dozen places to disagree about what "paused" means.
 
 ```mermaid
 sequenceDiagram

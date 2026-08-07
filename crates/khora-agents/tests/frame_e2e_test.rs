@@ -98,10 +98,11 @@ fn run_substrate(world: &mut World, runtime: &Runtime) -> LaneBus {
 /// previous pose for an entity.
 fn runtime_with_alpha(alpha: f32) -> Runtime {
     let mut runtime = Runtime::new();
-    let time = khora_core::time::Time {
-        interpolation_alpha: alpha,
-        ..khora_core::time::Time::default()
-    };
+    // Built by assignment rather than struct-update syntax: `Time::scale` is
+    // private so `set_scale` can refuse a negative one, and `..default()` from
+    // another crate needs every field visible.
+    let mut time = khora_core::time::Time::default();
+    time.interpolation_alpha = alpha;
     let shared: khora_core::time::SharedTime = Arc::new(std::sync::RwLock::new(time));
     runtime.resources.insert(shared);
 

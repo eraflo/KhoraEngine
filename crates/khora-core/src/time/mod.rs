@@ -52,6 +52,28 @@ pub struct Time {
     pub interpolation_alpha: f32,
     /// Monotonic frame counter, incremented once per rendered frame.
     pub frame: u64,
+    /// How fast the simulated world runs, against the wall clock.
+    ///
+    /// `1.0` is real time. `0.0` stops the simulation without stopping the
+    /// engine: the fixed-step accumulator never fills, so no sub-step runs, no
+    /// body integrates and no script timer counts down — while the renderer,
+    /// the UI and input carry on at real time, because they read the wall clock
+    /// and not this.
+    ///
+    /// **Not an editor concept.** It is the pause menu, the slow-motion hit,
+    /// the fast-forward of a strategy game — things a game wants on its own.
+    /// The editor happens to be one caller among them: it sets `0.0` while
+    /// editing, which is why a body no longer falls before anybody pressed
+    /// Play. Its own `PlayMode` stays where it belongs and never reaches the
+    /// engine; what crosses is a number any game could set.
+    ///
+    /// Negative values are refused by [`set_scale`](Self::set_scale) — running
+    /// a solver backwards is not a slower forward, and every integrator here
+    /// assumes time moves one way.
+    ///
+    /// Private so [`set_scale`](Self::set_scale) is the only way in — a field
+    /// anyone could assign is a field somebody assigns `-1.0` to.
+    scale: f32,
 }
 
 impl Default for Time {
@@ -61,6 +83,7 @@ impl Default for Time {
             fixed_delta_seconds: DEFAULT_FIXED_DELTA_SECONDS,
             interpolation_alpha: 0.0,
             frame: 0,
+            scale: 1.0,
         }
     }
 }
@@ -74,6 +97,29 @@ impl Time {
             fixed_delta_seconds,
             ..Self::default()
         }
+    }
+
+    /// How fast the simulated world runs. `1.0` is real time, `0.0` is stopped.
+    #[must_use]
+    pub fn scale(&self) -> f32 {
+        self.scale
+    }
+
+    /// Sets it, refusing to run time backwards.
+    ///
+    /// A negative scale is not a slower forward: every integrator in the engine
+    /// assumes time moves one way, and a solver run in reverse produces states
+    /// no forward run could reach. Clamped rather than rejected, because a
+    /// caller computing a scale from a curve should not have to guard the
+    /// bottom of it.
+    pub fn set_scale(&mut self, scale: f32) {
+        self.scale = scale.max(0.0);
+    }
+
+    /// Whether the simulated world is advancing at all.
+    #[must_use]
+    pub fn is_running(&self) -> bool {
+        self.scale > 0.0
     }
 }
 
@@ -103,5 +149,49 @@ mod tests {
         assert_eq!(t.fixed_delta_seconds, 1.0 / 120.0);
         assert_eq!(t.interpolation_alpha, 0.0);
         assert_eq!(t.frame, 0);
+    }
+}
+
+#[cfg(test)]
+mod scale_tests {
+    use super::*;
+
+    #[test]
+    fn a_fresh_clock_runs_at_real_time() {
+        assert_eq!(Time::default().scale(), 1.0);
+        assert!(Time::default().is_running());
+    }
+
+    /// **What stops a body falling in the editor.** Zero is not a special case
+    /// in the scheduler — the accumulator simply never fills.
+    #[test]
+    fn a_scale_of_zero_stops_the_world() {
+        let mut time = Time::default();
+        time.set_scale(0.0);
+
+        assert!(!time.is_running());
+    }
+
+    /// Slow motion and fast forward are the same knob, which is the reason it
+    /// is a scale and not a boolean: a game wants these on its own, and the
+    /// editor is one caller among them.
+    #[test]
+    fn a_scale_between_the_two_is_slow_motion() {
+        let mut time = Time::default();
+        time.set_scale(0.25);
+
+        assert_eq!(time.scale(), 0.25);
+        assert!(time.is_running());
+    }
+
+    /// Running a solver backwards is not a slower forward. Every integrator
+    /// here assumes time moves one way, and a reversed step produces states no
+    /// forward run could reach.
+    #[test]
+    fn time_refuses_to_run_backwards() {
+        let mut time = Time::default();
+        time.set_scale(-1.0);
+
+        assert_eq!(time.scale(), 0.0);
     }
 }

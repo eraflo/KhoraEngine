@@ -346,6 +346,9 @@ impl EngineApp for EditorApp {
     }
 
     fn before_agents(&mut self, world: &mut GameWorld, runtime: &Runtime) {
+        // First: the scale decides whether this frame's agents integrate at all.
+        self.drive_simulation_clock(runtime);
+
         if let Some(pvfs_arc) = self.project_vfs.as_ref() {
             hot_reload::pump(pvfs_arc, &self.editor_state);
         }
@@ -861,6 +864,42 @@ impl EditorApp {
             if let Ok(mut shell) = shell.lock() {
                 shell.set_status(status_copy);
             }
+        }
+    }
+}
+
+impl EditorApp {
+    /// Tells the engine how fast the simulated world should run.
+    ///
+    /// The **only** thing `PlayMode` causes to cross into the engine, and it
+    /// crosses as a number rather than as a mode: a scale of `0.0` is what a
+    /// pause menu or a cutscene sets too, so the editor is one caller among
+    /// several rather than a special case the engine has to know about.
+    ///
+    /// Before this, a rigid body fell while nobody had pressed Play — the
+    /// engine had no way to be told the world was not meant to be running, and
+    /// the transport pill's claim to "tell the truth about what the engine is
+    /// doing" was decoration.
+    fn drive_simulation_clock(&self, runtime: &Runtime) {
+        let Some(shared) = runtime.resources.get::<khora_sdk::prelude::SharedTime>() else {
+            return;
+        };
+        let play_mode = self
+            .editor_state
+            .lock()
+            .ok()
+            .map(|state| state.play_mode)
+            .unwrap_or(PlayMode::Editing);
+
+        // `Paused` stops it for the same reason `Editing` does: the author is
+        // looking at a frozen world in both, and the difference between them is
+        // what the editor draws, not what the simulation does.
+        let scale = match play_mode {
+            PlayMode::Playing => 1.0,
+            PlayMode::Editing | PlayMode::Paused => 0.0,
+        };
+        if let Ok(mut time) = shared.write() {
+            time.set_scale(scale);
         }
     }
 }
