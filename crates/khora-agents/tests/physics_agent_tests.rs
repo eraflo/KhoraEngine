@@ -56,14 +56,20 @@ fn step_n(agent: &mut PhysicsAgent, world: &mut World, runtime: &Arc<Runtime>, n
         let mut bus = LaneBus::new();
         let mut deck = khora_core::lane::OutputDeck::new();
 
-        // PreExtract — physics_provider_sync registers/updates bodies &
-        // colliders with the provider (was PhysicsFlow::adapt).
-        substrate::run_data_systems(
-            world,
-            runtime,
-            &mut deck,
+        // The three pre-agent phases, in the order `EngineCore::run_app_update`
+        // runs them. `PostSimulation` is the one this harness used to skip, and
+        // skipping it broke the loop: `transform_propagation` lives there, and
+        // it is what carries the `Transform` the writeback produced into the
+        // `GlobalTransform` the next frame's provider sync reads. Without it
+        // the sync pushed the *spawn* pose back into the provider every frame,
+        // so a body fell one step and was teleported home, forever.
+        for phase in [
+            khora_data::ecs::TickPhase::PreSimulation,
+            khora_data::ecs::TickPhase::PostSimulation,
             khora_data::ecs::TickPhase::PreExtract,
-        );
+        ] {
+            substrate::run_data_systems(world, runtime, &mut deck, phase);
+        }
 
         // Substrate Pass — Flows project read-only Views into the bus.
         substrate::run_flows(world, &mut bus, runtime);
@@ -149,11 +155,15 @@ fn test_physics_gravity_influence() {
     // Run 10 steps (≈ 160 ms at 60 fps fixed timestep).
     step_n(&mut agent, &mut world, &runtime, 10);
 
-    let transform = world.get::<Transform>(entity).unwrap();
+    // A real distance, not merely "lower than it started". Ten steps of 1/60 s
+    // under semi-implicit Euler falls `g·dt²·n(n+1)/2` ≈ 0.15 m; the window is
+    // wide enough for the integrator's details and narrow enough to fail on
+    // what was actually happening — one step's worth (~0.003 m) repeated
+    // forever, which the old `y < 10.0` accepted without complaint.
+    let fallen = 10.0 - world.get::<Transform>(entity).unwrap().translation.y;
     assert!(
-        transform.translation.y < 10.0,
-        "Entity should have fallen under gravity. Current Y: {}",
-        transform.translation.y
+        (0.10..0.20).contains(&fallen),
+        "ten steps of gravity should fall about 0.15 m; fell {fallen}"
     );
 }
 

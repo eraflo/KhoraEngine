@@ -209,9 +209,17 @@ impl PhysicsProvider for RapierPhysicsWorld {
             };
             rb.set_body_type(rb_type, true);
             rb.set_additional_mass(desc.mass, true);
-            rb.set_linvel(to_rapier_vec(desc.linear_velocity), true);
-            rb.set_angvel(to_rapier_vec(desc.angular_velocity), true);
             rb.enable_ccd(desc.ccd_enabled);
+            // **Not the velocity.** This runs every frame from
+            // `physics_provider_sync`, and `desc.linear_velocity` is the
+            // authored component — an *initial condition*, set once at
+            // `add_body`. Writing it here meant gravity accumulated for exactly
+            // one step and was then thrown away: a body fell a fraction of a
+            // millimetre per frame forever instead of falling.
+            //
+            // Setting a velocity on purpose is a deliberate act, like
+            // teleporting is, and wants a method of its own rather than a
+            // side-effect of the frame's sync.
         }
     }
 
