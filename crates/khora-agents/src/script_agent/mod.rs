@@ -177,15 +177,6 @@ impl Agent for ScriptingAgent {
             apply_reloads(&mut self.runtime, &pending.drain());
         }
 
-        // Drained before anything can return early. An event left in the queue
-        // because this agent bailed out below would be one the engine raised and
-        // nobody ever heard.
-        if let Some(pending) = context.locked::<Channel<ScriptEvent>>() {
-            for event in pending.drain() {
-                self.inbox.push(event);
-            }
-        }
-
         let Some(view): Option<&ScriptView> = context.bus.get() else {
             // The flow has not run, or the scene holds no scripts.
             return;
@@ -193,6 +184,25 @@ impl Agent for ScriptingAgent {
         if view.is_empty() {
             self.last = ScriptRunReport::default();
             return;
+        }
+
+        // One queue, two producers: what scripts raised last frame, and what the
+        // engine raised through its channel. Neither is delivered in the frame
+        // it was produced — an event handled where it was raised opens a cascade
+        // with no bound, and a budget that cannot bound the work is not a
+        // budget.
+        //
+        // Drained **here**, after the early returns above, and that is a
+        // correction: draining it first "so nothing is lost if the agent bails"
+        // had it backwards. The channel is bounded and counts what it drops; the
+        // inbox is a plain `Vec`. Moving events out of the one into the other
+        // before knowing whether this frame can deliver them is how a scene with
+        // no scripts and an engine that raises events grows a queue forever.
+        let mut events = std::mem::take(&mut self.inbox);
+        if let Some(pending) = context.locked::<Channel<ScriptEvent>>() {
+            for event in pending.drain() {
+                events.push(event);
+            }
         }
 
         let mut ctx = LaneContext::new();
@@ -205,35 +215,49 @@ impl Agent for ScriptingAgent {
         ctx.insert(Slot::new(&mut self.runtime));
         // SAFETY: `deck` is borrowed from EngineContext for this call.
         ctx.insert(Slot::new(&mut *context.deck));
-
-        // One queue, two producers: what scripts raised last frame, and what the
-        // engine raised through the bus. Neither is delivered in the frame it
-        // was produced — an event handled where it was raised opens a cascade
-        // with no bound, and a budget that cannot bound the work is not a
-        // budget.
-        let events = std::mem::take(&mut self.inbox);
         ctx.insert(Ref::new(&events));
 
-        let Some(lane) = self.lanes.get(self.current_lane) else {
-            log::error!("ScriptingAgent: lane `{}` is missing", self.current_lane);
-            return;
-        };
-
-        let clock = Stopwatch::new();
-        if let Err(error) = lane.execute(&mut ctx) {
-            log::error!("Script lane {} failed: {error}", lane.strategy_name());
-            return;
-        }
-        let elapsed = clock.elapsed();
-
-        if let Some(mut report) = ctx.get::<ScriptRunReport>().cloned() {
-            if let Some(elapsed) = elapsed {
-                self.observe(&report, elapsed);
+        // No early return past this point, and that is the whole shape of this
+        // block: `events` has already left the inbox, so any exit that forgot to
+        // put it back would drop everything raised last frame — silently, since
+        // an event nobody was told about is indistinguishable from one nobody
+        // raised. Every outcome funnels into the single `match` below instead.
+        let report = match self.lanes.get(self.current_lane) {
+            None => {
+                log::error!("ScriptingAgent: lane `{}` is missing", self.current_lane);
+                None
             }
-            // Held for the next frame. Taken out of the report so a status read
-            // does not carry a queue of events around with it.
-            self.inbox = std::mem::take(&mut report.raised);
-            self.last = report;
+            Some(lane) => {
+                let clock = Stopwatch::new();
+                match lane.execute(&mut ctx) {
+                    Err(error) => {
+                        log::error!("Script lane {} failed: {error}", lane.strategy_name());
+                        None
+                    }
+                    Ok(()) => ctx
+                        .get::<ScriptRunReport>()
+                        .cloned()
+                        .map(|report| (report, clock.elapsed())),
+                }
+            }
+        };
+        // Ends the borrows of `self.runtime` and of `events`, so both can move.
+        drop(ctx);
+
+        match report {
+            Some((mut report, elapsed)) => {
+                if let Some(elapsed) = elapsed {
+                    self.observe(&report, elapsed);
+                }
+                // Held for the next frame. Taken out of the report so a status
+                // read does not carry a queue of events around with it.
+                self.inbox = std::mem::take(&mut report.raised);
+                self.last = report;
+            }
+            // The lane did not run, or ran and reported nothing. Whatever was
+            // raised last frame has not been delivered, so it goes back rather
+            // than out with the stack frame.
+            None => self.inbox = events,
         }
     }
 
@@ -350,5 +374,104 @@ fn apply_reloads(runtime: &mut ScriptRuntime, reloads: &[ScriptReload]) {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::ecs::entity::EntityId;
+    use khora_core::lane::{LaneBus, OutputDeck};
+    use khora_core::{Runtime, WorldAccess};
+    use khora_data::flow::{ScriptInstance, ScriptProgram};
+    use std::sync::Arc;
+
+    fn an_event() -> ScriptEvent {
+        ScriptEvent {
+            target: EntityId {
+                index: 1,
+                generation: 0,
+            },
+            name: "Damaged".to_owned(),
+            args: Vec::new(),
+        }
+    }
+
+    fn a_scene_with_one_script() -> ScriptView {
+        ScriptView {
+            delta_seconds: 0.0,
+            programs: vec![ScriptProgram {
+                module: "ai/guard.erg".to_owned(),
+                behavior: "Guard".to_owned(),
+            }],
+            instances: vec![ScriptInstance {
+                entity: EntityId {
+                    index: 1,
+                    generation: 0,
+                },
+                program: 0,
+                authored: None,
+                translation: Default::default(),
+                rotation: Default::default(),
+                scale: Default::default(),
+            }],
+        }
+    }
+
+    /// Runs one frame against a scene that has scripts, so `execute` gets as far
+    /// as picking a lane.
+    fn run_one_frame(agent: &mut ScriptingAgent) {
+        let mut bus = LaneBus::new();
+        bus.publish(a_scene_with_one_script());
+        let mut deck = OutputDeck::new();
+        let permit = agent.contention();
+        let mut ctx = EngineContext::for_agent(
+            WorldAccess::None,
+            Arc::new(Runtime::default()),
+            &bus,
+            &mut deck,
+            &permit,
+            Some(agent.id()),
+        );
+        agent.execute(&mut ctx);
+    }
+
+    /// **The reason `execute` has one exit.** The inbox is taken out before the
+    /// lane runs, so an exit that forgot to put it back would drop everything
+    /// raised last frame — and silently, because an event nobody was told about
+    /// looks exactly like one nobody raised.
+    ///
+    /// Unreachable today: `current_lane` is set once and never reassigned. It
+    /// stops being unreachable the moment the agent gains a second lane to
+    /// choose between, which is the whole point of giving it a budget.
+    #[test]
+    fn a_missing_lane_does_not_lose_what_was_raised() {
+        let mut agent = ScriptingAgent::default();
+        agent.inbox.push(an_event());
+        agent.current_lane = "a lane nobody registered";
+
+        run_one_frame(&mut agent);
+
+        assert_eq!(
+            agent.inbox.len(),
+            1,
+            "the frame could not deliver it, so it waits for one that can"
+        );
+    }
+
+    /// The same guarantee from the other side: a lane that runs and reports
+    /// puts what it delivered behind it, and the inbox holds only what that run
+    /// raised.
+    #[test]
+    fn a_lane_that_runs_takes_what_was_raised() {
+        let mut agent = ScriptingAgent::default();
+        agent.inbox.push(an_event());
+
+        run_one_frame(&mut agent);
+
+        assert!(
+            agent.inbox.is_empty(),
+            "delivered — the scene names no compiled module, so nobody handled it"
+        );
     }
 }

@@ -29,6 +29,7 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::script::{engine_event_channel, ScriptEvent};
 use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_io::script_hot_reload::reload_channel;
 use khora_script::reload::ScriptReload;
 use khora_script::vm::Program;
@@ -36,8 +37,33 @@ use khora_script::vm::Program;
 /// Runs one frame of the agent against `runtime`, stamped with exactly the
 /// permit the scheduler would stamp — a test that granted more would be testing
 /// a context the engine never builds.
+/// One entity running one behavior, so the agent gets past its "no scripts in
+/// this scene" exit. The module is never compiled, so the lane runs and reports
+/// nothing — which is all these tests need it to do.
+fn a_scene_with_one_script() -> ScriptView {
+    ScriptView {
+        delta_seconds: 0.0,
+        programs: vec![ScriptProgram {
+            module: "ai/guard.erg".to_owned(),
+            behavior: "Guard".to_owned(),
+        }],
+        instances: vec![ScriptInstance {
+            entity: EntityId {
+                index: 1,
+                generation: 0,
+            },
+            program: 0,
+            authored: None,
+            translation: Default::default(),
+            rotation: Default::default(),
+            scale: Default::default(),
+        }],
+    }
+}
+
 fn run_one_frame(agent: &mut ScriptingAgent, runtime: &Arc<Runtime>) {
-    let bus = LaneBus::new();
+    let mut bus = LaneBus::new();
+    bus.publish(a_scene_with_one_script());
     let mut deck = OutputDeck::new();
     let permit = agent.contention();
     let mut ctx = EngineContext::for_agent(
@@ -90,6 +116,48 @@ fn a_queued_engine_event_reaches_the_agent() {
     run_one_frame(&mut ScriptingAgent::default(), &runtime);
 
     assert!(events.is_empty(), "the agent took the event");
+}
+
+/// **The channel is the buffer; the agent's inbox is not.** A scene with no
+/// scripts must leave an engine-raised event where it is — bounded, counted,
+/// and still there next frame — rather than move it into a plain `Vec` that
+/// nothing will ever drain.
+#[test]
+fn an_engine_event_waits_in_the_channel_while_no_script_runs() {
+    let events = engine_event_channel();
+    events.send(ScriptEvent {
+        target: EntityId {
+            index: 1,
+            generation: 0,
+        },
+        name: "Damaged".to_owned(),
+        args: Vec::new(),
+    });
+
+    let mut runtime = Runtime::default();
+    runtime.resources.insert(events.clone());
+    let runtime = Arc::new(runtime);
+
+    // No view published: the flow has not run, or the scene holds no scripts.
+    let bus = LaneBus::new();
+    let mut deck = OutputDeck::new();
+    let mut agent = ScriptingAgent::default();
+    let permit = agent.contention();
+    let mut ctx = EngineContext::for_agent(
+        WorldAccess::None,
+        Arc::clone(&runtime),
+        &bus,
+        &mut deck,
+        &permit,
+        Some(agent.id()),
+    );
+    agent.execute(&mut ctx);
+
+    assert_eq!(
+        events.len(),
+        1,
+        "still queued, for a frame that can deliver it"
+    );
 }
 
 /// **The reach must come from the declaration, not from the runtime holding
