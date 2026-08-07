@@ -34,11 +34,15 @@ uuid = { version = "1.20.0", features = ["v4", "v5", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Communication
-flume = "0.12"
-
 # Logging
 log = "0.4"
 
 # Handle
 raw-window-handle = "0.6"
+
+[dev-dependencies]
+criterion = "0.8"
+
+[[bench]]
+name = "channel_bench"
+harness = false
