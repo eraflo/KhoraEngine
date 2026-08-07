@@ -29,8 +29,8 @@ use khora_core::physics::{CharacterControllerOptions, PhysicsProvider};
 use khora_core::Runtime;
 
 use crate::ecs::{
-    Collider, DataSystemRegistration, KinematicCharacterController, RigidBody, SimulatedTransform,
-    TickPhase, Transform, World,
+    BodyMotion, Collider, DataSystemRegistration, KinematicCharacterController, RigidBody,
+    SimulatedTransform, TickPhase, Transform, World,
 };
 use crate::flow::PhysicsStepResult;
 
@@ -74,17 +74,31 @@ fn physics_world_writeback(world: &mut World, runtime: &Runtime, deck: &mut Outp
 fn sync_from_provider(world: &mut World, provider: &dyn PhysicsProvider) {
     // Read first, write after: adding a component is a structural change, and
     // an entity simulated for the first time has no `SimulatedTransform` yet.
-    let poses: Vec<(EntityId, SimulatedTransform)> = world
+    let observed: Vec<(EntityId, SimulatedTransform, BodyMotion)> = world
         .query::<(EntityId, &RigidBody)>()
         .filter_map(|(entity, rb)| {
             let handle = rb.handle?;
             let (pos, rot) = provider.get_body_transform(handle);
-            Some((entity, SimulatedTransform::from_parts(pos, rot)))
+            let (linear, angular) = provider.get_body_velocity(handle);
+            Some((
+                entity,
+                SimulatedTransform::from_parts(pos, rot),
+                BodyMotion { linear, angular },
+            ))
         })
         .collect();
 
-    for (entity, pose) in poses {
+    for (entity, pose, motion) in observed {
         set_simulated(world, entity, pose);
+        // Read back rather than left to the authored field, which is a starting
+        // condition. Anything asking a body what it is doing used to be told
+        // what its designer typed.
+        match world.get_mut::<BodyMotion>(entity) {
+            Some(existing) => *existing = motion,
+            None => {
+                let _ = world.add_component(entity, motion);
+            }
+        }
     }
 }
 

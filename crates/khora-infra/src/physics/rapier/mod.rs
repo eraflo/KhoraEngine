@@ -177,6 +177,13 @@ impl PhysicsProvider for RapierPhysicsWorld {
         }
     }
 
+    fn get_body_velocity(&self, handle: RigidBodyHandle) -> (Vec3, Vec3) {
+        match self.rigid_body_set.get(to_rapier_rb_handle(handle)) {
+            Some(rb) => (from_rapier_vec(rb.linvel()), from_rapier_vec(rb.angvel())),
+            None => (Vec3::ZERO, Vec3::ZERO),
+        }
+    }
+
     fn set_body_transform(&mut self, handle: RigidBodyHandle, pos: Vec3, rot: Quat) {
         let rb_handle = to_rapier_rb_handle(handle);
         if let Some(rb) = self.rigid_body_set.get_mut(rb_handle) {

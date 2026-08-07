@@ -389,3 +389,48 @@ fn a_declared_move_of_three_millimetres_reaches_the_body() {
         "the marker is good for one frame, or the body is dragged back forever"
     );
 }
+
+/// **Asking a body what it is doing used to answer with what its designer
+/// typed.** `RigidBody` held one field documented "Current linear velocity"
+/// while being `Authored` and serialized; the sync pushed it into the solver
+/// every frame, so gravity accumulated for one step and was erased.
+#[test]
+fn a_falling_body_reports_the_velocity_gravity_gave_it() {
+    use khora_data::ecs::BodyMotion;
+
+    let mut world = World::new();
+    let provider: Arc<Mutex<Box<dyn khora_core::physics::PhysicsProvider>>> =
+        Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
+    let runtime = make_runtime(&provider);
+    let mut agent = PhysicsAgent::default();
+
+    {
+        let bus = khora_core::lane::LaneBus::new();
+        let mut deck = khora_core::lane::OutputDeck::new();
+        let mut ctx = make_init_ctx(&mut world, &runtime, &bus, &mut deck);
+        agent.on_initialize(&mut ctx);
+    }
+
+    let entity = world.spawn((
+        Transform::new(Vec3::new(0.0, 10.0, 0.0), Default::default(), Vec3::ONE),
+        khora_data::ecs::GlobalTransform::at_position(Vec3::new(0.0, 10.0, 0.0)),
+        RigidBody {
+            body_type: BodyType::Dynamic,
+            ..Default::default()
+        },
+    ));
+
+    step_n(&mut agent, &mut world, &runtime, 10);
+
+    let motion = world.get::<BodyMotion>(entity).expect("simulated");
+    assert!(
+        motion.linear.y < -1.0,
+        "ten steps of falling is about -1.6 m/s downward; reported {}",
+        motion.linear.y
+    );
+    assert_eq!(
+        world.get::<RigidBody>(entity).unwrap().initial_velocity,
+        Vec3::ZERO,
+        "the authored starting condition is untouched"
+    );
+}

@@ -189,8 +189,8 @@ fn sync_rigid_bodies(
             position: current_pos,
             rotation: current_rot,
             body_type: rb.body_type,
-            linear_velocity: rb.linear_velocity,
-            angular_velocity: rb.angular_velocity,
+            linear_velocity: rb.initial_velocity,
+            angular_velocity: rb.initial_angular_velocity,
             mass: rb.mass,
             ccd_enabled: rb.ccd_enabled,
         };

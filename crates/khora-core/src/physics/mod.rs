@@ -256,6 +256,13 @@ pub trait PhysicsProvider: Send + Sync {
     /// Synchronizes the position and rotation of a rigid body.
     fn get_body_transform(&self, handle: RigidBodyHandle) -> (Vec3, Quat);
 
+    /// The linear and angular velocity a body currently has.
+    ///
+    /// Read back rather than assumed: `RigidBody::initial_velocity` is what its
+    /// author declared, applied once when the body is created. What it is doing
+    /// now is the solver's, and until this existed nothing could ask.
+    fn get_body_velocity(&self, handle: RigidBodyHandle) -> (Vec3, Vec3);
+
     /// Manually sets the position and rotation of a rigid body.
     fn set_body_transform(&mut self, handle: RigidBodyHandle, pos: Vec3, rot: Quat);
 

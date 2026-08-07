@@ -30,10 +30,18 @@ pub struct RigidBody {
     pub mass: f32,
     /// Whether to enable Continuous Collision Detection (CCD).
     pub ccd_enabled: bool,
-    /// Current linear velocity.
-    pub linear_velocity: Vec3,
-    /// Current angular velocity.
-    pub angular_velocity: Vec3,
+    /// The linear velocity the body starts with.
+    ///
+    /// An **initial condition**, applied once when the body is created — not
+    /// what it is doing now. The two were one field documented as "current"
+    /// while being `Authored` and serialized, and the sync could not tell which
+    /// it held: it pushed the authored value into the solver every frame, so
+    /// gravity accumulated for exactly one step and was then erased. What the
+    /// body is doing lives in [`BodyMotion`](crate::ecs::BodyMotion).
+    pub initial_velocity: Vec3,
+    /// The angular velocity the body starts with, for the reason
+    /// [`initial_velocity`](Self::initial_velocity) gives.
+    pub initial_angular_velocity: Vec3,
 }
 
 impl Default for RigidBody {
@@ -43,8 +51,8 @@ impl Default for RigidBody {
             body_type: BodyType::Dynamic,
             mass: 1.0,
             ccd_enabled: false,
-            linear_velocity: Vec3::ZERO,
-            angular_velocity: Vec3::ZERO,
+            initial_velocity: Vec3::ZERO,
+            initial_angular_velocity: Vec3::ZERO,
         }
     }
 }
@@ -57,8 +65,8 @@ impl RigidBody {
             body_type: BodyType::Dynamic,
             mass,
             ccd_enabled: false,
-            linear_velocity: Vec3::ZERO,
-            angular_velocity: Vec3::ZERO,
+            initial_velocity: Vec3::ZERO,
+            initial_angular_velocity: Vec3::ZERO,
         }
     }
 
@@ -69,8 +77,8 @@ impl RigidBody {
             body_type: BodyType::Static,
             mass: 0.0,
             ccd_enabled: false,
-            linear_velocity: Vec3::ZERO,
-            angular_velocity: Vec3::ZERO,
+            initial_velocity: Vec3::ZERO,
+            initial_angular_velocity: Vec3::ZERO,
         }
     }
 }

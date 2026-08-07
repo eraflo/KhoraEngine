@@ -13,6 +13,7 @@
 // limitations under the License.
 
 mod active_events;
+mod body_motion;
 mod collider;
 mod kinematic_character_controller;
 mod physics_debug_data;
@@ -20,6 +21,7 @@ mod physics_material;
 mod rigid_body;
 
 pub use active_events::*;
+pub use body_motion::*;
 pub use collider::*;
 pub use kinematic_character_controller::*;
 pub use physics_debug_data::*;
