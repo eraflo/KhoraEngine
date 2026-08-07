@@ -66,6 +66,8 @@ pub fn run_behaviors(
         let remaining = fuel.saturating_sub(report.spent);
         if remaining == 0 {
             report.deferred += 1;
+            // The turn never happened, so nothing addressed to it was seen.
+            keep_undelivered(events, instance.entity, 0, &mut report);
             continue;
         }
 
@@ -168,19 +170,27 @@ pub fn run_behaviors(
                 report.completed += 1;
                 report.spent += spent;
             }
-            Outcome::Deferred { spent } => {
+            Outcome::Deferred { spent, delivered } => {
                 report.deferred += 1;
                 report.spent += spent;
+                keep_undelivered(events, instance.entity, delivered, &mut report);
             }
             // Neither completed nor deferred: the behavior is mid-sequence and
             // will carry on when its wait elapses. Counted as completed because
             // it did exactly what it meant to — reporting it as deferred would
             // make the agent's health score fall for a script working as
             // written.
-            Outcome::Awaiting { spent, pending } => {
+            Outcome::Awaiting {
+                spent,
+                pending,
+                delivered,
+            } => {
                 runtime.instance(instance.entity, &program.behavior).pending = pending;
                 report.completed += 1;
                 report.spent += spent;
+                // A behavior mid-`await` is busy, not finished: what it has not
+                // been told yet waits for the turn that will listen.
+                keep_undelivered(events, instance.entity, delivered, &mut report);
             }
             Outcome::Faulted { spent, reason } => {
                 log::error!(
@@ -279,5 +289,25 @@ pub(super) fn farewell_departed(
         host.fields = std::mem::take(&mut runtime.instance(entity, &behavior).fields);
         report.spent += say_goodbye(&program, &behavior, host, left.min(FUEL_PER_BEHAVIOR));
         host.fields = khora_script::arena::PersistentStore::new();
+    }
+}
+
+/// Puts back what an instance was never told.
+///
+/// **Only what it was never told.** A turn that got through three of its five
+/// events and then ran out of fuel keeps two; putting back all five would
+/// deliver the first three twice, and a `Damaged` arriving twice is exactly as
+/// wrong as one that never arrives.
+///
+/// A faulted behavior keeps nothing: it is disabled, so it will never handle
+/// them, and holding them would grow the queue for a listener that is gone.
+fn keep_undelivered(
+    events: &EventQueue,
+    entity: khora_core::ecs::entity::EntityId,
+    delivered: usize,
+    report: &mut ScriptRunReport,
+) {
+    for event in events.for_entity(entity).skip(delivered) {
+        report.undelivered.push(event.clone());
     }
 }

@@ -34,12 +34,22 @@ pub(super) enum Outcome {
     Awaiting {
         spent: u64,
         pending: Option<Pending>,
+        /// How many of this instance's events it got through first.
+        delivered: usize,
     },
     Completed {
         spent: u64,
     },
     Deferred {
         spent: u64,
+        /// How many of this instance's events were handled before the fuel ran
+        /// out.
+        ///
+        /// The rest were never seen, and the frame puts them back. Counting
+        /// rather than returning them keeps `Outcome` free of a borrow, and
+        /// counting rather than putting *all* of them back is the difference
+        /// between a `Damaged` arriving late and arriving twice.
+        delivered: usize,
     },
     Faulted {
         spent: u64,
@@ -64,7 +74,7 @@ impl Outcome {
     pub(super) fn spent(&self) -> u64 {
         match self {
             Self::Completed { spent }
-            | Self::Deferred { spent }
+            | Self::Deferred { spent, .. }
             | Self::Awaiting { spent, .. }
             | Self::Faulted { spent, .. } => *spent,
         }
@@ -159,10 +169,13 @@ pub(super) fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
     if let Some(mut pending) = resuming {
         pending.remaining -= delta;
         if pending.remaining > 0.0 {
-            // Still waiting. Nothing else runs either: the behavior is busy.
+            // Still waiting. Nothing else runs either: the behavior is busy —
+            // so nothing addressed to it this frame was delivered, and the
+            // frame keeps all of it for the turn that will listen.
             return Outcome::Awaiting {
                 spent,
                 pending: Some(pending),
+                delivered: 0,
             };
         }
 
@@ -178,6 +191,7 @@ pub(super) fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
                 return Outcome::Awaiting {
                     spent,
                     pending: Some(waiting_again(pending.machine, host)),
+                    delivered: 0,
                 }
             }
             Run::Faulted(fault) => return Outcome::faulted(spent, fault),
@@ -196,14 +210,21 @@ pub(super) fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
         }
     }
 
+    // What this instance has been told, so the frame can put back what it has
+    // not. Incremented **after** an event is done with, so a handler that ran
+    // out of fuel part-way is retried whole rather than skipped.
+    let mut delivered = 0;
     for event in events.for_entity(entity) {
         let left = fuel.saturating_sub(spent);
         if left == 0 {
-            return Outcome::Deferred { spent };
+            return Outcome::Deferred { spent, delivered };
         }
 
         match deliver(program, behavior, event, host, left, |_| true) {
-            Ok(done) if matches!(done.outcome, Run::Completed) => spent += done.spent,
+            Ok(done) if matches!(done.outcome, Run::Completed) => {
+                spent += done.spent;
+                delivered += 1;
+            }
             Ok(done) => match done.outcome {
                 Run::Suspended(_) => {
                     spent += done.spent;
@@ -213,11 +234,12 @@ pub(super) fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
                         Some(machine) => Outcome::Awaiting {
                             spent,
                             pending: Some(waiting_again(machine, host)),
+                            delivered,
                         },
                         // Out of fuel with nothing to keep: the handler is
                         // retried whole next frame, which is what deferring
                         // has always meant.
-                        None => Outcome::Deferred { spent },
+                        None => Outcome::Deferred { spent, delivered },
                     };
                 }
                 Run::Faulted(fault) => return Outcome::faulted(spent + done.spent, fault),
@@ -225,7 +247,9 @@ pub(super) fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
             },
             // A behavior that does not handle this event is the normal case,
             // not a mistake — a guard hears `Damaged` and ignores `Opened`.
-            Err(NotDelivered::NoHandler { .. }) => {}
+            // Delivered all the same: it was offered and declined, and putting
+            // it back would offer it again every frame forever.
+            Err(NotDelivered::NoHandler { .. }) => delivered += 1,
             Err(other) => {
                 return Outcome::Faulted {
                     spent,
@@ -241,7 +265,9 @@ pub(super) fn run_one(call: Invocation<'_>, host: &mut Host) -> Outcome {
     // `Update` runs.
     let left = fuel.saturating_sub(spent);
     if left == 0 {
-        return Outcome::Deferred { spent };
+        // Every event was offered; only `Update` is owed, and deferring it
+        // costs the frame nothing to put back.
+        return Outcome::Deferred { spent, delivered };
     }
     match call_hook(
         program,

@@ -40,6 +40,14 @@ pub struct ScriptRunReport {
     /// behaviors never leaves scripting, and routing it through the `World` and
     /// back would add two frames of latency and a slot nothing else reads.
     pub raised: EventQueue,
+    /// What no behavior was told, because its turn did not happen.
+    ///
+    /// A frame that runs out of fuel defers behaviors, and deferring is the
+    /// design working rather than failing — but an event dropped along with the
+    /// turn made it lossy: under budget pressure a `Damaged` vanished, and
+    /// nothing said so. These go back into the agent's inbox for the frame that
+    /// can deliver them.
+    pub undelivered: EventQueue,
     /// State for the scene to record, for the instances that did work.
     ///
     /// Carried in the report rather than written to the deck inside the loop so

@@ -401,3 +401,75 @@ fn an_entity_whose_module_is_not_loaded_is_skipped() {
     assert_eq!(report.completed, 0);
     assert_eq!(report.faulted, 0);
 }
+
+// ─── What a deferred turn was never told ────────────────────────────────────
+
+/// A guard whose handler costs enough that a small budget cannot pay for many.
+const COUNTER: &str = r#"
+behavior Guard {
+    int hits = 0;
+
+    on Damaged(int amount) {
+        hits += amount;
+    }
+}
+"#;
+
+fn damage(entity: EntityId, amount: i64) -> khora_core::script::ScriptEvent {
+    khora_core::script::ScriptEvent {
+        target: entity,
+        name: "Damaged".to_owned(),
+        args: vec![khora_core::script::ScriptValue::Int(amount)],
+    }
+}
+
+/// **A turn that never happened was told nothing.** Its events go back whole,
+/// for the frame that can pay for it.
+#[test]
+fn a_turn_with_no_fuel_keeps_every_event() {
+    let mut runtime = runtime_of(COUNTER);
+    let mut host = Host::new();
+    let mut events = khora_core::script::EventQueue::new();
+    events.push(damage(entity(0), 1));
+    events.push(damage(entity(0), 2));
+
+    let report = run_behaviors(&view_of(1), &events, &mut runtime, &mut host, 0);
+
+    assert_eq!(report.deferred, 1);
+    assert_eq!(
+        report.undelivered.len(),
+        2,
+        "neither was offered, so neither is lost"
+    );
+}
+
+/// **And a turn that happened was told everything.** Putting these back would
+/// deliver them twice, which is exactly as wrong as losing them.
+#[test]
+fn a_turn_that_ran_keeps_nothing() {
+    let mut runtime = runtime_of(COUNTER);
+    let mut host = Host::new();
+    let mut events = khora_core::script::EventQueue::new();
+    events.push(damage(entity(0), 1));
+    events.push(damage(entity(0), 2));
+
+    let report = run_behaviors(&view_of(1), &events, &mut runtime, &mut host, 100_000);
+
+    assert_eq!(report.completed, 1);
+    assert!(report.undelivered.is_empty());
+}
+
+/// An event addressed to somebody else is not this instance's to keep.
+#[test]
+fn a_deferred_turn_keeps_only_what_was_addressed_to_it() {
+    let mut runtime = runtime_of(COUNTER);
+    let mut host = Host::new();
+    let mut events = khora_core::script::EventQueue::new();
+    events.push(damage(entity(0), 1));
+    events.push(damage(entity(9), 2));
+
+    let report = run_behaviors(&view_of(1), &events, &mut runtime, &mut host, 0);
+
+    assert_eq!(report.undelivered.len(), 1);
+    assert_eq!(report.undelivered.as_slice()[0].target, entity(0));
+}

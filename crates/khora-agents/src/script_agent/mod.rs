@@ -251,7 +251,16 @@ impl Agent for ScriptingAgent {
                 }
                 // Held for the next frame. Taken out of the report so a status
                 // read does not carry a queue of events around with it.
+                //
+                // Both halves: what this frame's behaviors raised, and what the
+                // frame could not tell a behavior because its turn was deferred
+                // or it was mid-`await`. Keeping only the first made deferring
+                // lossy — under budget pressure an event vanished, silently,
+                // which contradicts deferring being the design working.
                 self.inbox = std::mem::take(&mut report.raised);
+                for event in report.undelivered.drain() {
+                    self.inbox.push(event);
+                }
                 self.last = report;
             }
             // The lane did not run, or ran and reported nothing. Whatever was
@@ -460,19 +469,42 @@ mod tests {
         );
     }
 
-    /// The same guarantee from the other side: a lane that runs and reports
-    /// puts what it delivered behind it, and the inbox holds only what that run
-    /// raised.
+    /// **Deferring is the design working, so it must not lose anything.** With
+    /// no budget the agent has no fuel and every behavior is deferred; the
+    /// event waits for a frame that can deliver it rather than going out with
+    /// the one that could not.
+    ///
+    /// This test used to assert the opposite — that the inbox was emptied —
+    /// and passed only because a deferred turn dropped its events.
     #[test]
-    fn a_lane_that_runs_takes_what_was_raised() {
+    fn a_deferred_behavior_keeps_what_it_was_never_told() {
         let mut agent = ScriptingAgent::default();
+        agent.inbox.push(an_event());
+
+        run_one_frame(&mut agent);
+
+        assert_eq!(agent.inbox.len(), 1, "still waiting to be told");
+    }
+
+    /// And once there is fuel, it is delivered and does not come back. A fix
+    /// that kept everything would deliver twice, which is as wrong as losing
+    /// it.
+    #[test]
+    fn a_behavior_that_gets_its_turn_is_told_once() {
+        let mut agent = ScriptingAgent::default();
+        agent.apply_budget(ResourceBudget {
+            strategy_id: StrategyId::Balanced,
+            time_limit: Duration::from_millis(1),
+            memory_limit: None,
+            extra_params: Default::default(),
+        });
         agent.inbox.push(an_event());
 
         run_one_frame(&mut agent);
 
         assert!(
             agent.inbox.is_empty(),
-            "delivered — the scene names no compiled module, so nobody handled it"
+            "offered — the scene names no compiled module, so nobody handled it"
         );
     }
 }
