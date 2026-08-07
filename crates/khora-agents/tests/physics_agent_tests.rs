@@ -266,3 +266,51 @@ fn test_physics_kcc_grounding() {
         transform.translation.y
     );
 }
+
+/// **What a scene load leaves behind, and why physics stopped after one.**
+///
+/// `GlobalTransform` is `Derived`, so a Recipe does not carry it and a loaded
+/// entity arrives with a `Transform` alone. Every system that needs a world
+/// pose asks for it by reference: propagation skipped the entity, the provider
+/// sync never registered its body, and `cleanup_orphans` then removed the body
+/// it had. A rigid body stopped being simulated at all — after a scene load, or
+/// after pressing Stop, which restores through the same path.
+#[test]
+fn an_entity_loaded_without_a_global_transform_is_still_simulated() {
+    let mut world = World::new();
+    let provider: Arc<Mutex<Box<dyn khora_core::physics::PhysicsProvider>>> =
+        Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
+    let runtime = make_runtime(&provider);
+    let mut agent = PhysicsAgent::default();
+
+    {
+        let bus = khora_core::lane::LaneBus::new();
+        let mut deck = khora_core::lane::OutputDeck::new();
+        let mut ctx = make_init_ctx(&mut world, &runtime, &bus, &mut deck);
+        agent.on_initialize(&mut ctx);
+    }
+
+    // Exactly what `recipe_strategy` produces: the authored components, and no
+    // derived one.
+    let entity = world.spawn((
+        Transform::new(Vec3::new(0.0, 10.0, 0.0), Default::default(), Vec3::ONE),
+        RigidBody {
+            body_type: BodyType::Dynamic,
+            ..Default::default()
+        },
+    ));
+    assert!(
+        world
+            .get::<khora_data::ecs::GlobalTransform>(entity)
+            .is_none(),
+        "the fixture is the shape a load produces"
+    );
+
+    step_n(&mut agent, &mut world, &runtime, 10);
+
+    let fallen = 10.0 - world.get::<Transform>(entity).unwrap().translation.y;
+    assert!(
+        fallen > 0.10,
+        "a loaded body must fall like any other; fell {fallen}"
+    );
+}
