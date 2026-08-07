@@ -46,7 +46,7 @@ use khora_core::Runtime;
 
 use crate::ecs::{
     ActiveEvents, Camera, Collider, DataSystemRegistration, GlobalTransform, Parent,
-    PhysicsMaterial, RigidBody, SemanticDomain, TickPhase, World,
+    PhysicsMaterial, RigidBody, SemanticDomain, Teleported, TickPhase, World,
 };
 use crate::flow::{Flow, Selection};
 use crate::register_flow;
@@ -171,6 +171,14 @@ fn sync_rigid_bodies(
     active_bodies: &mut HashSet<RigidBodyHandle>,
 ) -> HashMap<EntityId, RigidBodyHandle> {
     let mut rb_map = HashMap::new();
+
+    // Collected before the mutable query, and cleared after it: the marker is
+    // good for the one frame in which it was raised.
+    let teleported: HashSet<EntityId> = world
+        .query::<(EntityId, &Teleported)>()
+        .map(|(entity, _)| entity)
+        .collect();
+
     let query = world.query_mut::<(EntityId, &GlobalTransform, &mut RigidBody)>();
 
     for (entity_id, transform, rb) in query {
@@ -188,11 +196,14 @@ fn sync_rigid_bodies(
         };
 
         let handle = if let Some(handle) = rb.handle {
-            // Teleport detection.
-            let (phys_pos, phys_rot) = provider.get_body_transform(handle);
-            if (phys_pos - current_pos).length_squared() > 0.0001
-                || phys_rot.dot(current_rot).abs() < 0.9999
-            {
+            // Told, not guessed. This used to compare the provider's pose to
+            // the entity's and call anything over a centimetre a teleport —
+            // which fires on a fast body's own motion and misses a 3 mm nudge,
+            // because integration drift and a deliberate move produce the same
+            // "they differ". Whoever moves an entity now marks it, and the
+            // marker is cleared below so a body is not dragged back to its
+            // authored pose every frame after.
+            if teleported.contains(&entity_id) {
                 provider.set_body_transform(handle, current_pos, current_rot);
             }
             provider.update_body_properties(handle, desc);
@@ -206,6 +217,10 @@ fn sync_rigid_bodies(
         rb_map.insert(entity_id, handle);
         active_bodies.insert(handle);
     }
+    for entity in &teleported {
+        let _ = world.remove_component::<Teleported>(*entity);
+    }
+
     rb_map
 }
 

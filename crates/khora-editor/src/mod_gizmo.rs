@@ -194,6 +194,13 @@ pub fn apply_delta(
         transform.translation = result.translation;
         transform.rotation = result.rotation;
         transform.scale = result.scale;
+
+        // Says so, rather than leaving the physics sync to infer it from a
+        // difference. A body the simulation owns is otherwise put straight back
+        // where it was, and a drag under a centimetre used to vanish entirely.
+        let _ = world
+            .inner_world_mut()
+            .add_component(entity, khora_sdk::khora_data::ecs::Teleported);
     }
 }
 

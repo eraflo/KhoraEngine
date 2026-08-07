@@ -24,8 +24,8 @@ use khora_core::{
 };
 
 use crate::ecs::{
-    DataSystemRegistration, GlobalTransform, Parent, SimulatedTransform, TickPhase, Transform,
-    Without, World,
+    DataSystemRegistration, GlobalTransform, Parent, SimulatedTransform, Teleported, TickPhase,
+    Transform, Without, World,
 };
 
 /// Propagates local `Transform` changes through the scene hierarchy to
@@ -43,8 +43,14 @@ pub fn transform_propagation_system(world: &mut World) {
     // writeback wrote the provider's world pose into the *local* `Transform`
     // and this system then multiplied it by the parent again, so a parented
     // body drifted by its parent's transform every single frame.
+    // An entity somebody just moved is **not** in this map, however simulated
+    // it is: the author's placement wins the frame they made it, and the
+    // physics sync reads the world pose computed here to push it into the
+    // provider. Without the exception the simulated pose would win, the sync
+    // would push it straight back, and the move would be invisible.
     let simulated: HashMap<EntityId, AffineTransform> = world
         .query::<(EntityId, &SimulatedTransform)>()
+        .filter(|(id, _)| world.get::<Teleported>(*id).is_none())
         .map(|(id, pose)| (id, pose.0))
         .collect();
 

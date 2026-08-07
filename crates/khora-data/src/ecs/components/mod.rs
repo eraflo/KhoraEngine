@@ -27,6 +27,7 @@ mod physics;
 mod script;
 mod simulated_transform;
 mod tag;
+mod teleported;
 mod transform;
 
 pub use audio::*;
@@ -44,4 +45,5 @@ pub use physics::*;
 pub use script::*;
 pub use simulated_transform::*;
 pub use tag::*;
+pub use teleported::*;
 pub use transform::*;

@@ -163,6 +163,11 @@ fn transform_mut(world: &mut World, entity: EntityId) -> Result<&mut Transform, 
     if !world.contains(entity) {
         return Err(ApplyError::NoSuchEntity(entity));
     }
+    // Marked before the borrow, because a script moving an entity is an
+    // authoring act and the physics sync has to be told: a simulated body would
+    // otherwise be put back where the solver left it, next frame, silently.
+    // Harmless on an entity nothing simulates — the sync clears it either way.
+    let _ = world.add_component(entity, crate::ecs::Teleported);
     world
         .get_mut::<Transform>(entity)
         .ok_or(ApplyError::NoTransform(entity))

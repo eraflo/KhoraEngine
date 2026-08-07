@@ -333,3 +333,59 @@ fn an_entity_loaded_without_a_global_transform_is_still_simulated() {
         "a loaded body must fall like any other; fell {fallen}"
     );
 }
+
+/// **A declared move reaches the simulation; an undeclared one does not.**
+///
+/// The sync used to infer a teleport from a difference over 1 cm, which fires on
+/// a fast body's own motion and misses a 3 mm nudge. Whoever moves an entity
+/// says so now, and the threshold is gone with the guesswork — three
+/// millimetres is a move if somebody made it.
+#[test]
+fn a_declared_move_of_three_millimetres_reaches_the_body() {
+    use khora_data::ecs::{SimulatedTransform, Teleported};
+
+    let mut world = World::new();
+    let provider: Arc<Mutex<Box<dyn khora_core::physics::PhysicsProvider>>> =
+        Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
+    let runtime = make_runtime(&provider);
+    let mut agent = PhysicsAgent::default();
+
+    {
+        let bus = khora_core::lane::LaneBus::new();
+        let mut deck = khora_core::lane::OutputDeck::new();
+        let mut ctx = make_init_ctx(&mut world, &runtime, &bus, &mut deck);
+        agent.on_initialize(&mut ctx);
+    }
+
+    let entity = world.spawn((
+        Transform::new(Vec3::new(0.0, 10.0, 0.0), Default::default(), Vec3::ONE),
+        khora_data::ecs::GlobalTransform::at_position(Vec3::new(0.0, 10.0, 0.0)),
+        RigidBody {
+            body_type: BodyType::Static,
+            ..Default::default()
+        },
+    ));
+    step_n(&mut agent, &mut world, &runtime, 2);
+
+    // The author nudges it, and says so — the same two steps a gizmo drag takes.
+    world.get_mut::<Transform>(entity).unwrap().translation.x = 0.003;
+    world
+        .add_component(entity, Teleported)
+        .expect("marked as moved");
+
+    step_n(&mut agent, &mut world, &runtime, 1);
+
+    let x = world
+        .get::<SimulatedTransform>(entity)
+        .expect("simulated")
+        .translation()
+        .x;
+    assert!(
+        (x - 0.003).abs() < 1e-4,
+        "the three-millimetre move reached the body; it is at x = {x}"
+    );
+    assert!(
+        world.get::<Teleported>(entity).is_none(),
+        "the marker is good for one frame, or the body is dragged back forever"
+    );
+}
