@@ -117,7 +117,6 @@ impl EventQueue {
         self.events.drain(..)
     }
 
-    /// Discards everything queued.
     /// Everything addressed to one entity, in order.
     pub fn for_entity(&self, entity: EntityId) -> impl Iterator<Item = &ScriptEvent> + '_ {
         self.events.iter().filter(move |e| e.target == entity)

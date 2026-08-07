@@ -76,7 +76,6 @@ impl CommandBuffer {
         Self::default()
     }
 
-    /// An empty buffer with room for `capacity` commands.
     /// Queues a command.
     pub fn push(&mut self, command: WorldCommand) {
         self.commands.push(command);
@@ -111,13 +110,6 @@ impl CommandBuffer {
         self.commands.drain(..)
     }
 
-    /// Discards every command.
-    /// Moves `other`'s commands onto the end of this buffer, emptying it.
-    /// Merges buffers by an explicit order key.
-    ///
-    /// The key is what makes a parallel lane reproducible: sorting by it means
-    /// the applied order depends on the scene, not on which worker finished
-    /// first. Behavior declaration order is the intended key.
     /// Finds the writes that will be silently lost when this buffer is applied.
     ///
     /// Returned in a fixed order so a test — or a log a user is comparing across

@@ -444,7 +444,6 @@ impl NativeRegistry {
         self.functions.len()
     }
 
-    /// Whether nothing is exposed.
     /// Every function, in index order.
     pub fn iter(&self) -> impl Iterator<Item = &'static NativeFn> + '_ {
         self.functions.iter().copied()

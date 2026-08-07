@@ -61,15 +61,11 @@ pub struct ScriptStateWriteback {
 }
 
 impl ScriptStateWriteback {
-    /// An empty writeback.
     /// Queues one instance's state.
     pub fn push(&mut self, update: ScriptStateUpdate) {
         self.updates.push(update);
     }
 
-    /// How many instances are queued.
-    /// Whether none are.
-    /// The queued updates.
     /// Takes every update, leaving the allocation intact for the next frame.
     pub fn drain(&mut self) -> std::vec::Drain<'_, ScriptStateUpdate> {
         self.updates.drain(..)
