@@ -220,7 +220,7 @@ fn a_first_load_carries_nothing_and_reports_nothing() {
     let reports: Vec<ReloadReport> = runtime.reload(MODULE, compile(GUARD));
 
     assert!(reports.is_empty());
-    assert_eq!(runtime.len(), 1, "and the module is loaded");
+    assert_eq!(runtime.module_count(), 1, "and the module is loaded");
 }
 
 // ─── Recovery ───────────────────────────────────────────────────────────────

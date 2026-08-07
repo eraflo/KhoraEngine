@@ -105,7 +105,7 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> Compiled {
     };
 
     let mut diagnostics = khora_script::modules::report_name_clashes(&resolved);
-    if diagnostics.iter().any(is_error) {
+    if khora_script::diagnostics::has_errors(&diagnostics) {
         return Compiled {
             program: None,
             diagnostics,
@@ -114,7 +114,7 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> Compiled {
 
     let checked = khora_script::check(&merged);
     diagnostics.extend(checked.diagnostics);
-    if diagnostics.iter().any(is_error) {
+    if khora_script::diagnostics::has_errors(&diagnostics) {
         return Compiled {
             program: None,
             diagnostics,
@@ -123,16 +123,12 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> Compiled {
 
     let compiled = khora_script::compile(&merged);
     diagnostics.extend(compiled.diagnostics);
-    let failed = diagnostics.iter().any(is_error);
+    let failed = khora_script::diagnostics::has_errors(&diagnostics);
 
     Compiled {
         program: (!failed).then_some(compiled.program),
         diagnostics,
     }
-}
-
-fn is_error(diagnostic: &Diagnostic) -> bool {
-    diagnostic.severity == khora_script::Severity::Error
 }
 
 #[cfg(test)]

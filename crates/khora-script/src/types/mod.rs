@@ -48,7 +48,7 @@ use crate::ast::{
     BehaviorDecl, BehaviorMember, FunctionDecl, Item, Module, OperatorDecl, OverloadableOp,
     StructDecl,
 };
-use crate::diagnostics::{Diagnostic, Severity, Span};
+use crate::diagnostics::{Diagnostic, Span};
 
 /// What a check produced.
 #[derive(Debug, Clone)]
@@ -60,9 +60,7 @@ pub struct Checked {
 impl Checked {
     /// Whether any diagnostic is an error.
     pub fn has_errors(&self) -> bool {
-        self.diagnostics
-            .iter()
-            .any(|d| d.severity == Severity::Error)
+        crate::diagnostics::has_errors(&self.diagnostics)
     }
 }
 

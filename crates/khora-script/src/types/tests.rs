@@ -468,3 +468,54 @@ fn a_single_mistake_does_not_cascade() {
         "expected exactly one message, got {found:?}"
     );
 }
+
+/// **The list and the declarations are one decision written twice.**
+///
+/// `ENGINE_TYPES` says which names a script may write; `ergon_type!` declares
+/// what those names actually are. They drifted once — the list carried
+/// `Transform`, `Mesh` and `Material` with nothing behind them, so a script
+/// naming one type-checked and then failed at its first use with a message
+/// about a missing component rather than a missing type.
+///
+/// A name is backed when the registry holds a constructor of that name
+/// returning that engine type, which is exactly what `ergon_type!` submits.
+#[test]
+fn every_engine_type_is_declared() {
+    use crate::native::{NativeRegistry, NativeTy};
+
+    let natives = NativeRegistry::discovered();
+
+    for name in crate::types::ty::ENGINE_TYPES {
+        let constructor = natives
+            .iter()
+            .find(|native| native.name == *name)
+            .unwrap_or_else(|| panic!("`{name}` is offered to scripts but nothing declares it"));
+
+        assert_eq!(
+            constructor.result,
+            NativeTy::Engine(name),
+            "`{name}`'s constructor must produce a `{name}`"
+        );
+    }
+}
+
+/// The other direction: a declared type nobody may name is unreachable, which
+/// is the same drift seen from the other side.
+#[test]
+fn every_declared_engine_type_may_be_named() {
+    use crate::native::{NativeRegistry, NativeTy};
+
+    for native in NativeRegistry::discovered().iter() {
+        if let NativeTy::Engine(name) = native.result {
+            // Accessors also return components of an engine type; only the
+            // constructor shares its name with the type it builds.
+            if native.name != name {
+                continue;
+            }
+            assert!(
+                crate::types::ty::ENGINE_TYPES.contains(&name),
+                "`{name}` is declared but no script may name it"
+            );
+        }
+    }
+}

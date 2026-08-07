@@ -200,7 +200,22 @@ pub struct Diagnostic {
     pub note: Option<String>,
 }
 
+/// Whether any of these stops the pipeline.
+///
+/// One definition, because six places asked it: the five compiler stages each
+/// spelled `iter().any(|d| d.severity == Severity::Error)` on their own result
+/// type, and `khora-io`'s driver spelled the element predicate a sixth time. A
+/// stage result is genuinely its own type; the question asked of it is not.
+pub fn has_errors(diagnostics: &[Diagnostic]) -> bool {
+    diagnostics.iter().any(Diagnostic::is_error)
+}
+
 impl Diagnostic {
+    /// Whether this one stops the pipeline.
+    pub fn is_error(&self) -> bool {
+        self.severity == Severity::Error
+    }
+
     /// An error at `span`.
     pub fn error(message: impl Into<String>, span: Span) -> Self {
         Self {

@@ -102,7 +102,7 @@ impl Checker {
             Expr::Call { callee, args, span } => self.check_call(callee, args, *span, context),
             Expr::Field { object, name, span } => {
                 let receiver = self.check_expr(object, context);
-                self.check_field(&receiver, name, *span, false)
+                self.check_field(&receiver, name, *span)
             }
             Expr::OptionalField { object, name, span } => {
                 let receiver = self.check_expr(object, context);
@@ -116,7 +116,7 @@ impl Checker {
                 // The result is optional whatever the field's own type: the
                 // receiver may be absent.
                 let inner = receiver.unwrapped();
-                let field = self.check_field(&inner, name, *span, true);
+                let field = self.check_field(&inner, name, *span);
                 match field {
                     Ty::Error => Ty::Error,
                     other => Ty::Optional(Box::new(other)),
@@ -507,7 +507,7 @@ impl Checker {
         Ty::Error
     }
 
-    fn check_field(&mut self, receiver: &Ty, name: &str, span: Span, optional: bool) -> Ty {
+    fn check_field(&mut self, receiver: &Ty, name: &str, span: Span) -> Ty {
         match receiver {
             Ty::Error => Ty::Error,
             Ty::Struct(struct_name) => {
@@ -545,10 +545,6 @@ impl Checker {
             // `this` is the entity, and an entity's components are reached
             // through the engine surface rather than through a field.
             Ty::Behavior(_) | Ty::Entity => Ty::Error,
-            other if optional => {
-                self.error(format!("`{}` has no field `{name}`", other.name()), span);
-                Ty::Error
-            }
             other => {
                 self.error(format!("`{}` has no field `{name}`", other.name()), span);
                 Ty::Error

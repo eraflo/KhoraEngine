@@ -74,16 +74,17 @@ pub enum Ty {
 /// The engine types a script may name. Listed rather than derived: the API
 /// surface is a decision, and a script should not reach whatever happens to be
 /// reachable.
-pub const ENGINE_TYPES: &[&str] = &[
-    "Vec2",
-    "Vec3",
-    "Vec4",
-    "Quat",
-    "Color",
-    "Transform",
-    "Mesh",
-    "Material",
-];
+///
+/// But a decision is not the same as a wish. This once also named `Transform`,
+/// `Mesh` and `Material`, none of which had a `Value` variant, a constructor or
+/// an accessor — so `Transform t;` type-checked, shaped cleanly, and then failed
+/// at the first use with "`Transform` has no `x`". A name here that nothing
+/// declares is worse than a name that is absent: absent gives the author the
+/// error they can act on.
+///
+/// [`every_engine_type_is_declared`](super::tests::every_engine_type_is_declared)
+/// holds the two together.
+pub const ENGINE_TYPES: &[&str] = &["Vec2", "Vec3", "Vec4", "Quat", "Color"];
 
 impl Ty {
     /// The name to print in a diagnostic.

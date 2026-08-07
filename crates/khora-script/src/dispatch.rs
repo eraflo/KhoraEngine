@@ -108,9 +108,10 @@ impl std::fmt::Display for NotDelivered {
 
 /// The name a behavior's handler compiles to.
 ///
-/// One place, because the compiler writes it and the dispatcher reads it, and
-/// two spellings of the same convention would fail silently — a handler that
-/// simply never fires.
+/// One place, and now actually one: the compiler writes the name here too
+/// (`bytecode::member_signature`, `bytecode::expr`), because two spellings of
+/// the same convention fail silently — a handler registered under one and
+/// looked up under the other never fires, and nothing reports it.
 pub fn handler_name(behavior: &str, event: &str) -> String {
     format!("{behavior}.{event}")
 }

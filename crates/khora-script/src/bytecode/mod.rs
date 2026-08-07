@@ -69,9 +69,7 @@ pub struct Compiled {
 impl Compiled {
     /// Whether any diagnostic is an error.
     pub fn has_errors(&self) -> bool {
-        self.diagnostics
-            .iter()
-            .any(|d| d.severity == crate::diagnostics::Severity::Error)
+        crate::diagnostics::has_errors(&self.diagnostics)
     }
 }
 
@@ -846,9 +844,10 @@ fn shape_of_state_slot(decl: &crate::ast::StateDecl, slot: &str) -> Shape {
 
 /// The compiled name, return shape and source span of a behavior member.
 ///
-/// One place, because `collect_signatures` and `compile_behavior` both need it
-/// and two spellings of the same convention would fail silently — a handler
-/// registered under one name and emitted under another simply never fires.
+/// The name itself comes from [`dispatch`](crate::dispatch), which is where the
+/// *reader* of it lives. Both sides claimed to be the one place; neither was,
+/// and a handler registered under one spelling and looked up under another does
+/// not fail to compile — it simply never fires.
 ///
 /// The span is the *name* rather than the whole declaration: it is what a
 /// duplicate report has to point at for the author to see which two collided.
@@ -858,8 +857,8 @@ fn member_signature(
     member: &BehaviorMember,
 ) -> Option<(String, Shape, Span)> {
     let qualify = |name: &str| match state {
-        Some(state) => format!("{behavior}.{state}.{name}"),
-        None => format!("{behavior}.{name}"),
+        Some(state) => crate::dispatch::state_handler_name(behavior, state, name),
+        None => crate::dispatch::handler_name(behavior, name),
     };
 
     match member {

@@ -44,7 +44,7 @@ pub use path::{normalise, PathError};
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::Module;
-use crate::diagnostics::{Diagnostic, Severity, SourceFile, Span};
+use crate::diagnostics::{Diagnostic, SourceFile, Span};
 use crate::lexer::lex;
 use crate::parser::parse;
 
@@ -71,9 +71,7 @@ pub struct Resolved {
 impl Resolved {
     /// Whether any diagnostic is an error.
     pub fn has_errors(&self) -> bool {
-        self.diagnostics
-            .iter()
-            .any(|d| d.severity == Severity::Error)
+        crate::diagnostics::has_errors(&self.diagnostics)
     }
 
     /// A resolved module by path.

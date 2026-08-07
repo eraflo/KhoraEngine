@@ -53,9 +53,7 @@ pub struct Parsed {
 impl Parsed {
     /// Whether any diagnostic is an error.
     pub fn has_errors(&self) -> bool {
-        self.diagnostics
-            .iter()
-            .any(|d| d.severity == crate::diagnostics::Severity::Error)
+        crate::diagnostics::has_errors(&self.diagnostics)
     }
 }
 

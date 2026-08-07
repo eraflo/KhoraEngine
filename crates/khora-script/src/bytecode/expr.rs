@@ -511,7 +511,7 @@ impl Compiler {
         let sibling = self
             .behavior
             .as_ref()
-            .map(|layout| format!("{}.{name}", layout.name))
+            .map(|layout| crate::dispatch::handler_name(&layout.name, name))
             .and_then(|qualified| self.signatures.get(&qualified).copied());
         if let Some(index) = sibling {
             return self.emit_call(CallTarget::Script(index), name, args);

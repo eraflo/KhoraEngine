@@ -32,38 +32,66 @@
 use khora_core::script::ScriptValue;
 use serde_json::{Map, Value as Json};
 
-/// Converts a script value into JSON the component mirror can read.
-pub(super) fn to_json(value: &ScriptValue) -> Result<Json, String> {
-    Ok(match value {
-        ScriptValue::Unit => Json::Null,
-        ScriptValue::Bool(flag) => Json::Bool(*flag),
-        ScriptValue::Int(number) => Json::from(*number),
-        ScriptValue::Float(number) => number_from_float(*number)?,
-        ScriptValue::Str(text) => Json::String(text.clone()),
-        // The math types and `EntityId` derive `Serialize`, so their JSON shape
-        // is by construction the one the mirror expects — hand-writing it here
-        // would be a second definition free to drift from the first.
-        ScriptValue::Vec2(v) => encode(v)?,
-        ScriptValue::Vec3(v) => encode(v)?,
-        ScriptValue::Vec4(v) => encode(v)?,
-        ScriptValue::Quat(q) => encode(q)?,
-        ScriptValue::Color(c) => encode(c)?,
-        ScriptValue::Entity(id) => encode(id)?,
-        ScriptValue::Array(values) => Json::Array(
-            values
-                .iter()
-                .map(to_json)
-                .collect::<Result<Vec<_>, String>>()?,
-        ),
-        ScriptValue::Struct(fields) => {
-            let mut object = Map::with_capacity(fields.len());
-            for (name, field) in fields {
-                object.insert(name.clone(), to_json(field)?);
-            }
-            Json::Object(object)
-        }
-    })
+/// How one table row becomes JSON.
+///
+/// Three rows answer for themselves. `Bool` and `Int` are cheaper as their own
+/// JSON kinds than through serde, and a `Float` has to **refuse** a NaN with a
+/// message naming the field — `serde_json` turns one into `null`, which
+/// deserializes as a missing field and leaves the author hunting a write that
+/// appeared to succeed. Everything else derives `Serialize`, so its JSON shape
+/// is by construction the one the mirror expects.
+///
+/// Matching on the literal variant before the general arm is how
+/// `ergon_type!` already spells an exception in a generated table.
+macro_rules! json_of {
+    (Bool, $inner:expr) => {
+        Json::Bool(*$inner)
+    };
+    (Int, $inner:expr) => {
+        Json::from(*$inner)
+    };
+    (Float, $inner:expr) => {
+        number_from_float(*$inner)?
+    };
+    ($variant:ident, $inner:expr) => {
+        encode($inner)?
+    };
 }
+
+macro_rules! define_to_json {
+    ($($variant:ident : $rust:ty ;)*) => {
+        /// Converts a script value into JSON the component mirror can read.
+        ///
+        /// Generated from [`script_value_table`](khora_core::script_value_table)
+        /// rather than listed. Six of the nine rows were spelled out here — the
+        /// fifth conversion of the same universe, and the one the value bridge
+        /// was written to remove. There is no `_` arm: a row added to the table
+        /// has to break this file, not slip past it.
+        pub(super) fn to_json(value: &ScriptValue) -> Result<Json, String> {
+            Ok(match value {
+                $(ScriptValue::$variant(inner) => json_of!($variant, inner),)*
+
+                // ── Irregular ──────────────────────────────────────────────
+                ScriptValue::Unit => Json::Null,
+                ScriptValue::Str(text) => Json::String(text.clone()),
+                ScriptValue::Array(values) => Json::Array(
+                    values
+                        .iter()
+                        .map(to_json)
+                        .collect::<Result<Vec<_>, String>>()?,
+                ),
+                ScriptValue::Struct(fields) => {
+                    let mut object = Map::with_capacity(fields.len());
+                    for (name, field) in fields {
+                        object.insert(name.clone(), to_json(field)?);
+                    }
+                    Json::Object(object)
+                }
+            })
+        }
+    };
+}
+khora_core::script_value_table!(define_to_json);
 
 fn encode<T: serde::Serialize>(value: &T) -> Result<Json, String> {
     serde_json::to_value(value).map_err(|error| error.to_string())

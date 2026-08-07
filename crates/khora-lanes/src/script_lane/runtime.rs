@@ -280,11 +280,14 @@ impl ScriptRuntime {
     }
 
     /// How many modules are loaded.
-    pub fn len(&self) -> usize {
+    ///
+    /// Named for what it counts, beside `instance_count`: a bare `len` on a
+    /// runtime holding both modules and instances says which of the two only by
+    /// convention, and the two numbers are rarely the same.
+    pub fn module_count(&self) -> usize {
         self.programs.len()
     }
 
-    /// Whether none are.
     /// The state of one entity's behavior, created empty if it is new.
     pub fn instance(&mut self, entity: EntityId, behavior: &str) -> &mut Instance {
         self.instances
