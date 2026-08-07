@@ -40,11 +40,15 @@ Research ──► Plan ──► Implement ──► (verify) ──► compact
 
 ## Artifacts
 
-- `docs/research/AAAA-MM-JJ_topic.md` — research findings (committed).
-- `docs/plans/descriptive-name.md` — implementation plans + live status (committed).
+- `docs/research/AAAA-MM-JJ_topic.md` — research findings (**scratch, never committed**).
+- `docs/plans/descriptive-name.md` — implementation plan + live status (**scratch, never committed**).
 
-Both are versioned in git so they show up in review and history. `knowledge/MEMORY.md` tracks the
-current state and points at the active plan docs.
+Both are working files: they describe a moment, not the system. Delete them once the work lands —
+a kept artefact becomes a second, stale description of the code that a later reader takes for
+current intent. Anything durable belongs in the code's own comments or in
+[`knowledge/`](./knowledge/MEMORY.md).
+
+`knowledge/MEMORY.md` tracks the current state and points at whichever plan is still live.
 
 ## When to skip
 
