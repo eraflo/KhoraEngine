@@ -181,6 +181,25 @@ mod provenance_tests {
         );
     }
 
+    /// **A marker is a component, and a scene has to record it.**
+    ///
+    /// `ActiveEvents` and `AudioListener` carried
+    /// `#[component(no_serializable)]`, which does not mean "runtime state" —
+    /// it drops the `ComponentRegistration` outright, so no serializer ever
+    /// knew the type existed. Saving a scene and loading it back removed both:
+    /// the collider stopped reporting contacts, and the scene came back deaf.
+    /// `provenance_of` returning `None` is the shape of that bug.
+    #[test]
+    fn a_marker_component_is_registered_and_authored() {
+        for marker in ["ActiveEvents", "AudioListener"] {
+            assert_eq!(
+                provenance_of(marker),
+                Some(ComponentProvenance::Authored),
+                "{marker} must be recorded in a scene — somebody put it there on purpose"
+            );
+        }
+    }
+
     /// The components a user actually authors keep the default, including the
     /// two whose registration is hand-written rather than derive-generated.
     #[test]
@@ -271,6 +290,8 @@ mod tests {
             Camera::new_perspective(std::f32::consts::FRAC_PI_3, 1.5, 0.05, 500.0),
             Light::point(),
             AudioSource::default(),
+            crate::ecs::AudioListener,
+            crate::ecs::ActiveEvents,
             tags,
             Parent(other),
             Children(vec![other]),

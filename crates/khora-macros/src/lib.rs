@@ -451,7 +451,20 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
             }
         }
     } else {
-        quote! {}
+        // A marker — a unit struct, or one whose every field is skipped. The
+        // mirror above is generated for it; without these two impls it had a
+        // type and no way to reach it, so the registration did not compile and
+        // the only way to declare such a component was
+        // `#[component(no_serializable)]` — which drops the registration
+        // entirely and makes the marker vanish from every scene file. A marker
+        // carries no data and all of its meaning: its presence *is* the value.
+        quote! {
+            impl From<#name> for #serializable_name {
+                fn from(_: #name) -> Self {
+                    Self
+                }
+            }
+        }
     };
 
     let from_serializable_to_original = if matches!(fields, Fields::Named(_))
@@ -476,7 +489,15 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
             }
         }
     } else {
-        quote! {}
+        // The other direction for a marker. `Default` rather than `Self`,
+        // because a struct whose fields were all skipped has fields to fill.
+        quote! {
+            impl From<#serializable_name> for #name {
+                fn from(_: #serializable_name) -> Self {
+                    Self::default()
+                }
+            }
+        }
     };
 
     let expanded = quote! {

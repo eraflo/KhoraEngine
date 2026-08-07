@@ -18,7 +18,11 @@ use serde::{Deserialize, Serialize};
 /// Indicates that an entity should receive collision events.
 /// By default, the physics engine does not report collisions for every entity
 /// to save on performance. Adding this component enables reporting for this entity.
+// `Authored`, the default, and deliberately: a designer adds this to say "report
+// this collider's contacts". It was `#[component(no_serializable)]`, which does
+// not mean "runtime state" — it removes the `ComponentRegistration` entirely, so
+// no serializer ever knew the type existed. Saving a scene and loading it back
+// silently dropped it, and the collider went quiet.
 #[derive(Debug, Clone, Copy, Default, Component, Serialize, Deserialize)]
-#[component(no_serializable)]
 #[component(domain = Physics)]
 pub struct ActiveEvents;
