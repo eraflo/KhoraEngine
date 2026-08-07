@@ -27,8 +27,9 @@ use khora_agents::script_agent::ScriptingAgent;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{LaneBus, OutputDeck};
-use khora_core::script::{Pending, ScriptEvent};
+use khora_core::script::{engine_event_channel, ScriptEvent};
 use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_io::script_hot_reload::reload_channel;
 use khora_script::reload::ScriptReload;
 use khora_script::vm::Program;
 
@@ -52,8 +53,8 @@ fn run_one_frame(agent: &mut ScriptingAgent, runtime: &Arc<Runtime>) {
 
 #[test]
 fn a_queued_reload_reaches_the_agent() {
-    let reloads = Pending::<ScriptReload>::new();
-    reloads.push(ScriptReload {
+    let reloads = reload_channel();
+    reloads.send(ScriptReload {
         module: "ai/guard.erg".to_owned(),
         program: Program::default(),
     });
@@ -72,8 +73,8 @@ fn a_queued_reload_reaches_the_agent() {
 
 #[test]
 fn a_queued_engine_event_reaches_the_agent() {
-    let events = Pending::<ScriptEvent>::new();
-    events.push(ScriptEvent {
+    let events = engine_event_channel();
+    events.send(ScriptEvent {
         target: EntityId {
             index: 1,
             generation: 0,
@@ -98,13 +99,13 @@ fn a_queued_engine_event_reaches_the_agent() {
 /// for the wrong reason.
 #[test]
 fn an_agent_that_declared_nothing_reaches_neither() {
-    let reloads = Pending::<ScriptReload>::new();
-    reloads.push(ScriptReload {
+    let reloads = reload_channel();
+    reloads.send(ScriptReload {
         module: "ai/guard.erg".to_owned(),
         program: Program::default(),
     });
-    let events = Pending::<ScriptEvent>::new();
-    events.push(ScriptEvent {
+    let events = engine_event_channel();
+    events.send(ScriptEvent {
         target: EntityId {
             index: 1,
             generation: 0,

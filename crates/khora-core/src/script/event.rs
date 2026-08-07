@@ -53,9 +53,23 @@ pub struct ScriptEvent {
     pub args: Vec<ScriptValue>,
 }
 
-impl crate::script::Supersedes for ScriptEvent {
-    // The default — nothing. Two collisions in one frame are two events, and a
-    // producer that meant to send one should send one.
+impl crate::event::Supersedes for ScriptEvent {
+    // The default — nothing coalesces. Two collisions in one frame are two
+    // events, and a producer that meant to send one should send one.
+}
+
+/// How many engine-raised events may wait for the scripting agent.
+///
+/// Nothing coalesces them, so this is a real ceiling rather than a count of
+/// distinct subjects. Sized for several frames of a busy scene: the agent
+/// drains every frame it runs, and the case that fills this is an agent that
+/// has not run at all — a stall, or a scene with no scripts — where the oldest
+/// event is also the least worth delivering.
+pub const ENGINE_EVENT_BACKLOG: usize = 4096;
+
+/// A channel for the events the engine raises for scripts.
+pub fn engine_event_channel() -> crate::event::Channel<ScriptEvent> {
+    crate::event::Channel::bounded(ENGINE_EVENT_BACKLOG, crate::event::WhenFull::DropOldest)
 }
 
 impl ScriptEvent {

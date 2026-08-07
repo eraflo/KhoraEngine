@@ -54,8 +54,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 
+use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::OutputDeck;
-use khora_core::script::Pending;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 use khora_script::reload::ScriptReload;
@@ -67,7 +67,21 @@ use crate::asset::decoders::script::imports_of;
 /// Named here rather than spelled out at each use: the pump is the only writer,
 /// so the queue's identity belongs beside it — and it saves the engine wiring a
 /// dependency on `khora-script` just to name the element type.
-pub type PendingReloads = Pending<ScriptReload>;
+pub type PendingReloads = Channel<ScriptReload>;
+
+/// How many recompiled modules may wait for the scripting agent.
+///
+/// A [`ScriptReload`] supersedes an earlier one for the same module, so repeats
+/// of one file never fill this — it counts **distinct** modules changed between
+/// two frames. What gets near it is a mass change: a branch switch, a generated
+/// tree. Dropping the oldest then keeps what was saved most recently, which is
+/// what the author is looking at.
+const RELOAD_BACKLOG: usize = 1024;
+
+/// A channel for what this pump recompiles.
+pub fn reload_channel() -> PendingReloads {
+    Channel::bounded(RELOAD_BACKLOG, WhenFull::DropOldest)
+}
 use crate::asset::AssetWatcher;
 use crate::script_compile::{compile_module, DiskLoader};
 
@@ -140,7 +154,7 @@ fn importers_of(
 ///
 /// Returns how many compiled. A module that does not compile is reported and
 /// skipped: one broken script should not stop the others from running.
-pub fn load_all(script_root: &Path, pending: &Pending<ScriptReload>) -> usize {
+pub fn load_all(script_root: &Path, pending: &PendingReloads) -> usize {
     let loader = DiskLoader::new(script_root);
     let mut loaded = 0;
 
@@ -148,7 +162,7 @@ pub fn load_all(script_root: &Path, pending: &Pending<ScriptReload>) -> usize {
         let compiled = compile_module(&loader, &module);
         match compiled.program {
             Some(program) => {
-                pending.push(ScriptReload { module, program });
+                pending.send(ScriptReload { module, program });
                 loaded += 1;
             }
             None => {
@@ -205,7 +219,7 @@ fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
     if events.is_empty() {
         return;
     }
-    let Some(pending) = runtime.resources.get::<Pending<ScriptReload>>() else {
+    let Some(pending) = runtime.resources.get::<PendingReloads>() else {
         return;
     };
 
@@ -234,7 +248,7 @@ fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
         match compiled.program {
             Some(program) => {
                 log::info!("script hot-reload: recompiled {module}");
-                pending.push(ScriptReload { module, program });
+                pending.send(ScriptReload { module, program });
             }
             None => {
                 // Kept running rather than replaced. A save mid-edit usually
@@ -470,7 +484,7 @@ mod load_tests {
         )
         .expect("writes");
 
-        let pending = Pending::<ScriptReload>::new();
+        let pending = reload_channel();
         assert_eq!(load_all(dir.path(), &pending), 2);
 
         let queued: Vec<String> = pending.drain().into_iter().map(|r| r.module).collect();
@@ -490,7 +504,7 @@ mod load_tests {
         )
         .expect("writes");
 
-        let pending = Pending::<ScriptReload>::new();
+        let pending = reload_channel();
         load_all(dir.path(), &pending);
 
         assert_eq!(
@@ -508,7 +522,7 @@ mod load_tests {
         std::fs::write(dir.path().join("good.erg"), "fn void A() { }").expect("writes");
         std::fs::write(dir.path().join("broken.erg"), "behavior {{{").expect("writes");
 
-        let pending = Pending::<ScriptReload>::new();
+        let pending = reload_channel();
         assert_eq!(load_all(dir.path(), &pending), 1);
         assert_eq!(
             pending.drain().first().map(|r| r.module.clone()),
@@ -519,7 +533,7 @@ mod load_tests {
     #[test]
     fn an_empty_root_loads_nothing_and_does_not_fail() {
         let dir = tempfile::TempDir::new().expect("a temp dir");
-        let pending = Pending::<ScriptReload>::new();
+        let pending = reload_channel();
 
         assert_eq!(load_all(dir.path(), &pending), 0);
         assert!(pending.is_empty());

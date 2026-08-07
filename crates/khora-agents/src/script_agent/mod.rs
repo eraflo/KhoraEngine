@@ -46,8 +46,9 @@ use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
 };
+use khora_core::event::Channel;
 use khora_core::lane::{LaneContext, LaneRegistry, Ref, Slot};
-use khora_core::script::{CommandBuffer, EventQueue, Pending, ScriptEvent, ScriptStateWriteback};
+use khora_core::script::{CommandBuffer, EventQueue, ScriptEvent, ScriptStateWriteback};
 use khora_core::{EngineContext, Stopwatch};
 use khora_data::flow::ScriptView;
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
@@ -88,7 +89,7 @@ pub struct ScriptingAgent {
     /// event from one behavior to another never leaves scripting, and the round
     /// trip would cost two frames of latency and a deck slot nothing else reads.
     /// Engine-raised events arrive the other way, through
-    /// [`Pending<ScriptEvent>`](Pending) — a queue the engine fills and this
+    /// [`Channel<ScriptEvent>`](Channel) — a queue the engine fills and this
     /// agent drains. The two stay apart on purpose: putting script-to-script
     /// traffic in a shared resource would move the agent's own state somewhere
     /// anything could reach it, which is the opposite of what makes its
@@ -172,14 +173,14 @@ impl Agent for ScriptingAgent {
         // Applied before anything runs, so a frame never executes the version
         // the author has just replaced. Arriving through the bus rather than
         // from a shared cache is what keeps `access` honest.
-        if let Some(pending) = context.locked::<Pending<ScriptReload>>() {
+        if let Some(pending) = context.locked::<Channel<ScriptReload>>() {
             apply_reloads(&mut self.runtime, &pending.drain());
         }
 
         // Drained before anything can return early. An event left in the queue
         // because this agent bailed out below would be one the engine raised and
         // nobody ever heard.
-        if let Some(pending) = context.locked::<Pending<ScriptEvent>>() {
+        if let Some(pending) = context.locked::<Channel<ScriptEvent>>() {
             for event in pending.drain() {
                 self.inbox.push(event);
             }
@@ -281,8 +282,8 @@ impl Agent for ScriptingAgent {
                 TypeId::of::<CommandBuffer>(),
                 TypeId::of::<ScriptStateWriteback>(),
             ])
-            .locking::<Pending<ScriptReload>>()
-            .locking::<Pending<ScriptEvent>>()
+            .locking::<Channel<ScriptReload>>()
+            .locking::<Channel<ScriptEvent>>()
     }
 
     fn execution_timing(&self) -> ExecutionTiming {
