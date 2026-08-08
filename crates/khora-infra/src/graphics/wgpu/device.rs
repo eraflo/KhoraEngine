@@ -2072,16 +2072,28 @@ mod buffer_descriptor_tests {
         assert!(!built.usage.contains(wgpu::BufferUsages::VERTEX));
     }
 
-    /// What the reporter's own workaround was for: a real vertex buffer is
-    /// also a copy destination, and both halves have to survive.
+    /// **The reporter's case, with their workaround removed.**
+    ///
+    /// `lana-khora-spike` asked for `VERTEX | INDEX | COPY_DST` on a vertex
+    /// buffer so that the raw bit copy would yield wgpu `INDEX | VERTEX`, and
+    /// the `VERTEX` flag would survive whichever way the bits landed. Their
+    /// comment says to drop the `INDEX` bit once `create_buffer` calls
+    /// `into_wgpu`. This is that call, without the bit.
+    ///
+    /// The engine asks for the same combination in its own text renderer
+    /// (`khora-infra/src/renderer/text.rs`), which is why the defect was not
+    /// specific to their project — it simply never surfaced there, because
+    /// nothing queues text in the sandbox and the buffer is bound only when
+    /// something does.
     #[test]
-    fn a_realistic_combination_survives() {
+    fn a_vertex_buffer_that_is_also_a_copy_target() {
         let source = a_descriptor(api_buf::BufferUsage::VERTEX | api_buf::BufferUsage::COPY_DST);
         let built = buffer_descriptor(&source);
 
         assert_eq!(
             built.usage,
-            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            "no INDEX bit needed to keep VERTEX"
         );
     }
 
