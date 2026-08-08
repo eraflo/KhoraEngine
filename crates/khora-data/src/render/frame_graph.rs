@@ -24,6 +24,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use khora_core::renderer::api::command::CommandBufferId;
+use khora_core::renderer::traits::CommandEncoder;
 use khora_core::renderer::GraphicsDevice;
 
 /// Logical resource handle in the frame graph — used for declaring reads/writes.
@@ -113,9 +114,43 @@ pub struct UiPassSlot(pub Option<PassContribution>);
 #[derive(Default)]
 pub struct SkyboxPassSlot(pub Option<PassContribution>);
 
+/// Deck slot carrying the scene's **transparent** draws, written by
+/// `RenderAgent` alongside [`ScenePassSlot`].
+///
+/// # Why the scene is two passes
+///
+/// A blended surface must not write depth — two transparent surfaces could not
+/// composite if it did. So it leaves the pixel at the far plane, and the skybox
+/// paints exactly the pixels left at the far plane. With the whole scene in one
+/// pass, the sky therefore repainted the glass wherever there was no opaque
+/// geometry behind it: a transparent sphere against the sky simply vanished,
+/// while the half of it overlapping the floor survived.
+///
+/// Splitting the scene puts the sky where it belongs — **between** the opaque
+/// draws that give it a depth buffer to test against and the blended draws that
+/// composite over it.
+///
+/// The alternative was to draw the sky first and let it clear the target. That
+/// would have made a background the frame cannot be rendered without: the
+/// skybox agent is `Important`, not `Critical`, and SAA is built so that
+/// dropping work costs quality, never correctness. With the split, an absent
+/// sky costs you the sky — the opaque pass still clears, and the glass still
+/// blends over the clear colour.
+#[derive(Default)]
+pub struct TransparentPassSlot(pub Option<PassContribution>);
+
 /// Deck slot carrying the overlay / debug-viz pass, written by `OverlayAgent`.
 #[derive(Default)]
 pub struct OverlayPassSlot(pub Option<PassContribution>);
+
+/// The encoder a lane records its transparent draws into.
+///
+/// A newtype because [`LaneContext`](khora_core::lane::LaneContext) is keyed by
+/// type, so the opaque encoder and this one cannot both be a bare
+/// `Slot<dyn CommandEncoder>`. Only the lit lanes — the ones with a blended
+/// batch — look for it; every other lane keeps recording into the single
+/// encoder it always had.
+pub struct TransparentEncoder(pub khora_core::lane::Slot<dyn CommandEncoder>);
 
 /// Per-frame collection of recorded passes.
 ///
@@ -252,6 +287,45 @@ mod tests {
 
     fn buf(id: u64) -> CommandBufferId {
         CommandBufferId(id)
+    }
+
+    /// **The glass-against-the-sky bug.** A blended surface writes no depth,
+    /// and the skybox paints exactly the pixels left at the far plane — so the
+    /// sky must draw *before* the transparent geometry, or it repaints it
+    /// wherever no opaque geometry stood behind.
+    ///
+    /// Insertion order is what expresses this: the topological sort refines it
+    /// via declared read/write edges, and insertion order is the tie-breaker.
+    /// This pins the order the engine folds the slots in.
+    #[test]
+    fn the_sky_is_folded_between_the_opaque_and_the_blended_draws() {
+        let mut g = FrameGraph::new();
+
+        // The order `EngineCore::submit_passes` uses.
+        g.add_pass(
+            PassDescriptor::new("ScenePass")
+                .writes(ResourceId::Color)
+                .writes(ResourceId::Depth),
+            buf(1),
+        );
+        g.add_pass(
+            PassDescriptor::new("SkyboxPass")
+                .writes(ResourceId::Color)
+                .reads(ResourceId::Depth),
+            buf(2),
+        );
+        g.add_pass(
+            PassDescriptor::new("TransparentPass")
+                .writes(ResourceId::Color)
+                .reads(ResourceId::Depth),
+            buf(3),
+        );
+
+        assert_eq!(
+            g.compile(),
+            [buf(1), buf(2), buf(3)],
+            "the sky must sit between the opaque draws that give it a depth              buffer and the blended draws that composite over it"
+        );
     }
 
     #[test]

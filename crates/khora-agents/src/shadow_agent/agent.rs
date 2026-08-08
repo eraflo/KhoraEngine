@@ -251,15 +251,9 @@ impl Agent for ShadowAgent {
             let mut ctx = LaneContext::new();
             ctx.insert(device.clone());
             ctx.insert(gpu_meshes);
-            // SAFETY: encoder lives for the entire scope of this block; ctx
-            // is dropped before encoder.finish().
-            let encoder_slot = Slot::new(encoder.as_mut());
-            ctx.insert(unsafe {
-                std::mem::transmute::<
-                    Slot<dyn khora_core::renderer::traits::CommandEncoder>,
-                    Slot<dyn khora_core::renderer::traits::CommandEncoder>,
-                >(encoder_slot)
-            });
+            // The encoder outlives `ctx`, which is dropped before it is
+            // finished — the contract `Slot::for_encoder` states.
+            ctx.insert(Slot::for_encoder(encoder.as_mut()));
             ctx.insert(Ref::new(render_world));
             if let Some(shadow_view) = context.bus.get::<khora_data::flow::ShadowView>() {
                 ctx.insert(Ref::new(shadow_view));

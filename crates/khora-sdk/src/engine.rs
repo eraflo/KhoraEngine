@@ -620,15 +620,26 @@ impl<A: EngineApp> EngineCore<A> {
         // before the debug overlays. The topological sort refines this via the
         // declared read/write edges; insertion order is the tie-breaker.
         if let (Some(graph), Some(scheduler)) = (&frame_graph, self.scheduler.as_mut()) {
-            use khora_data::render::{OverlayPassSlot, ScenePassSlot, SkyboxPassSlot, UiPassSlot};
+            use khora_data::render::{
+                OverlayPassSlot, ScenePassSlot, SkyboxPassSlot, TransparentPassSlot, UiPassSlot,
+            };
             let deck = scheduler.deck_mut();
             let scene = deck.take::<ScenePassSlot>().0;
             let skybox = deck.take::<SkyboxPassSlot>().0;
+            let transparent = deck.take::<TransparentPassSlot>().0;
             let ui = deck.take::<UiPassSlot>().0;
             let overlay = deck.take::<OverlayPassSlot>().0;
-            if scene.is_some() || skybox.is_some() || ui.is_some() || overlay.is_some() {
+            if scene.is_some()
+                || skybox.is_some()
+                || transparent.is_some()
+                || ui.is_some()
+                || overlay.is_some()
+            {
                 if let Ok(mut fg) = graph.lock() {
-                    for pass in [scene, skybox, ui, overlay].into_iter().flatten() {
+                    for pass in [scene, skybox, transparent, ui, overlay]
+                        .into_iter()
+                        .flatten()
+                    {
                         fg.add_pass(pass.descriptor, pass.command_buffer);
                     }
                 } else {

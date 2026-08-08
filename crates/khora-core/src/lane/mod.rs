@@ -390,6 +390,44 @@ impl<T: ?Sized> Slot<T> {
     }
 }
 
+impl Slot<dyn crate::renderer::traits::CommandEncoder> {
+    /// Lends a command encoder to a [`LaneContext`].
+    ///
+    /// # Why this exists
+    ///
+    /// A `LaneContext` is keyed by type, so what it holds must be `'static` —
+    /// and an encoder borrowed from the caller's stack is not. Erasing that
+    /// bound needs a `transmute`, and six agents were each spelling one out.
+    /// An agent chooses a lane against a budget; laundering a lifetime is not
+    /// its job, and `unsafe` at that layer is a smell whatever the comment
+    /// above it says.
+    ///
+    /// # Why it is safe to call
+    ///
+    /// It adds no hazard that [`Slot::new`] does not already carry: that
+    /// function is itself safe and turns a borrow into a raw pointer under the
+    /// same contract — **the `Slot` must not outlive the reference it was made
+    /// from**. Here that means the encoder must outlive the `LaneContext` it is
+    /// handed to, which every caller satisfies by construction: the context is
+    /// a local of the agent's `execute`, dropped before the encoder is
+    /// finished.
+    ///
+    /// What is erased is only the lifetime *bound on the trait object*; the
+    /// pointer was already lifetime-free.
+    pub fn for_encoder(encoder: &mut dyn crate::renderer::traits::CommandEncoder) -> Self {
+        // SAFETY: `Slot` holds a raw pointer, so the two types have identical
+        // layout; only the `dyn` object's lifetime bound differs. The contract
+        // that makes the pointer valid is `Slot`'s own, stated above and
+        // upheld by the caller.
+        unsafe {
+            std::mem::transmute::<
+                Slot<dyn crate::renderer::traits::CommandEncoder + '_>,
+                Slot<dyn crate::renderer::traits::CommandEncoder>,
+            >(Slot::new(encoder))
+        }
+    }
+}
+
 /// Wraps a **shared** borrow for storage in [`LaneContext`].
 ///
 /// Like [`Slot`] but for immutable references.

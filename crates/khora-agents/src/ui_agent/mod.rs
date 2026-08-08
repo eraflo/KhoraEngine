@@ -245,15 +245,9 @@ impl Agent for UiAgent {
             ctx.insert(Ref::new(ui_scene));
             ctx.insert(Ref::new(&atlas_map));
 
-            // SAFETY: encoder is alive for this block; ctx is dropped before
-            // encoder.finish() consumes it.
-            let encoder_slot = Slot::new(encoder.as_mut());
-            ctx.insert(unsafe {
-                std::mem::transmute::<
-                    Slot<dyn khora_core::renderer::traits::CommandEncoder>,
-                    Slot<dyn khora_core::renderer::traits::CommandEncoder>,
-                >(encoder_slot)
-            });
+            // The encoder outlives `ctx`, which is dropped before it is
+            // finished — the contract `Slot::for_encoder` states.
+            ctx.insert(Slot::for_encoder(encoder.as_mut()));
             ctx.insert(color_target);
 
             if let Err(e) = lane.execute(&mut ctx) {

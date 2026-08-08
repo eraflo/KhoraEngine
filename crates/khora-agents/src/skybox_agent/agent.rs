@@ -158,15 +158,9 @@ impl Agent for SkyboxAgent {
         {
             let mut ctx = LaneContext::new();
             ctx.insert(device.clone());
-            // SAFETY: encoder is alive for the whole block; ctx is dropped
-            // before encoder.finish() consumes it.
-            let encoder_slot = Slot::new(encoder.as_mut());
-            ctx.insert(unsafe {
-                std::mem::transmute::<
-                    Slot<dyn khora_core::renderer::traits::CommandEncoder>,
-                    Slot<dyn khora_core::renderer::traits::CommandEncoder>,
-                >(encoder_slot)
-            });
+            // The encoder outlives `ctx`, which is dropped before it is
+            // finished — the contract `Slot::for_encoder` states.
+            ctx.insert(Slot::for_encoder(encoder.as_mut()));
             if let Some(rw) = render_world {
                 ctx.insert(khora_core::lane::Ref::new(rw));
             }

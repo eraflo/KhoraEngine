@@ -44,7 +44,7 @@ use khora_data::assets::Assets;
 use khora_data::ecs::World;
 use khora_data::render::{
     extract_active_camera_view, PassContribution, PassDescriptor, RenderWorld, ResourceId,
-    ScenePassSlot,
+    ScenePassSlot, TransparentPassSlot,
 };
 use khora_data::AssetStore;
 use khora_lanes::render_lane::{ForwardPlusLane, LitForwardLane, SimpleUnlitLane, StandardPbrLane};
@@ -111,7 +111,10 @@ impl Agent for RenderAgent {
     /// Buffers its main scene pass into the [`ScenePassSlot`] deck slot.
     fn contention(&self) -> Contention {
         Contention::none()
-            .writing_deck([std::any::TypeId::of::<ScenePassSlot>()])
+            .writing_deck([
+                std::any::TypeId::of::<ScenePassSlot>(),
+                std::any::TypeId::of::<TransparentPassSlot>(),
+            ])
             .reading::<AssetStore>()
             .reading::<Arc<FrameContext>>()
             .reading::<AgentFrameStatusMap>()
@@ -311,6 +314,13 @@ impl Agent for RenderAgent {
         // Encode the scene pass into a fresh command buffer; the FrameGraph
         // submits it once all agents have finished recording.
         let mut encoder = device.create_command_encoder(Some("Khora Scene Encoder"));
+        // A second buffer for the blended draws. The engine folds the skybox
+        // pass between the two: a blended surface writes no depth, and the sky
+        // paints exactly the pixels left at the far plane, so glass recorded in
+        // the same pass as the opaque geometry was repainted by the sky
+        // wherever nothing opaque stood behind it.
+        let mut transparent_encoder =
+            device.create_command_encoder(Some("Khora Transparent Encoder"));
         {
             let mut ctx = LaneContext::new();
             ctx.insert(device.clone());
@@ -318,18 +328,16 @@ impl Agent for RenderAgent {
             if let Some(ps) = pipeline_system.clone() {
                 ctx.insert(ps);
             }
-            // SAFETY: encoder is alive for this whole block; ctx (which holds
-            // the slot) is dropped before encoder.finish() consumes it.
-            let encoder_slot = Slot::new(encoder.as_mut());
-            ctx.insert(unsafe {
-                std::mem::transmute::<
-                    Slot<dyn khora_core::renderer::traits::CommandEncoder>,
-                    Slot<dyn khora_core::renderer::traits::CommandEncoder>,
-                >(encoder_slot)
-            });
-            // SAFETY: render_world is borrowed from the LaneBus, which lives
-            // for the entire frame and is read-only — the Ref's pointer
-            // outlives its only consumer (this lane).
+            // Both encoders outlive `ctx`, which is dropped at the end of this
+            // block — before either is finished. That is the contract
+            // `Slot::for_encoder` states.
+            ctx.insert(Slot::for_encoder(encoder.as_mut()));
+            ctx.insert(khora_data::render::TransparentEncoder(Slot::for_encoder(
+                transparent_encoder.as_mut(),
+            )));
+            // `render_world` is borrowed from the LaneBus, which lives for the
+            // entire frame and is read-only — the `Ref`'s pointer outlives its
+            // only consumer (this lane).
             ctx.insert(khora_core::lane::Ref::new(render_world));
             // SAFETY: deck is borrowed from EngineContext for the duration
             // of this agent.execute() call. Lit lanes read `ShadowEntries`
@@ -377,6 +385,24 @@ impl Agent for RenderAgent {
         context.deck.slot::<ScenePassSlot>().0 = Some(PassContribution {
             descriptor,
             command_buffer: cmd_buf,
+        });
+
+        // The blended half, folded after the skybox. A frame with nothing
+        // transparent still finishes the encoder — the buffer is simply empty —
+        // so the slot is always written and never carries a stale contribution
+        // from a previous frame.
+        let Some(transparent_buf) = transparent_encoder.finish() else {
+            log::error!(
+                "RenderAgent: transparent encoder.finish() returned None — backend reported \
+                 failure, skipping TransparentPass submission"
+            );
+            return;
+        };
+        context.deck.slot::<TransparentPassSlot>().0 = Some(PassContribution {
+            descriptor: PassDescriptor::new("TransparentPass")
+                .writes(ResourceId::Color)
+                .reads(ResourceId::Depth),
+            command_buffer: transparent_buf,
         });
     }
 

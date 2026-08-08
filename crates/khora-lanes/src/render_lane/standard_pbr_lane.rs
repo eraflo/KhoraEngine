@@ -255,6 +255,7 @@ fn render_pbr(
     ibl_bindings: Option<khora_core::renderer::api::ibl::IblGpuBindings>,
     device: &dyn khora_core::renderer::GraphicsDevice,
     encoder: &mut dyn CommandEncoder,
+    transparent_encoder: Option<&khora_data::render::TransparentEncoder>,
     render_ctx: &RenderContext,
     gpu_meshes: &RwLock<Assets<GpuMesh>>,
 ) {
@@ -630,33 +631,25 @@ fn render_pbr(
         return;
     };
 
-    let mut render_pass = encoder.begin_render_pass(&render_pass_desc);
-    render_pass.set_bind_group(0, &camera_bind_group, &[]);
-    render_pass.set_bind_group(3, &final_lighting_bind_group, &[]);
-
-    // Opaque first — it fills the depth buffer the transparent pass tests
-    // against — then the blended draws, farthest first.
-    let mut current_pipeline = None;
-    for cmd in draw_commands
-        .iter()
-        .chain(transparent_draws.iter().map(|(_, cmd)| cmd))
     {
-        if current_pipeline != Some(cmd.pipeline) {
-            render_pass.set_pipeline(&cmd.pipeline);
-            current_pipeline = Some(cmd.pipeline);
-        }
-        if let Some(bg) = &cmd.model_bind_group {
-            render_pass.set_bind_group(1, bg, &[cmd.model_offset]);
-        }
-        if let Some(bg) = &cmd.material_bind_group {
-            render_pass.set_bind_group(2, bg, &[]);
-        }
-        render_pass.set_vertex_buffer(0, &cmd.vertex_buffer, 0);
-        render_pass.set_index_buffer(&cmd.index_buffer, 0, cmd.index_format);
-        render_pass.draw_indexed(0..cmd.index_count, 0, 0..1);
+        let mut render_pass = encoder.begin_render_pass(&render_pass_desc);
+        render_pass.set_bind_group(0, &camera_bind_group, &[]);
+        render_pass.set_bind_group(3, &final_lighting_bind_group, &[]);
+        crate::render_lane::record_draws(render_pass.as_mut(), draw_commands.iter());
     }
 
-    drop(render_pass);
+    // The blended half goes into its own command buffer, so the engine can
+    // fold the skybox pass between the two. Keeping it here would have the sky
+    // repaint the glass: a blended surface writes no depth, and the sky paints
+    // exactly the pixels left at the far plane.
+    crate::render_lane::record_transparent_pass(
+        transparent_encoder.map(|handle| handle.0.get()),
+        &transparent_draws,
+        render_ctx,
+        &camera_bind_group,
+        &final_lighting_bind_group,
+    );
+
     // Only the per-frame group-3 lighting bind group is transient now;
     // model uniforms live in the ring, materials in the GpuMaterial cache.
     for bg in temp_bind_groups {
@@ -763,6 +756,7 @@ impl khora_core::lane::Lane for StandardPbrLane {
             ibl_bindings,
             device.as_ref(),
             encoder,
+            ctx.get::<khora_data::render::TransparentEncoder>(),
             &render_ctx,
             &gpu_meshes,
         );

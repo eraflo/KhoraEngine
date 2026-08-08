@@ -22,6 +22,8 @@ mod forward_plus_lane;
 mod gizmo_lane;
 mod grid_lane;
 mod lit_forward_lane;
+mod recording;
+pub(crate) use recording::{record_draws, record_transparent_pass};
 pub mod shaders;
 pub mod shadows_lane;
 mod simple_unlit_lane;
