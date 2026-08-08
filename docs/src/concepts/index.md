@@ -17,6 +17,7 @@ in order for the full picture, or jump to the one you need.
 5. [Agents and Lanes](./agents-and-lanes.md) — strategists that choose, executors that run.
 6. [GORNA](./gorna.md) — how subsystems negotiate for the frame budget.
 7. [AGDF](./agdf.md) — adapting data layout at runtime, without changing meaning.
+8. [Scripting (Ergon)](./scripting.md) — a gameplay language that can be told to stop.
 
 ## The subsystems
 

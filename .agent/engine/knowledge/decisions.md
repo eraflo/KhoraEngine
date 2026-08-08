@@ -35,7 +35,7 @@ Durable decisions and their rationale. Append when a new structural decision lan
    Lighting); new lighting features add bindings to group 3, never a 5th group (wgpu universal baseline).
 
 10. **Shaders as files** — WGSL lives in `shaders/pipelines/` + `shaders/lib/`, composed via
-    `ShaderRegistry` + `naga_oil` `#import`; no inline source, no runtime filesystem reads.
+    the `PipelineSystem` backend + `naga_oil` `#import`; no inline source, no runtime filesystem reads.
 
 11. **Documentation in place, no ADR files** — record decisions in existing docs, not a separate ADR
     section. (Project convention.)

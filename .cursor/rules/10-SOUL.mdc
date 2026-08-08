@@ -54,7 +54,8 @@ Control ──► Agent ──► Lane ──► Data        (the per-frame desc
        budget   selects   reads bus / writes deck
 ```
 
-**17 workspace crates** (14 `khora-*` + `sandbox` + `xtask` + `hub`). One line each. The last column
+**17 workspace members** (14 `khora-*` + `sandbox` + `xtask` + `hub`), plus `khora-macros`, a path
+crate that is not a member. One line each. The last column
 points to the on-demand [`reference/`](./reference/) doc for that crate's domain:
 
 | Crate | One-line role | reference/ |
@@ -63,9 +64,10 @@ points to the on-demand [`reference/`](./reference/) doc for that crate's domain
 | `khora-macros` | `#[derive(Component)]` proc macro (path crate, not a member). | ecs-data |
 | `khora-data` | CRPECS ECS, component storage, SoA/AGDF layout, Flows. | ecs-data |
 | `khora-control` | DCC, GORNA arbitration, cost model, PID budget, Substrate Pass. | control-gorna |
-| `khora-lanes` | Hot-path Lanes: render / physics / audio / ui. | per-domain |
-| `khora-agents` | Strategist Agents: Render/Shadow/Overlay/Physics/Ui/Audio. | per-domain |
-| `khora-infra` | Concrete backends: wgpu, Rapier3D, CPAL, Taffy, winit. | per-domain |
+| `khora-script` | **Ergon** — the gameplay language: lexer, parser, bytecode, VM, hot-reload. Suspends on an instruction boundary so the DCC can bound a frame. Depends on core + macros only, so it is testable without booting an engine. | scripting |
+| `khora-lanes` | Hot-path Lanes: render / physics / audio / ui / script. | per-domain |
+| `khora-agents` | Strategist Agents: Render/Shadow/Overlay/Skybox/Physics/Ui/Audio/Script. Each holds strategy state and nothing else. | per-domain |
+| `khora-infra` | Concrete backends, one subfolder each: `graphics/wgpu`, `physics/rapier`, `physics/khora` (in-house, incomplete), `audio/cpal`, `ui/taffy`, `platform/window`. Also owns the `.wgsl` files and their composition. | per-domain |
 | `khora-io` | Asset service, VFS, serialization, pack/file loaders. | api-ux |
 | `khora-telemetry` | Metrics, monitors, telemetry events. | control-gorna |
 | `khora-plugins` | Plugin loading / registration. | api-ux |

@@ -262,7 +262,8 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la clÃ
 - **StandardPbrLane**: alternative `RenderAgent` strategy (Cook-Torrance GGX), shares the
   `khora::std/lighting/shadow` lib modules and the group-3 contract.
 - **Legacy WGSL cleanup**: 14 duplicate root `.wgsl` files deleted; canonical sources under
-  `shaders/pipelines/` + `shaders/lib/`, referenced via `ShaderRegistry` + `naga_oil #import`.
+  `khora-infra/src/graphics/shader/shaders/{pipelines,lib}/`, composed by the `PipelineSystem`
+  backend via `naga_oil #import`. A lane names a pipeline; it never handles source.
 - **Bugfix â€” 5-bind-group Forward+ pipeline**: F+ briefly used 5 groups; `max_bind_groups == 4` made the
   pipeline invalid (scene stopped rendering). Fixed by the canonical 4-bind-group convention
   (`conventions.md Â§10`): group 3 = whole lighting domain.
@@ -295,5 +296,6 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la clÃ
 > + the `physics_world_writeback` DataSystem.
 
 ## Architecture decisions
-See [`decisions.md`](./decisions.md). Crate count is **16** (13 `khora-*` + sandbox + xtask + hub);
+See [`decisions.md`](./decisions.md). Crate count is **17 workspace members** (14 `khora-*` + sandbox
++ xtask + hub, plus `khora-macros` as a non-member path crate);
 older notes saying 11/12 were stale and omitted `khora-runtime`.

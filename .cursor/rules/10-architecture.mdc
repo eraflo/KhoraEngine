@@ -103,7 +103,7 @@ Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`,
 | `khora-data` | Data | CRPECS ECS (`World`, storage, query, `SemanticDomain`), SoA/AGDF layout (`LayoutAdvisor`, `Ucb1`), `Assets<T>`, UI components, scene definitions, Flows, `EcsMaintenance`. |
 | `khora-control` | Control | `DccService` (agent lifecycle), `GornaArbitrator` (budget fitting + replay), cost model, PID budget, Substrate dispatcher, situational `Context` (thermal/battery/phase). |
 | `khora-telemetry` | Infra | `TelemetryService`, `MetricsRegistry`, `MonitorRegistry`, telemetry event storage. |
-| `khora-lanes` | Lanes | Render (Unlit, LitForward, Forward+, StandardPbr, Shadow, Overlay: Grid/Emissive/Wireframe/Gizmo, UI), Physics (Standard, CCD), Audio (SpatialMixing, SourceUpdate), UI (StandardUi, TaffyLayout), `ShaderRegistry`. |
+| `khora-lanes` | Lanes | Render (Unlit, LitForward, Forward+, StandardPbr, Shadow, Overlay: Grid/Emissive/Wireframe/Gizmo, UI), Physics (Standard, CCD), Audio (SpatialMixing, SourceUpdate), UI (StandardUi, TaffyLayout), Script (Budgeted). |
 | `khora-infra` | Infra | Default backends: `WgpuRenderSystem`/`WgpuDevice`, `WinitWindow` + input, Rapier3D physics, CPAL audio, Taffy layout, GPU/Memory/Vram monitors. Each implements a `khora-core` trait and is swappable. |
 | `khora-io` | Data | `AssetService`, `SerializationService`, VFS, `AssetIo`, `PackLoader`/`FileLoader`, decoders (glTF, OBJ, Symphonia audio, texture, font). |
 | `khora-agents` | Agents | `RenderAgent`, `ShadowAgent`, `OverlayAgent`, `PhysicsAgent`, `UiAgent`, `AudioAgent` + `PhysicsQueryService`. |
@@ -198,11 +198,13 @@ pub trait Agent: Send + Sync {
 | `UiAgent` | Ui | Layout + Render (editor mode) |
 | `AudioAgent` | Audio | source count / quality |
 
-WGSL composition: a render lane calls `ShaderRegistry::create_module("khora::pipelines::<name>")` from
-`on_initialize`; the registry resolves `#import` via `naga_oil` against `shaders/lib/`, validates with
-`naga`, emits final WGSL. No runtime filesystem reads; add a pipeline to `PIPELINE_MODULES` in
-`shader_registry.rs`. Detail in [`../../docs/src/06_agents.md`](../../docs/src/06_agents.md) and
-[`../../docs/src/08_gorna.md`](../../docs/src/08_gorna.md).
+WGSL composition: the `.wgsl` files live in `khora-infra/src/graphics/shader/shaders/`
+(`pipelines/` entry points, `lib/` reusable modules) and are embedded with `include_str!`.
+A render lane never handles source — it **names** a pipeline in its spec
+(`shader: "khora::pipelines::forward_plus"`), and the `PipelineSystem` backend
+(`khora-infra/src/graphics/shader/system.rs`) resolves the `#import` graph via `naga_oil`,
+compiles, and caches. There is no `ShaderRegistry` type; earlier revisions of these docs
+named one.
 
 ---
 

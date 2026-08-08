@@ -53,7 +53,7 @@ What this engine does not yet answer, and where the next iteration should go.
 
 ## 03 — Agents and lanes
 
-1. **`asset_lane` and `ecs_lane` should not be lanes.** A `Lane` is a strategy variant a GORNA-negotiating agent picks per frame. Asset decoders and ECS compaction have no strategies — they are on-demand or fixed maintenance work. The current implementations as lanes are residual and should be lifted into services (`AssetService` / `DecoderRegistry`, `EcsMaintenance`). See [Roadmap](./roadmap.md) Phase 2 — Architecture refactoring.
+1. ~~**`asset_lane` and `ecs_lane` should not be lanes.**~~ **Resolved.** Asset decoders are services under `khora-io::asset::decoders`; ECS compaction is maintenance in `khora-data::ecs::systems`. `khora-lanes` now holds exactly the four families that have strategies to negotiate: render, physics, audio, script.
 2. **Plugin agents.** Agents are added at compile time via registration. Hot-loaded plugin agents need a stable ABI we have not yet committed to.
 3. **Multi-`LaneKind` agents.** Forbidden by current rule. If a future subsystem genuinely needs to coordinate two lane kinds (compute + render in the same pipeline), the rule may need a carve-out.
 4. **Async agent work.** Some lanes (asset streaming) want async I/O. The contract for an agent that yields control mid-frame is open.
@@ -67,12 +67,14 @@ What this engine does not yet answer, and where the next iteration should go.
 2. **HDR pipeline.** Currently SDR. HDR target format support exists in wgpu 28.0; the tone-mapping pass and editor color-correctness pass are not yet implemented.
 3. **Compute-driven culling.** A compute pass for view-frustum culling would let us skip the per-frame extraction cost in `LitForwardLane::prepare`. Designed, not built.
 4. **Render graph.** Considered, deferred. Today the lane order is small enough that explicit dependency declaration is clearer than a graph. We will revisit when the lane count crosses ~10 per frame.
+5. **Shader management is not settled.** Every `.wgsl` is `include_str!`-ed into the binary and composed once at startup, so a shader cannot be edited without a rebuild — while `.erg` scripts, meshes and textures all hot-reload. The composition point is a `const` table in `system.rs`, which means adding a pipeline edits engine source rather than declaring anything. And the two raw-string exceptions (`TEXT_WGSL`, `EGUI_WGSL`) exist because their consumers take source rather than a handle. What a shader *is* to this engine — a compiled-in constant, or an asset with a UUID like every other file under `assets/` — is the question underneath all three.
 
 ## 05 — Physics
 
 1. **Per-region simulation rate.** "Use Standard near the player, Simplified everywhere else" is a gameplay-relevance policy — *not* AGDF (which is layout only). It must be opt-in and developer-authored; the engine provides the detach/reattach mechanism but never applies it by default. The opt-in API is not built.
 2. **Physics state in serialization.** `SerializationGoal::FastestLoad` does not preserve velocities or contacts. Whether to add a "snapshot with physics" goal is open.
-3. **Native solver migration.** Roadmap Phase 6. The trait surface is stable enough; the implementation is a multi-quarter effort.
+3. **Native solver migration.** Roadmap Phase 6. The trait surface is stable enough; the implementation is a multi-quarter effort. `khora-infra::physics::khora` holds a broad phase, a narrow phase and a solver, none of them wired into a `PhysicsProvider` and almost none of them tested.
+4. **Choosing a backend at all.** Two physics backends now sit side by side, and nothing can pick between them: three call sites construct `RapierPhysicsWorld` directly. `GraphicsBackendSelector` is not the precedent it sounds like — it selects a GPU adapter *within* wgpu, not between renderers. A real selection point is unbuilt, and the editor's "switch the backend" feature depends on it.
 
 ## 06 — Audio
 

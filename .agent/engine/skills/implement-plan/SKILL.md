@@ -12,7 +12,7 @@ The **Implement** phase of [`../../workflow-rpi.md`](../../workflow-rpi.md). Goa
 1. **Read the current phase** from the plan file — only that phase, not the whole history.
 2. **Implement** exactly what the phase specifies. Match surrounding idioms, naming, and comment density.
    Honor Khora's hard rules (`RULES.md`, relevant `reference/*.md`): `khora_core::math`, `log::*` not
-   `println!`, no `unwrap()` on GPU/IO, no `std::thread::spawn`, shaders as `.wgsl` via `ShaderRegistry`.
+   `println!`, no `unwrap()` on GPU/IO, no `std::thread::spawn`, shaders as `.wgsl` composed by the `PipelineSystem` backend.
 3. **Verify** with the phase's check (via [`../build-and-test/SKILL.md`](../build-and-test/SKILL.md));
    primary gate is `cargo test --workspace`. For GPU work, one clean `cargo run -p sandbox`.
 4. **Compact** — update the plan's **Status** checklist in place: mark the phase done, record any

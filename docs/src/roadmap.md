@@ -2,9 +2,9 @@
 
 The phased development plan for Khora. Six phases, multi-year horizon.
 
-- Document — Khora Roadmap v1.0
+- Document — Khora Roadmap v1.1
 - Status — Living
-- Date — May 2026
+- Date — August 2026
 
 ---
 
@@ -32,8 +32,15 @@ With the successful abstraction of command recording and submission, the core ar
 
 **Goal:** Build out the necessary features to represent and interact with a game world, starting with the implementation of CRPECS.
 
-### Architecture refactoring
-- **Lift `asset_lane` and `ecs_lane` out of the Lane abstraction.** Per the *Agent vs Service* rule, a `Lane` is a strategy variant an agent picks under GORNA negotiation. Asset decoders (glTF, OBJ, WAV, Symphonia, texture, font, pack) and ECS compaction have no per-frame strategies to negotiate — they are on-demand or fixed maintenance work. They should expose their behavior through the existing service surfaces (`AssetService`, `EcsMaintenance`) rather than implement `Lane`. Targets:
+### Architecture refactoring — **done**
+
+`khora-lanes` now holds exactly four lane families — `render_lane`,
+`physics_lane`, `audio_lane`, `script_lane`. Asset decoders are services under
+`khora-io::asset::decoders`; ECS compaction is maintenance in
+`khora-data::ecs::systems`. Neither had a per-frame strategy to negotiate, which
+is what a `Lane` is for. Kept below for the reasoning.
+
+- ~~**Lift `asset_lane` and `ecs_lane` out of the Lane abstraction.**~~ Per the *Agent vs Service* rule, a `Lane` is a strategy variant an agent picks under GORNA negotiation. Asset decoders (glTF, OBJ, WAV, Symphonia, texture, font, pack) and ECS compaction have no per-frame strategies to negotiate — they are on-demand or fixed maintenance work. They should expose their behavior through the existing service surfaces (`AssetService`, `EcsMaintenance`) rather than implement `Lane`. Targets:
   - Replace `AssetDecoder<A>` *lane* implementations with plain `AssetDecoder<A>` services registered in `DecoderRegistry`. The `AssetDecoder<A>` trait already exists in `khora-lanes` without a `Lane` bound — finish moving the decoders to use it cleanly and drop the lane scaffolding.
   - Move `CompactionLane` work directly into `EcsMaintenance::tick`, deleting the lane wrapper. Maintenance is already not an agent (see [ECS](./concepts/ecs.md) §08); the lane wrapper is residual.
   - Update [Lanes](./concepts/agents-and-lanes.md) and [Architecture](./concepts/clad.md) tables once the migration lands — today they still list `asset_lane/` and `ecs_lane/` for accuracy with the current code, but those entries should disappear after this refacto.
@@ -80,10 +87,27 @@ With the successful abstraction of command recording and submission, the core ar
 - #70 Implement editor panels for fine-grained system control
 - #103 Implement a basic networking system
 
-### Scripting v1
-- #168 Evaluate and choose a scripting language
-- #169 Implement scripting backend and bindings
-- #170 Make the scripting VM an ISA (`ScriptingAgent`)
+### Scripting v1 — **done, and not the way it was written**
+
+The item said *evaluate and choose a scripting language*. The evaluation
+concluded that none of the candidates could be told to stop: Lua's debug hooks
+and Wasmtime's fuel interrupt, but interruption is an error path in both, and a
+budget needs stopping to be ordinary. So Khora has its own — **Ergon**
+([concept page](./concepts/scripting.md), `khora-script`).
+
+- ~~#168 Evaluate and choose a scripting language~~ — evaluated, none fit; see above
+- ~~#169 Implement scripting backend and bindings~~ — lexer, parser, bytecode, VM,
+  persistent field arena, native functions, `#[ergon_type]`, and a single
+  table-driven value bridge
+- ~~#170 Make the scripting VM an ISA (`ScriptingAgent`)~~ — negotiates a time
+  budget, converts it to fuel at a measured rate, defers whole behaviors rather
+  than thinning every one
+- ~~Hot-reload~~ — an edited module recompiles and live instances keep their
+  fields, matched by name
+
+**Open:** the mini-game in `examples/sandbox` with all gameplay in Ergon, and the
+`criterion` bench that goes with it (1000 behaviors under 0.5 ms). Both are what
+will tell us whether the design pays under real load rather than in tests.
 
 ### Maturation, optimization, packaging
 - #94 Extensive performance profiling and optimization
@@ -98,9 +122,19 @@ With the successful abstraction of command recording and submission, the core ar
 **Goal:** Build upon the stable SAA foundation to explore next-generation features.
 
 ### Advanced adaptivity (AGDF, contracts)
+
+AGDF ships in three layers and two are in. See [AGDF](./concepts/agdf.md) for
+what each means.
+
+- ~~#90 Investigate Adaptive Game Data Flow (AGDF) feasibility and design~~ — L1
+  (observe and advise) and L2 (the field-SoA substrate) are delivered
+- #91 **L3 — online repack.** The frontier, deliberately deferred. The work:
+  connect the two vocabularies that are still disjoint (the advisor's
+  `LayoutRecommendation` and the registry's `LayoutPolicy` — `set_layout` has no
+  caller today), implement `AoSoA`, and migrate a populated column live without
+  breaking in-flight queries. The mini-game supplies the real load that is
+  missing to measure whether it pays.
 - #89 Design semantic interfaces and contracts v1
-- #90 Investigate Adaptive Game Data Flow (AGDF) feasibility and design
-- #91 Implement basic AGDF for a specific component type
 - #92 Explore using specialized hardware (ML cores)
 - #129 Metrics system advanced features (labels, histograms, export)
 
@@ -139,6 +173,14 @@ With the successful abstraction of command recording and submission, the core ar
 - #307 **Graph network simulation.** Analysis of *Learning to Simulate Complex Physics with Graph Networks* (DeepMind) for complex particle-based interactions.
 
 ### Implementation and transition
+
+**Started.** `khora-infra/src/physics/khora/` holds an incremental AABB BVH
+(broad phase), a narrow phase and an impulse solver, sitting beside the Rapier
+backend where a choice between the two can eventually be made. It does **not**
+implement `PhysicsProvider` yet — nothing stitches the three stages into a world
+the engine can step, and Rapier is what runs. It is also almost entirely
+untested, which is the near-term risk on this pillar.
+
 - #308 Implement Custom Khora-Solver v1 (rigid body + XPBD core)
 - #309 Transition `PhysicsAgent` and lanes to the native solver
 - #310 Performance match and exceed against the previous third-party backend
@@ -233,4 +275,25 @@ With the successful abstraction of command recording and submission, the core ar
 
 ---
 
-*This roadmap reflects the current plan. Items move through Open → In Progress → Closed. The set of phases is stable; the contents within each phase grow as work continues.*
+## What is not on this roadmap
+
+Two things shipped in 2026 that no issue number anticipated, because they came
+out of the work rather than the plan:
+
+- **A reusable channel**, not an event bus. Four places had independently grown
+  a queue with a cursor and a drop policy. `Channel<T>` in `khora-core::event`
+  is the one of them, with two axes and nothing else: how a reader reads
+  (cursor or destructive take) and what happens when it is full.
+- **Component provenance.** `SemanticDomain` says who *consumes* a component;
+  `ComponentProvenance` says who may *write* it — `Authored`, `ToolAuthored`,
+  `Derived`, `Runtime`. It is what stopped the physics writeback from
+  overwriting a designer's transform, and what keeps a simulated pose out of a
+  scene file without a line of filtering.
+
+---
+
+*This roadmap reflects the current plan. Items move through Open → In Progress →
+Closed. The set of phases is stable; the contents within each phase grow as work
+continues. Where an item shipped differently from how it was written, the
+original text is kept struck through — a plan that quietly rewrites its own
+history teaches nothing.*

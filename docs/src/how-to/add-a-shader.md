@@ -8,7 +8,7 @@ it through the `PipelineSystem` backend, composing reusable modules with `naga_o
 [Rendering](../concepts/rendering.md).
 
 > **Shaders are files, never strings.** Never inline WGSL as a Rust `const`/`static`.
-> Every shader is a `.wgsl` file composed through the `ShaderRegistry` /
+> Every shader is a `.wgsl` file composed by the `PipelineSystem` backend /
 > `PipelineSystem` so it is reviewable and hot-reloadable.
 
 ## Step 1 — Add the `.wgsl` file

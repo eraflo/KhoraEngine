@@ -1,5 +1,5 @@
 ---
-description: "Locates WHERE things live in the Khora codebase — files, directories, modules, symbols relevant to a feature or task. Read-only; returns a categorized map of paths, not analysis. Dispatch during the Research phase to find the surface area of a change without polluting the parent context."
+description: "Khora engine agent"
 alwaysApply: false
 ---
 

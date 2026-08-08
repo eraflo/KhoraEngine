@@ -27,12 +27,26 @@ and [`security-privacy.md`](./security-privacy.md).
 ## 2 — Build & test
 
 - Compile with zero warnings at the configured lint level; `cargo clippy --workspace` clean.
-- All workspace tests must pass before declaring work complete (~586 today; treat the live count as truth).
+- All workspace tests must pass before declaring work complete (~1650 unit + ~50 doc today; treat the live count as truth).
 - No Vulkan validation errors when running `cargo run -p sandbox`; confirm the frame loop is clean for GPU work.
 
 ## 3 — Architecture rules
 
-- Respect the CLAD dependency graph; dependencies flow **downward only**: `khora-core` → `khora-data` / `khora-control` → `khora-lanes` → `khora-agents` → `khora-infra` → `khora-sdk`. Never introduce a cycle.
+- Respect the CLAD dependency graph; dependencies flow **downward only**. Each
+  tier may depend on anything above it and nothing below:
+
+  | Tier | Crates | Depends on |
+  |---|---|---|
+  | floor | `khora-core`, `khora-macros` | nothing |
+  | on the floor | `khora-data`, `khora-control`, `khora-script`, `khora-telemetry`, `khora-infra`, `khora-tool-ui` | core (+ `macros` for data/script, + `data` for control) |
+  | middle | `khora-io`, `khora-lanes` | core, data, script, telemetry / core, data, io, script |
+  | strategists | `khora-agents` | everything above, **including `khora-infra`** |
+  | façade | `khora-sdk` | agents, control, core, data, infra, io, lanes, telemetry |
+  | apps | `khora-editor`, `hub`, `khora-runtime`, `khora-plugins` | sdk (+ `tool-ui` for editor and hub) |
+
+  The two easy to get backwards: **`khora-agents` depends on `khora-infra`**, not
+  the reverse, and **`khora-infra` depends on `khora-core` only** — it is a floor
+  tenant, not a top layer. Never introduce a cycle; `cargo tree` is the arbiter.
 - Abstract traits live in `khora-core`. Concrete backends live in per-backend subfolders under `khora-infra` (`graphics/wgpu/`, `physics/rapier/`, `audio/cpal/`, `ui/taffy/`, …).
 - Change a `khora-core` trait only when you also update every downstream implementation.
 - Keep GPU resources behind abstract IDs (`TextureId`, `BufferId`, `PipelineId`). Never expose raw wgpu handles in public APIs.
@@ -52,7 +66,9 @@ and [`security-privacy.md`](./security-privacy.md).
 
 ## 5 — Concurrency
 
-- Never use `std::thread::spawn` directly. Concurrency goes through the DCC agent system. The DCC schedules; agents execute. Per-frame work runs through agents and the `Lane` trait. **Sole exception:** the DCC's own cold-path tick thread (`DccService::start` in `khora-control/src/service.rs`) — it *is* the concurrency authority this rule routes everything else through, spawned once at startup. Test code may also spawn threads for isolation.
+- Never use `std::thread::spawn` directly. Concurrency goes through the DCC agent system. The DCC schedules; agents execute. Per-frame work runs through agents and the `Lane` trait. **Exceptions:** (1) the DCC's own cold-path tick thread (`DccService::start` in `khora-control/src/service.rs`) — it *is* the concurrency authority this rule routes everything else through, spawned once at startup; (2) the scheduler's **persistent worker pool** (`WorkerPool` in `khora-control/src/worker_pool.rs`), spawned once in `ExecutionScheduler::new` and joined on `Drop`, which runs a concurrent wave's `AgentAccess::Isolated` agents as `'static` jobs (world-free, reaching inputs through `Arc<LaneBus>`/`Arc<Runtime>`) — a wave's `SharedWorld` agents run inline on the calling thread, so the `World` never crosses a thread boundary and no `unsafe`/lifetime-transmute is needed. The pool threads are scheduler-owned and never escape its lifetime. Test code may also spawn threads for isolation.
+- An agent declares **two** things, and they answer different questions. `Agent::access()` is about the `World` alone: `Exclusive` (`&mut World`, always a wave of its own), `SharedWorld` (`&World`), `Isolated` (world-free, so eligible for the worker pool). `Agent::contention()` is about everything else — the `OutputDeck` slots it writes, and the `Runtime` resources, services and backends it **reads** or **locks**. Two agents share a concurrent wave only if their contentions are disjoint; reads do not conflict with reads.
+- Never reach `context.runtime.{resources,services,backends}` from an agent. Go through `EngineContext::resource` (reading) or `::locked` (taking a lock), which refuse what `contention()` did not declare. Declaring more than you touch is not harmless: it silently serialises a wave that could have run concurrently, and no test reddens.
 
 ## 6 — Subsystem boundaries
 
@@ -61,7 +77,9 @@ and [`security-privacy.md`](./security-privacy.md).
 - UI layout through the `LayoutSystem` trait. Never call Taffy directly from agents.
 - Reference loaded assets via `AssetHandle<T>` / `HandleComponent<T>`. Never store raw asset data inline.
 - Serialize through the three-strategy pattern (Definition / Recipe / Archetype) via `SerializationGoal`.
-- Never inline WGSL source as a Rust `const`/`static`. Shaders are `.wgsl` files under `crates/khora-lanes/src/render_lane/shaders/` (`pipelines/` entry points, `lib/` reusable modules), composed via `ShaderRegistry` + `naga_oil` `#import`.
+- Never inline WGSL source as a Rust `const`/`static`. Shaders are `.wgsl` files under `crates/khora-infra/src/graphics/shader/shaders/` (`pipelines/` entry points, `lib/` reusable modules), embedded with `include_str!` and composed by the `PipelineSystem` backend (`khora-infra/src/graphics/shader/system.rs`) using `naga_oil` `#import`. Lanes resolve a pipeline **by name** (`khora::pipelines::grid`), never by handing over source.
+  - **Two exceptions, and they are the only ones:** `TEXT_WGSL` and `EGUI_WGSL` in `khora-lanes/src/render_lane/shaders/mod.rs`. Their consumers (`StandardTextRenderer`, the egui overlay) take a raw string rather than a pipeline handle, and the application passes it in. No new `_WGSL` constant should appear.
+  - There is **no `ShaderRegistry` type** — earlier revisions of this file named one. The composition point is the `PipelineSystem` backend.
 
 ## 7 — Components & ECS
 

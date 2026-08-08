@@ -38,6 +38,16 @@ extra methods. It is *not* a controller (the DCC decides global priorities) and
 Audio, and Overlay. See [Agents and Lanes](../concepts/agents-and-lanes.md). Also
 called an **ISA** (Intelligent Subsystem Agent).
 
+### Channel&lt;T&gt;
+
+The engine's one reusable one-way queue, in `khora-core::event`. Two axes and
+nothing else: how a reader reads (a **cursor** it owns, so several readers see
+the same events independently — or a destructive `drain`), and what happens when
+it is full (`DropOldest` or `Reject`, with the drop counted rather than
+silent). Deliberately *not* a global event bus: each channel is created and
+registered by whoever owns that traffic. Replaced four independently-grown
+queues, one of which was fully generic and entirely dead.
+
 ### CLAD — Control / Lanes / Agents / Data
 
 The concrete crate structure and dependency layering that implements SAA, and the
@@ -46,6 +56,26 @@ downward only; the descent names how a budget becomes work each frame: Control
 arbitrates, the Agent selects a Lane, the Lane reads projected Views and writes
 results back to Data. CLAD is *the how*; [SAA](#saa--symbiotic-adaptive-architecture)
 is *the why*. See [CLAD](../concepts/clad.md).
+
+### ComponentProvenance
+
+Who has the right to **write** a component — as opposed to `SemanticDomain`,
+which says who consumes it. Four values: `Authored` (a human, a tool or game
+code; serialized, offered in "+ Add Component"), `ToolAuthored`, `Derived`
+(recomputed by the engine from authored state, so never serialized and never
+copied on duplicate), and `Runtime` (per-run transient state that nobody authors
+and nothing recomputes). It is what keeps a simulated pose out of a scene file
+without a line of filtering, because the serializer honours the axis directly.
+See [Physics](../concepts/physics.md).
+
+### Contention
+
+What an agent declares that it competes with others for: the `OutputDeck` slots
+it writes, and the `Runtime` resources it **reads** or **locks**. Distinct from
+`AgentAccess`, which is about the `World` alone. Two agents share a concurrent
+wave only when their contentions are disjoint. Enforced at the access point —
+`EngineContext::resource` and `::locked` refuse what was not declared. See
+[Agents and Lanes](../concepts/agents-and-lanes.md).
 
 ### CRPECS — Chunked Relational Page ECS
 
@@ -84,6 +114,15 @@ recovers, then returns to the negotiated strategy. A separate "spiral of death"
 guard bounds the fixed-timestep accumulator (see
 [Fixed timestep](#fixed-timestep--interpolation-alpha)). See
 [GORNA](../concepts/gorna.md).
+
+### Ergon
+
+Khora's own gameplay language, in `khora-script`. It exists because a budget
+needs stopping to be *ordinary*: Ergon suspends on an instruction boundary and
+keeps the machine that suspended, so the next frame resumes rather than
+restarts. Runs inside a fuel budget converted from the time GORNA allocated, and
+degrades by deferring whole behaviors rather than thinning every one. See
+[Scripting](../concepts/scripting.md).
 
 ### ExecutionPhase / TickPhase
 

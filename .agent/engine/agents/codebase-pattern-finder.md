@@ -12,7 +12,7 @@ consistent with Khora's conventions. **Read-only** — you never edit.
 
 ## Method
 1. Identify the abstraction the task instantiates: `Lane`, `Agent`, `#[derive(Component)]`,
-   `register_flow!`, `AssetDecoderRegistration`, a `.wgsl` pipeline + `ShaderRegistry` entry, a
+   `register_flow!`, `AssetDecoderRegistration`, a `.wgsl` pipeline + its `PipelineSystem` entry, a
    `DataSystemRegistration`, an SDK builder, etc.
 2. **codegraph first** to enumerate existing implementors of that trait/macro, then pick the 1-2
    closest, most-canonical, most-recent examples.

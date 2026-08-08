@@ -1,5 +1,5 @@
 ---
-description: "Discovers relevant prior knowledge — past research docs, plans, architecture decisions, and working memory — in docs/research/, docs/plans/, and .agent/engine/knowledge/. Read-only; returns a short annotated index so the parent reuses existing findings instead of re-researching. Dispatch at the start of the Research phase."
+description: "Khora engine agent"
 alwaysApply: false
 ---
 

@@ -9,7 +9,10 @@ ECS↔physics synchronization.
 
 ## Key files
 - Trait: `crates/khora-core/src/physics/` (`PhysicsProvider`, `BodyType`, `ColliderShape`).
-- Backend: `crates/khora-infra/src/physics/rapier/` (`RapierPhysicsWorld`, `conversions.rs`).
+- Backends, one subfolder each: `crates/khora-infra/src/physics/rapier/` (`RapierPhysicsWorld`,
+  `conversions.rs`) — the one the engine runs; and `crates/khora-infra/src/physics/khora/` — an
+  in-house broad phase, narrow phase and impulse solver that **does not implement `PhysicsProvider`
+  yet** and is wired to nothing. Deliberate future work, not abandoned code.
 - Lanes: `crates/khora-lanes/src/physics_lane/` (Standard, CCD).
 - Components / flow: `crates/khora-data/src/ecs/components/physics/`, `crates/khora-data/src/flow/physics.rs`.
 
@@ -20,9 +23,19 @@ ECS↔physics synchronization.
   developer-authored `DataSystem`, never automatic AGDF.
 - Convert math at the boundary via `conversions.rs`; engine-side math is `khora_core::math`.
 
-Note: `physics_lane` currently queries the World directly (`native_lanes.rs`) — migrating it to an
-`OutputDeck` writeback channel is open work (see [`../knowledge/MEMORY.md`](../knowledge/MEMORY.md)). Use
-codegraph to map the sync path before changing it.
+## Who writes a pose
+
+`ComponentProvenance` decides, and three components split what one used to hold:
+
+- `Transform` (`Authored`) — what a human, a tool or game code declared. Serialized.
+- `SimulatedTransform` (`Runtime`) — the **world** pose the provider reports. Never serialized, never
+  composed with a parent. `transform_propagation` prefers it unless the entity is `Teleported`.
+- `BodyMotion` (`Runtime`) — the velocity the body *has*, as opposed to `RigidBody::initial_velocity`
+  (`Authored`), which is applied once at creation.
+
+Moving something is **declared**, not inferred: whoever moves an entity adds the `Teleported` marker,
+and the sync consumes and removes it. The old 1 cm / 1.62° heuristic could not work — drift, a parent
+frame, a sub-step overshoot and a real teleport all produce "the two values differ".
 
 ## Skills
 - [`add-a-lane`](../skills/add-a-lane/SKILL.md) — add a physics lane / strategy.

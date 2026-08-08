@@ -79,7 +79,7 @@ ever disagree, those files win; this page is a digest, not a duplicate.
 
 - Shaders are **`.wgsl` files**, never inline Rust `const`/`static` strings. They
   live under `crates/khora-lanes/src/render_lane/shaders/` — `pipelines/` for entry
-  points, `lib/` for reusable modules — and are composed via `ShaderRegistry` with
+  points, `lib/` for reusable modules — and are composed by the `PipelineSystem` backend with
   `naga_oil` `#import`. Write WGSL only (no GLSL or SPIR-V).
 - **The four-bind-group budget.** Every render lane uses exactly four bind groups:
   `0` Frame (camera), `1` Object (per-draw model/normal matrix), `2` Material,

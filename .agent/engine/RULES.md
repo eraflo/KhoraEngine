@@ -22,12 +22,26 @@ and [`security-privacy.md`](./security-privacy.md).
 ## 2 — Build & test
 
 - Compile with zero warnings at the configured lint level; `cargo clippy --workspace` clean.
-- All workspace tests must pass before declaring work complete (~586 today; treat the live count as truth).
+- All workspace tests must pass before declaring work complete (~1650 unit + ~50 doc today; treat the live count as truth).
 - No Vulkan validation errors when running `cargo run -p sandbox`; confirm the frame loop is clean for GPU work.
 
 ## 3 — Architecture rules
 
-- Respect the CLAD dependency graph; dependencies flow **downward only**: `khora-core` → `khora-data` / `khora-control` → `khora-lanes` → `khora-agents` → `khora-infra` → `khora-sdk`. Never introduce a cycle.
+- Respect the CLAD dependency graph; dependencies flow **downward only**. Each
+  tier may depend on anything above it and nothing below:
+
+  | Tier | Crates | Depends on |
+  |---|---|---|
+  | floor | `khora-core`, `khora-macros` | nothing |
+  | on the floor | `khora-data`, `khora-control`, `khora-script`, `khora-telemetry`, `khora-infra`, `khora-tool-ui` | core (+ `macros` for data/script, + `data` for control) |
+  | middle | `khora-io`, `khora-lanes` | core, data, script, telemetry / core, data, io, script |
+  | strategists | `khora-agents` | everything above, **including `khora-infra`** |
+  | façade | `khora-sdk` | agents, control, core, data, infra, io, lanes, telemetry |
+  | apps | `khora-editor`, `hub`, `khora-runtime`, `khora-plugins` | sdk (+ `tool-ui` for editor and hub) |
+
+  The two easy to get backwards: **`khora-agents` depends on `khora-infra`**, not
+  the reverse, and **`khora-infra` depends on `khora-core` only** — it is a floor
+  tenant, not a top layer. Never introduce a cycle; `cargo tree` is the arbiter.
 - Abstract traits live in `khora-core`. Concrete backends live in per-backend subfolders under `khora-infra` (`graphics/wgpu/`, `physics/rapier/`, `audio/cpal/`, `ui/taffy/`, …).
 - Change a `khora-core` trait only when you also update every downstream implementation.
 - Keep GPU resources behind abstract IDs (`TextureId`, `BufferId`, `PipelineId`). Never expose raw wgpu handles in public APIs.
@@ -58,7 +72,9 @@ and [`security-privacy.md`](./security-privacy.md).
 - UI layout through the `LayoutSystem` trait. Never call Taffy directly from agents.
 - Reference loaded assets via `AssetHandle<T>` / `HandleComponent<T>`. Never store raw asset data inline.
 - Serialize through the three-strategy pattern (Definition / Recipe / Archetype) via `SerializationGoal`.
-- Never inline WGSL source as a Rust `const`/`static`. Shaders are `.wgsl` files under `crates/khora-lanes/src/render_lane/shaders/` (`pipelines/` entry points, `lib/` reusable modules), composed via `ShaderRegistry` + `naga_oil` `#import`.
+- Never inline WGSL source as a Rust `const`/`static`. Shaders are `.wgsl` files under `crates/khora-infra/src/graphics/shader/shaders/` (`pipelines/` entry points, `lib/` reusable modules), embedded with `include_str!` and composed by the `PipelineSystem` backend (`khora-infra/src/graphics/shader/system.rs`) using `naga_oil` `#import`. Lanes resolve a pipeline **by name** (`khora::pipelines::grid`), never by handing over source.
+  - **Two exceptions, and they are the only ones:** `TEXT_WGSL` and `EGUI_WGSL` in `khora-lanes/src/render_lane/shaders/mod.rs`. Their consumers (`StandardTextRenderer`, the egui overlay) take a raw string rather than a pipeline handle, and the application passes it in. No new `_WGSL` constant should appear.
+  - There is **no `ShaderRegistry` type** — earlier revisions of this file named one. The composition point is the `PipelineSystem` backend.
 
 ## 7 — Components & ECS
 

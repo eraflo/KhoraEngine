@@ -44,10 +44,15 @@ reasoning rather than treating it as arbitrary:
   and the main pass have different costs, different dependencies, and different
   per-frame roles, so they are two agents, not one agent with two jobs.
 - **No per-frame state.** An agent does not buffer outputs, own a Flow, or
-  accumulate work between frames. If it needs to remember something across frames,
-  that thing belongs in a lane (`self`), in the ECS, or in a tick-scoped context —
-  not on the agent. State on an agent is the first symptom of lane logic leaking
-  upward.
+  accumulate work between frames. What it may hold is its strategy state — its
+  lanes, the one it picked, its budget — and *shared handles* it reads through.
+  Anything that is a subsystem's own state belongs in `Runtime::services` or
+  `Runtime::backends`, where the physics provider and the scripting runtime both
+  live; anything measured per frame belongs in a shared slot the way
+  `AgentFrameStatusMap` does. State on an agent is the first symptom of lane
+  logic leaking upward — `ScriptingAgent` carried an entire language runtime
+  before this rule was applied to it, and what that cost was not correctness but
+  reach: nothing else could see the live behaviors.
 - **Strategist, never worker or controller.** An agent does not contain pipeline
   code (that is the lane's job) and does not decide global priorities (that is the
   DCC's job). It sits precisely in between.
@@ -61,6 +66,39 @@ A corollary worth stating: a subsystem that has *no strategies to negotiate* is 
 an agent at all. ECS maintenance, asset loading, and serialization are **services**,
 not agents, because there is nothing for GORNA to choose between. Reserve the agent
 abstraction for subsystems that genuinely have competing performance strategies.
+
+## What an agent declares
+
+An agent answers two questions, and they are different questions.
+
+`Agent::access()` is about the **`World` alone**:
+
+| Variant | Meaning |
+|---|---|
+| `Exclusive` | takes `&mut World` — always a wave of its own |
+| `SharedWorld` | reads `&World` |
+| `Isolated` | does not touch the `World` at all, so it is eligible for the worker pool |
+
+`Agent::contention()` is about **everything else**: the `OutputDeck` slots it
+writes, and the `Runtime` resources, services and backends it reads or locks.
+Two agents share a concurrent wave only when their contentions are disjoint;
+reads do not conflict with reads.
+
+The declaration is not on the honour system. An agent reaches shared state
+through `EngineContext::resource` (reading) or `::locked` (taking a lock), and
+both refuse what `contention()` did not declare — logging the refusal and
+returning `None`.
+
+**Declaring more than you touch is not harmless.** It silently serialises a wave
+that could have run concurrently, and no test reddens. That is the failure mode
+to watch for here: over-declaration fails in the direction of slowness, which
+nothing catches automatically.
+
+The rule this replaced was cruder — *at most one `SharedWorld` agent per wave* —
+because such an agent "may write shared resources" and nothing could say which.
+Now they say, so two of them may share a wave when their declarations do not
+overlap. The parallelism was gained by removing a constraint, not by adding a
+mechanism.
 
 ## How a lane gets its data: the bus and the deck
 

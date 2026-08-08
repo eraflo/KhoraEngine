@@ -21,7 +21,7 @@ A `Lane` is a unit of hot-path work selected by an `Agent` via GORNA. Trait in
    the trait impl dispatches to them. Construct via `Default` — no inherent methods (mirrors the agent rule).
 3. **Read inputs from `LaneContext::bus`** (typed `View`), **write outputs into `LaneContext::deck`**.
    Never call `world.query*` from a lane.
-4. If render: compose the pipeline through `ShaderRegistry::create_module(...)` in `on_initialize`; respect
+4. If render: name the pipeline (`khora::pipelines::<name>`) in the lane's pipeline spec; respect
    the **4-bind-group** budget (see [`add-a-shader`](../add-a-shader/SKILL.md)).
 5. Register the lane with its agent (one agent per `LaneKind`) and add it to the agent's strategy set if it
    is a selectable strategy.

@@ -1,5 +1,5 @@
 ---
-description: "Use to audit safety and confidentiality — review unsafe blocks, supply-chain/dependency risk, input validation at boundaries, and scan for secrets before any commit or push. Read-only; reports findings, does not edit."
+description: "Khora engine agent"
 alwaysApply: false
 ---
 

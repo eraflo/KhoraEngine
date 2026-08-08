@@ -36,6 +36,7 @@
 - [Agents and Lanes](./concepts/agents-and-lanes.md)
 - [GORNA](./concepts/gorna.md)
 - [AGDF](./concepts/agdf.md)
+- [Scripting (Ergon)](./concepts/scripting.md)
 - [Rendering](./concepts/rendering.md)
 - [Physics](./concepts/physics.md)
 - [Audio](./concepts/audio.md)

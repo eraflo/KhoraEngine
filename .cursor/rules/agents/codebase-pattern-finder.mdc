@@ -1,5 +1,5 @@
 ---
-description: "Finds existing Khora implementations to model new work on — the canonical example of \"how we already do X\" (a Lane, an Agent, a Component, a Flow, a shader pipeline, a decoder). Read-only; returns concrete code snippets with file:line so the parent can mirror the established pattern instead of inventing one."
+description: "Khora engine agent"
 alwaysApply: false
 ---
 
@@ -17,7 +17,7 @@ consistent with Khora's conventions. **Read-only** — you never edit.
 
 ## Method
 1. Identify the abstraction the task instantiates: `Lane`, `Agent`, `#[derive(Component)]`,
-   `register_flow!`, `AssetDecoderRegistration`, a `.wgsl` pipeline + `ShaderRegistry` entry, a
+   `register_flow!`, `AssetDecoderRegistration`, a `.wgsl` pipeline + its `PipelineSystem` entry, a
    `DataSystemRegistration`, an SDK builder, etc.
 2. **codegraph first** to enumerate existing implementors of that trait/macro, then pick the 1-2
    closest, most-canonical, most-recent examples.

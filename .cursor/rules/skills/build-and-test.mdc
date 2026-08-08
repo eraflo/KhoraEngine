@@ -16,7 +16,7 @@ The validation loop for any change. **Primary command (95% of cases):**
 cargo test --workspace
 ```
 
-This builds everything and runs the full suite (~586 tests today). Deviate only when:
+This builds everything and runs the full suite (~1650 tests today; treat the live count as truth). Deviate only when:
 
 | Need | Command |
 |---|---|

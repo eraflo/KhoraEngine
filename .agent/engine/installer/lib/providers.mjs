@@ -44,7 +44,7 @@ function essentials(profile) {
       'Math via `khora_core::math` — never raw `glam`. Log via `log::*`, never `println!`.',
       'Never `unwrap()` on fallible GPU/IO. Never `std::thread::spawn` — concurrency goes through the DCC.',
       'Never bypass the `Lane` abstraction for hot-path work; agents implement only `Agent` + `Default`.',
-      'Shaders are `.wgsl` files composed via `ShaderRegistry` — never inline WGSL strings.',
+      'Shaders are `.wgsl` files composed by the `PipelineSystem` backend — never inline WGSL strings.',
       'Never push to git or create PRs without explicit permission. Never commit secrets.',
     ],
   };

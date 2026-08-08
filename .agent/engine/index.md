@@ -16,7 +16,7 @@ load what the task needs, not the whole tree.
 | [`RULES.md`](./RULES.md) | always | Must always / never, boundaries, permission model. |
 | [`workflow-rpi.md`](./workflow-rpi.md) | always | The Research → Plan → Implement loop + context discipline. |
 | [`conventions.md`](./conventions.md) | on demand | Naming, code patterns, file layout, bind-group budget. |
-| [`architecture.md`](./architecture.md) | on demand | CLAD map, 16 crates, trait map, components, file locations, codegraph. |
+| [`architecture.md`](./architecture.md) | on demand | CLAD map, crate map, trait map, components, file locations, codegraph. |
 | [`security-privacy.md`](./security-privacy.md) | on demand | No dangerous code, never push secrets. |
 
 ## Knowledge (persistent memory)
@@ -53,6 +53,7 @@ during Research and Implement. Replaces the former per-domain "expert" agents.
 | [`audio`](./reference/audio.md) | CPAL devices, spatial mixing lanes, audio flow. |
 | [`math`](./reference/math.md) | `khora_core::math`, explicit SIMD, numerical correctness. |
 | [`ecs-data`](./reference/ecs-data.md) | CRPECS, storage, queries, SoA/AGDF layout, component registration. |
+| [`scripting`](./reference/scripting.md) | Ergon — the language, VM, fuel/suspension, hot-reload, script lane + agent. |
 | [`control-gorna`](./reference/control-gorna.md) | DCC, GORNA negotiation/replay, cost model, PID budget, adaptation modes. |
 | [`editor-ui-ux`](./reference/editor-ui-ux.md) | khora-editor panels, gizmos, dock — design via `/impeccable`. |
 | [`api-ux`](./reference/api-ux.md) | khora-sdk public ergonomics, builder/type-state. |

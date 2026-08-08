@@ -22,7 +22,7 @@ HDR/tone mapping, post-processing, GPU occupancy and synchronization (no Vulkan 
 ## Hard rules
 - Every render technique is a `Lane` selected via GORNA. The backend owns **no** render pipeline.
 - **Exactly 4 bind groups** (Frame/Object/Material/Lighting). New lighting features add bindings to group 3, never a 5th group. Shadow bindings fixed at group-3 indices 1/2/3.
-- WGSL only, as `.wgsl` files composed through `ShaderRegistry` — never inline shader strings, never runtime FS reads.
+- WGSL only, as `.wgsl` files under `khora-infra/src/graphics/shader/shaders/`, composed by the `PipelineSystem` backend — never inline shader strings, never runtime FS reads.
 - GPU resources via typed IDs (`TextureId`, `BufferId`, `PipelineId`) — never raw wgpu handles in public APIs. No `unwrap()` on GPU paths.
 - For any visual-design decision (editor look, debug viz style), use `/impeccable`.
 

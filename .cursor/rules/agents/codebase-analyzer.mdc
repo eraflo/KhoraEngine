@@ -1,5 +1,5 @@
 ---
-description: "Explains HOW specific Khora code works — traces control/data flow, contracts, and invariants across the CLAD descent. Read-only; returns a distilled walkthrough with file:line citations, not the raw source. Dispatch during Research once the relevant files are known, to understand a mechanism without loading every file into the parent context."
+description: "Khora engine agent"
 alwaysApply: false
 ---
 

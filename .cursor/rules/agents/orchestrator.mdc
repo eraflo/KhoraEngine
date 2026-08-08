@@ -1,5 +1,5 @@
 ---
-description: "Default front door for engine work. Use when a request spans multiple subsystems, the scope is unclear, or you need to decide how to approach a task. Holds the global engine map, runs the RPI workflow, and dispatches read-only research subagents; does not dive into details itself."
+description: "Khora engine agent"
 alwaysApply: false
 ---
 
