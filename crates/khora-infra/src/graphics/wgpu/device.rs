@@ -200,7 +200,6 @@ pub struct WgpuDeviceInternal {
 
     next_shader_id: AtomicUsize,
     next_pipeline_id: AtomicUsize,
-    #[allow(dead_code)] // Will be used when create_compute_pipeline is implemented
     next_compute_pipeline_id: AtomicU64,
     next_pipeline_layout_id: AtomicUsize,
     next_buffer_id: AtomicUsize,

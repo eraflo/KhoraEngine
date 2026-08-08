@@ -256,7 +256,6 @@ impl ComponentPage {
     }
 
     /// Returns the number of rows of data (and entities) this page currently stores.
-    #[allow(dead_code)]
     pub(crate) fn row_count(&self) -> usize {
         self.entities.len()
     }

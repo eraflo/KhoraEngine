@@ -9,7 +9,6 @@ description = "Intelligent wrappers driving the Lanes"
 [dependencies]
 khora-core = { path = "../khora-core" }
 khora-data = { path = "../khora-data" }
-khora-io = { path = "../khora-io" }
 khora-lanes = { path = "../khora-lanes" }
 khora-script = { path = "../khora-script" }
 khora-telemetry = { path = "../khora-telemetry" }
@@ -29,4 +28,5 @@ bincode = { version = "2.0.1", features = ["serde"] }
 
 [dev-dependencies]
 khora-control = { path = "../khora-control" }
+khora-io = { path = "../khora-io" }
 khora-infra = { path = "../khora-infra", features = ["physics"] }

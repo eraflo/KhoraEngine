@@ -16,11 +16,20 @@
 //! stateful objects with rich business APIs).
 //!
 //! See [`crate::runtime`] for the broader Services / Backends / Resources
-//! taxonomy.
+//! taxonomy. The container itself is
+//! [`TypedRegistry`](crate::runtime::registry::TypedRegistry) — this module
+//! contributes the name and the admission criteria, not a second copy of the
+//! lookup code.
 
-use std::any::{type_name, Any, TypeId};
-use std::collections::HashMap;
-use std::sync::Arc;
+use super::registry::{RegistryKind, TypedRegistry};
+
+/// Marker naming the [`Services`] container. See [`RegistryKind`].
+pub struct ServiceKind;
+
+impl RegistryKind for ServiceKind {
+    const NAME: &'static str = "Services";
+    const NOUN: &'static str = "service";
+}
 
 /// Container of engine services — concrete stateful objects with rich APIs
 /// (asset loading, serialization, telemetry, DCC orchestration).
@@ -30,148 +39,4 @@ use std::sync::Arc;
 /// sense together), lives for the engine lifetime, and is invoked by name.
 /// Trait implementations belong in [`crate::runtime::Backends`]. Plain
 /// shared state belongs in [`crate::runtime::Resources`].
-///
-/// API mirrors the legacy `ServiceRegistry` (drop-in replacement).
-#[derive(Default)]
-pub struct Services {
-    inner: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
-    parent: Option<Arc<Services>>,
-}
-
-impl Services {
-    /// Creates an empty container.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            inner: HashMap::new(),
-            parent: None,
-        }
-    }
-
-    /// Creates a container that delegates lookups to `parent` when a key
-    /// is absent locally. Local inserts shadow parent entries.
-    #[must_use]
-    pub fn with_parent(parent: Arc<Services>) -> Self {
-        Self {
-            inner: HashMap::new(),
-            parent: Some(parent),
-        }
-    }
-
-    /// Inserts a service, keyed by `T`'s `TypeId`. Replaces any prior
-    /// entry of the same type.
-    pub fn insert<T: Send + Sync + 'static>(&mut self, service: T) {
-        self.inner.insert(TypeId::of::<T>(), Box::new(service));
-    }
-
-    /// Returns a borrow of the registered service, walking the parent
-    /// chain on miss.
-    #[must_use]
-    pub fn get<T: Send + Sync + 'static>(&self) -> Option<&T> {
-        self.inner
-            .get(&TypeId::of::<T>())
-            .and_then(|b| b.downcast_ref::<T>())
-            .or_else(|| self.parent.as_deref()?.get::<T>())
-    }
-
-    /// Returns a borrow of the registered service, panicking if absent.
-    pub fn require<T: Send + Sync + 'static>(&self) -> &T {
-        self.get::<T>().unwrap_or_else(|| {
-            panic!(
-                "Services: required service `{}` is not registered",
-                type_name::<T>()
-            )
-        })
-    }
-
-    /// Reports whether a service of the given type is registered.
-    #[must_use]
-    pub fn contains<T: Send + Sync + 'static>(&self) -> bool {
-        self.inner.contains_key(&TypeId::of::<T>())
-            || self
-                .parent
-                .as_deref()
-                .map(|p| p.contains::<T>())
-                .unwrap_or(false)
-    }
-
-    /// Number of services registered locally (excluding parent chain).
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    /// Whether no services are registered locally.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
-    }
-}
-
-impl std::fmt::Debug for Services {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Services")
-            .field("registered", &self.inner.len())
-            .field("has_parent", &self.parent.is_some())
-            .finish()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct FakeAssetService {
-        name: String,
-    }
-    struct FakeSerializationService;
-
-    #[test]
-    fn insert_and_get() {
-        let mut s = Services::new();
-        s.insert(FakeAssetService {
-            name: "assets".into(),
-        });
-        assert_eq!(s.get::<FakeAssetService>().unwrap().name, "assets");
-    }
-
-    #[test]
-    fn require_panics_when_absent() {
-        let s = Services::new();
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _ = s.require::<FakeAssetService>().name.len();
-        }));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn parent_chain_delegates() {
-        let mut parent = Services::new();
-        parent.insert(FakeAssetService {
-            name: "from-parent".into(),
-        });
-        let child = Services::with_parent(Arc::new(parent));
-        assert_eq!(child.get::<FakeAssetService>().unwrap().name, "from-parent");
-    }
-
-    #[test]
-    fn local_shadows_parent() {
-        let mut parent = Services::new();
-        parent.insert(FakeAssetService {
-            name: "parent".into(),
-        });
-        let mut child = Services::with_parent(Arc::new(parent));
-        child.insert(FakeAssetService {
-            name: "child".into(),
-        });
-        assert_eq!(child.get::<FakeAssetService>().unwrap().name, "child");
-    }
-
-    #[test]
-    fn contains_walks_parent() {
-        let mut parent = Services::new();
-        parent.insert(FakeSerializationService);
-        let child = Services::with_parent(Arc::new(parent));
-        assert!(child.contains::<FakeSerializationService>());
-    }
-}
+pub type Services = TypedRegistry<ServiceKind>;

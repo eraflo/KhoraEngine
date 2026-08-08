@@ -98,7 +98,6 @@ pub fn restore_scene(world: &mut GameWorld, snapshot: &[u8]) {
 /// `EditorInterchange` (Recipe / bincode). Use
 /// [`save_scene_in_project_with_goal`] to pick a different strategy
 /// (`HumanReadableDebug` for RON export, `FastestLoad` for archetype).
-#[allow(dead_code)]
 pub fn save_scene_in_project(pvfs: &mut ProjectVfs, world: &GameWorld, rel_path: &Path) -> bool {
     save_scene_in_project_with_goal(pvfs, world, rel_path, SerializationGoal::EditorInterchange)
 }
@@ -261,12 +260,6 @@ fn create_default_scene_in_project(pvfs: &mut ProjectVfs, world: &mut GameWorld,
 /// "Save As..." dialog when the user picks a destination outside
 /// `<project>/assets/`. Logs a warning so the divergence from VFS-managed
 /// I/O is visible.
-#[allow(dead_code)]
-pub fn save_scene_to_path(world: &GameWorld, path: &str) -> bool {
-    save_scene_to_path_with_goal(world, path, SerializationGoal::EditorInterchange)
-}
-
-/// Same as [`save_scene_to_path`] with an explicit serialization goal.
 pub fn save_scene_to_path_with_goal(
     world: &GameWorld,
     path: &str,

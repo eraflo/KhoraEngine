@@ -58,12 +58,13 @@ pub enum ActivationKind {
 /// `icon` and `category_label` are reserved for Phase 4 (folder-tree
 /// sidebar driven entirely by handlers); built-in implementations
 /// already supply them so the rewrite is a drop-in.
-#[allow(dead_code)]
 pub trait AssetTypeHandler: Send + Sync + 'static {
     /// Lower-case `asset_type_name` (matches `AssetMetadata::asset_type_name`).
     fn matches_type_name(&self, type_name: &str) -> bool;
     fn tile_kind(&self) -> AssetTileKind;
+    #[allow(dead_code)]
     fn icon(&self) -> Icon;
+    #[allow(dead_code)]
     fn category_label(&self) -> &'static str;
     /// Default activation: open externally.
     fn activate(&self, abs_path: String) -> ActivationKind {

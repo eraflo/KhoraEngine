@@ -9,7 +9,6 @@ description = "Hot-path execution pipelines for performance-critical operations"
 [dependencies]
 khora-core = { path = "../khora-core" }
 khora-data = { path = "../khora-data" }
-khora-io = { path = "../khora-io" }
 
 # The script lane runs Ergon. The language is a foundation crate — it depends
 # only on khora-core — so this does not invert the CLAD descent.

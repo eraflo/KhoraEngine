@@ -49,17 +49,6 @@ impl Mat3 {
         Self { cols: [c0, c1, c2] }
     }
 
-    /// Returns a row of the matrix as a `Vec3`.
-    #[allow(dead_code)]
-    #[inline]
-    fn get_row(&self, index: usize) -> Vec3 {
-        Vec3 {
-            x: self.cols[0].get(index),
-            y: self.cols[1].get(index),
-            z: self.cols[2].get(index),
-        }
-    }
-
     /// Creates a 2D scaling matrix.
     ///
     /// The Z-axis scale is set to 1.0, making it a no-op in that dimension.
