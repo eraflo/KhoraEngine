@@ -202,6 +202,8 @@ inventory::submit! {
     crate::scene::ComponentRegistration {
         type_id: std::any::TypeId::of::<MaterialRef>(),
         type_name: "MaterialRef",
+        // An enum: one-of, not all-of. See `ComponentShape`.
+        shape: crate::scene::ComponentShape::Opaque,
         provenance: crate::ecs::ComponentProvenance::Authored,
         serialize_recipe: serialize_material_ref,
         deserialize_recipe: deserialize_material_ref,

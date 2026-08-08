@@ -214,6 +214,8 @@ inventory::submit! {
     crate::scene::ComponentRegistration {
         type_id: std::any::TypeId::of::<MeshRef>(),
         type_name: "MeshRef",
+        // An enum: one-of, not all-of. See `ComponentShape`.
+        shape: crate::scene::ComponentShape::Opaque,
         provenance: crate::ecs::ComponentProvenance::Authored,
         serialize_recipe: serialize_mesh_ref,
         deserialize_recipe: deserialize_mesh_ref,

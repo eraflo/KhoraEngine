@@ -38,6 +38,12 @@ pub struct ComponentRegistration {
     /// The `TypeId` of the component type.
     pub type_id: TypeId,
 
+    /// What this component looks like from outside Rust — see
+    /// [`ComponentShape`](crate::scene::ComponentShape). Consumed by the Ergon
+    /// mirrors, the projection, and an editor rendering a component whose crate
+    /// it does not link.
+    pub shape: crate::scene::ComponentShape,
+
     /// A human-readable name for the component (e.g., "Camera", "Light").
     pub type_name: &'static str,
 

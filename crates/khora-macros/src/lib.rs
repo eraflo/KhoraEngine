@@ -380,6 +380,48 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         .chain(from_serializable_skipped)
         .collect();
 
+    // The field schema, built from the very list that feeds the `Serializable`
+    // mirror. Sharing the list is the point: a field the mirror omits is a field
+    // the schema must omit too, and deriving them separately would let
+    // `#[component(skip)]` be honoured in one place and forgotten in the other.
+    let field_schema = {
+        let entries: Vec<_> = match fields {
+            Fields::Named(_) => included_fields
+                .iter()
+                .map(|f| {
+                    let name = f.ident.as_ref().expect("named field");
+                    let ty = &f.ty;
+                    quote! {
+                        crate::scene::FieldSchema {
+                            name: stringify!(#name),
+                            ty: stringify!(#ty),
+                        }
+                    }
+                })
+                .collect(),
+            Fields::Unnamed(_) => included_fields
+                .iter()
+                .enumerate()
+                .map(|(i, f)| {
+                    // A tuple field has no name; its index is what an inspector
+                    // shows and what a generator addresses it by.
+                    let index = i.to_string();
+                    let ty = &f.ty;
+                    quote! {
+                        crate::scene::FieldSchema {
+                            name: #index,
+                            ty: stringify!(#ty),
+                        }
+                    }
+                })
+                .collect(),
+            // A marker carries no data, and saying so is the truthful answer.
+            Fields::Unit => Vec::new(),
+        };
+        // Always `Fields`: this derive only accepts structs.
+        quote! { crate::scene::ComponentShape::Fields(&[#(#entries),*]) }
+    };
+
     // Determine struct kind for Serializable.
     //
     // The `Serializable<Name>` mirror is a generated implementation detail
@@ -517,6 +559,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
             crate::scene::ComponentRegistration {
                 type_id: std::any::TypeId::of::<#name>(),
                 type_name: stringify!(#name),
+                shape: #field_schema,
                 provenance: crate::ecs::ComponentProvenance::#provenance_ident,
                 serialize_recipe: |world, entity| {
                     // By value so it works for any column layout (AoS or field-SoA).

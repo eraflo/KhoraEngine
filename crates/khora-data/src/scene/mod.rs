@@ -16,6 +16,7 @@
 
 mod recipe;
 pub mod registry;
+pub mod shape;
 
 mod archetype_strategy;
 mod definition_strategy;
@@ -26,6 +27,7 @@ mod strategy;
 
 pub use recipe::*;
 pub use registry::*;
+pub use shape::{ComponentShape, FieldSchema};
 
 pub use archetype_strategy::*;
 pub use definition_strategy::*;
