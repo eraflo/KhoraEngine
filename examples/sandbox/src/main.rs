@@ -341,6 +341,28 @@ impl EngineApp for SandboxGame {
             .with_component(chrome_handle)
             .build();
 
+        // A sphere driven by Ergon rather than by Rust — the first entity in
+        // this repository whose motion comes from a script.
+        //
+        // `Script` names the module and the behaviour; `with_field` overrides a
+        // default the script declared, which is exactly what the inspector
+        // edits and what a scene file keeps. The behaviour itself is in
+        // `assets/scripts/hover.erg`, recompiled from source at startup.
+        let scripted = khora_sdk::prelude::materials::StandardMaterial {
+            base_color: khora_sdk::prelude::math::LinearRgba::rgb(0.9, 0.45, 0.15),
+            roughness: 0.35,
+            ..Default::default()
+        };
+        let scripted_handle = world.add_material(*Box::new(scripted));
+        khora_sdk::spawn_sphere(world, 0.45, 32, 16)
+            .at_position(Vec3::new(-2.2, 0.8, -1.4))
+            .with_component(scripted_handle)
+            .with_component(
+                khora_sdk::prelude::ecs::Script::new("hover.erg", "Hover")
+                    .with_field("speed", khora_sdk::prelude::ecs::ScriptValue::Float(0.9)),
+            )
+            .build();
+
         // Two tinted glass spheres, one behind the other, to show alpha
         // blending: `AlphaMode::Blend` puts them in the depth-sorted
         // transparent batch, so the far one shows through the near one and the
@@ -707,6 +729,15 @@ fn main() -> Result<()> {
                 ),
             }
         }
+
+        // Ergon. Resolved from this crate's compile-time location for the same
+        // reason as the shaders above: the sandbox is run from the checkout.
+        //
+        // The watcher slot is already spent on the shader tree, so `mount`
+        // compiles what is there and leaves watching alone — the scripts run,
+        // and editing one takes a restart until the multi-root watcher lands.
+        let script_assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
+        khora_sdk::scripts::mount(runtime, &script_assets);
     })?;
     Ok(())
 }

@@ -91,15 +91,24 @@ pub fn mount(runtime: &mut Runtime, assets_root: &Path) -> usize {
         return 0;
     }
 
-    let Some(pending) = runtime
+    // Created here when this is the first thing to need one: a windowing driver
+    // runs the application's bootstrap closure before the engine populates the
+    // runtime, so `mount` legitimately arrives first. The engine's own insert
+    // is conditional for the same reason, and the two meet on whichever ran
+    // earlier.
+    if runtime
         .resources
         .get::<khora_io::script_hot_reload::PendingReloads>()
-    else {
-        // The engine bootstrap inserts this. Reaching here means `mount` was
-        // called against a runtime the engine never built.
-        log::error!("scripts::mount: no reload channel in the runtime — scripts will not load");
-        return 0;
-    };
+        .is_none()
+    {
+        runtime
+            .resources
+            .insert(khora_io::script_hot_reload::reload_channel());
+    }
+    let pending = runtime
+        .resources
+        .get::<khora_io::script_hot_reload::PendingReloads>()
+        .expect("just inserted");
 
     let loaded = khora_io::script_hot_reload::load_all(&script_dir, pending);
     log::info!(

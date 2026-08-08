@@ -148,13 +148,17 @@ impl World {
     /// patching the moved entity's metadata so every domain that referenced the
     /// vacated slot now points at it.
     ///
+    /// Takes a row, not an entity, and deliberately: **whose** row it was never
+    /// mattered, and taking the entity invited comparing identities where rows
+    /// were meant — which is exactly the bug this signature closes.
+    ///
     /// A mixed-domain bundle is stored in one page but registered under several
     /// domain keys in [`EntityMetadata::locations`], all addressing the same
     /// `(page_id, row_index)`. The moved (last-row) entity may likewise reference
     /// this page under more than one domain, so every one of its locations that
     /// pointed at the page's old last row is repointed at `location` — patching a
     /// single domain would leave the others dangling. O(domains) per page, no scan.
-    fn remove_from_page(&mut self, entity_to_despawn: EntityId, location: PageIndex) {
+    fn remove_from_page(&mut self, location: PageIndex) {
         let page = &mut self.storage.pages[location.page_id as usize];
         if page.entities.is_empty() {
             return;
@@ -166,8 +170,20 @@ impl World {
 
         // The last row moved into the vacated slot. Repoint every location of the
         // moved entity that addressed this page's old last row at the new slot.
-        // (When the despawned entity *is* the last row, nothing moved.)
-        if last_entity_in_page != entity_to_despawn {
+        //
+        // The test is **which row was removed**, not whose entity it was. Those
+        // are not the same question, and reading one for the other was a real
+        // bug: an entity that leaves a page and comes back — `add_component`
+        // then `remove_component`, which is what a `Teleported` marker does
+        // every frame — leaves an orphan row *and* holds a live row in the same
+        // page, both under its own id. When compaction reclaimed the orphan and
+        // the live row happened to be last, an id comparison concluded "nothing
+        // moved" and skipped the patch. The entity kept a row index into a page
+        // that had just got shorter, and the next migration read past the end of
+        // a column.
+        //
+        // Nothing moved only when the removed row *was* the last one.
+        if location.row_index != old_last_row {
             let metadata = self.entities.get_metadata_mut(last_entity_in_page).unwrap();
             for loc in metadata.locations.values_mut() {
                 if loc.page_id == location.page_id && loc.row_index == old_last_row {
@@ -534,7 +550,7 @@ impl World {
         let mut removed_rows: HashSet<PageIndex> = HashSet::new();
         for (domain, location) in metadata.locations {
             if removed_rows.insert(location) {
-                self.remove_from_page(entity_id, location);
+                self.remove_from_page(location);
             }
 
             // Clear the entity's bit in the domain bitset and update stats.
@@ -1538,13 +1554,10 @@ impl World {
                 // Orphan: `remove_from_page` swap-removes it and repoints the
                 // survivor moved into the slot (across all its domains). The
                 // swapped-in row now sits at `row`, so re-check the same index.
-                self.remove_from_page(
-                    entity,
-                    PageIndex {
-                        page_id,
-                        row_index: row as u32,
-                    },
-                );
+                self.remove_from_page(PageIndex {
+                    page_id,
+                    row_index: row as u32,
+                });
                 removed_any = true;
             }
         }

@@ -270,12 +270,28 @@ impl<A: EngineApp> EngineCore<A> {
         // Filling them is the application's job, because the root to watch is
         // the exe's `assets/` for a game and the open project for the editor.
         // See `khora_sdk::scripts::mount`.
-        runtime
+        // Inserted only if absent. A windowing driver runs the application's
+        // bootstrap closure *before* this, and an app that mounted its scripts
+        // there has already filled this queue — overwriting it with a fresh one
+        // would drop every program compiled at startup, silently.
+        if runtime
             .resources
-            .insert(khora_io::script_hot_reload::reload_channel());
-        runtime
+            .get::<khora_io::script_hot_reload::PendingReloads>()
+            .is_none()
+        {
+            runtime
+                .resources
+                .insert(khora_io::script_hot_reload::reload_channel());
+        }
+        if runtime
             .resources
-            .insert(khora_core::script::engine_event_channel());
+            .get::<khora_core::event::Channel<khora_core::script::ScriptEvent>>()
+            .is_none()
+        {
+            runtime
+                .resources
+                .insert(khora_core::script::engine_event_channel());
+        }
 
         // Create the game world
         let mut game_world = GameWorld::new();

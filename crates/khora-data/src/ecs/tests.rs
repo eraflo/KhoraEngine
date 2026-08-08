@@ -1578,3 +1578,117 @@ fn emptied_page_slot_is_recycled() {
         assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(i as i32)));
     }
 }
+
+#[cfg(test)]
+mod script_domain_migration_tests {
+    use crate::ecs::components::{GlobalTransform, Script, Transform};
+    use crate::ecs::World;
+    use khora_core::math::Vec3;
+
+    /// **Adding a component in a domain the entity does not yet occupy.**
+    ///
+    /// Reproduces a panic seen when the sandbox attached a `Script` to a sphere
+    /// that already carried `Transform`, `GlobalTransform`, `MeshRef` and
+    /// `MaterialRef`: `copy_row_between` read a row past the end of the source
+    /// column during the archetype migration.
+    #[test]
+    fn a_late_domain_component_migrates_cleanly() {
+        let mut world = World::new();
+
+        // Several entities first, so the pages hold more than one row and an
+        // off-by-one has somewhere to go wrong.
+        for _ in 0..12 {
+            let filler = world.spawn((Transform::default(), GlobalTransform::default()));
+            let _ = filler;
+        }
+
+        let entity = world.spawn((Transform::default(), GlobalTransform::default()));
+        let _ = world.add_component(entity, Script::new("hover.erg", "Hover"));
+
+        let script = world.get::<Script>(entity);
+        assert!(
+            script.is_some(),
+            "the component did not survive the migration"
+        );
+        assert_eq!(script.unwrap().behavior, "Hover");
+        assert!(
+            world.get::<Transform>(entity).is_some(),
+            "the components it already had must survive too"
+        );
+    }
+
+    /// **A marker added and removed every frame must not corrupt the page.**
+    ///
+    /// `Teleported` is exactly that: whoever moves an entity adds it, and the
+    /// physics sync consumes and removes it in the same frame. Reproduces the
+    /// panic seen once scripts started queueing `SetTranslation` — the second
+    /// add read a source row past the end of a sibling column.
+    #[test]
+    fn a_marker_added_and_removed_repeatedly_keeps_rows_in_step() {
+        use crate::ecs::components::Teleported;
+
+        let mut world = World::new();
+        let mut entities = Vec::new();
+        for _ in 0..12 {
+            entities.push(world.spawn((Transform::default(), GlobalTransform::default())));
+        }
+        let subject = entities[5];
+
+        for round in 0..3 {
+            let _ = world.add_component(subject, Teleported);
+            assert!(
+                world.get::<Teleported>(subject).is_some(),
+                "round {round}: the marker did not land"
+            );
+            let _ = world.remove_component::<Teleported>(subject);
+            assert!(
+                world.get::<Teleported>(subject).is_none(),
+                "round {round}: the marker did not leave"
+            );
+            assert!(
+                world.get::<Transform>(subject).is_some(),
+                "round {round}: the entity lost a component it never gave up"
+            );
+        }
+    }
+
+    /// **The frame loop's shape, with a script driving it.**
+    ///
+    /// A behaviour queueing `SetTranslation` makes the applier add `Teleported`
+    /// every frame, and the physics sync removes it — each add abandons a row
+    /// that compaction later reclaims. Reproduces the panic the sandbox hit the
+    /// moment scripts actually ran: an entity kept a row index into a page
+    /// compaction had since shortened.
+    #[test]
+    fn add_remove_and_compaction_keep_every_row_index_true() {
+        use crate::ecs::components::Teleported;
+
+        let mut world = World::new();
+        let mut entities = Vec::new();
+        for i in 0..13 {
+            entities.push(world.spawn((
+                Transform::from_translation(Vec3::new(i as f32, 0.0, 0.0)),
+                GlobalTransform::default(),
+            )));
+        }
+        let subject = entities[7];
+
+        for round in 0..6 {
+            let _ = world.add_component(subject, Teleported);
+            let _ = world.remove_component::<Teleported>(subject);
+            // What `EcsMaintenance` does at the end of every tick.
+            world.run_compaction(8);
+
+            for (i, entity) in entities.iter().enumerate() {
+                assert!(
+                    world.get::<Transform>(*entity).is_some(),
+                    "round {round}: entity {i} lost its Transform"
+                );
+                assert!(
+                    world.get::<GlobalTransform>(*entity).is_some(),
+                    "round {round}: entity {i} lost its GlobalTransform"
+                );
+            }
+        }
+    }
+}
