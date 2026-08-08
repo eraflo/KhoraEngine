@@ -14,8 +14,9 @@
 
 //! Internal narrow-phase collision detection.
 
-use super::{ColliderShape, ContactManifold};
-use crate::math::{AffineTransform, Vec3, Vec4};
+use super::ContactManifold;
+use khora_core::math::{AffineTransform, Vec3, Vec4};
+use khora_core::physics::ColliderShape;
 
 /// Narrow-phase collision detection system.
 pub struct NarrowPhase;
@@ -110,7 +111,7 @@ impl Default for NarrowPhase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::Vec3;
+    use khora_core::math::Vec3;
 
     #[test]
     fn test_sphere_sphere_collision() {

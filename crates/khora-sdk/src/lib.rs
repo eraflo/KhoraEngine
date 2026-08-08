@@ -216,7 +216,7 @@ pub use khora_core::physics::PhysicsProvider;
 pub use khora_core::renderer::api::text::TextRenderer;
 pub use khora_core::renderer::traits::PipelineSystem;
 pub use khora_core::ui::LayoutSystem;
-pub use khora_infra::audio::backends::cpal::CpalAudioDevice;
+pub use khora_infra::audio::cpal::CpalAudioDevice;
 pub use khora_infra::graphics::WgpuPipelineSystem;
 pub use khora_infra::physics::rapier::RapierPhysicsWorld;
 pub use khora_infra::renderer::StandardTextRenderer;

@@ -16,14 +16,6 @@
 //!
 //! Universal traits and types for physics simulation providers.
 
-pub mod collision;
-pub mod dynamic_tree;
-pub mod solver;
-
-pub use collision::*;
-pub use dynamic_tree::*;
-pub use solver::*;
-
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
@@ -354,28 +346,6 @@ pub struct RaycastHit {
     pub normal: Vec3,
     /// Exact position of the hit.
     pub position: Vec3,
-}
-
-/// Detailed information about a contact between two colliders.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
-pub struct ContactManifold {
-    /// Normal vector pointing from entity A to entity B.
-    pub normal: Vec3,
-    /// Intersection depth.
-    pub depth: f32,
-    /// Contact point in world space.
-    pub point: Vec3,
-}
-
-impl ContactManifold {
-    /// Returns the inverted manifold (flipped normal).
-    pub fn inverted(&self) -> Self {
-        Self {
-            normal: -self.normal,
-            depth: self.depth,
-            point: self.point,
-        }
-    }
 }
 
 /// A simple line for debug rendering.

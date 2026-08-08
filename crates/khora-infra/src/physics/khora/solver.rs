@@ -16,8 +16,9 @@
 //!
 //! Pure mathematical implementation of constraint resolution using impulses.
 
-use super::{BodyType, ContactManifold};
-use crate::math::Vec3;
+use super::ContactManifold;
+use khora_core::math::Vec3;
+use khora_core::physics::BodyType;
 
 /// Represents the physical state of a body relevant to impulse resolution.
 #[derive(Debug, Clone, Copy)]

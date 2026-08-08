@@ -17,8 +17,8 @@
 //! A high-performance spatial partitioning structure for broad-phase collision detection.
 //! It uses an incrementally balanced binary tree of AABBs.
 
-use crate::math::Aabb;
-use crate::math::Vec3;
+use khora_core::math::Aabb;
+use khora_core::math::Vec3;
 
 const NULL_NODE: i32 = -1;
 

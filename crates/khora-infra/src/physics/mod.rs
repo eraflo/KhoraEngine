@@ -12,5 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Physics simulation providers.
+//! Physics simulation providers — one subfolder per backend.
+//!
+//! [`rapier`] is the backend the engine runs. [`khora`] is the start of an
+//! in-house one and does not implement
+//! [`PhysicsProvider`](khora_core::physics::PhysicsProvider) yet; see its
+//! module documentation.
+
+pub mod khora;
 pub mod rapier;
