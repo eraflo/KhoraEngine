@@ -43,22 +43,24 @@ the renderer uses. The concrete builder API lives in
 ## How it plugs into a frame
 
 UI follows the same CLAD descent as every other domain (`Control → Agent → Lane →
-Data`), as two lanes owned by the **`UiAgent`**:
+Data`), through **one** lane owned by the `UiAgent`:
 
 ```
 ECS (layout nodes, styles, images, hierarchy)
-  ↓ UI Flow projects a UiScene into the LaneBus
-layout lane   — runs the LayoutSystem, produces pre-laid-out nodes
-  ↓
+  ↓ UiFlow projects a UiScene into the LaneBus
 UI render lane — rasterizes the scene, compositing over what the renderer drew
 ```
 
-The data layer's UI **[Flow](../reference/glossary.md)** projects the UI domain into
-a scene View on the LaneBus; the layout lane computes geometry through the
-`LayoutSystem` trait; the render lane draws the result in the frame's `OUTPUT`
-phase, loading the existing colour target so it composites over the scene the
-renderer already produced. Two passes, same shape as the scene render path: a
-compute-style pass followed by a draw pass.
+The data layer's UI **[Flow](../reference/glossary.md)** projects the UI domain
+into a scene View on the LaneBus, and `UiRenderLane` draws it in the frame's
+`OUTPUT` phase, loading the existing colour target so it composites over the scene
+the renderer already produced.
+
+> **Layout is not wired yet.** The `LayoutSystem` trait exists in `khora-core` and
+> the Taffy backend implements it, but **nothing calls `compute_layouts`**:
+> `UiFlow` reads the `UiTransform` an author already placed. Until that gap
+> closes, UI positions are authored, not computed — the trait and the backend are
+> the shape the engine intends, not a path a frame currently takes.
 
 Notably, there is no separate "UI renderer" — the UI render lane shares the one GPU
 device with everything else, reached through the same typed-ID abstraction. Text
@@ -67,7 +69,7 @@ on that device.
 
 ## Editor UI versus game UI
 
-Today the `UiAgent` runs in the editor. Its negotiation surface is minimal — one
+The `UiAgent` is one of the built-in agents `EngineCore` registers, so it runs for every SDK application, not only the editor. Its negotiation surface is minimal — one
 strategy, no real GORNA pressure yet — because editor UI complexity hasn't demanded
 density tiers (full / simplified / hidden chrome) that the design leaves room for.
 In-game (play-mode) UI is on the roadmap; the path is mostly a matter of which modes

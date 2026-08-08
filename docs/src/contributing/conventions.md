@@ -78,7 +78,7 @@ ever disagree, those files win; this page is a digest, not a duplicate.
 ## Shaders
 
 - Shaders are **`.wgsl` files**, never inline Rust `const`/`static` strings. They
-  live under `crates/khora-lanes/src/render_lane/shaders/` — `pipelines/` for entry
+  live under `crates/khora-infra/src/graphics/shader/shaders/` — `pipelines/` for entry
   points, `lib/` for reusable modules — and are composed by the `PipelineSystem` backend with
   `naga_oil` `#import`. Write WGSL only (no GLSL or SPIR-V).
 - **The four-bind-group budget.** Every render lane uses exactly four bind groups:
@@ -90,7 +90,7 @@ ever disagree, those files win; this page is a digest, not a duplicate.
 ## Architecture boundaries
 
 - **Dependencies flow strictly downward**: `khora-core` → `khora-data` /
-  `khora-control` → `khora-lanes` → `khora-agents` → `khora-infra` →
+  `khora-control` → `khora-lanes` → `khora-agents` →
   `khora-sdk`. Never introduce a cycle. Abstract traits live in `khora-core`;
   concrete backends (wgpu, Rapier, CPAL, Taffy, winit) live under `khora-infra`.
 - Keep GPU resources behind abstract IDs (`TextureId`, `BufferId`, `PipelineId`) —

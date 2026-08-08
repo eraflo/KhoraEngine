@@ -55,7 +55,7 @@ Place the file next to the built-in decoders in
 matching the existing entries (e.g. `texture`, `shader`, `font`). Registration fires
 at startup — no manual wiring.
 
-> The `type_name` must match what `IndexBuilder::asset_type_for_extension` returns for
+> The `type_name` must match what `asset_type_for_extension` returns for
 > your file extensions, or the loader will not route bytes to your decoder.
 >
 > Slots where multiple backends compete (`audio`, `mesh`) deliberately stay registered

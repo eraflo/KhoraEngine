@@ -43,7 +43,7 @@ pub struct FoliageAgent {
 `AgentId` is a **fixed enum** — there is no `Custom` variant. A new subsystem reuses
 the slot closest to its work. Foliage rendering, for example, reuses
 `AgentId::Renderer`. The variants are: `Renderer`, `ShadowRenderer`, `Overlay`,
-`Physics`, `Ecs`, `Ui`, `Audio`, `Asset`.
+`Skybox`, `Physics`, `Ecs`, `Ui`, `Audio`, `Script`, `Asset`.
 
 ```rust
 impl Agent for FoliageAgent {

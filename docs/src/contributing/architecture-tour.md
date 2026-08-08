@@ -58,7 +58,7 @@ runtime without ever changing meaning ("adapt the HOW, never the WHAT").
 Two facts make the codebase legible once you start reading it:
 
 - **Dependencies flow strictly downward**: `khora-core` → `khora-data` /
-  `khora-control` → `khora-lanes` → `khora-agents` → `khora-infra` →
+  `khora-control` → `khora-lanes` → `khora-agents` →
   `khora-sdk`. There are no cycles. Abstract traits live in `khora-core`;
   concrete backends live under `khora-infra`. Knowing this tells you, for any
   symbol, roughly *which crate* it must be in.

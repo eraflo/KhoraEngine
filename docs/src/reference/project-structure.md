@@ -85,7 +85,7 @@ its body with a custom `EngineApp` impl.
 | `created_at` | `u64` | Unix epoch seconds at creation | Informational; not used for runtime logic. |
 
 The descriptor type is `ProjectDescriptor` in
-[`hub/src/project.rs`](../../../hub/src/project.rs) — private to the hub today, but
+[`hub/src/services/project.rs`](../../../hub/src/services/project.rs) — private to the hub today, but
 the JSON shape is the public contract. The editor reads `name` and
 `engine_version` at startup
 ([`crates/khora-editor/src/main.rs`](../../../crates/khora-editor/src/main.rs),
@@ -104,8 +104,10 @@ so older project files keep working.
 
 ## Asset extensions
 
-The editor's asset browser categorises files by extension. The mapping lives in
-[`crates/khora-editor/src/scene_io.rs`](../../../crates/khora-editor/src/scene_io.rs).
+The asset browser categorises files by extension. The mapping is
+`asset_type_for_extension` in
+[`crates/khora-io/src/asset/index_builder.rs`](../../../crates/khora-io/src/asset/index_builder.rs)
+— it is the engine's, not the editor's, so a packed build classifies identically.
 
 | Type | Recognised extensions |
 |------|-----------------------|
@@ -116,8 +118,13 @@ The editor's asset browser categorises files by extension. The mapping lives in
 | Material | `.mat`, `.kmat` |
 | Scene | `.scene`, `.kscene` |
 | Font | `.ttf`, `.otf` |
+| Script | `.erg` (Ergon), `.kscript` |
+| Prefab | `.kprefab` |
 
-Files with unknown extensions are still scanned but classified as generic.
+An unknown extension is **not** discarded and not lumped together: the file is
+indexed under its own lowercased extension as the type tag, so it shows up in the
+browser and a decoder can be added later without re-indexing. Only a file with no
+extension at all gets the generic `blob` tag.
 
 ## Lifecycle
 

@@ -70,8 +70,10 @@ for (source,) in world.query_mut::<(&mut AudioSource,)>() {
 }
 ```
 
-A source with **no** `GlobalTransform` is mixed as a 2D sound (UI clicks, music) — no
-distance attenuation or panning. To stop a sound, despawn its entity; to silence it, set
+A source with **no** `GlobalTransform` is not mixed at all: `AudioFlow` queries
+`(&AudioSource, &GlobalTransform)`, so such an entity never enters the audio view. What
+does play unspatialised — no distance attenuation, no panning — is a scene with **no
+listener**: the mixing lane leaves the pan centred. To stop a sound, despawn its entity; to silence it, set
 `volume` to `0.0`. Playback is tied to entity lifetime — there is no global "playing
 sounds" registry.
 

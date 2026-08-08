@@ -9,7 +9,7 @@ wonder *why*, there is a one-line answer with a link — keep moving.
 
 ## Prerequisites
 
-- Rust 1.91+ (edition 2024) and a GPU with Vulkan, Metal, or DX12. Full setup is
+- Rust 1.95+ and a GPU with Vulkan, Metal, or DX12. Full setup is
   in [Contributing → Setup](../contributing/setup.md).
 - A clone of the engine you can build:
 
@@ -56,8 +56,8 @@ use khora_sdk::prelude::*;
 use khora_sdk::run_winit;
 use khora_sdk::winit_adapters::WinitWindowProvider;
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, GameWorld, PhaseProvider, RenderSystem,
-    Runtime, WgpuRenderSystem, WindowConfig,
+    AgentProvider, DccService, EngineApp, GameWorld, PhaseProvider, PipelineSystem,
+    RenderSystem, Runtime, WgpuPipelineSystem, WgpuRenderSystem, WindowConfig,
 };
 use std::sync::{Arc, Mutex};
 
@@ -191,6 +191,16 @@ fn main() -> Result<()> {
         runtime.backends.insert(rs.graphics_device());
         let rs: Box<dyn RenderSystem> = Box::new(rs);
         runtime.backends.insert(Arc::new(Mutex::new(rs)));
+
+        // Required: every render lane resolves its pipeline through this. Without
+        // it each one bails in `on_initialize` and the window stays empty.
+        match WgpuPipelineSystem::new() {
+            Ok(sys) => {
+                let sys: Arc<dyn PipelineSystem> = Arc::new(sys);
+                runtime.resources.insert(sys);
+            }
+            Err(e) => log::error!("pipeline system init failed: {e}"),
+        }
     })?;
     Ok(())
 }

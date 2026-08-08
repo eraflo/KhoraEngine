@@ -153,12 +153,14 @@ Most engine editors waste 220 px on a left sidebar that simply switches workspac
 - **Status bar** — 28 px. Engine state, FPS, build status, GORNA pulse.
 
 ### Modes
+
+**Two ship today** — the Spine has exactly these, switched with `Ctrl+1` / `Ctrl+2`:
+
 1. **Scene** — 3D editing (default)
-2. **Canvas** — 2D layout & UI
-3. **Graph** — Node-based logic / shader
-4. **Animation** — Timeline & curves
-5. **Shader** — Code editor with live preview
-6. **Control Plane** — Engine telemetry & GORNA stream
+2. **Control Plane** — Engine telemetry & GORNA stream
+
+Designed but not built: Canvas (2D layout & UI), Graph (node-based logic /
+shader), Animation (timeline & curves), Shader (code editor with live preview).
 
 > **A panel that demands attention every second isn't a panel — it's an alarm.** We design for ambient awareness, not constant interruption.
 

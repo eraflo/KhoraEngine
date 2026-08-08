@@ -30,7 +30,7 @@ The editor application — panels, gizmos, play mode, scene I/O.
 
 `khora-editor` is a separate binary built on the SDK. It opens a project (a folder containing `.kscene` files and assets), authors scenes through ECS-aware panels, and previews them with **play mode** — a one-button switch between editing and full simulation.
 
-The editor is not a separate engine. It uses the same agents, lanes, and ECS as a shipping game. What changes is *which agents run* (Editor mode runs Render, Shadow, UI; Playing mode adds Physics and Audio) and *what the panels do on top of the world*.
+The editor is not a separate engine. It uses the same agents, lanes, and ECS as a shipping game — **all of them, all the time**. What Play changes is the *simulation clock* and what the panels do on top of the world.
 
 The visual language — colors, typography, panels, voice — is documented in [Editor design system](../design/editor.md). This chapter covers the **architecture**, not the look.
 
@@ -91,27 +91,43 @@ When you press **Play**:
 1. The current world is serialized using `SerializationGoal::FastestLoad` (Archetype strategy).
 2. The snapshot is stored in memory.
 3. The editor's `PlayMode` (UI-state) becomes `Playing`.
-4. `EngineMode` switches from `Custom("editor")` to `Playing` — `PhysicsAgent` and `AudioAgent` start running, `UiAgent` stops.
+4. The editor sets the engine's **simulation clock scale** to `1.0`.
 5. The play camera takes over from the editor camera.
 
 When you press **Stop**:
 
 1. The editor's `PlayMode` becomes `Editing`.
-2. `EngineMode` switches back to `Custom("editor")`.
+2. The simulation clock scale goes back to `0.0`.
 3. The snapshot is deserialized into the world.
 4. The editor camera resumes.
 
-The snapshot is fast — milliseconds for a 10 000-entity scene — because Archetype strategy serializes ECS pages directly. See [Serialization](../concepts/serialization.md).
+The snapshot uses the `EditorInterchange` goal — the Recipe strategy, bincode — not
+the page-level Archetype one. `FastestLoad` was tried and abandoned: it lost `Name`
+components and corrupted the heap. See [Serialization](../concepts/serialization.md).
 
-| Aspect | Editor (`Custom("editor")`) | Playing (`Playing`) |
+| Aspect | Editing | Playing |
 |---|---|---|
-| Active agents | Render, Shadow, UI | Render, Shadow, Physics, Audio |
+| Active agents | All eight | All eight — the same ones |
+| Simulation clock | `Time::scale == 0.0` — no fixed sub-steps run | `Time::scale == 1.0` |
 | Camera | Editor camera (free orbit) | Scene cameras (active ones) |
 | Input | Editor input (gizmos, selection) | Game input (player controls) |
 | ECS | Mutable — user edits directly | Snapshot-based — original world preserved |
 | Rendering | Viewport texture + gizmos + overlay | Full scene, no editor chrome |
 
-> **Two enums, two scopes.** `PlayMode` (`Editing` / `Playing` / `Paused`) is the editor's UI state — it drives buttons, panel visibility, and what the user sees. `EngineMode` (`Playing` / `Custom("editor")` / other) is the engine's filter for agent execution. The editor application bridges them: user clicks Play → editor sets `PlayMode::Playing` → editor requests `EngineMode::Playing` from the engine.
+> **`PlayMode` never leaves the editor.** It is the editor's UI state — buttons,
+> panel visibility, what the user sees. The only thing that crosses into the engine
+> is a **number**: the simulation clock's scale.
+>
+> That is deliberate. At scale `0.0` the fixed-step accumulator never fills, so no
+> body integrates and no script timer counts down, while rendering carries on at
+> real time. A pause menu, a cutscene and a slow-motion hit all write the same
+> number, which makes the editor one caller among several rather than a case the
+> engine has to know about.
+>
+> `EngineMode` is a separate axis the DCC reads to scope agents to a mode. The
+> mechanism exists (`DccService::register_agent_for_mode`), but **nothing uses it
+> today** — every built-in agent is registered for all modes. Earlier revisions of
+> this page described an editor/playing agent filter that was never built.
 
 > **Physics state is not preserved across play mode.** Velocities, contacts, and sleep state are reset on restore. The ECS components are restored exactly; the physics world rebuilds from those components.
 
@@ -153,11 +169,11 @@ Empty folders are shown, so **New Folder** produces a usable target immediately.
 
 The viewport has floating gizmos for the selected entity:
 
-- **Move** — three-axis arrows + center sphere for screen-space drag.
+- **Move** — three axis arrows.
 - **Rotate** — three rings, one per axis.
-- **Scale** — three handles + uniform-scale center.
+- **Scale** — three axis arms with end cubes.
 
-Selection is tracked in `EditorState.selected_entity`. Clicking an entity in the hierarchy or the viewport sets it; `Esc` clears it. Selected entities get a 2 px gold inner-stroke outline (1 px dark outer stroke), visible against any background.
+Selection is tracked in `EditorState.selection` (a set — multi-select is supported), with `EditorState.inspected` naming the one the Inspector shows. Clicking an entity in the hierarchy or the viewport sets it; `Esc` clears it. Selected entities get a 2 px gold inner-stroke outline (1 px dark outer stroke), visible against any background.
 
 Numeric fields in the Inspector are draggable scrubbers — drag horizontally to change a value, modifier keys for precision. No spinner buttons.
 
@@ -204,7 +220,7 @@ The choice is **deterministic** (presence of `Cargo.toml` is the contract) and *
 
 ## 09 — The Control Plane
 
-The sixth Spine mode is the **Control Plane** — a workspace dedicated to the engine's mind.
+The second Spine mode is the **Control Plane** — a workspace dedicated to the engine's mind.
 
 | Region | Purpose |
 |---|---|
@@ -232,21 +248,36 @@ To preview your scene in play mode, press the Play button. Your `EngineApp::upda
 
 ## For engine contributors
 
-The editor is implemented as a set of `EnginePlugin`s — each panel registers callbacks at the appropriate `ExecutionPhase`:
+The editor is an application built on the SDK — it implements `EngineApp` and
+contributes its agents through `AgentProvider`.
 
-| Folder | Contents |
+| Where | Contents |
 |---|---|
-| `crates/khora-editor/src/panels/` | Scene tree, properties, asset browser, viewport, console, GORNA stream |
-| `crates/khora-editor/src/gizmos/` | Move / rotate / scale, selection outline |
-| `crates/khora-editor/src/ops/` | High-level scene operations (spawn, despawn, parent, add component) |
-| `crates/khora-editor/src/scene_io/` | Scene save / load via `SerializationService` |
-| `crates/khora-editor/src/state.rs` | `EditorState` — selection, mode, pending operations |
+| `crates/khora-editor/src/panels/` | Scene tree, properties, asset browser, viewport, console, control plane |
+| `crates/khora-editor/src/chrome/` | Title bar, menus, the window frame |
+| `crates/khora-editor/src/widgets/` | Editor-specific widgets (tiles, inspector fields) |
+| `crates/khora-editor/src/ops.rs` | High-level scene operations (spawn, despawn, parent, add component) |
+| `crates/khora-editor/src/commands.rs` | The command dispatch the menus and palette go through |
+| `crates/khora-editor/src/scene_io.rs` | Scene save / load via `SerializationService` |
+| `crates/khora-editor/src/mod_gizmo.rs`, `picking.rs` | Gizmo dispatch and viewport picking |
+| `crates/khora-editor/src/project_vfs.rs` | The live asset index — VFS, watcher and identity registry |
 
-To add a panel: implement the panel render function, register it as an `EnginePlugin` in the editor's main plugin list. Panels read `EditorState` and the world; they mutate through `ops/` operations to keep the action layer clear.
+`EditorState` — selection, mode, pending operations — is **not** in the editor
+crate. It lives in `crates/khora-core/src/ui/editor/state.rs`, alongside the dock
+tree, the gizmo interaction model and the command history, because the render
+lanes and the egui backend need the same vocabulary and neither may depend on the
+editor. The engine's design keeps that vocabulary backend-agnostic; the editor is
+one consumer of it.
 
-To add a gizmo type: add a render path in `gizmos/` that draws the gizmo for the selected entity, plus an interaction handler in `ops/` that converts mouse drags into `Transform` mutations.
+To add a panel: write its render function under `panels/`, register it in the
+workbench, and route any mutation through `ops.rs` so the action layer stays the
+single place the world changes.
 
-The editor depends directly on `khora-agents` and `khora-io` for performance — it bypasses the SDK in places. This is a known trade-off (see Decisions).
+To add a gizmo type: extend the interaction model in
+`crates/khora-core/src/ui/editor/gizmo_interact.rs`, draw it from the engine-side
+`GizmoLane`, and convert drags into `Transform` mutations through `ops.rs`.
+
+The editor depends on `khora-sdk` and `khora-tool-ui`, and nothing else from the workspace — there is no SDK bypass. Earlier revisions of this page described one; the manifest never had it.
 
 ## Decisions
 
@@ -254,7 +285,7 @@ The editor depends directly on `khora-agents` and `khora-io` for performance —
 - **Editor as a separate binary.** The editor is a different application from a shipping game — different lifecycle, different active agents, different input.
 - **Mode-first layouts.** Opinionated defaults beat infinite customization for 95% of users.
 - **Play mode through scene snapshot.** Press Play, run the game; press Stop, you are back where you were. No state pollution.
-- **Editor reaches into `khora-agents` and `khora-io`.** Pragmatic shortcut for performance. The SDK is the public API for *games*; the editor is privileged.
+- **The editor is an ordinary SDK application.** It depends on `khora-sdk` plus the first-party `khora-tool-ui` design system, which the SDK deliberately does not re-export so a game never compiles the engine vendor's brand.
 
 ### We said no to
 - **Free-form panel docking.** Powerful but exhausting. We pick layouts users won't want to change.

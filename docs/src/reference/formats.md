@@ -167,7 +167,7 @@ resolves through it, which is what makes dev and release agree on identity.
 A `.kmat` is a material asset referenced from an entity via
 `MaterialRef::Asset(uuid)` and resolved through the VFS. The recognised
 extensions for the material category are `.kmat` and `.mat`
-(`IndexBuilder::asset_type_for_extension` maps both to the type tag `"material"`).
+(`asset_type_for_extension` maps both to the type tag `"material"`).
 
 The on-disk form is **RON** of a type-tagged tree:
 

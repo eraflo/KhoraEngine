@@ -58,8 +58,13 @@ panel is a live feed of negotiations (timestamp, subsystem, suggestion,
 accept/reject — e.g. "RenderAgent: LitForward → Forward+, reason: GPU pressure").
 The underlying signals come from the `TelemetryService`. See
 [GORNA](./concepts/gorna.md), [Telemetry](./concepts/telemetry.md), and [Editor](./reference/editor.md).
-Note: a richer offline decision *recorder* (the `Replay` adaptation mode and a
-DCC/GORNA decision tracer) is roadmap work, not shipped.
+Recording and replay ship: `DccService::start_decision_recording` captures
+GORNA's per-tick decisions into a `DecisionTrace`, and `replay_decisions` issues
+them back in order — bypassing live fit and the adaptation mode — for
+bit-for-bit reproduction in QA or a bug repro. What is *not* shipped is a
+`Replay` variant of `AdaptationMode` (the enum has only `Learning`, `Manual`,
+`Stable` and `Bounded`) and an editor surface for the traces; the API is there,
+the tooling around it is roadmap work.
 
 ### What is the difference between an Agent and a Lane?
 
@@ -67,8 +72,8 @@ An **agent** is a strategist: it owns one `LaneKind`, negotiates a budget throug
 GORNA, and *selects* which strategy to run. A **lane** is the worker: one
 deterministic algorithm (render a forward pass, step physics once) that runs when
 its agent dispatches it. The agent owns *selection*; the lane owns *execution*.
-`RenderAgent` chooses between the `SimpleUnlit`, `LitForward`, and `Forward+`
-lanes. See [Agents and lanes](./concepts/agents-and-lanes.md).
+`RenderAgent` chooses between four: `SimpleUnlit`, `LitForward`, `StandardPbr`
+and `ForwardPlus`. See [Agents and lanes](./concepts/agents-and-lanes.md).
 
 ### What is the difference between GORNA and AGDF?
 
@@ -102,12 +107,18 @@ diversity SAA is designed to handle eventually, and XR is an explicit later-phas
 
 ### What is the minimum supported Rust version (MSRV)?
 
-**Rust 1.91.** It is the lowest stable toolchain that compiles the whole
-workspace, enforced in CI. The binding constraint is the `#[derive(Component)]`
-macro output in `khora-data`, which uses `const fn TypeId::of` in a `const`
-context — that became usable in `const` in Rust 1.91. The project is **stable**
-Rust (no nightly features); the workspace crates are edition 2021. The manifest's
-`rust-version = "1.91"` is the source of truth.
+**Rust 1.95.** It is the lowest stable toolchain that compiles the whole
+workspace, verified by `cargo +1.95 check --workspace --all-features
+--all-targets` and enforced in CI.
+
+The binding constraint is a **dependency floor**, not anything first-party:
+`sysinfo` 0.39 requires 1.95. The `egui`/`eframe` 0.34 family requires 1.92, and
+the `const fn TypeId::of` that `#[derive(Component)]` emits needs 1.91 — both sit
+below the floor. Because the number comes from dependencies, it can drop again if
+those crates relax their own.
+
+The project is **stable** Rust (no nightly features); the workspace crates are
+edition 2021. The manifest's `rust-version` is the source of truth.
 
 ### How do I add a component, a lane, or an agent?
 
@@ -153,9 +164,14 @@ Yes, within bounds, via an agent's **`AdaptationMode`** (set through
 `DccService::set_adaptation_mode`): `Manual(strategy)` pins one strategy, `Stable`
 blocks opportunistic up-switches, `Bounded { min, max }` clamps the range, and
 `Learning` (the default) lets GORNA negotiate freely. A death-spiral safety stop
-can still force the cheapest strategy in an emergency, regardless of mode. Finer
-controls — calibration, deterministic replay, game→engine hints, and spatial
-priority volumes — are on the [Roadmap](./roadmap.md). See [GORNA](./concepts/gorna.md).
+can still force the cheapest strategy in an emergency, regardless of mode.
+
+Game→engine **hints** ship alongside it: `DccService::set_hint` takes an
+`EngineHint::Cap { agent, max_ms }` to refuse strategies above a cost, or
+`Prioritize` to bias an agent's share when the fit upgrades. Deterministic replay
+ships too (see the decision-tracer answer above). What remains on the
+[Roadmap](./roadmap.md) is calibration and spatial priority volumes. See
+[GORNA](./concepts/gorna.md).
 
 ---
 

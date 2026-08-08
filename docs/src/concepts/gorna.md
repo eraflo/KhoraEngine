@@ -19,7 +19,7 @@ a Steam Deck do not share a frame budget, and the same machine does not share on
 between a quiet menu and a crowded firefight.
 
 GORNA replaces the fixed split with a per-tick negotiation. Agents declare what they
-*can* do at several cost points; the **DCC** (the Dynamic Control Core) observes the
+*can* do at several cost points; the **DCC** (the Dynamic Context Core) observes the
 running system, applies a set of heuristics, and hands back a budget that reflects
 *this* hardware, *this* scene, *this* frame. The result is one binary that adapts
 its strategy each tick to hold the frame rate, instead of a binary tuned for one
@@ -153,7 +153,7 @@ the DCC being a registered service). There are four modes:
 
 All four are enforced today. A death-spiral safety stop can still force the cheapest
 strategy in any mode — safety overrides developer control. (A few finer modes —
-calibration, a game→engine hint channel, a spatial `PriorityVolume` constraint API —
+calibration, spatial priority volumes, a spatial `PriorityVolume` constraint API —
 remain on the roadmap; they are not part of `AdaptationMode`.)
 
 Separately, the DCC can **record and replay** its decision trace. Arbitration is
@@ -184,12 +184,18 @@ graph TD
 ```
 
 The two paths touch only through the `BudgetChannel`, and the hot path never blocks
-on the cold path. Within each phase the scheduler currently executes agents
-*sequentially*, in priority order, so a GORNA budget is a per-agent exclusive time
-slice of the frame, not a concurrent allocation — which is exactly why the budget
-fitting sums the calibrated per-agent costs against the frame budget. Parallel agent
-execution is roadmap work; when it lands, the fitting must switch from sum-of-costs
-to a critical-path model.
+on the cold path.
+
+Within a phase the scheduler groups agents into **waves** and runs each wave
+concurrently — enabled by default (`set_parallel_execution(true)`). Two agents
+share a wave only when their declared [contentions](./agents-and-lanes.md) are
+disjoint; an `Exclusive` agent is a wave of its own.
+
+Because a wave is concurrent, its cost is the **critical path** — the slowest
+member — not the sum of its members. The budget fitting reflects that: the
+scheduler publishes the wave plan and GORNA fits against `max` within a wave and
+`sum` across waves. Over-declaring a contention is therefore not free: it
+serialises a wave that could have run concurrently, and nothing reddens.
 
 ## Next steps
 

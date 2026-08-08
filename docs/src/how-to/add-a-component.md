@@ -15,7 +15,7 @@ list to edit.
 
 Declare the component's semantic domain with `#[component(domain = …)]`. The domain
 drives change-epoch tracking (which `Flow`s must re-project when this component
-changes). Valid domains: `Spatial`, `Render`, `Audio`, `Physics`, `Ui`.
+changes). Valid domains: `Spatial`, `Render`, `Audio`, `Physics`, `Ui`, `Script`.
 
 ```rust
 use khora_macros::Component;
@@ -69,7 +69,7 @@ Build, then confirm the component spawns and reads back:
 ```rust
 let mut world = World::new();
 let e = world.spawn(WindAffected { direction: Vec3::X, strength: 2.0 });
-assert_eq!(world.get_component::<WindAffected>(e).unwrap().strength, 2.0);
+assert_eq!(world.get::<WindAffected>(e).unwrap().strength, 2.0);
 ```
 
 ```bash

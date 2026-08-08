@@ -113,11 +113,12 @@ does **not** live here — it flows through the `LaneBus` and `OutputDeck`.
 
 | Group | Methods |
 |---|---|
-| Lifecycle | `new`, `from_world`, `tick_maintenance` |
+| Lifecycle | `new`, `from_world` |
 | Entities | `spawn`, `despawn`, `spawn_camera`, `spawn_entity`, `iter_entities` |
 | Components | `add_component`, `remove_component`, `get_component`, `get_component_mut`, `get_transform`, `get_transform_mut` |
 | Queries | `query::<...>()`, `query_mut::<...>()` |
 | Transforms | `sync_global_transform`, `update_transform` |
+| Hierarchy | `set_parent` |
 | Assets | `add_mesh`, `add_material` |
 | Internal | `inner_world`, `inner_world_mut` (low-level; prefer the wrapped surface) |
 
@@ -174,7 +175,7 @@ rustdoc for the full variant list.
 
 `EngineMode` (re-exported from `khora-control`) gates **which agents run** each
 frame. The base engine knows only `EngineMode::Playing`; other modes are injected
-by plugins (the editor registers `EngineMode::Custom("editor")`). It is distinct
+by plugins (an app *may* register mode-scoped agents through `DccService::register_agent_for_mode`; nothing in the engine or the editor does today). It is distinct
 from `PlayMode` (`Editing` / `Playing` / `Paused`), the editor's own UI-state enum
 re-exported from `khora_core::ui::editor`.
 

@@ -15,17 +15,31 @@
 //! Skybox lane — draws the IBL environment cube as the scene background.
 //!
 //! Renders `khora::pipelines::skybox` (a fullscreen triangle pinned to the far
-//! plane) into the main color target, **after** the scene pass. It is
-//! depth-tested (`LessEqual`) against the scene's depth buffer with depth-write
-//! disabled, so it only paints the pixels the geometry left at the far plane —
-//! the sky shows through the background, the meshes are untouched. The visible
-//! sky is therefore exactly the environment the lit surfaces reflect.
+//! plane) into the main color target. It is depth-tested (`LessEqual`) against
+//! the scene's depth buffer with depth-write disabled, so it paints only the
+//! pixels **the opaque geometry left at the far plane**. The visible sky is
+//! therefore exactly the environment the lit surfaces reflect.
+//!
+//! # Where it sits, and why that word matters
+//!
+//! Between the scene's two passes: after the opaque draws that give it a depth
+//! buffer to test against, and **before** the blended ones.
+//!
+//! This doc used to say "after the scene pass" and "the meshes are untouched".
+//! Both held for opaque meshes and for no other kind: a blended surface must
+//! not write depth — two of them could not composite if it did — so it leaves
+//! the pixel at the far plane, and the sky then repainted it. A glass sphere
+//! against the sky vanished, while the half of it overlapping the floor
+//! survived. The scene is now two contributions
+//! ([`ScenePassSlot`](khora_data::render::ScenePassSlot) and
+//! [`TransparentPassSlot`](khora_data::render::TransparentPassSlot)) and this
+//! pass is folded between them.
 //!
 //! Registered under [`SkyboxAgent`](khora_agents::skybox_agent), which runs in
 //! the OUTPUT phase after `RenderAgent` and buffers this lane's pass into the
 //! FrameGraph (`writes(Color).reads(Depth)`), mirroring how `OverlayAgent`
-//! contributes the grid/gizmo overlays. `LoadOp::Load` preserves what the scene
-//! drew.
+//! contributes the grid/gizmo overlays. `LoadOp::Load` preserves what the
+//! opaque pass drew.
 //!
 //! Per CLAD this struct holds only persistent state; init / render bodies are
 //! private free functions in this module.

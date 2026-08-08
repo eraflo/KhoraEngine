@@ -6,11 +6,11 @@ running locally.
 
 ## Prerequisites
 
-- **Rust toolchain.** The minimum supported Rust version (MSRV) is **1.91**. CI
-  enforces it with a dedicated `cargo check` on 1.91, so anything newer than the
-  stdlib/language surface of 1.91 will fail the build. Install with
+- **Rust toolchain.** The minimum supported Rust version (MSRV) is **1.95**. CI
+  enforces it with a dedicated `cargo check` on 1.95, so anything newer than the
+  stdlib/language surface of 1.95 will fail the build. Install with
   [`rustup`](https://rustup.rs); `stable` is fine for day-to-day work as long as
-  your change still compiles on 1.91.
+  your change still compiles on 1.95.
 - **System libraries (Linux).** The audio, windowing, and UI backends need native
   dev packages. On Debian/Ubuntu:
 

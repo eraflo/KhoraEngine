@@ -66,7 +66,7 @@ In development, assets are loose files on disk and the index is built by scannin
 the project's asset directory. In release, every asset is concatenated into a single
 **pack** file alongside a binary index, and the source descriptors are rewritten
 from paths to packed offsets. The decoder layer above does not know which is in use —
-it sees the same VFS and the same handle type. Because UUIDs are content-derived,
+it sees the same VFS and the same handle type. Because UUIDs are derived from the project-relative path (or frozen in the identity registry once an asset has been renamed),
 the two modes are interchangeable; the editor's build step produces the packed pair
 from the same asset directory, deterministically.
 

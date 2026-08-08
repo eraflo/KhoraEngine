@@ -29,7 +29,7 @@ For the CPU side, the scheduler publishes a `TelemetryEvent::AgentCost { id, n, 
 per frame, surfaced as the `agent.<Id>_time_ms` metric — that is your per-agent cost.
 
 If you are reading metrics from your own code rather than the editor, the well-known names live in
-`crates/khora-telemetry/src/lib.rs` under `WELL_KNOWN_METRICS`; the DCC also ingests
+`crates/khora-telemetry/src/lib.rs` under the metric names the DCC emits (built inline, e.g. `agent.<Id>_time_ms` in `DccService`); the DCC also ingests
 `renderer.frame_time` (ms), `renderer.draw_calls`, and `renderer.triangles_rendered` from the GPU
 report.
 

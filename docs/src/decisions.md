@@ -22,7 +22,7 @@ Choices we made, and what we said no to. The global ledger.
 ### We said yes to
 - **A self-optimizing core.** GORNA, DCC, and per-tick negotiation are non-negotiable. Without them, Khora is just another engine.
 - **Cold path / hot path separation.** The frame loop is never blocked by analysis. Budgets flow one way through a channel.
-- **Agent per `LaneKind`.** Render, Shadow, Physics, UI, Audio. One subsystem, one negotiation surface.
+- **One negotiation surface per agent.** Eight today: Render, Shadow, Overlay, Skybox, Physics, Ui, Audio, Script. An agent owns one `LaneKind`, but a `LaneKind` may have several agents — four dispatch render lanes — and a subsystem with no competing strategies (asset decoding, ECS compaction) is a service, not an agent.
 - **Trait-defined contracts.** Every seam in the engine is a Rust trait. No string-keyed APIs in the hot path.
 - **Splitting `khora-io` from `khora-data`.** Asset loading and serialization are I/O concerns; ECS storage is not.
 - **Backends are swappable.** Every `khora-infra` backend implements a `khora-core` trait. wgpu, Rapier3D, CPAL, Taffy are *current defaults*, not architectural commitments.
@@ -56,7 +56,7 @@ Choices we made, and what we said no to. The global ledger.
 - **No:** agent-managed concurrency (DCC handles cold-path concurrency); agents reading from each other directly (cross-agent data flows through `FrameContext` slots).
 
 ### Lanes
-- **Yes:** three-phase lifecycle (prepare / execute / cleanup); type-erased `LaneContext`; `estimate_cost` returning `f32`.
+- **Yes:** lifecycle of `on_initialize` / `execute` / `on_shutdown` — only `execute` is per-frame; type-erased `LaneContext`; `estimate_cost` returning `f32`.
 - **No:** lanes referencing each other directly; lane-owned threads; inlined shader source as Rust strings.
 
 ### GORNA
@@ -77,14 +77,14 @@ Choices we made, and what we said no to. The global ledger.
 
 ### Assets and VFS
 - **Yes:** UUID-based identity; loose files in dev, pack in release; asset loaders as lanes; reference-counted handles.
-- **No:** asset path strings as identity; an "asset agent"; asset hot-reload as a v1 feature.
+- **No:** asset path strings as identity; an "asset agent"; an "asset agent". (Asset hot-reload was on this list and has since been built: the editor arms an `AssetWatcher` when a project opens.)
 
 ### UI
 - **Yes:** UI components in the same ECS; `LayoutSystem` trait; two-lane split (compute + render); hierarchy via `Parent` / `Children`.
 - **No:** an immediate-mode UI inside the engine; a separate UI rendering backend; Taffy types in components.
 
 ### Serialization
-- **Yes:** three strategies, one file format; `#[derive(Component)]` generates the mirror; play mode uses Archetype; editor uses Definition.
+- **Yes:** four strategies, one file format; `#[derive(Component)]` generates the mirror; play mode uses Archetype; editor uses Definition.
 - **No:** reflection-based serialization; a "serialization agent"; preserving physics state across play mode (in v1).
 
 ### Telemetry
@@ -98,7 +98,7 @@ Choices we made, and what we said no to. The global ledger.
 - **No:** hidden global setup; exposing internals (Scheduler internals, GORNA arbitration) through the SDK; a single `prelude::*` that imports everything.
 
 ### Editor
-- **Yes:** editor as a separate binary; mode-first layouts; play mode through scene snapshot; editor reaches into `khora-agents` and `khora-io` directly (pragmatic shortcut for performance).
+- **Yes:** editor as a separate binary; mode-first layouts; play mode through scene snapshot; the editor is an ordinary SDK application (`khora-sdk` + `khora-tool-ui`, nothing else).
 - **No:** free-form panel docking; telemetry charts in the main UI (they belong in the Control Plane mode); editor chrome during play mode.
 
 ### Extension model
@@ -108,9 +108,9 @@ Choices we made, and what we said no to. The global ledger.
 ## 04 — Process
 
 ### We said yes to
-- **Tests are the contract.** ~470 workspace tests. Adding a feature without a test is a code smell.
+- **Tests are the contract.** ~1676 workspace tests. Adding a feature without a test is a code smell.
 - **CHANGELOG is auto-generated.** No human edits.
-- **CI runs `cargo xtask all`.** fmt + clippy + test + doc. If it passes there, it passes locally.
+- **CI runs `cargo fmt`, `cargo clippy`, `cargo nextest run`, `cargo deny` and an MSRV `cargo check` directly (`cargo xtask all` is the local equivalent).** fmt + clippy + test + doc. If it passes there, it passes locally.
 - **Documentation ships with the engine.** When the engine changes, the book changes in the same commit.
 - **Decisions logged in writing.** This document is the long-form artifact.
 

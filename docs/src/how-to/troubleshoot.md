@@ -17,14 +17,14 @@ Jump to the subsystem you are fighting:
 
 ## Build & toolchain
 
-### The toolchain is rejected — "package requires rustc 1.91" (or a similar MSRV error)
+### The toolchain is rejected — "package requires rustc 1.95" (or a similar MSRV error)
 
-**Cause.** The workspace pins its minimum supported Rust version to **1.91** in the root
-`Cargo.toml` (`[workspace.package] rust-version = "1.91"`), the lowest stable toolchain that
+**Cause.** The workspace pins its minimum supported Rust version to **1.95** in the root
+`Cargo.toml` (`[workspace.package] rust-version = "1.95"`), the lowest stable toolchain that
 compiles the whole tree. An older toolchain cannot build it.
 
-**Fix.** `rustup update` (or `rustup install 1.91 && rustup default 1.91`). The MSRV is verified
-with `cargo +1.91 check --workspace --all-features --all-targets`.
+**Fix.** `rustup update` (or `rustup install 1.95 && rustup default 1.95`). The MSRV is verified
+with `cargo +1.95 check --workspace --all-features --all-targets`.
 
 ### `target/` grows very large
 
@@ -213,7 +213,7 @@ on the active camera or the player.
   zero gain.
 - A **CPAL output device exists and opened** — on a headless CI box or a machine with no default
   output, the device may fail to open. A stream-level failure is reported through the CPAL error
-  callback as `audio stream error: …` (`backends/cpal/device.rs`).
+  callback as `audio stream error: …` (`crates/khora-infra/src/audio/cpal/device.rs`).
 
 **Fix.** Confirm a working default output device, a playing source with non-zero gain, and an active
 audio mode. See [Audio](../concepts/audio.md).

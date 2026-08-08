@@ -43,7 +43,7 @@ Pass` job aggregates them):
 | **Test — macOS** | same | Runs on `macos-latest`. |
 | **Doctests** | `cargo test --workspace --doc --all-features --locked` | Separate job — `nextest` does **not** run doctests, so rustdoc `# Examples` are verified only here. |
 | **Supply chain** | `cargo deny check` | Advisories, licenses, and duplicate-version policy from `deny.toml`. |
-| **MSRV** | `cargo check --workspace --all-features --all-targets --locked` on **1.91** | Fails if a change uses a newer stdlib/language feature than the pinned MSRV. |
+| **MSRV** | `cargo check --workspace --all-features --all-targets --locked` on **1.95** | Fails if a change uses a newer stdlib/language feature than the pinned MSRV. |
 
 A **coverage** job also runs but is **report-only** — it produces an `lcov.info`
 artifact, has no threshold, and never blocks the merge.
@@ -63,7 +63,7 @@ artifact, has no threshold, and never blocks the merge.
   vulnerability, kept in the ignore list with its rationale documented inline. If
   you add a dependency that trips a *new* advisory, the gate fails until it is
   resolved or explicitly justified.
-- **MSRV is 1.91.** This gate is a plain `cargo check` on the pinned toolchain. If
+- **MSRV is 1.95.** This gate is a plain `cargo check` on the pinned toolchain. If
   your change needs a newer language or stdlib feature, the MSRV has to be bumped
   deliberately — it is not raised implicitly by a PR.
 

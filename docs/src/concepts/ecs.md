@@ -77,8 +77,8 @@ into the SoA arrays with no per-entity allocation and no per-entity branching.
 
 ## Semantic domains
 
-Every component declares a **SemanticDomain** (`Spatial`, `Render`, `UI`,
-`Audio`, …), encoded as a bitset on its registry entry. Domains exist so that a
+Every component declares a **SemanticDomain** — `Spatial`, `Render`, `Audio`,
+`Physics`, `Ui`, `Script` — encoded as a bitset on its registry entry. Domains exist so that a
 query can pre-filter pages by *meaning*: a render-extraction query hinted with the
 `Render` domain never touches UI pages. As the entity count grows, this is part of
 what keeps per-frame extraction from scaling with the whole world.
@@ -136,7 +136,7 @@ chosen *per component* are covered in [AGDF](./agdf.md).
 ## Maintenance is a service, not an agent
 
 ECS maintenance — draining cleanup after component removal and compacting pages
-with too many holes — runs every frame between user logic and agent execution. It
+with too many holes — runs every frame at the end of the tick, after the agents have executed. It
 is deliberately *not* an agent. An [agent](./agents-and-lanes.md) exists to
 negotiate between competing strategies; maintenance has no strategies to negotiate,
 it does the same fixed work every frame. So it is a direct data-layer operation,

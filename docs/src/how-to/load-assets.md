@@ -96,7 +96,7 @@ use khora_sdk::prelude::AssetUUID;
 use khora_sdk::renderer::scene::Mesh;
 
 // In `setup`, with `runtime: &Runtime`:
-if let Some(service) = runtime.resources.get::<Arc<std::sync::Mutex<AssetService>>>() {
+if let Some(service) = runtime.services.get::<Arc<std::sync::Mutex<AssetService>>>() {
     if let Ok(mut svc) = service.lock() {
         let mesh = svc.load::<Mesh>(&AssetUUID::new_v5("models/ship.gltf"));
         // `mesh` is `Result<AssetHandle<Mesh>>`; handle the error, don't unwrap on IO.

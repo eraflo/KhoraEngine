@@ -66,8 +66,10 @@ of serialization bugs, which is exactly why the macro generates the mirror.
 
 Pressing Play snapshots the world; pressing Stop restores it. This rides on the same
 service: the snapshot is just a `save_world` into memory and the restore a
-`load_world` back, fast because the chosen encoding serializes pages with minimal
-transformation — a large scene snapshots and restores in milliseconds.
+`load_world` back, under the `EditorInterchange` goal — the Recipe strategy over
+bincode. The page-level `FastestLoad` was tried for exactly this and abandoned: it
+dropped `Name` components. Recipe is compact enough that a large scene still
+snapshots and restores in milliseconds.
 
 One honest caveat: **physics state is not preserved** across a snapshot. On restore,
 the physics engine rebuilds from component data, so velocities and contacts reset to

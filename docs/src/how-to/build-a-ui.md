@@ -111,7 +111,7 @@ for (text,) in world.query_mut::<(&mut UiText,)>() {
 
 ## What the UI agent and lane do
 
-The `UiAgent` owns two lanes: a layout lane reads the UI components, runs Taffy, and
+The `UiAgent` owns one lane — `UiRenderLane`. Layout is not a lane: the laid-out `UiScene` is produced by `UiFlow` during the Substrate Pass. (A layout lane reads the UI components, runs Taffy, and
 produces a laid-out `UiScene`; a render lane rasterizes that scene over the 3D frame.
 Swapping the layout backend is a matter of implementing `LayoutSystem` — see
 [UI](../concepts/ui.md).

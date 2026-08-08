@@ -36,7 +36,7 @@ their surface is re-exported through `khora-sdk` where game code needs it. See t
 | `khora_core` | [Trait floor — math, GORNA types, traits, runtime containers](https://eraflo.github.io/KhoraEngine/api/khora_core/index.html) |
 | `khora_data` | [CRPECS ECS, component storage, Flows, scene strategies](https://eraflo.github.io/KhoraEngine/api/khora_data/index.html) |
 | `khora_io` | [VFS, asset service, serialization service, pack builder](https://eraflo.github.io/KhoraEngine/api/khora_io/index.html) |
-| `khora_lanes` | [Render, physics, audio, asset, scene, UI lanes](https://eraflo.github.io/KhoraEngine/api/khora_lanes/index.html) |
+| `khora_lanes` | [Render, physics, audio, UI and script lanes](https://eraflo.github.io/KhoraEngine/api/khora_lanes/index.html) |
 | `khora_agents` | [The strategist agents + `PhysicsQueryService`](https://eraflo.github.io/KhoraEngine/api/khora_agents/index.html) |
 | `khora_control` | [DCC, scheduler, GORNA arbitration, plugin](https://eraflo.github.io/KhoraEngine/api/khora_control/index.html) |
 | `khora_infra` | [Default backends — wgpu, Rapier, CPAL, Taffy, winit](https://eraflo.github.io/KhoraEngine/api/khora_infra/index.html) |

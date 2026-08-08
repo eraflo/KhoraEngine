@@ -95,7 +95,7 @@ Each SAA pillar lands in a specific crate:
 | SAA concept (the why) | CLAD crate (the how) | Role |
 |---|---|---|
 | **Dynamic Context Core** & **GORNA** | `khora-control` | Strategic brain — observes telemetry (incl. Data access patterns), arbitrates the agent budget auction, runs the Scheduler, invokes the Substrate. It never drives Data's layout — Data self-optimizes |
-| **Intelligent Subsystem Agents** | `khora-agents` | Tactical managers — one per `LaneKind` (render, shadow, physics, audio, UI) |
+| **Intelligent Subsystem Agents** | `khora-agents` | Tactical managers — eight today: Render, Shadow, Overlay, Skybox, Physics, Ui, Audio, Script. Not one per `LaneKind`: four of them dispatch `LaneKind::Render` lanes, and `Asset`, `Scene` and `Ecs` have no agent because they have no strategy to negotiate |
 | **Multiple agent strategies** | `khora-lanes` | Fast, deterministic workers — the algorithms an agent chooses from |
 | **Adaptive Game Data Flows** | `khora-data` | Foundation — archetype storage + adaptive memory layout, self-optimized *inside* the Data layer; representation only, never game semantics |
 | **Semantic interfaces and contracts** | `khora-core` | Universal language — traits, core types, math, GORNA types |

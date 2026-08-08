@@ -78,9 +78,12 @@ independent of the frame loop.
 Every major subsystem is an [**agent**](../reference/glossary.md): not a passive
 library but a semi-autonomous component with deep understanding of its own
 domain. An agent measures its own cost, holds multiple strategies with different
-performance characteristics, and can estimate the resource cost of each. Five
-agents exist today — one per [**`LaneKind`**](../reference/glossary.md): Render,
-Shadow, Physics, UI, Audio. The architecture is open; you can add your own.
+performance characteristics, and can estimate the resource cost of each. Eight
+agents exist today: Render, Shadow, Overlay, Skybox, Physics, Ui, Audio and
+Script. It is **not** one per [**`LaneKind`**](../reference/glossary.md) — four of
+them dispatch render lanes, and the `Asset`, `Scene` and `Ecs` kinds have no agent
+at all, because a decoder and a compaction pass have no competing strategies to
+negotiate. The architecture is open; you can add your own.
 
 ### 3. GORNA — Goal-Oriented Resource Negotiation and Allocation
 
@@ -174,7 +177,7 @@ graph TD
     end
     subgraph Hot["Hot path — main thread, 60+ Hz"]
         Scheduler[ExecutionScheduler]
-        Agents[Agents: Render, Shadow, Physics, UI, Audio]
+        Agents[Agents: Render, Shadow, Overlay, Skybox, Physics, Ui, Audio, Script]
         Lanes[Lanes: pipelines]
     end
     Telemetry --> DCC

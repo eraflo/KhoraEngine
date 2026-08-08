@@ -47,10 +47,13 @@ EngineCore::tick
   ├─ run_scheduler
   │   ├─ Substrate Pass             # Flows project Views into the LaneBus
   │   ├─ OBSERVE phase
-  │   │   ├─ ShadowAgent.execute    # encodes the shadow atlas
-  │   │   └─ RenderAgent.execute    # records the main pass
-  │   ├─ TRANSFORM / MUTATE phases  # physics, audio
-  │   ├─ OUTPUT phase               # UiAgent records the UI overlay
+  │   │   └─ ShadowAgent.execute    # encodes the shadow atlas
+  │   ├─ TRANSFORM phase            # physics, audio, scripting
+  │   ├─ OUTPUT phase
+  │   │   ├─ RenderAgent.execute    # opaque draws, then the blended ones
+  │   │   ├─ SkyboxAgent.execute    # the background
+  │   │   ├─ OverlayAgent.execute   # grid, wireframe, gizmos
+  │   │   └─ UiAgent.execute        # the UI overlay
   │   └─ FINALIZE phase             # telemetry, cleanup
   │   (agents record GPU passes into the frame graph)
   │
@@ -101,6 +104,42 @@ consumer lanes are agnostic about which one ran. The subtle part is shimmer
 prevention: orthographic shadow bounds are snapped to texel boundaries so shadow
 edges don't crawl as the camera moves. Leave that logic alone unless you can prove
 a bug.
+
+## Transparency, and the order it needs
+
+A material with `AlphaMode::Blend` joins a second batch. Everything about how it
+is drawn follows from one constraint: **a blended surface must not write depth.**
+If it did, two panes of glass could not composite — the nearer one would reject
+the farther one's fragments before they were ever mixed in.
+
+Two consequences a game developer can rely on:
+
+**Blended objects are sorted back-to-front, per object.** The sort key is the
+squared distance from the camera to the model's origin. That is exact for
+separated objects and approximate for intersecting or concave ones — two glass
+spheres that overlap in depth may composite in the wrong order, and no
+per-object sort can fix that. It is the standard trade: per-fragment ordering
+costs far more than the artefact does.
+
+**The sky is drawn between the two batches.** Because blended surfaces leave the
+depth buffer at the far plane, and the skybox paints exactly the pixels left
+there, a sky drawn afterwards would repaint the glass. The frame graph folds the
+passes in this order:
+
+```
+ScenePass         opaque draws — clears colour + depth, writes depth
+SkyboxPass        paints where the opaque geometry left the far plane
+TransparentPass   blended draws, farthest first — tests depth, writes none
+OverlayPass       grid, wireframe, gizmos
+UiPass            the UI
+```
+
+Draw a transparent object against the sky and it composites over the sky, as it
+should. Before the passes were split it disappeared there — while the half of it
+overlapping a wall stayed, because the wall had written depth.
+
+**For glass, set `double_sided: true`.** Otherwise back faces are culled and a
+sphere you can see into looks hollow.
 
 ## Render interpolation
 

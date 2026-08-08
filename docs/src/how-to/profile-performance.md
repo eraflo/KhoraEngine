@@ -45,7 +45,7 @@ see [Editor — The Control Plane](../reference/editor.md):
 - **Meters Wall** — frame time, GPU %, memory, agent budget, assets pending.
 
 To read live metrics from your own game/UI, the well-known metric names are documented in
-`crates/khora-telemetry/src/lib.rs` under `WELL_KNOWN_METRICS`. To add your own, hold a
+`crates/khora-telemetry/src/lib.rs` under the metric names the DCC emits (built inline, e.g. `agent.<Id>_time_ms` in `DccService`). To add your own, hold a
 `Counter` / `Gauge` handle in the agent or lane that owns it (do not look up by string in the hot
 path).
 

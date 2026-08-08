@@ -90,12 +90,22 @@ use khora_sdk::khora_core::control::gorna::{
 use khora_sdk::khora_core::EngineContext;
 use khora_sdk::khora_core::lane::{Lane, LaneContext};
 
-#[derive(Default)]
 pub struct HeartbeatAgent {
     /// The lane chosen for this frame, set by `apply_budget`.
     lane: Option<Box<dyn Lane>>,
     /// The strategy GORNA last issued us.
     current_strategy: StrategyId,
+}
+
+// `StrategyId` has no `Default`, so `#[derive(Default)]` will not compile here —
+// name the starting strategy yourself. Every built-in agent does the same.
+impl Default for HeartbeatAgent {
+    fn default() -> Self {
+        Self {
+            lane: None,
+            current_strategy: StrategyId::Balanced,
+        }
+    }
 }
 
 impl Agent for HeartbeatAgent {

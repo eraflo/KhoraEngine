@@ -68,7 +68,7 @@ Then open [Your first game](./tutorials/your-first-game.md) to build your own.
 ## Status
 
 Khora is **experimental**. The foundational architecture, the CRPECS ECS, the
-GORNA negotiation loop, six intelligent agents, an editor with play mode, and a
+GORNA negotiation loop, eight intelligent agents, an editor with play mode, and a
 large workspace test suite are operational. The SDK surface is intentionally
 narrow and grows as the engine matures. The [Roadmap](./roadmap.md) lays
 out the multi-year path; the [Open questions](./open_questions.md)
