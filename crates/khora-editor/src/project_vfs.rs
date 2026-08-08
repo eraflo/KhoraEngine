@@ -20,7 +20,7 @@
 //! that needs to read or write project content.
 
 use anyhow::{bail, Context, Result};
-use khora_sdk::khora_core::asset::AssetUUID;
+use khora_sdk::khora_core::asset::{asset_key, AssetUUID};
 use khora_sdk::khora_core::renderer::api::scene::Mesh;
 use khora_sdk::{
     AssetChangeEvent, AssetIdRegistry, AssetService, AssetWatcher, AssetWriter, FileLoader,
@@ -320,11 +320,7 @@ impl ProjectVfs {
                 _ => continue,
             };
             // Skip the engine's own `.khora` project dir if it ever sits inside.
-            let rel_fwd = rel
-                .components()
-                .map(|c| c.as_os_str().to_string_lossy().into_owned())
-                .collect::<Vec<_>>()
-                .join("/");
+            let rel_fwd = asset_key(rel);
             if rel_fwd.starts_with('.') {
                 continue;
             }

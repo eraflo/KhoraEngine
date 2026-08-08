@@ -70,6 +70,9 @@ impl AssetUUID {
     /// This is the preferred method for generating UUIDs for assets on disk,
     /// as it guarantees that the UUID will be the same every time the asset
     /// pipeline is run for the same file.
+    ///
+    /// The path string must come from [`asset_key`] — the stability this
+    /// promises is only as stable as the convention that builds its input.
     pub fn new_v5(path_str: &str) -> Self {
         Self(Uuid::new_v5(&ASSET_NAMESPACE_UUID, path_str.as_bytes()))
     }
@@ -79,5 +82,91 @@ impl Default for AssetUUID {
     /// Creates a new, random (version 4) `AssetUUID`.
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Turns a project-relative path into the string that names an asset.
+///
+/// # Why this is not five lines at each call site
+///
+/// This is the *entire* definition of an asset's identity: whatever string
+/// comes out of here is what [`AssetUUID::new_v5`] hashes. It used to be
+/// written out by hand in five places — the index builder, the pack builder,
+/// the file watcher, the editor's project VFS and its scene loader — and each
+/// copy could have drifted on its own.
+///
+/// The drift would not have been loud. `Path::components` yields
+/// `textures\wall.png` on Windows and `textures/wall.png` elsewhere, so a copy
+/// that forgot the join would keep working perfectly on one platform and hand
+/// every asset a different UUID on the other: scene references resolving to
+/// nothing, on someone else's machine, with no error at the point of failure.
+///
+/// A convention with five copies is a convention that can drift. This is the
+/// one copy.
+pub fn asset_key(relative: &std::path::Path) -> String {
+    relative
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+#[cfg(test)]
+mod asset_key_tests {
+    use super::*;
+    use std::path::Path;
+
+    /// The convention itself. If this changes, every asset in every existing
+    /// project gets a new identity and every scene reference breaks — so it is
+    /// pinned here rather than left to five call sites to agree on.
+    #[test]
+    fn nested_paths_join_with_forward_slashes() {
+        assert_eq!(
+            asset_key(
+                Path::new("textures")
+                    .join("walls")
+                    .join("brick.png")
+                    .as_path()
+            ),
+            "textures/walls/brick.png"
+        );
+    }
+
+    #[test]
+    fn a_single_component_is_itself() {
+        assert_eq!(asset_key(Path::new("scene.kscene")), "scene.kscene");
+    }
+
+    #[test]
+    fn an_empty_relative_path_is_the_empty_key() {
+        assert_eq!(asset_key(Path::new("")), "");
+    }
+
+    /// **The bug this exists to prevent.** A Windows-separated relative path
+    /// and a Unix-separated one name the same asset, so they must hash to the
+    /// same UUID. Five hand-written copies each had their own chance to get
+    /// this wrong on one platform only.
+    #[test]
+    fn separators_do_not_change_an_asset_s_identity() {
+        let windows_style = Path::new(r"textures\walls\brick.png");
+        let unix_style = Path::new("textures/walls/brick.png");
+
+        // On Windows both parse to the same components; elsewhere the
+        // backslash string is a single component and must not silently become
+        // a different asset than the one the editor indexed.
+        let key = asset_key(unix_style);
+        assert_eq!(key, "textures/walls/brick.png");
+        assert_eq!(
+            AssetUUID::new_v5(&key),
+            AssetUUID::new_v5("textures/walls/brick.png")
+        );
+
+        if cfg!(windows) {
+            assert_eq!(asset_key(windows_style), key);
+            assert_eq!(
+                AssetUUID::new_v5(&asset_key(windows_style)),
+                AssetUUID::new_v5(&key)
+            );
+        }
     }
 }

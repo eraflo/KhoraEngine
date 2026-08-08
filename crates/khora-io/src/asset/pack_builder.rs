@@ -45,7 +45,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use crossbeam_channel::Sender;
-use khora_core::asset::{AssetSource, CompressionKind};
+use khora_core::asset::{asset_key, AssetSource, CompressionKind};
 use std::{
     fs::File,
     io::Write,
@@ -241,7 +241,7 @@ impl<'a> PackBuilder<'a> {
                 }
             };
 
-            let rel_str = rel_to_forward_slash(&rel_path);
+            let rel_str = asset_key(&rel_path);
             self.send_progress(PackProgress::Started {
                 rel_path: rel_str.clone(),
                 current: idx,
@@ -335,13 +335,6 @@ impl<'a> PackBuilder<'a> {
             let _ = tx.send(ev);
         }
     }
-}
-
-fn rel_to_forward_slash(rel: &Path) -> String {
-    rel.components()
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("/")
 }
 
 #[cfg(test)]

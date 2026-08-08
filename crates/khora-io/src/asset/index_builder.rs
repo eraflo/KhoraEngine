@@ -41,7 +41,7 @@
 use crate::asset::dependencies::{extract_dependencies, type_has_dependency_extractor};
 use crate::asset::id_registry::AssetIdRegistry;
 use anyhow::{anyhow, Context, Result};
-use khora_core::asset::{AssetMetadata, AssetSource, AssetUUID};
+use khora_core::asset::{asset_key, AssetMetadata, AssetSource, AssetUUID};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
@@ -199,7 +199,7 @@ impl<'a> IndexBuilder<'a> {
                     .unwrap_or_else(|| EXTENSIONLESS_ASSET_TYPE.to_string()),
                 None => EXTENSIONLESS_ASSET_TYPE.to_string(),
             };
-            let rel_fwd = rel_to_forward_slash(&rel);
+            let rel_fwd = asset_key(&rel);
             entries.push((rel_fwd, rel, abs.to_path_buf(), type_name));
         }
 
@@ -255,16 +255,6 @@ impl<'a> IndexBuilder<'a> {
             .map_err(|e| anyhow!("Failed to encode asset index: {}", e))
             .context("IndexBuilder::build_index_bytes")
     }
-}
-
-/// Normalizes a relative path to forward-slash separators so UUIDs are
-/// platform-agnostic (`textures\foo.png` on Windows would otherwise hash
-/// differently from `textures/foo.png` on Linux).
-fn rel_to_forward_slash(rel: &Path) -> String {
-    rel.components()
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("/")
 }
 
 #[cfg(test)]
@@ -338,12 +328,7 @@ mod tests {
         let metadata = IndexBuilder::new(root).build_metadata().unwrap();
         let by_path: std::collections::HashMap<String, String> = metadata
             .iter()
-            .map(|m| {
-                (
-                    rel_to_forward_slash(&m.source_path),
-                    m.asset_type_name.clone(),
-                )
-            })
+            .map(|m| (asset_key(&m.source_path), m.asset_type_name.clone()))
             .collect();
 
         assert_eq!(
@@ -452,7 +437,7 @@ mod tests {
             assert!(
                 tex.dependencies.is_empty(),
                 "texture '{}' must have no dependencies",
-                rel_to_forward_slash(&tex.source_path)
+                asset_key(&tex.source_path)
             );
         }
     }

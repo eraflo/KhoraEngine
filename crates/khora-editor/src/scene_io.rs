@@ -22,6 +22,7 @@
 //! back to direct `std::fs` only in that case.
 
 use crate::project_vfs::ProjectVfs;
+use khora_sdk::khora_core::asset::asset_key;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::math::{LinearRgba, Vec3};
 use khora_sdk::{GameWorld, SceneFile, SerializationGoal, SerializationService};
@@ -348,12 +349,7 @@ pub fn load_scene_from_path(world: &mut GameWorld, path: &str) -> bool {
 /// returns `None` — callers should fall back to [`load_scene_from_path`].
 pub fn rel_inside_project(abs_path: &Path, assets_root: &Path) -> Option<String> {
     let rel = abs_path.strip_prefix(assets_root).ok()?;
-    Some(
-        rel.components()
-            .map(|c| c.as_os_str().to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-            .join("/"),
-    )
+    Some(asset_key(rel))
 }
 
 #[cfg(test)]

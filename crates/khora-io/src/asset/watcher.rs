@@ -33,7 +33,7 @@
 //! non-blocking via [`AssetWatcher::poll_for`].
 
 use anyhow::{Context, Result};
-use khora_core::asset::AssetUUID;
+use khora_core::asset::{asset_key, AssetUUID};
 use khora_core::event::{Channel, Supersedes, WhenFull};
 use notify::{recommended_watcher, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
@@ -236,11 +236,7 @@ fn translate_event(
     }
 
     let rel = abs.strip_prefix(assets_root).ok()?;
-    let rel_str = rel
-        .components()
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-        .collect::<Vec<_>>()
-        .join("/");
+    let rel_str = asset_key(rel);
 
     let uuid = AssetUUID::new_v5(&rel_str);
     Some(AssetChangeEvent {
