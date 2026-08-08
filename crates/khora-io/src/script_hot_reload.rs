@@ -84,6 +84,7 @@ pub fn reload_channel() -> PendingReloads {
 }
 use crate::asset::AssetWatcher;
 use crate::script_compile::{compile_module, DiskLoader};
+use crate::script_mirror::PreludeLoader;
 
 /// The extension the pump reacts to.
 const ERGON_EXTENSION: &str = ".erg";
@@ -155,7 +156,7 @@ fn importers_of(
 /// Returns how many compiled. A module that does not compile is reported and
 /// skipped: one broken script should not stop the others from running.
 pub fn load_all(script_root: &Path, pending: &PendingReloads) -> usize {
-    let loader = DiskLoader::new(script_root);
+    let loader = PreludeLoader::new(DiskLoader::new(script_root));
     let mut loaded = 0;
 
     for module in modules_under(script_root).into_keys() {
@@ -241,7 +242,7 @@ fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
 
     let script_root = watcher.assets_root().join(root.unwrap_or_default());
     let affected = importers_of(&modules_under(&script_root), &changed);
-    let loader = DiskLoader::new(&script_root);
+    let loader = PreludeLoader::new(DiskLoader::new(&script_root));
 
     for module in affected {
         let compiled = compile_module(&loader, &module);

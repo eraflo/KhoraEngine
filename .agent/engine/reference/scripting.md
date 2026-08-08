@@ -21,7 +21,12 @@ the next frame resumes rather than restarts. Suspension is the normal path, not 
   hot-reload, matched **by name** because a slot means nothing across a recompile.
 - Value bridge: `crates/khora-script/src/bridge.rs` + `khora-core/src/script/table.rs` — the single
   X-macro table driving `ScriptValue` ↔ `Value` ↔ `Persisted` ↔ JSON.
-- Hot-reload: `crates/khora-script/src/reload.rs`, `crates/khora-io/src/asset/script_hot_reload.rs`.
+- Hot-reload: `crates/khora-script/src/reload.rs`, `crates/khora-io/src/script_hot_reload.rs`.
+- Compiling a module and everything it imports: `crates/khora-io/src/script_compile.rs`
+  (`compile_module`, `DiskLoader`).
+- Component mirrors: `crates/khora-io/src/script_mirror.rs` — turns each `ComponentShape`
+  (`khora-data/src/scene/shape.rs`, emitted by `#[derive(Component)]`) into Ergon declarations, served
+  at `engine/components.erg` by a `PreludeLoader` stacked over the `DiskLoader`.
 - Lane: `crates/khora-lanes/src/script_lane/` — `mod.rs` (the `Lane`), `frame.rs` (the loop),
   `turn.rs` (one behavior's turn), `hooks.rs`, `runtime.rs` (`ScriptRuntime`), `reload.rs`,
   `report.rs`, `persistence.rs`.
@@ -51,6 +56,15 @@ the next frame resumes rather than restarts. Suspension is the normal path, not 
   files, the table is being bypassed.
 - Fields carried across a hot-reload are matched **by name**. A positional carry-over silently moves one
   guard's health into another's ammo.
+- **The component mirrors are served, never written to disk.** A generated file an author can open goes
+  stale and is then edited, in that order, and the second is found long after the first. `PreludeLoader`
+  answers `engine/components.erg` ahead of the inner loader, so a file left at that path — a copy of an
+  older engine — cannot shadow the mirror of the one running.
+- **A mirror that cannot express something says so; it never guesses.** A field whose Rust type Ergon
+  has no spelling for stays as a comment naming that type; a component whose every field is like that,
+  or whose field names the language cannot spell (a tuple index, or a reserved word — `Script.behavior`,
+  `UiInteraction.state`), is left undeclared with the reason. An empty `struct` means *marker*, and
+  emitting one for a component that does carry data would be a false statement.
 
 ## Traps
 - `khora-script` depends on `khora-core` and `khora-macros` **only**, deliberately: the compiler and VM
@@ -58,6 +72,17 @@ the next frame resumes rather than restarts. Suspension is the normal path, not 
 - The rate that converts a time budget into fuel is measured by the **lane** and stored on
   `ScriptRuntime`, not assumed by the agent. `INITIAL_RATE` lives in
   `khora-lanes/src/script_lane/runtime.rs` and is the single definition.
+- **An Ergon `struct` type-checks but its fields do not lower.** `compile_field`
+  (`khora-script/src/bytecode/expr.rs`) emits an accessor call for `Shape::Engine` and refuses
+  everything else with "only an engine type's components can be read yet". This predates the mirrors and
+  applies to every `struct`, including one a game declares — so a mirrored `t.translation` passes the
+  checker and stops at the compiler. Pinned by `reading_a_mirrored_field_still_needs_the_ecs_bridge` in
+  `script_mirror.rs`; that test is what will say the projected read has landed.
+- `ENGINE_TYPES` (`khora-script/src/types/ty.rs`) is a list of names with a `Value` variant, a
+  constructor and accessors behind them. It once named `Transform`, which had none, so `Transform t;`
+  shaped cleanly and failed with the misleading "`Transform` has no `x`". Adding a name there without
+  the three is worse than leaving it out — the mirrors give a component its fields through an ordinary
+  `struct` declaration instead.
 
 ## Skills
 - [`build-and-test`](../skills/build-and-test/SKILL.md) · [`debug-frame`](../skills/debug-frame/SKILL.md)
