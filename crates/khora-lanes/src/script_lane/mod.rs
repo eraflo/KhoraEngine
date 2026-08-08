@@ -42,6 +42,7 @@
 mod frame;
 mod hooks;
 pub mod persistence;
+mod reload;
 pub mod report;
 pub mod runtime;
 mod turn;
@@ -63,10 +64,14 @@ pub use runtime::{Instance, Pending, ReloadReport, ScriptRuntime};
 
 use std::any::Any;
 
+use self::reload::apply_reloads;
+use khora_core::event::Channel;
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, OutputDeck, Ref, Slot};
-use khora_core::script::{CommandBuffer, EventQueue, ScriptStateWriteback};
+use khora_core::script::{CommandBuffer, ScriptEvent, ScriptStateWriteback};
+use khora_core::Stopwatch;
 use khora_data::flow::ScriptView;
 use khora_script::native::Host;
+use khora_script::reload::ScriptReload;
 
 /// Runs each entity's behavior until the frame's fuel is gone.
 #[derive(Debug, Default)]
@@ -96,41 +101,92 @@ impl Lane for BudgetedScriptLane {
     }
 
     fn execute(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
-        let report = {
-            let view = ctx
-                .get::<Ref<ScriptView>>()
-                .ok_or_else(|| LaneError::missing("Ref<ScriptView>"))?
-                .get();
-            let fuel = *ctx
-                .get::<Fuel>()
-                .ok_or_else(|| LaneError::missing("Fuel"))?;
-            let runtime = ctx
-                .get::<Slot<ScriptRuntime>>()
-                .ok_or_else(|| LaneError::missing("Slot<ScriptRuntime>"))?
-                .get();
-            let deck = ctx
-                .get::<Slot<OutputDeck>>()
-                .ok_or_else(|| LaneError::missing("Slot<OutputDeck>"))?
-                .get();
+        let view = ctx
+            .get::<Ref<ScriptView>>()
+            .ok_or_else(|| LaneError::missing("Ref<ScriptView>"))?
+            .get();
+        let fuel = *ctx
+            .get::<Fuel>()
+            .ok_or_else(|| LaneError::missing("Fuel"))?;
 
-            // An empty queue is the ordinary case: most frames raise no events.
-            let empty = EventQueue::new();
-            let events = ctx.get::<Ref<EventQueue>>().map_or(&empty, Ref::get);
+        // The channels the engine fills. Read here rather than by the agent:
+        // draining one and acting on it is work, and work is what a lane is.
+        let reloads = ctx
+            .get::<Ref<Channel<ScriptReload>>>()
+            .map(|c| c.get().drain())
+            .unwrap_or_default();
+        let from_engine = ctx
+            .get::<Ref<Channel<ScriptEvent>>>()
+            .map(|c| c.get().drain())
+            .unwrap_or_default();
 
-            let mut host = Host::new();
-            // Once for the frame, not once per behavior: input is a fact about
-            // the frame, and every behavior in it must see the same one.
-            host.input = view.input.clone();
-            let mut report = run_behaviors(view, events, runtime, &mut host, fuel.0);
-            report.raised = host.take_events();
+        let runtime = ctx
+            .get::<Slot<ScriptRuntime>>()
+            .ok_or_else(|| LaneError::missing("Slot<ScriptRuntime>"))?
+            .get();
 
-            // Handed over together with the arena reset, so no command can
-            // outlive the frame memory it might have referred to.
-            deck.slot::<CommandBuffer>().extend(host.end_frame());
-            deck.slot::<ScriptStateWriteback>()
-                .extend(report.state.iter().cloned());
-            report
-        };
+        // Applied before anything runs, so a frame never executes the version
+        // the author has just replaced.
+        apply_reloads(runtime, &reloads);
+
+        if view.is_empty() {
+            // Nothing to run, but the mail must still be kept: the engine's
+            // channel has already been drained, and events dropped here would
+            // be gone with no trace of having existed.
+            let mut waiting = runtime.take_pending();
+            for event in from_engine {
+                waiting.push(event);
+            }
+            runtime.set_pending(waiting);
+            runtime.set_last_report(ScriptRunReport::default());
+            ctx.insert(ScriptRunReport::default());
+            return Ok(());
+        }
+
+        // One queue, two producers: what scripts raised last frame, and what the
+        // engine raised through its channel. Neither is delivered in the frame
+        // it was produced — an event handled where it was raised opens a cascade
+        // with no bound, and a budget that cannot bound the work is not a
+        // budget.
+        let mut events = runtime.take_pending();
+        for event in from_engine {
+            events.push(event);
+        }
+
+        let deck = ctx
+            .get::<Slot<OutputDeck>>()
+            .ok_or_else(|| LaneError::missing("Slot<OutputDeck>"))?
+            .get();
+
+        let clock = Stopwatch::new();
+        let mut host = Host::new();
+        // Once for the frame, not once per behavior: input is a fact about
+        // the frame, and every behavior in it must see the same one.
+        host.input = view.input.clone();
+        let mut report = run_behaviors(view, &events, runtime, &mut host, fuel.0);
+        report.raised = host.take_events();
+
+        // Handed over together with the arena reset, so no command can
+        // outlive the frame memory it might have referred to.
+        deck.slot::<CommandBuffer>().extend(host.end_frame());
+        deck.slot::<ScriptStateWriteback>()
+            .extend(report.state.iter().cloned());
+
+        if let Some(elapsed) = clock.elapsed() {
+            runtime.observe_rate(report.spent, elapsed);
+        }
+
+        // Held for the next frame. Both halves: what this frame's behaviors
+        // raised, and what the frame could not tell a behavior because its turn
+        // was deferred or it was mid-`await`. Keeping only the first made
+        // deferring lossy — under budget pressure an event vanished, silently,
+        // which contradicts deferring being the design working.
+        let mut waiting = std::mem::take(&mut report.raised);
+        for event in report.undelivered.drain() {
+            waiting.push(event);
+        }
+        runtime.set_pending(waiting);
+        runtime.set_last_report(report.clone());
 
         ctx.insert(report);
         Ok(())

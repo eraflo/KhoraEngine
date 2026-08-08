@@ -127,6 +127,16 @@ fn a_touched_event_reaches_the_behavior_that_declared_the_handler() {
         program: compile(GUARD),
     });
     let mut runtime_with_reload = Runtime::default();
+    // The scripting world, as `EngineBuilder` registers it. The agent
+    // holds a handle to it, not the thing.
+    runtime_with_reload
+        .services
+        .insert(std::sync::Arc::new(std::sync::Mutex::new(
+            khora_lanes::script_lane::ScriptRuntime::new(),
+        ))
+            as std::sync::Arc<
+                std::sync::Mutex<khora_lanes::script_lane::ScriptRuntime>,
+            >);
     runtime_with_reload.resources.insert(events.clone());
     runtime_with_reload.resources.insert(reloads);
     let runtime = Arc::new(runtime_with_reload);

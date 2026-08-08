@@ -146,6 +146,16 @@ fn wired() -> (Arc<Runtime>, Channel<InputEvent>, ScriptingAgent) {
     });
 
     let mut runtime = Runtime::default();
+    // The scripting world, as `EngineBuilder` registers it. The agent
+    // holds a handle to it, not the thing.
+    runtime
+        .services
+        .insert(std::sync::Arc::new(std::sync::Mutex::new(
+            khora_lanes::script_lane::ScriptRuntime::new(),
+        ))
+            as std::sync::Arc<
+                std::sync::Mutex<khora_lanes::script_lane::ScriptRuntime>,
+            >);
     runtime.resources.insert(events.clone());
     runtime.resources.insert(Arc::new(Mutex::new(map)));
     runtime.resources.insert(reloads);

@@ -30,7 +30,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::script_lane::ScriptRunReport;
 use khora_core::ecs::entity::EntityId;
+use khora_core::script::EventQueue;
 use khora_script::arena::{Persisted, PersistentStore};
 use khora_script::vm::Value;
 use khora_script::vm::{BehaviorLayout, Machine, Program};
@@ -178,16 +180,122 @@ pub fn restore_carried(fields: &mut PersistentStore, carried: &PersistentStore) 
 /// the instance's fields, and cloning a `Vec<Instruction>` per instance per
 /// frame to get it would make the frame cost scale with the code's size for no
 /// reason. The reference count is the whole cost instead.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ScriptRuntime {
     programs: HashMap<String, Arc<Program>>,
     instances: HashMap<(EntityId, String), Instance>,
+    /// What behaviors raised for each other, waiting for the next frame.
+    ///
+    /// Held here rather than routed through the `World` and back: an event from
+    /// one behavior to another never leaves scripting, and the round trip would
+    /// cost two frames of latency and a deck slot nothing else reads.
+    /// Engine-raised events arrive the other way, through a
+    /// `Channel<ScriptEvent>` the engine fills and the agent drains.
+    ///
+    /// It lives on the runtime and not on the agent because an agent that
+    /// buffers its own output is an agent that has stopped being a strategist
+    /// (`RULES.md` §8). This *is* the scripting world's pending mail, and the
+    /// runtime is the scripting world.
+    pending: EventQueue,
+    /// What the last run did, for the agent's `report_status`.
+    ///
+    /// Same reason: per-frame numbers do not live as agent state — the
+    /// convention `AgentFrameStatusMap` sets for scheduler-measured timings,
+    /// applied to the counters only the lane can produce.
+    last_report: ScriptRunReport,
+    /// Measured instructions per millisecond on this machine.
+    ///
+    /// The lane corrects it from what a run actually cost, and the agent reads
+    /// it to turn a time budget into fuel. It lives here because only the lane
+    /// knows how many instructions were spent, and an agent that measured its
+    /// own execution would be doing the lane's job.
+    rate: f64,
+}
+
+/// Instructions per millisecond, before anything has been measured.
+///
+/// Only ever the starting point: the first frame that runs corrects it. A
+/// constant that stayed fixed would be wrong on every machine but the one it
+/// was written on, and wrong in the direction that matters — too generous on a
+/// slow machine is exactly where the budget needed to hold.
+pub const INITIAL_RATE: f64 = 50_000.0;
+
+/// How much of the measured rate one frame's observation may move it.
+///
+/// Smoothed rather than replaced, because one frame is a noisy sample: a
+/// scheduler hiccup would otherwise halve the budget for the frame after it,
+/// producing a stutter out of a measurement artefact.
+const RATE_BLEND: f64 = 0.1;
+
+impl Default for ScriptRuntime {
+    fn default() -> Self {
+        Self {
+            programs: HashMap::new(),
+            instances: HashMap::new(),
+            pending: EventQueue::new(),
+            last_report: ScriptRunReport::default(),
+            rate: INITIAL_RATE,
+        }
+    }
 }
 
 impl ScriptRuntime {
     /// An empty runtime.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Takes the mail waiting for delivery, leaving the queue empty.
+    ///
+    /// Taken rather than borrowed because the lane needs the runtime mutably
+    /// while it delivers, and an event still in the queue while it is being
+    /// delivered is one that can be delivered twice.
+    pub fn take_pending(&mut self) -> EventQueue {
+        std::mem::take(&mut self.pending)
+    }
+
+    /// Puts mail back, to be delivered by a frame that can.
+    ///
+    /// The failure path matters more than the happy one: a frame that bails
+    /// after taking the queue must return it, or everything raised last frame
+    /// vanishes — silently, because an event nobody was told about looks
+    /// exactly like one nobody raised.
+    pub fn set_pending(&mut self, pending: EventQueue) {
+        self.pending = pending;
+    }
+
+    /// How much mail is waiting. For tests and for an inspector.
+    pub fn pending_len(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// Records what the run just did.
+    pub fn set_last_report(&mut self, report: ScriptRunReport) {
+        self.last_report = report;
+    }
+
+    /// What the last run did.
+    pub fn last_report(&self) -> &ScriptRunReport {
+        &self.last_report
+    }
+
+    /// Measured instructions per millisecond, for turning a budget into fuel.
+    pub fn rate(&self) -> f64 {
+        self.rate
+    }
+
+    /// Corrects the measured rate from what a run actually cost.
+    pub fn observe_rate(&mut self, spent: u64, elapsed: std::time::Duration) {
+        let millis = elapsed.as_secs_f64() * 1_000.0;
+        // A run too short to time says nothing: the clock's own resolution
+        // would dominate, and a rate read from noise is worse than the last one
+        // that was measured properly.
+        if spent == 0 || millis <= f64::EPSILON {
+            return;
+        }
+
+        let observed = spent as f64 / millis;
+        self.rate = self.rate * (1.0 - RATE_BLEND) + observed * RATE_BLEND;
     }
 
     /// Registers a compiled module under the path it came from.

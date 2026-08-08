@@ -19,24 +19,37 @@
 //! makes the frame budget a suggestion. Every other subsystem here already
 //! degrades under pressure; before Ergon, gameplay was the one that could not.
 //!
+//! # What the agent does, and what it does not
+//!
+//! It picks a lane to fit the budget and hands that lane what it needs: the
+//! view, the fuel, the locked runtime, the deck, the queues the engine fills.
+//! Then it dispatches. The lane applies reloads, delivers mail, runs behaviors
+//! and records what that cost — because that is *work*, and `RULES.md` §8 says
+//! an agent is a strategist.
+//!
+//! It used to do all of it, and own the scripting runtime besides. What the
+//! shape cost was not correctness but reach: nothing else could see the live
+//! behaviors, because they were a private field of a strategist.
+//!
 //! # The budget is a time, and fuel is how it is spent
 //!
 //! [`apply_budget`](Agent::apply_budget) receives a `Duration` and converts it
-//! at a rate the agent **measures** rather than assumes. A fixed
+//! at a rate the **lane** measures rather than one assumed here. A fixed
 //! instructions-per-millisecond constant would be wrong on the first machine
-//! that was not the one it was written on; the rate here starts at an estimate
-//! and is corrected by what the last frames actually cost.
+//! that was not the one it was written on; the rate starts at an estimate and
+//! is corrected by what the last frames actually cost.
 //!
 //! # Why it can run in parallel
 //!
-//! [`access`](Agent::access) is [`AgentAccess::Isolated`], and that is a claim
-//! the code has to earn: `execute` reads the `ScriptView` from the bus, runs
-//! behaviors against the agent's **own** runtime, and writes one deck slot.
-//! It touches no `World` and nothing another agent can see. That is only true
-//! because a script's effects are queued as commands rather than written — the
-//! constraint from `RULES.md` §3 is what buys the parallelism.
+//! [`access`](Agent::access) is [`AgentAccess::Isolated`], which is a claim
+//! about the `World` alone: no lane here reads or writes one, because a
+//! script's effects are queued as commands rather than applied. What it *does*
+//! reach — the runtime, the two channels, two deck slots — is declared in
+//! [`contention`](Agent::contention), and that declaration is what keeps a
+//! concurrent agent out of the same state.
 
 use std::any::TypeId;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use khora_core::agent::{
@@ -48,53 +61,37 @@ use khora_core::control::gorna::{
 };
 use khora_core::event::Channel;
 use khora_core::lane::{LaneContext, LaneRegistry, Ref, Slot};
-use khora_core::script::{CommandBuffer, EventQueue, ScriptEvent, ScriptStateWriteback};
-use khora_core::{EngineContext, Stopwatch};
+use khora_core::script::{CommandBuffer, ScriptEvent, ScriptStateWriteback};
+use khora_core::EngineContext;
 use khora_data::flow::ScriptView;
+use khora_lanes::script_lane::runtime::INITIAL_RATE;
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
 use khora_script::reload::ScriptReload;
 
-/// Instructions per millisecond, before anything has been measured.
+/// The strategist that negotiates for gameplay.
 ///
-/// Only ever the starting point: the first frame that runs corrects it. A
-/// constant that stayed fixed would be wrong on every machine but the one it
-/// was written on, and wrong in the direction that matters — too generous on a
-/// slow machine is exactly where the budget needed to hold.
-const INITIAL_RATE: f64 = 50_000.0;
-
-/// How much of the measured rate one frame's observation may move it.
-///
-/// Smoothed rather than replaced, because one frame is a noisy sample: a
-/// scheduler hiccup would otherwise halve the budget for the frame after it,
-/// producing a stutter out of a measurement artefact.
-const RATE_BLEND: f64 = 0.1;
-
-/// The ISA that runs gameplay scripts.
+/// Holds **only** its own strategy state. The [`ScriptRuntime`] — compiled
+/// programs, live instances, the mail behaviors owe each other, the last run's
+/// counters, the measured instruction rate — lives in the
+/// [`Runtime`](khora_core::Runtime) and is locked for the duration of
+/// `execute`, exactly as `PhysicsAgent` locks its provider.
 pub struct ScriptingAgent {
+    /// Every script lane — the agent's strategies.
     lanes: LaneRegistry,
+    /// The lane this budget chose.
     current_lane: &'static str,
+    /// Current GORNA strategy ID.
     current_strategy: StrategyId,
-    /// Compiled programs and live instances. Owned rather than shared, which is
-    /// what lets [`Agent::access`] be `Isolated` honestly.
-    runtime: ScriptRuntime,
-    /// This frame's fuel, from the last budget.
+    /// This frame's fuel, converted from the budget at the measured rate.
     fuel: u64,
-    /// Measured instructions per millisecond.
-    rate: f64,
-    /// What the last run did, for [`Agent::report_status`].
-    last: ScriptRunReport,
-    /// What the previous frame raised, waiting to be delivered.
+    /// Shared handle to the scripting world.
     ///
-    /// Kept by the agent rather than routed through the `World` and back: an
-    /// event from one behavior to another never leaves scripting, and the round
-    /// trip would cost two frames of latency and a deck slot nothing else reads.
-    /// Engine-raised events arrive the other way, through
-    /// [`Channel<ScriptEvent>`](Channel) — a queue the engine fills and this
-    /// agent drains. The two stay apart on purpose: putting script-to-script
-    /// traffic in a shared resource would move the agent's own state somewhere
-    /// anything could reach it, which is the opposite of what makes its
-    /// isolation claim true.
-    inbox: EventQueue,
+    /// A handle, not the thing. [`negotiate`](Agent::negotiate),
+    /// [`apply_budget`](Agent::apply_budget) and
+    /// [`report_status`](Agent::report_status) all receive no `EngineContext`,
+    /// so what they read has to be reachable without one. `PhysicsAgent` holds
+    /// `AgentFrameStatusMap` for the same reason and in the same shape.
+    runtime: Option<Arc<Mutex<ScriptRuntime>>>,
 }
 
 impl Default for ScriptingAgent {
@@ -106,13 +103,27 @@ impl Default for ScriptingAgent {
             lanes,
             current_lane: "Budgeted",
             current_strategy: StrategyId::Balanced,
-            runtime: ScriptRuntime::new(),
             fuel: 0,
-            rate: INITIAL_RATE,
-            last: ScriptRunReport::default(),
-            inbox: EventQueue::new(),
+            runtime: None,
         }
     }
+}
+
+/// Reads something off the scripting world without blocking.
+///
+/// `try_lock` rather than `lock`: the guard is only ever held inside `execute`,
+/// so this succeeds in practice — but negotiation and status reads run on the
+/// DCC thread, and neither is worth a chance of blocking it. The fallback is
+/// what a caller would see before the first frame anyway.
+fn peek<T>(
+    runtime: &Option<Arc<Mutex<ScriptRuntime>>>,
+    read: impl FnOnce(&ScriptRuntime) -> T,
+    fallback: T,
+) -> T {
+    runtime
+        .as_ref()
+        .and_then(|shared| shared.try_lock().ok().map(|guard| read(&guard)))
+        .unwrap_or(fallback)
 }
 
 impl Agent for ScriptingAgent {
@@ -126,7 +137,7 @@ impl Agent for ScriptingAgent {
         // thousand, and offering a fixed estimate would have the DCC allocate
         // against a number that was never true.
         let per_behavior = Duration::from_nanos(2_000);
-        let live = self.runtime.instance_count().max(1) as u32;
+        let live = peek(&self.runtime, ScriptRuntime::instance_count, 0).max(1) as u32;
 
         NegotiationResponse {
             strategies: vec![
@@ -157,128 +168,102 @@ impl Agent for ScriptingAgent {
     fn apply_budget(&mut self, budget: ResourceBudget) {
         self.current_strategy = budget.strategy_id;
 
+        // Converted at a rate the **lane** measured rather than one assumed
+        // here. A fixed instructions-per-millisecond constant would be wrong on
+        // the first machine that was not the one it was written on.
+        let rate = peek(&self.runtime, ScriptRuntime::rate, INITIAL_RATE);
         let millis = budget.time_limit.as_secs_f64() * 1_000.0;
-        self.fuel = (millis * self.rate) as u64;
+        self.fuel = (millis * rate) as u64;
 
         log::debug!(
             "ScriptingAgent: {:?} — {:.3}ms at {:.0} instr/ms = {} fuel",
             budget.strategy_id,
             millis,
-            self.rate,
+            rate,
             self.fuel
         );
     }
 
-    fn execute(&mut self, context: &mut EngineContext<'_>) {
-        // Applied before anything runs, so a frame never executes the version
-        // the author has just replaced. Arriving through the bus rather than
-        // from a shared cache is what keeps `access` honest.
-        if let Some(pending) = context.locked::<Channel<ScriptReload>>() {
-            apply_reloads(&mut self.runtime, &pending.drain());
+    fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
+        self.runtime = context.locked::<Arc<Mutex<ScriptRuntime>>>().cloned();
+        if self.runtime.is_none() {
+            log::error!("ScriptingAgent: no ScriptRuntime registered — scripts will not run");
         }
+    }
+
+    fn execute(&mut self, context: &mut EngineContext<'_>) {
+        // Looked up again when initialisation did not find one, so a runtime
+        // registered late still reaches the agent rather than leaving it inert
+        // for the rest of the run.
+        let shared = match self.runtime.clone() {
+            Some(handle) => handle,
+            None => {
+                let Some(found) = context.locked::<Arc<Mutex<ScriptRuntime>>>().cloned() else {
+                    log::debug!("ScriptingAgent: no ScriptRuntime registered, skipping");
+                    return;
+                };
+                self.runtime = Some(found.clone());
+                found
+            }
+        };
+        let mut runtime = match shared.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                log::error!("ScriptingAgent: script runtime mutex poisoned: {poisoned}");
+                return;
+            }
+        };
 
         let Some(view): Option<&ScriptView> = context.bus.get() else {
-            // The flow has not run, or the scene holds no scripts.
+            // The flow has not run, so there is nothing to hand a lane.
             return;
         };
-        if view.is_empty() {
-            self.last = ScriptRunReport::default();
-            return;
-        }
-
-        // One queue, two producers: what scripts raised last frame, and what the
-        // engine raised through its channel. Neither is delivered in the frame
-        // it was produced — an event handled where it was raised opens a cascade
-        // with no bound, and a budget that cannot bound the work is not a
-        // budget.
-        //
-        // Drained **here**, after the early returns above, and that is a
-        // correction: draining it first "so nothing is lost if the agent bails"
-        // had it backwards. The channel is bounded and counts what it drops; the
-        // inbox is a plain `Vec`. Moving events out of the one into the other
-        // before knowing whether this frame can deliver them is how a scene with
-        // no scripts and an engine that raises events grows a queue forever.
-        let mut events = std::mem::take(&mut self.inbox);
-        if let Some(pending) = context.locked::<Channel<ScriptEvent>>() {
-            for event in pending.drain() {
-                events.push(event);
-            }
-        }
 
         let mut ctx = LaneContext::new();
         // SAFETY: `view` is borrowed from the LaneBus, which lives for the whole
         // frame and is read-only; the `Ref` outlives its only consumer below.
         ctx.insert(Ref::new(view));
         ctx.insert(Fuel(self.fuel));
-        // SAFETY: the runtime is this agent's own field, borrowed for the
-        // duration of this call and reachable by nothing else.
-        ctx.insert(Slot::new(&mut self.runtime));
+        // SAFETY: the guard is held for the whole of this call and released
+        // when `ctx` drops, and the contention declaration is what keeps a
+        // concurrent agent out of it.
+        ctx.insert(Slot::new(&mut *runtime));
         // SAFETY: `deck` is borrowed from EngineContext for this call.
         ctx.insert(Slot::new(&mut *context.deck));
-        ctx.insert(Ref::new(&events));
 
-        // No early return past this point, and that is the whole shape of this
-        // block: `events` has already left the inbox, so any exit that forgot to
-        // put it back would drop everything raised last frame — silently, since
-        // an event nobody was told about is indistinguishable from one nobody
-        // raised. Every outcome funnels into the single `match` below instead.
-        let report = match self.lanes.get(self.current_lane) {
-            None => {
-                log::error!("ScriptingAgent: lane `{}` is missing", self.current_lane);
-                None
-            }
-            Some(lane) => {
-                let clock = Stopwatch::new();
-                match lane.execute(&mut ctx) {
-                    Err(error) => {
-                        log::error!("Script lane {} failed: {error}", lane.strategy_name());
-                        None
-                    }
-                    Ok(()) => ctx
-                        .get::<ScriptRunReport>()
-                        .cloned()
-                        .map(|report| (report, clock.elapsed())),
-                }
-            }
+        // The two queues the engine fills, handed over rather than drained
+        // here: the agent wires, the lane works.
+        if let Some(reloads) = context.locked::<Channel<ScriptReload>>() {
+            ctx.insert(Ref::new(reloads));
+        }
+        if let Some(events) = context.locked::<Channel<ScriptEvent>>() {
+            ctx.insert(Ref::new(events));
+        }
+
+        let Some(lane) = self.lanes.get(self.current_lane) else {
+            log::error!("ScriptingAgent: lane `{}` is missing", self.current_lane);
+            return;
         };
-        // Ends the borrows of `self.runtime` and of `events`, so both can move.
-        drop(ctx);
-
-        match report {
-            Some((mut report, elapsed)) => {
-                if let Some(elapsed) = elapsed {
-                    self.observe(&report, elapsed);
-                }
-                // Held for the next frame. Taken out of the report so a status
-                // read does not carry a queue of events around with it.
-                //
-                // Both halves: what this frame's behaviors raised, and what the
-                // frame could not tell a behavior because its turn was deferred
-                // or it was mid-`await`. Keeping only the first made deferring
-                // lossy — under budget pressure an event vanished, silently,
-                // which contradicts deferring being the design working.
-                self.inbox = std::mem::take(&mut report.raised);
-                for event in report.undelivered.drain() {
-                    self.inbox.push(event);
-                }
-                self.last = report;
-            }
-            // The lane did not run, or ran and reported nothing. Whatever was
-            // raised last frame has not been delivered, so it goes back rather
-            // than out with the stack frame.
-            None => self.inbox = events,
+        if let Err(error) = lane.execute(&mut ctx) {
+            log::error!("Script lane {} failed: {error}", lane.strategy_name());
         }
     }
 
     fn report_status(&self) -> AgentStatus {
+        let report = peek(
+            &self.runtime,
+            |runtime| runtime.last_report().clone(),
+            ScriptRunReport::default(),
+        );
+
         // Health is the share of behaviors that got their turn. An agent that
         // reported 1.0 while half its behaviors were deferred would tell the
         // DCC nothing was wrong at exactly the moment something was.
-        let attempted = self.last.completed + self.last.deferred;
+        let attempted = report.completed + report.deferred;
         let health = if attempted == 0 {
             1.0
         } else {
-            self.last.completed as f32 / attempted as f32
+            report.completed as f32 / attempted as f32
         };
 
         AgentStatus {
@@ -287,10 +272,10 @@ impl Agent for ScriptingAgent {
             health_score: health,
             // Not "stalled": deferring is the design working, not failing. A
             // behavior that faults is the thing that has actually stopped.
-            is_stalled: self.last.faulted > 0,
+            is_stalled: report.faulted > 0,
             message: format!(
                 "{} ran, {} deferred, {} faulted",
-                self.last.completed, self.last.deferred, self.last.faulted
+                report.completed, report.deferred, report.faulted
             ),
         }
     }
@@ -317,6 +302,7 @@ impl Agent for ScriptingAgent {
             ])
             .locking::<Channel<ScriptReload>>()
             .locking::<Channel<ScriptEvent>>()
+            .locking::<Arc<Mutex<ScriptRuntime>>>()
     }
 
     fn execution_timing(&self) -> ExecutionTiming {
@@ -339,50 +325,6 @@ impl Agent for ScriptingAgent {
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
-    }
-}
-
-impl ScriptingAgent {
-    /// Corrects the measured instruction rate from what a run actually cost.
-    ///
-    /// Private and not part of the `Agent` trait, which `RULES.md` §8 requires:
-    /// an agent's public surface is the trait and nothing else.
-    fn observe(&mut self, report: &ScriptRunReport, elapsed: Duration) {
-        let millis = elapsed.as_secs_f64() * 1_000.0;
-        // A run too short to time says nothing: the clock's own resolution
-        // would dominate, and a rate read from noise is worse than the last
-        // one that was measured properly.
-        if report.spent == 0 || millis <= f64::EPSILON {
-            return;
-        }
-
-        let observed = report.spent as f64 / millis;
-        self.rate = self.rate * (1.0 - RATE_BLEND) + observed * RATE_BLEND;
-    }
-}
-
-/// Applies the modules recompiled this frame, reporting what each cost.
-///
-/// The reporting is the point of doing it here rather than inside the runtime:
-/// a rename drops a field's value, and an author who is not told is left to
-/// discover it in whatever the guard does next.
-fn apply_reloads(runtime: &mut ScriptRuntime, reloads: &[ScriptReload]) {
-    for reload in reloads {
-        for report in runtime.reload(&reload.module, reload.program.clone()) {
-            if report.lost_anything() {
-                log::warn!(
-                    "hot-reload: `{}` lost {} — a renamed field keeps no value",
-                    report.behavior,
-                    report.dropped.join(", ")
-                );
-            } else {
-                log::info!(
-                    "hot-reload: `{}` kept {} field(s)",
-                    report.behavior,
-                    report.kept.len()
-                );
-            }
-        }
     }
 }
 
@@ -428,16 +370,24 @@ mod tests {
         }
     }
 
+    /// A runtime with the scripting world registered, as the engine wires it.
+    fn wired() -> (Arc<Runtime>, Arc<Mutex<ScriptRuntime>>) {
+        let shared: Arc<Mutex<ScriptRuntime>> = Arc::new(Mutex::new(ScriptRuntime::new()));
+        let mut runtime = Runtime::default();
+        runtime.services.insert(shared.clone());
+        (Arc::new(runtime), shared)
+    }
+
     /// Runs one frame against a scene that has scripts, so `execute` gets as far
     /// as picking a lane.
-    fn run_one_frame(agent: &mut ScriptingAgent) {
+    fn run_one_frame(agent: &mut ScriptingAgent, runtime: &Arc<Runtime>) {
         let mut bus = LaneBus::new();
         bus.publish(a_scene_with_one_script());
         let mut deck = OutputDeck::new();
         let permit = agent.contention();
         let mut ctx = EngineContext::for_agent(
             WorldAccess::None,
-            Arc::new(Runtime::default()),
+            runtime.clone(),
             &bus,
             &mut deck,
             &permit,
@@ -446,44 +396,62 @@ mod tests {
         agent.execute(&mut ctx);
     }
 
-    /// **The reason `execute` has one exit.** The inbox is taken out before the
-    /// lane runs, so an exit that forgot to put it back would drop everything
-    /// raised last frame — and silently, because an event nobody was told about
-    /// looks exactly like one nobody raised.
+    /// How much mail is waiting on the scripting world.
+    fn waiting(shared: &Arc<Mutex<ScriptRuntime>>) -> usize {
+        shared.lock().expect("uncontended in test").pending_len()
+    }
+
+    /// Seeds the mail a previous frame would have left.
+    fn leave_mail(shared: &Arc<Mutex<ScriptRuntime>>) {
+        let mut runtime = shared.lock().expect("uncontended in test");
+        let mut pending = runtime.take_pending();
+        pending.push(an_event());
+        runtime.set_pending(pending);
+    }
+
+    /// **A missing lane must not lose what was raised.** This used to depend on
+    /// `execute` having exactly one exit: it took the queue out before running
+    /// the lane, so any early return that forgot to put it back dropped
+    /// everything raised last frame — silently, because an event nobody was
+    /// told about looks exactly like one nobody raised.
     ///
-    /// Unreachable today: `current_lane` is set once and never reassigned. It
-    /// stops being unreachable the moment the agent gains a second lane to
-    /// choose between, which is the whole point of giving it a budget.
+    /// The agent no longer takes the queue at all; the lane does, and a lane
+    /// that never runs never takes it. The invariant is now structural rather
+    /// than maintained, which is why this test can no longer fail for the
+    /// reason it was written for — and is kept, because the guarantee it names
+    /// is still the one that matters.
     #[test]
     fn a_missing_lane_does_not_lose_what_was_raised() {
+        let (runtime, shared) = wired();
         let mut agent = ScriptingAgent::default();
-        agent.inbox.push(an_event());
+        leave_mail(&shared);
         agent.current_lane = "a lane nobody registered";
 
-        run_one_frame(&mut agent);
+        run_one_frame(&mut agent, &runtime);
 
         assert_eq!(
-            agent.inbox.len(),
+            waiting(&shared),
             1,
             "the frame could not deliver it, so it waits for one that can"
         );
     }
 
     /// **Deferring is the design working, so it must not lose anything.** With
-    /// no budget the agent has no fuel and every behavior is deferred; the
-    /// event waits for a frame that can deliver it rather than going out with
-    /// the one that could not.
+    /// no budget there is no fuel and every behavior is deferred; the event
+    /// waits for a frame that can deliver it rather than going out with the one
+    /// that could not.
     ///
-    /// This test used to assert the opposite — that the inbox was emptied —
+    /// This test used to assert the opposite — that the queue was emptied —
     /// and passed only because a deferred turn dropped its events.
     #[test]
     fn a_deferred_behavior_keeps_what_it_was_never_told() {
+        let (runtime, shared) = wired();
         let mut agent = ScriptingAgent::default();
-        agent.inbox.push(an_event());
+        leave_mail(&shared);
 
-        run_one_frame(&mut agent);
+        run_one_frame(&mut agent, &runtime);
 
-        assert_eq!(agent.inbox.len(), 1, "still waiting to be told");
+        assert_eq!(waiting(&shared), 1, "still waiting to be told");
     }
 
     /// And once there is fuel, it is delivered and does not come back. A fix
@@ -491,6 +459,7 @@ mod tests {
     /// it.
     #[test]
     fn a_behavior_that_gets_its_turn_is_told_once() {
+        let (runtime, shared) = wired();
         let mut agent = ScriptingAgent::default();
         agent.apply_budget(ResourceBudget {
             strategy_id: StrategyId::Balanced,
@@ -498,13 +467,51 @@ mod tests {
             memory_limit: None,
             extra_params: Default::default(),
         });
-        agent.inbox.push(an_event());
+        leave_mail(&shared);
 
-        run_one_frame(&mut agent);
+        run_one_frame(&mut agent, &runtime);
 
-        assert!(
-            agent.inbox.is_empty(),
+        assert_eq!(
+            waiting(&shared),
+            0,
             "offered — the scene names no compiled module, so nobody handled it"
         );
+    }
+
+    /// **The state the agent is allowed to hold.** `RULES.md` §8 says an agent
+    /// chooses a lane against a budget and reports status; a simulation runtime,
+    /// a queue of pending output and last frame's counters are none of those.
+    /// This pins the shape rather than the behaviour, because the shape is what
+    /// drifted.
+    #[test]
+    fn the_agent_holds_no_simulation_state() {
+        let agent = ScriptingAgent::default();
+
+        // Everything it knows before a frame runs: its lanes, which one it
+        // picked, its strategy, its fuel, and a handle it has not been given.
+        assert_eq!(agent.current_lane, "Budgeted");
+        assert_eq!(agent.fuel, 0);
+        assert!(
+            agent.runtime.is_none(),
+            "the scripting world is the engine's, handed over at initialisation"
+        );
+    }
+
+    /// With no runtime registered, negotiation still answers — it prices from
+    /// the fallback rather than blocking the DCC or panicking.
+    #[test]
+    fn negotiation_survives_an_unregistered_runtime() {
+        let mut agent = ScriptingAgent::default();
+        let request = NegotiationRequest {
+            target_latency: Duration::from_millis(16),
+            priority_weight: 1.0,
+            constraints: Default::default(),
+            current_mode: khora_core::agent::EngineMode::Playing,
+            agent_timing: agent.execution_timing(),
+        };
+
+        let response = agent.negotiate(request);
+
+        assert_eq!(response.strategies.len(), 3);
     }
 }

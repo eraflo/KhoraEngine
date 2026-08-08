@@ -78,6 +78,20 @@ fn run_one_frame(agent: &mut ScriptingAgent, runtime: &Arc<Runtime>) {
     agent.execute(&mut ctx);
 }
 
+/// A `Runtime` holding the scripting world, as `EngineBuilder` registers it.
+fn a_runtime_with_scripting() -> Runtime {
+    let mut runtime = Runtime::default();
+    runtime
+        .services
+        .insert(std::sync::Arc::new(std::sync::Mutex::new(
+            khora_lanes::script_lane::ScriptRuntime::new(),
+        ))
+            as std::sync::Arc<
+                std::sync::Mutex<khora_lanes::script_lane::ScriptRuntime>,
+            >);
+    runtime
+}
+
 #[test]
 fn a_queued_reload_reaches_the_agent() {
     let reloads = reload_channel();
@@ -87,6 +101,16 @@ fn a_queued_reload_reaches_the_agent() {
     });
 
     let mut runtime = Runtime::default();
+    // The scripting world, as `EngineBuilder` registers it. The agent
+    // holds a handle to it, not the thing.
+    runtime
+        .services
+        .insert(std::sync::Arc::new(std::sync::Mutex::new(
+            khora_lanes::script_lane::ScriptRuntime::new(),
+        ))
+            as std::sync::Arc<
+                std::sync::Mutex<khora_lanes::script_lane::ScriptRuntime>,
+            >);
     runtime.resources.insert(reloads.clone());
     let runtime = Arc::new(runtime);
 
@@ -111,6 +135,16 @@ fn a_queued_engine_event_reaches_the_agent() {
     });
 
     let mut runtime = Runtime::default();
+    // The scripting world, as `EngineBuilder` registers it. The agent
+    // holds a handle to it, not the thing.
+    runtime
+        .services
+        .insert(std::sync::Arc::new(std::sync::Mutex::new(
+            khora_lanes::script_lane::ScriptRuntime::new(),
+        ))
+            as std::sync::Arc<
+                std::sync::Mutex<khora_lanes::script_lane::ScriptRuntime>,
+            >);
     runtime.resources.insert(events.clone());
     let runtime = Arc::new(runtime);
 
@@ -136,6 +170,16 @@ fn an_engine_event_waits_in_the_channel_while_no_script_runs() {
     });
 
     let mut runtime = Runtime::default();
+    // The scripting world, as `EngineBuilder` registers it. The agent
+    // holds a handle to it, not the thing.
+    runtime
+        .services
+        .insert(std::sync::Arc::new(std::sync::Mutex::new(
+            khora_lanes::script_lane::ScriptRuntime::new(),
+        ))
+            as std::sync::Arc<
+                std::sync::Mutex<khora_lanes::script_lane::ScriptRuntime>,
+            >);
     runtime.resources.insert(events.clone());
     let runtime = Arc::new(runtime);
 
@@ -184,6 +228,16 @@ fn an_agent_that_declared_nothing_reaches_neither() {
     });
 
     let mut runtime = Runtime::default();
+    // The scripting world, as `EngineBuilder` registers it. The agent
+    // holds a handle to it, not the thing.
+    runtime
+        .services
+        .insert(std::sync::Arc::new(std::sync::Mutex::new(
+            khora_lanes::script_lane::ScriptRuntime::new(),
+        ))
+            as std::sync::Arc<
+                std::sync::Mutex<khora_lanes::script_lane::ScriptRuntime>,
+            >);
     runtime.resources.insert(reloads.clone());
     runtime.resources.insert(events.clone());
     let runtime = Arc::new(runtime);
@@ -212,6 +266,6 @@ fn an_agent_that_declared_nothing_reaches_neither() {
 fn an_agent_whose_queues_are_absent_still_runs() {
     run_one_frame(
         &mut ScriptingAgent::default(),
-        &Arc::new(Runtime::default()),
+        &Arc::new(a_runtime_with_scripting()),
     );
 }

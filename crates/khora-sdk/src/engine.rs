@@ -246,6 +246,17 @@ impl<A: EngineApp> EngineCore<A> {
             Arc::new(std::sync::RwLock::new(std::collections::HashMap::new()));
         runtime.resources.insert(agent_frame_status);
 
+        // The scripting world — compiled programs, live behavior instances, the
+        // mail behaviors owe each other. Registered here rather than owned by
+        // `ScriptingAgent` for the same reason the physics provider is: an
+        // agent chooses a lane against a budget, and a subsystem's state is not
+        // strategy state. It also means anything that legitimately needs to see
+        // live behaviors — an inspector, a debugger — can, without going
+        // through the agent.
+        let script_runtime: Arc<Mutex<khora_lanes::script_lane::ScriptRuntime>> =
+            Arc::new(Mutex::new(khora_lanes::script_lane::ScriptRuntime::new()));
+        runtime.services.insert(script_runtime);
+
         // Create the game world
         let mut game_world = GameWorld::new();
 
