@@ -39,38 +39,27 @@ use khora_core::renderer::api::pipeline::{
 use khora_core::renderer::api::resource::buffer::{self as api_buf};
 use khora_core::renderer::api::resource::texture::{self as api_tex};
 
-/// Translate Khora's [`TextureUsage`] flag set into wgpu's `TextureUsages`.
+/// Build the wgpu descriptor for an empty buffer.
 ///
-/// Khora exposes a separate `DEPTH_STENCIL_ATTACHMENT` flag (bit 5) for API
-/// clarity, but wgpu folds depth and color attachments under a single
-/// `RENDER_ATTACHMENT` (bit 4). Doing a naive `from_bits_truncate` therefore
-/// **silently drops** the depth-attachment intent — the texture loses
-/// `RENDER_ATTACHMENT`, becomes sample-only, and any subsequent
-/// `RenderPass` that targets it as the depth view fails validation with
-/// `TextureViewIsNotRenderable`.
+/// A free function rather than three lines inside `create_buffer`, and that is
+/// the whole point: the bug this fixes (issue #279) lived at the call site, not
+/// in the conversion it should have used. `IntoWgpu for BufferUsage` was always
+/// correct; `create_buffer` reinterpreted the raw bits instead of calling it,
+/// and no test could see the difference because there was nothing to call.
 ///
-/// This mapping fans both Khora flags onto wgpu's `RENDER_ATTACHMENT`.
-fn convert_texture_usage(usage: api_tex::TextureUsage) -> wgpu::TextureUsages {
-    let mut out = wgpu::TextureUsages::empty();
-    if usage.contains(api_tex::TextureUsage::COPY_SRC) {
-        out |= wgpu::TextureUsages::COPY_SRC;
+/// Now there is. A regression here fails `a_vertex_buffer_stays_a_vertex_buffer`
+/// on any machine, with no GPU.
+fn buffer_descriptor<'a>(
+    descriptor: &'a api_buf::BufferDescriptor<'a>,
+) -> wgpu::BufferDescriptor<'a> {
+    wgpu::BufferDescriptor {
+        label: descriptor.label.as_deref(),
+        size: descriptor.size,
+        usage: descriptor.usage.into_wgpu(),
+        mapped_at_creation: descriptor.mapped_at_creation,
     }
-    if usage.contains(api_tex::TextureUsage::COPY_DST) {
-        out |= wgpu::TextureUsages::COPY_DST;
-    }
-    if usage.contains(api_tex::TextureUsage::TEXTURE_BINDING) {
-        out |= wgpu::TextureUsages::TEXTURE_BINDING;
-    }
-    if usage.contains(api_tex::TextureUsage::STORAGE_BINDING) {
-        out |= wgpu::TextureUsages::STORAGE_BINDING;
-    }
-    if usage.contains(api_tex::TextureUsage::RENDER_ATTACHMENT)
-        || usage.contains(api_tex::TextureUsage::DEPTH_STENCIL_ATTACHMENT)
-    {
-        out |= wgpu::TextureUsages::RENDER_ATTACHMENT;
-    }
-    out
 }
+
 use khora_core::renderer::api::util::{
     GraphicsBackendType, IndexFormat, RendererDeviceType, TextureFormat,
 };
@@ -1055,14 +1044,7 @@ impl GraphicsDevice for WgpuDevice {
             })?;
         let device = &context.device;
 
-        // Create the buffer using the wgpu device
-        let wgpu_buffer_descriptor = wgpu::BufferDescriptor {
-            label: descriptor.label.as_deref(),
-            size: descriptor.size,
-            usage: wgpu::BufferUsages::from_bits_truncate(descriptor.usage.bits()),
-            mapped_at_creation: descriptor.mapped_at_creation,
-        };
-
+        let wgpu_buffer_descriptor = buffer_descriptor(descriptor);
         let wgpu_buffer = device.create_buffer(&wgpu_buffer_descriptor);
         let id = self.generate_buffer_id();
 
@@ -1329,7 +1311,7 @@ impl GraphicsDevice for WgpuDevice {
             sample_count: descriptor.sample_count.into_wgpu(),
             dimension: descriptor.dimension.into_wgpu(),
             format: descriptor.format.into_wgpu(),
-            usage: convert_texture_usage(descriptor.usage),
+            usage: descriptor.usage.into_wgpu(),
             view_formats: &descriptor
                 .view_formats
                 .iter()
@@ -2045,5 +2027,76 @@ mod tests {
 
         // Performance report should be None initially
         assert!(monitor.get_gpu_report().is_none());
+    }
+}
+
+#[cfg(test)]
+mod buffer_descriptor_tests {
+    use super::*;
+
+    fn a_descriptor(usage: api_buf::BufferUsage) -> api_buf::BufferDescriptor<'static> {
+        api_buf::BufferDescriptor {
+            label: Some(std::borrow::Cow::Borrowed("test")),
+            size: 256,
+            usage,
+            mapped_at_creation: false,
+        }
+    }
+
+    /// **Issue #279.** Reported from the outside against a Metal build: a
+    /// vertex buffer reached the driver marked as an index buffer.
+    ///
+    /// The cause was `wgpu::BufferUsages::from_bits_truncate(usage.bits())`
+    /// here, where Khora numbers `VERTEX` at bit 4 and wgpu numbers it at
+    /// bit 5. The conversion that does it properly already existed and was
+    /// used by `create_buffer_init` fifty lines below; this path simply did
+    /// not call it.
+    #[test]
+    fn a_vertex_buffer_stays_a_vertex_buffer() {
+        let source = a_descriptor(api_buf::BufferUsage::VERTEX);
+        let built = buffer_descriptor(&source);
+
+        assert_eq!(built.usage, wgpu::BufferUsages::VERTEX);
+        assert!(
+            !built.usage.contains(wgpu::BufferUsages::INDEX),
+            "the exact swap that was reported"
+        );
+    }
+
+    #[test]
+    fn an_index_buffer_stays_an_index_buffer() {
+        let source = a_descriptor(api_buf::BufferUsage::INDEX);
+        let built = buffer_descriptor(&source);
+
+        assert_eq!(built.usage, wgpu::BufferUsages::INDEX);
+        assert!(!built.usage.contains(wgpu::BufferUsages::VERTEX));
+    }
+
+    /// What the reporter's own workaround was for: a real vertex buffer is
+    /// also a copy destination, and both halves have to survive.
+    #[test]
+    fn a_realistic_combination_survives() {
+        let source = a_descriptor(api_buf::BufferUsage::VERTEX | api_buf::BufferUsage::COPY_DST);
+        let built = buffer_descriptor(&source);
+
+        assert_eq!(
+            built.usage,
+            wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST
+        );
+    }
+
+    /// The rest of the descriptor is carried across unchanged — a fix that
+    /// quietly dropped the label or the mapping flag would trade one silent
+    /// failure for another.
+    #[test]
+    fn the_rest_of_the_descriptor_is_carried_across() {
+        let mut source = a_descriptor(api_buf::BufferUsage::UNIFORM);
+        source.mapped_at_creation = true;
+
+        let built = buffer_descriptor(&source);
+
+        assert_eq!(built.label, Some("test"));
+        assert_eq!(built.size, 256);
+        assert!(built.mapped_at_creation);
     }
 }

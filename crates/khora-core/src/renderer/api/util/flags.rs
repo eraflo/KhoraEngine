@@ -16,81 +16,42 @@
 
 use super::enums::ShaderStage;
 
-/// Flags representing which shader stages can access a resource binding.
-///
-/// This is used in bind group layouts to specify visibility of resources.
-/// Multiple stages can be combined using bitwise operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ShaderStageFlags {
-    bits: u32,
+crate::khora_bitflags! {
+    /// Flags representing which shader stages can access a resource binding.
+    ///
+    /// Used in bind group layouts to specify the visibility of a resource.
+    /// Combine with `|`.
+    ///
+    /// Built with `khora_bitflags!` like every other flag set in the engine.
+    /// It used to be hand-written, which cost it the `ALL_DECLARED` constant a
+    /// backend bridge needs to prove it translates every flag — so this one
+    /// crossed into wgpu as a raw bit cast, correct only because the two sets
+    /// happen to be numbered alike.
+    pub struct ShaderStageFlags: u32 {
+        /// Vertex shader stage.
+        const VERTEX = 1 << 0;
+        /// Fragment shader stage.
+        const FRAGMENT = 1 << 1;
+        /// Compute shader stage.
+        const COMPUTE = 1 << 2;
+        /// All graphics stages (vertex + fragment).
+        const VERTEX_FRAGMENT = Self::VERTEX.bits() | Self::FRAGMENT.bits();
+        /// All stages.
+        const ALL = Self::VERTEX.bits() | Self::FRAGMENT.bits() | Self::COMPUTE.bits();
+    }
 }
 
 impl ShaderStageFlags {
-    /// No shader stages.
-    pub const NONE: Self = Self { bits: 0 };
-    /// Vertex shader stage.
-    pub const VERTEX: Self = Self { bits: 1 << 0 };
-    /// Fragment shader stage.
-    pub const FRAGMENT: Self = Self { bits: 1 << 1 };
-    /// Compute shader stage.
-    pub const COMPUTE: Self = Self { bits: 1 << 2 };
-    /// All graphics stages (vertex + fragment).
-    pub const VERTEX_FRAGMENT: Self = Self {
-        bits: Self::VERTEX.bits | Self::FRAGMENT.bits,
-    };
-    /// All stages.
-    pub const ALL: Self = Self {
-        bits: Self::VERTEX.bits | Self::FRAGMENT.bits | Self::COMPUTE.bits,
-    };
+    /// No shader stages. Alias of [`Self::EMPTY`], kept because "no stages"
+    /// reads better than "empty" at a binding's visibility.
+    pub const NONE: Self = Self::EMPTY;
 
-    /// Creates a new set of shader stage flags from raw bits.
-    pub const fn from_bits(bits: u32) -> Self {
-        Self { bits }
-    }
-
-    /// Creates flags from a single shader stage.
+    /// The flag set for a single stage.
     pub const fn from_stage(stage: ShaderStage) -> Self {
         match stage {
             ShaderStage::Vertex => Self::VERTEX,
             ShaderStage::Fragment => Self::FRAGMENT,
             ShaderStage::Compute => Self::COMPUTE,
         }
-    }
-
-    /// Returns the raw bits.
-    pub const fn bits(&self) -> u32 {
-        self.bits
-    }
-
-    /// Combines two sets of flags.
-    pub const fn union(self, other: Self) -> Self {
-        Self {
-            bits: self.bits | other.bits,
-        }
-    }
-
-    /// Checks if these flags contain a specific stage.
-    pub const fn contains(&self, stage: ShaderStage) -> bool {
-        let stage_bits = Self::from_stage(stage).bits;
-        (self.bits & stage_bits) == stage_bits
-    }
-
-    /// Checks if these flags are empty (no stages).
-    pub const fn is_empty(&self) -> bool {
-        self.bits == 0
-    }
-}
-
-impl std::ops::BitOr for ShaderStageFlags {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        self.union(rhs)
-    }
-}
-
-impl std::ops::BitOrAssign for ShaderStageFlags {
-    fn bitor_assign(&mut self, rhs: Self) {
-        *self = self.union(rhs);
     }
 }

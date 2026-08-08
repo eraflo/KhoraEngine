@@ -22,7 +22,6 @@ use khora_core::renderer::api::pipeline::enums::{
     BlendFactor, BlendOperation, CompareFunction, CullMode, FrontFace, PolygonMode,
     PrimitiveTopology, StencilOperation, VertexFormat, VertexStepMode,
 };
-use khora_core::renderer::api::resource::buffer::BufferUsage;
 use khora_core::renderer::api::resource::texture::{
     AddressMode, FilterMode, ImageAspect, MipmapFilterMode, SamplerBorderColor, TextureDimension,
     TextureViewDimension,
@@ -30,7 +29,6 @@ use khora_core::renderer::api::resource::texture::{
 use khora_core::renderer::api::util::enums::{
     IndexFormat, SampleCount, ShaderStage, TextureFormat,
 };
-use khora_core::renderer::api::util::flags::ShaderStageFlags;
 
 /// A local extension trait to convert our engine's types into WGPU-compatible types.
 /// This avoids Rust's orphan rules while keeping an idiomatic `.into_wgpu()` syntax.
@@ -266,12 +264,6 @@ impl IntoWgpu<wgpu::ShaderStages> for ShaderStage {
     }
 }
 
-impl IntoWgpu<wgpu::ShaderStages> for ShaderStageFlags {
-    fn into_wgpu(self) -> wgpu::ShaderStages {
-        wgpu::ShaderStages::from_bits_truncate(self.bits())
-    }
-}
-
 impl IntoWgpu<wgpu::VertexFormat> for VertexFormat {
     fn into_wgpu(self) -> wgpu::VertexFormat {
         match self {
@@ -403,34 +395,6 @@ impl IntoWgpu<wgpu::BlendOperation> for BlendOperation {
             BlendOperation::Min => wgpu::BlendOperation::Min,
             BlendOperation::Max => wgpu::BlendOperation::Max,
         }
-    }
-}
-
-impl IntoWgpu<wgpu::BufferUsages> for BufferUsage {
-    fn into_wgpu(self) -> wgpu::BufferUsages {
-        let mut usages = wgpu::BufferUsages::empty();
-        if self.contains(BufferUsage::COPY_SRC) {
-            usages |= wgpu::BufferUsages::COPY_SRC;
-        }
-        if self.contains(BufferUsage::COPY_DST) {
-            usages |= wgpu::BufferUsages::COPY_DST;
-        }
-        if self.contains(BufferUsage::INDEX) {
-            usages |= wgpu::BufferUsages::INDEX;
-        }
-        if self.contains(BufferUsage::VERTEX) {
-            usages |= wgpu::BufferUsages::VERTEX;
-        }
-        if self.contains(BufferUsage::UNIFORM) {
-            usages |= wgpu::BufferUsages::UNIFORM;
-        }
-        if self.contains(BufferUsage::STORAGE) {
-            usages |= wgpu::BufferUsages::STORAGE;
-        }
-        if self.contains(BufferUsage::INDIRECT) {
-            usages |= wgpu::BufferUsages::INDIRECT;
-        }
-        usages
     }
 }
 

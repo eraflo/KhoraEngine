@@ -19,6 +19,7 @@ mod command;
 pub(crate) mod context;
 mod conversions;
 mod device;
+mod flag_bridge;
 mod profiler;
 mod resilience;
 mod system;

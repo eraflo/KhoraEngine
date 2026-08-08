@@ -35,6 +35,22 @@ macro_rules! khora_bitflags {
             /// An empty set of flags.
             pub const EMPTY: Self = Self { bits: 0 };
 
+            /// Every bit any declared flag occupies.
+            ///
+            /// Generated from the declaration itself, so it cannot fall behind
+            /// it. A backend bridge asserts against this to prove it translates
+            /// **every** flag rather than the ones somebody remembered — which
+            /// is how [`BufferUsage`] came to drop `MAP_READ`, `MAP_WRITE` and
+            /// `QUERY_RESOLVE` on the way to wgpu, in silence, for as long as
+            /// nobody asked for a mappable buffer.
+            ///
+            /// Composite flags contribute no bits their parts do not already
+            /// contribute, so a coverage check written against this is not
+            /// fooled by an `ALL`.
+            ///
+            /// [`BufferUsage`]: crate::renderer::api::resource::BufferUsage
+            pub const ALL_DECLARED: Self = Self { bits: 0 $( | $flag_value )* };
+
             /// Creates a new bitflag set from the given raw bits.
             /// Bits not corresponding to any defined flag are kept.
             pub const fn from_bits_truncate(bits: $ty) -> Self {
@@ -197,6 +213,41 @@ mod tests {
             const CUSTOM_HIGH_BIT = 1 << 20;
             const NONE_FLAG = 0; // A flag with value 0, should behave like EMPTY
         }
+    }
+
+    /// `ALL_DECLARED` is the union of every declared flag, generated from the
+    /// declaration so it cannot fall behind it.
+    ///
+    /// A composite adds no bits its parts do not already add — `COMBINED_AC`
+    /// here — which is what lets a coverage check written against this treat
+    /// composites as free rather than as flags to be bridged.
+    #[test]
+    fn all_declared_is_the_union_of_every_flag() {
+        let by_hand = TestFlags::FLAG_A
+            | TestFlags::FLAG_B
+            | TestFlags::FLAG_C
+            | TestFlags::FLAG_D
+            | TestFlags::CUSTOM_HIGH_BIT;
+
+        assert_eq!(TestFlags::ALL_DECLARED.bits(), by_hand.bits());
+        assert!(
+            TestFlags::ALL_DECLARED.contains(TestFlags::COMBINED_AC),
+            "a composite is covered by its parts"
+        );
+    }
+
+    /// The reason it exists: something that translates these flags elsewhere
+    /// can prove it covers all of them, instead of covering the ones whoever
+    /// wrote it remembered.
+    #[test]
+    fn a_forgotten_flag_leaves_an_uncovered_bit() {
+        let partial = TestFlags::FLAG_A | TestFlags::FLAG_B;
+
+        assert_ne!(
+            partial.bits(),
+            TestFlags::ALL_DECLARED.bits(),
+            "a partial mapping must be distinguishable from a complete one"
+        );
     }
 
     #[test]
