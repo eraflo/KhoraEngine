@@ -2688,6 +2688,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "image",
+ "khora-script",
  "khora-sdk",
  "khora-tool-ui",
  "log",

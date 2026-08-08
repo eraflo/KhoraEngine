@@ -44,3 +44,8 @@ zip = "8"
 
 # Image decoding (for window icon from PNG)
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+# The seeded `main.erg` must compile. A dev-dependency, so the shipped hub
+# still links nothing of the language.
+khora-script = { path = "../crates/khora-script" }

@@ -115,18 +115,18 @@ pub fn create_project(
 
     std::fs::write(root.join("project.json"), json).context("Failed to write project.json")?;
 
-    // ── assets/scripts/main.kscript ────────────────────────────────────
+    // ── assets/scripts/main.erg ─────────────────────────────────────────
     // Seed an empty gameplay-scripts file so contributors have a starting
-    // point. v1 has no scripting language yet — this is a JSON stub that
-    // documents where game logic will live once the scripting runtime
-    // lands. The file is treated as a regular project asset (the canonical
-    // ext→type map registers `.kscript` under the `script` slot), so it
-    // shows up in the asset browser like any other resource.
+    // point. It is a real Ergon module: the engine compiles every `.erg` under
+    // `assets/scripts` at startup, so a fresh project has gameplay that runs
+    // rather than a placeholder that documents one. The file is a regular
+    // project asset (the canonical ext→type map registers `.erg` under the
+    // `script` slot), so it shows up in the asset browser like any other.
     std::fs::write(
-        root.join("assets").join("scripts").join("main.kscript"),
-        default_main_kscript(name),
+        root.join("assets").join("scripts").join("main.erg"),
+        default_main_erg(name),
     )
-    .context("Failed to write assets/scripts/main.kscript")?;
+    .context("Failed to write assets/scripts/main.erg")?;
 
     // Note: The editor creates the default scene (assets/scenes/default.kscene)
     // on first open if it doesn't exist. No need to create it here.
@@ -173,29 +173,46 @@ fn default_gitignore() -> &'static str {
      "
 }
 
-fn default_main_kscript(project_name: &str) -> String {
-    // Stub: structured JSON that the future Khora script runtime will
-    // interpret. For now it's documentation. The fields chosen here are
-    // forward-compatible with the planned schema:
-    //   - `entry`: which behaviour table to execute first
-    //   - `behaviours`: map of named behaviour blocks
-    //   - `bindings`: which entities/components the behaviour reaches
+/// The behaviour a new project starts with.
+///
+/// It runs. That is the whole point: the hub used to seed a JSON stub whose own
+/// comment said "the scripting runtime is not implemented yet", and nothing
+/// under `assets/scripts` could ever be compiled — a project began with a file
+/// that documented a feature instead of using one.
+///
+/// Deliberately does nothing visible. `OnSpawn` fires once per entity carrying
+/// this behaviour, and a fresh project has none, so the log line appears only
+/// after the author attaches it — which is the moment they want to know the
+/// chain works.
+fn default_main_erg(project_name: &str) -> String {
     format!(
-        "{{\n  \
-            \"_comment\": \"Khora gameplay scripts — data-driven, hot-reloadable. \
-            The scripting runtime is not implemented yet (v0.x); this file is \
-            a placeholder authored by the hub when a project is created. Edit \
-            it once the runtime is available.\",\n  \
-            \"project\": \"{project_name}\",\n  \
-            \"version\": 1,\n  \
-            \"entry\": \"main\",\n  \
-            \"behaviours\": {{\n    \
-                \"main\": {{\n      \
-                    \"on_start\": [],\n      \
-                    \"on_tick\": []\n    \
-                }}\n  \
-            }}\n\
-        }}\n",
+        "// {project_name} — gameplay in Ergon.\n\
+         //\n\
+         // Every `.erg` under `assets/scripts` is compiled when the game starts,\n\
+         // and recompiled when you save. Attach a behaviour to an entity by\n\
+         // adding a `Script` component naming this file and the behaviour.\n\
+         //\n\
+         // A behaviour cannot write the world directly: `SetPosition`, `Despawn`\n\
+         // and the rest queue a command the engine applies at a boundary where\n\
+         // mutation is legal. That is what lets gameplay run beside the renderer\n\
+         // rather than after it.\n\
+         \n\
+         behavior Main {{\n\
+         \x20   // Fields are authored per entity: the inspector edits them, the\n\
+         \x20   // scene file keeps them, and renaming one leaves the others alone.\n\
+         \x20   float speed = 1.0;\n\
+         \n\
+         \x20   // Once per entity, the first time this behaviour runs on it.\n\
+         \x20   void OnSpawn() {{\n\
+         \x20       Log(\"{project_name}: Main is running\");\n\
+         \x20   }}\n\
+         \n\
+         \x20   // Once per frame, if the frame budget allows. Out of budget, this\n\
+         \x20   // is deferred whole rather than cut short — a half-run decision is\n\
+         \x20   // worse than a late one.\n\
+         \x20   void Update(float dt) {{\n\
+         \x20   }}\n\
+         }}\n",
         project_name = project_name
     )
 }
@@ -399,6 +416,51 @@ fn sanitize_name(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// **A new project starts with a file that compiles.**
+    ///
+    /// The hub used to seed a JSON stub that no compiler could read, and no
+    /// project could have working gameplay out of the box. A seed that does not
+    /// compile is worse than the stub was: it fails at the first launch, and
+    /// the author cannot tell their mistake from ours.
+    #[test]
+    fn the_seeded_behaviour_compiles() {
+        let source = super::default_main_erg("Demo");
+
+        let lexed = khora_script::lex(&source);
+        assert!(
+            lexed.diagnostics.is_empty(),
+            "seed does not lex: {:?}",
+            lexed.diagnostics
+        );
+
+        let parsed = khora_script::parse(lexed.tokens);
+        assert!(
+            parsed.diagnostics.is_empty(),
+            "seed does not parse: {:?}",
+            parsed.diagnostics
+        );
+
+        let checked = khora_script::check(&parsed.module);
+        assert!(
+            checked.diagnostics.is_empty(),
+            "seed does not check: {:?}",
+            checked.diagnostics
+        );
+
+        let compiled = khora_script::compile(&parsed.module);
+        assert!(
+            compiled.diagnostics.is_empty(),
+            "seed does not compile: {:?}",
+            compiled.diagnostics
+        );
+    }
+
+    /// The project's name reaches the file, so the first log line names it.
+    #[test]
+    fn the_seed_carries_the_project_name() {
+        assert!(super::default_main_erg("Nimbus").contains("Nimbus"));
+    }
+
     use super::*;
 
     #[test]
