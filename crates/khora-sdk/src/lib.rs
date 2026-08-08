@@ -75,6 +75,7 @@
 mod engine;
 mod game_world;
 mod run_default;
+pub mod scripts;
 mod traits;
 mod vessel;
 pub mod winit_adapters;

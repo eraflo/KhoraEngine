@@ -203,6 +203,12 @@ pub struct ScriptRuntime {
     /// convention `AgentFrameStatusMap` sets for scheduler-measured timings,
     /// applied to the counters only the lane can produce.
     last_report: ScriptRunReport,
+    /// How many instances the last run found with no compiled module.
+    ///
+    /// Kept only so the warning fires on a *transition*: an entity naming a
+    /// module nobody compiled would otherwise print once per frame, which is
+    /// how a real message becomes noise somebody filters out.
+    last_unloaded: usize,
     /// Measured instructions per millisecond on this machine.
     ///
     /// The lane corrects it from what a run actually cost, and the agent reads
@@ -234,6 +240,7 @@ impl Default for ScriptRuntime {
             instances: HashMap::new(),
             pending: EventQueue::new(),
             last_report: ScriptRunReport::default(),
+            last_unloaded: 0,
             rate: INITIAL_RATE,
         }
     }
@@ -277,6 +284,28 @@ impl ScriptRuntime {
     /// What the last run did.
     pub fn last_report(&self) -> &ScriptRunReport {
         &self.last_report
+    }
+
+    /// Reports instances whose module is not compiled, when the count changes.
+    ///
+    /// The failure it names is the one that hid for a long time: the channel
+    /// carrying compiled programs was only ever filled by one binary, so in the
+    /// editor and the sandbox this table stayed empty and every instance was
+    /// passed over without a word.
+    pub fn report_unloaded(&mut self, unloaded: usize) {
+        if unloaded == self.last_unloaded {
+            return;
+        }
+        self.last_unloaded = unloaded;
+
+        if unloaded > 0 {
+            log::warn!(
+                "script lane: {unloaded} instance(s) name a module with no compiled program                  — {} module(s) are loaded. Is the project's script root mounted                  (`khora_sdk::scripts::mount`)?",
+                self.programs.len()
+            );
+        } else {
+            log::info!("script lane: every instance now has a compiled program");
+        }
     }
 
     /// Measured instructions per millisecond, for turning a budget into fuel.

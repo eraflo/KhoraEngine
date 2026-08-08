@@ -38,13 +38,12 @@ use crate::khora_core::asset::AssetUUID;
 use crate::khora_core::renderer::api::scene::Mesh;
 use crate::winit_adapters::WinitWindowProvider;
 use crate::{
-    run_winit, AgentProvider, AssetIo, AssetService, AssetWatcher, AudioDevice, AudioMixBus,
-    AudioStream, CpalAudioDevice, DccService, DefaultMixBus, EngineApp, FileLoader,
-    FileSystemResolver, GameWorld, IndexBuilder, InputEvent, LayoutSystem, MeshDispatcher,
-    MetricsRegistry, PackLoader, PhaseProvider, PhysicsProvider, PipelineSystem,
-    RapierPhysicsWorld, RenderSystem, Runtime, SceneFile, SerializationService, SoundData,
-    StandardTextRenderer, StreamInfo, SymphoniaDecoder, TaffyLayoutSystem, TextRenderer,
-    WgpuPipelineSystem, WgpuRenderSystem, WindowConfig, TEXT_WGSL,
+    run_winit, AgentProvider, AssetIo, AssetService, AudioDevice, AudioMixBus, AudioStream,
+    CpalAudioDevice, DccService, DefaultMixBus, EngineApp, FileLoader, FileSystemResolver,
+    GameWorld, IndexBuilder, InputEvent, LayoutSystem, MeshDispatcher, MetricsRegistry, PackLoader,
+    PhaseProvider, PhysicsProvider, PipelineSystem, RapierPhysicsWorld, RenderSystem, Runtime,
+    SceneFile, SerializationService, SoundData, StandardTextRenderer, StreamInfo, SymphoniaDecoder,
+    TaffyLayoutSystem, TextRenderer, WgpuPipelineSystem, WgpuRenderSystem, WindowConfig, TEXT_WGSL,
 };
 use khora_io::asset::PackManifest;
 use serde::Deserialize;
@@ -424,57 +423,15 @@ pub fn run_default() -> Result<()> {
             }
         }
 
-        // Hot-reload, for both `.wgsl` and `.erg`: when running against a loose
-        // `assets/` tree, watch the whole thing so edits recompose shader
-        // modules and recompile script modules in place. The two data systems
-        // read the same stream from their own cursors — one drained channel
-        // would give every event to whichever ran first.
+        // Hot-reload for both `.wgsl` and `.erg`, rooted beside the executable.
+        // One watcher over the whole tree is one OS handle, and the two data
+        // systems read the same stream from their own cursors. With no such
+        // directory — a packed runtime — nothing is watched and the backends
+        // serve their embedded sources.
         //
-        // The whole tree rather than `assets/shaders`, because scripts live
-        // beside shaders and one watcher covering both is one OS handle. With no
-        // such directory — a packed runtime — nothing is watched and the
-        // backends serve their embedded sources.
-        let assets_dir = exe_dir.join("assets");
-        if assets_dir.is_dir() {
-            match AssetWatcher::new(&assets_dir) {
-                Ok(watcher) => {
-                    runtime.resources.insert(Arc::new(watcher));
-                    log::info!(
-                        "khora-sdk run_default: watching {} for hot-reload",
-                        assets_dir.display()
-                    );
-                }
-                Err(e) => log::warn!(
-                    "khora-sdk run_default: hot-reload disabled ({}): {:#}",
-                    assets_dir.display(),
-                    e
-                ),
-            }
-        }
-
-        // Where recompiled modules wait for the frame that applies them. Shared
-        // between the pump that writes and the agent that drains, which is why
-        // it is a resource rather than a field on either.
-        let pending_scripts = khora_io::script_hot_reload::reload_channel();
-
-        // The initial load. The pump reacts to *changes*, so without this a game
-        // starts with no programs and its scripts only begin working once their
-        // author saves a file. It takes the same road a reload does, so a
-        // program reaches the runtime one way rather than two.
-        let script_dir = assets_dir.join("scripts");
-        if script_dir.is_dir() {
-            let loaded = khora_io::script_hot_reload::load_all(&script_dir, &pending_scripts);
-            log::info!("khora-sdk run_default: compiled {loaded} script module(s)");
-        }
-        runtime.resources.insert(pending_scripts);
-
-        // Where the engine raises events for scripts. Inserted whether or not
-        // anything raises one yet, so a producer only has to `push` — a queue
-        // that has to be created before it can be written to is a queue somebody
-        // forgets to create.
-        runtime
-            .resources
-            .insert(khora_core::script::engine_event_channel());
+        // The queues themselves are inserted by the engine bootstrap for every
+        // application; only the root is this launcher's business.
+        crate::scripts::mount(runtime, &exe_dir.join("assets"));
     })?;
     Ok(())
 }

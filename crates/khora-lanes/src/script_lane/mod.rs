@@ -176,6 +176,12 @@ impl Lane for BudgetedScriptLane {
             runtime.observe_rate(report.spent, elapsed);
         }
 
+        // Said once per transition, not once per frame: an entity naming an
+        // uncompiled module would otherwise print at the frame rate. The
+        // previous state is what makes it a transition — the runtime remembers
+        // how many it reported last time.
+        runtime.report_unloaded(report.unloaded);
+
         // Held for the next frame. Both halves: what this frame's behaviors
         // raised, and what the frame could not tell a behavior because its turn
         // was deferred or it was mid-`await`. Keeping only the first made

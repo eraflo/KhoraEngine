@@ -32,6 +32,15 @@ pub struct ScriptRunReport {
     pub deferred: usize,
     /// Behaviors that faulted this frame and were disabled.
     pub faulted: usize,
+    /// Instances whose module is not in the runtime's program table.
+    ///
+    /// An entity naming a script nobody compiled. This used to be a silent
+    /// `continue`, on the assumption that whatever failed to supply the module
+    /// would say so — and nothing did. The scripting channel was, for most of
+    /// this engine's life, never filled outside one binary: a correct `.erg` on
+    /// a correct entity produced no behaviour and **no message**, which is the
+    /// hardest kind of failure to find.
+    pub unloaded: usize,
     /// Fuel actually spent.
     pub spent: u64,
     /// What this frame's scripts raised, for the next frame to deliver.

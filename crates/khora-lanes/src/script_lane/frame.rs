@@ -72,9 +72,14 @@ pub fn run_behaviors(
         }
 
         let Some(compiled) = runtime.program(&program.module) else {
-            // The module has not been compiled — an asset still loading, or a
-            // scene naming a script that is not there. Neither is this lane's
-            // to fix, and both are reported by whatever failed to supply it.
+            // The module is not in the program table — nobody compiled it, or
+            // nobody wired the channel that carries compiled programs here.
+            //
+            // Counted rather than passed over. The comment that used to sit
+            // here said both causes were "reported by whatever failed to supply
+            // it"; neither was, and that assumption hid a subsystem that looked
+            // wired and was not.
+            report.unloaded += 1;
             continue;
         };
         // A handle, not the program: the runtime is borrowed mutably below for

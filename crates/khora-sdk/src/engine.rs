@@ -257,6 +257,26 @@ impl<A: EngineApp> EngineCore<A> {
             Arc::new(Mutex::new(khora_lanes::script_lane::ScriptRuntime::new()));
         runtime.services.insert(script_runtime);
 
+        // The two queues that feed it, inserted for **every** application
+        // rather than by one binary's launcher.
+        //
+        // They used to live in `run_default`, which only `khora-runtime` calls.
+        // The editor and the sandbox therefore ran the scripting agent and its
+        // lane over a runtime whose program table could never be filled — a
+        // correct `.erg` on a correct entity produced no behaviour and no
+        // message. An empty channel costs nothing; not having one costs a
+        // subsystem that looks wired and is not.
+        //
+        // Filling them is the application's job, because the root to watch is
+        // the exe's `assets/` for a game and the open project for the editor.
+        // See `khora_sdk::scripts::mount`.
+        runtime
+            .resources
+            .insert(khora_io::script_hot_reload::reload_channel());
+        runtime
+            .resources
+            .insert(khora_core::script::engine_event_channel());
+
         // Create the game world
         let mut game_world = GameWorld::new();
 

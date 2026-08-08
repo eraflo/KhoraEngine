@@ -243,3 +243,58 @@ mod tests {
         assert!(loader.load("absent.erg").is_none());
     }
 }
+
+#[cfg(test)]
+mod shipped_script_tests {
+    use super::*;
+
+    /// **Every `.erg` versioned in this repository compiles.**
+    ///
+    /// The sandbox's scripts are the only worked examples the documentation has,
+    /// and a broken example is worse than none — a reader cannot tell their
+    /// mistake from ours. This walks the tree rather than naming files, so a
+    /// script added tomorrow is covered without anyone remembering to add it.
+    #[test]
+    fn the_sandbox_scripts_compile() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/sandbox/assets/scripts");
+        let Ok(root) = root.canonicalize() else {
+            // A checkout without the example tree is not a failure of this crate.
+            return;
+        };
+
+        let loader = DiskLoader::new(&root);
+        let mut compiled_any = false;
+
+        for entry in std::fs::read_dir(&root).expect("script directory is readable") {
+            let path = entry.expect("directory entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("erg") {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .expect("utf-8 file name");
+
+            let result = compile_module(&loader, name);
+
+            assert!(
+                result.diagnostics.is_empty(),
+                "{name} does not compile: {:?}",
+                result.diagnostics
+            );
+            assert!(
+                result.program.is_some(),
+                "{name} produced no program despite reporting no diagnostic"
+            );
+            compiled_any = true;
+        }
+
+        assert!(
+            compiled_any,
+            "no `.erg` found under {} — the worked examples are the proof the \
+             chain works, and losing them would be silent",
+            root.display()
+        );
+    }
+}

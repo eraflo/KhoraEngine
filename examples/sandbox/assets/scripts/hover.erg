@@ -1,0 +1,37 @@
+// The first Ergon module versioned in this repository.
+//
+// It exists to prove the chain end to end — a `.erg` on disk is found, compiled,
+// attached to an entity through the `Script` component, budgeted by GORNA, and
+// its effects applied to the world. Until this file, every part of that chain
+// was tested in isolation and none of it ran in an application.
+//
+// Keep it small and visible. A behaviour that is hard to see cannot tell you
+// whether the chain works.
+
+// Lifts an entity and lets it fall back, forever.
+//
+// `SetPosition` queues a `WorldCommand`; nothing here writes the world directly,
+// which is what lets the scripting lane run beside the other agents.
+behavior Hover {
+    // Authored per entity: the inspector edits these, the scene file keeps them,
+    // and a hot-reload that renames a field leaves the others alone.
+    float speed = 1.5;
+    float height = 0.4;
+    float ground = 0.8;
+
+    // How far through the cycle we are. State, not configuration — it survives
+    // an edit to this file because it is carried across by name.
+    float phase = 0.0;
+
+    void Update(float dt) {
+        phase = phase + dt * speed;
+
+        // A triangle wave. No trigonometry native exists yet, and this reads the
+        // same at a glance: `phase - Floor(phase)` is the fractional part, and
+        // folding it about its midpoint gives a rise and a fall.
+        float t = phase - Floor(phase);
+        float lift = height * (1.0 - Abs(t * 2.0 - 1.0));
+
+        SetPosition(this, Vec3(-2.2, ground + lift, -1.4));
+    }
+}
