@@ -12,7 +12,7 @@ khora-core = { path = "../khora-core" }
 # Graphics dependencies (wgpu backend)
 wgpu = "29.0"
 raw-window-handle = "0.6"
-pollster = "0.4"
+pollster = "1.0"
 async-trait = "0.1"
 bytemuck = { version = "1.25.0", features = ["derive"] }
 
