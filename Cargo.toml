@@ -51,7 +51,10 @@ license = "Apache-2.0"
 
 
 [profile.dev]
-opt-level = 1 # Enable minimal optimization even in dev
+# Workspace crates are rebuilt on every change: compile them without
+# optimisation. Dependencies are built once and cached, so they get optimised
+# (below) — wgpu, rapier and the rest stay fast at run time.
+opt-level = 0
 # Drop full debuginfo from dev builds. With `line-tables-only` we still get
 # stack traces (file + line numbers in panics, RUST_BACKTRACE=1, profiler
 # samples) but skip the per-symbol type tables that account for the bulk
@@ -63,6 +66,7 @@ debug = "line-tables-only"
 # Strip debuginfo from dependencies so re-fetching crates doesn't re-bloat
 # target/. Workspace crates keep their `debug` setting from above.
 [profile.dev.package."*"]
+opt-level = 2
 debug = "line-tables-only"
 
 [profile.release]

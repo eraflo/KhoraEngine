@@ -309,7 +309,7 @@ fn an_entity_loaded_without_a_global_transform_is_still_simulated() {
         agent.on_initialize(&mut ctx);
     }
 
-    // Exactly what `recipe_strategy` produces: the authored components, and no
+    // Exactly what the recipe strategy produces: the authored components, and no
     // derived one.
     let entity = world.spawn((
         Transform::new(Vec3::new(0.0, 10.0, 0.0), Default::default(), Vec3::ONE),

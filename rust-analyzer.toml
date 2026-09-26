@@ -1,0 +1,5 @@
+# rust-analyzer checks the code on every save. With its own target directory
+# (`target/rust-analyzer`) those checks no longer take cargo's lock on `target/`
+# and block the builds and test runs started from a terminal.
+[cargo]
+targetDir = true

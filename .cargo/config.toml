@@ -6,3 +6,9 @@ sandbox = "run -p sandbox"
 # in release. The typical contributor's dev loop in one command. See
 # `xtask/src/commands/dev.rs` for what each step does.
 hub-dev = "xtask hub-dev"
+
+# Link with `rust-lld`, which ships with the Rust toolchain, instead of MSVC's
+# link.exe. A workspace test run links some forty test binaries, each pulling
+# in wgpu, rapier and egui; link time dominates a rebuild after a small change.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld.exe"
