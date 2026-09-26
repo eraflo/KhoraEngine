@@ -19,7 +19,7 @@ the next frame resumes rather than restarts. Suspension is the normal path, not 
 - Language: `crates/khora-script/src/` — `lexer/`, `parser/`, `ast/`, `bytecode/`, `vm/`, `types/`.
 - Persistent state: `crates/khora-script/src/arena/` (`PersistentStore`, `Persisted`) — what survives a
   hot-reload, matched **by name** because a slot means nothing across a recompile.
-- Value bridge: `crates/khora-script/src/bridge.rs` + `khora-core/src/script/table.rs` — the single
+- Value bridge: `crates/khora-script/src/bridge/mod.rs` + `khora-core/src/script/table.rs` — the single
   X-macro table driving `ScriptValue` ↔ `Value` ↔ `Persisted` ↔ JSON.
 - Hot-reload: `crates/khora-script/src/reload.rs`, `crates/khora-io/src/script_hot_reload.rs`.
 - Compiling a module and everything it imports: `crates/khora-io/src/script_compile.rs`

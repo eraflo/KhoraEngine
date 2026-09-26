@@ -19,9 +19,9 @@
 //! resolving to an entity, `Vec3` surviving a register, the checker agreeing
 //! that a native takes one — has to hold for that to happen at all.
 
-use super::{Host, NativeRegistry};
 use crate::bytecode::compile_with;
 use crate::lexer::lex;
+use crate::native::{Host, NativeRegistry};
 use crate::parser::parse;
 use crate::types::check_with;
 use crate::vm::{Fault, Machine, Run, Value};

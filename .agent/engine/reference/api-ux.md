@@ -8,7 +8,7 @@ The `khora-sdk` surface that game developers touch: `EngineApp`, `GameWorld`, `V
 `run_default`, the `prelude`, and the re-export discipline that keeps internals private.
 
 ## Key files
-- SDK: `crates/khora-sdk/src/` (`lib.rs`, `engine.rs`, `game_world.rs`, `vessel.rs`, `traits.rs`, `run_default.rs`).
+- SDK: `crates/khora-sdk/src/` (`lib.rs`, `engine/`, `game_world.rs`, `vessel.rs`, `traits.rs`, `run_default.rs`).
 - I/O surface: `khora-io` (asset/serialization), `khora-plugins`.
 
 ## Principles

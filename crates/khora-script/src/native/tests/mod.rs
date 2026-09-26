@@ -19,6 +19,9 @@
 //! compiler emitting an index, the VM finding it in the registry — has to agree
 //! for that to happen at all.
 
+mod engine_types;
+mod world;
+
 use super::{builtins, Host, NativeContext, NativeError, NativeFn, NativeRegistry, NativeTy};
 use crate::bytecode::compile_with;
 use crate::lexer::lex;

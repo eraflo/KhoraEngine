@@ -1,0 +1,555 @@
+// Copyright 2025 eraflo
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! `#[derive(Component)]`: the `Component` impl, the serializable mirror and
+//! the registrations a component needs to be stored, saved and inspected.
+
+use proc_macro::TokenStream;
+use quote::{format_ident, quote};
+use syn::{parse_macro_input, Data, DeriveInput, Fields};
+
+pub fn derive_component(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+    let vis = &input.vis;
+    let serializable_name = format_ident!("Serializable{}", name);
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    // Generate Component impl
+    let component_impl = quote! {
+        impl #impl_generics crate::ecs::component::Component for #name #ty_generics #where_clause {}
+    };
+
+    // Parse struct fields
+    let fields = match &input.data {
+        Data::Struct(data) => &data.fields,
+        _ => {
+            return TokenStream::from(quote! {
+                #component_impl
+                compile_error!("Component derive only supports structs");
+            });
+        }
+    };
+
+    // ── Field-SoA layout opt-in: `#[component(layout = "soa")]` ──────────
+    // A component can declare a field-split (Structure-of-Arrays) physical
+    // column — the AGDF compute-friendly layout. v1 supports structs whose
+    // fields are all `f32`. When opted in, the generated `Component` impl routes
+    // storage through a `FieldSoaColumn<Self>` and a `SoaLayout` impl describes
+    // the field↔lane mapping. Otherwise `component_impl` stays the default
+    // (empty marker) and no `SoaLayout` is emitted.
+    //
+    // As in the `no_serializable` scan below, other `key = value` metas are
+    // consumed so `layout` is found whatever the key order.
+    let layout_soa = input.attrs.iter().any(|attr| {
+        if !attr.path().is_ident("component") {
+            return false;
+        }
+        let mut soa = false;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("layout") {
+                let s = meta.value()?.parse::<syn::LitStr>()?;
+                soa = s.value() == "soa";
+            } else if meta.input.peek(syn::Token![=]) {
+                let _ = meta.value()?.parse::<syn::Expr>()?;
+            }
+            Ok(())
+        });
+        soa
+    });
+
+    let (component_impl, soa_layout_impl) = if layout_soa {
+        let named = match fields {
+            Fields::Named(n) => n,
+            _ => {
+                return TokenStream::from(quote! {
+                    #component_impl
+                    compile_error!("#[component(layout = \"soa\")] requires a struct with named fields");
+                });
+            }
+        };
+        let mut field_idents = Vec::new();
+        for f in &named.named {
+            let is_f32 = matches!(&f.ty, syn::Type::Path(p) if p.path.is_ident("f32"));
+            if !is_f32 {
+                return TokenStream::from(quote! {
+                    #component_impl
+                    compile_error!("#[component(layout = \"soa\")] (v1) supports only `f32` fields");
+                });
+            }
+            field_idents.push(f.ident.clone().unwrap());
+        }
+        let field_count = field_idents.len();
+        let field_names: Vec<String> = field_idents.iter().map(|i| i.to_string()).collect();
+        let field_idx: Vec<usize> = (0..field_count).collect();
+
+        let soa_layout = quote! {
+            impl #impl_generics crate::ecs::soa::SoaLayout for #name #ty_generics #where_clause {
+                const FIELD_COUNT: usize = #field_count;
+                const FIELD_NAMES: &'static [&'static str] = &[#(#field_names),*];
+                fn scatter_push(&self, fields: &mut [Vec<f32>]) {
+                    #(fields[#field_idx].push(self.#field_idents);)*
+                }
+                fn scatter_set(&self, fields: &mut [Vec<f32>], row: usize) {
+                    #(fields[#field_idx][row] = self.#field_idents;)*
+                }
+                fn gather(fields: &[Vec<f32>], row: usize) -> Self {
+                    Self { #(#field_idents: fields[#field_idx][row]),* }
+                }
+            }
+        };
+        let comp_impl = quote! {
+            impl #impl_generics crate::ecs::component::Component for #name #ty_generics #where_clause {
+                fn make_column() -> Box<dyn crate::ecs::page::AnyVec> {
+                    Box::new(crate::ecs::soa::FieldSoaColumn::<#name>::new())
+                }
+                fn push_into_column(self, column: &mut dyn crate::ecs::page::AnyVec) {
+                    column
+                        .as_any_mut()
+                        .downcast_mut::<crate::ecs::soa::FieldSoaColumn<#name>>()
+                        .expect("SoA column type mismatch")
+                        .push(self);
+                }
+                fn copy_row_between(
+                    src: &dyn crate::ecs::page::AnyVec,
+                    src_row: usize,
+                    dst: &mut dyn crate::ecs::page::AnyVec,
+                ) {
+                    let value = src
+                        .as_any()
+                        .downcast_ref::<crate::ecs::soa::FieldSoaColumn<#name>>()
+                        .expect("SoA column type mismatch")
+                        .get(src_row);
+                    dst.as_any_mut()
+                        .downcast_mut::<crate::ecs::soa::FieldSoaColumn<#name>>()
+                        .expect("SoA column type mismatch")
+                        .push(value);
+                }
+                fn clone_from_column(column: &dyn crate::ecs::page::AnyVec, row: usize) -> Self {
+                    column
+                        .as_any()
+                        .downcast_ref::<crate::ecs::soa::FieldSoaColumn<#name>>()
+                        .expect("SoA column type mismatch")
+                        .get(row)
+                }
+                fn set_in_column(self, column: &mut dyn crate::ecs::page::AnyVec, row: usize) {
+                    column
+                        .as_any_mut()
+                        .downcast_mut::<crate::ecs::soa::FieldSoaColumn<#name>>()
+                        .expect("SoA column type mismatch")
+                        .set(row, self);
+                }
+            }
+        };
+        (comp_impl, soa_layout)
+    } else {
+        (component_impl, quote! {})
+    };
+
+    // Check for #[component(no_serializable)] attribute.
+    //
+    // The `else if` branch consumes unknown `key = value` metas (`domain`,
+    // `provenance`, `layout`) so the walk reaches this flag whatever the order
+    // the keys were written in — without it, `parse_nested_meta` aborts on the
+    // first unconsumed value and the discarded error makes the miss silent.
+    let no_serializable = input.attrs.iter().any(|attr| {
+        if !attr.path().is_ident("component") {
+            return false;
+        }
+        let mut no = false;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("no_serializable") {
+                no = true;
+            } else if meta.input.peek(syn::Token![=]) {
+                let _ = meta.value()?.parse::<syn::Expr>()?;
+            }
+            Ok(())
+        });
+        no
+    });
+
+    // Parse the type-level `#[component(...)]` keys that carry a value:
+    //
+    // * `domain = <SemanticDomain variant>` — the component self-registers its
+    //   domain into `World` via `inventory`, so the domain lives on the type
+    //   instead of a hand-maintained list in `World::new`.
+    // * `provenance = <ComponentProvenance variant>` — who writes the component.
+    //   Absent means `Authored`: a component is the author's data unless it says
+    //   otherwise, so engine-written types opt out explicitly rather than every
+    //   authored type having to opt in.
+    //
+    // Both keys are read in ONE pass. `parse_nested_meta` requires every meta it
+    // walks to be fully consumed, so a closure that recognises only one key
+    // aborts on the other's `= value` — and because the result is discarded, the
+    // failure is silent and the second key is simply never seen. Hence the
+    // trailing branch that consumes unknown `key = value` pairs (`layout = ...`)
+    // so parsing continues past them.
+    let (domain_ident, provenance_ident): (Option<syn::Ident>, syn::Ident) = {
+        let mut domain = None;
+        let mut provenance = None;
+        for attr in &input.attrs {
+            if !attr.path().is_ident("component") {
+                continue;
+            }
+            let _ = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("domain") {
+                    domain = Some(meta.value()?.parse::<syn::Ident>()?);
+                } else if meta.path.is_ident("provenance") {
+                    provenance = Some(meta.value()?.parse::<syn::Ident>()?);
+                } else if meta.input.peek(syn::Token![=]) {
+                    let _ = meta.value()?.parse::<syn::Expr>()?;
+                }
+                Ok(())
+            });
+        }
+        let provenance = provenance
+            .unwrap_or_else(|| syn::Ident::new("Authored", proc_macro::Span::call_site().into()));
+        (domain, provenance)
+    };
+
+    let domain_registration = match &domain_ident {
+        Some(domain) => quote! {
+            inventory::submit! {
+                crate::ecs::ComponentDomainRegistration {
+                    register: |world: &mut crate::ecs::World| {
+                        world.register_component::<#name>(crate::ecs::SemanticDomain::#domain);
+                    }
+                }
+            }
+        },
+        None => quote! {},
+    };
+
+    if no_serializable {
+        return TokenStream::from(quote! {
+            #component_impl
+            #domain_registration
+            #soa_layout_impl
+        });
+    }
+
+    // Separate included and skipped fields
+    let mut included_fields = Vec::new();
+    let mut skipped_fields = Vec::new();
+
+    for field in fields.iter() {
+        let is_skip = field.attrs.iter().any(|attr| {
+            if !attr.path().is_ident("component") {
+                return false;
+            }
+            let mut skip = false;
+            let _ = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("skip") {
+                    skip = true;
+                }
+                Ok(())
+            });
+            skip
+        });
+
+        if is_skip {
+            skipped_fields.push(field);
+        } else {
+            included_fields.push(field);
+        }
+    }
+
+    // Generate Serializable struct fields (only included fields)
+    let serializable_field_defs: Vec<_> = included_fields
+        .iter()
+        .map(|f| {
+            let fvis = &f.vis;
+            let fname = &f.ident;
+            let ftype = &f.ty;
+            if let Some(fname) = fname {
+                quote! { #fvis #fname: #ftype }
+            } else {
+                quote! { #fvis #ftype }
+            }
+        })
+        .collect();
+
+    // Generate field assignments for From<Original> → Serializable
+    let to_serializable_assigns: Vec<_> = included_fields
+        .iter()
+        .map(|f| {
+            let fname = &f.ident;
+            if fname.is_some() {
+                quote! { #fname: value.#fname }
+            } else {
+                quote! { value.#fname }
+            }
+        })
+        .collect();
+
+    // Generate field assignments for From<Serializable> → Original
+    // Included fields come from the serializable, skipped fields use Default
+    let from_serializable_included: Vec<_> = included_fields
+        .iter()
+        .map(|f| {
+            let fname = &f.ident;
+            if fname.is_some() {
+                quote! { #fname: serializable.#fname }
+            } else {
+                quote! { serializable.#fname }
+            }
+        })
+        .collect();
+
+    let from_serializable_skipped: Vec<_> = skipped_fields
+        .iter()
+        .map(|f| {
+            let fname = &f.ident;
+            if fname.is_some() {
+                quote! { #fname: Default::default() }
+            } else {
+                quote! { Default::default() }
+            }
+        })
+        .collect();
+
+    let all_from_fields: Vec<_> = from_serializable_included
+        .into_iter()
+        .chain(from_serializable_skipped)
+        .collect();
+
+    // The field schema, built from the very list that feeds the `Serializable`
+    // mirror. Sharing the list is the point: a field the mirror omits is a field
+    // the schema must omit too, and deriving them separately would let
+    // `#[component(skip)]` be honoured in one place and forgotten in the other.
+    let field_schema = {
+        let entries: Vec<_> = match fields {
+            Fields::Named(_) => included_fields
+                .iter()
+                .map(|f| {
+                    let name = f.ident.as_ref().expect("named field");
+                    let ty = &f.ty;
+                    quote! {
+                        crate::scene::FieldSchema {
+                            name: stringify!(#name),
+                            ty: stringify!(#ty),
+                        }
+                    }
+                })
+                .collect(),
+            Fields::Unnamed(_) => included_fields
+                .iter()
+                .enumerate()
+                .map(|(i, f)| {
+                    // A tuple field has no name; its index is what an inspector
+                    // shows and what a generator addresses it by.
+                    let index = i.to_string();
+                    let ty = &f.ty;
+                    quote! {
+                        crate::scene::FieldSchema {
+                            name: #index,
+                            ty: stringify!(#ty),
+                        }
+                    }
+                })
+                .collect(),
+            // A marker carries no data, and saying so is the truthful answer.
+            Fields::Unit => Vec::new(),
+        };
+        // Always `Fields`: this derive only accepts structs.
+        quote! { crate::scene::ComponentShape::Fields(&[#(#entries),*]) }
+    };
+
+    // Determine struct kind for Serializable.
+    //
+    // The `Serializable<Name>` mirror is a generated implementation detail
+    // used by the scene serialization pipeline and the editor inspector.
+    // It is `pub` because callers of `#[derive(Component)]` can be public,
+    // but it is not part of the documented public API surface. We tag it
+    // with `#[allow(missing_docs)]` so that crates with `#![warn(missing_docs)]`
+    // do not require users to document every mirror field by hand.
+    let serializable_struct = match fields {
+        Fields::Named(_) if serializable_field_defs.is_empty() => {
+            // All fields skipped → unit struct
+            quote! {
+                #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+                #[allow(missing_docs)]
+                #[doc(hidden)]
+                #vis struct #serializable_name;
+            }
+        }
+        Fields::Named(_) => {
+            quote! {
+                #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+                #[allow(missing_docs)]
+                #[doc(hidden)]
+                #vis struct #serializable_name {
+                    #(#serializable_field_defs),*
+                }
+            }
+        }
+        Fields::Unnamed(_) => {
+            let field_types: Vec<_> = included_fields.iter().map(|f| &f.ty).collect();
+            let field_vis: Vec<_> = included_fields.iter().map(|f| &f.vis).collect();
+            quote! {
+                #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+                #[allow(missing_docs)]
+                #[doc(hidden)]
+                #vis struct #serializable_name(#(#field_vis #field_types),*);
+            }
+        }
+        Fields::Unit => {
+            quote! {
+                #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+                #[allow(missing_docs)]
+                #[doc(hidden)]
+                #vis struct #serializable_name;
+            }
+        }
+    };
+
+    // Generate From impls
+    let from_original_to_serializable = if matches!(fields, Fields::Named(_))
+        && !serializable_field_defs.is_empty()
+    {
+        quote! {
+            impl From<#name> for #serializable_name {
+                fn from(value: #name) -> Self {
+                    Self {
+                        #(#to_serializable_assigns),*
+                    }
+                }
+            }
+        }
+    } else if matches!(fields, Fields::Unnamed(_)) {
+        let indices: Vec<syn::Index> = (0..included_fields.len()).map(syn::Index::from).collect();
+        quote! {
+            impl From<#name> for #serializable_name {
+                fn from(value: #name) -> Self {
+                    Self(#(value.#indices),*)
+                }
+            }
+        }
+    } else {
+        // A marker — a unit struct, or one whose every field is skipped. The
+        // mirror above is generated for it; without these two impls it had a
+        // type and no way to reach it, so the registration did not compile and
+        // the only way to declare such a component was
+        // `#[component(no_serializable)]` — which drops the registration
+        // entirely and makes the marker vanish from every scene file. A marker
+        // carries no data and all of its meaning: its presence *is* the value.
+        quote! {
+            impl From<#name> for #serializable_name {
+                fn from(_: #name) -> Self {
+                    Self
+                }
+            }
+        }
+    };
+
+    let from_serializable_to_original = if matches!(fields, Fields::Named(_))
+        && !serializable_field_defs.is_empty()
+    {
+        quote! {
+            impl From<#serializable_name> for #name {
+                fn from(serializable: #serializable_name) -> Self {
+                    Self {
+                        #(#all_from_fields),*
+                    }
+                }
+            }
+        }
+    } else if matches!(fields, Fields::Unnamed(_)) {
+        let indices: Vec<syn::Index> = (0..included_fields.len()).map(syn::Index::from).collect();
+        quote! {
+            impl From<#serializable_name> for #name {
+                fn from(serializable: #serializable_name) -> Self {
+                    Self(#(serializable.#indices),*)
+                }
+            }
+        }
+    } else {
+        // The other direction for a marker. `Default` rather than `Self`,
+        // because a struct whose fields were all skipped has fields to fill.
+        quote! {
+            impl From<#serializable_name> for #name {
+                fn from(_: #serializable_name) -> Self {
+                    Self::default()
+                }
+            }
+        }
+    };
+
+    let expanded = quote! {
+        #component_impl
+        #domain_registration
+        #soa_layout_impl
+        #serializable_struct
+        #from_original_to_serializable
+        #from_serializable_to_original
+
+        // Auto-register this component for scene serialization AND for the
+        // editor's generic inspector (the latter via the `*_json` pair,
+        // which goes through serde on the same Serializable mirror as
+        // bincode does — so anything tagged `#[component(skip)]` is
+        // omitted from both paths automatically).
+        inventory::submit! {
+            crate::scene::ComponentRegistration {
+                type_id: std::any::TypeId::of::<#name>(),
+                type_name: stringify!(#name),
+                shape: #field_schema,
+                provenance: crate::ecs::ComponentProvenance::#provenance_ident,
+                serialize_recipe: |world, entity| {
+                    // By value so it works for any column layout (AoS or field-SoA).
+                    world.clone_component::<#name>(entity).map(|c| {
+                        bincode::encode_to_vec(&<#serializable_name>::from(c), bincode::config::standard())
+                            .unwrap_or_default()
+                    })
+                },
+                deserialize_recipe: |world, entity, data| {
+                    let (s, _): (#serializable_name, _) = bincode::decode_from_slice_with_context(
+                        data, bincode::config::standard(), ()
+                    ).map_err(|e| e.to_string())?;
+                    world.add_component(entity, <#name>::from(s)).ok();
+                    Ok(())
+                },
+                create_default: |world, entity| {
+                    world.add_component(entity, <#name>::default()).ok();
+                    Ok(())
+                },
+                to_json: |world, entity| {
+                    world.clone_component::<#name>(entity).and_then(|c| {
+                        serde_json::to_value(<#serializable_name>::from(c)).ok()
+                    })
+                },
+                from_json: |world, entity, value| {
+                    let s: #serializable_name = serde_json::from_value(value.clone())
+                        .map_err(|e| e.to_string())?;
+                    let new_value = <#name>::from(s);
+                    // Layout-agnostic write: update in place if present, else add.
+                    if !world.set_component(entity, new_value.clone()) {
+                        world.add_component(entity, new_value)
+                            .map_err(|e| format!("{:?}", e))?;
+                    }
+                    Ok(())
+                },
+                remove: |world, entity| {
+                    // Surgical single-component remove — preserves every
+                    // other component on the entity (any domain).
+                    match world.remove_component::<#name>(entity) {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(format!("{:?}", e)),
+                    }
+                },
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}

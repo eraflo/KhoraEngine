@@ -15,7 +15,7 @@
 //! CPU→GPU mesh + material projection — the data-layer replacement for
 //! `MeshPreparationSystem`.
 //!
-//! [`ProjectionRegistry`] is created once in `engine.rs` bootstrap, registered
+//! [`ProjectionRegistry`] is created once in the SDK bootstrap (`khora-sdk/src/engine/bootstrap.rs`), registered
 //! into `ServiceRegistry`, and called via `sync_all()` in `tick_with_services()`
 //! **before** the scheduler dispatches agents.
 //!

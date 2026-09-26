@@ -17,7 +17,7 @@ a GORNA budget. Non-negotiating work uses a service (`AssetService`, `EcsMainten
 3. Declare `ExecutionTiming` (allowed phases, priority, importance, dependencies) and the allowed `EngineMode`.
 4. In `negotiate`, return `NegotiationResponse` options (time, VRAM) per strategy; in `apply_budget`, pick the
    strategy the arbitrator granted; in `execute`, call `Lane::execute(LaneContext{bus, deck, budget})`.
-5. Register the agent in `crates/khora-sdk/src/engine.rs` next to the existing agents.
+5. Register the agent in `crates/khora-sdk/src/engine/bootstrap.rs` next to the existing agents.
 
 ## Hard rules
 - **No method outside the `Agent` trait** — no `start/stop`, builders, or accessors. Private free functions

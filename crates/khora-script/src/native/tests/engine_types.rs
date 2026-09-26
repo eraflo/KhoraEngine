@@ -18,9 +18,9 @@
 //! author expects is the specification, and building the mechanism first would
 //! have let the mechanism decide the shape.
 
-use super::{Host, NativeRegistry};
 use crate::bytecode::compile_with;
 use crate::lexer::lex;
+use crate::native::{Host, NativeRegistry};
 use crate::parser::parse;
 use crate::types::check_with;
 use crate::vm::{Machine, Run, Value};

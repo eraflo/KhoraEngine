@@ -57,8 +57,6 @@ pub mod bridge;
 pub mod bytecode;
 pub mod diagnostics;
 pub mod dispatch;
-#[cfg(test)]
-mod dispatch_tests;
 pub mod lexer;
 pub mod lifecycle;
 pub mod modules;

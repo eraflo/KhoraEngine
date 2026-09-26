@@ -376,16 +376,16 @@ fn every_public_path_of_khora_control_still_resolves() {
 // Paths other crates import today, spelled exactly as they spell them.
 // ---------------------------------------------------------------------------
 
-// khora-sdk/src/engine.rs:23 (and khora-sdk/src/lib.rs:139 for the last three)
+// khora-sdk/src/engine/ (and khora-sdk/src/lib.rs for the last three)
 use khora_control::{substrate, DccConfig, DccService, EngineMode};
-// khora-sdk/src/lib.rs:139,148,149
+// khora-sdk/src/lib.rs
 use khora_control::registry::AgentRegistry;
 use khora_control::Context as DccContext;
 use khora_control::Context as EngineContext;
 
 #[test]
 fn paths_used_by_other_crates_still_resolve() {
-    // khora-sdk/src/engine.rs: `substrate::run_data_systems`, `ExecutionScheduler`,
+    // khora-sdk/src/engine/: `substrate::run_data_systems`, `ExecutionScheduler`,
     // `Context { hardware: HardwareState::default(), .. }`.
     let _ = substrate::run_data_systems;
     let _ = type_name::<khora_control::ExecutionScheduler>();

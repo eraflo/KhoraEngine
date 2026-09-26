@@ -389,3 +389,6 @@ pub struct Delivered {
     /// host, in [`awaiting`](Host::awaiting).
     pub suspended: Option<Machine>,
 }
+
+#[cfg(test)]
+mod tests;

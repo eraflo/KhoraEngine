@@ -93,43 +93,9 @@ pub use winit_adapters::WinitWindowProvider;
 // ─────────────────────────────────────────────────────────────────────
 // Editor UI re-exports — so editor panels can import from SDK only
 // ─────────────────────────────────────────────────────────────────────
-pub mod editor_ui {
-    //! Editor UI types re-exported from khora_core.
-    //!
-    //! Includes everything from `khora_core::ui::editor::*` plus the
-    //! shared `UiTheme` and font types that live one level up in
-    //! `khora_core::ui` (because the hub uses them too).
-    pub use khora_core::ui::editor::*;
-    pub use khora_core::ui::fonts::{FontHandle, FontPack, NamedFont};
-    pub use khora_core::ui::theme::UiTheme;
-}
+pub mod editor_ui;
 
-pub mod tool_ui {
-    //! UI surface for standalone Khora tools (the hub, future asset
-    //! cookers, …).
-    //!
-    //! These tools depend on `khora-sdk` and reach the egui backend
-    //! exclusively through this module — never directly via `egui`
-    //! or `eframe`. The day the engine swaps backend, this re-export
-    //! list moves to whichever crate provides the new
-    //! [`run_native`] + [`AppContext`] implementation.
-    //!
-    //! This module is the **runtime** seam only. Khora's *look* — the brand
-    //! palette and the shared widget vocabulary — is cosmetics and lives in
-    //! the separate `khora-tool-ui` crate, which the SDK deliberately does
-    //! **not** depend on, so a game built on Khora never compiles the engine
-    //! vendor's brand. Tools depend on both.
-
-    pub use khora_core::math::{LinearRgba, Rect2D, Vec2};
-    pub use khora_core::ui::editor::{
-        FontFamilyHint, Icon, InlineEditEvent, Interaction, TextAlign,
-    };
-    pub use khora_core::ui::{
-        Align, Align2, App, AppContext, AppLifecycle, CornerRadius, FontHandle, FontPack, Margin,
-        NamedFont, Stroke, UiBuilder, UiTheme,
-    };
-    pub use khora_infra::ui::egui::app::{run_native, WindowConfigInput, WindowIconInput};
-}
+pub mod tool_ui;
 
 // ─────────────────────────────────────────────────────────────────────
 // Re-exports from internal crates — the SDK is the single entry point
@@ -199,11 +165,7 @@ pub use khora_core::renderer::api::scene::mesh::Mesh;
 pub use khora_data::EnvironmentMap;
 
 /// Renderer sub-modules (used by editor gizmo)
-pub mod renderer {
-    pub use khora_core::renderer::api::resource;
-    pub use khora_core::renderer::api::scene;
-    pub use khora_core::renderer::light;
-}
+pub mod renderer;
 
 // WgpuRenderSystem (used by editor main)
 pub use khora_infra::WgpuRenderSystem;
@@ -252,81 +214,7 @@ pub use winit;
 // Re-export inventory for editor
 pub extern crate inventory;
 
-pub mod prelude {
-    //! Common imports for game development.
-    //!
-    //! Glob-import this module to bring the everyday game-dev types into scope:
-    //! input ([`InputEvent`], [`KeyCode`], [`MouseButton`]), timing
-    //! ([`Time`], [`SharedTime`]), assets ([`AssetHandle`], [`AssetUUID`]), and
-    //! the [`ecs`], [`materials`], and [`math`] sub-modules. The window config
-    //! types [`WindowConfig`] and [`WindowIcon`] come along too.
-    //!
-    //! # Examples
-    //!
-    //! ```rust
-    //! use khora_sdk::prelude::*;
-    //! use khora_sdk::prelude::math::Vec3;
-    //!
-    //! // ECS components, math, and materials are all reachable through the prelude.
-    //! let _transform = ecs::Transform::from_translation(Vec3::new(0.0, 1.0, 0.0));
-    //! let _material = materials::StandardMaterial::default();
-    //! let _red = math::LinearRgba::RED;
-    //! ```
-
-    // SDK types
-    pub use crate::{WindowConfig, WindowIcon, PRIMARY_VIEWPORT};
-
-    // Assets
-    pub use khora_core::asset::{AssetHandle, AssetUUID};
-
-    // Memory tracking (for `#[global_allocator]`)
-    pub use khora_core::memory::SaaTrackingAllocator;
-
-    // Input
-    pub use khora_core::platform::{InputEvent, KeyCode, MouseButton};
-
-    // Per-frame timing — real frame delta, fixed sim step, interpolation alpha.
-    // `SharedTime` is the interior-mutable handle to cache in `setup` and read
-    // each frame in `update`.
-    pub use khora_core::time::{SharedTime, Time};
-
-    // ECS types
-    pub mod ecs {
-        //! Core ECS types for game logic.
-        pub use khora_core::ecs::entity::EntityId;
-        pub use khora_core::physics::{BodyType, ColliderShape};
-        pub use khora_core::renderer::light::{DirectionalLight, LightType, PointLight, SpotLight};
-        pub use khora_data::ecs::{
-            AudioSource, Camera, Children, Collider, Component, ComponentBundle, GlobalTransform,
-            Light, MaterialRef, MeshRef, Name, Parent, ProceduralMeshKind, ProjectionType,
-            RigidBody, Script, Tag, Transform, Without,
-        };
-        // `Script` is how an entity gets gameplay logic. It was missing from
-        // this list, which meant no game could attach a behaviour through the
-        // SDK at all — the only road in was the editor's generic
-        // "+ Add Component" card.
-        pub use khora_core::script::ScriptValue;
-    }
-
-    // Materials
-    pub mod materials {
-        //! Built-in material types.
-        //!
-        //! [`AlphaMode`] is re-exported alongside them because it is the type of
-        //! `StandardMaterial::alpha_mode`: without it a game could not select
-        //! masked or blended transparency through the SDK.
-        pub use khora_core::asset::{
-            AlphaMode, EmissiveMaterial, StandardMaterial, UnlitMaterial, WireframeMaterial,
-        };
-    }
-
-    // Math
-    pub mod math {
-        //! Math types and utilities.
-        pub use khora_core::math::LinearRgba;
-        pub use khora_core::math::*;
-    }
-}
+pub mod prelude;
 
 // Re-export InputEvent at crate level for trait usage
 pub use khora_core::platform::{InputEvent, KeyCode, MouseButton};
