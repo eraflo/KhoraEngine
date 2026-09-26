@@ -12,19 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Generic helpers and containers.
+//! Defines the `Mat3` and `Mat4` types and associated operations.
 
-pub mod dynamic_uniform_buffer;
-pub mod enums;
-pub mod flags;
-pub mod half_float;
-pub mod uniform_ring_buffer;
+use super::{Quaternion, Vec2, Vec3, Vec4, EPSILON};
 
-pub use self::dynamic_uniform_buffer::*;
-pub use self::enums::*;
-pub use self::flags::*;
-pub use self::half_float::*;
-pub use self::uniform_ring_buffer::*;
+mod mat3;
+mod mat4;
 
-mod atlas;
-pub use atlas::*;
+pub use mat3::Mat3;
+pub use mat4::Mat4;
+
+#[cfg(test)]
+mod tests;

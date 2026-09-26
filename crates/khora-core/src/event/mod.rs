@@ -25,7 +25,6 @@
 
 mod channel;
 #[cfg(test)]
-#[path = "channel_tests.rs"]
-mod channel_tests;
+mod tests;
 
 pub use self::channel::{Channel, Cursor, Supersedes, WhenFull};

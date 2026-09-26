@@ -12,19 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Generic helpers and containers.
+//! Debug geometry a backend can draw.
 
-pub mod dynamic_uniform_buffer;
-pub mod enums;
-pub mod flags;
-pub mod half_float;
-pub mod uniform_ring_buffer;
+use crate::math::{LinearRgba, Vec3};
 
-pub use self::dynamic_uniform_buffer::*;
-pub use self::enums::*;
-pub use self::flags::*;
-pub use self::half_float::*;
-pub use self::uniform_ring_buffer::*;
-
-mod atlas;
-pub use atlas::*;
+/// A simple line for debug rendering.
+#[derive(Debug, Clone, Copy)]
+pub struct DebugLine {
+    /// Start point.
+    pub start: Vec3,
+    /// End point.
+    pub end: Vec3,
+    /// Color.
+    pub color: LinearRgba,
+}

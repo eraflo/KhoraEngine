@@ -68,163 +68,35 @@ use std::collections::HashMap;
 use std::fmt;
 use std::marker::PhantomData;
 
+mod error;
+mod kind;
+mod registry;
+
+pub use error::LaneError;
+pub use kind::LaneKind;
+pub use registry::LaneRegistry;
+
 pub mod bus;
+
 pub mod context_keys;
+
 pub mod deck;
+
 pub mod lock;
+
 pub mod slot;
+
 pub use bus::LaneBus;
+
 pub use context_keys::*;
+
 pub use deck::OutputDeck;
+
 pub use lock::{
     mutex_lock, mutex_lock_render, read_lock, read_lock_render, write_lock, write_lock_render,
 };
+
 pub use slot::SlotGuard;
-
-/// Error type for lane operations.
-#[derive(Debug)]
-pub enum LaneError {
-    /// The lane has not been initialized yet.
-    NotInitialized,
-    /// The execution context passed to the lane has the wrong type.
-    InvalidContext {
-        /// What the lane expected.
-        expected: &'static str,
-        /// Description of what was received.
-        received: String,
-    },
-    /// A `RwLock` / `Mutex` was poisoned by a prior panic.
-    LockPoisoned {
-        /// Which lock — used in the error message for diagnostics.
-        context: &'static str,
-    },
-    /// A required GPU resource (pipeline, buffer, texture, sampler) was
-    /// not present in the registry the lane consulted.
-    MissingResource {
-        /// What kind of resource (e.g. `"pipeline"`, `"buffer"`).
-        kind: &'static str,
-        /// Human-readable key the lane looked up.
-        key: String,
-    },
-    /// A required asset was not present in the registry / cache.
-    MissingAsset {
-        /// Asset kind (`"mesh"`, `"texture"`, …).
-        kind: &'static str,
-        /// Stringified asset id (UUID, name, …).
-        id: String,
-    },
-    /// A domain-specific error occurred during execution.
-    ExecutionFailed(Box<dyn std::error::Error + Send + Sync>),
-    /// A domain-specific error occurred during initialization.
-    InitializationFailed(Box<dyn std::error::Error + Send + Sync>),
-}
-
-impl fmt::Display for LaneError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LaneError::NotInitialized => write!(f, "Lane not initialized"),
-            LaneError::InvalidContext { expected, received } => {
-                write!(
-                    f,
-                    "Invalid lane context: expected {expected}, got {received}"
-                )
-            }
-            LaneError::LockPoisoned { context } => {
-                write!(f, "Lane lock poisoned: {context}")
-            }
-            LaneError::MissingResource { kind, key } => {
-                write!(f, "Missing {kind} resource: {key}")
-            }
-            LaneError::MissingAsset { kind, id } => {
-                write!(f, "Missing {kind} asset: {id}")
-            }
-            LaneError::ExecutionFailed(e) => write!(f, "Lane execution failed: {e}"),
-            LaneError::InitializationFailed(e) => write!(f, "Lane initialization failed: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for LaneError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            LaneError::ExecutionFailed(e) | LaneError::InitializationFailed(e) => Some(e.as_ref()),
-            _ => None,
-        }
-    }
-}
-
-impl LaneError {
-    /// Convenience constructor for a missing context entry.
-    pub fn missing(type_name: &'static str) -> Self {
-        LaneError::InvalidContext {
-            expected: type_name,
-            received: "not found in LaneContext".into(),
-        }
-    }
-
-    /// Convenience constructor for a poisoned lock.
-    pub fn lock_poisoned(context: &'static str) -> Self {
-        LaneError::LockPoisoned { context }
-    }
-
-    /// Convenience constructor for a missing resource.
-    pub fn missing_resource(kind: &'static str, key: impl Into<String>) -> Self {
-        LaneError::MissingResource {
-            kind,
-            key: key.into(),
-        }
-    }
-
-    /// Convenience constructor for a missing asset.
-    pub fn missing_asset(kind: &'static str, id: impl std::fmt::Display) -> Self {
-        LaneError::MissingAsset {
-            kind,
-            id: id.to_string(),
-        }
-    }
-}
-
-/// Classification of lane types, used for routing and filtering.
-///
-/// Agents use this to identify compatible lanes during GORNA negotiation
-/// and lane selection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum LaneKind {
-    /// Main scene rendering (forward, deferred, etc.)
-    Render,
-    /// Shadow map generation
-    Shadow,
-    /// Physics simulation
-    Physics,
-    /// Audio mixing and spatialization
-    Audio,
-    /// Asset loading and processing
-    Asset,
-    /// Scene serialization/deserialization
-    Scene,
-    /// ECS maintenance (compaction, garbage collection)
-    Ecs,
-    /// User interface layout and interaction
-    Ui,
-    /// Gameplay scripts
-    Script,
-}
-
-impl std::fmt::Display for LaneKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LaneKind::Render => write!(f, "Render"),
-            LaneKind::Shadow => write!(f, "Shadow"),
-            LaneKind::Physics => write!(f, "Physics"),
-            LaneKind::Audio => write!(f, "Audio"),
-            LaneKind::Asset => write!(f, "Asset"),
-            LaneKind::Scene => write!(f, "Scene"),
-            LaneKind::Ecs => write!(f, "ECS"),
-            LaneKind::Ui => write!(f, "UI"),
-            LaneKind::Script => write!(f, "Script"),
-        }
-    }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LaneContext — generic type-map for passing data to lanes
@@ -341,79 +213,6 @@ impl fmt::Debug for LaneContext<'_> {
         f.debug_struct("LaneContext")
             .field("entries", &self.data.len())
             .finish()
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// LaneRegistry — generic container for heterogeneous lanes
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// A registry that stores [`Lane`] trait objects for agent use.
-///
-/// Agents use a `LaneRegistry` instead of domain-specific vectors
-/// (e.g., `Vec<Box<dyn RenderLane>>`). This enables developers to add
-/// custom lanes without modifying agent code.
-///
-/// ```rust,ignore
-/// use khora_core::lane::{LaneRegistry, LaneKind};
-///
-/// let mut reg = LaneRegistry::new();
-/// reg.register(Box::new(MyCustomLane::new()));
-///
-/// // Find all render lanes
-/// let render_lanes = reg.find_by_kind(LaneKind::Render);
-/// ```
-pub struct LaneRegistry {
-    lanes: Vec<Box<dyn Lane>>,
-}
-
-impl LaneRegistry {
-    /// Creates an empty registry.
-    pub fn new() -> Self {
-        Self { lanes: Vec::new() }
-    }
-
-    /// Adds a lane to the registry.
-    pub fn register(&mut self, lane: Box<dyn Lane>) {
-        self.lanes.push(lane);
-    }
-
-    /// Finds a lane by its strategy name.
-    pub fn get(&self, name: &str) -> Option<&dyn Lane> {
-        self.lanes
-            .iter()
-            .find(|l| l.strategy_name() == name)
-            .map(|b| b.as_ref())
-    }
-
-    /// Returns all lanes of a given kind.
-    pub fn find_by_kind(&self, kind: LaneKind) -> Vec<&dyn Lane> {
-        self.lanes
-            .iter()
-            .filter(|l| l.lane_kind() == kind)
-            .map(|b| b.as_ref())
-            .collect()
-    }
-
-    /// Returns a slice of all registered lanes.
-    pub fn all(&self) -> &[Box<dyn Lane>] {
-        &self.lanes
-    }
-
-    /// Returns the number of registered lanes.
-    pub fn len(&self) -> usize {
-        self.lanes.len()
-    }
-
-    /// Returns `true` if no lanes are registered.
-    pub fn is_empty(&self) -> bool {
-        self.lanes.is_empty()
-    }
-}
-
-impl Default for LaneRegistry {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

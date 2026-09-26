@@ -20,9 +20,18 @@ use crate::renderer::api::resource::{
     TextureViewDescriptor, TextureViewId,
 };
 use crate::renderer::api::util::enums::{SampleCount, TextureFormat};
-use crate::renderer::api::util::AtlasRect;
 use crate::renderer::GraphicsDevice;
 use std::borrow::Cow;
+
+/// A rect within a texture atlas (UV coordinates).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct AtlasRect {
+    /// Minimum UV coordinates (top-left).
+    pub min: crate::math::Vec2,
+    /// Maximum UV coordinates (bottom-right).
+    pub max: crate::math::Vec2,
+}
 
 /// A dynamic texture atlas that manages allocation and GPU updates.
 pub struct TextureAtlas {

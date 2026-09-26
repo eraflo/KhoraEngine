@@ -16,214 +16,30 @@
 //!
 //! Universal traits and types for physics simulation providers.
 
-use bincode::{Decode, Encode};
-use serde::{Deserialize, Serialize};
+use crate::math::{Quat, Vec3};
 
-use crate::math::{LinearRgba, Quat, Vec3};
+mod collision;
+mod debug;
+mod desc;
+mod handle;
+mod query;
 
-/// Opaque handle to a rigid body in the physics engine.
-///
-/// Carries the backend's slot **and its generation**. A backend that recycles
-/// slots — Rapier does — would otherwise resolve a handle to whatever now
-/// occupies the slot the caller meant, silently: a stale handle would move
-/// somebody else's body rather than fail. See [`Slot`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
-pub struct RigidBodyHandle(pub u64);
-
-/// Opaque handle to a collider in the physics engine.
-///
-/// Carries the slot and its generation, for the reason [`RigidBodyHandle`]
-/// gives.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
-pub struct ColliderHandle(pub u64);
-
-/// A backend slot and the generation that says which occupant is meant.
-///
-/// Both handle types are one of these packed into a `u64`. Packed rather than
-/// two fields because a handle is stored on components and crosses the
-/// serialization boundary, and one number stays one number there.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Slot {
-    /// Which slot in the backend's arena.
-    pub index: u32,
-    /// How many times that slot has been reused before this occupant.
-    pub generation: u32,
-}
-
-impl Slot {
-    /// Packs into the `u64` a handle carries.
-    pub const fn pack(self) -> u64 {
-        (self.generation as u64) << 32 | self.index as u64
-    }
-
-    /// Unpacks what [`pack`](Self::pack) wrote.
-    pub const fn unpack(packed: u64) -> Self {
-        Self {
-            index: packed as u32,
-            generation: (packed >> 32) as u32,
-        }
-    }
-}
-
-impl RigidBodyHandle {
-    /// The slot and generation this addresses.
-    pub const fn slot(self) -> Slot {
-        Slot::unpack(self.0)
-    }
-}
-
-impl ColliderHandle {
-    /// The slot and generation this addresses.
-    pub const fn slot(self) -> Slot {
-        Slot::unpack(self.0)
-    }
-}
-
-/// Two entities beginning or ending contact.
-///
-/// The engine's form of a collision, as distinct from [`CollisionEvent`] which
-/// is the backend's: that one names two colliders, this one names two entities,
-/// and the translation happens where the provider is in hand rather than being
-/// left to whoever consumes it.
-///
-/// **A transition, not a state.** `Started` and `Stopped` say what changed;
-/// "who is touching whom right now" is a different question that this does not
-/// answer, and that a relation between entities would.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Collision {
-    /// Whether contact began or ended.
-    pub kind: CollisionKind,
-    /// One of the two. Which is which carries no meaning — a contact is
-    /// symmetric, and a consumer that cares about one entity checks both.
-    pub a: crate::ecs::entity::EntityId,
-    /// The other.
-    pub b: crate::ecs::entity::EntityId,
-}
-
-/// Whether a [`Collision`] began or ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CollisionKind {
-    /// The two started touching.
-    Started,
-    /// They stopped.
-    Stopped,
-}
-
-impl crate::event::Supersedes for Collision {
-    // Nothing coalesces. Two entities that touch, separate and touch again
-    // within one frame did that twice, and a consumer counting hits is
-    // counting hits.
-}
-
-/// How many collisions are kept for readers that have not caught up.
-///
-/// A heavy frame is hundreds of contacts; this is several frames of one. The
-/// case that reaches it is a consumer that stopped reading, where the oldest
-/// contact is also the least worth delivering.
-pub const COLLISION_BACKLOG: usize = 4096;
-
-/// A channel for the contacts the physics lane reports.
-pub fn collision_channel() -> crate::event::Channel<Collision> {
-    crate::event::Channel::bounded(COLLISION_BACKLOG, crate::event::WhenFull::DropOldest)
-}
-
-/// What one physics step reported, on its way from the lane to the channel.
-///
-/// A deck slot, because that is the sanctioned road out of a lane: a lane that
-/// wrote the shared channel directly would be a lane reaching engine state, and
-/// the scheduler would have no way to know it had.
-#[derive(Debug, Clone, Default)]
-pub struct ContactBatch {
-    /// The contacts, in the order the backend reported them.
-    pub contacts: Vec<Collision>,
-}
-
-/// Defines the type of a rigid body.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
-pub enum BodyType {
-    /// Responds to forces and collisions.
-    Dynamic,
-    /// Fixed in place, does not move.
-    Static,
-    /// Controlled by the user, not by forces.
-    Kinematic,
-}
-
-/// Description for creating a rigid body.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RigidBodyDesc {
-    /// Initial position.
-    pub position: Vec3,
-    /// Initial rotation.
-    pub rotation: Quat,
-    /// Body type.
-    pub body_type: BodyType,
-    /// Linear velocity.
-    pub linear_velocity: Vec3,
-    /// Angular velocity.
-    pub angular_velocity: Vec3,
-    /// Mass of the body in kilograms.
-    pub mass: f32,
-    /// Whether to enable Continuous Collision Detection (CCD).
-    pub ccd_enabled: bool,
-}
-
-/// Description for creating a collider.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ColliderDesc {
-    /// The entity this collider belongs to.
-    ///
-    /// Stamped into the backend so a contact can name **who** touched whom.
-    /// Without it a collision arrives as two backend handles and the only way
-    /// back to entities is to scan every collider component comparing handles —
-    /// linear per contact, and ambiguous the moment a slot is recycled.
-    ///
-    /// `None` for a collider the ECS does not own, which nothing creates today
-    /// and a tool or a query volume might.
-    pub owner: Option<crate::ecs::entity::EntityId>,
-    /// Parent rigid body to attach to (if any).
-    pub parent_body: Option<RigidBodyHandle>,
-    /// Relative or absolute position.
-    pub position: Vec3,
-    /// Relative or absolute rotation.
-    pub rotation: Quat,
-    /// Shape definition.
-    pub shape: ColliderShape,
-    /// Whether to enable collision events for this collider.
-    pub active_events: bool,
-    /// Friction coefficient.
-    pub friction: f32,
-    /// Restitution (bounciness) coefficient.
-    pub restitution: f32,
-}
-
-/// Supported collider shapes.
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
-pub enum ColliderShape {
-    /// Box with half-extents.
-    Box(Vec3),
-    /// Sphere with radius.
-    Sphere(f32),
-    /// Capsule with half-height and radius.
-    Capsule(f32, f32),
-}
-
-impl ColliderShape {
-    /// Computes the axis-aligned bounding box (AABB) for this shape in local space.
-    pub fn compute_aabb(&self) -> crate::math::Aabb {
-        match self {
-            ColliderShape::Box(half_extents) => crate::math::Aabb::from_half_extents(*half_extents),
-            ColliderShape::Sphere(radius) => {
-                crate::math::Aabb::from_half_extents(Vec3::new(*radius, *radius, *radius))
-            }
-            ColliderShape::Capsule(half_height, radius) => {
-                let r = Vec3::new(*radius, *radius, *radius);
-                let h = Vec3::new(0.0, *half_height, 0.0);
-                crate::math::Aabb::from_half_extents(r + h)
-            }
-        }
-    }
-}
+pub use collision::collision_channel;
+pub use collision::Collision;
+pub use collision::CollisionEvent;
+pub use collision::CollisionKind;
+pub use collision::ContactBatch;
+pub use collision::COLLISION_BACKLOG;
+pub use debug::DebugLine;
+pub use desc::BodyType;
+pub use desc::ColliderDesc;
+pub use desc::ColliderShape;
+pub use desc::RigidBodyDesc;
+pub use handle::ColliderHandle;
+pub use handle::RigidBodyHandle;
+pub use handle::Slot;
+pub use query::CharacterControllerOptions;
+pub use query::RaycastHit;
 
 /// Interface contract for any physics engine implementation (e.g., Rapier).
 pub trait PhysicsProvider: Send + Sync {
@@ -302,62 +118,12 @@ pub trait PhysicsProvider: Send + Sync {
     ) -> (Vec3, bool);
 }
 
-/// Options for resolving kinematic character movement.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
-pub struct CharacterControllerOptions {
-    /// Max height of obstacles the character can step over.
-    pub autostep_height: f32,
-    /// Min width of obstacles for autostepping.
-    pub autostep_min_width: f32,
-    /// Whether autostepping is enabled.
-    pub autostep_enabled: bool,
-    /// Max angle for climbing slopes.
-    pub max_slope_climb_angle: f32,
-    /// Min angle for sliding down slopes.
-    pub min_slope_slide_angle: f32,
-    /// Distance to maintain from obstacles.
-    pub offset: f32,
-}
-
-/// Events representing collision start/end.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
-pub enum CollisionEvent {
-    /// Collision between two colliders started.
-    Started(ColliderHandle, ColliderHandle),
-    /// Collision between two colliders stopped.
-    Stopped(ColliderHandle, ColliderHandle),
-}
-
 /// A ray in 3D space.
 ///
 /// Re-exported from [`crate::math`], where it lives alongside the intersection
 /// tests: physics is only one of its callers — editor picking and gizmo
 /// manipulation cast the same rays and must not reinvent the math.
 pub use crate::math::Ray;
-
-/// Information about a raycast hit.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
-pub struct RaycastHit {
-    /// The collider that was hit.
-    pub collider: ColliderHandle,
-    /// Distance from ray origin to hit point.
-    pub distance: f32,
-    /// Normal vector at the hit point.
-    pub normal: Vec3,
-    /// Exact position of the hit.
-    pub position: Vec3,
-}
-
-/// A simple line for debug rendering.
-#[derive(Debug, Clone, Copy)]
-pub struct DebugLine {
-    /// Start point.
-    pub start: Vec3,
-    /// End point.
-    pub end: Vec3,
-    /// Color.
-    pub color: LinearRgba,
-}
 
 #[cfg(test)]
 mod handle_tests {
