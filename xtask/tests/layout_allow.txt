@@ -1,0 +1,87 @@
+# Ratchet allowlist for xtask/tests/layout.rs.
+#
+# Format: <check-name> <repo-relative path>  # reason naming the batch
+# Every layout check reads this list. A check fails on a violation that is not
+# listed, and on a listed path that no longer violates it: remove the line in
+# the commit that fixes the path. The list only shrinks. A check with no entry
+# here is strict.
+
+# --- no_file_and_folder_module_pair ------------------------------------------
+
+no_file_and_folder_module_pair crates/khora-script/src/bridge.rs  # becomes bridge/mod.rs in B2 (2.34)
+
+# --- test_files_follow_convention (T1) ---------------------------------------
+
+test_files_follow_convention crates/khora-core/src/event/channel_tests.rs  # T1 test layout, B2
+test_files_follow_convention crates/khora-core/src/event/mod.rs  # #[path] on channel_tests; T1 test layout, B2
+test_files_follow_convention crates/khora-data/src/ecs/hierarchy_tests.rs  # T1 test layout, B2
+test_files_follow_convention crates/khora-lanes/src/script_lane/event_tests.rs  # to script_lane/tests/ in B2 (2.23)
+test_files_follow_convention crates/khora-lanes/src/script_lane/lifecycle_tests.rs  # to script_lane/tests/ in B2 (2.23)
+test_files_follow_convention crates/khora-lanes/src/script_lane/reload_tests.rs  # to script_lane/tests/ in B2 (2.23)
+test_files_follow_convention crates/khora-lanes/src/script_lane/save_tests.rs  # to script_lane/tests/ in B2 (2.23)
+test_files_follow_convention crates/khora-script/src/dispatch_tests.rs  # to dispatch/tests/ in B2 (2.35)
+test_files_follow_convention crates/khora-script/src/native/engine_types_tests.rs  # to native/tests/ in B2 (2.35)
+test_files_follow_convention crates/khora-script/src/native/world_tests.rs  # to native/tests/ in B2 (2.35)
+
+# --- non_test_code_under_700_lines -------------------------------------------
+
+non_test_code_under_700_lines crates/khora-control/src/gorna/mod.rs  # 741 non-test lines; split in B2 (2.2)
+non_test_code_under_700_lines crates/khora-control/src/scheduler.rs  # 1119 non-test lines; split in B2 (2.1)
+non_test_code_under_700_lines crates/khora-control/src/service.rs  # 764 non-test lines; split in B2 (2.3)
+non_test_code_under_700_lines crates/khora-core/src/math/matrix.rs  # 890 non-test lines; not itemised in B2 yet
+non_test_code_under_700_lines crates/khora-core/src/math/vector.rs  # 862 non-test lines; not itemised in B2 yet
+non_test_code_under_700_lines crates/khora-data/src/ecs/query.rs  # 750 non-test lines; not itemised in B2 yet
+non_test_code_under_700_lines crates/khora-data/src/ecs/world.rs  # 1619 non-test lines; split in B2 (2.6)
+non_test_code_under_700_lines crates/khora-data/src/gpu/ibl.rs  # 1013 non-test lines; not itemised in B2 yet
+non_test_code_under_700_lines crates/khora-editor/src/app.rs  # 926 non-test lines; split in B2 (2.42)
+non_test_code_under_700_lines crates/khora-editor/src/commands.rs  # 886 non-test lines; split in B2 (2.41)
+non_test_code_under_700_lines crates/khora-editor/src/panels/asset_browser/mod.rs  # 1593 non-test lines; split in B2 (2.39)
+non_test_code_under_700_lines crates/khora-editor/src/panels/control_plane.rs  # 1064 non-test lines; split in B2 (2.40)
+non_test_code_under_700_lines crates/khora-editor/src/panels/scene_tree.rs  # 896 non-test lines; not itemised in B2 yet
+non_test_code_under_700_lines crates/khora-editor/src/panels/viewport.rs  # 825 non-test lines; split in B2 (2.42)
+non_test_code_under_700_lines crates/khora-infra/src/graphics/shader/system.rs  # 870 non-test lines; not itemised in B2 yet
+non_test_code_under_700_lines crates/khora-infra/src/graphics/wgpu/device.rs  # 1977 non-test lines; split in B2 (2.28)
+non_test_code_under_700_lines crates/khora-infra/src/graphics/wgpu/system.rs  # 1352 non-test lines; split in B2 (2.29)
+non_test_code_under_700_lines crates/khora-infra/src/ui/egui/ui_builder.rs  # 959 non-test lines; not itemised in B2 yet
+non_test_code_under_700_lines crates/khora-lanes/src/render_lane/forward_plus_lane.rs  # 1409 non-test lines; split in B2 (2.20)
+non_test_code_under_700_lines crates/khora-lanes/src/render_lane/lit_forward_lane.rs  # 1075 non-test lines; split in B2 (2.21)
+non_test_code_under_700_lines crates/khora-lanes/src/render_lane/simple_unlit_lane.rs  # 737 non-test lines; split in B2 (2.22)
+non_test_code_under_700_lines crates/khora-lanes/src/render_lane/standard_pbr_lane.rs  # 774 non-test lines; split in B2 (2.22)
+non_test_code_under_700_lines crates/khora-script/src/bytecode/mod.rs  # 920 non-test lines; split by the Ergon specs (02, 04, 05, 09)
+non_test_code_under_700_lines crates/khora-script/src/dispatch_tests.rs  # 1289 lines, all tests; becomes tests/ in B2 (2.35)
+non_test_code_under_700_lines crates/khora-script/src/vm/mod.rs  # 828 non-test lines; split by the Ergon specs (02, 04, 05, 09)
+non_test_code_under_700_lines crates/khora-sdk/src/engine.rs  # 815 non-test lines; split in B2 (2.37)
+non_test_code_under_700_lines examples/sandbox/src/main.rs  # 743 non-test lines; split in B2 (2.45)
+
+# --- wgsl_only_in_shader_tree (T9) -------------------------------------------
+
+wgsl_only_in_shader_tree crates/khora-lanes/src/render_lane/shaders/pipelines/egui.wgsl  # to infra shaders/pipelines/ in B4 (4.4)
+wgsl_only_in_shader_tree crates/khora-lanes/src/render_lane/shaders/pipelines/text.wgsl  # to infra shaders/pipelines/ in B4 (4.4)
+
+# --- every_agent_folder_has_agent_rs -----------------------------------------
+
+every_agent_folder_has_agent_rs crates/khora-agents/src/audio_agent  # agent into agent.rs in B2 (2.24)
+every_agent_folder_has_agent_rs crates/khora-agents/src/script_agent  # agent into agent.rs in B2 (2.24)
+every_agent_folder_has_agent_rs crates/khora-agents/src/ui_agent  # agent into agent.rs in B2 (2.24)
+
+# --- lanes_mirror_agents (T2) ------------------------------------------------
+
+lanes_mirror_agents crates/khora-lanes/src/overlay_lane  # out of render_lane/ in B4
+lanes_mirror_agents crates/khora-lanes/src/shadow_lane  # render_lane/shadows_lane/ moves up in B4
+lanes_mirror_agents crates/khora-lanes/src/skybox_lane  # out of render_lane/ in B4
+lanes_mirror_agents crates/khora-lanes/src/ui_lane  # render_lane/ui_render_lane.rs moves in B4
+
+# --- no_duplicate_asset_files ------------------------------------------------
+
+no_duplicate_asset_files hub/assets/fonts/Fraunces-Regular.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
+no_duplicate_asset_files hub/assets/fonts/Fraunces-SemiBold.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
+no_duplicate_asset_files hub/assets/fonts/Geist-Medium.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
+no_duplicate_asset_files hub/assets/fonts/Geist-Regular.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
+no_duplicate_asset_files hub/assets/fonts/Geist-SemiBold.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
+no_duplicate_asset_files hub/assets/fonts/GeistMono-Medium.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
+no_duplicate_asset_files hub/assets/fonts/GeistMono-Regular.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
+no_duplicate_asset_files hub/assets/fonts/LICENSE-Fraunces.txt  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
+no_duplicate_asset_files hub/assets/fonts/LICENSE-Geist.txt  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
+no_duplicate_asset_files hub/assets/fonts/LICENSE-Lucide.txt  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
+no_duplicate_asset_files hub/assets/fonts/Lucide.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
+no_duplicate_asset_files hub/assets/khora_small_logo.png  # shared logo to khora-tool-ui/assets/ in B3 (3.6)
