@@ -1692,3 +1692,302 @@ mod script_domain_migration_tests {
         }
     }
 }
+
+// --- Dead migration orphans vs. `remove_from_page` ---
+//
+// A same-domain migration leaves the entity's old row in its source page until
+// compaction. `despawn` only removes the rows its metadata points at, so that
+// orphan keeps the dead entity's id. Removing any other row of the page later
+// swaps the dead orphan into the hole; its owner has no live metadata to patch.
+
+#[test]
+fn compaction_after_despawn_skips_dead_orphan_owner() {
+    let mut world = compaction_world();
+    let a = world.spawn(RenderId(1));
+    let b = world.spawn(RenderId(2));
+    world.add_component(a, RenderTag).expect("add_component");
+    world.add_component(b, RenderTag).expect("add_component");
+    assert!(world.despawn(b));
+
+    // The {RenderId} page holds [a_orphan, b_orphan]; removing a's orphan
+    // swaps b's dead orphan into row 0.
+    world.run_compaction(usize::MAX);
+
+    assert_eq!(total_rows(&world), 1, "only a's live row remains");
+    assert_eq!(world.get::<RenderId>(a).copied(), Some(RenderId(1)));
+    assert_eq!(world.get::<RenderTag>(a).copied(), Some(RenderTag));
+}
+
+#[test]
+fn despawn_neighbour_of_dead_orphan_does_not_panic() {
+    let mut world = compaction_world();
+    let a = world.spawn(RenderId(1));
+    let b = world.spawn(RenderId(2));
+    world.add_component(b, RenderTag).expect("add_component");
+    assert!(world.despawn(b));
+
+    // Removing a's row (row 0) swaps b's dead orphan (last row) into it.
+    assert!(world.despawn(a));
+
+    while world.run_compaction(16) > 0 {}
+    assert_eq!(total_rows(&world), 0, "every row was dead");
+}
+
+#[test]
+fn dead_orphan_swap_leaves_recycled_index_untouched() {
+    let mut world = compaction_world();
+    let a = world.spawn(RenderId(1));
+    let b = world.spawn(RenderId(2));
+    world.add_component(b, RenderTag).expect("add_component");
+    assert!(world.despawn(b));
+
+    // `c` recycles b's index with a newer generation, in another page. The
+    // orphan's stored id (old generation) must not resolve to c's metadata.
+    let c = world.spawn(Position(3));
+    assert_eq!(c.index, b.index);
+    assert_ne!(c.generation, b.generation);
+
+    assert!(world.despawn(a));
+    assert_eq!(world.get::<Position>(c).copied(), Some(Position(3)));
+
+    while world.run_compaction(16) > 0 {}
+    assert_eq!(total_rows(&world), 1, "only c's live row remains");
+    assert_eq!(world.get::<Position>(c).copied(), Some(Position(3)));
+}
+
+#[test]
+fn compaction_repoints_live_row_of_orphan_owner_in_same_page() {
+    let mut world = compaction_world();
+    // Add then remove a component: the entity migrates away and back into the
+    // same {RenderId} page, which now holds [e_orphan, e_live].
+    let e = world.spawn(RenderId(1));
+    world.add_component(e, RenderTag).expect("add_component");
+    world
+        .remove_component::<RenderTag>(e)
+        .expect("remove_component");
+
+    // Removing e's orphan (row 0) moves e's own live row into it; e's
+    // metadata must follow even though the removed row carries the same id.
+    while world.run_compaction(16) > 0 {}
+
+    assert_eq!(total_rows(&world), 1);
+    assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(1)));
+    assert_eq!(world.get::<RenderTag>(e), None);
+    assert!(world.despawn(e));
+    assert_eq!(total_rows(&world), 0);
+}
+
+// --- Orphans vs. multi-domain pages, recycled indices, churn ---
+
+#[test]
+fn multi_domain_entity_migrating_back_is_repointed_on_neighbour_despawn() {
+    let mut world = compaction_world();
+    let x = world.spawn((Position(0), RenderId(0)));
+    let e = world.spawn((Position(1), RenderId(10)));
+    world.add_component(e, RenderTag).expect("add_component");
+    world
+        .remove_component::<RenderTag>(e)
+        .expect("remove_component");
+    // P = [x, e_orphan, e_live]; both of e's domains point at (P, 2).
+
+    // Despawning x moves e's live row (old last row) into row 0: BOTH domain
+    // locations must follow, although e also owns the orphan at row 1.
+    assert!(world.despawn(x));
+    assert_eq!(world.get::<Position>(e).copied(), Some(Position(1)));
+    assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(10)));
+    assert_eq!(world.query::<&Position>().count(), 1);
+    assert_eq!(world.query::<&RenderId>().count(), 1);
+
+    while world.run_compaction(16) > 0 {}
+    assert_eq!(total_rows(&world), 1);
+    assert_eq!(world.get::<Position>(e).copied(), Some(Position(1)));
+    assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(10)));
+    assert!(world.despawn(e));
+    assert_eq!(total_rows(&world), 0);
+}
+
+#[test]
+fn despawn_entity_whose_orphans_share_its_page() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let e = world.spawn(RenderId(1));
+    world.add_component(e, RenderTag).expect("add_component");
+    world
+        .remove_component::<RenderTag>(e)
+        .expect("remove_component");
+    world.add_component(e, RenderTag).expect("add_component");
+    world
+        .remove_component::<RenderTag>(e)
+        .expect("remove_component");
+    let x = world.spawn(RenderId(2));
+    // {RenderId} page = [e_orph, e_orph, e_live, x]; despawn e while its own
+    // orphans share the page with its live row and a live neighbour.
+    assert!(world.despawn(e));
+    assert_eq!(world.get::<RenderId>(x).copied(), Some(RenderId(2)));
+    let ids: Vec<EntityId> = world
+        .query::<(EntityId, &RenderId)>()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(ids, vec![x], "only x is live");
+
+    while world.run_compaction(1) > 0 {}
+    assert_eq!(total_rows(&world), 1);
+    assert_eq!(world.get::<RenderId>(x).copied(), Some(RenderId(2)));
+}
+
+#[test]
+fn recycled_index_in_same_page_as_dead_orphan() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let a = world.spawn(RenderId(1));
+    let b = world.spawn(RenderId(2));
+    world.add_component(b, RenderTag).expect("add_component");
+    assert!(world.despawn(b));
+    // c recycles b's index and lands in the SAME {RenderId} page as b's orphan.
+    let c = world.spawn(RenderId(3));
+    assert_eq!(c.index, b.index);
+    // Page = [a, b_orph(old gen), c(new gen)].
+    assert!(world.despawn(a)); // moves c into row 0
+    assert_eq!(world.get::<RenderId>(c).copied(), Some(RenderId(3)));
+    let ids: Vec<EntityId> = world
+        .query::<(EntityId, &RenderId)>()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(ids, vec![c]);
+
+    while world.run_compaction(16) > 0 {}
+    assert_eq!(total_rows(&world), 1);
+    assert_eq!(world.get::<RenderId>(c).copied(), Some(RenderId(3)));
+    assert!(world.get::<RenderId>(b).is_none());
+}
+
+/// Deterministic model-based churn: spawn / add / remove / despawn /
+/// remove_component_domain / budget-1 compaction, checked after every step.
+#[test]
+fn model_based_churn_with_partial_compaction() {
+    use khora_core::ecs::entity::EntityId;
+    use std::collections::HashMap;
+
+    #[derive(Clone, Copy, Debug)]
+    struct Model {
+        id: i32,
+        pos: Option<i32>,
+        tag: bool,
+    }
+
+    let mut world = compaction_world();
+    let mut live: Vec<(EntityId, Model)> = Vec::new();
+    let mut dead: Vec<EntityId> = Vec::new();
+    let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = move || {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (seed >> 33) as usize
+    };
+    let mut counter = 0i32;
+
+    for step in 0..3000 {
+        let op = next() % 8;
+        match op {
+            0 | 1 => {
+                counter += 1;
+                let e = if next() % 2 == 0 {
+                    world.spawn(RenderId(counter))
+                } else {
+                    world.spawn((Position(counter), RenderId(counter)))
+                };
+                let pos = world.get::<Position>(e).map(|p| p.0);
+                live.push((
+                    e,
+                    Model {
+                        id: counter,
+                        pos,
+                        tag: false,
+                    },
+                ));
+            }
+            2 | 3 if !live.is_empty() => {
+                let i = next() % live.len();
+                let (e, m) = &mut live[i];
+                if m.tag {
+                    world.remove_component::<RenderTag>(*e).expect("remove");
+                    m.tag = false;
+                } else {
+                    world.add_component(*e, RenderTag).expect("add");
+                    m.tag = true;
+                }
+            }
+            4 if !live.is_empty() => {
+                let i = next() % live.len();
+                let (e, _) = live.swap_remove(i);
+                assert!(world.despawn(e), "step {step}: despawn live");
+                dead.push(e);
+            }
+            5 if !live.is_empty() => {
+                let i = next() % live.len();
+                let (e, m) = &mut live[i];
+                if m.pos.is_some() {
+                    assert!(world.remove_component_domain::<Position>(*e).is_some());
+                    m.pos = None;
+                }
+            }
+            _ => {
+                world.run_compaction(1);
+            }
+        }
+
+        for (e, m) in &live {
+            assert_eq!(
+                world.get::<RenderId>(*e).map(|r| r.0),
+                Some(m.id),
+                "step {step}: RenderId of {e:?}"
+            );
+            assert_eq!(
+                world.get::<RenderTag>(*e).is_some(),
+                m.tag,
+                "step {step}: RenderTag of {e:?}"
+            );
+            assert_eq!(
+                world.get::<Position>(*e).map(|p| p.0),
+                m.pos,
+                "step {step}: Position of {e:?}"
+            );
+        }
+        for d in &dead {
+            assert!(
+                world.get::<RenderId>(*d).is_none(),
+                "step {step}: dead {d:?}"
+            );
+        }
+        let mut seen: HashMap<EntityId, i32> = HashMap::new();
+        for (id, r) in world.query::<(EntityId, &RenderId)>() {
+            assert!(
+                seen.insert(id, r.0).is_none(),
+                "step {step}: duplicate row for {id:?}"
+            );
+        }
+        assert_eq!(seen.len(), live.len(), "step {step}: RenderId query count");
+        for (e, m) in &live {
+            assert_eq!(seen.get(e), Some(&m.id), "step {step}: query value {e:?}");
+        }
+        let tagged = live.iter().filter(|(_, m)| m.tag).count();
+        assert_eq!(
+            world.query::<(&RenderId, &RenderTag)>().count(),
+            tagged,
+            "step {step}: tagged count"
+        );
+        let with_pos = live.iter().filter(|(_, m)| m.pos.is_some()).count();
+        assert_eq!(
+            world.query::<&Position>().count(),
+            with_pos,
+            "step {step}: Position count"
+        );
+    }
+
+    while world.run_compaction(16) > 0 {}
+    assert_eq!(total_rows(&world), live.len(), "no orphan rows after drain");
+    for (e, m) in &live {
+        assert_eq!(world.get::<RenderId>(*e).map(|r| r.0), Some(m.id));
+    }
+}

@@ -158,6 +158,10 @@ impl World {
     /// this page under more than one domain, so every one of its locations that
     /// pointed at the page's old last row is repointed at `location` — patching a
     /// single domain would leave the others dangling. O(domains) per page, no scan.
+    ///
+    /// The moved row may be a migration orphan whose owner is dead (despawned, or
+    /// its index recycled under a newer generation): there is no live metadata to
+    /// patch, so it is left for compaction.
     fn remove_from_page(&mut self, location: PageIndex) {
         let page = &mut self.storage.pages[location.page_id as usize];
         if page.entities.is_empty() {
@@ -165,8 +169,13 @@ impl World {
         }
 
         let old_last_row = (page.entities.len() - 1) as u32;
-        let last_entity_in_page = page.entities[old_last_row as usize];
+        let moved_entity = page.entities[old_last_row as usize];
         page.swap_remove_row(location.row_index);
+
+        // Removing the last row moves nothing.
+        if location.row_index == old_last_row {
+            return;
+        }
 
         // The last row moved into the vacated slot. Repoint every location of the
         // moved entity that addressed this page's old last row at the new slot.
@@ -182,9 +191,9 @@ impl World {
         // that had just got shorter, and the next migration read past the end of
         // a column.
         //
-        // Nothing moved only when the removed row *was* the last one.
-        if location.row_index != old_last_row {
-            let metadata = self.entities.get_metadata_mut(last_entity_in_page).unwrap();
+        // `get_metadata_mut` checks the generation, so a dead or recycled owner
+        // yields `None` and its orphan row is left for compaction.
+        if let Some(metadata) = self.entities.get_metadata_mut(moved_entity) {
             for loc in metadata.locations.values_mut() {
                 if loc.page_id == location.page_id && loc.row_index == old_last_row {
                     *loc = location;
