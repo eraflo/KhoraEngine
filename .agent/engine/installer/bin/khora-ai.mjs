@@ -13,6 +13,7 @@ import {
 import { PROVIDERS, generateAgentsMd } from '../lib/providers.mjs';
 import { bootstrapTools } from '../lib/tooling.mjs';
 import { scanSecrets } from '../lib/secrets.mjs';
+import { sweep } from '../lib/sweep.mjs';
 
 const ALL = Object.keys(PROVIDERS);
 
@@ -28,6 +29,7 @@ async function main() {
     case 'uninstall':    return cmdUninstall(ctx, args);
     case 'scan-secrets': return cmdScanSecrets(ctx, flags);
     case 'list':         return cmdList(ctx);
+    case 'sweep':        return cmdSweep(ctx, rest);
     case 'help': case undefined: return usage();
     default: log.err(`unknown command: ${cmd}`); usage(); process.exit(2);
   }
@@ -125,6 +127,48 @@ function cmdList(ctx) {
   console.log(`Generated artifacts: ${e?.generated?.length || 0}`);
 }
 
+// Prunes <repo>/target (see lib/sweep.mjs). Always exits 0: it runs at the
+// start of every agent session and a cleanup must never block one.
+async function cmdSweep(ctx, rest) {
+  // Strict parsing: a deletion must never follow from a typo. A value that is
+  // not a plain non-negative number falls back to the default; an unknown
+  // argument (a mistyped `--dry-run`, say) stops the sweep before it removes
+  // anything.
+  const opts = { maxAgeDays: 3, maxGb: 20, dryRun: false, force: false };
+  const number = (s) => (typeof s === 'string' && /^\d+(\.\d+)?$/.test(s) ? Number(s) : undefined);
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i];
+    if (arg === '--dry-run') opts.dryRun = true;
+    else if (arg === '--force') opts.force = true;
+    else if (arg === '--days' || arg === '--max-gb') {
+      const next = rest[i + 1];
+      if (next !== undefined && !next.startsWith('--')) {
+        i++;
+        const n = number(next);
+        if (n !== undefined) opts[arg === '--days' ? 'maxAgeDays' : 'maxGb'] = n;
+      }
+    } else {
+      console.log(`target sweep: unknown argument "${arg}", nothing removed`);
+      return;
+    }
+  }
+  const r = await sweep(path.join(ctx.repoRoot, 'target'), {
+    maxAgeDays: opts.maxAgeDays,
+    maxGb: opts.maxGb,
+    dryRun: opts.dryRun,
+    ...(opts.force ? { minIntervalHours: 0 } : {}),
+  });
+  if (r.skipped) {
+    console.log('target sweep: skipped, the last one ran recently (--force to run anyway)');
+    return;
+  }
+  const gb = (b) => (b / 1024 ** 3).toFixed(2);
+  const verb = opts.dryRun ? 'would remove' : 'removed';
+  const full = r.fullClean ? ', debug/release profiles over the limit' : '';
+  const errs = r.errors.length ? `, ${r.errors.length} could not be removed (in use?)` : '';
+  console.log(`target sweep: ${verb} ${r.removed.length} dir(s)${full}; ${gb(r.bytesBefore)} → ${gb(r.bytesAfter)} GiB${errs}`);
+}
+
 function usage() {
   const bin = `node .agent/<profile>/installer/bin/khora-ai.mjs`;
   console.log(`khora-ai — provider AI wrapper generator (profile derived from path)
@@ -135,6 +179,8 @@ Usage:
   ${bin} uninstall <provider|all>               Remove wrappers + gitignore/hook entries
   ${bin} scan-secrets --staged                  Secret scan (used by pre-commit)
   ${bin} list                                   Show install state
+  ${bin} sweep [--days N] [--max-gb G] [--dry-run] [--force]
+                                                Prune target/: stale incremental caches, whole profiles past G GiB
 
 Providers: ${ALL.join(', ')}, all
 Examples:

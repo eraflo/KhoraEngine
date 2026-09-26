@@ -117,15 +117,21 @@ export function generateClaude(ctx, generated) {
   log.ok('Claude Code wrappers (CLAUDE.md, .claude/agents, .claude/skills, .claude/settings.json)');
 }
 
-function mergeClaudeHooks(hooks, ctx) {
-  const bin = canon(ctx.profile, 'installer/bin/khora-ai.mjs');
+export function mergeClaudeHooks(hooks, ctx) {
+  const own = canon(ctx.profile, 'installer/bin/khora-ai.mjs');
+  // Anchored on the project root, so a hook works whatever directory it runs from.
+  // Braced: under the PowerShell hook shell (Windows without Git Bash) Claude Code
+  // rewrites `${CLAUDE_PROJECT_DIR}` to `${env:CLAUDE_PROJECT_DIR}`, not the bare form.
+  const bin = `"\${CLAUDE_PROJECT_DIR}/${own}"`;
   const syncCmd = `node ${bin} sync --if-changed "$CLAUDE_TOOL_INPUT_FILE_PATH"`;
-  const owned = (c) => typeof c === 'string' && c.includes('khora-ai.mjs');
+  // A profile owns only the hooks that run its own installer: installing one
+  // profile never removes another's, nor the user's.
+  const owned = (c) => typeof c === 'string' && c.includes(own);
   const post = (hooks.PostToolUse ?? []).filter((g) => !(g.hooks ?? []).some((h) => owned(h.command)));
   post.push({ matcher: 'Write|Edit', hooks: [{ type: 'command', command: syncCmd }] });
-  // Strip any previously-installed khora-ai SessionStart hook (the old headroom proxy
-  // launcher); none is added anymore.
+  // SessionStart: prune target/ (stale incremental caches, oversized profiles).
   const start = (hooks.SessionStart ?? []).filter((g) => !(g.hooks ?? []).some((h) => owned(h.command)));
+  start.push({ hooks: [{ type: 'command', command: `node ${bin} sweep` }] });
   return { ...hooks, PostToolUse: post, SessionStart: start };
 }
 

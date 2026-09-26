@@ -31,3 +31,4 @@ crate, not a member.
 - `cargo run -p khora-editor` — editor
 - `cargo xtask all` — CI pipeline (fmt + clippy + test + doc)
 - `mdbook build docs/` — documentation
+- `node .agent/engine/installer/bin/khora-ai.mjs sweep [--days N] [--max-gb G] [--dry-run] [--force]` — prune `target/`: incremental caches unused for N days (3), and the `debug`/`release` profiles when together they exceed G GiB (20; `doc/` never counts). Runs at the start of every Claude Code session (SessionStart hook), at most once per 12 h (`target/.khora-sweep-stamp`; `--force` ignores it). A full clean can fail a build running at that moment — rerun it. Tests: `node --test ".agent/engine/installer/lib/*.test.mjs"`.
