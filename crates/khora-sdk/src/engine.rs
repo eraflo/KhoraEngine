@@ -358,7 +358,7 @@ impl<A: EngineApp> EngineCore<A> {
 
         // Initialize agents with the full runtime so on_initialize() can
         // find Arc<dyn GraphicsDevice>, Arc<Mutex<Box<dyn RenderSystem>>>,
-        // GpuCache, etc. via the typed runtime containers.
+        // AssetStore, etc. via the typed runtime containers.
         {
             let init_bus = khora_core::lane::LaneBus::new();
             let mut init_deck = khora_core::lane::OutputDeck::new();

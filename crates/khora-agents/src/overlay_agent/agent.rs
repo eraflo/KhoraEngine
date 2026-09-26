@@ -49,8 +49,7 @@ use std::sync::RwLock;
 
 /// The agent responsible for overlay / debug rendering passes.
 ///
-/// Owns a [`LaneRegistry`] of overlay lanes (gizmo, wireframe, emissive,
-/// …). Each lane is asked to run every frame; lanes that have nothing
+/// Owns a [`LaneRegistry`] of overlay lanes (grid, wireframe, gizmo). Each lane is asked to run every frame; lanes that have nothing
 /// to do early-out internally rather than being gated at the agent
 /// level. This keeps the agent generic — it never knows what each lane
 /// needs to consult to decide.

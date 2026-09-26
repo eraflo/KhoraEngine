@@ -20,7 +20,7 @@ use std::error::Error;
 /// A trait for types that can decode a specific kind of asset from raw bytes.
 ///
 /// Each implementation handles one asset type (e.g., `CpuTexture`, `Mesh`, `SoundData`).
-/// Concrete decoders live in `khora-lanes` (they also implement `Lane` for identity).
+/// Concrete decoders live in [`crate::asset::decoders`].
 pub trait AssetDecoder<A: Asset> {
     /// Parses a byte slice and converts it into an instance of the asset `A`.
     fn load(&self, bytes: &[u8]) -> Result<A, Box<dyn Error + Send + Sync>>;

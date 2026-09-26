@@ -21,8 +21,7 @@ Components live in `crates/khora-data/src/ecs/components/`. The `#[derive(Compon
    ```
 2. Field attributes: `#[component(skip)]` for GPU handles / runtime caches;
    `#[component(no_serializable)]` on the type for unit structs / trait-object fields needing a manual mirror.
-3. The derive self-registers via `inventory`. For batch registration use `register_components!` in
-   `crates/khora-data/src/ecs/components/registrations.rs`. Only generics (`HandleComponent<T>`) and
+3. The derive self-registers via `inventory` — there is no registration list to edit. Only generics (`HandleComponent<T>`) and
    hand-written impls stay explicit in `World::new`.
 4. If the component should appear in the editor inspector, confirm its `ComponentRegistration` is picked up
    (the macro emits add/remove function pointers).

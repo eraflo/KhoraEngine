@@ -35,10 +35,10 @@
 //! creating their pipeline layout, and
 //! [`bindings::fill_shadow_bind_group_entries`] when building the
 //! per-frame bind group. The matching WGSL — bindings + sampling
-//! functions — lives under `khora-lanes/src/render_lane/shaders/lib/
+//! functions — lives under `khora-infra/src/graphics/shader/shaders/lib/
 //! shadow/` (`bindings.wgsl`, `sample_2d.wgsl`, `sample_cube.wgsl`)
 //! and is composed into every lit shader at module-creation time by
-//! the `ShaderRegistry`.
+//! the `PipelineSystem` backend.
 
 pub mod bindings;
 mod entries;

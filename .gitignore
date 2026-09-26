@@ -35,6 +35,8 @@ target/
 /.claude/agents/knowledge-locator.md
 /.claude/agents/orchestrator.md
 /.claude/agents/security-auditor.md
+/.claude/agents/test-breaker.md
+/.claude/agents/test-writer.md
 /.claude/settings.json
 /.claude/settings.local.json
 /.claude/skills/add-a-component/SKILL.md
@@ -49,6 +51,8 @@ target/
 /.claude/skills/release-checklist/SKILL.md
 /.claude/skills/research-codebase/SKILL.md
 /.claude/skills/run-the-engine/SKILL.md
+/.cursor/agents/impeccable-*
+/.cursor/hooks.json
 /.cursor/rules/000-index.mdc
 /.cursor/rules/10-RULES.mdc
 /.cursor/rules/10-SOUL.mdc
@@ -61,6 +65,8 @@ target/
 /.cursor/rules/agents/knowledge-locator.mdc
 /.cursor/rules/agents/orchestrator.mdc
 /.cursor/rules/agents/security-auditor.mdc
+/.cursor/rules/agents/test-breaker.mdc
+/.cursor/rules/agents/test-writer.mdc
 /.cursor/rules/reference/api-ux.mdc
 /.cursor/rules/reference/audio.mdc
 /.cursor/rules/reference/control-gorna.mdc
@@ -86,7 +92,9 @@ target/
 /.cursor/skills/impeccable/
 /.gemini/settings.json
 /.gemini/skills/impeccable/
+/.github/agents/impeccable-*
 /.github/copilot-instructions.md
+/.github/hooks/impeccable.json
 /.github/instructions/api-ux.instructions.md
 /.github/instructions/audio.instructions.md
 /.github/instructions/control-gorna.instructions.md
@@ -101,7 +109,8 @@ target/
 /GEMINI.md
 # <<< khora-ai <<<
 
-# RPI working artefacts — scratch, emptied when the work lands (see docs/research/README.md)
-docs/research/*.md
-docs/plans/*.md
+# RPI working artefacts — scratch, emptied when the work lands (see docs/research/README.md).
+# `**` so a plan organised in subdirectories is covered too.
+docs/research/**/*.md
+docs/plans/**/*.md
 !docs/research/README.md

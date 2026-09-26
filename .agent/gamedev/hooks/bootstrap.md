@@ -9,4 +9,4 @@ Checklist the orchestrator runs when starting a game-development session.
    installer sets them up. Warn if missing, don't block.
 5. **Build sanity** (optional) — `cargo build` to confirm a clean baseline.
 
-Keep context small: load docs/skills on demand via [`../index.md`](../index.md).
+Keep context small: load `skills/` and `reference/` docs on demand via [`../index.md`](../index.md).

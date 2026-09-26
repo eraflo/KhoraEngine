@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Editor panels — split from the monolithic main.rs.
+//! Editor panels.
 
 pub mod asset_browser;
 pub mod console;

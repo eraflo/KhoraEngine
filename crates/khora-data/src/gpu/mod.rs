@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! GPU resource management — shared cache and CPU→GPU projection.
+//! GPU resource management — shared store and CPU→GPU projection.
 //!
 //! This module provides:
-//! - [`GpuCache`]: the engine-wide, shared GPU mesh cache.
+//! - [`AssetStore`]: the engine-wide store of projected assets (GPU meshes
+//!   among them).
 //! - [`ProjectionRegistry`]: drives CPU→GPU mesh upload before agents run.
 //!
 //! Both are registered into the [`ServiceRegistry`] during bootstrap and

@@ -36,10 +36,10 @@
 //!
 //! ## State of the crate
 //!
-//! Phase 0: the suspend/resume core, proven before any syntax exists. There is
-//! no lexer, parser or type checker yet — deliberately. If a program cannot be
-//! stopped and restarted without changing its result, nothing built on top would
-//! be worth writing.
+//! The whole chain is in place: lexer, parser, type checker, bytecode compiler
+//! and VM. The suspend/resume core was built first, before any syntax: if a
+//! program cannot be stopped and restarted without changing its result,
+//! nothing built on top would be worth writing.
 //!
 //! [`Agent`]: khora_core::agent::Agent
 

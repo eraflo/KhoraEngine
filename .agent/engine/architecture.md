@@ -1,6 +1,6 @@
 # Khora Engine — Architecture Brief (engine profile)
 
-Dense reference for AI agents. Full narrative in [`../../docs/src/02_architecture.md`](../../docs/src/02_architecture.md).
+Dense reference for AI agents. Full narrative in [`../../docs/src/concepts/clad.md`](../../docs/src/concepts/clad.md).
 
 - Document — Khora Architecture Brief v2.0
 - Status — Active
@@ -89,7 +89,7 @@ khora-sdk
 Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`, `khora-runtime`,
 `hub`, and `sandbox` sit on top of `khora-sdk`.
 
-## 3 — Crate responsibilities (16 workspace crates)
+## 3 — Crate responsibilities (17 workspace members)
 
 | Crate | Layer | Responsibility |
 |---|---|---|
@@ -136,17 +136,17 @@ set (`UiTransform`, `UiColor`, `UiText`, `UiImage`, `UiBorder`). Each carries a 
 | Area | Path |
 |---|---|
 | Lane trait / bus / deck | `crates/khora-core/src/lane/` (`mod.rs`, `bus.rs`, `deck.rs`) |
-| Agent trait / `AgentId` | `crates/khora-core/src/agent/`, GORNA types `crates/khora-core/src/control/gorna/` |
+| Agent trait / `AgentId` | `crates/khora-core/src/agent/`, GORNA types `crates/khora-core/src/control/gorna.rs` |
 | Math / SIMD | `crates/khora-core/src/math/` (`simd.rs`) |
 | ECS (CRPECS) / layout learner | `crates/khora-data/src/ecs/` (`world.rs`, `storage.rs`, `soa.rs`, `layout.rs`) |
 | Components / registrations | `crates/khora-data/src/ecs/components/` |
 | Flows / DataSystems | `crates/khora-data/src/flow/`, `crates/khora-data/src/ecs/systems/` |
 | DCC / GORNA / cost / PID | `crates/khora-control/src/service.rs`, `gorna/mod.rs`, `cost_model.rs`; PID `crates/khora-core/src/control/pid.rs` |
 | Substrate dispatcher | `crates/khora-control/src/substrate/` |
-| Render lanes / shaders | `crates/khora-lanes/src/render_lane/` (`shaders/pipelines/`, `shaders/lib/`, `shader_registry.rs`) |
+| Render lanes / shaders | `crates/khora-lanes/src/render_lane/`; shaders in `crates/khora-infra/src/graphics/shader/shaders/` (`pipelines/`, `lib/`), composed by `graphics/shader/system.rs` |
 | Physics / audio / ui lanes | `crates/khora-lanes/src/{physics_lane,audio_lane,ui_lane}/` |
 | wgpu backend | `crates/khora-infra/src/graphics/wgpu/` (`system.rs`, `device.rs`) |
-| Rapier / CPAL / Taffy | `crates/khora-infra/src/{physics/rapier,audio/backends/cpal,ui/taffy}/` |
+| Rapier / CPAL / Taffy | `crates/khora-infra/src/{physics/rapier,audio/cpal,ui/taffy}/` |
 | Agents | `crates/khora-agents/src/{render,shadow,overlay,physics,ui,audio}_agent/` |
 | SDK entry / GameWorld / Vessel | `crates/khora-sdk/src/lib.rs`, `game_world.rs`, `vessel.rs` |
 | Sandbox app | `examples/sandbox/src/main.rs` |
@@ -168,7 +168,7 @@ Per frame:
 ```
 
 App implements `EngineApp + AgentProvider + PhaseProvider` (composite SDK trait). Detail in
-[`../../docs/src/03_lifecycle.md`](../../docs/src/03_lifecycle.md).
+[`../../docs/src/concepts/the-frame.md`](../../docs/src/concepts/the-frame.md).
 
 ## 8 — Agents (one per CLAD domain)
 

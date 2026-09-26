@@ -38,7 +38,7 @@ Code style and project conventions. Pairs with [`RULES.md`](./RULES.md).
 - Unit tests in `#[cfg(test)] mod tests` at the bottom of each module file.
 - Integration tests in `crates/{name}/tests/`; benchmarks in `crates/{name}/benches/`.
 - Backend implementations grouped per backend folder under `khora-infra/src/`: `graphics/wgpu/`, `physics/rapier/`, `audio/cpal/`, `ui/taffy/`.
-- Shaders under `crates/khora-lanes/src/render_lane/shaders/` — `pipelines/` (entry points) and `lib/` (reusable modules). One pass per pipeline file; no `.wgsl` at the shaders root.
+- Shaders under `crates/khora-infra/src/graphics/shader/shaders/` — `pipelines/` (entry points) and `lib/` (reusable modules). One pass per pipeline file; no `.wgsl` at the shaders root.
 - **Invariant `DataSystem`s**: one file per system in `crates/khora-data/src/ecs/systems/`. Discovered via `inventory::submit!{ DataSystemRegistration { … } }`. Zero wiring elsewhere.
 - **Domain `Flow`s**: one file per flow in `crates/khora-data/src/flow/`. Register with `register_flow!(MyFlow)`. The Scheduler's Substrate Pass runs them automatically.
 - **Asset decoders**: one file per decoder in `crates/khora-io/src/asset/decoders/`. Registered with the `AssetService`; the `…Lane` legacy suffix is dropped.
@@ -67,7 +67,7 @@ pub struct Light {
 
 - `#[component(skip)]` for fields that must not serialize (GPU handles, runtime caches).
 - `#[component(no_serializable)]` for components with manual mirrors (unit structs, trait objects).
-- The derive self-registers via `inventory`. Batch registrations live in `crates/khora-data/src/ecs/components/registrations.rs` (`register_components!`). Only generics and hand-written impls stay explicit in `World::new`.
+- The derive self-registers via `inventory`. Only generics and hand-written impls stay explicit in `World::new`.
 
 ## 5 — Logging
 

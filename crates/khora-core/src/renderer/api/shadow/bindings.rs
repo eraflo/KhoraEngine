@@ -16,7 +16,7 @@
 //! (group 3 in every lit pipeline).
 //!
 //! This file is the **single source of truth** mirrored by the WGSL
-//! lib modules under `khora-lanes/src/render_lane/shaders/lib/shadow/`
+//! lib modules under `khora-infra/src/graphics/shader/shaders/lib/shadow/`
 //! (`bindings.wgsl` + sampling helpers). Bump a constant here and
 //! update the WGSL counterpart in lockstep.
 

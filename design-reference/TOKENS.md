@@ -1,6 +1,6 @@
 # Khora design tokens — frozen source of truth
 
-This is the canonical token table the egui theme (`khora-core::ui::brand`) is generated from.
+This is the canonical token table the egui theme (`khora-tool-ui/src/brand.rs`) is generated from.
 The HTML mockups (`khora-editor-mockup.html`, `khora-hub-mockup.html`) are the visual arbiter;
 these values reproduce them exactly.
 

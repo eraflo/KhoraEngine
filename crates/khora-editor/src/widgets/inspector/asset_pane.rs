@@ -11,9 +11,8 @@
 //! When the user selects an asset in the browser, the Properties panel
 //! switches from per-entity component cards to this pane: file
 //! metadata, source path, and a couple of OS-level actions
-//! (Reveal in Explorer, Open Externally). Phase 5 entry — per-type
-//! preview cards (texture image, mesh stats, audio duration) come in
-//! a follow-up.
+//! (Reveal in Explorer, Open Externally). Per-type preview cards
+//! (texture image, mesh stats, audio duration) do not exist yet.
 
 use khora_sdk::editor_ui::{FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
 

@@ -21,7 +21,7 @@
 //!
 //! After `sync_all()` returns for a given frame, every entity that has a
 //! `HandleComponent<Mesh>` also has a `HandleComponent<GpuMesh>`, and the
-//! shared `GpuCache` is fully up to date.  This call is idempotent: entities
+//! shared `AssetStore` is fully up to date.  This call is idempotent: entities
 //! already holding a `HandleComponent<GpuMesh>` are skipped via the
 //! `Without<HandleComponent<GpuMesh>>` query filter.
 //!
@@ -90,9 +90,9 @@ impl ProjectionRegistry {
     ///
     /// For each entity that has `HandleComponent<Mesh>` but not yet
     /// `HandleComponent<GpuMesh>`:
-    /// 1. Checks whether the UUID is already in `GpuCache` (shared across agents).
+    /// 1. Checks whether the UUID is already in the `AssetStore` (shared across agents).
     /// 2. If not, uploads vertex + index buffers via `device`.
-    /// 3. Inserts the result into `GpuCache`.
+    /// 3. Inserts the result into the `AssetStore`.
     /// 4. Adds `HandleComponent<GpuMesh>` to the entity so subsequent frames skip it.
     ///
     /// This method is idempotent and safe to call every frame.

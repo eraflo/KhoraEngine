@@ -162,7 +162,8 @@ impl BuildTarget {
 }
 
 /// What we write next to the staged runtime so it knows which scene to
-/// auto-load. Mirrors the schema `khora_runtime::RuntimeConfig` reads.
+/// auto-load. Mirrors the `RuntimeConfig` that `khora-sdk/src/run_default.rs`
+/// reads.
 #[derive(Debug, Serialize)]
 struct RuntimeConfig<'a> {
     project_name: &'a str,

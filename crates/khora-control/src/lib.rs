@@ -21,7 +21,8 @@
 //! Its primary responsibilities include:
 //!
 //! - **The Dynamic Context Core (DCC):** A service that aggregates engine-wide
-//!   telemetry (from `khora-telemetry`) to build a constantly updated situational
+//!   telemetry (`khora_core::telemetry::TelemetryEvent`s, kept in its own
+//!   `MetricStore`) to build a constantly updated situational
 //!   model of the application's performance and state.
 //!
 //! - **Goal-Oriented Resource Negotiation & Allocation (GORNA):** The protocol

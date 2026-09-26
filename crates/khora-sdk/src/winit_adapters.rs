@@ -257,7 +257,7 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
         );
 
         // Bootstrap the engine, transferring ownership of the runtime.
-        // bootstrap() inserts built-in entries (GpuCache, etc.), wraps in
+        // bootstrap() inserts built-in entries (AssetStore, etc.), wraps in
         // Arc, and stores the final runtime in self.engine.runtime.
         let app = A::new();
         self.engine.bootstrap(app, runtime);

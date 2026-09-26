@@ -77,7 +77,7 @@ pub enum RenderingStrategy {
 /// The agent responsible for the main render pass (`LaneKind::Render`).
 ///
 /// Holds **only** its own strategy state — every other dependency
-/// (`GraphicsDevice`, `RenderSystem`, `GpuCache`, `RenderWorldStore`,
+/// (`GraphicsDevice`, `RenderSystem`, `AssetStore`, `RenderWorldStore`,
 /// `FrameContext`) is fetched from `EngineContext::services` per frame.
 pub struct RenderAgent {
     /// Render lanes — the agent's strategies.

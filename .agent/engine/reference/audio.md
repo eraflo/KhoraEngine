@@ -9,7 +9,7 @@ Spatial 3D audio mixing, the RT-thread mix bus boundary, device/stream lifecycle
 
 ## Key files
 - Traits: `crates/khora-core/src/audio/` (`AudioDevice`, `AudioMixBus`, `AudioStream`, `DefaultMixBus`, `StreamInfo`).
-- Backend: `crates/khora-infra/src/audio/backends/cpal/` (`CpalAudioDevice`, `mix_bus.rs`).
+- Backend: `crates/khora-infra/src/audio/cpal/` (`CpalAudioDevice`); the mixer is `crates/khora-core/src/audio/mix_bus.rs`.
 - Lanes: `crates/khora-lanes/src/audio_lane/` (SpatialMixing, SourceUpdate).
 - Decoding: `crates/khora-io/src/asset/decoders/audio/` (`SymphoniaDecoder`); data `SoundData`.
 

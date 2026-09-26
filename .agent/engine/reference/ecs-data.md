@@ -10,7 +10,7 @@ read-only Flow / DataSystem machinery.
 ## Key files
 - ECS: `crates/khora-data/src/ecs/` (`world.rs`, `storage.rs`, `soa.rs`, `query*.rs`, `bitset.rs`).
 - AGDF layout: `crates/khora-data/src/ecs/layout.rs` (`LayoutAdvisor`, `Ucb1`, `DecayCounter`).
-- Components + registration: `crates/khora-data/src/ecs/components/` (`registrations.rs`).
+- Components + registration: `crates/khora-data/src/ecs/components/` (self-registered through `inventory`).
 - Flows / DataSystems: `crates/khora-data/src/flow/`, `crates/khora-data/src/ecs/systems/`.
 - Derive macro: `crates/khora-macros/src/`.
 

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/src/logos/khora_full_logo.png" alt="Khora Engine" width="220">
+  <img src="docs/src/logos/logo_round.png" alt="Khora Engine" width="220">
 </p>
 
 <h1 align="center">Khora Engine</h1>
@@ -69,7 +69,7 @@ game, understand the engine, or contribute. **Start at the
 | [Your first game](./docs/src/tutorials/your-first-game.md) | Build a running scene, step by step |
 | [The big idea (SAA)](./docs/src/concepts/saa.md) | Understand why the engine negotiates with itself |
 | [API reference (rustdoc)](https://eraflo.github.io/KhoraEngine/api/) | Look up the exact public API |
-| [Roadmap](./docs/src/project/roadmap.md) | See what is committed and what is planned |
+| [Roadmap](./docs/src/roadmap.md) | See what is committed and what is planned |
 
 Read it locally with live reload:
 
@@ -110,12 +110,15 @@ folders without touching the rest of the engine.
 
 ## For AI coding agents
 
-Khora ships with provider-agnostic agent instructions:
+Agent instructions live in [`.agent/`](./.agent/) — the single source of
+truth: rules, conventions, architecture brief, research and verification
+subagents. The provider entry points (`CLAUDE.md`, `AGENTS.md`,
+`.github/copilot-instructions.md`, `.cursor/`, `.gemini/`) are generated from
+it and not committed:
 
-- [`CLAUDE.md`](./CLAUDE.md) — Claude Code entry
-- [`AGENTS.md`](./AGENTS.md) — Codex / Aider / Cursor / Continue entry
-- [`.github/copilot-instructions.md`](./.github/copilot-instructions.md) — GitHub Copilot entry
-- [`.agent/`](./.agent/) — single source of truth: rules, conventions, architecture brief, specialist personas
+```bash
+node .agent/engine/installer/bin/khora-ai.mjs install all
+```
 
 ## Community and contributing
 

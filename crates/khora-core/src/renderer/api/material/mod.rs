@@ -33,9 +33,9 @@
 //! creating their pipeline layout's group-2 slot, and the data-layer
 //! projection calls [`bindings::fill_material_bind_group_entries`] when
 //! building each material's bind group. The matching WGSL — bindings +
-//! sampling helpers — lives under `khora-lanes/src/render_lane/shaders/
+//! sampling helpers — lives in `khora-infra/src/graphics/shader/shaders/
 //! lib/std/material_textures.wgsl` and is composed into every lit shader
-//! by the `ShaderRegistry`.
+//! by the `PipelineSystem` backend.
 
 pub mod bindings;
 

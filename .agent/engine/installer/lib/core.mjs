@@ -121,6 +121,14 @@ export function rewriteGitignore(ctx) {
   paths.add('.claude/settings.local.json');
   // Bootstrapped design skill (impeccable) — installed per harness, never committed.
   for (const h of ['.claude', '.cursor', '.gemini', '.github']) paths.add(`${h}/skills/impeccable/`);
+  // impeccable's installer also writes agents and hooks outside its skill folder;
+  // they are regenerated on every install, so they are not committed either.
+  for (const p of [
+    '.cursor/agents/impeccable-*',
+    '.cursor/hooks.json',
+    '.github/agents/impeccable-*',
+    '.github/hooks/impeccable.json',
+  ]) paths.add(p);
   for (const prof of Object.values(m.profiles)) {
     for (const g of (prof.generated ?? [])) paths.add(g);
   }

@@ -16,7 +16,7 @@
 //! lit pipeline).
 //!
 //! This file is the **single source of truth** mirrored by the WGSL lib
-//! module `khora-lanes/src/render_lane/shaders/lib/std/material_textures.wgsl`.
+//! module `khora-infra/src/graphics/shader/shaders/lib/std/material_textures.wgsl`.
 //! Bump a constant here and update the WGSL counterpart in lockstep.
 
 use std::marker::PhantomData;

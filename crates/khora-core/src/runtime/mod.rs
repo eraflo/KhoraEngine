@@ -22,7 +22,7 @@
 //! |---|---|---|
 //! | [`Services`] | Concrete stateful objects with rich business APIs | `AssetService`, `SerializationService`, `TelemetryService`, `DccService` |
 //! | [`Backends`] | Concrete impls of abstract traits defined in `khora-core` | `dyn RenderSystem`, `dyn PhysicsProvider`, `dyn AudioDevice`, `dyn LayoutSystem` |
-//! | [`Resources`] | Long-lived shared state without a service-style API | `InputMap`, `EditorViewportOverride`, `GpuCache`, `UiAtlasMap` |
+//! | [`Resources`] | Long-lived shared state without a service-style API | `InputMap`, `EditorViewportOverride`, `AssetStore`, `UiAtlasMap` |
 //!
 //! Per-frame state (current viewport, frame deltas, lane outputs) does
 //! NOT belong in any of these containers — it flows through

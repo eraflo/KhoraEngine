@@ -16,6 +16,8 @@
 //!   - [`add_component`] — "+ Add Component" menu, bucketed by domain
 //!   - [`display`]       — icon / type-tag / category labels
 //!   - [`tabs`]          — `InspectorTab` trait + `Properties` / `Debug`
+//!   - [`asset_pane`]    — asset metadata shown when an asset is selected
+//!   - [`tag_chips`]     — chip renderer for the `Tag` component
 
 pub mod add_component;
 pub mod asset_pane;

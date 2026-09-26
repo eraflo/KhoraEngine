@@ -169,7 +169,7 @@ pub use khora_core::{Backends, Resources, Runtime, Services};
 // Telemetry service
 pub use khora_telemetry::MonitorRegistry;
 pub use khora_telemetry::TelemetryService;
-// AgentRegistry is already re-exported above (line 51) via
+// AgentRegistry is already re-exported above, via
 // `pub use khora_control::registry::AgentRegistry`.
 
 // Infra / monitors

@@ -95,7 +95,7 @@ immutable. It bundles three typed containers, each with a clear admission rule:
 |---|---|---|
 | `runtime.services` | Concrete stateful objects with a rich business API. | `AssetService`, `SerializationService`, `TelemetryService`, `DccService` |
 | `runtime.backends` | Concrete impls of abstract `khora-core` traits. | `dyn RenderSystem`, `dyn PhysicsProvider`, `dyn AudioDevice`, `dyn LayoutSystem` |
-| `runtime.resources` | Long-lived shared state without a service-style API. | `GpuCache`, `InputMap`, viewport overrides |
+| `runtime.resources` | Long-lived shared state without a service-style API. | `AssetStore`, `InputMap`, viewport overrides |
 
 Look up an entry with `runtime.services.get::<T>()`, `runtime.backends.get::<T>()`,
 or `runtime.resources.get::<T>()` (each returns `Option<&T>`; `require::<T>()`

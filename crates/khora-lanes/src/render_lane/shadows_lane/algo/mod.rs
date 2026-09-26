@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! Shadow rendering algorithm — free functions shared by every quality
-//! tier (`StandardShadowsLane`, `LowResShadowsLane`, future variants).
+//! tier (`StandardShadowsLane`, `MediumShadowsLane`, `LowResShadowsLane`).
 //!
 //! Each function takes its dimensions as parameters; the lane that calls
 //! it provides its own (hardcoded-in-the-type) constants. No config

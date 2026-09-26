@@ -20,7 +20,7 @@ description: Investigates a per-frame problem or a GORNA budget decision — wro
 
 ## Known-issue checklist
 - Scene not rendering → check bind-group count (must be 4) and that the Flow published its `View`.
-- Camera jitter → matrix precision / shadow bias (see [`../knowledge/MEMORY.md`](../knowledge/MEMORY.md)).
+- Camera jitter → matrix precision / shadow bias (see [`../../knowledge/MEMORY.md`](../../knowledge/MEMORY.md)).
 - Vulkan semaphore warnings → known, usually non-fatal.
 
 Find the root cause before patching; explain it concisely. As the cause narrows, consult

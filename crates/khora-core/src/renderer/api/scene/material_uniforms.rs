@@ -29,7 +29,7 @@ pub struct ModelUniforms {
 /// Data for a material's properties, formatted for the standard Lit Shader.
 ///
 /// Mirrors the WGSL `MaterialUniforms` struct in
-/// `khora-lanes/src/render_lane/shaders/lib/std/material.wgsl`
+/// `khora-infra/src/graphics/shader/shaders/lib/std/material.wgsl`
 /// (`#[repr(C)]`); changing the field order or types here MUST be
 /// mirrored WGSL-side in lockstep.
 #[repr(C)]

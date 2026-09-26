@@ -46,7 +46,7 @@ use khora_data::render::RenderWorld;
 
 use algo::ShadowsLaneState;
 
-/// Cost estimate shared by both strategies — roughly `casters × meshes`
+/// Cost estimate shared by every quality tier — roughly `casters × meshes`
 /// with point lights weighted 6× (six cube passes). Each lane scales
 /// this further to reflect its own quality.
 pub(crate) fn cost_estimate(render_world: &RenderWorld) -> f32 {

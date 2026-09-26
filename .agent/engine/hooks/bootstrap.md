@@ -11,4 +11,4 @@ Checklist the orchestrator runs at the start of an engine-development session.
    don't block.
 5. **Build sanity** (optional, on demand) — `cargo build` to confirm a clean baseline before editing.
 
-Keep context small: load docs/agents on demand via [`../index.md`](../index.md), not all up front.
+Keep context small: load `agents/` and `reference/` docs on demand via [`../index.md`](../index.md), not all up front.

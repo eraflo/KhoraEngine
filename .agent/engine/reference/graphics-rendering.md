@@ -10,7 +10,7 @@ HDR/tone mapping, post-processing, GPU occupancy and synchronization (no Vulkan 
 
 ## Key files
 - Render lanes: `crates/khora-lanes/src/render_lane/` (Unlit, LitForward, ForwardPlus, StandardPbr, Shadow, Overlay).
-- Shaders: `crates/khora-lanes/src/render_lane/shaders/` — `pipelines/` (entry points), `lib/` (`std`/`lighting`/`shadow`). `shader_registry.rs` composes via `naga_oil #import`.
+- Shaders: `crates/khora-infra/src/graphics/shader/shaders/` — `pipelines/` (entry points), `lib/` (`std`/`lighting`/`shadow`). `graphics/shader/system.rs` (the `PipelineSystem` backend) composes them via `naga_oil #import`.
 - Backend: `crates/khora-infra/src/graphics/wgpu/` (`WgpuRenderSystem`, `WgpuDevice`).
 - Render API traits: `crates/khora-core/src/renderer/`.
 

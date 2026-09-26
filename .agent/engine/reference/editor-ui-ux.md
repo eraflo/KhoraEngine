@@ -10,7 +10,7 @@ transform gizmos, dock layout, theme, and the egui/Taffy plumbing.
 ## Key files
 - Editor: `crates/khora-editor/src/` (`app.rs`, `panels/`, `gizmo/`, `commands.rs`, `hot_reload.rs`).
 - Editor UI types: `crates/khora-core/src/ui/editor/` (gizmos, viewport, panels, theme).
-- UI lanes / layout: `crates/khora-lanes/src/ui_lane/`, `crates/khora-infra/src/ui/{taffy,egui}/`.
+- UI lanes / layout: `crates/khora-lanes/src/render_lane/ui_render_lane.rs`, `crates/khora-agents/src/ui_agent/`, `crates/khora-infra/src/ui/{taffy,egui}/`.
 - SDK surface: `khora_sdk::editor_ui` / `tool_ui` re-exports (panels import from the SDK only).
 
 ## Hard rules

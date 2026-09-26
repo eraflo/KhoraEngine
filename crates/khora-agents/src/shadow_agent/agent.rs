@@ -96,7 +96,7 @@ impl ShadowStrategy {
 /// The agent responsible for shadow map rendering (`LaneKind::Shadow`).
 ///
 /// Holds **only** its own strategy state — every other dependency
-/// (`GraphicsDevice`, `GpuCache`, `RenderWorld`, `FrameContext`) is
+/// (`GraphicsDevice`, `AssetStore`, `RenderWorld`, `FrameContext`) is
 /// fetched from `EngineContext::services` per frame.
 pub struct ShadowAgent {
     /// Registered strategies — one lane per [`ShadowStrategy`] value.
