@@ -101,9 +101,7 @@ impl WgpuRenderSystem {
 
         Ok(egui_id)
     }
-}
 
-impl WgpuRenderSystem {
     /// Renders a clear pass to the offscreen viewport target.
     ///
     /// Call this once per frame (after `begin_frame()`, before
@@ -167,9 +165,7 @@ impl WgpuRenderSystem {
         gc.queue.submit(std::iter::once(encoder.finish()));
         Ok(())
     }
-}
 
-impl WgpuRenderSystem {
     /// Returns the current viewport dimensions `(width, height)` in pixels.
     pub fn viewport_size(&self) -> (u32, u32) {
         (self.viewport_width, self.viewport_height)

@@ -245,9 +245,7 @@ impl SimpleUnlitLane {
 
         Ok(())
     }
-}
 
-impl SimpleUnlitLane {
     pub(super) fn on_gpu_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
         // Ring buffers own their GPU buffers + bind groups; the pipeline and
         // bind-group layouts are owned + cached by the `PipelineSystem`

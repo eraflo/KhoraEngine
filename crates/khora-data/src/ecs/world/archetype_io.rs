@@ -93,9 +93,7 @@ impl World {
         };
         bincode::encode_to_vec(layout, config::standard())
     }
-}
 
-impl World {
     /// Deserializes and completely replaces the World state from a memory layout.
     ///
     /// This method is highly unsafe as it writes raw bytes into component vectors.

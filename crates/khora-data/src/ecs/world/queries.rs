@@ -91,9 +91,7 @@ impl World {
         // 3. Return the query with the plan and the current matching pages.
         Query::new(self, plan, matching_page_indices, row_plan)
     }
-}
 
-impl World {
     /// Creates a mutable iterator that queries the world for entities matching a set of components and filters.
     ///
     /// This method is similar to `query`, but it allows mutable access to the components.
@@ -147,9 +145,7 @@ impl World {
         // 3. Construct the iterator
         QueryMut::new(self, plan, matching_page_indices, row_plan)
     }
-}
 
-impl World {
     /// Analyzes a query's component signature to create an optimized execution plan.
     ///
     /// This method identifies if a query is transversal (spanning multiple domains)
@@ -219,9 +215,7 @@ impl World {
         // that belong to the driver domain.
         QueryPlan::new(true, Some(driver_domain), peer_domains, driver_signature)
     }
-}
 
-impl World {
     /// Finds the pages a query iterates: none for an entity scan (it walks the
     /// entity store), otherwise the pages matching the plan's driver signature
     /// and not containing any `without` type.
@@ -231,9 +225,7 @@ impl World {
         }
         self.find_matching_pages(&plan.driver_signature, without_type_ids)
     }
-}
 
-impl World {
     /// Decides, once per query, the per-row work a Native iteration needs beyond
     /// its driver row (see [`NativeRowPlan`]).
     ///
@@ -284,9 +276,7 @@ impl World {
             fetch_from_world: false,
         }
     }
-}
 
-impl World {
     /// Internal helper to find pages matching a signature and filter.
     fn find_matching_pages(&self, type_ids: &[TypeId], without_type_ids: &[TypeId]) -> Vec<u32> {
         let mut matching_page_indices = Vec::new();
@@ -305,9 +295,7 @@ impl World {
         }
         matching_page_indices
     }
-}
 
-impl World {
     /// (Internal) Computes a bitset that represents the intersection of all domains
     /// involved in a transversal query. This is used to speed up joins by skipping
     /// metadata lookups for entities that are guaranteed to not satisfy the query.

@@ -40,9 +40,7 @@ impl WgpuRenderSystem {
             shader_source,
         ))
     }
-}
 
-impl WgpuRenderSystem {
     /// Creates an [`EguiOverlay`] **and** an [`EguiEditorShell`] that share
     /// the same `egui::Context`, plus an offscreen viewport target.
     ///

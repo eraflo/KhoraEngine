@@ -53,9 +53,7 @@ impl World {
         self.storage.registry.register::<T>(domain);
         self.type_registry.register::<T>();
     }
-}
 
-impl World {
     /// This operation is designed to be fast. It performs the necessary data
     /// migration to move the entity's components for the given `SemanticDomain`
     /// to a new `ComponentPage` that matches the new layout.
@@ -212,9 +210,7 @@ impl World {
         // 7. Return the old location for cleanup, without performing swap_remove
         Ok(old_location_opt)
     }
-}
 
-impl World {
     /// Removes a **single** component `C` from `entity`, preserving every
     /// other component the entity carries (in any domain).
     ///
@@ -357,9 +353,7 @@ impl World {
         // 9. Hand the old location off to the GC.
         Ok(Some(loc))
     }
-}
 
-impl World {
     /// Logically removes all components belonging to a specific `SemanticDomain` from an entity.
     ///
     /// This is an extremely fast, O(1) operation that only modifies the entity's
@@ -407,9 +401,7 @@ impl World {
 
         location
     }
-}
 
-impl World {
     /// Gets a mutable reference to a single component `T` for a given entity.
     ///
     /// This provides direct, "random" access to a component, which can be less
@@ -445,9 +437,7 @@ impl World {
 
         vec.get_mut(location.row_index as usize)
     }
-}
 
-impl World {
     /// Gets mutable references to components of type `T` for multiple entities simultaneously.
     ///
     /// This is safer than `get_mut` in a loop because it allows retrieving multiple
@@ -525,9 +515,7 @@ impl World {
 
         results
     }
-}
 
-impl World {
     /// Gets an immutable reference to a single component `T` for a given entity.
     ///
     /// This provides direct, "random" access to a component.
@@ -560,9 +548,7 @@ impl World {
             .downcast_ref::<Vec<T>>()?;
         vec.get(location.row_index as usize)
     }
-}
 
-impl World {
     /// Reads a component by **value**, working for *any* physical layout (AoS or
     /// field-SoA). This is the layout-agnostic read path: a field-SoA component
     /// can't hand out `&T` (its bytes aren't a contiguous `T`), so callers that
@@ -585,9 +571,7 @@ impl World {
             location.row_index as usize,
         ))
     }
-}
 
-impl World {
     /// Writes a component by **value**, working for any physical layout. The
     /// layout-agnostic write path (AoS assigns the slot; field-SoA scatters into
     /// its lanes). Returns `false` if the entity is not alive or lacks the
@@ -619,9 +603,7 @@ impl World {
         self.bump_domain_epoch(domain);
         true
     }
-}
 
-impl World {
     /// Runs `f` over every field-SoA column of component `T` in the world — the
     /// bulk SIMD entry point. Each call hands the kernel a [`FieldSoaColumn`](crate::ecs::FieldSoaColumn)
     /// whose per-field `f32` lanes are contiguous, so it can tile them into

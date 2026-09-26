@@ -76,9 +76,7 @@ impl World {
         }
         true
     }
-}
 
-impl World {
     /// Despawns `root` and every entity beneath it, returning how many went.
     ///
     /// Destroying a parent alone would leave its children holding a [`Parent`]
@@ -117,9 +115,7 @@ impl World {
         self.set_parent(root, None);
         doomed.iter().filter(|e| self.despawn(**e)).count()
     }
-}
 
-impl World {
     /// Whether `candidate` sits under `ancestor` in the hierarchy.
     pub fn is_descendant_of(&self, candidate: EntityId, ancestor: EntityId) -> bool {
         use crate::ecs::Parent;

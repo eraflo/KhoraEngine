@@ -204,9 +204,7 @@ impl LitForwardLane {
 
         Ok(())
     }
-}
 
-impl LitForwardLane {
     pub(super) fn on_gpu_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
         // Destroy ring buffers first (they own buffers + bind groups).
         // `.lock().ok().and_then(|mut g| g.take())` gracefully degrades

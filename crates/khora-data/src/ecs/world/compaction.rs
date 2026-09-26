@@ -43,9 +43,7 @@ impl World {
             .values()
             .any(|loc| loc.page_id == page_id && loc.row_index as usize == row)
     }
-}
 
-impl World {
     /// Compacts a single page: physically drops every row no live entity
     /// references (a migration orphan), preserving order for the surviving rows.
     ///
@@ -107,9 +105,7 @@ impl World {
             }
         }
     }
-}
 
-impl World {
     /// Drains up to `budget` dirty pages and compacts each, returning the number
     /// of pages processed. Called once per frame by
     /// [`EcsMaintenance`](crate::ecs::EcsMaintenance) in `TickPhase::Maintenance`.

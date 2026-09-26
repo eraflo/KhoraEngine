@@ -446,9 +446,7 @@ impl ForwardPlusLane {
 
         Ok(())
     }
-}
 
-impl ForwardPlusLane {
     pub(super) fn on_gpu_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
         let mut resources = crate::lock_or_log!(
             self.gpu_resources.lock(),
