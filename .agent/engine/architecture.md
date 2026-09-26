@@ -143,7 +143,7 @@ set (`UiTransform`, `UiColor`, `UiText`, `UiImage`, `UiBorder`). Each carries a 
 | Flows / DataSystems | `crates/khora-data/src/flow/`, `crates/khora-data/src/ecs/systems/` |
 | DCC / GORNA / cost / PID | `crates/khora-control/src/service/`, `gorna/`, `cost_model.rs`; PID `crates/khora-core/src/control/pid.rs` |
 | Substrate dispatcher | `crates/khora-control/src/substrate/` |
-| Render lanes / shaders | `crates/khora-lanes/src/render_lane/`; shaders in `crates/khora-infra/src/graphics/shader/shaders/` (`pipelines/`, `lib/`), composed by `graphics/shader/system.rs` |
+| Render lanes / shaders | `crates/khora-lanes/src/render_lane/`; shaders in `crates/khora-infra/src/graphics/shader/shaders/` (`pipelines/`, `lib/`), composed by `graphics/shader/system/mod.rs` |
 | Physics / audio / ui lanes | `crates/khora-lanes/src/{physics_lane,audio_lane}/`, `crates/khora-lanes/src/render_lane/ui_render_lane.rs` |
 | wgpu backend | `crates/khora-infra/src/graphics/wgpu/` (`system/`, `device/`) |
 | Rapier / CPAL / Taffy | `crates/khora-infra/src/{physics/rapier,audio/cpal,ui/taffy}/` |
@@ -197,7 +197,7 @@ WGSL composition: the `.wgsl` files live in `khora-infra/src/graphics/shader/sha
 (`pipelines/` entry points, `lib/` reusable modules) and are embedded with `include_str!`.
 A render lane never handles source — it **names** a pipeline in its spec
 (`shader: "khora::pipelines::forward_plus"`), and the `PipelineSystem` backend
-(`khora-infra/src/graphics/shader/system.rs`) resolves the `#import` graph via `naga_oil`,
+(`khora-infra/src/graphics/shader/system/mod.rs`) resolves the `#import` graph via `naga_oil`,
 compiles, and caches. There is no `ShaderRegistry` type; earlier revisions of these docs
 named one.
 

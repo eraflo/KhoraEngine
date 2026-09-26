@@ -10,7 +10,7 @@ backend via `naga_oil` `#import`. **Never** inline WGSL as a Rust string; **neve
 runtime.
 
 > There is **no `ShaderRegistry` type** — earlier revisions of these docs named one. The composition
-> point is `WgpuPipelineSystem` in `crates/khora-infra/src/graphics/shader/system.rs`.
+> point is `WgpuPipelineSystem` in `crates/khora-infra/src/graphics/shader/system/mod.rs`.
 
 ## Layout
 All under `crates/khora-infra/src/graphics/shader/shaders/`:
