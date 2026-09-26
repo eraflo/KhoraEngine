@@ -27,10 +27,11 @@ load what the task needs, not the whole tree.
 | [`knowledge/decisions.md`](./knowledge/decisions.md) | Architecture decisions + rationale. |
 | [`knowledge/context.md`](./knowledge/context.md) | Project facts, workspace, build commands. |
 
-## Research subagents — [`agents/`](./agents/)
+## Subagents — [`agents/`](./agents/)
 
-Read-only workers for **context control**: they run noisy searches in a separate context and return a
-distilled `file:line` summary. Dispatch them during the Research phase; the main agent implements.
+Workers for **context control**: they run in a separate context and hand back a distilled result. The
+research subagents are read-only; the two verification subagents write tests only. The main agent
+implements.
 
 | Agent | Use when |
 |---|---|
@@ -40,6 +41,8 @@ distilled `file:line` summary. Dispatch them during the Research phase; the main
 | [`codebase-pattern-finder`](./agents/codebase-pattern-finder.md) | Find an existing example/pattern to mirror. |
 | [`knowledge-locator`](./agents/knowledge-locator.md) | Find prior research/plans/decisions in `docs/*` + `knowledge/`. |
 | [`security-auditor`](./agents/security-auditor.md) | unsafe audit, supply chain, secrets, pre-push gate. |
+| [`test-writer`](./agents/test-writer.md) | Implement, step 1 — write a phase's tests from the plan, failing, before any code. |
+| [`test-breaker`](./agents/test-breaker.md) | Implement, after the code — try to break it; one failing test per real finding. |
 
 ## Domain reference — [`reference/`](./reference/)
 
@@ -66,7 +69,7 @@ during Research and Implement. Replaces the former per-domain "expert" agents.
 |---|---|
 | [`research-codebase`](./skills/research-codebase/SKILL.md) | RPI phase 1 — understand a problem → `docs/research/`. |
 | [`create-plan`](./skills/create-plan/SKILL.md) | RPI phase 2 — write a phase-by-phase plan → `docs/plans/`. |
-| [`implement-plan`](./skills/implement-plan/SKILL.md) | RPI phase 3 — execute a plan, compact status per phase. |
+| [`implement-plan`](./skills/implement-plan/SKILL.md) | RPI phase 3 — per phase: tests first, implement, break, fix, compact. |
 | [`build-and-test`](./skills/build-and-test/SKILL.md) | Validate a change (primary: `cargo test --workspace`). |
 | [`add-a-lane`](./skills/add-a-lane/SKILL.md) | Add a hot-path `Lane`. |
 | [`add-an-agent`](./skills/add-an-agent/SKILL.md) | Add a strategist `Agent`. |

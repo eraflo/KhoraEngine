@@ -85,7 +85,8 @@ ${e.rules.map((r) => `- ${r}`).join('\n')}
 Query the **codegraph** MCP before grepping. Token-optimized commands via **rtk**. For any design /
 UI-UX task, use **\`/impeccable\`**. For non-trivial work, follow the **RPI** loop
 (\`/research-codebase\` → \`/create-plan\` → \`/implement-plan\`); dispatch read-only research subagents
-for context control (see \`${canon(p, 'workflow-rpi.md')}\`).
+for context control (see \`${canon(p, 'workflow-rpi.md')}\`). When implementing: **tests first** by the
+\`test-writer\` subagent, then the code, then the \`test-breaker\` subagent tries to break it.
 ${imports}`;
 }
 

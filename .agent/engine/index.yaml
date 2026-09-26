@@ -47,6 +47,8 @@ agents:
   - { path: agents/codebase-pattern-finder.md,  when: find an existing example / pattern to mirror }
   - { path: agents/knowledge-locator.md,        when: find prior research / plans / decisions }
   - { path: agents/security-auditor.md,         when: unsafe audit / supply chain / secrets / pre-push }
+  - { path: agents/test-writer.md,              when: implement step 1 — write a phase's tests from the plan, failing, before any code }
+  - { path: agents/test-breaker.md,             when: after the implementation — try to break it; one failing test per real finding }
 
 # Domain reference — on-demand knowledge (scope, key files, hard rules) per domain.
 reference:

@@ -23,7 +23,8 @@ values, and the global engine map; read [`../RULES.md`](../RULES.md) before any 
    - **Research** — [`research-codebase`](../skills/research-codebase/SKILL.md): dispatch the subagents
      below, read the relevant [`../reference/`](../reference/) domain doc, write `docs/research/`.
    - **Plan** — [`create-plan`](../skills/create-plan/SKILL.md): write `docs/plans/`.
-   - **Implement** — [`implement-plan`](../skills/implement-plan/SKILL.md): phase by phase, compact status.
+   - **Implement** — [`implement-plan`](../skills/implement-plan/SKILL.md): phase by phase — `test-writer`
+     writes the tests, the main agent implements, `test-breaker` tries to break it, then fix and compact.
 
 ## Research subagents (dispatch, don't reason inline)
 - `knowledge-locator` — prior research/plans/decisions in `docs/{research,plans}/` + `knowledge/`.
@@ -31,6 +32,10 @@ values, and the global engine map; read [`../RULES.md`](../RULES.md) before any 
 - `codebase-analyzer` — **how** a mechanism works (`file:line` + CLAD flow).
 - `codebase-pattern-finder` — an existing example to mirror.
 - `security-auditor` — read-only safety/secrets findings before any push.
+
+## Verification subagents (write tests only)
+- `test-writer` — a phase's tests from the plan, failing, before any implementation.
+- `test-breaker` — after the implementation: attacks it, one failing test per real finding.
 
 ## Domain knowledge → [`../reference/`](../reference/)
 Load the matching on-demand doc for hard rules and key files: `graphics-rendering`, `physics`, `audio`,

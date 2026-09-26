@@ -34,7 +34,9 @@ into **read-only research subagents** (they return a distilled `file:line` summa
 When you need a domain fact, **load the one [`reference/`](./reference/) doc** the index points to — not
 all of them. This keeps the working context small and accurate (long contexts degrade past ~50%).
 
-Subagents are for **context control, not role-play**: the main agent implements; the subagents research.
+Subagents are for **context control, not role-play**: the main agent implements; the subagents research,
+or write tests. **Tests come first**, from the plan, by the `test-writer` subagent; once the code passes
+them, the `test-breaker` subagent tries to break it. The implementer never edits the tests it was given.
 
 ---
 
