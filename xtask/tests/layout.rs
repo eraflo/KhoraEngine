@@ -20,7 +20,10 @@
 //!
 //! Rust checks scan `crates/*/src`, `hub/src`, `xtask/src` and
 //! `examples/*/src`. Every walk skips `target/`, `.git/`, `.codegraph/` and
-//! `node_modules/`.
+//! `node_modules/` at any depth; the generated wrappers and tool state at the
+//! root (`.claude/`, `.cursor/`, `.gemini/`, `.gitagent/`, `.khora/`,
+//! `.impeccable/`, `.dist/`); and any directory holding a `.git` entry — a
+//! worktree, submodule or nested clone, whose files are another checkout's.
 //!
 //! Every check is a **ratchet**. A check reports its violations keyed by a
 //! stable repo-relative path; `xtask/tests/layout_allow.txt` lists the known
@@ -48,6 +51,20 @@ use std::process::Command;
 
 /// Directory names never walked into, wherever they appear.
 const SKIP_DIRS: &[&str] = &["target", ".git", ".codegraph", "node_modules"];
+
+/// Directories at the repository root never walked into: generated AI
+/// wrappers and tool state, not part of the tree the checks govern.
+/// `.agent/` and `.github/` are sources and stay scanned.
+const SKIP_ROOT_DIRS: &[&str] = &[
+    ".claude",
+    ".cursor",
+    ".gemini",
+    ".codegraph",
+    ".gitagent",
+    ".khora",
+    ".impeccable",
+    ".dist",
+];
 
 /// Largest number of non-test lines a Rust file may hold.
 const MAX_NON_TEST_LINES: usize = 700;
@@ -578,12 +595,29 @@ fn child_dirs(dir: &Path) -> Vec<PathBuf> {
     dirs
 }
 
+/// True for a directory the walkers must not enter:
+///
+/// - one named in `SKIP_DIRS` (`target/`, `.git/`, `.codegraph/`,
+///   `node_modules/`), at any depth;
+/// - one named in `SKIP_ROOT_DIRS`, directly under the repository root
+///   (generated wrappers and tool state: `.claude/`, `.cursor/`, `.gemini/`,
+///   `.codegraph/`, `.gitagent/`, `.khora/`, `.impeccable/`, `.dist/`);
+/// - one holding a `.git` entry, file or directory — another checkout (a git
+///   worktree, a submodule, a nested clone) whose files are copies, not this
+///   tree's. Only directories below the walk's start are tested, so the
+///   repository root, which holds `.git/` itself, is still walked.
 fn is_skipped(path: &Path) -> bool {
-    path.file_name()
-        .is_some_and(|name| SKIP_DIRS.iter().any(|skip| name == *skip))
+    let Some(name) = path.file_name() else {
+        return false;
+    };
+    SKIP_DIRS.iter().any(|skip| name == *skip)
+        || (path.parent() == Some(repo_root().as_path())
+            && SKIP_ROOT_DIRS.iter().any(|skip| name == *skip))
+        || path.join(".git").exists()
 }
 
-/// Every file under `dir`, recursively, sorted.
+/// Every file under `dir`, recursively, sorted. Directories `is_skipped`
+/// rejects are not entered.
 fn walk_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
@@ -605,7 +639,8 @@ fn walk_files(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-/// Every directory strictly below `dir`, recursively, sorted.
+/// Every directory strictly below `dir`, recursively, sorted. Directories
+/// `is_skipped` rejects are neither listed nor entered.
 fn walk_dirs(dir: &Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let mut stack = child_dirs(dir);
@@ -1523,6 +1558,37 @@ Command `cargo test -p xtask`, text `crates/khora-core/src/lib.rs is here`.
     .map(|(line, path)| (line, path.to_owned()))
     .collect();
     assert_eq!(cited, expected);
+}
+
+/// The walkers never enter another checkout: a directory holding a `.git`
+/// file (a worktree) or a `.git/` directory (a submodule, a nested clone) is
+/// skipped with everything under it, while an ordinary sibling is visited.
+#[test]
+fn walkers_skip_nested_checkouts() {
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-nested-git-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    let setup = || -> std::io::Result<()> {
+        fs::create_dir_all(dir.join("normal/deep"))?;
+        fs::write(dir.join("normal/deep/kept.wgsl"), "")?;
+        fs::create_dir_all(dir.join("worktree/sub"))?;
+        fs::write(dir.join("worktree/.git"), "gitdir: elsewhere\n")?;
+        fs::write(dir.join("worktree/sub/copy.wgsl"), "")?;
+        fs::create_dir_all(dir.join("submodule/.git"))?;
+        fs::write(dir.join("submodule/copy.wgsl"), "")?;
+        Ok(())
+    };
+    let setup = setup();
+    let files: Vec<String> = walk_files(&dir).iter().map(|p| rel(&dir, p)).collect();
+    let dirs: Vec<String> = walk_dirs(&dir).iter().map(|p| rel(&dir, p)).collect();
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert_eq!(files, vec!["normal/deep/kept.wgsl".to_owned()]);
+    assert_eq!(dirs, vec!["normal".to_owned(), "normal/deep".to_owned()]);
 }
 
 /// Only `.agent/<profile>/knowledge/MEMORY.md` is a dated log.
