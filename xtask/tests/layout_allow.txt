@@ -14,19 +14,12 @@
 
 # --- non_test_code_under_700_lines -------------------------------------------
 
-non_test_code_under_700_lines crates/khora-editor/src/app.rs  # 926 non-test lines; split in B2 (2.42)
-non_test_code_under_700_lines crates/khora-editor/src/commands.rs  # 886 non-test lines; split in B2 (2.41)
-non_test_code_under_700_lines crates/khora-editor/src/panels/asset_browser/mod.rs  # 1593 non-test lines; split in B2 (2.39)
-non_test_code_under_700_lines crates/khora-editor/src/panels/control_plane.rs  # 1064 non-test lines; split in B2 (2.40)
-non_test_code_under_700_lines crates/khora-editor/src/panels/scene_tree.rs  # 896 non-test lines; not itemised in B2 yet
-non_test_code_under_700_lines crates/khora-editor/src/panels/viewport.rs  # 825 non-test lines; split in B2 (2.42)
 non_test_code_under_700_lines crates/khora-infra/src/graphics/shader/system.rs  # 870 non-test lines; not itemised in B2 yet
 non_test_code_under_700_lines crates/khora-infra/src/graphics/wgpu/device/graphics_device.rs  # one `impl GraphicsDevice for WgpuDevice` block; a trait impl cannot span files, splitting it means delegating to inherent methods — a code change, not a move (B3)
 non_test_code_under_700_lines crates/khora-infra/src/ui/egui/ui_builder.rs  # 959 non-test lines; not itemised in B2 yet
 non_test_code_under_700_lines crates/khora-lanes/src/render_lane/standard_pbr_lane.rs  # 774 non-test lines; split in B2 (2.22)
 non_test_code_under_700_lines crates/khora-script/src/bytecode/mod.rs  # 920 non-test lines; split by the Ergon specs (02, 04, 05, 09)
 non_test_code_under_700_lines crates/khora-script/src/vm/mod.rs  # 828 non-test lines; split by the Ergon specs (02, 04, 05, 09)
-non_test_code_under_700_lines examples/sandbox/src/main.rs  # 743 non-test lines; split in B2 (2.45)
 
 # --- wgsl_only_in_shader_tree (T9) -------------------------------------------
 

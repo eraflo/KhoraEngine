@@ -1,7 +1,7 @@
 # Gameplay — reference
 
 Domain knowledge for gameplay code on `khora-sdk`. Consulted during Research (dispatch the `codebase-*`
-subagents to apply it to concrete files). Reference: `examples/sandbox/src/main.rs`,
+subagents to apply it to concrete files). Reference: `examples/sandbox/src/` (the game in `game.rs`),
 [`../sdk-guide.md`](../sdk-guide.md).
 
 ## Scope

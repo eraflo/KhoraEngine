@@ -13,5 +13,7 @@
 
 pub mod auth;
 pub mod releases;
+pub mod repos;
 
 pub use releases::*;
+pub use repos::*;

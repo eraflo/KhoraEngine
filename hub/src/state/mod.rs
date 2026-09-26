@@ -15,10 +15,12 @@ pub mod engine_manager;
 pub mod home;
 pub mod new_project;
 pub mod screen;
+pub mod settings;
 
-pub use auth::{AuthState, SettingsState};
+pub use auth::AuthState;
 pub use banner::Banner;
 pub use engine_manager::EngineManagerState;
 pub use home::HomeState;
 pub use new_project::{EngineChoice, NewProjectState};
 pub use screen::Screen;
+pub use settings::SettingsState;

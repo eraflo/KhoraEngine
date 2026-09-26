@@ -149,7 +149,7 @@ set (`UiTransform`, `UiColor`, `UiText`, `UiImage`, `UiBorder`). Each carries a 
 | Rapier / CPAL / Taffy | `crates/khora-infra/src/{physics/rapier,audio/cpal,ui/taffy}/` |
 | Agents | `crates/khora-agents/src/{render,shadow,overlay,physics,ui,audio}_agent/` |
 | SDK entry / GameWorld / Vessel | `crates/khora-sdk/src/lib.rs`, `game_world.rs`, `vessel.rs` |
-| Sandbox app | `examples/sandbox/src/main.rs` |
+| Sandbox app | `examples/sandbox/src/` (`game.rs`, `player.rs`, `assets.rs`) |
 
 ## 7 — Engine lifecycle
 

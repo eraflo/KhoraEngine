@@ -15,9 +15,9 @@
 //! Khora Engine Editor application entry point.
 //!
 //! Thin trampoline. The substance lives in:
-//!   - `app.rs`        — `EditorApp` + `EngineApp`/`AgentProvider`/`PhaseProvider`
+//!   - `app/`          — `EditorApp` + `EngineApp`/`AgentProvider`/`PhaseProvider`
 //!   - `bootstrap.rs`  — winit + overlay/shell setup, CLI parsing
-//!   - `commands.rs`   — menu actions, save/load/build dispatchers
+//!   - `commands/`     — menu actions, save/load/build dispatchers
 //!   - `input.rs`      — per-frame input event routing
 //!   - `hot_reload.rs` — project VFS hot-reload pump
 
@@ -32,7 +32,6 @@ mod app;
 mod bootstrap;
 mod build_game;
 mod chrome;
-mod cmd_palette;
 mod commands;
 mod fonts;
 mod hot_reload;
@@ -46,7 +45,6 @@ mod project_vfs;
 mod scene_io;
 mod util;
 mod widgets;
-mod workbench;
 
 fn main() -> anyhow::Result<()> {
     bootstrap::run()

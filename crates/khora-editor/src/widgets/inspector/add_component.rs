@@ -30,7 +30,7 @@ use super::display::category_label_for_tag;
 pub const SURFACED_ELSEWHERE: &[&str] = &["Name"];
 
 /// `SemanticDomain::Ui` as the small integer tag the editor carries in
-/// [`ComponentJson::domain`] (see `ops::domain_tag`).
+/// [`ComponentJson::domain`] (see `ops::scene_tree::domain_tag`).
 ///
 /// The `Ui*` family drives the in-world Taffy UI, which is authored in a
 /// canvas, not on a 3D scene entity — dropping a `UiNode` on a mesh yields a

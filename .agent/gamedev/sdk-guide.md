@@ -1,7 +1,7 @@
 # Khora SDK — Guide
 
 Concrete, code-grounded usage of the public `khora-sdk` API. The reference game is
-`examples/sandbox/src/main.rs`.
+`examples/sandbox/src/`.
 
 - Document — Khora SDK Guide v1.0
 - Status — Active
@@ -136,4 +136,4 @@ for ev in inputs { if let InputEvent::MouseMoved { x, y } = ev { /* look */ } }
 
 ---
 
-*When in doubt, read `examples/sandbox/src/main.rs` — it exercises this whole surface.*
+*When in doubt, read `examples/sandbox/src/` — it exercises this whole surface.*

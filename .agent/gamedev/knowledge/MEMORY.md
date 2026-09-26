@@ -18,5 +18,5 @@ placeholders with your project's real state.)
 - <next things to build>
 
 ## Notes
-- Reference game: `examples/sandbox/src/main.rs`.
+- Reference game: `examples/sandbox/src/` (`game.rs`, `player.rs`, `assets.rs`).
 - For UI/design decisions use `/impeccable`. Never bake secrets into a build.

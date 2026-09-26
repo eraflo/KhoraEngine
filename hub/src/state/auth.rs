@@ -6,10 +6,9 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! GitHub authentication state + Settings screen state.
+//! GitHub authentication state.
 
 use crate::auth;
-use std::sync::mpsc;
 
 /// GitHub auth state — disconnected → connecting → connected.
 #[derive(Debug, Default)]
@@ -39,12 +38,4 @@ impl AuthState {
     pub fn is_connected(&self) -> bool {
         matches!(self, Self::Connected { .. })
     }
-}
-
-/// Settings screen state — auth flow + local repo path editing.
-#[derive(Default)]
-pub struct SettingsState {
-    pub auth: AuthState,
-    pub auth_rx: Option<mpsc::Receiver<auth::AuthMessage>>,
-    pub local_repo_draft: String,
 }

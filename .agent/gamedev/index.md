@@ -63,7 +63,7 @@ On-demand knowledge per domain. Load the one the task touches; consult it during
 
 ## Reference
 
-The **`sandbox`** example (`examples/sandbox/src/main.rs` in the engine repo) is the canonical game using
+The **`sandbox`** example (`examples/sandbox/src/` in the engine repo) is the canonical game using
 only the SDK — read it when in doubt.
 
 ---

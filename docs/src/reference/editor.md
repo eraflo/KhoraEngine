@@ -256,8 +256,8 @@ contributes its agents through `AgentProvider`.
 | `crates/khora-editor/src/panels/` | Scene tree, properties, asset browser, viewport, console, control plane |
 | `crates/khora-editor/src/chrome/` | Title bar, menus, the window frame |
 | `crates/khora-editor/src/widgets/` | Editor-specific widgets (tiles, inspector fields) |
-| `crates/khora-editor/src/ops.rs` | High-level scene operations (spawn, despawn, parent, add component) |
-| `crates/khora-editor/src/commands.rs` | The command dispatch the menus and palette go through |
+| `crates/khora-editor/src/ops/` | High-level scene operations (spawn, despawn, parent, add component) |
+| `crates/khora-editor/src/commands/` | The command dispatch the menus and palette go through |
 | `crates/khora-editor/src/scene_io.rs` | Scene save / load via `SerializationService` |
 | `crates/khora-editor/src/mod_gizmo.rs`, `picking.rs` | Gizmo dispatch and viewport picking |
 | `crates/khora-editor/src/project_vfs.rs` | The live asset index — VFS, watcher and identity registry |
@@ -270,12 +270,12 @@ editor. The engine's design keeps that vocabulary backend-agnostic; the editor i
 one consumer of it.
 
 To add a panel: write its render function under `panels/`, register it in the
-workbench, and route any mutation through `ops.rs` so the action layer stays the
+workbench, and route any mutation through `ops/` so the action layer stays the
 single place the world changes.
 
 To add a gizmo type: extend the interaction model in
 `crates/khora-core/src/ui/editor/gizmo_interact.rs`, draw it from the engine-side
-`GizmoLane`, and convert drags into `Transform` mutations through `ops.rs`.
+`GizmoLane`, and convert drags into `Transform` mutations through `ops/`.
 
 The editor depends on `khora-sdk` and `khora-tool-ui`, and nothing else from the workspace — there is no SDK bypass. Earlier revisions of this page described one; the manifest never had it.
 

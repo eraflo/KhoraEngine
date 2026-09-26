@@ -15,11 +15,13 @@
 //! Editor panels.
 
 pub mod asset_browser;
+pub mod command_palette;
 pub mod console;
 pub mod control_plane;
 pub mod properties;
 pub mod scene_tree;
 pub mod viewport;
+pub mod workbench;
 
 pub use asset_browser::AssetBrowserPanel;
 pub use console::ConsolePanel;

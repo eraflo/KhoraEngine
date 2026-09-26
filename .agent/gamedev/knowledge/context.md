@@ -20,4 +20,4 @@
 - `cargo run -p khora-editor` (engine repo) — author scenes/prefabs visually.
 
 ## Reference
-- `examples/sandbox/src/main.rs` — a complete game using only the SDK.
+- `examples/sandbox/src/` — a complete game using only the SDK.

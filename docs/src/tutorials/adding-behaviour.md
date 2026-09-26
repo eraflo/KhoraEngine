@@ -176,7 +176,7 @@ You can now spawn a scene and drive it with input. From here:
 - [How-to recipes](../how-to/index.md) — full input mapping (including mouse look),
   spawning and transforming entities, parenting.
 - Want the full free-fly controller with mouse look? Read
-  `examples/sandbox/src/main.rs`, which this lesson is a trimmed slice of.
+  `examples/sandbox/src/player.rs`, which this lesson is a trimmed slice of.
 - Curious why movement uses `delta_seconds` while physics doesn't? Read
   [The frame](../concepts/the-frame.md) — fixed timestep and interpolation.
 - Ready to write your own engine subsystem? Continue to

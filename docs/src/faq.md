@@ -35,7 +35,7 @@ Clone the repo, run `cargo test --workspace` to confirm your environment, then
 `cargo run -p sandbox` for the shipping demo. The smallest working game is under a
 hundred lines and is walked through end to end — app struct, bootstrap closure,
 spawning a scene with `Vessel` — in the [SDK quickstart](./tutorials/your-first-game.md).
-The full example lives at `examples/sandbox/src/main.rs`.
+The full example lives in `examples/sandbox/src/` — the game itself in `game.rs`.
 
 ### Can I swap the physics, audio, or render backend?
 

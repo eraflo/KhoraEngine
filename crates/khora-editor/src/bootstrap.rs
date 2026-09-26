@@ -10,7 +10,7 @@
 //!
 //! Owns the binary entry point and the closure handed to `run_winit` that
 //! constructs the renderer, the egui overlay, and the editor shell. Keeps
-//! `app.rs` focused on `EditorApp` and `EngineApp` semantics.
+//! `app/` focused on `EditorApp` and `EngineApp` semantics.
 
 use std::sync::{Arc, Mutex};
 

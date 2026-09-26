@@ -26,4 +26,4 @@ for things the map can't model (mouse motion, scroll).
 - Lock the `InputMap` mutex briefly; don't hold it across heavy work.
 - `KeyCode` / `MouseButton` / `InputBinding` come from the SDK (`prelude` / `khora_sdk`).
 
-See `examples/sandbox/src/main.rs` `PlayerController` for the full pattern. Verify with `cargo run`.
+See `PlayerController` in `examples/sandbox/src/player.rs` for the full pattern. Verify with `cargo run`.
