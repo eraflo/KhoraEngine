@@ -27,9 +27,9 @@ use khora_core::control::gorna::{
     NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
 use khora_core::lane::PhysicsDeltaTime;
-use khora_core::lane::{LaneContext, LaneRegistry, Slot};
+use khora_core::lane::{LaneContext, LaneRegistry};
 use khora_core::physics::PhysicsProvider;
-use khora_core::EngineContext;
+use khora_core::{EngineContext, WorldAccess};
 use khora_data::ecs::World;
 use khora_lanes::physics_lane::StandardPhysicsLane;
 
@@ -164,7 +164,9 @@ impl Agent for PhysicsAgent {
         };
         let provider_arc: Arc<Mutex<Box<dyn PhysicsProvider>>> = (*provider_arc).clone();
 
-        let Some(world_any) = context.world_mut() else {
+        // Matched on the field rather than through `world_mut()`, which would
+        // borrow the whole context: the deck is lent to the lane alongside it.
+        let WorldAccess::Exclusive(world_any) = &mut context.world else {
             return;
         };
         let Some(world) = world_any.downcast_mut::<World>() else {
@@ -181,12 +183,12 @@ impl Agent for PhysicsAgent {
 
         let mut ctx = LaneContext::new();
         ctx.insert(PhysicsDeltaTime(self.fixed_timestep));
-        ctx.insert(Slot::new(world));
-        ctx.insert(Slot::new(provider_guard.as_mut()));
+        ctx.insert_slot(world);
+        ctx.insert_slot(provider_guard.as_mut());
         // Forward the per-frame `OutputDeck` so the lane can publish a
         // `PhysicsStepResult` marker that `physics_world_writeback` reads
         // during Maintenance.
-        ctx.insert(Slot::new(&mut *context.deck));
+        ctx.insert_slot(&mut *context.deck);
 
         // Both strategies dispatch the same lane today; LowPower simply
         // tightens the fixed_timestep via apply_budget. A future

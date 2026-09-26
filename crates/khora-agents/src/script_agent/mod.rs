@@ -60,7 +60,7 @@ use khora_core::control::gorna::{
     StrategyOption,
 };
 use khora_core::event::Channel;
-use khora_core::lane::{LaneContext, LaneRegistry, Ref, Slot};
+use khora_core::lane::{LaneContext, LaneRegistry};
 use khora_core::script::{CommandBuffer, ScriptEvent, ScriptStateWriteback};
 use khora_core::EngineContext;
 use khora_data::flow::ScriptView;
@@ -219,25 +219,27 @@ impl Agent for ScriptingAgent {
             return;
         };
 
-        let mut ctx = LaneContext::new();
-        // SAFETY: `view` is borrowed from the LaneBus, which lives for the whole
-        // frame and is read-only; the `Ref` outlives its only consumer below.
-        ctx.insert(Ref::new(view));
-        ctx.insert(Fuel(self.fuel));
-        // SAFETY: the guard is held for the whole of this call and released
-        // when `ctx` drops, and the contention declaration is what keeps a
-        // concurrent agent out of it.
-        ctx.insert(Slot::new(&mut *runtime));
-        // SAFETY: `deck` is borrowed from EngineContext for this call.
-        ctx.insert(Slot::new(&mut *context.deck));
-
         // The two queues the engine fills, handed over rather than drained
-        // here: the agent wires, the lane works.
-        if let Some(reloads) = context.locked::<Channel<ScriptReload>>() {
-            ctx.insert(Ref::new(reloads));
+        // here: the agent wires, the lane works. Cloned (a handle to the same
+        // queue) because the deck lent below borrows the context exclusively.
+        let reloads = context.locked::<Channel<ScriptReload>>().cloned();
+        let events = context.locked::<Channel<ScriptEvent>>().cloned();
+
+        let mut ctx = LaneContext::new();
+        // `view` is borrowed from the LaneBus, read-only for the frame.
+        ctx.insert_ref(view);
+        ctx.insert(Fuel(self.fuel));
+        // The guard is held for the whole of this call, outliving `ctx`, and
+        // the contention declaration is what keeps a concurrent agent out of it.
+        ctx.insert_slot(&mut *runtime);
+        // `deck` is borrowed from EngineContext for this call.
+        ctx.insert_slot(&mut *context.deck);
+
+        if let Some(reloads) = &reloads {
+            ctx.insert_ref(reloads);
         }
-        if let Some(events) = context.locked::<Channel<ScriptEvent>>() {
-            ctx.insert(Ref::new(events));
+        if let Some(events) = &events {
+            ctx.insert_ref(events);
         }
 
         let Some(lane) = self.lanes.get(self.current_lane) else {

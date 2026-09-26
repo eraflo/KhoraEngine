@@ -83,15 +83,23 @@ produces them.** Querying the World from a lane is a rule violation.
 
 For outputs the engine drains at the I/O boundary (recorded command buffers, draw
 lists), write into a typed slot on the `OutputDeck`. The agent owns the deck via
-`EngineContext::deck`; thread a `Slot` into the `LaneContext` if the lane itself
-accumulates output. `OutputDeck::slot::<T>()` lazily creates a `T::default()` on
-first access:
+`EngineContext::deck`; lend it to the `LaneContext` with `insert_slot` if the lane
+itself accumulates output. `OutputDeck::slot::<T>()` lazily creates a `T::default()`
+on first access:
 
 ```rust
 // agent side
 let draws: &mut Vec<DrawCommand> = context.deck.slot::<Vec<DrawCommand>>();
-// … or hand the lane a Slot into it and let the lane push …
+// … or lend the lane the deck and let the lane push …
+ctx.insert_slot(&mut *context.deck);
+
+// lane side — a guard, released when it drops
+let mut deck = ctx.slot::<OutputDeck>().ok_or(LaneError::missing("&mut OutputDeck"))?;
+deck.slot::<Vec<DrawCommand>>().push(draw);
 ```
+
+The borrow checker holds the `LaneContext` to the lifetime of what it borrows, so a
+context cannot outlive the deck, the encoder or the view lent to it.
 
 ## Step 4 — Register the lane on an agent
 

@@ -66,17 +66,20 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::fmt;
+use std::marker::PhantomData;
 
 pub mod bus;
 pub mod context_keys;
 pub mod deck;
 pub mod lock;
+pub mod slot;
 pub use bus::LaneBus;
 pub use context_keys::*;
 pub use deck::OutputDeck;
 pub use lock::{
     mutex_lock, mutex_lock_render, read_lock, read_lock_render, write_lock, write_lock_render,
 };
+pub use slot::SlotGuard;
 
 /// Error type for lane operations.
 #[derive(Debug)]
@@ -246,43 +249,54 @@ impl std::fmt::Display for LaneKind {
 /// assert_eq!(ctx.get::<String>().unwrap(), "hello");
 /// ```
 ///
-/// # Mutable references
+/// # Borrowed data
 ///
-/// For data that is borrowed (not owned), use [`Slot`] (mutable) or
-/// [`Ref`] (shared) wrappers:
+/// Data the agent only borrows is lent for the context's lifetime `'a`:
+/// [`insert_slot`](LaneContext::insert_slot) for a mutable borrow, taken back
+/// by the lane as a [`SlotGuard`] through [`slot`](LaneContext::slot), and
+/// [`insert_ref`](LaneContext::insert_ref) for a shared one, read with
+/// [`get_ref`](LaneContext::get_ref). The borrow checker keeps the context from
+/// outliving what it borrows.
 ///
-/// ```rust,ignore
-/// use khora_core::lane::{LaneContext, Slot};
+/// ```rust
+/// use khora_core::lane::LaneContext;
 ///
 /// let mut value = 10u32;
-/// let mut ctx = LaneContext::new();
-/// ctx.insert(Slot::new(&mut value));
-///
-/// let slot = ctx.get::<Slot<u32>>().unwrap();
-/// *slot.get() = 20;
+/// {
+///     let mut ctx = LaneContext::new();
+///     ctx.insert_slot(&mut value);
+///     *ctx.slot::<u32>().unwrap() = 20;
+/// }
+/// assert_eq!(value, 20);
 /// ```
 ///
-/// # Safety
+/// A context is a local of one `execute`: it never crosses a thread, so it is
+/// neither `Send` nor `Sync`.
 ///
-/// `LaneContext` uses `unsafe impl Send + Sync` because it may hold
-/// [`Slot`] / [`Ref`] wrappers containing raw pointers. This is safe
-/// because the context is stack-scoped: created by the agent, passed to
-/// one lane at a time, and dropped before the next frame.
-pub struct LaneContext {
+/// ```rust,compile_fail,E0277
+/// use khora_core::lane::LaneContext;
+///
+/// fn assert_send<T: Send>() {}
+/// assert_send::<LaneContext<'static>>();
+/// ```
+///
+/// ```rust,compile_fail,E0277
+/// use khora_core::lane::LaneContext;
+///
+/// fn assert_sync<T: Sync>() {}
+/// assert_sync::<LaneContext<'static>>();
+/// ```
+pub struct LaneContext<'a> {
     data: HashMap<TypeId, Box<dyn Any>>,
+    _borrows: PhantomData<&'a mut ()>,
 }
 
-// SAFETY: All values inserted via `insert<T: Send + Sync>()` are Send+Sync.
-// Slot/Ref wrappers hold raw pointers but are only used within single-threaded
-// frame scopes where the pointed-to data is guaranteed to be alive.
-unsafe impl Send for LaneContext {}
-unsafe impl Sync for LaneContext {}
-
-impl LaneContext {
+impl<'a> LaneContext<'a> {
     /// Creates an empty context.
     pub fn new() -> Self {
         Self {
             data: HashMap::new(),
+            _borrows: PhantomData,
         }
     }
 
@@ -316,137 +330,17 @@ impl LaneContext {
     }
 }
 
-impl Default for LaneContext {
+impl Default for LaneContext<'_> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl fmt::Debug for LaneContext {
+impl fmt::Debug for LaneContext<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LaneContext")
             .field("entries", &self.data.len())
             .finish()
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Slot / Ref — safe-ish wrappers for borrowing through LaneContext
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Wraps a **mutable** borrow for storage in [`LaneContext`].
-///
-/// This erases the lifetime so the value can be stored in the type-map.
-/// The caller **must** ensure the `Slot` does not outlive the original
-/// reference (guaranteed by the stack-scoped context pattern).
-///
-/// ```rust,ignore
-/// use khora_core::lane::Slot;
-///
-/// let mut encoder: Box<dyn CommandEncoder> = /* ... */;
-/// let slot = Slot::new(encoder.as_mut());
-/// // slot.get() -> &mut dyn CommandEncoder
-/// ```
-pub struct Slot<T: ?Sized>(*mut T);
-
-// SAFETY: Slot is used only within single-threaded frame scopes.
-unsafe impl<T: ?Sized> Send for Slot<T> {}
-unsafe impl<T: ?Sized> Sync for Slot<T> {}
-
-impl<T: ?Sized> Slot<T> {
-    /// Creates a `Slot` from a mutable reference.
-    pub fn new(value: &mut T) -> Self {
-        Self(value as *mut T)
-    }
-
-    /// Creates a `Slot` from a raw pointer.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure:
-    /// - The pointer is valid and properly aligned.
-    /// - The pointed-to data outlives every use of this `Slot`.
-    /// - No other mutable reference to the data exists while the `Slot` is live.
-    pub unsafe fn from_raw(ptr: *mut T) -> Self {
-        Self(ptr)
-    }
-
-    /// Returns a mutable reference to the wrapped value.
-    ///
-    /// # Safety contract
-    ///
-    /// Safe when called within the scope where the original reference is
-    /// still alive and no other reference to the same data exists.
-    #[allow(clippy::mut_from_ref)]
-    pub fn get(&self) -> &mut T {
-        // SAFETY: guaranteed by single-lane-at-a-time execution
-        unsafe { &mut *self.0 }
-    }
-
-    /// Returns a shared reference to the wrapped value.
-    pub fn get_ref(&self) -> &T {
-        // SAFETY: same as get()
-        unsafe { &*self.0 }
-    }
-}
-
-impl Slot<dyn crate::renderer::traits::CommandEncoder> {
-    /// Lends a command encoder to a [`LaneContext`].
-    ///
-    /// # Why this exists
-    ///
-    /// A `LaneContext` is keyed by type, so what it holds must be `'static` —
-    /// and an encoder borrowed from the caller's stack is not. Erasing that
-    /// bound needs a `transmute`, and six agents were each spelling one out.
-    /// An agent chooses a lane against a budget; laundering a lifetime is not
-    /// its job, and `unsafe` at that layer is a smell whatever the comment
-    /// above it says.
-    ///
-    /// # Why it is safe to call
-    ///
-    /// It adds no hazard that [`Slot::new`] does not already carry: that
-    /// function is itself safe and turns a borrow into a raw pointer under the
-    /// same contract — **the `Slot` must not outlive the reference it was made
-    /// from**. Here that means the encoder must outlive the `LaneContext` it is
-    /// handed to, which every caller satisfies by construction: the context is
-    /// a local of the agent's `execute`, dropped before the encoder is
-    /// finished.
-    ///
-    /// What is erased is only the lifetime *bound on the trait object*; the
-    /// pointer was already lifetime-free.
-    pub fn for_encoder(encoder: &mut dyn crate::renderer::traits::CommandEncoder) -> Self {
-        // SAFETY: `Slot` holds a raw pointer, so the two types have identical
-        // layout; only the `dyn` object's lifetime bound differs. The contract
-        // that makes the pointer valid is `Slot`'s own, stated above and
-        // upheld by the caller.
-        unsafe {
-            std::mem::transmute::<
-                Slot<dyn crate::renderer::traits::CommandEncoder + '_>,
-                Slot<dyn crate::renderer::traits::CommandEncoder>,
-            >(Slot::new(encoder))
-        }
-    }
-}
-
-/// Wraps a **shared** borrow for storage in [`LaneContext`].
-///
-/// Like [`Slot`] but for immutable references.
-pub struct Ref<T: ?Sized>(*const T);
-
-// SAFETY: Ref is used only within single-threaded frame scopes.
-unsafe impl<T: ?Sized> Send for Ref<T> {}
-unsafe impl<T: ?Sized> Sync for Ref<T> {}
-
-impl<T: ?Sized> Ref<T> {
-    /// Creates a `Ref` from a shared reference.
-    pub fn new(value: &T) -> Self {
-        Self(value as *const T)
-    }
-
-    /// Returns a shared reference to the wrapped value.
-    pub fn get(&self) -> &T {
-        // SAFETY: guaranteed by frame-scoped lifetime
-        unsafe { &*self.0 }
     }
 }
 

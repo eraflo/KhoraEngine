@@ -21,7 +21,7 @@
 
 use std::any::Any;
 
-use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, Ref};
+use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind};
 use khora_core::renderer::GraphicsDevice;
 use khora_data::render::RenderWorld;
 
@@ -65,8 +65,8 @@ impl Lane for StandardShadowsLane {
     }
 
     fn estimate_cost(&self, ctx: &LaneContext) -> f32 {
-        let render_world = match ctx.get::<Ref<RenderWorld>>() {
-            Some(slot) => slot.get(),
+        let render_world = match ctx.get_ref::<RenderWorld>() {
+            Some(render_world) => render_world,
             None => return 1.0,
         };
         super::cost_estimate(render_world)

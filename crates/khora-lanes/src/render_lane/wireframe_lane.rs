@@ -30,7 +30,7 @@
 //! Per CLAD this struct holds only persistent state; init / render bodies are
 //! private free functions in this module.
 
-use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, Ref, Slot};
+use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind};
 use khora_core::renderer::api::command::{BindGroupId, BindGroupLayoutId};
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::BufferId;
@@ -467,10 +467,9 @@ impl Lane for WireframeLane {
             return Ok(());
         }
 
-        let Some(render_world) = ctx.get::<Ref<RenderWorld>>() else {
+        let Some(render_world) = ctx.get_ref::<RenderWorld>() else {
             return Ok(());
         };
-        let render_world = render_world.get();
         let Some(view) = render_world.views.first() else {
             return Ok(());
         };
@@ -484,10 +483,10 @@ impl Lane for WireframeLane {
             .get::<Arc<RwLock<Assets<GpuMesh>>>>()
             .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?
             .clone();
-        let encoder = ctx
-            .get::<Slot<dyn CommandEncoder>>()
-            .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?
-            .get();
+        let mut encoder_guard = ctx
+            .slot::<dyn CommandEncoder>()
+            .ok_or(LaneError::missing("&mut dyn CommandEncoder"))?;
+        let encoder = &mut *encoder_guard;
         let color_target = ctx
             .get::<khora_core::lane::ColorTarget>()
             .ok_or(LaneError::missing("ColorTarget"))?

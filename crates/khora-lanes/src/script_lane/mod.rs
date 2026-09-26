@@ -66,7 +66,7 @@ use std::any::Any;
 
 use self::reload::apply_reloads;
 use khora_core::event::Channel;
-use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, OutputDeck, Ref, Slot};
+use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, OutputDeck};
 use khora_core::script::{CommandBuffer, ScriptEvent, ScriptStateWriteback};
 use khora_core::Stopwatch;
 use khora_data::flow::ScriptView;
@@ -96,15 +96,14 @@ impl Lane for BudgetedScriptLane {
     fn estimate_cost(&self, ctx: &LaneContext) -> f32 {
         // Proportional to how many behaviors are live, which is the only thing
         // about the coming frame the lane can know before running it.
-        ctx.get::<Ref<ScriptView>>()
-            .map_or(1.0, |view| view.get().len() as f32)
+        ctx.get_ref::<ScriptView>()
+            .map_or(1.0, |view| view.len() as f32)
     }
 
     fn execute(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
         let view = ctx
-            .get::<Ref<ScriptView>>()
-            .ok_or_else(|| LaneError::missing("Ref<ScriptView>"))?
-            .get();
+            .get_ref::<ScriptView>()
+            .ok_or_else(|| LaneError::missing("&ScriptView"))?;
         let fuel = *ctx
             .get::<Fuel>()
             .ok_or_else(|| LaneError::missing("Fuel"))?;
@@ -112,18 +111,18 @@ impl Lane for BudgetedScriptLane {
         // The channels the engine fills. Read here rather than by the agent:
         // draining one and acting on it is work, and work is what a lane is.
         let reloads = ctx
-            .get::<Ref<Channel<ScriptReload>>>()
-            .map(|c| c.get().drain())
+            .get_ref::<Channel<ScriptReload>>()
+            .map(|c| c.drain())
             .unwrap_or_default();
         let from_engine = ctx
-            .get::<Ref<Channel<ScriptEvent>>>()
-            .map(|c| c.get().drain())
+            .get_ref::<Channel<ScriptEvent>>()
+            .map(|c| c.drain())
             .unwrap_or_default();
 
-        let runtime = ctx
-            .get::<Slot<ScriptRuntime>>()
-            .ok_or_else(|| LaneError::missing("Slot<ScriptRuntime>"))?
-            .get();
+        let mut runtime_guard = ctx
+            .slot::<ScriptRuntime>()
+            .ok_or_else(|| LaneError::missing("&mut ScriptRuntime"))?;
+        let runtime = &mut *runtime_guard;
 
         // Applied before anything runs, so a frame never executes the version
         // the author has just replaced.
@@ -139,6 +138,7 @@ impl Lane for BudgetedScriptLane {
             }
             runtime.set_pending(waiting);
             runtime.set_last_report(ScriptRunReport::default());
+            drop(runtime_guard);
             ctx.insert(ScriptRunReport::default());
             return Ok(());
         }
@@ -153,10 +153,10 @@ impl Lane for BudgetedScriptLane {
             events.push(event);
         }
 
-        let deck = ctx
-            .get::<Slot<OutputDeck>>()
-            .ok_or_else(|| LaneError::missing("Slot<OutputDeck>"))?
-            .get();
+        let mut deck_guard = ctx
+            .slot::<OutputDeck>()
+            .ok_or_else(|| LaneError::missing("&mut OutputDeck"))?;
+        let deck = &mut *deck_guard;
 
         let clock = Stopwatch::new();
         let mut host = Host::new();
@@ -194,6 +194,8 @@ impl Lane for BudgetedScriptLane {
         runtime.set_pending(waiting);
         runtime.set_last_report(report.clone());
 
+        drop(deck_guard);
+        drop(runtime_guard);
         ctx.insert(report);
         Ok(())
     }

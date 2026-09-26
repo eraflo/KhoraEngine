@@ -33,7 +33,7 @@ use khora_core::control::gorna::{
 };
 use khora_core::lane::{
     ClearColor, ColorTarget, DepthTarget, LaneContext, LaneKind, LaneRegistry, ShadowAtlasView,
-    ShadowComparisonSampler, Slot,
+    ShadowComparisonSampler,
 };
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::api::scene::GpuMesh;
@@ -128,10 +128,11 @@ impl Agent for RenderAgent {
         let mut strategies = Vec::new();
         // Negotiate from a stub LaneContext: we don't have access to the live
         // RenderWorld here (negotiate runs on the DCC thread), so we estimate
-        // costs against the lane defaults.
-        let mut stub_world = RenderWorld::new();
+        // costs against the lane defaults. Lent read-only, as `execute` lends
+        // the live one: lanes read it with `get_ref` in both places.
+        let stub_world = RenderWorld::new();
         let mut ctx = LaneContext::new();
-        ctx.insert(Slot::new(&mut stub_world));
+        ctx.insert_ref(&stub_world);
 
         for lane in self.lanes.find_by_kind(LaneKind::Render) {
             let cost = lane.estimate_cost(&ctx);
@@ -328,22 +329,19 @@ impl Agent for RenderAgent {
             if let Some(ps) = pipeline_system.clone() {
                 ctx.insert(ps);
             }
-            // Both encoders outlive `ctx`, which is dropped at the end of this
-            // block — before either is finished. That is the contract
-            // `Slot::for_encoder` states.
-            ctx.insert(Slot::for_encoder(encoder.as_mut()));
-            ctx.insert(khora_data::render::TransparentEncoder(Slot::for_encoder(
+            // Both encoders are lent to `ctx`, which is dropped at the end of
+            // this block — before either is finished.
+            ctx.insert_slot(encoder.as_mut());
+            ctx.insert_slot_as::<khora_data::render::TransparentEncoder, _>(
                 transparent_encoder.as_mut(),
-            )));
-            // `render_world` is borrowed from the LaneBus, which lives for the
-            // entire frame and is read-only — the `Ref`'s pointer outlives its
-            // only consumer (this lane).
-            ctx.insert(khora_core::lane::Ref::new(render_world));
-            // SAFETY: deck is borrowed from EngineContext for the duration
-            // of this agent.execute() call. Lit lanes read `ShadowEntries`
+            );
+            // `render_world` is borrowed from the LaneBus, read-only for the
+            // frame.
+            ctx.insert_ref(render_world);
+            // The deck is borrowed from EngineContext for this call. Lit lanes read `ShadowEntries`
             // (written by shadow_pass_lane in OBSERVE) from the deck to
             // build per-light shadow uniforms.
-            ctx.insert(Slot::new(&mut *context.deck));
+            ctx.insert_slot(&mut *context.deck);
             ctx.insert(color_target);
             if let Some(dt) = depth_target {
                 ctx.insert(dt);

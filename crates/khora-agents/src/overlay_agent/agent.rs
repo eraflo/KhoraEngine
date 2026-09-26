@@ -35,7 +35,7 @@ use khora_core::control::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
     NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
-use khora_core::lane::{ClearColor, ColorTarget, DepthTarget, LaneContext, LaneRegistry, Slot};
+use khora_core::lane::{ClearColor, ColorTarget, DepthTarget, LaneContext, LaneRegistry};
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::api::scene::GpuMesh;
 use khora_core::renderer::GraphicsDevice;
@@ -181,15 +181,14 @@ impl Agent for OverlayAgent {
             let mut ctx = LaneContext::new();
             ctx.insert(device.clone());
             ctx.insert(gpu_meshes.clone());
-            // The encoder outlives `ctx`, which is dropped before it is
-            // finished — the contract `Slot::for_encoder` states.
-            ctx.insert(Slot::for_encoder(encoder.as_mut()));
+            // The encoder is lent to `ctx`, which is dropped before the
+            // encoder is finished.
+            ctx.insert_slot(encoder.as_mut());
             // RenderWorld carries the primary view GizmoLane needs for
             // its camera matrix.
             if let Some(rw) = render_world {
-                ctx.insert(khora_core::lane::Ref::new(rw));
+                ctx.insert_ref(rw);
             }
-            ctx.insert(Slot::new(&mut *context.deck));
             ctx.insert(color_target);
             if let Some(dt) = depth_target {
                 ctx.insert(dt);
@@ -222,6 +221,10 @@ impl Agent for OverlayAgent {
             {
                 ctx.insert(wireframe_cfg);
             }
+
+            // Lent last: the deck borrow is exclusive, so the resource
+            // lookups above have to be done by now.
+            ctx.insert_slot(&mut *context.deck);
 
             for lane in self.lanes.all() {
                 if let Err(e) = lane.execute(&mut ctx) {

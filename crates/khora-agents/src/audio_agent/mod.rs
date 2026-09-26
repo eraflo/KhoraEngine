@@ -33,7 +33,7 @@ use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
 };
-use khora_core::lane::{LaneContext, LaneRegistry, Ref, Slot};
+use khora_core::lane::{LaneContext, LaneRegistry};
 use khora_core::EngineContext;
 use khora_data::flow::AudioView;
 use khora_lanes::audio_lane::SpatialMixingLane;
@@ -138,14 +138,11 @@ impl Agent for AudioAgent {
 
         let mut ctx = LaneContext::new();
         ctx.insert(mix_bus);
-        // SAFETY: `view` is borrowed from the LaneBus, which lives for
-        // the whole frame and is read-only; the Ref's pointer outlives
-        // its only consumer (the lane below).
-        ctx.insert(Ref::new(view));
-        // SAFETY: `deck` is borrowed from EngineContext for the duration
-        // of this agent.execute() call. The lane writes its
-        // `AudioPlaybackWriteback` slot through this borrow.
-        ctx.insert(Slot::new(&mut *context.deck));
+        // `view` is borrowed from the LaneBus, read-only for the frame.
+        ctx.insert_ref(view);
+        // `deck` is borrowed from EngineContext for this call. The lane
+        // writes its `AudioPlaybackWriteback` slot through this borrow.
+        ctx.insert_slot(&mut *context.deck);
 
         if let Some(lane) = self.lanes.get(self.current_lane) {
             if let Err(e) = lane.execute(&mut ctx) {

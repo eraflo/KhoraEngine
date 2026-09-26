@@ -33,7 +33,7 @@
 use std::sync::Arc;
 
 use khora_core::audio::{AudioMixBus, StreamInfo};
-use khora_core::lane::{LaneError, OutputDeck, Ref, Slot};
+use khora_core::lane::{LaneError, OutputDeck};
 use khora_data::ecs::PlaybackState;
 use khora_data::flow::{AudioPlaybackUpdate, AudioPlaybackWriteback, AudioView};
 
@@ -67,9 +67,8 @@ impl khora_core::lane::Lane for SpatialMixingLane {
             .ok_or(LaneError::missing("Arc<dyn AudioMixBus>"))?
             .clone();
         let view = ctx
-            .get::<Ref<AudioView>>()
-            .ok_or(LaneError::missing("Ref<AudioView>"))?
-            .get();
+            .get_ref::<AudioView>()
+            .ok_or(LaneError::missing("&AudioView"))?;
 
         let stream_info = mix_bus.stream_info();
         let sample_count = FRAMES_PER_TICK * stream_info.channels as usize;
@@ -78,8 +77,7 @@ impl khora_core::lane::Lane for SpatialMixingLane {
         let writeback = self.mix(view, &mut staging, &stream_info);
         mix_bus.write_block(&staging);
 
-        if let Some(deck_slot) = ctx.get::<Slot<OutputDeck>>() {
-            let deck = deck_slot.get();
+        if let Some(mut deck) = ctx.slot::<OutputDeck>() {
             let slot = deck.slot::<AudioPlaybackWriteback>();
             slot.updates.extend(writeback.updates);
         }

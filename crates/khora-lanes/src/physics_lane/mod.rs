@@ -56,16 +56,16 @@ impl khora_core::lane::Lane for StandardPhysicsLane {
         &self,
         ctx: &mut khora_core::lane::LaneContext,
     ) -> Result<(), khora_core::lane::LaneError> {
-        use khora_core::lane::{LaneError, OutputDeck, Slot};
+        use khora_core::lane::{LaneError, OutputDeck};
 
         let dt = ctx
             .get::<khora_core::lane::PhysicsDeltaTime>()
             .ok_or(LaneError::missing("PhysicsDeltaTime"))?
             .0;
-        let provider = ctx
-            .get::<Slot<dyn PhysicsProvider>>()
-            .ok_or(LaneError::missing("Slot<dyn PhysicsProvider>"))?
-            .get();
+        let mut provider_guard = ctx
+            .slot::<dyn PhysicsProvider>()
+            .ok_or(LaneError::missing("&mut dyn PhysicsProvider"))?;
+        let provider = &mut *provider_guard;
 
         provider.step(dt);
 
@@ -99,8 +99,7 @@ impl khora_core::lane::Lane for StandardPhysicsLane {
         // pulls fresh transforms from the provider when it's present —
         // unifying the Lane → Deck → DataSystem pattern across audio and
         // physics, and avoiding stale writebacks when the agent is paused.
-        if let Some(deck_slot) = ctx.get::<Slot<OutputDeck>>() {
-            let deck = deck_slot.get();
+        if let Some(mut deck) = ctx.slot::<OutputDeck>() {
             *deck.slot::<khora_data::flow::PhysicsStepResult>() =
                 khora_data::flow::PhysicsStepResult { dt };
             // Extended, not replaced: the agent runs this lane once per fixed

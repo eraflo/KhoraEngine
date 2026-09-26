@@ -38,7 +38,7 @@ use khora_core::control::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
     NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
-use khora_core::lane::{LaneContext, LaneRegistry, Ref, Slot};
+use khora_core::lane::{LaneContext, LaneRegistry};
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::api::scene::GpuMesh;
 use khora_core::renderer::GraphicsDevice;
@@ -133,7 +133,7 @@ impl Agent for ShadowAgent {
         // borrowed empty stub.
         let stub_world = RenderWorld::new();
         let mut ctx = LaneContext::new();
-        ctx.insert(Ref::new(&stub_world));
+        ctx.insert_ref(&stub_world);
 
         let lane_time = |name: &str, default_cost: f32| {
             let cost = self
@@ -251,17 +251,15 @@ impl Agent for ShadowAgent {
             let mut ctx = LaneContext::new();
             ctx.insert(device.clone());
             ctx.insert(gpu_meshes);
-            // The encoder outlives `ctx`, which is dropped before it is
-            // finished — the contract `Slot::for_encoder` states.
-            ctx.insert(Slot::for_encoder(encoder.as_mut()));
-            ctx.insert(Ref::new(render_world));
+            // The encoder is lent to `ctx`, which is dropped before the
+            // encoder is finished.
+            ctx.insert_slot(encoder.as_mut());
+            ctx.insert_ref(render_world);
             if let Some(shadow_view) = context.bus.get::<khora_data::flow::ShadowView>() {
-                ctx.insert(Ref::new(shadow_view));
+                ctx.insert_ref(shadow_view);
             }
-            // SAFETY: deck is borrowed from EngineContext for the duration
-            // of this agent.execute() call; the lane runs synchronously
-            // before the slot is dropped.
-            ctx.insert(Slot::new(&mut *context.deck));
+            // The deck is borrowed from EngineContext for this call.
+            ctx.insert_slot(&mut *context.deck);
 
             // Pick exactly one lane (the strategy GORNA selected) and run
             // it. The unselected lanes stay idle for this frame — their

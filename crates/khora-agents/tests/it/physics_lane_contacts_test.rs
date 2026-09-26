@@ -24,7 +24,7 @@
 //! its own tests.
 
 use khora_core::ecs::entity::EntityId;
-use khora_core::lane::{Lane, LaneContext, OutputDeck, PhysicsDeltaTime, Slot};
+use khora_core::lane::{Lane, LaneContext, OutputDeck, PhysicsDeltaTime};
 use khora_core::math::{Quat, Vec3};
 use khora_core::physics::{
     BodyType, ColliderDesc, ColliderShape, CollisionKind, ContactBatch, PhysicsProvider,
@@ -86,8 +86,8 @@ fn a_world_with_a_contact() -> Box<dyn PhysicsProvider> {
 fn run(provider: &mut Box<dyn PhysicsProvider>, deck: &mut OutputDeck) {
     let mut ctx = LaneContext::new();
     ctx.insert(PhysicsDeltaTime(1.0 / 60.0));
-    ctx.insert(Slot::new(provider.as_mut()));
-    ctx.insert(Slot::new(deck));
+    ctx.insert_slot(provider.as_mut());
+    ctx.insert_slot(deck);
     StandardPhysicsLane::new()
         .execute(&mut ctx)
         .expect("the lane ran");

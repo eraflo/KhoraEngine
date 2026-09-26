@@ -38,7 +38,7 @@ pub use low_res::{LowResShadowsLane, STRATEGY_NAME as LOW_RES_STRATEGY_NAME};
 pub use medium::{MediumShadowsLane, STRATEGY_NAME as MEDIUM_STRATEGY_NAME};
 pub use standard::{StandardShadowsLane, STRATEGY_NAME as STANDARD_STRATEGY_NAME};
 
-use khora_core::lane::{LaneContext, LaneError, Ref, Slot};
+use khora_core::lane::{LaneContext, LaneError};
 use khora_core::renderer::api::scene::GpuMesh;
 use khora_core::renderer::{traits::CommandEncoder, GraphicsDevice};
 use khora_data::assets::Assets;
@@ -85,17 +85,14 @@ pub(crate) fn execute_shared(
             .get::<std::sync::Arc<std::sync::RwLock<Assets<GpuMesh>>>>()
             .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?
             .clone();
-        let encoder = ctx
-            .get::<Slot<dyn CommandEncoder>>()
-            .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?
-            .get();
+        let mut encoder_guard = ctx
+            .slot::<dyn CommandEncoder>()
+            .ok_or(LaneError::missing("&mut dyn CommandEncoder"))?;
+        let encoder = &mut *encoder_guard;
         let render_world = ctx
-            .get::<Ref<RenderWorld>>()
-            .ok_or(LaneError::missing("Ref<RenderWorld>"))?
-            .get();
-        let shadow_view = ctx
-            .get::<Ref<khora_data::flow::ShadowView>>()
-            .map(|r| r.get());
+            .get_ref::<RenderWorld>()
+            .ok_or(LaneError::missing("&RenderWorld"))?;
+        let shadow_view = ctx.get_ref::<khora_data::flow::ShadowView>();
 
         state.render(
             atlas_2d_max_lights,
@@ -113,8 +110,7 @@ pub(crate) fn execute_shared(
     // `OutputDeck`. This is the **only** cross-lane channel — no
     // `LaneContext::insert`, no `FrameContext` hoist, no shared
     // resource. Lit consumer lanes read `deck.slot::<ShadowFrame>()`.
-    if let Some(deck_slot) = ctx.get::<Slot<khora_core::lane::OutputDeck>>() {
-        let deck = deck_slot.get();
+    if let Some(mut deck) = ctx.slot::<khora_core::lane::OutputDeck>() {
         let frame = deck.slot::<khora_core::renderer::api::shadow::ShadowFrame>();
         frame.bindings = state.shadow_bindings();
         if let Ok(results) = state.shadow_results.read() {

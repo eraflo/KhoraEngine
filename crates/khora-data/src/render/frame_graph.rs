@@ -24,7 +24,6 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use khora_core::renderer::api::command::CommandBufferId;
-use khora_core::renderer::traits::CommandEncoder;
 use khora_core::renderer::GraphicsDevice;
 
 /// Logical resource handle in the frame graph — used for declaring reads/writes.
@@ -143,14 +142,16 @@ pub struct TransparentPassSlot(pub Option<PassContribution>);
 #[derive(Default)]
 pub struct OverlayPassSlot(pub Option<PassContribution>);
 
-/// The encoder a lane records its transparent draws into.
+/// Tag naming the encoder a lane records its transparent draws into.
 ///
-/// A newtype because [`LaneContext`](khora_core::lane::LaneContext) is keyed by
+/// A tag because [`LaneContext`](khora_core::lane::LaneContext) is keyed by
 /// type, so the opaque encoder and this one cannot both be a bare
-/// `Slot<dyn CommandEncoder>`. Only the lit lanes — the ones with a blended
-/// batch — look for it; every other lane keeps recording into the single
-/// encoder it always had.
-pub struct TransparentEncoder(pub khora_core::lane::Slot<dyn CommandEncoder>);
+/// `dyn CommandEncoder` borrow: the agent lends it with
+/// `insert_slot_as::<TransparentEncoder, _>` and a lane takes it with
+/// `slot_as::<TransparentEncoder, dyn CommandEncoder>`. Only the lit lanes —
+/// the ones with a blended batch — look for it; every other lane keeps
+/// recording into the single encoder it always had.
+pub struct TransparentEncoder;
 
 /// Per-frame collection of recorded passes.
 ///

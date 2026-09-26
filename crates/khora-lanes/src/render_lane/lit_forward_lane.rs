@@ -224,9 +224,8 @@ impl khora_core::lane::Lane for LitForwardLane {
     }
 
     fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
-        let render_world = match ctx.get::<khora_core::lane::Ref<khora_data::render::RenderWorld>>()
-        {
-            Some(slot) => slot.get(),
+        let render_world = match ctx.get_ref::<khora_data::render::RenderWorld>() {
+            Some(render_world) => render_world,
             None => return 1.0,
         };
         let gpu_meshes = match ctx.get::<std::sync::Arc<
@@ -267,7 +266,7 @@ impl khora_core::lane::Lane for LitForwardLane {
         &self,
         ctx: &mut khora_core::lane::LaneContext,
     ) -> Result<(), khora_core::lane::LaneError> {
-        use khora_core::lane::{LaneError, Ref, Slot};
+        use khora_core::lane::LaneError;
         let device = ctx
             .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
@@ -280,14 +279,13 @@ impl khora_core::lane::Lane for LitForwardLane {
             >>()
             .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?
             .clone();
-        let encoder = ctx
-            .get::<Slot<dyn khora_core::renderer::traits::CommandEncoder>>()
-            .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?
-            .get();
+        let mut encoder_guard = ctx
+            .slot::<dyn khora_core::renderer::traits::CommandEncoder>()
+            .ok_or(LaneError::missing("&mut dyn CommandEncoder"))?;
+        let encoder = &mut *encoder_guard;
         let render_world = ctx
-            .get::<Ref<khora_data::render::RenderWorld>>()
-            .ok_or(LaneError::missing("Ref<RenderWorld>"))?
-            .get();
+            .get_ref::<khora_data::render::RenderWorld>()
+            .ok_or(LaneError::missing("&RenderWorld"))?;
         let color_target = ctx
             .get::<khora_core::lane::ColorTarget>()
             .ok_or(LaneError::missing("ColorTarget"))?
@@ -312,11 +310,9 @@ impl khora_core::lane::Lane for LitForwardLane {
         // the lit render in that case. `entries` is always present
         // (possibly empty).
         let (shadow_entries, shadow_bindings) = ctx
-            .get::<Slot<khora_core::lane::OutputDeck>>()
-            .map(|s| {
-                let frame = s
-                    .get()
-                    .slot::<khora_core::renderer::api::shadow::ShadowFrame>();
+            .slot::<khora_core::lane::OutputDeck>()
+            .map(|mut s| {
+                let frame = s.slot::<khora_core::renderer::api::shadow::ShadowFrame>();
                 (frame.entries.clone(), frame.bindings)
             })
             .unwrap_or_default();
@@ -332,7 +328,9 @@ impl khora_core::lane::Lane for LitForwardLane {
             ibl_bindings,
             device.as_ref(),
             encoder,
-            ctx.get::<khora_data::render::TransparentEncoder>(),
+            ctx.slot_as::<khora_data::render::TransparentEncoder, dyn khora_core::renderer::traits::CommandEncoder>()
+                .as_deref_mut()
+                .map(|encoder| encoder as &mut dyn CommandEncoder),
             &render_ctx,
             &gpu_meshes,
         );
@@ -374,7 +372,7 @@ impl LitForwardLane {
         ibl_bindings: Option<khora_core::renderer::api::ibl::IblGpuBindings>,
         device: &dyn khora_core::renderer::GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
-        transparent_encoder: Option<&khora_data::render::TransparentEncoder>,
+        transparent_encoder: Option<&mut dyn CommandEncoder>,
         render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) {
@@ -812,7 +810,7 @@ impl LitForwardLane {
         // sky repaint the glass: a blended surface writes no depth, and the sky
         // paints exactly the pixels left at the far plane.
         super::record_transparent_pass(
-            transparent_encoder.map(|handle| handle.0.get()),
+            transparent_encoder,
             &transparent_draws,
             render_ctx,
             &camera_bind_group,

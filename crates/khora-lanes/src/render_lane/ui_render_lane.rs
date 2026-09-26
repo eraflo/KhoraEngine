@@ -18,7 +18,7 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, Ref, Slot};
+use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind};
 use khora_core::math::{Mat4, Vec4};
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutEntry, BindGroupLayoutId,
@@ -253,17 +253,15 @@ impl Lane for UiRenderLane {
             .get::<Arc<dyn GraphicsDevice>>()
             .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?;
         let ui_scene = ctx
-            .get::<Ref<UiScene>>()
-            .ok_or(LaneError::missing("Ref<UiScene>"))?
-            .get();
+            .get_ref::<UiScene>()
+            .ok_or(LaneError::missing("&UiScene"))?;
         let atlas_map = ctx
-            .get::<Ref<khora_data::ui::UiAtlasMap>>()
-            .ok_or(LaneError::missing("Ref<UiAtlasMap>"))?
-            .get();
-        let encoder = ctx
-            .get::<Slot<dyn khora_core::renderer::traits::CommandEncoder>>()
-            .ok_or(LaneError::missing("Slot<dyn CommandEncoder>"))?
-            .get();
+            .get_ref::<khora_data::ui::UiAtlasMap>()
+            .ok_or(LaneError::missing("&UiAtlasMap"))?;
+        let mut encoder_guard = ctx
+            .slot::<dyn khora_core::renderer::traits::CommandEncoder>()
+            .ok_or(LaneError::missing("&mut dyn CommandEncoder"))?;
+        let encoder = &mut *encoder_guard;
         let color_target = ctx
             .get::<khora_core::lane::ColorTarget>()
             .ok_or(LaneError::missing("ColorTarget"))?
@@ -335,8 +333,7 @@ impl Lane for UiRenderLane {
         //    the device's bind-group table bounded instead of leaking one entry
         //    per UI frame.
         let mut atlas_bg = None;
-        if let Some(atlas_slot) = ctx.get::<Slot<khora_core::renderer::api::util::TextureAtlas>>() {
-            let atlas = atlas_slot.get();
+        if let Some(atlas) = ctx.slot::<khora_core::renderer::api::util::TextureAtlas>() {
             if let (Some(layout), Some(sampler)) = (
                 self.atlas_layout.get().copied(),
                 self.sampler.get().copied(),

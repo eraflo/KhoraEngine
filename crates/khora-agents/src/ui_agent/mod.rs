@@ -38,8 +38,7 @@ use khora_core::control::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
 };
-use khora_core::lane::Ref;
-use khora_core::lane::{ColorTarget, Lane, LaneContext, Slot};
+use khora_core::lane::{ColorTarget, Lane, LaneContext};
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::api::text::TextRenderer;
 use khora_core::renderer::GraphicsDevice;
@@ -237,25 +236,24 @@ impl Agent for UiAgent {
             // duration of this frame's UI work).
             if let Some(guard) = atlas_guard.as_mut() {
                 if let Some(atlas) = guard.as_mut() {
-                    ctx.insert(Slot::new(atlas));
+                    ctx.insert_slot(atlas);
                 }
             }
-            // SAFETY: ui_scene is borrowed from the LaneBus, alive for the
-            // full frame; ctx (which holds the Ref) is dropped well before.
-            ctx.insert(Ref::new(ui_scene));
-            ctx.insert(Ref::new(&atlas_map));
+            // `ui_scene` is borrowed from the LaneBus, read-only for the frame.
+            ctx.insert_ref(ui_scene);
+            ctx.insert_ref(&atlas_map);
 
-            // The encoder outlives `ctx`, which is dropped before it is
-            // finished — the contract `Slot::for_encoder` states.
-            ctx.insert(Slot::for_encoder(encoder.as_mut()));
+            // The encoder is lent to `ctx`, which is dropped before the
+            // encoder is finished.
+            ctx.insert_slot(encoder.as_mut());
             ctx.insert(color_target);
 
             if let Err(e) = lane.execute(&mut ctx) {
                 log::error!("UiAgent: UiRenderLane execution failed: {}", e);
             }
         }
-        // Drop the LaneContext (with its Slot<TextureAtlas>) before
-        // releasing `atlas_guard` so the borrow chain unwinds cleanly.
+        // The LaneContext (which borrowed the atlas) is gone; release
+        // `atlas_guard` before finishing the encoder.
         drop(atlas_guard);
         let Some(cmd_buf) = encoder.finish() else {
             log::error!("UiAgent: encoder.finish() returned None — skipping UiPass submission");

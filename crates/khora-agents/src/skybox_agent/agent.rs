@@ -26,7 +26,7 @@ use khora_core::control::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
     NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
-use khora_core::lane::{ColorTarget, DepthTarget, LaneContext, LaneRegistry, Slot};
+use khora_core::lane::{ColorTarget, DepthTarget, LaneContext, LaneRegistry};
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
@@ -158,11 +158,11 @@ impl Agent for SkyboxAgent {
         {
             let mut ctx = LaneContext::new();
             ctx.insert(device.clone());
-            // The encoder outlives `ctx`, which is dropped before it is
-            // finished — the contract `Slot::for_encoder` states.
-            ctx.insert(Slot::for_encoder(encoder.as_mut()));
+            // The encoder is lent to `ctx`, which is dropped before the
+            // encoder is finished.
+            ctx.insert_slot(encoder.as_mut());
             if let Some(rw) = render_world {
-                ctx.insert(khora_core::lane::Ref::new(rw));
+                ctx.insert_ref(rw);
             }
             ctx.insert(color_target);
             ctx.insert(depth_target);
