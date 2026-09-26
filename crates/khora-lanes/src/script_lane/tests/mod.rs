@@ -18,6 +18,11 @@
 //! behaviors that *do* run produce exactly what they would have produced with
 //! no budget at all. Degrading must cost lateness, never correctness.
 
+mod event;
+mod lifecycle;
+mod reload;
+mod save;
+
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};

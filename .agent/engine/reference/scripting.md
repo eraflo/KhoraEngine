@@ -30,7 +30,7 @@ the next frame resumes rather than restarts. Suspension is the normal path, not 
 - Lane: `crates/khora-lanes/src/script_lane/` — `mod.rs` (the `Lane`), `frame.rs` (the loop),
   `turn.rs` (one behavior's turn), `hooks.rs`, `runtime.rs` (`ScriptRuntime`), `reload.rs`,
   `report.rs`, `persistence.rs`.
-- Agent: `crates/khora-agents/src/script_agent/mod.rs`.
+- Agent: `crates/khora-agents/src/script_agent/agent.rs`.
 - Engine→script events: `khora-core/src/script/event.rs` (`Channel<ScriptEvent>`).
 - Script→engine effects: `khora-core/src/script/buffer.rs` (`CommandBuffer`, `WorldCommand`), applied
   by a `DataSystem` in `khora-data/src/ecs/systems/script_commands/`.

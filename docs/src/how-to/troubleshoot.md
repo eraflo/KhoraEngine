@@ -70,7 +70,7 @@ targets, follow the [SDK quickstart](../tutorials/your-first-game.md) and the ed
 The render system classifies every surface-acquire outcome and every device-health flag into a
 deliberate action, so most GPU hiccups are handled without a panic. The pure decision logic lives in
 `crates/khora-infra/src/graphics/wgpu/resilience.rs`; the side effects (reconfigure / skip / error)
-are applied in `system.rs`. Knowing which bucket a log line falls into tells you whether to act.
+are applied in `crates/khora-infra/src/graphics/wgpu/system/mod.rs`. Knowing which bucket a log line falls into tells you whether to act.
 
 ### Brief flicker or a single dropped frame after an alt-tab, resolution change, or display switch — then it recovers on its own
 

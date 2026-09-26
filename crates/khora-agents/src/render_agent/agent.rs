@@ -20,6 +20,7 @@
 //! looked up from the [`ServiceRegistry`] each frame — agents are not
 //! the owners of those resources.
 
+use super::strategy::RenderingStrategy;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -57,22 +58,6 @@ const COST_TO_MS_SCALE: f32 = 5.0;
 
 /// Approximate VRAM per mesh in bytes (vertex + index buffers).
 const DEFAULT_VRAM_PER_MESH: u64 = 100 * 1024;
-
-/// Rendering strategy selection mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum RenderingStrategy {
-    /// Simple unlit rendering (vertex colors only).
-    #[default]
-    Unlit,
-    /// Standard forward rendering with lighting (Blinn-Phong).
-    LitForward,
-    /// Full PBR (Cook-Torrance) forward rendering with shadows.
-    StandardPbr,
-    /// Forward+ (tiled forward) rendering with compute-based light culling.
-    ForwardPlus,
-    /// Automatic selection based on scene complexity (light count).
-    Auto,
-}
 
 /// The agent responsible for the main render pass (`LaneKind::Render`).
 ///

@@ -23,10 +23,8 @@ use khora_script::arena::Persisted;
 use khora_script::native::Host;
 use khora_script::vm::Value;
 
-use super::tests::{
-    compile, damage_all, entity, health, runtime_with_guard, view_of, GUARD, MODULE,
-};
-use super::{run_behaviors, ReloadReport, ScriptRuntime};
+use super::{compile, damage_all, entity, health, runtime_with_guard, view_of, GUARD, MODULE};
+use crate::script_lane::{run_behaviors, ReloadReport, ScriptRuntime};
 
 /// The guard after an edit that inserts a field *above* `health` and adds one
 /// below — the case a positional carry-over gets wrong.

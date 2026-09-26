@@ -12,10 +12,6 @@ no_file_and_folder_module_pair crates/khora-script/src/bridge.rs  # becomes brid
 
 # --- test_files_follow_convention (T1) ---------------------------------------
 
-test_files_follow_convention crates/khora-lanes/src/script_lane/event_tests.rs  # to script_lane/tests/ in B2 (2.23)
-test_files_follow_convention crates/khora-lanes/src/script_lane/lifecycle_tests.rs  # to script_lane/tests/ in B2 (2.23)
-test_files_follow_convention crates/khora-lanes/src/script_lane/reload_tests.rs  # to script_lane/tests/ in B2 (2.23)
-test_files_follow_convention crates/khora-lanes/src/script_lane/save_tests.rs  # to script_lane/tests/ in B2 (2.23)
 test_files_follow_convention crates/khora-script/src/dispatch_tests.rs  # to dispatch/tests/ in B2 (2.35)
 test_files_follow_convention crates/khora-script/src/native/engine_types_tests.rs  # to native/tests/ in B2 (2.35)
 test_files_follow_convention crates/khora-script/src/native/world_tests.rs  # to native/tests/ in B2 (2.35)
@@ -29,12 +25,8 @@ non_test_code_under_700_lines crates/khora-editor/src/panels/control_plane.rs  #
 non_test_code_under_700_lines crates/khora-editor/src/panels/scene_tree.rs  # 896 non-test lines; not itemised in B2 yet
 non_test_code_under_700_lines crates/khora-editor/src/panels/viewport.rs  # 825 non-test lines; split in B2 (2.42)
 non_test_code_under_700_lines crates/khora-infra/src/graphics/shader/system.rs  # 870 non-test lines; not itemised in B2 yet
-non_test_code_under_700_lines crates/khora-infra/src/graphics/wgpu/device.rs  # 1977 non-test lines; split in B2 (2.28)
-non_test_code_under_700_lines crates/khora-infra/src/graphics/wgpu/system.rs  # 1352 non-test lines; split in B2 (2.29)
+non_test_code_under_700_lines crates/khora-infra/src/graphics/wgpu/device/graphics_device.rs  # one `impl GraphicsDevice for WgpuDevice` block; a trait impl cannot span files, splitting it means delegating to inherent methods — a code change, not a move (B3)
 non_test_code_under_700_lines crates/khora-infra/src/ui/egui/ui_builder.rs  # 959 non-test lines; not itemised in B2 yet
-non_test_code_under_700_lines crates/khora-lanes/src/render_lane/forward_plus_lane.rs  # 1409 non-test lines; split in B2 (2.20)
-non_test_code_under_700_lines crates/khora-lanes/src/render_lane/lit_forward_lane.rs  # 1075 non-test lines; split in B2 (2.21)
-non_test_code_under_700_lines crates/khora-lanes/src/render_lane/simple_unlit_lane.rs  # 737 non-test lines; split in B2 (2.22)
 non_test_code_under_700_lines crates/khora-lanes/src/render_lane/standard_pbr_lane.rs  # 774 non-test lines; split in B2 (2.22)
 non_test_code_under_700_lines crates/khora-script/src/bytecode/mod.rs  # 920 non-test lines; split by the Ergon specs (02, 04, 05, 09)
 non_test_code_under_700_lines crates/khora-script/src/dispatch_tests.rs  # 1289 lines, all tests; becomes tests/ in B2 (2.35)
@@ -49,9 +41,6 @@ wgsl_only_in_shader_tree crates/khora-lanes/src/render_lane/shaders/pipelines/te
 
 # --- every_agent_folder_has_agent_rs -----------------------------------------
 
-every_agent_folder_has_agent_rs crates/khora-agents/src/audio_agent  # agent into agent.rs in B2 (2.24)
-every_agent_folder_has_agent_rs crates/khora-agents/src/script_agent  # agent into agent.rs in B2 (2.24)
-every_agent_folder_has_agent_rs crates/khora-agents/src/ui_agent  # agent into agent.rs in B2 (2.24)
 
 # --- lanes_mirror_agents (T2) ------------------------------------------------
 

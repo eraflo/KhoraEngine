@@ -26,5 +26,7 @@
 //!   allocated by GORNA to maintain stability or performance.
 
 mod agent;
+mod strategy;
 
 pub use agent::*;
+pub use strategy::*;

@@ -57,7 +57,7 @@ and [`security-privacy.md`](./security-privacy.md).
 - Never use `Box<dyn Any>` downcasting as a substitute for proper trait design.
 - Never store mutable global state. Use `LaneContext`/`OutputDeck` slots or ECS components.
 - `Arc<dyn Trait>` for cross-crate shared references; `Arc<Mutex<T>>` for shared mutable state.
-- One primary type per file (`device.rs` → `WgpuDevice`).
+- One primary type per file (`mat4.rs` → `Mat4`).
 
 ## 5 — Concurrency
 

@@ -18,6 +18,7 @@
 //! own GORNA/strategy state.  The shared `PhysicsProvider` is fetched from
 //! the [`ServiceRegistry`] each frame — agents are not the owners.
 
+use super::strategy::PhysicsStrategy;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -34,24 +35,6 @@ use khora_data::ecs::World;
 use khora_lanes::physics_lane::StandardPhysicsLane;
 
 const COST_TO_MS_SCALE: f32 = 3.0;
-
-/// Strategies for physics simulation.
-///
-/// Debug-overlay extraction was previously a third variant here, but it
-/// is not a *strategy* of the same mission ("step the simulation") — it
-/// is a side-channel projection of provider state into the `World`.
-/// That work now lives in the
-/// [`physics_debug_extraction`](khora_data::ecs::systems::physics_debug_extraction)
-/// `DataSystem` so the simulation continues to step regardless of whether
-/// the debug overlay is active.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PhysicsStrategy {
-    /// Standard high-precision physics.
-    #[default]
-    Standard,
-    /// Simplified physics for low-power mode.
-    Simplified,
-}
 
 /// The agent responsible for managing the physics simulation.
 ///

@@ -23,8 +23,8 @@ use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_script::arena::Persisted;
 use khora_script::native::Host;
 
-use super::tests::{compile, entity, runtime_of, MODULE};
-use super::{run_behaviors, ScriptRuntime};
+use super::{compile, entity, runtime_of, MODULE};
+use crate::script_lane::{run_behaviors, ScriptRuntime};
 
 /// An attacker that hits entity 1 once, and a guard that feels it.
 ///

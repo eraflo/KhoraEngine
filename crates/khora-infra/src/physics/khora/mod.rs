@@ -51,34 +51,6 @@ pub mod collision;
 pub mod dynamic_tree;
 pub mod solver;
 
-use khora_core::math::Vec3;
+mod contact;
 
-/// Detailed information about a contact between two colliders.
-///
-/// The currency between [`collision`] and [`solver`] — the narrow phase
-/// produces one per contact, the solver consumes it. It is not part of the
-/// [`PhysicsProvider`](khora_core::physics::PhysicsProvider) contract, so it
-/// belongs to this backend rather than to the engine's vocabulary.
-///
-/// Not serializable: it describes one contact during one step, and the derives
-/// it used to carry in `khora-core` had no callers.
-#[derive(Debug, Clone, Copy)]
-pub struct ContactManifold {
-    /// Normal vector pointing from entity A to entity B.
-    pub normal: Vec3,
-    /// Intersection depth.
-    pub depth: f32,
-    /// Contact point in world space.
-    pub point: Vec3,
-}
-
-impl ContactManifold {
-    /// Returns the inverted manifold (flipped normal).
-    pub fn inverted(&self) -> Self {
-        Self {
-            normal: -self.normal,
-            depth: self.depth,
-            point: self.point,
-        }
-    }
-}
+pub use contact::ContactManifold;

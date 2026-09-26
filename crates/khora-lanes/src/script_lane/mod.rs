@@ -48,14 +48,6 @@ pub mod runtime;
 mod turn;
 
 #[cfg(test)]
-mod event_tests;
-#[cfg(test)]
-mod lifecycle_tests;
-#[cfg(test)]
-mod reload_tests;
-#[cfg(test)]
-mod save_tests;
-#[cfg(test)]
 mod tests;
 
 pub use frame::run_behaviors;

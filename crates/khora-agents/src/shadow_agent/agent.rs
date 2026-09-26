@@ -30,6 +30,7 @@
 //! All produce the same `ShadowGpuBindings` + `ShadowEntries` contract;
 //! lit consumer lanes are agnostic about which one ran.
 
+use super::strategy::ShadowStrategy;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -51,47 +52,6 @@ use khora_lanes::render_lane::shadows_lane::{
 use khora_lanes::render_lane::{LowResShadowsLane, MediumShadowsLane, StandardShadowsLane};
 
 const COST_TO_MS_SCALE: f32 = 5.0;
-
-/// Strategy slot mirroring the `Lane` family registered on the agent.
-///
-/// One value = one fully-featured shadow pipeline. The agent stores the
-/// currently-selected variant so `execute()` knows which lane to invoke
-/// (the registry holds them both, but only one runs per frame).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShadowStrategy {
-    /// Full-quality pipeline: 2048² × 4-layer 2D atlas + 512² × 4-cube
-    /// cube atlas. Maps to [`StandardShadowsLane`].
-    Standard,
-    /// Half resolution (1024² × 4-layer + 256² × 4-cube) — the `Balanced`
-    /// middle rung. Maps to [`MediumShadowsLane`].
-    Medium,
-    /// Quarter resolution (512² × 4-layer + 128² × 4-cube).
-    /// Maps to [`LowResShadowsLane`].
-    LowRes,
-}
-
-impl ShadowStrategy {
-    /// Returns the stable strategy name advertised by the matching lane.
-    pub fn lane_name(self) -> &'static str {
-        match self {
-            ShadowStrategy::Standard => STANDARD_STRATEGY_NAME,
-            ShadowStrategy::Medium => MEDIUM_STRATEGY_NAME,
-            ShadowStrategy::LowRes => LOW_RES_STRATEGY_NAME,
-        }
-    }
-
-    /// Maps a GORNA-issued [`StrategyId`] onto a concrete shadow strategy.
-    /// Each tier gets a genuinely different pipeline so budget changes are
-    /// observable in quality and cost.
-    fn from_strategy_id(id: StrategyId) -> Self {
-        match id {
-            StrategyId::HighPerformance => ShadowStrategy::Standard,
-            StrategyId::Balanced => ShadowStrategy::Medium,
-            StrategyId::LowPower => ShadowStrategy::LowRes,
-            StrategyId::Custom(_) => ShadowStrategy::Standard,
-        }
-    }
-}
 
 /// The agent responsible for shadow map rendering (`LaneKind::Shadow`).
 ///

@@ -285,12 +285,12 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la cl�
 - **`EmissiveLane` / `WireframeLane` `execute` are no-ops** — pipelines compose at init but the draw bodies
   are TODO (`emissive_lane.rs`, `wireframe_lane.rs`) pending gating data (`MaterialKind::Emissive`
   flag / a debug flag).
-- **Minor TODOs**: GPU VRAM capacity detection + dynamic adapter name (`wgpu/device.rs`), GPU timestamp
+- **Minor TODOs**: GPU VRAM capacity detection + dynamic adapter name (`wgpu/device/mod.rs`), GPU timestamp
   writes (`wgpu/command.rs`), Taffy uses a hardcoded 1920px viewport width (`ui/taffy/taffy_layout.rs`).
 
 > Verify the live state before asserting — these are code-grounded as of the date above, not runtime claims.
 > Resolved (do not re-list as issues): Vulkan semaphore errors are handled by the single-acquire frame
-> lifecycle (`wgpu/device.rs`); egui↔wgpu-28 is solved by the custom `EguiWgpuRenderer` in `khora-infra`.
+> lifecycle (`wgpu/device/`); egui↔wgpu-28 is solved by the custom `EguiWgpuRenderer` in `khora-infra`.
 > The orphan `physics_lane/native_lanes.rs` (experimental broadphase/solver that queried the World
 > directly) was **removed** rather than migrated; the real physics path routes through `PhysicsProvider`
 > + the `physics_world_writeback` DataSystem.

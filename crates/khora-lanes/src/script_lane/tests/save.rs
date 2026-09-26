@@ -33,8 +33,8 @@ use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_script::arena::Persisted;
 use khora_script::native::Host;
 
-use super::tests::{entity, runtime_of, MODULE};
-use super::{run_behaviors, ScriptRuntime};
+use super::{entity, runtime_of, MODULE};
+use crate::script_lane::{run_behaviors, ScriptRuntime};
 
 /// The guard from the design: two states, each with its own data, and a
 /// schedule that belongs to the patrol rather than to the guard.

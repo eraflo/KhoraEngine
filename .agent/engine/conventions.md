@@ -34,7 +34,7 @@ Code style and project conventions. Pairs with [`RULES.md`](./RULES.md).
 
 ## 3 — File layout
 
-- One primary type per file (`device.rs` → `WgpuDevice`).
+- One primary type per file (`mat4.rs` → `Mat4`).
 - Unit tests in `#[cfg(test)] mod tests` at the bottom of each module file.
 - Integration tests in `crates/{name}/tests/`; benchmarks in `crates/{name}/benches/`.
 - Backend implementations grouped per backend folder under `khora-infra/src/`: `graphics/wgpu/`, `physics/rapier/`, `audio/cpal/`, `ui/taffy/`.

@@ -145,7 +145,7 @@ set (`UiTransform`, `UiColor`, `UiText`, `UiImage`, `UiBorder`). Each carries a 
 | Substrate dispatcher | `crates/khora-control/src/substrate/` |
 | Render lanes / shaders | `crates/khora-lanes/src/render_lane/`; shaders in `crates/khora-infra/src/graphics/shader/shaders/` (`pipelines/`, `lib/`), composed by `graphics/shader/system.rs` |
 | Physics / audio / ui lanes | `crates/khora-lanes/src/{physics_lane,audio_lane}/`, `crates/khora-lanes/src/render_lane/ui_render_lane.rs` |
-| wgpu backend | `crates/khora-infra/src/graphics/wgpu/` (`system.rs`, `device.rs`) |
+| wgpu backend | `crates/khora-infra/src/graphics/wgpu/` (`system/`, `device/`) |
 | Rapier / CPAL / Taffy | `crates/khora-infra/src/{physics/rapier,audio/cpal,ui/taffy}/` |
 | Agents | `crates/khora-agents/src/{render,shadow,overlay,physics,ui,audio}_agent/` |
 | SDK entry / GameWorld / Vessel | `crates/khora-sdk/src/lib.rs`, `game_world.rs`, `vessel.rs` |

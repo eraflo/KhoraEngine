@@ -23,8 +23,8 @@ use khora_data::flow::{ScriptProgram, ScriptView};
 use khora_script::arena::Persisted;
 use khora_script::native::Host;
 
-use super::tests::{compile, entity, runtime_of, view_of, MODULE};
-use super::{run_behaviors, ScriptRuntime};
+use super::{compile, entity, runtime_of, view_of, MODULE};
+use crate::script_lane::{run_behaviors, ScriptRuntime};
 
 /// A guard that counts the frames it has been ticked, so a hook that fires twice
 /// or not at all is visible in a number rather than in an absence.

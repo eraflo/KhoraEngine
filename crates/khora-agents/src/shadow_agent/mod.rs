@@ -19,5 +19,7 @@
 //! into the [`FrameContext`] for render lanes to consume.
 
 mod agent;
+mod strategy;
 
 pub use agent::*;
+pub use strategy::*;
