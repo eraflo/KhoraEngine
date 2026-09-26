@@ -67,6 +67,48 @@ fn live_location<T: 'static>(world: &World, entity: EntityId) -> Option<PageInde
         .copied()
 }
 
+/// Returns `true` if the live `entity` holds any of `filters`' types in its row
+/// of that type's domain — the per-row half of a Native `Without` filter whose
+/// type lives outside the driver domain (see [`NativeRowPlan::foreign_without`]),
+/// which the page-level exclusion of `find_matching_pages` cannot see.
+fn has_foreign_excluded(
+    world: &World,
+    entity: EntityId,
+    filters: &[(SemanticDomain, TypeId)],
+) -> bool {
+    let Some(meta) = live_metadata(world, entity) else {
+        return false;
+    };
+    filters.iter().any(|(domain, type_id)| {
+        meta.locations.get(domain).is_some_and(|loc| {
+            world.storage.pages[loc.page_id as usize]
+                .type_ids
+                .binary_search(type_id)
+                .is_ok()
+        })
+    })
+}
+
+/// The per-row work a Native query needs beyond reading its driver row, decided
+/// once at query construction by `World::native_row_plan`.
+///
+/// A Native query iterates the pages of its driver domain, but a `Without` or
+/// `Option` term may name a component registered in another domain, stored in
+/// another page than the driver row. The default (empty) plan — every term in
+/// the driver domain — keeps the per-row path check-free.
+#[derive(Debug, Default)]
+pub(crate) struct NativeRowPlan {
+    /// `Without` types registered outside the driver domain, with their domain,
+    /// checked per row by `has_foreign_excluded`.
+    pub(crate) foreign_without: Vec<(SemanticDomain, TypeId)>,
+    /// An `Option` term names a type registered outside the driver domain: the
+    /// page-row `fetch` would read it from the driver page, which never holds
+    /// it, so each live row's item is joined through the entity's live
+    /// locations with `fetch_from_world` instead (which also checks every
+    /// `Without` term, so `foreign_without` is left empty).
+    pub(crate) fetch_from_world: bool,
+}
+
 // ------------------------- //
 // ---- WorldQuery Part ---- //
 // ------------------------- //
@@ -88,6 +130,13 @@ pub trait WorldQuery {
     /// Returns the sorted list of `TypeId`s for components to be EXCLUDED from the query.
     /// Used to filter out pages that contain these components.
     fn without_type_ids() -> Vec<TypeId> {
+        Vec::new()
+    }
+
+    /// Returns the `TypeId`s of the components read by `Option` terms. They do
+    /// not constrain which pages match, but the query engine must know their
+    /// domains to read them from the right page.
+    fn optional_type_ids() -> Vec<TypeId> {
         Vec::new()
     }
 
@@ -220,6 +269,10 @@ impl<T: Component> WorldQuery for Option<&T> {
         Vec::new()
     }
 
+    fn optional_type_ids() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
+
     unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
         let page = &*page_ptr;
         let column = page.columns.get(&TypeId::of::<T>())?;
@@ -255,6 +308,10 @@ impl<T: Component> WorldQuery for Option<&mut T> {
 
     fn type_ids() -> Vec<TypeId> {
         Vec::new()
+    }
+
+    fn optional_type_ids() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
     }
 
     fn mutable_type_ids() -> Vec<TypeId> {
@@ -311,6 +368,14 @@ macro_rules! impl_query_tuple {
                 $(ids.extend($Q::without_type_ids());)*
                 ids.sort();
                 ids.dedup(); // Ensure unique TypeIds for canonical signature
+                ids
+            }
+
+            fn optional_type_ids() -> Vec<TypeId> {
+                let mut ids = Vec::new();
+                $(ids.extend($Q::optional_type_ids());)*
+                ids.sort();
+                ids.dedup();
                 ids
             }
 
@@ -438,7 +503,8 @@ pub struct Query<'a, Q: WorldQuery> {
     /// The index of the current page we are iterating through.
     current_page_index: usize,
 
-    /// The index of the next row to fetch within the current page.
+    /// The index of the next row to fetch within the current page (in
+    /// EntityScan mode: the next entity-store slot).
     current_row_index: usize,
 
     /// A marker to associate this iterator with the lifetime `'a` and the query type `Q`.
@@ -447,15 +513,24 @@ pub struct Query<'a, Q: WorldQuery> {
 
     /// Pre-computed bitset intersection for fast-failing transversal lookups.
     combined_bitset: Option<DomainBitset>,
+
+    /// The per-row work of a Native iteration beyond the driver row (see
+    /// [`NativeRowPlan`]). Empty for most queries.
+    row_plan: NativeRowPlan,
 }
 
 impl<'a, Q: WorldQuery> Query<'a, Q> {
     /// (Internal) Creates a new `Query` iterator.
     ///
     /// This is intended to be called only by `World::query()`.
-    /// It takes the world, the plan (strategy), and the pre-calculated list
-    /// of matching pages as arguments.
-    pub(crate) fn new(world: &'a World, plan: QueryPlan, matching_page_indices: Vec<u32>) -> Self {
+    /// It takes the world, the plan (strategy), the pre-calculated list
+    /// of matching pages, and the Native per-row plan as arguments.
+    pub(crate) fn new(
+        world: &'a World,
+        plan: QueryPlan,
+        matching_page_indices: Vec<u32>,
+        row_plan: NativeRowPlan,
+    ) -> Self {
         let combined_bitset = world.compute_query_bitset(&plan);
         Self {
             world_ptr: world as *const _,
@@ -465,6 +540,7 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
             current_row_index: 0,
             _phantom: PhantomData,
             combined_bitset,
+            row_plan,
         }
     }
 }
@@ -479,6 +555,7 @@ impl<'a, Q: WorldQuery> Iterator for Query<'a, Q> {
         match self.plan.mode {
             QueryMode::Native => self.next_native(),
             QueryMode::Transversal => self.next_transversal(),
+            QueryMode::EntityScan => self.next_entity_scan(),
         }
     }
 }
@@ -517,6 +594,21 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                         continue;
                     }
                 }
+                let entity = page.entities[row];
+                if !self.row_plan.foreign_without.is_empty()
+                    && has_foreign_excluded(world, entity, &self.row_plan.foreign_without)
+                {
+                    continue;
+                }
+                if self.row_plan.fetch_from_world {
+                    // SAFETY: `world` is a valid `&World` borrowed for `'a`; this is
+                    // the entity's live driver row, so `fetch_from_world` joins its
+                    // live rows only.
+                    match unsafe { Q::fetch_from_world(world as *const _, entity) } {
+                        Some(item) => return Some(item),
+                        None => continue,
+                    }
+                }
 
                 // SAFETY: `page` lives in `world`, which is borrowed for `'a`, and
                 // `matching_page_indices` only contains pages whose signature
@@ -530,6 +622,30 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                                             // The `loop` will then re-evaluate with the new page index.
             }
         }
+    }
+
+    /// (Internal) Performs an "EntityScan" iteration for a query naming no
+    /// component: walks the entity store and yields each live entity once,
+    /// joining every term through the entity's live locations.
+    fn next_entity_scan(&mut self) -> Option<Q::Item<'a>> {
+        // SAFETY: same invariant as `next_native` — `world_ptr` came from the
+        // `&'a World` given to `Query::new` and that shared borrow is kept
+        // alive for `'a`, so no aliasing `&mut World` exists.
+        let world = unsafe { &*self.world_ptr };
+        while let Some((entity, metadata)) = world.entities.get(self.current_row_index) {
+            self.current_row_index += 1;
+            // A vacated slot is a dead entity; an occupied slot's id carries
+            // the live generation.
+            if metadata.is_none() {
+                continue;
+            }
+            // SAFETY: `world` is a valid `&World` borrowed for `'a`;
+            // `fetch_from_world` only reads the live rows of a live entity.
+            if let Some(item) = unsafe { Q::fetch_from_world(world as *const _, *entity) } {
+                return Some(item);
+            }
+        }
+        None
     }
 
     /// (Internal) Performs a "Transversal" iteration, joining data across domains.
@@ -654,6 +770,9 @@ pub struct QueryMut<'a, Q: WorldQuery> {
     _phantom: PhantomData<(&'a (), Q)>,
     /// Pre-computed bitset intersection for fast-failing transversal lookups.
     combined_bitset: Option<DomainBitset>,
+    /// The per-row work of a Native iteration beyond the driver row (see
+    /// [`NativeRowPlan`]). Empty for most queries.
+    row_plan: NativeRowPlan,
 }
 
 impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
@@ -664,6 +783,7 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
         world: &'a mut World,
         plan: QueryPlan,
         matching_page_indices: Vec<u32>,
+        row_plan: NativeRowPlan,
     ) -> Self {
         let combined_bitset = world.compute_query_bitset(&plan);
         Self {
@@ -674,6 +794,7 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             current_row_index: 0,
             _phantom: PhantomData,
             combined_bitset,
+            row_plan,
         }
     }
 }
@@ -685,6 +806,7 @@ impl<'a, Q: WorldQuery> Iterator for QueryMut<'a, Q> {
         match self.plan.mode {
             QueryMode::Native => self.next_native(),
             QueryMode::Transversal => self.next_transversal(),
+            QueryMode::EntityScan => self.next_entity_scan(),
         }
     }
 }
@@ -708,12 +830,30 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                 let row = self.current_row_index;
                 self.current_row_index += 1;
 
-                // Skip stale orphan rows (see `is_live_row`), through a shared
-                // borrow taken before the `&mut` page below.
+                // Skip stale orphan rows (see `is_live_row`) and rows failing a
+                // foreign-domain `Without` (see `has_foreign_excluded`), through
+                // shared borrows taken before any `&mut` access below.
+                let entity = world.storage.pages[page_id].entities[row];
                 if let Some(domain) = self.plan.driver_domain {
-                    let entity = world.storage.pages[page_id].entities[row];
                     if !is_live_row(world, page_id as u32, row, entity, domain) {
                         continue;
+                    }
+                }
+                if !self.row_plan.foreign_without.is_empty()
+                    && has_foreign_excluded(world, entity, &self.row_plan.foreign_without)
+                {
+                    continue;
+                }
+                if self.row_plan.fetch_from_world {
+                    // SAFETY: `world_ptr` is the exclusively-borrowed `World` (see
+                    // above) and keeps its write permission — unlike a pointer cast
+                    // from the `world` reborrow, which `&mut T` terms may not write
+                    // through; `world` is not used again. This is the entity's live
+                    // driver row and each live entity has exactly one, so the
+                    // `&mut` items this yields address disjoint rows.
+                    match unsafe { Q::fetch_from_world(self.world_ptr as *const _, entity) } {
+                        Some(item) => return Some(item),
+                        None => continue,
                     }
                 }
 
@@ -729,6 +869,33 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             } else {
                 self.current_page_index += 1;
                 self.current_row_index = 0;
+            }
+        }
+    }
+
+    /// Mutable counterpart of `Query::next_entity_scan`: yields each live
+    /// entity once, joining every term through its live locations.
+    fn next_entity_scan(&mut self) -> Option<Q::Item<'a>> {
+        loop {
+            // SAFETY: same invariant as `next_native` — `world_ptr` came from the
+            // `&'a mut World` given to `QueryMut::new` and that exclusive borrow is
+            // held for `'a`. This shared reborrow ends before `fetch_from_world`
+            // takes its own access below, so the two never overlap.
+            let entity = {
+                let world = unsafe { &*self.world_ptr };
+                let (entity, metadata) = world.entities.get(self.current_row_index)?;
+                self.current_row_index += 1;
+                // A vacated slot is a dead entity.
+                if metadata.is_none() {
+                    continue;
+                }
+                *entity
+            };
+            // SAFETY: `world_ptr` is the exclusively-borrowed `World` (see above);
+            // each live entity is visited once, so the `&mut` items this yields
+            // address disjoint rows.
+            if let Some(item) = unsafe { Q::fetch_from_world(self.world_ptr as *const _, entity) } {
+                return Some(item);
             }
         }
     }

@@ -26,6 +26,11 @@ pub enum QueryMode {
     /// Join path: requested components span multiple domains.
     /// Iteration is "driven" by one domain and peers are looked up via bitsets.
     Transversal,
+    /// The query names no component (`EntityId`, `Option<&T>`, `Without<T>`
+    /// terms only), so no page signature can drive it: iteration walks the
+    /// entity store and yields each live entity once, joining every term
+    /// through its live locations.
+    EntityScan,
 }
 
 /// A pre-calculated execution strategy for a specific set of component types.
@@ -61,6 +66,17 @@ impl QueryPlan {
             driver_domain,
             peer_domains,
             driver_signature,
+        }
+    }
+
+    /// Creates the plan for a query that names no component (see
+    /// [`QueryMode::EntityScan`]).
+    pub fn entity_scan() -> Self {
+        Self {
+            mode: QueryMode::EntityScan,
+            driver_domain: None,
+            peer_domains: HashSet::new(),
+            driver_signature: Vec::new(),
         }
     }
 }

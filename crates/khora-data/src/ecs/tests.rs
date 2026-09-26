@@ -2227,3 +2227,493 @@ fn transversal_query_mut_optional_mut_term_keeps_entity_lacking_it() {
         .collect();
     assert_eq!(rows, vec![(e, false)]);
 }
+
+// --- Component-less queries & cross-domain `Without` (Native mode) ---
+
+#[test]
+fn entity_id_only_query_skips_orphans_and_dead_entities() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let a = world.spawn(RenderId(10));
+    world.add_component(a, RenderTag).expect("add_component");
+    let ids: Vec<EntityId> = world.query::<EntityId>().collect();
+    assert_eq!(ids, vec![a], "orphan row yielded a duplicate id");
+    assert!(world.despawn(a));
+    let ids: Vec<EntityId> = world.query::<EntityId>().collect();
+    assert!(ids.is_empty(), "dead entity yielded: {ids:?}");
+}
+
+#[test]
+fn native_without_filter_sees_component_in_other_domain_page() {
+    let mut world = compaction_world();
+    let e = world.spawn(Position(1));
+    world.add_component(e, RenderTag).expect("add_component");
+    let n = world.query::<(&Position, Without<RenderTag>)>().count();
+    assert_eq!(n, 0, "entity with RenderTag passed Without<RenderTag>");
+}
+
+/// Spawns `co` co-located in one page across Spatial + Render, and `split`
+/// whose Spatial and Render rows live in different pages.
+fn two_layout_world() -> (
+    World,
+    khora_core::ecs::entity::EntityId,
+    khora_core::ecs::entity::EntityId,
+) {
+    let mut world = compaction_world();
+    let co = world.spawn((Position(1), RenderId(10)));
+    let split = world.spawn(Position(2));
+    world
+        .add_component(split, RenderTag)
+        .expect("add_component");
+    (world, co, split)
+}
+
+#[test]
+fn entity_id_only_query_yields_each_multi_domain_entity_once() {
+    use khora_core::ecs::entity::EntityId;
+    let (world, co, split) = two_layout_world();
+    let mut ids: Vec<EntityId> = world.query::<EntityId>().collect();
+    ids.sort_by_key(|id| id.index);
+    assert_eq!(ids, vec![co, split]);
+}
+
+#[test]
+fn entity_id_only_query_mut_yields_each_entity_once() {
+    use khora_core::ecs::entity::EntityId;
+    let (mut world, co, split) = two_layout_world();
+    let mut ids: Vec<EntityId> = world.query_mut::<EntityId>().collect();
+    ids.sort_by_key(|id| id.index);
+    assert_eq!(ids, vec![co, split]);
+}
+
+#[test]
+fn component_less_without_filter_checks_every_domain() {
+    use khora_core::ecs::entity::EntityId;
+    let (world, co, _split) = two_layout_world();
+    let ids: Vec<EntityId> = world
+        .query::<(EntityId, Without<RenderTag>)>()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(
+        ids,
+        vec![co],
+        "split entity carries RenderTag in its Render page"
+    );
+}
+
+#[test]
+fn component_less_option_term_reads_the_entity_live_row() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let spatial = world.spawn(Position(7));
+    let render_only = world.spawn(RenderId(3));
+    let mut rows: Vec<(EntityId, Option<i32>)> = world
+        .query::<(EntityId, Option<&Position>)>()
+        .map(|(id, p)| (id, p.map(|p| p.0)))
+        .collect();
+    rows.sort_by_key(|(id, _)| id.index);
+    assert_eq!(rows, vec![(spatial, Some(7)), (render_only, None)]);
+}
+
+#[test]
+fn component_less_query_mut_writes_through_option_term() {
+    let (mut world, co, split) = two_layout_world();
+    for (_, pos) in world.query_mut::<(khora_core::ecs::entity::EntityId, Option<&mut Position>)>()
+    {
+        if let Some(pos) = pos {
+            pos.0 += 100;
+        }
+    }
+    assert_eq!(world.get::<Position>(co).map(|p| p.0), Some(101));
+    assert_eq!(world.get::<Position>(split).map(|p| p.0), Some(102));
+}
+
+#[test]
+fn native_without_filter_keeps_entities_lacking_the_component() {
+    use khora_core::ecs::entity::EntityId;
+    let (world, co, _split) = two_layout_world();
+    let ids: Vec<EntityId> = world
+        .query::<(EntityId, &Position, Without<RenderTag>)>()
+        .map(|(id, _, _)| id)
+        .collect();
+    assert_eq!(ids, vec![co]);
+}
+
+#[test]
+fn native_query_mut_without_filter_sees_component_in_other_domain_page() {
+    let (mut world, _co, _split) = two_layout_world();
+    let n = world
+        .query_mut::<(&mut Position, Without<RenderTag>)>()
+        .count();
+    assert_eq!(n, 1, "only the co-located entity lacks RenderTag");
+}
+
+// --- Edge cases: entity scans, foreign `Without`, `Option` joins ---
+
+#[test]
+fn entity_scan_yields_componentless_entity_once_then_not_after_despawn() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let empty = world.spawn(());
+    let ids: Vec<EntityId> = world.query::<EntityId>().collect();
+    assert_eq!(ids, vec![empty]);
+    assert!(world.despawn(empty));
+    let ids: Vec<EntityId> = world.query::<EntityId>().collect();
+    assert!(
+        ids.is_empty(),
+        "dead component-less entity yielded: {ids:?}"
+    );
+}
+
+#[test]
+fn entity_scan_yields_entity_stripped_of_every_component() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let e = world.spawn(Position(1));
+    world.remove_component::<Position>(e).expect("remove");
+    let ids: Vec<EntityId> = world.query::<EntityId>().collect();
+    assert_eq!(ids, vec![e]);
+    let rows: Vec<(EntityId, Option<i32>)> = world
+        .query::<(EntityId, Option<&Position>)>()
+        .map(|(id, p)| (id, p.map(|p| p.0)))
+        .collect();
+    assert_eq!(rows, vec![(e, None)]);
+}
+
+#[test]
+fn entity_scan_yields_recycled_index_with_live_generation() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let a = world.spawn(Position(1));
+    assert!(world.despawn(a));
+    let b = world.spawn(Position(2));
+    assert_eq!(a.index, b.index);
+    assert_ne!(a.generation, b.generation);
+    let ids: Vec<EntityId> = world.query::<EntityId>().collect();
+    assert_eq!(ids, vec![b]);
+}
+
+#[test]
+fn native_without_same_and_foreign_domain_combined() {
+    use khora_core::ecs::entity::EntityId;
+    let (mut world, co, _split) = two_layout_world();
+    let plain = world.spawn(Position(3));
+    let _moving = world.spawn((Position(4), Velocity(1)));
+    let mut ids: Vec<EntityId> = world
+        .query::<(EntityId, &Position, Without<Velocity>, Without<RenderTag>)>()
+        .map(|(id, ..)| id)
+        .collect();
+    ids.sort_by_key(|id| id.index);
+    assert_eq!(ids, vec![co, plain]);
+}
+
+#[test]
+fn native_multiple_foreign_withouts() {
+    use khora_core::ecs::entity::EntityId;
+    let (mut world, _co, _split) = two_layout_world();
+    let plain = world.spawn(Position(3));
+    let mut ids: Vec<EntityId> = world
+        .query::<(EntityId, &Position, Without<RenderTag>, Without<RenderId>)>()
+        .map(|(id, ..)| id)
+        .collect();
+    ids.sort_by_key(|id| id.index);
+    assert_eq!(ids, vec![plain], "co has RenderId, split has RenderTag");
+}
+
+#[test]
+fn native_without_unregistered_type_excludes_nothing() {
+    let (world, _co, _split) = two_layout_world();
+    let n = world
+        .query::<(&Position, Without<NonCopyableComponent>)>()
+        .count();
+    assert_eq!(n, 2);
+}
+
+#[test]
+fn plan_cache_shared_between_filtered_and_unfiltered_queries() {
+    let (world, _co, _split) = two_layout_world();
+    assert_eq!(world.query::<&Position>().count(), 2);
+    assert_eq!(world.query::<(&Position, Without<RenderTag>)>().count(), 1);
+    assert_eq!(world.query::<&Position>().count(), 2);
+    assert_eq!(world.query::<(&Position, Without<RenderTag>)>().count(), 1);
+}
+
+#[test]
+fn native_without_tracks_foreign_component_removal_and_migration() {
+    use khora_core::ecs::entity::EntityId;
+    let (mut world, co, split) = two_layout_world();
+    // Migrate split's Render row (orphan left in the {RenderTag} page): still excluded.
+    world.add_component(split, RenderId(5)).expect("add");
+    let ids: Vec<EntityId> = world
+        .query::<(EntityId, &Position, Without<RenderTag>)>()
+        .map(|(id, ..)| id)
+        .collect();
+    assert_eq!(ids, vec![co]);
+    // Drop RenderTag: split now passes, even though orphan rows still hold it.
+    world.remove_component::<RenderTag>(split).expect("remove");
+    let mut ids: Vec<EntityId> = world
+        .query::<(EntityId, &Position, Without<RenderTag>)>()
+        .map(|(id, ..)| id)
+        .collect();
+    ids.sort_by_key(|id| id.index);
+    assert_eq!(ids, vec![co, split]);
+}
+
+#[test]
+fn entity_scan_after_colocated_component_removed() {
+    use khora_core::ecs::entity::EntityId;
+    let (mut world, co, _split) = two_layout_world();
+    world.remove_component::<RenderId>(co).expect("remove");
+    let rows: Vec<(EntityId, bool)> = world
+        .query::<(EntityId, Option<&RenderId>)>()
+        .map(|(id, r)| (id, r.is_some()))
+        .filter(|(id, _)| *id == co)
+        .collect();
+    assert_eq!(rows, vec![(co, false)]);
+    assert!(world
+        .query::<(EntityId, Without<RenderId>)>()
+        .any(|(id, _)| id == co));
+}
+
+#[test]
+fn transversal_option_term_in_domain_entity_lacks() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    world.register_component::<NonCopyableComponent>(SemanticDomain::Audio);
+    let e = world.spawn((Position(1), RenderId(2)));
+    let rows: Vec<(EntityId, bool)> = world
+        .query::<(
+            EntityId,
+            &Position,
+            &RenderId,
+            Option<&NonCopyableComponent>,
+        )>()
+        .map(|(id, _, _, n)| (id, n.is_some()))
+        .collect();
+    assert_eq!(rows, vec![(e, false)]);
+}
+
+#[test]
+fn native_option_term_reads_foreign_domain_row() {
+    let (world, _co, _split) = two_layout_world();
+    let mut rows: Vec<(i32, bool)> = world
+        .query::<(&Position, Option<&RenderTag>)>()
+        .map(|(p, t)| (p.0, t.is_some()))
+        .collect();
+    rows.sort();
+    assert_eq!(
+        rows,
+        vec![(1, false), (2, true)],
+        "split's RenderTag not seen"
+    );
+}
+
+#[test]
+fn native_query_mut_option_term_writes_foreign_domain_row() {
+    let mut world = compaction_world();
+    let e = world.spawn(Position(1));
+    world.add_component(e, RenderId(10)).expect("add");
+    for (_, r) in world.query_mut::<(&mut Position, Option<&mut RenderId>)>() {
+        if let Some(r) = r {
+            r.0 += 1;
+        }
+    }
+    assert_eq!(world.get::<RenderId>(e).map(|r| r.0), Some(11));
+}
+
+#[test]
+fn native_option_term_in_driver_domain_reads_the_driver_row() {
+    let mut world = compaction_world();
+    world.spawn(Position(1));
+    let moving = world.spawn(Position(2));
+    world.add_component(moving, Velocity(5)).expect("add");
+    let mut rows: Vec<(i32, Option<i32>)> = world
+        .query::<(&Position, Option<&Velocity>)>()
+        .map(|(p, v)| (p.0, v.map(|v| v.0)))
+        .collect();
+    rows.sort();
+    assert_eq!(rows, vec![(1, None), (2, Some(5))]);
+}
+
+#[test]
+fn native_foreign_option_term_skips_orphan_rows() {
+    let mut world = compaction_world();
+    let e = world.spawn(Position(1));
+    world.add_component(e, RenderId(10)).expect("add");
+    // Migrates the Spatial row, leaving an orphan in the {Position} page.
+    world.add_component(e, Velocity(3)).expect("add");
+    let rows: Vec<(i32, Option<i32>)> = world
+        .query::<(&Position, Option<&RenderId>)>()
+        .map(|(p, r)| (p.0, r.map(|r| r.0)))
+        .collect();
+    assert_eq!(
+        rows,
+        vec![(1, Some(10))],
+        "orphan row duplicated the entity"
+    );
+}
+
+// --- Native foreign `Option` terms: layouts, aliasing, filters, epochs ---
+
+#[test]
+fn native_foreign_option_reads_live_row_not_stale_colocated_copy() {
+    let mut world = compaction_world();
+    let co = world.spawn((Position(1), RenderId(10)));
+    // Migrates co's Render row out of the co-located page, which keeps a stale
+    // RenderId(10) in its partial-orphan row.
+    world.add_component(co, RenderTag).expect("add");
+    world.get_mut::<RenderId>(co).expect("render id").0 = 20;
+    let rows: Vec<(i32, Option<i32>)> = world
+        .query::<(&Position, Option<&RenderId>)>()
+        .map(|(p, r)| (p.0, r.map(|r| r.0)))
+        .collect();
+    assert_eq!(rows, vec![(1, Some(20))]);
+}
+
+#[test]
+fn native_foreign_option_and_without_keep_entity_whose_colocated_component_was_removed() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let co = world.spawn((Position(1), RenderTag));
+    world.remove_component::<RenderTag>(co).expect("remove");
+    let rows: Vec<(EntityId, bool)> = world
+        .query::<(EntityId, &Position, Option<&RenderId>, Without<RenderTag>)>()
+        .map(|(id, _, r, _)| (id, r.is_some()))
+        .collect();
+    assert_eq!(rows, vec![(co, false)], "co no longer has RenderTag");
+}
+
+#[test]
+fn native_unregistered_driver_with_registered_option_still_yields_rows() {
+    let mut world = World::new();
+    world.register_component::<RenderId>(SemanticDomain::Render);
+    world.spawn(Position(1));
+    let rows: Vec<(i32, bool)> = world
+        .query::<(&Position, Option<&RenderId>)>()
+        .map(|(p, r)| (p.0, r.is_some()))
+        .collect();
+    assert_eq!(rows, vec![(1, false)]);
+}
+
+#[test]
+fn native_query_mut_colocated_mut_and_foreign_option_mut_both_write() {
+    let mut world = compaction_world();
+    let co = world.spawn((Position(1), RenderId(10)));
+    for (p, r) in world.query_mut::<(&mut Position, Option<&mut RenderId>)>() {
+        p.0 += 1;
+        if let Some(r) = r {
+            r.0 += 1;
+        }
+    }
+    assert_eq!(world.get::<Position>(co).copied(), Some(Position(2)));
+    assert_eq!(world.get::<RenderId>(co).copied(), Some(RenderId(11)));
+}
+
+#[test]
+fn native_query_mut_mixed_terms_across_layouts_write_each_entity_once() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let co = world.spawn((Position(1), Velocity(0), RenderId(10)));
+    let split = world.spawn((Position(2), Velocity(0)));
+    world.add_component(split, RenderId(20)).expect("add");
+    let tagged = world.spawn((Position(3), Velocity(0)));
+    world.add_component(tagged, RenderTag).expect("add");
+    let bare = world.spawn((Position(4), Velocity(0)));
+    // Leaves orphan rows in the Spatial and Render pages of `split`.
+    world.register_component::<NonCopyableComponent>(SemanticDomain::Spatial);
+    world
+        .add_component(split, NonCopyableComponent("n".into()))
+        .expect("add");
+    let e = world.spawn(Position(9));
+    world.add_component(e, Velocity(0)).expect("add");
+    world.add_component(e, RenderId(90)).expect("add");
+    world.add_component(e, RenderTag).expect("add");
+
+    let render_before = world.domain_epoch(SemanticDomain::Render);
+    let mut seen: Vec<EntityId> = Vec::new();
+    for (id, p, v, r, _) in world.query_mut::<(
+        EntityId,
+        &Position,
+        &mut Velocity,
+        Option<&mut RenderId>,
+        Without<RenderTag>,
+    )>() {
+        seen.push(id);
+        v.0 += p.0;
+        if let Some(r) = r {
+            r.0 += 1;
+        }
+    }
+    assert!(world.domain_epoch(SemanticDomain::Render) > render_before);
+    seen.sort_by_key(|id| id.index);
+    assert_eq!(seen, vec![co, split, bare]);
+    assert_eq!(world.get::<Velocity>(co).copied(), Some(Velocity(1)));
+    assert_eq!(world.get::<Velocity>(split).copied(), Some(Velocity(2)));
+    assert_eq!(world.get::<Velocity>(tagged).copied(), Some(Velocity(0)));
+    assert_eq!(world.get::<Velocity>(bare).copied(), Some(Velocity(4)));
+    assert_eq!(world.get::<RenderId>(co).copied(), Some(RenderId(11)));
+    assert_eq!(world.get::<RenderId>(split).copied(), Some(RenderId(21)));
+    assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(90)));
+}
+
+#[test]
+fn native_query_mut_foreign_option_skips_orphans_after_repeated_migrations() {
+    let mut world = compaction_world();
+    let e = world.spawn(Position(1));
+    world.add_component(e, RenderId(10)).expect("add");
+    world.add_component(e, Velocity(1)).expect("add");
+    world.remove_component::<Velocity>(e).expect("remove");
+    world.add_component(e, Velocity(2)).expect("add");
+    world.add_component(e, RenderTag).expect("add");
+    world.remove_component::<RenderTag>(e).expect("remove");
+    let mut hits = 0;
+    for (_, r) in world.query_mut::<(&Position, Option<&mut RenderId>)>() {
+        hits += 1;
+        if let Some(r) = r {
+            r.0 += 1;
+        }
+    }
+    assert_eq!(hits, 1);
+    assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(11)));
+}
+
+#[test]
+fn native_same_domain_and_foreign_option_terms_together() {
+    let mut world = compaction_world();
+    world.spawn(Position(1));
+    let a = world.spawn((Position(2), Velocity(5)));
+    world.add_component(a, RenderId(7)).expect("add");
+    world.spawn((Position(3), RenderId(8)));
+    let mut rows: Vec<(i32, Option<i32>, Option<i32>)> = world
+        .query::<(&Position, Option<&Velocity>, Option<&RenderId>)>()
+        .map(|(p, v, r)| (p.0, v.map(|v| v.0), r.map(|r| r.0)))
+        .collect();
+    rows.sort();
+    assert_eq!(
+        rows,
+        vec![(1, None, None), (2, Some(5), Some(7)), (3, None, Some(8))]
+    );
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default, khora_macros::Component)]
+#[component(no_serializable, layout = "soa")]
+struct SoaSpeed {
+    x: f32,
+}
+
+#[test]
+fn native_soa_term_with_foreign_option_reads_both() {
+    use crate::ecs::Soa;
+    let mut world = compaction_world();
+    world.register_component::<SoaSpeed>(SemanticDomain::Spatial);
+    world.spawn(SoaSpeed { x: 1.0 });
+    let split = world.spawn(SoaSpeed { x: 2.0 });
+    world.add_component(split, RenderId(20)).expect("add");
+    world.spawn((SoaSpeed { x: 3.0 }, RenderId(30)));
+    let mut rows: Vec<(i32, Option<i32>)> = world
+        .query::<(Soa<SoaSpeed>, Option<&RenderId>)>()
+        .map(|(s, r)| (s.x as i32, r.map(|r| r.0)))
+        .collect();
+    rows.sort();
+    assert_eq!(rows, vec![(1, None), (2, Some(20)), (3, Some(30))]);
+}

@@ -31,7 +31,7 @@ use crate::ecs::{
     entity_store::EntityStore,
     page::{ComponentPage, PageIndex},
     planner::QueryPlanner,
-    query::{Query, WorldQuery},
+    query::{NativeRowPlan, Query, WorldQuery},
     registry::ComponentRegistry,
     serialization::SceneMemoryLayout,
     storage::StorageManager,
@@ -629,8 +629,9 @@ impl World {
         // 2. Dynamically find matching pages for this call.
         // This ensures the query is correct even if new archetypes were created
         // in a different domain since the last call.
-        let matching_page_indices =
-            self.find_matching_pages(&plan.driver_signature, &Q::without_type_ids());
+        let without_type_ids = Q::without_type_ids();
+        let matching_page_indices = self.plan_pages(&plan, &without_type_ids);
+        let row_plan = self.native_row_plan(&plan, &without_type_ids, &Q::optional_type_ids());
 
         // Record one access observation per queried component (coarse, off the
         // per-element path): count the query and the rows it scans. The DCC reads
@@ -642,7 +643,7 @@ impl World {
         self.storage.registry.record_access(&type_ids, rows_scanned);
 
         // 3. Return the query with the plan and the current matching pages.
-        Query::new(self, plan, matching_page_indices)
+        Query::new(self, plan, matching_page_indices, row_plan)
     }
 
     /// Creates a mutable iterator that queries the world for entities matching a set of components and filters.
@@ -675,8 +676,9 @@ impl World {
         };
 
         // 2. Dynamically find pages
-        let matching_page_indices =
-            self.find_matching_pages(&plan.driver_signature, &Q::without_type_ids());
+        let without_type_ids = Q::without_type_ids();
+        let matching_page_indices = self.plan_pages(&plan, &without_type_ids);
+        let row_plan = self.native_row_plan(&plan, &without_type_ids, &Q::optional_type_ids());
 
         // Record one access observation per queried component (see `query`).
         let rows_scanned: u64 = matching_page_indices
@@ -695,7 +697,7 @@ impl World {
         }
 
         // 3. Construct the iterator
-        QueryMut::new(self, plan, matching_page_indices)
+        QueryMut::new(self, plan, matching_page_indices, row_plan)
     }
 
     /// Registers a component type with a specific semantic domain.
@@ -713,6 +715,13 @@ impl World {
     /// This method identifies if a query is transversal (spanning multiple domains)
     /// and selects the most efficient "Driver Domain" based on entity density.
     pub(crate) fn analyze_query(&self, type_ids: &[TypeId]) -> QueryPlan {
+        if type_ids.is_empty() {
+            // ENTITY SCAN: no component term, so no page signature can drive the
+            // query — every page would match, yielding an entity once per page
+            // row it owns (one per domain, plus migration orphans).
+            return QueryPlan::entity_scan();
+        }
+
         let mut domains = HashSet::new();
         for type_id in type_ids {
             if let Some(domain) = self.storage.registry.get_domain(*type_id) {
@@ -771,6 +780,67 @@ impl World {
         QueryPlan::new(true, Some(driver_domain), peer_domains, driver_signature)
     }
 
+    /// Finds the pages a query iterates: none for an entity scan (it walks the
+    /// entity store), otherwise the pages matching the plan's driver signature
+    /// and not containing any `without` type.
+    fn plan_pages(&self, plan: &QueryPlan, without_type_ids: &[TypeId]) -> Vec<u32> {
+        if plan.mode == crate::ecs::QueryMode::EntityScan {
+            return Vec::new();
+        }
+        self.find_matching_pages(&plan.driver_signature, without_type_ids)
+    }
+
+    /// Decides, once per query, the per-row work a Native iteration needs beyond
+    /// its driver row (see [`NativeRowPlan`]).
+    ///
+    /// `find_matching_pages` excludes a `without` type only at page level, and
+    /// the page-row `fetch` reads an `Option` term from the driver row's page:
+    /// both are exact for the driver domain (the live driver row's page holds
+    /// that domain's components) but blind to a type registered in another
+    /// domain, stored in another page. Only those foreign terms cost per-row
+    /// work; a query whose terms all share the driver domain gets the empty
+    /// plan. Transversal and entity-scan queries get it too: they already join
+    /// every term through `fetch_from_world`, which checks every live location.
+    pub(crate) fn native_row_plan(
+        &self,
+        plan: &QueryPlan,
+        without_type_ids: &[TypeId],
+        optional_type_ids: &[TypeId],
+    ) -> NativeRowPlan {
+        if plan.mode != crate::ecs::QueryMode::Native {
+            return NativeRowPlan::default();
+        }
+        // No driver domain: every component term is unregistered (a spawned
+        // bundle may store such components, which no domain tracks), so there
+        // is no domain to be foreign to — keep the page-row path.
+        let Some(driver_domain) = plan.driver_domain else {
+            return NativeRowPlan::default();
+        };
+        // An unregistered type has no domain, so it is never foreign.
+        let foreign_domain = |type_id: TypeId| {
+            self.storage
+                .registry
+                .get_domain(type_id)
+                .filter(|&domain| domain != driver_domain)
+        };
+        if optional_type_ids
+            .iter()
+            .any(|&type_id| foreign_domain(type_id).is_some())
+        {
+            return NativeRowPlan {
+                foreign_without: Vec::new(),
+                fetch_from_world: true,
+            };
+        }
+        NativeRowPlan {
+            foreign_without: without_type_ids
+                .iter()
+                .filter_map(|&type_id| Some((foreign_domain(type_id)?, type_id)))
+                .collect(),
+            fetch_from_world: false,
+        }
+    }
+
     /// Internal helper to find pages matching a signature and filter.
     fn find_matching_pages(&self, type_ids: &[TypeId], without_type_ids: &[TypeId]) -> Vec<u32> {
         let mut matching_page_indices = Vec::new();
@@ -794,7 +864,7 @@ impl World {
     /// involved in a transversal query. This is used to speed up joins by skipping
     /// metadata lookups for entities that are guaranteed to not satisfy the query.
     pub(crate) fn compute_query_bitset(&self, plan: &QueryPlan) -> Option<DomainBitset> {
-        if plan.mode == crate::ecs::QueryMode::Native {
+        if plan.mode != crate::ecs::QueryMode::Transversal {
             return None;
         }
 
