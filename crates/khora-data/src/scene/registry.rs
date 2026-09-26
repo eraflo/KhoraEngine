@@ -29,7 +29,7 @@ use std::any::TypeId;
 /// strategies use these registrations to handle all component types automatically.
 ///
 /// The two `*_recipe` functions are the bincode round-trip used by the scene
-/// file format ([`super::recipe_strategy`]). The two `*_json` functions are
+/// file format ([`RecipeSerializationStrategy`](super::RecipeSerializationStrategy)). The two `*_json` functions are
 /// the parallel serde-JSON round-trip used by the editor inspector to
 /// display and (eventually) edit components without per-type code. Both
 /// pairs go through the same auto-generated `Serializable<Type>` mirror

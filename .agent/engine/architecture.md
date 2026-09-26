@@ -69,7 +69,7 @@ bumped O(1) at every semantic mutation) + any runtime-state fingerprint — is u
 Audio/Render/Shadow flows; Ui/Physics stay uncached (no change signal / mutates every frame).
 Representation-only: a cached View is bit-identical to a re-projected one. Gameplay-relevance
 gating (e.g. detach `RigidBody` by distance) is **not** AGDF — it changes the simulation, so it is an
-opt-in, developer-authored `DataSystem`. See `khora-data/src/ecs/layout.rs` (`LayoutAdvisor`, `Ucb1`).
+opt-in, developer-authored `DataSystem`. See `khora-data/src/ecs/layout/` (`LayoutAdvisor`; bandits `Ucb1` in `bandit.rs`).
 
 ## 2 — Crate dependency graph
 
@@ -138,7 +138,7 @@ set (`UiTransform`, `UiColor`, `UiText`, `UiImage`, `UiBorder`). Each carries a 
 | Lane trait / bus / deck | `crates/khora-core/src/lane/` (`mod.rs`, `bus.rs`, `deck.rs`) |
 | Agent trait / `AgentId` | `crates/khora-core/src/agent/`, GORNA types `crates/khora-core/src/control/gorna.rs` |
 | Math / SIMD | `crates/khora-core/src/math/` (`simd.rs`) |
-| ECS (CRPECS) / layout learner | `crates/khora-data/src/ecs/` (`world.rs`, `storage.rs`, `soa.rs`, `layout.rs`) |
+| ECS (CRPECS) / layout learner | `crates/khora-data/src/ecs/` (`world/`, `storage.rs`, `soa.rs`, `layout/`) |
 | Components / registrations | `crates/khora-data/src/ecs/components/` |
 | Flows / DataSystems | `crates/khora-data/src/flow/`, `crates/khora-data/src/ecs/systems/` |
 | DCC / GORNA / cost / PID | `crates/khora-control/src/service/`, `gorna/`, `cost_model.rs`; PID `crates/khora-core/src/control/pid.rs` |

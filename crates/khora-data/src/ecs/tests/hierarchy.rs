@@ -20,7 +20,7 @@
 
 use khora_core::ecs::entity::EntityId;
 
-use super::{Children, Parent, Transform, World};
+use crate::ecs::{Children, Parent, Transform, World};
 
 fn parent_of(world: &World, child: EntityId) -> Option<EntityId> {
     world.get::<Parent>(child).map(|p| p.0)

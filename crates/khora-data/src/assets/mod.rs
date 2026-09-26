@@ -15,6 +15,7 @@
 //! Defines asset types and their associated data structures.
 
 mod audio;
+pub(crate) mod procedural_mesh;
 mod storage;
 
 pub use audio::*;

@@ -61,6 +61,4 @@ pub use world::*;
 pub use world_ext::{entities_with_all_tags, entities_with_any_tag, entities_with_tag};
 
 #[cfg(test)]
-mod hierarchy_tests;
-#[cfg(test)]
 mod tests;

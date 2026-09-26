@@ -39,6 +39,11 @@ pub use light::*;
 pub use material_ref::*;
 pub use material_registry::*;
 pub use mesh_ref::*;
+
+// The builders live with the other asset code; `ecs` keeps naming them.
+pub use crate::assets::procedural_mesh::{
+    create_cube, create_plane, create_sphere, reconstruct_procedural_mesh,
+};
 pub use name::*;
 pub use parent::*;
 pub use physics::*;

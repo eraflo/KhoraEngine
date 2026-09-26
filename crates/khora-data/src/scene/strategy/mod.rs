@@ -17,6 +17,16 @@
 use crate::ecs::World;
 use std::fmt;
 
+mod archetype;
+mod definition;
+mod messagepack;
+mod recipe;
+
+pub use archetype::*;
+pub use definition::*;
+pub use messagepack::*;
+pub use recipe::*;
+
 /// An error that can occur during the serialization process.
 #[derive(Debug)]
 pub enum SerializationError {

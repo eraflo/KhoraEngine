@@ -8,8 +8,8 @@ CRPECS internals, component storage and queries, the AGDF layout learner, compon
 read-only Flow / DataSystem machinery.
 
 ## Key files
-- ECS: `crates/khora-data/src/ecs/` (`world.rs`, `storage.rs`, `soa.rs`, `query*.rs`, `bitset.rs`).
-- AGDF layout: `crates/khora-data/src/ecs/layout.rs` (`LayoutAdvisor`, `Ucb1`, `DecayCounter`).
+- ECS: `crates/khora-data/src/ecs/` (`world/`, `storage.rs`, `soa.rs`, `query/`, `query_plan.rs`, `bitset.rs`).
+- AGDF layout: `crates/khora-data/src/ecs/layout/` (`LayoutAdvisor` in `mod.rs`, `Ucb1` in `bandit.rs`, `DecayCounter` in `decay.rs`).
 - Components + registration: `crates/khora-data/src/ecs/components/` (self-registered through `inventory`).
 - Flows / DataSystems: `crates/khora-data/src/flow/`, `crates/khora-data/src/ecs/systems/`.
 - Derive macro: `crates/khora-macros/src/`.

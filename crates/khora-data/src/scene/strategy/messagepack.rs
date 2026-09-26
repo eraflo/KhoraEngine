@@ -9,7 +9,7 @@
 //! MessagePack scene strategy — portable schema-less binary.
 //!
 //! Same shape as [`super::RecipeSerializationStrategy`] (a topo-sorted
-//! [`super::SceneRecipe`]) but encoded with `rmp-serde` so any language
+//! [`SceneRecipe`]) but encoded with `rmp-serde` so any language
 //! with a MessagePack reader can consume it. Slightly larger on disk
 //! than bincode but the broad ecosystem support makes it the natural
 //! "interop" format for asset pipeline tooling outside Rust.

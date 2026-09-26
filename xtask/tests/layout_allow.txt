@@ -14,7 +14,6 @@ no_file_and_folder_module_pair crates/khora-script/src/bridge.rs  # becomes brid
 
 test_files_follow_convention crates/khora-core/src/event/channel_tests.rs  # T1 test layout, B2
 test_files_follow_convention crates/khora-core/src/event/mod.rs  # #[path] on channel_tests; T1 test layout, B2
-test_files_follow_convention crates/khora-data/src/ecs/hierarchy_tests.rs  # T1 test layout, B2
 test_files_follow_convention crates/khora-lanes/src/script_lane/event_tests.rs  # to script_lane/tests/ in B2 (2.23)
 test_files_follow_convention crates/khora-lanes/src/script_lane/lifecycle_tests.rs  # to script_lane/tests/ in B2 (2.23)
 test_files_follow_convention crates/khora-lanes/src/script_lane/reload_tests.rs  # to script_lane/tests/ in B2 (2.23)
@@ -27,9 +26,6 @@ test_files_follow_convention crates/khora-script/src/native/world_tests.rs  # to
 
 non_test_code_under_700_lines crates/khora-core/src/math/matrix.rs  # 890 non-test lines; not itemised in B2 yet
 non_test_code_under_700_lines crates/khora-core/src/math/vector.rs  # 862 non-test lines; not itemised in B2 yet
-non_test_code_under_700_lines crates/khora-data/src/ecs/query.rs  # 750 non-test lines; not itemised in B2 yet
-non_test_code_under_700_lines crates/khora-data/src/ecs/world.rs  # 1619 non-test lines; split in B2 (2.6)
-non_test_code_under_700_lines crates/khora-data/src/gpu/ibl.rs  # 1013 non-test lines; not itemised in B2 yet
 non_test_code_under_700_lines crates/khora-editor/src/app.rs  # 926 non-test lines; split in B2 (2.42)
 non_test_code_under_700_lines crates/khora-editor/src/commands.rs  # 886 non-test lines; split in B2 (2.41)
 non_test_code_under_700_lines crates/khora-editor/src/panels/asset_browser/mod.rs  # 1593 non-test lines; split in B2 (2.39)
