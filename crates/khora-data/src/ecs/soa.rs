@@ -476,3 +476,613 @@ mod world_integration {
         assert_eq!(world.query::<Soa<Velocity>>().count(), 1);
     }
 }
+
+/// `#[component(layout = "soa")]` must select the field-split column whatever
+/// the position of `layout` among the attribute's other `key = value` pairs.
+///
+/// The check reads the column type the derive routes storage through
+/// (`Component::make_column`) rather than naming `SoaLayout` items: a component
+/// whose opt-in was dropped has no `SoaLayout` impl, and a test that named one
+/// would fail to compile instead of reporting the miss.
+#[cfg(test)]
+mod layout_attribute_order {
+    use crate::ecs::component::Component;
+    use crate::ecs::{SemanticDomain, World};
+    use khora_macros::Component;
+
+    /// `layout` written after `domain = ...`.
+    #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
+    #[component(no_serializable, domain = Physics, layout = "soa")]
+    struct DomainFirstSoa {
+        a: f32,
+        b: f32,
+    }
+
+    /// `layout` written after `provenance = ...`.
+    #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
+    #[component(no_serializable, provenance = Runtime, layout = "soa")]
+    struct ProvenanceFirstSoa {
+        a: f32,
+        b: f32,
+    }
+
+    /// Whether `C`'s storage column is the canonical AoS `Vec<C>` — i.e. the
+    /// field-SoA opt-in did not take effect.
+    fn stored_as_aos<C: Component>() -> bool {
+        C::make_column().as_any().is::<Vec<C>>()
+    }
+
+    /// Guards that a preceding `domain = ...` does not swallow the SoA opt-in.
+    #[test]
+    fn layout_soa_after_domain_selects_field_soa_column() {
+        assert!(
+            !stored_as_aos::<DomainFirstSoa>(),
+            "`#[component(domain = Physics, layout = \"soa\")]` must store the \
+             component field-split, but its column is an AoS `Vec<DomainFirstSoa>`"
+        );
+    }
+
+    /// Guards that a preceding `provenance = ...` does not swallow the SoA opt-in.
+    #[test]
+    fn layout_soa_after_provenance_selects_field_soa_column() {
+        assert!(
+            !stored_as_aos::<ProvenanceFirstSoa>(),
+            "`#[component(provenance = Runtime, layout = \"soa\")]` must store the \
+             component field-split, but its column is an AoS `Vec<ProvenanceFirstSoa>`"
+        );
+    }
+
+    /// Guards the same property through a live `World`: a field-split column
+    /// cannot hand out `&T`, so `World::get` finds nothing while the by-value
+    /// read still returns the spawned value.
+    #[test]
+    fn layout_soa_after_domain_is_not_readable_by_reference() {
+        let mut world = World::default();
+        world.register_component::<DomainFirstSoa>(SemanticDomain::Physics);
+        let value = DomainFirstSoa { a: 1.5, b: -2.0 };
+        let entity = world.spawn(value);
+
+        assert_eq!(world.clone_component::<DomainFirstSoa>(entity), Some(value));
+        assert!(
+            world.get::<DomainFirstSoa>(entity).is_none(),
+            "a field-SoA component must not be stored as a contiguous `DomainFirstSoa`"
+        );
+    }
+}
+
+/// `World::add_component` (and the scene registration built on it) must accept
+/// a field-SoA component: as the entity's first component in its domain, and
+/// when the entity migrates from a page that already holds other components —
+/// in the same domain or co-located from another domain. Every other component
+/// the entity carries must survive the migration unchanged.
+#[cfg(test)]
+mod add_component_field_soa {
+    use std::any::TypeId;
+
+    use crate::ecs::component::Component;
+    use crate::ecs::{SemanticDomain, Soa, World};
+    use crate::scene::ComponentRegistration;
+    use khora_macros::Component;
+
+    /// A serializable field-SoA component — it gets a `ComponentRegistration`.
+    #[derive(Debug, Clone, Copy, PartialEq, Component)]
+    #[component(layout = "soa")]
+    struct SoaSpin {
+        rate: f32,
+        phase: f32,
+    }
+
+    /// Non-zero on purpose, so `create_default` is distinguishable from a
+    /// zero-filled row.
+    impl Default for SoaSpin {
+        fn default() -> Self {
+            Self {
+                rate: 1.0,
+                phase: 0.25,
+            }
+        }
+    }
+
+    /// An AoS component living in the same domain as `SoaSpin`.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    struct Mass(f32);
+    impl Component for Mass {}
+
+    /// An AoS component living in another domain than `SoaSpin`.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    struct Glow(f32);
+    impl Component for Glow {}
+
+    fn world() -> World {
+        let mut world = World::default();
+        world.register_component::<SoaSpin>(SemanticDomain::Physics);
+        world.register_component::<Mass>(SemanticDomain::Physics);
+        world.register_component::<Glow>(SemanticDomain::Render);
+        world
+    }
+
+    fn registration() -> &'static ComponentRegistration {
+        inventory::iter::<ComponentRegistration>
+            .into_iter()
+            .find(|r| r.type_id == TypeId::of::<SoaSpin>())
+            .expect("a serializable field-SoA component registers for scenes")
+    }
+
+    const SPIN: SoaSpin = SoaSpin {
+        rate: 3.5,
+        phase: -0.75,
+    };
+
+    /// Adding the component to an entity with nothing in any domain yet.
+    #[test]
+    fn add_field_soa_as_first_component_in_domain() {
+        let mut world = world();
+        let entity = world.spawn(());
+
+        world
+            .add_component(entity, SPIN)
+            .expect("adding a registered, absent component succeeds");
+
+        assert_eq!(world.clone_component::<SoaSpin>(entity), Some(SPIN));
+    }
+
+    /// Adding the component to an entity whose only component lives in another
+    /// domain: that component must be untouched.
+    #[test]
+    fn add_field_soa_beside_other_domain_component() {
+        let mut world = world();
+        let entity = world.spawn(Glow(0.5));
+
+        world
+            .add_component(entity, SPIN)
+            .expect("adding a registered, absent component succeeds");
+
+        assert_eq!(world.clone_component::<SoaSpin>(entity), Some(SPIN));
+        assert_eq!(world.get::<Glow>(entity), Some(&Glow(0.5)));
+    }
+
+    /// Adding the component to an entity that already has a component in the
+    /// same domain migrates the row; the existing component keeps its value.
+    #[test]
+    fn add_field_soa_migrates_same_domain_row() {
+        let mut world = world();
+        let entity = world.spawn(Mass(12.0));
+
+        world
+            .add_component(entity, SPIN)
+            .expect("adding a registered, absent component succeeds");
+
+        assert_eq!(world.clone_component::<SoaSpin>(entity), Some(SPIN));
+        assert_eq!(world.get::<Mass>(entity), Some(&Mass(12.0)));
+    }
+
+    /// Adding the component to an entity whose page co-locates components of
+    /// several domains migrates the whole row; every component survives.
+    #[test]
+    fn add_field_soa_migrates_co_located_cross_domain_row() {
+        let mut world = world();
+        let entity = world.spawn((Mass(12.0), Glow(0.5)));
+
+        world
+            .add_component(entity, SPIN)
+            .expect("adding a registered, absent component succeeds");
+
+        assert_eq!(world.clone_component::<SoaSpin>(entity), Some(SPIN));
+        assert_eq!(world.get::<Mass>(entity), Some(&Mass(12.0)));
+        assert_eq!(world.get::<Glow>(entity), Some(&Glow(0.5)));
+    }
+
+    /// Several entities migrating into the same destination page keep their
+    /// field arrays row-aligned: each reads back its own value.
+    #[test]
+    fn add_field_soa_to_several_entities_keeps_rows_aligned() {
+        let mut world = world();
+        let first = world.spawn(Mass(1.0));
+        let second = world.spawn(Mass(2.0));
+        let first_spin = SoaSpin {
+            rate: 10.0,
+            phase: 11.0,
+        };
+        let second_spin = SoaSpin {
+            rate: 20.0,
+            phase: 21.0,
+        };
+
+        world.add_component(first, first_spin).expect("first add");
+        world
+            .add_component(second, second_spin)
+            .expect("second add");
+
+        assert_eq!(world.clone_component::<SoaSpin>(first), Some(first_spin));
+        assert_eq!(world.clone_component::<SoaSpin>(second), Some(second_spin));
+        assert_eq!(world.get::<Mass>(first), Some(&Mass(1.0)));
+        assert_eq!(world.get::<Mass>(second), Some(&Mass(2.0)));
+    }
+
+    /// A component added after spawn is visible to the by-value `Soa<T>` query.
+    #[test]
+    fn soa_query_yields_component_added_after_spawn() {
+        let mut world = world();
+        let entity = world.spawn(Mass(12.0));
+
+        world
+            .add_component(entity, SPIN)
+            .expect("adding a registered, absent component succeeds");
+
+        let seen: Vec<SoaSpin> = world.query::<Soa<SoaSpin>>().collect();
+        assert_eq!(seen, vec![SPIN]);
+    }
+
+    /// The scene recipe path round-trips a field-SoA component onto another
+    /// entity, leaving that entity's existing component intact.
+    #[test]
+    fn recipe_round_trip_restores_field_soa_component() {
+        let reg = registration();
+        let mut src = world();
+        let source = src.spawn(SPIN);
+        let bytes = (reg.serialize_recipe)(&src, source).expect("the source carries SoaSpin");
+
+        let mut dst = world();
+        let target = dst.spawn(Mass(7.0));
+        (reg.deserialize_recipe)(&mut dst, target, &bytes).expect("recipe decodes");
+
+        assert_eq!(dst.clone_component::<SoaSpin>(target), Some(SPIN));
+        assert_eq!(dst.get::<Mass>(target), Some(&Mass(7.0)));
+    }
+
+    /// The registration's `create_default` attaches `SoaSpin::default()`.
+    #[test]
+    fn create_default_attaches_default_field_soa_component() {
+        let reg = registration();
+        let mut world = world();
+        let target = world.spawn(Mass(7.0));
+
+        (reg.create_default)(&mut world, target).expect("create_default succeeds");
+
+        assert_eq!(
+            world.clone_component::<SoaSpin>(target),
+            Some(SoaSpin::default())
+        );
+        assert_eq!(world.get::<Mass>(target), Some(&Mass(7.0)));
+    }
+}
+
+/// `layout` must be read wherever it sits among the `#[component(...)]` keys —
+/// first, in the middle, last after a flag, or in its own attribute — and its
+/// presence must not hide the `domain` / `provenance` / `no_serializable` keys
+/// from their own scans. An explicit non-`"soa"` value keeps the AoS column.
+#[cfg(test)]
+mod layout_attribute_shapes {
+    use std::any::TypeId;
+
+    use crate::ecs::component::Component;
+    use crate::ecs::{ComponentProvenance, SemanticDomain, World};
+    use crate::scene::ComponentRegistration;
+    use khora_macros::Component;
+
+    /// `layout` between two value keys.
+    #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
+    #[component(domain = Physics, layout = "soa", provenance = Runtime)]
+    struct LayoutMiddle {
+        a: f32,
+        b: f32,
+    }
+
+    /// `layout` first, before both value keys.
+    #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
+    #[component(layout = "soa", domain = Audio, provenance = Derived)]
+    struct LayoutFirst {
+        a: f32,
+        b: f32,
+    }
+
+    /// `layout` alone in a second `#[component]` attribute.
+    #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
+    #[component(domain = Physics)]
+    #[component(layout = "soa")]
+    struct LayoutSplitAttrs {
+        a: f32,
+        b: f32,
+    }
+
+    /// `layout` last, after a flag and two value keys.
+    #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
+    #[component(no_serializable, domain = Physics, provenance = Runtime, layout = "soa")]
+    struct LayoutLastAfterFlag {
+        a: f32,
+        b: f32,
+    }
+
+    /// An explicit AoS request after a value key.
+    #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
+    #[component(no_serializable, domain = Physics, layout = "aos")]
+    struct LayoutAos {
+        a: f32,
+        b: f32,
+    }
+
+    /// A value that only differs from `"soa"` by case.
+    #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
+    #[component(no_serializable, domain = Physics, layout = "SOA")]
+    struct LayoutWrongCase {
+        a: f32,
+        b: f32,
+    }
+
+    fn stored_as_aos<C: Component>() -> bool {
+        C::make_column().as_any().is::<Vec<C>>()
+    }
+
+    fn registration_of<C: 'static>() -> Option<&'static ComponentRegistration> {
+        inventory::iter::<ComponentRegistration>
+            .into_iter()
+            .find(|r| r.type_id == TypeId::of::<C>())
+    }
+
+    #[test]
+    fn layout_between_value_keys_keeps_all_three() {
+        assert!(!stored_as_aos::<LayoutMiddle>());
+        let reg = registration_of::<LayoutMiddle>().expect("serializable → registered");
+        assert_eq!(reg.provenance, ComponentProvenance::Runtime);
+        assert_eq!(
+            World::new().component_domain(TypeId::of::<LayoutMiddle>()),
+            Some(SemanticDomain::Physics)
+        );
+    }
+
+    #[test]
+    fn layout_first_does_not_hide_following_value_keys() {
+        assert!(!stored_as_aos::<LayoutFirst>());
+        let reg = registration_of::<LayoutFirst>().expect("serializable → registered");
+        assert_eq!(reg.provenance, ComponentProvenance::Derived);
+        assert_eq!(
+            World::new().component_domain(TypeId::of::<LayoutFirst>()),
+            Some(SemanticDomain::Audio)
+        );
+    }
+
+    #[test]
+    fn layout_in_its_own_attribute_is_honoured() {
+        assert!(!stored_as_aos::<LayoutSplitAttrs>());
+        assert_eq!(
+            World::new().component_domain(TypeId::of::<LayoutSplitAttrs>()),
+            Some(SemanticDomain::Physics)
+        );
+    }
+
+    #[test]
+    fn layout_last_after_flag_and_value_keys_is_honoured() {
+        assert!(!stored_as_aos::<LayoutLastAfterFlag>());
+        assert!(
+            registration_of::<LayoutLastAfterFlag>().is_none(),
+            "`no_serializable` must still suppress the scene registration"
+        );
+        assert_eq!(
+            World::new().component_domain(TypeId::of::<LayoutLastAfterFlag>()),
+            Some(SemanticDomain::Physics)
+        );
+    }
+
+    #[test]
+    fn non_soa_layout_values_keep_the_aos_column() {
+        assert!(stored_as_aos::<LayoutAos>());
+        assert!(stored_as_aos::<LayoutWrongCase>());
+    }
+}
+
+/// A field-SoA component that reached its entity through `add_component` must
+/// then go through every other world path — removal of itself or of a sibling,
+/// re-adding, in-place writes, despawn, orphan compaction, the scene
+/// registration hooks and the archetype snapshot — with its field arrays kept
+/// row-aligned with the page's entity list.
+#[cfg(test)]
+mod field_soa_after_add {
+    use std::any::TypeId;
+
+    use crate::ecs::{SemanticDomain, Soa, World};
+    use crate::scene::ComponentRegistration;
+    use khora_core::ecs::entity::EntityId;
+    use khora_macros::Component;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Default, Component)]
+    #[component(layout = "soa")]
+    struct Drift {
+        dx: f32,
+        dy: f32,
+        dz: f32,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    struct Weight(f32);
+    impl crate::ecs::component::Component for Weight {}
+
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    struct Tint(f32);
+    impl crate::ecs::component::Component for Tint {}
+
+    fn world() -> World {
+        let mut world = World::default();
+        world.register_component::<Drift>(SemanticDomain::Physics);
+        world.register_component::<Weight>(SemanticDomain::Physics);
+        world.register_component::<Tint>(SemanticDomain::Render);
+        world
+    }
+
+    fn drift(i: u32) -> Drift {
+        let f = i as f32;
+        Drift {
+            dx: f,
+            dy: f + 0.5,
+            dz: -f,
+        }
+    }
+
+    fn registration() -> &'static ComponentRegistration {
+        inventory::iter::<ComponentRegistration>
+            .into_iter()
+            .find(|r| r.type_id == TypeId::of::<Drift>())
+            .expect("serializable → registered")
+    }
+
+    #[test]
+    fn remove_then_readd_then_remove_sibling() {
+        let mut world = world();
+        let e = world.spawn(Weight(3.0));
+        world.add_component(e, drift(1)).expect("add");
+
+        world.remove_component::<Drift>(e).expect("remove SoA");
+        assert_eq!(world.clone_component::<Drift>(e), None);
+        assert_eq!(world.get::<Weight>(e), Some(&Weight(3.0)));
+
+        world.add_component(e, drift(2)).expect("re-add");
+        assert_eq!(world.clone_component::<Drift>(e), Some(drift(2)));
+
+        world.remove_component::<Weight>(e).expect("remove sibling");
+        assert_eq!(world.get::<Weight>(e), None);
+        assert_eq!(world.clone_component::<Drift>(e), Some(drift(2)));
+    }
+
+    /// Interleaves adds, removals, sibling migrations and despawns over many
+    /// entities, compacts, and checks every survivor reads its own value.
+    #[test]
+    fn interleaved_churn_and_compaction_keep_rows_aligned() {
+        let mut world = world();
+        let entities: Vec<EntityId> = (0..64)
+            .map(|i| {
+                if i % 3 == 0 {
+                    world.spawn((Weight(i as f32), Tint(i as f32)))
+                } else {
+                    world.spawn(Weight(i as f32))
+                }
+            })
+            .collect();
+
+        for (i, &e) in entities.iter().enumerate() {
+            world.add_component(e, drift(i as u32)).expect("add");
+        }
+        for (i, &e) in entities.iter().enumerate() {
+            match i % 4 {
+                0 => {
+                    world.remove_component::<Drift>(e).expect("remove SoA");
+                }
+                1 => {
+                    world.remove_component::<Weight>(e).expect("remove sibling");
+                }
+                _ => {}
+            }
+        }
+        // A second wave re-adds onto the entities that lost it.
+        for (i, &e) in entities.iter().enumerate() {
+            if i % 4 == 0 {
+                world
+                    .add_component(e, drift(1000 + i as u32))
+                    .expect("re-add");
+            }
+        }
+        world.run_compaction(usize::MAX);
+        // Despawns land after compaction: a despawned entity's leftover
+        // migration rows make compaction itself panic (see
+        // `compaction_after_despawn`), which is not what this test measures.
+        for (i, &e) in entities.iter().enumerate() {
+            if i % 4 == 2 {
+                assert!(world.despawn(e));
+            }
+        }
+
+        let mut live = 0;
+        for (i, &e) in entities.iter().enumerate() {
+            let expected_drift = match i % 4 {
+                0 => Some(drift(1000 + i as u32)),
+                2 => None,
+                _ => Some(drift(i as u32)),
+            };
+            assert_eq!(
+                world.clone_component::<Drift>(e),
+                expected_drift,
+                "drift of entity {i}"
+            );
+            let expected_weight = match i % 4 {
+                1 | 2 => None,
+                _ => Some(Weight(i as f32)),
+            };
+            assert_eq!(
+                world.get::<Weight>(e).copied(),
+                expected_weight,
+                "weight of entity {i}"
+            );
+            if i % 4 != 2 {
+                let expected_tint = (i % 3 == 0).then_some(Tint(i as f32));
+                assert_eq!(
+                    world.get::<Tint>(e).copied(),
+                    expected_tint,
+                    "tint of entity {i}"
+                );
+                live += 1;
+            }
+        }
+        assert_eq!(world.query::<Soa<Drift>>().count(), live);
+    }
+
+    #[test]
+    fn json_hooks_add_update_read_and_remove() {
+        let reg = registration();
+        let mut world = world();
+        let e = world.spawn(Weight(3.0));
+
+        let v = serde_json::json!({ "dx": 1.0, "dy": 2.0, "dz": 3.0 });
+        (reg.from_json)(&mut world, e, &v).expect("from_json adds");
+        let expected = Drift {
+            dx: 1.0,
+            dy: 2.0,
+            dz: 3.0,
+        };
+        assert_eq!(world.clone_component::<Drift>(e), Some(expected));
+
+        let v2 = serde_json::json!({ "dx": 4.0, "dy": 5.0, "dz": 6.0 });
+        (reg.from_json)(&mut world, e, &v2).expect("from_json updates");
+        assert_eq!((reg.to_json)(&world, e), Some(v2));
+
+        (reg.remove)(&mut world, e).expect("remove hook");
+        assert_eq!(world.clone_component::<Drift>(e), None);
+        assert_eq!(world.get::<Weight>(e), Some(&Weight(3.0)));
+    }
+
+    /// The archetype snapshot of a world whose field-SoA column was filled by
+    /// `add_component` (including the orphan row it left) restores every value.
+    #[test]
+    fn archetype_round_trip_after_add() {
+        let mut src = world();
+        let a = src.spawn(Weight(1.0));
+        let b = src.spawn((Weight(2.0), Tint(0.5)));
+        src.add_component(a, drift(1)).expect("add a");
+        src.add_component(b, drift(2)).expect("add b");
+        let bytes = src.serialize_archetype().expect("encode");
+
+        let mut dst = world();
+        dst.deserialize_archetype(&bytes).expect("decode");
+        assert_eq!(dst.clone_component::<Drift>(a), Some(drift(1)));
+        assert_eq!(dst.clone_component::<Drift>(b), Some(drift(2)));
+        assert_eq!(dst.get::<Weight>(b), Some(&Weight(2.0)));
+        assert_eq!(dst.get::<Tint>(b), Some(&Tint(0.5)));
+    }
+
+    /// Adding a sibling to an entity that was spawned with the field-SoA
+    /// component migrates the field-SoA row through the registered row copier.
+    #[test]
+    fn add_sibling_to_spawned_field_soa_entity() {
+        let mut world = world();
+        let a = world.spawn(drift(1));
+        let b = world.spawn(drift(2));
+        world.add_component(b, Weight(5.0)).expect("add sibling");
+        world
+            .add_component(a, Tint(0.25))
+            .expect("add other-domain");
+        world.run_compaction(usize::MAX);
+
+        assert_eq!(world.clone_component::<Drift>(a), Some(drift(1)));
+        assert_eq!(world.clone_component::<Drift>(b), Some(drift(2)));
+        assert_eq!(world.get::<Weight>(b), Some(&Weight(5.0)));
+        assert_eq!(world.get::<Tint>(a), Some(&Tint(0.25)));
+        assert_eq!(world.query::<Soa<Drift>>().count(), 2);
+    }
+}

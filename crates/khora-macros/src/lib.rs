@@ -107,6 +107,9 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     // storage through a `FieldSoaColumn<Self>` and a `SoaLayout` impl describes
     // the field↔lane mapping. Otherwise `component_impl` stays the default
     // (empty marker) and no `SoaLayout` is emitted.
+    //
+    // As in the `no_serializable` scan below, other `key = value` metas are
+    // consumed so `layout` is found whatever the key order.
     let layout_soa = input.attrs.iter().any(|attr| {
         if !attr.path().is_ident("component") {
             return false;
@@ -114,11 +117,10 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         let mut soa = false;
         let _ = attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("layout") {
-                if let Ok(value) = meta.value() {
-                    if let Ok(s) = value.parse::<syn::LitStr>() {
-                        soa = s.value() == "soa";
-                    }
-                }
+                let s = meta.value()?.parse::<syn::LitStr>()?;
+                soa = s.value() == "soa";
+            } else if meta.input.peek(syn::Token![=]) {
+                let _ = meta.value()?.parse::<syn::Expr>()?;
             }
             Ok(())
         });

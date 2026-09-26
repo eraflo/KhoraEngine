@@ -901,14 +901,13 @@ impl World {
                 }
             }
 
-            dest_page
+            // Push through the component's own column hook: the column is a
+            // `Vec<C>` for AoS but a `FieldSoaColumn<C>` for field-SoA.
+            let dest_col = dest_page
                 .columns
                 .get_mut(&TypeId::of::<C>())
-                .unwrap()
-                .as_any_mut()
-                .downcast_mut::<Vec<C>>()
-                .unwrap()
-                .push(component);
+                .expect("destination page signature includes the added component");
+            component.push_into_column(dest_col.as_mut());
 
             dest_page.add_entity(entity_id);
         }
