@@ -44,7 +44,7 @@ target into a strategy per agent**. Reading a decision means tracing it back thr
 
 Each switch in the stream prints its reason, e.g. `RenderAgent: LitForward → Forward+ — GPU
 pressure`. That suffix is the heuristic that fired. The `HeuristicEngine`
-(`crates/khora-control/src/analysis.rs`, `analyze`) evaluates these pressure sources every cold-path
+(`crates/khora-control/src/analysis/mod.rs`, `analyze`) evaluates these pressure sources every cold-path
 tick, starting from a 60 FPS baseline target (16.66 ms):
 
 | Pressure source | Trigger | Effect on the target |
@@ -64,7 +64,7 @@ level on `khora_control` to see them outside the editor.
 ### Step B — understand the multiplier that scaled the budget
 
 The heuristics produce a single `suggested_latency_ms` **target**. A **PID controller** then drives
-the `global_budget_multiplier` so *measured* frame time tracks that target (`service.rs`, the DccService
+the `global_budget_multiplier` so *measured* frame time tracks that target (`crates/khora-control/src/service/decision_loop.rs`, the DccService
 cold-path loop). Key behaviours when reading a decision:
 
 - The multiplier only updates once there are at least `FRAME_TIME_MIN_SAMPLES` frame-time samples and

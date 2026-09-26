@@ -141,10 +141,10 @@ set (`UiTransform`, `UiColor`, `UiText`, `UiImage`, `UiBorder`). Each carries a 
 | ECS (CRPECS) / layout learner | `crates/khora-data/src/ecs/` (`world.rs`, `storage.rs`, `soa.rs`, `layout.rs`) |
 | Components / registrations | `crates/khora-data/src/ecs/components/` |
 | Flows / DataSystems | `crates/khora-data/src/flow/`, `crates/khora-data/src/ecs/systems/` |
-| DCC / GORNA / cost / PID | `crates/khora-control/src/service.rs`, `gorna/mod.rs`, `cost_model.rs`; PID `crates/khora-core/src/control/pid.rs` |
+| DCC / GORNA / cost / PID | `crates/khora-control/src/service/`, `gorna/`, `cost_model.rs`; PID `crates/khora-core/src/control/pid.rs` |
 | Substrate dispatcher | `crates/khora-control/src/substrate/` |
 | Render lanes / shaders | `crates/khora-lanes/src/render_lane/`; shaders in `crates/khora-infra/src/graphics/shader/shaders/` (`pipelines/`, `lib/`), composed by `graphics/shader/system.rs` |
-| Physics / audio / ui lanes | `crates/khora-lanes/src/{physics_lane,audio_lane,ui_lane}/` |
+| Physics / audio / ui lanes | `crates/khora-lanes/src/{physics_lane,audio_lane}/`, `crates/khora-lanes/src/render_lane/ui_render_lane.rs` |
 | wgpu backend | `crates/khora-infra/src/graphics/wgpu/` (`system.rs`, `device.rs`) |
 | Rapier / CPAL / Taffy | `crates/khora-infra/src/{physics/rapier,audio/cpal,ui/taffy}/` |
 | Agents | `crates/khora-agents/src/{render,shadow,overlay,physics,ui,audio}_agent/` |

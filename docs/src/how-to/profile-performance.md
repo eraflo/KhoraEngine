@@ -89,7 +89,7 @@ measured. See [AGDF — anticipatory budgeting](../concepts/agdf.md).
 
 Rendering runs at the display's variable rate; the simulation advances in **fixed** increments so it
 stays frame-rate independent and deterministic. The scheduler
-(`crates/khora-control/src/scheduler.rs`) reconciles the two with an accumulator
+(`crates/khora-control/src/scheduler/frame.rs`) reconciles the two with an accumulator
 (`compute_sim_steps`).
 
 **Sim steps scale with real dt.** Each frame the real wall-clock delta (clamped to

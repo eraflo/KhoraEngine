@@ -139,7 +139,7 @@ present in the world. See [Rendering](../concepts/rendering.md).
 ## Physics
 
 The simulation runs on a **fixed timestep** decoupled from the display rate. The scheduler
-(`crates/khora-control/src/scheduler.rs`, `compute_sim_steps`) accumulates real frame time and runs
+(`crates/khora-control/src/scheduler/sim_steps.rs`, `compute_sim_steps`) accumulates real frame time and runs
 whole fixed sub-steps; the `PhysicsAgent` (`crates/khora-agents/src/physics_agent/agent.rs`) owns the
 fixed step via its GORNA strategy. See [GORNA](../concepts/gorna.md) and
 [Profile performance](./profile-performance.md).
@@ -176,7 +176,7 @@ window drag) would demand more catch-up steps than the cap, the excess accumulat
 physics in one frame and freezing.
 
 **Fix.** Nothing in normal operation — recovery is automatic once frame pacing returns. The two knobs
-(`MAX_FRAME_DELTA_SECONDS`, `MAX_SIM_STEPS`) are constants in `scheduler.rs`; raise them only if you
+(`MAX_FRAME_DELTA_SECONDS`, `MAX_SIM_STEPS`) are constants in `crates/khora-control/src/scheduler/mod.rs` and `scheduler/sim_steps.rs`; raise them only if you
 deliberately want more catch-up at the cost of a worse worst-case frame.
 
 ### NaN positions / the simulation explodes
@@ -297,8 +297,8 @@ panic — see the `corrupt_material_still_builds_with_empty_deps` behaviour in `
 
 The DCC adapts each agent's strategy every cold-path tick based on hardware and frame-time pressure.
 When quality changes unexpectedly, GORNA is usually responding to a real signal. The mechanism is in
-[GORNA](../concepts/gorna.md); the code is `khora-control/src/analysis.rs` (`HeuristicEngine`) and
-`khora-control/src/service.rs` (`DccService`). To investigate a single decision frame by frame, use
+[GORNA](../concepts/gorna.md); the code is `khora-control/src/analysis/mod.rs` (`HeuristicEngine`) and
+`khora-control/src/service/mod.rs` (`DccService`). To investigate a single decision frame by frame, use
 [Debug a frame](./debug-a-frame.md).
 
 ### "Why did quality suddenly drop?" (a strategy downgraded on its own)

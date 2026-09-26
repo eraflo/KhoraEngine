@@ -38,7 +38,8 @@
 //!
 //! Checks that need `git` (`no_tracked_ignored_files`,
 //! `no_duplicate_asset_files`) return early without asserting when `git`
-//! cannot be run in the repository.
+//! cannot be run in the repository; `cited_source_paths_exist` then checks
+//! existence only.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -62,6 +63,7 @@ const RATCHETED_CHECKS: &[&str] = &[
     "lanes_mirror_agents",
     "no_tracked_ignored_files",
     "relative_links_resolve",
+    "cited_source_paths_exist",
     "no_duplicate_asset_files",
 ];
 
@@ -77,6 +79,12 @@ const SHADER_TREE: &str = "crates/khora-infra/src/graphics/shader/shaders/";
 
 /// Markdown trees that are scratch: neither scanned nor link targets.
 const SCRATCH_DOCS: &[&str] = &["docs/plans/", "docs/research/"];
+
+/// Top-level directories whose paths a doc may cite in inline code.
+const CITED_ROOTS: &[&str] = &["crates", "hub", "xtask", "examples"];
+
+/// Extensions of the files a cited source path may name.
+const CITED_EXTENSIONS: &[&str] = &["rs", "wgsl", "toml", "md", "json", "ron"];
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -398,6 +406,86 @@ fn relative_links_resolve() {
     ratchet(
         "relative_links_resolve",
         "relative links that do not resolve",
+        &violations,
+    );
+}
+
+/// Every repository source path a doc cites in inline code exists. Catches the
+/// drift `relative_links_resolve` cannot see when a file moves: a
+/// `` `crates/khora-control/src/scheduler.rs` `` that is prose, not a link.
+///
+/// Scanned: the files `relative_links_resolve` scans, minus the dated logs
+/// `.agent/*/knowledge/MEMORY.md`. Only inline code spans outside fenced code
+/// blocks are read. A span is a cited path when, with no whitespace in it:
+///
+/// - it starts with `crates/`, `hub/`, `xtask/`, `examples/`, or
+///   `khora-<name>/` where `crates/khora-<name>/` exists (resolved as
+///   `crates/khora-<name>/…`);
+/// - once everything from its first `:` or `#` is dropped (`:123`,
+///   `:12-34`, `::Symbol`, `#anchor`), it ends in `/` (a directory) or in a
+///   file name with one of the extensions `.rs`, `.wgsl`, `.toml`, `.md`,
+///   `.json`, `.ron`.
+///
+/// Brace groups are expanded (`{physics/rapier,audio/cpal}` → two paths, one
+/// level of nesting); a group without a comma is a placeholder (`{domain}`)
+/// and skips the span, as does any span containing `*`, `<`, `>`, `…` or
+/// `...`. Bare file names (`` `service.rs` ``) and directories without a
+/// trailing `/` are out of scope: nothing says where they live.
+///
+/// A cited path must exist in the working tree and be known to git — tracked,
+/// or untracked but not ignored (a file a split has just created), or a
+/// directory holding such a file — so a citation of a gitignored generated
+/// file fails. When `git` cannot run, existence alone is checked.
+/// Keyed by the citing Markdown file.
+#[test]
+fn cited_source_paths_exist() {
+    let root = repo_root();
+    let crates = crate_dir_names(&root);
+    let known = git(
+        &root,
+        &[
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ],
+    )
+    .map(|listed| split_nul(&listed).collect::<BTreeSet<String>>());
+
+    let mut violations = Violations::new();
+    for source in markdown_sources(&root) {
+        let source_rel = rel(&root, &source);
+        if is_scratch_doc(&source_rel) || is_dated_log(&source_rel) {
+            continue;
+        }
+        for (line, span, path) in cited_source_paths(&read_text(&source), &crates) {
+            let on_disk = root.join(path.trim_end_matches('/'));
+            let exists = if path.ends_with('/') {
+                on_disk.is_dir()
+            } else {
+                on_disk.is_file()
+            };
+            let problem = if !exists {
+                "does not exist"
+            } else if known
+                .as_ref()
+                .is_some_and(|known| !is_known_to_git(known, path.trim_end_matches('/')))
+            {
+                "ignored by git"
+            } else {
+                continue;
+            };
+            add(
+                &mut violations,
+                source_rel.clone(),
+                format!("line {line}: `{span}` → {path} {problem}"),
+            );
+        }
+    }
+    ratchet(
+        "cited_source_paths_exist",
+        "source paths cited in inline code that do not exist",
         &violations,
     );
 }
@@ -1086,6 +1174,176 @@ fn html_link_targets(line: &str) -> Vec<String> {
     targets
 }
 
+/// `README.md`, `docs/README.md`, `docs/src/**/*.md` and `.agent/**/*.md`,
+/// scratch trees included (callers filter them).
+fn markdown_sources(root: &Path) -> Vec<PathBuf> {
+    let mut sources = Vec::new();
+    for single in ["README.md", "docs/README.md"] {
+        let path = root.join(single);
+        if path.is_file() {
+            sources.push(path);
+        }
+    }
+    for tree in ["docs/src", ".agent"] {
+        sources.extend(
+            walk_files(&root.join(tree))
+                .into_iter()
+                .filter(|path| has_extension(path, "md")),
+        );
+    }
+    sources
+}
+
+/// `.agent/<profile>/knowledge/MEMORY.md`: a dated log, whose old entries
+/// rightly name paths that have since moved.
+fn is_dated_log(rel_path: &str) -> bool {
+    matches!(
+        rel_path.split('/').collect::<Vec<_>>().as_slice(),
+        [".agent", _, "knowledge", "MEMORY.md"]
+    )
+}
+
+/// Names of the directories directly under `crates/`.
+fn crate_dir_names(root: &Path) -> BTreeSet<String> {
+    child_dirs(&root.join("crates"))
+        .iter()
+        .map(|path| file_name(path))
+        .collect()
+}
+
+/// True when `path` is in `known`, or is a directory holding a file that is.
+fn is_known_to_git(known: &BTreeSet<String>, path: &str) -> bool {
+    let dir = format!("{path}/");
+    known.contains(path)
+        || known
+            .range(dir.clone()..)
+            .next()
+            .is_some_and(|first| first.starts_with(&dir))
+}
+
+/// `(1-based line, span content)` of every inline code span outside fenced
+/// code blocks. A span opens on a run of backticks and closes on the next run
+/// of the same length on the same line; an unmatched run is literal text.
+fn inline_code_spans(text: &str) -> Vec<(usize, String)> {
+    let mut spans = Vec::new();
+    let mut fence: Option<char> = None;
+    for (index, raw) in text.lines().enumerate() {
+        let trimmed = raw.trim_start();
+        let marker = trimmed.chars().next().filter(|ch| *ch == '`' || *ch == '~');
+        if let Some(ch) = marker {
+            if trimmed.starts_with(&ch.to_string().repeat(3)) {
+                fence = match fence {
+                    None => Some(ch),
+                    Some(open) if open == ch => None,
+                    other => other,
+                };
+                continue;
+            }
+        }
+        if fence.is_some() {
+            continue;
+        }
+        let bytes = raw.as_bytes();
+        let run_end = |from: usize| {
+            from + bytes[from..]
+                .iter()
+                .take_while(|byte| **byte == b'`')
+                .count()
+        };
+        let mut at = 0;
+        while let Some(offset) = raw[at..].find('`') {
+            let open = at + offset;
+            let content = run_end(open);
+            let len = content - open;
+            let mut search = content;
+            let mut close = None;
+            while let Some(offset) = raw[search..].find('`') {
+                let start = search + offset;
+                let end = run_end(start);
+                if end - start == len {
+                    close = Some(start);
+                    break;
+                }
+                search = end;
+            }
+            match close {
+                Some(close) => {
+                    spans.push((index + 1, raw[content..close].trim().to_owned()));
+                    at = close + len;
+                }
+                None => at = content,
+            }
+        }
+    }
+    spans
+}
+
+/// `(1-based line, span, repo-relative path)` of every source path cited in
+/// an inline code span; see `cited_source_paths_exist` for what counts.
+fn cited_source_paths(text: &str, crates: &BTreeSet<String>) -> Vec<(usize, String, String)> {
+    let mut cited = Vec::new();
+    for (line, span) in inline_code_spans(text) {
+        let skipped = span.is_empty()
+            || span.contains("...")
+            || span
+                .chars()
+                .any(|ch| ch.is_whitespace() || matches!(ch, '*' | '<' | '>' | '…'));
+        if skipped {
+            continue;
+        }
+        let path = span.split([':', '#']).next().unwrap_or("");
+        let Some(expanded) = expand_braces(path) else {
+            continue;
+        };
+        for candidate in expanded {
+            if let Some(path) = repo_source_path(&candidate, crates) {
+                cited.push((line, span.clone(), path));
+            }
+        }
+    }
+    cited
+}
+
+/// Every alternative of `a{b,c}d{e,f}`, or `None` when a brace group is
+/// nested, unbalanced, or has no comma (a placeholder such as `{domain}`).
+fn expand_braces(path: &str) -> Option<Vec<String>> {
+    let Some(open) = path.find('{') else {
+        return (!path.contains('}')).then(|| vec![path.to_owned()]);
+    };
+    let close = open + path[open..].find('}')?;
+    let inner = &path[open + 1..close];
+    if inner.contains('{') || !inner.contains(',') || path[..open].contains('}') {
+        return None;
+    }
+    let head = &path[..open];
+    let tails = expand_braces(&path[close + 1..])?;
+    Some(
+        inner
+            .split(',')
+            .flat_map(|alt| tails.iter().map(move |tail| format!("{head}{alt}{tail}")))
+            .collect(),
+    )
+}
+
+/// The repo-relative path `candidate` names, when it is a cited source path.
+fn repo_source_path(candidate: &str, crates: &BTreeSet<String>) -> Option<String> {
+    let candidate = candidate.strip_prefix("./").unwrap_or(candidate);
+    let (first, _) = candidate.split_once('/')?;
+    let path = if CITED_ROOTS.contains(&first) {
+        candidate.to_owned()
+    } else if first.starts_with("khora-") && crates.contains(first) {
+        format!("crates/{candidate}")
+    } else {
+        return None;
+    };
+    let last = path.rsplit('/').next().unwrap_or("");
+    let names_file = Path::new(last)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| CITED_EXTENSIONS.contains(&ext));
+    (path.ends_with('/') || names_file).then_some(path)
+}
+
 /// The file part of a relative link target, or `None` for links not checked.
 fn link_path(target: &str) -> Option<String> {
     if target.starts_with('#') || target.starts_with("mailto:") || target.contains("://") {
@@ -1217,4 +1475,61 @@ fn breaker_single_quoted_html_links_are_seen() {
             .any(|(_, target)| target == "./missing-logo.png"),
         "single-quoted src not extracted: {links:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Helper tests
+// ---------------------------------------------------------------------------
+
+/// The citation extractor sees a plain path, a `:line` suffix, a brace group
+/// and a `khora-x/` short form; it ignores fenced code, glob and placeholder
+/// spans, bare file names, and `khora-` names that are not crate folders.
+#[test]
+fn cited_source_paths_extractor() {
+    let crates: BTreeSet<String> = ["khora-core", "khora-infra"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let text = "\
+Plain `crates/khora-core/src/lib.rs` here.
+Line `crates/khora-core/src/math/vector.rs:123` and range `hub/src/main.rs:4-9`.
+Braces `crates/khora-infra/src/{physics/rapier,audio/cpal}/` too.
+Short `khora-core/src/lane/bus.rs#anchor`, double ``xtask/Cargo.toml``.
+```rust
+// `crates/khora-core/src/fenced.rs`
+```
+~~~
+`crates/khora-core/src/tilde_fenced.rs`
+~~~
+Glob `crates/*/src/lib.rs`, angle `crates/<name>/src/`, ellipsis `crates/…/x.rs`.
+Placeholder `crates/khora-lanes/src/{domain}_lane/`, bare `service.rs`.
+Not a crate `khora-render/src/lib.rs`, no extension `crates/khora-core`.
+Command `cargo test -p xtask`, text `crates/khora-core/src/lib.rs is here`.
+";
+    let cited: Vec<(usize, String)> = cited_source_paths(text, &crates)
+        .into_iter()
+        .map(|(line, _, path)| (line, path))
+        .collect();
+    let expected: Vec<(usize, String)> = [
+        (1, "crates/khora-core/src/lib.rs"),
+        (2, "crates/khora-core/src/math/vector.rs"),
+        (2, "hub/src/main.rs"),
+        (3, "crates/khora-infra/src/physics/rapier/"),
+        (3, "crates/khora-infra/src/audio/cpal/"),
+        (4, "crates/khora-core/src/lane/bus.rs"),
+        (4, "xtask/Cargo.toml"),
+    ]
+    .into_iter()
+    .map(|(line, path)| (line, path.to_owned()))
+    .collect();
+    assert_eq!(cited, expected);
+}
+
+/// Only `.agent/<profile>/knowledge/MEMORY.md` is a dated log.
+#[test]
+fn dated_log_is_only_the_knowledge_memory() {
+    assert!(is_dated_log(".agent/engine/knowledge/MEMORY.md"));
+    assert!(!is_dated_log(".agent/engine/knowledge/decisions.md"));
+    assert!(!is_dated_log(".agent/engine/MEMORY.md"));
+    assert!(!is_dated_log("docs/src/knowledge/MEMORY.md"));
 }
