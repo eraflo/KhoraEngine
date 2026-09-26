@@ -1991,3 +1991,239 @@ fn model_based_churn_with_partial_compaction() {
         assert_eq!(world.get::<RenderId>(*e).map(|r| r.0), Some(m.id));
     }
 }
+
+// --- Transversal (cross-domain) queries must skip migration orphans ---
+//
+// A same-domain `add_component` leaves the entity's old domain row in its source
+// page until compaction. The Transversal path drives iteration from the driver
+// domain's pages, so it must skip rows that are not the entity's live row there
+// (duplicate item) and rows whose entity is dead (a recycled index would
+// otherwise resolve the dead `EntityId` to the new entity's data).
+
+#[test]
+fn transversal_query_skips_migration_orphan() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let e = world.spawn((Position(1), RenderId(10)));
+    world.add_component(e, RenderTag).expect("add_component");
+    let rows: Vec<(EntityId, i32, i32)> = world
+        .query::<(EntityId, &Position, &RenderId)>()
+        .map(|(id, p, r)| (id, p.0, r.0))
+        .collect();
+    assert_eq!(rows, vec![(e, 1, 10)]);
+}
+
+#[test]
+fn transversal_query_skips_dead_orphan_with_recycled_index() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let a = world.spawn((Position(1), RenderId(10)));
+    world.add_component(a, RenderTag).expect("add_component");
+    assert!(world.despawn(a));
+    let c = world.spawn((Position(3), RenderId(30)));
+    assert_eq!(c.index, a.index);
+    let rows: Vec<(EntityId, i32, i32)> = world
+        .query::<(EntityId, &Position, &RenderId)>()
+        .map(|(id, p, r)| (id, p.0, r.0))
+        .collect();
+    assert_eq!(rows, vec![(c, 3, 30)]);
+}
+
+#[test]
+fn transversal_query_mut_skips_migration_orphan() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let e = world.spawn((Position(1), RenderId(10)));
+    world.add_component(e, RenderTag).expect("add_component");
+    let mut seen = Vec::new();
+    for (id, p, r) in world.query_mut::<(EntityId, &mut Position, &mut RenderId)>() {
+        p.0 += 1;
+        r.0 += 1;
+        seen.push(id);
+    }
+    assert_eq!(seen, vec![e]);
+    // Incremented exactly once — a duplicate item would have aliased and
+    // incremented the live components twice.
+    assert_eq!(world.get::<Position>(e).copied(), Some(Position(2)));
+    assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(11)));
+}
+
+#[test]
+fn transversal_query_mut_skips_dead_orphan_with_recycled_index() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let a = world.spawn((Position(1), RenderId(10)));
+    world.add_component(a, RenderTag).expect("add_component");
+    assert!(world.despawn(a));
+    let c = world.spawn((Position(3), RenderId(30)));
+    assert_eq!(c.index, a.index);
+    let mut seen = Vec::new();
+    for (id, p, r) in world.query_mut::<(EntityId, &mut Position, &mut RenderId)>() {
+        p.0 += 1;
+        r.0 += 1;
+        seen.push(id);
+    }
+    assert_eq!(seen, vec![c]);
+    assert_eq!(world.get::<Position>(c).copied(), Some(Position(4)));
+    assert_eq!(world.get::<RenderId>(c).copied(), Some(RenderId(31)));
+}
+
+#[test]
+fn transversal_query_with_optional_term_skips_migration_orphan() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let e = world.spawn((Position(1), RenderId(10)));
+    world.add_component(e, RenderTag).expect("add_component");
+    let rows: Vec<(EntityId, i32, bool)> = world
+        .query::<(EntityId, &Position, &RenderId, Option<&RenderTag>)>()
+        .map(|(id, p, _, tag)| (id, p.0, tag.is_some()))
+        .collect();
+    assert_eq!(rows, vec![(e, 1, true)]);
+}
+
+#[test]
+fn transversal_query_with_without_filter_skips_dead_orphan() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let a = world.spawn((Position(1), RenderId(10)));
+    world.add_component(a, RenderTag).expect("add_component");
+    assert!(world.despawn(a));
+    let c = world.spawn((Position(3), RenderId(30)));
+    assert_eq!(c.index, a.index);
+    let rows: Vec<(EntityId, i32)> = world
+        .query::<(EntityId, &Position, &RenderId, Without<Velocity>)>()
+        .map(|(id, p, _, _)| (id, p.0))
+        .collect();
+    assert_eq!(rows, vec![(c, 3)]);
+}
+
+// --- Transversal path: driver choice, remove/repeated migrations, optional terms ---
+
+/// The driver domain `analyze_query` picks for `Q` on `world` right now.
+fn driver_of<Q: crate::ecs::query::WorldQuery>(world: &World) -> Option<SemanticDomain> {
+    world.analyze_query(&Q::type_ids()).driver_domain
+}
+
+#[test]
+fn transversal_query_skips_orphan_with_render_driver() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let e = world.spawn((Position(1), RenderId(10)));
+    // Dense Render domain + one Spatial-only page -> Render becomes the driver
+    // (a mixed page counts toward its first TypeId's domain only).
+    for i in 0..20 {
+        world.spawn(RenderId(100 + i));
+    }
+    world.spawn(Velocity(0));
+    world.add_component(e, RenderTag).expect("add_component");
+    assert_eq!(
+        driver_of::<(EntityId, &Position, &RenderId)>(&world),
+        Some(SemanticDomain::Render)
+    );
+    let rows: Vec<(EntityId, i32, i32)> = world
+        .query::<(EntityId, &Position, &RenderId)>()
+        .map(|(id, p, r)| (id, p.0, r.0))
+        .collect();
+    assert_eq!(rows, vec![(e, 1, 10)]);
+}
+
+#[test]
+fn transversal_query_skips_orphan_with_spatial_driver() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let e = world.spawn((Position(1), RenderId(10)));
+    // Dense Spatial domain + one Render-only page -> Spatial becomes the driver.
+    for i in 0..20 {
+        world.spawn(Position(100 + i));
+    }
+    world.spawn(RenderTag);
+    world.add_component(e, RenderTag).expect("add_component");
+    assert_eq!(
+        driver_of::<(EntityId, &Position, &RenderId)>(&world),
+        Some(SemanticDomain::Spatial)
+    );
+    let rows: Vec<(EntityId, i32, i32)> = world
+        .query::<(EntityId, &Position, &RenderId)>()
+        .map(|(id, p, r)| (id, p.0, r.0))
+        .collect();
+    assert_eq!(rows, vec![(e, 1, 10)]);
+}
+
+#[test]
+fn transversal_query_skips_remove_component_orphan() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let e = world.spawn((Position(1), RenderId(10), RenderTag));
+    world
+        .remove_component::<RenderTag>(e)
+        .expect("remove_component");
+    let rows: Vec<(EntityId, i32, i32)> = world
+        .query::<(EntityId, &Position, &RenderId)>()
+        .map(|(id, p, r)| (id, p.0, r.0))
+        .collect();
+    assert_eq!(rows, vec![(e, 1, 10)]);
+}
+
+#[test]
+fn transversal_query_mut_after_repeated_migrations_yields_once() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let e = world.spawn((Position(1), RenderId(10)));
+    // add -> remove -> add: two orphans in two different pages, none compacted.
+    world.add_component(e, RenderTag).expect("add 1");
+    world.remove_component::<RenderTag>(e).expect("remove");
+    world.add_component(e, RenderTag).expect("add 2");
+    let mut seen = Vec::new();
+    for (id, p, r) in world.query_mut::<(EntityId, &mut Position, &mut RenderId)>() {
+        p.0 += 1;
+        r.0 += 1;
+        seen.push(id);
+    }
+    assert_eq!(seen, vec![e]);
+    assert_eq!(world.get::<Position>(e).copied(), Some(Position(2)));
+    assert_eq!(world.get::<RenderId>(e).copied(), Some(RenderId(11)));
+}
+
+#[test]
+fn transversal_optional_same_domain_term_keeps_entity_lacking_it() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    // `e` has no Velocity (Spatial, same domain as Position).
+    let e = world.spawn((Position(1), RenderId(10)));
+    let rows: Vec<(EntityId, bool)> = world
+        .query::<(EntityId, &Position, &RenderId, Option<&Velocity>)>()
+        .map(|(id, _, _, v)| (id, v.is_some()))
+        .collect();
+    assert_eq!(rows, vec![(e, false)]);
+}
+
+#[test]
+fn transversal_optional_other_domain_term_keeps_entity_lacking_it() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    world.register_component::<NonCopyableComponent>(SemanticDomain::Audio);
+    // `e` has no row at all in the Audio domain.
+    let e = world.spawn((Position(1), RenderId(10)));
+    let rows: Vec<(EntityId, bool)> = world
+        .query::<(
+            EntityId,
+            &Position,
+            &RenderId,
+            Option<&NonCopyableComponent>,
+        )>()
+        .map(|(id, _, _, n)| (id, n.is_some()))
+        .collect();
+    assert_eq!(rows, vec![(e, false)]);
+}
+
+#[test]
+fn transversal_query_mut_optional_mut_term_keeps_entity_lacking_it() {
+    use khora_core::ecs::entity::EntityId;
+    let mut world = compaction_world();
+    let e = world.spawn((Position(1), RenderId(10)));
+    let rows: Vec<(EntityId, bool)> = world
+        .query_mut::<(EntityId, &mut Position, &RenderId, Option<&mut Velocity>)>()
+        .map(|(id, _, _, v)| (id, v.is_some()))
+        .collect();
+    assert_eq!(rows, vec![(e, false)]);
+}

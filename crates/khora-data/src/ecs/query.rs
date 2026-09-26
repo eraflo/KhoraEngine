@@ -15,7 +15,8 @@
 use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::{
-    page::{AnyVec, ComponentPage},
+    entity::EntityMetadata,
+    page::{AnyVec, ComponentPage, PageIndex},
     Component, DomainBitset, FieldSoaColumn, QueryMode, QueryPlan, SemanticDomain, SoaLayout,
     World,
 };
@@ -29,8 +30,10 @@ use std::{any::TypeId, marker::PhantomData};
 /// and the old page's signature is unchanged, so `find_matching_pages` keeps
 /// matching it. Only the row the entity's metadata points to is real; any other
 /// row bearing the same entity is a stale orphan (holding outdated component
-/// values) that must not be yielded. The Native iterators call this per row; the
-/// Transversal path performs the equivalent check inside `Without::fetch_from_world`.
+/// values) that must not be yielded. A row whose entity is dead is never live:
+/// the generation check keeps a recycled index from resolving a dead orphan to
+/// the new entity. Both the Native and the Transversal iterators call this per
+/// driver-page row.
 fn is_live_row(
     world: &World,
     page_id: u32,
@@ -38,13 +41,30 @@ fn is_live_row(
     entity: EntityId,
     domain: SemanticDomain,
 ) -> bool {
+    live_metadata(world, entity)
+        .and_then(|meta| meta.locations.get(&domain))
+        .is_some_and(|loc| loc.page_id == page_id && loc.row_index as usize == row)
+}
+
+/// Returns `entity`'s metadata if it is alive — its slot's generation matches —
+/// or `None` for a dead `EntityId`, even when its index has been recycled.
+fn live_metadata(world: &World, entity: EntityId) -> Option<&EntityMetadata> {
     world
         .entities
         .get(entity.index as usize)
         .filter(|(slot, _)| slot.generation == entity.generation)
         .and_then(|(_, meta)| meta.as_ref())
-        .and_then(|meta| meta.locations.get(&domain))
-        .is_some_and(|loc| loc.page_id == page_id && loc.row_index as usize == row)
+}
+
+/// Returns the live location of `entity`'s row in the domain component `T` is
+/// registered in, or `None` if the entity is dead, `T` is unregistered, or the
+/// entity has no row in that domain.
+fn live_location<T: 'static>(world: &World, entity: EntityId) -> Option<PageIndex> {
+    let domain = world.storage.registry.get_domain(TypeId::of::<T>())?;
+    live_metadata(world, entity)?
+        .locations
+        .get(&domain)
+        .copied()
 }
 
 // ------------------------- //
@@ -137,14 +157,8 @@ impl<T: Component> WorldQuery for &T {
     ) -> Option<Self::Item<'a>> {
         let world = &*world;
 
-        // Get the entity's metadata.
-        let metadata = world.entities.get(entity_id.index as usize)?.1.as_ref()?;
-
-        // Get the domain for the component type.
-        let domain = world.storage.registry.get_domain(TypeId::of::<T>())?;
-
-        // Get the location of the entity in the domain.
-        let location = metadata.locations.get(&domain)?;
+        // Get the entity's live row in `T`'s domain (`None` if it is dead).
+        let location = live_location::<T>(world, entity_id)?;
 
         // Get the page for the entity.
         let page = &world.storage.pages[location.page_id as usize];
@@ -187,14 +201,8 @@ impl<T: Component> WorldQuery for &mut T {
         world: *const World,
         entity_id: EntityId,
     ) -> Option<Self::Item<'a>> {
+        let location = live_location::<T>(&*world, entity_id)?;
         let world_mut = &mut *(world as *mut World);
-        let metadata = world_mut
-            .entities
-            .get_mut(entity_id.index as usize)?
-            .1
-            .as_mut()?;
-        let _domain = world_mut.storage.registry.get_domain(TypeId::of::<T>())?;
-        let location = metadata.locations.get(&_domain)?;
 
         let page = &mut world_mut.storage.pages[location.page_id as usize];
         let column = page.columns.get_mut(&TypeId::of::<T>())?;
@@ -224,16 +232,20 @@ impl<T: Component> WorldQuery for Option<&T> {
         entity_id: EntityId,
     ) -> Option<Self::Item<'a>> {
         let world = &*world;
-        let metadata = world.entities.get(entity_id.index as usize)?.1.as_ref()?;
-        let domain = world.storage.registry.get_domain(TypeId::of::<T>())?;
-        let location = metadata.locations.get(&domain)?;
+        // A dead entity fails the join; a live one lacking `T` — no row in
+        // `T`'s domain, or no `T` column in that row's page — yields `Some(None)`.
+        live_metadata(world, entity_id)?;
+        let Some(location) = live_location::<T>(world, entity_id) else {
+            return Some(None);
+        };
 
         let page = &world.storage.pages[location.page_id as usize];
-        let column = page.columns.get(&TypeId::of::<T>())?;
-        let vec = column.as_any().downcast_ref::<Vec<T>>()?;
-        // For optional in world, we return Some(Option).
-        // If the component is missing, we return Some(None).
-        Some(vec.get(location.row_index as usize))
+        Some(
+            page.columns
+                .get(&TypeId::of::<T>())
+                .and_then(|column| column.as_any().downcast_ref::<Vec<T>>())
+                .and_then(|vec| vec.get(location.row_index as usize)),
+        )
     }
 }
 
@@ -260,20 +272,21 @@ impl<T: Component> WorldQuery for Option<&mut T> {
         world: *const World,
         entity_id: EntityId,
     ) -> Option<Self::Item<'a>> {
+        // Same contract as `Option<&T>`: a dead entity fails the join, a live
+        // one lacking `T` yields `Some(None)`.
+        live_metadata(&*world, entity_id)?;
+        let Some(location) = live_location::<T>(&*world, entity_id) else {
+            return Some(None);
+        };
         let world_mut = &mut *(world as *mut World);
-        let metadata = world_mut
-            .entities
-            .get_mut(entity_id.index as usize)?
-            .1
-            .as_mut()?;
-        let domain = world_mut.storage.registry.get_domain(TypeId::of::<T>())?;
-        let location = metadata.locations.get(&domain)?;
 
         let page = &mut world_mut.storage.pages[location.page_id as usize];
-        let column = page.columns.get_mut(&TypeId::of::<T>())?;
-        let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
-        // Return Some(Option)
-        Some(vec.get_mut(location.row_index as usize))
+        Some(
+            page.columns
+                .get_mut(&TypeId::of::<T>())
+                .and_then(|column| column.as_any_mut().downcast_mut::<Vec<T>>())
+                .and_then(|vec| vec.get_mut(location.row_index as usize)),
+        )
     }
 }
 
@@ -537,12 +550,23 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
             if self.current_row_index < page.row_count() {
                 // In transversal mode, we use the EntityId from the driver page to look up
                 // counterpart components in the peer domains.
-                let entity_id = page.entities[self.current_row_index];
+                let row = self.current_row_index;
+                let entity_id = page.entities[row];
                 self.current_row_index += 1;
 
                 // Optimization: Skip metadata lookup if the entity is not in the combined bitset.
                 if let Some(bitset) = &self.combined_bitset {
                     if !bitset.is_set(entity_id.index) {
+                        continue;
+                    }
+                }
+
+                // Skip stale orphan rows and dead entities (see `is_live_row`):
+                // the bitset is keyed by entity index only, so it still matches
+                // an orphan row of a live entity (a duplicate item) and a dead
+                // orphan whose index was recycled (a dead `EntityId`).
+                if let Some(domain) = self.plan.driver_domain {
+                    if !is_live_row(world, page_id, row, entity_id, domain) {
                         continue;
                     }
                 }
@@ -600,7 +624,7 @@ impl<T: Component> WorldQuery for Without<T> {
         // `world` to point to a `World` valid for `'a`; the `Query`/`QueryMut`
         // callers always pass a pointer derived from their live borrow.
         let world = unsafe { &*world };
-        let metadata = world.entities.get(entity_id.index as usize)?.1.as_ref()?;
+        let metadata = live_metadata(world, entity_id)?;
 
         // Check ALL pages associated with this entity.
         // If ANY page contains the forbidden component, filtering failed.
@@ -721,16 +745,25 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             // returning, so no two `&mut World` reborrows overlap.
             let world = unsafe { &mut *self.world_ptr };
             let page_id = self.matching_page_indices[self.current_page_index] as usize;
-            let page = &mut world.storage.pages[page_id];
+            let page = &world.storage.pages[page_id];
 
             // Check if there are rows left in the current page.
             if self.current_row_index < page.row_count() {
-                let entity_id = page.entities[self.current_row_index];
+                let row = self.current_row_index;
+                let entity_id = page.entities[row];
                 self.current_row_index += 1;
 
                 // Skip entities that are not in the combined bitset.
                 if let Some(combined) = &self.combined_bitset {
                     if !combined.is_set(entity_id.index) {
+                        continue;
+                    }
+                }
+
+                // Skip stale orphan rows and dead entities (see `is_live_row`
+                // and the matching check in `Query::next_transversal`).
+                if let Some(domain) = self.plan.driver_domain {
+                    if !is_live_row(world, page_id as u32, row, entity_id, domain) {
                         continue;
                     }
                 }
