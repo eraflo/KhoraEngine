@@ -70,7 +70,7 @@ fn fp_lighting_layout_entries() -> Vec<khora_core::renderer::api::command::BindG
         false,
         None,
     )];
-    entries.extend(khora_data::render::shadow_bindings::shadow_bind_group_layout_entries());
+    entries.extend(khora_core::renderer::api::shadow::bindings::shadow_bind_group_layout_entries());
     entries.extend([
         BindGroupLayoutEntry::buffer(
             g3::LIGHT_INDICES,

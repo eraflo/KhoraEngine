@@ -59,8 +59,7 @@
 use crate::project_vfs::ProjectVfs;
 use anyhow::{anyhow, Context, Result};
 use khora_sdk::khora_core::asset::CompressionKind;
-use khora_sdk::PackBuilder;
-use serde::Serialize;
+use khora_sdk::{PackBuilder, RuntimeConfig, DEFAULT_SCENE_REL_PATH, RUNTIME_CONFIG_FILE};
 use std::path::{Path, PathBuf};
 
 /// Build profile selecting compression / manifest / runtime-validation
@@ -159,22 +158,6 @@ impl BuildTarget {
             Self::Linux | Self::Macos => "",
         }
     }
-}
-
-/// What we write next to the staged runtime so it knows which scene to
-/// auto-load. Mirrors the `RuntimeConfig` that `khora-sdk/src/run_default.rs`
-/// reads.
-#[derive(Debug, Serialize)]
-struct RuntimeConfig<'a> {
-    project_name: &'a str,
-    default_scene: &'a str,
-    /// Build preset label (debug/release/shipping). Runtime uses it to
-    /// decide whether to verify pack integrity on load.
-    preset: &'a str,
-    /// Whether the runtime should re-hash assets against `manifest.bin`
-    /// on load. Independent of `preset` so runtimes shipped before the
-    /// preset concept existed can still toggle it.
-    verify_integrity: bool,
 }
 
 /// Which build strategy was used to produce a [`BuildOutcome`].
@@ -450,13 +433,14 @@ fn find_compiled_binary(target_release: &Path, target: BuildTarget) -> Result<Pa
 
 fn write_runtime_config(output_dir: &Path, project_name: &str, preset: BuildPreset) -> Result<()> {
     let cfg = RuntimeConfig {
-        project_name,
-        default_scene: crate::scene_io::DEFAULT_SCENE_REL,
-        preset: preset.label(),
+        project_name: project_name.to_owned(),
+        default_scene: DEFAULT_SCENE_REL_PATH.to_owned(),
+        window_title: Some(project_name.to_owned()),
+        preset: Some(preset.label().to_owned()),
         verify_integrity: preset.verify_integrity(),
     };
     let cfg_text = serde_json::to_string_pretty(&cfg).context("serialize runtime.json")?;
-    std::fs::write(output_dir.join("runtime.json"), cfg_text)
+    std::fs::write(output_dir.join(RUNTIME_CONFIG_FILE), cfg_text)
         .context("Failed to write runtime.json")
 }
 
@@ -681,5 +665,27 @@ mod tests {
         assert_eq!(sanitize_binary_name("ok-name_1"), "ok-name_1");
         assert_eq!(sanitize_binary_name(""), "game");
         assert_eq!(sanitize_binary_name("/etc/passwd"), "_etc_passwd");
+    }
+
+    /// The `runtime.json` the runtime reads, for a project named "Khora Demo"
+    /// built with the Release preset. The SDK's reader test parses the same
+    /// file, so what is written here is what the runtime gets back.
+    const READ_BY_THE_RUNTIME: &str = include_str!("../../khora-sdk/tests/fixtures/runtime.json");
+
+    /// Every field the runtime reads is written, with the value the runtime
+    /// expects — the window title included.
+    #[test]
+    fn the_runtime_json_the_editor_writes_is_what_the_runtime_reads() -> Result<()> {
+        let dir =
+            std::env::temp_dir().join(format!("khora-editor-runtime-json-{}", std::process::id()));
+        std::fs::create_dir_all(&dir)?;
+        let written = write_runtime_config(&dir, "Khora Demo", BuildPreset::Release)
+            .and_then(|()| Ok(std::fs::read_to_string(dir.join("runtime.json"))?));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let written: serde_json::Value = serde_json::from_str(&written?)?;
+        let expected: serde_json::Value = serde_json::from_str(READ_BY_THE_RUNTIME)?;
+        assert_eq!(written, expected);
+        Ok(())
     }
 }

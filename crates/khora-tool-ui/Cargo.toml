@@ -11,3 +11,10 @@ description = "Khora's first-party tool design system — brand tokens and share
 # This crate supplies the *values* and the *widgets*; khora-core owns the
 # *contracts*. No backend (egui) dependency — widgets paint through `UiBuilder`.
 khora-core = { path = "../khora-core" }
+log = "0.4"
+# Decodes the embedded logo into a window icon.
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[features]
+# The headless `testing::RecordingUiBuilder`, for another crate's widget tests.
+testing = []

@@ -37,10 +37,6 @@ use std::marker::PhantomData;
 /// Compiles only when both arguments name the same type.
 fn same_type<T: ?Sized>(_: PhantomData<T>, _: PhantomData<T>) {}
 
-/// Compiles only when both references point at the same item (two distinct
-/// `fn` items never share a type, and `&fn-item` does not coerce).
-fn same_item<T>(_: &T, _: &T) {}
-
 fn is_clone<T: Clone>() {}
 fn is_copy<T: Copy>() {}
 fn is_debug<T: std::fmt::Debug>() {}
@@ -71,7 +67,6 @@ mod every_pub_mod {
     use khora_lanes::render_lane::shadows_lane::algo::pass as _;
     use khora_lanes::render_lane::shadows_lane::algo::state as _;
     use khora_lanes::render_lane::util as _;
-    use khora_lanes::render_lane::util::lock as _;
     use khora_lanes::script_lane as _;
     use khora_lanes::script_lane::persistence as _;
     use khora_lanes::script_lane::report as _;
@@ -383,51 +378,6 @@ fn module_render_lane_paths_still_resolve() {
     let _ = khora_lanes::render_lane::shadows_lane::algo::state::ShadowsLaneState::shadow_bindings;
     let _ = khora_lanes::render_lane::shadows_lane::algo::state::ShadowsLaneState::shutdown;
     is_default::<khora_lanes::render_lane::shadows_lane::algo::state::ShadowsLaneState>();
-    let _ = khora_lanes::render_lane::util::lock::mutex_lock_render::<u32>;
-    same_item(
-        &khora_lanes::render_lane::util::lock::mutex_lock_render::<u32>,
-        &khora_core::lane::mutex_lock_render::<u32>,
-    );
-    let _ = khora_lanes::render_lane::util::lock::read_lock_render::<u32>;
-    same_item(
-        &khora_lanes::render_lane::util::lock::read_lock_render::<u32>,
-        &khora_core::lane::read_lock_render::<u32>,
-    );
-    let _ = khora_lanes::render_lane::util::lock::write_lock_render::<u32>;
-    same_item(
-        &khora_lanes::render_lane::util::lock::write_lock_render::<u32>,
-        &khora_core::lane::write_lock_render::<u32>,
-    );
-    let _ = khora_lanes::render_lane::util::lock::mutex_lock::<u32>;
-    let _ = khora_lanes::render_lane::util::mutex_lock::<u32>;
-    same_item(
-        &khora_lanes::render_lane::util::lock::mutex_lock::<u32>,
-        &khora_core::lane::mutex_lock::<u32>,
-    );
-    same_item(
-        &khora_lanes::render_lane::util::mutex_lock::<u32>,
-        &khora_core::lane::mutex_lock::<u32>,
-    );
-    let _ = khora_lanes::render_lane::util::lock::read_lock::<u32>;
-    let _ = khora_lanes::render_lane::util::read_lock::<u32>;
-    same_item(
-        &khora_lanes::render_lane::util::lock::read_lock::<u32>,
-        &khora_core::lane::read_lock::<u32>,
-    );
-    same_item(
-        &khora_lanes::render_lane::util::read_lock::<u32>,
-        &khora_core::lane::read_lock::<u32>,
-    );
-    let _ = khora_lanes::render_lane::util::lock::write_lock::<u32>;
-    let _ = khora_lanes::render_lane::util::write_lock::<u32>;
-    same_item(
-        &khora_lanes::render_lane::util::lock::write_lock::<u32>,
-        &khora_core::lane::write_lock::<u32>,
-    );
-    same_item(
-        &khora_lanes::render_lane::util::write_lock::<u32>,
-        &khora_core::lane::write_lock::<u32>,
-    );
 }
 
 #[test]

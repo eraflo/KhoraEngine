@@ -14,7 +14,6 @@ members = [
     # compiler and VM stay testable without booting an engine.
     "crates/khora-script",
     "crates/khora-editor",
-    "crates/khora-plugins",
     "crates/khora-runtime",
     "crates/khora-sdk",
     # First-party tool design system (brand + widgets). Not an engine crate:

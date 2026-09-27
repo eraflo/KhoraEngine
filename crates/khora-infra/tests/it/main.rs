@@ -18,4 +18,5 @@
 //! full link of the crate's dependency tree. New integration tests join this
 //! binary as a module instead of adding a file at the root of `tests/`.
 
+mod light_culling_layout;
 mod public_paths;

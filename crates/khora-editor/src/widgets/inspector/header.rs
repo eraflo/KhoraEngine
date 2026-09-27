@@ -10,7 +10,8 @@
 
 use khora_sdk::editor_ui::{FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
 
-use crate::widgets::paint::{paint_icon, paint_text_size, with_alpha};
+use khora_tool_ui::widgets::paint;
+use khora_tool_ui::widgets::with_alpha;
 
 /// Paints the Inspector's rich header — large icon tile + name + meta row
 /// (tag + status pill + id). Returns the bottom edge in screen-space.
@@ -44,7 +45,7 @@ pub fn paint_inspector_header(
     let tile_y = origin[1] + 14.0;
     ui.paint_rect_filled([tile_x, tile_y], [36.0, 36.0], theme.surface_active, 8.0);
     ui.paint_rect_stroke([tile_x, tile_y], [36.0, 36.0], theme.border, 8.0, 1.0);
-    paint_icon(
+    paint::icon(
         ui,
         [tile_x + 10.0, tile_y + 10.0],
         icon,
@@ -54,7 +55,7 @@ pub fn paint_inspector_header(
 
     // Name
     let name_x = tile_x + 48.0;
-    paint_text_size(ui, [name_x, origin[1] + 14.0], name, 14.5, theme.text);
+    paint::text(ui, [name_x, origin[1] + 14.0], name, 14.5, theme.text);
 
     // Meta row
     let meta_y = origin[1] + 36.0;
@@ -80,7 +81,7 @@ pub fn paint_inspector_header(
         999.0,
     );
     ui.paint_circle_filled([pill_x + 8.0, meta_y + 8.0], 2.5, status_color);
-    paint_text_size(
+    paint::text(
         ui,
         [pill_x + 14.0, meta_y + 3.0],
         status_label,

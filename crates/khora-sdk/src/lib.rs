@@ -75,6 +75,7 @@
 mod engine;
 mod game_world;
 mod run_default;
+mod runtime_config;
 pub mod scripts;
 mod traits;
 mod vessel;
@@ -83,6 +84,7 @@ pub mod winit_adapters;
 pub use engine::EngineCore;
 pub use game_world::GameWorld;
 pub use run_default::run_default;
+pub use runtime_config::{RuntimeConfig, DEFAULT_SCENE_REL_PATH, RUNTIME_CONFIG_FILE};
 pub use traits::{AgentProvider, EngineApp, PhaseProvider, WindowProvider};
 pub use vessel::{spawn_cube_at, spawn_plane, spawn_sphere, Vessel};
 pub use winit_adapters::{run_winit, WinitAppRunner};
@@ -102,10 +104,8 @@ pub mod tool_ui;
 // ─────────────────────────────────────────────────────────────────────
 
 // Control / DCC
-pub use khora_control::{Context as EngineContext, DccConfig, DccService, EngineMode};
-// Re-export the same Context as `DccContext` so editor code can use the
-// more descriptive name without a separate `use` line. (Same type — both
-// re-exports point at `khora_control::Context`.)
+pub use khora_control::{DccConfig, DccService, EngineMode};
+// The situational `khora_control::Context`, as `DccContext` for the editor.
 //
 // `AgentRegistry` is exposed as a read-only telemetry surface for the
 // editor's Control Plane panel. The mutating side (`ExecutionScheduler`,
@@ -146,7 +146,6 @@ pub use khora_infra::GpuMonitor;
 pub use khora_core::asset::AssetSource;
 pub use khora_core::scene::{SceneFile, SerializationGoal};
 pub use khora_data::assets::SoundData;
-pub use khora_io;
 pub use khora_io::asset::decoders::audio::SymphoniaDecoder;
 pub use khora_io::asset::{
     AssetChangeEvent, AssetChangeKind, AssetIdRegistry, AssetIo, AssetService, AssetWatcher,
@@ -188,7 +187,6 @@ pub use khora_lanes::render_lane::shaders::TEXT_WGSL;
 
 // Data / ECS (needed for world restore)
 pub use khora_data;
-pub use khora_data::ecs::World as EcsWorld;
 
 // Re-export types used by editor panels and gizmo code
 pub use khora_core;
@@ -199,9 +197,6 @@ pub use khora_data::ecs::HandleComponent;
 // PropertyEdit is in khora_core::ui::editor, already re-exported via editor_ui
 pub use khora_data::scene::ComponentRegistration;
 pub use khora_data::scene::{instantiate_subtree, serialize_subtree};
-
-// Agents (for when apps need to create their own)
-pub use khora_agents;
 
 // Lanes — re-exported so the editor can reach built-in shaders without
 // taking a direct dependency on khora-lanes.
@@ -219,8 +214,7 @@ pub mod prelude;
 // Re-export InputEvent at crate level for trait usage
 pub use khora_core::platform::{InputEvent, KeyCode, MouseButton};
 
-/// Well-known viewport handle for the primary 3D viewport.
-pub const PRIMARY_VIEWPORT: ViewportTextureHandle = ViewportTextureHandle(0);
+pub use engine::PRIMARY_VIEWPORT;
 
 /// Raw window icon data for native window creation.
 #[derive(Clone, Debug)]

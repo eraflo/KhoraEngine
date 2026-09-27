@@ -22,8 +22,10 @@ the next frame resumes rather than restarts. Suspension is the normal path, not 
 - Value bridge: `crates/khora-script/src/bridge/mod.rs` + `khora-core/src/script/table.rs` — the single
   X-macro table driving `ScriptValue` ↔ `Value` ↔ `Persisted` ↔ JSON.
 - Hot-reload: `crates/khora-script/src/reload.rs`, `crates/khora-io/src/script_hot_reload.rs`.
-- Compiling a module and everything it imports: `crates/khora-io/src/script_compile.rs`
-  (`compile_module`, `DiskLoader`).
+- Compiling a module and everything it imports: `crates/khora-script/src/pipeline.rs`
+  (`compile_module`, `CompileOutcome`), reading through a `SourceLoader`; the disk one is
+  `DiskLoader` in `crates/khora-io/src/script_compile.rs`. Import paths and the `.erg`
+  `EXTENSION`: `crates/khora-script/src/modules/`.
 - Component mirrors: `crates/khora-io/src/script_mirror.rs` — turns each `ComponentShape`
   (`khora-data/src/scene/shape.rs`, emitted by `#[derive(Component)]`) into Ergon declarations, served
   at `engine/components.erg` by a `PreludeLoader` stacked over the `DiskLoader`.

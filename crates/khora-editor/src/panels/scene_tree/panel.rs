@@ -16,13 +16,15 @@
 
 use khora_sdk::editor_ui::*;
 
-use super::drop::{dispatch_asset_drop, payload_is_entity, unpack_entity};
+use super::drop::dispatch_asset_drop;
 use super::rows::{
     count_scene_nodes, count_visible_nodes, filter_scene_node, find_node_name, render_node,
 };
 use super::{EditorAction, SceneTreePanel, HEADER_HEIGHT, ROW_HEIGHT, TOOLBAR_HEIGHT};
+use crate::drag_payload::{payload_is_entity, unpack_asset_drag, unpack_entity};
 use crate::widgets::chrome::paint_panel_header;
-use crate::widgets::paint::{paint_hairline_h, paint_icon, paint_text_size, with_alpha};
+use khora_tool_ui::widgets::paint;
+use khora_tool_ui::widgets::with_alpha;
 
 impl EditorPanel for SceneTreePanel {
     fn id(&self) -> &str {
@@ -98,7 +100,7 @@ impl EditorPanel for SceneTreePanel {
 
         // Only the count: the dock tab above already says "Scene Tree", and a
         // second title 20px below it was the same word twice.
-        paint_text_size(
+        paint::text(
             ui,
             [tab_x, tab_y + 5.0],
             &badge,
@@ -120,7 +122,7 @@ impl EditorPanel for SceneTreePanel {
                 4.0,
             );
         }
-        paint_icon(
+        paint::icon(
             ui,
             [add_rect[0] + 5.0, add_rect[1] + 5.0],
             Icon::Plus,
@@ -167,7 +169,7 @@ impl EditorPanel for SceneTreePanel {
             theme.radius_sm,
             1.0,
         );
-        paint_icon(
+        paint::icon(
             ui,
             [search_x + 8.0, toolbar_y + 9.0],
             Icon::Search,
@@ -216,12 +218,11 @@ impl EditorPanel for SceneTreePanel {
             FontFamilyHint::Proportional,
             TextAlign::Left,
         );
-        paint_hairline_h(
-            ui,
-            px + 102.0,
-            section_y + 6.0,
-            pw - 110.0,
+        ui.paint_line(
+            [px + 102.0, section_y + 6.0],
+            [px + 102.0 + pw - 110.0, section_y + 6.0],
             with_alpha(theme.separator, 0.55),
+            1.0,
         );
 
         // ── Rows ──────────────────────────────────────
@@ -335,9 +336,7 @@ impl EditorPanel for SceneTreePanel {
                         child: unpack_entity(packed),
                         new_parent: None,
                     }));
-                } else if let Some(idx) =
-                    crate::panels::asset_browser::unpack_asset_drag(packed, asset_epoch)
-                {
+                } else if let Some(idx) = unpack_asset_drag(packed, asset_epoch) {
                     pending.set(Some(EditorAction::DropAsset {
                         idx: idx as usize,
                         target: None,

@@ -48,7 +48,7 @@ What this engine does not yet answer, and where the next iteration should go.
 
    Prior art drawn on: profile-guided hot/cold splitting (Chilimbi PLDI'99; Pettis–Hansen PLDI'90), AoSoA layout abstraction (LLAMA, Cabana), online reorganization with worst-case bounds (OREO, ICDE'24), just-in-time data structures (De Wael & Marr, 2015), and the MAPE-K autonomic loop (Kephart & Chess, 2003) — which the DCC is an instance of. Distance-based *gameplay* gating (detaching physics) is **not** AGDF — it is opt-in, developer-authored policy.
 3. **Page-size tuning.** Pages start at 8 entries and grow geometrically. Whether 64 or 256 would be better at scale is unmeasured.
-4. **`khora-plugins` API.** The plugin model is real but its public API is still settling alongside editor needs.
+4. **Plugin API.** `EnginePlugin` (`khora-control/src/plugin.rs`) is the plugin model; its public API is still settling alongside editor needs.
 5. **Flow view-cache signals.** `RenderFlow`/`ShadowFlow`/`AudioFlow` now republish their previous View when their `Flow::cache_key` — per-domain change epochs (`World::domain_epoch`) plus, for the render-side flows, a bit-level fingerprint of the editor viewport override — is unchanged (see [AGDF §07](./concepts/agdf.md)). `UiFlow` and `PhysicsFlow` stay uncached: surface size and hot-reloadable fonts have no change signal a key could fold in, and physics mutates its domains every simulated frame. Folding asset-version signals (hot reload) and a surface-size signal into cache keys is open.
 
 ## 03 — Agents and lanes
@@ -118,7 +118,7 @@ What this engine does not yet answer, and where the next iteration should go.
 
 ## 12 — Extension model
 
-1. **Agent registration API.** `EngineConfig::register_agent` is illustrative, not stable. Settling alongside `khora-plugins`.
+1. **Agent registration API.** `EngineConfig::register_agent` is illustrative, not stable. Settling alongside `EnginePlugin`.
 2. **Plugin DLL ABI.** Hot-loaded plugin agents need a stable ABI we have not yet committed to.
 3. **Custom phases.** `ExecutionPhase::custom(id)` exists but the surrounding tooling (editor visibility, telemetry naming) is incomplete.
 

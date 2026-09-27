@@ -19,8 +19,8 @@ use khora_sdk::editor_ui::*;
 use super::paint::{kv, paint_card_box};
 use super::{AgentSnapshot, ControlPlanePanel};
 use crate::widgets::chrome::{paint_panel_header, paint_status_dot, panel_tab};
-use crate::widgets::controls::paint_meter_bar;
-use crate::widgets::paint::{paint_hairline_h, paint_icon, paint_text_size, with_alpha};
+use khora_tool_ui::widgets::paint;
+use khora_tool_ui::widgets::with_alpha;
 use khora_tool_ui::widgets::Health;
 
 impl ControlPlanePanel {
@@ -71,10 +71,10 @@ impl ControlPlanePanel {
             theme.surface_active,
             8.0,
         );
-        paint_icon(ui, [x + 22.0, y + 56.0], Icon::Cpu, 16.0, theme.primary);
+        paint::icon(ui, [x + 22.0, y + 56.0], Icon::Cpu, 16.0, theme.primary);
 
         let name = agent.name();
-        paint_text_size(ui, [x + 58.0, y + 46.0], &name, 14.5, theme.text);
+        paint::text(ui, [x + 58.0, y + 46.0], &name, 14.5, theme.text);
 
         let tag = agent.crate_name;
         let tag_w = ui.measure_text(tag, 10.0, FontFamilyHint::Monospace)[0] + 14.0;
@@ -114,7 +114,7 @@ impl ControlPlanePanel {
             999.0,
         );
         paint_status_dot(ui, [pill_x + 8.0, y + 76.0], status_color);
-        paint_text_size(
+        paint::text(
             ui,
             [pill_x + 14.0, y + 70.0],
             status_label,
@@ -123,12 +123,11 @@ impl ControlPlanePanel {
         );
 
         // Section divider
-        paint_hairline_h(
-            ui,
-            x + 8.0,
-            y + 100.0,
-            w - 16.0,
+        ui.paint_line(
+            [x + 8.0, y + 100.0],
+            [x + 8.0 + w - 16.0, y + 100.0],
             with_alpha(theme.separator, 0.55),
+            1.0,
         );
 
         // Cards — each shows real fields from AgentStatus + ExecutionTiming.
@@ -195,13 +194,12 @@ impl ControlPlanePanel {
         );
         cy += 22.0;
         let bar_color = Health::from_ratio(agent.status.health_score).color(theme);
-        paint_meter_bar(
+        khora_tool_ui::widgets::meter_bar(
             ui,
-            [x + 18.0, cy + 4.0],
-            w - 36.0,
+            theme,
+            [x + 18.0, cy + 4.0, w - 36.0, 3.0],
             agent.status.health_score.clamp(0.0, 1.0),
             bar_color,
-            theme,
         );
         cy += 18.0;
 
@@ -228,7 +226,7 @@ impl ControlPlanePanel {
             1.0,
         );
         paint_status_dot(ui, [x + 24.0, cy + 11.0], theme.success);
-        paint_text_size(
+        paint::text(
             ui,
             [x + 36.0, cy + 5.0],
             agent.strategy_label(),

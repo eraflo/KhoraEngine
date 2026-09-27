@@ -77,33 +77,3 @@ pub(super) fn dispatch_asset_drop(
         other => log::info!("Hierarchy: asset type '{other}' is not droppable here"),
     }
 }
-
-/// Packs an `EntityId` into a `u64` for drag-and-drop payloads. Layout:
-/// high 32 = generation, low 32 = index. Also used by the asset
-/// browser's drop handler to ingest entity drags from the scene tree
-/// (drop = create prefab in the current folder).
-pub(crate) fn pack_entity(e: khora_sdk::prelude::ecs::EntityId) -> u64 {
-    ((e.generation as u64) << 32) | (e.index as u64)
-}
-
-/// Inverse of [`pack_entity`].
-pub(crate) fn unpack_entity(payload: u64) -> khora_sdk::prelude::ecs::EntityId {
-    khora_sdk::prelude::ecs::EntityId {
-        index: payload as u32,
-        generation: (payload >> 32) as u32,
-    }
-}
-
-/// `true` when `payload` is *not* one of the asset-browser's
-/// dedicated drag tags (the type-agnostic asset-tile tag). Lets receivers
-/// disambiguate scene-tree entity payloads from asset-tile payloads on
-/// the same `dnd_take_drop_payload` channel.
-///
-/// The check is conservative: any payload whose top 32 bits don't
-/// match a known tag is assumed to be a packed `EntityId`. Entity
-/// generations are tiny u32s (start at 1) so this can't collide with
-/// the ASCII-encoded tag constants in
-/// [`crate::panels::asset_browser`].
-pub(crate) fn payload_is_entity(payload: u64) -> bool {
-    !crate::panels::asset_browser::is_asset_drag(payload)
-}

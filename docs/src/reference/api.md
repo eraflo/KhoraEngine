@@ -42,7 +42,6 @@ their surface is re-exported through `khora-sdk` where game code needs it. See t
 | `khora_infra` | [Default backends — wgpu, Rapier, CPAL, Taffy, winit](https://eraflo.github.io/KhoraEngine/api/khora_infra/index.html) |
 | `khora_telemetry` | [Telemetry service, metrics, monitors](https://eraflo.github.io/KhoraEngine/api/khora_telemetry/index.html) |
 | `khora_macros` | [`#[derive(Component)]` proc macro](https://eraflo.github.io/KhoraEngine/api/khora_macros/index.html) |
-| `khora_plugins` | [Plugin loading and registration](https://eraflo.github.io/KhoraEngine/api/khora_plugins/index.html) |
 | `khora_editor` | [Editor application](https://eraflo.github.io/KhoraEngine/api/khora_editor/index.html) |
 
 ## Generating locally

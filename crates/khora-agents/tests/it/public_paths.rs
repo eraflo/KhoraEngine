@@ -169,9 +169,8 @@ fn module_ui_agent_paths_still_resolve() {
 
 // ---------------------------------------------------------------------------
 // Paths other crates of the workspace spell today (`crates/`, `hub/`,
-// `examples/`, `xtask/`; brace imports expanded; `khora_sdk::khora_agents::…`
-// mapped onto the `khora_agents` path the SDK re-exports). The trailing comment
-// names the users. Items, modules and enum variants are imported;
+// `examples/`, `xtask/`; brace imports expanded). The trailing comment names
+// the users. Items, modules and enum variants are imported;
 // associated items are named in the test below.
 // ---------------------------------------------------------------------------
 

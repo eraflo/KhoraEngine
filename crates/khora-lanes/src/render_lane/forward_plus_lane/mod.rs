@@ -83,7 +83,7 @@ const LIGHT_TILE_TEST_COST: f32 = 0.00001;
 
 /// Binding indices inside the group-3 *lighting* bind group, mirroring
 /// `forward_plus.wgsl`. Bindings 1/2/3 belong to the shared shadow
-/// contract (`khora_data::render::shadow_bindings::binding`) — Forward+
+/// contract (`khora_core::renderer::api::shadow::bindings::binding`) — Forward+
 /// owns 0, 4, 5, 6, 7 around them. See the canonical render bind-group
 /// convention in `.agent/conventions.md`.
 mod g3 {

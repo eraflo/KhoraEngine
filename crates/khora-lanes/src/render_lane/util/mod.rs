@@ -14,10 +14,6 @@
 
 //! Internal helpers for render-lane implementations.
 
-pub mod lock;
-
-pub use lock::{mutex_lock, read_lock, write_lock};
-
 /// Lock helper for callers that cannot propagate `Result<_, LaneError>`.
 ///
 /// Returns the guard on success; on poisoning logs an error and

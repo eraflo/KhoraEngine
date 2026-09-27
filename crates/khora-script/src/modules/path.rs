@@ -24,6 +24,9 @@
 //! compile the same file twice and its declarations would collide with
 //! themselves.
 
+/// The extension of an Ergon source file, without its dot.
+pub const EXTENSION: &str = "erg";
+
 /// Why a path was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PathError {
@@ -95,7 +98,10 @@ pub fn normalise(path: &str) -> Result<String, PathError> {
     }
 
     let joined = segments.join("/");
-    if !joined.ends_with(".erg") {
+    if !joined
+        .strip_suffix(EXTENSION)
+        .is_some_and(|stem| stem.ends_with('.'))
+    {
         return Err(PathError::WrongExtension);
     }
     Ok(joined)

@@ -128,7 +128,7 @@ fn script_dependencies(path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
     };
 
     let root = script_root(path);
-    crate::asset::decoders::script::imports_of(source)
+    khora_script::modules::imports_of(source)
         .into_iter()
         .map(|import| AssetUUID::new_v5(&format!("{root}{import}")))
         .collect()

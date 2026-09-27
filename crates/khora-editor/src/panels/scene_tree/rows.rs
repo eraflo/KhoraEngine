@@ -16,9 +16,10 @@
 
 use khora_sdk::editor_ui::*;
 
-use super::drop::{pack_entity, payload_is_entity, unpack_entity};
 use super::{EditorAction, ROW_HEIGHT, ROW_PAD_X};
-use crate::widgets::paint::{paint_icon, paint_text_size, with_alpha};
+use crate::drag_payload::{pack_entity, payload_is_entity, unpack_asset_drag, unpack_entity};
+use khora_tool_ui::widgets::paint;
+use khora_tool_ui::widgets::with_alpha;
 
 /// Filters a `SceneNode` against a lowercase needle. Returns `Some(node)`
 /// when the node's own name contains the needle (subtree kept intact) or
@@ -130,9 +131,7 @@ pub(super) fn render_node(
                     new_parent: Some(node.entity),
                 }));
             }
-        } else if let Some(idx) =
-            crate::panels::asset_browser::unpack_asset_drag(packed, asset_epoch)
-        {
+        } else if let Some(idx) = unpack_asset_drag(packed, asset_epoch) {
             pending.set(Some(EditorAction::DropAsset {
                 idx: idx as usize,
                 target: Some(node.entity),
@@ -226,7 +225,7 @@ pub(super) fn render_node(
         } else {
             theme.text_muted
         };
-        paint_icon(ui, [cx, y + 7.0], glyph, 11.0, colour);
+        paint::icon(ui, [cx, y + 7.0], glyph, 11.0, colour);
     }
     cx += 14.0;
 
@@ -242,7 +241,7 @@ pub(super) fn render_node(
         base_icon_color
     };
     let icon = entity_icon(node.icon);
-    paint_icon(ui, [cx, y + 6.0], icon, 13.0, icon_color);
+    paint::icon(ui, [cx, y + 6.0], icon, 13.0, icon_color);
     cx += 18.0;
 
     // Tag indicator — small glyph next to the type icon when the entity
@@ -250,7 +249,7 @@ pub(super) fn render_node(
     // tag set; for now the glyph alone tells the user "this entity has
     // tags, look at the inspector for details".
     if node.tag_count > 0 {
-        paint_icon(ui, [cx, y + 6.0], Icon::Tag, 12.0, icon_color);
+        paint::icon(ui, [cx, y + 6.0], Icon::Tag, 12.0, icon_color);
         cx += 16.0;
     }
 
@@ -272,7 +271,7 @@ pub(super) fn render_node(
         let field_w = (row_x + row_click_w - cx - 6.0).max(40.0);
         rename_rect.set(Some([cx - 2.0, y + 3.0, field_w, ROW_HEIGHT - 6.0]));
     } else {
-        paint_text_size(ui, [cx, y + 7.0], &node.name, 12.0, label_color);
+        paint::text(ui, [cx, y + 7.0], &node.name, 12.0, label_color);
     }
 
     // No visibility eye. It used to dim the row and nothing else — the object

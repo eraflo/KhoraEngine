@@ -39,7 +39,7 @@ pub mod path;
 mod tests;
 
 pub use loader::{MemoryLoader, SourceLoader};
-pub use path::{normalise, PathError};
+pub use path::{normalise, PathError, EXTENSION};
 
 use std::collections::{HashMap, HashSet};
 
@@ -78,6 +78,29 @@ impl Resolved {
     pub fn get(&self, path: &str) -> Option<&ResolvedModule> {
         self.modules.iter().find(|m| m.path == path)
     }
+}
+
+/// The modules a source file imports, deduplicated, in source order.
+///
+/// Parsed rather than scanned for the word `import`: the string `"import"`
+/// inside a literal or a comment is not one, and a dependency graph built from
+/// a text search would load files nobody asked for — or, worse, miss the ones
+/// they did.
+///
+/// A file that fails to parse yields what the parser recovered before it gave
+/// up, which for imports is usually everything: they sit at the top, and the
+/// parser recovers statement by statement.
+pub fn imports_of(source: &str) -> Vec<String> {
+    let lexed = lex(source);
+    let parsed = parse(lexed.tokens);
+
+    let mut seen = Vec::new();
+    for import in &parsed.module.imports {
+        if !seen.contains(&import.path) {
+            seen.push(import.path.clone());
+        }
+    }
+    seen
 }
 
 /// Resolves `entry` and everything it imports.

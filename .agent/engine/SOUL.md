@@ -51,7 +51,7 @@ Control ──► Agent ──► Lane ──► Data        (the per-frame desc
        budget   selects   reads bus / writes deck
 ```
 
-**17 workspace members** (14 `khora-*` + `sandbox` + `xtask` + `hub`), plus `khora-macros`, a path
+**16 workspace members** (13 `khora-*` + `sandbox` + `xtask` + `hub`), plus `khora-macros`, a path
 crate that is not a member. One line each. The last column
 points to the on-demand [`reference/`](./reference/) doc for that crate's domain:
 
@@ -67,7 +67,6 @@ points to the on-demand [`reference/`](./reference/) doc for that crate's domain
 | `khora-infra` | Concrete backends, one subfolder each: `graphics/wgpu`, `physics/rapier`, `physics/khora` (in-house, incomplete), `audio/cpal`, `ui/taffy`, `platform/window`. Also owns the `.wgsl` files and their composition. | per-domain |
 | `khora-io` | Asset service, VFS, serialization, pack/file loaders. | api-ux |
 | `khora-telemetry` | Metrics, monitors, telemetry events. | control-gorna |
-| `khora-plugins` | Plugin loading / registration. | api-ux |
 | `khora-sdk` | The **only** public API for game devs (façade). | api-ux |
 | `khora-tool-ui` | First-party **tool** design system: brand palette + shared widgets. Not an engine crate — the SDK does *not* depend on it, so games never inherit Khora's brand. Used by `khora-editor` + `hub`. | editor-ui-ux |
 | `khora-editor` | Editor app on the SDK (panels, gizmos, dock). | editor-ui-ux |

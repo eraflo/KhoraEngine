@@ -127,7 +127,7 @@ impl LitForwardLane {
         device: &dyn khora_core::renderer::GraphicsDevice,
         pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
-        use crate::render_lane::util::lock::mutex_lock_render;
+        use khora_core::lane::lock::mutex_lock_render;
 
         log::info!("LitForwardLane: Initializing GPU resources...");
 

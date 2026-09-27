@@ -34,6 +34,6 @@ pub mod traits;
 // pub use self::api::*; // Removed legacy blanket re-export. Use explicit paths: crate::renderer::api::<submodule>::<type>
 
 pub use self::error::{PipelineError, RenderError, ResourceError, ShaderError};
-pub use self::forward_plus::{ForwardPlusTileConfig, GpuLight, LightCullingUniforms, TileSize};
+pub use self::forward_plus::{ForwardPlusTileConfig, GpuLight, TileSize};
 pub use self::light::{DirectionalLight, LightType, PointLight, SpotLight};
 pub use self::traits::{GraphicsDevice, RenderSystem};

@@ -39,8 +39,8 @@ use std::sync::RwLock;
 pub(super) fn render_pbr(
     lane: &StandardPbrLane,
     render_world: &RenderWorld,
-    shadow_entries: &khora_data::render::ShadowEntries,
-    shadow_bindings: Option<khora_data::render::ShadowGpuBindings>,
+    shadow_entries: &khora_core::renderer::api::shadow::ShadowEntries,
+    shadow_bindings: Option<khora_core::renderer::api::shadow::ShadowGpuBindings>,
     ibl_bindings: Option<khora_core::renderer::api::ibl::IblGpuBindings>,
     device: &dyn khora_core::renderer::GraphicsDevice,
     encoder: &mut dyn CommandEncoder,
@@ -140,14 +140,14 @@ pub(super) fn render_pbr(
     for (light_index, light) in render_world.lights.iter().enumerate() {
         let shadow = shadow_entries.get(light_index);
         let (atlas2d_view_proj, atlas2d_index) = match shadow {
-            Some(khora_data::render::ShadowEntry::Atlas2D {
+            Some(khora_core::renderer::api::shadow::ShadowEntry::Atlas2D {
                 view_proj,
                 atlas_index,
             }) => (*view_proj, *atlas_index as f32),
             _ => (Mat4::IDENTITY, -1.0),
         };
         let (cube_layer, cube_far_plane) = match shadow {
-            Some(khora_data::render::ShadowEntry::Cube {
+            Some(khora_core::renderer::api::shadow::ShadowEntry::Cube {
                 cube_array_index,
                 far_plane,
                 ..
@@ -380,7 +380,7 @@ pub(super) fn render_pbr(
             return;
         };
         let mut entries = vec![BindGroupEntry {
-            binding: khora_data::render::shadow_bindings::binding::LIGHTING_UNIFORMS,
+            binding: khora_core::renderer::api::shadow::bindings::binding::LIGHTING_UNIFORMS,
             resource: BindingResource::Buffer(BufferBinding {
                 buffer: lighting_ring_buffer_id,
                 offset: 0,
@@ -388,7 +388,7 @@ pub(super) fn render_pbr(
             }),
             _phantom: std::marker::PhantomData,
         }];
-        khora_data::render::shadow_bindings::fill_shadow_bind_group_entries(
+        khora_core::renderer::api::shadow::bindings::fill_shadow_bind_group_entries(
             &shadow_bindings,
             &mut entries,
         );

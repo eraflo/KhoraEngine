@@ -37,18 +37,15 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
 
-use crate::widgets::paint::with_alpha;
 use crate::widgets::tile::AssetTileKind;
+use khora_tool_ui::widgets::with_alpha;
 
 use handlers::{handler_for, tile_kind_for, ActivationKind};
 use naming::{entity_display_name, sanitize_for_filename};
 
-mod drag;
 mod folder_tree;
 mod naming;
 mod panel;
-
-pub(crate) use drag::{is_asset_drag, unpack_asset_drag};
 
 const HEADER_HEIGHT: f32 = 34.0;
 

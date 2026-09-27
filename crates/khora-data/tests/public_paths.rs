@@ -1780,44 +1780,6 @@ fn module_render_paths_still_resolve() {
     let _ = khora_data::render::RenderWorld::spot_light_count;
     is_clone::<khora_data::render::RenderWorld>();
     is_default::<khora_data::render::RenderWorld>();
-    // Re-exports of `khora_core::renderer::api::shadow`.
-    let _ = khora_data::render::shadow_bindings::binding::LIGHTING_UNIFORMS;
-    let _ = khora_data::render::shadow_bindings::fill_shadow_bind_group_entries;
-    let _ = khora_data::render::shadow_bindings::shadow_bind_group_layout_entries;
-    same_item(
-        &khora_data::render::shadow_bindings::fill_shadow_bind_group_entries,
-        &khora_core::renderer::api::shadow::bindings::fill_shadow_bind_group_entries,
-    );
-    same_item(
-        &khora_data::render::shadow_bindings::shadow_bind_group_layout_entries,
-        &khora_core::renderer::api::shadow::bindings::shadow_bind_group_layout_entries,
-    );
-    let _ = khora_data::render::fill_shadow_bind_group_entries;
-    same_item(
-        &khora_data::render::fill_shadow_bind_group_entries,
-        &khora_core::renderer::api::shadow::fill_shadow_bind_group_entries,
-    );
-    let _ = khora_data::render::shadow_bind_group_layout_entries;
-    same_item(
-        &khora_data::render::shadow_bind_group_layout_entries,
-        &khora_core::renderer::api::shadow::shadow_bind_group_layout_entries,
-    );
-    same_type(
-        PhantomData::<khora_data::render::ShadowEntries>,
-        PhantomData::<khora_core::renderer::api::shadow::ShadowEntries>,
-    );
-    same_type(
-        PhantomData::<khora_data::render::ShadowEntry>,
-        PhantomData::<khora_core::renderer::api::shadow::ShadowEntry>,
-    );
-    same_type(
-        PhantomData::<khora_data::render::ShadowFrame>,
-        PhantomData::<khora_core::renderer::api::shadow::ShadowFrame>,
-    );
-    same_type(
-        PhantomData::<khora_data::render::ShadowGpuBindings>,
-        PhantomData::<khora_core::renderer::api::shadow::ShadowGpuBindings>,
-    );
     let _ = type_name::<khora_data::render::ShadowResult>();
     let _ = khora_data::render::extract_active_camera_view;
     let _ = khora_data::render::primary_view;
@@ -2311,15 +2273,6 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ = type_name::<khora_data::render::RenderWorld>(); // khora-agents, khora-lanes
     let _ = type_name::<khora_data::render::ResourceId>(); // khora-agents
     let _ = type_name::<khora_data::render::ScenePassSlot>(); // khora-agents, khora-sdk
-    let _ = type_name::<khora_data::render::ShadowEntries>(); // khora-lanes
-    let _ = type_name::<khora_data::render::ShadowEntry>(); // khora-lanes
-    let _ = |e: &khora_data::render::ShadowEntry| {
-        matches!(e, khora_data::render::ShadowEntry::Atlas2D { .. })
-    }; // khora-lanes
-    let _ = |e: &khora_data::render::ShadowEntry| {
-        matches!(e, khora_data::render::ShadowEntry::Cube { .. })
-    }; // khora-lanes
-    let _ = type_name::<khora_data::render::ShadowGpuBindings>(); // khora-lanes
     let _ = type_name::<khora_data::render::SharedFrameGraph>(); // khora-sdk
     let _ = type_name::<khora_data::render::SkyboxPassSlot>(); // khora-agents, khora-sdk
     let _ = type_name::<khora_data::render::TransparentEncoder>(); // khora-agents, khora-lanes
@@ -2328,9 +2281,6 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ = type_name::<khora_data::render::WireframeConfig>(); // khora-lanes
     let _ = khora_data::render::WireframeConfig::default; // khora-sdk
     let _ = khora_data::render::extract_active_camera_view; // khora-agents, khora-editor
-    let _ = khora_data::render::shadow_bindings::binding::LIGHTING_UNIFORMS; // khora-lanes
-    let _ = khora_data::render::shadow_bindings::fill_shadow_bind_group_entries; // khora-lanes
-    let _ = khora_data::render::shadow_bindings::shadow_bind_group_layout_entries; // khora-lanes
     let _ = khora_data::render::submit_frame_graph; // khora-sdk
     let _ = type_name::<khora_data::scene::ArchetypeSerializationStrategy>(); // khora-io
     let _ = type_name::<khora_data::scene::ComponentRegistration>(); // khora-io, khora-sdk

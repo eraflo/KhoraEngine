@@ -94,7 +94,6 @@ mod every_pub_mod {
     use khora_infra::renderer::custom as _;
     use khora_infra::renderer::custom::pixel_font as _;
     use khora_infra::renderer::text as _;
-    use khora_infra::renderer::util as _;
     use khora_infra::telemetry as _;
     use khora_infra::telemetry::gpu_monitor as _;
     use khora_infra::telemetry::memory_monitor as _;
@@ -351,16 +350,6 @@ fn module_renderer_paths_still_resolve() {
     is_debug::<khora_infra::renderer::text::TextVertex>();
     is_pod::<khora_infra::renderer::text::TextVertex>();
     is_zeroable::<khora_infra::renderer::text::TextVertex>();
-    let _ = type_name::<khora_infra::renderer::util::AtlasRect>();
-    same_type(
-        PhantomData::<khora_infra::renderer::util::AtlasRect>,
-        PhantomData::<khora_core::renderer::api::util::AtlasRect>,
-    );
-    let _ = type_name::<khora_infra::renderer::util::TextureAtlas>();
-    same_type(
-        PhantomData::<khora_infra::renderer::util::TextureAtlas>,
-        PhantomData::<khora_core::renderer::api::util::TextureAtlas>,
-    );
 }
 
 #[test]

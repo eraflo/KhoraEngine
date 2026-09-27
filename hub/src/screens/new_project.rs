@@ -18,6 +18,7 @@ use crate::github;
 use crate::project;
 use khora_sdk::tool_ui::{Icon, UiBuilder, UiTheme};
 use khora_tool_ui::brand::khora_dark;
+use khora_tool_ui::widgets::paint::eyebrow;
 use khora_tool_ui::widgets::{
     self, Button, ButtonKind, StepState, button, checkbox, error_line, field_label, input_frame,
     paint::{display, mono, text},
@@ -378,16 +379,6 @@ fn show_rail(app: &HubApp, ui: &mut dyn UiBuilder, t: &UiTheme, rect: [f32; 4]) 
         t,
         [rect[0], rect[1] + 26.0, rect[2], rect[3]],
         &borrowed,
-    );
-}
-
-fn eyebrow(ui: &mut dyn UiBuilder, t: &UiTheme, pos: [f32; 2], label: &str) {
-    mono(
-        ui,
-        pos,
-        &label.to_uppercase(),
-        t.font_size_caption - 1.0,
-        t.text_disabled,
     );
 }
 

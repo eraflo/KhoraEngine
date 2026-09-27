@@ -20,7 +20,7 @@ use khora_sdk::ExecutionPhase;
 use super::paint::phase_color_for;
 use super::{AgentSnapshot, ControlPlanePanel};
 use crate::widgets::chrome::{paint_panel_header, panel_tab};
-use crate::widgets::paint::{paint_hairline_h, with_alpha};
+use khora_tool_ui::widgets::with_alpha;
 
 impl ControlPlanePanel {
     pub(super) fn paint_schedule_panel(
@@ -134,12 +134,11 @@ impl ControlPlanePanel {
                 }
             }
 
-            paint_hairline_h(
-                ui,
-                x + 14.0,
-                row_y + 2.0,
-                w - 28.0,
+            ui.paint_line(
+                [x + 14.0, row_y + 2.0],
+                [x + 14.0 + w - 28.0, row_y + 2.0],
                 with_alpha(theme.separator, 0.30),
+                1.0,
             );
             row_y += 6.0;
             if row_y > y + h - 24.0 {

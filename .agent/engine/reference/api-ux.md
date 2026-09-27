@@ -9,7 +9,7 @@ The `khora-sdk` surface that game developers touch: `EngineApp`, `GameWorld`, `V
 
 ## Key files
 - SDK: `crates/khora-sdk/src/` (`lib.rs`, `engine/`, `game_world.rs`, `vessel.rs`, `traits.rs`, `run_default.rs`).
-- I/O surface: `khora-io` (asset/serialization), `khora-plugins`.
+- I/O surface: `khora-io` (asset/serialization).
 
 ## Principles
 - **The SDK is a façade** — the Scheduler, `BudgetChannel`, `EnginePlugin`, and all `khora-*` internals stay

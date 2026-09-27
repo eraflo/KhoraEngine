@@ -36,15 +36,3 @@ lanes_mirror_agents crates/khora-lanes/src/ui_lane  # render_lane/ui_render_lane
 
 # --- no_duplicate_asset_files ------------------------------------------------
 
-no_duplicate_asset_files hub/assets/fonts/Fraunces-Regular.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
-no_duplicate_asset_files hub/assets/fonts/Fraunces-SemiBold.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
-no_duplicate_asset_files hub/assets/fonts/Geist-Medium.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
-no_duplicate_asset_files hub/assets/fonts/Geist-Regular.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
-no_duplicate_asset_files hub/assets/fonts/Geist-SemiBold.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
-no_duplicate_asset_files hub/assets/fonts/GeistMono-Medium.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
-no_duplicate_asset_files hub/assets/fonts/GeistMono-Regular.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
-no_duplicate_asset_files hub/assets/fonts/LICENSE-Fraunces.txt  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
-no_duplicate_asset_files hub/assets/fonts/LICENSE-Geist.txt  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
-no_duplicate_asset_files hub/assets/fonts/LICENSE-Lucide.txt  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
-no_duplicate_asset_files hub/assets/fonts/Lucide.ttf  # shared fonts to khora-tool-ui/assets/ in B3 (3.6)
-no_duplicate_asset_files hub/assets/khora_small_logo.png  # shared logo to khora-tool-ui/assets/ in B3 (3.6)

@@ -424,35 +424,16 @@ mod tests {
     /// the author cannot tell their mistake from ours.
     #[test]
     fn the_seeded_behaviour_compiles() {
-        let source = super::default_main_erg("Demo");
+        let loader =
+            khora_script::MemoryLoader::new().with("main.erg", super::default_main_erg("Demo"));
+        let outcome = khora_script::compile_module(&loader, "main.erg");
 
-        let lexed = khora_script::lex(&source);
         assert!(
-            lexed.diagnostics.is_empty(),
-            "seed does not lex: {:?}",
-            lexed.diagnostics
-        );
-
-        let parsed = khora_script::parse(lexed.tokens);
-        assert!(
-            parsed.diagnostics.is_empty(),
-            "seed does not parse: {:?}",
-            parsed.diagnostics
-        );
-
-        let checked = khora_script::check(&parsed.module);
-        assert!(
-            checked.diagnostics.is_empty(),
-            "seed does not check: {:?}",
-            checked.diagnostics
-        );
-
-        let compiled = khora_script::compile(&parsed.module);
-        assert!(
-            compiled.diagnostics.is_empty(),
+            outcome.diagnostics.is_empty(),
             "seed does not compile: {:?}",
-            compiled.diagnostics
+            outcome.diagnostics
         );
+        assert!(outcome.program.is_some(), "seed produced no program");
     }
 
     /// The project's name reaches the file, so the first log line names it.

@@ -29,8 +29,10 @@
 //!
 //! ## Extending it
 //!
-//! A new tool gets the whole look for free: install [`brand::khora_dark`] as
-//! its theme, load the same fonts, and build its screens out of [`widgets`].
+//! A new tool gets the whole look for free: it installs [`brand::khora_dark`]
+//! as its theme and [`fonts::brand_fonts`] as its fonts, sets
+//! [`logo::logo_icon`] as its window icon, and builds its screens out of
+//! [`widgets`].
 //! Widgets are free functions over `&mut dyn UiBuilder` + `&UiTheme` — they
 //! never touch a backend and never reach into [`brand::pal`] directly, so
 //! re-theming is a matter of passing a different [`UiTheme`].
@@ -40,6 +42,9 @@
 #![deny(missing_docs)]
 
 pub mod brand;
+pub mod fonts;
+pub mod logo;
+#[cfg(any(test, feature = "testing"))]
 pub mod testing;
 pub mod widgets;
 

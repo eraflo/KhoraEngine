@@ -28,11 +28,8 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
 
-use crate::widgets::{
-    brand::paint_brand_pill,
-    chrome::paint_search_pill,
-    paint::{paint_vertical_gradient, with_alpha},
-};
+use crate::widgets::{brand::paint_brand_pill, chrome::paint_search_pill};
+use khora_tool_ui::widgets::{vertical_gradient, with_alpha};
 
 const TITLE_BAR_HEIGHT: f32 = 44.0;
 const SEARCH_MIN_W: f32 = 180.0;
@@ -86,7 +83,7 @@ impl EditorPanel for TitleBarPanel {
         let [x, y, w, h] = rect;
 
         // ── Background gradient + bottom hairline ────
-        paint_vertical_gradient(ui, rect, theme.surface_elevated, theme.surface, 6);
+        vertical_gradient(ui, rect, theme.surface_elevated, theme.surface, 6);
         ui.paint_line(
             [x, y + h],
             [x + w, y + h],
@@ -199,7 +196,7 @@ impl EditorPanel for TitleBarPanel {
             if int.hovered {
                 ui.paint_rect_filled([icon_x, icon_y], [28.0, 28.0], theme.surface_active, 6.0);
             }
-            crate::widgets::paint::paint_icon(
+            khora_tool_ui::widgets::paint::icon(
                 ui,
                 [icon_x + 7.0, icon_y + 7.0],
                 Icon::Search,

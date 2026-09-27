@@ -19,3 +19,4 @@
 //! binary as a module instead of adding a file at the root of `tests/`.
 
 mod public_paths;
+mod runtime_config_file;

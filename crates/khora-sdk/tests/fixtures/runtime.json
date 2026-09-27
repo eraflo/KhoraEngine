@@ -1,0 +1,7 @@
+{
+  "project_name": "Khora Demo",
+  "default_scene": "scenes/default.kscene",
+  "window_title": "Khora Demo",
+  "preset": "release",
+  "verify_integrity": true
+}

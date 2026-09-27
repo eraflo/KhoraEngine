@@ -17,14 +17,15 @@
 use khora_sdk::editor_ui::*;
 
 use crate::widgets::chrome::paint_panel_header;
-use crate::widgets::paint::{paint_icon, paint_text_size, with_alpha};
 use crate::widgets::tile::{paint_asset_tile, AssetTileKind};
+use khora_tool_ui::widgets::paint;
+use khora_tool_ui::widgets::with_alpha;
 
-use super::drag::pack_asset_drag;
 use super::naming::ensure_extension;
 use super::{
     AssetBrowserPanel, FlatAsset, HEADER_HEIGHT, SIDEBAR_WIDTH, TILE_GAP, TILE_SIZE, TOOLBAR_HEIGHT,
 };
+use crate::drag_payload::{pack_asset_drag, payload_is_entity, unpack_entity};
 
 const SIDEBAR_CATEGORIES: &[(AssetTileKind, &str, Icon)] = &[
     (AssetTileKind::Unknown, "All Assets", Icon::Database),
@@ -56,7 +57,7 @@ impl EditorPanel for AssetBrowserPanel {
         let tab_y = py + (HEADER_HEIGHT - 22.0) * 0.5;
         let badge = format!("{}", self.flat.len());
         // Only the count: the dock tab above already says "Asset Browser".
-        paint_text_size(
+        paint::text(
             ui,
             [px + 6.0, tab_y + 5.0],
             &badge,
@@ -82,7 +83,7 @@ impl EditorPanel for AssetBrowserPanel {
             if int.hovered {
                 ui.paint_rect_filled([ax, py + 6.0], [22.0, 22.0], theme.surface_active, 4.0);
             }
-            paint_icon(ui, [ax + 5.0, py + 11.0], icon, 13.0, theme.text_dim);
+            paint::icon(ui, [ax + 5.0, py + 11.0], icon, 13.0, theme.text_dim);
             match salt {
                 "ab-trash" if int.clicked => {
                     header_delete_selected = true;
@@ -184,7 +185,7 @@ impl EditorPanel for AssetBrowserPanel {
                     theme.radius_sm,
                 );
             }
-            paint_icon(
+            paint::icon(
                 ui,
                 [row_x + 8.0, row_y + 5.0],
                 *icon,
@@ -195,7 +196,7 @@ impl EditorPanel for AssetBrowserPanel {
                     theme.text_dim
                 },
             );
-            paint_text_size(
+            paint::text(
                 ui,
                 [row_x + 26.0, row_y + 5.0],
                 label,
@@ -223,7 +224,7 @@ impl EditorPanel for AssetBrowserPanel {
 
         // Tree separator label.
         row_y += 8.0;
-        paint_text_size(ui, [px + 8.0, row_y], "FOLDERS", 10.0, theme.text_muted);
+        paint::text(ui, [px + 8.0, row_y], "FOLDERS", 10.0, theme.text_muted);
         row_y += 16.0;
 
         // Folder tree (real VFS hierarchy).
@@ -269,7 +270,7 @@ impl EditorPanel for AssetBrowserPanel {
         );
 
         // Search affordance icon.
-        paint_icon(
+        paint::icon(
             ui,
             [search_x + 4.0, search_y + 5.0],
             Icon::Search,
@@ -322,8 +323,8 @@ impl EditorPanel for AssetBrowserPanel {
         let _drop_int =
             ui.interact_rect("ab-grid-drop", [grid_inner_x, drop_y, grid_inner_w, drop_h]);
         if let Some(payload) = ui.dnd_take_drop_payload() {
-            if crate::panels::scene_tree::payload_is_entity(payload) {
-                let entity = crate::panels::scene_tree::unpack_entity(payload);
+            if payload_is_entity(payload) {
+                let entity = unpack_entity(payload);
                 self.queue_save_entity_as_prefab(entity);
             }
         }
@@ -414,8 +415,8 @@ impl EditorPanel for AssetBrowserPanel {
             // land on a tile (top hovered) and the grid-wide drop rect below
             // would never see it.
             if let Some(payload) = ui.dnd_take_drop_payload() {
-                if crate::panels::scene_tree::payload_is_entity(payload) {
-                    entity_drop = Some(crate::panels::scene_tree::unpack_entity(payload));
+                if payload_is_entity(payload) {
+                    entity_drop = Some(unpack_entity(payload));
                 }
             }
             // Generic per-tile context menu (same idiom the scene tree uses

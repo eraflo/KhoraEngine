@@ -35,6 +35,7 @@
 //! for the tree it was written against. Nothing is constructed; the tests only
 //! have to type-check.
 
+mod light_caps;
 mod math;
 mod math_layout;
 mod renderer;
@@ -3273,15 +3274,18 @@ mod paths_used_by_other_crates {
     use khora_core::renderer::api::scene::MAX_POINT_LIGHTS as _; // khora-lanes
     use khora_core::renderer::api::scene::MAX_SPOT_LIGHTS as _; // khora-lanes
     use khora_core::renderer::api::shader_defs::ShaderDefs as _; // khora-infra
-    use khora_core::renderer::api::shadow::bindings as _; // khora-data
-    use khora_core::renderer::api::shadow::bindings::fill_shadow_bind_group_entries as _; // khora-data
-    use khora_core::renderer::api::shadow::bindings::shadow_bind_group_layout_entries as _; // khora-data
-    use khora_core::renderer::api::shadow::fill_shadow_bind_group_entries as _; // khora-data
-    use khora_core::renderer::api::shadow::shadow_bind_group_layout_entries as _; // khora-data
-    use khora_core::renderer::api::shadow::ShadowEntries as _; // khora-data
-    use khora_core::renderer::api::shadow::ShadowEntry as _; // khora-data
+    use khora_core::renderer::api::shadow::bindings as _; // khora-lanes
+    use khora_core::renderer::api::shadow::bindings::binding::ATLAS_2D as _; // khora-lanes
+    use khora_core::renderer::api::shadow::bindings::binding::ATLAS_CUBE as _; // khora-lanes
+    use khora_core::renderer::api::shadow::bindings::binding::LIGHTING_UNIFORMS as _; // khora-lanes
+    use khora_core::renderer::api::shadow::bindings::fill_shadow_bind_group_entries as _; // khora-lanes
+    use khora_core::renderer::api::shadow::bindings::shadow_bind_group_layout_entries as _; // khora-lanes
+    use khora_core::renderer::api::shadow::ShadowEntries as _; // khora-lanes
+    use khora_core::renderer::api::shadow::ShadowEntry as _; // khora-lanes
+    use khora_core::renderer::api::shadow::ShadowEntry::Atlas2D as _; // khora-lanes
+    use khora_core::renderer::api::shadow::ShadowEntry::Cube as _; // khora-lanes
     use khora_core::renderer::api::shadow::ShadowFrame as _; // khora-data, khora-lanes
-    use khora_core::renderer::api::shadow::ShadowGpuBindings as _; // khora-data
+    use khora_core::renderer::api::shadow::ShadowGpuBindings as _; // khora-lanes
     use khora_core::renderer::api::text::TextLayout as _; // khora-data, khora-infra
     use khora_core::renderer::api::text::TextRenderer as _; // khora-agents, khora-data, khora-infra, khora-lanes, khora-sdk
     use khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer as _; // khora-lanes
@@ -3294,7 +3298,7 @@ mod paths_used_by_other_crates {
     use khora_core::renderer::api::util::f32_to_f16_bits as _; // khora-io
     use khora_core::renderer::api::util::flags::ShaderStageFlags as _; // khora-infra
     use khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer as _; // khora-lanes
-    use khora_core::renderer::api::util::AtlasRect as _; // khora-data, khora-infra
+    use khora_core::renderer::api::util::AtlasRect as _; // khora-data
     use khora_core::renderer::api::util::GraphicsBackendType as _; // khora-infra
     use khora_core::renderer::api::util::IndexFormat as _; // khora-agents, khora-data, khora-infra, khora-io, khora-lanes
     use khora_core::renderer::api::util::RendererDeviceType as _; // khora-infra

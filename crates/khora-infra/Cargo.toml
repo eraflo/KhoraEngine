@@ -64,9 +64,3 @@ eframe = { version = "0.34", default-features = false, features = [
     "wayland",
     "x11",
 ] }
-
-[features]
-default = ["graphics", "platform", "physics"]
-graphics = []
-platform = []
-physics = []

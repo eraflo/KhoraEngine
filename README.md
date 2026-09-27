@@ -96,7 +96,6 @@ khora-agents     Six agents — Render, Shadow, Overlay, Physics, UI, Audio
 khora-infra      Default backends — wgpu, Rapier3D, CPAL, Taffy, winit (swappable)
 khora-io         VFS, asset loading, scene serialization
 khora-telemetry  TelemetryService, MetricsRegistry, monitors
-khora-plugins    Plugin loading and registration
 khora-sdk        Public API — the only surface a game depends on
 khora-editor     Editor application
 khora-runtime    Generic player binary, stamped with packed assets

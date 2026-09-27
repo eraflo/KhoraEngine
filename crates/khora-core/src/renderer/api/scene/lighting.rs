@@ -15,6 +15,7 @@
 //! Lighting uniform structures.
 
 use crate::math::LinearRgba;
+use crate::renderer::api::shader_defs::ShaderDefs;
 
 /// Data for a single directional light, formatted for GPU consumption.
 #[repr(C)]
@@ -60,12 +61,15 @@ pub struct SpotLightUniform {
     pub shadow_params: [f32; 4],
 }
 
-/// Constants for maximum light counts.
-pub const MAX_DIRECTIONAL_LIGHTS: usize = 4;
-/// Maximum number of point lights supported in the global lighting buffer.
-pub const MAX_POINT_LIGHTS: usize = 16;
-/// Maximum number of spot lights supported in the global lighting buffer.
-pub const MAX_SPOT_LIGHTS: usize = 8;
+/// Maximum number of directional lights in the global lighting buffer: the
+/// shader's `MAX_DIRECTIONAL_LIGHTS`, from [`ShaderDefs`].
+pub const MAX_DIRECTIONAL_LIGHTS: usize = ShaderDefs::MAX_DIRECTIONAL_LIGHTS as usize;
+/// Maximum number of point lights in the global lighting buffer: the
+/// shader's `MAX_POINT_LIGHTS`, from [`ShaderDefs`].
+pub const MAX_POINT_LIGHTS: usize = ShaderDefs::MAX_POINT_LIGHTS as usize;
+/// Maximum number of spot lights in the global lighting buffer: the shader's
+/// `MAX_SPOT_LIGHTS`, from [`ShaderDefs`].
+pub const MAX_SPOT_LIGHTS: usize = ShaderDefs::MAX_SPOT_LIGHTS as usize;
 
 /// The structure of the global lighting uniform buffer.
 #[repr(C)]

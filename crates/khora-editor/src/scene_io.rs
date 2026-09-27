@@ -28,8 +28,9 @@ use khora_sdk::prelude::math::{LinearRgba, Vec3};
 use khora_sdk::{GameWorld, SceneFile, SerializationGoal, SerializationService};
 use std::path::Path;
 
-/// Canonical relative path of the auto-created default scene.
-pub const DEFAULT_SCENE_REL: &str = "scenes/default.kscene";
+// Canonical relative path of the auto-created default scene: the one the
+// runtime loads when `runtime.json` names none.
+use khora_sdk::DEFAULT_SCENE_REL_PATH as DEFAULT_SCENE_REL;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Play-mode snapshot — full-world capture via SerializationService.
@@ -538,6 +539,20 @@ mod tests {
         assert!(
             world.get_component::<MeshRef>(mesh_a).is_some(),
             "restored MeshA keeps its Render-domain MeshRef"
+        );
+    }
+
+    /// The scene the editor saves by default is the one the runtime loads when
+    /// `runtime.json` names none. The SDK's test pins its fallback against the
+    /// same file.
+    #[test]
+    fn default_scene_path_is_the_one_the_runtime_falls_back_to() {
+        let runtime_json: serde_json::Value =
+            serde_json::from_str(include_str!("../../khora-sdk/tests/fixtures/runtime.json"))
+                .expect("the fixture is valid JSON");
+        assert_eq!(
+            Some(DEFAULT_SCENE_REL),
+            runtime_json["default_scene"].as_str()
         );
     }
 }

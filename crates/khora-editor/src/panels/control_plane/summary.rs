@@ -18,9 +18,8 @@ use khora_sdk::editor_ui::*;
 use khora_sdk::DccContext;
 
 use super::{ControlPlanePanel, FRAME_TARGET_MS};
-use crate::widgets::brand::paint_diamond_filled;
-use crate::widgets::controls::paint_meter_bar;
-use crate::widgets::paint::{paint_text_size, with_alpha};
+use khora_tool_ui::widgets::paint;
+use khora_tool_ui::widgets::with_alpha;
 
 impl ControlPlanePanel {
     #[allow(clippy::too_many_arguments)] // A paint helper; the args are all data it draws.
@@ -47,8 +46,8 @@ impl ControlPlanePanel {
         // Brand block (left). Width is computed from the actual rendered
         // sub-text so the stats cells start *after* it instead of at a
         // hard-coded 320px (which used to overlap on common screen widths).
-        paint_diamond_filled(ui, x + 24.0, y + h * 0.5, 8.0, theme.primary);
-        paint_text_size(
+        khora_tool_ui::widgets::diamond(ui, [x + 24.0, y + h * 0.5], 8.0 * 2.0, theme.primary);
+        paint::text(
             ui,
             [x + 40.0, y + 14.0],
             "Dynamic Context Core",
@@ -186,7 +185,13 @@ impl ControlPlanePanel {
                     frame_samples,
                 );
             } else {
-                paint_meter_bar(ui, [cx, y + 56.0], cell_w - 16.0, *frac, *color, theme);
+                khora_tool_ui::widgets::meter_bar(
+                    ui,
+                    theme,
+                    [cx, y + 56.0, cell_w - 16.0, 3.0],
+                    *frac,
+                    *color,
+                );
             }
         }
     }

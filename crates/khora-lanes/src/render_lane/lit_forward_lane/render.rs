@@ -40,8 +40,8 @@ impl LitForwardLane {
     pub(super) fn render(
         &self,
         render_world: &RenderWorld,
-        shadow_entries: &khora_data::render::ShadowEntries,
-        shadow_bindings: Option<khora_data::render::ShadowGpuBindings>,
+        shadow_entries: &khora_core::renderer::api::shadow::ShadowEntries,
+        shadow_bindings: Option<khora_core::renderer::api::shadow::ShadowGpuBindings>,
         ibl_bindings: Option<khora_core::renderer::api::ibl::IblGpuBindings>,
         device: &dyn khora_core::renderer::GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
@@ -149,7 +149,7 @@ impl LitForwardLane {
 
             // Atlas2D / single-matrix path used by directional + spot.
             let (atlas2d_view_proj, atlas2d_index) = match shadow {
-                Some(khora_data::render::ShadowEntry::Atlas2D {
+                Some(khora_core::renderer::api::shadow::ShadowEntry::Atlas2D {
                     view_proj,
                     atlas_index,
                 }) => (*view_proj, *atlas_index as f32),
@@ -158,7 +158,7 @@ impl LitForwardLane {
 
             // Cube path used by point lights.
             let (cube_layer, cube_far_plane) = match shadow {
-                Some(khora_data::render::ShadowEntry::Cube {
+                Some(khora_core::renderer::api::shadow::ShadowEntry::Cube {
                     cube_array_index,
                     far_plane,
                     ..
@@ -417,7 +417,7 @@ impl LitForwardLane {
 
         // Build Lighting Bind Group. Shadow-related entries (atlas2D,
         // sampler, atlas_cube) are filled by
-        // [`khora_data::render::shadow_bindings::fill_shadow_bind_group_entries`]
+        // [`khora_core::renderer::api::shadow::bindings::fill_shadow_bind_group_entries`]
         // — we never reference the individual texture types here.
         let final_lighting_bind_group = if let Some(layout) = self.light_layout.get().copied() {
             let Some(shadow_bindings) = shadow_bindings else {
@@ -429,7 +429,7 @@ impl LitForwardLane {
 
             // binding 0 — lighting uniform buffer (lit lane's responsibility)
             let mut entries = vec![BindGroupEntry {
-                binding: khora_data::render::shadow_bindings::binding::LIGHTING_UNIFORMS,
+                binding: khora_core::renderer::api::shadow::bindings::binding::LIGHTING_UNIFORMS,
                 resource: BindingResource::Buffer(BufferBinding {
                     buffer: lighting_ring_buffer_id,
                     offset: 0,
@@ -438,7 +438,7 @@ impl LitForwardLane {
                 _phantom: std::marker::PhantomData,
             }];
             // bindings 1, 2, 3 — shadow lane's responsibility (opaque)
-            khora_data::render::shadow_bindings::fill_shadow_bind_group_entries(
+            khora_core::renderer::api::shadow::bindings::fill_shadow_bind_group_entries(
                 &shadow_bindings,
                 &mut entries,
             );

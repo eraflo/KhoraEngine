@@ -17,8 +17,8 @@
 //! Same algorithm as [`super::StandardShadowsLane`] (CSM / spot / cube
 //! point), with half the per-side resolution everywhere — the middle
 //! rung between Standard and [`super::LowResShadowsLane`]. Same output
-//! contract: produces a [`khora_data::render::ShadowGpuBindings`] bundle
-//! plus [`khora_data::render::ShadowEntries`]; lit consumer lanes never
+//! contract: produces a [`khora_core::renderer::api::shadow::ShadowGpuBindings`] bundle
+//! plus [`khora_core::renderer::api::shadow::ShadowEntries`]; lit consumer lanes never
 //! need to know which strategy ran.
 //!
 //! `ShadowAgent` selects this lane for `StrategyId::Balanced`, giving

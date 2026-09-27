@@ -17,7 +17,8 @@
 use khora_sdk::editor_ui::{FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
 
 use super::header::paint_inspector_header;
-use crate::widgets::paint::{paint_icon, paint_text_size, with_alpha};
+use khora_tool_ui::widgets::paint;
+use khora_tool_ui::widgets::with_alpha;
 
 /// One row of "key — value" inside the metadata card.
 fn paint_kv_row(
@@ -91,7 +92,7 @@ pub fn render_asset_pane(
         theme.radius_md,
         1.0,
     );
-    paint_text_size(ui, [card_x + 12.0, y + 10.0], "File", 12.0, theme.text);
+    paint::text(ui, [card_x + 12.0, y + 10.0], "File", 12.0, theme.text);
 
     let row_x = card_x + 12.0;
     let row_w = card_w - 24.0;
@@ -151,8 +152,8 @@ pub fn render_asset_pane(
             theme.background
         };
         ui.paint_rect_filled([bx, by_btn], [btn_w, 24.0], bg, theme.radius_sm);
-        paint_icon(ui, [bx + 8.0, by_btn + 6.0], *icon, 12.0, theme.text_dim);
-        paint_text_size(ui, [bx + 28.0, by_btn + 6.0], label, 11.0, theme.text);
+        paint::icon(ui, [bx + 8.0, by_btn + 6.0], *icon, 12.0, theme.text_dim);
+        paint::text(ui, [bx + 28.0, by_btn + 6.0], label, 11.0, theme.text);
         if int.clicked {
             match *salt {
                 "asset-open-ext" => match open::that(&abs_string) {

@@ -1168,19 +1168,6 @@ fn gpu_light_fields(x: &khora_core::renderer::forward_plus::GpuLight) {
     );
 }
 
-fn light_culling_uniforms_fields(x: &khora_core::renderer::forward_plus::LightCullingUniforms) {
-    let _ = (
-        &x.view_projection,
-        &x.inverse_projection,
-        &x.screen_dimensions,
-        &x.tile_count,
-        &x.num_lights,
-        &x.tile_size,
-        &x.shadow_atlas_index,
-        &x._padding,
-    );
-}
-
 fn tile_size_variants(x: &khora_core::renderer::forward_plus::TileSize) {
     match x {
         khora_core::renderer::forward_plus::TileSize::X16 => {}
@@ -3207,21 +3194,6 @@ fn module_renderer_paths_still_resolve() {
     is_pod::<khora_core::renderer::forward_plus::GpuLight>();
     is_zeroable::<khora_core::renderer::forward_plus::GpuLight>();
     is_default::<khora_core::renderer::forward_plus::GpuLight>();
-    let _ = type_name::<khora_core::renderer::forward_plus::LightCullingUniforms>();
-    let _ = type_name::<khora_core::renderer::LightCullingUniforms>();
-    same_type(
-        PhantomData::<khora_core::renderer::LightCullingUniforms>,
-        PhantomData::<khora_core::renderer::forward_plus::LightCullingUniforms>,
-    );
-    let _ = light_culling_uniforms_fields
-        as fn(&khora_core::renderer::forward_plus::LightCullingUniforms);
-    is_debug::<khora_core::renderer::forward_plus::LightCullingUniforms>();
-    is_clone::<khora_core::renderer::forward_plus::LightCullingUniforms>();
-    is_copy::<khora_core::renderer::forward_plus::LightCullingUniforms>();
-    is_partial_eq::<khora_core::renderer::forward_plus::LightCullingUniforms>();
-    is_pod::<khora_core::renderer::forward_plus::LightCullingUniforms>();
-    is_zeroable::<khora_core::renderer::forward_plus::LightCullingUniforms>();
-    is_default::<khora_core::renderer::forward_plus::LightCullingUniforms>();
     let _ = type_name::<khora_core::renderer::forward_plus::TileSize>();
     let _ = type_name::<khora_core::renderer::TileSize>();
     same_type(

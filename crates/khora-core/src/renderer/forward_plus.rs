@@ -270,48 +270,6 @@ impl Default for GpuLight {
     }
 }
 
-/// Uniforms for the light culling compute shader.
-///
-/// This structure is uploaded to GPU each frame with the current camera
-/// and screen state for the light culling pass.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
-pub struct LightCullingUniforms {
-    /// View-projection matrix for frustum calculations.
-    pub view_projection: [[f32; 4]; 4],
-    /// Inverse projection matrix for reconstructing view-space positions.
-    pub inverse_projection: [[f32; 4]; 4],
-
-    /// Screen dimensions in pixels (width, height).
-    pub screen_dimensions: [f32; 2],
-    /// Tile grid dimensions (tiles_x, tiles_y).
-    pub tile_count: [u32; 2],
-
-    /// Number of active lights in the light buffer.
-    pub num_lights: u32,
-    /// Tile size in pixels.
-    pub tile_size: u32,
-    /// Index of the first directional light's shadow map.
-    pub shadow_atlas_index: i32,
-    /// Padding for 16-byte alignment.
-    pub _padding: [f32; 1],
-}
-
-impl Default for LightCullingUniforms {
-    fn default() -> Self {
-        Self {
-            view_projection: [[0.0; 4]; 4],
-            inverse_projection: [[0.0; 4]; 4],
-            screen_dimensions: [1920.0, 1080.0],
-            tile_count: [120, 68], // 1920/16, 1080/16 rounded up
-            num_lights: 0,
-            tile_size: 16,
-            shadow_atlas_index: -1,
-            _padding: [0.0; 1],
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,17 +311,6 @@ mod tests {
         // GpuLight should be exactly 72 bytes (18 x 4-byte fields)
         // Updated from 64 after shadow fields (shadow_map_index, shadow_bias, shadow_normal_bias, shadow_far_plane) were added.
         assert_eq!(std::mem::size_of::<GpuLight>(), 72);
-    }
-
-    #[test]
-    fn test_light_culling_uniforms_size() {
-        // LightCullingUniforms should be a multiple of 16 bytes for GPU alignment
-        let size = std::mem::size_of::<LightCullingUniforms>();
-        assert_eq!(
-            size % 16,
-            0,
-            "LightCullingUniforms should be 16-byte aligned"
-        );
     }
 
     #[test]

@@ -18,7 +18,7 @@ use khora_sdk::editor_ui::*;
 use khora_sdk::{AgentImportance, ExecutionPhase};
 
 use super::AgentSnapshot;
-use crate::widgets::paint::{paint_icon, paint_text_size};
+use khora_tool_ui::widgets::paint;
 
 pub(super) fn phase_color_for(phase: ExecutionPhase, theme: &UiTheme) -> [f32; 4] {
     if phase == ExecutionPhase::INIT {
@@ -54,8 +54,8 @@ pub(super) fn paint_card_box(
         theme.surface_elevated,
         theme.radius_md,
     );
-    paint_icon(ui, [x + 8.0, y + 7.0], icon, 12.0, theme.primary_dim);
-    paint_text_size(ui, [x + 26.0, y + 7.0], title, 12.0, theme.text);
+    paint::icon(ui, [x + 8.0, y + 7.0], icon, 12.0, theme.primary_dim);
+    paint::text(ui, [x + 26.0, y + 7.0], title, 12.0, theme.text);
     y + header_h + 4.0
 }
 
@@ -70,7 +70,7 @@ pub(super) fn kv(
     value: &str,
     theme: &UiTheme,
 ) {
-    paint_text_size(ui, [x, y], key, 11.0, theme.text_dim);
+    paint::text(ui, [x, y], key, 11.0, theme.text_dim);
     ui.paint_text_styled(
         [x + w - 4.0, y],
         value,

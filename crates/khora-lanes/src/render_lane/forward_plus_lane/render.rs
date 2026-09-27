@@ -40,8 +40,8 @@ impl ForwardPlusLane {
     pub(super) fn render(
         &self,
         render_world: &RenderWorld,
-        shadow_entries: &khora_data::render::ShadowEntries,
-        shadow_bindings: Option<khora_data::render::ShadowGpuBindings>,
+        shadow_entries: &khora_core::renderer::api::shadow::ShadowEntries,
+        shadow_bindings: Option<khora_core::renderer::api::shadow::ShadowGpuBindings>,
         ibl_bindings: Option<khora_core::renderer::api::ibl::IblGpuBindings>,
         device: &dyn khora_core::renderer::GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
@@ -129,7 +129,7 @@ impl ForwardPlusLane {
         // Point: `shadow_map_index` = cube atlas index,
         // `shadow_far_plane` = perspective far plane used by the shadow
         // pass (matches `ShadowEntry::Cube.far_plane`).
-        use khora_data::render::ShadowEntry;
+        use khora_core::renderer::api::shadow::ShadowEntry;
         let lights: Vec<_> = render_world
             .lights
             .iter()
@@ -397,7 +397,7 @@ impl ForwardPlusLane {
         let mut lighting_entries: Vec<BindGroupEntry> = Vec::with_capacity(8);
         lighting_entries.push(BindGroupEntry::buffer(g3::LIGHTS, light_buffer, 0, None));
         // Bindings 1/2/3 — shadow atlas 2D + sampler + cube atlas.
-        khora_data::render::shadow_bindings::fill_shadow_bind_group_entries(
+        khora_core::renderer::api::shadow::bindings::fill_shadow_bind_group_entries(
             &shadow_bindings,
             &mut lighting_entries,
         );

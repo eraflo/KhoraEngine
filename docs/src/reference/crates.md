@@ -8,7 +8,7 @@ dependency direction, and a flat "where things live" lookup.
 
 ## The crates
 
-Khora is **17 workspace members**: 14 `khora-*` plus `sandbox`, `xtask`, and
+Khora is **16 workspace members**: 13 `khora-*` plus `sandbox`, `xtask`, and
 `hub`. `khora-macros` is a fifteenth `khora-*` crate but a *path* crate — a
 dependency of `khora-data` and `khora-script`, not a workspace member.
 
@@ -24,7 +24,6 @@ dependency of `khora-data` and `khora-script`, not a workspace member.
 | `khora-infra` | Concrete backends, one subfolder each: wgpu, Rapier3D, an in-house physics backend, CPAL, Taffy, winit, native telemetry. Owns the `.wgsl` files and their composition. |
 | `khora-io` | Asset service, VFS, serialization service, pack/file loaders, hot-reload watchers. |
 | `khora-telemetry` | Metrics, monitors, telemetry events. |
-| `khora-plugins` | Plugin loading and registration. |
 | `khora-sdk` | The single public API for game developers (façade). |
 | `khora-tool-ui` | The first-party **tool** design system: brand palette and shared widgets. Deliberately outside the SDK, so a game built on Khora never compiles the engine vendor's brand. Used by `khora-editor` and `hub`. |
 | `khora-editor` | The editor application built on the SDK (panels, gizmos, dock). |
@@ -45,7 +44,7 @@ depend on anything above it and nothing below:
 | middle | `khora-io`, `khora-lanes` | core, data, script, telemetry / core, data, io, script |
 | strategists | `khora-agents` | everything above, **including `khora-infra`** |
 | façade | `khora-sdk` | agents, control, core, data, infra, io, lanes, telemetry |
-| apps | `khora-editor`, `hub`, `khora-runtime`, `khora-plugins` | sdk (+ `tool-ui` for editor and hub) |
+| apps | `khora-editor`, `hub`, `khora-runtime` | sdk (+ `tool-ui` for editor and hub) |
 
 Two are easy to get backwards, and older revisions of this page had them so:
 **`khora-agents` depends on `khora-infra`**, not the reverse — a strategist
@@ -70,7 +69,6 @@ graph TD
     ED[khora-editor]
     HUB[hub]
     RT[khora-runtime]
-    PLUG[khora-plugins]
 
     DATA --> CORE
     DATA --> MACRO
@@ -101,7 +99,6 @@ graph TD
     HUB --> SDK
     HUB --> TOOLUI
     RT --> SDK
-    PLUG --> SDK
 ```
 
 Abstract traits live in `khora-core`; concrete backends live in per-backend

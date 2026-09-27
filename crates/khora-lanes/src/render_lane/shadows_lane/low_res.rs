@@ -17,8 +17,8 @@
 //! Same algorithm as [`super::StandardShadowsLane`] (CSM / spot / cube
 //! point), but with smaller atlases — quarter the per-side resolution
 //! everywhere. Same output contract: produces a
-//! [`khora_data::render::ShadowGpuBindings`] bundle plus
-//! [`khora_data::render::ShadowEntries`]; lit consumer lanes never need
+//! [`khora_core::renderer::api::shadow::ShadowGpuBindings`] bundle plus
+//! [`khora_core::renderer::api::shadow::ShadowEntries`]; lit consumer lanes never need
 //! to know which strategy ran.
 //!
 //! `ShadowAgent` selects this lane when GORNA reports a tight time /

@@ -204,7 +204,7 @@ impl SimpleUnlitLane {
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *crate::render_lane::util::lock::mutex_lock_render(
+        *khora_core::lane::lock::mutex_lock_render(
             &self.camera_ring,
             "SimpleUnlit init.camera_ring",
         )? = Some(camera_ring);
@@ -221,7 +221,7 @@ impl SimpleUnlitLane {
             )
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *crate::render_lane::util::lock::mutex_lock_render(
+        *khora_core::lane::lock::mutex_lock_render(
             &self.model_ring,
             "SimpleUnlit init.model_ring",
         )? = Some(model_ring);
@@ -238,7 +238,7 @@ impl SimpleUnlitLane {
             )
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        *crate::render_lane::util::lock::mutex_lock_render(
+        *khora_core::lane::lock::mutex_lock_render(
             &self.material_ring,
             "SimpleUnlit init.material_ring",
         )? = Some(material_ring);

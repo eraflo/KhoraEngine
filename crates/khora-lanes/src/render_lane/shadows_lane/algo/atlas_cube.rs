@@ -42,7 +42,7 @@ pub struct AtlasCube {
     /// Underlying 2D-array texture id.
     pub texture: RwLock<Option<TextureId>>,
     /// `CubeArray` view bound by the lit shader at
-    /// [`khora_data::render::shadow_bindings::binding::ATLAS_CUBE`].
+    /// [`khora_core::renderer::api::shadow::bindings::binding::ATLAS_CUBE`].
     pub view: RwLock<Option<TextureViewId>>,
     /// Per-face 2D views used as depth render targets when rasterising
     /// each cube face. Indexed `cube_layer * 6 + face_index` (with
@@ -71,7 +71,7 @@ impl AtlasCube {
         max_cubes: u32,
         label: &str,
     ) -> Result<(), RenderError> {
-        use crate::render_lane::util::lock::write_lock_render;
+        use khora_core::lane::lock::write_lock_render;
 
         let cube_layers = max_cubes * 6;
 

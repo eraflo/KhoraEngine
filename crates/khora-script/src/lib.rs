@@ -62,6 +62,7 @@ pub mod lifecycle;
 pub mod modules;
 pub mod native;
 pub mod parser;
+pub mod pipeline;
 pub mod reload;
 pub mod types;
 pub mod vm;
@@ -84,5 +85,6 @@ pub use native::{
     Host, NativeContext, NativeError, NativeFn, NativeRegistry, NativeTy, ScriptType,
 };
 pub use parser::{parse, Parsed};
+pub use pipeline::{compile_module, CompileOutcome};
 pub use types::{check, Checked, Ty};
 pub use vm::{Function, Instruction, Machine, Program, Run, Suspension, Value};

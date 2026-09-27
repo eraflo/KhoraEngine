@@ -9,11 +9,11 @@
 //! Boot — wires the `HubApp` into the engine's `App` runtime, sets up
 //! the window icon, and surfaces the per-frame `update` impl.
 
+use crate::HubApp;
 use crate::async_pump::pump_async_messages;
 use crate::chrome::{STATUS_HEIGHT, TOPBAR_HEIGHT, paint_banner, show_status_bar, show_topbar};
 use crate::screens;
 use crate::state::Screen;
-use crate::{HubApp, fonts};
 use khora_sdk::tool_ui::{
     self as kui, App, AppContext, UiBuilder, WindowConfigInput, WindowIconInput,
 };
@@ -21,7 +21,7 @@ use khora_tool_ui::khora_dark;
 
 impl App for HubApp {
     fn on_start(&mut self, ctx: &mut dyn AppContext) {
-        ctx.set_fonts(&fonts::build_pack());
+        ctx.set_fonts(&khora_tool_ui::fonts::brand_fonts());
         // The one canonical Khora theme, shared with the editor.
         ctx.set_theme(&khora_dark());
     }
@@ -66,27 +66,13 @@ impl App for HubApp {
     }
 }
 
-/// Loads the embedded Khora logo and converts it to a [`WindowIconInput`].
+/// The Khora logo as the hub's window icon.
 fn load_logo_icon() -> WindowIconInput {
-    let png_bytes = include_bytes!("../assets/khora_small_logo.png");
-    match image::load_from_memory(png_bytes) {
-        Ok(img) => {
-            let rgba_img = img.to_rgba8();
-            let (w, h) = rgba_img.dimensions();
-            WindowIconInput {
-                rgba: rgba_img.into_raw(),
-                width: w,
-                height: h,
-            }
-        }
-        Err(e) => {
-            log::warn!("Failed to decode logo PNG: {}", e);
-            WindowIconInput {
-                rgba: vec![0, 0, 0, 0],
-                width: 1,
-                height: 1,
-            }
-        }
+    let logo = khora_tool_ui::logo::logo_icon();
+    WindowIconInput {
+        rgba: logo.rgba,
+        width: logo.width,
+        height: logo.height,
     }
 }
 

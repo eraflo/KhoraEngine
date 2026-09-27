@@ -79,11 +79,8 @@ fn is_copy<T: Copy>() {}
 fn is_debug<T: std::fmt::Debug>() {}
 fn is_default<T: Default>() {}
 fn is_deserialize_owned<T: serde::de::DeserializeOwned>() {}
-fn is_display<T: std::fmt::Display>() {}
 fn is_eq<T: Eq>() {}
-fn is_error<T: std::error::Error>() {}
 fn is_gltf_resource_resolver<T: khora_io::asset::decoders::mesh::GltfResourceResolver>() {}
-fn is_hash<T: std::hash::Hash>() {}
 fn is_partial_eq<T: PartialEq>() {}
 fn is_serialize<T: serde::Serialize>() {}
 fn is_source_loader<T: khora_script::SourceLoader>() {}
@@ -112,7 +109,6 @@ mod every_pub_mod {
     use khora_io::asset::shader as _;
     use khora_io::asset::texture as _;
     use khora_io::asset_resolver as _;
-    use khora_io::sandbox_fs as _;
     use khora_io::script_compile as _;
     use khora_io::script_hot_reload as _;
     use khora_io::script_mirror as _;
@@ -160,30 +156,6 @@ fn pack_progress_variants(x: &khora_io::asset::PackProgress) {
         khora_io::asset::PackProgress::Finished { .. } => {}
         khora_io::asset::PackProgress::Failed { .. } => {}
     }
-}
-
-fn fs_error_variants(x: &khora_io::sandbox_fs::FsError) {
-    match x {
-        khora_io::sandbox_fs::FsError::NoRoot(..) => {}
-        khora_io::sandbox_fs::FsError::UnknownRoot(..) => {}
-        khora_io::sandbox_fs::FsError::Absolute(..) => {}
-        khora_io::sandbox_fs::FsError::Escapes(..) => {}
-        khora_io::sandbox_fs::FsError::ReadOnly(..) => {}
-        khora_io::sandbox_fs::FsError::NotFound(..) => {}
-        khora_io::sandbox_fs::FsError::Io(..) => {}
-    }
-}
-
-fn root_variants(x: &khora_io::sandbox_fs::Root) {
-    match x {
-        khora_io::sandbox_fs::Root::Save => {}
-        khora_io::sandbox_fs::Root::Config => {}
-        khora_io::sandbox_fs::Root::Data => {}
-    }
-}
-
-fn compiled_fields(x: &khora_io::script_compile::Compiled) {
-    let _ = (&x.program, &x.diagnostics);
 }
 
 fn serialization_service_error_variants(x: &khora_io::serialization::SerializationServiceError) {
@@ -293,6 +265,14 @@ fn module_asset_paths_still_resolve() {
         khora_io::asset::decoders::audio::WavDecoder,
     ) = khora_io::asset::AssetService::register_decoder::<khora_data::assets::SoundData>;
     let _ = khora_io::asset::AssetService::register_inventory_decoders;
+    let _: fn(
+        &std::path::Path,
+        &khora_io::asset::AssetIdRegistry,
+        std::sync::Arc<khora_telemetry::MetricsRegistry>,
+    ) -> anyhow::Result<khora_io::asset::AssetService> =
+        khora_io::asset::AssetService::open_loose_files;
+    let _: fn(&mut khora_io::asset::AssetService, &std::path::Path) =
+        khora_io::asset::AssetService::register_default_decoders;
     let _ = khora_io::asset::AssetService::load::<khora_data::assets::SoundData>;
     let _ = khora_io::asset::AssetService::load_raw;
     let _ = khora_io::asset::AssetService::invalidate;
@@ -593,22 +573,6 @@ fn module_asset_paths_still_resolve() {
     is_clone::<khora_io::asset::decoders::script::ScriptDecoder>();
     is_default::<khora_io::asset::decoders::script::ScriptDecoder>();
     is_asset_decoder_script_module::<khora_io::asset::decoders::script::ScriptDecoder>();
-    let _ = khora_io::asset::decoders::script::imports_of;
-    let _ = khora_io::asset::decoders::imports_of;
-    let _ = khora_io::asset::script::imports_of;
-    let _ = khora_io::asset::imports_of;
-    same_item(
-        &khora_io::asset::decoders::imports_of,
-        &khora_io::asset::decoders::script::imports_of,
-    );
-    same_item(
-        &khora_io::asset::script::imports_of,
-        &khora_io::asset::decoders::script::imports_of,
-    );
-    same_item(
-        &khora_io::asset::imports_of,
-        &khora_io::asset::decoders::script::imports_of,
-    );
     let _ = type_name::<khora_io::asset::decoders::shader::ShaderDecoder>();
     let _ = type_name::<khora_io::asset::decoders::ShaderDecoder>();
     let _ = type_name::<khora_io::asset::shader::ShaderDecoder>();
@@ -653,65 +617,13 @@ fn module_asset_paths_still_resolve() {
 }
 
 #[test]
-fn module_sandbox_fs_paths_still_resolve() {
-    let _ = type_name::<khora_io::sandbox_fs::FsError>();
-    let _ = fs_error_variants as fn(&khora_io::sandbox_fs::FsError);
-    is_debug::<khora_io::sandbox_fs::FsError>();
-    is_clone::<khora_io::sandbox_fs::FsError>();
-    is_partial_eq::<khora_io::sandbox_fs::FsError>();
-    is_eq::<khora_io::sandbox_fs::FsError>();
-    is_display::<khora_io::sandbox_fs::FsError>();
-    is_error::<khora_io::sandbox_fs::FsError>();
-    let _ = type_name::<khora_io::sandbox_fs::Root>();
-    let _ = root_variants as fn(&khora_io::sandbox_fs::Root);
-    let _ = khora_io::sandbox_fs::Root::scheme;
-    let _ = khora_io::sandbox_fs::Root::from_scheme;
-    let _ = khora_io::sandbox_fs::Root::is_writable;
-    is_debug::<khora_io::sandbox_fs::Root>();
-    is_clone::<khora_io::sandbox_fs::Root>();
-    is_copy::<khora_io::sandbox_fs::Root>();
-    is_partial_eq::<khora_io::sandbox_fs::Root>();
-    is_eq::<khora_io::sandbox_fs::Root>();
-    is_hash::<khora_io::sandbox_fs::Root>();
-    is_display::<khora_io::sandbox_fs::Root>();
-    let _ = type_name::<khora_io::sandbox_fs::SandboxFs>();
-    #[allow(clippy::type_complexity)]
-    let _: fn(
-        &'static std::path::Path,
-        &'static std::path::Path,
-        &'static std::path::Path,
-    ) -> Result<khora_io::sandbox_fs::SandboxFs, khora_io::sandbox_fs::FsError> =
-        khora_io::sandbox_fs::SandboxFs::new;
-    let _ = khora_io::sandbox_fs::SandboxFs::root_path;
-    let _ = khora_io::sandbox_fs::SandboxFs::resolve;
-    let _ = khora_io::sandbox_fs::SandboxFs::resolve_for_write;
-    let _ = khora_io::sandbox_fs::SandboxFs::read;
-    let _ = khora_io::sandbox_fs::SandboxFs::read_to_string;
-    let _: fn(
-        &khora_io::sandbox_fs::SandboxFs,
-        &str,
-        &'static [u8],
-    ) -> Result<(), khora_io::sandbox_fs::FsError> = khora_io::sandbox_fs::SandboxFs::write;
-    let _ = khora_io::sandbox_fs::SandboxFs::exists;
-    let _ = khora_io::sandbox_fs::SandboxFs::delete;
-    let _ = khora_io::sandbox_fs::SandboxFs::list;
-    is_debug::<khora_io::sandbox_fs::SandboxFs>();
-    is_clone::<khora_io::sandbox_fs::SandboxFs>();
-}
-
-#[test]
 fn module_script_compile_paths_still_resolve() {
-    let _ = type_name::<khora_io::script_compile::Compiled>();
-    let _ = compiled_fields as fn(&khora_io::script_compile::Compiled);
-    let _ = khora_io::script_compile::Compiled::succeeded;
-    is_debug::<khora_io::script_compile::Compiled>();
     let _ = type_name::<khora_io::script_compile::DiskLoader>();
     let _: fn(std::path::PathBuf) -> khora_io::script_compile::DiskLoader =
         khora_io::script_compile::DiskLoader::new;
     is_debug::<khora_io::script_compile::DiskLoader>();
     is_clone::<khora_io::script_compile::DiskLoader>();
     is_source_loader::<khora_io::script_compile::DiskLoader>();
-    let _ = khora_io::script_compile::compile_module;
 }
 
 #[test]
@@ -764,9 +676,8 @@ fn module_vfs_paths_still_resolve() {
 
 // ---------------------------------------------------------------------------
 // Paths other crates of the workspace spell today (`crates/`, `hub/`,
-// `examples/`, `xtask/`; brace imports expanded; `khora_sdk::khora_io::…`
-// mapped onto the `khora_io` path the SDK re-exports). The trailing comment
-// names the users. Items, modules and enum variants are imported;
+// `examples/`, `xtask/`; brace imports expanded). The trailing comment names
+// the users. Items, modules and enum variants are imported;
 // associated items are named in the test below.
 // ---------------------------------------------------------------------------
 
@@ -796,7 +707,6 @@ mod paths_used_by_other_crates {
     use khora_io::asset::PACK_FORMAT_VERSION as _; // khora-sdk
     use khora_io::asset::PACK_HEADER_SIZE as _; // khora-sdk
     use khora_io::asset::PACK_MAGIC as _; // khora-sdk
-    use khora_io::script_compile::compile_module as _; // khora-agents
     use khora_io::script_compile::DiskLoader as _; // khora-agents
     use khora_io::script_hot_reload::load_all as _; // khora-sdk
     use khora_io::script_hot_reload::reload_channel as _; // khora-agents, khora-sdk

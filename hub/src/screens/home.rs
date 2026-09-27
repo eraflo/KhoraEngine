@@ -19,6 +19,7 @@ use crate::config::RecentProject;
 use crate::ui::widgets::format_ts;
 use khora_sdk::tool_ui::{FontFamilyHint, Icon, Interaction, UiBuilder, UiTheme};
 use khora_tool_ui::brand::khora_dark;
+use khora_tool_ui::widgets::paint::eyebrow;
 use khora_tool_ui::widgets::{
     self, Button, ButtonKind, Tone, button, chip, diamond, empty_state, icon_button, nav_item,
     paint::{display, fill_stroke, mono, text, vertical_gradient},
@@ -137,16 +138,6 @@ fn show_sidebar(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         crate::AuthState::Disconnected => ("not connected".to_owned(), Tone::Neutral),
     };
     chip(ui, &t, [x, gh_y + 6.0, w, 18.0], &label, tone, true);
-}
-
-fn eyebrow(ui: &mut dyn UiBuilder, t: &UiTheme, pos: [f32; 2], label: &str) {
-    mono(
-        ui,
-        pos,
-        &label.to_uppercase(),
-        t.font_size_caption - 1.0,
-        t.text_disabled,
-    );
 }
 
 // ── Main ────────────────────────────────────────────────

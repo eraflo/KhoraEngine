@@ -175,3 +175,13 @@ impl<A: EngineApp> Default for EngineCore<A> {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// The handle the winit runner inserts as a resource is the one games and
+    /// the editor name through the public `PRIMARY_VIEWPORT`.
+    #[test]
+    fn the_runner_viewport_is_the_public_primary_viewport() {
+        assert_eq!(super::PRIMARY_VIEWPORT, crate::PRIMARY_VIEWPORT);
+    }
+}

@@ -37,7 +37,8 @@ use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::script::{CommandBuffer, WorldCommand};
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_io::script_compile::{compile_module, DiskLoader};
+use khora_io::script_compile::DiskLoader;
+use khora_script::compile_module;
 use khora_script::reload::ScriptReload;
 
 const MODULE: &str = "hover.erg";

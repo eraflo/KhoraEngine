@@ -28,8 +28,6 @@ mod drop;
 mod panel;
 mod rows;
 
-pub(crate) use drop::{payload_is_entity, unpack_entity};
-
 const ROW_HEIGHT: f32 = 26.0;
 
 const HEADER_HEIGHT: f32 = 34.0;

@@ -23,9 +23,9 @@ use std::sync::{Arc, Mutex};
 use khora_sdk::editor_ui::*;
 use khora_sdk::KeyCode;
 
-use crate::widgets::brand::paint_diamond_filled;
 use crate::widgets::chrome::paint_kbd_chip;
-use crate::widgets::paint::{paint_icon, paint_text_size, with_alpha};
+use khora_tool_ui::widgets::paint;
+use khora_tool_ui::widgets::with_alpha;
 
 /// A single palette command.
 #[derive(Debug, Clone)]
@@ -247,11 +247,10 @@ impl EditorPanel for CommandPalettePanel {
         let input_y = modal_y + (header_h - 28.0) * 0.5;
 
         // Diamond
-        paint_diamond_filled(
+        khora_tool_ui::widgets::diamond(
             ui,
-            modal_x + pad + 9.0,
-            modal_y + header_h * 0.5,
-            7.0,
+            [modal_x + pad + 9.0, modal_y + header_h * 0.5],
+            7.0 * 2.0,
             theme.primary,
         );
 
@@ -439,7 +438,7 @@ impl EditorPanel for CommandPalettePanel {
                     );
                 }
 
-                paint_icon(
+                paint::icon(
                     ui,
                     [row_x + 15.0, row_y + 11.0],
                     cmd.icon,
@@ -452,7 +451,7 @@ impl EditorPanel for CommandPalettePanel {
                 );
 
                 // Label + desc
-                paint_text_size(ui, [row_x + 44.0, row_y + 8.0], cmd.label, 13.0, theme.text);
+                paint::text(ui, [row_x + 44.0, row_y + 8.0], cmd.label, 13.0, theme.text);
                 ui.paint_text_styled(
                     [row_x + row_w - 8.0, row_y + 11.0],
                     cmd.description,
@@ -500,7 +499,7 @@ impl EditorPanel for CommandPalettePanel {
         let mut fx = modal_x + pad;
         for (chip, text) in [("↑↓", " Navigate"), ("↵", " Select"), ("esc", " Close")] {
             let after = paint_kbd_chip(ui, [fx, footer_y + 14.0], chip, &theme);
-            paint_text_size(
+            paint::text(
                 ui,
                 [after + 4.0, footer_y + 14.0],
                 text,

@@ -41,15 +41,6 @@ pub use grid::GridConfig;
 pub use wireframe::WireframeConfig;
 pub use world::{ExtractedLight, ExtractedMesh, ExtractedView, RenderWorld};
 
-// Shadow contract lives in `khora_core::renderer::api::shadow` now.
-// Re-export at this path for backwards-compatibility during the
-// migration; once every consumer points at the new path, these
-// aliases can be deleted.
-pub use khora_core::renderer::api::shadow::{
-    bindings as shadow_bindings, fill_shadow_bind_group_entries, shadow_bind_group_layout_entries,
-    ShadowEntries, ShadowEntry, ShadowFrame, ShadowGpuBindings,
-};
-
 use khora_core::{
     math::{Mat4, Vec3},
     renderer::api::resource::ViewInfo,

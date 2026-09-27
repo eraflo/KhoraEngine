@@ -18,8 +18,8 @@ use khora_sdk::editor_ui::*;
 
 use super::{AgentSnapshot, ControlPlanePanel, AGENT_ROW_HEIGHT};
 use crate::widgets::chrome::{paint_panel_header, paint_status_dot, panel_tab};
-use crate::widgets::controls::paint_meter_bar;
-use crate::widgets::paint::{paint_icon, paint_text_size, with_alpha};
+use khora_tool_ui::widgets::paint;
+use khora_tool_ui::widgets::with_alpha;
 use khora_tool_ui::widgets::Health;
 
 impl ControlPlanePanel {
@@ -153,11 +153,11 @@ impl ControlPlanePanel {
 
         // Icon box
         ui.paint_rect_filled([x + 8.0, y + 8.0], [22.0, 22.0], theme.surface_active, 4.0);
-        paint_icon(ui, [x + 12.0, y + 12.0], Icon::Cpu, 14.0, theme.primary);
+        paint::icon(ui, [x + 12.0, y + 12.0], Icon::Cpu, 14.0, theme.primary);
 
         // Top row: name + importance badge + status dot
         let name = agent.name();
-        paint_text_size(ui, [x + 38.0, y + 7.0], &name, 12.5, theme.text);
+        paint::text(ui, [x + 38.0, y + 7.0], &name, 12.5, theme.text);
         // Stalled indicator
         if agent.status.is_stalled {
             paint_status_dot(ui, [x + w - 50.0, y + 14.0], theme.error);
@@ -194,7 +194,13 @@ impl ControlPlanePanel {
         // "healthy / degraded" label can never disagree about the same agent.
         let health = agent.status.health_score.clamp(0.0, 1.0);
         let bar_color = Health::from_ratio(health).color(theme);
-        paint_meter_bar(ui, [x + 38.0, y + 40.0], w - 56.0, health, bar_color, theme);
+        khora_tool_ui::widgets::meter_bar(
+            ui,
+            theme,
+            [x + 38.0, y + 40.0, w - 56.0, 3.0],
+            health,
+            bar_color,
+        );
 
         // Foot: phase + priority
         ui.paint_text_styled(

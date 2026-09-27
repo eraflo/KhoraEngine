@@ -22,8 +22,6 @@
 
 pub mod brand;
 pub mod chrome;
-pub mod controls;
 pub mod enum_variants;
 pub mod inspector;
-pub mod paint;
 pub mod tile;

@@ -60,7 +60,7 @@ use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 use khora_script::reload::ScriptReload;
 
-use crate::asset::decoders::script::imports_of;
+use khora_script::modules::{imports_of, EXTENSION};
 
 /// Where this pump leaves what it recompiled, for the scripting agent to drain.
 ///
@@ -83,11 +83,9 @@ pub fn reload_channel() -> PendingReloads {
     Channel::bounded(RELOAD_BACKLOG, WhenFull::DropOldest)
 }
 use crate::asset::AssetWatcher;
-use crate::script_compile::{compile_module, DiskLoader};
+use crate::script_compile::DiskLoader;
 use crate::script_mirror::PreludeLoader;
-
-/// The extension the pump reacts to.
-const ERGON_EXTENSION: &str = ".erg";
+use khora_script::compile_module;
 
 /// The script root as a directory name, relative to the assets directory.
 ///
@@ -101,7 +99,10 @@ fn script_root_of(rel_path: &str) -> &str {
 
 /// The module path an `.erg` file is known by: its path under the script root.
 fn module_path_of(rel_path: &str) -> Option<&str> {
-    if !rel_path.ends_with(ERGON_EXTENSION) {
+    if !rel_path
+        .strip_suffix(EXTENSION)
+        .is_some_and(|stem| stem.ends_with('.'))
+    {
         return None;
     }
     let root = script_root_of(rel_path);
@@ -197,7 +198,7 @@ fn modules_under(root: &Path) -> BTreeMap<String, Vec<String>> {
                 && entry
                     .path()
                     .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("erg"))
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case(EXTENSION))
         })
         .filter_map(|entry| {
             let relative = entry.path().strip_prefix(root).ok()?;

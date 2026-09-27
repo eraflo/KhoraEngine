@@ -1,4 +1,4 @@
-# Editor brand fonts
+# Brand fonts
 
 This directory holds the typefaces used by Khora's "Deep Navy / Silver" brand
 theme, shared by the editor and the hub:
@@ -7,9 +7,6 @@ theme, shared by the editor and the hub:
 - **Fraunces** — display serif for screen headings and hero numerals
   (Undercase Type). 72pt optical instances, Regular + SemiBold.
 - **Lucide** — icon font reached via `FontFamilyHint::Icons`.
-
-If any file is missing the app still works — egui falls back to its built-in
-fonts, Fraunces falls back to Geist, and missing icons render as blank glyphs.
 
 ## Expected files
 
@@ -21,11 +18,9 @@ Lucide.ttf
 LICENSE-Geist.txt  LICENSE-Fraunces.txt  LICENSE-Lucide.txt
 ```
 
-They are loaded by `crates/khora-editor/src/fonts.rs` through the `FileLoader`
-asset I/O layer, then handed to the egui shell as a `FontPack`. The same set
-also lives under `hub/assets/fonts/` for the standalone launcher (the hub
-reaches the shared brand tokens through `khora-sdk`, but still bundles its own
-copy of the font files).
+They are embedded in the binary by `crates/khora-tool-ui/src/fonts.rs`
+(`include_bytes!`) and handed to the egui shell as a `FontPack`, so the editor,
+the hub, and any other Khora tool get them wherever the binary runs.
 
 ## Licenses — all SIL Open Font License 1.1
 
@@ -35,18 +30,16 @@ copy of the font files).
 | Fraunces | <https://github.com/undercasetype/Fraunces> | `LICENSE-Fraunces.txt` |
 | Lucide | <https://github.com/lucide-icons/lucide> | `LICENSE-Lucide.txt` |
 
-If you redistribute the app with these fonts bundled, keep the matching
-`LICENSE-*.txt` alongside them.
+If you redistribute a tool, ship the matching `LICENSE-*.txt` with it.
 
 ## How to fetch Fraunces (macOS / Linux / Git Bash, from the repo root)
 
 ```bash
 BASE="https://raw.githubusercontent.com/undercasetype/Fraunces/master"
-for DST in crates/khora-editor/assets/fonts hub/assets/fonts; do
-  curl -sL -o "$DST/Fraunces-Regular.ttf"  "$BASE/fonts/ttf/Fraunces72pt-Regular.ttf"
-  curl -sL -o "$DST/Fraunces-SemiBold.ttf" "$BASE/fonts/ttf/Fraunces72pt-SemiBold.ttf"
-  curl -sL -o "$DST/LICENSE-Fraunces.txt"  "$BASE/OFL.txt"
-done
+DST=crates/khora-tool-ui/assets/fonts
+curl -sL -o "$DST/Fraunces-Regular.ttf"  "$BASE/fonts/ttf/Fraunces72pt-Regular.ttf"
+curl -sL -o "$DST/Fraunces-SemiBold.ttf" "$BASE/fonts/ttf/Fraunces72pt-SemiBold.ttf"
+curl -sL -o "$DST/LICENSE-Fraunces.txt"  "$BASE/OFL.txt"
 ```
 
 Geist and Lucide are already vendored; see this repo's git history for their

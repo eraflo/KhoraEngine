@@ -22,6 +22,7 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+use khora_core::renderer::api::shadow::ShadowEntry;
 use khora_core::renderer::api::{
     command::BindGroupLayoutId,
     pipeline::RenderPipelineId,
@@ -31,7 +32,7 @@ use khora_core::renderer::api::{
 };
 use khora_core::renderer::{traits::CommandEncoder, GraphicsDevice};
 use khora_data::assets::Assets;
-use khora_data::render::{RenderWorld, ShadowEntry};
+use khora_data::render::RenderWorld;
 
 use super::atlas_2d::Atlas2D;
 use super::atlas_cube::AtlasCube;
@@ -101,7 +102,7 @@ impl ShadowsLaneState {
         cube_max_lights: u32,
         label_prefix: &str,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
-        use crate::render_lane::util::lock::write_lock_render;
+        use khora_core::lane::lock::write_lock_render;
         use khora_core::renderer::api::pipeline::enums::CompareFunction;
         use khora_core::renderer::api::resource::{
             AddressMode, FilterMode, MipmapFilterMode, SamplerDescriptor,
@@ -369,8 +370,8 @@ impl ShadowsLaneState {
 
     /// Publishes the shadow bindings (per-frame snapshot of atlas
     /// resource ids) into the lane context. Lit consumer lanes read
-    /// this opaquely via [`khora_data::render::ShadowGpuBindings`].
-    pub fn shadow_bindings(&self) -> Option<khora_data::render::ShadowGpuBindings> {
+    /// this opaquely via [`khora_core::renderer::api::shadow::ShadowGpuBindings`].
+    pub fn shadow_bindings(&self) -> Option<khora_core::renderer::api::shadow::ShadowGpuBindings> {
         super::bindings::build_bindings(
             &self.atlas_2d,
             &self.atlas_cube,

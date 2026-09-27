@@ -99,10 +99,7 @@ impl EditorPanel for ViewportPanel {
                     // epoch stamp is only meaningful against the same read of
                     // `asset_entries` the index will address.
                     let entry = self.state.lock().ok().and_then(|s| {
-                        let idx = crate::panels::asset_browser::unpack_asset_drag(
-                            payload,
-                            s.asset_epoch,
-                        )?;
+                        let idx = crate::drag_payload::unpack_asset_drag(payload, s.asset_epoch)?;
                         s.asset_entries.get(idx as usize).cloned()
                     });
                     if let Some(entry) = entry {
@@ -166,13 +163,13 @@ impl ViewportPanel {
         ui.paint_rect_filled(
             [pill_x, pill_y],
             [total_w, pill_h],
-            crate::widgets::paint::with_alpha(theme.surface_elevated, 0.92),
+            khora_tool_ui::widgets::with_alpha(theme.surface_elevated, 0.92),
             999.0,
         );
         ui.paint_rect_stroke(
             [pill_x, pill_y],
             [total_w, pill_h],
-            crate::widgets::paint::with_alpha(theme.separator, 0.6),
+            khora_tool_ui::widgets::with_alpha(theme.separator, 0.6),
             999.0,
             1.0,
         );
@@ -190,7 +187,7 @@ impl ViewportPanel {
             } else {
                 theme.text_dim
             };
-            crate::widgets::paint::paint_icon(
+            khora_tool_ui::widgets::paint::icon(
                 ui,
                 [r[0] + 6.0, r[1] + 6.0],
                 *icon,
@@ -371,13 +368,13 @@ impl ViewportPanel {
         ui.paint_rect_filled(
             [card_x, card_y],
             [card_w, card_h],
-            crate::widgets::paint::with_alpha(theme.surface_elevated, 0.85),
+            khora_tool_ui::widgets::with_alpha(theme.surface_elevated, 0.85),
             theme.radius_lg,
         );
         ui.paint_rect_stroke(
             [card_x, card_y],
             [card_w, card_h],
-            crate::widgets::paint::with_alpha(theme.separator, 0.55),
+            khora_tool_ui::widgets::with_alpha(theme.separator, 0.55),
             theme.radius_lg,
             1.0,
         );
@@ -472,7 +469,7 @@ impl ViewportPanel {
         ui.paint_rect_stroke(
             [viewport_min[0], viewport_min[1]],
             viewport_size,
-            crate::widgets::paint::with_alpha(color, 0.85),
+            khora_tool_ui::widgets::with_alpha(color, 0.85),
             0.0,
             stroke_w,
         );
@@ -485,7 +482,7 @@ impl ViewportPanel {
         ui.paint_rect_filled(
             [lx, ly],
             [label_w, label_h],
-            crate::widgets::paint::with_alpha(color, 0.85),
+            khora_tool_ui::widgets::with_alpha(color, 0.85),
             999.0,
         );
         ui.paint_circle_filled([lx + 10.0, ly + label_h * 0.5], 3.0, theme.background);
@@ -622,7 +619,7 @@ impl ViewportPanel {
             cx,
             cy,
             size,
-            crate::widgets::paint::with_alpha(theme.primary, 0.06),
+            khora_tool_ui::widgets::with_alpha(theme.primary, 0.06),
             1.5,
         );
     }

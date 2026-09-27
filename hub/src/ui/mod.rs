@@ -15,5 +15,4 @@
 //! What remains is hub-specific: loading the font files, and the handful of
 //! helpers that format the hub's own data.
 
-pub mod fonts;
 pub mod widgets;

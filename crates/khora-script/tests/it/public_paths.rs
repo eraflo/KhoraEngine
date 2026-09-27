@@ -99,6 +99,7 @@ mod every_pub_mod {
     use khora_script::native::ty as _;
     use khora_script::native::world as _;
     use khora_script::parser as _;
+    use khora_script::pipeline as _;
     use khora_script::reload as _;
     use khora_script::types as _;
     use khora_script::types::expr as _;
@@ -509,6 +510,11 @@ fn resolved_fields(x: &khora_script::modules::Resolved) {
 
 fn resolved_module_fields(x: &khora_script::modules::ResolvedModule) {
     let _ = (&x.path, &x.source, &x.module);
+}
+
+fn compile_outcome_fields(x: &khora_script::pipeline::CompileOutcome) {
+    let _: &Option<khora_script::vm::Program> = &x.program;
+    let _: &Vec<khora_script::diagnostics::Diagnostic> = &x.diagnostics;
 }
 
 fn path_error_variants(x: &khora_script::modules::path::PathError) {
@@ -1565,6 +1571,13 @@ fn module_modules_paths_still_resolve() {
         &khora_script::modules::normalise,
         &khora_script::modules::path::normalise,
     );
+    let _: &str = khora_script::modules::path::EXTENSION;
+    let _: &str = khora_script::modules::EXTENSION;
+    assert_eq!(
+        khora_script::modules::EXTENSION,
+        khora_script::modules::path::EXTENSION
+    );
+    let _: fn(&str) -> Vec<String> = khora_script::modules::imports_of;
     let _ = khora_script::modules::report_name_clashes;
     let _ = khora_script::modules::resolve;
     let _ = khora_script::resolve;
@@ -1713,6 +1726,28 @@ fn module_parser_paths_still_resolve() {
     let _ = khora_script::parser::parse;
     let _ = khora_script::parse;
     same_item(&khora_script::parse, &khora_script::parser::parse);
+}
+
+#[test]
+fn module_pipeline_paths_still_resolve() {
+    let _ = type_name::<khora_script::pipeline::CompileOutcome>();
+    let _ = type_name::<khora_script::CompileOutcome>();
+    same_type(
+        PhantomData::<khora_script::CompileOutcome>,
+        PhantomData::<khora_script::pipeline::CompileOutcome>,
+    );
+    let _ = compile_outcome_fields as fn(&khora_script::pipeline::CompileOutcome);
+    let _ = khora_script::pipeline::CompileOutcome::succeeded;
+    is_debug::<khora_script::pipeline::CompileOutcome>();
+    let _: fn(
+        &dyn khora_script::modules::SourceLoader,
+        &str,
+    ) -> khora_script::pipeline::CompileOutcome = khora_script::pipeline::compile_module;
+    let _ = khora_script::compile_module;
+    same_item(
+        &khora_script::compile_module,
+        &khora_script::pipeline::compile_module,
+    );
 }
 
 #[test]
@@ -2116,42 +2151,40 @@ mod paths_used_by_other_crates {
     use khora_script::arena::Persisted as _; // khora-lanes
     use khora_script::arena::Persisted::Owned as _; // khora-lanes
     use khora_script::arena::PersistentStore as _; // khora-lanes
-    use khora_script::ast::Module as _; // khora-io
     use khora_script::bridge::from_persisted as _; // khora-lanes
     use khora_script::bridge::to_persisted as _; // khora-lanes
-    use khora_script::check as _; // hub, khora-agents, khora-io, khora-lanes
-    use khora_script::compile as _; // hub, khora-agents, khora-io, khora-lanes
-    use khora_script::diagnostics::has_errors as _; // khora-io
-    use khora_script::diagnostics::Diagnostic as _; // khora-io
+    use khora_script::check as _; // khora-agents, khora-lanes
+    use khora_script::compile as _; // khora-agents, khora-lanes
+    use khora_script::compile_module as _; // hub, khora-agents, khora-io
     use khora_script::dispatch::deliver as _; // khora-lanes
     use khora_script::dispatch::initialise as _; // khora-lanes
     use khora_script::dispatch::invoke as _; // khora-lanes
     use khora_script::dispatch::tick_timers as _; // khora-lanes
     use khora_script::dispatch::NotDelivered as _; // khora-lanes
     use khora_script::inventory::submit as _; // khora-macros (macro)
-    use khora_script::lex as _; // hub, khora-agents, khora-io, khora-lanes
+    use khora_script::lex as _; // khora-agents, khora-io, khora-lanes
     use khora_script::lifecycle as _; // khora-lanes
-    use khora_script::modules::report_name_clashes as _; // khora-io
+    use khora_script::modules::imports_of as _; // khora-io
     use khora_script::modules::SourceLoader as _; // khora-io
+    use khora_script::modules::EXTENSION as _; // khora-io
     use khora_script::native::Host as _; // khora-lanes
     use khora_script::native::NativeFn as _; // khora-macros
     use khora_script::native::NativeRegistration as _; // khora-macros
     use khora_script::native::ScriptType as _; // khora-macros
-    use khora_script::parse as _; // hub, khora-agents, khora-io, khora-lanes
+    use khora_script::parse as _; // khora-agents, khora-lanes
     use khora_script::reload::ScriptReload as _; // khora-agents, khora-io, khora-lanes
-    use khora_script::resolve as _; // khora-io
     use khora_script::vm::BehaviorLayout as _; // khora-lanes
     use khora_script::vm::Machine as _; // khora-lanes
-    use khora_script::vm::Program as _; // khora-agents, khora-io, khora-lanes
+    use khora_script::vm::Program as _; // khora-agents, khora-lanes
     use khora_script::vm::Run as _; // khora-lanes
     use khora_script::vm::TimerKind as _; // khora-lanes
     use khora_script::vm::TimerLayout as _; // khora-lanes
     use khora_script::vm::Value as _; // khora-lanes
     use khora_script::vm::Value::Unit as _; // khora-macros
+    use khora_script::CompileOutcome as _; // khora-io
     use khora_script::Diagnostic as _; // khora-io
-    use khora_script::MemoryLoader as _; // khora-io
+    use khora_script::MemoryLoader as _; // hub, khora-io
     use khora_script::Program as _; // khora-lanes
-    use khora_script::SourceLoader as _; // khora-io
     use khora_script::TokenKind as _; // khora-io
 }
 

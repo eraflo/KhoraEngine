@@ -32,7 +32,7 @@ pub const STRATEGY_NAME: &str = "StandardShadows";
 
 /// Full-quality shadows: 2048² × 4-layer 2D atlas + 512² × 4-cube cube
 /// atlas. Drives the canonical CSM / spot perspective / 6-pass point
-/// pipeline; publishes a [`khora_data::render::ShadowGpuBindings`]
+/// pipeline; publishes a [`khora_core::renderer::api::shadow::ShadowGpuBindings`]
 /// bundle plus per-light entries into the per-frame lane context.
 #[derive(Default)]
 pub struct StandardShadowsLane {

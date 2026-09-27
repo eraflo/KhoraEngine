@@ -296,6 +296,6 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la clÃ
 > + the `physics_world_writeback` DataSystem.
 
 ## Architecture decisions
-See [`decisions.md`](./decisions.md). Crate count is **17 workspace members** (14 `khora-*` + sandbox
+See [`decisions.md`](./decisions.md). Crate count is **16 workspace members** (13 `khora-*` + sandbox
 + xtask + hub, plus `khora-macros` as a non-member path crate);
 older notes saying 11/12 were stale and omitted `khora-runtime`.

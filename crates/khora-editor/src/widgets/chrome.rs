@@ -21,7 +21,8 @@ use khora_sdk::editor_ui::{FontFamilyHint, Icon, Interaction, TextAlign, UiBuild
 // `Interaction` is the return type of `paint_search_pill` and `panel_tab` (for
 // the click + width tuple). Kept explicit to make the public surface readable.
 
-use super::paint::{paint_icon, paint_text_size, with_alpha};
+use khora_tool_ui::widgets::paint;
+use khora_tool_ui::widgets::with_alpha;
 
 /// A keyboard-shortcut chip ("⌘", "K", "Esc"). Returns the right edge in
 /// screen-space.
@@ -81,7 +82,7 @@ pub fn paint_search_pill(
     );
 
     let cy = origin[1] + height * 0.5;
-    paint_icon(
+    paint::icon(
         ui,
         [origin[0] + 10.0, cy - 6.5],
         Icon::Search,
@@ -89,7 +90,7 @@ pub fn paint_search_pill(
         theme.text_dim,
     );
 
-    paint_text_size(
+    paint::text(
         ui,
         [
             origin[0] + 30.0,
@@ -146,7 +147,7 @@ pub fn panel_tab(
     }
 
     let text_color = if active { theme.text } else { theme.text_dim };
-    paint_text_size(
+    paint::text(
         ui,
         [
             origin[0] + pad_x,
@@ -199,7 +200,7 @@ pub fn paint_panel_header(
     theme: &UiTheme,
 ) {
     let [x, y, w, _] = panel_rect;
-    super::paint::paint_vertical_gradient(
+    khora_tool_ui::widgets::vertical_gradient(
         ui,
         [x, y, w, height],
         theme.surface_elevated,

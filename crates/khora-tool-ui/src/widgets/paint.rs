@@ -173,6 +173,18 @@ pub fn mono(ui: &mut dyn UiBuilder, pos: [f32; 2], s: &str, size: f32, color: Co
     );
 }
 
+/// Paints a section eyebrow at `pos`: a small uppercase monospace label, in the
+/// disabled text colour, that names the block below it.
+pub fn eyebrow(ui: &mut dyn UiBuilder, t: &UiTheme, pos: [f32; 2], label: &str) {
+    mono(
+        ui,
+        pos,
+        &label.to_uppercase(),
+        t.font_size_caption - 1.0,
+        t.text_disabled,
+    );
+}
+
 /// Paints left-aligned display (serif) text — screen headings and hero
 /// numerals only. Falls back to the proportional face if Fraunces is absent.
 #[inline]

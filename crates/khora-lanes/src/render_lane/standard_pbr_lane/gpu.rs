@@ -185,7 +185,7 @@ pub(super) fn init_gpu_resources(
     )
     .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-    use crate::render_lane::util::lock::mutex_lock_render;
+    use khora_core::lane::lock::mutex_lock_render;
     *mutex_lock_render(&lane.camera_ring, "StandardPbr init.camera_ring")? = Some(camera_ring);
     *mutex_lock_render(&lane.lighting_ring, "StandardPbr init.lighting_ring")? =
         Some(lighting_ring);

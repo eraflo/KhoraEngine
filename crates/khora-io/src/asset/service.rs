@@ -19,13 +19,20 @@
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
 use khora_core::asset::{Asset, AssetHandle, AssetUUID};
-use khora_data::assets::Assets;
+use khora_core::renderer::api::scene::Mesh;
+use khora_data::assets::{Assets, SoundData};
 use khora_telemetry::MetricsRegistry;
 
+use super::decoders::audio::SymphoniaDecoder;
+use super::decoders::mesh::{FileSystemResolver, MeshDispatcher};
+use super::file::FileLoader;
+use super::id_registry::AssetIdRegistry;
+use super::index_builder::IndexBuilder;
 use super::io::AssetIo;
 use super::manifest::PackManifest;
 use super::registry::DecoderRegistry;
@@ -120,6 +127,42 @@ impl AssetService {
         for reg in inventory::iter::<super::registry::DecoderRegistration> {
             (reg.register)(self);
         }
+    }
+
+    /// Opens a service over a project's loose `<project_root>/assets/`
+    /// directory, with every default decoder registered (see
+    /// [`Self::register_default_decoders`]).
+    ///
+    /// Asset ids come from `registry`: a path it freezes keeps its recorded
+    /// UUID, every other path gets its `new_v5` default.
+    pub fn open_loose_files(
+        project_root: &Path,
+        registry: &AssetIdRegistry,
+        metrics_registry: Arc<MetricsRegistry>,
+    ) -> Result<Self> {
+        let assets_root = project_root.join("assets");
+        let index_bytes = IndexBuilder::new(&assets_root)
+            .with_registry(registry)
+            .build_index_bytes()
+            .with_context(|| format!("Failed to index {}", assets_root.display()))?;
+        let io = Box::new(FileLoader::new(&assets_root));
+        let mut svc = Self::new(&index_bytes, io, metrics_registry, None)?;
+        svc.register_default_decoders(&assets_root);
+        Ok(svc)
+    }
+
+    /// Registers the decoders every Khora application uses: the ones
+    /// declared through `inventory` (see [`Self::register_inventory_decoders`]),
+    /// audio through Symphonia, and meshes through the [`MeshDispatcher`].
+    ///
+    /// A glTF file's external URIs (`.bin` buffers, textures) are resolved
+    /// relative to `gltf_root`, not to the glTF file: authors reference them
+    /// by their project path, like everywhere else in the VFS.
+    pub fn register_default_decoders(&mut self, gltf_root: &Path) {
+        self.register_inventory_decoders();
+        self.register_decoder::<SoundData>("audio", SymphoniaDecoder);
+        let gltf_resolver = Arc::new(FileSystemResolver::new(gltf_root));
+        self.register_decoder::<Mesh>("mesh", MeshDispatcher::new(gltf_resolver));
     }
 
     /// Loads, decodes, and returns a typed handle to an asset.

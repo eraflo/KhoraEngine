@@ -84,6 +84,14 @@ fn window_icon_fields(x: &khora_sdk::WindowIcon) {
     let _ = (&x.rgba, &x.width, &x.height);
 }
 
+fn runtime_config_fields(x: &khora_sdk::RuntimeConfig) {
+    let _: &String = &x.project_name;
+    let _: &String = &x.default_scene;
+    let _: &Option<String> = &x.window_title;
+    let _: &Option<String> = &x.preset;
+    let _: &bool = &x.verify_integrity;
+}
+
 // ---------------------------------------------------------------------------
 // Trait items, named through a generic parameter. A generic body is
 // type-checked where it is written, so these need no implementor and are
@@ -383,11 +391,6 @@ fn module_crate_root_paths_still_resolve() {
         PhantomData::<khora_sdk::DccConfig>,
         PhantomData::<khora_control::DccConfig>,
     );
-    let _ = type_name::<khora_sdk::EngineContext>();
-    same_type(
-        PhantomData::<khora_sdk::EngineContext>,
-        PhantomData::<khora_control::Context>,
-    );
     let _ = type_name::<khora_sdk::DccContext>();
     same_type(
         PhantomData::<khora_sdk::DccContext>,
@@ -402,11 +405,6 @@ fn module_crate_root_paths_still_resolve() {
     same_type(
         PhantomData::<khora_sdk::DefaultMixBus>,
         PhantomData::<khora_core::audio::DefaultMixBus>,
-    );
-    let _ = type_name::<khora_sdk::EcsWorld>();
-    same_type(
-        PhantomData::<khora_sdk::EcsWorld>,
-        PhantomData::<khora_data::ecs::World>,
     );
     let _ = type_name::<khora_sdk::EditorCamera>();
     same_type(
@@ -947,16 +945,22 @@ fn module_crate_root_paths_still_resolve() {
     #[allow(unused_imports)]
     use khora_sdk::inventory as _; // `pub extern crate`
     #[allow(unused_imports)]
-    use khora_sdk::khora_agents as _; // module `khora_agents`
-    #[allow(unused_imports)]
     use khora_sdk::khora_core as _; // module `khora_core`
     #[allow(unused_imports)]
     use khora_sdk::khora_data as _; // module `khora_data`
     #[allow(unused_imports)]
-    use khora_sdk::khora_io as _; // module `khora_io`
-    #[allow(unused_imports)]
     use khora_sdk::khora_lanes as _; // module `khora_lanes`
     let _ = khora_sdk::run_default;
+    let _ = type_name::<khora_sdk::RuntimeConfig>();
+    let _ = runtime_config_fields as fn(&khora_sdk::RuntimeConfig);
+    let _: fn(&std::path::Path) -> khora_sdk::RuntimeConfig =
+        khora_sdk::RuntimeConfig::load_or_default;
+    let _: fn() -> khora_sdk::RuntimeConfig = khora_sdk::RuntimeConfig::defaults;
+    let _: fn(&khora_sdk::RuntimeConfig) -> String = khora_sdk::RuntimeConfig::window_title;
+    is_debug::<khora_sdk::RuntimeConfig>();
+    is_clone::<khora_sdk::RuntimeConfig>();
+    let _: &str = khora_sdk::DEFAULT_SCENE_REL_PATH;
+    let _: &str = khora_sdk::RUNTIME_CONFIG_FILE;
     let _ = khora_sdk::serialize_subtree;
     same_item(
         &khora_sdk::serialize_subtree,
@@ -1332,16 +1336,8 @@ fn whole_crate_reexports_are_the_dependencies() {
         PhantomData::<khora_data::ecs::World>,
     );
     same_type(
-        PhantomData::<khora_sdk::khora_io::asset::AssetService>,
-        PhantomData::<khora_io::asset::AssetService>,
-    );
-    same_type(
         PhantomData::<khora_sdk::khora_lanes::render_lane::GridLane>,
         PhantomData::<khora_lanes::render_lane::GridLane>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::khora_agents::render_agent::RenderAgent>,
-        PhantomData::<khora_agents::render_agent::RenderAgent>,
     );
     same_type(
         PhantomData::<khora_sdk::winit::event_loop::EventLoop<()>>,
@@ -1350,10 +1346,11 @@ fn whole_crate_reexports_are_the_dependencies() {
 }
 
 // ---------------------------------------------------------------------------
-// Values games and the editor rely on. `PRIMARY_VIEWPORT` is defined twice in
-// the crate (the public one in `lib.rs`, a private one in `engine/mod.rs` that the
-// winit runner inserts as a resource); the public one, and its prelude
-// re-export, must keep naming the first viewport.
+// Values games and the editor rely on. `PRIMARY_VIEWPORT` is defined once, in
+// `engine/mod.rs` (the winit runner inserts it as a resource), and re-exported
+// at the crate root and in the prelude; both paths must keep naming the first
+// viewport. The `runtime.json` the editor writes and the runtime reads keeps
+// its file name, its default scene and its defaults.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -1366,6 +1363,19 @@ fn primary_viewport_names_the_first_viewport() {
         khora_sdk::prelude::PRIMARY_VIEWPORT,
         khora_sdk::PRIMARY_VIEWPORT
     );
+}
+
+#[test]
+fn runtime_config_file_and_defaults_are_unchanged() {
+    assert_eq!(khora_sdk::RUNTIME_CONFIG_FILE, "runtime.json");
+    assert_eq!(khora_sdk::DEFAULT_SCENE_REL_PATH, "scenes/default.kscene");
+    let defaults = khora_sdk::RuntimeConfig::defaults();
+    assert_eq!(defaults.project_name, "Khora Runtime");
+    assert_eq!(defaults.default_scene, khora_sdk::DEFAULT_SCENE_REL_PATH);
+    assert_eq!(defaults.window_title, None);
+    assert_eq!(defaults.window_title(), "Khora Runtime");
+    assert_eq!(defaults.preset, None);
+    assert!(!defaults.verify_integrity);
 }
 
 #[test]
@@ -2120,6 +2130,7 @@ mod paths_used_by_other_crates {
     use khora_sdk::RapierPhysicsWorld as _; // khora-editor, sandbox
     use khora_sdk::RenderSystem as _; // khora-editor, sandbox
     use khora_sdk::Runtime as _; // khora-editor, sandbox
+    use khora_sdk::RuntimeConfig as _; // khora-editor
     use khora_sdk::SceneFile as _; // khora-editor
     use khora_sdk::SerializationGoal as _; // khora-editor
     use khora_sdk::SerializationService as _; // khora-editor
@@ -2133,7 +2144,9 @@ mod paths_used_by_other_crates {
     use khora_sdk::WgpuPipelineSystem as _; // khora-editor, sandbox
     use khora_sdk::WgpuRenderSystem as _; // khora-editor, sandbox
     use khora_sdk::WindowConfig as _; // sandbox
+    use khora_sdk::DEFAULT_SCENE_REL_PATH as _; // khora-editor
     use khora_sdk::PRIMARY_VIEWPORT as _; // khora-editor
+    use khora_sdk::RUNTIME_CONFIG_FILE as _; // khora-editor
     use khora_sdk::TEXT_WGSL as _; // khora-editor, sandbox
 }
 

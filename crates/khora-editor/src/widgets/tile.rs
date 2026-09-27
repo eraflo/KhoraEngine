@@ -16,7 +16,8 @@
 
 use khora_sdk::editor_ui::{FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
 
-use super::paint::{paint_icon, paint_text_size, with_alpha};
+use khora_tool_ui::widgets::paint;
+use khora_tool_ui::widgets::with_alpha;
 
 /// Visual category for an asset tile. Drives the gradient + icon + format
 /// glyph. Variants map onto the canonical type names produced by
@@ -155,7 +156,7 @@ pub fn paint_asset_tile(
 
     // Centered icon
     let icon_size = (tw * 0.45).clamp(20.0, 36.0);
-    paint_icon(
+    paint::icon(
         ui,
         [
             thumb_x + (tw - icon_size) * 0.5,
@@ -184,7 +185,7 @@ pub fn paint_asset_tile(
     } else {
         name.to_owned()
     };
-    paint_text_size(
+    paint::text(
         ui,
         [origin[0] + 4.0, name_y],
         &truncated,

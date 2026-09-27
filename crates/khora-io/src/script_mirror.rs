@@ -84,7 +84,8 @@ pub fn mirror_source() -> &'static str {
 /// Stacked over whatever serves a project's own scripts:
 ///
 /// ```no_run
-/// use khora_io::script_compile::{compile_module, DiskLoader};
+/// use khora_io::script_compile::DiskLoader;
+/// use khora_script::compile_module;
 /// use khora_io::script_mirror::PreludeLoader;
 ///
 /// let loader = PreludeLoader::new(DiskLoader::new("assets/scripts"));
@@ -274,11 +275,11 @@ fn unspellable(name: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::script_compile::compile_module;
+    use khora_script::compile_module;
     use khora_script::MemoryLoader;
 
     /// Compiles `source` as `main.erg`, with the mirrors available to import.
-    fn compile(source: &str) -> crate::script_compile::Compiled {
+    fn compile(source: &str) -> khora_script::CompileOutcome {
         let loader = PreludeLoader::new(MemoryLoader::new().with("main.erg", source));
         compile_module(&loader, "main.erg")
     }

@@ -20,7 +20,7 @@
 //! | `chrome`         | Top bar, status bar, banner overlay              |
 //! | `screens`        | Per-screen UI (home, settings, …)                |
 //! | `services`       | Hub services (config, download, git, github, …)  |
-//! | `ui`             | Theme, fonts, widgets                            |
+//! | `ui`             | Theme, widgets                                   |
 //! | `async_pump`     | Per-frame drain of background channels           |
 //! | `bootstrap`      | `App::update` impl + `run()` entry point         |
 
@@ -45,7 +45,6 @@ pub use state::{
     AuthState, Banner, EngineChoice, EngineManagerState, HomeState, NewProjectState, Screen,
     SettingsState,
 };
-pub use ui::fonts;
 pub use ui::widgets;
 
 fn main() -> anyhow::Result<()> {

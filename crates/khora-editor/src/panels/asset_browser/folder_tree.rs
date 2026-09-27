@@ -18,10 +18,11 @@ use std::collections::BTreeMap;
 
 use khora_sdk::editor_ui::*;
 
-use crate::widgets::paint::{paint_icon, paint_text_size, with_alpha};
+use khora_tool_ui::widgets::paint;
+use khora_tool_ui::widgets::with_alpha;
 
-use super::drag::unpack_asset_drag;
 use super::{AssetBrowserPanel, SIDEBAR_ROW_H, TREE_INDENT};
+use crate::drag_payload::unpack_asset_drag;
 
 /// A folder-tree context-menu / drag-drop action, collected during the
 /// (`&self`) tree walk and applied afterwards where `&mut self` is available.
@@ -327,10 +328,10 @@ impl AssetBrowserPanel {
             } else {
                 Icon::ChevronRight
             };
-            paint_icon(ui, [chev_x, *y + 5.0], chev, 11.0, theme.text_muted);
+            paint::icon(ui, [chev_x, *y + 5.0], chev, 11.0, theme.text_muted);
         }
         let icon_x = chev_x + 14.0;
-        paint_icon(
+        paint::icon(
             ui,
             [icon_x, *y + 5.0],
             Icon::Database,
@@ -351,7 +352,7 @@ impl AssetBrowserPanel {
                 18.0,
             ]);
         } else {
-            paint_text_size(
+            paint::text(
                 ui,
                 [icon_x + 14.0, *y + 5.0],
                 label,

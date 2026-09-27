@@ -21,10 +21,9 @@
 
 use anyhow::{bail, Context, Result};
 use khora_sdk::khora_core::asset::{asset_key, AssetUUID};
-use khora_sdk::khora_core::renderer::api::scene::Mesh;
 use khora_sdk::{
     AssetChangeEvent, AssetIdRegistry, AssetService, AssetWatcher, AssetWriter, FileLoader,
-    FileSystemResolver, IndexBuilder, MeshDispatcher, MetricsRegistry, SoundData, SymphoniaDecoder,
+    IndexBuilder, MetricsRegistry,
 };
 use std::{
     path::{Path, PathBuf},
@@ -75,35 +74,11 @@ impl ProjectVfs {
             log::warn!("Could not create asset identity registry file: {e}");
         }
 
-        let index_bytes = IndexBuilder::new(&assets_root)
-            .with_registry(&registry)
-            .build_index_bytes()
-            .context("Failed to build initial project asset index")?;
-
-        let file_loader = FileLoader::new(&assets_root);
-        // Note: we hand a *clone* (a fresh FileLoader) to the AssetService so
-        // that we keep our own `file_loader` available to implement
-        // `AssetWriter` for scene saves. They both read/write the same root,
-        // so this is consistent.
-        let io = Box::new(FileLoader::new(&assets_root));
-        let mut asset_service = AssetService::new(&index_bytes, io, metrics, None)
+        let asset_service = AssetService::open_loose_files(&root, &registry, metrics)
             .context("Failed to construct AssetService")?;
-
-        // texture + font auto-register via inventory.
-        asset_service.register_inventory_decoders();
-        // audio + mesh are explicitly chosen by the consumer (see
-        // doctrine in decoders/{audio,mesh}/mod.rs).
-        asset_service.register_decoder::<SoundData>("audio", SymphoniaDecoder);
-        // Mesh dispatch: gltf URIs (external `.bin` / texture buffers) are
-        // resolved relative to the project's `assets/` root. Authors place
-        // referenced resources at project-relative paths (e.g.
-        // `meshes/character/diffuse.png`) and reference them with that same
-        // path inside the gltf — this diverges from the strict gltf-spec
-        // "URIs are relative to the gltf file" but matches the rest of the
-        // VFS's path convention. `.glb` and `.obj` files are self-contained
-        // and don't go through the resolver at all.
-        let gltf_resolver = Arc::new(FileSystemResolver::new(&assets_root));
-        asset_service.register_decoder::<Mesh>("mesh", MeshDispatcher::new(gltf_resolver));
+        // Our own loader over the same root, kept to implement `AssetWriter`
+        // for scene saves.
+        let file_loader = FileLoader::new(&assets_root);
 
         let watcher = AssetWatcher::new(&assets_root)
             .context("Failed to start asset watcher (filesystem hot reload)")?;
@@ -334,5 +309,122 @@ impl ProjectVfs {
     /// don't need to reach through `pvfs.watcher`.
     pub fn poll_changes(&self) -> Vec<AssetChangeEvent> {
         self.watcher.poll_for("editor_vfs")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_sdk::khora_core::renderer::api::scene::Mesh;
+
+    /// One file per asset type the index builder knows. The bytes are not a
+    /// valid asset of any kind: the probe only asks whether a decoder is
+    /// registered for the type, not whether it accepts the file.
+    const PROBES: &[&str] = &[
+        "probe.obj",
+        "probe.png",
+        "probe.wav",
+        "probe.wgsl",
+        "probe.ttf",
+        "probe.kscene",
+        "probe.kmat",
+        "probe.erg",
+        "probe.kprefab",
+    ];
+
+    /// The asset types a loose-files project can decode. The SDK's
+    /// `run_default` test pins the same list for the runtime's loose-files
+    /// mode: the editor and a runtime reading the same project decode the same
+    /// assets.
+    const DECODABLE: &[&str] = &[
+        "audio", "font", "material", "mesh", "script", "shader", "texture",
+    ];
+
+    /// The asset types among [`PROBES`] that `svc` has a decoder for, sorted.
+    fn decodable_types(svc: &mut AssetService) -> Result<Vec<String>> {
+        let mut decodable = Vec::new();
+        for file in PROBES {
+            let uuid = AssetUUID::new_v5(file);
+            let type_name = svc
+                .vfs()
+                .get_metadata(&uuid)
+                .ok_or_else(|| anyhow::anyhow!("{file} is not indexed"))?
+                .asset_type_name
+                .clone();
+            let no_decoder = match svc.load::<Mesh>(&uuid) {
+                Ok(_) => false,
+                Err(e) => format!("{e:#}").contains("No decoder registered"),
+            };
+            if !no_decoder {
+                decodable.push(type_name);
+            }
+        }
+        decodable.sort();
+        Ok(decodable)
+    }
+
+    #[test]
+    fn an_opened_project_registers_every_decoder() -> Result<()> {
+        let root = std::env::temp_dir().join(format!(
+            "khora-editor-project-decoders-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            std::fs::remove_dir_all(&root)?;
+        }
+        let assets = root.join("assets");
+        std::fs::create_dir_all(&assets)?;
+        for file in PROBES {
+            std::fs::write(assets.join(file), b"not a real asset")?;
+        }
+
+        let decodable = ProjectVfs::open(root.clone(), Arc::new(MetricsRegistry::new()))
+            .and_then(|mut pvfs| decodable_types(&mut pvfs.asset_service));
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(decodable?, DECODABLE);
+        Ok(())
+    }
+
+    /// A renamed asset keeps the UUID its references stored: an opened project
+    /// indexes it under the identity `.khora/asset-registry.ron` froze, not the
+    /// one its new path would derive. The SDK's loose-files runtime is held to
+    /// the same by its own test.
+    #[test]
+    fn an_opened_project_resolves_the_uuids_the_registry_froze() -> Result<()> {
+        let root = std::env::temp_dir().join(format!(
+            "khora-editor-project-registry-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            std::fs::remove_dir_all(&root)?;
+        }
+        let scenes = root.join("assets").join("scenes");
+        std::fs::create_dir_all(&scenes)?;
+        std::fs::write(scenes.join("renamed.kscene"), b"scene bytes")?;
+
+        let frozen = khora_sdk::khora_core::asset::AssetUUID::new_v5("scenes/original.kscene");
+        let mut registry = khora_sdk::AssetIdRegistry::load(&root);
+        registry.freeze("scenes/renamed.kscene", frozen);
+        registry.save()?;
+
+        let resolved =
+            ProjectVfs::open(root.clone(), Arc::new(MetricsRegistry::new())).map(|mut pvfs| {
+                let by_frozen = pvfs.asset_service.load_raw(&frozen).ok();
+                let by_path = pvfs
+                    .asset_service
+                    .vfs()
+                    .get_metadata(&khora_sdk::khora_core::asset::AssetUUID::new_v5(
+                        "scenes/renamed.kscene",
+                    ))
+                    .is_some();
+                (by_frozen, by_path)
+            });
+        let _ = std::fs::remove_dir_all(&root);
+        let (by_frozen, by_path) = resolved?;
+
+        assert_eq!(by_frozen.as_deref(), Some(&b"scene bytes"[..]));
+        assert!(!by_path, "indexed under its path-derived UUID");
+        Ok(())
     }
 }

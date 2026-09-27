@@ -89,7 +89,7 @@ khora-sdk
 Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`, `khora-runtime`,
 `hub`, and `sandbox` sit on top of `khora-sdk`.
 
-## 3 — Crate responsibilities (17 workspace members)
+## 3 — Crate responsibilities (16 workspace members)
 
 | Crate | Layer | Responsibility |
 |---|---|---|
@@ -102,7 +102,6 @@ Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`,
 | `khora-infra` | Infra | Default backends: `WgpuRenderSystem`/`WgpuDevice`, `WinitWindow` + input, Rapier3D physics, CPAL audio, Taffy layout, GPU/Memory/Vram monitors. Each implements a `khora-core` trait and is swappable. |
 | `khora-io` | Data | `AssetService`, `SerializationService`, VFS, `AssetIo`, `PackLoader`/`FileLoader`, decoders (glTF, OBJ, Symphonia audio, texture, font). |
 | `khora-agents` | Agents | `RenderAgent`, `ShadowAgent`, `OverlayAgent`, `PhysicsAgent`, `UiAgent`, `AudioAgent` + `PhysicsQueryService`. |
-| `khora-plugins` | Extension | Plugin loading and registration. |
 | `khora-sdk` | Public API | `EngineCore` + `run_winit` entry, `GameWorld` (safe ECS façade), `EngineApp`/`AgentProvider`/`PhaseProvider` traits, `WindowConfig`, `Vessel` + `spawn_plane`/`spawn_cube_at`/`spawn_sphere`, `prelude`. **The only crate game devs import.** |
 | `khora-editor` | Application | Editor app on the SDK — panels, gizmos, dock, hot-reload, command palette. |
 | `khora-runtime` | Application | Generic player binary stamped with packed assets; boots via `khora_sdk::run_default`. |

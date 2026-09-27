@@ -82,7 +82,7 @@ pub fn asset_type_for_extension(ext: &str) -> Option<String> {
         "kmat" | "mat" => Some("material"),
         // Script formats. `.erg` is Ergon, the engine's own language; `kscript`
         // predates it and is kept so a project that used it still indexes.
-        "erg" | "kscript" => Some("script"),
+        khora_script::modules::EXTENSION | "kscript" => Some("script"),
         // Prefab formats (Phase 5 — instanced via SerializationService)
         "kprefab" => Some("prefab"),
         _ => None,

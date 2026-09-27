@@ -172,7 +172,7 @@ fn init_gpu_resources(
     let _ = lane.camera_bind_group.set(camera_bind_group);
     let _ = lane.material_buffer.set(material_buffer);
     let _ = lane.material_bind_group.set(material_bind_group);
-    *crate::render_lane::util::lock::mutex_lock_render(
+    *khora_core::lane::lock::mutex_lock_render(
         &lane.model_ring,
         "WireframeLane init.model_ring",
     )? = Some(model_ring);

@@ -20,7 +20,5 @@
 pub mod custom;
 /// Text rendering implementation.
 pub mod text;
-/// Utility functions and types for rendering.
-pub mod util;
 
 pub use text::StandardTextRenderer;

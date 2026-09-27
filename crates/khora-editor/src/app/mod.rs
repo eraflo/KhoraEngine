@@ -31,8 +31,8 @@ use khora_sdk::{CommandHistory, DccService, PlayMode};
 use khora_sdk::{EditorCamera, EditorShell, EditorState, LogEntry};
 
 use crate::input::InputState;
+use crate::ops;
 use crate::project_vfs::ProjectVfs;
-use crate::{mod_agents, ops};
 
 mod engine_app;
 mod layout;
@@ -244,13 +244,12 @@ impl EditorApp {
 }
 
 impl AgentProvider for EditorApp {
-    fn register_agents(&self, dcc: &DccService, runtime: &mut Runtime) {
+    fn register_agents(&self, _dcc: &DccService, runtime: &mut Runtime) {
         runtime.resources.insert(self.editor_state.clone());
         runtime.resources.insert(self.camera.clone());
         // Editor viewport override — RenderFlow reads it as fallback
         // when no scene Camera is active (Editing mode).
         runtime.resources.insert(self.viewport_override.clone());
-        mod_agents::register_editor_agents(dcc);
     }
 }
 

@@ -41,7 +41,7 @@ pub struct Atlas2D {
     /// Texture id (depth-only).
     pub texture: RwLock<Option<TextureId>>,
     /// `D2Array` view bound by the lit shader at
-    /// [`khora_data::render::shadow_bindings::binding::ATLAS_2D`].
+    /// [`khora_core::renderer::api::shadow::bindings::binding::ATLAS_2D`].
     pub view: RwLock<Option<TextureViewId>>,
 }
 
@@ -68,7 +68,7 @@ impl Atlas2D {
         max_lights: u32,
         label: &str,
     ) -> Result<(), RenderError> {
-        use crate::render_lane::util::lock::write_lock_render;
+        use khora_core::lane::lock::write_lock_render;
 
         let texture = device
             .create_texture(&TextureDescriptor {

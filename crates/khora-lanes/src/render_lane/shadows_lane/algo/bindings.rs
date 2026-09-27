@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! Bundles the lane's atlas resources into the
-//! [`khora_data::render::ShadowGpuBindings`] type that lit consumer
+//! [`khora_core::renderer::api::shadow::ShadowGpuBindings`] type that lit consumer
 //! lanes read from the lane context.
 //!
 //! Living next to the atlases keeps the binding-construction concern
@@ -21,7 +21,7 @@
 //! 2D / cube view ids.
 
 use khora_core::renderer::api::resource::SamplerId;
-use khora_data::render::ShadowGpuBindings;
+use khora_core::renderer::api::shadow::ShadowGpuBindings;
 
 use super::atlas_2d::Atlas2D;
 use super::atlas_cube::AtlasCube;

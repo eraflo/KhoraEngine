@@ -31,27 +31,13 @@ use crate::app::EditorApp;
 /// CLI project path passed via `--project <path>`.
 pub static PROJECT_PATH: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
 
-/// Decode the embedded PNG logo into a `WindowIcon`.
+/// The Khora logo as the editor's window icon.
 pub fn load_logo_icon() -> WindowIcon {
-    let png_bytes = include_bytes!("../assets/khora_small_logo.png");
-    match image::load_from_memory(png_bytes) {
-        Ok(img) => {
-            let rgba_img = img.to_rgba8();
-            let (w, h) = rgba_img.dimensions();
-            WindowIcon {
-                rgba: rgba_img.into_raw(),
-                width: w,
-                height: h,
-            }
-        }
-        Err(e) => {
-            log::warn!("Failed to decode logo PNG: {}", e);
-            WindowIcon {
-                rgba: vec![0, 0, 0, 0],
-                width: 1,
-                height: 1,
-            }
-        }
+    let logo = khora_tool_ui::logo::logo_icon();
+    WindowIcon {
+        rgba: logo.rgba,
+        width: logo.width,
+        height: logo.height,
     }
 }
 
@@ -140,4 +126,17 @@ pub fn run() -> anyhow::Result<()> {
         }
     })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    /// The embedded logo decodes into the window icon. A PNG the `image` build
+    /// cannot read falls back to a transparent 1x1 icon with only a warning,
+    /// so nothing else notices a lost `png` feature or a bad asset.
+    #[test]
+    fn the_window_icon_is_the_decoded_logo() {
+        let icon = super::load_logo_icon();
+        assert_eq!((icon.width, icon.height), (600, 600));
+        assert_eq!(icon.rgba.len(), 600 * 600 * 4);
+    }
 }
