@@ -85,7 +85,7 @@ its body with a custom `EngineApp` impl.
 | `created_at` | `u64` | Unix epoch seconds at creation | Informational; not used for runtime logic. |
 
 The descriptor type is `ProjectDescriptor` in
-[`hub/src/services/project.rs`](../../../hub/src/services/project.rs) — private to the hub today, but
+[`crates/khora-hub/src/services/project.rs`](../../../crates/khora-hub/src/services/project.rs) — private to the hub today, but
 the JSON shape is the public contract. The editor reads `name` and
 `engine_version` at startup
 ([`crates/khora-editor/src/main.rs`](../../../crates/khora-editor/src/main.rs),

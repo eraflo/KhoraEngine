@@ -15,8 +15,8 @@ itself. **Read-only** — you never edit. You do **not** explain how code works 
 1. **codegraph first.** Query the codegraph MCP to resolve the symbols/edges for the task's keywords
    before grepping — it is the pre-built index and far cheaper than a grep/read loop.
 2. Fall back to `Grep`/`Glob` for strings the graph doesn't cover (config, shaders, assets, docs).
-3. Map to Khora's structure: crates under `crates/khora-*`, the CLAD layers, `sandbox/`, `xtask/`,
-   `hub/`, shaders under `crates/khora-infra/src/graphics/shader/shaders/`, docs under `docs/`.
+3. Map to Khora's structure: crates under `crates/khora-*` (the hub is `crates/khora-hub`), the CLAD
+   layers, `examples/sandbox/`, `xtask/`, shaders under `crates/khora-infra/src/graphics/shader/shaders/`, docs under `docs/`.
 
 ## Output
 A categorized list, each entry `path:line` (or `path/` for a directory) + a ≤10-word note. Group as:

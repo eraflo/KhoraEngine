@@ -14,6 +14,7 @@ members = [
     # compiler and VM stay testable without booting an engine.
     "crates/khora-script",
     "crates/khora-editor",
+    "crates/khora-hub",
     "crates/khora-runtime",
     "crates/khora-sdk",
     # First-party tool design system (brand + widgets). Not an engine crate:
@@ -22,7 +23,6 @@ members = [
     # Examples and tools
     "examples/sandbox",
     "xtask",
-    "hub",
 ]
 
 # Shared package metadata inherited by every workspace member via

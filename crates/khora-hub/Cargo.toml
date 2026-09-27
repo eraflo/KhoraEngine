@@ -13,10 +13,10 @@ path = "src/main.rs"
 [dependencies]
 # Engine SDK — the hub reaches the egui+eframe backend exclusively
 # through `khora_sdk::tool_ui::*`. No direct dep on egui/eframe.
-khora-sdk = { path = "../crates/khora-sdk" }
+khora-sdk = { path = "../khora-sdk" }
 # Look (brand palette + shared widgets), shared with the editor so the two
 # tools cannot drift. Kept out of khora-sdk so games don't compile the brand.
-khora-tool-ui = { path = "../crates/khora-tool-ui" }
+khora-tool-ui = { path = "../khora-tool-ui" }
 
 # HTTP client for GitHub releases API
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
@@ -47,4 +47,4 @@ zip = "8"
 [dev-dependencies]
 # The seeded `main.erg` must compile. A dev-dependency, so the shipped hub
 # still links nothing of the language.
-khora-script = { path = "../crates/khora-script" }
+khora-script = { path = "../khora-script" }

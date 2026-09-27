@@ -18,12 +18,12 @@
 //! crate's manifest directory) and fails with the **complete, sorted** list of
 //! violations, so a failing run is the to-do list.
 //!
-//! Rust checks scan `crates/*/src`, `hub/src`, `xtask/src` and
-//! `examples/*/src`. Every walk skips `target/`, `.git/`, `.codegraph/` and
-//! `node_modules/` at any depth; the generated wrappers and tool state at the
-//! root (`.claude/`, `.cursor/`, `.gemini/`, `.gitagent/`, `.khora/`,
-//! `.impeccable/`, `.dist/`); and any directory holding a `.git` entry — a
-//! worktree, submodule or nested clone, whose files are another checkout's.
+//! Rust checks scan `crates/*/src`, `xtask/src` and `examples/*/src`. Every
+//! walk skips `target/`, `.git/`, `.codegraph/` and `node_modules/` at any
+//! depth; the generated wrappers and tool state at the root (`.claude/`,
+//! `.cursor/`, `.gemini/`, `.gitagent/`, `.khora/`, `.impeccable/`,
+//! `.dist/`); and any directory holding a `.git` entry — a worktree,
+//! submodule or nested clone, whose files are another checkout's.
 //!
 //! Every check is a **ratchet**. A check reports its violations keyed by a
 //! stable repo-relative path; `xtask/tests/layout_allow.txt` lists the known
@@ -98,7 +98,7 @@ const SHADER_TREE: &str = "crates/khora-infra/src/graphics/shader/shaders/";
 const SCRATCH_DOCS: &[&str] = &["docs/plans/", "docs/research/"];
 
 /// Top-level directories whose paths a doc may cite in inline code.
-const CITED_ROOTS: &[&str] = &["crates", "hub", "xtask", "examples"];
+const CITED_ROOTS: &[&str] = &["crates", "xtask", "examples"];
 
 /// Extensions of the files a cited source path may name.
 const CITED_EXTENSIONS: &[&str] = &["rs", "wgsl", "toml", "md", "json", "ron"];
@@ -435,7 +435,7 @@ fn relative_links_resolve() {
 /// `.agent/*/knowledge/MEMORY.md`. Only inline code spans outside fenced code
 /// blocks are read. A span is a cited path when, with no whitespace in it:
 ///
-/// - it starts with `crates/`, `hub/`, `xtask/`, `examples/`, or
+/// - it starts with `crates/`, `xtask/`, `examples/`, or
 ///   `khora-<name>/` where `crates/khora-<name>/` exists (resolved as
 ///   `crates/khora-<name>/…`);
 /// - once everything from its first `:` or `#` is dropped (`:123`,
@@ -561,7 +561,7 @@ fn repo_root() -> PathBuf {
         .unwrap_or_else(|| panic!("{} has no parent", env!("CARGO_MANIFEST_DIR")))
 }
 
-/// `crates/*/src`, `examples/*/src`, `hub/src`, `xtask/src` — those that exist.
+/// `crates/*/src`, `examples/*/src`, `xtask/src` — those that exist.
 fn rust_src_roots(root: &Path) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     for group in ["crates", "examples"] {
@@ -572,11 +572,9 @@ fn rust_src_roots(root: &Path) -> Vec<PathBuf> {
             }
         }
     }
-    for single in ["hub/src", "xtask/src"] {
-        let src = root.join(single);
-        if src.is_dir() {
-            roots.push(src);
-        }
+    let xtask = root.join("xtask/src");
+    if xtask.is_dir() {
+        roots.push(xtask);
     }
     roots.sort();
     roots
@@ -1527,7 +1525,7 @@ fn cited_source_paths_extractor() {
         .collect();
     let text = "\
 Plain `crates/khora-core/src/lib.rs` here.
-Line `crates/khora-core/src/math/vector.rs:123` and range `hub/src/main.rs:4-9`.
+Line `crates/khora-core/src/math/vector.rs:123` and range `examples/sandbox/src/main.rs:4-9`.
 Braces `crates/khora-infra/src/{physics/rapier,audio/cpal}/` too.
 Short `khora-core/src/lane/bus.rs#anchor`, double ``xtask/Cargo.toml``.
 ```rust
@@ -1548,7 +1546,7 @@ Command `cargo test -p xtask`, text `crates/khora-core/src/lib.rs is here`.
     let expected: Vec<(usize, String)> = [
         (1, "crates/khora-core/src/lib.rs"),
         (2, "crates/khora-core/src/math/vector.rs"),
-        (2, "hub/src/main.rs"),
+        (2, "examples/sandbox/src/main.rs"),
         (3, "crates/khora-infra/src/physics/rapier/"),
         (3, "crates/khora-infra/src/audio/cpal/"),
         (4, "crates/khora-core/src/lane/bus.rs"),
