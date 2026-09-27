@@ -40,7 +40,7 @@ the next frame resumes rather than restarts. Suspension is the normal path, not 
 ## Hard rules
 - **A script never writes the `World`.** Its effects are queued as `WorldCommand`s and applied by a
   data system during `Maintenance`. This is what lets the script lane run world-free.
-- **The agent chooses a lane; the lane does the work.** `ScriptingAgent` holds lanes, current lane,
+- **The agent chooses a lane; the lane does the work.** `ScriptAgent` holds lanes, current lane,
   strategy, fuel and a handle to the shared `ScriptRuntime` — nothing else. Applying reloads, draining
   channels, delivering events and keeping counters all live in the lane (`RULES.md` §8).
 - **`ScriptRuntime` lives in `Runtime::services`** as `Arc<Mutex<ScriptRuntime>>`, like the physics

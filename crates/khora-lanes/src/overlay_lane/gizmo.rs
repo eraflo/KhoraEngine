@@ -30,14 +30,11 @@ use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::BufferId;
 use khora_core::renderer::traits::CommandEncoder;
 use khora_core::ui::editor::GizmoLineInstance;
-use khora_data::render::{GizmoFrame, RenderWorld};
-use std::sync::{Arc, Mutex, OnceLock};
+use khora_data::render::{RenderWorld, SharedGizmoFrame};
+use std::sync::{Arc, OnceLock};
 
 /// Maximum number of gizmo line instances the storage buffer holds.
 const GIZMO_CAPACITY: usize = 4096;
-
-/// Shared gizmo line container — the host app writes, `GizmoLane` reads.
-pub type SharedGizmoFrame = Arc<Mutex<GizmoFrame>>;
 
 /// Editor / debug gizmo overlay lane.
 #[derive(Debug)]
@@ -164,19 +161,10 @@ const GIZMO_STORAGE_LAYOUT_LABEL: &str = "gizmo_storage_layout";
 
 /// Group-0 camera layout: a single uniform buffer (vertex stage).
 fn gizmo_camera_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
-    use khora_core::renderer::api::command::{
-        BindGroupLayoutEntry, BindingType, BufferBindingType,
-    };
-    use khora_core::renderer::api::util::ShaderStageFlags;
-    vec![BindGroupLayoutEntry {
-        binding: 0,
-        visibility: ShaderStageFlags::VERTEX,
-        ty: BindingType::Buffer {
-            ty: BufferBindingType::Uniform,
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-    }]
+    crate::render_lane::util::single_uniform_layout(
+        khora_core::renderer::api::util::ShaderStageFlags::VERTEX,
+        false,
+    )
 }
 
 /// Group-1 storage layout: the read-only line-instance storage buffer.

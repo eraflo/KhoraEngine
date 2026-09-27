@@ -36,9 +36,9 @@ pub use frame_graph::{
     ScenePassSlot, SharedFrameGraph, SkyboxPassSlot, TransparentEncoder, TransparentPassSlot,
     UiPassSlot,
 };
-pub use gizmo::GizmoFrame;
-pub use grid::GridConfig;
-pub use wireframe::WireframeConfig;
+pub use gizmo::{GizmoFrame, SharedGizmoFrame};
+pub use grid::{GridConfig, SharedGridConfig};
+pub use wireframe::{SharedWireframeConfig, WireframeConfig};
 pub use world::{ExtractedLight, ExtractedMesh, ExtractedView, RenderWorld};
 
 use khora_core::{

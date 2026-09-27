@@ -15,7 +15,7 @@
 //! The shadow quality tiers the shadow agent negotiates between.
 
 use khora_core::control::gorna::StrategyId;
-use khora_lanes::render_lane::shadows_lane::{
+use khora_lanes::shadow_lane::{
     LOW_RES_STRATEGY_NAME, MEDIUM_STRATEGY_NAME, STANDARD_STRATEGY_NAME,
 };
 
@@ -27,13 +27,13 @@ use khora_lanes::render_lane::shadows_lane::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShadowStrategy {
     /// Full-quality pipeline: 2048² × 4-layer 2D atlas + 512² × 4-cube
-    /// cube atlas. Maps to [`StandardShadowsLane`](khora_lanes::render_lane::StandardShadowsLane).
+    /// cube atlas. Maps to [`StandardShadowsLane`](khora_lanes::shadow_lane::StandardShadowsLane).
     Standard,
     /// Half resolution (1024² × 4-layer + 256² × 4-cube) — the `Balanced`
-    /// middle rung. Maps to [`MediumShadowsLane`](khora_lanes::render_lane::MediumShadowsLane).
+    /// middle rung. Maps to [`MediumShadowsLane`](khora_lanes::shadow_lane::MediumShadowsLane).
     Medium,
     /// Quarter resolution (512² × 4-layer + 128² × 4-cube).
-    /// Maps to [`LowResShadowsLane`](khora_lanes::render_lane::LowResShadowsLane).
+    /// Maps to [`LowResShadowsLane`](khora_lanes::shadow_lane::LowResShadowsLane).
     LowRes,
 }
 

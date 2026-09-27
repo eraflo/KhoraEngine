@@ -26,3 +26,8 @@ inventory = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "sync"] }
+
+[dev-dependencies]
+# Parses the raw WGSL strings the SDK hands to the text renderer and the egui
+# overlay (tests/it/editor_shader_sources.rs). Same version khora-infra uses.
+naga = { version = "29.0.3", features = ["wgsl-in"] }

@@ -71,15 +71,15 @@ impl<A: EngineApp> EngineCore<A> {
         // enables the grid via `GridConfig` there. They are standalone
         // `Arc<Mutex<Default>>` with no dependency on later-created
         // resources, so exposing them this early is safe.
-        let gizmo_frame: khora_lanes::render_lane::SharedGizmoFrame =
+        let gizmo_frame: khora_data::render::SharedGizmoFrame =
             Arc::new(Mutex::new(khora_data::render::GizmoFrame::default()));
         runtime.resources.insert(gizmo_frame);
         // Editor grid — disabled by default; the editor opts in.
-        let grid_config: khora_lanes::render_lane::SharedGridConfig =
+        let grid_config: khora_data::render::SharedGridConfig =
             Arc::new(Mutex::new(khora_data::render::GridConfig::default()));
         runtime.resources.insert(grid_config);
         // Wireframe debug overlay — disabled by default; the editor opts in.
-        let wireframe_config: khora_lanes::render_lane::SharedWireframeConfig =
+        let wireframe_config: khora_data::render::SharedWireframeConfig =
             Arc::new(Mutex::new(khora_data::render::WireframeConfig::default()));
         runtime.resources.insert(wireframe_config);
 
@@ -188,7 +188,7 @@ impl<A: EngineApp> EngineCore<A> {
 
         // The scripting world — compiled programs, live behavior instances, the
         // mail behaviors owe each other. Registered here rather than owned by
-        // `ScriptingAgent` for the same reason the physics provider is: an
+        // `ScriptAgent` for the same reason the physics provider is: an
         // agent chooses a lane against a budget, and a subsystem's state is not
         // strategy state. It also means anything that legitimately needs to see
         // live behaviors — an inspector, a debugger — can, without going
@@ -291,7 +291,7 @@ impl<A: EngineApp> EngineCore<A> {
         // in reach that can be told that.
         dcc.register_agent(
             Arc::new(Mutex::new(
-                khora_agents::script_agent::ScriptingAgent::default(),
+                khora_agents::script_agent::ScriptAgent::default(),
             )),
             1.0,
         );

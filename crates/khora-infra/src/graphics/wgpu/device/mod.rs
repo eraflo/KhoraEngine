@@ -638,7 +638,7 @@ mod buffer_descriptor_tests {
     /// `into_wgpu`. This is that call, without the bit.
     ///
     /// The engine asks for the same combination in its own text renderer
-    /// (`khora-infra/src/renderer/text.rs`), which is why the defect was not
+    /// (`khora-infra/src/graphics/text/standard.rs`), which is why the defect was not
     /// specific to their project — it simply never surfaced there, because
     /// nothing queues text in the sandbox and the buffer is bound only when
     /// something does.

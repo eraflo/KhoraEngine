@@ -17,6 +17,7 @@
 //! Each file under `tests/` used to be its own executable, and each executable
 //! is a full link of wgpu, rapier and egui. One binary links once.
 
+mod agent_negotiation_snapshot_test;
 mod asset_loading_test;
 mod collision_to_behavior_test;
 mod contention_test;

@@ -414,19 +414,10 @@ const SHADOW_MODEL_LAYOUT_LABEL: &str = "shadow_model_layout";
 /// Bespoke shadow camera layout: a single dynamic-offset uniform buffer
 /// (vertex stage only).
 fn shadow_camera_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
-    use khora_core::renderer::api::command::{
-        BindGroupLayoutEntry, BindingType, BufferBindingType,
-    };
-    use khora_core::renderer::api::util::ShaderStageFlags;
-    vec![BindGroupLayoutEntry {
-        binding: 0,
-        visibility: ShaderStageFlags::VERTEX,
-        ty: BindingType::Buffer {
-            ty: BufferBindingType::Uniform,
-            has_dynamic_offset: true,
-            min_binding_size: None,
-        },
-    }]
+    crate::render_lane::util::single_uniform_layout(
+        khora_core::renderer::api::util::ShaderStageFlags::VERTEX,
+        true,
+    )
 }
 
 /// Bespoke shadow model layout: a single dynamic-offset uniform buffer

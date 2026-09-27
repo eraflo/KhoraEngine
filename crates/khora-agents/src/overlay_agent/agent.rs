@@ -85,9 +85,9 @@ impl Agent for OverlayAgent {
             .reading::<Arc<FrameContext>>()
             .reading::<AgentFrameStatusMap>()
             .reading::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
-            .reading::<khora_lanes::render_lane::SharedGizmoFrame>()
-            .reading::<khora_lanes::render_lane::SharedGridConfig>()
-            .reading::<khora_lanes::render_lane::SharedWireframeConfig>()
+            .reading::<khora_data::render::SharedGizmoFrame>()
+            .reading::<khora_data::render::SharedGridConfig>()
+            .reading::<khora_data::render::SharedWireframeConfig>()
             .reading::<Arc<dyn GraphicsDevice>>()
     }
 
@@ -201,7 +201,7 @@ impl Agent for OverlayAgent {
             // editor stays a pure consumer of engine APIs (no
             // engine-internal `EditorAgent`).
             if let Some(gizmos) = context
-                .resource::<khora_lanes::render_lane::SharedGizmoFrame>()
+                .resource::<khora_data::render::SharedGizmoFrame>()
                 .cloned()
             {
                 ctx.insert(gizmos);
@@ -209,14 +209,14 @@ impl Agent for OverlayAgent {
             // Editor-grid opt-in — same mechanism: the host app enables
             // it, `GridLane` consumes it; absent ⇒ no grid.
             if let Some(grid_cfg) = context
-                .resource::<khora_lanes::render_lane::SharedGridConfig>()
+                .resource::<khora_data::render::SharedGridConfig>()
                 .cloned()
             {
                 ctx.insert(grid_cfg);
             }
             // Wireframe debug overlay — same opt-in mechanism.
             if let Some(wireframe_cfg) = context
-                .resource::<khora_lanes::render_lane::SharedWireframeConfig>()
+                .resource::<khora_data::render::SharedWireframeConfig>()
                 .cloned()
             {
                 ctx.insert(wireframe_cfg);
@@ -300,9 +300,9 @@ impl Default for OverlayAgent {
         // Order matters — overlays composite in registration order:
         // grid is the backdrop, wireframe is debug viz, gizmo is the editor
         // handles on top.
-        lanes.register(Box::new(khora_lanes::render_lane::GridLane::default()));
-        lanes.register(Box::new(khora_lanes::render_lane::WireframeLane::default()));
-        lanes.register(Box::new(khora_lanes::render_lane::GizmoLane::default()));
+        lanes.register(Box::new(khora_lanes::overlay_lane::GridLane::default()));
+        lanes.register(Box::new(khora_lanes::overlay_lane::WireframeLane::default()));
+        lanes.register(Box::new(khora_lanes::overlay_lane::GizmoLane::default()));
 
         Self {
             lanes,
@@ -339,5 +339,34 @@ mod tests {
         assert_eq!(timing.default_phase, ExecutionPhase::OUTPUT);
         assert_eq!(timing.dependencies.len(), 1);
         assert_eq!(timing.dependencies[0].target, AgentId::Renderer);
+    }
+}
+
+#[cfg(test)]
+mod lane_registration_tests {
+    use super::*;
+    use khora_core::lane::LaneKind;
+
+    /// The lanes this agent registers, by `strategy_name()`, with their kind,
+    /// in registration order. Moving a lane's source file between modules must
+    /// leave this list untouched: the names are what negotiation and
+    /// `execute` look lanes up by.
+    #[test]
+    fn registers_the_same_lanes_by_name() {
+        let agent = OverlayAgent::default();
+        let lanes: Vec<(&str, LaneKind)> = agent
+            .lanes
+            .all()
+            .iter()
+            .map(|lane| (lane.strategy_name(), lane.lane_kind()))
+            .collect();
+        assert_eq!(
+            lanes,
+            [
+                ("Grid", LaneKind::Render),
+                ("Wireframe", LaneKind::Render),
+                ("Gizmo", LaneKind::Render)
+            ]
+        );
     }
 }

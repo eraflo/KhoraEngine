@@ -23,6 +23,7 @@
 //! editor drives it from a viewport toggle; the sandbox leaves it off.
 
 use khora_core::math::LinearRgba;
+use std::sync::{Arc, Mutex};
 
 /// Wireframe debug-overlay state.
 #[derive(Debug, Clone)]
@@ -45,6 +46,10 @@ impl Default for WireframeConfig {
         }
     }
 }
+
+/// Shared wireframe-overlay config — the host app enables it, `WireframeLane`
+/// reads it.
+pub type SharedWireframeConfig = Arc<Mutex<WireframeConfig>>;
 
 #[cfg(test)]
 mod tests {

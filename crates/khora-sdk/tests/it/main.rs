@@ -18,5 +18,6 @@
 //! full link of the crate's dependency tree. New integration tests join this
 //! binary as a module instead of adding a file at the root of `tests/`.
 
+mod editor_shader_sources;
 mod public_paths;
 mod runtime_config_file;

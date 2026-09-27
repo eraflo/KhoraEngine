@@ -39,7 +39,7 @@ use khora_script::reload::ScriptReload;
 /// counters, the measured instruction rate — lives in the
 /// [`Runtime`](khora_core::Runtime) and is locked for the duration of
 /// `execute`, exactly as `PhysicsAgent` locks its provider.
-pub struct ScriptingAgent {
+pub struct ScriptAgent {
     /// Every script lane — the agent's strategies.
     lanes: LaneRegistry,
     /// The lane this budget chose.
@@ -58,7 +58,7 @@ pub struct ScriptingAgent {
     runtime: Option<Arc<Mutex<ScriptRuntime>>>,
 }
 
-impl Default for ScriptingAgent {
+impl Default for ScriptAgent {
     fn default() -> Self {
         let mut lanes = LaneRegistry::new();
         lanes.register(Box::new(BudgetedScriptLane::new()));
@@ -90,7 +90,7 @@ fn peek<T>(
         .unwrap_or(fallback)
 }
 
-impl Agent for ScriptingAgent {
+impl Agent for ScriptAgent {
     fn id(&self) -> AgentId {
         AgentId::Script
     }
@@ -140,7 +140,7 @@ impl Agent for ScriptingAgent {
         self.fuel = (millis * rate) as u64;
 
         log::debug!(
-            "ScriptingAgent: {:?} — {:.3}ms at {:.0} instr/ms = {} fuel",
+            "ScriptAgent: {:?} — {:.3}ms at {:.0} instr/ms = {} fuel",
             budget.strategy_id,
             millis,
             rate,
@@ -151,7 +151,7 @@ impl Agent for ScriptingAgent {
     fn on_initialize(&mut self, context: &mut EngineContext<'_>) {
         self.runtime = context.locked::<Arc<Mutex<ScriptRuntime>>>().cloned();
         if self.runtime.is_none() {
-            log::error!("ScriptingAgent: no ScriptRuntime registered — scripts will not run");
+            log::error!("ScriptAgent: no ScriptRuntime registered — scripts will not run");
         }
     }
 
@@ -163,7 +163,7 @@ impl Agent for ScriptingAgent {
             Some(handle) => handle,
             None => {
                 let Some(found) = context.locked::<Arc<Mutex<ScriptRuntime>>>().cloned() else {
-                    log::debug!("ScriptingAgent: no ScriptRuntime registered, skipping");
+                    log::debug!("ScriptAgent: no ScriptRuntime registered, skipping");
                     return;
                 };
                 self.runtime = Some(found.clone());
@@ -173,7 +173,7 @@ impl Agent for ScriptingAgent {
         let mut runtime = match shared.lock() {
             Ok(guard) => guard,
             Err(poisoned) => {
-                log::error!("ScriptingAgent: script runtime mutex poisoned: {poisoned}");
+                log::error!("ScriptAgent: script runtime mutex poisoned: {poisoned}");
                 return;
             }
         };
@@ -207,7 +207,7 @@ impl Agent for ScriptingAgent {
         }
 
         let Some(lane) = self.lanes.get(self.current_lane) else {
-            log::error!("ScriptingAgent: lane `{}` is missing", self.current_lane);
+            log::error!("ScriptAgent: lane `{}` is missing", self.current_lane);
             return;
         };
         if let Err(error) = lane.execute(&mut ctx) {
@@ -346,7 +346,7 @@ mod tests {
 
     /// Runs one frame against a scene that has scripts, so `execute` gets as far
     /// as picking a lane.
-    fn run_one_frame(agent: &mut ScriptingAgent, runtime: &Arc<Runtime>) {
+    fn run_one_frame(agent: &mut ScriptAgent, runtime: &Arc<Runtime>) {
         let mut bus = LaneBus::new();
         bus.publish(a_scene_with_one_script());
         let mut deck = OutputDeck::new();
@@ -389,7 +389,7 @@ mod tests {
     #[test]
     fn a_missing_lane_does_not_lose_what_was_raised() {
         let (runtime, shared) = wired();
-        let mut agent = ScriptingAgent::default();
+        let mut agent = ScriptAgent::default();
         leave_mail(&shared);
         agent.current_lane = "a lane nobody registered";
 
@@ -412,7 +412,7 @@ mod tests {
     #[test]
     fn a_deferred_behavior_keeps_what_it_was_never_told() {
         let (runtime, shared) = wired();
-        let mut agent = ScriptingAgent::default();
+        let mut agent = ScriptAgent::default();
         leave_mail(&shared);
 
         run_one_frame(&mut agent, &runtime);
@@ -426,7 +426,7 @@ mod tests {
     #[test]
     fn a_behavior_that_gets_its_turn_is_told_once() {
         let (runtime, shared) = wired();
-        let mut agent = ScriptingAgent::default();
+        let mut agent = ScriptAgent::default();
         agent.apply_budget(ResourceBudget {
             strategy_id: StrategyId::Balanced,
             time_limit: Duration::from_millis(1),
@@ -451,7 +451,7 @@ mod tests {
     /// drifted.
     #[test]
     fn the_agent_holds_no_simulation_state() {
-        let agent = ScriptingAgent::default();
+        let agent = ScriptAgent::default();
 
         // Everything it knows before a frame runs: its lanes, which one it
         // picked, its strategy, its fuel, and a handle it has not been given.
@@ -467,7 +467,7 @@ mod tests {
     /// the fallback rather than blocking the DCC or panicking.
     #[test]
     fn negotiation_survives_an_unregistered_runtime() {
-        let mut agent = ScriptingAgent::default();
+        let mut agent = ScriptAgent::default();
         let request = NegotiationRequest {
             target_latency: Duration::from_millis(16),
             priority_weight: 1.0,
@@ -479,5 +479,27 @@ mod tests {
         let response = agent.negotiate(request);
 
         assert_eq!(response.strategies.len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod lane_registration_tests {
+    use super::*;
+    use khora_core::lane::LaneKind;
+
+    /// The lanes this agent registers, by `strategy_name()`, with their kind,
+    /// in registration order. Moving a lane's source file between modules must
+    /// leave this list untouched: the names are what negotiation and
+    /// `execute` look lanes up by.
+    #[test]
+    fn registers_the_same_lanes_by_name() {
+        let agent = ScriptAgent::default();
+        let lanes: Vec<(&str, LaneKind)> = agent
+            .lanes
+            .all()
+            .iter()
+            .map(|lane| (lane.strategy_name(), lane.lane_kind()))
+            .collect();
+        assert_eq!(lanes, [("Budgeted", LaneKind::Script)]);
     }
 }

@@ -38,12 +38,8 @@ use khora_core::renderer::api::scene::GpuMesh;
 use khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer;
 use khora_core::renderer::traits::CommandEncoder;
 use khora_data::assets::Assets;
-use khora_data::render::{RenderWorld, WireframeConfig};
+use khora_data::render::{RenderWorld, SharedWireframeConfig, WireframeConfig};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
-
-/// Shared wireframe-overlay config — the host app enables it, `WireframeLane`
-/// reads it.
-pub type SharedWireframeConfig = Arc<Mutex<WireframeConfig>>;
 
 /// Wireframe material uniform — matches `WireframeMaterialUniforms` in
 /// `wireframe.wgsl` (line color + width, padded to 16 bytes).

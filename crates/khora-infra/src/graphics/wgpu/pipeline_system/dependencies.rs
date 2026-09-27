@@ -26,9 +26,19 @@ use naga_oil::compose::{ComposableModuleDescriptor, ShaderLanguage};
 /// Re-registers a dirty lib module with the composer using its overlay (or
 /// embedded) source, replacing the previous registration. `naga_oil` allows
 /// re-adding a composable module under the same import path.
+///
+/// A watched file the lib table does not know and that declares no
+/// `#define_import_path` is not a lib module but a whole shader (the
+/// `standalone/` ones, handed to their consumers as raw strings): there is
+/// nothing to re-register, so it is skipped rather than failed.
 pub(super) fn readd_lib_module(inner: &mut Inner, path: &str) -> Result<(), RenderError> {
     let source = resolve_lib_source(inner, path)
         .ok_or_else(|| backend_err(&format!("lib module `{path}` has no source")))?;
+    let known_lib = LIB_MODULES.iter().any(|(p, _)| *p == path);
+    if !known_lib && !source.contains("#define_import_path") {
+        log::debug!("shader hot-reload: `{path}` is not a lib module, nothing to recompose");
+        return Ok(());
+    }
     let patched = inject_float_defs(&source);
     let defs = inner.base_defs.clone();
     inner

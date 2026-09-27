@@ -199,7 +199,7 @@ enables it (e.g. *Playing* in the editor).
 ### No spatialization — sound plays but is not panned by position
 
 **Cause.** The mixing lane only pans when a **listener transform** is present; with no listener the
-channels stay balanced (see `spatial_mixing_lane.rs`).
+channels stay balanced (see `audio_lane/spatial_mixing.rs`).
 
 **Fix.** Ensure the scene has a listener (an `AudioListener` on an entity with a transform), typically
 on the active camera or the player.

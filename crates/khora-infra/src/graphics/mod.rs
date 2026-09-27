@@ -15,6 +15,9 @@
 //! WGPU graphics backend implementation
 
 pub mod shader;
+pub mod text;
 pub mod wgpu;
 
-pub use shader::WgpuPipelineSystem;
+pub use shader::{EGUI_WGSL, TEXT_WGSL};
+pub use text::StandardTextRenderer;
+pub use wgpu::WgpuPipelineSystem;

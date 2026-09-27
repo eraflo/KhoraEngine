@@ -31,7 +31,7 @@ use khora_core::renderer::GraphicsDevice;
 use khora_data::assets::Assets;
 use khora_data::render::{PassContribution, PassDescriptor, ResourceId, UiPassSlot};
 use khora_data::ui::{UiAtlasMap, UiImageAtlas, UiScene};
-use khora_lanes::render_lane::UiRenderLane;
+use khora_lanes::ui_lane::UiRenderLane;
 
 /// The agent responsible for the UI subsystem (`LaneKind::Ui`).
 ///
@@ -293,5 +293,40 @@ impl Default for UiAgent {
             time_budget: Duration::ZERO,
             current_strategy: StrategyId::Balanced,
         }
+    }
+}
+
+#[cfg(test)]
+mod lane_registration_tests {
+    use super::*;
+    use khora_core::lane::{LaneBus, LaneKind, OutputDeck};
+    use khora_core::{Runtime, WorldAccess};
+
+    /// The lane this agent builds, by `strategy_name()`, with its kind. The
+    /// agent builds it in `on_initialize`, which needs no GPU to get that far.
+    /// Moving the lane's source file between modules must leave this
+    /// untouched; so must leaving its `LaneKind` alone.
+    #[test]
+    fn registers_the_same_lanes_by_name() {
+        let mut agent = UiAgent::default();
+        let bus = LaneBus::new();
+        let mut deck = OutputDeck::new();
+        let permit = agent.contention();
+        let mut ctx = EngineContext::for_agent(
+            WorldAccess::None,
+            Arc::new(Runtime::default()),
+            &bus,
+            &mut deck,
+            &permit,
+            Some(agent.id()),
+        );
+        agent.on_initialize(&mut ctx);
+
+        let lanes: Vec<(&str, LaneKind)> = agent
+            .render_lane
+            .iter()
+            .map(|lane| (lane.strategy_name(), lane.lane_kind()))
+            .collect();
+        assert_eq!(lanes, [("UiRender", LaneKind::Render)]);
     }
 }

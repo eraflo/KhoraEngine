@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Renderer infrastructure module.
-//!
-//! Provides concrete implementations of rendering systems including
-//! text rendering, texture atlasing, and GPU resource management.
+//! Text rendering: the standard `TextRenderer` and its custom fonts.
 
 pub mod custom;
 /// Text rendering implementation.
-pub mod text;
+pub mod standard;
 
-pub use text::StandardTextRenderer;
+pub use standard::StandardTextRenderer;

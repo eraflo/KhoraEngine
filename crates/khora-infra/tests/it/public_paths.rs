@@ -78,6 +78,10 @@ mod every_pub_mod {
     use khora_infra::audio::cpal as _;
     use khora_infra::graphics as _;
     use khora_infra::graphics::shader as _;
+    use khora_infra::graphics::text as _;
+    use khora_infra::graphics::text::custom as _;
+    use khora_infra::graphics::text::custom::pixel_font as _;
+    use khora_infra::graphics::text::standard as _;
     use khora_infra::graphics::wgpu as _;
     use khora_infra::physics as _;
     use khora_infra::physics::khora as _;
@@ -86,14 +90,10 @@ mod every_pub_mod {
     use khora_infra::physics::khora::solver as _;
     use khora_infra::physics::rapier as _;
     use khora_infra::platform as _;
-    use khora_infra::platform::input as _;
     use khora_infra::platform::sysinfo_impl as _;
-    use khora_infra::platform::window as _;
-    use khora_infra::platform::window::winit as _;
-    use khora_infra::renderer as _;
-    use khora_infra::renderer::custom as _;
-    use khora_infra::renderer::custom::pixel_font as _;
-    use khora_infra::renderer::text as _;
+    use khora_infra::platform::winit as _;
+    use khora_infra::platform::winit::input as _;
+    use khora_infra::platform::winit::window as _;
     use khora_infra::telemetry as _;
     use khora_infra::telemetry::gpu_monitor as _;
     use khora_infra::telemetry::memory_monitor as _;
@@ -136,7 +136,7 @@ fn velocity_state_fields(x: &khora_infra::physics::khora::solver::VelocityState)
     );
 }
 
-fn standard_text_layout_fields(x: &khora_infra::renderer::text::StandardTextLayout) {
+fn standard_text_layout_fields(x: &khora_infra::graphics::text::standard::StandardTextLayout) {
     let _ = (
         &x.size,
         &x.glyph_positions,
@@ -146,7 +146,7 @@ fn standard_text_layout_fields(x: &khora_infra::renderer::text::StandardTextLayo
     );
 }
 
-fn text_vertex_fields(x: &khora_infra::renderer::text::TextVertex) {
+fn text_vertex_fields(x: &khora_infra::graphics::text::standard::TextVertex) {
     let _ = (&x.pos, &x.uv, &x.color);
 }
 
@@ -214,14 +214,24 @@ fn module_audio_paths_still_resolve() {
 
 #[test]
 fn module_graphics_paths_still_resolve() {
-    let _ = type_name::<khora_infra::graphics::shader::WgpuPipelineSystem>();
+    let _ = type_name::<khora_infra::graphics::wgpu::WgpuPipelineSystem>();
     let _ = type_name::<khora_infra::graphics::WgpuPipelineSystem>();
     same_type(
-        PhantomData::<khora_infra::graphics::shader::WgpuPipelineSystem>,
+        PhantomData::<khora_infra::graphics::wgpu::WgpuPipelineSystem>,
         PhantomData::<khora_infra::graphics::WgpuPipelineSystem>,
     );
     let _ = khora_infra::graphics::WgpuPipelineSystem::new;
     is_pipeline_system::<khora_infra::graphics::WgpuPipelineSystem>();
+    let _: &str = khora_infra::graphics::shader::EGUI_WGSL;
+    let _: &str = khora_infra::graphics::shader::TEXT_WGSL;
+    assert_eq!(
+        khora_infra::graphics::EGUI_WGSL,
+        khora_infra::graphics::shader::EGUI_WGSL
+    );
+    assert_eq!(
+        khora_infra::graphics::TEXT_WGSL,
+        khora_infra::graphics::shader::TEXT_WGSL
+    );
 }
 
 #[test]
@@ -276,80 +286,86 @@ fn module_physics_paths_still_resolve() {
 
 #[test]
 fn module_platform_paths_still_resolve() {
-    let _ = khora_infra::platform::input::translate_winit_input;
+    let _ = khora_infra::platform::winit::input::translate_winit_input;
     let _ = type_name::<khora_infra::platform::sysinfo_impl::SysinfoMonitor>();
     let _ = khora_infra::platform::sysinfo_impl::SysinfoMonitor::new;
     let _ = khora_infra::platform::sysinfo_impl::SysinfoMonitor::refresh;
     is_hardware_monitor::<khora_infra::platform::sysinfo_impl::SysinfoMonitor>();
     is_default::<khora_infra::platform::sysinfo_impl::SysinfoMonitor>();
-    let _ = type_name::<khora_infra::platform::window::winit::WinitWindow>();
-    let _ = type_name::<khora_infra::platform::window::WinitWindow>();
+    let _ = type_name::<khora_infra::platform::winit::window::WinitWindow>();
+    let _ = type_name::<khora_infra::platform::winit::WinitWindow>();
     let _ = type_name::<khora_infra::WinitWindow>();
     same_type(
-        PhantomData::<khora_infra::platform::window::WinitWindow>,
-        PhantomData::<khora_infra::platform::window::winit::WinitWindow>,
+        PhantomData::<khora_infra::platform::winit::WinitWindow>,
+        PhantomData::<khora_infra::platform::winit::window::WinitWindow>,
     );
     same_type(
         PhantomData::<khora_infra::WinitWindow>,
-        PhantomData::<khora_infra::platform::window::winit::WinitWindow>,
+        PhantomData::<khora_infra::platform::winit::window::WinitWindow>,
     );
-    let _ = khora_infra::platform::window::winit::WinitWindow::winit_window;
-    let _ = khora_infra::platform::window::winit::WinitWindow::clone_winit_arc;
-    is_debug::<khora_infra::platform::window::winit::WinitWindow>();
-    is_clone::<khora_infra::platform::window::winit::WinitWindow>();
-    is_has_window_handle::<khora_infra::platform::window::winit::WinitWindow>();
-    is_has_display_handle::<khora_infra::platform::window::winit::WinitWindow>();
-    is_khora_window::<khora_infra::platform::window::winit::WinitWindow>();
-    let _ = type_name::<khora_infra::platform::window::winit::WinitWindowBuilder>();
-    let _ = type_name::<khora_infra::platform::window::WinitWindowBuilder>();
+    let _ = khora_infra::platform::winit::window::WinitWindow::winit_window;
+    let _ = khora_infra::platform::winit::window::WinitWindow::clone_winit_arc;
+    is_debug::<khora_infra::platform::winit::window::WinitWindow>();
+    is_clone::<khora_infra::platform::winit::window::WinitWindow>();
+    is_has_window_handle::<khora_infra::platform::winit::window::WinitWindow>();
+    is_has_display_handle::<khora_infra::platform::winit::window::WinitWindow>();
+    is_khora_window::<khora_infra::platform::winit::window::WinitWindow>();
+    let _ = type_name::<khora_infra::platform::winit::window::WinitWindowBuilder>();
+    let _ = type_name::<khora_infra::platform::winit::WinitWindowBuilder>();
     let _ = type_name::<khora_infra::WinitWindowBuilder>();
     same_type(
-        PhantomData::<khora_infra::platform::window::WinitWindowBuilder>,
-        PhantomData::<khora_infra::platform::window::winit::WinitWindowBuilder>,
+        PhantomData::<khora_infra::platform::winit::WinitWindowBuilder>,
+        PhantomData::<khora_infra::platform::winit::window::WinitWindowBuilder>,
     );
     same_type(
         PhantomData::<khora_infra::WinitWindowBuilder>,
-        PhantomData::<khora_infra::platform::window::winit::WinitWindowBuilder>,
+        PhantomData::<khora_infra::platform::winit::window::WinitWindowBuilder>,
     );
-    let _ = khora_infra::platform::window::winit::WinitWindowBuilder::new;
+    let _ = khora_infra::platform::winit::window::WinitWindowBuilder::new;
     let _: fn(
-        khora_infra::platform::window::winit::WinitWindowBuilder,
+        khora_infra::platform::winit::window::WinitWindowBuilder,
         String,
-    ) -> khora_infra::platform::window::winit::WinitWindowBuilder =
-        khora_infra::platform::window::winit::WinitWindowBuilder::with_title;
-    let _ = khora_infra::platform::window::winit::WinitWindowBuilder::with_dimensions;
-    let _ = khora_infra::platform::window::winit::WinitWindowBuilder::with_icon_rgba;
-    let _ = khora_infra::platform::window::winit::WinitWindowBuilder::build;
-    is_default::<khora_infra::platform::window::winit::WinitWindowBuilder>();
+    ) -> khora_infra::platform::winit::window::WinitWindowBuilder =
+        khora_infra::platform::winit::window::WinitWindowBuilder::with_title;
+    let _ = khora_infra::platform::winit::window::WinitWindowBuilder::with_dimensions;
+    let _ = khora_infra::platform::winit::window::WinitWindowBuilder::with_icon_rgba;
+    let _ = khora_infra::platform::winit::window::WinitWindowBuilder::build;
+    is_default::<khora_infra::platform::winit::window::WinitWindowBuilder>();
 }
 
 #[test]
-fn module_renderer_paths_still_resolve() {
-    let _ = khora_infra::renderer::custom::pixel_font::get_font_bits;
-    let _ = khora_infra::renderer::custom::pixel_font::rasterize_glyph;
-    let _ = type_name::<khora_infra::renderer::text::StandardTextLayout>();
-    let _ = standard_text_layout_fields as fn(&khora_infra::renderer::text::StandardTextLayout);
-    is_text_layout::<khora_infra::renderer::text::StandardTextLayout>();
-    let _ = type_name::<khora_infra::renderer::text::StandardTextRenderer>();
-    let _ = type_name::<khora_infra::renderer::StandardTextRenderer>();
+fn module_graphics_text_paths_still_resolve() {
+    let _ = khora_infra::graphics::text::custom::pixel_font::get_font_bits;
+    let _ = khora_infra::graphics::text::custom::pixel_font::rasterize_glyph;
+    let _ = type_name::<khora_infra::graphics::text::standard::StandardTextLayout>();
+    let _ = standard_text_layout_fields
+        as fn(&khora_infra::graphics::text::standard::StandardTextLayout);
+    is_text_layout::<khora_infra::graphics::text::standard::StandardTextLayout>();
+    let _ = type_name::<khora_infra::graphics::text::standard::StandardTextRenderer>();
+    let _ = type_name::<khora_infra::graphics::text::StandardTextRenderer>();
+    let _ = type_name::<khora_infra::graphics::StandardTextRenderer>();
     let _ = type_name::<khora_infra::StandardTextRenderer>();
     same_type(
-        PhantomData::<khora_infra::renderer::StandardTextRenderer>,
-        PhantomData::<khora_infra::renderer::text::StandardTextRenderer>,
+        PhantomData::<khora_infra::graphics::StandardTextRenderer>,
+        PhantomData::<khora_infra::graphics::text::standard::StandardTextRenderer>,
+    );
+    same_type(
+        PhantomData::<khora_infra::graphics::text::StandardTextRenderer>,
+        PhantomData::<khora_infra::graphics::text::standard::StandardTextRenderer>,
     );
     same_type(
         PhantomData::<khora_infra::StandardTextRenderer>,
-        PhantomData::<khora_infra::renderer::text::StandardTextRenderer>,
+        PhantomData::<khora_infra::graphics::text::standard::StandardTextRenderer>,
     );
-    let _ = khora_infra::renderer::text::StandardTextRenderer::new;
-    is_text_renderer::<khora_infra::renderer::text::StandardTextRenderer>();
-    let _ = type_name::<khora_infra::renderer::text::TextVertex>();
-    let _ = text_vertex_fields as fn(&khora_infra::renderer::text::TextVertex);
-    is_copy::<khora_infra::renderer::text::TextVertex>();
-    is_clone::<khora_infra::renderer::text::TextVertex>();
-    is_debug::<khora_infra::renderer::text::TextVertex>();
-    is_pod::<khora_infra::renderer::text::TextVertex>();
-    is_zeroable::<khora_infra::renderer::text::TextVertex>();
+    let _ = khora_infra::graphics::text::standard::StandardTextRenderer::new;
+    is_text_renderer::<khora_infra::graphics::text::standard::StandardTextRenderer>();
+    let _ = type_name::<khora_infra::graphics::text::standard::TextVertex>();
+    let _ = text_vertex_fields as fn(&khora_infra::graphics::text::standard::TextVertex);
+    is_copy::<khora_infra::graphics::text::standard::TextVertex>();
+    is_clone::<khora_infra::graphics::text::standard::TextVertex>();
+    is_debug::<khora_infra::graphics::text::standard::TextVertex>();
+    is_pod::<khora_infra::graphics::text::standard::TextVertex>();
+    is_zeroable::<khora_infra::graphics::text::standard::TextVertex>();
 }
 
 #[test]
@@ -543,21 +559,23 @@ fn module_ui_paths_still_resolve() {
 mod paths_used_by_other_crates {
     use khora_infra::audio::cpal::CpalAudioDevice as _; // khora-sdk
     use khora_infra::graphics::WgpuPipelineSystem as _; // khora-sdk
+    use khora_infra::graphics::EGUI_WGSL as _; // khora-sdk
+    use khora_infra::graphics::TEXT_WGSL as _; // khora-sdk
     use khora_infra::physics::rapier::RapierPhysicsWorld as _; // khora-agents, khora-sdk
-    use khora_infra::platform::input::translate_winit_input as _; // khora-sdk
-    use khora_infra::platform::window::WinitWindow as _; // khora-sdk
-    use khora_infra::renderer::StandardTextRenderer as _; // khora-sdk
+    use khora_infra::platform::winit::input::translate_winit_input as _; // khora-sdk
+    use khora_infra::platform::winit::WinitWindow as _; // khora-sdk
     use khora_infra::telemetry::memory_monitor::MemoryMonitor as _; // khora-sdk
     use khora_infra::ui::egui::app::run_native as _; // khora-sdk
     use khora_infra::ui::egui::app::WindowConfigInput as _; // khora-sdk
     use khora_infra::ui::egui::app::WindowIconInput as _; // khora-sdk
     use khora_infra::ui::TaffyLayoutSystem as _; // khora-sdk
     use khora_infra::GpuMonitor as _; // khora-sdk
+    use khora_infra::StandardTextRenderer as _; // khora-sdk
     use khora_infra::WgpuRenderSystem as _; // khora-sdk
 }
 
 #[test]
 fn associated_items_used_by_other_crates_still_resolve() {
-    let _ = khora_infra::platform::window::WinitWindowBuilder::new; // khora-sdk
+    let _ = khora_infra::platform::winit::WinitWindowBuilder::new; // khora-sdk
     let _ = khora_infra::telemetry::memory_monitor::MemoryMonitor::new; // khora-sdk
 }

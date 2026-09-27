@@ -21,7 +21,7 @@
 
 use std::sync::Arc;
 
-use khora_agents::script_agent::ScriptingAgent;
+use khora_agents::script_agent::ScriptAgent;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{LaneBus, OutputDeck};
@@ -89,7 +89,7 @@ fn a_scene_with_a_guard() -> ScriptView {
 }
 
 /// Runs one frame of the agent, returning the commands its behaviors queued.
-fn run_one_frame(agent: &mut ScriptingAgent, runtime: &Arc<Runtime>) -> Vec<WorldCommand> {
+fn run_one_frame(agent: &mut ScriptAgent, runtime: &Arc<Runtime>) -> Vec<WorldCommand> {
     let mut bus = LaneBus::new();
     bus.publish(a_scene_with_a_guard());
     let mut deck = OutputDeck::new();
@@ -141,7 +141,7 @@ fn a_touched_event_reaches_the_behavior_that_declared_the_handler() {
     runtime_with_reload.resources.insert(reloads);
     let runtime = Arc::new(runtime_with_reload);
 
-    let mut agent = ScriptingAgent::default();
+    let mut agent = ScriptAgent::default();
     // The DCC does this every frame; without it the agent has no fuel and
     // defers everything, which is a budget of nothing rather than a bug.
     agent.apply_budget(khora_core::control::gorna::ResourceBudget {

@@ -360,7 +360,7 @@ impl EngineApp for EditorApp {
         let grid_on = matches!(play_mode, PlayMode::Editing);
         if let Some(grid_cfg) = runtime
             .resources
-            .get::<khora_sdk::khora_lanes::render_lane::SharedGridConfig>()
+            .get::<khora_sdk::khora_data::render::SharedGridConfig>()
         {
             if let Ok(mut cfg) = grid_cfg.lock() {
                 cfg.enabled = grid_on;
@@ -371,7 +371,7 @@ impl EngineApp for EditorApp {
         // the grid it is editor chrome, hidden outside Editing mode.
         if let Some(wf_cfg) = runtime
             .resources
-            .get::<khora_sdk::khora_lanes::render_lane::SharedWireframeConfig>()
+            .get::<khora_sdk::khora_data::render::SharedWireframeConfig>()
         {
             if let Ok(mut cfg) = wf_cfg.lock() {
                 cfg.enabled = self.wireframe_enabled && grid_on;
@@ -394,7 +394,7 @@ impl EngineApp for EditorApp {
         };
         if let Some(shared) = runtime
             .resources
-            .get::<khora_sdk::khora_lanes::render_lane::SharedGizmoFrame>()
+            .get::<khora_sdk::khora_data::render::SharedGizmoFrame>()
         {
             if let Ok(mut frame) = shared.lock() {
                 frame.lines = gizmo_lines;

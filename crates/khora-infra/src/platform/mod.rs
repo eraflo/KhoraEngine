@@ -14,6 +14,5 @@
 
 //! Platform abstraction implementation
 
-pub mod input;
 pub mod sysinfo_impl;
-pub mod window;
+pub mod winit;

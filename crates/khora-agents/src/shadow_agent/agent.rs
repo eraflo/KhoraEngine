@@ -46,10 +46,10 @@ use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 use khora_data::render::RenderWorld;
 use khora_data::AssetStore;
-use khora_lanes::render_lane::shadows_lane::{
+use khora_lanes::shadow_lane::{LowResShadowsLane, MediumShadowsLane, StandardShadowsLane};
+use khora_lanes::shadow_lane::{
     LOW_RES_STRATEGY_NAME, MEDIUM_STRATEGY_NAME, STANDARD_STRATEGY_NAME,
 };
-use khora_lanes::render_lane::{LowResShadowsLane, MediumShadowsLane, StandardShadowsLane};
 
 const COST_TO_MS_SCALE: f32 = 5.0;
 
@@ -441,5 +441,34 @@ mod tests {
 
         let ids: Vec<StrategyId> = response.strategies.iter().map(|s| s.id).collect();
         assert_eq!(ids, vec![StrategyId::LowPower]);
+    }
+}
+
+#[cfg(test)]
+mod lane_registration_tests {
+    use super::*;
+    use khora_core::lane::LaneKind;
+
+    /// The lanes this agent registers, by `strategy_name()`, with their kind,
+    /// in registration order. Moving a lane's source file between modules must
+    /// leave this list untouched: the names are what negotiation and
+    /// `execute` look lanes up by.
+    #[test]
+    fn registers_the_same_lanes_by_name() {
+        let agent = ShadowAgent::default();
+        let lanes: Vec<(&str, LaneKind)> = agent
+            .lanes
+            .all()
+            .iter()
+            .map(|lane| (lane.strategy_name(), lane.lane_kind()))
+            .collect();
+        assert_eq!(
+            lanes,
+            [
+                ("StandardShadows", LaneKind::Shadow),
+                ("MediumShadows", LaneKind::Shadow),
+                ("LowResShadows", LaneKind::Shadow)
+            ]
+        );
     }
 }

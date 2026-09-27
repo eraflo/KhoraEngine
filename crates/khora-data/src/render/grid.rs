@@ -22,12 +22,17 @@
 //! (shared as an `Arc<Mutex<GridConfig>>` runtime resource). The
 //! sandbox leaves it disabled — no grid; the editor enables it.
 
+use std::sync::{Arc, Mutex};
+
 /// Editor grid overlay state.
 #[derive(Debug, Clone, Default)]
 pub struct GridConfig {
     /// Whether `GridLane` should render the infinite ground grid.
     pub enabled: bool,
 }
+
+/// Shared editor-grid config — the host app enables it, `GridLane` reads it.
+pub type SharedGridConfig = Arc<Mutex<GridConfig>>;
 
 #[cfg(test)]
 mod tests {

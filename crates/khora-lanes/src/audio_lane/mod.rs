@@ -14,6 +14,6 @@
 
 //! Contains lanes for audio processing.
 
-mod mixing;
+mod spatial_mixing;
 
-pub use mixing::*;
+pub use spatial_mixing::*;

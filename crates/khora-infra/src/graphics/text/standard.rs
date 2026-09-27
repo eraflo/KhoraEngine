@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::renderer::custom::pixel_font;
+use super::custom::pixel_font;
 use khora_core::asset::{font::Font, AssetUUID, Handle};
 use khora_core::math::{LinearRgba, Vec2, Vec4};
 use khora_core::renderer::api::util::TextureAtlas;

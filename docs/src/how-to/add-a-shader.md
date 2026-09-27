@@ -59,7 +59,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 ## Step 2 — Register the module with the backend
 
 Add the file to the relevant table in
-`crates/khora-infra/src/graphics/shader/system/mod.rs` so the composer knows it. A
+`crates/khora-infra/src/graphics/wgpu/pipeline_system/mod.rs` so the composer knows it. A
 reusable module goes in `LIB_MODULES` (with a `khora::…` import path); an entry-point
 pipeline goes in `PIPELINE_MODULES` (keyed by its logical name):
 

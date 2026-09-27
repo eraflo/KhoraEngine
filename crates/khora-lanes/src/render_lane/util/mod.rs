@@ -14,6 +14,10 @@
 
 //! Internal helpers for render-lane implementations.
 
+mod uniform_layout;
+
+pub(crate) use uniform_layout::single_uniform_layout;
+
 /// Lock helper for callers that cannot propagate `Result<_, LaneError>`.
 ///
 /// Returns the guard on success; on poisoning logs an error and

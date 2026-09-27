@@ -24,7 +24,7 @@ use anyhow::Result;
 use khora_core::platform::KhoraWindow;
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::traits::RenderSystem;
-use khora_infra::platform::window::WinitWindow;
+use khora_infra::platform::winit::WinitWindow;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
@@ -52,7 +52,7 @@ impl WindowProvider for WinitWindowProvider {
             .downcast_ref::<ActiveEventLoop>()
             .expect("WindowProvider::create called with wrong native_loop type");
 
-        let mut builder = khora_infra::platform::window::WinitWindowBuilder::new()
+        let mut builder = khora_infra::platform::winit::WinitWindowBuilder::new()
             .with_title(&config.title)
             .with_dimensions(config.width, config.height);
 
@@ -86,7 +86,7 @@ impl WindowProvider for WinitWindowProvider {
 
     fn translate_event(&self, raw_event: &dyn Any) -> Option<InputEvent> {
         if let Some(winit_event) = raw_event.downcast_ref::<WindowEvent>() {
-            khora_infra::platform::input::translate_winit_input(winit_event)
+            khora_infra::platform::winit::input::translate_winit_input(winit_event)
         } else {
             None
         }

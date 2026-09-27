@@ -298,7 +298,7 @@ pub(crate) fn map_keycode(keycode: WinitKeyCode) -> KeyCode {
             if WARNED.set(()).is_ok() {
                 log::warn!(
                     "khora-infra: unmapped winit::KeyCode variant {:?} (using KeyCode::Unidentified). \
-                     Consider extending map_keycode in crates/khora-infra/src/platform/input.rs.",
+                     Consider extending map_keycode in crates/khora-infra/src/platform/winit/input.rs.",
                     other,
                 );
             }

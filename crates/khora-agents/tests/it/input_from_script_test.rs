@@ -23,7 +23,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_agents::script_agent::ScriptingAgent;
+use khora_agents::script_agent::ScriptAgent;
 use khora_core::agent::Agent;
 use khora_core::control::gorna::{ResourceBudget, StrategyId};
 use khora_core::ecs::entity::EntityId;
@@ -95,7 +95,7 @@ fn a_scene_with_the_player(input: khora_core::platform::InputSnapshot) -> Script
 /// One frame of the real descent: the input data system folds the events into
 /// the map, the flow snapshots it, the agent runs the lane.
 fn run_one_frame(
-    agent: &mut ScriptingAgent,
+    agent: &mut ScriptAgent,
     world: &mut World,
     runtime: &Arc<Runtime>,
 ) -> Vec<WorldCommand> {
@@ -134,7 +134,7 @@ fn run_one_frame(
         .to_vec()
 }
 
-fn wired() -> (Arc<Runtime>, Channel<InputEvent>, ScriptingAgent) {
+fn wired() -> (Arc<Runtime>, Channel<InputEvent>, ScriptAgent) {
     let mut map = InputMap::new();
     map.bind("jump", InputBinding::Key(KeyCode::Space));
 
@@ -160,7 +160,7 @@ fn wired() -> (Arc<Runtime>, Channel<InputEvent>, ScriptingAgent) {
     runtime.resources.insert(Arc::new(Mutex::new(map)));
     runtime.resources.insert(reloads);
 
-    let mut agent = ScriptingAgent::default();
+    let mut agent = ScriptAgent::default();
     agent.apply_budget(ResourceBudget {
         strategy_id: StrategyId::Balanced,
         time_limit: std::time::Duration::from_millis(1),

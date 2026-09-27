@@ -17,7 +17,7 @@
 //! Runs in the OUTPUT phase after `RenderAgent`, like `OverlayAgent`, and
 //! contributes a single [`SkyboxPass`](khora_data::render::SkyboxPassSlot) to
 //! the FrameGraph (`writes(Color).reads(Depth)`). Its one lane
-//! ([`SkyboxLane`](khora_lanes::render_lane::SkyboxLane)) draws the IBL
+//! ([`SkyboxLane`](khora_lanes::skybox_lane::SkyboxLane)) draws the IBL
 //! environment cube behind the scene geometry (depth-tested, no depth write),
 //! so the visible sky matches what surfaces reflect.
 //!

@@ -64,7 +64,7 @@ pub fn run() -> anyhow::Result<()> {
         let theme = khora_sdk::khora_core::ui::UiTheme::default();
         match rs.create_editor_overlay_and_shell(
             event_loop,
-            khora_sdk::khora_lanes::render_lane::shaders::EGUI_WGSL,
+            khora_sdk::EGUI_WGSL,
             theme,
             khora_sdk::PRIMARY_VIEWPORT,
         ) {

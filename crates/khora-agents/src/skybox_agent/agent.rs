@@ -41,7 +41,7 @@ use khora_data::render::{
 /// it runs its lane unconditionally (no host opt-in) and carries a higher
 /// importance so the background sky survives budget pressure.
 ///
-/// [`SkyboxLane`]: khora_lanes::render_lane::SkyboxLane
+/// [`SkyboxLane`]: khora_lanes::skybox_lane::SkyboxLane
 pub struct SkyboxAgent {
     /// The single skybox lane, held in a registry for parity with the other
     /// render agents.
@@ -236,7 +236,7 @@ impl Agent for SkyboxAgent {
 impl Default for SkyboxAgent {
     fn default() -> Self {
         let mut lanes = LaneRegistry::new();
-        lanes.register(Box::new(khora_lanes::render_lane::SkyboxLane::default()));
+        lanes.register(Box::new(khora_lanes::skybox_lane::SkyboxLane::default()));
         Self {
             lanes,
             time_budget: Duration::ZERO,
@@ -271,5 +271,27 @@ mod tests {
         assert_eq!(timing.importance, AgentImportance::Important);
         assert_eq!(timing.dependencies.len(), 1);
         assert_eq!(timing.dependencies[0].target, AgentId::Renderer);
+    }
+}
+
+#[cfg(test)]
+mod lane_registration_tests {
+    use super::*;
+    use khora_core::lane::LaneKind;
+
+    /// The lanes this agent registers, by `strategy_name()`, with their kind,
+    /// in registration order. Moving a lane's source file between modules must
+    /// leave this list untouched: the names are what negotiation and
+    /// `execute` look lanes up by.
+    #[test]
+    fn registers_the_same_lanes_by_name() {
+        let agent = SkyboxAgent::default();
+        let lanes: Vec<(&str, LaneKind)> = agent
+            .lanes
+            .all()
+            .iter()
+            .map(|lane| (lane.strategy_name(), lane.lane_kind()))
+            .collect();
+        assert_eq!(lanes, [("Skybox", LaneKind::Render)]);
     }
 }

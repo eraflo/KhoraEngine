@@ -21,18 +21,12 @@ non_test_code_under_700_lines crates/khora-script/src/vm/mod.rs  # 828 non-test 
 
 # --- wgsl_only_in_shader_tree (T9) -------------------------------------------
 
-wgsl_only_in_shader_tree crates/khora-lanes/src/render_lane/shaders/pipelines/egui.wgsl  # to infra shaders/pipelines/ in B4 (4.4)
-wgsl_only_in_shader_tree crates/khora-lanes/src/render_lane/shaders/pipelines/text.wgsl  # to infra shaders/pipelines/ in B4 (4.4)
 
 # --- every_agent_folder_has_agent_rs -----------------------------------------
 
 
 # --- lanes_mirror_agents (T2) ------------------------------------------------
 
-lanes_mirror_agents crates/khora-lanes/src/overlay_lane  # out of render_lane/ in B4
-lanes_mirror_agents crates/khora-lanes/src/shadow_lane  # render_lane/shadows_lane/ moves up in B4
-lanes_mirror_agents crates/khora-lanes/src/skybox_lane  # out of render_lane/ in B4
-lanes_mirror_agents crates/khora-lanes/src/ui_lane  # render_lane/ui_render_lane.rs moves in B4
 
 # --- no_duplicate_asset_files ------------------------------------------------
 

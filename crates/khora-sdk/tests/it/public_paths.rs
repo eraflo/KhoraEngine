@@ -839,11 +839,10 @@ fn module_crate_root_paths_still_resolve() {
         PhantomData::<khora_sdk::SymphoniaDecoder>,
         PhantomData::<khora_io::asset::SymphoniaDecoder>,
     );
+    let _ = khora_sdk::EGUI_WGSL;
+    assert_eq!(khora_sdk::EGUI_WGSL, khora_infra::graphics::EGUI_WGSL);
     let _ = khora_sdk::TEXT_WGSL;
-    assert_eq!(
-        khora_sdk::TEXT_WGSL,
-        khora_lanes::render_lane::shaders::TEXT_WGSL
-    );
+    assert_eq!(khora_sdk::TEXT_WGSL, khora_infra::graphics::TEXT_WGSL);
     let _ = type_name::<khora_sdk::TaffyLayoutSystem>();
     same_type(
         PhantomData::<khora_sdk::TaffyLayoutSystem>,
@@ -1336,8 +1335,8 @@ fn whole_crate_reexports_are_the_dependencies() {
         PhantomData::<khora_data::ecs::World>,
     );
     same_type(
-        PhantomData::<khora_sdk::khora_lanes::render_lane::GridLane>,
-        PhantomData::<khora_lanes::render_lane::GridLane>,
+        PhantomData::<khora_sdk::khora_lanes::overlay_lane::GridLane>,
+        PhantomData::<khora_lanes::overlay_lane::GridLane>,
     );
     same_type(
         PhantomData::<khora_sdk::winit::event_loop::EventLoop<()>>,
@@ -2034,12 +2033,11 @@ mod paths_used_by_other_crates {
     use khora_sdk::khora_data::render::extract_active_camera_view as _; // khora-editor
     use khora_sdk::khora_data::render::EditorViewportOverride as _; // khora-editor
     use khora_sdk::khora_data::render::ExtractedView as _; // khora-editor
+    use khora_sdk::khora_data::render::SharedGizmoFrame as _; // khora-editor
+    use khora_sdk::khora_data::render::SharedGridConfig as _; // khora-editor
+    use khora_sdk::khora_data::render::SharedWireframeConfig as _; // khora-editor
     use khora_sdk::khora_data::scene::provenance_of as _; // khora-editor
     use khora_sdk::khora_data::AssetStore as _; // sandbox
-    use khora_sdk::khora_lanes::render_lane::shaders::EGUI_WGSL as _; // khora-editor
-    use khora_sdk::khora_lanes::render_lane::SharedGizmoFrame as _; // khora-editor
-    use khora_sdk::khora_lanes::render_lane::SharedGridConfig as _; // khora-editor
-    use khora_sdk::khora_lanes::render_lane::SharedWireframeConfig as _; // khora-editor
     use khora_sdk::prelude as _; // khora-editor, khora-runtime, sandbox (glob re-export)
     use khora_sdk::prelude::ecs as _; // khora-editor (glob re-export)
     use khora_sdk::prelude::ecs::AudioSource as _; // khora-editor
@@ -2145,6 +2143,7 @@ mod paths_used_by_other_crates {
     use khora_sdk::WgpuRenderSystem as _; // khora-editor, sandbox
     use khora_sdk::WindowConfig as _; // sandbox
     use khora_sdk::DEFAULT_SCENE_REL_PATH as _; // khora-editor
+    use khora_sdk::EGUI_WGSL as _; // khora-editor
     use khora_sdk::PRIMARY_VIEWPORT as _; // khora-editor
     use khora_sdk::RUNTIME_CONFIG_FILE as _; // khora-editor
     use khora_sdk::TEXT_WGSL as _; // khora-editor, sandbox

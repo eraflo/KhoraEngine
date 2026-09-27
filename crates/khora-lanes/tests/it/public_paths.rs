@@ -56,21 +56,23 @@ fn is_serialize<T: serde::Serialize>() {}
 #[allow(unused_imports)]
 mod every_pub_mod {
     use khora_lanes::audio_lane as _;
+    use khora_lanes::overlay_lane as _;
     use khora_lanes::physics_lane as _;
     use khora_lanes::render_lane as _;
-    use khora_lanes::render_lane::shaders as _;
-    use khora_lanes::render_lane::shadows_lane as _;
-    use khora_lanes::render_lane::shadows_lane::algo as _;
-    use khora_lanes::render_lane::shadows_lane::algo::atlas_2d as _;
-    use khora_lanes::render_lane::shadows_lane::algo::atlas_cube as _;
-    use khora_lanes::render_lane::shadows_lane::algo::bindings as _;
-    use khora_lanes::render_lane::shadows_lane::algo::pass as _;
-    use khora_lanes::render_lane::shadows_lane::algo::state as _;
     use khora_lanes::render_lane::util as _;
     use khora_lanes::script_lane as _;
     use khora_lanes::script_lane::persistence as _;
     use khora_lanes::script_lane::report as _;
     use khora_lanes::script_lane::runtime as _;
+    use khora_lanes::shadow_lane as _;
+    use khora_lanes::shadow_lane::algo as _;
+    use khora_lanes::shadow_lane::algo::atlas_2d as _;
+    use khora_lanes::shadow_lane::algo::atlas_cube as _;
+    use khora_lanes::shadow_lane::algo::bindings as _;
+    use khora_lanes::shadow_lane::algo::pass as _;
+    use khora_lanes::shadow_lane::algo::state as _;
+    use khora_lanes::skybox_lane as _;
+    use khora_lanes::ui_lane as _;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,15 +122,15 @@ fn shader_complexity_variants(x: &khora_lanes::render_lane::ShaderComplexity) {
     }
 }
 
-fn atlas2_d_fields(x: &khora_lanes::render_lane::shadows_lane::algo::atlas_2d::Atlas2D) {
+fn atlas2_d_fields(x: &khora_lanes::shadow_lane::algo::atlas_2d::Atlas2D) {
     let _ = (&x.texture, &x.view);
 }
 
-fn atlas_cube_fields(x: &khora_lanes::render_lane::shadows_lane::algo::atlas_cube::AtlasCube) {
+fn atlas_cube_fields(x: &khora_lanes::shadow_lane::algo::atlas_cube::AtlasCube) {
     let _ = (&x.texture, &x.view, &x.face_views);
 }
 
-fn attachment_pass_fields(x: &khora_lanes::render_lane::shadows_lane::algo::pass::AttachmentPass) {
+fn attachment_pass_fields(x: &khora_lanes::shadow_lane::algo::pass::AttachmentPass) {
     let _ = (
         &x.target_view,
         &x.base_array_layer,
@@ -138,7 +140,7 @@ fn attachment_pass_fields(x: &khora_lanes::render_lane::shadows_lane::algo::pass
     );
 }
 
-fn shadow_draw_cmd_fields(x: &khora_lanes::render_lane::shadows_lane::algo::pass::ShadowDrawCmd) {
+fn shadow_draw_cmd_fields(x: &khora_lanes::shadow_lane::algo::pass::ShadowDrawCmd) {
     let _ = (
         &x.model_bg,
         &x.model_offset,
@@ -149,9 +151,7 @@ fn shadow_draw_cmd_fields(x: &khora_lanes::render_lane::shadows_lane::algo::pass
     );
 }
 
-fn shadows_lane_state_fields(
-    x: &khora_lanes::render_lane::shadows_lane::algo::state::ShadowsLaneState,
-) {
+fn shadows_lane_state_fields(x: &khora_lanes::shadow_lane::algo::state::ShadowsLaneState) {
     let _ = (
         &x.pipeline,
         &x.camera_layout,
@@ -222,6 +222,22 @@ fn module_physics_lane_paths_still_resolve() {
 }
 
 #[test]
+fn module_overlay_lane_paths_still_resolve() {
+    let _ = type_name::<khora_lanes::overlay_lane::GizmoLane>();
+    is_debug::<khora_lanes::overlay_lane::GizmoLane>();
+    is_default::<khora_lanes::overlay_lane::GizmoLane>();
+    is_lane::<khora_lanes::overlay_lane::GizmoLane>();
+    let _ = type_name::<khora_lanes::overlay_lane::GridLane>();
+    is_debug::<khora_lanes::overlay_lane::GridLane>();
+    is_default::<khora_lanes::overlay_lane::GridLane>();
+    is_lane::<khora_lanes::overlay_lane::GridLane>();
+    let _ = type_name::<khora_lanes::overlay_lane::WireframeLane>();
+    is_debug::<khora_lanes::overlay_lane::WireframeLane>();
+    is_default::<khora_lanes::overlay_lane::WireframeLane>();
+    is_lane::<khora_lanes::overlay_lane::WireframeLane>();
+}
+
+#[test]
 fn module_render_lane_paths_still_resolve() {
     let _ = type_name::<khora_lanes::render_lane::ForwardPlusGpuResources>();
     let _ =
@@ -241,14 +257,6 @@ fn module_render_lane_paths_still_resolve() {
     let _ = khora_lanes::render_lane::ForwardPlusLane::get_pipeline_for_material;
     is_default::<khora_lanes::render_lane::ForwardPlusLane>();
     is_lane::<khora_lanes::render_lane::ForwardPlusLane>();
-    let _ = type_name::<khora_lanes::render_lane::GizmoLane>();
-    is_debug::<khora_lanes::render_lane::GizmoLane>();
-    is_default::<khora_lanes::render_lane::GizmoLane>();
-    is_lane::<khora_lanes::render_lane::GizmoLane>();
-    let _ = type_name::<khora_lanes::render_lane::GridLane>();
-    is_debug::<khora_lanes::render_lane::GridLane>();
-    is_default::<khora_lanes::render_lane::GridLane>();
-    is_lane::<khora_lanes::render_lane::GridLane>();
     let _ = type_name::<khora_lanes::render_lane::LitForwardLane>();
     let _ = lit_forward_lane_fields as fn(&khora_lanes::render_lane::LitForwardLane);
     let _ = khora_lanes::render_lane::LitForwardLane::new;
@@ -257,32 +265,6 @@ fn module_render_lane_paths_still_resolve() {
     let _ = khora_lanes::render_lane::LitForwardLane::get_pipeline_for_material;
     is_default::<khora_lanes::render_lane::LitForwardLane>();
     is_lane::<khora_lanes::render_lane::LitForwardLane>();
-    let _ = type_name::<khora_lanes::render_lane::shadows_lane::LowResShadowsLane>();
-    let _ = type_name::<khora_lanes::render_lane::LowResShadowsLane>();
-    same_type(
-        PhantomData::<khora_lanes::render_lane::shadows_lane::LowResShadowsLane>,
-        PhantomData::<khora_lanes::render_lane::LowResShadowsLane>,
-    );
-    let _ = khora_lanes::render_lane::LowResShadowsLane::ATLAS_2D_RESOLUTION;
-    let _ = khora_lanes::render_lane::LowResShadowsLane::ATLAS_2D_MAX_LIGHTS;
-    let _ = khora_lanes::render_lane::LowResShadowsLane::CUBE_FACE_RESOLUTION;
-    let _ = khora_lanes::render_lane::LowResShadowsLane::CUBE_MAX_LIGHTS;
-    let _ = khora_lanes::render_lane::LowResShadowsLane::new;
-    is_default::<khora_lanes::render_lane::LowResShadowsLane>();
-    is_lane::<khora_lanes::render_lane::LowResShadowsLane>();
-    let _ = type_name::<khora_lanes::render_lane::shadows_lane::MediumShadowsLane>();
-    let _ = type_name::<khora_lanes::render_lane::MediumShadowsLane>();
-    same_type(
-        PhantomData::<khora_lanes::render_lane::shadows_lane::MediumShadowsLane>,
-        PhantomData::<khora_lanes::render_lane::MediumShadowsLane>,
-    );
-    let _ = khora_lanes::render_lane::MediumShadowsLane::ATLAS_2D_RESOLUTION;
-    let _ = khora_lanes::render_lane::MediumShadowsLane::ATLAS_2D_MAX_LIGHTS;
-    let _ = khora_lanes::render_lane::MediumShadowsLane::CUBE_FACE_RESOLUTION;
-    let _ = khora_lanes::render_lane::MediumShadowsLane::CUBE_MAX_LIGHTS;
-    let _ = khora_lanes::render_lane::MediumShadowsLane::new;
-    is_default::<khora_lanes::render_lane::MediumShadowsLane>();
-    is_lane::<khora_lanes::render_lane::MediumShadowsLane>();
     let _ = type_name::<khora_lanes::render_lane::ShaderComplexity>();
     let _ = shader_complexity_variants as fn(&khora_lanes::render_lane::ShaderComplexity);
     let _ = khora_lanes::render_lane::ShaderComplexity::cost_multiplier;
@@ -295,89 +277,99 @@ fn module_render_lane_paths_still_resolve() {
     is_partial_ord::<khora_lanes::render_lane::ShaderComplexity>();
     is_ord::<khora_lanes::render_lane::ShaderComplexity>();
     is_default::<khora_lanes::render_lane::ShaderComplexity>();
-    let _ = type_name::<khora_lanes::render_lane::SharedGizmoFrame>();
-    let _ = type_name::<khora_lanes::render_lane::SharedGridConfig>();
-    let _ = type_name::<khora_lanes::render_lane::SharedWireframeConfig>();
     let _ = type_name::<khora_lanes::render_lane::SimpleUnlitLane>();
     let _ = khora_lanes::render_lane::SimpleUnlitLane::new;
     let _ = khora_lanes::render_lane::SimpleUnlitLane::get_pipeline_for_material;
     is_default::<khora_lanes::render_lane::SimpleUnlitLane>();
     is_lane::<khora_lanes::render_lane::SimpleUnlitLane>();
-    let _ = type_name::<khora_lanes::render_lane::SkyboxLane>();
-    is_debug::<khora_lanes::render_lane::SkyboxLane>();
-    is_default::<khora_lanes::render_lane::SkyboxLane>();
-    is_lane::<khora_lanes::render_lane::SkyboxLane>();
     let _ = type_name::<khora_lanes::render_lane::StandardPbrLane>();
     is_default::<khora_lanes::render_lane::StandardPbrLane>();
     is_lane::<khora_lanes::render_lane::StandardPbrLane>();
-    let _ = type_name::<khora_lanes::render_lane::shadows_lane::StandardShadowsLane>();
-    let _ = type_name::<khora_lanes::render_lane::StandardShadowsLane>();
+}
+
+#[test]
+fn module_shadow_lane_paths_still_resolve() {
+    let _ = type_name::<khora_lanes::shadow_lane::LowResShadowsLane>();
+    let _ = khora_lanes::shadow_lane::LowResShadowsLane::ATLAS_2D_RESOLUTION;
+    let _ = khora_lanes::shadow_lane::LowResShadowsLane::ATLAS_2D_MAX_LIGHTS;
+    let _ = khora_lanes::shadow_lane::LowResShadowsLane::CUBE_FACE_RESOLUTION;
+    let _ = khora_lanes::shadow_lane::LowResShadowsLane::CUBE_MAX_LIGHTS;
+    let _ = khora_lanes::shadow_lane::LowResShadowsLane::new;
+    is_default::<khora_lanes::shadow_lane::LowResShadowsLane>();
+    is_lane::<khora_lanes::shadow_lane::LowResShadowsLane>();
+    let _ = type_name::<khora_lanes::shadow_lane::MediumShadowsLane>();
+    let _ = khora_lanes::shadow_lane::MediumShadowsLane::ATLAS_2D_RESOLUTION;
+    let _ = khora_lanes::shadow_lane::MediumShadowsLane::ATLAS_2D_MAX_LIGHTS;
+    let _ = khora_lanes::shadow_lane::MediumShadowsLane::CUBE_FACE_RESOLUTION;
+    let _ = khora_lanes::shadow_lane::MediumShadowsLane::CUBE_MAX_LIGHTS;
+    let _ = khora_lanes::shadow_lane::MediumShadowsLane::new;
+    is_default::<khora_lanes::shadow_lane::MediumShadowsLane>();
+    is_lane::<khora_lanes::shadow_lane::MediumShadowsLane>();
+    let _ = type_name::<khora_lanes::shadow_lane::StandardShadowsLane>();
+    let _ = khora_lanes::shadow_lane::StandardShadowsLane::ATLAS_2D_RESOLUTION;
+    let _ = khora_lanes::shadow_lane::StandardShadowsLane::ATLAS_2D_MAX_LIGHTS;
+    let _ = khora_lanes::shadow_lane::StandardShadowsLane::CUBE_FACE_RESOLUTION;
+    let _ = khora_lanes::shadow_lane::StandardShadowsLane::CUBE_MAX_LIGHTS;
+    let _ = khora_lanes::shadow_lane::StandardShadowsLane::new;
+    is_default::<khora_lanes::shadow_lane::StandardShadowsLane>();
+    is_lane::<khora_lanes::shadow_lane::StandardShadowsLane>();
+    let _ = khora_lanes::shadow_lane::LOW_RES_STRATEGY_NAME;
+    let _ = khora_lanes::shadow_lane::MEDIUM_STRATEGY_NAME;
+    let _ = khora_lanes::shadow_lane::STANDARD_STRATEGY_NAME;
+    let _ = type_name::<khora_lanes::shadow_lane::algo::atlas_2d::Atlas2D>();
+    let _ = atlas2_d_fields as fn(&khora_lanes::shadow_lane::algo::atlas_2d::Atlas2D);
+    let _ = khora_lanes::shadow_lane::algo::atlas_2d::Atlas2D::create;
+    let _ = khora_lanes::shadow_lane::algo::atlas_2d::Atlas2D::view_id;
+    let _ = khora_lanes::shadow_lane::algo::atlas_2d::Atlas2D::destroy;
+    is_default::<khora_lanes::shadow_lane::algo::atlas_2d::Atlas2D>();
+    let _ = khora_lanes::shadow_lane::algo::atlas_2d::collect_pass;
+    let _ = type_name::<khora_lanes::shadow_lane::algo::atlas_cube::AtlasCube>();
+    let _ = atlas_cube_fields as fn(&khora_lanes::shadow_lane::algo::atlas_cube::AtlasCube);
+    let _ = khora_lanes::shadow_lane::algo::atlas_cube::AtlasCube::create;
+    let _ = khora_lanes::shadow_lane::algo::atlas_cube::AtlasCube::view_id;
+    let _ = khora_lanes::shadow_lane::algo::atlas_cube::AtlasCube::face_views_snapshot;
+    let _ = khora_lanes::shadow_lane::algo::atlas_cube::AtlasCube::destroy;
+    is_default::<khora_lanes::shadow_lane::algo::atlas_cube::AtlasCube>();
+    let _ = khora_lanes::shadow_lane::algo::atlas_cube::collect_passes;
+    let _ = khora_lanes::shadow_lane::algo::bindings::build_bindings;
+    let _ = type_name::<khora_lanes::shadow_lane::algo::pass::AttachmentPass>();
+    let _ = attachment_pass_fields as fn(&khora_lanes::shadow_lane::algo::pass::AttachmentPass);
+    let _ = type_name::<khora_lanes::shadow_lane::algo::pass::ShadowDrawCmd>();
+    let _ = shadow_draw_cmd_fields as fn(&khora_lanes::shadow_lane::algo::pass::ShadowDrawCmd);
+    is_debug::<khora_lanes::shadow_lane::algo::pass::ShadowDrawCmd>();
+    is_clone::<khora_lanes::shadow_lane::algo::pass::ShadowDrawCmd>();
+    is_copy::<khora_lanes::shadow_lane::algo::pass::ShadowDrawCmd>();
+    let _ = khora_lanes::shadow_lane::algo::pass::build_draw_cmds;
+    let _ = khora_lanes::shadow_lane::algo::pass::record_depth_pass;
+    let _ = type_name::<khora_lanes::shadow_lane::algo::state::ShadowsLaneState>();
+    let _ = type_name::<khora_lanes::shadow_lane::algo::ShadowsLaneState>();
     same_type(
-        PhantomData::<khora_lanes::render_lane::shadows_lane::StandardShadowsLane>,
-        PhantomData::<khora_lanes::render_lane::StandardShadowsLane>,
+        PhantomData::<khora_lanes::shadow_lane::algo::ShadowsLaneState>,
+        PhantomData::<khora_lanes::shadow_lane::algo::state::ShadowsLaneState>,
     );
-    let _ = khora_lanes::render_lane::StandardShadowsLane::ATLAS_2D_RESOLUTION;
-    let _ = khora_lanes::render_lane::StandardShadowsLane::ATLAS_2D_MAX_LIGHTS;
-    let _ = khora_lanes::render_lane::StandardShadowsLane::CUBE_FACE_RESOLUTION;
-    let _ = khora_lanes::render_lane::StandardShadowsLane::CUBE_MAX_LIGHTS;
-    let _ = khora_lanes::render_lane::StandardShadowsLane::new;
-    is_default::<khora_lanes::render_lane::StandardShadowsLane>();
-    is_lane::<khora_lanes::render_lane::StandardShadowsLane>();
-    let _ = type_name::<khora_lanes::render_lane::UiRenderLane>();
-    let _ = khora_lanes::render_lane::UiRenderLane::new;
-    is_default::<khora_lanes::render_lane::UiRenderLane>();
-    is_lane::<khora_lanes::render_lane::UiRenderLane>();
-    let _ = type_name::<khora_lanes::render_lane::WireframeLane>();
-    is_debug::<khora_lanes::render_lane::WireframeLane>();
-    is_default::<khora_lanes::render_lane::WireframeLane>();
-    is_lane::<khora_lanes::render_lane::WireframeLane>();
-    let _ = khora_lanes::render_lane::shaders::EGUI_WGSL;
-    let _ = khora_lanes::render_lane::shaders::TEXT_WGSL;
-    let _ = khora_lanes::render_lane::shadows_lane::LOW_RES_STRATEGY_NAME;
-    let _ = khora_lanes::render_lane::shadows_lane::MEDIUM_STRATEGY_NAME;
-    let _ = khora_lanes::render_lane::shadows_lane::STANDARD_STRATEGY_NAME;
-    let _ = type_name::<khora_lanes::render_lane::shadows_lane::algo::atlas_2d::Atlas2D>();
-    let _ = atlas2_d_fields as fn(&khora_lanes::render_lane::shadows_lane::algo::atlas_2d::Atlas2D);
-    let _ = khora_lanes::render_lane::shadows_lane::algo::atlas_2d::Atlas2D::create;
-    let _ = khora_lanes::render_lane::shadows_lane::algo::atlas_2d::Atlas2D::view_id;
-    let _ = khora_lanes::render_lane::shadows_lane::algo::atlas_2d::Atlas2D::destroy;
-    is_default::<khora_lanes::render_lane::shadows_lane::algo::atlas_2d::Atlas2D>();
-    let _ = khora_lanes::render_lane::shadows_lane::algo::atlas_2d::collect_pass;
-    let _ = type_name::<khora_lanes::render_lane::shadows_lane::algo::atlas_cube::AtlasCube>();
-    let _ = atlas_cube_fields
-        as fn(&khora_lanes::render_lane::shadows_lane::algo::atlas_cube::AtlasCube);
-    let _ = khora_lanes::render_lane::shadows_lane::algo::atlas_cube::AtlasCube::create;
-    let _ = khora_lanes::render_lane::shadows_lane::algo::atlas_cube::AtlasCube::view_id;
     let _ =
-        khora_lanes::render_lane::shadows_lane::algo::atlas_cube::AtlasCube::face_views_snapshot;
-    let _ = khora_lanes::render_lane::shadows_lane::algo::atlas_cube::AtlasCube::destroy;
-    is_default::<khora_lanes::render_lane::shadows_lane::algo::atlas_cube::AtlasCube>();
-    let _ = khora_lanes::render_lane::shadows_lane::algo::atlas_cube::collect_passes;
-    let _ = khora_lanes::render_lane::shadows_lane::algo::bindings::build_bindings;
-    let _ = type_name::<khora_lanes::render_lane::shadows_lane::algo::pass::AttachmentPass>();
-    let _ = attachment_pass_fields
-        as fn(&khora_lanes::render_lane::shadows_lane::algo::pass::AttachmentPass);
-    let _ = type_name::<khora_lanes::render_lane::shadows_lane::algo::pass::ShadowDrawCmd>();
-    let _ = shadow_draw_cmd_fields
-        as fn(&khora_lanes::render_lane::shadows_lane::algo::pass::ShadowDrawCmd);
-    is_debug::<khora_lanes::render_lane::shadows_lane::algo::pass::ShadowDrawCmd>();
-    is_clone::<khora_lanes::render_lane::shadows_lane::algo::pass::ShadowDrawCmd>();
-    is_copy::<khora_lanes::render_lane::shadows_lane::algo::pass::ShadowDrawCmd>();
-    let _ = khora_lanes::render_lane::shadows_lane::algo::pass::build_draw_cmds;
-    let _ = khora_lanes::render_lane::shadows_lane::algo::pass::record_depth_pass;
-    let _ = type_name::<khora_lanes::render_lane::shadows_lane::algo::state::ShadowsLaneState>();
-    let _ = type_name::<khora_lanes::render_lane::shadows_lane::algo::ShadowsLaneState>();
-    same_type(
-        PhantomData::<khora_lanes::render_lane::shadows_lane::algo::ShadowsLaneState>,
-        PhantomData::<khora_lanes::render_lane::shadows_lane::algo::state::ShadowsLaneState>,
-    );
-    let _ = shadows_lane_state_fields
-        as fn(&khora_lanes::render_lane::shadows_lane::algo::state::ShadowsLaneState);
-    let _ = khora_lanes::render_lane::shadows_lane::algo::state::ShadowsLaneState::init_gpu;
-    let _ = khora_lanes::render_lane::shadows_lane::algo::state::ShadowsLaneState::render;
-    let _ = khora_lanes::render_lane::shadows_lane::algo::state::ShadowsLaneState::shadow_bindings;
-    let _ = khora_lanes::render_lane::shadows_lane::algo::state::ShadowsLaneState::shutdown;
-    is_default::<khora_lanes::render_lane::shadows_lane::algo::state::ShadowsLaneState>();
+        shadows_lane_state_fields as fn(&khora_lanes::shadow_lane::algo::state::ShadowsLaneState);
+    let _ = khora_lanes::shadow_lane::algo::state::ShadowsLaneState::init_gpu;
+    let _ = khora_lanes::shadow_lane::algo::state::ShadowsLaneState::render;
+    let _ = khora_lanes::shadow_lane::algo::state::ShadowsLaneState::shadow_bindings;
+    let _ = khora_lanes::shadow_lane::algo::state::ShadowsLaneState::shutdown;
+    is_default::<khora_lanes::shadow_lane::algo::state::ShadowsLaneState>();
+}
+
+#[test]
+fn module_skybox_lane_paths_still_resolve() {
+    let _ = type_name::<khora_lanes::skybox_lane::SkyboxLane>();
+    is_debug::<khora_lanes::skybox_lane::SkyboxLane>();
+    is_default::<khora_lanes::skybox_lane::SkyboxLane>();
+    is_lane::<khora_lanes::skybox_lane::SkyboxLane>();
+}
+
+#[test]
+fn module_ui_lane_paths_still_resolve() {
+    let _ = type_name::<khora_lanes::ui_lane::UiRenderLane>();
+    let _ = khora_lanes::ui_lane::UiRenderLane::new;
+    is_default::<khora_lanes::ui_lane::UiRenderLane>();
+    is_lane::<khora_lanes::ui_lane::UiRenderLane>();
 }
 
 #[test]
@@ -520,35 +512,34 @@ fn exported_macros_still_expand() {
 #[allow(unused_imports)]
 mod paths_used_by_other_crates {
     use khora_lanes::audio_lane::SpatialMixingLane as _; // khora-agents
+    use khora_lanes::overlay_lane::GizmoLane as _; // khora-agents
+    use khora_lanes::overlay_lane::GridLane as _; // khora-agents
+    use khora_lanes::overlay_lane::WireframeLane as _; // khora-agents
     use khora_lanes::physics_lane::StandardPhysicsLane as _; // khora-agents
-    use khora_lanes::render_lane::shaders::EGUI_WGSL as _; // khora-editor (as khora_sdk::khora_lanes::…)
-    use khora_lanes::render_lane::shaders::TEXT_WGSL as _; // khora-sdk
-    use khora_lanes::render_lane::shadows_lane::LOW_RES_STRATEGY_NAME as _; // khora-agents
-    use khora_lanes::render_lane::shadows_lane::MEDIUM_STRATEGY_NAME as _; // khora-agents
-    use khora_lanes::render_lane::shadows_lane::STANDARD_STRATEGY_NAME as _; // khora-agents
     use khora_lanes::render_lane::ForwardPlusLane as _; // khora-agents
     use khora_lanes::render_lane::LitForwardLane as _; // khora-agents
-    use khora_lanes::render_lane::LowResShadowsLane as _; // khora-agents
-    use khora_lanes::render_lane::MediumShadowsLane as _; // khora-agents
-    use khora_lanes::render_lane::SharedGizmoFrame as _; // khora-agents, khora-editor (as khora_sdk::khora_lanes::…), khora-sdk
-    use khora_lanes::render_lane::SharedGridConfig as _; // khora-agents, khora-editor (as khora_sdk::khora_lanes::…), khora-sdk
-    use khora_lanes::render_lane::SharedWireframeConfig as _; // khora-agents, khora-editor (as khora_sdk::khora_lanes::…), khora-sdk
     use khora_lanes::render_lane::SimpleUnlitLane as _; // khora-agents
     use khora_lanes::render_lane::StandardPbrLane as _; // khora-agents
-    use khora_lanes::render_lane::StandardShadowsLane as _; // khora-agents
-    use khora_lanes::render_lane::UiRenderLane as _; // khora-agents
     use khora_lanes::script_lane::runtime::INITIAL_RATE as _; // khora-agents
     use khora_lanes::script_lane::BudgetedScriptLane as _; // khora-agents
     use khora_lanes::script_lane::Fuel as _; // khora-agents
     use khora_lanes::script_lane::ScriptRunReport as _; // khora-agents
     use khora_lanes::script_lane::ScriptRuntime as _; // khora-agents, khora-sdk
+    use khora_lanes::shadow_lane::LowResShadowsLane as _; // khora-agents
+    use khora_lanes::shadow_lane::MediumShadowsLane as _; // khora-agents
+    use khora_lanes::shadow_lane::StandardShadowsLane as _; // khora-agents
+    use khora_lanes::shadow_lane::LOW_RES_STRATEGY_NAME as _; // khora-agents
+    use khora_lanes::shadow_lane::MEDIUM_STRATEGY_NAME as _; // khora-agents
+    use khora_lanes::shadow_lane::STANDARD_STRATEGY_NAME as _; // khora-agents
+    use khora_lanes::skybox_lane::SkyboxLane as _; // khora-agents
+    use khora_lanes::ui_lane::UiRenderLane as _; // khora-agents
 }
 
 #[test]
 fn associated_items_used_by_other_crates_still_resolve() {
-    let _ = khora_lanes::render_lane::GizmoLane::default; // khora-agents
-    let _ = khora_lanes::render_lane::GridLane::default; // khora-agents
-    let _ = khora_lanes::render_lane::SkyboxLane::default; // khora-agents
-    let _ = khora_lanes::render_lane::WireframeLane::default; // khora-agents
+    let _ = khora_lanes::overlay_lane::GizmoLane::default; // khora-agents
+    let _ = khora_lanes::overlay_lane::GridLane::default; // khora-agents
+    let _ = khora_lanes::overlay_lane::WireframeLane::default; // khora-agents
     let _ = khora_lanes::script_lane::ScriptRuntime::new; // khora-agents, khora-sdk
+    let _ = khora_lanes::skybox_lane::SkyboxLane::default; // khora-agents
 }

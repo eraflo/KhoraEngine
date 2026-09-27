@@ -24,6 +24,7 @@
 //! pattern: only contract types live in `khora-data`, no GPU code.
 
 use khora_core::ui::editor::GizmoLineInstance;
+use std::sync::{Arc, Mutex};
 
 /// Per-frame gizmo lines published by a host application (editor,
 /// debug tooling) and consumed by the engine's `GizmoLane`.
@@ -49,6 +50,9 @@ impl GizmoFrame {
         self.lines.clear();
     }
 }
+
+/// Shared gizmo line container — the host app writes, `GizmoLane` reads.
+pub type SharedGizmoFrame = Arc<Mutex<GizmoFrame>>;
 
 #[cfg(test)]
 mod tests {

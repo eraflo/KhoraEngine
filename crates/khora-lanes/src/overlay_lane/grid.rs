@@ -33,11 +33,8 @@ use khora_core::renderer::api::command::{BindGroupId, BindGroupLayoutId};
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::BufferId;
 use khora_core::renderer::traits::CommandEncoder;
-use khora_data::render::{GridConfig, RenderWorld};
-use std::sync::{Arc, Mutex, OnceLock};
-
-/// Shared editor-grid config — the host app enables it, `GridLane` reads it.
-pub type SharedGridConfig = Arc<Mutex<GridConfig>>;
+use khora_data::render::{RenderWorld, SharedGridConfig};
+use std::sync::{Arc, OnceLock};
 
 /// Infinite editor ground-grid overlay lane.
 #[derive(Debug, Default)]
@@ -110,19 +107,11 @@ const GRID_CAMERA_LAYOUT_LABEL: &str = "grid_camera_layout";
 
 /// Group-0 camera layout: a single uniform buffer (vertex + fragment).
 fn grid_camera_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
-    use khora_core::renderer::api::command::{
-        BindGroupLayoutEntry, BindingType, BufferBindingType,
-    };
-    use khora_core::renderer::api::util::ShaderStageFlags;
-    vec![BindGroupLayoutEntry {
-        binding: 0,
-        visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
-        ty: BindingType::Buffer {
-            ty: BufferBindingType::Uniform,
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-    }]
+    crate::render_lane::util::single_uniform_layout(
+        khora_core::renderer::api::util::ShaderStageFlags::VERTEX
+            | khora_core::renderer::api::util::ShaderStageFlags::FRAGMENT,
+        false,
+    )
 }
 
 /// The declarative pipeline spec for the grid overlay — fullscreen triangle,

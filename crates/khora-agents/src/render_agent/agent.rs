@@ -539,3 +539,33 @@ mod tests {
         assert!(!status.is_stalled);
     }
 }
+
+#[cfg(test)]
+mod lane_registration_tests {
+    use super::*;
+    use khora_core::lane::LaneKind;
+
+    /// The lanes this agent registers, by `strategy_name()`, with their kind,
+    /// in registration order. Moving a lane's source file between modules must
+    /// leave this list untouched: the names are what negotiation and
+    /// `execute` look lanes up by.
+    #[test]
+    fn registers_the_same_lanes_by_name() {
+        let agent = RenderAgent::default();
+        let lanes: Vec<(&str, LaneKind)> = agent
+            .lanes
+            .all()
+            .iter()
+            .map(|lane| (lane.strategy_name(), lane.lane_kind()))
+            .collect();
+        assert_eq!(
+            lanes,
+            [
+                ("SimpleUnlit", LaneKind::Render),
+                ("LitForward", LaneKind::Render),
+                ("StandardPbr", LaneKind::Render),
+                ("ForwardPlus", LaneKind::Render)
+            ]
+        );
+    }
+}

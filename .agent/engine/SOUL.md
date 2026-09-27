@@ -64,7 +64,7 @@ points to the on-demand [`reference/`](./reference/) doc for that crate's domain
 | `khora-script` | **Ergon** — the gameplay language: lexer, parser, bytecode, VM, hot-reload. Suspends on an instruction boundary so the DCC can bound a frame. Depends on core + macros only, so it is testable without booting an engine. | scripting |
 | `khora-lanes` | Hot-path Lanes: render / physics / audio / ui / script. | per-domain |
 | `khora-agents` | Strategist Agents: Render/Shadow/Overlay/Skybox/Physics/Ui/Audio/Script. Each holds strategy state and nothing else. | per-domain |
-| `khora-infra` | Concrete backends, one subfolder each: `graphics/wgpu`, `physics/rapier`, `physics/khora` (in-house, incomplete), `audio/cpal`, `ui/taffy`, `platform/window`. Also owns the `.wgsl` files and their composition. | per-domain |
+| `khora-infra` | Concrete backends, one subfolder each: `graphics/wgpu`, `physics/rapier`, `physics/khora` (in-house, incomplete), `audio/cpal`, `ui/taffy`, `platform/winit`. Also owns the `.wgsl` files and their composition. | per-domain |
 | `khora-io` | Asset service, VFS, serialization, pack/file loaders. | api-ux |
 | `khora-telemetry` | Metrics, monitors, telemetry events. | control-gorna |
 | `khora-sdk` | The **only** public API for game devs (façade). | api-ux |

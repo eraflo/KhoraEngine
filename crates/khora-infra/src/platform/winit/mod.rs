@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Window platform abstraction implementation
+//! The winit platform backend: the window and the translation of its input
+//! events into engine events.
 
-pub mod winit;
+pub mod input;
+pub mod window;
 
-pub use self::winit::{WinitWindow, WinitWindowBuilder};
+pub use self::window::{WinitWindow, WinitWindowBuilder};

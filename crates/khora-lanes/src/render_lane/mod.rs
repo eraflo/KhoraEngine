@@ -12,27 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Render-domain lanes (the hot-path strategies for the rendering subsystem).
+//! Lanes of the `RenderAgent`: the strategies that draw the scene.
 //!
 //! The per-frame `RenderWorld` and the extraction logic live in
-//! [`khora_data::render`].  This module exposes the lanes that consume that
-//! data and the UI-scene types specific to the UI render pipeline.
+//! [`khora_data::render`]. The shadow, overlay, skybox and UI lanes, drawn by
+//! agents of their own, have folders of their own beside this one.
 
-mod forward_plus_lane;
-mod gizmo_lane;
-mod grid_lane;
-mod lit_forward_lane;
+mod forward_plus;
+mod lit_forward;
 mod recording;
 mod shader_complexity;
 pub(crate) use recording::{record_draws, record_transparent_pass};
-pub mod shaders;
-pub mod shadows_lane;
-mod simple_unlit_lane;
-mod skybox_lane;
-mod standard_pbr_lane;
-mod ui_render_lane;
+mod simple_unlit;
+mod standard_pbr;
 pub mod util;
-mod wireframe_lane;
 
 /// Squared distance from the camera to a model's origin — the sort key the lit
 /// lanes use to order alpha-blended draws back-to-front.
@@ -53,17 +46,11 @@ pub(crate) fn camera_distance_sq(
     dx * dx + dy * dy + dz * dz
 }
 
-pub use forward_plus_lane::*;
-pub use gizmo_lane::{GizmoLane, SharedGizmoFrame};
-pub use grid_lane::{GridLane, SharedGridConfig};
-pub use lit_forward_lane::*;
+pub use forward_plus::*;
+pub use lit_forward::*;
 pub use shader_complexity::ShaderComplexity;
-pub use shadows_lane::{LowResShadowsLane, MediumShadowsLane, StandardShadowsLane};
-pub use simple_unlit_lane::*;
-pub use skybox_lane::SkyboxLane;
-pub use standard_pbr_lane::StandardPbrLane;
-pub use ui_render_lane::*;
-pub use wireframe_lane::{SharedWireframeConfig, WireframeLane};
+pub use simple_unlit::*;
+pub use standard_pbr::StandardPbrLane;
 
 #[cfg(test)]
 mod transparency_tests {

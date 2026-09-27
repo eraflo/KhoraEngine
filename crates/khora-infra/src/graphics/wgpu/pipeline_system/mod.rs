@@ -18,9 +18,8 @@
 //! abstract `GraphicsDevice` (layout / pipeline creation), with three caches:
 //! bind-group layouts (by `LayoutCacheKey`), shader modules (by
 //! `(name, variant)`), and render pipelines (by `PipelineKey`). The `.wgsl`
-//! sources live next to this file (`shaders/`), embedded at compile time —
-//! they were relocated here from `khora-lanes` so the shader compiler is a
-//! backend, not lane code.
+//! sources live in `graphics/shader/shaders/` (`lib/` modules, `pipelines/`
+//! entry points), embedded at compile time.
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -54,51 +53,51 @@ mod rebuild;
 const LIB_MODULES: &[(&str, &str)] = &[
     (
         "khora::std::camera",
-        include_str!("../shaders/lib/std/camera.wgsl"),
+        include_str!("../../shader/shaders/lib/std/camera.wgsl"),
     ),
     (
         "khora::std::model",
-        include_str!("../shaders/lib/std/model.wgsl"),
+        include_str!("../../shader/shaders/lib/std/model.wgsl"),
     ),
     (
         "khora::std::material",
-        include_str!("../shaders/lib/std/material.wgsl"),
+        include_str!("../../shader/shaders/lib/std/material.wgsl"),
     ),
     (
         "khora::std::material_textures",
-        include_str!("../shaders/lib/std/material_textures.wgsl"),
+        include_str!("../../shader/shaders/lib/std/material_textures.wgsl"),
     ),
     (
         "khora::std::vertex",
-        include_str!("../shaders/lib/std/vertex.wgsl"),
+        include_str!("../../shader/shaders/lib/std/vertex.wgsl"),
     ),
     (
         "khora::lighting::structs",
-        include_str!("../shaders/lib/lighting/structs.wgsl"),
+        include_str!("../../shader/shaders/lib/lighting/structs.wgsl"),
     ),
     (
         "khora::lighting::uniforms",
-        include_str!("../shaders/lib/lighting/uniforms.wgsl"),
+        include_str!("../../shader/shaders/lib/lighting/uniforms.wgsl"),
     ),
     (
         "khora::lighting::attenuation",
-        include_str!("../shaders/lib/lighting/attenuation.wgsl"),
+        include_str!("../../shader/shaders/lib/lighting/attenuation.wgsl"),
     ),
     (
         "khora::lighting::pbr",
-        include_str!("../shaders/lib/lighting/pbr.wgsl"),
+        include_str!("../../shader/shaders/lib/lighting/pbr.wgsl"),
     ),
     (
         "khora::shadow::bindings",
-        include_str!("../shaders/lib/shadow/bindings.wgsl"),
+        include_str!("../../shader/shaders/lib/shadow/bindings.wgsl"),
     ),
     (
         "khora::shadow::sample_2d",
-        include_str!("../shaders/lib/shadow/sample_2d.wgsl"),
+        include_str!("../../shader/shaders/lib/shadow/sample_2d.wgsl"),
     ),
     (
         "khora::shadow::sample_cube",
-        include_str!("../shaders/lib/shadow/sample_cube.wgsl"),
+        include_str!("../../shader/shaders/lib/shadow/sample_cube.wgsl"),
     ),
 ];
 
@@ -106,67 +105,67 @@ const LIB_MODULES: &[(&str, &str)] = &[
 const PIPELINE_MODULES: &[(&str, &str)] = &[
     (
         "khora::pipelines::lit_forward",
-        include_str!("../shaders/pipelines/lit_forward.wgsl"),
+        include_str!("../../shader/shaders/pipelines/lit_forward.wgsl"),
     ),
     (
         "khora::pipelines::forward_plus",
-        include_str!("../shaders/pipelines/forward_plus.wgsl"),
+        include_str!("../../shader/shaders/pipelines/forward_plus.wgsl"),
     ),
     (
         "khora::pipelines::standard_pbr",
-        include_str!("../shaders/pipelines/standard_pbr.wgsl"),
+        include_str!("../../shader/shaders/pipelines/standard_pbr.wgsl"),
     ),
     (
         "khora::pipelines::unlit",
-        include_str!("../shaders/pipelines/unlit.wgsl"),
+        include_str!("../../shader/shaders/pipelines/unlit.wgsl"),
     ),
     (
         "khora::pipelines::wireframe",
-        include_str!("../shaders/pipelines/wireframe.wgsl"),
+        include_str!("../../shader/shaders/pipelines/wireframe.wgsl"),
     ),
     (
         "khora::pipelines::shadow_pass",
-        include_str!("../shaders/pipelines/shadow_pass.wgsl"),
+        include_str!("../../shader/shaders/pipelines/shadow_pass.wgsl"),
     ),
     (
         "khora::pipelines::light_culling",
-        include_str!("../shaders/pipelines/light_culling.wgsl"),
+        include_str!("../../shader/shaders/pipelines/light_culling.wgsl"),
     ),
     (
         "khora::pipelines::ui",
-        include_str!("../shaders/pipelines/ui.wgsl"),
+        include_str!("../../shader/shaders/pipelines/ui.wgsl"),
     ),
     (
         "khora::pipelines::grid",
-        include_str!("../shaders/pipelines/grid.wgsl"),
+        include_str!("../../shader/shaders/pipelines/grid.wgsl"),
     ),
     (
         "khora::pipelines::gizmo",
-        include_str!("../shaders/pipelines/gizmo.wgsl"),
+        include_str!("../../shader/shaders/pipelines/gizmo.wgsl"),
     ),
     (
         "khora::pipelines::ibl_sky",
-        include_str!("../shaders/pipelines/ibl_sky.wgsl"),
+        include_str!("../../shader/shaders/pipelines/ibl_sky.wgsl"),
     ),
     (
         "khora::pipelines::ibl_irradiance",
-        include_str!("../shaders/pipelines/ibl_irradiance.wgsl"),
+        include_str!("../../shader/shaders/pipelines/ibl_irradiance.wgsl"),
     ),
     (
         "khora::pipelines::ibl_prefilter",
-        include_str!("../shaders/pipelines/ibl_prefilter.wgsl"),
+        include_str!("../../shader/shaders/pipelines/ibl_prefilter.wgsl"),
     ),
     (
         "khora::pipelines::ibl_brdf_lut",
-        include_str!("../shaders/pipelines/ibl_brdf_lut.wgsl"),
+        include_str!("../../shader/shaders/pipelines/ibl_brdf_lut.wgsl"),
     ),
     (
         "khora::pipelines::skybox",
-        include_str!("../shaders/pipelines/skybox.wgsl"),
+        include_str!("../../shader/shaders/pipelines/skybox.wgsl"),
     ),
     (
         "khora::pipelines::ibl_equirect",
-        include_str!("../shaders/pipelines/ibl_equirect.wgsl"),
+        include_str!("../../shader/shaders/pipelines/ibl_equirect.wgsl"),
     ),
 ];
 

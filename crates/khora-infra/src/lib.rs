@@ -22,13 +22,12 @@ pub mod audio;
 pub mod graphics;
 pub mod physics;
 pub mod platform;
-pub mod renderer;
 pub mod telemetry;
 pub mod ui;
 
 pub use graphics::wgpu::WgpuRenderSystem;
-pub use platform::window::{WinitWindow, WinitWindowBuilder};
-pub use renderer::StandardTextRenderer;
+pub use graphics::StandardTextRenderer;
+pub use platform::winit::{WinitWindow, WinitWindowBuilder};
 pub use telemetry::{
     gpu_monitor::GpuMonitor, memory_monitor::MemoryMonitor, vram_monitor::VramMonitor,
 };

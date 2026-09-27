@@ -2818,6 +2818,7 @@ dependencies = [
  "khora-lanes",
  "khora-telemetry",
  "log",
+ "naga",
  "serde",
  "serde_json",
  "tokio",

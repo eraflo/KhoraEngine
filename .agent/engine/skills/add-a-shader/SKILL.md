@@ -10,7 +10,7 @@ backend via `naga_oil` `#import`. **Never** inline WGSL as a Rust string; **neve
 runtime.
 
 > There is **no `ShaderRegistry` type** — earlier revisions of these docs named one. The composition
-> point is `WgpuPipelineSystem` in `crates/khora-infra/src/graphics/shader/system/mod.rs`.
+> point is `WgpuPipelineSystem` in `crates/khora-infra/src/graphics/wgpu/pipeline_system/mod.rs`.
 
 ## Layout
 All under `crates/khora-infra/src/graphics/shader/shaders/`:
@@ -18,8 +18,8 @@ All under `crates/khora-infra/src/graphics/shader/shaders/`:
 - Reusable modules: `lib/` (`std/`, `lighting/`, `shadow/`), each declaring a `#define_import_path`
   (e.g. `khora::shadow::sample_2d`).
 
-Two `.wgsl` files still live in `khora-lanes/src/render_lane/shaders/` — `text.wgsl` and `egui.wgsl`,
-exposed as `TEXT_WGSL` / `EGUI_WGSL` because their consumers take a raw string rather than a pipeline
+Two pipelines — `text.wgsl` and `egui.wgsl` — are also exposed as raw strings, `TEXT_WGSL` /
+`EGUI_WGSL` in `crates/khora-infra/src/graphics/shader/mod.rs`, because their consumers take a raw string rather than a pipeline
 handle. **No new `_WGSL` constant should appear.**
 
 ## Steps

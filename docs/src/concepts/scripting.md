@@ -22,7 +22,7 @@ suspended. Next frame resumes rather than restarts.
 ```mermaid
 sequenceDiagram
     participant DCC
-    participant Agent as ScriptingAgent
+    participant Agent as ScriptAgent
     participant Lane as BudgetedScriptLane
     participant VM
 
@@ -106,7 +106,7 @@ The split follows [CLAD](./clad.md) exactly, and it did not always:
 | The language and VM | `khora-script` | Depends on `khora-core` and the macros only, so the compiler and VM are testable without booting an engine |
 | The scripting world (programs, live instances, pending mail, last report, measured rate) | `Runtime::services`, as `Arc<Mutex<ScriptRuntime>>` | It is subsystem state, not strategy state — the same place the physics provider lives |
 | The work (reloads, delivery, running behaviors, measuring) | `BudgetedScriptLane` | Lanes execute |
-| Choosing a lane for a budget | `ScriptingAgent` | Agents are strategists and hold nothing else |
+| Choosing a lane for a budget | `ScriptAgent` | Agents are strategists and hold nothing else |
 
 The agent used to own all of it. What that cost was not correctness but reach:
 nothing else could see the live behaviors, because they were a private field of

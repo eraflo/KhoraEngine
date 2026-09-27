@@ -125,7 +125,7 @@ A flat lookup for "I want to find X."
 | VFS and asset loading | `khora-io::asset`, `khora-io::vfs` |
 | Serialization service | `khora-io::serialization` |
 | Render pipelines | `khora-lanes::render_lane` |
-| WGSL shaders and their composition | `khora-infra::graphics::shader` (28 of 30 files; the two raw-string exceptions live in `khora-lanes::render_lane::shaders`) |
+| WGSL shaders and their composition | `khora-infra::graphics::shader` (the `.wgsl` tree and the two raw-string exceptions, `TEXT_WGSL` and `EGUI_WGSL`), composed by `khora-infra::graphics::wgpu::WgpuPipelineSystem` |
 | Physics lanes | `khora-lanes::physics_lane` |
 | Audio lanes | `khora-lanes::audio_lane` |
 | Script lane (fuel, deferral, hot-reload) | `khora-lanes::script_lane` |

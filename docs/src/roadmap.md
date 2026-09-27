@@ -98,7 +98,7 @@ budget needs stopping to be ordinary. So Khora has its own — **Ergon**
 - ~~#169 Implement scripting backend and bindings~~ — lexer, parser, bytecode, VM,
   persistent field arena, native functions, `#[ergon_type]`, and a single
   table-driven value bridge
-- ~~#170 Make the scripting VM an ISA (`ScriptingAgent`)~~ — negotiates a time
+- ~~#170 Make the scripting VM an ISA (`ScriptAgent`)~~ — negotiates a time
   budget, converts it to fuel at a measured rate, defers whole behaviors rather
   than thinning every one
 - ~~Hot-reload~~ — an edited module recompiles and live instances keep their

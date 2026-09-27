@@ -29,7 +29,7 @@
 
 use std::sync::Arc;
 
-use khora_agents::script_agent::ScriptingAgent;
+use khora_agents::script_agent::ScriptAgent;
 use khora_core::agent::Agent;
 use khora_core::control::gorna::{ResourceBudget, StrategyId};
 use khora_core::ecs::entity::EntityId;
@@ -110,7 +110,7 @@ fn a_scene_with_one_hovering_sphere(delta_seconds: f32) -> ScriptView {
 
 /// Runs one frame, returning what the behaviours queued.
 fn run_one_frame(
-    agent: &mut ScriptingAgent,
+    agent: &mut ScriptAgent,
     runtime: &Arc<Runtime>,
     delta_seconds: f32,
 ) -> Vec<WorldCommand> {
@@ -132,8 +132,8 @@ fn run_one_frame(
     deck.take::<CommandBuffer>().as_slice().to_vec()
 }
 
-fn budgeted() -> ScriptingAgent {
-    let mut agent = ScriptingAgent::default();
+fn budgeted() -> ScriptAgent {
+    let mut agent = ScriptAgent::default();
     // The DCC does this every frame. Without it there is no fuel, every
     // behaviour is deferred, and the test would prove nothing about the
     // behaviour while looking like it passed.

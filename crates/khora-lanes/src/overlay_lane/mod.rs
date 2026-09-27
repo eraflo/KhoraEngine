@@ -12,8 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Groups different audio mixing lanes.
+//! Lanes of the `OverlayAgent`: the editor overlays drawn over the scene, in
+//! compositing order — the ground grid, the wireframe, then the gizmos.
 
-mod spatial_mixing_lane;
+mod gizmo;
+mod grid;
+mod wireframe;
 
-pub use spatial_mixing_lane::*;
+pub use gizmo::GizmoLane;
+pub use grid::GridLane;
+pub use wireframe::WireframeLane;

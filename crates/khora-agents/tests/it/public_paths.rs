@@ -133,9 +133,9 @@ fn module_render_agent_paths_still_resolve() {
 
 #[test]
 fn module_script_agent_paths_still_resolve() {
-    let _ = type_name::<khora_agents::script_agent::ScriptingAgent>();
-    is_default::<khora_agents::script_agent::ScriptingAgent>();
-    is_agent::<khora_agents::script_agent::ScriptingAgent>();
+    let _ = type_name::<khora_agents::script_agent::ScriptAgent>();
+    is_default::<khora_agents::script_agent::ScriptAgent>();
+    is_agent::<khora_agents::script_agent::ScriptAgent>();
 }
 
 #[test]
@@ -180,7 +180,7 @@ fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_agents::overlay_agent::OverlayAgent::default; // khora-sdk
     let _ = khora_agents::physics_agent::PhysicsAgent::default; // khora-sdk
     let _ = khora_agents::render_agent::RenderAgent::default; // khora-sdk
-    let _ = khora_agents::script_agent::ScriptingAgent::default; // khora-sdk
+    let _ = khora_agents::script_agent::ScriptAgent::default; // khora-sdk
     let _ = khora_agents::shadow_agent::ShadowAgent::default; // khora-sdk
     let _ = khora_agents::skybox_agent::SkyboxAgent::default; // khora-sdk
     let _ = khora_agents::ui_agent::UiAgent::default; // khora-sdk

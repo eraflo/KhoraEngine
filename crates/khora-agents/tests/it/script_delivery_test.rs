@@ -23,7 +23,7 @@
 
 use std::sync::Arc;
 
-use khora_agents::script_agent::ScriptingAgent;
+use khora_agents::script_agent::ScriptAgent;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{LaneBus, OutputDeck};
@@ -62,7 +62,7 @@ fn a_scene_with_one_script() -> ScriptView {
     }
 }
 
-fn run_one_frame(agent: &mut ScriptingAgent, runtime: &Arc<Runtime>) {
+fn run_one_frame(agent: &mut ScriptAgent, runtime: &Arc<Runtime>) {
     let mut bus = LaneBus::new();
     bus.publish(a_scene_with_one_script());
     let mut deck = OutputDeck::new();
@@ -114,7 +114,7 @@ fn a_queued_reload_reaches_the_agent() {
     runtime.resources.insert(reloads.clone());
     let runtime = Arc::new(runtime);
 
-    run_one_frame(&mut ScriptingAgent::default(), &runtime);
+    run_one_frame(&mut ScriptAgent::default(), &runtime);
 
     assert!(
         reloads.is_empty(),
@@ -148,7 +148,7 @@ fn a_queued_engine_event_reaches_the_agent() {
     runtime.resources.insert(events.clone());
     let runtime = Arc::new(runtime);
 
-    run_one_frame(&mut ScriptingAgent::default(), &runtime);
+    run_one_frame(&mut ScriptAgent::default(), &runtime);
 
     assert!(events.is_empty(), "the agent took the event");
 }
@@ -186,7 +186,7 @@ fn an_engine_event_waits_in_the_channel_while_no_script_runs() {
     // No view published: the flow has not run, or the scene holds no scripts.
     let bus = LaneBus::new();
     let mut deck = OutputDeck::new();
-    let mut agent = ScriptingAgent::default();
+    let mut agent = ScriptAgent::default();
     let permit = agent.contention();
     let mut ctx = EngineContext::for_agent(
         WorldAccess::None,
@@ -245,7 +245,7 @@ fn an_agent_that_declared_nothing_reaches_neither() {
     let bus = LaneBus::new();
     let mut deck = OutputDeck::new();
     let nothing = khora_core::agent::Contention::none();
-    let mut agent = ScriptingAgent::default();
+    let mut agent = ScriptAgent::default();
     let mut ctx = EngineContext::for_agent(
         WorldAccess::None,
         Arc::clone(&runtime),
@@ -265,7 +265,7 @@ fn an_agent_that_declared_nothing_reaches_neither() {
 #[test]
 fn an_agent_whose_queues_are_absent_still_runs() {
     run_one_frame(
-        &mut ScriptingAgent::default(),
+        &mut ScriptAgent::default(),
         &Arc::new(a_runtime_with_scripting()),
     );
 }

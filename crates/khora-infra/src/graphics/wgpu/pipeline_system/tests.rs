@@ -234,3 +234,56 @@ fn overlay_lib_recomposes_and_dependent_pipeline_still_composes() {
         })
         .expect("standard_pbr composes against the overlaid camera lib");
 }
+
+/// The sandbox hot-reloads every `.wgsl` under `shader/shaders/`, and the
+/// watcher names a pipeline file `khora::pipelines::<stem>`. A file in
+/// `pipelines/` that the table does not know is taken by `recompose_dirty`
+/// for a lib module and handed to the composer. So every file in the watched
+/// `pipelines/` directory must be a registered pipeline — or live elsewhere.
+#[test]
+fn every_watched_pipeline_file_is_a_registered_pipeline() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src/graphics/shader/shaders/pipelines");
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    let inner = sys.inner.lock().unwrap();
+    let mut unregistered: Vec<String> = std::fs::read_dir(&dir)
+        .expect("pipelines dir")
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let path = e.path();
+            (path.extension()? == "wgsl").then(|| path.file_stem()?.to_str().map(str::to_owned))?
+        })
+        .map(|stem| format!("khora::pipelines::{stem}"))
+        .filter(|name| !inner.pipelines.contains_key(name.as_str()))
+        .collect();
+    unregistered.sort();
+    assert!(
+        unregistered.is_empty(),
+        "watched pipeline files the PipelineSystem does not know: {unregistered:?}"
+    );
+}
+
+/// What `recompose_dirty` does, device-free, when the sandbox's watcher sees
+/// an edit to `pipelines/text.wgsl`: the overlay is set under
+/// `khora::pipelines::text`, which is not in the pipeline table, so it is
+/// re-added to the composer as a lib module. That must not fail — an edit to
+/// a file in the watched tree must not log a recompose error.
+#[test]
+fn hot_reload_of_text_wgsl_is_not_a_failed_lib_recompose() {
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    let edited = format!(
+        "{}\n// hot-reload overlay marker\n",
+        crate::graphics::shader::TEXT_WGSL
+    );
+    sys.set_overlay_source("khora::pipelines::text", edited);
+
+    let mut inner = sys.inner.lock().unwrap();
+    let dirty: Vec<String> = inner.dirty.iter().cloned().collect();
+    for path in &dirty {
+        if !inner.pipelines.contains_key(path.as_str()) {
+            readd_lib_module(&mut inner, path).unwrap_or_else(|e| {
+                panic!("recompose_dirty would log `failed to recompose lib `{path}``: {e}")
+            });
+        }
+    }
+}
