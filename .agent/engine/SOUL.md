@@ -51,7 +51,7 @@ Control ──► Agent ──► Lane ──► Data        (the per-frame desc
        budget   selects   reads bus / writes deck
 ```
 
-**16 workspace members** (13 `khora-*` + `sandbox` + `xtask` + `hub`), plus `khora-macros`, a path
+**16 workspace members** (14 `khora-*` + `sandbox` + `xtask`), plus `khora-macros`, a path
 crate that is not a member. One line each. The last column
 points to the on-demand [`reference/`](./reference/) doc for that crate's domain:
 
@@ -73,7 +73,7 @@ points to the on-demand [`reference/`](./reference/) doc for that crate's domain
 | `khora-runtime` | Generic player binary stamped with packed assets. | api-ux |
 | `sandbox` | Example game using the SDK. | — |
 | `xtask` | Build automation (`cargo gate`, `cargo xtask …`). | — |
-| `hub` | Project manager / engine launcher. | editor-ui-ux |
+| `khora-hub` | Project manager / engine launcher. | editor-ui-ux |
 
 That is all you keep resident. For anything deeper, research.
 

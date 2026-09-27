@@ -2139,8 +2139,8 @@ fn paths_emitted_by_ergon_fn_still_resolve() {
 }
 
 // ---------------------------------------------------------------------------
-// Paths other crates of the workspace spell today (`crates/`, `hub/`,
-// `examples/`, `xtask/`; brace imports expanded, macro bodies included).
+// Paths other crates of the workspace spell today (`crates/`, `examples/`,
+// `xtask/`; brace imports expanded, macro bodies included).
 // The trailing comment names the users. Items, modules and enum variants
 // are imported; associated items are named in the test below.
 // ---------------------------------------------------------------------------

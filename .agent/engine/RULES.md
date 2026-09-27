@@ -37,7 +37,7 @@ and [`security-privacy.md`](./security-privacy.md).
   | middle | `khora-io`, `khora-lanes` | core, data, script, telemetry / core, data, io, script |
   | strategists | `khora-agents` | everything above, **including `khora-infra`** |
   | façade | `khora-sdk` | agents, control, core, data, infra, io, lanes, telemetry |
-  | apps | `khora-editor`, `hub`, `khora-runtime` | sdk (+ `tool-ui` for editor and hub) |
+  | apps | `khora-editor`, `khora-hub`, `khora-runtime` | sdk (+ `tool-ui` for editor and hub) |
 
   The two easy to get backwards: **`khora-agents` depends on `khora-infra`**, not
   the reverse, and **`khora-infra` depends on `khora-core` only** — it is a floor

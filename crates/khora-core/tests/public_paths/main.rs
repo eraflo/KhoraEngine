@@ -2907,8 +2907,8 @@ fn exported_macros_still_expand() {
 }
 
 // ---------------------------------------------------------------------------
-// Paths other crates of the workspace spell today (`crates/`, `hub/`,
-// `examples/`, `xtask/`; brace imports expanded; `khora_sdk::khora_core::…`,
+// Paths other crates of the workspace spell today (`crates/`, `examples/`,
+// `xtask/`; brace imports expanded; `khora_sdk::khora_core::…`,
 // `khora_sdk::editor_ui::…` and `khora_sdk::prelude::math::…` mapped onto
 // the `khora_core` path the SDK re-exports). The trailing comment names the
 // users. Items, modules and enum variants are imported; associated items

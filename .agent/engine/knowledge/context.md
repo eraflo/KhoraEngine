@@ -20,8 +20,8 @@ Stable facts about the project. Update only when these change.
 ## Workspace — 16 members
 13 `khora-*` workspace members under `crates/`: `khora-core`, `khora-data`, `khora-control`,
 `khora-script`, `khora-lanes`, `khora-agents`, `khora-infra`, `khora-io`, `khora-telemetry`,
-`khora-sdk`, `khora-tool-ui`, `khora-editor`, `khora-runtime` — plus
-`examples/sandbox`, `xtask` and `hub`. `khora-macros` is a fourteenth `khora-*` crate but a path
+`khora-sdk`, `khora-tool-ui`, `khora-editor`, `khora-runtime`, `khora-hub` — plus
+`examples/sandbox` and `xtask`. `khora-macros` is a fourteenth `khora-*` crate but a path
 crate, not a member.
 
 ## Build commands

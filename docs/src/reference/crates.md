@@ -8,8 +8,8 @@ dependency direction, and a flat "where things live" lookup.
 
 ## The crates
 
-Khora is **16 workspace members**: 13 `khora-*` plus `sandbox`, `xtask`, and
-`hub`. `khora-macros` is a fifteenth `khora-*` crate but a *path* crate — a
+Khora is **16 workspace members**: 14 `khora-*` plus `sandbox` and `xtask`.
+`khora-macros` is a fifteenth `khora-*` crate but a *path* crate — a
 dependency of `khora-data` and `khora-script`, not a workspace member.
 
 | Crate | One-line role |
@@ -30,7 +30,7 @@ dependency of `khora-data` and `khora-script`, not a workspace member.
 | `khora-runtime` | The generic player binary, stamped with packed assets. |
 | `sandbox` | Example game using the SDK (`examples/sandbox`). |
 | `xtask` | Build automation (`cargo xtask …`). |
-| `hub` | Project manager / engine launcher. |
+| `khora-hub` | Project manager / engine launcher. |
 
 ## Dependency direction
 
@@ -44,7 +44,7 @@ depend on anything above it and nothing below:
 | middle | `khora-io`, `khora-lanes` | core, data, script, telemetry / core, data, io, script |
 | strategists | `khora-agents` | everything above, **including `khora-infra`** |
 | façade | `khora-sdk` | agents, control, core, data, infra, io, lanes, telemetry |
-| apps | `khora-editor`, `hub`, `khora-runtime` | sdk (+ `tool-ui` for editor and hub) |
+| apps | `khora-editor`, `khora-hub`, `khora-runtime` | sdk (+ `tool-ui` for editor and hub) |
 
 Two are easy to get backwards, and older revisions of this page had them so:
 **`khora-agents` depends on `khora-infra`**, not the reverse — a strategist
@@ -67,7 +67,7 @@ graph TD
     AGT[khora-agents]
     SDK[khora-sdk]
     ED[khora-editor]
-    HUB[hub]
+    HUB[khora-hub]
     RT[khora-runtime]
 
     DATA --> CORE
@@ -115,7 +115,7 @@ A flat lookup for "I want to find X."
 | Lane trait | `khora-core::lane` |
 | Agent trait | `khora-core::agent` |
 | Math types | `khora-core::math` |
-| GORNA types | `khora-core::control::gorna` |
+| GORNA types | `khora-core::agent::gorna` |
 | Runtime containers (`Services` / `Backends` / `Resources`) | `khora-core::runtime` |
 | Scene file format + `SerializationGoal` | `khora-core::scene` |
 | ECS World and components | `khora-data::ecs` |

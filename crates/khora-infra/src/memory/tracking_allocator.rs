@@ -39,7 +39,7 @@ const SMALL_ALLOCATION_THRESHOLD: usize = 1024; // 1KB
 /// # Usage
 ///
 /// ```rust,ignore
-/// use khora_core::memory::SaaTrackingAllocator;
+/// use khora_infra::SaaTrackingAllocator;
 ///
 /// #[global_allocator]
 /// static GLOBAL: SaaTrackingAllocator = SaaTrackingAllocator::new(std::alloc::System);

@@ -263,10 +263,11 @@ contributes its agents through `AgentProvider`.
 | `crates/khora-editor/src/project_vfs.rs` | The live asset index — VFS, watcher and identity registry |
 
 `EditorState` — selection, mode, pending operations — is **not** in the editor
-crate. It lives in `crates/khora-core/src/ui/editor/state.rs`, alongside the dock
-tree, the gizmo interaction model and the command history, because the render
+crate. It lives in `crates/khora-core/src/ui/editor/state.rs`, with the other
+editor contracts (`EditorShell`, `EditorPanel`, `UiBuilder`), because the render
 lanes and the egui backend need the same vocabulary and neither may depend on the
-editor. The engine's design keeps that vocabulary backend-agnostic; the editor is
+editor. The dock tree lives in `khora-tool-ui`; the gizmo interaction and the
+command history live in the editor crate. The engine's design keeps that vocabulary backend-agnostic; the editor is
 one consumer of it.
 
 To add a panel: write its render function under `panels/`, register it in the

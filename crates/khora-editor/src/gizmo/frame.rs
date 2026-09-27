@@ -211,3 +211,84 @@ fn world_origin(world: &GameWorld, entity: EntityId) -> Vec3 {
         .map(|t| t.translation)
         .unwrap_or(Vec3::ZERO)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gizmo::interact::{GizmoAxis, GizmoDrag};
+    use khora_sdk::editor_ui::GizmoMode;
+    use khora_sdk::khora_core::math::{Quaternion, Ray};
+
+    /// A Move drag grabbed on the selection's pivot writes the dragged offset
+    /// into every selected entity's `Transform`, flags each one `Teleported`,
+    /// and resolves against the captured starts, so a second update does not
+    /// add to the first.
+    #[test]
+    fn move_drag_moves_the_selected_entities_in_the_world() {
+        let mut world = GameWorld::new();
+        let a = world.spawn(Transform::new(
+            Vec3::new(1.0, 2.0, 3.0),
+            Quaternion::IDENTITY,
+            Vec3::ONE,
+        ));
+        let b = world.spawn(Transform::new(
+            Vec3::new(-4.0, 0.5, 7.0),
+            Quaternion::IDENTITY,
+            Vec3::new(2.0, 2.0, 2.0),
+        ));
+
+        let mut state = EditorState {
+            gizmo_mode: GizmoMode::Move,
+            ..Default::default()
+        };
+        state.selection.insert(a);
+        state.selection.insert(b);
+
+        let starts = capture_starts(&world, &state);
+        assert_eq!(starts.len(), 2);
+
+        let basis = gizmo_basis(GizmoMode::Move, Quaternion::IDENTITY);
+        let cursor = |y: f32| Ray::new(Vec3::new(1.0, y, 10.0), Vec3::new(0.0, 0.0, -1.0));
+        let mut drag = GizmoDrag::begin(
+            GizmoMode::Move,
+            GizmoAxis::Y,
+            Vec3::new(1.0, 2.0, 3.0),
+            &basis,
+            0.25,
+            &cursor(2.5),
+        )
+        .expect("grab resolves");
+
+        let first = drag.update(&cursor(3.5)).expect("still perpendicular");
+        apply_delta(&mut world, first, &starts);
+        let second = drag.update(&cursor(4.0)).expect("still perpendicular");
+        apply_delta(&mut world, second, &starts);
+
+        let ta = world
+            .get_component::<Transform>(a)
+            .expect("a keeps its Transform");
+        let tb = world
+            .get_component::<Transform>(b)
+            .expect("b keeps its Transform");
+        assert!(
+            (ta.translation - Vec3::new(1.0, 3.5, 3.0)).length() < 1e-4,
+            "a at {:?}",
+            ta.translation
+        );
+        assert!(
+            (tb.translation - Vec3::new(-4.0, 2.0, 7.0)).length() < 1e-4,
+            "b at {:?}",
+            tb.translation
+        );
+        assert_eq!(tb.scale, Vec3::new(2.0, 2.0, 2.0));
+        for entity in [a, b] {
+            assert!(
+                world
+                    .inner_world()
+                    .get::<khora_sdk::khora_data::ecs::Teleported>(entity)
+                    .is_some(),
+                "a dragged entity is flagged Teleported"
+            );
+        }
+    }
+}

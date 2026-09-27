@@ -2189,8 +2189,8 @@ fn crate_root_paths_still_resolve() {
 }
 
 // ---------------------------------------------------------------------------
-// Paths other crates of the workspace use today (`crates/`, `hub/`,
-// `examples/`, `xtask/`, brace imports included; the editor's and the
+// Paths other crates of the workspace use today (`crates/`, `examples/`,
+// `xtask/`, brace imports included; the editor's and the
 // sandbox's `khora_sdk::khora_data::...` spellings reach the same items through
 // the SDK's `pub use khora_data;`). The trailing comment names the users.
 // ---------------------------------------------------------------------------

@@ -87,19 +87,19 @@ khora-sdk
 ```
 
 Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`, `khora-runtime`,
-`hub`, and `sandbox` sit on top of `khora-sdk`.
+`khora-hub`, and `sandbox` sit on top of `khora-sdk`.
 
 ## 3 — Crate responsibilities (16 workspace members)
 
 | Crate | Layer | Responsibility |
 |---|---|---|
-| `khora-core` | Foundation | Traits (`Lane`, `Agent`, `RenderSystem`, `PhysicsProvider`, `AudioDevice`, `LayoutSystem`, `Asset`, VFS), math (`Vec2/3/4`, `Mat3/4`, `Quaternion`, `Aabb`, `LinearRgba`, `simd`), GORNA types, error hierarchy, `ServiceRegistry`, `EngineContext`, `SaaTrackingAllocator`. |
+| `khora-core` | Foundation | Traits (`Lane`, `Agent`, `RenderSystem`, `PhysicsProvider`, `AudioDevice`, `LayoutSystem`, `Asset`, VFS), math (`Vec2/3/4`, `Mat3/4`, `Quaternion`, `Aabb`, `LinearRgba`, `simd`), GORNA types, error hierarchy, `ServiceRegistry`, `EngineContext`, the memory counters. |
 | `khora-macros` | Foundation | `#[derive(Component)]` proc macro. Path crate (not a workspace member). |
 | `khora-data` | Data | CRPECS ECS (`World`, storage, query, `SemanticDomain`), SoA/AGDF layout (`LayoutAdvisor`, `Ucb1`), `Assets<T>`, UI components, scene definitions, Flows, `EcsMaintenance`. |
 | `khora-control` | Control | `DccService` (agent lifecycle), `GornaArbitrator` (budget fitting + replay), cost model, PID budget, Substrate dispatcher, situational `Context` (thermal/battery/phase). |
 | `khora-telemetry` | Infra | `TelemetryService`, `MetricsRegistry`, `MonitorRegistry`, telemetry event storage. |
 | `khora-lanes` | Lanes | Render (Unlit, LitForward, Forward+, StandardPbr, Shadow, Overlay: Grid/Emissive/Wireframe/Gizmo, UI), Physics (Standard, CCD), Audio (SpatialMixing, SourceUpdate), UI (StandardUi, TaffyLayout), Script (Budgeted). |
-| `khora-infra` | Infra | Default backends: `WgpuRenderSystem`/`WgpuDevice`, `WinitWindow` + input, Rapier3D physics, CPAL audio, Taffy layout, GPU/Memory/Vram monitors. Each implements a `khora-core` trait and is swappable. |
+| `khora-infra` | Infra | Default backends: `WgpuRenderSystem`/`WgpuDevice`, `WinitWindow` + input, Rapier3D physics, CPAL audio, Taffy layout, GPU/Memory/Vram monitors, `SaaTrackingAllocator`, `DefaultMixBus`. Each implements a `khora-core` trait and is swappable. |
 | `khora-io` | Data | `AssetService`, `SerializationService`, VFS, `AssetIo`, `PackLoader`/`FileLoader`, decoders (glTF, OBJ, Symphonia audio, texture, font). |
 | `khora-agents` | Agents | `RenderAgent`, `ShadowAgent`, `OverlayAgent`, `PhysicsAgent`, `UiAgent`, `AudioAgent` + `PhysicsQueryService`. |
 | `khora-sdk` | Public API | `EngineCore` + `run_winit` entry, `GameWorld` (safe ECS façade), `EngineApp`/`AgentProvider`/`PhaseProvider` traits, `WindowConfig`, `Vessel` + `spawn_plane`/`spawn_cube_at`/`spawn_sphere`, `prelude`. **The only crate game devs import.** |
@@ -107,7 +107,7 @@ Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`,
 | `khora-runtime` | Application | Generic player binary stamped with packed assets; boots via `khora_sdk::run_default`. |
 | `sandbox` | Example | Example game using only the SDK (`examples/sandbox`). |
 | `xtask` | Tool | Build automation — `cargo xtask {build,test,check,format,clippy,all,…}`. |
-| `hub` | Tool | Project manager / engine launcher; reaches egui only via `khora_sdk::tool_ui`. |
+| `khora-hub` | Tool | Project manager / engine launcher; reaches egui only via `khora_sdk::tool_ui`. |
 
 ## 4 — Trait map
 

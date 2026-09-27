@@ -675,8 +675,8 @@ fn module_vfs_paths_still_resolve() {
 }
 
 // ---------------------------------------------------------------------------
-// Paths other crates of the workspace spell today (`crates/`, `hub/`,
-// `examples/`, `xtask/`; brace imports expanded). The trailing comment names
+// Paths other crates of the workspace spell today (`crates/`, `examples/`,
+// `xtask/`; brace imports expanded). The trailing comment names
 // the users. Items, modules and enum variants are imported;
 // associated items are named in the test below.
 // ---------------------------------------------------------------------------

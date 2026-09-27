@@ -102,7 +102,7 @@ khora-runtime    Generic player binary, stamped with packed assets
 ```
 
 Plus the tooling crates `sandbox` (the demo game), `xtask` (build automation),
-and `hub` (the project launcher). Every backend in `khora-infra` implements a
+and `khora-hub` (the project launcher). Every backend in `khora-infra` implements a
 trait from `khora-core`: wgpu, Rapier3D, CPAL, and Taffy are *current defaults*,
 not architectural commitments — alternative backends drop in as new sibling
 folders without touching the rest of the engine.
