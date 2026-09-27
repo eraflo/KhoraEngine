@@ -70,7 +70,7 @@ during Research and Implement. Replaces the former per-domain "expert" agents.
 | [`research-codebase`](./skills/research-codebase/SKILL.md) | RPI phase 1 — understand a problem → `docs/research/`. |
 | [`create-plan`](./skills/create-plan/SKILL.md) | RPI phase 2 — write a phase-by-phase plan → `docs/plans/`. |
 | [`implement-plan`](./skills/implement-plan/SKILL.md) | RPI phase 3 — per phase: tests first, implement, break, fix, compact. |
-| [`build-and-test`](./skills/build-and-test/SKILL.md) | Validate a change (primary: `cargo test --workspace`). |
+| [`build-and-test`](./skills/build-and-test/SKILL.md) | Validate a change (`cargo t` while iterating, `cargo gate` before a commit). |
 | [`add-a-lane`](./skills/add-a-lane/SKILL.md) | Add a hot-path `Lane`. |
 | [`add-an-agent`](./skills/add-an-agent/SKILL.md) | Add a strategist `Agent`. |
 | [`add-a-component`](./skills/add-a-component/SKILL.md) | Define + register an ECS component. |

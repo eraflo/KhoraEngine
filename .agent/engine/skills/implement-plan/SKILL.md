@@ -22,7 +22,8 @@ The **Implement** phase of [`../../workflow-rpi.md`](../../workflow-rpi.md). Goa
 5. **Fix** until the breaker's tests pass. If the fixes were substantial, dispatch the breaker once more
    (at most two rounds); list anything left open in the plan's Status and in the report.
 6. **Verify** with the phase's check (via [`../build-and-test/SKILL.md`](../build-and-test/SKILL.md));
-   primary gate is `cargo test --workspace`. For GPU work, one clean `cargo run -p sandbox`.
+   `cargo gate`, once, when the phase is done; `cargo t -p <crate> [filter]` while iterating. For GPU work, one clean
+   `cargo run -p sandbox`.
 7. **Compact** — update the plan's **Status** checklist in place: mark the phase done, record any
    deviation from the plan and why, note the live test count. Then drop the phase's working detail from
    context and move to the next phase.

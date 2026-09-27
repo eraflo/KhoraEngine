@@ -17,7 +17,7 @@ to [GitHub Discussions](https://github.com/eraflo/KhoraEngine/discussions).
 - Work on a branch, then open a **pull request targeting `main`** and link it to
   the relevant issue.
 - Before opening the PR:
-  1. Run **`cargo xtask all`** locally (format + clippy + build + test + doc) so
+  1. Run **`cargo gate`** locally (format + clippy + tests + doc tests) so
      your change is already green against the gates below.
   2. Update the docs alongside the code — this book for concepts/narrative,
      rustdoc comments for API surface. A public-API change updates its mdBook

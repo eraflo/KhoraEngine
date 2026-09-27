@@ -32,4 +32,4 @@ Components live in `crates/khora-data/src/ecs/components/`. The `#[derive(Compon
   `HandleComponent<T>`.
 
 ## Verify
-`cargo test --workspace`. For storage/layout details, consult [`../../reference/ecs-data.md`](../../reference/ecs-data.md).
+`cargo gate`. For storage/layout details, consult [`../../reference/ecs-data.md`](../../reference/ecs-data.md).

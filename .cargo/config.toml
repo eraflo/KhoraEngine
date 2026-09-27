@@ -1,5 +1,13 @@
 [alias]
 xtask = "run --package xtask --"
+# The gate CI runs (format, clippy, tests, doc tests), stopping at the first
+# failure: `cargo gate`. Run it once, when a change is done.
+gate = "xtask gate"
+# Targeted tests while iterating: `cargo t -p <crate> [filter]`. Scoped to one
+# crate, a run after a change relinks only that crate's test binaries; a
+# workspace-wide run would relink every crate depending on it. Always with
+# `--all-features`, so each crate keeps a single cached build.
+t = "nextest run --all-features"
 sandbox = "run -p sandbox"
 
 # `cargo hub-dev` — pre-build editor + runtime in debug, then run the hub
@@ -12,3 +20,4 @@ hub-dev = "xtask hub-dev"
 # in wgpu, rapier and egui; link time dominates a rebuild after a small change.
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld.exe"
+

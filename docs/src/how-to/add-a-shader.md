@@ -97,8 +97,8 @@ registered pipeline at the empty variant — it catches import-graph and binding
 without a GPU:
 
 ```bash
-cargo test -p khora-infra composes_every_pipeline
-cargo test --workspace
+cargo t -p khora-infra composes_every_pipeline
+cargo gate
 cargo run -p sandbox   # confirm no wgpu/Vulkan validation errors
 ```
 

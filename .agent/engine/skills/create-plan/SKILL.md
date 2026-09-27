@@ -23,7 +23,7 @@ Write `docs/plans/descriptive-name.md` containing:
 - **Context** — why this change; the problem and intended outcome (link the research artifact).
 - **Phases** — ordered; for each: the exact files to edit, the specific edits, new symbols/signatures,
   a **Tests** table (test name · what it asserts — the `test-writer` subagent's input, written before any
-  code), and the **verification** for that phase (`cargo test -p <crate>` / `cargo test --workspace` / a
+  code), and the **verification** for that phase (`cargo t -p <crate> [filter]` / `cargo gate` / a
   sandbox run for GPU work).
 - **Out of scope** — what this change deliberately does not do.
 - **Status** — a checklist the implementation phase updates in place (intentional compaction).

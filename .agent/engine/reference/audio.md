@@ -26,4 +26,4 @@ mixing-lane wiring before editing — confirm the data path in code rather than 
 ## Skills
 - [`add-a-lane`](../skills/add-a-lane/SKILL.md) — add an audio lane / strategy.
 - [`add-a-component`](../skills/add-a-component/SKILL.md) — add an audio component.
-- [`run-the-engine`](../skills/run-the-engine/SKILL.md) · [`build-and-test`](../skills/build-and-test/SKILL.md) — verify (clean `cargo run -p sandbox`).
+- [`run-the-engine`](../skills/run-the-engine/SKILL.md) · [`build-and-test`](../skills/build-and-test/SKILL.md) — verify (a clean `cargo run -p sandbox`).

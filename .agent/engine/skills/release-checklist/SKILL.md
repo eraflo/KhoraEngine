@@ -7,8 +7,7 @@ description: Runs the pre-push quality and security gate for the engine. Use bef
 
 Run in order; stop and fix on the first failure.
 
-1. **Full CI gate** — `cargo xtask all` (fmt + clippy + test + doc). Must be green.
-   - Equivalent manual: `cargo fmt --all`, `cargo clippy --workspace`, `cargo test --workspace`, `cargo test --doc`.
+1. **Full CI gate** — `cargo gate` (fmt → clippy → nextest → doc tests, the flags CI uses). Must be green.
 2. **Run once** — `cargo run -p sandbox`: clean frame loop, no Vulkan validation errors, scene renders.
 3. **Security & secrets** — invoke the [`security-auditor`](../../agents/security-auditor.md) agent: no new
    `unsafe` without `// SAFETY:`, no secrets/keys/`.env`/personal paths in the diff, dependencies justified.

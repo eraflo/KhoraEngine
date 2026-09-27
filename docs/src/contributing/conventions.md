@@ -100,15 +100,14 @@ ever disagree, those files win; this page is a digest, not a duplicate.
 
 ## Before you push
 
-- The workspace must **build and test clean**: `cargo test --workspace` is the
-  primary check.
-- **`cargo clippy --workspace` must be clean** — CI runs it with `-D warnings`, so
-  any warning fails the build.
-- `cargo fmt` must report no changes.
+- **`cargo gate` must be green.** It runs what CI checks, with CI's flags, and
+  stops at the first failure: `cargo fmt` reporting no changes, clippy with
+  `-D warnings`, the whole test suite (nextest), then the doc tests.
+- While iterating, run the tests you are working on with
+  `cargo t -p <crate> [filter]`: scoped to one crate, a run after a change
+  relinks only that crate's tests.
 
-`cargo xtask all` runs format, clippy, build, test, and doc in one go — run it
-before opening a pull request. See [Workflow](./workflow.md) for the exact CI
-gates.
+See [Workflow](./workflow.md) for the exact CI gates.
 
 ---
 

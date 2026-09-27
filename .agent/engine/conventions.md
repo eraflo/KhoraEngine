@@ -94,7 +94,7 @@ pub struct Light {
 ## 8 — Git
 
 - Develop on `dev`; stable releases on `main`.
-- Pre-commit: `cargo xtask all` (fmt + clippy + test + doc). A `secret-scan` pre-commit hook (installed by the AI installer) blocks commits containing secrets.
+- Pre-commit: `cargo gate` (fmt + clippy + test + doc). A `secret-scan` pre-commit hook (installed by the AI installer) blocks commits containing secrets.
 - CI: GitHub Actions in `.github/workflows/`.
 - Commit messages: imperative mood, optional prefix (`feat:`, `fix:`, `refacto:`, `docs:`).
 - Never push without explicit user permission.

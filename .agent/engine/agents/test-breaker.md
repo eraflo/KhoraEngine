@@ -33,7 +33,9 @@ Report only what you can demonstrate.
 
 ## Method
 1. Read the plan, then the diff. List the promises the diff makes.
-2. For each attack that applies, write the test that would expose it and **run it**.
+2. For each attack that applies, write the test that would expose it and **run it**. Run tests only
+   through `cargo t -p <crate> [filter]`, scoped to the crates you touched (see
+   [`build-and-test`](../skills/build-and-test/SKILL.md)).
 3. **Keep only the tests that fail.** A test that passes is either a missing-coverage finding (keep it,
    mark it as coverage) or noise (delete it).
 4. Do not fix anything. Do not edit the implementation or the existing tests.

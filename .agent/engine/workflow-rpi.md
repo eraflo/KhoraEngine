@@ -34,7 +34,7 @@ Research ──► Plan ──► Implement ──► compact back into the plan
       diff in a fresh context and writes a failing test for each real defect or missing case.
    4. **Fix** — the main agent, until the breaker's tests pass. At most two breaker rounds; what remains
       is reported to the human, never dropped.
-   5. **Gate** (`cargo test --workspace`, see [`skills/build-and-test`](./skills/build-and-test/SKILL.md)),
+   5. **Gate** (`cargo gate`, once per phase, see [`skills/build-and-test`](./skills/build-and-test/SKILL.md)),
       then **compact status back into the plan file**, and move to the next phase.
 
 ## Context discipline (the whole point)

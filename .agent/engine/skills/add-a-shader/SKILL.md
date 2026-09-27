@@ -38,6 +38,6 @@ handle. **No new `_WGSL` constant should appear.**
 5. Add a test that the module composes and validates.
 
 ## Verify
-`cargo test --workspace` and `cargo run -p sandbox` (clean frame, scene renders, no Vulkan validation
+`cargo gate` and `cargo run -p sandbox` (clean frame, scene renders, no Vulkan validation
 errors). For visual style choices, use `/impeccable`. For technique detail, consult
 [`../../reference/graphics-rendering.md`](../../reference/graphics-rendering.md).

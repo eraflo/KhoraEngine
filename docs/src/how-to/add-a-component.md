@@ -73,7 +73,7 @@ assert_eq!(world.get::<WindAffected>(e).unwrap().strength, 2.0);
 ```
 
 ```bash
-cargo test --workspace
+cargo gate
 ```
 
 The component now appears in the editor inspector and survives scene save/load with

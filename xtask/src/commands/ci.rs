@@ -16,24 +16,18 @@ use crate::helpers::*;
 use anyhow::Result;
 use std::time::Instant;
 
+// Every command selects the same packages, targets and features: Cargo keeps
+// one build per combination and shares nothing between them, so mixing flag
+// sets recompiles the crates they touch.
+const SCOPE: [&str; 3] = ["--workspace", "--all-targets", "--all-features"];
+
 pub fn build() -> Result<()> {
     print_task_start("Building All Crates", HAMMER, BLUE);
     println!(
-        "{}💡 Info:{} Compiling all workspace crates with all features and targets (excluding xtask)",
+        "{}💡 Info:{} Compiling all workspace crates with all features and targets",
         BOLD, RESET
     );
-    execute_command(
-        "cargo",
-        &[
-            "build",
-            "--workspace",
-            "--exclude",
-            "xtask",
-            "--all-targets",
-            "--all-features",
-        ],
-        "Build",
-    )?;
+    execute_command("cargo", &["build", SCOPE[0], SCOPE[1], SCOPE[2]], "Build")?;
     Ok(())
 }
 
@@ -43,16 +37,29 @@ pub fn test() -> Result<()> {
         "{}💡 Info:{} Running tests using cargo-nextest with all features and targets",
         BOLD, RESET
     );
+    // `xtask` is excluded from the workspace pass and tested on its own: on
+    // Windows a running executable cannot be overwritten, and the workspace
+    // build would relink `target/debug/xtask.exe` while it runs this gate.
     execute_command(
         "cargo",
         &[
             "nextest",
             "run",
-            "--workspace",
-            "--all-targets",
-            "--all-features",
+            SCOPE[0],
+            "--exclude",
+            "xtask",
+            SCOPE[1],
+            SCOPE[2],
+            "--locked",
         ],
         "Tests",
+    )?;
+    execute_command(
+        "cargo",
+        &[
+            "nextest", "run", "-p", "xtask", SCOPE[1], SCOPE[2], "--locked",
+        ],
+        "xtask tests",
     )?;
     Ok(())
 }
@@ -63,7 +70,7 @@ pub fn check() -> Result<()> {
         "{}💡 Info:{} Checking code for errors without building executables",
         BOLD, RESET
     );
-    execute_command("cargo", &["check", "--workspace"], "Check")?;
+    execute_command("cargo", &["check", SCOPE[0], SCOPE[1], SCOPE[2]], "Check")?;
     Ok(())
 }
 
@@ -87,16 +94,41 @@ pub fn clippy() -> Result<()> {
     execute_command(
         "cargo",
         &[
-            "clippy",
-            "--workspace",
-            "--all-targets",
-            "--all-features",
-            "--",
-            "-D",
-            "warnings",
+            "clippy", SCOPE[0], SCOPE[1], SCOPE[2], "--", "-D", "warnings",
         ],
         "Clippy",
     )?;
+    Ok(())
+}
+
+/// Doc tests: nextest does not run them.
+pub fn doc_test() -> Result<()> {
+    print_task_start("Running Doc Tests", TEST_TUBE, GREEN);
+    execute_command(
+        "cargo",
+        &["test", SCOPE[0], "--doc", SCOPE[2], "--locked"],
+        "Doc tests",
+    )?;
+    Ok(())
+}
+
+/// What CI checks, in the order that fails fastest: format, clippy, tests,
+/// doc tests. Stops at the first failure. Run it once, when a change is done;
+/// while iterating, `cargo t -p <crate> [filter]`.
+pub fn gate() -> Result<()> {
+    let start_time = Instant::now();
+    format()?;
+    clippy()?;
+    test()?;
+    doc_test()?;
+    println!(
+        "\n{}{}{} Gate passed in {:.0}s{}",
+        BOLD,
+        GREEN,
+        CHECK,
+        start_time.elapsed().as_secs_f64(),
+        RESET
+    );
     Ok(())
 }
 

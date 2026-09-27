@@ -105,7 +105,7 @@ inserts it) — see [Add a lane](./add-a-lane.md).
 ## Step 5 — Verify it works
 
 ```bash
-cargo test --workspace
+cargo gate
 ```
 
 A unit test can drive `run_flow_cached` with a `World` and a `LaneBus`, then assert the

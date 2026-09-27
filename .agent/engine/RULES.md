@@ -10,7 +10,7 @@ and [`security-privacy.md`](./security-privacy.md).
 
 ## 1 — Must always
 
-- Run `cargo build` and `cargo test --workspace` after any code change. **Primary check:** `cargo test --workspace`.
+- Validate every change with `cargo gate` (fmt, clippy, tests, doc tests — what CI runs) before committing; iterate with `cargo t -p <crate> [filter]`. See `skills/build-and-test` for where the build time goes.
 - Use the engine's own math types `khora_core::math::{Vec3, Mat4, Quaternion, LinearRgba, …}` — never raw `glam`.
 - Naming: `snake_case` (Rust), `PascalCase` (types), `kebab-case` (crate names). See [`conventions.md`](./conventions.md).
 - Add `#[cfg(test)]` unit tests for any new public function.
@@ -21,7 +21,7 @@ and [`security-privacy.md`](./security-privacy.md).
 
 ## 2 — Build & test
 
-- Compile with zero warnings at the configured lint level; `cargo clippy --workspace` clean.
+- Compile with zero warnings at the configured lint level; clippy clean (part of `cargo gate`).
 - All workspace tests must pass before declaring work complete (~1650 unit + ~50 doc today; treat the live count as truth).
 - No Vulkan validation errors when running `cargo run -p sandbox`; confirm the frame loop is clean for GPU work.
 
@@ -101,7 +101,7 @@ and [`security-privacy.md`](./security-privacy.md).
 
 ## 10 — Permission model
 
-- **No prompt:** read any file, run `cargo build` / `cargo clippy` / single-test runs, query the codegraph MCP, lint.
+- **No prompt:** read any file, run `cargo gate` / `cargo t` / `cargo run`, query the codegraph MCP, lint.
 - **Ask first:** installing dependencies, any `git` write op (commit/push/branch/reset), deleting files or branches, full release builds, modifying CI.
 - **Never without explicit user permission:** push to git, create PRs, modify CI/workflows.
 

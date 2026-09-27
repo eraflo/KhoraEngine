@@ -24,7 +24,7 @@ decision names the **CLAD** layer or **SAA** concept it touches. Reply in the us
 - **Performance by design** — cache-friendly layouts, minimal allocations, zero-copy where possible.
 - **Architecture integrity** — respect the CLAD descent: `Control → Agent → Lane → Data`.
 - **Minimal changes** — fix what's asked; don't refactor adjacent code or over-engineer.
-- **Verify** — every change must `cargo build` clean and pass `cargo test --workspace`.
+- **Verify** — every change must pass `cargo gate` (fmt, clippy, tests, doc tests).
 
 ## Golden rule — research, plan, implement (don't accumulate)
 
@@ -72,7 +72,7 @@ points to the on-demand [`reference/`](./reference/) doc for that crate's domain
 | `khora-editor` | Editor app on the SDK (panels, gizmos, dock). | editor-ui-ux |
 | `khora-runtime` | Generic player binary stamped with packed assets. | api-ux |
 | `sandbox` | Example game using the SDK. | — |
-| `xtask` | Build automation (`cargo xtask all`). | — |
+| `xtask` | Build automation (`cargo gate`, `cargo xtask …`). | — |
 | `hub` | Project manager / engine launcher. | editor-ui-ux |
 
 That is all you keep resident. For anything deeper, research.

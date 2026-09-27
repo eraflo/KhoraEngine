@@ -26,5 +26,5 @@ A `Lane` is a unit of hot-path work selected by an `Agent` via GORNA. Trait in
 - Never bypass the `Lane` abstraction for hot-path work. Never expose raw GPU handles. No `unwrap()` on GPU/IO.
 
 ## Verify
-`cargo test --workspace`; for render lanes, `cargo run -p sandbox` (clean frame). Delegate domain detail to
+`cargo gate`; for render lanes, `cargo run -p sandbox` (clean frame). Delegate domain detail to
 the matching specialist agent (graphics / physics / audio).

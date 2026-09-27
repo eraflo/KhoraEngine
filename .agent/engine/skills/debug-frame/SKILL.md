@@ -6,7 +6,7 @@ description: Investigates a per-frame problem or a GORNA budget decision — wro
 # Debug a frame / GORNA decision
 
 ## Approach
-1. **Reproduce** with `cargo run -p sandbox` (or editor); capture the exact log lines and `RUST_LOG=debug`
+1. **Reproduce** with `cargo run -p sandbox` (or the editor); capture the exact log lines and `RUST_LOG=debug`
    for the suspect subsystem.
 2. **Locate** the path with codegraph: `codegraph_trace` from the agent's `execute` to the lane, or from
    `negotiate → arbitrate → apply_budget`.

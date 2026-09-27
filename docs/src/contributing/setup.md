@@ -35,10 +35,10 @@ later incremental builds are fast.
 
 ## 2. Run the tests
 
-The primary check is the whole-workspace test run:
+The primary check is the gate — what CI runs, with CI's flags:
 
 ```bash
-cargo test --workspace
+cargo gate
 ```
 
 This must be green before you start changing things — it tells you the tree is
@@ -94,9 +94,10 @@ mdbook serve docs --open
 
 ## Tooling you'll use
 
-- **`cargo xtask`** — the workspace build-automation entry point. `cargo xtask all`
-  runs the full local gate (build, test, check, format, clippy) — run it before
-  opening a pull request. Other subcommands cover assets (`cargo xtask assets pack`)
+- **`cargo xtask`** — the workspace build-automation entry point. `cargo gate`
+  (`cargo xtask gate`) runs the full local gate (format, clippy, tests, doc
+  tests) — run it before opening a pull request; `cargo t -p <crate> [filter]`
+  runs a subset of the tests while you iterate. Other subcommands cover assets (`cargo xtask assets pack`)
   and regenerating the AI doc wrappers.
 - **`cargo hub-dev`** — the contributor dev loop described above (build editor +
   runtime, launch the hub).

@@ -49,6 +49,9 @@ enum Commands {
     Clippy,
     /// Run all CI tasks (build, test, check, format, clippy).
     All,
+    /// Run what CI checks — format, clippy, tests, doc tests — and stop at the
+    /// first failure. The check to run before a commit.
+    Gate,
 
     /// Pre-build editor + runtime in debug, then run the hub in release.
     /// Convenience wrapper for the typical contributor dev loop — also
@@ -89,6 +92,7 @@ fn main() -> Result<()> {
             Commands::Format => commands::ci::format()?,
             Commands::Clippy => commands::ci::clippy()?,
             Commands::All => commands::ci::all()?,
+            Commands::Gate => commands::ci::gate()?,
 
             Commands::HubDev => commands::dev::hub_dev()?,
 

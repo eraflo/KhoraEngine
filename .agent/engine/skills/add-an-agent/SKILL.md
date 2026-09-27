@@ -25,4 +25,4 @@ a GORNA budget. Non-negotiating work uses a service (`AssetService`, `EcsMainten
 - One agent per `LaneKind`; no per-frame state; no owning a Flow; no buffering outputs.
 
 ## Verify
-`cargo test --workspace`. For budget/negotiation design, consult [`../../reference/control-gorna.md`](../../reference/control-gorna.md).
+`cargo gate`. For budget/negotiation design, consult [`../../reference/control-gorna.md`](../../reference/control-gorna.md).

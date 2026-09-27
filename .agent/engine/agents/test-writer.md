@@ -28,11 +28,13 @@ says the code must do, not from a guess at how it will be done.
 2. Write each test so its name states the behaviour and its assertion checks the **observable result**
    (a value read back, a component in the `World`, a compile error with its message) — not an internal
    call count.
-3. **Run every test you wrote** (`cargo test -p <crate> <name>`) and check it **fails for the reason the
+3. **Run every test you wrote** (`cargo t -p <crate> <name>`) and check it **fails for the reason the
    plan predicts**: a `todo!()` panic, a wrong value, a missing diagnostic. A test that passes before the
    implementation exists is testing nothing — fix it or drop it and say so. A test that fails to compile
    is not a failing test.
-4. Run `cargo build --workspace --all-targets` once at the end: the tree must still build.
+4. Run tests only through `cargo t -p <crate> [filter]`, scoped to the crates you touched, and never
+   while another build runs (see [`build-and-test`](../skills/build-and-test/SKILL.md)). Leave the
+   whole-workspace build to the main agent's gate.
 
 ## Output
 - **Files touched** — each test file and stub, `path:line`.

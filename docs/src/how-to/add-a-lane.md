@@ -120,7 +120,7 @@ To add a whole new subsystem rather than a strategy for an existing one, see
 ## Step 5 — Verify it works
 
 ```bash
-cargo test --workspace
+cargo gate
 cargo run -p sandbox   # confirm no wgpu/Vulkan validation errors for a render lane
 ```
 

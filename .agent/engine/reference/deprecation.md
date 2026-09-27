@@ -19,6 +19,6 @@ consolidating duplicated logic — never a feature change.
 - [`build-and-test`](../skills/build-and-test/SKILL.md) — `cargo build` (zero warnings) + clippy + tests.
 
 ## Verify
-`cargo build` (zero warnings), `cargo clippy --workspace` (clean), `cargo test --workspace` (no regressions).
+`cargo gate` (zero warnings, clippy clean, no regressions).
 Removing code that *looks* dead but is wired via `inventory`/`register_flow!` is a real risk — confirm
 registration sites before deleting.
