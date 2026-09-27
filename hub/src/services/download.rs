@@ -62,7 +62,7 @@ pub fn uninstall_engine(version: &str) -> std::io::Result<()> {
 /// cache slot.
 ///
 /// Layout produced under `~/.khora/engines/<version>/`:
-/// - `editor/` — extracted editor archive (contains `khora-editor{.exe}` + assets)
+/// - `editor/` — extracted editor archive (contains `khora-editor{.exe}` + font licenses)
 /// - `runtime/` — extracted runtime archive (contains `khora-runtime{.exe}`),
 ///   only when `runtime_asset` is `Some` and its download succeeds
 ///

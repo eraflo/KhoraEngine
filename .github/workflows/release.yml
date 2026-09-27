@@ -106,49 +106,40 @@ jobs:
       - name: Build runtime binary
         run: cargo build --release -p khora-runtime
 
-      # ── Stage engine payload (binary + bundled assets) ─────────────
-      # The editor looks up runtime assets (Geist + Lucide fonts, etc.) under
-      # `<exe-dir>/assets/` first; we MUST ship that directory next to the
-      # binary or the editor panics on first paint when a downloaded build
-      # tries to resolve `FontFamily::Name("icons")`.
+      # ── Stage engine payload (binary + font licenses) ──────────────
+      # The brand fonts and the logo are embedded in the editor and hub
+      # binaries by khora-tool-ui; only their SIL OFL licenses ship next to
+      # them, as the fonts' license requires.
       - name: Stage engine payload (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path stage/engine | Out-Null
+          New-Item -ItemType Directory -Force -Path stage/engine/licenses | Out-Null
           Copy-Item target/release/khora-editor.exe stage/engine/
-          if (Test-Path crates/khora-editor/assets) {
-            Copy-Item crates/khora-editor/assets stage/engine/assets -Recurse
-          }
+          Copy-Item crates/khora-tool-ui/assets/fonts/LICENSE-*.txt stage/engine/licenses/
 
       - name: Stage engine payload (Unix)
         if: matrix.os != 'windows-latest'
         run: |
-          mkdir -p stage/engine
+          mkdir -p stage/engine/licenses
           cp target/release/khora-editor stage/engine/
-          if [ -d crates/khora-editor/assets ]; then
-            cp -R crates/khora-editor/assets stage/engine/assets
-          fi
+          cp crates/khora-tool-ui/assets/fonts/LICENSE-*.txt stage/engine/licenses/
 
-      # ── Stage hub payload (binary + assets) ────────────────────────
+      # ── Stage hub payload (binary + font licenses) ─────────────────
       - name: Stage hub payload (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path stage/hub | Out-Null
+          New-Item -ItemType Directory -Force -Path stage/hub/licenses | Out-Null
           Copy-Item target/release/khora-hub.exe stage/hub/
-          if (Test-Path hub/assets) {
-            Copy-Item hub/assets stage/hub/assets -Recurse
-          }
+          Copy-Item crates/khora-tool-ui/assets/fonts/LICENSE-*.txt stage/hub/licenses/
 
       - name: Stage hub payload (Unix)
         if: matrix.os != 'windows-latest'
         run: |
-          mkdir -p stage/hub
+          mkdir -p stage/hub/licenses
           cp target/release/khora-hub stage/hub/
-          if [ -d hub/assets ]; then
-            cp -R hub/assets stage/hub/assets
-          fi
+          cp crates/khora-tool-ui/assets/fonts/LICENSE-*.txt stage/hub/licenses/
 
       # ── Stage runtime payload (binary only) ───────────────────────
       # Runtime ships as a single binary — its asset payload (index.bin +
