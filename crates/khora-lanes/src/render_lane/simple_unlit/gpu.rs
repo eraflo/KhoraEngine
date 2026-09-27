@@ -160,10 +160,8 @@ impl SimpleUnlitLane {
         device: &dyn khora_core::renderer::GraphicsDevice,
         pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
-        use khora_core::renderer::api::{
-            resource::CameraUniformData, scene::ModelUniforms,
-            util::uniform_ring_buffer::UniformRingBuffer,
-        };
+        use crate::render_lane::util::UniformRingBuffer;
+        use khora_core::renderer::api::{resource::CameraUniformData, scene::ModelUniforms};
 
         log::info!("SimpleUnlitLane: Initializing GPU resources...");
 
@@ -209,34 +207,32 @@ impl SimpleUnlitLane {
             "SimpleUnlit init.camera_ring",
         )? = Some(camera_ring);
 
-        let model_ring =
-            khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::new(
-                device,
-                model_layout,
-                0,
-                std::mem::size_of::<ModelUniforms>() as u32,
-                khora_core::renderer::api::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
-                khora_core::renderer::api::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
-                "Model Dynamic Ring Runlit",
-            )
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        let model_ring = crate::render_lane::util::DynamicUniformRingBuffer::new(
+            device,
+            model_layout,
+            0,
+            std::mem::size_of::<ModelUniforms>() as u32,
+            crate::render_lane::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
+            crate::render_lane::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+            "Model Dynamic Ring Runlit",
+        )
+        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         *khora_core::lane::lock::mutex_lock_render(
             &self.model_ring,
             "SimpleUnlit init.model_ring",
         )? = Some(model_ring);
 
-        let material_ring =
-            khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::new(
-                device,
-                material_layout,
-                0, // Binding size
-                std::mem::size_of::<khora_core::renderer::api::scene::MaterialUniforms>() as u32,
-                khora_core::renderer::api::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
-                khora_core::renderer::api::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
-                "Material Dynamic Ring Runlit",
-            )
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        let material_ring = crate::render_lane::util::DynamicUniformRingBuffer::new(
+            device,
+            material_layout,
+            0, // Binding size
+            std::mem::size_of::<khora_core::renderer::api::scene::MaterialUniforms>() as u32,
+            crate::render_lane::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
+            crate::render_lane::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+            "Material Dynamic Ring Runlit",
+        )
+        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         *khora_core::lane::lock::mutex_lock_render(
             &self.material_ring,

@@ -126,11 +126,9 @@ mod every_pub_mod {
     use khora_core::renderer::api::shadow::bindings::binding as _;
     use khora_core::renderer::api::text as _;
     use khora_core::renderer::api::util as _;
-    use khora_core::renderer::api::util::dynamic_uniform_buffer as _;
     use khora_core::renderer::api::util::enums as _;
     use khora_core::renderer::api::util::flags as _;
     use khora_core::renderer::api::util::half_float as _;
-    use khora_core::renderer::api::util::uniform_ring_buffer as _;
     use khora_core::renderer::error as _;
     use khora_core::renderer::forward_plus as _;
     use khora_core::renderer::light as _;
@@ -2913,29 +2911,6 @@ fn module_renderer_paths_still_resolve() {
     let _ = khora_core::renderer::api::util::TextureAtlas::texture;
     let _ = khora_core::renderer::api::util::TextureAtlas::view;
     let _ = khora_core::renderer::api::util::TextureAtlas::size;
-    let _ = khora_core::renderer::api::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS;
-    let _ = khora_core::renderer::api::util::DEFAULT_MAX_ELEMENTS;
-    let _ = type_name::<
-        khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer,
-    >();
-    let _ = type_name::<khora_core::renderer::api::util::DynamicUniformRingBuffer>();
-    same_type(
-        PhantomData::<khora_core::renderer::api::util::DynamicUniformRingBuffer>,
-        PhantomData::<
-            khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer,
-        >,
-    );
-    let _ = khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::new;
-    let _ =
-        khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::advance;
-    let _ = khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::push;
-    let _ = khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::current_bind_group;
-    let _ = khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::current_slot_index;
-    let _ =
-        khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::destroy;
-    is_debug::<khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer>();
-    let _ = khora_core::renderer::api::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT;
-    let _ = khora_core::renderer::api::util::MIN_UNIFORM_ALIGNMENT;
     let _ = type_name::<khora_core::renderer::api::util::enums::GraphicsBackendType>();
     let _ = type_name::<khora_core::renderer::api::util::GraphicsBackendType>();
     same_type(
@@ -3093,24 +3068,6 @@ fn module_renderer_paths_still_resolve() {
         &khora_core::renderer::api::util::f32_to_f16_bits,
         &khora_core::renderer::api::util::half_float::f32_to_f16_bits,
     );
-    let _ = type_name::<khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer>();
-    let _ = type_name::<khora_core::renderer::api::util::UniformRingBuffer>();
-    same_type(
-        PhantomData::<khora_core::renderer::api::util::UniformRingBuffer>,
-        PhantomData::<khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer>,
-    );
-    let _ = khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer::new;
-    let _ = khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer::advance;
-    let _ = khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer::write;
-    let _ =
-        khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer::current_bind_group;
-    let _ = khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer::current_buffer;
-    let _ =
-        khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer::current_slot_index;
-    let _ = khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer::slot_count;
-    let _ = khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer::data_size;
-    let _ = khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer::destroy;
-    is_debug::<khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer>();
     let _ = type_name::<khora_core::renderer::error::PipelineError>();
     let _ = type_name::<khora_core::renderer::PipelineError>();
     same_type(

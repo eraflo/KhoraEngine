@@ -26,7 +26,6 @@
 
 pub mod app;
 pub mod editor;
-pub mod editor_overlay;
 pub mod fonts;
 pub mod geometry;
 pub mod layout;
@@ -37,7 +36,7 @@ pub use app::{App, AppContext, AppLifecycle};
 pub use editor::{
     EditorCamera, EditorPanel, EditorShell, PanelLocation, UiBuilder, ViewportTextureHandle,
 };
-pub use editor_overlay::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
+pub use editor::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
 pub use fonts::{FontHandle, FontPack, NamedFont};
 pub use geometry::{Align, Align2, CornerRadius, Margin, Stroke};
 pub use layout::{LayoutSystem, UiLayoutView};

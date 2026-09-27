@@ -52,7 +52,6 @@ fn same_type<T: ?Sized>(_: PhantomData<T>, _: PhantomData<T>) {}
 fn same_item<T>(_: &T, _: &T) {}
 
 fn is_asset<T: khora_core::asset::Asset>() {}
-fn is_audio_mix_bus<T: khora_core::audio::mix_bus::AudioMixBus>() {}
 fn is_borrow_decode<T: bincode::BorrowDecode<'static, ()>>() {}
 fn is_clone<T: Clone>() {}
 fn is_copy<T: Copy>() {}
@@ -70,7 +69,6 @@ fn is_extend_script_state_update<T: Extend<khora_core::script::writeback::Script
 fn is_extend_world_command<T: Extend<khora_core::script::command::WorldCommand>>() {}
 fn is_from_str<T: From<&'static str>>() {}
 fn is_from_string<T: From<String>>() {}
-fn is_global_alloc<T: std::alloc::GlobalAlloc>() {}
 fn is_hash<T: std::hash::Hash>() {}
 fn is_into_iterator<T: IntoIterator>() {}
 fn is_material<T: khora_core::asset::Material>() {}
@@ -103,7 +101,6 @@ mod every_pub_mod {
     use khora_core::context as _;
     use khora_core::control as _;
     use khora_core::control::gorna as _;
-    use khora_core::control::pid as _;
     use khora_core::ecs as _;
     use khora_core::ecs::entity as _;
     use khora_core::event as _;
@@ -394,19 +391,6 @@ fn strategy_option_fields(x: &khora_core::control::gorna::StrategyOption) {
 
 fn timing_adjustment_fields(x: &khora_core::control::gorna::TimingAdjustment) {
     let _ = (&x.importance_override,);
-}
-
-fn pid_config_fields(x: &khora_core::control::pid::PidConfig) {
-    let _ = (
-        &x.kp,
-        &x.ki,
-        &x.kd,
-        &x.setpoint_weight_b,
-        &x.derivative_filter_n,
-        &x.kb,
-        &x.output_min,
-        &x.output_max,
-    );
 }
 
 fn entity_id_fields(x: &khora_core::ecs::entity::EntityId) {
@@ -1634,14 +1618,6 @@ fn module_audio_paths_still_resolve() {
     is_copy::<khora_core::audio::device::StreamInfo>();
     // trait `khora_core::audio::mix_bus::AudioMixBus`: see `audio_mix_bus_trait_items`
     // trait `khora_core::audio::AudioMixBus`: see `audio_mix_bus_trait_items`
-    let _ = type_name::<khora_core::audio::mix_bus::DefaultMixBus>();
-    let _ = type_name::<khora_core::audio::DefaultMixBus>();
-    same_type(
-        PhantomData::<khora_core::audio::DefaultMixBus>,
-        PhantomData::<khora_core::audio::mix_bus::DefaultMixBus>,
-    );
-    let _ = khora_core::audio::mix_bus::DefaultMixBus::new;
-    is_audio_mix_bus::<khora_core::audio::mix_bus::DefaultMixBus>();
 }
 
 #[test]
@@ -1759,21 +1735,6 @@ fn module_control_paths_still_resolve() {
     is_debug::<khora_core::control::gorna::TimingAdjustment>();
     is_clone::<khora_core::control::gorna::TimingAdjustment>();
     let _ = khora_core::control::gorna::measured_frame_time_ms;
-    let _ = type_name::<khora_core::control::pid::PidConfig>();
-    let _ = pid_config_fields as fn(&khora_core::control::pid::PidConfig);
-    is_debug::<khora_core::control::pid::PidConfig>();
-    is_clone::<khora_core::control::pid::PidConfig>();
-    is_copy::<khora_core::control::pid::PidConfig>();
-    is_partial_eq::<khora_core::control::pid::PidConfig>();
-    is_default::<khora_core::control::pid::PidConfig>();
-    let _ = type_name::<khora_core::control::pid::PidController>();
-    let _ = khora_core::control::pid::PidController::new;
-    let _ = khora_core::control::pid::PidController::update;
-    let _ = khora_core::control::pid::PidController::reset;
-    let _ = khora_core::control::pid::PidController::output;
-    let _ = khora_core::control::pid::PidController::config;
-    is_debug::<khora_core::control::pid::PidController>();
-    is_clone::<khora_core::control::pid::PidController>();
 }
 
 #[test]
@@ -2062,13 +2023,6 @@ fn module_memory_paths_still_resolve() {
     let _ = &khora_core::memory::PEAK_ALLOCATED_BYTES;
     let _ = &khora_core::memory::SMALL_ALLOCATIONS;
     let _ = &khora_core::memory::SMALL_ALLOCATION_BYTES;
-    let _ = type_name::<khora_core::memory::SaaTrackingAllocator<std::alloc::System>>();
-    let _ = <khora_core::memory::SaaTrackingAllocator<std::alloc::System>>::new;
-    is_debug::<khora_core::memory::SaaTrackingAllocator<std::alloc::System>>();
-    is_default::<khora_core::memory::SaaTrackingAllocator<std::alloc::System>>();
-    is_clone::<khora_core::memory::SaaTrackingAllocator<std::alloc::System>>();
-    is_copy::<khora_core::memory::SaaTrackingAllocator<std::alloc::System>>();
-    is_global_alloc::<khora_core::memory::SaaTrackingAllocator<std::alloc::System>>();
     let _ = &khora_core::memory::TOTAL_ALLOCATIONS;
     let _ = &khora_core::memory::TOTAL_DEALLOCATIONS;
     let _ = &khora_core::memory::TOTAL_REALLOCATIONS;
@@ -3000,7 +2954,6 @@ mod paths_used_by_other_crates {
     use khora_core::audio::AudioDevice as _; // khora-infra, khora-sdk
     use khora_core::audio::AudioMixBus as _; // khora-agents, khora-infra, khora-lanes, khora-sdk
     use khora_core::audio::AudioStream as _; // khora-infra, khora-sdk
-    use khora_core::audio::DefaultMixBus as _; // khora-sdk
     use khora_core::audio::StreamInfo as _; // khora-infra, khora-lanes, khora-sdk
     use khora_core::context::EngineContext as _; // khora-agents
     use khora_core::control::gorna::measured_frame_time_ms as _; // khora-agents
@@ -3028,8 +2981,6 @@ mod paths_used_by_other_crates {
     use khora_core::control::gorna::StrategyId::Balanced as _; // khora-agents
     use khora_core::control::gorna::StrategyOption as _; // khora-agents, khora-control
     use khora_core::control::gorna::TickDecisions as _; // khora-control
-    use khora_core::control::pid::PidConfig as _; // khora-control
-    use khora_core::control::pid::PidController as _; // khora-control
     use khora_core::ecs::entity::EntityId as _; // khora-agents, khora-data, khora-infra, khora-io, khora-lanes, khora-script, khora-sdk
     use khora_core::event::Channel as _; // khora-agents, khora-data, khora-io, khora-lanes, khora-script, khora-sdk
     use khora_core::event::Supersedes as _; // khora-io, khora-script
@@ -3086,7 +3037,6 @@ mod paths_used_by_other_crates {
     use khora_core::math::EPSILON as _; // khora-data
     use khora_core::memory::get_currently_allocated_bytes as _; // khora-infra
     use khora_core::memory::get_extended_memory_stats as _; // khora-infra
-    use khora_core::memory::SaaTrackingAllocator as _; // khora-sdk
     use khora_core::physics::collision_channel as _; // khora-agents, khora-data, khora-sdk
     use khora_core::physics::BodyType as _; // khora-agents, khora-data, khora-infra, khora-sdk
     use khora_core::physics::CharacterControllerOptions as _; // khora-data, khora-infra
@@ -3288,16 +3238,12 @@ mod paths_used_by_other_crates {
     use khora_core::renderer::api::shadow::ShadowGpuBindings as _; // khora-lanes
     use khora_core::renderer::api::text::TextLayout as _; // khora-data, khora-infra
     use khora_core::renderer::api::text::TextRenderer as _; // khora-agents, khora-data, khora-infra, khora-lanes, khora-sdk
-    use khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer as _; // khora-lanes
-    use khora_core::renderer::api::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS as _; // khora-lanes
-    use khora_core::renderer::api::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT as _; // khora-lanes
     use khora_core::renderer::api::util::enums::IndexFormat as _; // khora-infra
     use khora_core::renderer::api::util::enums::SampleCount as _; // khora-infra
     use khora_core::renderer::api::util::enums::ShaderStage as _; // khora-infra
     use khora_core::renderer::api::util::enums::TextureFormat as _; // khora-infra
     use khora_core::renderer::api::util::f32_to_f16_bits as _; // khora-io
     use khora_core::renderer::api::util::flags::ShaderStageFlags as _; // khora-infra
-    use khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer as _; // khora-lanes
     use khora_core::renderer::api::util::AtlasRect as _; // khora-data
     use khora_core::renderer::api::util::GraphicsBackendType as _; // khora-infra
     use khora_core::renderer::api::util::IndexFormat as _; // khora-agents, khora-data, khora-infra, khora-io, khora-lanes
@@ -3401,6 +3347,9 @@ mod paths_used_by_other_crates {
     use khora_core::ui::editor::gizmo::GizmoLineInstance as _; // khora-sdk
     use khora_core::ui::editor::gizmo_basis as _; // khora-editor (as khora_sdk::editor_ui::…)
     use khora_core::ui::editor::gizmo_world_size as _; // khora-editor (as khora_sdk::editor_ui::…)
+    use khora_core::ui::editor::overlay::EditorOverlay as _; // khora-infra
+    use khora_core::ui::editor::overlay::OverlayError as _; // khora-infra
+    use khora_core::ui::editor::overlay::OverlayScreenDescriptor as _; // khora-infra
     use khora_core::ui::editor::panel::EditorPanel as _; // khora-infra
     use khora_core::ui::editor::panel::PanelLocation as _; // khora-infra
     use khora_core::ui::editor::pick_handle as _; // khora-editor (as khora_sdk::editor_ui::…)
@@ -3449,9 +3398,6 @@ mod paths_used_by_other_crates {
     use khora_core::ui::editor::TextAlign as _; // khora-editor (as khora_sdk::editor_ui::…), khora-sdk
     use khora_core::ui::editor::UiBuilder as _; // khora-editor (as khora_sdk::editor_ui::…), khora-infra, khora-sdk, khora-tool-ui
     use khora_core::ui::editor::ViewportTextureHandle as _; // khora-infra
-    use khora_core::ui::editor_overlay::EditorOverlay as _; // khora-infra
-    use khora_core::ui::editor_overlay::OverlayError as _; // khora-infra
-    use khora_core::ui::editor_overlay::OverlayScreenDescriptor as _; // khora-infra
     use khora_core::ui::fonts::FontHandle as _; // khora-editor (as khora_sdk::editor_ui::…), khora-infra, khora-sdk
     use khora_core::ui::fonts::FontPack as _; // khora-editor (as khora_sdk::editor_ui::…), khora-infra, khora-sdk
     use khora_core::ui::fonts::NamedFont as _; // khora-editor (as khora_sdk::editor_ui::…), khora-infra, khora-sdk
@@ -3532,7 +3478,6 @@ fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_core::renderer::api::resource::BufferUsage::COPY_DST; // khora-lanes
     let _ = khora_core::renderer::api::resource::BufferUsage::STORAGE; // khora-lanes
     let _ = khora_core::renderer::api::resource::BufferUsage::UNIFORM; // khora-lanes
-    let _ = khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::new; // khora-lanes
     let _ = khora_core::renderer::light::DirectionalLight::default; // khora-data
     let _ = khora_core::renderer::light::PointLight::default; // khora-data
     let _ = khora_core::renderer::light::SpotLight::default; // khora-data

@@ -27,8 +27,8 @@
 use crate::render_lane::ShaderComplexity;
 use khora_core::renderer::api::command::BindGroupLayoutId;
 
-use khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer;
-use khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer;
+use crate::render_lane::util::DynamicUniformRingBuffer;
+use crate::render_lane::util::UniformRingBuffer;
 use khora_core::{
     asset::Material,
     renderer::{

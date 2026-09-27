@@ -44,6 +44,7 @@ pub mod context;
 pub mod cost_model;
 pub mod gorna;
 pub mod metrics;
+pub mod pid;
 pub mod plugin;
 pub mod registry;
 pub mod scheduler;

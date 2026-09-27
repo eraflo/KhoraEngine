@@ -11,7 +11,7 @@ modes, and tick ordering (Substrate Pass + agent descent).
 - DCC: `crates/khora-control/src/service/` (decision thread in `decision_loop.rs`); situational `Context` `crates/khora-control/src/context.rs`.
 - GORNA: `crates/khora-control/src/gorna/` — `mod.rs` (arbitration + replay via `Option<&TickDecisions>`), `fitting.rs` (budget fit, clamps).
 - Cost model: `crates/khora-control/src/cost_model.rs` (learned linear `predict_ms`).
-- PID: `crates/khora-core/src/control/pid.rs` (anti-windup, ~20 Hz cold path, output `[0.3, 1.0]`).
+- PID: `crates/khora-control/src/pid.rs` (anti-windup, ~20 Hz cold path, output `[0.3, 1.0]`).
 - Substrate dispatcher: `crates/khora-control/src/substrate/`.
 
 ## Concepts

@@ -31,7 +31,7 @@
 //! Each slot has its own GPU buffer and pre-created bind group, avoiding both
 //! buffer allocation and bind group creation during the render hot path.
 
-use crate::renderer::{
+use khora_core::renderer::{
     api::{
         command::{
             BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutId, BindingResource,
@@ -239,7 +239,7 @@ impl UniformRingBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::renderer::{
+    use khora_core::renderer::{
         api::{
             command::{
                 BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutId,
@@ -328,7 +328,7 @@ mod tests {
         fn begin_profiler_compute_pass<'enc>(
             &'enc mut self,
             _label: Option<&str>,
-            _profiler: &'enc dyn crate::renderer::traits::GpuProfiler,
+            _profiler: &'enc dyn khora_core::renderer::traits::GpuProfiler,
             _pass_index: u32,
         ) -> Box<dyn ComputePass<'enc> + 'enc> {
             Box::new(MockComputePass)
@@ -449,8 +449,8 @@ mod tests {
             _id: TextureId,
             _data: &[u8],
             _bpr: Option<u32>,
-            _offset: crate::math::dimension::Origin3D,
-            _size: crate::math::dimension::Extent3D,
+            _offset: khora_core::math::dimension::Origin3D,
+            _size: khora_core::math::dimension::Extent3D,
         ) -> Result<(), ResourceError> {
             Ok(())
         }
@@ -494,18 +494,20 @@ mod tests {
 
     fn create_test_layout(device: &MockGraphicsDevice) -> BindGroupLayoutId {
         device
-            .create_bind_group_layout(&crate::renderer::api::command::BindGroupLayoutDescriptor {
-                label: Some("test_layout"),
-                entries: &[crate::renderer::api::command::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
-                    ty: BindingType::Buffer {
-                        ty: BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                }],
-            })
+            .create_bind_group_layout(
+                &khora_core::renderer::api::command::BindGroupLayoutDescriptor {
+                    label: Some("test_layout"),
+                    entries: &[khora_core::renderer::api::command::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
+                        ty: BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                    }],
+                },
+            )
             .expect("Failed to create test layout")
     }
 

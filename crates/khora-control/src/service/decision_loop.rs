@@ -20,11 +20,11 @@ use super::{DccService, COST_MODEL_CAPACITY, FRAME_TIME_MIN_SAMPLES, PID_RENEGOT
 use crate::context::safety_ceiling;
 use crate::cost_model::CostModel;
 use crate::metrics::MetricStore;
+use crate::pid::PidController;
 use crate::EngineMode;
 use crossbeam_channel::Receiver;
 use khora_core::agent::Agent;
 use khora_core::control::gorna::ResourceBudget;
-use khora_core::control::pid::PidController;
 use khora_core::telemetry::{MetricId, TelemetryEvent};
 use khora_data::ecs::layout::LayoutAdvisor;
 use std::sync::atomic::Ordering;

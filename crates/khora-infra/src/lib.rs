@@ -20,13 +20,16 @@
 
 pub mod audio;
 pub mod graphics;
+pub mod memory;
 pub mod physics;
 pub mod platform;
 pub mod telemetry;
 pub mod ui;
 
+pub use audio::DefaultMixBus;
 pub use graphics::wgpu::WgpuRenderSystem;
 pub use graphics::StandardTextRenderer;
+pub use memory::SaaTrackingAllocator;
 pub use platform::winit::{WinitWindow, WinitWindowBuilder};
 pub use telemetry::{
     gpu_monitor::GpuMonitor, memory_monitor::MemoryMonitor, vram_monitor::VramMonitor,

@@ -24,12 +24,12 @@
 use std::borrow::Cow;
 use std::sync::RwLock;
 
+use crate::render_lane::util::DynamicUniformRingBuffer;
 use khora_core::math::{Extent3D, Mat4};
 use khora_core::renderer::api::resource::{
     CameraUniformData, ImageAspect, TextureDescriptor, TextureDimension, TextureId, TextureUsage,
     TextureViewDescriptor, TextureViewDimension, TextureViewId,
 };
-use khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer;
 use khora_core::renderer::api::util::{SampleCount, TextureFormat};
 use khora_core::renderer::error::RenderError;
 use khora_core::renderer::GraphicsDevice;

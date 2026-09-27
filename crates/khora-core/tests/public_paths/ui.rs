@@ -78,12 +78,12 @@ mod every_pub_mod {
     use khora_core::ui::editor::gizmo_interact as _;
     use khora_core::ui::editor::icons as _;
     use khora_core::ui::editor::log_capture as _;
+    use khora_core::ui::editor::overlay as _;
     use khora_core::ui::editor::panel as _;
     use khora_core::ui::editor::shell as _;
     use khora_core::ui::editor::state as _;
     use khora_core::ui::editor::ui_builder as _;
     use khora_core::ui::editor::viewport_texture as _;
-    use khora_core::ui::editor_overlay as _;
     use khora_core::ui::fonts as _;
     use khora_core::ui::geometry as _;
     use khora_core::ui::layout as _;
@@ -471,11 +471,11 @@ fn viewport_texture_handle_fields(
     let _ = (&x.0,);
 }
 
-fn overlay_error_fields(x: &khora_core::ui::editor_overlay::OverlayError) {
+fn overlay_error_fields(x: &khora_core::ui::editor::overlay::OverlayError) {
     let _ = (&x.0,);
 }
 
-fn overlay_screen_descriptor_fields(x: &khora_core::ui::editor_overlay::OverlayScreenDescriptor) {
+fn overlay_screen_descriptor_fields(x: &khora_core::ui::editor::overlay::OverlayScreenDescriptor) {
     let _ = (&x.width_px, &x.height_px, &x.scale_factor);
 }
 
@@ -832,23 +832,33 @@ mod trait_items {
         ui_builder_trait_identity_2::<T>();
     }
 
-    fn editor_overlay_trait_items<T: khora_core::ui::editor_overlay::EditorOverlay>() {
-        let _ = <T as khora_core::ui::editor_overlay::EditorOverlay>::handle_window_event;
-        let _ = <T as khora_core::ui::editor_overlay::EditorOverlay>::begin_frame;
-        let _ = <T as khora_core::ui::editor_overlay::EditorOverlay>::ui_context;
-        let _ = <T as khora_core::ui::editor_overlay::EditorOverlay>::end_frame_and_render;
-        let _ = <T as khora_core::ui::editor_overlay::EditorOverlay>::wants_pointer_input;
-        let _ = <T as khora_core::ui::editor_overlay::EditorOverlay>::wants_keyboard_input;
-        let _ = <T as khora_core::ui::editor_overlay::EditorOverlay>::as_any;
-        let _ = <T as khora_core::ui::editor_overlay::EditorOverlay>::as_any_mut;
+    fn editor_overlay_trait_items<T: khora_core::ui::editor::overlay::EditorOverlay>() {
+        let _ = <T as khora_core::ui::editor::overlay::EditorOverlay>::handle_window_event;
+        let _ = <T as khora_core::ui::editor::overlay::EditorOverlay>::begin_frame;
+        let _ = <T as khora_core::ui::editor::overlay::EditorOverlay>::ui_context;
+        let _ = <T as khora_core::ui::editor::overlay::EditorOverlay>::end_frame_and_render;
+        let _ = <T as khora_core::ui::editor::overlay::EditorOverlay>::wants_pointer_input;
+        let _ = <T as khora_core::ui::editor::overlay::EditorOverlay>::wants_keyboard_input;
+        let _ = <T as khora_core::ui::editor::overlay::EditorOverlay>::as_any;
+        let _ = <T as khora_core::ui::editor::overlay::EditorOverlay>::as_any_mut;
     }
 
     fn editor_overlay_trait_identity<T: khora_core::ui::EditorOverlay>() {
         editor_overlay_trait_items::<T>();
     }
 
-    fn editor_overlay_trait_identity_rev<T: khora_core::ui::editor_overlay::EditorOverlay>() {
+    fn editor_overlay_trait_identity_rev<T: khora_core::ui::editor::overlay::EditorOverlay>() {
         editor_overlay_trait_identity::<T>();
+    }
+
+    fn editor_overlay_trait_identity_editor<T: khora_core::ui::editor::EditorOverlay>() {
+        editor_overlay_trait_items::<T>();
+    }
+
+    fn editor_overlay_trait_identity_editor_rev<
+        T: khora_core::ui::editor::overlay::EditorOverlay,
+    >() {
+        editor_overlay_trait_identity_editor::<T>();
     }
 
     fn layout_system_trait_items<T: khora_core::ui::layout::LayoutSystem>() {
@@ -1463,29 +1473,40 @@ fn module_ui_paths_still_resolve() {
     is_partial_eq::<khora_core::ui::editor::viewport_texture::ViewportTextureHandle>();
     is_eq::<khora_core::ui::editor::viewport_texture::ViewportTextureHandle>();
     is_hash::<khora_core::ui::editor::viewport_texture::ViewportTextureHandle>();
-    // trait `khora_core::ui::editor_overlay::EditorOverlay`: see `editor_overlay_trait_items`
+    // trait `khora_core::ui::editor::overlay::EditorOverlay`: see `editor_overlay_trait_items`
     // trait `khora_core::ui::EditorOverlay`: see `editor_overlay_trait_items`
-    let _ = type_name::<khora_core::ui::editor_overlay::OverlayError>();
+    // trait `khora_core::ui::editor::EditorOverlay`: see `editor_overlay_trait_items`
+    let _ = type_name::<khora_core::ui::editor::overlay::OverlayError>();
     let _ = type_name::<khora_core::ui::OverlayError>();
     same_type(
         PhantomData::<khora_core::ui::OverlayError>,
-        PhantomData::<khora_core::ui::editor_overlay::OverlayError>,
+        PhantomData::<khora_core::ui::editor::overlay::OverlayError>,
     );
-    let _ = overlay_error_fields as fn(&khora_core::ui::editor_overlay::OverlayError);
-    is_debug::<khora_core::ui::editor_overlay::OverlayError>();
-    is_display::<khora_core::ui::editor_overlay::OverlayError>();
-    is_error::<khora_core::ui::editor_overlay::OverlayError>();
-    let _ = type_name::<khora_core::ui::editor_overlay::OverlayScreenDescriptor>();
+    let _ = type_name::<khora_core::ui::editor::OverlayError>();
+    same_type(
+        PhantomData::<khora_core::ui::editor::OverlayError>,
+        PhantomData::<khora_core::ui::editor::overlay::OverlayError>,
+    );
+    let _ = overlay_error_fields as fn(&khora_core::ui::editor::overlay::OverlayError);
+    is_debug::<khora_core::ui::editor::overlay::OverlayError>();
+    is_display::<khora_core::ui::editor::overlay::OverlayError>();
+    is_error::<khora_core::ui::editor::overlay::OverlayError>();
+    let _ = type_name::<khora_core::ui::editor::overlay::OverlayScreenDescriptor>();
     let _ = type_name::<khora_core::ui::OverlayScreenDescriptor>();
     same_type(
         PhantomData::<khora_core::ui::OverlayScreenDescriptor>,
-        PhantomData::<khora_core::ui::editor_overlay::OverlayScreenDescriptor>,
+        PhantomData::<khora_core::ui::editor::overlay::OverlayScreenDescriptor>,
+    );
+    let _ = type_name::<khora_core::ui::editor::OverlayScreenDescriptor>();
+    same_type(
+        PhantomData::<khora_core::ui::editor::OverlayScreenDescriptor>,
+        PhantomData::<khora_core::ui::editor::overlay::OverlayScreenDescriptor>,
     );
     let _ = overlay_screen_descriptor_fields
-        as fn(&khora_core::ui::editor_overlay::OverlayScreenDescriptor);
-    is_debug::<khora_core::ui::editor_overlay::OverlayScreenDescriptor>();
-    is_clone::<khora_core::ui::editor_overlay::OverlayScreenDescriptor>();
-    is_copy::<khora_core::ui::editor_overlay::OverlayScreenDescriptor>();
+        as fn(&khora_core::ui::editor::overlay::OverlayScreenDescriptor);
+    is_debug::<khora_core::ui::editor::overlay::OverlayScreenDescriptor>();
+    is_clone::<khora_core::ui::editor::overlay::OverlayScreenDescriptor>();
+    is_copy::<khora_core::ui::editor::overlay::OverlayScreenDescriptor>();
     let _ = type_name::<khora_core::ui::fonts::FontHandle>();
     let _ = type_name::<khora_core::ui::FontHandle>();
     same_type(

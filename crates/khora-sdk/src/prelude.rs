@@ -39,7 +39,7 @@ pub use crate::{WindowConfig, WindowIcon, PRIMARY_VIEWPORT};
 pub use khora_core::asset::{AssetHandle, AssetUUID};
 
 // Memory tracking (for `#[global_allocator]`)
-pub use khora_core::memory::SaaTrackingAllocator;
+pub use khora_infra::SaaTrackingAllocator;
 
 // Input
 pub use khora_core::platform::{InputEvent, KeyCode, MouseButton};

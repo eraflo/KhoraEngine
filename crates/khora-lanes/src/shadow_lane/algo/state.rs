@@ -22,13 +22,13 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+use crate::render_lane::util::DynamicUniformRingBuffer;
 use khora_core::renderer::api::shadow::ShadowEntry;
 use khora_core::renderer::api::{
     command::BindGroupLayoutId,
     pipeline::RenderPipelineId,
     resource::{CameraUniformData, SamplerId},
     scene::{GpuMesh, ModelUniforms},
-    util::dynamic_uniform_buffer::DynamicUniformRingBuffer,
 };
 use khora_core::renderer::{traits::CommandEncoder, GraphicsDevice};
 use khora_data::assets::Assets;
@@ -134,7 +134,7 @@ impl ShadowsLaneState {
             Some(model_layout);
 
         // 3. Ring buffers — sized for this lane's atlas capacities.
-        use khora_core::renderer::api::util::dynamic_uniform_buffer::{
+        use crate::render_lane::util::dynamic_uniform_buffer::{
             DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
         };
         let camera_ring_capacity = atlas_2d_max_lights + cube_max_lights * 6;

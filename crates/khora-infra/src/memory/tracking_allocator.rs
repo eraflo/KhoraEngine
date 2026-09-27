@@ -14,7 +14,7 @@
 
 //! An implementation of `GlobalAlloc` that tracks memory usage.
 
-use super::*;
+use khora_core::memory::*;
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::Ordering;
 
@@ -198,5 +198,111 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
             }
         }
         new_ptr
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A snapshot of the counters one allocator call moves.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    struct Counters {
+        current: usize,
+        allocations: u64,
+        deallocations: u64,
+        reallocations: u64,
+        allocated_lifetime: u64,
+        deallocated_lifetime: u64,
+        small: u64,
+        large: u64,
+    }
+
+    fn counters() -> Counters {
+        Counters {
+            current: CURRENTLY_ALLOCATED_BYTES.load(Ordering::Relaxed),
+            allocations: TOTAL_ALLOCATIONS.load(Ordering::Relaxed),
+            deallocations: TOTAL_DEALLOCATIONS.load(Ordering::Relaxed),
+            reallocations: TOTAL_REALLOCATIONS.load(Ordering::Relaxed),
+            allocated_lifetime: BYTES_ALLOCATED_LIFETIME.load(Ordering::Relaxed),
+            deallocated_lifetime: BYTES_DEALLOCATED_LIFETIME.load(Ordering::Relaxed),
+            small: SMALL_ALLOCATIONS.load(Ordering::Relaxed),
+            large: LARGE_ALLOCATIONS.load(Ordering::Relaxed),
+        }
+    }
+
+    /// Every allocation made through the allocator is counted, sized into its
+    /// class, and given back on release: alloc, grow, free, and the zeroed and
+    /// small and large paths. The counters are process-wide, so this is the one
+    /// test that drives them; the test binary does not install the allocator
+    /// as its global allocator, so nothing else moves them.
+    #[test]
+    fn allocations_through_the_allocator_are_counted_and_released() {
+        let allocator = SaaTrackingAllocator::new(System);
+        let before = counters();
+
+        // A medium block: neither small nor large.
+        let medium = Layout::from_size_align(4096, 8).expect("valid layout");
+        // SAFETY: `medium` has a non-zero size.
+        let ptr = unsafe { allocator.alloc(medium) };
+        assert!(!ptr.is_null());
+        let after_alloc = counters();
+        assert_eq!(after_alloc.current, before.current + 4096);
+        assert_eq!(after_alloc.allocations, before.allocations + 1);
+        assert_eq!(
+            after_alloc.allocated_lifetime,
+            before.allocated_lifetime + 4096
+        );
+        assert_eq!(after_alloc.small, before.small);
+        assert_eq!(after_alloc.large, before.large);
+        assert!(PEAK_ALLOCATED_BYTES.load(Ordering::Relaxed) >= after_alloc.current as u64);
+
+        // Growing it counts the difference, not a second allocation.
+        // SAFETY: `ptr` was allocated by `allocator` with `medium`, and the new
+        // size is non-zero.
+        let ptr = unsafe { allocator.realloc(ptr, medium, 8192) };
+        assert!(!ptr.is_null());
+        let after_grow = counters();
+        assert_eq!(after_grow.current, before.current + 8192);
+        assert_eq!(after_grow.reallocations, before.reallocations + 1);
+        assert_eq!(after_grow.allocations, before.allocations + 1);
+
+        // Freeing it gives every byte back.
+        let grown = Layout::from_size_align(8192, 8).expect("valid layout");
+        // SAFETY: `ptr` was (re)allocated by `allocator` to the size of `grown`.
+        unsafe { allocator.dealloc(ptr, grown) };
+        let after_free = counters();
+        assert_eq!(after_free.current, before.current);
+        assert_eq!(after_free.deallocations, before.deallocations + 1);
+        assert_eq!(
+            after_free.deallocated_lifetime,
+            before.deallocated_lifetime + 8192
+        );
+
+        // A small block and a large one land in their classes.
+        let small = Layout::from_size_align(16, 8).expect("valid layout");
+        let large = Layout::from_size_align(LARGE_ALLOCATION_THRESHOLD, 8).expect("valid layout");
+        // SAFETY: both layouts have a non-zero size.
+        let (small_ptr, large_ptr) =
+            unsafe { (allocator.alloc(small), allocator.alloc_zeroed(large)) };
+        assert!(!small_ptr.is_null() && !large_ptr.is_null());
+        let after_classes = counters();
+        assert_eq!(after_classes.small, before.small + 1);
+        assert_eq!(after_classes.large, before.large + 1);
+        assert_eq!(
+            after_classes.current,
+            before.current + 16 + LARGE_ALLOCATION_THRESHOLD
+        );
+        // SAFETY: `large_ptr` points at `large.size()` bytes, all zeroed by
+        // `alloc_zeroed` and not yet freed.
+        let zeroed = unsafe { std::slice::from_raw_parts(large_ptr, large.size()) };
+        assert!(zeroed.iter().all(|&byte| byte == 0));
+
+        // SAFETY: each pointer was allocated by `allocator` with its layout.
+        unsafe {
+            allocator.dealloc(small_ptr, small);
+            allocator.dealloc(large_ptr, large);
+        }
+        assert_eq!(counters().current, before.current);
     }
 }

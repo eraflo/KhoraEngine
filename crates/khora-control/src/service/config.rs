@@ -14,7 +14,7 @@
 
 //! Configuration of the DCC service.
 
-use khora_core::control::pid::PidConfig;
+use crate::pid::PidConfig;
 
 /// Configuration for the DCC Service.
 #[derive(Debug, Clone)]

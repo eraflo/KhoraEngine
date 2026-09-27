@@ -23,4 +23,4 @@ pub mod device;
 pub mod mix_bus;
 
 pub use device::{AudioDevice, AudioStream, StreamInfo};
-pub use mix_bus::{AudioMixBus, DefaultMixBus};
+pub use mix_bus::AudioMixBus;

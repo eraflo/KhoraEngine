@@ -61,15 +61,9 @@ pub struct SimpleUnlitLane {
 
     // Per-frame mutated ring buffers — `Mutex` is required for exclusive
     // access during `advance` / `write` / `push`.
-    camera_ring: std::sync::Mutex<
-        Option<khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer>,
-    >,
-    model_ring: std::sync::Mutex<
-        Option<khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer>,
-    >,
-    material_ring: std::sync::Mutex<
-        Option<khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer>,
-    >,
+    camera_ring: std::sync::Mutex<Option<crate::render_lane::util::UniformRingBuffer>>,
+    model_ring: std::sync::Mutex<Option<crate::render_lane::util::DynamicUniformRingBuffer>>,
+    material_ring: std::sync::Mutex<Option<crate::render_lane::util::DynamicUniformRingBuffer>>,
 }
 
 impl Default for SimpleUnlitLane {

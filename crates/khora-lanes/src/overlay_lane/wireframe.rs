@@ -30,12 +30,12 @@
 //! Per CLAD this struct holds only persistent state; init / render bodies are
 //! private free functions in this module.
 
+use crate::render_lane::util::DynamicUniformRingBuffer;
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind};
 use khora_core::renderer::api::command::{BindGroupId, BindGroupLayoutId};
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::BufferId;
 use khora_core::renderer::api::scene::GpuMesh;
-use khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer;
 use khora_core::renderer::traits::CommandEncoder;
 use khora_data::assets::Assets;
 use khora_data::render::{RenderWorld, SharedWireframeConfig, WireframeConfig};
@@ -73,15 +73,15 @@ fn init_gpu_resources(
     device: &dyn khora_core::renderer::GraphicsDevice,
     pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
 ) -> Result<(), khora_core::renderer::error::RenderError> {
+    use crate::render_lane::util::dynamic_uniform_buffer::{
+        DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
+    };
     use khora_core::renderer::api::command::{
         BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding,
     };
     use khora_core::renderer::api::pipeline::{LayoutKey, ShaderVariantKey};
     use khora_core::renderer::api::resource::{BufferDescriptor, BufferUsage, CameraUniformData};
     use khora_core::renderer::api::scene::ModelUniforms;
-    use khora_core::renderer::api::util::dynamic_uniform_buffer::{
-        DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
-    };
     use khora_core::renderer::api::util::ShaderStageFlags;
     use std::borrow::Cow;
 

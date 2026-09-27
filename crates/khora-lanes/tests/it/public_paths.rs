@@ -60,6 +60,8 @@ mod every_pub_mod {
     use khora_lanes::physics_lane as _;
     use khora_lanes::render_lane as _;
     use khora_lanes::render_lane::util as _;
+    use khora_lanes::render_lane::util::dynamic_uniform_buffer as _;
+    use khora_lanes::render_lane::util::uniform_ring_buffer as _;
     use khora_lanes::script_lane as _;
     use khora_lanes::script_lane::persistence as _;
     use khora_lanes::script_lane::report as _;
@@ -99,6 +101,16 @@ fn forward_plus_gpu_resources_fields(x: &khora_lanes::render_lane::ForwardPlusGp
         &x.culling_pipeline,
         &x.render_pipeline,
     );
+}
+
+/// The Forward+ rings are the ring buffers of `render_lane::util`.
+fn forward_plus_gpu_resources_rings(
+    x: &khora_lanes::render_lane::ForwardPlusGpuResources,
+) -> (
+    &Option<khora_lanes::render_lane::util::UniformRingBuffer>,
+    &Option<khora_lanes::render_lane::util::DynamicUniformRingBuffer>,
+) {
+    (&x.camera_ring, &x.model_ring)
 }
 
 fn forward_plus_lane_fields(x: &khora_lanes::render_lane::ForwardPlusLane) {
@@ -163,6 +175,16 @@ fn shadows_lane_state_fields(x: &khora_lanes::shadow_lane::algo::state::ShadowsL
         &x.camera_ring,
         &x.model_ring,
     );
+}
+
+/// The shadow rings are the dynamic ring buffer of `render_lane::util`.
+fn shadows_lane_state_rings(
+    x: &khora_lanes::shadow_lane::algo::state::ShadowsLaneState,
+) -> (
+    &std::sync::RwLock<Option<khora_lanes::render_lane::util::DynamicUniformRingBuffer>>,
+    &std::sync::RwLock<Option<khora_lanes::render_lane::util::DynamicUniformRingBuffer>>,
+) {
+    (&x.camera_ring, &x.model_ring)
 }
 
 fn fuel_fields(x: &khora_lanes::script_lane::Fuel) {
@@ -285,6 +307,51 @@ fn module_render_lane_paths_still_resolve() {
     let _ = type_name::<khora_lanes::render_lane::StandardPbrLane>();
     is_default::<khora_lanes::render_lane::StandardPbrLane>();
     is_lane::<khora_lanes::render_lane::StandardPbrLane>();
+}
+
+#[test]
+fn module_render_lane_util_paths_still_resolve() {
+    const _: u32 = khora_lanes::render_lane::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS;
+    const _: u32 = khora_lanes::render_lane::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT;
+    let _ = type_name::<
+        khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer,
+    >();
+    let _ = type_name::<khora_lanes::render_lane::util::DynamicUniformRingBuffer>();
+    same_type(
+        PhantomData::<khora_lanes::render_lane::util::DynamicUniformRingBuffer>,
+        PhantomData::<
+            khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer,
+        >,
+    );
+    let _ = khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::new;
+    let _ =
+        khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::advance;
+    let _ = khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::push;
+    let _ = khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::current_bind_group;
+    let _ = khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::current_slot_index;
+    let _ =
+        khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::destroy;
+    is_debug::<khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer>();
+    let _ = type_name::<khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer>();
+    let _ = type_name::<khora_lanes::render_lane::util::UniformRingBuffer>();
+    same_type(
+        PhantomData::<khora_lanes::render_lane::util::UniformRingBuffer>,
+        PhantomData::<khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer>,
+    );
+    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::new;
+    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::advance;
+    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::write;
+    let _ =
+        khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::current_bind_group;
+    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::current_buffer;
+    let _ =
+        khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::current_slot_index;
+    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::slot_count;
+    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::data_size;
+    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::destroy;
+    is_debug::<khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer>();
+    let _ = forward_plus_gpu_resources_rings;
+    let _ = shadows_lane_state_rings;
 }
 
 #[test]

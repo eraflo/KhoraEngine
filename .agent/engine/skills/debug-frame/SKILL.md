@@ -12,7 +12,7 @@ description: Investigates a per-frame problem or a GORNA budget decision — wro
    `negotiate → arbitrate → apply_budget`.
 3. **Inspect the descent**: which `LaneKind`/strategy was chosen? what budget did the arbitrator grant?
    GORNA fitting is in `crates/khora-control/src/gorna/fitting.rs`; cost prediction in `cost_model.rs`;
-   PID output in `crates/khora-core/src/control/pid.rs`.
+   PID output in `crates/khora-control/src/pid.rs`.
 4. **Substrate vs descent**: confirm whether the issue is in Pass A (DataSystems/Flows publishing Views) or
    Pass B (agent → lane). A missing/stale `View` in the `LaneBus` is a common cause of "nothing renders".
 5. **Replay**: GORNA supports deterministic replay (`Option<&TickDecisions>`) — use a recorded tick to

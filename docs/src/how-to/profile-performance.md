@@ -63,7 +63,7 @@ full reference. For performance work, three pieces matter.
 
 **The frame budget.** Heuristics (thermal, battery, phase, frame-time, stutter, trend, CPU pressure,
 GPU pressure, memory pressure, death-spiral) collapse into a single frame-time **target**. A **PID
-controller** (`khora_core::control::pid`) then drives the `global_budget_multiplier` applied to every
+controller** (`khora_control::pid`) then drives the `global_budget_multiplier` applied to every
 agent's budget, closing the loop on *measured* frame time versus that target. When frames run long the
 multiplier drops and agents pick cheaper strategies; when there is headroom it climbs back toward 1.0
 and agents upgrade. A hard safety ceiling caps the multiplier immediately on `Critical`

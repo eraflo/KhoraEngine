@@ -112,7 +112,7 @@ pub fn build_draw_cmds(
     device: &dyn khora_core::renderer::GraphicsDevice,
     render_world: &khora_data::render::RenderWorld,
     gpu_meshes: &khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
-    model_ring: &mut khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer,
+    model_ring: &mut crate::render_lane::util::DynamicUniformRingBuffer,
 ) -> Vec<ShadowDrawCmd> {
     let mut draw_cmds = Vec::with_capacity(render_world.meshes.len());
     for mesh in &render_world.meshes {

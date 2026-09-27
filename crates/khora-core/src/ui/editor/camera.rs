@@ -168,3 +168,98 @@ impl EditorCamera {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn close(a: Vec3, b: Vec3) -> bool {
+        (a - b).length() < 1e-3
+    }
+
+    /// The camera sits `distance` away from the point it orbits, and looks at
+    /// it.
+    #[test]
+    fn camera_orbits_at_its_distance_and_faces_the_target() {
+        let camera = EditorCamera {
+            target: Vec3::new(1.0, 2.0, 3.0),
+            ..EditorCamera::default()
+        };
+        let offset = camera.position() - camera.target;
+        assert!(
+            (offset.length() - camera.distance).abs() < 1e-3,
+            "camera {} from its target, expected {}",
+            offset.length(),
+            camera.distance
+        );
+        assert!(close(camera.forward(), (-offset).normalize()));
+    }
+
+    /// Orbiting far past the pole stops just short of it instead of flipping
+    /// the view over.
+    #[test]
+    fn orbit_clamps_pitch_short_of_the_pole() {
+        let mut camera = EditorCamera::default();
+        camera.orbit(0.0, -1.0e6);
+        let limit = 89.0_f32.to_radians();
+        assert!(
+            (camera.pitch - limit).abs() < 1e-4,
+            "pitch {}",
+            camera.pitch
+        );
+        camera.orbit(0.0, 1.0e6);
+        assert!(
+            (camera.pitch + limit).abs() < 1e-4,
+            "pitch {}",
+            camera.pitch
+        );
+    }
+
+    /// Zooming moves toward the target but never through it, and never out
+    /// past the far limit.
+    #[test]
+    fn zoom_stays_between_the_distance_limits() {
+        let mut camera = EditorCamera::default();
+        for _ in 0..200 {
+            camera.zoom(5.0);
+        }
+        assert_eq!(camera.distance, camera.min_distance);
+        for _ in 0..200 {
+            camera.zoom(-5.0);
+        }
+        assert_eq!(camera.distance, camera.max_distance);
+    }
+
+    /// Focusing re-targets the orbit without changing how far away it is.
+    #[test]
+    fn focus_moves_the_target_and_keeps_the_distance() {
+        let mut camera = EditorCamera::default();
+        let point = Vec3::new(-5.0, 1.0, 8.0);
+        camera.focus_on(point);
+        assert_eq!(camera.target, point);
+        assert!(((camera.position() - point).length() - camera.distance).abs() < 1e-3);
+    }
+
+    /// The ray under the centre of the viewport starts at the camera and
+    /// points at the target — the ray picking and gizmo grabbing rely on.
+    #[test]
+    fn centre_pixel_ray_points_at_the_target() {
+        let camera = EditorCamera {
+            target: Vec3::new(2.0, -1.0, 4.0),
+            ..EditorCamera::default()
+        };
+        let ray = camera.screen_to_ray(400.0, 300.0, 800.0, 600.0);
+        assert!(
+            close(ray.direction, camera.forward()),
+            "centre ray {:?}, forward {:?}",
+            ray.direction,
+            camera.forward()
+        );
+        // The ray starts on the near plane, in front of the camera.
+        assert!(
+            ((ray.origin - camera.position()).length() - camera.near).abs() < 1e-2,
+            "centre ray starts {} from the camera",
+            (ray.origin - camera.position()).length()
+        );
+    }
+}

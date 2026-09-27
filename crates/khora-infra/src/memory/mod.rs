@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Control system interfaces (GORNA, DCC).
+//! Memory tracking: the global allocator that feeds the engine-wide counters
+//! of `khora_core::memory`.
 
-pub mod gorna;
+mod tracking_allocator;
+
+pub use tracking_allocator::SaaTrackingAllocator;

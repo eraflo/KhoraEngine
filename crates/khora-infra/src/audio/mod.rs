@@ -17,6 +17,12 @@
 //! Same shape as [`graphics`](crate::graphics), [`physics`](crate::physics)
 //! and [`ui`](crate::ui): a backend is a subfolder named after what it wraps.
 //! This used to carry an extra `backends/` level that named nothing the parent
-//! module did not already say.
+//! module did not already say. Beside them, the default [`AudioMixBus`]
+//! implementation the backends drain.
+//!
+//! [`AudioMixBus`]: khora_core::audio::AudioMixBus
 
 pub mod cpal;
+mod default_mix_bus;
+
+pub use default_mix_bus::DefaultMixBus;

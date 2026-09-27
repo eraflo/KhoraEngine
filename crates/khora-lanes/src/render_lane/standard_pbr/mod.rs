@@ -24,11 +24,11 @@
 //! one-for-one, plumbed through a shared free function so the two
 //! lanes never drift apart structurally.
 
+use crate::render_lane::util::DynamicUniformRingBuffer;
+use crate::render_lane::util::UniformRingBuffer;
 use gpu::init_gpu_resources;
 use khora_core::renderer::api::command::BindGroupLayoutId;
 use khora_core::renderer::api::pipeline::RenderPipelineId;
-use khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer;
-use khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer;
 use khora_core::renderer::traits::CommandEncoder;
 use render::render_pbr;
 use std::sync::{Mutex, OnceLock};

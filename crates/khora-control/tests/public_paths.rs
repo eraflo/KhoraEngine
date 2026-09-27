@@ -39,6 +39,7 @@ fn is_copy<T: Copy>() {}
 fn is_debug<T: std::fmt::Debug>() {}
 fn is_default<T: Default>() {}
 fn is_eq<T: Eq>() {}
+fn is_partial_eq<T: PartialEq>() {}
 
 // ---------------------------------------------------------------------------
 // Public fields — read through a reference, never constructed.
@@ -87,6 +88,24 @@ fn dcc_config_fields(c: &khora_control::service::DccConfig) {
         &c.memory_budget_bytes,
         &c.frame_pid,
     );
+}
+
+fn pid_config_fields(x: &khora_control::pid::PidConfig) {
+    let _ = (
+        &x.kp,
+        &x.ki,
+        &x.kd,
+        &x.setpoint_weight_b,
+        &x.derivative_filter_n,
+        &x.kb,
+        &x.output_min,
+        &x.output_max,
+    );
+}
+
+/// The DCC's frame PID is tuned with this crate's `PidConfig`.
+fn dcc_config_frame_pid(c: &khora_control::service::DccConfig) -> &khora_control::pid::PidConfig {
+    &c.frame_pid
 }
 
 /// `EnginePlugin::on_phase` takes an `impl Fn`, so it cannot be named as a
@@ -281,6 +300,23 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::metrics::MetricStore::get_min;
     let _ = khora_control::metrics::MetricStore::get_sample_count;
 
+    // --- module `pid`
+    let _ = type_name::<khora_control::pid::PidConfig>();
+    let _ = pid_config_fields as fn(&khora_control::pid::PidConfig);
+    is_debug::<khora_control::pid::PidConfig>();
+    is_clone::<khora_control::pid::PidConfig>();
+    is_copy::<khora_control::pid::PidConfig>();
+    is_partial_eq::<khora_control::pid::PidConfig>();
+    is_default::<khora_control::pid::PidConfig>();
+    let _ = type_name::<khora_control::pid::PidController>();
+    let _ = khora_control::pid::PidController::new;
+    let _ = khora_control::pid::PidController::update;
+    let _ = khora_control::pid::PidController::reset;
+    let _ = khora_control::pid::PidController::output;
+    let _ = khora_control::pid::PidController::config;
+    is_debug::<khora_control::pid::PidController>();
+    is_clone::<khora_control::pid::PidController>();
+
     // --- module `plugin`
     let _ = type_name::<khora_control::plugin::EnginePlugin>();
     let _ = khora_control::plugin::EnginePlugin::new;
@@ -325,6 +361,8 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = type_name::<khora_control::service::DccConfig>();
     let _ = type_name::<khora_control::service::DccService>();
     let _ = dcc_config_fields as fn(&khora_control::service::DccConfig);
+    let _ = dcc_config_frame_pid
+        as fn(&khora_control::service::DccConfig) -> &khora_control::pid::PidConfig;
     is_default::<khora_control::service::DccConfig>();
     is_clone::<khora_control::service::DccConfig>();
     is_debug::<khora_control::service::DccConfig>();

@@ -22,7 +22,7 @@
 use super::renderer::{EguiRenderState, EguiWgpuRenderer};
 use crate::graphics::wgpu::context::WgpuGraphicsContext;
 use egui::ViewportId;
-use khora_core::ui::editor_overlay::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
+use khora_core::ui::editor::overlay::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 

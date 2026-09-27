@@ -24,6 +24,7 @@ pub mod gizmo;
 pub mod gizmo_interact;
 pub mod icons;
 pub mod log_capture;
+pub mod overlay;
 pub mod panel;
 pub mod shell;
 pub mod state;
@@ -44,6 +45,7 @@ pub use gizmo_interact::{
 };
 pub use icons::Icon;
 pub use log_capture::EditorLogCapture;
+pub use overlay::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
 pub use panel::{EditorPanel, PanelLocation};
 pub use shell::EditorShell;
 pub use state::{

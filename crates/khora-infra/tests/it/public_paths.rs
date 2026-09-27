@@ -43,6 +43,7 @@ fn same_item<T>(_: &T, _: &T) {}
 
 fn is_app_context<T: khora_core::ui::AppContext>() {}
 fn is_audio_device<T: khora_core::audio::AudioDevice>() {}
+fn is_audio_mix_bus<T: khora_core::audio::AudioMixBus>() {}
 fn is_audio_stream<T: khora_core::audio::AudioStream>() {}
 fn is_clone<T: Clone>() {}
 fn is_copy<T: Copy>() {}
@@ -50,6 +51,7 @@ fn is_debug<T: std::fmt::Debug>() {}
 fn is_default<T: Default>() {}
 fn is_editor_overlay<T: khora_core::ui::EditorOverlay>() {}
 fn is_editor_shell<T: khora_core::ui::EditorShell>() {}
+fn is_global_alloc<T: std::alloc::GlobalAlloc>() {}
 fn is_hardware_monitor<T: khora_core::platform::HardwareMonitor>() {}
 fn is_has_display_handle<T: raw_window_handle::HasDisplayHandle>() {}
 fn is_has_window_handle<T: raw_window_handle::HasWindowHandle>() {}
@@ -83,6 +85,7 @@ mod every_pub_mod {
     use khora_infra::graphics::text::custom::pixel_font as _;
     use khora_infra::graphics::text::standard as _;
     use khora_infra::graphics::wgpu as _;
+    use khora_infra::memory as _;
     use khora_infra::physics as _;
     use khora_infra::physics::khora as _;
     use khora_infra::physics::khora::collision as _;
@@ -198,6 +201,16 @@ fn module_crate_root_paths_still_resolve() {
     is_render_system::<khora_infra::WgpuRenderSystem>();
     is_send::<khora_infra::WgpuRenderSystem>();
     is_sync::<khora_infra::WgpuRenderSystem>();
+    let _ = type_name::<khora_infra::DefaultMixBus>();
+    same_type(
+        PhantomData::<khora_infra::DefaultMixBus>,
+        PhantomData::<khora_infra::audio::DefaultMixBus>,
+    );
+    let _ = type_name::<khora_infra::SaaTrackingAllocator<std::alloc::System>>();
+    same_type(
+        PhantomData::<khora_infra::SaaTrackingAllocator<std::alloc::System>>,
+        PhantomData::<khora_infra::memory::SaaTrackingAllocator<std::alloc::System>>,
+    );
 }
 
 #[test]
@@ -210,6 +223,29 @@ fn module_audio_paths_still_resolve() {
     is_send::<khora_infra::audio::cpal::CpalAudioStream>();
     is_sync::<khora_infra::audio::cpal::CpalAudioStream>();
     is_audio_stream::<khora_infra::audio::cpal::CpalAudioStream>();
+    let _ = type_name::<khora_infra::audio::DefaultMixBus>();
+    let _ = khora_infra::audio::DefaultMixBus::new;
+    is_audio_mix_bus::<khora_infra::audio::DefaultMixBus>();
+    is_send::<khora_infra::audio::DefaultMixBus>();
+    is_sync::<khora_infra::audio::DefaultMixBus>();
+}
+
+#[test]
+fn module_memory_paths_still_resolve() {
+    let _ = type_name::<khora_infra::memory::SaaTrackingAllocator<std::alloc::System>>();
+    // `const fn`: a `static` global allocator is built with it.
+    const _: khora_infra::memory::SaaTrackingAllocator<std::alloc::System> =
+        khora_infra::memory::SaaTrackingAllocator::new(std::alloc::System);
+    is_debug::<khora_infra::memory::SaaTrackingAllocator<std::alloc::System>>();
+    is_default::<khora_infra::memory::SaaTrackingAllocator<std::alloc::System>>();
+    is_clone::<khora_infra::memory::SaaTrackingAllocator<std::alloc::System>>();
+    is_copy::<khora_infra::memory::SaaTrackingAllocator<std::alloc::System>>();
+    is_global_alloc::<khora_infra::memory::SaaTrackingAllocator<std::alloc::System>>();
+    // The default inner allocator is `System`.
+    same_type(
+        PhantomData::<khora_infra::memory::SaaTrackingAllocator>,
+        PhantomData::<khora_infra::memory::SaaTrackingAllocator<std::alloc::System>>,
+    );
 }
 
 #[test]
@@ -569,7 +605,9 @@ mod paths_used_by_other_crates {
     use khora_infra::ui::egui::app::WindowConfigInput as _; // khora-sdk
     use khora_infra::ui::egui::app::WindowIconInput as _; // khora-sdk
     use khora_infra::ui::TaffyLayoutSystem as _; // khora-sdk
+    use khora_infra::DefaultMixBus as _; // khora-sdk
     use khora_infra::GpuMonitor as _; // khora-sdk
+    use khora_infra::SaaTrackingAllocator as _; // khora-sdk
     use khora_infra::StandardTextRenderer as _; // khora-sdk
     use khora_infra::WgpuRenderSystem as _; // khora-sdk
 }

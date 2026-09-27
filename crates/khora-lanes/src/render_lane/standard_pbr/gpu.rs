@@ -15,9 +15,9 @@
 //! GPU resources of the lane and the pipeline spec they are built from.
 
 use super::StandardPbrLane;
+use crate::render_lane::util::DynamicUniformRingBuffer;
+use crate::render_lane::util::UniformRingBuffer;
 use khora_core::renderer::api::pipeline::{LayoutKey, LayoutSpec, PipelineSpec, ShaderVariantKey};
-use khora_core::renderer::api::util::dynamic_uniform_buffer::DynamicUniformRingBuffer;
-use khora_core::renderer::api::util::uniform_ring_buffer::UniformRingBuffer;
 use khora_core::renderer::api::{
     pipeline::enums::PrimitiveTopology,
     scene::{LightingUniforms, ModelUniforms},
@@ -179,8 +179,8 @@ pub(super) fn init_gpu_resources(
         model_layout,
         0,
         std::mem::size_of::<ModelUniforms>() as u32,
-        khora_core::renderer::api::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
-        khora_core::renderer::api::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+        crate::render_lane::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
+        crate::render_lane::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
         "StandardPbr Model Ring",
     )
     .map_err(khora_core::renderer::error::RenderError::ResourceError)?;

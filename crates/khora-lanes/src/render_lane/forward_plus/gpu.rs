@@ -18,9 +18,7 @@
 use super::g3;
 
 use super::ForwardPlusLane;
-use khora_core::renderer::api::util::{
-    dynamic_uniform_buffer::DynamicUniformRingBuffer, uniform_ring_buffer::UniformRingBuffer,
-};
+use crate::render_lane::util::{DynamicUniformRingBuffer, UniformRingBuffer};
 use khora_core::renderer::api::{
     pipeline::enums::PrimitiveTopology,
     pipeline::{ComputePipelineSpec, LayoutKey, LayoutSpec, PipelineSpec, ShaderVariantKey},
@@ -390,8 +388,8 @@ impl ForwardPlusLane {
             model_layout,
             0,
             std::mem::size_of::<ModelUniforms>() as u32,
-            khora_core::renderer::api::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
-            khora_core::renderer::api::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+            crate::render_lane::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
+            crate::render_lane::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
             "Forward+ Model Ring",
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;

@@ -491,6 +491,55 @@ mod tests {
         assert!(offset.y.abs() < 1e-4 && offset.z.abs() < 1e-4);
     }
 
+    /// A Move drag on a grabbed handle moves the entity by exactly the distance
+    /// the cursor travelled along that handle, whatever the gizmo's drawn size,
+    /// and leaves its orientation and scale alone. Every entity of the
+    /// selection moves by the same offset.
+    #[test]
+    fn move_drag_moves_the_entity_by_the_dragged_amount() {
+        let rotation = Quaternion::from_axis_angle(Vec3::Z, std::f32::consts::FRAC_PI_2);
+        let entity = GizmoTransform {
+            translation: Vec3::new(1.0, 2.0, 3.0),
+            rotation,
+            scale: Vec3::new(2.0, 3.0, 4.0),
+        };
+        let other = GizmoTransform {
+            translation: Vec3::new(-4.0, 0.5, 7.0),
+            ..entity
+        };
+        let basis = gizmo_basis(GizmoMode::Move, rotation);
+        // Cursor rays straight down -Z, at the entity's X, so they cross the
+        // Y handle square on.
+        let cursor = |y: f32| Ray::new(Vec3::new(1.0, y, 10.0), Vec3::new(0.0, 0.0, -1.0));
+
+        let mut drag = GizmoDrag::begin(
+            GizmoMode::Move,
+            GizmoAxis::Y,
+            entity.translation,
+            &basis,
+            0.25,
+            &cursor(2.5),
+        )
+        .expect("the ray is perpendicular to Y, so the grab resolves");
+        let delta = drag.update(&cursor(4.0)).expect("still perpendicular");
+
+        let moved = delta.apply(entity);
+        assert!(
+            (moved.translation - Vec3::new(1.0, 3.5, 3.0)).length() < 1e-4,
+            "dragged 1.5 along +Y, entity now at {:?}",
+            moved.translation
+        );
+        assert_eq!(moved.rotation, entity.rotation);
+        assert_eq!(moved.scale, entity.scale);
+
+        let moved_other = delta.apply(other);
+        assert!(
+            (moved_other.translation - Vec3::new(-4.0, 2.0, 7.0)).length() < 1e-4,
+            "the rest of the selection moves by the same offset, got {:?}",
+            moved_other.translation
+        );
+    }
+
     /// Dragging back to where the grab started returns the entity exactly to
     /// its start — the property that makes deltas start-relative rather than
     /// accumulated.

@@ -404,7 +404,7 @@ fn module_crate_root_paths_still_resolve() {
     let _ = type_name::<khora_sdk::DefaultMixBus>();
     same_type(
         PhantomData::<khora_sdk::DefaultMixBus>,
-        PhantomData::<khora_core::audio::DefaultMixBus>,
+        PhantomData::<khora_infra::audio::DefaultMixBus>,
     );
     let _ = type_name::<khora_sdk::EditorCamera>();
     same_type(
@@ -724,6 +724,11 @@ fn module_crate_root_paths_still_resolve() {
     let _ = khora_sdk::PACK_MAGIC;
     assert_eq!(khora_sdk::PACK_MAGIC, khora_io::asset::PACK_MAGIC);
     let _ = khora_sdk::prelude::PRIMARY_VIEWPORT;
+    // Spelled by the hub's generated `main.rs` template and by the editor and
+    // runtime binaries, as a `static` global allocator built by a `const fn`
+    // with the default inner allocator.
+    const _: khora_sdk::prelude::SaaTrackingAllocator =
+        khora_sdk::prelude::SaaTrackingAllocator::new(std::alloc::System);
     let _ = khora_sdk::PRIMARY_VIEWPORT;
     let _ = type_name::<khora_sdk::PackBuilder>();
     same_type(
@@ -1114,7 +1119,7 @@ fn module_prelude_paths_still_resolve() {
     let _ = type_name::<khora_sdk::prelude::SaaTrackingAllocator<u32>>();
     same_type(
         PhantomData::<khora_sdk::prelude::SaaTrackingAllocator<u32>>,
-        PhantomData::<khora_core::memory::SaaTrackingAllocator<u32>>,
+        PhantomData::<khora_infra::memory::SaaTrackingAllocator<u32>>,
     );
     let _ = type_name::<khora_sdk::prelude::SharedTime>();
     same_type(
@@ -2052,7 +2057,7 @@ mod paths_used_by_other_crates {
     use khora_sdk::prelude::math::Quaternion as _; // sandbox
     use khora_sdk::prelude::math::Vec3 as _; // khora-editor, sandbox
     use khora_sdk::prelude::MouseButton as _; // sandbox
-    use khora_sdk::prelude::SaaTrackingAllocator as _; // khora-editor
+    use khora_sdk::prelude::SaaTrackingAllocator as _; // khora-editor, khora-runtime, sandbox, khora-hub (project template)
     use khora_sdk::prelude::SharedTime as _; // khora-editor, sandbox
     use khora_sdk::run_default as _; // khora-runtime
     use khora_sdk::run_winit as _; // khora-editor, sandbox
