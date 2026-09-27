@@ -16,7 +16,7 @@ use super::forecast::forecast_total_ms;
 use super::*;
 use crate::cost_model::CostModel;
 use crate::EngineMode;
-use khora_core::control::gorna::{
+use khora_core::agent::gorna::{
     AdaptationMode, AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget,
     StrategyId, StrategyOption,
 };

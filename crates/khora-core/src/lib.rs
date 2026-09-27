@@ -23,7 +23,6 @@ pub mod agent;
 pub mod asset;
 pub mod audio;
 pub mod context;
-pub mod control;
 
 pub mod ecs;
 pub mod event;

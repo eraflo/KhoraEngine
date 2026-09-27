@@ -95,7 +95,7 @@ opportunistic upgrades; a `Bounded` agent clamps to its range. Check the mode be
 ## 3 — Pin a strategy to isolate behaviour
 
 To remove adaptation as a variable, set the agent's **`AdaptationMode`** through the DCC service.
-There are exactly four modes (`crates/khora-core/src/control/gorna.rs`):
+There are exactly four modes (`crates/khora-core/src/agent/gorna.rs`):
 
 ```rust
 dcc.set_adaptation_mode(AgentId::Renderer, AdaptationMode::Manual(StrategyId::LowPower));
@@ -120,7 +120,7 @@ recipe and the trade-offs of each mode, see
 
 When a bug only reproduces under a *specific* adaptation sequence, capture that sequence and replay it
 bit-for-bit. The DCC records its per-tick decisions into a `DecisionTrace` (a `Vec<TickDecisions>` in
-arbitration order, `crates/khora-core/src/control/gorna.rs`) and can drive arbitration from a trace:
+arbitration order, `crates/khora-core/src/agent/gorna.rs`) and can drive arbitration from a trace:
 
 ```rust
 dcc.start_decision_recording();      // begins a fresh trace; takes effect next tick

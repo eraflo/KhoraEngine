@@ -21,9 +21,9 @@ use super::{
     ExecutionScheduler,
 };
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
+use khora_core::agent::gorna::{AgentFrameStatus, AgentFrameStatusMap, AgentId};
 use khora_core::agent::timing::AgentImportance;
 use khora_core::agent::{AgentAccess, AgentDependency, EngineMode, ExecutionPhase};
-use khora_core::control::gorna::{AgentFrameStatus, AgentFrameStatusMap, AgentId};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::{EngineContext, Runtime, WorldAccess};

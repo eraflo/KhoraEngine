@@ -23,8 +23,8 @@ use crate::metrics::MetricStore;
 use crate::pid::PidController;
 use crate::EngineMode;
 use crossbeam_channel::Receiver;
+use khora_core::agent::gorna::ResourceBudget;
 use khora_core::agent::Agent;
-use khora_core::control::gorna::ResourceBudget;
 use khora_core::telemetry::{MetricId, TelemetryEvent};
 use khora_data::ecs::layout::LayoutAdvisor;
 use std::sync::atomic::Ordering;
@@ -34,7 +34,7 @@ use std::time::{Duration, Instant};
 
 use crate::analysis::HeuristicEngine;
 use crate::gorna::GornaArbitrator;
-use khora_core::control::gorna::{AgentHints, AgentId, TickDecisions};
+use khora_core::agent::gorna::{AgentHints, AgentId, TickDecisions};
 use std::collections::HashMap;
 
 impl DccService {

@@ -15,9 +15,9 @@
 //! Agent registry for automatic registration and ordered iteration.
 
 use khora_core::agent::dependency::AgentDependency;
+use khora_core::agent::gorna::AgentId;
 use khora_core::agent::timing::AgentImportance;
 use khora_core::agent::{Agent, EngineMode, ExecutionPhase};
-use khora_core::control::gorna::AgentId;
 use std::sync::{Arc, Mutex};
 
 /// Tuple returned by [`AgentRegistry::collect_for_phase`] for each agent

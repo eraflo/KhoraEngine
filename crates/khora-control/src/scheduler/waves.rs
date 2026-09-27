@@ -17,9 +17,9 @@
 
 use super::AgentSlot;
 use khora_core::agent::dependency::DependencyKind;
+use khora_core::agent::gorna::AgentId;
 use khora_core::agent::AgentAccess;
 use khora_core::agent::Contention;
-use khora_core::control::gorna::AgentId;
 
 /// Per-agent metadata the parallel executor needs to group agents into waves.
 pub(super) struct WaveMeta {

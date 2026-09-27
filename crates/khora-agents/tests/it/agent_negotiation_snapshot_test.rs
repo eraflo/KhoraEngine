@@ -31,8 +31,8 @@ use khora_agents::script_agent::ScriptAgent;
 use khora_agents::shadow_agent::ShadowAgent;
 use khora_agents::skybox_agent::SkyboxAgent;
 use khora_agents::ui_agent::UiAgent;
+use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
 use khora_core::agent::{Agent, EngineMode, ExecutionTiming};
-use khora_core::control::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
 use std::time::Duration;
 
 const MIB: u64 = 1024 * 1024;

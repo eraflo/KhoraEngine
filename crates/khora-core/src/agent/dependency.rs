@@ -15,7 +15,7 @@
 //! Agent dependency system for execution ordering.
 
 use super::mode::EngineMode;
-use crate::control::gorna::{AgentId, StrategyId};
+use crate::agent::gorna::{AgentId, StrategyId};
 
 /// A dependency declaration from one agent to another.
 #[derive(Debug, Clone)]

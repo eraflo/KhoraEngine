@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use crate::scheduler::waves::{check_wave_disjoint, partition_waves, WaveMeta};
+use khora_core::agent::gorna::AgentId;
 use khora_core::agent::AgentAccess;
 use khora_core::agent::Contention;
-use khora_core::control::gorna::AgentId;
 
 fn meta(id: AgentId, access: AgentAccess, deps: &[AgentId]) -> WaveMeta {
     WaveMeta {

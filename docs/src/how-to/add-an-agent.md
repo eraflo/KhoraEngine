@@ -25,7 +25,7 @@ use std::time::Duration;
 
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming};
 use khora_core::context::EngineContext;
-use khora_core::control::gorna::{
+use khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget,
     StrategyId, StrategyOption,
 };

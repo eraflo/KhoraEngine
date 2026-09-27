@@ -16,14 +16,14 @@ use std::any::Any;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
+use khora_core::agent::gorna::{
+    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
+    StrategyOption,
+};
 use khora_core::agent::{
     Agent, AgentAccess, AgentImportance, Contention, ExecutionPhase, ExecutionTiming,
 };
 use khora_core::context::EngineContext;
-use khora_core::control::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-    StrategyOption,
-};
 use khora_core::lane::{ColorTarget, Lane, LaneContext};
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::api::text::TextRenderer;

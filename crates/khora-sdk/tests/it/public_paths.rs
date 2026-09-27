@@ -298,12 +298,12 @@ fn module_crate_root_paths_still_resolve() {
     let _ = type_name::<khora_sdk::AgentHints>();
     same_type(
         PhantomData::<khora_sdk::AgentHints>,
-        PhantomData::<khora_core::control::gorna::AgentHints>,
+        PhantomData::<khora_core::agent::gorna::AgentHints>,
     );
     let _ = type_name::<khora_sdk::AgentId>();
     same_type(
         PhantomData::<khora_sdk::AgentId>,
-        PhantomData::<khora_core::control::gorna::AgentId>,
+        PhantomData::<khora_core::agent::gorna::AgentId>,
     );
     let _ = type_name::<khora_sdk::AgentImportance>();
     same_type(
@@ -319,7 +319,7 @@ fn module_crate_root_paths_still_resolve() {
     let _ = type_name::<khora_sdk::AgentStatus>();
     same_type(
         PhantomData::<khora_sdk::AgentStatus>,
-        PhantomData::<khora_core::control::gorna::AgentStatus>,
+        PhantomData::<khora_core::agent::gorna::AgentStatus>,
     );
     let _ = type_name::<khora_sdk::AssetChangeEvent>();
     same_type(
@@ -444,7 +444,7 @@ fn module_crate_root_paths_still_resolve() {
     let _ = type_name::<khora_sdk::EngineHint>();
     same_type(
         PhantomData::<khora_sdk::EngineHint>,
-        PhantomData::<khora_core::control::gorna::EngineHint>,
+        PhantomData::<khora_core::agent::gorna::EngineHint>,
     );
     let _ = type_name::<khora_sdk::EngineMode>();
     same_type(
@@ -807,7 +807,7 @@ fn module_crate_root_paths_still_resolve() {
     let _ = type_name::<khora_sdk::StrategyId>();
     same_type(
         PhantomData::<khora_sdk::StrategyId>,
-        PhantomData::<khora_core::control::gorna::StrategyId>,
+        PhantomData::<khora_core::agent::gorna::StrategyId>,
     );
     let _ = type_name::<khora_sdk::StreamInfo>();
     same_type(

@@ -10,7 +10,7 @@ An `Agent` is a strategist: given a budget, it selects a `Lane` and reports stat
 a GORNA budget. Non-negotiating work uses a service (`AssetService`, `EcsMaintenance`, …).
 
 ## Steps
-1. Add an `AgentId` variant (priority-ordered) in `crates/khora-core/src/control/gorna.rs` / `agent/`.
+1. Add an `AgentId` variant (priority-ordered) in `crates/khora-core/src/agent/gorna.rs` / `agent/`.
 2. Create `crates/khora-agents/src/<domain>_agent/{mod.rs,agent.rs}`. Implement **only** `Agent` + `Default`:
    `id`, `negotiate`, `apply_budget`, `report_status`, `on_initialize` (cache services once), `execute`
    (dispatch the lane), `as_any`/`as_any_mut`.

@@ -130,18 +130,18 @@ impl<A: EngineApp> EngineCore<A> {
         self.dcc.as_ref()
     }
 
-    /// Applies a developer [`EngineHint`](khora_core::control::gorna::EngineHint)
+    /// Applies a developer [`EngineHint`](khora_core::agent::gorna::EngineHint)
     /// biasing GORNA arbitration (`Cap` a per-frame budget, `Prioritize` an
     /// agent) without changing game semantics. No-op if the DCC isn't running.
     /// Thread-safe; takes effect on the next arbitration tick.
-    pub fn set_engine_hint(&self, hint: khora_core::control::gorna::EngineHint) {
+    pub fn set_engine_hint(&self, hint: khora_core::agent::gorna::EngineHint) {
         if let Some(dcc) = &self.dcc {
             dcc.set_hint(hint);
         }
     }
 
     /// Clears all developer hints for an agent, restoring engine defaults.
-    pub fn clear_agent_hints(&self, agent_id: khora_core::control::gorna::AgentId) {
+    pub fn clear_agent_hints(&self, agent_id: khora_core::agent::gorna::AgentId) {
         if let Some(dcc) = &self.dcc {
             dcc.clear_agent_hints(agent_id);
         }
@@ -152,8 +152,8 @@ impl<A: EngineApp> EngineCore<A> {
     pub fn engine_hints(
         &self,
     ) -> std::collections::HashMap<
-        khora_core::control::gorna::AgentId,
-        khora_core::control::gorna::AgentHints,
+        khora_core::agent::gorna::AgentId,
+        khora_core::agent::gorna::AgentHints,
     > {
         self.dcc.as_ref().map(|d| d.hints()).unwrap_or_default()
     }

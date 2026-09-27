@@ -19,7 +19,7 @@
 //! last one is kept ("last wins" semantics).
 
 use crossbeam_channel::{Receiver, Sender};
-use khora_core::control::gorna::{AgentId, ResourceBudget};
+use khora_core::agent::gorna::{AgentId, ResourceBudget};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 

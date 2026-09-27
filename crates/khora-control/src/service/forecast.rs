@@ -16,7 +16,7 @@
 
 use crate::cost_model::CostModel;
 
-use khora_core::control::gorna::AgentId;
+use khora_core::agent::gorna::AgentId;
 use std::collections::HashMap;
 
 /// Forecasts the frame's empirical cost (`c·f(n)`) at workload `n`, grouping

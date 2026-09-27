@@ -14,8 +14,8 @@
 
 //! Core engine context providing access to foundational subsystems.
 
+use crate::agent::gorna::AgentId;
 use crate::agent::Contention;
-use crate::control::gorna::AgentId;
 use crate::lane::{LaneBus, OutputDeck};
 use crate::runtime::Runtime;
 use std::any::Any;

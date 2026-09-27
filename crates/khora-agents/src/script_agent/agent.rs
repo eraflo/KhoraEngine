@@ -16,12 +16,12 @@ use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_core::agent::{
-    Agent, AgentAccess, AgentImportance, Contention, ExecutionPhase, ExecutionTiming,
-};
-use khora_core::control::gorna::{
+use khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
+};
+use khora_core::agent::{
+    Agent, AgentAccess, AgentImportance, Contention, ExecutionPhase, ExecutionTiming,
 };
 use khora_core::event::Channel;
 use khora_core::lane::{LaneContext, LaneRegistry};

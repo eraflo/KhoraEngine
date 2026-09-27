@@ -182,7 +182,7 @@ impl<A: EngineApp> EngineCore<A> {
         // AgentFrameStatus map — per-agent execution metrics measured and
         // written by the scheduler each frame; agents read their own slot in
         // `report_status` instead of holding per-frame counters.
-        let agent_frame_status: khora_core::control::gorna::AgentFrameStatusMap =
+        let agent_frame_status: khora_core::agent::gorna::AgentFrameStatusMap =
             Arc::new(std::sync::RwLock::new(std::collections::HashMap::new()));
         runtime.resources.insert(agent_frame_status);
 
@@ -315,14 +315,14 @@ impl<A: EngineApp> EngineCore<A> {
 
         // Build scheduler
         let agent_ids = vec![
-            khora_core::control::gorna::AgentId::Renderer,
-            khora_core::control::gorna::AgentId::ShadowRenderer,
-            khora_core::control::gorna::AgentId::Overlay,
-            khora_core::control::gorna::AgentId::Skybox,
-            khora_core::control::gorna::AgentId::Physics,
-            khora_core::control::gorna::AgentId::Ui,
-            khora_core::control::gorna::AgentId::Audio,
-            khora_core::control::gorna::AgentId::Script,
+            khora_core::agent::gorna::AgentId::Renderer,
+            khora_core::agent::gorna::AgentId::ShadowRenderer,
+            khora_core::agent::gorna::AgentId::Overlay,
+            khora_core::agent::gorna::AgentId::Skybox,
+            khora_core::agent::gorna::AgentId::Physics,
+            khora_core::agent::gorna::AgentId::Ui,
+            khora_core::agent::gorna::AgentId::Audio,
+            khora_core::agent::gorna::AgentId::Script,
         ];
 
         let registry = dcc.agent_registry().clone();

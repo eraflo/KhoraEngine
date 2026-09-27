@@ -26,11 +26,11 @@
 
 use crate::analysis::AnalysisReport;
 use crate::context::Context;
-use khora_core::agent::Agent;
-use khora_core::control::gorna::{
+use khora_core::agent::gorna::{
     AdaptationMode, AgentHints, AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints,
     StrategyId, StrategyOption, TickDecisions,
 };
+use khora_core::agent::Agent;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};

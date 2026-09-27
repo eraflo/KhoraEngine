@@ -14,7 +14,7 @@
 
 //! The shadow quality tiers the shadow agent negotiates between.
 
-use khora_core::control::gorna::StrategyId;
+use khora_core::agent::gorna::StrategyId;
 use khora_lanes::shadow_lane::{
     LOW_RES_STRATEGY_NAME, MEDIUM_STRATEGY_NAME, STANDARD_STRATEGY_NAME,
 };

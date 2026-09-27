@@ -24,8 +24,8 @@
 use std::sync::{Arc, Mutex};
 
 use khora_agents::script_agent::ScriptAgent;
+use khora_core::agent::gorna::{ResourceBudget, StrategyId};
 use khora_core::agent::Agent;
-use khora_core::control::gorna::{ResourceBudget, StrategyId};
 use khora_core::ecs::entity::EntityId;
 use khora_core::event::Channel;
 use khora_core::lane::{LaneBus, OutputDeck};

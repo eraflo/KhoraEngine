@@ -18,13 +18,13 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use khora_core::agent::gorna::{
+    measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
+    NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
+};
 use khora_core::agent::{
     Agent, AgentAccess, AgentDependency, AgentImportance, Contention, DependencyKind,
     ExecutionPhase, ExecutionTiming,
-};
-use khora_core::control::gorna::{
-    measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
-    NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
 use khora_core::lane::{ColorTarget, DepthTarget, LaneContext, LaneRegistry};
 use khora_core::renderer::api::core::FrameContext;

@@ -22,11 +22,11 @@ use super::strategy::PhysicsStrategy;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
-use khora_core::control::gorna::{
+use khora_core::agent::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
     NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
+use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::lane::PhysicsDeltaTime;
 use khora_core::lane::{LaneContext, LaneRegistry};
 use khora_core::physics::PhysicsProvider;

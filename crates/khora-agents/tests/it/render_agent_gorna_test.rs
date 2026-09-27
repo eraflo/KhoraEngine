@@ -19,10 +19,10 @@
 //! externally-visible state via `report_status()`.
 
 use khora_agents::render_agent::RenderAgent;
-use khora_core::agent::{Agent, EngineMode, ExecutionTiming};
-use khora_core::control::gorna::{
+use khora_core::agent::gorna::{
     AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId,
 };
+use khora_core::agent::{Agent, EngineMode, ExecutionTiming};
 use std::collections::HashMap;
 use std::time::Duration;
 

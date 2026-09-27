@@ -144,8 +144,8 @@ fn a_touched_event_reaches_the_behavior_that_declared_the_handler() {
     let mut agent = ScriptAgent::default();
     // The DCC does this every frame; without it the agent has no fuel and
     // defers everything, which is a budget of nothing rather than a bug.
-    agent.apply_budget(khora_core::control::gorna::ResourceBudget {
-        strategy_id: khora_core::control::gorna::StrategyId::Balanced,
+    agent.apply_budget(khora_core::agent::gorna::ResourceBudget {
+        strategy_id: khora_core::agent::gorna::StrategyId::Balanced,
         time_limit: std::time::Duration::from_millis(1),
         memory_limit: None,
         extra_params: Default::default(),

@@ -15,12 +15,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
-use khora_core::audio::AudioMixBus;
-use khora_core::control::gorna::{
+use khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
 };
+use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
+use khora_core::audio::AudioMixBus;
 use khora_core::lane::{LaneContext, LaneRegistry};
 use khora_core::EngineContext;
 use khora_data::flow::AudioView;

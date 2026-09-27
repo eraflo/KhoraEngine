@@ -59,7 +59,7 @@ Agents declare what they offer as `StrategyOption`s and receive a `ResourceBudge
 The request and budget shapes are intentionally narrow — time, memory, VRAM, and a
 small extras map — so that adding a resource dimension is a considered change, not a
 free-form bag each subsystem invents its own dialect for. The exhaustive field lists
-live in the rustdoc on `khora_core::control::gorna`.
+live in the rustdoc on `khora_core::agent::gorna`.
 
 ## The cost model and the PID frame-budget controller
 

@@ -16,10 +16,10 @@ use crate::context::Context;
 use crate::registry::AgentRegistry;
 use crate::scheduler::*;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
-use khora_core::agent::{Agent, AgentAccess, AgentImportance};
-use khora_core::control::gorna::{
+use khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
 };
+use khora_core::agent::{Agent, AgentAccess, AgentImportance};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;

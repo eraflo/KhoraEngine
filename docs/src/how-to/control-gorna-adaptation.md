@@ -27,7 +27,7 @@ Call `set_adaptation_mode` on the `DccService` with the target `AgentId` and the
 It is thread-safe and takes effect on the next arbitration tick.
 
 ```rust
-use khora_core::control::gorna::{AdaptationMode, AgentId, StrategyId};
+use khora_core::agent::gorna::{AdaptationMode, AgentId, StrategyId};
 
 // Pin the renderer to LowPower (e.g. on battery): GORNA will not upgrade it.
 dcc.set_adaptation_mode(AgentId::Renderer, AdaptationMode::Manual(StrategyId::LowPower));

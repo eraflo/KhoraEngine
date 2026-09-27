@@ -18,11 +18,12 @@ pub mod completion;
 pub mod contention;
 pub mod dependency;
 pub mod execution_phase;
+pub mod gorna;
 pub mod mode;
 pub mod timing;
 
-use crate::control::gorna::AgentId;
-use crate::control::gorna::{AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget};
+use crate::agent::gorna::AgentId;
+use crate::agent::gorna::{AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget};
 use crate::EngineContext;
 use std::any::Any;
 
@@ -60,7 +61,7 @@ pub use timing::{AgentImportance, ExecutionTiming};
 ///
 /// ```ignore
 /// use khora_core::agent::{Agent, ExecutionTiming};
-/// use khora_core::control::gorna::{
+/// use khora_core::agent::gorna::{
 ///     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget,
 /// };
 /// use khora_core::EngineContext;

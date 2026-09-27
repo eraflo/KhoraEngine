@@ -24,13 +24,13 @@ use super::strategy::RenderingStrategy;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
+use khora_core::agent::gorna::{
+    measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
+    NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
+};
 use khora_core::agent::{
     Agent, AgentAccess, AgentDependency, AgentImportance, Contention, DependencyKind,
     ExecutionPhase, ExecutionTiming,
-};
-use khora_core::control::gorna::{
-    measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
-    NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
 use khora_core::lane::{
     ClearColor, ColorTarget, DepthTarget, LaneContext, LaneKind, LaneRegistry, ShadowAtlasView,
@@ -479,8 +479,8 @@ fn lane_name_for_strategy(strategy: RenderingStrategy, world: &RenderWorld) -> &
 #[cfg(test)]
 mod tests {
     use super::*;
+    use khora_core::agent::gorna::{NegotiationRequest, ResourceConstraints, StrategyId};
     use khora_core::agent::{EngineMode, ExecutionTiming};
-    use khora_core::control::gorna::{NegotiationRequest, ResourceConstraints, StrategyId};
 
     #[test]
     fn test_negotiate_offers_all_default_strategies() {

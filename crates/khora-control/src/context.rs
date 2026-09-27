@@ -54,7 +54,7 @@ pub struct Context {
     /// performance degradation. Ranges from 0.0 (emergency) to 1.0 (full
     /// performance).
     ///
-    /// Driven by the DCC's frame-time **PID** controller (`khora_core::control::pid`),
+    /// Driven by the DCC's frame-time **PID** controller (`crate::pid`),
     /// not a static table: the loop asservits this value so the *measured* frame
     /// time tracks the heuristic-suggested latency (`AnalysisReport::suggested_latency_ms`,
     /// itself modulated by thermal/battery/phase). On `Critical` thermal/battery or

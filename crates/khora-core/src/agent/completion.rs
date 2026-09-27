@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use crate::control::gorna::AgentId;
+use crate::agent::gorna::AgentId;
 use crate::renderer::api::core::StageHandle;
 
 /// Marker type for the "an agent finished its frame work" stage.

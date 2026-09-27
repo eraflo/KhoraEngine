@@ -26,7 +26,7 @@ use std::sync::Arc;
 use std::thread;
 
 use crate::registry::AgentRegistry;
-use khora_core::control::gorna::{AdaptationMode, AgentHints, AgentId, DecisionTrace, EngineHint};
+use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, DecisionTrace, EngineHint};
 use std::collections::HashMap;
 use std::sync::Mutex;
 

@@ -16,7 +16,7 @@
 //! and the per-agent clamps that adaptation modes and hints apply.
 
 use super::{strategy_rank, AgentAllocation, AgentNegotiation, GornaArbitrator};
-use khora_core::control::gorna::{AgentHints, StrategyId, StrategyOption};
+use khora_core::agent::gorna::{AgentHints, StrategyId, StrategyOption};
 
 impl GornaArbitrator {
     /// Runs the global budget fitting algorithm.

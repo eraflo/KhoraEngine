@@ -34,11 +34,11 @@ use super::strategy::ShadowStrategy;
 use std::sync::Arc;
 use std::time::Duration;
 
-use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
-use khora_core::control::gorna::{
+use khora_core::agent::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
     NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
+use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::lane::{LaneContext, LaneRegistry};
 use khora_core::renderer::api::core::FrameContext;
 use khora_core::renderer::api::scene::GpuMesh;
@@ -317,7 +317,7 @@ impl Default for ShadowAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::control::gorna::ResourceBudget;
+    use khora_core::agent::gorna::ResourceBudget;
     use std::collections::HashMap;
 
     fn budget(strategy_id: StrategyId) -> ResourceBudget {
@@ -430,7 +430,7 @@ mod tests {
         let response = agent.negotiate(NegotiationRequest {
             target_latency: Duration::from_millis(16),
             priority_weight: 1.0,
-            constraints: khora_core::control::gorna::ResourceConstraints {
+            constraints: khora_core::agent::gorna::ResourceConstraints {
                 // Below Medium's 22 MiB but above LowRes's ~5.5 MiB.
                 max_vram_bytes: Some(8 * 1024 * 1024),
                 ..Default::default()

@@ -14,7 +14,7 @@
 
 //! Event types for engine-wide telemetry.
 
-use crate::control::gorna::AgentId;
+use crate::agent::gorna::AgentId;
 use crate::telemetry::metrics::{MetricId, MetricValue};
 use crate::telemetry::monitoring::{GpuReport, HardwareReport, ResourceUsageReport};
 
