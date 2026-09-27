@@ -33,10 +33,8 @@ pub mod theme;
 pub mod types;
 
 pub use app::{App, AppContext, AppLifecycle};
-pub use editor::{
-    EditorCamera, EditorPanel, EditorShell, PanelLocation, UiBuilder, ViewportTextureHandle,
-};
 pub use editor::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
+pub use editor::{EditorPanel, EditorShell, PanelLocation, UiBuilder, ViewportTextureHandle};
 pub use fonts::{FontHandle, FontPack, NamedFont};
 pub use geometry::{Align, Align2, CornerRadius, Margin, Stroke};
 pub use layout::{LayoutSystem, UiLayoutView};

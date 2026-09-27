@@ -259,7 +259,7 @@ contributes its agents through `AgentProvider`.
 | `crates/khora-editor/src/ops/` | High-level scene operations (spawn, despawn, parent, add component) |
 | `crates/khora-editor/src/commands/` | The command dispatch the menus and palette go through |
 | `crates/khora-editor/src/scene_io.rs` | Scene save / load via `SerializationService` |
-| `crates/khora-editor/src/mod_gizmo.rs`, `picking.rs` | Gizmo dispatch and viewport picking |
+| `crates/khora-editor/src/gizmo/`, `picking.rs` | Gizmo geometry, drag math and dispatch; viewport picking |
 | `crates/khora-editor/src/project_vfs.rs` | The live asset index — VFS, watcher and identity registry |
 
 `EditorState` — selection, mode, pending operations — is **not** in the editor
@@ -274,7 +274,7 @@ workbench, and route any mutation through `ops/` so the action layer stays the
 single place the world changes.
 
 To add a gizmo type: extend the interaction model in
-`crates/khora-core/src/ui/editor/gizmo_interact.rs`, draw it from the engine-side
+`crates/khora-editor/src/gizmo/interact.rs` and its geometry in `gizmo/selection.rs`, draw it from the engine-side
 `GizmoLane`, and convert drags into `Transform` mutations through `ops/`.
 
 The editor depends on `khora-sdk` and `khora-tool-ui`, and nothing else from the workspace — there is no SDK bypass. Earlier revisions of this page described one; the manifest never had it.

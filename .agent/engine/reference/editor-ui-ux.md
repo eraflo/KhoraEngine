@@ -8,7 +8,7 @@ khora-editor panels (inspector, asset browser, scene tree, control-plane telemet
 transform gizmos, dock layout, theme, and the egui/Taffy plumbing.
 
 ## Key files
-- Editor: `crates/khora-editor/src/` (`app/`, `panels/`, `mod_gizmo.rs`, `commands/`, `hot_reload.rs`).
+- Editor: `crates/khora-editor/src/` (`app/`, `panels/`, `gizmo/`, `commands/`, `hot_reload.rs`).
 - Editor UI types: `crates/khora-core/src/ui/editor/` (gizmos, viewport, panels, theme).
 - UI lanes / layout: `crates/khora-lanes/src/ui_lane/`, `crates/khora-agents/src/ui_agent/`, `crates/khora-infra/src/ui/{taffy,egui}/`.
 - SDK surface: `khora_sdk::editor_ui` / `tool_ui` re-exports (panels import from the SDK only).

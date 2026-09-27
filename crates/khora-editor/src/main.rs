@@ -31,12 +31,14 @@ static GLOBAL: khora_sdk::prelude::SaaTrackingAllocator =
 mod app;
 mod bootstrap;
 mod build_game;
+mod camera;
 mod chrome;
 mod commands;
 mod drag_payload;
+mod gizmo;
 mod hot_reload;
 mod input;
-mod mod_gizmo;
+mod log_capture;
 mod ops;
 mod panels;
 mod picking;

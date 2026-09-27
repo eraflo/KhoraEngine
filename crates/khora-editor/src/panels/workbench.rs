@@ -37,7 +37,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::{EditorMode, EditorPanel, EditorState, UiBuilder, UiTheme};
-use khora_sdk::khora_core::ui::editor::dock::{zone_at, DockTree, DropZone};
+use khora_tool_ui::dock::{zone_at, DockTree, DropZone};
 use khora_tool_ui::widgets::{
     dock_drag_ghost, dock_drop_overlay, dock_splitter, dock_tab_strip, TAB_STRIP_H,
 };
@@ -212,7 +212,7 @@ impl EditorPanel for WorkbenchPanel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_sdk::khora_core::ui::editor::dock::DropZone;
+    use khora_tool_ui::dock::DropZone;
 
     /// A panel the pool holds but no layout names must simply not be shown —
     /// the two are independent so a mode can drop a panel without the app

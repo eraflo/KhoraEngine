@@ -12,8 +12,14 @@ description = "Khora's first-party tool design system — brand tokens and share
 # *contracts*. No backend (egui) dependency — widgets paint through `UiBuilder`.
 khora-core = { path = "../khora-core" }
 log = "0.4"
+# The dock tree is saved with the editor layout.
+serde = { version = "1", features = ["derive"] }
 # Decodes the embedded logo into a window icon.
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+[dev-dependencies]
+# The dock tree's serde round trip is tested through JSON.
+serde_json = "1"
 
 [features]
 # The headless `testing::RecordingUiBuilder`, for another crate's widget tests.

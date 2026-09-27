@@ -88,7 +88,7 @@ fn apply_edits_commits_name_and_component_json() {
 fn undo_redo_roundtrips_through_apply_edits() {
     let mut world = GameWorld::new();
     let mut state = EditorState::default();
-    let mut history = khora_sdk::editor_ui::CommandHistory::default();
+    let mut history = crate::commands::CommandHistory::default();
 
     let entity = world.spawn((
         Transform::identity(),
@@ -98,7 +98,7 @@ fn undo_redo_roundtrips_through_apply_edits() {
 
     let forward = PropertyEdit::SetName(entity, "Renamed".to_owned());
     let reverse = PropertyEdit::SetName(entity, "Baseline".to_owned());
-    history.push(khora_sdk::editor_ui::EditorCommand {
+    history.push(crate::commands::history::EditorCommand {
         description: "Rename".to_owned(),
         forward: forward.clone(),
         reverse,

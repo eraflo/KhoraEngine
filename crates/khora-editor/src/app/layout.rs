@@ -15,9 +15,9 @@
 //! The dock layouts and the panels registered in them.
 
 use khora_sdk::editor_ui::viewport_texture::ViewportTextureHandle;
-use khora_sdk::khora_core::ui::editor::dock::{DockTree, DropZone};
 use khora_sdk::Runtime;
 use khora_sdk::{EditorMode, EditorShell, PanelLocation};
+use khora_tool_ui::dock::{DockTree, DropZone};
 
 use super::EditorApp;
 use crate::chrome::{SpinePanel, StatusBarPanel, TitleBarPanel};

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! Dock chrome — the tab strips, dividers and drop hints that make
-//! [`DockTree`](khora_core::ui::editor::dock::DockTree) touchable.
+//! [`DockTree`](crate::dock::DockTree) touchable.
 //!
 //! Painting only: the geometry comes from a `DockLayout`, and every gesture is
 //! reported back to the caller, which owns the drag state and applies the
@@ -25,7 +25,7 @@
 //! does not exist. An affordance that loses a panel for good is worse than no
 //! affordance.
 
-use khora_core::ui::editor::dock::{
+use crate::dock::{
     ratio_from_pointer, DockRect, DropZone, SplitAxis, SplitterLayout, TabGroupLayout,
 };
 use khora_core::ui::{UiBuilder, UiTheme};
@@ -233,8 +233,8 @@ fn short_title(panel_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dock::{DockTree, DropZone};
     use crate::testing::RecordingUiBuilder;
-    use khora_core::ui::editor::dock::{DockTree, DropZone};
 
     fn theme() -> UiTheme {
         crate::khora_dark()

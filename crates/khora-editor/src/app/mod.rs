@@ -27,8 +27,11 @@ use khora_sdk::khora_core::ui::EditorOverlay;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::winit;
 use khora_sdk::{AgentProvider, GameWorld, Runtime};
-use khora_sdk::{CommandHistory, DccService, PlayMode};
-use khora_sdk::{EditorCamera, EditorShell, EditorState, LogEntry};
+use khora_sdk::{DccService, PlayMode};
+use khora_sdk::{EditorShell, EditorState, LogEntry};
+
+use crate::camera::EditorCamera;
+use crate::commands::CommandHistory;
 
 use crate::input::InputState;
 use crate::ops;

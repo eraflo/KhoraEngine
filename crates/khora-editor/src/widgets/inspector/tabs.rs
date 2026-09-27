@@ -15,9 +15,9 @@
 
 use std::sync::{Arc, Mutex};
 
+use crate::commands::CommandHistory;
 use khora_sdk::editor_ui::{EditorState, InspectedEntity, PropertyEdit, UiBuilder, UiTheme};
 use khora_sdk::prelude::ecs::EntityId;
-use khora_sdk::CommandHistory;
 
 use super::add_component::{is_author_facing, render_add_component};
 use super::card::render_card;

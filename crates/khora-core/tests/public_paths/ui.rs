@@ -38,10 +38,6 @@ use std::marker::PhantomData;
 /// Compiles only when both arguments name the same type.
 fn same_type<T: ?Sized>(_: PhantomData<T>, _: PhantomData<T>) {}
 
-/// Compiles only when both references point at the same item (two distinct
-/// `fn` items never share a type, and `&fn-item` does not coerce).
-fn same_item<T>(_: &T, _: &T) {}
-
 fn is_borrow_decode<T: bincode::BorrowDecode<'static, ()>>() {}
 fn is_clone<T: Clone>() {}
 fn is_copy<T: Copy>() {}
@@ -54,7 +50,6 @@ fn is_encode<T: bincode::Encode>() {}
 fn is_eq<T: Eq>() {}
 fn is_error<T: std::error::Error>() {}
 fn is_hash<T: std::hash::Hash>() {}
-fn is_log<T: log::Log>() {}
 fn is_partial_eq<T: PartialEq>() {}
 fn is_pod<T: bytemuck::Pod>() {}
 fn is_serialize<T: serde::Serialize>() {}
@@ -71,13 +66,8 @@ mod every_pub_mod {
     use khora_core::ui::app::context as _;
     use khora_core::ui::app::runtime as _;
     use khora_core::ui::editor as _;
-    use khora_core::ui::editor::camera as _;
-    use khora_core::ui::editor::command as _;
-    use khora_core::ui::editor::dock as _;
     use khora_core::ui::editor::gizmo as _;
-    use khora_core::ui::editor::gizmo_interact as _;
     use khora_core::ui::editor::icons as _;
-    use khora_core::ui::editor::log_capture as _;
     use khora_core::ui::editor::overlay as _;
     use khora_core::ui::editor::panel as _;
     use khora_core::ui::editor::shell as _;
@@ -96,108 +86,8 @@ mod every_pub_mod {
 // exhaustively). Nothing is constructed.
 // ---------------------------------------------------------------------------
 
-fn editor_camera_fields(x: &khora_core::ui::editor::camera::EditorCamera) {
-    let _ = (
-        &x.target,
-        &x.yaw,
-        &x.pitch,
-        &x.distance,
-        &x.fov_y,
-        &x.near,
-        &x.far,
-        &x.orbit_speed,
-        &x.pan_speed,
-        &x.zoom_speed,
-        &x.min_distance,
-        &x.max_distance,
-    );
-}
-
-fn editor_command_fields(x: &khora_core::ui::editor::command::EditorCommand) {
-    let _ = (&x.description, &x.forward, &x.reverse);
-}
-
-fn dock_layout_fields(x: &khora_core::ui::editor::dock::DockLayout) {
-    let _ = (&x.groups, &x.splitters);
-}
-
-fn dock_node_variants(x: &khora_core::ui::editor::dock::DockNode) {
-    match x {
-        khora_core::ui::editor::dock::DockNode::Tabs { .. } => {}
-        khora_core::ui::editor::dock::DockNode::Split { .. } => {}
-    }
-}
-
-fn drop_zone_variants(x: &khora_core::ui::editor::dock::DropZone) {
-    match x {
-        khora_core::ui::editor::dock::DropZone::Center => {}
-        khora_core::ui::editor::dock::DropZone::Left => {}
-        khora_core::ui::editor::dock::DropZone::Right => {}
-        khora_core::ui::editor::dock::DropZone::Top => {}
-        khora_core::ui::editor::dock::DropZone::Bottom => {}
-    }
-}
-
-fn split_axis_variants(x: &khora_core::ui::editor::dock::SplitAxis) {
-    match x {
-        khora_core::ui::editor::dock::SplitAxis::Horizontal => {}
-        khora_core::ui::editor::dock::SplitAxis::Vertical => {}
-    }
-}
-
-fn split_id_fields(x: &khora_core::ui::editor::dock::SplitId) {
-    let _ = (&x.0,);
-}
-
-fn splitter_layout_fields(x: &khora_core::ui::editor::dock::SplitterLayout) {
-    let _ = (&x.id, &x.rect, &x.axis, &x.bounds);
-}
-
-fn tab_group_layout_fields(x: &khora_core::ui::editor::dock::TabGroupLayout) {
-    let _ = (&x.rect, &x.panels, &x.active);
-}
-
-fn gizmo_kind_variants(x: &khora_core::ui::editor::gizmo::GizmoKind) {
-    match x {
-        khora_core::ui::editor::gizmo::GizmoKind::Empty => {}
-        khora_core::ui::editor::gizmo::GizmoKind::Camera { .. } => {}
-        khora_core::ui::editor::gizmo::GizmoKind::DirectionalLight => {}
-        khora_core::ui::editor::gizmo::GizmoKind::PointLight { .. } => {}
-        khora_core::ui::editor::gizmo::GizmoKind::Audio => {}
-        khora_core::ui::editor::gizmo::GizmoKind::Mesh => {}
-    }
-}
-
 fn gizmo_line_instance_fields(x: &khora_core::ui::editor::gizmo::GizmoLineInstance) {
     let _ = (&x.start, &x.end, &x.color);
-}
-
-fn selection_gizmo_fields(x: &khora_core::ui::editor::gizmo::SelectionGizmo) {
-    let _ = (&x.transform, &x.kind, &x.size);
-}
-
-fn gizmo_axis_variants(x: &khora_core::ui::editor::gizmo_interact::GizmoAxis) {
-    match x {
-        khora_core::ui::editor::gizmo_interact::GizmoAxis::X => {}
-        khora_core::ui::editor::gizmo_interact::GizmoAxis::Y => {}
-        khora_core::ui::editor::gizmo_interact::GizmoAxis::Z => {}
-    }
-}
-
-fn gizmo_delta_variants(x: &khora_core::ui::editor::gizmo_interact::GizmoDelta) {
-    match x {
-        khora_core::ui::editor::gizmo_interact::GizmoDelta::Translate(..) => {}
-        khora_core::ui::editor::gizmo_interact::GizmoDelta::Rotate { .. } => {}
-        khora_core::ui::editor::gizmo_interact::GizmoDelta::Scale { .. } => {}
-    }
-}
-
-fn gizmo_drag_fields(x: &khora_core::ui::editor::gizmo_interact::GizmoDrag) {
-    let _ = (&x.axis, &x.mode, &x.direction, &x.pivot);
-}
-
-fn gizmo_transform_fields(x: &khora_core::ui::editor::gizmo_interact::GizmoTransform) {
-    let _ = (&x.translation, &x.rotation, &x.scale);
 }
 
 fn icon_variants(x: &khora_core::ui::editor::icons::Icon) {
@@ -904,203 +794,6 @@ fn module_ui_paths_still_resolve() {
     // trait `khora_core::ui::app::runtime::AppLifecycle`: see `app_lifecycle_trait_items`
     // trait `khora_core::ui::app::AppLifecycle`: see `app_lifecycle_trait_items`
     // trait `khora_core::ui::AppLifecycle`: see `app_lifecycle_trait_items`
-    let _ = type_name::<khora_core::ui::editor::camera::EditorCamera>();
-    let _ = type_name::<khora_core::ui::editor::EditorCamera>();
-    let _ = type_name::<khora_core::ui::EditorCamera>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::EditorCamera>,
-        PhantomData::<khora_core::ui::editor::camera::EditorCamera>,
-    );
-    same_type(
-        PhantomData::<khora_core::ui::EditorCamera>,
-        PhantomData::<khora_core::ui::editor::camera::EditorCamera>,
-    );
-    let _ = editor_camera_fields as fn(&khora_core::ui::editor::camera::EditorCamera);
-    let _ = khora_core::ui::editor::camera::EditorCamera::position;
-    let _ = khora_core::ui::editor::camera::EditorCamera::orbit;
-    let _ = khora_core::ui::editor::camera::EditorCamera::pan;
-    let _ = khora_core::ui::editor::camera::EditorCamera::zoom;
-    let _ = khora_core::ui::editor::camera::EditorCamera::focus_on;
-    let _ = khora_core::ui::editor::camera::EditorCamera::forward;
-    let _ = khora_core::ui::editor::camera::EditorCamera::right;
-    let _ = khora_core::ui::editor::camera::EditorCamera::up;
-    let _ = khora_core::ui::editor::camera::EditorCamera::view_info;
-    let _ = khora_core::ui::editor::camera::EditorCamera::screen_to_ray;
-    is_debug::<khora_core::ui::editor::camera::EditorCamera>();
-    is_clone::<khora_core::ui::editor::camera::EditorCamera>();
-    is_default::<khora_core::ui::editor::camera::EditorCamera>();
-    let _ = type_name::<khora_core::ui::editor::command::CommandHistory>();
-    let _ = type_name::<khora_core::ui::editor::CommandHistory>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::CommandHistory>,
-        PhantomData::<khora_core::ui::editor::command::CommandHistory>,
-    );
-    let _ = khora_core::ui::editor::command::CommandHistory::new;
-    let _ = khora_core::ui::editor::command::CommandHistory::push;
-    let _ = khora_core::ui::editor::command::CommandHistory::undo;
-    let _ = khora_core::ui::editor::command::CommandHistory::redo;
-    let _ = khora_core::ui::editor::command::CommandHistory::can_undo;
-    let _ = khora_core::ui::editor::command::CommandHistory::can_redo;
-    let _ = khora_core::ui::editor::command::CommandHistory::undo_description;
-    let _ = khora_core::ui::editor::command::CommandHistory::redo_description;
-    let _ = khora_core::ui::editor::command::CommandHistory::undo_depth;
-    is_debug::<khora_core::ui::editor::command::CommandHistory>();
-    is_clone::<khora_core::ui::editor::command::CommandHistory>();
-    is_default::<khora_core::ui::editor::command::CommandHistory>();
-    let _ = type_name::<khora_core::ui::editor::command::EditorCommand>();
-    let _ = type_name::<khora_core::ui::editor::EditorCommand>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::EditorCommand>,
-        PhantomData::<khora_core::ui::editor::command::EditorCommand>,
-    );
-    let _ = editor_command_fields as fn(&khora_core::ui::editor::command::EditorCommand);
-    is_debug::<khora_core::ui::editor::command::EditorCommand>();
-    is_clone::<khora_core::ui::editor::command::EditorCommand>();
-    let _ = type_name::<khora_core::ui::editor::dock::DockLayout>();
-    let _ = type_name::<khora_core::ui::editor::DockLayout>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::DockLayout>,
-        PhantomData::<khora_core::ui::editor::dock::DockLayout>,
-    );
-    let _ = dock_layout_fields as fn(&khora_core::ui::editor::dock::DockLayout);
-    is_debug::<khora_core::ui::editor::dock::DockLayout>();
-    is_clone::<khora_core::ui::editor::dock::DockLayout>();
-    is_default::<khora_core::ui::editor::dock::DockLayout>();
-    is_partial_eq::<khora_core::ui::editor::dock::DockLayout>();
-    let _ = type_name::<khora_core::ui::editor::dock::DockNode>();
-    let _ = type_name::<khora_core::ui::editor::DockNode>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::DockNode>,
-        PhantomData::<khora_core::ui::editor::dock::DockNode>,
-    );
-    let _ = dock_node_variants as fn(&khora_core::ui::editor::dock::DockNode);
-    is_debug::<khora_core::ui::editor::dock::DockNode>();
-    is_clone::<khora_core::ui::editor::dock::DockNode>();
-    is_partial_eq::<khora_core::ui::editor::dock::DockNode>();
-    is_serialize::<khora_core::ui::editor::dock::DockNode>();
-    is_deserialize_owned::<khora_core::ui::editor::dock::DockNode>();
-    let _ = type_name::<khora_core::ui::editor::dock::DockRect>();
-    let _ = type_name::<khora_core::ui::editor::DockRect>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::DockRect>,
-        PhantomData::<khora_core::ui::editor::dock::DockRect>,
-    );
-    let _ = type_name::<khora_core::ui::editor::dock::DockTree>();
-    let _ = type_name::<khora_core::ui::editor::DockTree>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::DockTree>,
-        PhantomData::<khora_core::ui::editor::dock::DockTree>,
-    );
-    let _ = khora_core::ui::editor::dock::DockTree::empty;
-    let _: fn(String) -> khora_core::ui::editor::dock::DockTree =
-        khora_core::ui::editor::dock::DockTree::single;
-    let _ = khora_core::ui::editor::dock::DockTree::is_empty;
-    let _ = khora_core::ui::editor::dock::DockTree::panels;
-    let _ = khora_core::ui::editor::dock::DockTree::contains;
-    let _: fn(
-        &mut khora_core::ui::editor::dock::DockTree,
-        String,
-        Option<&str>,
-        khora_core::ui::editor::dock::DropZone,
-    ) -> Option<khora_core::ui::editor::dock::SplitId> =
-        khora_core::ui::editor::dock::DockTree::insert;
-    let _ = khora_core::ui::editor::dock::DockTree::remove;
-    let _ = khora_core::ui::editor::dock::DockTree::activate;
-    let _ = khora_core::ui::editor::dock::DockTree::set_ratio;
-    let _ = khora_core::ui::editor::dock::DockTree::layout;
-    is_debug::<khora_core::ui::editor::dock::DockTree>();
-    is_clone::<khora_core::ui::editor::dock::DockTree>();
-    is_partial_eq::<khora_core::ui::editor::dock::DockTree>();
-    is_serialize::<khora_core::ui::editor::dock::DockTree>();
-    is_deserialize_owned::<khora_core::ui::editor::dock::DockTree>();
-    is_default::<khora_core::ui::editor::dock::DockTree>();
-    let _ = type_name::<khora_core::ui::editor::dock::DropZone>();
-    let _ = type_name::<khora_core::ui::editor::DropZone>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::DropZone>,
-        PhantomData::<khora_core::ui::editor::dock::DropZone>,
-    );
-    let _ = drop_zone_variants as fn(&khora_core::ui::editor::dock::DropZone);
-    let _ = khora_core::ui::editor::dock::DropZone::axis;
-    let _ = khora_core::ui::editor::dock::DropZone::takes_first;
-    is_debug::<khora_core::ui::editor::dock::DropZone>();
-    is_clone::<khora_core::ui::editor::dock::DropZone>();
-    is_copy::<khora_core::ui::editor::dock::DropZone>();
-    is_partial_eq::<khora_core::ui::editor::dock::DropZone>();
-    is_eq::<khora_core::ui::editor::dock::DropZone>();
-    let _ = khora_core::ui::editor::dock::MIN_PANE;
-    let _ = khora_core::ui::editor::dock::SPLITTER_THICKNESS;
-    let _ = type_name::<khora_core::ui::editor::dock::SplitAxis>();
-    let _ = type_name::<khora_core::ui::editor::SplitAxis>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::SplitAxis>,
-        PhantomData::<khora_core::ui::editor::dock::SplitAxis>,
-    );
-    let _ = split_axis_variants as fn(&khora_core::ui::editor::dock::SplitAxis);
-    is_debug::<khora_core::ui::editor::dock::SplitAxis>();
-    is_clone::<khora_core::ui::editor::dock::SplitAxis>();
-    is_copy::<khora_core::ui::editor::dock::SplitAxis>();
-    is_partial_eq::<khora_core::ui::editor::dock::SplitAxis>();
-    is_eq::<khora_core::ui::editor::dock::SplitAxis>();
-    is_serialize::<khora_core::ui::editor::dock::SplitAxis>();
-    is_deserialize_owned::<khora_core::ui::editor::dock::SplitAxis>();
-    let _ = type_name::<khora_core::ui::editor::dock::SplitId>();
-    let _ = type_name::<khora_core::ui::editor::SplitId>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::SplitId>,
-        PhantomData::<khora_core::ui::editor::dock::SplitId>,
-    );
-    let _ = split_id_fields as fn(&khora_core::ui::editor::dock::SplitId);
-    is_debug::<khora_core::ui::editor::dock::SplitId>();
-    is_clone::<khora_core::ui::editor::dock::SplitId>();
-    is_copy::<khora_core::ui::editor::dock::SplitId>();
-    is_partial_eq::<khora_core::ui::editor::dock::SplitId>();
-    is_eq::<khora_core::ui::editor::dock::SplitId>();
-    is_hash::<khora_core::ui::editor::dock::SplitId>();
-    is_serialize::<khora_core::ui::editor::dock::SplitId>();
-    is_deserialize_owned::<khora_core::ui::editor::dock::SplitId>();
-    let _ = type_name::<khora_core::ui::editor::dock::SplitterLayout>();
-    let _ = type_name::<khora_core::ui::editor::SplitterLayout>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::SplitterLayout>,
-        PhantomData::<khora_core::ui::editor::dock::SplitterLayout>,
-    );
-    let _ = splitter_layout_fields as fn(&khora_core::ui::editor::dock::SplitterLayout);
-    is_debug::<khora_core::ui::editor::dock::SplitterLayout>();
-    is_clone::<khora_core::ui::editor::dock::SplitterLayout>();
-    is_partial_eq::<khora_core::ui::editor::dock::SplitterLayout>();
-    let _ = type_name::<khora_core::ui::editor::dock::TabGroupLayout>();
-    let _ = type_name::<khora_core::ui::editor::TabGroupLayout>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::TabGroupLayout>,
-        PhantomData::<khora_core::ui::editor::dock::TabGroupLayout>,
-    );
-    let _ = tab_group_layout_fields as fn(&khora_core::ui::editor::dock::TabGroupLayout);
-    let _ = khora_core::ui::editor::dock::TabGroupLayout::active_panel;
-    is_debug::<khora_core::ui::editor::dock::TabGroupLayout>();
-    is_clone::<khora_core::ui::editor::dock::TabGroupLayout>();
-    is_partial_eq::<khora_core::ui::editor::dock::TabGroupLayout>();
-    let _ = khora_core::ui::editor::dock::ratio_from_pointer;
-    let _ = khora_core::ui::editor::ratio_from_pointer;
-    same_item(
-        &khora_core::ui::editor::ratio_from_pointer,
-        &khora_core::ui::editor::dock::ratio_from_pointer,
-    );
-    let _ = khora_core::ui::editor::dock::zone_at;
-    let _ = khora_core::ui::editor::zone_at;
-    same_item(
-        &khora_core::ui::editor::zone_at,
-        &khora_core::ui::editor::dock::zone_at,
-    );
-    let _ = type_name::<khora_core::ui::editor::gizmo::GizmoKind>();
-    let _ = type_name::<khora_core::ui::editor::GizmoKind>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::GizmoKind>,
-        PhantomData::<khora_core::ui::editor::gizmo::GizmoKind>,
-    );
-    let _ = gizmo_kind_variants as fn(&khora_core::ui::editor::gizmo::GizmoKind);
-    is_debug::<khora_core::ui::editor::gizmo::GizmoKind>();
-    is_clone::<khora_core::ui::editor::gizmo::GizmoKind>();
     let _ = type_name::<khora_core::ui::editor::gizmo::GizmoLineInstance>();
     let _ = type_name::<khora_core::ui::editor::GizmoLineInstance>();
     same_type(
@@ -1114,103 +807,6 @@ fn module_ui_paths_still_resolve() {
     is_copy::<khora_core::ui::editor::gizmo::GizmoLineInstance>();
     is_pod::<khora_core::ui::editor::gizmo::GizmoLineInstance>();
     is_zeroable::<khora_core::ui::editor::gizmo::GizmoLineInstance>();
-    let _ = type_name::<khora_core::ui::editor::gizmo::SelectionGizmo>();
-    let _ = type_name::<khora_core::ui::editor::SelectionGizmo>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::SelectionGizmo>,
-        PhantomData::<khora_core::ui::editor::gizmo::SelectionGizmo>,
-    );
-    let _ = selection_gizmo_fields as fn(&khora_core::ui::editor::gizmo::SelectionGizmo);
-    is_debug::<khora_core::ui::editor::gizmo::SelectionGizmo>();
-    is_clone::<khora_core::ui::editor::gizmo::SelectionGizmo>();
-    let _ = khora_core::ui::editor::gizmo::camera_frustum;
-    let _ = khora_core::ui::editor::gizmo::directional_light_icon;
-    let _ = khora_core::ui::editor::gizmo::generate_selection_gizmos;
-    let _ = khora_core::ui::editor::generate_selection_gizmos;
-    same_item(
-        &khora_core::ui::editor::generate_selection_gizmos,
-        &khora_core::ui::editor::gizmo::generate_selection_gizmos,
-    );
-    let _ = khora_core::ui::editor::gizmo::gizmo_world_size;
-    let _ = khora_core::ui::editor::gizmo_world_size;
-    same_item(
-        &khora_core::ui::editor::gizmo_world_size,
-        &khora_core::ui::editor::gizmo::gizmo_world_size,
-    );
-    let _ = khora_core::ui::editor::gizmo::manipulator;
-    let _ = khora_core::ui::editor::gizmo::transform_axes;
-    let _ = khora_core::ui::editor::gizmo::wireframe_cube;
-    let _ = khora_core::ui::editor::gizmo::wireframe_sphere;
-    let _ = type_name::<khora_core::ui::editor::gizmo_interact::GizmoAxis>();
-    let _ = type_name::<khora_core::ui::editor::GizmoAxis>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::GizmoAxis>,
-        PhantomData::<khora_core::ui::editor::gizmo_interact::GizmoAxis>,
-    );
-    let _ = gizmo_axis_variants as fn(&khora_core::ui::editor::gizmo_interact::GizmoAxis);
-    let _ = khora_core::ui::editor::gizmo_interact::GizmoAxis::ALL;
-    let _ = khora_core::ui::editor::gizmo_interact::GizmoAxis::index;
-    let _ = khora_core::ui::editor::gizmo_interact::GizmoAxis::color;
-    is_debug::<khora_core::ui::editor::gizmo_interact::GizmoAxis>();
-    is_clone::<khora_core::ui::editor::gizmo_interact::GizmoAxis>();
-    is_copy::<khora_core::ui::editor::gizmo_interact::GizmoAxis>();
-    is_partial_eq::<khora_core::ui::editor::gizmo_interact::GizmoAxis>();
-    is_eq::<khora_core::ui::editor::gizmo_interact::GizmoAxis>();
-    is_hash::<khora_core::ui::editor::gizmo_interact::GizmoAxis>();
-    let _ = type_name::<khora_core::ui::editor::gizmo_interact::GizmoBasis>();
-    let _ = type_name::<khora_core::ui::editor::GizmoBasis>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::GizmoBasis>,
-        PhantomData::<khora_core::ui::editor::gizmo_interact::GizmoBasis>,
-    );
-    let _ = type_name::<khora_core::ui::editor::gizmo_interact::GizmoDelta>();
-    let _ = type_name::<khora_core::ui::editor::GizmoDelta>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::GizmoDelta>,
-        PhantomData::<khora_core::ui::editor::gizmo_interact::GizmoDelta>,
-    );
-    let _ = gizmo_delta_variants as fn(&khora_core::ui::editor::gizmo_interact::GizmoDelta);
-    let _ = khora_core::ui::editor::gizmo_interact::GizmoDelta::apply;
-    is_debug::<khora_core::ui::editor::gizmo_interact::GizmoDelta>();
-    is_clone::<khora_core::ui::editor::gizmo_interact::GizmoDelta>();
-    is_copy::<khora_core::ui::editor::gizmo_interact::GizmoDelta>();
-    is_partial_eq::<khora_core::ui::editor::gizmo_interact::GizmoDelta>();
-    let _ = type_name::<khora_core::ui::editor::gizmo_interact::GizmoDrag>();
-    let _ = type_name::<khora_core::ui::editor::GizmoDrag>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::GizmoDrag>,
-        PhantomData::<khora_core::ui::editor::gizmo_interact::GizmoDrag>,
-    );
-    let _ = gizmo_drag_fields as fn(&khora_core::ui::editor::gizmo_interact::GizmoDrag);
-    let _ = khora_core::ui::editor::gizmo_interact::GizmoDrag::begin;
-    let _ = khora_core::ui::editor::gizmo_interact::GizmoDrag::update;
-    is_debug::<khora_core::ui::editor::gizmo_interact::GizmoDrag>();
-    is_clone::<khora_core::ui::editor::gizmo_interact::GizmoDrag>();
-    is_copy::<khora_core::ui::editor::gizmo_interact::GizmoDrag>();
-    let _ = type_name::<khora_core::ui::editor::gizmo_interact::GizmoTransform>();
-    let _ = type_name::<khora_core::ui::editor::GizmoTransform>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::GizmoTransform>,
-        PhantomData::<khora_core::ui::editor::gizmo_interact::GizmoTransform>,
-    );
-    let _ = gizmo_transform_fields as fn(&khora_core::ui::editor::gizmo_interact::GizmoTransform);
-    is_debug::<khora_core::ui::editor::gizmo_interact::GizmoTransform>();
-    is_clone::<khora_core::ui::editor::gizmo_interact::GizmoTransform>();
-    is_copy::<khora_core::ui::editor::gizmo_interact::GizmoTransform>();
-    is_partial_eq::<khora_core::ui::editor::gizmo_interact::GizmoTransform>();
-    let _ = khora_core::ui::editor::gizmo_interact::gizmo_basis;
-    let _ = khora_core::ui::editor::gizmo_basis;
-    same_item(
-        &khora_core::ui::editor::gizmo_basis,
-        &khora_core::ui::editor::gizmo_interact::gizmo_basis,
-    );
-    let _ = khora_core::ui::editor::gizmo_interact::perpendiculars;
-    let _ = khora_core::ui::editor::gizmo_interact::pick_handle;
-    let _ = khora_core::ui::editor::pick_handle;
-    same_item(
-        &khora_core::ui::editor::pick_handle,
-        &khora_core::ui::editor::gizmo_interact::pick_handle,
-    );
     let _ = type_name::<khora_core::ui::editor::icons::Icon>();
     let _ = type_name::<khora_core::ui::editor::Icon>();
     same_type(
@@ -1225,14 +821,6 @@ fn module_ui_paths_still_resolve() {
     is_partial_eq::<khora_core::ui::editor::icons::Icon>();
     is_eq::<khora_core::ui::editor::icons::Icon>();
     is_hash::<khora_core::ui::editor::icons::Icon>();
-    let _ = type_name::<khora_core::ui::editor::log_capture::EditorLogCapture>();
-    let _ = type_name::<khora_core::ui::editor::EditorLogCapture>();
-    same_type(
-        PhantomData::<khora_core::ui::editor::EditorLogCapture>,
-        PhantomData::<khora_core::ui::editor::log_capture::EditorLogCapture>,
-    );
-    let _ = khora_core::ui::editor::log_capture::EditorLogCapture::new;
-    is_log::<khora_core::ui::editor::log_capture::EditorLogCapture>();
     // trait `khora_core::ui::editor::panel::EditorPanel`: see `editor_panel_trait_items`
     // trait `khora_core::ui::editor::EditorPanel`: see `editor_panel_trait_items`
     // trait `khora_core::ui::EditorPanel`: see `editor_panel_trait_items`

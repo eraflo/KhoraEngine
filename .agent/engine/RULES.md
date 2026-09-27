@@ -15,7 +15,7 @@ and [`security-privacy.md`](./security-privacy.md).
 - Naming: `snake_case` (Rust), `PascalCase` (types), `kebab-case` (crate names). See [`conventions.md`](./conventions.md).
 - Add `#[cfg(test)]` unit tests for any new public function.
 - Add a `// SAFETY:` comment on every `unsafe` block explaining why the invariant holds.
-- Log via `log::{info,warn,error,debug,trace}` — never `println!` / `eprintln!`. **Sole exception:** the engine's own log sink (`EditorLogCapture::log` in `khora-core/src/ui/editor/log_capture.rs`) writes to stderr with `eprintln!` because a `log::Log` implementation calling `log::*` would recurse infinitely.
+- Log via `log::{info,warn,error,debug,trace}` — never `println!` / `eprintln!`. **Sole exception:** the engine's own log sink (`EditorLogCapture::log` in `khora-editor/src/log_capture.rs`) writes to stderr with `eprintln!` because a `log::Log` implementation calling `log::*` would recurse infinitely.
 - Validate at system boundaries (user input, file I/O, GPU errors). Trust internal API contracts.
 - Write WGSL for the wgpu backend — no GLSL or SPIR-V.
 

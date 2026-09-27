@@ -15,7 +15,7 @@
 //! A dual-output logger that captures log entries for the editor console
 //! while also printing to stderr for development.
 
-use super::state::{LogEntry, LogLevel};
+use khora_sdk::editor_ui::{LogEntry, LogLevel};
 use std::sync::{Arc, Mutex};
 
 /// Maximum number of log entries kept in memory.

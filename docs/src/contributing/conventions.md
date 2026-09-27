@@ -23,7 +23,7 @@ ever disagree, those files win; this page is a digest, not a duplicate.
     unrecoverable errors before bubbling a `Result`, `debug`/`trace` for gated
     hot-path diagnostics.
 - **One exception:** the engine's own log sink,
-  `EditorLogCapture::log` (in `khora-core/src/ui/editor/log_capture.rs`), writes to
+  `EditorLogCapture::log` (in `khora-editor/src/log_capture.rs`), writes to
   stderr with `eprintln!` — a `log::Log` implementation that called `log::*` would
   recurse forever. That is the only sanctioned `eprintln!` in the codebase.
 

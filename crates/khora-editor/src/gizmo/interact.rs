@@ -31,8 +31,8 @@
 //! began ([`GizmoDelta::apply`]) rather than accumulated frame by frame, so a
 //! long drag cannot drift away from where the cursor says it should be.
 
-use super::state::GizmoMode;
-use crate::math::{Quaternion, Ray, Vec3};
+use khora_sdk::editor_ui::GizmoMode;
+use khora_sdk::khora_core::math::{Quaternion, Ray, Vec3};
 
 /// How close the cursor ray must come to a handle to grab it, as a fraction of
 /// the gizmo's world size. Generous on purpose — a handle you have to hit

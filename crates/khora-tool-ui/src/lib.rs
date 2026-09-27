@@ -42,6 +42,7 @@
 #![deny(missing_docs)]
 
 pub mod brand;
+pub mod dock;
 pub mod fonts;
 pub mod logo;
 #[cfg(any(test, feature = "testing"))]

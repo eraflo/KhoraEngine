@@ -366,11 +366,6 @@ fn module_crate_root_paths_still_resolve() {
         PhantomData::<khora_sdk::Backends>,
         PhantomData::<khora_core::Backends>,
     );
-    let _ = type_name::<khora_sdk::CommandHistory>();
-    same_type(
-        PhantomData::<khora_sdk::CommandHistory>,
-        PhantomData::<khora_core::ui::editor::CommandHistory>,
-    );
     let _ = type_name::<khora_sdk::ComponentJson>();
     same_type(
         PhantomData::<khora_sdk::ComponentJson>,
@@ -405,21 +400,6 @@ fn module_crate_root_paths_still_resolve() {
     same_type(
         PhantomData::<khora_sdk::DefaultMixBus>,
         PhantomData::<khora_infra::audio::DefaultMixBus>,
-    );
-    let _ = type_name::<khora_sdk::EditorCamera>();
-    same_type(
-        PhantomData::<khora_sdk::EditorCamera>,
-        PhantomData::<khora_core::ui::EditorCamera>,
-    );
-    let _ = type_name::<khora_sdk::EditorCommand>();
-    same_type(
-        PhantomData::<khora_sdk::EditorCommand>,
-        PhantomData::<khora_core::ui::editor::EditorCommand>,
-    );
-    let _ = type_name::<khora_sdk::EditorLogCapture>();
-    same_type(
-        PhantomData::<khora_sdk::EditorLogCapture>,
-        PhantomData::<khora_core::ui::editor::EditorLogCapture>,
     );
     let _ = type_name::<khora_sdk::EditorMode>();
     same_type(
@@ -565,11 +545,6 @@ fn module_crate_root_paths_still_resolve() {
     let _ = khora_sdk::GameWorld::inner_world;
     let _ = khora_sdk::GameWorld::inner_world_mut;
     is_default::<khora_sdk::GameWorld>();
-    let _ = type_name::<khora_sdk::GizmoKind>();
-    same_type(
-        PhantomData::<khora_sdk::GizmoKind>,
-        PhantomData::<khora_core::ui::editor::GizmoKind>,
-    );
     let _ = type_name::<khora_sdk::GizmoLineInstance>();
     same_type(
         PhantomData::<khora_sdk::GizmoLineInstance>,
@@ -936,11 +911,6 @@ fn module_crate_root_paths_still_resolve() {
     is_clone::<khora_sdk::WindowIcon>();
     is_debug::<khora_sdk::WindowIcon>();
     // trait `khora_sdk::WindowProvider`: see `window_provider_trait_items`
-    let _ = khora_sdk::generate_selection_gizmos;
-    same_item(
-        &khora_sdk::generate_selection_gizmos,
-        &khora_core::ui::editor::generate_selection_gizmos,
-    );
     let _ = khora_sdk::instantiate_subtree;
     same_item(
         &khora_sdk::instantiate_subtree,
@@ -1408,13 +1378,9 @@ fn window_config_defaults_are_unchanged() {
 
 #[allow(unused_imports)]
 mod glob_reexports {
-    use khora_sdk::editor_ui::camera as _; // module
-    use khora_sdk::editor_ui::command as _; // module
-    use khora_sdk::editor_ui::dock as _; // module
     use khora_sdk::editor_ui::gizmo as _; // module
-    use khora_sdk::editor_ui::gizmo_interact as _; // module
     use khora_sdk::editor_ui::icons as _; // module
-    use khora_sdk::editor_ui::log_capture as _; // module
+    use khora_sdk::editor_ui::overlay as _; // module
     use khora_sdk::editor_ui::panel as _; // module
     use khora_sdk::editor_ui::shell as _; // module
     use khora_sdk::editor_ui::state as _; // module
@@ -1483,44 +1449,8 @@ fn glob_reexports_still_name_the_same_items() {
         PhantomData::<khora_core::ui::editor::AssetEntry>,
     );
     same_type(
-        PhantomData::<khora_sdk::editor_ui::CommandHistory>,
-        PhantomData::<khora_core::ui::editor::CommandHistory>,
-    );
-    same_type(
         PhantomData::<khora_sdk::editor_ui::ComponentJson>,
         PhantomData::<khora_core::ui::editor::ComponentJson>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::DockLayout>,
-        PhantomData::<khora_core::ui::editor::DockLayout>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::DockNode>,
-        PhantomData::<khora_core::ui::editor::DockNode>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::DockRect>,
-        PhantomData::<khora_core::ui::editor::DockRect>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::DockTree>,
-        PhantomData::<khora_core::ui::editor::DockTree>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::DropZone>,
-        PhantomData::<khora_core::ui::editor::DropZone>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::EditorCamera>,
-        PhantomData::<khora_core::ui::editor::EditorCamera>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::EditorCommand>,
-        PhantomData::<khora_core::ui::editor::EditorCommand>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::EditorLogCapture>,
-        PhantomData::<khora_core::ui::editor::EditorLogCapture>,
     );
     same_type(
         PhantomData::<khora_sdk::editor_ui::EditorMode>,
@@ -1539,36 +1469,12 @@ fn glob_reexports_still_name_the_same_items() {
         PhantomData::<khora_core::ui::editor::FontFamilyHint>,
     );
     same_type(
-        PhantomData::<khora_sdk::editor_ui::GizmoAxis>,
-        PhantomData::<khora_core::ui::editor::GizmoAxis>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::GizmoBasis>,
-        PhantomData::<khora_core::ui::editor::GizmoBasis>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::GizmoDelta>,
-        PhantomData::<khora_core::ui::editor::GizmoDelta>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::GizmoDrag>,
-        PhantomData::<khora_core::ui::editor::GizmoDrag>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::GizmoKind>,
-        PhantomData::<khora_core::ui::editor::GizmoKind>,
-    );
-    same_type(
         PhantomData::<khora_sdk::editor_ui::GizmoLineInstance>,
         PhantomData::<khora_core::ui::editor::GizmoLineInstance>,
     );
     same_type(
         PhantomData::<khora_sdk::editor_ui::GizmoMode>,
         PhantomData::<khora_core::ui::editor::GizmoMode>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::GizmoTransform>,
-        PhantomData::<khora_core::ui::editor::GizmoTransform>,
     );
     same_type(
         PhantomData::<khora_sdk::editor_ui::Icon>,
@@ -1611,28 +1517,8 @@ fn glob_reexports_still_name_the_same_items() {
         PhantomData::<khora_core::ui::editor::SceneNode>,
     );
     same_type(
-        PhantomData::<khora_sdk::editor_ui::SelectionGizmo>,
-        PhantomData::<khora_core::ui::editor::SelectionGizmo>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::SplitAxis>,
-        PhantomData::<khora_core::ui::editor::SplitAxis>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::SplitId>,
-        PhantomData::<khora_core::ui::editor::SplitId>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::SplitterLayout>,
-        PhantomData::<khora_core::ui::editor::SplitterLayout>,
-    );
-    same_type(
         PhantomData::<khora_sdk::editor_ui::StatusBarData>,
         PhantomData::<khora_core::ui::editor::StatusBarData>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::editor_ui::TabGroupLayout>,
-        PhantomData::<khora_core::ui::editor::TabGroupLayout>,
     );
     same_type(
         PhantomData::<khora_sdk::editor_ui::TextAlign>,
@@ -1641,30 +1527,6 @@ fn glob_reexports_still_name_the_same_items() {
     same_type(
         PhantomData::<khora_sdk::editor_ui::ViewportTextureHandle>,
         PhantomData::<khora_core::ui::editor::ViewportTextureHandle>,
-    );
-    same_item(
-        &khora_sdk::editor_ui::generate_selection_gizmos,
-        &khora_core::ui::editor::generate_selection_gizmos,
-    );
-    same_item(
-        &khora_sdk::editor_ui::gizmo_basis,
-        &khora_core::ui::editor::gizmo_basis,
-    );
-    same_item(
-        &khora_sdk::editor_ui::gizmo_world_size,
-        &khora_core::ui::editor::gizmo_world_size,
-    );
-    same_item(
-        &khora_sdk::editor_ui::pick_handle,
-        &khora_core::ui::editor::pick_handle,
-    );
-    same_item(
-        &khora_sdk::editor_ui::ratio_from_pointer,
-        &khora_core::ui::editor::ratio_from_pointer,
-    );
-    same_item(
-        &khora_sdk::editor_ui::zone_at,
-        &khora_core::ui::editor::zone_at,
     );
     // `pub use khora_core::math::*` at `khora_sdk::prelude::math`
     same_type(
@@ -1971,33 +1833,21 @@ fn glob_reexports_still_name_the_same_items() {
 #[allow(unused_imports)]
 mod paths_used_by_other_crates {
     use khora_sdk::editor_ui as _; // khora-editor (glob re-export)
-    use khora_sdk::editor_ui::generate_selection_gizmos as _; // khora-editor
-    use khora_sdk::editor_ui::gizmo::manipulator as _; // khora-editor
-    use khora_sdk::editor_ui::gizmo_basis as _; // khora-editor
-    use khora_sdk::editor_ui::gizmo_world_size as _; // khora-editor
-    use khora_sdk::editor_ui::pick_handle as _; // khora-editor
     use khora_sdk::editor_ui::viewport_texture::ViewportTextureHandle as _; // khora-editor
     use khora_sdk::editor_ui::AssetEntry as _; // khora-editor
-    use khora_sdk::editor_ui::EditorCommand as _; // khora-editor
     use khora_sdk::editor_ui::EditorMode as _; // khora-editor
     use khora_sdk::editor_ui::EditorPanel as _; // khora-editor
     use khora_sdk::editor_ui::EditorState as _; // khora-editor
     use khora_sdk::editor_ui::FontFamilyHint as _; // khora-editor
     use khora_sdk::editor_ui::FontHandle as _; // khora-editor
     use khora_sdk::editor_ui::FontPack as _; // khora-editor
-    use khora_sdk::editor_ui::GizmoBasis as _; // khora-editor
-    use khora_sdk::editor_ui::GizmoDelta as _; // khora-editor
-    use khora_sdk::editor_ui::GizmoDrag as _; // khora-editor
-    use khora_sdk::editor_ui::GizmoKind as _; // khora-editor
     use khora_sdk::editor_ui::GizmoLineInstance as _; // khora-editor
-    use khora_sdk::editor_ui::GizmoTransform as _; // khora-editor
     use khora_sdk::editor_ui::Icon as _; // khora-editor
     use khora_sdk::editor_ui::InspectedEntity as _; // khora-editor
     use khora_sdk::editor_ui::Interaction as _; // khora-editor
     use khora_sdk::editor_ui::NamedFont as _; // khora-editor
     use khora_sdk::editor_ui::PropertyEdit as _; // khora-editor
     use khora_sdk::editor_ui::SceneNode as _; // khora-editor
-    use khora_sdk::editor_ui::SelectionGizmo as _; // khora-editor
     use khora_sdk::editor_ui::TextAlign as _; // khora-editor
     use khora_sdk::editor_ui::UiBuilder as _; // khora-editor
     use khora_sdk::editor_ui::UiTheme as _; // khora-editor
@@ -2026,9 +1876,6 @@ mod paths_used_by_other_crates {
     use khora_sdk::khora_core::renderer::light::LightType as _; // khora-editor
     use khora_sdk::khora_core::renderer::light::PointLight as _; // khora-editor
     use khora_sdk::khora_core::renderer::light::SpotLight as _; // khora-editor
-    use khora_sdk::khora_core::ui::editor::dock::zone_at as _; // khora-editor
-    use khora_sdk::khora_core::ui::editor::dock::DockTree as _; // khora-editor
-    use khora_sdk::khora_core::ui::editor::dock::DropZone as _; // khora-editor
     use khora_sdk::khora_core::ui::EditorOverlay as _; // khora-editor
     use khora_sdk::khora_core::ui::OverlayScreenDescriptor as _; // khora-editor
     use khora_sdk::khora_data::ecs::material_to_json as _; // khora-editor
@@ -2097,14 +1944,11 @@ mod paths_used_by_other_crates {
     use khora_sdk::AudioDevice as _; // khora-editor, sandbox
     use khora_sdk::AudioMixBus as _; // khora-editor, sandbox
     use khora_sdk::AudioStream as _; // khora-editor, sandbox
-    use khora_sdk::CommandHistory as _; // khora-editor
     use khora_sdk::ComponentRegistration as _; // khora-editor
     use khora_sdk::CpalAudioDevice as _; // khora-editor, sandbox
     use khora_sdk::DccContext as _; // khora-editor
     use khora_sdk::DccService as _; // khora-editor, sandbox
     use khora_sdk::DefaultMixBus as _; // khora-editor, sandbox
-    use khora_sdk::EditorCamera as _; // khora-editor
-    use khora_sdk::EditorLogCapture as _; // khora-editor
     use khora_sdk::EditorMode as _; // khora-editor
     use khora_sdk::EditorShell as _; // khora-editor
     use khora_sdk::EditorState as _; // khora-editor
@@ -2156,7 +2000,6 @@ mod paths_used_by_other_crates {
 
 #[test]
 fn associated_items_used_by_other_crates_still_resolve() {
-    let _ = khora_sdk::editor_ui::CommandHistory::default; // khora-editor
     let _ = khora_sdk::editor_ui::FontFamilyHint::Monospace; // khora-editor
     let _ = khora_sdk::khora_core::asset::AssetUUID::new_v5; // sandbox
     let _ = khora_sdk::khora_core::ui::UiTheme::default; // khora-editor

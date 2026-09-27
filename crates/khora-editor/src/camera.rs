@@ -16,10 +16,10 @@
 //!
 //! This is a backend-agnostic camera controller. The concrete input
 //! handling is performed by the editor application, which translates
-//! [`InputEvent`](crate::platform) into the methods exposed here.
+//! `InputEvent` into the methods exposed here.
 
-use crate::math::{Mat4, Vec3, FRAC_PI_4};
-use crate::renderer::api::resource::view::ViewInfo;
+use khora_sdk::khora_core::math::{Mat4, Vec3, FRAC_PI_4};
+use khora_sdk::khora_core::renderer::api::resource::view::ViewInfo;
 
 /// An orbit camera controller for the editor viewport.
 ///
@@ -104,7 +104,8 @@ impl EditorCamera {
         self.distance = self.distance.clamp(self.min_distance, self.max_distance);
     }
 
-    /// Focus the camera on a given world-space point.
+    /// Focus the camera on a given world-space point. Not bound to an input yet.
+    #[allow(dead_code)]
     pub fn focus_on(&mut self, point: Vec3) {
         self.target = point;
     }
@@ -142,7 +143,13 @@ impl EditorCamera {
     ///
     /// `x` and `y` are in pixels (top-left origin), `width`/`height`
     /// are the viewport dimensions in pixels.
-    pub fn screen_to_ray(&self, x: f32, y: f32, width: f32, height: f32) -> crate::physics::Ray {
+    pub fn screen_to_ray(
+        &self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    ) -> khora_sdk::khora_core::physics::Ray {
         let view_info = self.view_info(width, height);
         let vp = view_info.view_projection_matrix();
         let inv_vp = vp.inverse().unwrap_or(Mat4::IDENTITY);
@@ -151,8 +158,8 @@ impl EditorCamera {
         let ndc_x = (2.0 * x / width) - 1.0;
         let ndc_y = 1.0 - (2.0 * y / height);
 
-        let near_ndc = crate::math::Vec4::new(ndc_x, ndc_y, 0.0, 1.0);
-        let far_ndc = crate::math::Vec4::new(ndc_x, ndc_y, 1.0, 1.0);
+        let near_ndc = khora_sdk::khora_core::math::Vec4::new(ndc_x, ndc_y, 0.0, 1.0);
+        let far_ndc = khora_sdk::khora_core::math::Vec4::new(ndc_x, ndc_y, 1.0, 1.0);
 
         let near_world = inv_vp * near_ndc;
         let far_world = inv_vp * far_ndc;
@@ -162,7 +169,7 @@ impl EditorCamera {
 
         let direction = (far_pt - near_pt).normalize();
 
-        crate::physics::Ray {
+        khora_sdk::khora_core::physics::Ray {
             origin: near_pt,
             direction,
         }

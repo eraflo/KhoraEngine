@@ -118,15 +118,12 @@ pub use khora_control::Context as DccContext;
 pub use khora_core::agent::{AgentImportance, ExecutionPhase, ExecutionTiming};
 pub use khora_core::control::gorna::{AgentHints, AgentId, AgentStatus, EngineHint, StrategyId};
 pub use khora_core::telemetry::{MonitoredResourceType, TelemetryEvent};
-pub use khora_core::ui::editor::generate_selection_gizmos;
-pub use khora_core::ui::editor::gizmo::GizmoKind;
 pub use khora_core::ui::editor::gizmo::GizmoLineInstance;
 pub use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
 pub use khora_core::ui::editor::{
-    AssetEntry, CommandHistory, ComponentJson, EditorCamera, EditorCommand, EditorLogCapture,
-    EditorMode, EditorPanel, EditorShell, EditorState, EntityIcon, FontFamilyHint, GizmoMode, Icon,
-    InspectedEntity, Interaction, LogEntry, LogLevel, PanelLocation, PlayMode, PropertyEdit,
-    SceneNode, StatusBarData, TextAlign, UiBuilder,
+    AssetEntry, ComponentJson, EditorMode, EditorPanel, EditorShell, EditorState, EntityIcon,
+    FontFamilyHint, GizmoMode, Icon, InspectedEntity, Interaction, LogEntry, LogLevel,
+    PanelLocation, PlayMode, PropertyEdit, SceneNode, StatusBarData, TextAlign, UiBuilder,
 };
 pub use khora_core::ui::fonts::{FontHandle, FontPack, NamedFont};
 pub use khora_core::ui::theme::UiTheme;

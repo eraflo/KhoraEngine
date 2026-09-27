@@ -21,6 +21,7 @@
 //! menu live under `widgets/inspector/` so they can be reused by other
 //! panels and stay independently testable.
 
+use crate::commands::CommandHistory;
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;

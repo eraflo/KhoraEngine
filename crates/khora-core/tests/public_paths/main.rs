@@ -3333,26 +3333,12 @@ mod paths_used_by_other_crates {
     use khora_core::time::Time as _; // khora-control, khora-sdk
     use khora_core::time::DEFAULT_FIXED_DELTA_SECONDS as _; // khora-control
     use khora_core::ui::editor as _; // khora-sdk (glob re-export)
-    use khora_core::ui::editor::dock::ratio_from_pointer as _; // khora-tool-ui
-    use khora_core::ui::editor::dock::zone_at as _; // khora-editor (as khora_sdk::khora_core::…)
-    use khora_core::ui::editor::dock::DockRect as _; // khora-tool-ui
-    use khora_core::ui::editor::dock::DockTree as _; // khora-editor (as khora_sdk::khora_core::…), khora-tool-ui
-    use khora_core::ui::editor::dock::DropZone as _; // khora-editor (as khora_sdk::khora_core::…), khora-tool-ui
-    use khora_core::ui::editor::dock::SplitAxis as _; // khora-tool-ui
-    use khora_core::ui::editor::dock::SplitterLayout as _; // khora-tool-ui
-    use khora_core::ui::editor::dock::TabGroupLayout as _; // khora-tool-ui
-    use khora_core::ui::editor::generate_selection_gizmos as _; // khora-editor (as khora_sdk::editor_ui::…), khora-sdk
-    use khora_core::ui::editor::gizmo::manipulator as _; // khora-editor (as khora_sdk::editor_ui::…)
-    use khora_core::ui::editor::gizmo::GizmoKind as _; // khora-sdk
     use khora_core::ui::editor::gizmo::GizmoLineInstance as _; // khora-sdk
-    use khora_core::ui::editor::gizmo_basis as _; // khora-editor (as khora_sdk::editor_ui::…)
-    use khora_core::ui::editor::gizmo_world_size as _; // khora-editor (as khora_sdk::editor_ui::…)
     use khora_core::ui::editor::overlay::EditorOverlay as _; // khora-infra
     use khora_core::ui::editor::overlay::OverlayError as _; // khora-infra
     use khora_core::ui::editor::overlay::OverlayScreenDescriptor as _; // khora-infra
     use khora_core::ui::editor::panel::EditorPanel as _; // khora-infra
     use khora_core::ui::editor::panel::PanelLocation as _; // khora-infra
-    use khora_core::ui::editor::pick_handle as _; // khora-editor (as khora_sdk::editor_ui::…)
     use khora_core::ui::editor::shell::EditorShell as _; // khora-infra
     use khora_core::ui::editor::state::EditorState as _; // khora-infra
     use khora_core::ui::editor::state::StatusBarData as _; // khora-infra
@@ -3364,11 +3350,7 @@ mod paths_used_by_other_crates {
     use khora_core::ui::editor::ui_builder::TextAlign::Center as _; // khora-tool-ui
     use khora_core::ui::editor::viewport_texture::ViewportTextureHandle as _; // khora-editor (as khora_sdk::editor_ui::…), khora-infra, khora-sdk, khora-tool-ui
     use khora_core::ui::editor::AssetEntry as _; // khora-editor (as khora_sdk::editor_ui::…), khora-sdk
-    use khora_core::ui::editor::CommandHistory as _; // khora-sdk
     use khora_core::ui::editor::ComponentJson as _; // khora-sdk
-    use khora_core::ui::editor::EditorCamera as _; // khora-sdk
-    use khora_core::ui::editor::EditorCommand as _; // khora-editor (as khora_sdk::editor_ui::…), khora-sdk
-    use khora_core::ui::editor::EditorLogCapture as _; // khora-sdk
     use khora_core::ui::editor::EditorMode as _; // khora-editor (as khora_sdk::editor_ui::…), khora-sdk
     use khora_core::ui::editor::EditorPanel as _; // khora-editor (as khora_sdk::editor_ui::…), khora-sdk
     use khora_core::ui::editor::EditorShell as _; // khora-sdk
@@ -3376,13 +3358,8 @@ mod paths_used_by_other_crates {
     use khora_core::ui::editor::EntityIcon as _; // khora-sdk
     use khora_core::ui::editor::FontFamilyHint as _; // khora-editor (as khora_sdk::editor_ui::…), khora-sdk
     use khora_core::ui::editor::FontFamilyHint::Monospace as _; // khora-editor (as khora_sdk::editor_ui::…)
-    use khora_core::ui::editor::GizmoBasis as _; // khora-editor (as khora_sdk::editor_ui::…)
-    use khora_core::ui::editor::GizmoDelta as _; // khora-editor (as khora_sdk::editor_ui::…)
-    use khora_core::ui::editor::GizmoDrag as _; // khora-editor (as khora_sdk::editor_ui::…)
-    use khora_core::ui::editor::GizmoKind as _; // khora-editor (as khora_sdk::editor_ui::…)
     use khora_core::ui::editor::GizmoLineInstance as _; // khora-data, khora-editor (as khora_sdk::editor_ui::…), khora-lanes
     use khora_core::ui::editor::GizmoMode as _; // khora-sdk
-    use khora_core::ui::editor::GizmoTransform as _; // khora-editor (as khora_sdk::editor_ui::…)
     use khora_core::ui::editor::Icon as _; // khora-editor (as khora_sdk::editor_ui::…), khora-sdk, khora-tool-ui
     use khora_core::ui::editor::InlineEditEvent as _; // khora-sdk
     use khora_core::ui::editor::InspectedEntity as _; // khora-editor (as khora_sdk::editor_ui::…), khora-sdk
@@ -3393,7 +3370,6 @@ mod paths_used_by_other_crates {
     use khora_core::ui::editor::PlayMode as _; // khora-sdk
     use khora_core::ui::editor::PropertyEdit as _; // khora-editor (as khora_sdk::editor_ui::…), khora-sdk
     use khora_core::ui::editor::SceneNode as _; // khora-editor (as khora_sdk::editor_ui::…), khora-sdk
-    use khora_core::ui::editor::SelectionGizmo as _; // khora-editor (as khora_sdk::editor_ui::…)
     use khora_core::ui::editor::StatusBarData as _; // khora-sdk
     use khora_core::ui::editor::TextAlign as _; // khora-editor (as khora_sdk::editor_ui::…), khora-sdk
     use khora_core::ui::editor::UiBuilder as _; // khora-editor (as khora_sdk::editor_ui::…), khora-infra, khora-sdk, khora-tool-ui
@@ -3489,5 +3465,4 @@ fn associated_items_used_by_other_crates_still_resolve() {
         khora_core::telemetry::MetricId::new; // khora-control
     let _ = khora_core::time::Time::default; // khora-agents, khora-sdk
     let _ = khora_core::ui::UiTheme::default; // khora-editor (as khora_sdk::khora_core::…)
-    let _ = khora_core::ui::editor::CommandHistory::default; // khora-editor (as khora_sdk::editor_ui::…)
 }

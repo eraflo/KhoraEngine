@@ -15,14 +15,15 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::editor_ui::{pick_handle, GizmoDrag, GizmoTransform};
 use khora_sdk::khora_core::math::Ray;
 use khora_sdk::prelude::ecs::EntityId;
 use khora_sdk::prelude::*;
 use khora_sdk::KeyCode;
-use khora_sdk::{EditorCamera, EditorMode, EditorState, GizmoMode, PlayMode};
+use khora_sdk::{EditorMode, EditorState, GizmoMode, PlayMode};
 
-use crate::{mod_gizmo, ops};
+use crate::camera::EditorCamera;
+use crate::gizmo::{pick_handle, GizmoDrag, GizmoTransform};
+use crate::{gizmo, ops};
 
 /// State of modifier keys + button drags that has to outlive a single
 /// frame. Lives on `EditorApp` and is mutated through this module.
@@ -145,7 +146,7 @@ pub fn process_events(
                                 // its own object, so picking first would make
                                 // it impossible to grab.
                                 let grabbed = editor_state.lock().ok().and_then(|s| {
-                                    let frame = mod_gizmo::selection_frame(world, &s, &view)?;
+                                    let frame = gizmo::selection_frame(world, &s, &view)?;
                                     let axis = pick_handle(
                                         s.gizmo_mode,
                                         frame.pivot,
@@ -161,7 +162,7 @@ pub fn process_events(
                                         frame.size,
                                         &ray,
                                     )?;
-                                    Some((drag, mod_gizmo::capture_starts(world, &s)))
+                                    Some((drag, gizmo::capture_starts(world, &s)))
                                 });
 
                                 if let Some((drag, starts)) = grabbed {
@@ -297,7 +298,7 @@ pub fn process_events(
                     if let Some(ray) = cursor_ray(camera, Some((*x, *y)), viewport_rect) {
                         let delta = state.gizmo_drag.as_mut().and_then(|d| d.update(&ray));
                         if let Some(delta) = delta {
-                            mod_gizmo::apply_delta(world, delta, &state.gizmo_starts);
+                            gizmo::apply_delta(world, delta, &state.gizmo_starts);
                         }
                     }
                     state.prev_cursor = Some((*x, *y));

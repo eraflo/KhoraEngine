@@ -21,12 +21,13 @@
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::prelude::ecs::*;
-use khora_sdk::{CommandHistory, EditorState, GameWorld, PlayMode};
+use khora_sdk::{EditorState, GameWorld, PlayMode};
 
 use crate::project_vfs::ProjectVfs;
 use crate::{ops, scene_io};
 
 mod asset_ops;
+pub(crate) mod history;
 mod material;
 mod prefab;
 mod scene;
@@ -34,6 +35,7 @@ mod scene;
 pub use asset_ops::process_pending_asset_file_ops;
 pub use asset_ops::process_pending_assign_texture;
 pub use asset_ops::process_pending_spawn_mesh_asset;
+pub use history::CommandHistory;
 pub use material::process_pending_assign_material;
 pub use material::process_pending_save_as_material;
 pub use prefab::process_pending_prefab_spawn;

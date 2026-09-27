@@ -17,7 +17,7 @@
 //! Each user action (property edit, spawn, delete) is wrapped in an
 //! [`EditorCommand`] and pushed onto the [`CommandHistory`] stack.
 
-use super::state::PropertyEdit;
+use khora_sdk::editor_ui::PropertyEdit;
 
 /// A reversible editor operation.
 #[derive(Debug, Clone)]
@@ -35,6 +35,10 @@ pub struct EditorCommand {
 /// New commands push onto `undo_stack` and clear `redo_stack`.
 /// Undo pops from `undo_stack`, applies `reverse`, pushes onto `redo_stack`.
 /// Redo pops from `redo_stack`, applies `forward`, pushes onto `undo_stack`.
+// Nothing records an edit yet: the properties panel applies edits without
+// pushing them, so the recording half of this type is unused outside its tests
+// and undo has nothing to undo.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct CommandHistory {
     undo_stack: Vec<EditorCommand>,
@@ -52,6 +56,7 @@ impl Default for CommandHistory {
     }
 }
 
+#[allow(dead_code)]
 impl CommandHistory {
     /// Creates a new history with the given maximum stack depth.
     pub fn new(max_size: usize) -> Self {
@@ -117,7 +122,7 @@ impl CommandHistory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ecs::entity::EntityId;
+    use khora_sdk::khora_core::ecs::entity::EntityId;
 
     fn cmd(label: &str) -> EditorCommand {
         let e = EntityId {

@@ -19,6 +19,8 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
 
+use crate::camera::EditorCamera;
+
 mod overlays;
 
 pub struct ViewportPanel {

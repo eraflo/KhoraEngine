@@ -22,14 +22,16 @@ use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
 use khora_sdk::khora_core::ui::{EditorOverlay, OverlayScreenDescriptor};
 use khora_sdk::prelude::*;
 use khora_sdk::{winit, RenderSystem, WgpuRenderSystem};
-use khora_sdk::{CommandHistory, PlayMode};
-use khora_sdk::{EditorCamera, EditorLogCapture, EditorState};
+use khora_sdk::{EditorState, PlayMode};
 use khora_sdk::{EngineApp, GameWorld, InputEvent, Runtime};
 
 use super::EditorApp;
 use crate::bootstrap::load_logo_icon;
+use crate::camera::EditorCamera;
+use crate::commands::CommandHistory;
 use crate::input::InputState;
-use crate::{commands, hot_reload, input, mod_gizmo, ops};
+use crate::log_capture::EditorLogCapture;
+use crate::{commands, gizmo, hot_reload, input, ops};
 
 impl EngineApp for EditorApp {
     fn window_config() -> WindowConfig {
@@ -387,7 +389,7 @@ impl EngineApp for EditorApp {
             if state.play_mode != PlayMode::Editing || state.selection.is_empty() {
                 Vec::new()
             } else {
-                mod_gizmo::collect_gizmo_lines(world, &state, &view_info)
+                gizmo::collect_gizmo_lines(world, &state, &view_info)
             }
         } else {
             Vec::new()

@@ -12,18 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Gizmo rendering and manipulation for the editor viewport.
-//!
-//! The geometry and the drag math live in `khora-core`
-//! (`ui::editor::{gizmo, gizmo_interact}`); this module is the ECS side of it —
-//! it reads the selection out of the world, hands the pure code what it needs,
-//! and writes the resulting transforms back.
+//! The ECS side of the gizmos: reads the selection out of the world, hands the
+//! geometry and drag math what they need, and writes the resulting transforms
+//! back.
 
-use khora_sdk::editor_ui::gizmo::manipulator;
-use khora_sdk::editor_ui::{
-    generate_selection_gizmos, gizmo_basis, gizmo_world_size, EditorState, GizmoBasis, GizmoDelta,
-    GizmoKind, GizmoLineInstance, GizmoTransform, SelectionGizmo,
+use super::interact::{gizmo_basis, GizmoBasis, GizmoDelta, GizmoTransform};
+use super::selection::{
+    generate_selection_gizmos, gizmo_world_size, manipulator, GizmoKind, SelectionGizmo,
 };
+use khora_sdk::editor_ui::{EditorState, GizmoLineInstance};
 use khora_sdk::khora_core::math::{Mat4, Vec3};
 use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
 use khora_sdk::khora_core::renderer::api::scene::mesh::Mesh;

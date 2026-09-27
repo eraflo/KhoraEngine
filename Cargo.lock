@@ -2846,6 +2846,8 @@ dependencies = [
  "image",
  "khora-core",
  "log",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
