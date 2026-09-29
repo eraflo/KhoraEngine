@@ -16,7 +16,7 @@
 
 use super::enums::*;
 use crate::khora_bitflags;
-use crate::renderer::api::util::enums::{IndexFormat, TextureFormat};
+use crate::renderer::api::resource::{IndexFormat, TextureFormat};
 use std::borrow::Cow;
 
 /// Describes a single vertex attribute within a vertex buffer layout.

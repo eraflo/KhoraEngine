@@ -31,18 +31,14 @@
 //! Each slot has its own GPU buffer and pre-created bind group, avoiding both
 //! buffer allocation and bind group creation during the render hot path.
 
-use khora_core::renderer::{
-    api::{
-        command::{
-            BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutId, BindingResource,
-            BufferBinding,
-        },
-        core::MAX_FRAMES_IN_FLIGHT,
-        resource::{buffer::BufferDescriptor, buffer::BufferId, buffer::BufferUsage},
-    },
-    error::ResourceError,
-    traits::GraphicsDevice,
+use khora_core::renderer::api::command::{
+    BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutId, BindingResource,
+    BufferBinding,
 };
+use khora_core::renderer::api::frame::MAX_FRAMES_IN_FLIGHT;
+use khora_core::renderer::api::resource::buffer::{BufferDescriptor, BufferId, BufferUsage};
+use khora_core::renderer::error::ResourceError;
+use khora_core::renderer::traits::GraphicsDevice;
 use std::borrow::Cow;
 
 /// A single slot in the ring buffer, holding a GPU buffer and its associated bind group.
@@ -239,35 +235,28 @@ impl UniformRingBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::renderer::{
-        api::{
-            command::{
-                BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutId,
-                BindingType, BufferBindingType, CommandBufferId, ComputePassDescriptor,
-                ComputePipelineDescriptor, ComputePipelineId, RenderPassDescriptor,
-            },
-            core::{
-                GraphicsAdapterInfo, ShaderModuleDescriptor, ShaderModuleId, MAX_FRAMES_IN_FLIGHT,
-            },
-            pipeline::{
-                PipelineLayoutDescriptor, PipelineLayoutId, RenderPipelineDescriptor,
-                RenderPipelineId,
-            },
-            resource::{
-                buffer::{BufferDescriptor, BufferId},
-                texture::{
-                    self as texture_mod, SamplerDescriptor, SamplerId, TextureId,
-                    TextureViewDescriptor, TextureViewId,
-                },
-            },
-            util::{
-                GraphicsBackendType, IndexFormat, RendererDeviceType, ShaderStageFlags,
-                TextureFormat,
-            },
-        },
-        error::ResourceError,
-        traits::{CommandEncoder, ComputePass, GraphicsDevice, RenderPass},
+    use khora_core::renderer::api::command::{
+        BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutId,
+        BindingType, BufferBindingType, CommandBufferId, ComputePassDescriptor,
+        RenderPassDescriptor,
     };
+    use khora_core::renderer::api::device::{
+        GraphicsAdapterInfo, GraphicsBackendType, RendererDeviceType,
+    };
+    use khora_core::renderer::api::frame::MAX_FRAMES_IN_FLIGHT;
+    use khora_core::renderer::api::pipeline::{
+        ComputePipelineDescriptor, ComputePipelineId, PipelineLayoutDescriptor, PipelineLayoutId,
+        RenderPipelineDescriptor, RenderPipelineId,
+    };
+    use khora_core::renderer::api::resource::buffer::{BufferDescriptor, BufferId};
+    use khora_core::renderer::api::resource::texture::{
+        SamplerDescriptor, SamplerId, TextureId, TextureViewDescriptor, TextureViewId,
+    };
+    use khora_core::renderer::api::resource::{texture as texture_mod, IndexFormat, TextureFormat};
+    use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId};
+    use khora_core::renderer::api::util::ShaderStageFlags;
+    use khora_core::renderer::error::ResourceError;
+    use khora_core::renderer::traits::{CommandEncoder, ComputePass, GraphicsDevice, RenderPass};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// A mock graphics device that produces unique resource IDs for testing.

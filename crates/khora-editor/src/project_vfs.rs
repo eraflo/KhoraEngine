@@ -85,7 +85,7 @@ impl ProjectVfs {
 
         log::info!(
             "ProjectVfs opened: {} assets indexed under {}, watcher armed.",
-            asset_service.vfs().asset_count(),
+            asset_service.index().asset_count(),
             assets_root.display()
         );
 
@@ -315,7 +315,7 @@ impl ProjectVfs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_sdk::khora_core::renderer::api::scene::Mesh;
+    use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
 
     /// One file per asset type the index builder knows. The bytes are not a
     /// valid asset of any kind: the probe only asks whether a decoder is
@@ -346,7 +346,7 @@ mod tests {
         for file in PROBES {
             let uuid = AssetUUID::new_v5(file);
             let type_name = svc
-                .vfs()
+                .index()
                 .get_metadata(&uuid)
                 .ok_or_else(|| anyhow::anyhow!("{file} is not indexed"))?
                 .asset_type_name
@@ -413,7 +413,7 @@ mod tests {
                 let by_frozen = pvfs.asset_service.load_raw(&frozen).ok();
                 let by_path = pvfs
                     .asset_service
-                    .vfs()
+                    .index()
                     .get_metadata(&khora_sdk::khora_core::asset::AssetUUID::new_v5(
                         "scenes/renamed.kscene",
                     ))

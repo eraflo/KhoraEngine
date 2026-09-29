@@ -9,7 +9,7 @@
 //! State of the settings screen.
 
 use super::auth::AuthState;
-use crate::auth;
+use crate::services::github::auth;
 use std::sync::mpsc;
 
 /// Settings screen state — auth flow + local repo path editing.

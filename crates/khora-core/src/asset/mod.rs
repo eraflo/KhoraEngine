@@ -27,6 +27,7 @@
 //! such as an asset database or a virtual file system (VFS), are built in other
 //! crates.
 
+mod asset_uuid;
 /// Font asset definitions and metadata.
 pub mod font;
 mod handle;
@@ -34,14 +35,13 @@ mod materials;
 mod metadata;
 /// Ergon script modules, as the asset system holds them.
 pub mod script;
-mod uuid;
 
+pub use asset_uuid::*;
 pub use handle::AssetHandle as Handle;
 pub use handle::*;
 pub use materials::*;
 pub use metadata::*;
 pub use script::ScriptModule;
-pub use uuid::*;
 
 /// A marker trait for types that can be managed by the asset system.
 ///

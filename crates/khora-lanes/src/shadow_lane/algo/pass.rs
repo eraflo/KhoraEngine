@@ -25,8 +25,8 @@ use khora_core::renderer::api::command::{
     StoreOp,
 };
 use khora_core::renderer::api::pipeline::RenderPipelineId;
+use khora_core::renderer::api::resource::IndexFormat;
 use khora_core::renderer::api::resource::{BufferId, TextureViewId};
-use khora_core::renderer::api::util::IndexFormat;
 use khora_core::renderer::traits::CommandEncoder;
 
 /// Pre-collected draw command for one mesh within a shadow pass.
@@ -111,7 +111,7 @@ pub fn record_depth_pass(
 pub fn build_draw_cmds(
     device: &dyn khora_core::renderer::GraphicsDevice,
     render_world: &khora_data::render::RenderWorld,
-    gpu_meshes: &khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
+    gpu_meshes: &khora_data::assets::Assets<khora_core::renderer::api::gpu_scene::GpuMesh>,
     model_ring: &mut crate::render_lane::util::DynamicUniformRingBuffer,
 ) -> Vec<ShadowDrawCmd> {
     let mut draw_cmds = Vec::with_capacity(render_world.meshes.len());
@@ -123,7 +123,7 @@ pub fn build_draw_cmds(
             } else {
                 continue;
             };
-            let model_uniforms = khora_core::renderer::api::scene::ModelUniforms {
+            let model_uniforms = khora_core::renderer::api::gpu_scene::ModelUniforms {
                 model_matrix: model_mat.to_cols_array_2d(),
                 normal_matrix: normal_mat.to_cols_array_2d(),
             };

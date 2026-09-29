@@ -26,13 +26,13 @@ use entries::{
     WgpuPipelineLayoutEntry, WgpuRenderPipelineEntry, WgpuSamplerEntry, WgpuShaderModuleEntry,
     WgpuTextureEntry, WgpuTextureViewEntry,
 };
-use khora_core::renderer::api::command::{
-    self as api_cmd, BindGroupId, BindGroupLayoutId, ComputePipelineId,
-};
-use khora_core::renderer::api::core::ShaderModuleId;
+use khora_core::renderer::api::command as api_cmd;
+use khora_core::renderer::api::command::{BindGroupId, BindGroupLayoutId};
+use khora_core::renderer::api::pipeline::ComputePipelineId;
 use khora_core::renderer::api::pipeline::{PipelineLayoutId, RenderPipelineId};
 use khora_core::renderer::api::resource::buffer::{self as api_buf};
 use khora_core::renderer::api::resource::texture::{self as api_tex};
+use khora_core::renderer::api::shader::ShaderModuleId;
 
 mod entries;
 mod graphics_device;
@@ -63,7 +63,7 @@ use khora_core::renderer::ResourceError;
 
 use crate::graphics::wgpu::conversions::IntoWgpu;
 
-use crate::graphics::wgpu::context::WgpuGraphicsContext;
+use crate::graphics::wgpu::graphics_context::WgpuGraphicsContext;
 
 /// The internal, non-clonable state of the WgpuDevice.
 /// This struct holds all the GPU resources and state, protected by an Arc.
@@ -535,7 +535,7 @@ impl VramProvider for WgpuDevice {
 #[cfg(test)]
 mod tests {
     use crate::telemetry::gpu_monitor::GpuMonitor;
-    use khora_core::renderer::api::core::RenderStats;
+    use khora_core::renderer::api::device::RenderStats;
     use khora_core::telemetry::{MonitoredResourceType, ResourceMonitor};
 
     #[test]

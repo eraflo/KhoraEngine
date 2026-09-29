@@ -20,7 +20,8 @@
 //! shells out to `node` so contributors can type `cargo xtask ai install all`
 //! instead of the longer node invocation.
 
-use crate::helpers::*;
+use crate::exec::*;
+use crate::term::*;
 use anyhow::Result;
 
 /// Run the AI wrapper installer for the given profile, forwarding `args`

@@ -97,7 +97,7 @@ pub fn start_device_flow() -> mpsc::Receiver<AuthMessage> {
         let _ = tx.send(AuthMessage::DeviceCodeReady(device.clone()));
 
         match poll_token(&device) {
-            Ok(token) => match crate::github::get_authenticated_user(&token) {
+            Ok(token) => match crate::services::github::get_authenticated_user(&token) {
                 Ok(user) => {
                     if let Err(e) = store_token(&token) {
                         log::warn!("Failed to persist token: {e}");

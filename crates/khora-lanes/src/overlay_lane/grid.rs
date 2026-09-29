@@ -128,9 +128,10 @@ fn grid_pipeline_spec(
     };
     use khora_core::renderer::api::pipeline::{
         ColorTargetStateDescriptor, DepthStencilStateDescriptor, LayoutSpec,
-        MultisampleStateDescriptor, PipelineSpec, PrimitiveStateDescriptor, ShaderVariantKey,
+        MultisampleStateDescriptor, PipelineSpec, PrimitiveStateDescriptor,
     };
-    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
+    use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
+    use khora_core::renderer::api::shader::ShaderVariantKey;
     use std::borrow::Cow;
 
     // Alpha blend — antialiased grid lines fade against the scene.

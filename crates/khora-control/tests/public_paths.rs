@@ -42,6 +42,28 @@ fn is_eq<T: Eq>() {}
 fn is_partial_eq<T: PartialEq>() {}
 
 // ---------------------------------------------------------------------------
+// Every `pub mod`, down to the leaves.
+// ---------------------------------------------------------------------------
+
+#[allow(unused_imports)]
+mod every_pub_mod {
+    use khora_control::agent_registry as _;
+    use khora_control::analysis as _;
+    use khora_control::budget_channel as _;
+    use khora_control::cost_model as _;
+    use khora_control::dcc_context as _;
+    use khora_control::dcc_service as _;
+    use khora_control::gorna as _;
+    use khora_control::metrics as _;
+    use khora_control::pid as _;
+    use khora_control::plugin as _;
+    use khora_control::scheduler as _;
+    use khora_control::substrate as _;
+    use khora_control::substrate::flow_runner as _;
+    use khora_control::worker_pool as _;
+}
+
+// ---------------------------------------------------------------------------
 // Public fields — read through a reference, never constructed.
 // ---------------------------------------------------------------------------
 
@@ -54,7 +76,7 @@ fn analysis_report_fields(r: &khora_control::analysis::AnalysisReport) {
     );
 }
 
-fn hardware_state_fields(h: &khora_control::context::HardwareState) {
+fn hardware_state_fields(h: &khora_control::dcc_context::HardwareState) {
     let _ = (
         &h.thermal,
         &h.battery,
@@ -67,7 +89,7 @@ fn hardware_state_fields(h: &khora_control::context::HardwareState) {
     );
 }
 
-fn context_fields(c: &khora_control::context::Context) {
+fn context_fields(c: &khora_control::dcc_context::Context) {
     let _ = (
         &c.hardware,
         &c.mode,
@@ -80,7 +102,7 @@ fn cost_sample_fields(s: &khora_control::cost_model::CostSample) {
     let _ = (&s.n, &s.time_ms);
 }
 
-fn dcc_config_fields(c: &khora_control::service::DccConfig) {
+fn dcc_config_fields(c: &khora_control::dcc_service::DccConfig) {
     let _ = (
         &c.tick_rate,
         &c.telemetry_buffer_size,
@@ -104,7 +126,9 @@ fn pid_config_fields(x: &khora_control::pid::PidConfig) {
 }
 
 /// The DCC's frame PID is tuned with this crate's `PidConfig`.
-fn dcc_config_frame_pid(c: &khora_control::service::DccConfig) -> &khora_control::pid::PidConfig {
+fn dcc_config_frame_pid(
+    c: &khora_control::dcc_service::DccConfig,
+) -> &khora_control::pid::PidConfig {
     &c.frame_pid
 }
 
@@ -121,8 +145,8 @@ fn engine_plugin_on_phase(
 // Public constants.
 // ---------------------------------------------------------------------------
 
-// module `context`
-const _: f32 = khora_control::context::MEMORY_PRESSURE_CRITICAL;
+// module `dcc_context`
+const _: f32 = khora_control::dcc_context::MEMORY_PRESSURE_CRITICAL;
 // module `cost_model`
 const _: [khora_control::cost_model::ComplexityClass; 4] =
     khora_control::cost_model::ComplexityClass::ALL;
@@ -148,23 +172,23 @@ fn every_public_path_of_khora_control_still_resolves() {
     );
     same_type(
         PhantomData::<khora_control::BatteryLevel>,
-        PhantomData::<khora_control::context::BatteryLevel>,
+        PhantomData::<khora_control::dcc_context::BatteryLevel>,
     );
     same_type(
         PhantomData::<khora_control::Context>,
-        PhantomData::<khora_control::context::Context>,
+        PhantomData::<khora_control::dcc_context::Context>,
     );
     same_type(
         PhantomData::<khora_control::EngineMode>,
-        PhantomData::<khora_control::context::EngineMode>,
+        PhantomData::<khora_control::dcc_context::EngineMode>,
     );
     same_type(
         PhantomData::<khora_control::HardwareState>,
-        PhantomData::<khora_control::context::HardwareState>,
+        PhantomData::<khora_control::dcc_context::HardwareState>,
     );
     same_type(
         PhantomData::<khora_control::ThermalStatus>,
-        PhantomData::<khora_control::context::ThermalStatus>,
+        PhantomData::<khora_control::dcc_context::ThermalStatus>,
     );
     same_type(
         PhantomData::<khora_control::GornaArbitrator>,
@@ -176,7 +200,7 @@ fn every_public_path_of_khora_control_still_resolves() {
     );
     same_type(
         PhantomData::<khora_control::AgentRegistry>,
-        PhantomData::<khora_control::registry::AgentRegistry>,
+        PhantomData::<khora_control::agent_registry::AgentRegistry>,
     );
     same_type(
         PhantomData::<khora_control::ExecutionScheduler>,
@@ -184,11 +208,11 @@ fn every_public_path_of_khora_control_still_resolves() {
     );
     same_type(
         PhantomData::<khora_control::DccConfig>,
-        PhantomData::<khora_control::service::DccConfig>,
+        PhantomData::<khora_control::dcc_service::DccConfig>,
     );
     same_type(
         PhantomData::<khora_control::DccService>,
-        PhantomData::<khora_control::service::DccService>,
+        PhantomData::<khora_control::dcc_service::DccService>,
     );
 
     // --- module `analysis`
@@ -208,35 +232,35 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::budget_channel::BudgetChannel::sync;
     let _ = khora_control::budget_channel::BudgetChannel::get;
 
-    // --- module `context` (re-exports of `khora_core` enums + own items)
-    let _ = type_name::<khora_control::context::EngineMode>();
-    let _ = type_name::<khora_control::context::BatteryLevel>();
-    let _ = type_name::<khora_control::context::ThermalStatus>();
-    let _ = type_name::<khora_control::context::HardwareState>();
-    let _ = type_name::<khora_control::context::Context>();
+    // --- module `dcc_context` (re-exports of `khora_core` enums + own items)
+    let _ = type_name::<khora_control::dcc_context::EngineMode>();
+    let _ = type_name::<khora_control::dcc_context::BatteryLevel>();
+    let _ = type_name::<khora_control::dcc_context::ThermalStatus>();
+    let _ = type_name::<khora_control::dcc_context::HardwareState>();
+    let _ = type_name::<khora_control::dcc_context::Context>();
     same_type(
-        PhantomData::<khora_control::context::EngineMode>,
+        PhantomData::<khora_control::dcc_context::EngineMode>,
         PhantomData::<khora_core::agent::EngineMode>,
     );
     same_type(
-        PhantomData::<khora_control::context::BatteryLevel>,
+        PhantomData::<khora_control::dcc_context::BatteryLevel>,
         PhantomData::<khora_core::platform::BatteryLevel>,
     );
     same_type(
-        PhantomData::<khora_control::context::ThermalStatus>,
+        PhantomData::<khora_control::dcc_context::ThermalStatus>,
         PhantomData::<khora_core::platform::ThermalStatus>,
     );
-    let _ = hardware_state_fields as fn(&khora_control::context::HardwareState);
-    let _ = context_fields as fn(&khora_control::context::Context);
-    is_default::<khora_control::context::HardwareState>();
-    is_clone::<khora_control::context::HardwareState>();
-    is_debug::<khora_control::context::HardwareState>();
-    is_default::<khora_control::context::Context>();
-    is_clone::<khora_control::context::Context>();
-    is_debug::<khora_control::context::Context>();
-    let _ = khora_control::context::Context::refresh_memory_pressure;
-    let _ = khora_control::context::MEMORY_PRESSURE_CRITICAL;
-    let _ = khora_control::context::safety_ceiling;
+    let _ = hardware_state_fields as fn(&khora_control::dcc_context::HardwareState);
+    let _ = context_fields as fn(&khora_control::dcc_context::Context);
+    is_default::<khora_control::dcc_context::HardwareState>();
+    is_clone::<khora_control::dcc_context::HardwareState>();
+    is_debug::<khora_control::dcc_context::HardwareState>();
+    is_default::<khora_control::dcc_context::Context>();
+    is_clone::<khora_control::dcc_context::Context>();
+    is_debug::<khora_control::dcc_context::Context>();
+    let _ = khora_control::dcc_context::Context::refresh_memory_pressure;
+    let _ = khora_control::dcc_context::MEMORY_PRESSURE_CRITICAL;
+    let _ = khora_control::dcc_context::safety_ceiling;
 
     // --- module `cost_model`
     let _ = type_name::<khora_control::cost_model::ComplexityClass>();
@@ -326,22 +350,22 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::plugin::EnginePlugin::wants_phase;
     let _ = khora_control::plugin::EnginePlugin::name;
 
-    // --- module `registry`
-    let _ = type_name::<khora_control::registry::PhaseAgentEntry>();
-    let _ = type_name::<khora_control::registry::AgentRegistry>();
-    is_default::<khora_control::registry::AgentRegistry>();
-    let _ = khora_control::registry::AgentRegistry::new;
-    let _ = khora_control::registry::AgentRegistry::register;
-    let _ = khora_control::registry::AgentRegistry::register_for_mode;
-    let _ = khora_control::registry::AgentRegistry::len;
-    let _ = khora_control::registry::AgentRegistry::is_empty;
-    let _ = khora_control::registry::AgentRegistry::iter;
-    let _ = khora_control::registry::AgentRegistry::all_ids;
-    let _ = khora_control::registry::AgentRegistry::initialize_all;
-    let _ = khora_control::registry::AgentRegistry::execute_all;
-    let _ = khora_control::registry::AgentRegistry::get_by_id;
-    let _ = khora_control::registry::AgentRegistry::collect_for_phase;
-    let _ = khora_control::registry::AgentRegistry::execute_agent;
+    // --- module `agent_registry`
+    let _ = type_name::<khora_control::agent_registry::PhaseAgentEntry>();
+    let _ = type_name::<khora_control::agent_registry::AgentRegistry>();
+    is_default::<khora_control::agent_registry::AgentRegistry>();
+    let _ = khora_control::agent_registry::AgentRegistry::new;
+    let _ = khora_control::agent_registry::AgentRegistry::register;
+    let _ = khora_control::agent_registry::AgentRegistry::register_for_mode;
+    let _ = khora_control::agent_registry::AgentRegistry::len;
+    let _ = khora_control::agent_registry::AgentRegistry::is_empty;
+    let _ = khora_control::agent_registry::AgentRegistry::iter;
+    let _ = khora_control::agent_registry::AgentRegistry::all_ids;
+    let _ = khora_control::agent_registry::AgentRegistry::initialize_all;
+    let _ = khora_control::agent_registry::AgentRegistry::execute_all;
+    let _ = khora_control::agent_registry::AgentRegistry::get_by_id;
+    let _ = khora_control::agent_registry::AgentRegistry::collect_for_phase;
+    let _ = khora_control::agent_registry::AgentRegistry::execute_agent;
 
     // --- module `scheduler`
     let _ = type_name::<khora_control::scheduler::ExecutionScheduler>();
@@ -357,41 +381,41 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::scheduler::ExecutionScheduler::remove_phase;
     let _ = khora_control::scheduler::ExecutionScheduler::run_frame;
 
-    // --- module `service`
-    let _ = type_name::<khora_control::service::DccConfig>();
-    let _ = type_name::<khora_control::service::DccService>();
-    let _ = dcc_config_fields as fn(&khora_control::service::DccConfig);
+    // --- module `dcc_service`
+    let _ = type_name::<khora_control::dcc_service::DccConfig>();
+    let _ = type_name::<khora_control::dcc_service::DccService>();
+    let _ = dcc_config_fields as fn(&khora_control::dcc_service::DccConfig);
     let _ = dcc_config_frame_pid
-        as fn(&khora_control::service::DccConfig) -> &khora_control::pid::PidConfig;
-    is_default::<khora_control::service::DccConfig>();
-    is_clone::<khora_control::service::DccConfig>();
-    is_debug::<khora_control::service::DccConfig>();
-    let _ = khora_control::service::DccService::new;
-    let _ = khora_control::service::DccService::set_adaptation_mode;
-    let _ = khora_control::service::DccService::adaptation_mode;
-    let _ = khora_control::service::DccService::set_hint;
-    let _ = khora_control::service::DccService::clear_agent_hints;
-    let _ = khora_control::service::DccService::hints;
-    let _ = khora_control::service::DccService::layout_recommendations;
-    let _ = khora_control::service::DccService::start_decision_recording;
-    let _ = khora_control::service::DccService::stop_decision_recording;
-    let _ = khora_control::service::DccService::recorded_decisions;
-    let _ = khora_control::service::DccService::replay_decisions;
-    let _ = khora_control::service::DccService::stop_replay;
-    let _ = khora_control::service::DccService::is_replaying;
-    let _ = khora_control::service::DccService::connect_budget_channel;
-    let _ = khora_control::service::DccService::register_agent;
-    let _ = khora_control::service::DccService::register_agent_for_mode;
-    let _ = khora_control::service::DccService::start;
-    let _ = khora_control::service::DccService::stop;
-    let _ = khora_control::service::DccService::agent_registry;
-    let _ = khora_control::service::DccService::event_sender;
-    let _ = khora_control::service::DccService::get_context;
-    let _ = khora_control::service::DccService::context_handle;
-    let _ = khora_control::service::DccService::initialize_agents;
-    let _ = khora_control::service::DccService::execute_agents;
-    let _ = khora_control::service::DccService::agent_count;
-    let _ = khora_control::service::DccService::get_agent;
+        as fn(&khora_control::dcc_service::DccConfig) -> &khora_control::pid::PidConfig;
+    is_default::<khora_control::dcc_service::DccConfig>();
+    is_clone::<khora_control::dcc_service::DccConfig>();
+    is_debug::<khora_control::dcc_service::DccConfig>();
+    let _ = khora_control::dcc_service::DccService::new;
+    let _ = khora_control::dcc_service::DccService::set_adaptation_mode;
+    let _ = khora_control::dcc_service::DccService::adaptation_mode;
+    let _ = khora_control::dcc_service::DccService::set_hint;
+    let _ = khora_control::dcc_service::DccService::clear_agent_hints;
+    let _ = khora_control::dcc_service::DccService::hints;
+    let _ = khora_control::dcc_service::DccService::layout_recommendations;
+    let _ = khora_control::dcc_service::DccService::start_decision_recording;
+    let _ = khora_control::dcc_service::DccService::stop_decision_recording;
+    let _ = khora_control::dcc_service::DccService::recorded_decisions;
+    let _ = khora_control::dcc_service::DccService::replay_decisions;
+    let _ = khora_control::dcc_service::DccService::stop_replay;
+    let _ = khora_control::dcc_service::DccService::is_replaying;
+    let _ = khora_control::dcc_service::DccService::connect_budget_channel;
+    let _ = khora_control::dcc_service::DccService::register_agent;
+    let _ = khora_control::dcc_service::DccService::register_agent_for_mode;
+    let _ = khora_control::dcc_service::DccService::start;
+    let _ = khora_control::dcc_service::DccService::stop;
+    let _ = khora_control::dcc_service::DccService::agent_registry;
+    let _ = khora_control::dcc_service::DccService::event_sender;
+    let _ = khora_control::dcc_service::DccService::get_context;
+    let _ = khora_control::dcc_service::DccService::context_handle;
+    let _ = khora_control::dcc_service::DccService::initialize_agents;
+    let _ = khora_control::dcc_service::DccService::execute_agents;
+    let _ = khora_control::dcc_service::DccService::agent_count;
+    let _ = khora_control::dcc_service::DccService::get_agent;
 
     // --- module `substrate` (used by khora-sdk and khora-agents tests)
     let _ = khora_control::substrate::run_data_systems;
@@ -417,7 +441,7 @@ fn every_public_path_of_khora_control_still_resolves() {
 // khora-sdk/src/engine/ (and khora-sdk/src/lib.rs for the last three)
 use khora_control::{substrate, DccConfig, DccService, EngineMode};
 // khora-sdk/src/lib.rs
-use khora_control::registry::AgentRegistry;
+use khora_control::agent_registry::AgentRegistry;
 use khora_control::Context as DccContext;
 use khora_control::Context as EngineContext;
 

@@ -16,10 +16,10 @@
 
 mod backend;
 mod command;
-pub(crate) mod context;
 mod conversions;
 mod device;
 mod flag_bridge;
+pub(crate) mod graphics_context;
 mod pipeline_system;
 mod profiler;
 mod resilience;

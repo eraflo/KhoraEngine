@@ -15,7 +15,7 @@
 //! Canonical asset index builder.
 //!
 //! Walks a project's `assets/` directory and produces an [`AssetMetadata`] list
-//! suitable for [`crate::vfs::VirtualFileSystem::new`] — used by the editor to
+//! suitable for [`crate::asset::AssetIndex::new`] — used by the editor to
 //! build an in-memory index at boot, and by the pack builder (Phase 2) to
 //! produce reproducible release archives.
 //!
@@ -247,7 +247,7 @@ impl<'a> IndexBuilder<'a> {
     }
 
     /// Convenience: builds metadata and bincode-encodes it into the byte
-    /// vector that [`crate::vfs::VirtualFileSystem::new`] expects.
+    /// vector that [`crate::asset::AssetIndex::new`] expects.
     pub fn build_index_bytes(&self) -> Result<Vec<u8>> {
         let metadata = self.build_metadata()?;
         let cfg = bincode::config::standard();
@@ -260,7 +260,7 @@ impl<'a> IndexBuilder<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vfs::VirtualFileSystem;
+    use crate::asset::AssetIndex;
     use std::fs;
     use tempfile::tempdir;
 
@@ -379,7 +379,7 @@ mod tests {
         fs::write(root.join("textures").join("foo.png"), b"PNG").unwrap();
 
         let bytes = IndexBuilder::new(root).build_index_bytes().unwrap();
-        let vfs = VirtualFileSystem::new(&bytes).expect("VFS must decode our index");
+        let vfs = AssetIndex::new(&bytes).expect("VFS must decode our index");
         assert_eq!(vfs.asset_count(), 1);
         let uuid = AssetUUID::new_v5("textures/foo.png");
         let meta = vfs.get_metadata(&uuid).expect("VFS must surface the asset");
@@ -390,7 +390,7 @@ mod tests {
     /// the index builder reads when extracting dependencies.
     fn write_kmat(path: &Path, material: &khora_core::asset::StandardMaterial) {
         let json =
-            khora_data::ecs::material_to_json(material).expect("material serializes to JSON");
+            khora_data::scene::material_to_json(material).expect("material serializes to JSON");
         let ron = ron::ser::to_string(&json).expect("material JSON encodes to RON");
         fs::write(path, ron).unwrap();
     }

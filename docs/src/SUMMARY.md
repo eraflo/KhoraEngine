@@ -66,5 +66,5 @@
 # Project
 - [Roadmap](./roadmap.md)
 - [Decisions](./decisions.md)
-- [Open questions](./open_questions.md)
+- [Open questions](./open-questions.md)
 - [Editor design system](./design/editor.md)

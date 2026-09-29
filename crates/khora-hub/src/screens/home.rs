@@ -13,10 +13,10 @@
 //! decoration pretending to be information, and with a grid of them it reads
 //! as noise.
 
-use crate::HubApp;
-use crate::Screen;
-use crate::config::RecentProject;
-use crate::ui::widgets::format_ts;
+use crate::app::HubApp;
+use crate::services::config::RecentProject;
+use crate::state::Screen;
+use crate::ui::format::format_ts;
 use khora_sdk::tool_ui::{FontFamilyHint, Icon, Interaction, UiBuilder, UiTheme};
 use khora_tool_ui::brand::khora_dark;
 use khora_tool_ui::widgets::paint::eyebrow;
@@ -133,9 +133,9 @@ fn show_sidebar(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     let gh_h = 30.0;
     let gh_y = widgets::bottom(r) - pad - gh_h;
     let (label, tone) = match &app.settings.auth {
-        crate::AuthState::Connected { login, .. } => (format!("@{login}"), Tone::Success),
-        crate::AuthState::Connecting { .. } => ("connecting…".to_owned(), Tone::Warning),
-        crate::AuthState::Disconnected => ("not connected".to_owned(), Tone::Neutral),
+        crate::state::AuthState::Connected { login, .. } => (format!("@{login}"), Tone::Success),
+        crate::state::AuthState::Connecting { .. } => ("connecting…".to_owned(), Tone::Warning),
+        crate::state::AuthState::Disconnected => ("not connected".to_owned(), Tone::Neutral),
     };
     chip(ui, &t, [x, gh_y + 6.0, w, 18.0], &label, tone, true);
 }
@@ -356,7 +356,7 @@ fn project_card(
         }
         bx -= bw + 2.0;
 
-        if !crate::project::has_native_code(std::path::Path::new(&proj.path))
+        if !crate::services::project::has_native_code(std::path::Path::new(&proj.path))
             && icon_button(
                 ui,
                 t,
@@ -396,15 +396,16 @@ fn apply_action(app: &mut HubApp, action: Option<ProjectAction>) {
                 return;
             };
             let root = std::path::PathBuf::from(&proj.path);
-            match crate::project::add_native_code(&root, &proj.name, &proj.engine_version) {
+            match crate::services::project::add_native_code(&root, &proj.name, &proj.engine_version)
+            {
                 Ok(()) => {
-                    app.banner = Some(crate::Banner::info(format!(
+                    app.banner = Some(crate::state::Banner::info(format!(
                         "Added a native Rust scaffold to '{}'.",
                         proj.name
                     )));
                 }
                 Err(e) => {
-                    app.banner = Some(crate::Banner::error(format!(
+                    app.banner = Some(crate::state::Banner::error(format!(
                         "Couldn't add native code: {e:#}"
                     )));
                 }
@@ -484,10 +485,13 @@ fn show_remove_confirm_modal(app: &mut HubApp, ui: &mut dyn UiBuilder, idx: usiz
         if path.exists() {
             match std::fs::remove_dir_all(&path) {
                 Ok(()) => {
-                    app.banner = Some(crate::Banner::info(format!("Deleted '{}'", proj.name)))
+                    app.banner = Some(crate::state::Banner::info(format!(
+                        "Deleted '{}'",
+                        proj.name
+                    )))
                 }
                 Err(e) => {
-                    app.banner = Some(crate::Banner::error(format!(
+                    app.banner = Some(crate::state::Banner::error(format!(
                         "Couldn't delete '{}': {e}",
                         proj.path
                     )))

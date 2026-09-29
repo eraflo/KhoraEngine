@@ -38,7 +38,7 @@ use khora_core::renderer::api::command::{
     BindGroupId, DrawCommand, LoadOp, Operations, RenderPassColorAttachment,
     RenderPassDepthStencilAttachment, RenderPassDescriptor, StoreOp,
 };
-use khora_core::renderer::api::core::RenderContext;
+use khora_core::renderer::api::frame::RenderContext;
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::traits::{CommandEncoder, RenderPass};
 

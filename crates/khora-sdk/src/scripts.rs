@@ -98,19 +98,19 @@ pub fn mount(runtime: &mut Runtime, assets_root: &Path) -> usize {
     // earlier.
     if runtime
         .resources
-        .get::<khora_io::script_hot_reload::PendingReloads>()
+        .get::<khora_io::script::hot_reload::PendingReloads>()
         .is_none()
     {
         runtime
             .resources
-            .insert(khora_io::script_hot_reload::reload_channel());
+            .insert(khora_io::script::hot_reload::reload_channel());
     }
     let pending = runtime
         .resources
-        .get::<khora_io::script_hot_reload::PendingReloads>()
+        .get::<khora_io::script::hot_reload::PendingReloads>()
         .expect("just inserted");
 
-    let loaded = khora_io::script_hot_reload::load_all(&script_dir, pending);
+    let loaded = khora_io::script::hot_reload::load_all(&script_dir, pending);
     log::info!(
         "scripts::mount: compiled {loaded} script module(s) from {}",
         script_dir.display()

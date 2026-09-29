@@ -19,7 +19,7 @@
 //! string to `PipelineSystem::set_overlay_source`.
 
 use anyhow::{Context, Result};
-use khora_core::renderer::api::resource::CpuShaderSource;
+use khora_core::renderer::api::shader::CpuShaderSource;
 
 use crate::asset::{AssetDecoder, DecoderRegistration};
 

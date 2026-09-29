@@ -106,7 +106,7 @@ impl khora_core::lane::Lane for StandardPbrLane {
         let gpu_meshes = ctx
             .get::<std::sync::Arc<
                 std::sync::RwLock<
-                    khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
+                    khora_data::assets::Assets<khora_core::renderer::api::gpu_scene::GpuMesh>,
                 >,
             >>()
             .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?
@@ -130,7 +130,7 @@ impl khora_core::lane::Lane for StandardPbrLane {
             .get::<khora_core::lane::ClearColor>()
             .ok_or(LaneError::missing("ClearColor"))?
             .0;
-        let render_ctx = khora_core::renderer::api::core::RenderContext::new(
+        let render_ctx = khora_core::renderer::api::frame::RenderContext::new(
             &color_target,
             Some(&depth_target),
             clear_color,

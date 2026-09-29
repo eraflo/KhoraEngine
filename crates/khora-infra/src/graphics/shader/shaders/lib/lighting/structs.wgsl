@@ -1,6 +1,6 @@
 #define_import_path khora::lighting::structs
 
-// Light struct layouts mirroring `khora_core::renderer::api::scene::*LightUniform`
+// Light struct layouts mirroring `khora_core::renderer::light::*LightUniform`
 // (`#[repr(C)]`). The bytemuck-derived size on the Rust side and the
 // WGSL std140 layout must match exactly — verified by the
 // `ShaderRegistry` validation pass at boot.

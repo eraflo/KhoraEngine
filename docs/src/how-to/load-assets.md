@@ -93,7 +93,7 @@ an engine resource — cache it in `setup`:
 use std::sync::Arc;
 use khora_sdk::AssetService;
 use khora_sdk::prelude::AssetUUID;
-use khora_sdk::renderer::scene::Mesh;
+use khora_sdk::renderer::gpu_scene::Mesh;
 
 // In `setup`, with `runtime: &Runtime`:
 if let Some(service) = runtime.services.get::<Arc<std::sync::Mutex<AssetService>>>() {

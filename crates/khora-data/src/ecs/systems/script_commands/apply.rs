@@ -25,7 +25,7 @@ use khora_core::math::{Quaternion, Vec3};
 use khora_core::script::{ComponentName, ScriptValue, WorldCommand};
 
 use crate::ecs::{Transform, World};
-use crate::scene::registry::registration_of;
+use crate::scene::component_registration::registration_of;
 
 use super::json::{merge, to_json};
 
@@ -275,7 +275,7 @@ fn lookup(
     world: &World,
     entity: EntityId,
     component: &str,
-) -> Result<&'static crate::scene::registry::ComponentRegistration, ApplyError> {
+) -> Result<&'static crate::scene::component_registration::ComponentRegistration, ApplyError> {
     if !world.contains(entity) {
         return Err(ApplyError::NoSuchEntity(entity));
     }

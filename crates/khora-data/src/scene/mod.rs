@@ -14,15 +14,17 @@
 
 //! Scene module containing the Scene struct and related functionality.
 
+pub mod component_registration;
+pub mod material_registration;
 mod recipe;
-pub mod registry;
 pub mod shape;
 
 pub mod migrations;
 mod strategy;
 
+pub use component_registration::*;
+pub use material_registration::*;
 pub use recipe::*;
-pub use registry::*;
 pub use shape::{ComponentShape, FieldSchema};
 
 pub use migrations::*;

@@ -88,7 +88,7 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
 /// at runtime.
 pub fn collect_asset_entries(pvfs: &ProjectVfs) -> Vec<AssetEntry> {
     pvfs.asset_service
-        .vfs()
+        .index()
         .iter_all()
         .map(|m| {
             let rel_str = m.source_path.to_string_lossy().to_string();

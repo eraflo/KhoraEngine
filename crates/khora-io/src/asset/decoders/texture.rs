@@ -20,7 +20,7 @@
 //! The decoder reports the pixel **layout** only. Whether the values are to be
 //! read as sRGB or linear is the *role* of the material slot referencing them,
 //! supplied downstream as a
-//! [`TextureColorSpace`](khora_core::renderer::api::util::TextureColorSpace) —
+//! [`TextureColorSpace`](khora_core::renderer::api::resource::TextureColorSpace) —
 //! the same PNG is an sRGB albedo map or a linear normal map depending on the
 //! slot. Float sources (Radiance `.hdr`, OpenEXR) keep their high dynamic range
 //! instead of being flattened to 8-bit, which is what makes an authored
@@ -28,13 +28,11 @@
 
 use anyhow::{Context, Result};
 use image::ColorType;
-use khora_core::{
-    math::Extent3D,
-    renderer::api::{
-        resource::{CpuTexture, TextureDimension, TextureUsage},
-        util::{f32_to_f16_bits, SampleCount, TextureFormat},
-    },
+use khora_core::math::Extent3D;
+use khora_core::renderer::api::resource::{
+    CpuTexture, SampleCount, TextureDimension, TextureFormat, TextureUsage,
 };
+use khora_core::renderer::api::util::f32_to_f16_bits;
 
 use crate::asset::{AssetDecoder, DecoderRegistration};
 

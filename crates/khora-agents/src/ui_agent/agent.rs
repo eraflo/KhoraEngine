@@ -23,9 +23,9 @@ use khora_core::agent::gorna::{
 use khora_core::agent::{
     Agent, AgentAccess, AgentImportance, Contention, ExecutionPhase, ExecutionTiming,
 };
-use khora_core::context::EngineContext;
+use khora_core::engine_context::EngineContext;
 use khora_core::lane::{ColorTarget, Lane, LaneContext};
-use khora_core::renderer::api::core::FrameContext;
+use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::api::text::TextRenderer;
 use khora_core::renderer::GraphicsDevice;
 use khora_data::assets::Assets;

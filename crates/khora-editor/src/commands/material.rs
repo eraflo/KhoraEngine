@@ -68,7 +68,7 @@ pub fn process_pending_save_as_material(
                 return;
             }
         };
-        match khora_sdk::khora_data::ecs::material_to_json(&**material) {
+        match khora_sdk::khora_data::scene::material_to_json(&**material) {
             Some(value) => value,
             None => {
                 log::error!("Save material: failed to serialize material to JSON");

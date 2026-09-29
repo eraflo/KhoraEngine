@@ -27,7 +27,7 @@ use khora_core::agent::{
     ExecutionPhase, ExecutionTiming,
 };
 use khora_core::lane::{ColorTarget, DepthTarget, LaneContext, LaneRegistry};
-use khora_core::renderer::api::core::FrameContext;
+use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 use khora_data::render::{

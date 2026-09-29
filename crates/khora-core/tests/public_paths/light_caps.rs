@@ -15,10 +15,10 @@
 //! The light caps the lighting uniforms are sized by are the values the
 //! shaders receive as defines.
 
-use khora_core::renderer::api::scene::{
+use khora_core::renderer::api::shader::defs::ShaderDefs;
+use khora_core::renderer::light::{
     LightingUniforms, MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS,
 };
-use khora_core::renderer::api::shader_defs::ShaderDefs;
 
 #[test]
 fn light_caps_are_the_shader_defs_values() {

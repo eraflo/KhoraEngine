@@ -36,8 +36,8 @@ use khora_core::lane::{
     ClearColor, ColorTarget, DepthTarget, LaneContext, LaneKind, LaneRegistry, ShadowAtlasView,
     ShadowComparisonSampler,
 };
-use khora_core::renderer::api::core::FrameContext;
-use khora_core::renderer::api::scene::GpuMesh;
+use khora_core::renderer::api::frame::FrameContext;
+use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::{GraphicsDevice, RenderSystem};
 use khora_core::EngineContext;

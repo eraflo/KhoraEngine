@@ -28,8 +28,9 @@ use khora_core::lane::OutputDeck;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 
+use crate::assets::AssetStore;
 use crate::ecs::{DataSystemRegistration, TickPhase, World};
-use crate::gpu::{AssetEviction, AssetStore};
+use crate::gpu::AssetEviction;
 
 fn asset_eviction_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
     let Some(eviction) = runtime.resources.get::<Arc<Mutex<AssetEviction>>>() else {

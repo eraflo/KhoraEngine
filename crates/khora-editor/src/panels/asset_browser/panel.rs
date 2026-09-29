@@ -16,7 +16,7 @@
 
 use khora_sdk::editor_ui::*;
 
-use crate::widgets::chrome::paint_panel_header;
+use crate::widgets::panel_header::paint_panel_header;
 use crate::widgets::tile::{paint_asset_tile, AssetTileKind};
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;

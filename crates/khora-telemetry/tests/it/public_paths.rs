@@ -31,7 +31,7 @@
 //! tree it was written against. Nothing is constructed; the tests only have to
 //! type-check.
 //!
-//! `khora-io` reaches into the submodules (`metrics::registry::{CounterHandle,
+//! `khora-io` reaches into the submodules (`metrics::{CounterHandle,
 //! HistogramHandle}`), so they are pinned at those paths as well as at the
 //! crate-root re-exports.
 
@@ -53,14 +53,12 @@ fn is_metrics_backend<T: khora_telemetry::storage::backend::MetricsBackend>() {}
 #[allow(unused_imports)]
 mod every_pub_mod {
     use khora_telemetry::metrics as _;
-    use khora_telemetry::metrics::registry as _;
     use khora_telemetry::monitoring as _;
-    use khora_telemetry::monitoring::registry as _;
-    use khora_telemetry::service as _;
+    use khora_telemetry::scoped_metric_timer as _;
     use khora_telemetry::storage as _;
     use khora_telemetry::storage::backend as _;
     use khora_telemetry::storage::memory_backend as _;
-    use khora_telemetry::utils as _;
+    use khora_telemetry::telemetry_service as _;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,130 +103,130 @@ mod trait_items {
 
 #[test]
 fn module_metrics_paths_still_resolve() {
-    let _ = type_name::<khora_telemetry::metrics::registry::CounterHandle>();
-    let _ = khora_telemetry::metrics::registry::CounterHandle::increment;
-    let _ = khora_telemetry::metrics::registry::CounterHandle::increment_by;
-    let _ = khora_telemetry::metrics::registry::CounterHandle::get;
-    let _ = khora_telemetry::metrics::registry::CounterHandle::id;
-    is_debug::<khora_telemetry::metrics::registry::CounterHandle>();
-    is_clone::<khora_telemetry::metrics::registry::CounterHandle>();
-    let _ = type_name::<khora_telemetry::metrics::registry::GaugeHandle>();
-    let _ = khora_telemetry::metrics::registry::GaugeHandle::set;
-    let _ = khora_telemetry::metrics::registry::GaugeHandle::add;
-    let _ = khora_telemetry::metrics::registry::GaugeHandle::sub;
-    let _ = khora_telemetry::metrics::registry::GaugeHandle::get;
-    let _ = khora_telemetry::metrics::registry::GaugeHandle::id;
-    is_debug::<khora_telemetry::metrics::registry::GaugeHandle>();
-    is_clone::<khora_telemetry::metrics::registry::GaugeHandle>();
-    let _ = type_name::<khora_telemetry::metrics::registry::HistogramHandle>();
-    let _ = khora_telemetry::metrics::registry::HistogramHandle::observe;
-    let _ = khora_telemetry::metrics::registry::HistogramHandle::id;
-    let _ = khora_telemetry::metrics::registry::HistogramHandle::get_metric;
-    is_debug::<khora_telemetry::metrics::registry::HistogramHandle>();
-    is_clone::<khora_telemetry::metrics::registry::HistogramHandle>();
-    let _ = type_name::<khora_telemetry::metrics::registry::MetricsRegistry>();
+    let _ = type_name::<khora_telemetry::metrics::CounterHandle>();
+    let _ = khora_telemetry::metrics::CounterHandle::increment;
+    let _ = khora_telemetry::metrics::CounterHandle::increment_by;
+    let _ = khora_telemetry::metrics::CounterHandle::get;
+    let _ = khora_telemetry::metrics::CounterHandle::id;
+    is_debug::<khora_telemetry::metrics::CounterHandle>();
+    is_clone::<khora_telemetry::metrics::CounterHandle>();
+    let _ = type_name::<khora_telemetry::metrics::GaugeHandle>();
+    let _ = khora_telemetry::metrics::GaugeHandle::set;
+    let _ = khora_telemetry::metrics::GaugeHandle::add;
+    let _ = khora_telemetry::metrics::GaugeHandle::sub;
+    let _ = khora_telemetry::metrics::GaugeHandle::get;
+    let _ = khora_telemetry::metrics::GaugeHandle::id;
+    is_debug::<khora_telemetry::metrics::GaugeHandle>();
+    is_clone::<khora_telemetry::metrics::GaugeHandle>();
+    let _ = type_name::<khora_telemetry::metrics::HistogramHandle>();
+    let _ = khora_telemetry::metrics::HistogramHandle::observe;
+    let _ = khora_telemetry::metrics::HistogramHandle::id;
+    let _ = khora_telemetry::metrics::HistogramHandle::get_metric;
+    is_debug::<khora_telemetry::metrics::HistogramHandle>();
+    is_clone::<khora_telemetry::metrics::HistogramHandle>();
+    let _ = type_name::<khora_telemetry::metrics::MetricsRegistry>();
     let _ = type_name::<khora_telemetry::MetricsRegistry>();
     same_type(
         PhantomData::<khora_telemetry::MetricsRegistry>,
-        PhantomData::<khora_telemetry::metrics::registry::MetricsRegistry>,
+        PhantomData::<khora_telemetry::metrics::MetricsRegistry>,
     );
-    let _ = khora_telemetry::metrics::registry::MetricsRegistry::new;
-    let _ = khora_telemetry::metrics::registry::MetricsRegistry::with_backend;
+    let _ = khora_telemetry::metrics::MetricsRegistry::new;
+    let _ = khora_telemetry::metrics::MetricsRegistry::with_backend;
     #[allow(clippy::type_complexity)]
     let _: fn(
-        &khora_telemetry::metrics::registry::MetricsRegistry,
+        &khora_telemetry::metrics::MetricsRegistry,
         String,
         String,
         String,
-    ) -> khora_core::telemetry::MetricsResult<
-        khora_telemetry::metrics::registry::CounterHandle,
-    > = khora_telemetry::metrics::registry::MetricsRegistry::register_counter;
+    )
+        -> khora_core::telemetry::MetricsResult<khora_telemetry::metrics::CounterHandle> =
+        khora_telemetry::metrics::MetricsRegistry::register_counter;
     #[allow(clippy::type_complexity)]
     let _: fn(
-        &khora_telemetry::metrics::registry::MetricsRegistry,
+        &khora_telemetry::metrics::MetricsRegistry,
         String,
         String,
         String,
         Vec<(String, String)>,
-    ) -> khora_core::telemetry::MetricsResult<
-        khora_telemetry::metrics::registry::CounterHandle,
-    > = khora_telemetry::metrics::registry::MetricsRegistry::register_counter_with_labels;
+    )
+        -> khora_core::telemetry::MetricsResult<khora_telemetry::metrics::CounterHandle> =
+        khora_telemetry::metrics::MetricsRegistry::register_counter_with_labels;
     #[allow(clippy::type_complexity)]
     let _: fn(
-        &khora_telemetry::metrics::registry::MetricsRegistry,
+        &khora_telemetry::metrics::MetricsRegistry,
         String,
         String,
         String,
         String,
-    ) -> khora_core::telemetry::MetricsResult<
-        khora_telemetry::metrics::registry::GaugeHandle,
-    > = khora_telemetry::metrics::registry::MetricsRegistry::register_gauge;
+    )
+        -> khora_core::telemetry::MetricsResult<khora_telemetry::metrics::GaugeHandle> =
+        khora_telemetry::metrics::MetricsRegistry::register_gauge;
     #[allow(clippy::type_complexity)]
     let _: fn(
-        &khora_telemetry::metrics::registry::MetricsRegistry,
+        &khora_telemetry::metrics::MetricsRegistry,
         String,
         String,
         String,
         String,
         Vec<(String, String)>,
-    ) -> khora_core::telemetry::MetricsResult<
-        khora_telemetry::metrics::registry::GaugeHandle,
-    > = khora_telemetry::metrics::registry::MetricsRegistry::register_gauge_with_labels;
+    )
+        -> khora_core::telemetry::MetricsResult<khora_telemetry::metrics::GaugeHandle> =
+        khora_telemetry::metrics::MetricsRegistry::register_gauge_with_labels;
     #[allow(clippy::type_complexity)]
     let _: fn(
-        &khora_telemetry::metrics::registry::MetricsRegistry,
+        &khora_telemetry::metrics::MetricsRegistry,
         String,
         String,
         String,
         String,
         Vec<f64>,
     ) -> khora_core::telemetry::MetricsResult<
-        khora_telemetry::metrics::registry::HistogramHandle,
-    > = khora_telemetry::metrics::registry::MetricsRegistry::register_histogram;
-    let _ = khora_telemetry::metrics::registry::MetricsRegistry::get_metric;
-    let _ = khora_telemetry::metrics::registry::MetricsRegistry::contains_metric;
-    let _ = khora_telemetry::metrics::registry::MetricsRegistry::get_namespace_metrics;
-    let _ = khora_telemetry::metrics::registry::MetricsRegistry::get_all_counters;
-    let _ = khora_telemetry::metrics::registry::MetricsRegistry::get_all_gauges;
-    let _ = khora_telemetry::metrics::registry::MetricsRegistry::metric_count;
-    let _ = khora_telemetry::metrics::registry::MetricsRegistry::clear_all;
-    let _ = khora_telemetry::metrics::registry::MetricsRegistry::backend;
-    is_debug::<khora_telemetry::metrics::registry::MetricsRegistry>();
-    is_default::<khora_telemetry::metrics::registry::MetricsRegistry>();
+        khora_telemetry::metrics::HistogramHandle,
+    > = khora_telemetry::metrics::MetricsRegistry::register_histogram;
+    let _ = khora_telemetry::metrics::MetricsRegistry::get_metric;
+    let _ = khora_telemetry::metrics::MetricsRegistry::contains_metric;
+    let _ = khora_telemetry::metrics::MetricsRegistry::get_namespace_metrics;
+    let _ = khora_telemetry::metrics::MetricsRegistry::get_all_counters;
+    let _ = khora_telemetry::metrics::MetricsRegistry::get_all_gauges;
+    let _ = khora_telemetry::metrics::MetricsRegistry::metric_count;
+    let _ = khora_telemetry::metrics::MetricsRegistry::clear_all;
+    let _ = khora_telemetry::metrics::MetricsRegistry::backend;
+    is_debug::<khora_telemetry::metrics::MetricsRegistry>();
+    is_default::<khora_telemetry::metrics::MetricsRegistry>();
 }
 
 #[test]
 fn module_monitoring_paths_still_resolve() {
-    let _ = type_name::<khora_telemetry::monitoring::registry::MonitorRegistry>();
+    let _ = type_name::<khora_telemetry::monitoring::MonitorRegistry>();
     let _ = type_name::<khora_telemetry::MonitorRegistry>();
     same_type(
         PhantomData::<khora_telemetry::MonitorRegistry>,
-        PhantomData::<khora_telemetry::monitoring::registry::MonitorRegistry>,
+        PhantomData::<khora_telemetry::monitoring::MonitorRegistry>,
     );
-    let _ = khora_telemetry::monitoring::registry::MonitorRegistry::new;
-    let _ = khora_telemetry::monitoring::registry::MonitorRegistry::register;
-    let _ = khora_telemetry::monitoring::registry::MonitorRegistry::update_all;
-    let _ = khora_telemetry::monitoring::registry::MonitorRegistry::get_all_monitors;
-    is_debug::<khora_telemetry::monitoring::registry::MonitorRegistry>();
-    is_clone::<khora_telemetry::monitoring::registry::MonitorRegistry>();
-    is_default::<khora_telemetry::monitoring::registry::MonitorRegistry>();
+    let _ = khora_telemetry::monitoring::MonitorRegistry::new;
+    let _ = khora_telemetry::monitoring::MonitorRegistry::register;
+    let _ = khora_telemetry::monitoring::MonitorRegistry::update_all;
+    let _ = khora_telemetry::monitoring::MonitorRegistry::get_all_monitors;
+    is_debug::<khora_telemetry::monitoring::MonitorRegistry>();
+    is_clone::<khora_telemetry::monitoring::MonitorRegistry>();
+    is_default::<khora_telemetry::monitoring::MonitorRegistry>();
 }
 
 #[test]
-fn module_service_paths_still_resolve() {
-    let _ = type_name::<khora_telemetry::service::TelemetryService>();
+fn module_telemetry_service_paths_still_resolve() {
+    let _ = type_name::<khora_telemetry::telemetry_service::TelemetryService>();
     let _ = type_name::<khora_telemetry::TelemetryService>();
     same_type(
         PhantomData::<khora_telemetry::TelemetryService>,
-        PhantomData::<khora_telemetry::service::TelemetryService>,
+        PhantomData::<khora_telemetry::telemetry_service::TelemetryService>,
     );
-    let _ = khora_telemetry::service::TelemetryService::new;
-    let _ = khora_telemetry::service::TelemetryService::with_dcc_sender;
-    let _ = khora_telemetry::service::TelemetryService::tick;
-    let _ = khora_telemetry::service::TelemetryService::metrics_registry;
-    let _ = khora_telemetry::service::TelemetryService::monitor_registry;
-    is_debug::<khora_telemetry::service::TelemetryService>();
-    is_default::<khora_telemetry::service::TelemetryService>();
+    let _ = khora_telemetry::telemetry_service::TelemetryService::new;
+    let _ = khora_telemetry::telemetry_service::TelemetryService::with_dcc_sender;
+    let _ = khora_telemetry::telemetry_service::TelemetryService::tick;
+    let _ = khora_telemetry::telemetry_service::TelemetryService::metrics_registry;
+    let _ = khora_telemetry::telemetry_service::TelemetryService::monitor_registry;
+    is_debug::<khora_telemetry::telemetry_service::TelemetryService>();
+    is_default::<khora_telemetry::telemetry_service::TelemetryService>();
 }
 
 #[test]
@@ -252,14 +250,14 @@ fn module_storage_paths_still_resolve() {
 }
 
 #[test]
-fn module_utils_paths_still_resolve() {
-    let _ = type_name::<khora_telemetry::utils::ScopedMetricTimer<'static>>();
+fn module_scoped_metric_timer_paths_still_resolve() {
+    let _ = type_name::<khora_telemetry::scoped_metric_timer::ScopedMetricTimer<'static>>();
     let _ = type_name::<khora_telemetry::ScopedMetricTimer<'static>>();
     same_type(
         PhantomData::<khora_telemetry::ScopedMetricTimer<'static>>,
-        PhantomData::<khora_telemetry::utils::ScopedMetricTimer<'static>>,
+        PhantomData::<khora_telemetry::scoped_metric_timer::ScopedMetricTimer<'static>>,
     );
-    let _ = khora_telemetry::utils::ScopedMetricTimer::new;
+    let _ = khora_telemetry::scoped_metric_timer::ScopedMetricTimer::new;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,8 +269,8 @@ fn module_utils_paths_still_resolve() {
 
 #[allow(unused_imports)]
 mod paths_used_by_other_crates {
-    use khora_telemetry::metrics::registry::CounterHandle as _; // khora-io
-    use khora_telemetry::metrics::registry::HistogramHandle as _; // khora-io
+    use khora_telemetry::metrics::CounterHandle as _; // khora-io
+    use khora_telemetry::metrics::HistogramHandle as _; // khora-io
     use khora_telemetry::MetricsRegistry as _; // khora-agents, khora-io, khora-sdk
     use khora_telemetry::MonitorRegistry as _; // khora-sdk
     use khora_telemetry::ScopedMetricTimer as _; // khora-io

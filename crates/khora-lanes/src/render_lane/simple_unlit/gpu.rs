@@ -16,10 +16,9 @@
 //! pipeline specs they are built from.
 
 use super::SimpleUnlitLane;
-use khora_core::renderer::api::{
-    pipeline::enums::PrimitiveTopology,
-    pipeline::{LayoutKey, LayoutSpec, PipelineSpec, ShaderVariantKey},
-};
+use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
+use khora_core::renderer::api::pipeline::{LayoutKey, LayoutSpec, PipelineSpec};
+use khora_core::renderer::api::shader::ShaderVariantKey;
 
 // ─── Free functions (CLAD: declarative pipeline spec + bespoke layouts) ───
 
@@ -34,7 +33,7 @@ fn unlit_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindG
     use khora_core::renderer::api::command::{
         BindGroupLayoutEntry, BindingType, BufferBindingType,
     };
-    use khora_core::renderer::api::scene::ModelUniforms;
+    use khora_core::renderer::api::gpu_scene::ModelUniforms;
     use khora_core::renderer::api::util::ShaderStageFlags;
     vec![BindGroupLayoutEntry {
         binding: 0,
@@ -55,7 +54,7 @@ fn unlit_material_layout_entries() -> Vec<khora_core::renderer::api::command::Bi
     use khora_core::renderer::api::command::{
         BindGroupLayoutEntry, BindingType, BufferBindingType,
     };
-    use khora_core::renderer::api::scene::MaterialUniforms;
+    use khora_core::renderer::api::material::MaterialUniforms;
     use khora_core::renderer::api::util::ShaderStageFlags;
     vec![BindGroupLayoutEntry {
         binding: 0,
@@ -84,7 +83,7 @@ fn pipeline_spec(device: &dyn khora_core::renderer::GraphicsDevice) -> PipelineS
         ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
         PrimitiveStateDescriptor, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
     };
-    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
+    use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
     use std::borrow::Cow;
 
     PipelineSpec {
@@ -161,7 +160,8 @@ impl SimpleUnlitLane {
         pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
         use crate::render_lane::util::UniformRingBuffer;
-        use khora_core::renderer::api::{resource::CameraUniformData, scene::ModelUniforms};
+        use khora_core::renderer::api::gpu_scene::ModelUniforms;
+        use khora_core::renderer::api::resource::CameraUniformData;
 
         log::info!("SimpleUnlitLane: Initializing GPU resources...");
 
@@ -212,8 +212,8 @@ impl SimpleUnlitLane {
             model_layout,
             0,
             std::mem::size_of::<ModelUniforms>() as u32,
-            crate::render_lane::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
-            crate::render_lane::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+            crate::render_lane::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS,
+            crate::render_lane::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
             "Model Dynamic Ring Runlit",
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
@@ -227,9 +227,9 @@ impl SimpleUnlitLane {
             device,
             material_layout,
             0, // Binding size
-            std::mem::size_of::<khora_core::renderer::api::scene::MaterialUniforms>() as u32,
-            crate::render_lane::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
-            crate::render_lane::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+            std::mem::size_of::<khora_core::renderer::api::material::MaterialUniforms>() as u32,
+            crate::render_lane::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS,
+            crate::render_lane::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
             "Material Dynamic Ring Runlit",
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;

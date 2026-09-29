@@ -19,7 +19,8 @@
 //! commands live in `commands::ci`; the asset-pipeline test fixtures in
 //! `commands::assets`.
 
-use crate::helpers::*;
+use crate::exec::*;
+use crate::term::*;
 use anyhow::Result;
 
 /// `cargo xtask hub-dev` — pre-builds the engine binaries the hub needs to

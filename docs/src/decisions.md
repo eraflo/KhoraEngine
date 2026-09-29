@@ -122,4 +122,4 @@ Choices we made, and what we said no to. The global ledger.
 
 ---
 
-*See [Open questions](./open_questions.md) for the things we have not yet decided.*
+*See [Open questions](./open-questions.md) for the things we have not yet decided.*

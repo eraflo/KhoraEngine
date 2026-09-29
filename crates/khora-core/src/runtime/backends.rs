@@ -18,7 +18,7 @@
 //!
 //! See [`crate::runtime`] for the broader Services / Backends / Resources
 //! taxonomy. The container itself is
-//! [`TypedRegistry`](crate::runtime::registry::TypedRegistry) — this module
+//! [`TypedRegistry`](crate::runtime::typed_registry::TypedRegistry) — this module
 //! contributes the name and the admission criteria, not a second copy of the
 //! lookup code.
 //!
@@ -40,7 +40,7 @@
 //! [`AudioDevice`]: crate::audio::device::AudioDevice
 //! [`LayoutSystem`]: crate::ui::LayoutSystem
 
-use super::registry::{RegistryKind, TypedRegistry};
+use super::typed_registry::{RegistryKind, TypedRegistry};
 
 /// Marker naming the [`Backends`] container. See [`RegistryKind`].
 pub struct BackendKind;

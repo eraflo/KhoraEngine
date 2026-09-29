@@ -14,7 +14,7 @@
 
 //! Flags representing which shader stages can access a resource binding.
 
-use super::enums::ShaderStage;
+use crate::renderer::api::shader::ShaderStage;
 
 crate::khora_bitflags! {
     /// Flags representing which shader stages can access a resource binding.

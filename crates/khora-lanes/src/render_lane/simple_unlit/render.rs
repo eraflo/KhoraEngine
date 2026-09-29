@@ -15,18 +15,14 @@
 //! Recording the lane's draw calls for one frame.
 
 use super::SimpleUnlitLane;
-use khora_core::renderer::{
-    api::{
-        command::{
-            LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
-            RenderPassDescriptor, StoreOp,
-        },
-        core::RenderContext,
-        pipeline::RenderPipelineId,
-        scene::GpuMesh,
-    },
-    traits::CommandEncoder,
+use khora_core::renderer::api::command::{
+    LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
+    RenderPassDescriptor, StoreOp,
 };
+use khora_core::renderer::api::frame::RenderContext;
+use khora_core::renderer::api::gpu_scene::GpuMesh;
+use khora_core::renderer::api::pipeline::RenderPipelineId;
+use khora_core::renderer::traits::CommandEncoder;
 use khora_data::assets::Assets;
 use khora_data::render::RenderWorld;
 use std::sync::RwLock;
@@ -40,7 +36,8 @@ impl SimpleUnlitLane {
         render_ctx: &RenderContext,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) {
-        use khora_core::renderer::api::{resource::CameraUniformData, scene::ModelUniforms};
+        use khora_core::renderer::api::gpu_scene::ModelUniforms;
+        use khora_core::renderer::api::resource::CameraUniformData;
 
         // 1. Get Active Camera View.
         //
@@ -165,7 +162,7 @@ impl SimpleUnlitLane {
                 let model_bg = *model_ring.current_bind_group();
 
                 // Build MaterialUniforms
-                let material_uniforms = khora_core::renderer::api::scene::MaterialUniforms {
+                let material_uniforms = khora_core::renderer::api::material::MaterialUniforms {
                     base_color,
                     emissive: khora_core::math::LinearRgba::BLACK,
                     ambient: khora_core::math::LinearRgba::BLACK,

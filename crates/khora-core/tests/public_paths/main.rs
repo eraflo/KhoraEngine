@@ -75,7 +75,7 @@ fn is_material<T: khora_core::asset::Material>() {}
 fn is_ord<T: Ord>() {}
 fn is_partial_eq<T: PartialEq>() {}
 fn is_partial_ord<T: PartialOrd>() {}
-fn is_registry_kind<T: khora_core::runtime::registry::RegistryKind>() {}
+fn is_registry_kind<T: khora_core::runtime::typed_registry::RegistryKind>() {}
 fn is_serialize<T: serde::Serialize>() {}
 fn is_supersedes<T: khora_core::event::Supersedes>() {}
 
@@ -99,9 +99,9 @@ mod every_pub_mod {
     use khora_core::audio as _;
     use khora_core::audio::device as _;
     use khora_core::audio::mix_bus as _;
-    use khora_core::context as _;
     use khora_core::ecs as _;
     use khora_core::ecs::entity as _;
+    use khora_core::engine_context as _;
     use khora_core::event as _;
     use khora_core::graph as _;
     use khora_core::interpolation as _;
@@ -118,7 +118,7 @@ mod every_pub_mod {
     use khora_core::platform::input_map as _;
     use khora_core::platform::window as _;
     use khora_core::runtime as _;
-    use khora_core::runtime::registry as _;
+    use khora_core::runtime::typed_registry as _;
     use khora_core::scene as _;
     use khora_core::script as _;
     use khora_core::script::buffer as _;
@@ -133,10 +133,10 @@ mod every_pub_mod {
     use khora_core::telemetry::metrics as _;
     use khora_core::telemetry::monitoring as _;
     use khora_core::time as _;
-    use khora_core::utils as _;
-    use khora_core::utils::any_map as _;
-    use khora_core::utils::bitflags as _;
-    use khora_core::utils::timer as _;
+    use khora_core::util as _;
+    use khora_core::util::any_map as _;
+    use khora_core::util::bitflags as _;
+    use khora_core::util::stopwatch as _;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,15 +283,15 @@ fn stream_info_fields(x: &khora_core::audio::device::StreamInfo) {
     let _ = (&x.channels, &x.sample_rate);
 }
 
-fn engine_context_fields(x: &khora_core::context::EngineContext<'static>) {
+fn engine_context_fields(x: &khora_core::engine_context::EngineContext<'static>) {
     let _ = (&x.world, &x.runtime, &x.bus, &x.deck);
 }
 
-fn world_access_variants(x: &khora_core::context::WorldAccess<'static>) {
+fn world_access_variants(x: &khora_core::engine_context::WorldAccess<'static>) {
     match x {
-        khora_core::context::WorldAccess::None => {}
-        khora_core::context::WorldAccess::Shared(..) => {}
-        khora_core::context::WorldAccess::Exclusive(..) => {}
+        khora_core::engine_context::WorldAccess::None => {}
+        khora_core::engine_context::WorldAccess::Shared(..) => {}
+        khora_core::engine_context::WorldAccess::Exclusive(..) => {}
     }
 }
 
@@ -570,7 +570,7 @@ fn rigid_body_handle_fields(x: &khora_core::physics::RigidBodyHandle) {
     let _ = (&x.0,);
 }
 
-fn physics_slot_fields(x: &khora_core::physics::Slot) {
+fn physics_slot_fields(x: &khora_core::physics::SlotId) {
     let _ = (&x.index, &x.generation);
 }
 
@@ -1224,16 +1224,16 @@ mod trait_items {
         window_handle_trait_identity::<T>();
     }
 
-    fn registry_kind_trait_items<T: khora_core::runtime::registry::RegistryKind>() {
-        let _ = <T as khora_core::runtime::registry::RegistryKind>::NAME;
-        let _ = <T as khora_core::runtime::registry::RegistryKind>::NOUN;
+    fn registry_kind_trait_items<T: khora_core::runtime::typed_registry::RegistryKind>() {
+        let _ = <T as khora_core::runtime::typed_registry::RegistryKind>::NAME;
+        let _ = <T as khora_core::runtime::typed_registry::RegistryKind>::NOUN;
     }
 
     fn registry_kind_trait_identity<T: khora_core::runtime::RegistryKind>() {
         registry_kind_trait_items::<T>();
     }
 
-    fn registry_kind_trait_identity_rev<T: khora_core::runtime::registry::RegistryKind>() {
+    fn registry_kind_trait_identity_rev<T: khora_core::runtime::typed_registry::RegistryKind>() {
         registry_kind_trait_identity::<T>();
     }
 
@@ -1620,27 +1620,27 @@ fn module_audio_paths_still_resolve() {
 }
 
 #[test]
-fn module_context_paths_still_resolve() {
-    let _ = type_name::<khora_core::context::EngineContext<'static>>();
+fn module_engine_context_paths_still_resolve() {
+    let _ = type_name::<khora_core::engine_context::EngineContext<'static>>();
     let _ = type_name::<khora_core::EngineContext<'static>>();
     same_type(
         PhantomData::<khora_core::EngineContext<'static>>,
-        PhantomData::<khora_core::context::EngineContext<'static>>,
+        PhantomData::<khora_core::engine_context::EngineContext<'static>>,
     );
-    let _ = engine_context_fields as fn(&khora_core::context::EngineContext<'static>);
-    let _ = khora_core::context::EngineContext::for_agent;
-    let _ = khora_core::context::EngineContext::for_initialisation;
-    let _ = khora_core::context::EngineContext::resource::<u32>;
-    let _ = khora_core::context::EngineContext::locked::<u32>;
-    let _ = khora_core::context::EngineContext::world_ref;
-    let _ = khora_core::context::EngineContext::world_mut;
-    let _ = type_name::<khora_core::context::WorldAccess<'static>>();
+    let _ = engine_context_fields as fn(&khora_core::engine_context::EngineContext<'static>);
+    let _ = khora_core::engine_context::EngineContext::for_agent;
+    let _ = khora_core::engine_context::EngineContext::for_initialisation;
+    let _ = khora_core::engine_context::EngineContext::resource::<u32>;
+    let _ = khora_core::engine_context::EngineContext::locked::<u32>;
+    let _ = khora_core::engine_context::EngineContext::world_ref;
+    let _ = khora_core::engine_context::EngineContext::world_mut;
+    let _ = type_name::<khora_core::engine_context::WorldAccess<'static>>();
     let _ = type_name::<khora_core::WorldAccess<'static>>();
     same_type(
         PhantomData::<khora_core::WorldAccess<'static>>,
-        PhantomData::<khora_core::context::WorldAccess<'static>>,
+        PhantomData::<khora_core::engine_context::WorldAccess<'static>>,
     );
-    let _ = world_access_variants as fn(&khora_core::context::WorldAccess<'static>);
+    let _ = world_access_variants as fn(&khora_core::engine_context::WorldAccess<'static>);
 }
 
 #[test]
@@ -2151,15 +2151,15 @@ fn module_physics_paths_still_resolve() {
     is_encode::<khora_core::physics::RigidBodyHandle>();
     is_decode::<khora_core::physics::RigidBodyHandle>();
     is_borrow_decode::<khora_core::physics::RigidBodyHandle>();
-    let _ = type_name::<khora_core::physics::Slot>();
-    let _ = physics_slot_fields as fn(&khora_core::physics::Slot);
-    let _ = khora_core::physics::Slot::pack;
-    let _ = khora_core::physics::Slot::unpack;
-    is_debug::<khora_core::physics::Slot>();
-    is_clone::<khora_core::physics::Slot>();
-    is_copy::<khora_core::physics::Slot>();
-    is_partial_eq::<khora_core::physics::Slot>();
-    is_eq::<khora_core::physics::Slot>();
+    let _ = type_name::<khora_core::physics::SlotId>();
+    let _ = physics_slot_fields as fn(&khora_core::physics::SlotId);
+    let _ = khora_core::physics::SlotId::pack;
+    let _ = khora_core::physics::SlotId::unpack;
+    is_debug::<khora_core::physics::SlotId>();
+    is_clone::<khora_core::physics::SlotId>();
+    is_copy::<khora_core::physics::SlotId>();
+    is_partial_eq::<khora_core::physics::SlotId>();
+    is_eq::<khora_core::physics::SlotId>();
     let _ = khora_core::physics::collision_channel;
 }
 
@@ -2322,38 +2322,46 @@ fn module_runtime_paths_still_resolve() {
     is_debug::<khora_core::runtime::Runtime>();
     let _ = type_name::<khora_core::runtime::ServiceKind>();
     is_registry_kind::<khora_core::runtime::ServiceKind>();
-    // trait `khora_core::runtime::registry::RegistryKind`: see `registry_kind_trait_items`
+    // trait `khora_core::runtime::typed_registry::RegistryKind`: see `registry_kind_trait_items`
     // trait `khora_core::runtime::RegistryKind`: see `registry_kind_trait_items`
     let _ = type_name::<
-        khora_core::runtime::registry::TypedRegistry<khora_core::runtime::BackendKind>,
+        khora_core::runtime::typed_registry::TypedRegistry<khora_core::runtime::BackendKind>,
     >();
     let _ = type_name::<khora_core::runtime::TypedRegistry<khora_core::runtime::BackendKind>>();
     same_type(
         PhantomData::<khora_core::runtime::TypedRegistry<khora_core::runtime::BackendKind>>,
-        PhantomData::<khora_core::runtime::registry::TypedRegistry<khora_core::runtime::BackendKind>>,
+        PhantomData::<
+            khora_core::runtime::typed_registry::TypedRegistry<khora_core::runtime::BackendKind>,
+        >,
     );
-    let _ = <khora_core::runtime::registry::TypedRegistry<khora_core::runtime::BackendKind>>::new;
-    let _ = <khora_core::runtime::registry::TypedRegistry<khora_core::runtime::BackendKind>>::with_parent;
     let _ =
-        <khora_core::runtime::registry::TypedRegistry<khora_core::runtime::BackendKind>>::insert::<
-            u32,
-        >;
-    let _ = <khora_core::runtime::registry::TypedRegistry<khora_core::runtime::BackendKind>>::get::<
-        u32,
-    >;
+        <khora_core::runtime::typed_registry::TypedRegistry<khora_core::runtime::BackendKind>>::new;
+    let _ = <khora_core::runtime::typed_registry::TypedRegistry<khora_core::runtime::BackendKind>>::with_parent;
     let _ =
-        <khora_core::runtime::registry::TypedRegistry<khora_core::runtime::BackendKind>>::require::<
+        <khora_core::runtime::typed_registry::TypedRegistry<khora_core::runtime::BackendKind>>::insert::<
             u32,
         >;
     let _ =
-        <khora_core::runtime::registry::TypedRegistry<khora_core::runtime::BackendKind>>::contains::<
+        <khora_core::runtime::typed_registry::TypedRegistry<khora_core::runtime::BackendKind>>::get::<
             u32,
         >;
-    let _ = <khora_core::runtime::registry::TypedRegistry<khora_core::runtime::BackendKind>>::len;
     let _ =
-        <khora_core::runtime::registry::TypedRegistry<khora_core::runtime::BackendKind>>::is_empty;
-    is_default::<khora_core::runtime::registry::TypedRegistry<khora_core::runtime::BackendKind>>();
-    is_debug::<khora_core::runtime::registry::TypedRegistry<khora_core::runtime::BackendKind>>();
+        <khora_core::runtime::typed_registry::TypedRegistry<khora_core::runtime::BackendKind>>::require::<
+            u32,
+        >;
+    let _ =
+        <khora_core::runtime::typed_registry::TypedRegistry<khora_core::runtime::BackendKind>>::contains::<
+            u32,
+        >;
+    let _ =
+        <khora_core::runtime::typed_registry::TypedRegistry<khora_core::runtime::BackendKind>>::len;
+    let _ =
+        <khora_core::runtime::typed_registry::TypedRegistry<khora_core::runtime::BackendKind>>::is_empty;
+    is_default::<
+        khora_core::runtime::typed_registry::TypedRegistry<khora_core::runtime::BackendKind>,
+    >();
+    is_debug::<khora_core::runtime::typed_registry::TypedRegistry<khora_core::runtime::BackendKind>>(
+    );
 }
 
 #[test]
@@ -2832,28 +2840,28 @@ fn module_time_paths_still_resolve() {
 }
 
 #[test]
-fn module_utils_paths_still_resolve() {
-    let _ = type_name::<khora_core::utils::any_map::AnyMap>();
-    let _ = khora_core::utils::any_map::AnyMap::new;
-    let _ = khora_core::utils::any_map::AnyMap::insert::<u32>;
-    let _ = khora_core::utils::any_map::AnyMap::get::<u32>;
-    let _ = khora_core::utils::any_map::AnyMap::contains::<u32>;
-    let _ = khora_core::utils::any_map::AnyMap::remove::<u32>;
-    is_default::<khora_core::utils::any_map::AnyMap>();
-    let _ = type_name::<khora_core::utils::timer::Stopwatch>();
+fn module_util_paths_still_resolve() {
+    let _ = type_name::<khora_core::util::any_map::AnyMap>();
+    let _ = khora_core::util::any_map::AnyMap::new;
+    let _ = khora_core::util::any_map::AnyMap::insert::<u32>;
+    let _ = khora_core::util::any_map::AnyMap::get::<u32>;
+    let _ = khora_core::util::any_map::AnyMap::contains::<u32>;
+    let _ = khora_core::util::any_map::AnyMap::remove::<u32>;
+    is_default::<khora_core::util::any_map::AnyMap>();
+    let _ = type_name::<khora_core::util::stopwatch::Stopwatch>();
     let _ = type_name::<khora_core::Stopwatch>();
     same_type(
         PhantomData::<khora_core::Stopwatch>,
-        PhantomData::<khora_core::utils::timer::Stopwatch>,
+        PhantomData::<khora_core::util::stopwatch::Stopwatch>,
     );
-    let _ = khora_core::utils::timer::Stopwatch::new;
-    let _ = khora_core::utils::timer::Stopwatch::elapsed;
-    let _ = khora_core::utils::timer::Stopwatch::elapsed_ms;
-    let _ = khora_core::utils::timer::Stopwatch::elapsed_us;
-    let _ = khora_core::utils::timer::Stopwatch::elapsed_secs_f64;
-    is_debug::<khora_core::utils::timer::Stopwatch>();
-    is_clone::<khora_core::utils::timer::Stopwatch>();
-    is_default::<khora_core::utils::timer::Stopwatch>();
+    let _ = khora_core::util::stopwatch::Stopwatch::new;
+    let _ = khora_core::util::stopwatch::Stopwatch::elapsed;
+    let _ = khora_core::util::stopwatch::Stopwatch::elapsed_ms;
+    let _ = khora_core::util::stopwatch::Stopwatch::elapsed_us;
+    let _ = khora_core::util::stopwatch::Stopwatch::elapsed_secs_f64;
+    is_debug::<khora_core::util::stopwatch::Stopwatch>();
+    is_clone::<khora_core::util::stopwatch::Stopwatch>();
+    is_default::<khora_core::util::stopwatch::Stopwatch>();
 }
 
 // ---------------------------------------------------------------------------
@@ -2979,8 +2987,8 @@ mod paths_used_by_other_crates {
     use khora_core::audio::AudioMixBus as _; // khora-agents, khora-infra, khora-lanes, khora-sdk
     use khora_core::audio::AudioStream as _; // khora-infra, khora-sdk
     use khora_core::audio::StreamInfo as _; // khora-infra, khora-lanes, khora-sdk
-    use khora_core::context::EngineContext as _; // khora-agents
     use khora_core::ecs::entity::EntityId as _; // khora-agents, khora-data, khora-infra, khora-io, khora-lanes, khora-script, khora-sdk
+    use khora_core::engine_context::EngineContext as _; // khora-agents
     use khora_core::event::Channel as _; // khora-agents, khora-data, khora-io, khora-lanes, khora-script, khora-sdk
     use khora_core::event::Supersedes as _; // khora-io, khora-script
     use khora_core::event::WhenFull as _; // khora-io, khora-script
@@ -3053,7 +3061,7 @@ mod paths_used_by_other_crates {
     use khora_core::physics::RaycastHit as _; // khora-infra
     use khora_core::physics::RigidBodyDesc as _; // khora-agents, khora-data, khora-infra
     use khora_core::physics::RigidBodyHandle as _; // khora-data, khora-infra
-    use khora_core::physics::Slot as _; // khora-infra
+    use khora_core::physics::SlotId as _; // khora-infra
     use khora_core::platform::input::KeyCode as _; // khora-infra
     use khora_core::platform::input_channel as _; // khora-agents, khora-data, khora-sdk
     use khora_core::platform::window::KhoraWindow as _; // khora-infra
@@ -3089,8 +3097,6 @@ mod paths_used_by_other_crates {
     use khora_core::renderer::api::command::BufferBindingType::Uniform as _; // khora-infra
     use khora_core::renderer::api::command::CommandBufferId as _; // khora-data, khora-infra
     use khora_core::renderer::api::command::ComputePassDescriptor as _; // khora-infra, khora-lanes
-    use khora_core::renderer::api::command::ComputePipelineDescriptor as _; // khora-infra
-    use khora_core::renderer::api::command::ComputePipelineId as _; // khora-infra, khora-lanes
     use khora_core::renderer::api::command::DrawCommand as _; // khora-lanes
     use khora_core::renderer::api::command::LoadOp as _; // khora-data, khora-infra, khora-lanes
     use khora_core::renderer::api::command::LoadOp::Clear as _; // khora-lanes
@@ -3106,24 +3112,31 @@ mod paths_used_by_other_crates {
     use khora_core::renderer::api::command::TextureSampleType::Float as _; // khora-infra, khora-lanes
     use khora_core::renderer::api::command::TextureViewDimension as _; // khora-data, khora-lanes
     use khora_core::renderer::api::command::TextureViewDimension::D2 as _; // khora-infra
-    use khora_core::renderer::api::core::BackendSelectionConfig as _; // khora-infra
-    use khora_core::renderer::api::core::BackendSelectionResult as _; // khora-infra
-    use khora_core::renderer::api::core::FrameContext as _; // khora-agents, khora-sdk
-    use khora_core::renderer::api::core::GpuHook as _; // khora-infra
-    use khora_core::renderer::api::core::GraphicsAdapterInfo as _; // khora-infra
-    use khora_core::renderer::api::core::RenderContext as _; // khora-lanes
-    use khora_core::renderer::api::core::RenderSettings as _; // khora-infra
-    use khora_core::renderer::api::core::RenderStats as _; // khora-infra
-    use khora_core::renderer::api::core::ShaderModuleDescriptor as _; // khora-infra
-    use khora_core::renderer::api::core::ShaderModuleId as _; // khora-infra
-    use khora_core::renderer::api::core::ShaderSourceData as _; // khora-infra
-    use khora_core::renderer::api::core::MAX_FRAMES_IN_FLIGHT as _; // khora-lanes
+    use khora_core::renderer::api::device::BackendSelectionConfig as _; // khora-infra
+    use khora_core::renderer::api::device::BackendSelectionResult as _; // khora-infra
+    use khora_core::renderer::api::device::GpuHook as _; // khora-infra
+    use khora_core::renderer::api::device::GraphicsAdapterInfo as _; // khora-infra
+    use khora_core::renderer::api::device::GraphicsBackendType as _; // khora-infra
+    use khora_core::renderer::api::device::RenderSettings as _; // khora-infra
+    use khora_core::renderer::api::device::RenderStats as _; // khora-infra
+    use khora_core::renderer::api::device::RendererDeviceType as _; // khora-infra
+    use khora_core::renderer::api::frame::FrameContext as _; // khora-agents, khora-sdk
+    use khora_core::renderer::api::frame::RenderContext as _; // khora-lanes
+    use khora_core::renderer::api::frame::MAX_FRAMES_IN_FLIGHT as _; // khora-lanes
+    use khora_core::renderer::api::gpu_scene as _; // khora-sdk
+    use khora_core::renderer::api::gpu_scene::mesh::Mesh as _; // khora-editor (as khora_sdk::khora_core::…), khora-sdk
+    use khora_core::renderer::api::gpu_scene::GpuMesh as _; // khora-agents, khora-data, khora-io, khora-lanes
+    use khora_core::renderer::api::gpu_scene::Mesh as _; // khora-data, khora-editor (as khora_sdk::khora_core::…), khora-io, khora-sdk
+    use khora_core::renderer::api::gpu_scene::ModelUniforms as _; // khora-lanes
+    use khora_core::renderer::api::gpu_scene::RenderObject as _; // khora-infra
     use khora_core::renderer::api::ibl::fill_ibl_bind_group_entries as _; // khora-lanes
     use khora_core::renderer::api::ibl::ibl_bind_group_layout_entries as _; // khora-lanes
     use khora_core::renderer::api::ibl::IblGpuBindings as _; // khora-data, khora-lanes
     use khora_core::renderer::api::material::bindings::flag as _; // khora-data, khora-infra
     use khora_core::renderer::api::material::fill_material_bind_group_entries as _; // khora-data
+    use khora_core::renderer::api::material::GpuMaterial as _; // khora-data, khora-io
     use khora_core::renderer::api::material::MaterialGpuBindings as _; // khora-data
+    use khora_core::renderer::api::material::MaterialUniforms as _; // khora-data, khora-lanes
     use khora_core::renderer::api::pipeline::enums::BlendFactor as _; // khora-infra, khora-lanes
     use khora_core::renderer::api::pipeline::enums::BlendOperation as _; // khora-infra, khora-lanes
     use khora_core::renderer::api::pipeline::enums::CompareFunction as _; // khora-infra, khora-lanes
@@ -3148,6 +3161,8 @@ mod paths_used_by_other_crates {
     use khora_core::renderer::api::pipeline::BlendStateDescriptor as _; // khora-infra
     use khora_core::renderer::api::pipeline::ColorTargetStateDescriptor as _; // khora-data, khora-infra, khora-lanes
     use khora_core::renderer::api::pipeline::ColorWrites as _; // khora-infra, khora-lanes
+    use khora_core::renderer::api::pipeline::ComputePipelineDescriptor as _; // khora-infra
+    use khora_core::renderer::api::pipeline::ComputePipelineId as _; // khora-infra, khora-lanes
     use khora_core::renderer::api::pipeline::ComputePipelineKey as _; // khora-infra
     use khora_core::renderer::api::pipeline::ComputePipelineSpec as _; // khora-infra, khora-lanes
     use khora_core::renderer::api::pipeline::DepthStencilStateDescriptor as _; // khora-lanes
@@ -3163,8 +3178,6 @@ mod paths_used_by_other_crates {
     use khora_core::renderer::api::pipeline::PrimitiveTopology as _; // khora-agents, khora-data, khora-infra, khora-io, khora-lanes
     use khora_core::renderer::api::pipeline::RenderPipelineDescriptor as _; // khora-infra
     use khora_core::renderer::api::pipeline::RenderPipelineId as _; // khora-data, khora-infra, khora-lanes
-    use khora_core::renderer::api::pipeline::ShaderDefScalar as _; // khora-infra
-    use khora_core::renderer::api::pipeline::ShaderVariantKey as _; // khora-data, khora-infra, khora-io, khora-lanes
     use khora_core::renderer::api::pipeline::VertexAttributeDescriptor as _; // khora-data, khora-infra, khora-io, khora-lanes
     use khora_core::renderer::api::pipeline::VertexBufferLayoutDescriptor as _; // khora-infra, khora-lanes
     use khora_core::renderer::api::pipeline::VertexFormat as _; // khora-data
@@ -3189,40 +3202,38 @@ mod paths_used_by_other_crates {
     use khora_core::renderer::api::resource::BufferId as _; // khora-agents, khora-data, khora-infra, khora-io, khora-lanes
     use khora_core::renderer::api::resource::BufferUsage as _; // khora-data, khora-infra, khora-lanes
     use khora_core::renderer::api::resource::CameraUniformData as _; // khora-infra, khora-lanes
-    use khora_core::renderer::api::resource::CpuShaderSource as _; // khora-io
     use khora_core::renderer::api::resource::CpuTexture as _; // khora-agents, khora-data, khora-io, sandbox (as khora_sdk::khora_core::…)
     use khora_core::renderer::api::resource::FilterMode as _; // khora-data, khora-infra, khora-lanes
     use khora_core::renderer::api::resource::FilterMode::Linear as _; // khora-lanes
     use khora_core::renderer::api::resource::ImageAspect as _; // khora-data, khora-infra, khora-lanes
+    use khora_core::renderer::api::resource::IndexFormat as _; // khora-infra
+    use khora_core::renderer::api::resource::IndexFormat as _; // khora-agents, khora-data, khora-infra, khora-io, khora-lanes
     use khora_core::renderer::api::resource::MipmapFilterMode as _; // khora-data, khora-infra, khora-lanes
     use khora_core::renderer::api::resource::MipmapFilterMode::Linear as _; // khora-lanes
+    use khora_core::renderer::api::resource::SampleCount as _; // khora-infra
+    use khora_core::renderer::api::resource::SampleCount as _; // khora-data, khora-infra, khora-io, khora-lanes, sandbox (as khora_sdk::khora_core::…)
     use khora_core::renderer::api::resource::SamplerDescriptor as _; // khora-data, khora-infra, khora-lanes
     use khora_core::renderer::api::resource::SamplerId as _; // khora-data, khora-infra, khora-io, khora-lanes
+    use khora_core::renderer::api::resource::TextureColorSpace as _; // khora-data
     use khora_core::renderer::api::resource::TextureDescriptor as _; // khora-data, khora-infra, khora-lanes
     use khora_core::renderer::api::resource::TextureDimension as _; // khora-data, khora-infra, khora-io, khora-lanes, sandbox (as khora_sdk::khora_core::…)
+    use khora_core::renderer::api::resource::TextureFormat as _; // khora-infra
+    use khora_core::renderer::api::resource::TextureFormat as _; // khora-data, khora-infra, khora-io, khora-lanes, sandbox (as khora_sdk::khora_core::…)
+    use khora_core::renderer::api::resource::TextureFormat::Rgba8Unorm as _; // khora-agents
     use khora_core::renderer::api::resource::TextureId as _; // khora-data, khora-infra, khora-lanes
     use khora_core::renderer::api::resource::TextureUsage as _; // khora-data, khora-infra, khora-io, khora-lanes, sandbox (as khora_sdk::khora_core::…)
     use khora_core::renderer::api::resource::TextureViewDescriptor as _; // khora-data, khora-infra, khora-lanes
     use khora_core::renderer::api::resource::TextureViewDimension as _; // khora-lanes
     use khora_core::renderer::api::resource::TextureViewId as _; // khora-data, khora-infra, khora-lanes
     use khora_core::renderer::api::resource::ViewInfo as _; // khora-data, khora-editor (as khora_sdk::khora_core::…), khora-infra
-    use khora_core::renderer::api::scene as _; // khora-sdk
-    use khora_core::renderer::api::scene::mesh::Mesh as _; // khora-editor (as khora_sdk::khora_core::…), khora-sdk
-    use khora_core::renderer::api::scene::CullingUniformsData as _; // khora-lanes
-    use khora_core::renderer::api::scene::DirectionalLightUniform as _; // khora-lanes
-    use khora_core::renderer::api::scene::GpuMaterial as _; // khora-data, khora-io
-    use khora_core::renderer::api::scene::GpuMesh as _; // khora-agents, khora-data, khora-io, khora-lanes
-    use khora_core::renderer::api::scene::LightingUniforms as _; // khora-lanes
-    use khora_core::renderer::api::scene::MaterialUniforms as _; // khora-data, khora-lanes
-    use khora_core::renderer::api::scene::Mesh as _; // khora-data, khora-editor (as khora_sdk::khora_core::…), khora-io, khora-sdk
-    use khora_core::renderer::api::scene::ModelUniforms as _; // khora-lanes
-    use khora_core::renderer::api::scene::PointLightUniform as _; // khora-lanes
-    use khora_core::renderer::api::scene::RenderObject as _; // khora-infra
-    use khora_core::renderer::api::scene::SpotLightUniform as _; // khora-lanes
-    use khora_core::renderer::api::scene::MAX_DIRECTIONAL_LIGHTS as _; // khora-lanes
-    use khora_core::renderer::api::scene::MAX_POINT_LIGHTS as _; // khora-lanes
-    use khora_core::renderer::api::scene::MAX_SPOT_LIGHTS as _; // khora-lanes
-    use khora_core::renderer::api::shader_defs::ShaderDefs as _; // khora-infra
+    use khora_core::renderer::api::shader::defs::ShaderDefs as _; // khora-infra
+    use khora_core::renderer::api::shader::CpuShaderSource as _; // khora-io
+    use khora_core::renderer::api::shader::ShaderDefScalar as _; // khora-infra
+    use khora_core::renderer::api::shader::ShaderModuleDescriptor as _; // khora-infra
+    use khora_core::renderer::api::shader::ShaderModuleId as _; // khora-infra
+    use khora_core::renderer::api::shader::ShaderSourceData as _; // khora-infra
+    use khora_core::renderer::api::shader::ShaderStage as _; // khora-infra
+    use khora_core::renderer::api::shader::ShaderVariantKey as _; // khora-data, khora-infra, khora-io, khora-lanes
     use khora_core::renderer::api::shadow::bindings as _; // khora-lanes
     use khora_core::renderer::api::shadow::bindings::binding::ATLAS_2D as _; // khora-lanes
     use khora_core::renderer::api::shadow::bindings::binding::ATLAS_CUBE as _; // khora-lanes
@@ -3237,34 +3248,31 @@ mod paths_used_by_other_crates {
     use khora_core::renderer::api::shadow::ShadowGpuBindings as _; // khora-lanes
     use khora_core::renderer::api::text::TextLayout as _; // khora-data, khora-infra
     use khora_core::renderer::api::text::TextRenderer as _; // khora-agents, khora-data, khora-infra, khora-lanes, khora-sdk
-    use khora_core::renderer::api::util::enums::IndexFormat as _; // khora-infra
-    use khora_core::renderer::api::util::enums::SampleCount as _; // khora-infra
-    use khora_core::renderer::api::util::enums::ShaderStage as _; // khora-infra
-    use khora_core::renderer::api::util::enums::TextureFormat as _; // khora-infra
     use khora_core::renderer::api::util::f32_to_f16_bits as _; // khora-io
     use khora_core::renderer::api::util::flags::ShaderStageFlags as _; // khora-infra
     use khora_core::renderer::api::util::AtlasRect as _; // khora-data
-    use khora_core::renderer::api::util::GraphicsBackendType as _; // khora-infra
-    use khora_core::renderer::api::util::IndexFormat as _; // khora-agents, khora-data, khora-infra, khora-io, khora-lanes
-    use khora_core::renderer::api::util::RendererDeviceType as _; // khora-infra
-    use khora_core::renderer::api::util::SampleCount as _; // khora-data, khora-infra, khora-io, khora-lanes, sandbox (as khora_sdk::khora_core::…)
     use khora_core::renderer::api::util::ShaderStageFlags as _; // khora-data, khora-infra, khora-lanes
     use khora_core::renderer::api::util::TextureAtlas as _; // khora-data, khora-infra, khora-lanes
-    use khora_core::renderer::api::util::TextureColorSpace as _; // khora-data
-    use khora_core::renderer::api::util::TextureFormat as _; // khora-data, khora-infra, khora-io, khora-lanes, sandbox (as khora_sdk::khora_core::…)
-    use khora_core::renderer::api::util::TextureFormat::Rgba8Unorm as _; // khora-agents
     use khora_core::renderer::error::RenderError as _; // khora-data, khora-infra, khora-lanes
     use khora_core::renderer::error::RenderError::ResourceError as _; // khora-lanes
     use khora_core::renderer::error::ResourceError as _; // khora-infra
     use khora_core::renderer::error::ResourceError::BackendError as _; // khora-lanes
     use khora_core::renderer::light as _; // khora-sdk
+    use khora_core::renderer::light::CullingUniformsData as _; // khora-lanes
     use khora_core::renderer::light::DirectionalLight as _; // khora-agents, khora-data, khora-editor (as khora_sdk::khora_core::…), khora-lanes, khora-sdk
+    use khora_core::renderer::light::DirectionalLightUniform as _; // khora-lanes
     use khora_core::renderer::light::LightType as _; // khora-agents, khora-data, khora-editor (as khora_sdk::khora_core::…), khora-lanes, khora-sdk
     use khora_core::renderer::light::LightType::Directional as _; // khora-lanes
     use khora_core::renderer::light::LightType::Point as _; // khora-lanes
     use khora_core::renderer::light::LightType::Spot as _; // khora-lanes
+    use khora_core::renderer::light::LightingUniforms as _; // khora-lanes
     use khora_core::renderer::light::PointLight as _; // khora-agents, khora-data, khora-editor (as khora_sdk::khora_core::…), khora-lanes, khora-sdk
+    use khora_core::renderer::light::PointLightUniform as _; // khora-lanes
     use khora_core::renderer::light::SpotLight as _; // khora-data, khora-editor (as khora_sdk::khora_core::…), khora-sdk
+    use khora_core::renderer::light::SpotLightUniform as _; // khora-lanes
+    use khora_core::renderer::light::MAX_DIRECTIONAL_LIGHTS as _; // khora-lanes
+    use khora_core::renderer::light::MAX_POINT_LIGHTS as _; // khora-lanes
+    use khora_core::renderer::light::MAX_SPOT_LIGHTS as _; // khora-lanes
     use khora_core::renderer::traits::CommandEncoder as _; // khora-data, khora-infra, khora-lanes
     use khora_core::renderer::traits::ComputePass as _; // khora-infra
     use khora_core::renderer::traits::FrameTargets as _; // khora-infra
@@ -3406,7 +3414,7 @@ mod paths_used_by_other_crates {
     use khora_core::ui::UiBuilder as _; // khora-infra, khora-sdk, khora-tool-ui
     use khora_core::ui::UiLayoutView as _; // khora-data
     use khora_core::ui::UiTheme as _; // khora-infra, khora-sdk, khora-tool-ui
-    use khora_core::utils::timer::Stopwatch as _;
+    use khora_core::util::stopwatch::Stopwatch as _;
     use khora_core::Backends as _; // khora-sdk
     use khora_core::EngineContext as _; // khora-agents, khora-control
     use khora_core::Resources as _; // khora-sdk
@@ -3449,7 +3457,7 @@ fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_core::math::Vec4::new; // khora-script
     let _ = khora_core::platform::InputMap::new; // khora-sdk
     let _ = khora_core::renderer::GpuLight::from_parts; // khora-lanes
-    let _ = khora_core::renderer::api::core::RenderContext::new; // khora-lanes
+    let _ = khora_core::renderer::api::frame::RenderContext::new; // khora-lanes
     let _ = khora_core::renderer::api::resource::BufferUsage::COPY_DST; // khora-lanes
     let _ = khora_core::renderer::api::resource::BufferUsage::STORAGE; // khora-lanes
     let _ = khora_core::renderer::api::resource::BufferUsage::UNIFORM; // khora-lanes

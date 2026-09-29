@@ -179,7 +179,7 @@ The on-disk form is **RON** of a type-tagged tree:
 ```
 
 `type_name` selects a `MaterialRegistration` from an open, inventory-based
-registry (`khora-data::ecs::components::material_registry`); the `material`
+registry (`khora-data::scene::material_registration`); the `material`
 sub-value is decoded by that registration. Four material types register by
 default:
 

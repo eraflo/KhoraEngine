@@ -15,11 +15,11 @@
 //! GPU data handles and descriptors.
 
 pub mod buffer;
-pub mod shader_source;
 pub mod texture;
+pub mod texture_format;
 pub mod view;
 
 pub use self::buffer::*;
-pub use self::shader_source::*;
 pub use self::texture::*;
+pub use self::texture_format::{TextureColorSpace, TextureFormat};
 pub use self::view::*;

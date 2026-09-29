@@ -19,7 +19,6 @@ mod global_transform;
 mod handle;
 mod light;
 mod material_ref;
-mod material_registry;
 mod mesh_ref;
 mod name;
 mod parent;
@@ -37,7 +36,6 @@ pub use global_transform::*;
 pub use handle::*;
 pub use light::*;
 pub use material_ref::*;
-pub use material_registry::*;
 pub use mesh_ref::*;
 
 // The builders live with the other asset code; `ecs` keeps naming them.

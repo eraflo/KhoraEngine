@@ -14,11 +14,11 @@
 
 //! Helpers shared by the render-side lanes: per-frame uniform buffers and bind-group layouts.
 
-pub mod dynamic_uniform_buffer;
+pub mod dynamic_uniform_ring_buffer;
 mod uniform_layout;
 pub mod uniform_ring_buffer;
 
-pub use dynamic_uniform_buffer::DynamicUniformRingBuffer;
+pub use dynamic_uniform_ring_buffer::DynamicUniformRingBuffer;
 pub(crate) use uniform_layout::single_uniform_layout;
 pub use uniform_ring_buffer::UniformRingBuffer;
 

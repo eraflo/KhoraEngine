@@ -25,7 +25,7 @@
 use std::error::Error;
 use std::sync::Arc;
 
-use khora_core::renderer::api::scene::Mesh;
+use khora_core::renderer::api::gpu_scene::Mesh;
 
 use crate::asset::AssetDecoder;
 

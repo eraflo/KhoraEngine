@@ -23,13 +23,11 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 use crate::render_lane::util::DynamicUniformRingBuffer;
+use khora_core::renderer::api::command::BindGroupLayoutId;
+use khora_core::renderer::api::gpu_scene::{GpuMesh, ModelUniforms};
+use khora_core::renderer::api::pipeline::RenderPipelineId;
+use khora_core::renderer::api::resource::{CameraUniformData, SamplerId};
 use khora_core::renderer::api::shadow::ShadowEntry;
-use khora_core::renderer::api::{
-    command::BindGroupLayoutId,
-    pipeline::RenderPipelineId,
-    resource::{CameraUniformData, SamplerId},
-    scene::{GpuMesh, ModelUniforms},
-};
 use khora_core::renderer::{traits::CommandEncoder, GraphicsDevice};
 use khora_data::assets::Assets;
 use khora_data::render::RenderWorld;
@@ -134,7 +132,7 @@ impl ShadowsLaneState {
             Some(model_layout);
 
         // 3. Ring buffers — sized for this lane's atlas capacities.
-        use crate::render_lane::util::dynamic_uniform_buffer::{
+        use crate::render_lane::util::dynamic_uniform_ring_buffer::{
             DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
         };
         let camera_ring_capacity = atlas_2d_max_lights + cube_max_lights * 6;
@@ -435,10 +433,10 @@ fn shadow_pipeline_spec() -> khora_core::renderer::api::pipeline::PipelineSpec {
     use khora_core::renderer::api::pipeline::state::{DepthBiasState, StencilFaceState};
     use khora_core::renderer::api::pipeline::{
         DepthStencilStateDescriptor, LayoutSpec, MultisampleStateDescriptor, PipelineSpec,
-        PrimitiveStateDescriptor, ShaderVariantKey, VertexAttributeDescriptor,
-        VertexBufferLayoutDescriptor,
+        PrimitiveStateDescriptor, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
     };
-    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
+    use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
+    use khora_core::renderer::api::shader::ShaderVariantKey;
     use std::borrow::Cow;
 
     PipelineSpec {

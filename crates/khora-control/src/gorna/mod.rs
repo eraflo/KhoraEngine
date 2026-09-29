@@ -25,7 +25,7 @@
 //! 6. Issuing `ResourceBudget` to each agent.
 
 use crate::analysis::AnalysisReport;
-use crate::context::Context;
+use crate::dcc_context::Context;
 use khora_core::agent::gorna::{
     AdaptationMode, AgentHints, AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints,
     StrategyId, StrategyOption, TickDecisions,

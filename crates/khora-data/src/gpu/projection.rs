@@ -33,31 +33,27 @@
 //! referencing a texture absent from the `Assets<CpuTexture>` store, is logged
 //! and skipped rather than silently substituted.
 
-use crate::{
-    ecs::{HandleComponent, MaterialRef, Without, World},
-    gpu::AssetStore,
+use crate::assets::AssetStore;
+use crate::ecs::{HandleComponent, MaterialRef, Without, World};
+use khora_core::asset::{AlphaMode, AssetHandle, AssetUUID, Material};
+use khora_core::ecs::entity::EntityId;
+use khora_core::math::{LinearRgba, Origin3D};
+use khora_core::renderer::api::command::BindGroupDescriptor;
+use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
+use khora_core::renderer::api::material::bindings::flag;
+use khora_core::renderer::api::material::{
+    fill_material_bind_group_entries, GpuMaterial, MaterialGpuBindings, MaterialUniforms,
 };
-use khora_core::{
-    asset::{AlphaMode, AssetHandle, AssetUUID, Material},
-    ecs::entity::EntityId,
-    math::{LinearRgba, Origin3D},
-    renderer::{
-        api::{
-            command::BindGroupDescriptor,
-            material::{bindings::flag, fill_material_bind_group_entries, MaterialGpuBindings},
-            pipeline::{LayoutKey, ShaderVariantKey},
-            resource::{
-                AddressMode, BufferDescriptor, BufferUsage, CpuTexture, FilterMode, ImageAspect,
-                MipmapFilterMode, SamplerDescriptor, SamplerId, TextureDescriptor,
-                TextureDimension, TextureId, TextureUsage, TextureViewDescriptor, TextureViewId,
-            },
-            scene::{GpuMaterial, GpuMesh, MaterialUniforms, Mesh},
-            util::{IndexFormat, SampleCount, TextureColorSpace},
-        },
-        traits::PipelineSystem,
-        GraphicsDevice,
-    },
+use khora_core::renderer::api::pipeline::LayoutKey;
+use khora_core::renderer::api::resource::{
+    AddressMode, BufferDescriptor, BufferUsage, CpuTexture, FilterMode, ImageAspect, IndexFormat,
+    MipmapFilterMode, SampleCount, SamplerDescriptor, SamplerId, TextureColorSpace,
+    TextureDescriptor, TextureDimension, TextureId, TextureUsage, TextureViewDescriptor,
+    TextureViewId,
 };
+use khora_core::renderer::api::shader::ShaderVariantKey;
+use khora_core::renderer::traits::PipelineSystem;
+use khora_core::renderer::GraphicsDevice;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};

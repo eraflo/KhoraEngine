@@ -35,6 +35,7 @@ mod camera;
 mod chrome;
 mod commands;
 mod drag_payload;
+mod git;
 mod gizmo;
 mod hot_reload;
 mod input;
@@ -44,7 +45,6 @@ mod panels;
 mod picking;
 mod project_vfs;
 mod scene_io;
-mod util;
 mod widgets;
 
 fn main() -> anyhow::Result<()> {

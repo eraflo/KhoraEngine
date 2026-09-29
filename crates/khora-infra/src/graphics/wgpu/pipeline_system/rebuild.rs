@@ -16,15 +16,15 @@
 
 use std::borrow::Cow;
 
-use khora_core::renderer::api::command::{
-    BindGroupLayoutDescriptor, BindGroupLayoutId, ComputePipelineDescriptor,
-};
-use khora_core::renderer::api::core::{ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData};
+use khora_core::renderer::api::command::{BindGroupLayoutDescriptor, BindGroupLayoutId};
+use khora_core::renderer::api::pipeline::ComputePipelineDescriptor;
 use khora_core::renderer::api::pipeline::{
     ComputePipelineKey, LayoutKey, LayoutSpec, PipelineKey, PipelineLayoutDescriptor,
-    RenderPipelineDescriptor, ShaderDefScalar, ShaderVariantKey,
+    RenderPipelineDescriptor,
 };
-use khora_core::renderer::api::shader_defs::ShaderDefs;
+use khora_core::renderer::api::shader::defs::ShaderDefs;
+use khora_core::renderer::api::shader::{ShaderDefScalar, ShaderVariantKey};
+use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData};
 use khora_core::renderer::error::RenderError;
 use khora_core::renderer::traits::GraphicsDevice;
 

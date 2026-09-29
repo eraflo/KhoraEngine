@@ -16,7 +16,7 @@
 //! group (group 2 of every lit pipeline).
 //!
 //! The material's GPU representation is a per-UUID projection
-//! ([`GpuMaterial`](crate::renderer::api::scene::GpuMaterial)) built once
+//! ([`GpuMaterial`]) built once
 //! by the data layer, not rebuilt per draw by each lane. The bind-group
 //! contract for group 2 lives in [`bindings`]:
 //!
@@ -38,6 +38,11 @@
 //! by the `PipelineSystem` backend.
 
 pub mod bindings;
+pub mod gpu_material;
+pub mod uniforms;
+
+pub use self::gpu_material::GpuMaterial;
+pub use self::uniforms::MaterialUniforms;
 
 pub use bindings::{
     fill_material_bind_group_entries, material_bind_group_layout_entries,

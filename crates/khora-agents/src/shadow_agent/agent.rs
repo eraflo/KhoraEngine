@@ -40,8 +40,8 @@ use khora_core::agent::gorna::{
 };
 use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::lane::{LaneContext, LaneRegistry};
-use khora_core::renderer::api::core::FrameContext;
-use khora_core::renderer::api::scene::GpuMesh;
+use khora_core::renderer::api::frame::FrameContext;
+use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 use khora_data::render::RenderWorld;

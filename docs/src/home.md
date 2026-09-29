@@ -71,7 +71,7 @@ Khora is **experimental**. The foundational architecture, the CRPECS ECS, the
 GORNA negotiation loop, eight intelligent agents, an editor with play mode, and a
 large workspace test suite are operational. The SDK surface is intentionally
 narrow and grows as the engine matures. The [Roadmap](./roadmap.md) lays
-out the multi-year path; the [Open questions](./open_questions.md)
+out the multi-year path; the [Open questions](./open-questions.md)
 chapter is honest about what is still undecided.
 
 When the engine changes, this book changes in the same commit.

@@ -14,6 +14,6 @@
 
 //! Taffy-based layout implementation.
 
-pub mod taffy_layout;
+pub mod layout_system;
 
-pub use taffy_layout::TaffyLayoutSystem;
+pub use layout_system::TaffyLayoutSystem;

@@ -19,10 +19,6 @@
 //! in GORNA strategy negotiation.
 
 pub mod asset;
-pub mod asset_resolver;
-pub mod script_compile;
-pub mod script_hot_reload;
-pub mod script_mirror;
+pub mod script;
 pub mod serialization;
-pub mod shader_hot_reload;
-pub mod vfs;
+pub mod systems;

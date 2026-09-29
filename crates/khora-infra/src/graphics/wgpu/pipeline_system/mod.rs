@@ -26,16 +26,16 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 use khora_core::renderer::api::command::{
-    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindGroupLayoutId, ComputePipelineDescriptor,
-    ComputePipelineId,
+    BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindGroupLayoutId,
 };
-use khora_core::renderer::api::core::ShaderModuleId;
+use khora_core::renderer::api::pipeline::{ComputePipelineDescriptor, ComputePipelineId};
 use khora_core::renderer::api::pipeline::{
     ComputePipelineKey, ComputePipelineSpec, LayoutCacheKey, LayoutKey, PipelineKey,
     PipelineLayoutDescriptor, PipelineSpec, RenderPipelineDescriptor, RenderPipelineId,
-    ShaderVariantKey,
 };
-use khora_core::renderer::api::shader_defs::ShaderDefs;
+use khora_core::renderer::api::shader::defs::ShaderDefs;
+use khora_core::renderer::api::shader::ShaderModuleId;
+use khora_core::renderer::api::shader::ShaderVariantKey;
 use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::traits::{GraphicsDevice, PipelineSystem};
 

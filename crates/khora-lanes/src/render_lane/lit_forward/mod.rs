@@ -29,13 +29,11 @@ use khora_core::renderer::api::command::BindGroupLayoutId;
 
 use crate::render_lane::util::DynamicUniformRingBuffer;
 use crate::render_lane::util::UniformRingBuffer;
-use khora_core::{
-    asset::Material,
-    renderer::{
-        api::{pipeline::enums::PrimitiveTopology, pipeline::RenderPipelineId, scene::GpuMesh},
-        traits::CommandEncoder,
-    },
-};
+use khora_core::asset::Material;
+use khora_core::renderer::api::gpu_scene::GpuMesh;
+use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
+use khora_core::renderer::api::pipeline::RenderPipelineId;
+use khora_core::renderer::traits::CommandEncoder;
 use khora_data::assets::Assets;
 use khora_data::render::RenderWorld;
 use std::sync::RwLock;
@@ -180,7 +178,7 @@ impl khora_core::lane::Lane for LitForwardLane {
         };
         let gpu_meshes = match ctx.get::<std::sync::Arc<
             std::sync::RwLock<
-                khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
+                khora_data::assets::Assets<khora_core::renderer::api::gpu_scene::GpuMesh>,
             >,
         >>() {
             Some(arc) => arc,
@@ -224,7 +222,7 @@ impl khora_core::lane::Lane for LitForwardLane {
         let gpu_meshes = ctx
             .get::<std::sync::Arc<
                 std::sync::RwLock<
-                    khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
+                    khora_data::assets::Assets<khora_core::renderer::api::gpu_scene::GpuMesh>,
                 >,
             >>()
             .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?
@@ -248,7 +246,7 @@ impl khora_core::lane::Lane for LitForwardLane {
             .get::<khora_core::lane::ClearColor>()
             .ok_or(LaneError::missing("ClearColor"))?
             .0;
-        let render_ctx = khora_core::renderer::api::core::RenderContext::new(
+        let render_ctx = khora_core::renderer::api::frame::RenderContext::new(
             &color_target,
             Some(&depth_target),
             clear_color,

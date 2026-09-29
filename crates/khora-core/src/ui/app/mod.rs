@@ -17,8 +17,8 @@
 //! `khora-sdk` re-exports + a `run_native()` function that boots the
 //! eframe backend behind the trait.
 
-pub mod context;
+pub mod app_context;
 pub mod runtime;
 
-pub use context::AppContext;
+pub use app_context::AppContext;
 pub use runtime::{App, AppLifecycle};

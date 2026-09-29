@@ -15,11 +15,9 @@
 //! Command recording and pass execution.
 
 pub mod bind_group;
-pub mod compute;
-pub mod encoder;
+pub mod draw_command;
 pub mod pass;
 
 pub use self::bind_group::*;
-pub use self::compute::*;
-pub use self::encoder::*;
+pub use self::draw_command::*;
 pub use self::pass::*;

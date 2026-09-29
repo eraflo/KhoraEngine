@@ -8,10 +8,10 @@
 
 //! Engine manager — the local dev clone, what you can download, what you have.
 
-use crate::HubApp;
-use crate::Screen;
-use crate::download;
-use crate::github;
+use crate::app::HubApp;
+use crate::services::download;
+use crate::services::github;
+use crate::state::Screen;
 use khora_sdk::tool_ui::{FontFamilyHint, Icon, UiBuilder, UiTheme};
 use khora_tool_ui::brand::khora_dark;
 use khora_tool_ui::widgets::{
@@ -513,12 +513,12 @@ fn uninstall_version(app: &mut HubApp, version: &str) {
     }
     match download::uninstall_engine(version) {
         Ok(()) => {
-            app.banner = Some(crate::Banner::info(format!(
+            app.banner = Some(crate::state::Banner::info(format!(
                 "Uninstalled engine {version}."
             )))
         }
         Err(e) => {
-            app.banner = Some(crate::Banner::error(format!(
+            app.banner = Some(crate::state::Banner::error(format!(
                 "Couldn't remove engine {version} from disk: {e}"
             )))
         }

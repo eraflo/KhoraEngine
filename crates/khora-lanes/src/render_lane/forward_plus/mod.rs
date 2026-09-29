@@ -47,14 +47,12 @@
 use crate::render_lane::ShaderComplexity;
 use khora_data::render::RenderWorld;
 
-use khora_core::{
-    asset::Material,
-    renderer::{
-        api::{pipeline::enums::PrimitiveTopology, pipeline::RenderPipelineId, scene::GpuMesh},
-        traits::CommandEncoder,
-        ForwardPlusTileConfig,
-    },
-};
+use khora_core::asset::Material;
+use khora_core::renderer::api::gpu_scene::GpuMesh;
+use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
+use khora_core::renderer::api::pipeline::RenderPipelineId;
+use khora_core::renderer::traits::CommandEncoder;
+use khora_core::renderer::ForwardPlusTileConfig;
 use khora_data::assets::Assets;
 use std::sync::RwLock;
 
@@ -252,7 +250,7 @@ impl khora_core::lane::Lane for ForwardPlusLane {
         };
         let gpu_meshes = match ctx.get::<std::sync::Arc<
             std::sync::RwLock<
-                khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
+                khora_data::assets::Assets<khora_core::renderer::api::gpu_scene::GpuMesh>,
             >,
         >>() {
             Some(arc) => arc,
@@ -296,7 +294,7 @@ impl khora_core::lane::Lane for ForwardPlusLane {
         let gpu_meshes = ctx
             .get::<std::sync::Arc<
                 std::sync::RwLock<
-                    khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
+                    khora_data::assets::Assets<khora_core::renderer::api::gpu_scene::GpuMesh>,
                 >,
             >>()
             .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?
@@ -321,7 +319,7 @@ impl khora_core::lane::Lane for ForwardPlusLane {
             .ok_or(LaneError::missing("ClearColor"))?
             .0;
 
-        let render_ctx = khora_core::renderer::api::core::RenderContext::new(
+        let render_ctx = khora_core::renderer::api::frame::RenderContext::new(
             &color_target,
             Some(&depth_target),
             clear_color,

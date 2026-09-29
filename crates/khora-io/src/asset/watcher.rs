@@ -64,7 +64,7 @@ pub struct AssetChangeEvent {
     /// cross-platform UUID stability.
     pub rel_path: String,
     /// UUID derived from `rel_path` via [`AssetUUID::new_v5`]. May not yet
-    /// (or no longer) exist in the [`crate::vfs::VirtualFileSystem`] — the
+    /// (or no longer) exist in the [`crate::asset::AssetIndex`] — the
     /// consumer reconciles by reindex + invalidate as appropriate.
     pub uuid: AssetUUID,
 }

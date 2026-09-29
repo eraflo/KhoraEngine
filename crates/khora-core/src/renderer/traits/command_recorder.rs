@@ -12,15 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::renderer::api::{
-    command::{
-        BindGroupId, CommandBufferId, ComputePassDescriptor, ComputePipelineId,
-        RenderPassDescriptor,
-    },
-    pipeline::RenderPipelineId,
-    resource::BufferId,
-    util::IndexFormat,
+use crate::renderer::api::command::{
+    BindGroupId, CommandBufferId, ComputePassDescriptor, RenderPassDescriptor,
 };
+use crate::renderer::api::pipeline::{ComputePipelineId, RenderPipelineId};
+use crate::renderer::api::resource::{BufferId, IndexFormat};
 use crate::renderer::traits::GpuProfiler;
 use std::any::Any;
 use std::ops::Range;

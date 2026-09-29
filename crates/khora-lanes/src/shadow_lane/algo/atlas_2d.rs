@@ -30,7 +30,7 @@ use khora_core::renderer::api::resource::{
     CameraUniformData, ImageAspect, TextureDescriptor, TextureDimension, TextureId, TextureUsage,
     TextureViewDescriptor, TextureViewDimension, TextureViewId,
 };
-use khora_core::renderer::api::util::{SampleCount, TextureFormat};
+use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
 use khora_core::renderer::error::RenderError;
 use khora_core::renderer::GraphicsDevice;
 
@@ -142,7 +142,7 @@ pub fn collect_pass(
     view_proj: Mat4,
     device: &dyn GraphicsDevice,
     render_world: &khora_data::render::RenderWorld,
-    gpu_meshes: &khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
+    gpu_meshes: &khora_data::assets::Assets<khora_core::renderer::api::gpu_scene::GpuMesh>,
     camera_ring: &mut DynamicUniformRingBuffer,
     model_ring: &mut DynamicUniformRingBuffer,
 ) -> Option<AttachmentPass> {

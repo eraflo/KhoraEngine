@@ -34,14 +34,14 @@
 //! the three containers, applying the same admission criteria.
 
 mod backends;
-pub mod registry;
 mod resources;
 mod services;
+pub mod typed_registry;
 
 pub use backends::{BackendKind, Backends};
-pub use registry::{RegistryKind, TypedRegistry};
 pub use resources::{ResourceKind, Resources};
 pub use services::{ServiceKind, Services};
+pub use typed_registry::{RegistryKind, TypedRegistry};
 
 /// Bundle of the three runtime containers.
 ///

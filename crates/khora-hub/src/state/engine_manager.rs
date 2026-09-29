@@ -8,8 +8,8 @@
 
 //! Engine Manager screen state.
 
-use crate::download;
-use crate::github;
+use crate::services::download;
+use crate::services::github;
 use std::sync::mpsc;
 
 pub struct EngineManagerState {

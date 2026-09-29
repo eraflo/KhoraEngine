@@ -17,6 +17,8 @@
 mod audio;
 pub(crate) mod procedural_mesh;
 mod storage;
+mod store;
 
 pub use audio::*;
 pub use storage::*;
+pub use store::AssetStore;

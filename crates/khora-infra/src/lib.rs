@@ -35,4 +35,4 @@ pub use telemetry::{
     gpu_monitor::GpuMonitor, memory_monitor::MemoryMonitor, vram_monitor::VramMonitor,
 };
 pub use ui::egui::{EguiEditorShell, EguiFrameRenderState, EguiOverlay, EguiUiBuilder};
-pub use ui::taffy::taffy_layout::TaffyLayoutSystem;
+pub use ui::taffy::TaffyLayoutSystem;

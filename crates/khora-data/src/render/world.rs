@@ -18,14 +18,12 @@
 //! the rendering lanes.  It is populated by [`extract_scene`](super::extract_scene)
 //! once per frame in the engine's hot loop.
 
-use khora_core::{
-    asset::{AssetHandle, AssetUUID, Material},
-    math::{affine_transform::AffineTransform, Vec3},
-    renderer::{
-        api::scene::{GpuMaterial, GpuMesh},
-        light::LightType,
-    },
-};
+use khora_core::asset::{AssetHandle, AssetUUID, Material};
+use khora_core::math::affine_transform::AffineTransform;
+use khora_core::math::Vec3;
+use khora_core::renderer::api::gpu_scene::GpuMesh;
+use khora_core::renderer::api::material::GpuMaterial;
+use khora_core::renderer::light::LightType;
 
 /// Flat, GPU-friendly representation of a single mesh to render.
 #[derive(Clone)]

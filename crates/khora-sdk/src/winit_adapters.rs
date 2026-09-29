@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use khora_core::platform::KhoraWindow;
-use khora_core::renderer::api::core::FrameContext;
+use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::traits::RenderSystem;
 use khora_infra::platform::winit::WinitWindow;
 use winit::application::ApplicationHandler;

@@ -16,7 +16,8 @@
 
 use super::layout::PipelineLayoutId;
 use super::state::*;
-use crate::renderer::api::{core::ShaderModuleId, util::SampleCount};
+use crate::renderer::api::resource::SampleCount;
+use crate::renderer::api::shader::ShaderModuleId;
 use std::borrow::Cow;
 
 /// A complete descriptor for a render pipeline.

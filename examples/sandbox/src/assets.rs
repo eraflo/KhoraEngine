@@ -29,7 +29,7 @@ pub(super) fn register_checker_texture(
     use khora_sdk::khora_core::renderer::api::resource::{
         CpuTexture, TextureDimension, TextureUsage,
     };
-    use khora_sdk::khora_core::renderer::api::util::{SampleCount, TextureFormat};
+    use khora_sdk::khora_core::renderer::api::resource::{SampleCount, TextureFormat};
 
     const N: u32 = 8;
     let mut pixels = Vec::with_capacity((N * N * 4) as usize);

@@ -8,7 +8,7 @@
 
 //! Project template creation for new Khora Engine projects.
 
-use crate::git;
+use crate::services::git;
 use anyhow::{Context, Result};
 use serde::Serialize;
 use std::path::{Path, PathBuf};

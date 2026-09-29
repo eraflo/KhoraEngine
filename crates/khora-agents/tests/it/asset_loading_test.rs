@@ -189,7 +189,7 @@ fn test_load_texture_from_pack() -> Result<()> {
     // later via `TextureFormat::with_color_space`.
     assert_eq!(
         texture_handle.format,
-        khora_core::renderer::api::util::TextureFormat::Rgba8Unorm
+        khora_core::renderer::api::resource::TextureFormat::Rgba8Unorm
     );
 
     println!("Texture loading test passed: PNG texture loaded and decoded correctly");

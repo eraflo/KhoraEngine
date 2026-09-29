@@ -128,6 +128,116 @@ fn docs_do_not_place_a_moved_type_in_khora_core() {
     );
 }
 
+/// Module paths, file names and type names the naming sweep retired.
+const RENAMED: &[&str] = &[
+    // khora-core
+    "khora_core::utils",
+    "khora-core/src/utils",
+    "khora_core::context::",
+    "khora_core::ui::app::context",
+    "khora_core::lane::registry",
+    "khora_core::runtime::registry",
+    "khora_core::asset::uuid",
+    "khora_core::renderer::api::command::encoder",
+    "khora_core::renderer::api::command::compute",
+    "khora_core::renderer::api::core",
+    "khora-core/src/renderer/api/core",
+    "khora_core::renderer::api::scene",
+    "khora-core/src/renderer/api/scene",
+    "khora_core::renderer::api::shader_defs",
+    "khora_core::renderer::api::resource::shader_source",
+    "khora_core::renderer::api::util::enums",
+    "khora_core::renderer::forward_plus",
+    "khora_sdk::renderer::scene",
+    // khora-data
+    "khora_data::ecs::registry",
+    "khora_data::scene::registry",
+    "khora_data::ecs::components::material_registry",
+    "khora-data::ecs::components::material_registry",
+    "khora_data::gpu::store",
+    // khora-control
+    "khora_control::registry",
+    "khora_control::context",
+    "khora_control::service",
+    "khora-control/src/service/",
+    // khora-telemetry
+    "khora_telemetry::utils",
+    "khora_telemetry::service",
+    "khora_telemetry::metrics::registry",
+    "khora_telemetry::monitoring::registry",
+    // khora-io
+    "khora_io::vfs",
+    "khora-io::vfs",
+    "khora-io/src/vfs",
+    "VirtualFileSystem",
+    "khora_io::asset::service",
+    "khora_io::asset::registry",
+    "khora_io::serialization::service",
+    "khora_io::script_compile",
+    "khora_io::script_mirror",
+    "khora_io::script_hot_reload",
+    "khora_io::asset_resolver",
+    "khora_io::shader_hot_reload",
+    "script_mirror.rs",
+    "script_compile.rs",
+    "script_hot_reload.rs",
+    // khora-script, khora-infra, khora-lanes
+    "khora_script::native::context",
+    "khora_script::native::registry",
+    "taffy_layout",
+    "khora_lanes::render_lane::util::dynamic_uniform_buffer",
+    // docs, xtask
+    "open_questions",
+    "xtask/src/helpers",
+];
+
+/// Nothing names a path, file or type the naming sweep retired — in the
+/// Rust and Markdown files `scanned_files` covers, and also in the WGSL
+/// comments that name their Rust mirror, the repository READMEs and the
+/// tracked `.github` files.
+#[test]
+fn nothing_names_a_path_the_naming_sweep_retired() {
+    let root = repo_root();
+    let mut files = scanned_files(&root);
+    let mut extra = Vec::new();
+    if let Ok(entries) = fs::read_dir(root.join("crates")) {
+        for entry in entries.flatten() {
+            walk(&entry.path().join("src"), &mut extra);
+        }
+    }
+    extra.retain(|p| p.extension().and_then(|e| e.to_str()) == Some("wgsl"));
+    for dir in [".github/workflows", ".github/ISSUE_TEMPLATE"] {
+        walk(&root.join(dir), &mut extra);
+    }
+    for file in [
+        "README.md",
+        "docs/README.md",
+        ".agent/README.md",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+    ] {
+        extra.push(root.join(file));
+    }
+    files.extend(extra);
+    let mut hits = Vec::new();
+    for file in files {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        for (number, line) in text.lines().enumerate() {
+            for retired in RENAMED {
+                if line.contains(retired) {
+                    hits.push(format!("{}:{}: `{retired}`", rel(&root, &file), number + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "names the naming sweep retired are still used:\n  {}",
+        hits.join("\n  ")
+    );
+}
+
 fn scanned_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for dir in [

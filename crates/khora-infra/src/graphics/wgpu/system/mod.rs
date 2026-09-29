@@ -17,21 +17,21 @@
 use crate::telemetry::gpu_monitor::GpuMonitor;
 
 use crate::graphics::wgpu::backend::WgpuBackendSelector;
-use crate::graphics::wgpu::context::WgpuGraphicsContext;
 use crate::graphics::wgpu::device::WgpuDevice;
+use crate::graphics::wgpu::graphics_context::WgpuGraphicsContext;
 use crate::graphics::wgpu::profiler::WgpuTimestampProfiler;
 use crate::graphics::wgpu::resilience::{
     classify_acquire, surface_is_renderable, AcquireAction, SurfaceAcquireStatus,
 };
 use khora_core::platform::window::KhoraWindowHandle;
 use khora_core::renderer::api::command::{BindGroupId, BindGroupLayoutId};
-use khora_core::renderer::api::core::{BackendSelectionConfig, RenderStats};
+use khora_core::renderer::api::device::{BackendSelectionConfig, RenderStats};
 use khora_core::renderer::api::resource::{
     BufferId, ImageAspect, TextureDescriptor, TextureDimension, TextureId, TextureUsage,
     TextureViewDescriptor, TextureViewId, ViewInfo,
 };
+use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
 use khora_core::renderer::api::util::ShaderStageFlags;
-use khora_core::renderer::api::util::{SampleCount, TextureFormat};
 use khora_core::renderer::traits::{GpuProfiler, GraphicsBackendSelector};
 use khora_core::renderer::{GraphicsDevice, RenderError};
 use khora_core::telemetry::ResourceMonitor;

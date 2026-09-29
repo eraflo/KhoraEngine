@@ -39,7 +39,7 @@ pub use medium::{MediumShadowsLane, STRATEGY_NAME as MEDIUM_STRATEGY_NAME};
 pub use standard::{StandardShadowsLane, STRATEGY_NAME as STANDARD_STRATEGY_NAME};
 
 use khora_core::lane::{LaneContext, LaneError};
-use khora_core::renderer::api::scene::GpuMesh;
+use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::{traits::CommandEncoder, GraphicsDevice};
 use khora_data::assets::Assets;
 use khora_data::render::RenderWorld;

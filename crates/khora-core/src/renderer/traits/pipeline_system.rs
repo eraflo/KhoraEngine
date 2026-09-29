@@ -33,8 +33,8 @@
 use crate::renderer::api::command::{BindGroupLayoutEntry, BindGroupLayoutId};
 use crate::renderer::api::pipeline::{
     ComputePipelineId, ComputePipelineSpec, LayoutKey, PipelineSpec, RenderPipelineId,
-    ShaderVariantKey,
 };
+use crate::renderer::api::shader::ShaderVariantKey;
 use crate::renderer::error::RenderError;
 use crate::renderer::traits::GraphicsDevice;
 

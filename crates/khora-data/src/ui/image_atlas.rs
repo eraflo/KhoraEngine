@@ -27,7 +27,8 @@ use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, RwLock};
 
 use khora_core::asset::AssetUUID;
-use khora_core::renderer::api::util::{AtlasRect, TextureAtlas, TextureFormat};
+use khora_core::renderer::api::resource::TextureFormat;
+use khora_core::renderer::api::util::{AtlasRect, TextureAtlas};
 use khora_core::renderer::GraphicsDevice;
 
 /// Resource holding the UI image atlas (GPU texture) and an

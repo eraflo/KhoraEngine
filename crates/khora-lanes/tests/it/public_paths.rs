@@ -60,7 +60,7 @@ mod every_pub_mod {
     use khora_lanes::physics_lane as _;
     use khora_lanes::render_lane as _;
     use khora_lanes::render_lane::util as _;
-    use khora_lanes::render_lane::util::dynamic_uniform_buffer as _;
+    use khora_lanes::render_lane::util::dynamic_uniform_ring_buffer as _;
     use khora_lanes::render_lane::util::uniform_ring_buffer as _;
     use khora_lanes::script_lane as _;
     use khora_lanes::script_lane::persistence as _;
@@ -311,27 +311,32 @@ fn module_render_lane_paths_still_resolve() {
 
 #[test]
 fn module_render_lane_util_paths_still_resolve() {
-    const _: u32 = khora_lanes::render_lane::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS;
-    const _: u32 = khora_lanes::render_lane::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT;
+    const _: u32 =
+        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS;
+    const _: u32 =
+        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT;
     let _ = type_name::<
-        khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer,
+        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer,
     >();
     let _ = type_name::<khora_lanes::render_lane::util::DynamicUniformRingBuffer>();
     same_type(
         PhantomData::<khora_lanes::render_lane::util::DynamicUniformRingBuffer>,
         PhantomData::<
-            khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer,
+            khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer,
         >,
     );
-    let _ = khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::new;
     let _ =
-        khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::advance;
-    let _ = khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::push;
-    let _ = khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::current_bind_group;
-    let _ = khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::current_slot_index;
+        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::new;
     let _ =
-        khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer::destroy;
-    is_debug::<khora_lanes::render_lane::util::dynamic_uniform_buffer::DynamicUniformRingBuffer>();
+        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::advance;
+    let _ =
+        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::push;
+    let _ = khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::current_bind_group;
+    let _ = khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::current_slot_index;
+    let _ =
+        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::destroy;
+    is_debug::<khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer>(
+    );
     let _ = type_name::<khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer>();
     let _ = type_name::<khora_lanes::render_lane::util::UniformRingBuffer>();
     same_type(

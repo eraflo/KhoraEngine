@@ -16,16 +16,19 @@
 
 use std::{any::TypeId, collections::HashSet};
 
-use khora_core::{
-    asset::Material,
-    ecs::entity::EntityId,
-    renderer::api::scene::{GpuMaterial, GpuMesh, Mesh},
-};
+use khora_core::asset::Material;
+use khora_core::ecs::entity::EntityId;
+use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
+use khora_core::renderer::api::material::GpuMaterial;
 
+use crate::ecs::component_registry::ComponentRegistry;
+use crate::ecs::components::HandleComponent;
+use crate::ecs::entity_store::EntityStore;
+use crate::ecs::page::PageIndex;
+use crate::ecs::planner::QueryPlanner;
+use crate::ecs::storage::StorageManager;
 use crate::ecs::{
-    components::HandleComponent, entity_store::EntityStore, page::PageIndex, planner::QueryPlanner,
-    registry::ComponentRegistry, storage::StorageManager, ComponentBundle, LayoutPolicy,
-    MaterialRef, MeshRef, SemanticDomain, TypeRegistry,
+    ComponentBundle, LayoutPolicy, MaterialRef, MeshRef, SemanticDomain, TypeRegistry,
 };
 
 mod archetype_io;

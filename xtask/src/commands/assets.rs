@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use crate::commands::assets_config::AssetManifest;
-use crate::helpers::*;
+use crate::term::*;
 use anyhow::{Context, Result};
 use bincode;
 use khora_core::asset::{AssetMetadata, AssetSource, AssetUUID, CompressionKind};

@@ -28,3 +28,6 @@ level = 0
 # To re-enable the preprocessor (e.g. after upgrading mdbook-mermaid):
 # [preprocessor.mermaid]
 # command = "mdbook-mermaid"
+
+[output.html.redirect]
+"/open_questions.html" = "open-questions.html"

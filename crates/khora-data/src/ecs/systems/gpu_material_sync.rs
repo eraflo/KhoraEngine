@@ -19,7 +19,7 @@
 //! Runs in [`TickPhase::PreExtract`], after `gpu_mesh_sync` (so every
 //! rendered entity already has a `HandleComponent<GpuMesh>`) and before
 //! `RenderFlow` projects the world. Decoded CPU textures are read from the
-//! shared `Assets<CpuTexture>` sub-store of the [`AssetStore`](crate::gpu::AssetStore),
+//! shared `Assets<CpuTexture>` sub-store of the [`AssetStore`](crate::assets::AssetStore),
 //! populated by the SDK layer that owns the `AssetService` — this system
 //! performs no asset loading itself, keeping the data layer free of any
 //! `khora-io` dependency.

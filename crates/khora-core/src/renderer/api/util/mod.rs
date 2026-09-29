@@ -14,11 +14,9 @@
 
 //! Generic helpers and containers.
 
-pub mod enums;
 pub mod flags;
 pub mod half_float;
 
-pub use self::enums::*;
 pub use self::flags::*;
 pub use self::half_float::*;
 

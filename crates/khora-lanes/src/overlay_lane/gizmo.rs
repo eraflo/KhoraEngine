@@ -197,9 +197,10 @@ fn gizmo_pipeline_spec(
     };
     use khora_core::renderer::api::pipeline::{
         ColorTargetStateDescriptor, LayoutSpec, MultisampleStateDescriptor, PipelineSpec,
-        PrimitiveStateDescriptor, ShaderVariantKey,
+        PrimitiveStateDescriptor,
     };
-    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
+    use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
+    use khora_core::renderer::api::shader::ShaderVariantKey;
     use std::borrow::Cow;
 
     // Alpha blend; no depth attachment — gizmos always draw on top (the legacy

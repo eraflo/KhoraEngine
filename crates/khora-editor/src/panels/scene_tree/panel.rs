@@ -22,7 +22,7 @@ use super::rows::{
 };
 use super::{EditorAction, SceneTreePanel, HEADER_HEIGHT, ROW_HEIGHT, TOOLBAR_HEIGHT};
 use crate::drag_payload::{payload_is_entity, unpack_asset_drag, unpack_entity};
-use crate::widgets::chrome::paint_panel_header;
+use crate::widgets::panel_header::paint_panel_header;
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 

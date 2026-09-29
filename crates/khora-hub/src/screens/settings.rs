@@ -8,10 +8,10 @@
 
 //! Settings — the GitHub account and the local engine clone.
 
-use crate::AuthState;
-use crate::HubApp;
-use crate::Screen;
-use crate::auth;
+use crate::app::HubApp;
+use crate::services::github::auth;
+use crate::state::AuthState;
+use crate::state::Screen;
 use khora_sdk::tool_ui::{FontFamilyHint, Icon, UiBuilder, UiTheme};
 use khora_tool_ui::brand::khora_dark;
 use khora_tool_ui::widgets::{
@@ -119,7 +119,7 @@ fn github_card(app: &mut HubApp, ui: &mut dyn UiBuilder, t: &UiTheme, rect: [f32
             {
                 let _ = auth::forget_token();
                 app.settings.auth = AuthState::Disconnected;
-                app.banner = Some(crate::Banner::info("Disconnected from GitHub."));
+                app.banner = Some(crate::state::Banner::info("Disconnected from GitHub."));
             }
         }
         View::Connecting(message) => {
@@ -216,7 +216,7 @@ fn local_repo_card(app: &mut HubApp, ui: &mut dyn UiBuilder, t: &UiTheme, rect: 
         app.config.local_engine_repo = (!value.is_empty()).then(|| value.to_owned());
         let _ = app.config.save();
         app.engine_manager.local_repo = app.config.local_engine_repo.clone().unwrap_or_default();
-        app.banner = Some(crate::Banner::info("Local engine path saved."));
+        app.banner = Some(crate::state::Banner::info("Local engine path saved."));
     }
 
     widgets::bottom(rect)

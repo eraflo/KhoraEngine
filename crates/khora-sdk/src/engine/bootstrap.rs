@@ -216,12 +216,12 @@ impl<A: EngineApp> EngineCore<A> {
         // would drop every program compiled at startup, silently.
         if runtime
             .resources
-            .get::<khora_io::script_hot_reload::PendingReloads>()
+            .get::<khora_io::script::hot_reload::PendingReloads>()
             .is_none()
         {
             runtime
                 .resources
-                .insert(khora_io::script_hot_reload::reload_channel());
+                .insert(khora_io::script::hot_reload::reload_channel());
         }
         if runtime
             .resources

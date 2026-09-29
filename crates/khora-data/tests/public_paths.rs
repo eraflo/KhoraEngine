@@ -93,13 +93,13 @@ mod every_pub_mod {
     use khora_data::gpu::eviction as _;
     use khora_data::gpu::ibl as _;
     use khora_data::gpu::projection as _;
-    use khora_data::gpu::store as _;
     use khora_data::physics as _;
     use khora_data::physics::collision as _;
     use khora_data::render as _;
     use khora_data::scene as _;
+    use khora_data::scene::component_registration as _;
+    use khora_data::scene::material_registration as _;
     use khora_data::scene::migrations as _;
-    use khora_data::scene::registry as _;
     use khora_data::scene::shape as _;
     use khora_data::ui as _;
     use khora_data::ui::components as _;
@@ -218,11 +218,11 @@ fn material_ref_variants(x: &khora_data::ecs::MaterialRef) {
     }
 }
 
-fn serializable_material_data_fields(x: &khora_data::ecs::SerializableMaterialData) {
+fn serializable_material_data_fields(x: &khora_data::scene::SerializableMaterialData) {
     let _ = (&x.type_name, &x.data);
 }
 
-fn material_registration_fields(x: &khora_data::ecs::MaterialRegistration) {
+fn material_registration_fields(x: &khora_data::scene::MaterialRegistration) {
     let _ = (
         &x.type_name,
         &x.serialize,
@@ -556,7 +556,9 @@ fn render_world_fields(x: &khora_data::render::RenderWorld) {
     let _ = (&x.meshes, &x.lights, &x.views);
 }
 
-fn component_registration_fields(x: &khora_data::scene::registry::ComponentRegistration) {
+fn component_registration_fields(
+    x: &khora_data::scene::component_registration::ComponentRegistration,
+) {
     let _ = (
         &x.type_id,
         &x.shape,
@@ -902,6 +904,16 @@ fn module_assets_paths_still_resolve() {
     let _ = khora_data::assets::Assets::<khora_data::assets::SoundData>::is_empty;
     is_clone::<khora_data::assets::Assets<khora_data::assets::SoundData>>();
     is_default::<khora_data::assets::Assets<khora_data::assets::SoundData>>();
+    let _ = type_name::<khora_data::assets::AssetStore>();
+    let _ = type_name::<khora_data::AssetStore>();
+    same_type(
+        PhantomData::<khora_data::AssetStore>,
+        PhantomData::<khora_data::assets::AssetStore>,
+    );
+    let _ = khora_data::assets::AssetStore::new;
+    let _ = khora_data::assets::AssetStore::store::<khora_data::assets::SoundData>;
+    is_clone::<khora_data::assets::AssetStore>();
+    is_default::<khora_data::assets::AssetStore>();
 }
 
 #[test]
@@ -1116,17 +1128,6 @@ fn module_ecs_paths_still_resolve() {
     let _ = khora_data::ecs::MaterialRef::uuid;
     is_clone::<khora_data::ecs::MaterialRef>();
     is_component::<khora_data::ecs::MaterialRef>();
-    let _ = type_name::<khora_data::ecs::SerializableMaterialData>();
-    let _ = serializable_material_data_fields as fn(&khora_data::ecs::SerializableMaterialData);
-    is_clone::<khora_data::ecs::SerializableMaterialData>();
-    is_debug::<khora_data::ecs::SerializableMaterialData>();
-    let _ = type_name::<khora_data::ecs::MaterialDeserializeFn>();
-    let _ = type_name::<khora_data::ecs::MaterialRegistration>();
-    let _ = material_registration_fields as fn(&khora_data::ecs::MaterialRegistration);
-    let _ = khora_data::ecs::serialize_material_component;
-    let _ = khora_data::ecs::deserialize_material_component;
-    let _ = khora_data::ecs::material_to_json;
-    let _ = khora_data::ecs::material_from_json;
     let _ = type_name::<khora_data::ecs::ProceduralMeshKind>();
     let _ = procedural_mesh_kind_variants as fn(&khora_data::ecs::ProceduralMeshKind);
     is_clone::<khora_data::ecs::ProceduralMeshKind>();
@@ -1647,21 +1648,47 @@ fn module_gpu_paths_still_resolve() {
     let _ = khora_data::gpu::projection::ProjectionRegistry::sync_all;
     let _ = khora_data::gpu::projection::ProjectionRegistry::sync_materials;
     is_clone::<khora_data::gpu::projection::ProjectionRegistry>();
-    let _ = type_name::<khora_data::gpu::store::AssetStore>();
-    let _ = type_name::<khora_data::gpu::AssetStore>();
-    let _ = type_name::<khora_data::AssetStore>();
+}
+
+#[test]
+fn module_scene_material_registration_paths_still_resolve() {
+    let _ = type_name::<khora_data::scene::material_registration::SerializableMaterialData>();
     same_type(
-        PhantomData::<khora_data::gpu::AssetStore>,
-        PhantomData::<khora_data::gpu::store::AssetStore>,
+        PhantomData::<khora_data::scene::SerializableMaterialData>,
+        PhantomData::<khora_data::scene::material_registration::SerializableMaterialData>,
     );
+    let _ = serializable_material_data_fields
+        as fn(&khora_data::scene::material_registration::SerializableMaterialData);
+    is_clone::<khora_data::scene::material_registration::SerializableMaterialData>();
+    is_debug::<khora_data::scene::material_registration::SerializableMaterialData>();
+    let _ = type_name::<khora_data::scene::material_registration::MaterialDeserializeFn>();
     same_type(
-        PhantomData::<khora_data::AssetStore>,
-        PhantomData::<khora_data::gpu::store::AssetStore>,
+        PhantomData::<khora_data::scene::MaterialDeserializeFn>,
+        PhantomData::<khora_data::scene::material_registration::MaterialDeserializeFn>,
     );
-    let _ = khora_data::gpu::store::AssetStore::new;
-    let _ = khora_data::gpu::store::AssetStore::store::<khora_data::assets::SoundData>;
-    is_clone::<khora_data::gpu::store::AssetStore>();
-    is_default::<khora_data::gpu::store::AssetStore>();
+    let _ = type_name::<khora_data::scene::material_registration::MaterialRegistration>();
+    same_type(
+        PhantomData::<khora_data::scene::MaterialRegistration>,
+        PhantomData::<khora_data::scene::material_registration::MaterialRegistration>,
+    );
+    let _ = material_registration_fields
+        as fn(&khora_data::scene::material_registration::MaterialRegistration);
+    same_item(
+        &khora_data::scene::serialize_material_component,
+        &khora_data::scene::material_registration::serialize_material_component,
+    );
+    same_item(
+        &khora_data::scene::deserialize_material_component,
+        &khora_data::scene::material_registration::deserialize_material_component,
+    );
+    same_item(
+        &khora_data::scene::material_to_json,
+        &khora_data::scene::material_registration::material_to_json,
+    );
+    same_item(
+        &khora_data::scene::material_from_json,
+        &khora_data::scene::material_registration::material_from_json,
+    );
 }
 
 #[test]
@@ -1802,37 +1829,37 @@ fn module_render_paths_still_resolve() {
 
 #[test]
 fn module_scene_paths_still_resolve() {
-    let _ = type_name::<khora_data::scene::registry::ComponentRegistration>();
+    let _ = type_name::<khora_data::scene::component_registration::ComponentRegistration>();
     let _ = type_name::<khora_data::scene::ComponentRegistration>();
     same_type(
         PhantomData::<khora_data::scene::ComponentRegistration>,
-        PhantomData::<khora_data::scene::registry::ComponentRegistration>,
+        PhantomData::<khora_data::scene::component_registration::ComponentRegistration>,
     );
-    let _ =
-        component_registration_fields as fn(&khora_data::scene::registry::ComponentRegistration);
-    let _ = khora_data::scene::registry::serialize_all_components;
+    let _ = component_registration_fields
+        as fn(&khora_data::scene::component_registration::ComponentRegistration);
+    let _ = khora_data::scene::component_registration::serialize_all_components;
     let _ = khora_data::scene::serialize_all_components;
     same_item(
         &khora_data::scene::serialize_all_components,
-        &khora_data::scene::registry::serialize_all_components,
+        &khora_data::scene::component_registration::serialize_all_components,
     );
-    let _ = khora_data::scene::registry::link_parent_child;
+    let _ = khora_data::scene::component_registration::link_parent_child;
     let _ = khora_data::scene::link_parent_child;
     same_item(
         &khora_data::scene::link_parent_child,
-        &khora_data::scene::registry::link_parent_child,
+        &khora_data::scene::component_registration::link_parent_child,
     );
-    let _ = khora_data::scene::registry::registration_of;
+    let _ = khora_data::scene::component_registration::registration_of;
     let _ = khora_data::scene::registration_of;
     same_item(
         &khora_data::scene::registration_of,
-        &khora_data::scene::registry::registration_of,
+        &khora_data::scene::component_registration::registration_of,
     );
-    let _ = khora_data::scene::registry::provenance_of;
+    let _ = khora_data::scene::component_registration::provenance_of;
     let _ = khora_data::scene::provenance_of;
     same_item(
         &khora_data::scene::provenance_of,
-        &khora_data::scene::registry::provenance_of,
+        &khora_data::scene::component_registration::provenance_of,
     );
     let _ = type_name::<khora_data::scene::shape::ComponentShape>();
     let _ = type_name::<khora_data::scene::ComponentShape>();
@@ -2228,7 +2255,7 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ = type_name::<khora_data::ecs::Light>(); // khora-agents, khora-sdk
     let _ = type_name::<khora_data::ecs::MaterialRef>(); // khora-io, khora-sdk
     let _ = khora_data::ecs::MaterialRef::inline; // khora-sdk
-    let _ = type_name::<khora_data::ecs::MaterialRegistration>(); // khora-io
+    let _ = type_name::<khora_data::scene::MaterialRegistration>(); // khora-io
     let _ = type_name::<khora_data::ecs::MeshRef>(); // khora-io, khora-sdk
     let _ = type_name::<khora_data::ecs::Name>(); // khora-sdk
     let _ = type_name::<khora_data::ecs::Parent>(); // khora-agents, khora-io, khora-sdk
@@ -2255,7 +2282,7 @@ fn paths_used_by_other_crates_still_resolve() {
     world_query_trait_items::<&'static khora_data::ecs::Transform>(); // khora-sdk
     let _ = type_name::<khora_data::ecs::layout::LayoutAdvisor>(); // khora-control
     let _ = type_name::<khora_data::ecs::layout::LayoutRecommendation>(); // khora-control
-    let _ = khora_data::ecs::material_to_json; // khora-editor, khora-io
+    let _ = khora_data::scene::material_to_json; // khora-editor, khora-io
     let _ = khora_data::ecs::reconstruct_procedural_mesh; // khora-io
     let _ = khora_data::ecs::systems::collision_to_script::TOUCHED; // khora-agents
     let _ = type_name::<khora_data::flow::AudioPlaybackUpdate>(); // khora-lanes

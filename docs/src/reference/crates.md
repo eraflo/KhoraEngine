@@ -122,7 +122,7 @@ A flat lookup for "I want to find X."
 | Component storage / pages / archetypes | `khora-data::ecs` |
 | Flows (read-only projectors) | `khora-data::flow` |
 | Scene serialization strategies | `khora-data::scene` |
-| VFS and asset loading | `khora-io::asset`, `khora-io::vfs` |
+| Asset index and asset loading | `khora-io::asset` (`AssetIndex`, `AssetService`) |
 | Serialization service | `khora-io::serialization` |
 | Render pipelines | `khora-lanes::render_lane` |
 | WGSL shaders and their composition | `khora-infra::graphics::shader` (the `.wgsl` tree and the two raw-string exceptions, `TEXT_WGSL` and `EGUI_WGSL`), composed by `khora-infra::graphics::wgpu::WgpuPipelineSystem` |

@@ -184,7 +184,7 @@ impl<A: EngineApp> EngineCore<A> {
             .map(|arc| (*arc).clone());
         let fctx = frame_runtime_arc
             .resources
-            .get::<Arc<khora_core::renderer::api::core::FrameContext>>()
+            .get::<Arc<khora_core::renderer::api::frame::FrameContext>>()
             .map(|arc| (*arc).clone());
 
         let Some(rs) = &render_system else {

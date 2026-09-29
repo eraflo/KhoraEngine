@@ -19,7 +19,7 @@ use khora_sdk::ExecutionPhase;
 
 use super::paint::phase_color_for;
 use super::{AgentSnapshot, ControlPlanePanel};
-use crate::widgets::chrome::{paint_panel_header, panel_tab};
+use crate::widgets::panel_header::{paint_panel_header, panel_tab};
 use khora_tool_ui::widgets::with_alpha;
 
 impl ControlPlanePanel {

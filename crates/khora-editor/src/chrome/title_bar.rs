@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
 
-use crate::widgets::{brand::paint_brand_pill, chrome::paint_search_pill};
+use crate::widgets::{brand::paint_brand_pill, panel_header::paint_search_pill};
 use khora_tool_ui::widgets::{vertical_gradient, with_alpha};
 
 const TITLE_BAR_HEIGHT: f32 = 44.0;

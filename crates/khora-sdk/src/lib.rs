@@ -111,7 +111,7 @@ pub use khora_control::{DccConfig, DccService, EngineMode};
 // editor's Control Plane panel. The mutating side (`ExecutionScheduler`,
 // `BudgetChannel`, `EnginePlugin`) stays internal — the SDK is a façade
 // for game code, not for engine internals.
-pub use khora_control::registry::AgentRegistry;
+pub use khora_control::agent_registry::AgentRegistry;
 pub use khora_control::Context as DccContext;
 
 // Core types
@@ -133,7 +133,7 @@ pub use khora_core::{Backends, Resources, Runtime, Services};
 pub use khora_telemetry::MonitorRegistry;
 pub use khora_telemetry::TelemetryService;
 // AgentRegistry is already re-exported above, via
-// `pub use khora_control::registry::AgentRegistry`.
+// `pub use khora_control::agent_registry::AgentRegistry`.
 
 // Infra / monitors
 pub use khora_infra::telemetry::memory_monitor::MemoryMonitor;
@@ -154,7 +154,7 @@ pub use khora_io::serialization::SerializationService;
 pub use khora_telemetry::MetricsRegistry;
 
 // Mesh type (used by editor ops)
-pub use khora_core::renderer::api::scene::mesh::Mesh;
+pub use khora_core::renderer::api::gpu_scene::mesh::Mesh;
 
 // Scene environment — selects the equirectangular map the IBL bake projects
 // onto the environment cube (absent ⇒ the procedural sky is baked instead).

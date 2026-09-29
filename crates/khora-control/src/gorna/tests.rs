@@ -14,7 +14,7 @@
 
 use super::*;
 use crate::analysis::AnalysisReport;
-use crate::context::Context;
+use crate::dcc_context::Context;
 use crate::EngineMode;
 use khora_core::agent::gorna::{
     AdaptationMode, AgentHints, AgentId, AgentStatus, NegotiationRequest, NegotiationResponse,

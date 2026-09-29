@@ -19,7 +19,7 @@ use crate::renderer::api::resource::{
     ImageAspect, TextureDescriptor, TextureDimension, TextureId, TextureUsage,
     TextureViewDescriptor, TextureViewId,
 };
-use crate::renderer::api::util::enums::{SampleCount, TextureFormat};
+use crate::renderer::api::resource::{SampleCount, TextureFormat};
 use crate::renderer::GraphicsDevice;
 use std::borrow::Cow;
 

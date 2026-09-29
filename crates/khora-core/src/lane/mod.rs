@@ -70,11 +70,11 @@ use std::marker::PhantomData;
 
 mod error;
 mod kind;
-mod registry;
+mod lane_registry;
 
 pub use error::LaneError;
 pub use kind::LaneKind;
-pub use registry::LaneRegistry;
+pub use lane_registry::LaneRegistry;
 
 pub mod bus;
 

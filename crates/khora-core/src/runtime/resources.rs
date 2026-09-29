@@ -18,11 +18,11 @@
 //!
 //! See [`crate::runtime`] for the broader Services / Backends / Resources
 //! taxonomy. The container itself is
-//! [`TypedRegistry`](crate::runtime::registry::TypedRegistry) — this module
+//! [`TypedRegistry`](crate::runtime::typed_registry::TypedRegistry) — this module
 //! contributes the name and the admission criteria, not a second copy of the
 //! lookup code.
 
-use super::registry::{RegistryKind, TypedRegistry};
+use super::typed_registry::{RegistryKind, TypedRegistry};
 
 /// Marker naming the [`Resources`] container. See [`RegistryKind`].
 pub struct ResourceKind;

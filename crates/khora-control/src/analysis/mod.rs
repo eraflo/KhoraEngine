@@ -19,7 +19,7 @@
 //! decide whether a GORNA renegotiation is necessary and what the global
 //! performance target should be.
 
-use crate::context::Context;
+use crate::dcc_context::Context;
 use crate::metrics::MetricStore;
 use khora_core::platform::{BatteryLevel, ThermalStatus};
 use khora_core::telemetry::MetricId;

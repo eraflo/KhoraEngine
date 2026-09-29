@@ -18,8 +18,8 @@
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{CommandBuffer, EventQueue};
 
-use super::context::NativeContext;
-use super::registry::NativeRegistry;
+use super::call_context::NativeContext;
+use super::function_registry::NativeRegistry;
 use crate::arena::{Arena, PersistentStore};
 
 /// Everything a running program needs from outside itself.

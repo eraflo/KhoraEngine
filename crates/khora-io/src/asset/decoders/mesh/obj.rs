@@ -16,14 +16,11 @@
 
 use ahash::AHashMap;
 use anyhow::{Context, Result};
-use khora_core::{
-    math::{geometry::Aabb, Vec2, Vec3},
-    renderer::api::{
-        pipeline::enums::{PrimitiveTopology, VertexFormat},
-        pipeline::VertexAttributeDescriptor,
-        scene::Mesh,
-    },
-};
+use khora_core::math::geometry::Aabb;
+use khora_core::math::{Vec2, Vec3};
+use khora_core::renderer::api::gpu_scene::Mesh;
+use khora_core::renderer::api::pipeline::enums::{PrimitiveTopology, VertexFormat};
+use khora_core::renderer::api::pipeline::VertexAttributeDescriptor;
 use std::error::Error;
 
 use crate::asset::AssetDecoder;

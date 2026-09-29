@@ -28,7 +28,7 @@ use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::script::{engine_event_channel, ScriptEvent, ScriptValue, WorldCommand};
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_io::script_hot_reload::reload_channel;
+use khora_io::script::hot_reload::reload_channel;
 use khora_script::reload::ScriptReload;
 
 const MODULE: &str = "ai/guard.erg";

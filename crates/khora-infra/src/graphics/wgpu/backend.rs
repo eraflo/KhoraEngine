@@ -25,11 +25,11 @@ use async_trait::async_trait;
 use std::time::Instant;
 use wgpu::{Adapter, Backend, DeviceType, Instance, RequestAdapterOptions};
 
-use khora_core::renderer::{
-    api::core::{BackendSelectionConfig, BackendSelectionResult, GraphicsAdapterInfo},
-    api::util::{GraphicsBackendType, RendererDeviceType},
-    traits::GraphicsBackendSelector,
+use khora_core::renderer::api::device::{
+    BackendSelectionConfig, BackendSelectionResult, GraphicsAdapterInfo, GraphicsBackendType,
+    RendererDeviceType,
 };
+use khora_core::renderer::traits::GraphicsBackendSelector;
 
 /// Returns a human-readable name for a backend.
 #[allow(dead_code)]

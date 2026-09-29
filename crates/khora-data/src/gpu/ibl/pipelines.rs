@@ -27,9 +27,11 @@ use khora_core::renderer::api::command::{
 use khora_core::renderer::api::pipeline::state::ColorWrites;
 use khora_core::renderer::api::pipeline::{
     ColorTargetStateDescriptor, LayoutSpec, MultisampleStateDescriptor, PipelineSpec,
-    PrimitiveStateDescriptor, ShaderVariantKey,
+    PrimitiveStateDescriptor,
 };
-use khora_core::renderer::api::util::{SampleCount, ShaderStageFlags};
+use khora_core::renderer::api::resource::SampleCount;
+use khora_core::renderer::api::shader::ShaderVariantKey;
+use khora_core::renderer::api::util::ShaderStageFlags;
 
 /// The declarative spec for the procedural-sky bake pipeline.
 pub(super) fn sky_pipeline_spec() -> PipelineSpec {

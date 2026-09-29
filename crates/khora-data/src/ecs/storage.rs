@@ -14,11 +14,9 @@
 
 //! Internal component storage and page management.
 
-use crate::ecs::{
-    page::{AnyVec, ComponentPage},
-    registry::ComponentRegistry,
-    ComponentBundle, DomainBitset, DomainStats, SemanticDomain,
-};
+use crate::ecs::component_registry::ComponentRegistry;
+use crate::ecs::page::{AnyVec, ComponentPage};
+use crate::ecs::{ComponentBundle, DomainBitset, DomainStats, SemanticDomain};
 use std::any::TypeId;
 use std::collections::{HashMap, HashSet};
 

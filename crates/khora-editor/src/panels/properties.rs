@@ -26,11 +26,11 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
 
-use crate::widgets::chrome::paint_panel_header;
 use crate::widgets::inspector::asset_pane::{paint_asset_header, render_asset_pane};
 use crate::widgets::inspector::display::{pick_icon, pick_type_tag};
 use crate::widgets::inspector::header::paint_inspector_header;
 use crate::widgets::inspector::tabs::{DebugTab, InspectorTab, InspectorTabContext, PropertiesTab};
+use crate::widgets::panel_header::paint_panel_header;
 
 const HEADER_HEIGHT: f32 = 34.0;
 const INSPECTOR_HEADER_HEIGHT: f32 = 64.0;

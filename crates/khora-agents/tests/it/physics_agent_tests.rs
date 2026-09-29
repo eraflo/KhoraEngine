@@ -21,7 +21,7 @@
 
 use khora_agents::physics_agent::PhysicsAgent;
 use khora_core::agent::Agent;
-use khora_core::context::EngineContext;
+use khora_core::engine_context::EngineContext;
 use khora_core::math::Vec3;
 use khora_core::physics::BodyType;
 use khora_core::Runtime;

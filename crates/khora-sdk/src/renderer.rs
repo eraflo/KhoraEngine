@@ -12,6 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub use khora_core::renderer::api::gpu_scene;
 pub use khora_core::renderer::api::resource;
-pub use khora_core::renderer::api::scene;
 pub use khora_core::renderer::light;

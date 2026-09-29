@@ -16,21 +16,18 @@
 
 use super::gpu::pipeline_spec;
 use super::LitForwardLane;
-use khora_core::renderer::{
-    api::{
-        command::{
-            LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
-            RenderPassDescriptor, StoreOp,
-        },
-        core::RenderContext,
-        pipeline::RenderPipelineId,
-        scene::{
-            DirectionalLightUniform, GpuMesh, LightingUniforms, ModelUniforms, PointLightUniform,
-            SpotLightUniform, MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS,
-        },
-    },
-    traits::CommandEncoder,
+use khora_core::renderer::api::command::{
+    LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
+    RenderPassDescriptor, StoreOp,
 };
+use khora_core::renderer::api::frame::RenderContext;
+use khora_core::renderer::api::gpu_scene::{GpuMesh, ModelUniforms};
+use khora_core::renderer::api::pipeline::RenderPipelineId;
+use khora_core::renderer::light::{
+    DirectionalLightUniform, LightingUniforms, PointLightUniform, SpotLightUniform,
+    MAX_DIRECTIONAL_LIGHTS, MAX_POINT_LIGHTS, MAX_SPOT_LIGHTS,
+};
+use khora_core::renderer::traits::CommandEncoder;
 use khora_data::assets::Assets;
 use khora_data::render::RenderWorld;
 use std::sync::RwLock;

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::context::Context;
-use crate::registry::AgentRegistry;
+use crate::agent_registry::AgentRegistry;
+use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::gorna::{

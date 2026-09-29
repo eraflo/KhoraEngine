@@ -27,6 +27,7 @@ pub mod render;
 pub mod scene;
 pub mod ui;
 
-pub use gpu::{AssetEviction, AssetStore, EnvironmentMap, IblBaker, ProjectionRegistry};
+pub use assets::AssetStore;
+pub use gpu::{AssetEviction, EnvironmentMap, IblBaker, ProjectionRegistry};
 pub use ui::components::*;
 // pub use ui::layout_view::*; // Temporarily commented out if unused or fix path

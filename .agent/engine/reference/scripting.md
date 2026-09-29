@@ -21,12 +21,12 @@ the next frame resumes rather than restarts. Suspension is the normal path, not 
   hot-reload, matched **by name** because a slot means nothing across a recompile.
 - Value bridge: `crates/khora-script/src/bridge/mod.rs` + `khora-core/src/script/table.rs` — the single
   X-macro table driving `ScriptValue` ↔ `Value` ↔ `Persisted` ↔ JSON.
-- Hot-reload: `crates/khora-script/src/reload.rs`, `crates/khora-io/src/script_hot_reload.rs`.
+- Hot-reload: `crates/khora-script/src/reload.rs`, `crates/khora-io/src/script/hot_reload.rs`.
 - Compiling a module and everything it imports: `crates/khora-script/src/pipeline.rs`
   (`compile_module`, `CompileOutcome`), reading through a `SourceLoader`; the disk one is
-  `DiskLoader` in `crates/khora-io/src/script_compile.rs`. Import paths and the `.erg`
+  `DiskLoader` in `crates/khora-io/src/script/compile.rs`. Import paths and the `.erg`
   `EXTENSION`: `crates/khora-script/src/modules/`.
-- Component mirrors: `crates/khora-io/src/script_mirror.rs` — turns each `ComponentShape`
+- Component mirrors: `crates/khora-io/src/script/mirror.rs` — turns each `ComponentShape`
   (`khora-data/src/scene/shape.rs`, emitted by `#[derive(Component)]`) into Ergon declarations, served
   at `engine/components.erg` by a `PreludeLoader` stacked over the `DiskLoader`.
 - Lane: `crates/khora-lanes/src/script_lane/` — `mod.rs` (the `Lane`), `frame.rs` (the loop),
@@ -79,7 +79,7 @@ the next frame resumes rather than restarts. Suspension is the normal path, not 
   everything else with "only an engine type's components can be read yet". This predates the mirrors and
   applies to every `struct`, including one a game declares — so a mirrored `t.translation` passes the
   checker and stops at the compiler. Pinned by `reading_a_mirrored_field_still_needs_the_ecs_bridge` in
-  `script_mirror.rs`; that test is what will say the projected read has landed.
+  `khora-io/src/script/mirror.rs`; that test is what will say the projected read has landed.
 - `ENGINE_TYPES` (`khora-script/src/types/ty.rs`) is a list of names with a `Value` variant, a
   constructor and accessors behind them. It once named `Transform`, which had none, so `Transform t;`
   shaped cleanly and failed with the misleading "`Transform` has no `x`". Adding a name there without

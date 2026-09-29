@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::uuid::AssetUUID;
+use super::asset_uuid::AssetUUID;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 

@@ -9,9 +9,9 @@
 //! New Project form state + the `EngineChoice` that drives the engine
 //! combo.
 
-use crate::config::EngineInstall;
-use crate::download;
-use crate::github;
+use crate::services::config::EngineInstall;
+use crate::services::download;
+use crate::services::github;
 use std::sync::mpsc;
 
 /// One row of the New Project engine combo.

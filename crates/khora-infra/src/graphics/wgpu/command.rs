@@ -13,11 +13,12 @@
 // limitations under the License.
 
 use khora_core::renderer::api::command::{
-    BindGroupId, CommandBufferId, ComputePassDescriptor, ComputePipelineId, RenderPassDescriptor,
+    BindGroupId, CommandBufferId, ComputePassDescriptor, RenderPassDescriptor,
 };
+use khora_core::renderer::api::pipeline::ComputePipelineId;
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::buffer as api_buf;
-use khora_core::renderer::api::util::IndexFormat;
+use khora_core::renderer::api::resource::IndexFormat;
 use khora_core::renderer::traits::{CommandEncoder, ComputePass, GpuProfiler, RenderPass};
 use std::any::Any;
 use std::ops::Range;

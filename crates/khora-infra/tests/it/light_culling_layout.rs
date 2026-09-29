@@ -18,7 +18,7 @@
 
 use std::mem::{offset_of, size_of};
 
-use khora_core::renderer::api::scene::CullingUniformsData;
+use khora_core::renderer::light::CullingUniformsData;
 
 const LIGHT_CULLING_WGSL: &str =
     include_str!("../../src/graphics/shader/shaders/pipelines/light_culling.wgsl");

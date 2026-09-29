@@ -26,9 +26,8 @@ use khora_core::renderer::api::resource::texture::{
     AddressMode, FilterMode, ImageAspect, MipmapFilterMode, SamplerBorderColor, TextureDimension,
     TextureViewDimension,
 };
-use khora_core::renderer::api::util::enums::{
-    IndexFormat, SampleCount, ShaderStage, TextureFormat,
-};
+use khora_core::renderer::api::resource::{IndexFormat, SampleCount, TextureFormat};
+use khora_core::renderer::api::shader::ShaderStage;
 
 /// A local extension trait to convert our engine's types into WGPU-compatible types.
 /// This avoids Rust's orphan rules while keeping an idiomatic `.into_wgpu()` syntax.

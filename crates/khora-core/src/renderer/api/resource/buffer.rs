@@ -69,3 +69,12 @@ pub struct BufferDescriptor<'a> {
 /// the buffer in all subsequent operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BufferId(pub usize);
+
+/// Specifies the data type of indices in an index buffer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IndexFormat {
+    /// Indices are 16-bit unsigned integers.
+    Uint16,
+    /// Indices are 32-bit unsigned integers.
+    Uint32,
+}

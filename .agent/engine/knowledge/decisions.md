@@ -50,3 +50,8 @@ Durable decisions and their rationale. Append when a new structural decision lan
     file breaks no reference, with no remap. The read side is engine infrastructure (`IndexBuilder`,
     `PackBuilder`, runtime all resolve through it ⇒ dev/release parity); the editor (`ProjectVfs`) is the sole
     writer. The file sits outside `assets/`, so it is never scanned, watched, or packed.
+- **Type-keyed maps stay separate (2026-09-27).** `AnyMap` (frame blackboard, `Arc` values), `LaneBus`
+    (Views, `Box`), `OutputDeck` (lane outputs, `Box`), `LaneContext` (per-execution, not `Send`) and
+    `TypedRegistry` (runtime resources/services/backends) are each a `HashMap<TypeId, …>`. They differ in
+    ownership (`Arc` vs `Box`) and thread bounds, and `LaneContext` is on the per-frame hot path; a shared
+    generic would save ~20 lines each and touch every lane. Revisit only if a sixth appears.

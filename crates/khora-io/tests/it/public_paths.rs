@@ -31,13 +31,9 @@
 //! tree it was written against. Nothing is constructed; the tests only have to
 //! type-check.
 //!
-//! One deliberate exception: `khora_io::serialization` re-exports eleven items
-//! of `khora_data::scene` (`migrate_payload`, the four
-//! `*SerializationStrategy` types, `DeserializationError`, `MigrationError`,
-//! `SceneMigration`, `SceneMigrationRegistration`, `SerializationError`,
-//! `SerializationStrategy`) that no crate uses; the engine-tidy plan deletes
-//! them, so they are left out. `serialization::SerializationService` and the
-//! rest of `serialization::service` are pinned.
+//! `khora_io::serialization` is a single-file module holding
+//! `SerializationService` and its error; the strategies it drives live at
+//! `khora_data::scene`, and are not re-exported here.
 
 use std::any::type_name;
 use std::marker::PhantomData;
@@ -54,7 +50,7 @@ fn is_asset_decoder_box_dyn_material<
 >() {
 }
 fn is_asset_decoder_cpu_shader_source<
-    T: khora_io::asset::AssetDecoder<khora_core::renderer::api::resource::CpuShaderSource>,
+    T: khora_io::asset::AssetDecoder<khora_core::renderer::api::shader::CpuShaderSource>,
 >() {
 }
 fn is_asset_decoder_cpu_texture<
@@ -63,7 +59,7 @@ fn is_asset_decoder_cpu_texture<
 }
 fn is_asset_decoder_font<T: khora_io::asset::AssetDecoder<khora_core::asset::font::Font>>() {}
 fn is_asset_decoder_mesh<
-    T: khora_io::asset::AssetDecoder<khora_core::renderer::api::scene::Mesh>,
+    T: khora_io::asset::AssetDecoder<khora_core::renderer::api::gpu_scene::Mesh>,
 >() {
 }
 fn is_asset_decoder_script_module<
@@ -108,13 +104,14 @@ mod every_pub_mod {
     use khora_io::asset::script as _;
     use khora_io::asset::shader as _;
     use khora_io::asset::texture as _;
-    use khora_io::asset_resolver as _;
-    use khora_io::script_compile as _;
-    use khora_io::script_hot_reload as _;
-    use khora_io::script_mirror as _;
+    use khora_io::script as _;
+    use khora_io::script::compile as _;
+    use khora_io::script::hot_reload as _;
+    use khora_io::script::mirror as _;
     use khora_io::serialization as _;
-    use khora_io::shader_hot_reload as _;
-    use khora_io::vfs as _;
+    use khora_io::systems as _;
+    use khora_io::systems::asset_resolver as _;
+    use khora_io::systems::shader_hot_reload as _;
 }
 
 // ---------------------------------------------------------------------------
@@ -258,7 +255,7 @@ fn module_asset_paths_still_resolve() {
     // trait `khora_io::asset::AssetIo`: see `asset_io_trait_items`
     let _ = type_name::<khora_io::asset::AssetService>();
     let _ = khora_io::asset::AssetService::new;
-    let _ = khora_io::asset::AssetService::vfs;
+    let _ = khora_io::asset::AssetService::index;
     let _: fn(
         &mut khora_io::asset::AssetService,
         &str,
@@ -618,31 +615,31 @@ fn module_asset_paths_still_resolve() {
 
 #[test]
 fn module_script_compile_paths_still_resolve() {
-    let _ = type_name::<khora_io::script_compile::DiskLoader>();
-    let _: fn(std::path::PathBuf) -> khora_io::script_compile::DiskLoader =
-        khora_io::script_compile::DiskLoader::new;
-    is_debug::<khora_io::script_compile::DiskLoader>();
-    is_clone::<khora_io::script_compile::DiskLoader>();
-    is_source_loader::<khora_io::script_compile::DiskLoader>();
+    let _ = type_name::<khora_io::script::compile::DiskLoader>();
+    let _: fn(std::path::PathBuf) -> khora_io::script::compile::DiskLoader =
+        khora_io::script::compile::DiskLoader::new;
+    is_debug::<khora_io::script::compile::DiskLoader>();
+    is_clone::<khora_io::script::compile::DiskLoader>();
+    is_source_loader::<khora_io::script::compile::DiskLoader>();
 }
 
 #[test]
 fn module_script_hot_reload_paths_still_resolve() {
-    let _ = type_name::<khora_io::script_hot_reload::PendingReloads>();
-    let _ = khora_io::script_hot_reload::load_all;
-    let _ = khora_io::script_hot_reload::reload_channel;
+    let _ = type_name::<khora_io::script::hot_reload::PendingReloads>();
+    let _ = khora_io::script::hot_reload::load_all;
+    let _ = khora_io::script::hot_reload::reload_channel;
 }
 
 #[test]
 fn module_script_mirror_paths_still_resolve() {
-    let _ = khora_io::script_mirror::MIRROR_MODULE;
-    let _ = type_name::<khora_io::script_mirror::PreludeLoader<khora_script::MemoryLoader>>();
-    let _ = <khora_io::script_mirror::PreludeLoader<khora_script::MemoryLoader>>::new;
-    let _ = <khora_io::script_mirror::PreludeLoader<khora_script::MemoryLoader>>::inner;
-    is_debug::<khora_io::script_mirror::PreludeLoader<khora_script::MemoryLoader>>();
-    is_clone::<khora_io::script_mirror::PreludeLoader<khora_script::MemoryLoader>>();
-    is_source_loader::<khora_io::script_mirror::PreludeLoader<khora_script::MemoryLoader>>();
-    let _ = khora_io::script_mirror::mirror_source;
+    let _ = khora_io::script::mirror::MIRROR_MODULE;
+    let _ = type_name::<khora_io::script::mirror::PreludeLoader<khora_script::MemoryLoader>>();
+    let _ = <khora_io::script::mirror::PreludeLoader<khora_script::MemoryLoader>>::new;
+    let _ = <khora_io::script::mirror::PreludeLoader<khora_script::MemoryLoader>>::inner;
+    is_debug::<khora_io::script::mirror::PreludeLoader<khora_script::MemoryLoader>>();
+    is_clone::<khora_io::script::mirror::PreludeLoader<khora_script::MemoryLoader>>();
+    is_source_loader::<khora_io::script::mirror::PreludeLoader<khora_script::MemoryLoader>>();
+    let _ = khora_io::script::mirror::mirror_source;
 }
 
 #[test]
@@ -661,17 +658,17 @@ fn module_serialization_paths_still_resolve() {
 
 #[test]
 fn module_shader_hot_reload_paths_still_resolve() {
-    let _ = khora_io::shader_hot_reload::logical_name_for_shader_path;
+    let _ = khora_io::systems::shader_hot_reload::logical_name_for_shader_path;
 }
 
 #[test]
-fn module_vfs_paths_still_resolve() {
-    let _ = type_name::<khora_io::vfs::VirtualFileSystem>();
-    let _ = khora_io::vfs::VirtualFileSystem::new;
-    let _ = khora_io::vfs::VirtualFileSystem::get_metadata;
-    let _ = khora_io::vfs::VirtualFileSystem::iter_all;
-    let _ = khora_io::vfs::VirtualFileSystem::asset_count;
-    is_debug::<khora_io::vfs::VirtualFileSystem>();
+fn module_asset_index_paths_still_resolve() {
+    let _ = type_name::<khora_io::asset::AssetIndex>();
+    let _ = khora_io::asset::AssetIndex::new;
+    let _ = khora_io::asset::AssetIndex::get_metadata;
+    let _ = khora_io::asset::AssetIndex::iter_all;
+    let _ = khora_io::asset::AssetIndex::asset_count;
+    is_debug::<khora_io::asset::AssetIndex>();
 }
 
 // ---------------------------------------------------------------------------
@@ -707,9 +704,9 @@ mod paths_used_by_other_crates {
     use khora_io::asset::PACK_FORMAT_VERSION as _; // khora-sdk
     use khora_io::asset::PACK_HEADER_SIZE as _; // khora-sdk
     use khora_io::asset::PACK_MAGIC as _; // khora-sdk
-    use khora_io::script_compile::DiskLoader as _; // khora-agents
-    use khora_io::script_hot_reload::load_all as _; // khora-sdk
-    use khora_io::script_hot_reload::reload_channel as _; // khora-agents, khora-sdk
-    use khora_io::script_hot_reload::PendingReloads as _; // khora-sdk
+    use khora_io::script::compile::DiskLoader as _; // khora-agents
+    use khora_io::script::hot_reload::load_all as _; // khora-sdk
+    use khora_io::script::hot_reload::reload_channel as _; // khora-agents, khora-sdk
+    use khora_io::script::hot_reload::PendingReloads as _; // khora-sdk
     use khora_io::serialization::SerializationService as _; // khora-sdk
 }

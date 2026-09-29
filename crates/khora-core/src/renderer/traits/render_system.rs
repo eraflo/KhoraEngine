@@ -15,11 +15,9 @@
 use std::sync::Arc;
 
 use crate::platform::window::KhoraWindow;
-use crate::renderer::api::{
-    core::{GraphicsAdapterInfo, RenderSettings, RenderStats},
-    resource::{TextureViewId, ViewInfo},
-    scene::RenderObject,
-};
+use crate::renderer::api::device::{GraphicsAdapterInfo, RenderSettings, RenderStats};
+use crate::renderer::api::gpu_scene::RenderObject;
+use crate::renderer::api::resource::{TextureViewId, ViewInfo};
 use crate::renderer::error::RenderError;
 use crate::renderer::GraphicsDevice;
 use crate::telemetry::ResourceMonitor;

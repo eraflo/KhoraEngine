@@ -237,7 +237,7 @@ inventory::submit! {
 mod tests {
     use super::*;
     use crate::ecs::World;
-    use crate::scene::registry::ComponentRegistration;
+    use crate::scene::component_registration::ComponentRegistration;
 
     /// `MeshRef::Procedural` survives a recipe serialize → deserialize cycle.
     #[test]

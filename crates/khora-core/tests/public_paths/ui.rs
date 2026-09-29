@@ -63,7 +63,7 @@ fn is_zeroable<T: bytemuck::Zeroable>() {}
 mod every_pub_mod {
     use khora_core::ui as _;
     use khora_core::ui::app as _;
-    use khora_core::ui::app::context as _;
+    use khora_core::ui::app::app_context as _;
     use khora_core::ui::app::runtime as _;
     use khora_core::ui::editor as _;
     use khora_core::ui::editor::gizmo as _;
@@ -511,21 +511,21 @@ fn ui_val_variants(x: &khora_core::ui::types::UiVal) {
 
 #[allow(dead_code)]
 mod trait_items {
-    fn app_context_trait_items<T: khora_core::ui::app::context::AppContext>() {
-        let _ = <T as khora_core::ui::app::context::AppContext>::central;
-        let _ = <T as khora_core::ui::app::context::AppContext>::set_theme;
-        let _ = <T as khora_core::ui::app::context::AppContext>::set_fonts;
-        let _ = <T as khora_core::ui::app::context::AppContext>::screen_size;
-        let _ = <T as khora_core::ui::app::context::AppContext>::pixels_per_point;
-        let _ = <T as khora_core::ui::app::context::AppContext>::request_repaint;
-        let _ = <T as khora_core::ui::app::context::AppContext>::request_close;
+    fn app_context_trait_items<T: khora_core::ui::app::app_context::AppContext>() {
+        let _ = <T as khora_core::ui::app::app_context::AppContext>::central;
+        let _ = <T as khora_core::ui::app::app_context::AppContext>::set_theme;
+        let _ = <T as khora_core::ui::app::app_context::AppContext>::set_fonts;
+        let _ = <T as khora_core::ui::app::app_context::AppContext>::screen_size;
+        let _ = <T as khora_core::ui::app::app_context::AppContext>::pixels_per_point;
+        let _ = <T as khora_core::ui::app::app_context::AppContext>::request_repaint;
+        let _ = <T as khora_core::ui::app::app_context::AppContext>::request_close;
     }
 
     fn app_context_trait_identity<T: khora_core::ui::app::AppContext>() {
         app_context_trait_items::<T>();
     }
 
-    fn app_context_trait_identity_rev<T: khora_core::ui::app::context::AppContext>() {
+    fn app_context_trait_identity_rev<T: khora_core::ui::app::app_context::AppContext>() {
         app_context_trait_identity::<T>();
     }
 
@@ -533,7 +533,7 @@ mod trait_items {
         app_context_trait_items::<T>();
     }
 
-    fn app_context_trait_identity_2_rev<T: khora_core::ui::app::context::AppContext>() {
+    fn app_context_trait_identity_2_rev<T: khora_core::ui::app::app_context::AppContext>() {
         app_context_trait_identity_2::<T>();
     }
 
@@ -785,7 +785,7 @@ mod trait_items {
 
 #[test]
 fn module_ui_paths_still_resolve() {
-    // trait `khora_core::ui::app::context::AppContext`: see `app_context_trait_items`
+    // trait `khora_core::ui::app::app_context::AppContext`: see `app_context_trait_items`
     // trait `khora_core::ui::app::AppContext`: see `app_context_trait_items`
     // trait `khora_core::ui::AppContext`: see `app_context_trait_items`
     // trait `khora_core::ui::app::runtime::App`: see `app_trait_items`

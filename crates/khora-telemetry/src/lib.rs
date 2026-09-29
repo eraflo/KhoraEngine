@@ -20,11 +20,11 @@
 
 pub mod metrics;
 pub mod monitoring;
-pub mod service;
+pub mod scoped_metric_timer;
 pub mod storage;
-pub mod utils;
+pub mod telemetry_service;
 
-pub use self::service::TelemetryService;
-pub use crate::metrics::registry::MetricsRegistry;
-pub use crate::monitoring::registry::MonitorRegistry;
-pub use crate::utils::*;
+pub use metrics::MetricsRegistry;
+pub use monitoring::MonitorRegistry;
+pub use scoped_metric_timer::ScopedMetricTimer;
+pub use telemetry_service::TelemetryService;

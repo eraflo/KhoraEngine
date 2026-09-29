@@ -37,7 +37,7 @@ use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::script::{CommandBuffer, WorldCommand};
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_io::script_compile::DiskLoader;
+use khora_io::script::compile::DiskLoader;
 use khora_script::compile_module;
 use khora_script::reload::ScriptReload;
 
@@ -71,7 +71,7 @@ fn wired() -> Option<Arc<Runtime>> {
     );
     let program = compiled.program.expect("a program with no diagnostics");
 
-    let reloads = khora_io::script_hot_reload::reload_channel();
+    let reloads = khora_io::script::hot_reload::reload_channel();
     reloads.send(ScriptReload {
         module: MODULE.to_owned(),
         program,
@@ -195,7 +195,7 @@ fn an_unloaded_module_is_counted_not_ignored() {
         as Arc<std::sync::Mutex<khora_lanes::script_lane::ScriptRuntime>>);
     runtime
         .resources
-        .insert(khora_io::script_hot_reload::reload_channel());
+        .insert(khora_io::script::hot_reload::reload_channel());
     let runtime = Arc::new(runtime);
 
     let mut agent = budgeted();

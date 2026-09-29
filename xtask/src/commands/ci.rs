@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::helpers::*;
+use crate::exec::*;
+use crate::term::*;
 use anyhow::Result;
 use std::time::Instant;
 
@@ -133,7 +134,7 @@ pub fn gate() -> Result<()> {
 }
 
 pub fn all() -> Result<()> {
-    println!("{}", crate::helpers::BANNER);
+    println!("{}", crate::term::BANNER);
     println!("{}{}Starting full build pipeline...{}", BOLD, CYAN, RESET);
     println!(
         "{}💡 Pipeline:{} This will run build → test → check → format → clippy",

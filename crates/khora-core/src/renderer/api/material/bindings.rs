@@ -25,8 +25,8 @@ use crate::renderer::api::command::{
     BindGroupEntry, BindGroupLayoutEntry, BindingResource, BindingType, BufferBinding,
     BufferBindingType, SamplerBindingType, TextureSampleType, TextureViewDimension,
 };
-use crate::renderer::api::pipeline::ShaderVariantKey;
 use crate::renderer::api::resource::{BufferId, SamplerId, TextureViewId};
+use crate::renderer::api::shader::ShaderVariantKey;
 use crate::renderer::api::util::ShaderStageFlags;
 
 /// Binding indices inside the material bind group (group 2).
@@ -48,7 +48,7 @@ pub mod binding {
 }
 
 /// Canonical shader-variant flag names for the optional material texture
-/// slots. A material's [`ShaderVariantKey`](crate::renderer::api::pipeline::ShaderVariantKey)
+/// slots. A material's [`ShaderVariantKey`]
 /// sets the flag for each texture slot it declares; the group-2 layout,
 /// the WGSL `#ifdef` gates, and the cached bind group are all derived from
 /// the same set, so they stay in lockstep. Single source of truth — never
@@ -70,7 +70,7 @@ pub mod flag {
 ///
 /// Lit lanes never build this — the data-layer material projection does,
 /// once per material UUID. Lanes simply bind the resulting
-/// [`GpuMaterial`](crate::renderer::api::scene::GpuMaterial) bind group.
+/// [`GpuMaterial`](crate::renderer::api::material::GpuMaterial) bind group.
 ///
 /// Each texture view is `Some` only when the material declares that map
 /// (no fallback textures); the `None` slots are absent from both the

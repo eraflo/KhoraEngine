@@ -82,6 +82,99 @@ const RATCHETED_CHECKS: &[&str] = &[
     "relative_links_resolve",
     "cited_source_paths_exist",
     "no_duplicate_asset_files",
+    "one_spelling_of_util",
+    "no_generic_module_file_names",
+    "docs_pages_are_kebab_case",
+    "no_stuttering_file_names",
+    "retired_file_names",
+];
+
+/// Module names too generic to say what a file holds: each is shared by
+/// unrelated types across the workspace. Banned as a file module
+/// (`registry.rs`).
+const GENERIC_MODULE_NAMES: &[&str] = &["registry", "context", "service", "helpers", "widgets"];
+
+/// The generic names also banned as a folder module (`service/mod.rs`).
+/// `widgets/` is not among them: a folder holding one file per widget is a
+/// collection, named for what it collects.
+const GENERIC_FOLDER_NAMES: &[&str] = &["registry", "context", "service", "helpers"];
+
+/// Markdown file names under `docs/src` exempt from kebab-case: mdBook
+/// requires `SUMMARY.md` by that name.
+const DOCS_NAME_EXEMPT: &[&str] = &["SUMMARY.md"];
+
+/// Paths a rename has retired, with the reason. None may exist again.
+const RETIRED_FILE_NAMES: &[(&str, &str)] = &[
+    // A file is named after its primary type.
+    (
+        "crates/khora-core/src/utils/timer.rs",
+        "holds `Stopwatch`: name the file after it",
+    ),
+    (
+        "crates/khora-core/src/util/timer.rs",
+        "holds `Stopwatch`: name the file after it",
+    ),
+    (
+        "crates/khora-lanes/src/render_lane/util/dynamic_uniform_buffer.rs",
+        "holds `DynamicUniformRingBuffer`: name the file after it",
+    ),
+    (
+        "crates/khora-core/src/renderer/api/command/encoder.rs",
+        "holds `DrawCommand`, not an encoder (the recorder trait is `traits/command_recorder.rs`)",
+    ),
+    (
+        "crates/khora-core/src/asset/uuid.rs",
+        "holds `AssetUUID`: name the file after it",
+    ),
+    (
+        "crates/khora-infra/src/ui/taffy/taffy_layout.rs",
+        "stutters its folder's name",
+    ),
+    // Editor and hub use the same words.
+    (
+        "crates/khora-hub/src/chrome/topbar.rs",
+        "the editor's word is title bar: `title_bar.rs`",
+    ),
+    (
+        "crates/khora-hub/src/ui/widgets.rs",
+        "holds only `format_ts`: `ui/format.rs`",
+    ),
+    (
+        "crates/khora-editor/src/widgets/chrome.rs",
+        "clashes with the `chrome/` folder: `widgets/panel_header.rs`",
+    ),
+    (
+        "crates/khora-editor/src/util.rs",
+        "holds only `read_git_branch`: `git.rs`",
+    ),
+    ("xtask/src/helpers.rs", "split into `term.rs` and `exec.rs`"),
+    // A name says what the thing is.
+    (
+        "crates/khora-io/src/vfs.rs",
+        "`AssetIndex` is an asset index: `asset/index.rs` `AssetIndex`",
+    ),
+    (
+        "crates/khora-core/src/renderer/api/scene",
+        "GPU frame data, not the scene file format: `api/gpu_scene/`",
+    ),
+    (
+        "crates/khora-core/src/renderer/api/core",
+        "shadows the crate name and is a grab-bag: split it",
+    ),
+    // Shader in one place: `renderer/api/shader/`.
+    (
+        "crates/khora-core/src/renderer/api/shader_defs.rs",
+        "shader code lives in `api/shader/`",
+    ),
+    (
+        "crates/khora-core/src/renderer/api/resource/shader_source.rs",
+        "shader code lives in `api/shader/`",
+    ),
+    // Lights in one place: `renderer/light/`.
+    (
+        "crates/khora-core/src/renderer/light.rs",
+        "lights live in the `renderer/light/` folder",
+    ),
 ];
 
 /// Words one of which an allowlist reason must contain: the batch that
@@ -548,6 +641,275 @@ fn no_duplicate_asset_files() {
         "byte-identical asset files",
         &violations,
     );
+}
+
+// ---------------------------------------------------------------------------
+// Naming
+// ---------------------------------------------------------------------------
+
+/// One spelling per folder concept: the helper folder is `util/` (singular,
+/// like `flow/` and `lexer/`), never `utils/` — as a folder or as a
+/// `utils.rs` file module — under any Rust `src/` tree. Keyed by the folder
+/// or file.
+#[test]
+fn one_spelling_of_util() {
+    let root = repo_root();
+    let mut violations = Violations::new();
+    for src in rust_src_roots(&root) {
+        for dir in walk_dirs(&src) {
+            if file_name(&dir) == "utils" {
+                add(
+                    &mut violations,
+                    rel(&root, &dir),
+                    "spelled `utils/` (use `util/`)".to_owned(),
+                );
+            }
+        }
+        for file in walk_files(&src) {
+            if file_name(&file) == "utils.rs" {
+                add(
+                    &mut violations,
+                    rel(&root, &file),
+                    "spelled `utils.rs` (use `util`)".to_owned(),
+                );
+            }
+        }
+    }
+    ratchet(
+        "one_spelling_of_util",
+        "`utils` where the concept is spelled `util`",
+        &violations,
+    );
+}
+
+/// No module under a Rust `src/` tree carries a name that says nothing about
+/// what it holds:
+///
+/// - no file module named `registry.rs`, `context.rs`, `service.rs`,
+///   `helpers.rs` or `widgets.rs` (`GENERIC_MODULE_NAMES`);
+/// - no folder module (a folder holding `mod.rs`) named `registry/`,
+///   `context/`, `service/` or `helpers/` (`GENERIC_FOLDER_NAMES`);
+/// - no file or folder whose name starts with `mod_`.
+///
+/// Keyed by the file, or by the folder.
+#[test]
+fn no_generic_module_file_names() {
+    let root = repo_root();
+    let mut violations = Violations::new();
+    for src in rust_src_roots(&root) {
+        for file in walk_files(&src) {
+            if !has_extension(&file, "rs") {
+                continue;
+            }
+            let name = file_name(&file);
+            let stem = name.trim_end_matches(".rs");
+            if GENERIC_MODULE_NAMES.contains(&stem) {
+                add(
+                    &mut violations,
+                    rel(&root, &file),
+                    format!("generic name `{name}` (name it after the type it holds)"),
+                );
+            }
+            if name.starts_with("mod_") {
+                add(
+                    &mut violations,
+                    rel(&root, &file),
+                    format!("`mod_` prefix on `{name}`"),
+                );
+            }
+        }
+        for dir in walk_dirs(&src) {
+            let name = file_name(&dir);
+            if GENERIC_FOLDER_NAMES.contains(&name.as_str()) && dir.join("mod.rs").is_file() {
+                add(
+                    &mut violations,
+                    rel(&root, &dir),
+                    format!("generic folder module `{name}/` (name it after what it holds)"),
+                );
+            }
+            if name.starts_with("mod_") {
+                add(
+                    &mut violations,
+                    rel(&root, &dir),
+                    format!("`mod_` prefix on `{name}/`"),
+                );
+            }
+        }
+    }
+    ratchet(
+        "no_generic_module_file_names",
+        "modules with a generic or `mod_`-prefixed name",
+        &violations,
+    );
+}
+
+/// Every Markdown page under `docs/src` has a kebab-case file name: lowercase
+/// ASCII letters and digits, words joined by `-`, never `_`. `SUMMARY.md` is
+/// exempt (mdBook requires it). Keyed by the page.
+#[test]
+fn docs_pages_are_kebab_case() {
+    let root = repo_root();
+    let mut violations = Violations::new();
+    for page in walk_files(&root.join("docs/src")) {
+        if !has_extension(&page, "md") {
+            continue;
+        }
+        let name = file_name(&page);
+        if DOCS_NAME_EXEMPT.contains(&name.as_str()) {
+            continue;
+        }
+        if !is_kebab_case(name.trim_end_matches(".md")) {
+            add(
+                &mut violations,
+                rel(&root, &page),
+                format!("`{name}` is not kebab-case"),
+            );
+        }
+    }
+    ratchet(
+        "docs_pages_are_kebab_case",
+        "docs pages whose file name is not kebab-case",
+        &violations,
+    );
+}
+
+/// No Rust file repeats its folder's name: `<dir>/<dir>_*.rs` and
+/// `<dir>/<dir>.rs` are out (`ui/taffy/taffy_layout.rs`, which holds
+/// `TaffyLayoutSystem`), since the folder already says it. Scans every folder
+/// below a Rust `src/` tree; `src/` itself is not a module name.
+///
+/// A file named after a type it declares is exempt, because "a file is named
+/// after its primary type" comes first: `physics/physics_material.rs` holds
+/// `PhysicsMaterial`, `asset/asset_uuid.rs` would hold `AssetUUID`. "Named after"
+/// means the file stem is the type's snake_case name, acronyms kept whole
+/// (`AssetUUID` → `asset_uuid`). Keyed by the file.
+#[test]
+fn no_stuttering_file_names() {
+    let root = repo_root();
+    let mut violations = Violations::new();
+    for src in rust_src_roots(&root) {
+        for dir in walk_dirs(&src) {
+            let folder = file_name(&dir);
+            let Ok(entries) = fs::read_dir(&dir) else {
+                continue;
+            };
+            let mut stutters: Vec<PathBuf> = entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| path.is_file() && has_extension(path, "rs"))
+                .filter(|path| {
+                    let name = file_name(path);
+                    let stem = name.trim_end_matches(".rs");
+                    stem == folder || stem.starts_with(&format!("{folder}_"))
+                })
+                .filter(|path| {
+                    let name = file_name(path);
+                    let stem = name.trim_end_matches(".rs");
+                    !declared_type_names(&read_text(path))
+                        .iter()
+                        .any(|ty| snake_case(ty) == stem)
+                })
+                .collect();
+            stutters.sort();
+            for file in stutters {
+                add(
+                    &mut violations,
+                    rel(&root, &file),
+                    format!("repeats its folder's name `{folder}`"),
+                );
+            }
+        }
+    }
+    ratchet(
+        "no_stuttering_file_names",
+        "file names that repeat their folder's name",
+        &violations,
+    );
+}
+
+/// No path a rename has retired exists again (`RETIRED_FILE_NAMES`): a file
+/// named after something other than its primary type, a word the editor and
+/// the hub spell differently, a name that misstates what the thing is. Keyed
+/// by the retired path.
+#[test]
+fn retired_file_names() {
+    let root = repo_root();
+    let mut violations = Violations::new();
+    for (path, reason) in RETIRED_FILE_NAMES {
+        if root.join(path).exists() {
+            add(&mut violations, (*path).to_owned(), (*reason).to_owned());
+        }
+    }
+    ratchet(
+        "retired_file_names",
+        "retired file names that exist again",
+        &violations,
+    );
+}
+
+/// Names of the `struct`, `enum`, `union`, `trait` and `type` items a file
+/// declares at the start of a line (any visibility, any indentation).
+fn declared_type_names(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for raw in text.lines() {
+        let mut rest = raw.trim_start();
+        if let Some(after) = rest.strip_prefix("pub") {
+            rest = after.trim_start();
+            if rest.starts_with('(') {
+                let Some(close) = rest.find(')') else {
+                    continue;
+                };
+                rest = rest[close + 1..].trim_start();
+            }
+        }
+        for keyword in ["struct ", "enum ", "union ", "trait ", "type "] {
+            if let Some(after) = rest.strip_prefix(keyword) {
+                let name: String = after
+                    .trim_start()
+                    .chars()
+                    .take_while(|ch| ch.is_alphanumeric() || *ch == '_')
+                    .collect();
+                if !name.is_empty() {
+                    names.push(name);
+                }
+            }
+        }
+    }
+    names
+}
+
+/// `CamelCase` → `snake_case`, keeping an acronym whole: a `_` goes before an
+/// uppercase letter that follows a lowercase letter or digit, or that starts
+/// a new word after an acronym (`AssetUUID` → `asset_uuid`, `HTTPServer` →
+/// `http_server`).
+fn snake_case(name: &str) -> String {
+    let chars: Vec<char> = name.chars().collect();
+    let mut out = String::with_capacity(name.len() + 4);
+    for (index, ch) in chars.iter().enumerate() {
+        if ch.is_uppercase() && index > 0 {
+            let prev = chars[index - 1];
+            let next_is_lower = chars.get(index + 1).is_some_and(|next| next.is_lowercase());
+            if prev.is_lowercase()
+                || prev.is_ascii_digit()
+                || (prev.is_uppercase() && next_is_lower)
+            {
+                out.push('_');
+            }
+        }
+        out.extend(ch.to_lowercase());
+    }
+    out
+}
+
+/// Lowercase ASCII letters and digits in words joined by single `-`.
+fn is_kebab_case(stem: &str) -> bool {
+    !stem.is_empty()
+        && stem.split('-').all(|word| {
+            !word.is_empty()
+                && word
+                    .chars()
+                    .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -1587,6 +1949,60 @@ fn walkers_skip_nested_checkouts() {
 
     assert_eq!(files, vec!["normal/deep/kept.wgsl".to_owned()]);
     assert_eq!(dirs, vec!["normal".to_owned(), "normal/deep".to_owned()]);
+}
+
+/// Type names convert to file stems with acronyms kept whole.
+#[test]
+fn snake_case_keeps_acronyms_whole() {
+    for (ty, stem) in [
+        ("AssetUUID", "asset_uuid"),
+        ("TaffyLayoutSystem", "taffy_layout_system"),
+        ("PhysicsMaterial", "physics_material"),
+        ("HTTPServer", "http_server"),
+        ("Vec3", "vec3"),
+        ("Mat4x4", "mat4x4"),
+        ("Stopwatch", "stopwatch"),
+    ] {
+        assert_eq!(snake_case(ty), stem, "{ty}");
+    }
+}
+
+/// Every type-like item is found, whatever its visibility; functions and
+/// words inside other items are not types.
+#[test]
+fn declared_type_names_finds_items() {
+    let text = "\
+pub struct Alpha {
+pub(crate) enum Beta {
+    trait Gamma: Send {
+pub type Delta = u32;
+union Epsilon {
+pub fn struct_like() {}
+// struct Commented
+let structure = 1;
+";
+    let names = declared_type_names(text);
+    assert_eq!(names, vec!["Alpha", "Beta", "Gamma", "Delta", "Epsilon"]);
+}
+
+/// Kebab-case is lowercase words of letters and digits joined by single `-`.
+#[test]
+fn kebab_case_matcher() {
+    for good in ["open-questions", "roadmap", "ergon-02-types", "a1-b2"] {
+        assert!(is_kebab_case(good), "`{good}` should be kebab-case");
+    }
+    for bad in [
+        "open_questions",
+        "Open-questions",
+        "SUMMARY",
+        "open--questions",
+        "-open",
+        "open-",
+        "open questions",
+        "",
+    ] {
+        assert!(!is_kebab_case(bad), "`{bad}` should not be kebab-case");
+    }
 }
 
 /// Only `.agent/<profile>/knowledge/MEMORY.md` is a dated log.

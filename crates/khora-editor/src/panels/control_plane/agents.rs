@@ -17,7 +17,7 @@
 use khora_sdk::editor_ui::*;
 
 use super::{AgentSnapshot, ControlPlanePanel, AGENT_ROW_HEIGHT};
-use crate::widgets::chrome::{paint_panel_header, paint_status_dot, panel_tab};
+use crate::widgets::panel_header::{paint_panel_header, paint_status_dot, panel_tab};
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 use khora_tool_ui::widgets::Health;

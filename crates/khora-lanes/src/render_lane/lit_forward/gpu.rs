@@ -18,11 +18,11 @@
 use super::LitForwardLane;
 use crate::render_lane::util::DynamicUniformRingBuffer;
 use crate::render_lane::util::UniformRingBuffer;
-use khora_core::renderer::api::pipeline::{LayoutKey, LayoutSpec, PipelineSpec, ShaderVariantKey};
-use khora_core::renderer::api::{
-    pipeline::enums::PrimitiveTopology,
-    scene::{LightingUniforms, ModelUniforms},
-};
+use khora_core::renderer::api::gpu_scene::ModelUniforms;
+use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
+use khora_core::renderer::api::pipeline::{LayoutKey, LayoutSpec, PipelineSpec};
+use khora_core::renderer::api::shader::ShaderVariantKey;
+use khora_core::renderer::light::LightingUniforms;
 
 // ─── Free functions (CLAD: declarative pipeline spec) ───
 
@@ -47,7 +47,7 @@ pub(super) fn pipeline_spec(
         ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
         PrimitiveStateDescriptor, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
     };
-    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
+    use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
     use std::borrow::Cow;
 
     PipelineSpec {
@@ -184,8 +184,8 @@ impl LitForwardLane {
             model_layout,
             0,
             std::mem::size_of::<ModelUniforms>() as u32,
-            crate::render_lane::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
-            crate::render_lane::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+            crate::render_lane::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS,
+            crate::render_lane::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
             "LitForward Model Ring",
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
@@ -199,7 +199,7 @@ impl LitForwardLane {
             "LitForwardLane: Persistent ring buffers created (camera: {} bytes, lighting: {} bytes, {} slots each)",
             std::mem::size_of::<khora_core::renderer::api::resource::CameraUniformData>(),
             std::mem::size_of::<LightingUniforms>(),
-            khora_core::renderer::api::core::MAX_FRAMES_IN_FLIGHT,
+            khora_core::renderer::api::frame::MAX_FRAMES_IN_FLIGHT,
         );
 
         Ok(())

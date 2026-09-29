@@ -34,7 +34,7 @@ use khora_core::script::WorldCommand;
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::{TickPhase, World};
 use khora_data::flow::{ScriptFlow, ScriptInstance, ScriptProgram, ScriptView};
-use khora_io::script_hot_reload::reload_channel;
+use khora_io::script::hot_reload::reload_channel;
 use khora_script::reload::ScriptReload;
 
 const MODULE: &str = "player.erg";

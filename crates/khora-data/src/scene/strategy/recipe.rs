@@ -18,10 +18,9 @@
 //! All component types that derive `Component` are automatically handled.
 
 use super::{DeserializationError, SerializationError, SerializationStrategy};
-use crate::{
-    ecs::World,
-    scene::{registry::ComponentRegistration, SceneCommand, SceneRecipe},
-};
+use crate::ecs::World;
+use crate::scene::component_registration::ComponentRegistration;
+use crate::scene::{SceneCommand, SceneRecipe};
 use bincode::config;
 use khora_core::{ecs::entity::EntityId, graph::topological_sort};
 use std::collections::HashMap;
@@ -271,9 +270,8 @@ impl SerializationStrategy for RecipeSerializationStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ecs::{
-        material_from_json, material_to_json, Children, MaterialRef, Parent, Transform, World,
-    };
+    use crate::ecs::{Children, MaterialRef, Parent, Transform, World};
+    use crate::scene::{material_from_json, material_to_json};
     use khora_core::asset::{AssetUUID, EmissiveMaterial, Material, StandardMaterial};
     use khora_core::math::{LinearRgba, Vec3};
 

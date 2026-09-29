@@ -20,15 +20,12 @@
 //! project) and AGDF-ready hooks for future per-domain adaptation (LOD,
 //! frustum culling, etc.).
 
-use khora_core::{
-    asset::Material,
-    math::{Mat4, Vec3},
-    renderer::{
-        api::scene::{GpuMaterial, GpuMesh},
-        light::LightType,
-    },
-    Runtime,
-};
+use khora_core::asset::Material;
+use khora_core::math::{Mat4, Vec3};
+use khora_core::renderer::api::gpu_scene::GpuMesh;
+use khora_core::renderer::api::material::GpuMaterial;
+use khora_core::renderer::light::LightType;
+use khora_core::Runtime;
 
 use crate::ecs::{Camera, GlobalTransform, HandleComponent, Light, SemanticDomain, World};
 use crate::flow::{Flow, Selection};

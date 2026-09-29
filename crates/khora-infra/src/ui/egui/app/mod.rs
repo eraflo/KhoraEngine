@@ -12,8 +12,8 @@
 //! Standalone tools (the hub) consume this through `khora-sdk` —
 //! they never import `eframe` or `egui` directly.
 
-mod context;
+mod egui_app_context;
 mod runtime;
 
-pub use context::EguiAppContext;
+pub use egui_app_context::EguiAppContext;
 pub use runtime::{run_native, WindowConfigInput, WindowIconInput};

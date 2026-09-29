@@ -1,7 +1,7 @@
 #define_import_path khora::std::material
 
 // Material properties uniform — bound at @group(2) @binding(0). Layout
-// matches `khora_core::renderer::api::scene::MaterialUniforms`
+// matches `khora_core::renderer::api::material::MaterialUniforms`
 // (`#[repr(C)]`); changing the field order or types here MUST be
 // mirrored Rust-side.
 

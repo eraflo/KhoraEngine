@@ -15,8 +15,6 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 pub struct AuthenticatedUser {
     pub login: String,
-    #[serde(default)]
-    pub name: Option<String>,
 }
 
 /// A GitHub repository — subset of the `POST /user/repos` response we care about.
@@ -24,8 +22,6 @@ pub struct AuthenticatedUser {
 pub struct CreatedRepo {
     pub full_name: String,
     pub clone_url: String,
-    pub ssh_url: String,
-    pub html_url: String,
 }
 
 fn authed_client(token: &str) -> Result<reqwest::blocking::Client> {

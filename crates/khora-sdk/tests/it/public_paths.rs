@@ -639,7 +639,7 @@ fn module_crate_root_paths_still_resolve() {
     let _ = type_name::<khora_sdk::Mesh>();
     same_type(
         PhantomData::<khora_sdk::Mesh>,
-        PhantomData::<khora_core::renderer::api::scene::Mesh>,
+        PhantomData::<khora_core::renderer::api::gpu_scene::Mesh>,
     );
     let _ = type_name::<khora_sdk::MeshDispatcher>();
     same_type(
@@ -1067,11 +1067,11 @@ fn module_tool_ui_paths_still_resolve() {
 #[test]
 fn module_renderer_paths_still_resolve() {
     #[allow(unused_imports)]
+    use khora_sdk::renderer::gpu_scene as _; // module `khora_core::renderer::api::gpu_scene`
+    #[allow(unused_imports)]
     use khora_sdk::renderer::light as _; // module `khora_core::renderer::light`
     #[allow(unused_imports)]
     use khora_sdk::renderer::resource as _; // module `khora_core::renderer::api::resource`
-    #[allow(unused_imports)]
-    use khora_sdk::renderer::scene as _; // module `khora_core::renderer::api::scene`
 }
 
 #[test]
@@ -1399,15 +1399,15 @@ mod glob_reexports {
     use khora_sdk::prelude::math::ray as _; // module
     use khora_sdk::prelude::math::simd as _; // module
     use khora_sdk::prelude::math::vector as _; // module
+    use khora_sdk::renderer::gpu_scene::mesh as _; // module
+    use khora_sdk::renderer::gpu_scene::model_uniforms as _; // module
+    use khora_sdk::renderer::gpu_scene::render_object as _; // module
+    use khora_sdk::renderer::light::forward_plus as _; // module
+    use khora_sdk::renderer::light::uniforms as _; // module
     use khora_sdk::renderer::resource::buffer as _; // module
-    use khora_sdk::renderer::resource::shader_source as _; // module
     use khora_sdk::renderer::resource::texture as _; // module
+    use khora_sdk::renderer::resource::texture_format as _; // module
     use khora_sdk::renderer::resource::view as _; // module
-    use khora_sdk::renderer::scene::gpu_material as _; // module
-    use khora_sdk::renderer::scene::lighting as _; // module
-    use khora_sdk::renderer::scene::material_uniforms as _; // module
-    use khora_sdk::renderer::scene::mesh as _; // module
-    use khora_sdk::renderer::scene::render_object as _; // module
 }
 
 #[allow(dead_code)]
@@ -1684,8 +1684,20 @@ fn glob_reexports_still_name_the_same_items() {
         PhantomData::<khora_core::renderer::api::resource::CameraUniformData>,
     );
     same_type(
-        PhantomData::<khora_sdk::renderer::resource::CpuShaderSource>,
-        PhantomData::<khora_core::renderer::api::resource::CpuShaderSource>,
+        PhantomData::<khora_sdk::renderer::resource::IndexFormat>,
+        PhantomData::<khora_core::renderer::api::resource::IndexFormat>,
+    );
+    same_type(
+        PhantomData::<khora_sdk::renderer::resource::SampleCount>,
+        PhantomData::<khora_core::renderer::api::resource::SampleCount>,
+    );
+    same_type(
+        PhantomData::<khora_sdk::renderer::resource::TextureColorSpace>,
+        PhantomData::<khora_core::renderer::api::resource::TextureColorSpace>,
+    );
+    same_type(
+        PhantomData::<khora_sdk::renderer::resource::TextureFormat>,
+        PhantomData::<khora_core::renderer::api::resource::TextureFormat>,
     );
     same_type(
         PhantomData::<khora_sdk::renderer::resource::CpuTexture>,
@@ -1747,79 +1759,83 @@ fn glob_reexports_still_name_the_same_items() {
         PhantomData::<khora_sdk::renderer::resource::ViewInfo>,
         PhantomData::<khora_core::renderer::api::resource::ViewInfo>,
     );
-    // `khora_sdk::renderer::scene` is `khora_core::renderer::api::scene`: every item in it
+    // `khora_sdk::renderer::gpu_scene` is `khora_core::renderer::api::gpu_scene`: every item in it
     same_type(
-        PhantomData::<khora_sdk::renderer::scene::CullingUniformsData>,
-        PhantomData::<khora_core::renderer::api::scene::CullingUniformsData>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::renderer::scene::DirectionalLightUniform>,
-        PhantomData::<khora_core::renderer::api::scene::DirectionalLightUniform>,
+        PhantomData::<khora_sdk::renderer::gpu_scene::GpuMesh>,
+        PhantomData::<khora_core::renderer::api::gpu_scene::GpuMesh>,
     );
     same_type(
-        PhantomData::<khora_sdk::renderer::scene::GpuMaterial>,
-        PhantomData::<khora_core::renderer::api::scene::GpuMaterial>,
+        PhantomData::<khora_sdk::renderer::gpu_scene::Mesh>,
+        PhantomData::<khora_core::renderer::api::gpu_scene::Mesh>,
     );
     same_type(
-        PhantomData::<khora_sdk::renderer::scene::GpuMesh>,
-        PhantomData::<khora_core::renderer::api::scene::GpuMesh>,
+        PhantomData::<khora_sdk::renderer::gpu_scene::ModelUniforms>,
+        PhantomData::<khora_core::renderer::api::gpu_scene::ModelUniforms>,
     );
     same_type(
-        PhantomData::<khora_sdk::renderer::scene::LightingUniforms>,
-        PhantomData::<khora_core::renderer::api::scene::LightingUniforms>,
-    );
-    assert_eq!(
-        khora_sdk::renderer::scene::MAX_DIRECTIONAL_LIGHTS,
-        khora_core::renderer::api::scene::MAX_DIRECTIONAL_LIGHTS
-    );
-    assert_eq!(
-        khora_sdk::renderer::scene::MAX_POINT_LIGHTS,
-        khora_core::renderer::api::scene::MAX_POINT_LIGHTS
-    );
-    assert_eq!(
-        khora_sdk::renderer::scene::MAX_SPOT_LIGHTS,
-        khora_core::renderer::api::scene::MAX_SPOT_LIGHTS
-    );
-    same_type(
-        PhantomData::<khora_sdk::renderer::scene::MaterialUniforms>,
-        PhantomData::<khora_core::renderer::api::scene::MaterialUniforms>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::renderer::scene::Mesh>,
-        PhantomData::<khora_core::renderer::api::scene::Mesh>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::renderer::scene::ModelUniforms>,
-        PhantomData::<khora_core::renderer::api::scene::ModelUniforms>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::renderer::scene::PointLightUniform>,
-        PhantomData::<khora_core::renderer::api::scene::PointLightUniform>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::renderer::scene::RenderObject>,
-        PhantomData::<khora_core::renderer::api::scene::RenderObject>,
-    );
-    same_type(
-        PhantomData::<khora_sdk::renderer::scene::SpotLightUniform>,
-        PhantomData::<khora_core::renderer::api::scene::SpotLightUniform>,
+        PhantomData::<khora_sdk::renderer::gpu_scene::RenderObject>,
+        PhantomData::<khora_core::renderer::api::gpu_scene::RenderObject>,
     );
     // `khora_sdk::renderer::light` is `khora_core::renderer::light`: every item in it
     same_type(
+        PhantomData::<khora_sdk::renderer::light::CullingUniformsData>,
+        PhantomData::<khora_core::renderer::light::CullingUniformsData>,
+    );
+    same_type(
         PhantomData::<khora_sdk::renderer::light::DirectionalLight>,
         PhantomData::<khora_core::renderer::light::DirectionalLight>,
+    );
+    same_type(
+        PhantomData::<khora_sdk::renderer::light::DirectionalLightUniform>,
+        PhantomData::<khora_core::renderer::light::DirectionalLightUniform>,
+    );
+    same_type(
+        PhantomData::<khora_sdk::renderer::light::ForwardPlusTileConfig>,
+        PhantomData::<khora_core::renderer::light::ForwardPlusTileConfig>,
+    );
+    same_type(
+        PhantomData::<khora_sdk::renderer::light::GpuLight>,
+        PhantomData::<khora_core::renderer::light::GpuLight>,
     );
     same_type(
         PhantomData::<khora_sdk::renderer::light::LightType>,
         PhantomData::<khora_core::renderer::light::LightType>,
     );
     same_type(
+        PhantomData::<khora_sdk::renderer::light::LightingUniforms>,
+        PhantomData::<khora_core::renderer::light::LightingUniforms>,
+    );
+    same_type(
         PhantomData::<khora_sdk::renderer::light::PointLight>,
         PhantomData::<khora_core::renderer::light::PointLight>,
     );
     same_type(
+        PhantomData::<khora_sdk::renderer::light::PointLightUniform>,
+        PhantomData::<khora_core::renderer::light::PointLightUniform>,
+    );
+    same_type(
         PhantomData::<khora_sdk::renderer::light::SpotLight>,
         PhantomData::<khora_core::renderer::light::SpotLight>,
+    );
+    same_type(
+        PhantomData::<khora_sdk::renderer::light::SpotLightUniform>,
+        PhantomData::<khora_core::renderer::light::SpotLightUniform>,
+    );
+    same_type(
+        PhantomData::<khora_sdk::renderer::light::TileSize>,
+        PhantomData::<khora_core::renderer::light::TileSize>,
+    );
+    assert_eq!(
+        khora_sdk::renderer::light::MAX_DIRECTIONAL_LIGHTS,
+        khora_core::renderer::light::MAX_DIRECTIONAL_LIGHTS
+    );
+    assert_eq!(
+        khora_sdk::renderer::light::MAX_POINT_LIGHTS,
+        khora_core::renderer::light::MAX_POINT_LIGHTS
+    );
+    assert_eq!(
+        khora_sdk::renderer::light::MAX_SPOT_LIGHTS,
+        khora_core::renderer::light::MAX_SPOT_LIGHTS
     );
 }
 
@@ -1864,21 +1880,20 @@ mod paths_used_by_other_crates {
     use khora_sdk::khora_core::platform::InputBinding as _; // sandbox
     use khora_sdk::khora_core::platform::InputMap as _; // sandbox
     use khora_sdk::khora_core::platform::KhoraWindow as _; // khora-editor
+    use khora_sdk::khora_core::renderer::api::gpu_scene::mesh::Mesh as _; // khora-editor
+    use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh as _; // khora-editor
     use khora_sdk::khora_core::renderer::api::resource::CpuTexture as _; // sandbox
+    use khora_sdk::khora_core::renderer::api::resource::SampleCount as _; // sandbox
     use khora_sdk::khora_core::renderer::api::resource::TextureDimension as _; // sandbox
+    use khora_sdk::khora_core::renderer::api::resource::TextureFormat as _; // sandbox
     use khora_sdk::khora_core::renderer::api::resource::TextureUsage as _; // sandbox
     use khora_sdk::khora_core::renderer::api::resource::ViewInfo as _; // khora-editor
-    use khora_sdk::khora_core::renderer::api::scene::mesh::Mesh as _; // khora-editor
-    use khora_sdk::khora_core::renderer::api::scene::Mesh as _; // khora-editor
-    use khora_sdk::khora_core::renderer::api::util::SampleCount as _; // sandbox
-    use khora_sdk::khora_core::renderer::api::util::TextureFormat as _; // sandbox
     use khora_sdk::khora_core::renderer::light::DirectionalLight as _; // khora-editor
     use khora_sdk::khora_core::renderer::light::LightType as _; // khora-editor
     use khora_sdk::khora_core::renderer::light::PointLight as _; // khora-editor
     use khora_sdk::khora_core::renderer::light::SpotLight as _; // khora-editor
     use khora_sdk::khora_core::ui::EditorOverlay as _; // khora-editor
     use khora_sdk::khora_core::ui::OverlayScreenDescriptor as _; // khora-editor
-    use khora_sdk::khora_data::ecs::material_to_json as _; // khora-editor
     use khora_sdk::khora_data::ecs::SemanticDomain as _; // khora-editor
     use khora_sdk::khora_data::ecs::Tag as _; // khora-editor
     use khora_sdk::khora_data::ecs::Teleported as _; // khora-editor
@@ -1888,6 +1903,7 @@ mod paths_used_by_other_crates {
     use khora_sdk::khora_data::render::SharedGizmoFrame as _; // khora-editor
     use khora_sdk::khora_data::render::SharedGridConfig as _; // khora-editor
     use khora_sdk::khora_data::render::SharedWireframeConfig as _; // khora-editor
+    use khora_sdk::khora_data::scene::material_to_json as _; // khora-editor
     use khora_sdk::khora_data::scene::provenance_of as _; // khora-editor
     use khora_sdk::khora_data::AssetStore as _; // sandbox
     use khora_sdk::prelude as _; // khora-editor, khora-runtime, sandbox (glob re-export)

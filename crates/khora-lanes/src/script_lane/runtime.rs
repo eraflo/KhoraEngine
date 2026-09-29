@@ -300,7 +300,9 @@ impl ScriptRuntime {
 
         if unloaded > 0 {
             log::warn!(
-                "script lane: {unloaded} instance(s) name a module with no compiled program                  — {} module(s) are loaded. Is the project's script root mounted                  (`khora_sdk::scripts::mount`)?",
+                "script lane: {unloaded} instance(s) name a module with no compiled program \
+                 — {} module(s) are loaded. Is the project's script root mounted \
+                 (`khora_sdk::scripts::mount`)?",
                 self.programs.len()
             );
         } else {

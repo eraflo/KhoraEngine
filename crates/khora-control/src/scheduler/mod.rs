@@ -14,10 +14,10 @@
 
 //! The ExecutionScheduler — hot-path orchestrator for the SAA frame loop.
 
+use crate::agent_registry::AgentRegistry;
 use crate::budget_channel::BudgetChannel;
-use crate::context::Context;
+use crate::dcc_context::Context;
 use crate::plugin::EnginePlugin;
-use crate::registry::AgentRegistry;
 use crate::worker_pool::WorkerPool;
 use crossbeam_channel::Sender;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};

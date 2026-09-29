@@ -8,8 +8,8 @@
 
 //! GitHub integration — OAuth device-flow auth + Releases API client.
 //!
-//! `releases::*` is re-exported flat so existing call sites that wrote
-//! `crate::github::GithubAsset` keep working after the reorganisation.
+//! Releases and repositories are re-exported flat: callers name
+//! `github::GithubRelease`, `github::fetch_releases_async`, … directly.
 
 pub mod auth;
 pub mod releases;

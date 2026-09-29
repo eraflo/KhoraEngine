@@ -15,9 +15,8 @@
 //! `GraphicsDevice` for the wgpu device: resource creation, writes,
 //! command submission.
 
-use khora_core::renderer::api::util::{
-    GraphicsBackendType, IndexFormat, RendererDeviceType, TextureFormat,
-};
+use khora_core::renderer::api::device::{GraphicsBackendType, RendererDeviceType};
+use khora_core::renderer::api::resource::{IndexFormat, TextureFormat};
 use khora_core::renderer::traits::CommandEncoder;
 use khora_core::renderer::{GraphicsDevice, PipelineError, ResourceError, ShaderError};
 
@@ -38,18 +37,17 @@ use super::entries::{
 use super::map_async::{MapAsyncFutureState, MapAsyncOperationFuture};
 use super::{buffer_descriptor, WgpuDevice};
 use khora_core::math::dimension;
-use khora_core::renderer::api::command::{
-    self as api_cmd, BindGroupId, BindGroupLayoutId, ComputePipelineId,
-};
-use khora_core::renderer::api::core::{
-    GraphicsAdapterInfo, ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData,
-};
+use khora_core::renderer::api::command as api_cmd;
+use khora_core::renderer::api::command::{BindGroupId, BindGroupLayoutId};
+use khora_core::renderer::api::device::GraphicsAdapterInfo;
 use khora_core::renderer::api::pipeline::enums::{CompareFunction, CullMode};
+use khora_core::renderer::api::pipeline::ComputePipelineId;
 use khora_core::renderer::api::pipeline::{
     PipelineLayoutDescriptor, PipelineLayoutId, RenderPipelineDescriptor, RenderPipelineId,
 };
 use khora_core::renderer::api::resource::buffer::{self as api_buf};
 use khora_core::renderer::api::resource::texture::{self as api_tex};
+use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId, ShaderSourceData};
 
 impl GraphicsDevice for WgpuDevice {
     // --- Shader Module Operations ---
@@ -415,7 +413,7 @@ impl GraphicsDevice for WgpuDevice {
 
     fn create_compute_pipeline(
         &self,
-        descriptor: &api_cmd::ComputePipelineDescriptor,
+        descriptor: &khora_core::renderer::api::pipeline::ComputePipelineDescriptor,
     ) -> Result<ComputePipelineId, ResourceError> {
         let context =
             self.internal.context.lock().map_err(|e| {

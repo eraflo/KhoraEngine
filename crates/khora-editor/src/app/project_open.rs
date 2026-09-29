@@ -22,7 +22,7 @@ use khora_sdk::GameWorld;
 use super::EditorApp;
 use crate::bootstrap::PROJECT_PATH;
 use crate::project_vfs::ProjectVfs;
-use crate::{hot_reload, scene_io, util};
+use crate::{git, hot_reload, scene_io};
 
 impl EditorApp {
     pub(super) fn open_cli_project(&mut self, world: &mut GameWorld) {
@@ -65,7 +65,7 @@ impl EditorApp {
 
         let entries = hot_reload::collect_asset_entries(&pvfs);
         let dirs = pvfs.list_dirs();
-        let git_branch = util::read_git_branch(&path);
+        let git_branch = git::read_git_branch(&path);
 
         if let Ok(mut state) = self.editor_state.lock() {
             state.project_folder = Some(path.to_string_lossy().to_string());

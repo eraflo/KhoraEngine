@@ -25,7 +25,7 @@
 //! bounds want caching against the mesh handle.
 
 use khora_sdk::khora_core::math::{Aabb, Mat4, Ray, Vec3};
-use khora_sdk::khora_core::renderer::api::scene::mesh::Mesh;
+use khora_sdk::khora_core::renderer::api::gpu_scene::mesh::Mesh;
 use khora_sdk::prelude::ecs::{AudioSource, Camera, EntityId, GlobalTransform, Light, Transform};
 use khora_sdk::{GameWorld, HandleComponent};
 

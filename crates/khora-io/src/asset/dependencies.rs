@@ -164,7 +164,7 @@ fn material_dependencies(bytes: &[u8]) -> Vec<AssetUUID> {
 mod tests {
     use super::*;
     use khora_core::asset::{AssetUUID, StandardMaterial};
-    use khora_data::ecs::material_to_json;
+    use khora_data::scene::material_to_json;
 
     /// Renders a `StandardMaterial` as the `.kmat` RON bytes the decoder
     /// consumes (the `{ type_name, material }` value tree, RON-encoded).

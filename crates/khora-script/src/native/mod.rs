@@ -56,16 +56,16 @@ pub use convert::ScriptType;
 pub use events::ERGON_RAISE;
 pub use ty::NativeTy;
 
-mod context;
+mod call_context;
+mod function_registry;
 mod host;
-mod registry;
 
-pub use context::NativeContext;
-pub use context::NativeError;
+pub use call_context::NativeContext;
+pub use call_context::NativeError;
+pub use function_registry::NativeFn;
+pub use function_registry::NativeRegistration;
+pub use function_registry::NativeRegistry;
 pub use host::Host;
-pub use registry::NativeFn;
-pub use registry::NativeRegistration;
-pub use registry::NativeRegistry;
 
 /// The engine function a component of an engine type reads.
 ///

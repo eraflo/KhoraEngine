@@ -298,7 +298,7 @@ panic — see the `corrupt_material_still_builds_with_empty_deps` behaviour in `
 The DCC adapts each agent's strategy every cold-path tick based on hardware and frame-time pressure.
 When quality changes unexpectedly, GORNA is usually responding to a real signal. The mechanism is in
 [GORNA](../concepts/gorna.md); the code is `khora-control/src/analysis/mod.rs` (`HeuristicEngine`) and
-`khora-control/src/service/mod.rs` (`DccService`). To investigate a single decision frame by frame, use
+`khora-control/src/dcc_service/mod.rs` (`DccService`). To investigate a single decision frame by frame, use
 [Debug a frame](./debug-a-frame.md).
 
 ### "Why did quality suddenly drop?" (a strategy downgraded on its own)

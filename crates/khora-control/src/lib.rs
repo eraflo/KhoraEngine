@@ -38,24 +38,24 @@
 
 #![warn(missing_docs)]
 
+pub mod agent_registry;
 pub mod analysis;
 pub mod budget_channel;
-pub mod context;
 pub mod cost_model;
+pub mod dcc_context;
+pub mod dcc_service;
 pub mod gorna;
 pub mod metrics;
 pub mod pid;
 pub mod plugin;
-pub mod registry;
 pub mod scheduler;
-pub mod service;
 pub mod substrate;
 pub mod worker_pool;
 
+pub use agent_registry::AgentRegistry;
 pub use analysis::AnalysisReport;
-pub use context::{BatteryLevel, Context, EngineMode, HardwareState, ThermalStatus};
+pub use dcc_context::{BatteryLevel, Context, EngineMode, HardwareState, ThermalStatus};
+pub use dcc_service::{DccConfig, DccService};
 pub use gorna::GornaArbitrator;
 pub use plugin::EnginePlugin;
-pub use registry::AgentRegistry;
 pub use scheduler::ExecutionScheduler;
-pub use service::{DccConfig, DccService};

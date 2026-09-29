@@ -36,8 +36,8 @@ use khora_core::agent::{
     ExecutionPhase, ExecutionTiming,
 };
 use khora_core::lane::{ClearColor, ColorTarget, DepthTarget, LaneContext, LaneRegistry};
-use khora_core::renderer::api::core::FrameContext;
-use khora_core::renderer::api::scene::GpuMesh;
+use khora_core::renderer::api::frame::FrameContext;
+use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 use khora_data::assets::Assets;

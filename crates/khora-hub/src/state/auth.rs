@@ -8,8 +8,6 @@
 
 //! GitHub authentication state.
 
-use crate::auth;
-
 /// GitHub auth state — disconnected → connecting → connected.
 #[derive(Debug, Default)]
 pub enum AuthState {
@@ -17,7 +15,6 @@ pub enum AuthState {
     Disconnected,
     /// Device flow in progress: waiting for the user to authorize.
     Connecting {
-        device_code: Option<auth::DeviceCode>,
         message: String,
     },
     Connected {

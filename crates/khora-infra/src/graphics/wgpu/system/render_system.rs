@@ -21,10 +21,10 @@ use khora_core::platform::window::KhoraWindow;
 use khora_core::renderer::api::command::{
     LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
 };
-use khora_core::renderer::api::core::{GraphicsAdapterInfo, RenderSettings, RenderStats};
+use khora_core::renderer::api::device::{GraphicsAdapterInfo, RenderSettings, RenderStats};
+use khora_core::renderer::api::gpu_scene::RenderObject;
+use khora_core::renderer::api::resource::IndexFormat;
 use khora_core::renderer::api::resource::ViewInfo;
-use khora_core::renderer::api::scene::RenderObject;
-use khora_core::renderer::api::util::IndexFormat;
 use khora_core::renderer::traits::{FrameTargets, RenderSystem};
 use khora_core::renderer::{GraphicsDevice, RenderError};
 use khora_core::telemetry::ResourceMonitor;

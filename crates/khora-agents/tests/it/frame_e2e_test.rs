@@ -36,10 +36,10 @@
 
 use khora_core::lane::LaneBus;
 use khora_core::math::{Mat4, Quaternion, Vec3};
+use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::api::pipeline::PrimitiveTopology;
 use khora_core::renderer::api::resource::BufferId;
-use khora_core::renderer::api::scene::GpuMesh;
-use khora_core::renderer::api::util::IndexFormat;
+use khora_core::renderer::api::resource::IndexFormat;
 use khora_core::renderer::light::{DirectionalLight, LightType, PointLight};
 use khora_core::Runtime;
 

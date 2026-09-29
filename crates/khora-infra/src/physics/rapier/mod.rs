@@ -18,7 +18,7 @@ mod conversions;
 mod debug;
 mod events;
 
-use khora_core::physics::{ColliderHandle, RigidBodyHandle, Slot};
+use khora_core::physics::{ColliderHandle, RigidBodyHandle, SlotId};
 
 mod world;
 
@@ -41,7 +41,7 @@ pub(super) fn from_rapier_rb_handle(
     handle: rapier3d::dynamics::RigidBodyHandle,
 ) -> RigidBodyHandle {
     let (index, generation) = handle.into_raw_parts();
-    RigidBodyHandle(Slot { index, generation }.pack())
+    RigidBodyHandle(SlotId { index, generation }.pack())
 }
 
 fn to_rapier_cl_handle(handle: ColliderHandle) -> rapier3d::geometry::ColliderHandle {
@@ -51,7 +51,7 @@ fn to_rapier_cl_handle(handle: ColliderHandle) -> rapier3d::geometry::ColliderHa
 
 pub(super) fn from_rapier_cl_handle(handle: rapier3d::geometry::ColliderHandle) -> ColliderHandle {
     let (index, generation) = handle.into_raw_parts();
-    ColliderHandle(Slot { index, generation }.pack())
+    ColliderHandle(SlotId { index, generation }.pack())
 }
 
 /// Set when the low 64 bits hold an entity.

@@ -23,12 +23,13 @@ use khora_core::renderer::api::command::{
     BindGroupLayoutEntry, BindingType, BufferBindingType, TextureViewDimension,
 };
 use khora_core::renderer::api::ibl::IblGpuBindings;
+use khora_core::renderer::api::resource::SampleCount;
 use khora_core::renderer::api::resource::{
     AddressMode, BufferDescriptor, BufferId, BufferUsage, FilterMode, ImageAspect,
     MipmapFilterMode, SamplerDescriptor, SamplerId, TextureDescriptor, TextureDimension, TextureId,
     TextureUsage, TextureViewDescriptor, TextureViewId,
 };
-use khora_core::renderer::api::util::{SampleCount, ShaderStageFlags};
+use khora_core::renderer::api::util::ShaderStageFlags;
 use khora_core::renderer::error::RenderError;
 use khora_core::renderer::GraphicsDevice;
 

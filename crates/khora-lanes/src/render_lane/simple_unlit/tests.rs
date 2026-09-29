@@ -13,11 +13,10 @@
 // limitations under the License.
 
 use super::*;
+use khora_core::asset::AssetHandle;
 use khora_core::lane::Lane;
-use khora_core::{
-    asset::AssetHandle,
-    renderer::api::{pipeline::enums::PrimitiveTopology, resource::BufferId, util::IndexFormat},
-};
+use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
+use khora_core::renderer::api::resource::{BufferId, IndexFormat};
 use khora_data::render::ExtractedMesh;
 use std::sync::Arc;
 

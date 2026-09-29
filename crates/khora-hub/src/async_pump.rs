@@ -10,10 +10,10 @@
 //! `App::update` so the rest of the frame paints against a coherent
 //! state.
 
-use crate::HubApp;
-use crate::auth;
-use crate::config::EngineInstall;
-use crate::download;
+use crate::app::HubApp;
+use crate::services::config::EngineInstall;
+use crate::services::download;
+use crate::services::github::auth;
 use crate::state::{AuthState, Banner};
 use khora_sdk::tool_ui::AppContext;
 
@@ -141,7 +141,6 @@ fn pump_auth(app: &mut HubApp, ctx: &mut dyn AppContext) {
                     log::warn!("Could not open browser at {uri}: {e}");
                 }
                 app.settings.auth = AuthState::Connecting {
-                    device_code: Some(code),
                     message: format!("Enter code {user_code} on {uri}"),
                 };
             }

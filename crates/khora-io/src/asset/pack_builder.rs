@@ -340,8 +340,8 @@ impl<'a> PackBuilder<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::asset::AssetIndex;
     use crate::asset::{AssetService, PackLoader};
-    use crate::vfs::VirtualFileSystem;
     use khora_core::asset::AssetUUID;
     use khora_telemetry::MetricsRegistry;
     use std::fs;
@@ -406,7 +406,7 @@ mod tests {
         // we appended (and that the leading 16-byte header is consumed
         // transparently by PackLoader's seek-relative-to-asset-region logic).
         let index_bytes = std::fs::read(&out.index_bin).unwrap();
-        let vfs = VirtualFileSystem::new(&index_bytes).unwrap();
+        let vfs = AssetIndex::new(&index_bytes).unwrap();
         let pack_file = std::fs::File::open(&out.data_pack).unwrap();
         let pack_loader = PackLoader::new(pack_file).expect("valid pack header");
         assert_eq!(pack_loader.header().asset_count, vfs.asset_count() as u32);

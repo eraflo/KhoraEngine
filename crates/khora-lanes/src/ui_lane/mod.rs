@@ -32,8 +32,9 @@ use khora_core::renderer::api::pipeline::{
 use khora_core::renderer::api::resource::{
     BufferDescriptor, BufferId, BufferUsage, TextureViewDimension, TextureViewId,
 };
+use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
 use khora_core::renderer::api::text::TextRenderer;
-use khora_core::renderer::api::util::{SampleCount, ShaderStageFlags, TextureFormat};
+use khora_core::renderer::api::util::ShaderStageFlags;
 use khora_core::renderer::GraphicsDevice;
 use khora_data::ui::UiScene;
 
@@ -499,7 +500,8 @@ fn ui_atlas_layout_entries() -> Vec<BindGroupLayoutEntry> {
 fn ui_pipeline_spec(
     device: &dyn GraphicsDevice,
 ) -> khora_core::renderer::api::pipeline::PipelineSpec {
-    use khora_core::renderer::api::pipeline::{LayoutSpec, PipelineSpec, ShaderVariantKey};
+    use khora_core::renderer::api::pipeline::{LayoutSpec, PipelineSpec};
+    use khora_core::renderer::api::shader::ShaderVariantKey;
     PipelineSpec {
         label: "UI Render Pipeline",
         shader: "khora::pipelines::ui",

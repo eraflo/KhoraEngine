@@ -22,7 +22,7 @@
 pub mod agent;
 pub mod asset;
 pub mod audio;
-pub mod context;
+pub mod engine_context;
 
 pub mod ecs;
 pub mod event;
@@ -40,8 +40,8 @@ pub mod script;
 pub mod telemetry;
 pub mod time;
 pub mod ui;
-pub mod utils;
+pub mod util;
 
-pub use context::{EngineContext, WorldAccess};
+pub use engine_context::{EngineContext, WorldAccess};
 pub use runtime::{Backends, Resources, Runtime, Services};
-pub use utils::timer::Stopwatch;
+pub use util::stopwatch::Stopwatch;

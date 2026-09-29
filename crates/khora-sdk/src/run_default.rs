@@ -112,7 +112,7 @@ fn build_asset_service(
     log::info!(
         "khora-sdk run_default: using {} ({} assets indexed)",
         mode_label,
-        svc.vfs().asset_count()
+        svc.index().asset_count()
     );
 
     Ok(svc)
@@ -339,7 +339,7 @@ pub fn run_default() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::khora_core::renderer::api::scene::Mesh;
+    use crate::khora_core::renderer::api::gpu_scene::Mesh;
     use std::path::PathBuf;
 
     /// The `runtime.json` the editor's "Build Game" writes for a project named
@@ -392,7 +392,7 @@ mod tests {
         for file in PROBES {
             let uuid = AssetUUID::new_v5(file);
             let type_name = svc
-                .vfs()
+                .index()
                 .get_metadata(&uuid)
                 .ok_or_else(|| anyhow!("{file} is not indexed"))?
                 .asset_type_name
@@ -495,7 +495,7 @@ mod tests {
             build_asset_service(&dir, Arc::new(MetricsRegistry::new()), false).map(|mut svc| {
                 let by_frozen = svc.load_raw(&frozen).ok();
                 let by_path = svc
-                    .vfs()
+                    .index()
                     .get_metadata(&AssetUUID::new_v5("scenes/renamed.kscene"))
                     .is_some();
                 (by_frozen, by_path)

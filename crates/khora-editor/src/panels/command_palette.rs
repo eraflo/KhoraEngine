@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use khora_sdk::editor_ui::*;
 use khora_sdk::KeyCode;
 
-use crate::widgets::chrome::paint_kbd_chip;
+use crate::widgets::panel_header::paint_kbd_chip;
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 

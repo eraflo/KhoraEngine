@@ -15,12 +15,10 @@
 //! The GPU buffers and bind groups Forward+ keeps across frames.
 
 use crate::render_lane::util::{DynamicUniformRingBuffer, UniformRingBuffer};
+use khora_core::renderer::api::command::BindGroupId;
 use khora_core::renderer::api::command::BindGroupLayoutId;
-use khora_core::renderer::api::{
-    command::{BindGroupId, ComputePipelineId},
-    pipeline::RenderPipelineId,
-    resource::BufferId,
-};
+use khora_core::renderer::api::pipeline::{ComputePipelineId, RenderPipelineId};
+use khora_core::renderer::api::resource::BufferId;
 
 // --- ForwardPlusLane ---
 

@@ -27,7 +27,7 @@ it as a research-grade engine to study or build prototypes on, not to ship a
 commercial title on today. The phased plan — scene/assets, the adaptive core,
 tooling/scripting, advanced intelligence, then a native physics solver — is laid
 out honestly in the [Roadmap](./roadmap.md), and uncertainties are tracked in
-[Open questions](./open_questions.md).
+[Open questions](./open-questions.md).
 
 ### How do I get started?
 
@@ -176,4 +176,4 @@ ships too (see the decision-tracer answer above). What remains on the
 ---
 
 *See also the [Glossary](./reference/glossary.md) for term definitions, and
-[Open questions](./open_questions.md) for what the engine has not yet decided.*
+[Open questions](./open-questions.md) for what the engine has not yet decided.*

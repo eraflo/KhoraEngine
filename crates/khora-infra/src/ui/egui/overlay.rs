@@ -20,7 +20,7 @@
 //! - A custom [`EguiWgpuRenderer`] for rendering egui output with wgpu 28
 
 use super::renderer::{EguiRenderState, EguiWgpuRenderer};
-use crate::graphics::wgpu::context::WgpuGraphicsContext;
+use crate::graphics::wgpu::graphics_context::WgpuGraphicsContext;
 use egui::ViewportId;
 use khora_core::ui::editor::overlay::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
 use std::any::Any;

@@ -9,9 +9,11 @@
 //! Boot — wires the `HubApp` into the engine's `App` runtime, sets up
 //! the window icon, and surfaces the per-frame `update` impl.
 
-use crate::HubApp;
+use crate::app::HubApp;
 use crate::async_pump::pump_async_messages;
-use crate::chrome::{STATUS_HEIGHT, TOPBAR_HEIGHT, paint_banner, show_status_bar, show_topbar};
+use crate::chrome::{
+    STATUS_HEIGHT, TITLE_BAR_HEIGHT, paint_banner, show_status_bar, show_title_bar,
+};
 use crate::screens;
 use crate::state::Screen;
 use khora_sdk::tool_ui::{
@@ -40,7 +42,9 @@ impl App for HubApp {
             let r = ui.panel_rect();
             ui.paint_rect_filled([r[0], r[1]], [r[2], r[3]], theme.background, 0.0);
 
-            ui.top_inset_panel("hub_topbar", TOPBAR_HEIGHT, &mut |ui| show_topbar(self, ui));
+            ui.top_inset_panel("hub_title_bar", TITLE_BAR_HEIGHT, &mut |ui| {
+                show_title_bar(self, ui)
+            });
             ui.bottom_inset_panel("hub_status_bar", STATUS_HEIGHT, &mut |ui| {
                 show_status_bar(self, ui)
             });

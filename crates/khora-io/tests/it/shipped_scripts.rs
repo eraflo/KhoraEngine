@@ -17,7 +17,7 @@
 
 use std::path::{Path, PathBuf};
 
-use khora_io::script_compile::DiskLoader;
+use khora_io::script::compile::DiskLoader;
 use khora_script::compile_module;
 
 /// Directory of the sandbox example's scripts.

@@ -18,8 +18,6 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 pub struct GithubRelease {
     pub tag_name: String,
-    pub name: Option<String>,
-    pub body: Option<String>,
     pub prerelease: bool,
     pub assets: Vec<GithubAsset>,
 }

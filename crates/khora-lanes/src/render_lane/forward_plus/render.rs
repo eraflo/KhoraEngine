@@ -19,19 +19,15 @@ use khora_data::render::RenderWorld;
 
 use super::gpu::render_pipeline_spec;
 use super::ForwardPlusLane;
-use khora_core::renderer::{
-    api::{
-        command::{
-            ComputePassDescriptor, LoadOp, Operations, RenderPassColorAttachment,
-            RenderPassDepthStencilAttachment, RenderPassDescriptor, StoreOp,
-        },
-        core::RenderContext,
-        pipeline::RenderPipelineId,
-        resource::CameraUniformData,
-        scene::GpuMesh,
-    },
-    traits::CommandEncoder,
+use khora_core::renderer::api::command::{
+    ComputePassDescriptor, LoadOp, Operations, RenderPassColorAttachment,
+    RenderPassDepthStencilAttachment, RenderPassDescriptor, StoreOp,
 };
+use khora_core::renderer::api::frame::RenderContext;
+use khora_core::renderer::api::gpu_scene::GpuMesh;
+use khora_core::renderer::api::pipeline::RenderPipelineId;
+use khora_core::renderer::api::resource::CameraUniformData;
+use khora_core::renderer::traits::CommandEncoder;
 use khora_data::assets::Assets;
 use std::sync::RwLock;
 
@@ -199,7 +195,7 @@ impl ForwardPlusLane {
 
             let inv_vp = view.view_proj.inverse().unwrap_or_default();
 
-            let culling_data = khora_core::renderer::api::scene::CullingUniformsData {
+            let culling_data = khora_core::renderer::light::CullingUniformsData {
                 view_projection: view.view_proj.to_cols_array_2d(),
                 inverse_projection: inv_vp.to_cols_array_2d(),
                 screen_dimensions: [width as f32, height as f32],
@@ -284,7 +280,7 @@ impl ForwardPlusLane {
                 let model_mat = extracted_mesh.transform.to_matrix();
                 let normal_mat = model_mat.inverse().unwrap_or_default().transpose();
 
-                let model_uniforms = khora_core::renderer::api::scene::ModelUniforms {
+                let model_uniforms = khora_core::renderer::api::gpu_scene::ModelUniforms {
                     model_matrix: model_mat.to_cols_array_2d(),
                     normal_matrix: normal_mat.to_cols_array_2d(),
                 };

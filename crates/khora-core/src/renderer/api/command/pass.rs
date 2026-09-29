@@ -15,7 +15,7 @@
 //! Descriptors and types for render and compute passes.
 
 use crate::math::LinearRgba;
-use crate::renderer::api::core::gpu_hook::GpuHook;
+use crate::renderer::api::device::gpu_hook::GpuHook;
 use crate::renderer::api::resource::TextureViewId;
 
 /// Describes the operation to perform on an attachment at the start of a render pass.

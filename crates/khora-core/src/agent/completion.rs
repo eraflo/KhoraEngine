@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::agent::gorna::AgentId;
-use crate::renderer::api::core::StageHandle;
+use crate::renderer::api::frame::StageHandle;
 
 /// Marker type for the "an agent finished its frame work" stage.
 pub struct AgentDone;

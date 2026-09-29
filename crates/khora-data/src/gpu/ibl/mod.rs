@@ -35,7 +35,7 @@ use bake::bake;
 use khora_core::asset::AssetUUID;
 use khora_core::math::Vec3;
 use khora_core::renderer::api::ibl::IblGpuBindings;
-use khora_core::renderer::api::util::TextureFormat;
+use khora_core::renderer::api::resource::TextureFormat;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 use resources::{normalized_or_default, IblResources};

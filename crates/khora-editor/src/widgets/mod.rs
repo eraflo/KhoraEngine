@@ -21,7 +21,7 @@
 //! relying on egui's auto-layout.
 
 pub mod brand;
-pub mod chrome;
 pub mod enum_variants;
 pub mod inspector;
+pub mod panel_header;
 pub mod tile;

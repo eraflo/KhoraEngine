@@ -19,10 +19,11 @@ use super::g3;
 
 use super::ForwardPlusLane;
 use crate::render_lane::util::{DynamicUniformRingBuffer, UniformRingBuffer};
-use khora_core::renderer::api::{
-    pipeline::enums::PrimitiveTopology,
-    pipeline::{ComputePipelineSpec, LayoutKey, LayoutSpec, PipelineSpec, ShaderVariantKey},
+use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
+use khora_core::renderer::api::pipeline::{
+    ComputePipelineSpec, LayoutKey, LayoutSpec, PipelineSpec,
 };
+use khora_core::renderer::api::shader::ShaderVariantKey;
 
 // ─── Free functions (CLAD: declarative specs + bespoke layouts) ───
 
@@ -40,7 +41,7 @@ fn fp_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindGrou
     use khora_core::renderer::api::command::{
         BindGroupLayoutEntry, BindingType, BufferBindingType,
     };
-    use khora_core::renderer::api::scene::ModelUniforms;
+    use khora_core::renderer::api::gpu_scene::ModelUniforms;
     use khora_core::renderer::api::util::ShaderStageFlags;
     vec![BindGroupLayoutEntry {
         binding: 0,
@@ -160,7 +161,7 @@ pub(super) fn render_pipeline_spec(
         ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
         PrimitiveStateDescriptor, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
     };
-    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
+    use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
     use std::borrow::Cow;
 
     PipelineSpec {
@@ -261,11 +262,9 @@ impl ForwardPlusLane {
         device: &dyn khora_core::renderer::GraphicsDevice,
         pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
-        use khora_core::renderer::api::{
-            command::{BindGroupDescriptor, BindGroupEntry},
-            resource::CameraUniformData,
-            scene::ModelUniforms,
-        };
+        use khora_core::renderer::api::command::{BindGroupDescriptor, BindGroupEntry};
+        use khora_core::renderer::api::gpu_scene::ModelUniforms;
+        use khora_core::renderer::api::resource::CameraUniformData;
         use std::borrow::Cow;
 
         log::info!("ForwardPlusLane: Initializing GPU resources...");
@@ -388,8 +387,8 @@ impl ForwardPlusLane {
             model_layout,
             0,
             std::mem::size_of::<ModelUniforms>() as u32,
-            crate::render_lane::util::dynamic_uniform_buffer::DEFAULT_MAX_ELEMENTS,
-            crate::render_lane::util::dynamic_uniform_buffer::MIN_UNIFORM_ALIGNMENT,
+            crate::render_lane::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS,
+            crate::render_lane::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
             "Forward+ Model Ring",
         )
         .map_err(khora_core::renderer::error::RenderError::ResourceError)?;

@@ -8,8 +8,8 @@
 
 //! Download and extraction of engine releases from GitHub.
 
-use crate::config::EngineInstall;
-use crate::github::GithubAsset;
+use crate::services::config::EngineInstall;
+use crate::services::github::GithubAsset;
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::mpsc;

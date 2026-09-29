@@ -30,11 +30,11 @@
 use bincode::config;
 use khora_core::asset::{AssetUUID, Material, StandardMaterial};
 
-use crate::ecs::components::{
+use crate::ecs::HandleComponent;
+use crate::scene::{
     deserialize_material_component, material_from_json, material_to_json,
     serialize_material_component,
 };
-use crate::ecs::HandleComponent;
 
 /// Runtime-only resolved material: a shared handle to the type-erased material
 /// data plus its identifying `AssetUUID`. Produced by the resolver, consumed by

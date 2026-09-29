@@ -84,18 +84,21 @@ mod every_pub_mod {
     use khora_core::renderer::api as _;
     use khora_core::renderer::api::command as _;
     use khora_core::renderer::api::command::bind_group as _;
-    use khora_core::renderer::api::command::compute as _;
-    use khora_core::renderer::api::command::encoder as _;
+    use khora_core::renderer::api::command::draw_command as _;
     use khora_core::renderer::api::command::pass as _;
-    use khora_core::renderer::api::core as _;
-    use khora_core::renderer::api::core::adapter as _;
-    use khora_core::renderer::api::core::backend as _;
-    use khora_core::renderer::api::core::context as _;
-    use khora_core::renderer::api::core::frame_context as _;
-    use khora_core::renderer::api::core::gpu_hook as _;
-    use khora_core::renderer::api::core::settings as _;
-    use khora_core::renderer::api::core::shader as _;
-    use khora_core::renderer::api::core::stats as _;
+    use khora_core::renderer::api::device as _;
+    use khora_core::renderer::api::device::adapter as _;
+    use khora_core::renderer::api::device::backend as _;
+    use khora_core::renderer::api::device::gpu_hook as _;
+    use khora_core::renderer::api::device::settings as _;
+    use khora_core::renderer::api::device::stats as _;
+    use khora_core::renderer::api::frame as _;
+    use khora_core::renderer::api::frame::frame_context as _;
+    use khora_core::renderer::api::frame::render_context as _;
+    use khora_core::renderer::api::gpu_scene as _;
+    use khora_core::renderer::api::gpu_scene::mesh as _;
+    use khora_core::renderer::api::gpu_scene::model_uniforms as _;
+    use khora_core::renderer::api::gpu_scene::render_object as _;
     use khora_core::renderer::api::ibl as _;
     use khora_core::renderer::api::ibl::bindings as _;
     use khora_core::renderer::api::ibl::bindings::offset as _;
@@ -103,7 +106,10 @@ mod every_pub_mod {
     use khora_core::renderer::api::material::bindings as _;
     use khora_core::renderer::api::material::bindings::binding as _;
     use khora_core::renderer::api::material::bindings::flag as _;
+    use khora_core::renderer::api::material::gpu_material as _;
+    use khora_core::renderer::api::material::uniforms as _;
     use khora_core::renderer::api::pipeline as _;
+    use khora_core::renderer::api::pipeline::compute as _;
     use khora_core::renderer::api::pipeline::descriptor as _;
     use khora_core::renderer::api::pipeline::enums as _;
     use khora_core::renderer::api::pipeline::layout as _;
@@ -111,27 +117,26 @@ mod every_pub_mod {
     use khora_core::renderer::api::pipeline::state as _;
     use khora_core::renderer::api::resource as _;
     use khora_core::renderer::api::resource::buffer as _;
-    use khora_core::renderer::api::resource::shader_source as _;
     use khora_core::renderer::api::resource::texture as _;
+    use khora_core::renderer::api::resource::texture_format as _;
     use khora_core::renderer::api::resource::view as _;
-    use khora_core::renderer::api::scene as _;
-    use khora_core::renderer::api::scene::gpu_material as _;
-    use khora_core::renderer::api::scene::lighting as _;
-    use khora_core::renderer::api::scene::material_uniforms as _;
-    use khora_core::renderer::api::scene::mesh as _;
-    use khora_core::renderer::api::scene::render_object as _;
-    use khora_core::renderer::api::shader_defs as _;
+    use khora_core::renderer::api::shader as _;
+    use khora_core::renderer::api::shader::defs as _;
+    use khora_core::renderer::api::shader::module as _;
+    use khora_core::renderer::api::shader::source as _;
+    use khora_core::renderer::api::shader::stage as _;
+    use khora_core::renderer::api::shader::variant as _;
     use khora_core::renderer::api::shadow as _;
     use khora_core::renderer::api::shadow::bindings as _;
     use khora_core::renderer::api::shadow::bindings::binding as _;
     use khora_core::renderer::api::text as _;
     use khora_core::renderer::api::util as _;
-    use khora_core::renderer::api::util::enums as _;
     use khora_core::renderer::api::util::flags as _;
     use khora_core::renderer::api::util::half_float as _;
     use khora_core::renderer::error as _;
-    use khora_core::renderer::forward_plus as _;
     use khora_core::renderer::light as _;
+    use khora_core::renderer::light::forward_plus as _;
+    use khora_core::renderer::light::uniforms as _;
     use khora_core::renderer::traits as _;
 }
 
@@ -225,20 +230,20 @@ fn texture_sample_type_variants(
 }
 
 fn compute_pipeline_descriptor_fields(
-    x: &khora_core::renderer::api::command::compute::ComputePipelineDescriptor<'static>,
+    x: &khora_core::renderer::api::pipeline::compute::ComputePipelineDescriptor<'static>,
 ) {
     let _ = (&x.label, &x.layout, &x.shader_module, &x.entry_point);
 }
 
-fn compute_pipeline_id_fields(x: &khora_core::renderer::api::command::compute::ComputePipelineId) {
+fn compute_pipeline_id_fields(x: &khora_core::renderer::api::pipeline::compute::ComputePipelineId) {
     let _ = (&x.0,);
 }
 
-fn command_buffer_id_fields(x: &khora_core::renderer::api::command::encoder::CommandBufferId) {
+fn command_buffer_id_fields(x: &khora_core::renderer::api::command::draw_command::CommandBufferId) {
     let _ = (&x.0,);
 }
 
-fn draw_command_fields(x: &khora_core::renderer::api::command::encoder::DrawCommand) {
+fn draw_command_fields(x: &khora_core::renderer::api::command::draw_command::DrawCommand) {
     let _ = (
         &x.pipeline,
         &x.vertex_buffer,
@@ -306,18 +311,20 @@ fn store_op_variants(x: &khora_core::renderer::api::command::pass::StoreOp) {
     }
 }
 
-fn graphics_adapter_info_fields(x: &khora_core::renderer::api::core::adapter::GraphicsAdapterInfo) {
+fn graphics_adapter_info_fields(
+    x: &khora_core::renderer::api::device::adapter::GraphicsAdapterInfo,
+) {
     let _ = (&x.name, &x.backend_type, &x.device_type);
 }
 
 fn backend_selection_config_fields(
-    x: &khora_core::renderer::api::core::backend::BackendSelectionConfig,
+    x: &khora_core::renderer::api::device::backend::BackendSelectionConfig,
 ) {
     let _ = (&x.preferred_backends, &x.timeout, &x.prefer_discrete_gpu);
 }
 
 fn backend_selection_result_fields(
-    x: &khora_core::renderer::api::core::backend::BackendSelectionResult<u32>,
+    x: &khora_core::renderer::api::device::backend::BackendSelectionResult<u32>,
 ) {
     let _ = (
         &x.adapter,
@@ -327,7 +334,9 @@ fn backend_selection_result_fields(
     );
 }
 
-fn render_context_fields(x: &khora_core::renderer::api::core::context::RenderContext<'static>) {
+fn render_context_fields(
+    x: &khora_core::renderer::api::frame::render_context::RenderContext<'static>,
+) {
     let _ = (
         &x.color_target,
         &x.depth_target,
@@ -338,16 +347,16 @@ fn render_context_fields(x: &khora_core::renderer::api::core::context::RenderCon
     );
 }
 
-fn gpu_hook_variants(x: &khora_core::renderer::api::core::gpu_hook::GpuHook) {
+fn gpu_hook_variants(x: &khora_core::renderer::api::device::gpu_hook::GpuHook) {
     match x {
-        khora_core::renderer::api::core::gpu_hook::GpuHook::FrameStart => {}
-        khora_core::renderer::api::core::gpu_hook::GpuHook::MainPassBegin => {}
-        khora_core::renderer::api::core::gpu_hook::GpuHook::MainPassEnd => {}
-        khora_core::renderer::api::core::gpu_hook::GpuHook::FrameEnd => {}
+        khora_core::renderer::api::device::gpu_hook::GpuHook::FrameStart => {}
+        khora_core::renderer::api::device::gpu_hook::GpuHook::MainPassBegin => {}
+        khora_core::renderer::api::device::gpu_hook::GpuHook::MainPassEnd => {}
+        khora_core::renderer::api::device::gpu_hook::GpuHook::FrameEnd => {}
     }
 }
 
-fn render_settings_fields(x: &khora_core::renderer::api::core::settings::RenderSettings) {
+fn render_settings_fields(x: &khora_core::renderer::api::device::settings::RenderSettings) {
     let _ = (
         &x.strategy,
         &x.quality_level,
@@ -359,24 +368,24 @@ fn render_settings_fields(x: &khora_core::renderer::api::core::settings::RenderS
 }
 
 fn shader_module_descriptor_fields(
-    x: &khora_core::renderer::api::core::shader::ShaderModuleDescriptor<'static>,
+    x: &khora_core::renderer::api::shader::module::ShaderModuleDescriptor<'static>,
 ) {
     let _ = (&x.label, &x.source);
 }
 
-fn shader_module_id_fields(x: &khora_core::renderer::api::core::shader::ShaderModuleId) {
+fn shader_module_id_fields(x: &khora_core::renderer::api::shader::module::ShaderModuleId) {
     let _ = (&x.0,);
 }
 
 fn shader_source_data_variants(
-    x: &khora_core::renderer::api::core::shader::ShaderSourceData<'static>,
+    x: &khora_core::renderer::api::shader::module::ShaderSourceData<'static>,
 ) {
     match x {
-        khora_core::renderer::api::core::shader::ShaderSourceData::Wgsl(..) => {}
+        khora_core::renderer::api::shader::module::ShaderSourceData::Wgsl(..) => {}
     }
 }
 
-fn render_stats_fields(x: &khora_core::renderer::api::core::stats::RenderStats) {
+fn render_stats_fields(x: &khora_core::renderer::api::device::stats::RenderStats) {
     let _ = (
         &x.frame_number,
         &x.cpu_preparation_time_ms,
@@ -639,11 +648,11 @@ fn pipeline_spec_fields(x: &khora_core::renderer::api::pipeline::spec::PipelineS
     );
 }
 
-fn shader_def_scalar_variants(x: &khora_core::renderer::api::pipeline::spec::ShaderDefScalar) {
+fn shader_def_scalar_variants(x: &khora_core::renderer::api::shader::variant::ShaderDefScalar) {
     match x {
-        khora_core::renderer::api::pipeline::spec::ShaderDefScalar::Bool(..) => {}
-        khora_core::renderer::api::pipeline::spec::ShaderDefScalar::Int(..) => {}
-        khora_core::renderer::api::pipeline::spec::ShaderDefScalar::UInt(..) => {}
+        khora_core::renderer::api::shader::variant::ShaderDefScalar::Bool(..) => {}
+        khora_core::renderer::api::shader::variant::ShaderDefScalar::Int(..) => {}
+        khora_core::renderer::api::shader::variant::ShaderDefScalar::UInt(..) => {}
     }
 }
 
@@ -724,9 +733,7 @@ fn buffer_id_fields(x: &khora_core::renderer::api::resource::buffer::BufferId) {
     let _ = (&x.0,);
 }
 
-fn cpu_shader_source_fields(
-    x: &khora_core::renderer::api::resource::shader_source::CpuShaderSource,
-) {
+fn cpu_shader_source_fields(x: &khora_core::renderer::api::shader::source::CpuShaderSource) {
     let _ = (&x.0,);
 }
 
@@ -873,7 +880,7 @@ fn view_info_fields(x: &khora_core::renderer::api::resource::view::ViewInfo) {
     let _ = (&x.view_matrix, &x.projection_matrix, &x.camera_position);
 }
 
-fn gpu_material_fields(x: &khora_core::renderer::api::scene::gpu_material::GpuMaterial) {
+fn gpu_material_fields(x: &khora_core::renderer::api::material::gpu_material::GpuMaterial) {
     let _ = (
         &x.uniform_buffer,
         &x.base_color_view,
@@ -894,9 +901,7 @@ fn gpu_material_fields(x: &khora_core::renderer::api::scene::gpu_material::GpuMa
     );
 }
 
-fn culling_uniforms_data_fields(
-    x: &khora_core::renderer::api::scene::lighting::CullingUniformsData,
-) {
+fn culling_uniforms_data_fields(x: &khora_core::renderer::light::uniforms::CullingUniformsData) {
     let _ = (
         &x.view_projection,
         &x.inverse_projection,
@@ -909,7 +914,7 @@ fn culling_uniforms_data_fields(
 }
 
 fn directional_light_uniform_fields(
-    x: &khora_core::renderer::api::scene::lighting::DirectionalLightUniform,
+    x: &khora_core::renderer::light::uniforms::DirectionalLightUniform,
 ) {
     let _ = (
         &x.direction,
@@ -919,7 +924,7 @@ fn directional_light_uniform_fields(
     );
 }
 
-fn lighting_uniforms_fields(x: &khora_core::renderer::api::scene::lighting::LightingUniforms) {
+fn lighting_uniforms_fields(x: &khora_core::renderer::light::uniforms::LightingUniforms) {
     let _ = (
         &x.directional_lights,
         &x.point_lights,
@@ -931,11 +936,11 @@ fn lighting_uniforms_fields(x: &khora_core::renderer::api::scene::lighting::Ligh
     );
 }
 
-fn point_light_uniform_fields(x: &khora_core::renderer::api::scene::lighting::PointLightUniform) {
+fn point_light_uniform_fields(x: &khora_core::renderer::light::uniforms::PointLightUniform) {
     let _ = (&x.position, &x.color, &x.shadow_params);
 }
 
-fn spot_light_uniform_fields(x: &khora_core::renderer::api::scene::lighting::SpotLightUniform) {
+fn spot_light_uniform_fields(x: &khora_core::renderer::light::uniforms::SpotLightUniform) {
     let _ = (
         &x.position,
         &x.direction,
@@ -946,17 +951,15 @@ fn spot_light_uniform_fields(x: &khora_core::renderer::api::scene::lighting::Spo
     );
 }
 
-fn material_uniforms_fields(
-    x: &khora_core::renderer::api::scene::material_uniforms::MaterialUniforms,
-) {
+fn material_uniforms_fields(x: &khora_core::renderer::api::material::uniforms::MaterialUniforms) {
     let _ = (&x.base_color, &x.emissive, &x.ambient, &x.pbr_factors);
 }
 
-fn model_uniforms_fields(x: &khora_core::renderer::api::scene::material_uniforms::ModelUniforms) {
+fn model_uniforms_fields(x: &khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms) {
     let _ = (&x.model_matrix, &x.normal_matrix);
 }
 
-fn gpu_mesh_fields(x: &khora_core::renderer::api::scene::mesh::GpuMesh) {
+fn gpu_mesh_fields(x: &khora_core::renderer::api::gpu_scene::mesh::GpuMesh) {
     let _ = (
         &x.vertex_buffer,
         &x.index_buffer,
@@ -966,7 +969,7 @@ fn gpu_mesh_fields(x: &khora_core::renderer::api::scene::mesh::GpuMesh) {
     );
 }
 
-fn mesh_fields(x: &khora_core::renderer::api::scene::mesh::Mesh) {
+fn mesh_fields(x: &khora_core::renderer::api::gpu_scene::mesh::Mesh) {
     let _ = (
         &x.positions,
         &x.normals,
@@ -980,7 +983,7 @@ fn mesh_fields(x: &khora_core::renderer::api::scene::mesh::Mesh) {
     );
 }
 
-fn render_object_fields(x: &khora_core::renderer::api::scene::render_object::RenderObject) {
+fn render_object_fields(x: &khora_core::renderer::api::gpu_scene::render_object::RenderObject) {
     let _ = (
         &x.pipeline,
         &x.vertex_buffer,
@@ -1012,88 +1015,88 @@ fn atlas_rect_fields(x: &khora_core::renderer::api::util::AtlasRect) {
     let _ = (&x.min, &x.max);
 }
 
-fn graphics_backend_type_variants(x: &khora_core::renderer::api::util::enums::GraphicsBackendType) {
+fn graphics_backend_type_variants(x: &khora_core::renderer::api::device::GraphicsBackendType) {
     match x {
-        khora_core::renderer::api::util::enums::GraphicsBackendType::Vulkan => {}
-        khora_core::renderer::api::util::enums::GraphicsBackendType::Metal => {}
-        khora_core::renderer::api::util::enums::GraphicsBackendType::Dx12 => {}
-        khora_core::renderer::api::util::enums::GraphicsBackendType::Dx11 => {}
-        khora_core::renderer::api::util::enums::GraphicsBackendType::OpenGL => {}
-        khora_core::renderer::api::util::enums::GraphicsBackendType::WebGpu => {}
-        khora_core::renderer::api::util::enums::GraphicsBackendType::Unknown => {}
+        khora_core::renderer::api::device::GraphicsBackendType::Vulkan => {}
+        khora_core::renderer::api::device::GraphicsBackendType::Metal => {}
+        khora_core::renderer::api::device::GraphicsBackendType::Dx12 => {}
+        khora_core::renderer::api::device::GraphicsBackendType::Dx11 => {}
+        khora_core::renderer::api::device::GraphicsBackendType::OpenGL => {}
+        khora_core::renderer::api::device::GraphicsBackendType::WebGpu => {}
+        khora_core::renderer::api::device::GraphicsBackendType::Unknown => {}
     }
 }
 
-fn index_format_variants(x: &khora_core::renderer::api::util::enums::IndexFormat) {
+fn index_format_variants(x: &khora_core::renderer::api::resource::IndexFormat) {
     match x {
-        khora_core::renderer::api::util::enums::IndexFormat::Uint16 => {}
-        khora_core::renderer::api::util::enums::IndexFormat::Uint32 => {}
+        khora_core::renderer::api::resource::IndexFormat::Uint16 => {}
+        khora_core::renderer::api::resource::IndexFormat::Uint32 => {}
     }
 }
 
-fn render_strategy_variants(x: &khora_core::renderer::api::util::enums::RenderStrategy) {
+fn render_strategy_variants(x: &khora_core::renderer::api::device::RenderStrategy) {
     match x {
-        khora_core::renderer::api::util::enums::RenderStrategy::Forward => {}
-        khora_core::renderer::api::util::enums::RenderStrategy::Deferred => {}
-        khora_core::renderer::api::util::enums::RenderStrategy::Custom(..) => {}
+        khora_core::renderer::api::device::RenderStrategy::Forward => {}
+        khora_core::renderer::api::device::RenderStrategy::Deferred => {}
+        khora_core::renderer::api::device::RenderStrategy::Custom(..) => {}
     }
 }
 
-fn renderer_device_type_variants(x: &khora_core::renderer::api::util::enums::RendererDeviceType) {
+fn renderer_device_type_variants(x: &khora_core::renderer::api::device::RendererDeviceType) {
     match x {
-        khora_core::renderer::api::util::enums::RendererDeviceType::IntegratedGpu => {}
-        khora_core::renderer::api::util::enums::RendererDeviceType::DiscreteGpu => {}
-        khora_core::renderer::api::util::enums::RendererDeviceType::VirtualGpu => {}
-        khora_core::renderer::api::util::enums::RendererDeviceType::Cpu => {}
-        khora_core::renderer::api::util::enums::RendererDeviceType::Unknown => {}
+        khora_core::renderer::api::device::RendererDeviceType::IntegratedGpu => {}
+        khora_core::renderer::api::device::RendererDeviceType::DiscreteGpu => {}
+        khora_core::renderer::api::device::RendererDeviceType::VirtualGpu => {}
+        khora_core::renderer::api::device::RendererDeviceType::Cpu => {}
+        khora_core::renderer::api::device::RendererDeviceType::Unknown => {}
     }
 }
 
-fn sample_count_variants(x: &khora_core::renderer::api::util::enums::SampleCount) {
+fn sample_count_variants(x: &khora_core::renderer::api::resource::SampleCount) {
     match x {
-        khora_core::renderer::api::util::enums::SampleCount::X1 => {}
-        khora_core::renderer::api::util::enums::SampleCount::X2 => {}
-        khora_core::renderer::api::util::enums::SampleCount::X4 => {}
-        khora_core::renderer::api::util::enums::SampleCount::X8 => {}
-        khora_core::renderer::api::util::enums::SampleCount::X16 => {}
-        khora_core::renderer::api::util::enums::SampleCount::X32 => {}
-        khora_core::renderer::api::util::enums::SampleCount::X64 => {}
+        khora_core::renderer::api::resource::SampleCount::X1 => {}
+        khora_core::renderer::api::resource::SampleCount::X2 => {}
+        khora_core::renderer::api::resource::SampleCount::X4 => {}
+        khora_core::renderer::api::resource::SampleCount::X8 => {}
+        khora_core::renderer::api::resource::SampleCount::X16 => {}
+        khora_core::renderer::api::resource::SampleCount::X32 => {}
+        khora_core::renderer::api::resource::SampleCount::X64 => {}
     }
 }
 
-fn shader_stage_variants(x: &khora_core::renderer::api::util::enums::ShaderStage) {
+fn shader_stage_variants(x: &khora_core::renderer::api::shader::ShaderStage) {
     match x {
-        khora_core::renderer::api::util::enums::ShaderStage::Vertex => {}
-        khora_core::renderer::api::util::enums::ShaderStage::Fragment => {}
-        khora_core::renderer::api::util::enums::ShaderStage::Compute => {}
+        khora_core::renderer::api::shader::ShaderStage::Vertex => {}
+        khora_core::renderer::api::shader::ShaderStage::Fragment => {}
+        khora_core::renderer::api::shader::ShaderStage::Compute => {}
     }
 }
 
-fn texture_color_space_variants(x: &khora_core::renderer::api::util::enums::TextureColorSpace) {
+fn texture_color_space_variants(x: &khora_core::renderer::api::resource::TextureColorSpace) {
     match x {
-        khora_core::renderer::api::util::enums::TextureColorSpace::Srgb => {}
-        khora_core::renderer::api::util::enums::TextureColorSpace::Linear => {}
+        khora_core::renderer::api::resource::TextureColorSpace::Srgb => {}
+        khora_core::renderer::api::resource::TextureColorSpace::Linear => {}
     }
 }
 
-fn texture_format_variants(x: &khora_core::renderer::api::util::enums::TextureFormat) {
+fn texture_format_variants(x: &khora_core::renderer::api::resource::TextureFormat) {
     match x {
-        khora_core::renderer::api::util::enums::TextureFormat::R8Unorm => {}
-        khora_core::renderer::api::util::enums::TextureFormat::Rg8Unorm => {}
-        khora_core::renderer::api::util::enums::TextureFormat::Rgba8Unorm => {}
-        khora_core::renderer::api::util::enums::TextureFormat::Rgba8UnormSrgb => {}
-        khora_core::renderer::api::util::enums::TextureFormat::Bgra8UnormSrgb => {}
-        khora_core::renderer::api::util::enums::TextureFormat::R16Float => {}
-        khora_core::renderer::api::util::enums::TextureFormat::Rg16Float => {}
-        khora_core::renderer::api::util::enums::TextureFormat::Rgba16Float => {}
-        khora_core::renderer::api::util::enums::TextureFormat::R32Float => {}
-        khora_core::renderer::api::util::enums::TextureFormat::Rg32Float => {}
-        khora_core::renderer::api::util::enums::TextureFormat::Rgba32Float => {}
-        khora_core::renderer::api::util::enums::TextureFormat::Depth16Unorm => {}
-        khora_core::renderer::api::util::enums::TextureFormat::Depth24Plus => {}
-        khora_core::renderer::api::util::enums::TextureFormat::Depth24PlusStencil8 => {}
-        khora_core::renderer::api::util::enums::TextureFormat::Depth32Float => {}
-        khora_core::renderer::api::util::enums::TextureFormat::Depth32FloatStencil8 => {}
+        khora_core::renderer::api::resource::TextureFormat::R8Unorm => {}
+        khora_core::renderer::api::resource::TextureFormat::Rg8Unorm => {}
+        khora_core::renderer::api::resource::TextureFormat::Rgba8Unorm => {}
+        khora_core::renderer::api::resource::TextureFormat::Rgba8UnormSrgb => {}
+        khora_core::renderer::api::resource::TextureFormat::Bgra8UnormSrgb => {}
+        khora_core::renderer::api::resource::TextureFormat::R16Float => {}
+        khora_core::renderer::api::resource::TextureFormat::Rg16Float => {}
+        khora_core::renderer::api::resource::TextureFormat::Rgba16Float => {}
+        khora_core::renderer::api::resource::TextureFormat::R32Float => {}
+        khora_core::renderer::api::resource::TextureFormat::Rg32Float => {}
+        khora_core::renderer::api::resource::TextureFormat::Rgba32Float => {}
+        khora_core::renderer::api::resource::TextureFormat::Depth16Unorm => {}
+        khora_core::renderer::api::resource::TextureFormat::Depth24Plus => {}
+        khora_core::renderer::api::resource::TextureFormat::Depth24PlusStencil8 => {}
+        khora_core::renderer::api::resource::TextureFormat::Depth32Float => {}
+        khora_core::renderer::api::resource::TextureFormat::Depth32FloatStencil8 => {}
     }
 }
 
@@ -1145,11 +1148,13 @@ fn shader_error_variants(x: &khora_core::renderer::error::ShaderError) {
     }
 }
 
-fn forward_plus_tile_config_fields(x: &khora_core::renderer::forward_plus::ForwardPlusTileConfig) {
+fn forward_plus_tile_config_fields(
+    x: &khora_core::renderer::light::forward_plus::ForwardPlusTileConfig,
+) {
     let _ = (&x.tile_size, &x.max_lights_per_tile, &x.use_depth_prepass);
 }
 
-fn gpu_light_fields(x: &khora_core::renderer::forward_plus::GpuLight) {
+fn gpu_light_fields(x: &khora_core::renderer::light::forward_plus::GpuLight) {
     let _ = (
         &x.position,
         &x.range,
@@ -1166,10 +1171,10 @@ fn gpu_light_fields(x: &khora_core::renderer::forward_plus::GpuLight) {
     );
 }
 
-fn tile_size_variants(x: &khora_core::renderer::forward_plus::TileSize) {
+fn tile_size_variants(x: &khora_core::renderer::light::forward_plus::TileSize) {
     match x {
-        khora_core::renderer::forward_plus::TileSize::X16 => {}
-        khora_core::renderer::forward_plus::TileSize::X32 => {}
+        khora_core::renderer::light::forward_plus::TileSize::X16 => {}
+        khora_core::renderer::light::forward_plus::TileSize::X32 => {}
     }
 }
 
@@ -1524,63 +1529,64 @@ fn module_renderer_paths_still_resolve() {
     is_partial_eq::<khora_core::renderer::api::command::bind_group::TextureSampleType>();
     is_eq::<khora_core::renderer::api::command::bind_group::TextureSampleType>();
     let _ = type_name::<
-        khora_core::renderer::api::command::compute::ComputePipelineDescriptor<'static>,
+        khora_core::renderer::api::pipeline::compute::ComputePipelineDescriptor<'static>,
     >();
-    let _ = type_name::<khora_core::renderer::api::command::ComputePipelineDescriptor<'static>>();
+    let _ = type_name::<khora_core::renderer::api::pipeline::ComputePipelineDescriptor<'static>>();
     same_type(
-        PhantomData::<khora_core::renderer::api::command::ComputePipelineDescriptor<'static>>,
+        PhantomData::<khora_core::renderer::api::pipeline::ComputePipelineDescriptor<'static>>,
         PhantomData::<
-            khora_core::renderer::api::command::compute::ComputePipelineDescriptor<'static>,
+            khora_core::renderer::api::pipeline::compute::ComputePipelineDescriptor<'static>,
         >,
     );
     let _ = compute_pipeline_descriptor_fields
-        as fn(&khora_core::renderer::api::command::compute::ComputePipelineDescriptor<'static>);
-    is_debug::<khora_core::renderer::api::command::compute::ComputePipelineDescriptor<'static>>();
-    is_clone::<khora_core::renderer::api::command::compute::ComputePipelineDescriptor<'static>>();
-    let _ = type_name::<khora_core::renderer::api::command::compute::ComputePipelineId>();
-    let _ = type_name::<khora_core::renderer::api::command::ComputePipelineId>();
+        as fn(&khora_core::renderer::api::pipeline::compute::ComputePipelineDescriptor<'static>);
+    is_debug::<khora_core::renderer::api::pipeline::compute::ComputePipelineDescriptor<'static>>();
+    is_clone::<khora_core::renderer::api::pipeline::compute::ComputePipelineDescriptor<'static>>();
+    let _ = type_name::<khora_core::renderer::api::pipeline::compute::ComputePipelineId>();
+    let _ = type_name::<khora_core::renderer::api::pipeline::ComputePipelineId>();
     let _ = type_name::<khora_core::renderer::api::pipeline::ComputePipelineId>();
     same_type(
-        PhantomData::<khora_core::renderer::api::command::ComputePipelineId>,
-        PhantomData::<khora_core::renderer::api::command::compute::ComputePipelineId>,
+        PhantomData::<khora_core::renderer::api::pipeline::ComputePipelineId>,
+        PhantomData::<khora_core::renderer::api::pipeline::compute::ComputePipelineId>,
     );
     same_type(
         PhantomData::<khora_core::renderer::api::pipeline::ComputePipelineId>,
-        PhantomData::<khora_core::renderer::api::command::compute::ComputePipelineId>,
+        PhantomData::<khora_core::renderer::api::pipeline::compute::ComputePipelineId>,
     );
     let _ = compute_pipeline_id_fields
-        as fn(&khora_core::renderer::api::command::compute::ComputePipelineId);
-    is_debug::<khora_core::renderer::api::command::compute::ComputePipelineId>();
-    is_clone::<khora_core::renderer::api::command::compute::ComputePipelineId>();
-    is_copy::<khora_core::renderer::api::command::compute::ComputePipelineId>();
-    is_partial_eq::<khora_core::renderer::api::command::compute::ComputePipelineId>();
-    is_eq::<khora_core::renderer::api::command::compute::ComputePipelineId>();
-    is_hash::<khora_core::renderer::api::command::compute::ComputePipelineId>();
-    is_partial_ord::<khora_core::renderer::api::command::compute::ComputePipelineId>();
-    is_ord::<khora_core::renderer::api::command::compute::ComputePipelineId>();
-    let _ = type_name::<khora_core::renderer::api::command::encoder::CommandBufferId>();
+        as fn(&khora_core::renderer::api::pipeline::compute::ComputePipelineId);
+    is_debug::<khora_core::renderer::api::pipeline::compute::ComputePipelineId>();
+    is_clone::<khora_core::renderer::api::pipeline::compute::ComputePipelineId>();
+    is_copy::<khora_core::renderer::api::pipeline::compute::ComputePipelineId>();
+    is_partial_eq::<khora_core::renderer::api::pipeline::compute::ComputePipelineId>();
+    is_eq::<khora_core::renderer::api::pipeline::compute::ComputePipelineId>();
+    is_hash::<khora_core::renderer::api::pipeline::compute::ComputePipelineId>();
+    is_partial_ord::<khora_core::renderer::api::pipeline::compute::ComputePipelineId>();
+    is_ord::<khora_core::renderer::api::pipeline::compute::ComputePipelineId>();
+    let _ = type_name::<khora_core::renderer::api::command::draw_command::CommandBufferId>();
     let _ = type_name::<khora_core::renderer::api::command::CommandBufferId>();
     same_type(
         PhantomData::<khora_core::renderer::api::command::CommandBufferId>,
-        PhantomData::<khora_core::renderer::api::command::encoder::CommandBufferId>,
+        PhantomData::<khora_core::renderer::api::command::draw_command::CommandBufferId>,
     );
     let _ = command_buffer_id_fields
-        as fn(&khora_core::renderer::api::command::encoder::CommandBufferId);
-    is_debug::<khora_core::renderer::api::command::encoder::CommandBufferId>();
-    is_copy::<khora_core::renderer::api::command::encoder::CommandBufferId>();
-    is_clone::<khora_core::renderer::api::command::encoder::CommandBufferId>();
-    is_partial_eq::<khora_core::renderer::api::command::encoder::CommandBufferId>();
-    is_eq::<khora_core::renderer::api::command::encoder::CommandBufferId>();
-    is_hash::<khora_core::renderer::api::command::encoder::CommandBufferId>();
-    let _ = type_name::<khora_core::renderer::api::command::encoder::DrawCommand>();
+        as fn(&khora_core::renderer::api::command::draw_command::CommandBufferId);
+    is_debug::<khora_core::renderer::api::command::draw_command::CommandBufferId>();
+    is_copy::<khora_core::renderer::api::command::draw_command::CommandBufferId>();
+    is_clone::<khora_core::renderer::api::command::draw_command::CommandBufferId>();
+    is_partial_eq::<khora_core::renderer::api::command::draw_command::CommandBufferId>();
+    is_eq::<khora_core::renderer::api::command::draw_command::CommandBufferId>();
+    is_hash::<khora_core::renderer::api::command::draw_command::CommandBufferId>();
+    let _ = type_name::<khora_core::renderer::api::command::draw_command::DrawCommand>();
     let _ = type_name::<khora_core::renderer::api::command::DrawCommand>();
     same_type(
         PhantomData::<khora_core::renderer::api::command::DrawCommand>,
-        PhantomData::<khora_core::renderer::api::command::encoder::DrawCommand>,
+        PhantomData::<khora_core::renderer::api::command::draw_command::DrawCommand>,
     );
-    let _ = draw_command_fields as fn(&khora_core::renderer::api::command::encoder::DrawCommand);
-    is_debug::<khora_core::renderer::api::command::encoder::DrawCommand>();
-    is_clone::<khora_core::renderer::api::command::encoder::DrawCommand>();
+    let _ =
+        draw_command_fields as fn(&khora_core::renderer::api::command::draw_command::DrawCommand);
+    is_debug::<khora_core::renderer::api::command::draw_command::DrawCommand>();
+    is_clone::<khora_core::renderer::api::command::draw_command::DrawCommand>();
     let _ = type_name::<khora_core::renderer::api::command::pass::ComputePassDescriptor<'static>>();
     let _ = type_name::<khora_core::renderer::api::command::ComputePassDescriptor<'static>>();
     same_type(
@@ -1665,147 +1671,149 @@ fn module_renderer_paths_still_resolve() {
     is_debug::<khora_core::renderer::api::command::pass::StoreOp>();
     is_partial_eq::<khora_core::renderer::api::command::pass::StoreOp>();
     is_eq::<khora_core::renderer::api::command::pass::StoreOp>();
-    let _ = khora_core::renderer::api::core::MAX_FRAMES_IN_FLIGHT;
-    let _ = type_name::<khora_core::renderer::api::core::adapter::GraphicsAdapterInfo>();
-    let _ = type_name::<khora_core::renderer::api::core::GraphicsAdapterInfo>();
+    let _ = khora_core::renderer::api::frame::MAX_FRAMES_IN_FLIGHT;
+    let _ = type_name::<khora_core::renderer::api::device::adapter::GraphicsAdapterInfo>();
+    let _ = type_name::<khora_core::renderer::api::device::GraphicsAdapterInfo>();
     same_type(
-        PhantomData::<khora_core::renderer::api::core::GraphicsAdapterInfo>,
-        PhantomData::<khora_core::renderer::api::core::adapter::GraphicsAdapterInfo>,
+        PhantomData::<khora_core::renderer::api::device::GraphicsAdapterInfo>,
+        PhantomData::<khora_core::renderer::api::device::adapter::GraphicsAdapterInfo>,
     );
     let _ = graphics_adapter_info_fields
-        as fn(&khora_core::renderer::api::core::adapter::GraphicsAdapterInfo);
-    is_debug::<khora_core::renderer::api::core::adapter::GraphicsAdapterInfo>();
-    is_clone::<khora_core::renderer::api::core::adapter::GraphicsAdapterInfo>();
-    is_default::<khora_core::renderer::api::core::adapter::GraphicsAdapterInfo>();
-    let _ = type_name::<khora_core::renderer::api::core::backend::BackendSelectionConfig>();
-    let _ = type_name::<khora_core::renderer::api::core::BackendSelectionConfig>();
+        as fn(&khora_core::renderer::api::device::adapter::GraphicsAdapterInfo);
+    is_debug::<khora_core::renderer::api::device::adapter::GraphicsAdapterInfo>();
+    is_clone::<khora_core::renderer::api::device::adapter::GraphicsAdapterInfo>();
+    is_default::<khora_core::renderer::api::device::adapter::GraphicsAdapterInfo>();
+    let _ = type_name::<khora_core::renderer::api::device::backend::BackendSelectionConfig>();
+    let _ = type_name::<khora_core::renderer::api::device::BackendSelectionConfig>();
     same_type(
-        PhantomData::<khora_core::renderer::api::core::BackendSelectionConfig>,
-        PhantomData::<khora_core::renderer::api::core::backend::BackendSelectionConfig>,
+        PhantomData::<khora_core::renderer::api::device::BackendSelectionConfig>,
+        PhantomData::<khora_core::renderer::api::device::backend::BackendSelectionConfig>,
     );
     let _ = backend_selection_config_fields
-        as fn(&khora_core::renderer::api::core::backend::BackendSelectionConfig);
-    is_debug::<khora_core::renderer::api::core::backend::BackendSelectionConfig>();
-    is_clone::<khora_core::renderer::api::core::backend::BackendSelectionConfig>();
-    is_default::<khora_core::renderer::api::core::backend::BackendSelectionConfig>();
-    let _ = type_name::<khora_core::renderer::api::core::backend::BackendSelectionResult<u32>>();
-    let _ = type_name::<khora_core::renderer::api::core::BackendSelectionResult<u32>>();
+        as fn(&khora_core::renderer::api::device::backend::BackendSelectionConfig);
+    is_debug::<khora_core::renderer::api::device::backend::BackendSelectionConfig>();
+    is_clone::<khora_core::renderer::api::device::backend::BackendSelectionConfig>();
+    is_default::<khora_core::renderer::api::device::backend::BackendSelectionConfig>();
+    let _ = type_name::<khora_core::renderer::api::device::backend::BackendSelectionResult<u32>>();
+    let _ = type_name::<khora_core::renderer::api::device::BackendSelectionResult<u32>>();
     same_type(
-        PhantomData::<khora_core::renderer::api::core::BackendSelectionResult<u32>>,
-        PhantomData::<khora_core::renderer::api::core::backend::BackendSelectionResult<u32>>,
+        PhantomData::<khora_core::renderer::api::device::BackendSelectionResult<u32>>,
+        PhantomData::<khora_core::renderer::api::device::backend::BackendSelectionResult<u32>>,
     );
     let _ = backend_selection_result_fields
-        as fn(&khora_core::renderer::api::core::backend::BackendSelectionResult<u32>);
-    is_debug::<khora_core::renderer::api::core::backend::BackendSelectionResult<u32>>();
-    let _ = type_name::<khora_core::renderer::api::core::context::RenderContext<'static>>();
-    let _ = type_name::<khora_core::renderer::api::core::RenderContext<'static>>();
+        as fn(&khora_core::renderer::api::device::backend::BackendSelectionResult<u32>);
+    is_debug::<khora_core::renderer::api::device::backend::BackendSelectionResult<u32>>();
+    let _ = type_name::<khora_core::renderer::api::frame::render_context::RenderContext<'static>>();
+    let _ = type_name::<khora_core::renderer::api::frame::RenderContext<'static>>();
     same_type(
-        PhantomData::<khora_core::renderer::api::core::RenderContext<'static>>,
-        PhantomData::<khora_core::renderer::api::core::context::RenderContext<'static>>,
+        PhantomData::<khora_core::renderer::api::frame::RenderContext<'static>>,
+        PhantomData::<khora_core::renderer::api::frame::render_context::RenderContext<'static>>,
     );
     let _ = render_context_fields
-        as fn(&khora_core::renderer::api::core::context::RenderContext<'static>);
-    let _ = khora_core::renderer::api::core::context::RenderContext::new;
-    let _ = type_name::<khora_core::renderer::api::core::frame_context::FrameContext>();
-    let _ = type_name::<khora_core::renderer::api::core::FrameContext>();
+        as fn(&khora_core::renderer::api::frame::render_context::RenderContext<'static>);
+    let _ = khora_core::renderer::api::frame::render_context::RenderContext::new;
+    let _ = type_name::<khora_core::renderer::api::frame::frame_context::FrameContext>();
+    let _ = type_name::<khora_core::renderer::api::frame::FrameContext>();
     same_type(
-        PhantomData::<khora_core::renderer::api::core::FrameContext>,
-        PhantomData::<khora_core::renderer::api::core::frame_context::FrameContext>,
+        PhantomData::<khora_core::renderer::api::frame::FrameContext>,
+        PhantomData::<khora_core::renderer::api::frame::frame_context::FrameContext>,
     );
-    let _ = khora_core::renderer::api::core::frame_context::FrameContext::new;
-    let _ = khora_core::renderer::api::core::frame_context::FrameContext::insert::<u32>;
-    let _ = khora_core::renderer::api::core::frame_context::FrameContext::get::<u32>;
-    let _ = khora_core::renderer::api::core::frame_context::FrameContext::contains::<u32>;
-    let _ = khora_core::renderer::api::core::frame_context::FrameContext::insert_stage::<u32>;
-    let _ = khora_core::renderer::api::core::frame_context::FrameContext::spawn::<
+    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::new;
+    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::insert::<u32>;
+    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::get::<u32>;
+    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::contains::<u32>;
+    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::insert_stage::<u32>;
+    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::spawn::<
         std::future::Ready<()>,
     >;
-    let _ = khora_core::renderer::api::core::frame_context::FrameContext::wait_for_all;
-    let _ = khora_core::renderer::api::core::frame_context::FrameContext::tokio_handle;
-    is_send::<khora_core::renderer::api::core::frame_context::FrameContext>();
-    is_sync::<khora_core::renderer::api::core::frame_context::FrameContext>();
-    is_debug::<khora_core::renderer::api::core::frame_context::FrameContext>();
-    let _ = type_name::<khora_core::renderer::api::core::frame_context::StageHandle<u32>>();
-    let _ = type_name::<khora_core::renderer::api::core::StageHandle<u32>>();
+    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::wait_for_all;
+    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::tokio_handle;
+    is_send::<khora_core::renderer::api::frame::frame_context::FrameContext>();
+    is_sync::<khora_core::renderer::api::frame::frame_context::FrameContext>();
+    is_debug::<khora_core::renderer::api::frame::frame_context::FrameContext>();
+    let _ = type_name::<khora_core::renderer::api::frame::frame_context::StageHandle<u32>>();
+    let _ = type_name::<khora_core::renderer::api::frame::StageHandle<u32>>();
     same_type(
-        PhantomData::<khora_core::renderer::api::core::StageHandle<u32>>,
-        PhantomData::<khora_core::renderer::api::core::frame_context::StageHandle<u32>>,
+        PhantomData::<khora_core::renderer::api::frame::StageHandle<u32>>,
+        PhantomData::<khora_core::renderer::api::frame::frame_context::StageHandle<u32>>,
     );
-    let _ = <khora_core::renderer::api::core::frame_context::StageHandle<u32>>::mark_done;
-    let _ = <khora_core::renderer::api::core::frame_context::StageHandle<u32>>::is_done;
-    let _ = <khora_core::renderer::api::core::frame_context::StageHandle<u32>>::wait;
-    is_clone::<khora_core::renderer::api::core::frame_context::StageHandle<u32>>();
-    is_default::<khora_core::renderer::api::core::frame_context::StageHandle<u32>>();
-    let _ = type_name::<khora_core::renderer::api::core::gpu_hook::GpuHook>();
-    let _ = type_name::<khora_core::renderer::api::core::GpuHook>();
+    let _ = <khora_core::renderer::api::frame::frame_context::StageHandle<u32>>::mark_done;
+    let _ = <khora_core::renderer::api::frame::frame_context::StageHandle<u32>>::is_done;
+    let _ = <khora_core::renderer::api::frame::frame_context::StageHandle<u32>>::wait;
+    is_clone::<khora_core::renderer::api::frame::frame_context::StageHandle<u32>>();
+    is_default::<khora_core::renderer::api::frame::frame_context::StageHandle<u32>>();
+    let _ = type_name::<khora_core::renderer::api::device::gpu_hook::GpuHook>();
+    let _ = type_name::<khora_core::renderer::api::device::GpuHook>();
     same_type(
-        PhantomData::<khora_core::renderer::api::core::GpuHook>,
-        PhantomData::<khora_core::renderer::api::core::gpu_hook::GpuHook>,
+        PhantomData::<khora_core::renderer::api::device::GpuHook>,
+        PhantomData::<khora_core::renderer::api::device::gpu_hook::GpuHook>,
     );
-    let _ = gpu_hook_variants as fn(&khora_core::renderer::api::core::gpu_hook::GpuHook);
-    let _ = khora_core::renderer::api::core::gpu_hook::GpuHook::ALL;
-    is_debug::<khora_core::renderer::api::core::gpu_hook::GpuHook>();
-    is_clone::<khora_core::renderer::api::core::gpu_hook::GpuHook>();
-    is_copy::<khora_core::renderer::api::core::gpu_hook::GpuHook>();
-    is_partial_eq::<khora_core::renderer::api::core::gpu_hook::GpuHook>();
-    is_eq::<khora_core::renderer::api::core::gpu_hook::GpuHook>();
-    is_hash::<khora_core::renderer::api::core::gpu_hook::GpuHook>();
-    let _ = type_name::<khora_core::renderer::api::core::settings::RenderSettings>();
-    let _ = type_name::<khora_core::renderer::api::core::RenderSettings>();
+    let _ = gpu_hook_variants as fn(&khora_core::renderer::api::device::gpu_hook::GpuHook);
+    let _ = khora_core::renderer::api::device::gpu_hook::GpuHook::ALL;
+    is_debug::<khora_core::renderer::api::device::gpu_hook::GpuHook>();
+    is_clone::<khora_core::renderer::api::device::gpu_hook::GpuHook>();
+    is_copy::<khora_core::renderer::api::device::gpu_hook::GpuHook>();
+    is_partial_eq::<khora_core::renderer::api::device::gpu_hook::GpuHook>();
+    is_eq::<khora_core::renderer::api::device::gpu_hook::GpuHook>();
+    is_hash::<khora_core::renderer::api::device::gpu_hook::GpuHook>();
+    let _ = type_name::<khora_core::renderer::api::device::settings::RenderSettings>();
+    let _ = type_name::<khora_core::renderer::api::device::RenderSettings>();
     same_type(
-        PhantomData::<khora_core::renderer::api::core::RenderSettings>,
-        PhantomData::<khora_core::renderer::api::core::settings::RenderSettings>,
+        PhantomData::<khora_core::renderer::api::device::RenderSettings>,
+        PhantomData::<khora_core::renderer::api::device::settings::RenderSettings>,
     );
     let _ =
-        render_settings_fields as fn(&khora_core::renderer::api::core::settings::RenderSettings);
-    is_debug::<khora_core::renderer::api::core::settings::RenderSettings>();
-    is_clone::<khora_core::renderer::api::core::settings::RenderSettings>();
-    is_default::<khora_core::renderer::api::core::settings::RenderSettings>();
-    let _ = type_name::<khora_core::renderer::api::core::shader::ShaderModuleDescriptor<'static>>();
-    let _ = type_name::<khora_core::renderer::api::core::ShaderModuleDescriptor<'static>>();
+        render_settings_fields as fn(&khora_core::renderer::api::device::settings::RenderSettings);
+    is_debug::<khora_core::renderer::api::device::settings::RenderSettings>();
+    is_clone::<khora_core::renderer::api::device::settings::RenderSettings>();
+    is_default::<khora_core::renderer::api::device::settings::RenderSettings>();
+    let _ =
+        type_name::<khora_core::renderer::api::shader::module::ShaderModuleDescriptor<'static>>();
+    let _ = type_name::<khora_core::renderer::api::shader::ShaderModuleDescriptor<'static>>();
     same_type(
-        PhantomData::<khora_core::renderer::api::core::ShaderModuleDescriptor<'static>>,
-        PhantomData::<khora_core::renderer::api::core::shader::ShaderModuleDescriptor<'static>>,
+        PhantomData::<khora_core::renderer::api::shader::ShaderModuleDescriptor<'static>>,
+        PhantomData::<khora_core::renderer::api::shader::module::ShaderModuleDescriptor<'static>>,
     );
     let _ = shader_module_descriptor_fields
-        as fn(&khora_core::renderer::api::core::shader::ShaderModuleDescriptor<'static>);
-    is_debug::<khora_core::renderer::api::core::shader::ShaderModuleDescriptor<'static>>();
-    is_clone::<khora_core::renderer::api::core::shader::ShaderModuleDescriptor<'static>>();
-    let _ = type_name::<khora_core::renderer::api::core::shader::ShaderModuleId>();
-    let _ = type_name::<khora_core::renderer::api::core::ShaderModuleId>();
+        as fn(&khora_core::renderer::api::shader::module::ShaderModuleDescriptor<'static>);
+    is_debug::<khora_core::renderer::api::shader::module::ShaderModuleDescriptor<'static>>();
+    is_clone::<khora_core::renderer::api::shader::module::ShaderModuleDescriptor<'static>>();
+    let _ = type_name::<khora_core::renderer::api::shader::module::ShaderModuleId>();
+    let _ = type_name::<khora_core::renderer::api::shader::ShaderModuleId>();
     same_type(
-        PhantomData::<khora_core::renderer::api::core::ShaderModuleId>,
-        PhantomData::<khora_core::renderer::api::core::shader::ShaderModuleId>,
+        PhantomData::<khora_core::renderer::api::shader::ShaderModuleId>,
+        PhantomData::<khora_core::renderer::api::shader::module::ShaderModuleId>,
     );
-    let _ = shader_module_id_fields as fn(&khora_core::renderer::api::core::shader::ShaderModuleId);
-    is_debug::<khora_core::renderer::api::core::shader::ShaderModuleId>();
-    is_clone::<khora_core::renderer::api::core::shader::ShaderModuleId>();
-    is_copy::<khora_core::renderer::api::core::shader::ShaderModuleId>();
-    is_partial_eq::<khora_core::renderer::api::core::shader::ShaderModuleId>();
-    is_eq::<khora_core::renderer::api::core::shader::ShaderModuleId>();
-    is_hash::<khora_core::renderer::api::core::shader::ShaderModuleId>();
-    is_partial_ord::<khora_core::renderer::api::core::shader::ShaderModuleId>();
-    is_ord::<khora_core::renderer::api::core::shader::ShaderModuleId>();
-    let _ = type_name::<khora_core::renderer::api::core::shader::ShaderSourceData<'static>>();
-    let _ = type_name::<khora_core::renderer::api::core::ShaderSourceData<'static>>();
+    let _ =
+        shader_module_id_fields as fn(&khora_core::renderer::api::shader::module::ShaderModuleId);
+    is_debug::<khora_core::renderer::api::shader::module::ShaderModuleId>();
+    is_clone::<khora_core::renderer::api::shader::module::ShaderModuleId>();
+    is_copy::<khora_core::renderer::api::shader::module::ShaderModuleId>();
+    is_partial_eq::<khora_core::renderer::api::shader::module::ShaderModuleId>();
+    is_eq::<khora_core::renderer::api::shader::module::ShaderModuleId>();
+    is_hash::<khora_core::renderer::api::shader::module::ShaderModuleId>();
+    is_partial_ord::<khora_core::renderer::api::shader::module::ShaderModuleId>();
+    is_ord::<khora_core::renderer::api::shader::module::ShaderModuleId>();
+    let _ = type_name::<khora_core::renderer::api::shader::module::ShaderSourceData<'static>>();
+    let _ = type_name::<khora_core::renderer::api::shader::ShaderSourceData<'static>>();
     same_type(
-        PhantomData::<khora_core::renderer::api::core::ShaderSourceData<'static>>,
-        PhantomData::<khora_core::renderer::api::core::shader::ShaderSourceData<'static>>,
+        PhantomData::<khora_core::renderer::api::shader::ShaderSourceData<'static>>,
+        PhantomData::<khora_core::renderer::api::shader::module::ShaderSourceData<'static>>,
     );
     let _ = shader_source_data_variants
-        as fn(&khora_core::renderer::api::core::shader::ShaderSourceData<'static>);
-    is_debug::<khora_core::renderer::api::core::shader::ShaderSourceData<'static>>();
-    is_clone::<khora_core::renderer::api::core::shader::ShaderSourceData<'static>>();
-    let _ = type_name::<khora_core::renderer::api::core::stats::RenderStats>();
-    let _ = type_name::<khora_core::renderer::api::core::RenderStats>();
+        as fn(&khora_core::renderer::api::shader::module::ShaderSourceData<'static>);
+    is_debug::<khora_core::renderer::api::shader::module::ShaderSourceData<'static>>();
+    is_clone::<khora_core::renderer::api::shader::module::ShaderSourceData<'static>>();
+    let _ = type_name::<khora_core::renderer::api::device::stats::RenderStats>();
+    let _ = type_name::<khora_core::renderer::api::device::RenderStats>();
     same_type(
-        PhantomData::<khora_core::renderer::api::core::RenderStats>,
-        PhantomData::<khora_core::renderer::api::core::stats::RenderStats>,
+        PhantomData::<khora_core::renderer::api::device::RenderStats>,
+        PhantomData::<khora_core::renderer::api::device::stats::RenderStats>,
     );
-    let _ = render_stats_fields as fn(&khora_core::renderer::api::core::stats::RenderStats);
-    is_debug::<khora_core::renderer::api::core::stats::RenderStats>();
-    is_clone::<khora_core::renderer::api::core::stats::RenderStats>();
-    is_default::<khora_core::renderer::api::core::stats::RenderStats>();
+    let _ = render_stats_fields as fn(&khora_core::renderer::api::device::stats::RenderStats);
+    is_debug::<khora_core::renderer::api::device::stats::RenderStats>();
+    is_clone::<khora_core::renderer::api::device::stats::RenderStats>();
+    is_default::<khora_core::renderer::api::device::stats::RenderStats>();
     let _ = khora_core::renderer::api::ibl::bindings::IBL_BINDING_COUNT;
     let _ = khora_core::renderer::api::ibl::IBL_BINDING_COUNT;
     let _ = type_name::<khora_core::renderer::api::ibl::bindings::IblGpuBindings>();
@@ -2172,38 +2180,38 @@ fn module_renderer_paths_still_resolve() {
     let _ = khora_core::renderer::api::pipeline::spec::PipelineSpec::key;
     is_debug::<khora_core::renderer::api::pipeline::spec::PipelineSpec>();
     is_clone::<khora_core::renderer::api::pipeline::spec::PipelineSpec>();
-    let _ = type_name::<khora_core::renderer::api::pipeline::spec::ShaderDefScalar>();
-    let _ = type_name::<khora_core::renderer::api::pipeline::ShaderDefScalar>();
+    let _ = type_name::<khora_core::renderer::api::shader::variant::ShaderDefScalar>();
+    let _ = type_name::<khora_core::renderer::api::shader::ShaderDefScalar>();
     same_type(
-        PhantomData::<khora_core::renderer::api::pipeline::ShaderDefScalar>,
-        PhantomData::<khora_core::renderer::api::pipeline::spec::ShaderDefScalar>,
+        PhantomData::<khora_core::renderer::api::shader::ShaderDefScalar>,
+        PhantomData::<khora_core::renderer::api::shader::variant::ShaderDefScalar>,
     );
     let _ = shader_def_scalar_variants
-        as fn(&khora_core::renderer::api::pipeline::spec::ShaderDefScalar);
-    is_debug::<khora_core::renderer::api::pipeline::spec::ShaderDefScalar>();
-    is_clone::<khora_core::renderer::api::pipeline::spec::ShaderDefScalar>();
-    is_copy::<khora_core::renderer::api::pipeline::spec::ShaderDefScalar>();
-    is_partial_eq::<khora_core::renderer::api::pipeline::spec::ShaderDefScalar>();
-    is_eq::<khora_core::renderer::api::pipeline::spec::ShaderDefScalar>();
-    is_hash::<khora_core::renderer::api::pipeline::spec::ShaderDefScalar>();
-    let _ = type_name::<khora_core::renderer::api::pipeline::spec::ShaderVariantKey>();
-    let _ = type_name::<khora_core::renderer::api::pipeline::ShaderVariantKey>();
+        as fn(&khora_core::renderer::api::shader::variant::ShaderDefScalar);
+    is_debug::<khora_core::renderer::api::shader::variant::ShaderDefScalar>();
+    is_clone::<khora_core::renderer::api::shader::variant::ShaderDefScalar>();
+    is_copy::<khora_core::renderer::api::shader::variant::ShaderDefScalar>();
+    is_partial_eq::<khora_core::renderer::api::shader::variant::ShaderDefScalar>();
+    is_eq::<khora_core::renderer::api::shader::variant::ShaderDefScalar>();
+    is_hash::<khora_core::renderer::api::shader::variant::ShaderDefScalar>();
+    let _ = type_name::<khora_core::renderer::api::shader::variant::ShaderVariantKey>();
+    let _ = type_name::<khora_core::renderer::api::shader::ShaderVariantKey>();
     same_type(
-        PhantomData::<khora_core::renderer::api::pipeline::ShaderVariantKey>,
-        PhantomData::<khora_core::renderer::api::pipeline::spec::ShaderVariantKey>,
+        PhantomData::<khora_core::renderer::api::shader::ShaderVariantKey>,
+        PhantomData::<khora_core::renderer::api::shader::variant::ShaderVariantKey>,
     );
-    let _ = khora_core::renderer::api::pipeline::spec::ShaderVariantKey::empty;
-    let _ = khora_core::renderer::api::pipeline::spec::ShaderVariantKey::flag;
-    let _ = khora_core::renderer::api::pipeline::spec::ShaderVariantKey::with;
-    let _ = khora_core::renderer::api::pipeline::spec::ShaderVariantKey::is_empty;
-    let _ = khora_core::renderer::api::pipeline::spec::ShaderVariantKey::has_flag;
-    let _ = khora_core::renderer::api::pipeline::spec::ShaderVariantKey::defs;
-    is_debug::<khora_core::renderer::api::pipeline::spec::ShaderVariantKey>();
-    is_clone::<khora_core::renderer::api::pipeline::spec::ShaderVariantKey>();
-    is_default::<khora_core::renderer::api::pipeline::spec::ShaderVariantKey>();
-    is_partial_eq::<khora_core::renderer::api::pipeline::spec::ShaderVariantKey>();
-    is_eq::<khora_core::renderer::api::pipeline::spec::ShaderVariantKey>();
-    is_hash::<khora_core::renderer::api::pipeline::spec::ShaderVariantKey>();
+    let _ = khora_core::renderer::api::shader::variant::ShaderVariantKey::empty;
+    let _ = khora_core::renderer::api::shader::variant::ShaderVariantKey::flag;
+    let _ = khora_core::renderer::api::shader::variant::ShaderVariantKey::with;
+    let _ = khora_core::renderer::api::shader::variant::ShaderVariantKey::is_empty;
+    let _ = khora_core::renderer::api::shader::variant::ShaderVariantKey::has_flag;
+    let _ = khora_core::renderer::api::shader::variant::ShaderVariantKey::defs;
+    is_debug::<khora_core::renderer::api::shader::variant::ShaderVariantKey>();
+    is_clone::<khora_core::renderer::api::shader::variant::ShaderVariantKey>();
+    is_default::<khora_core::renderer::api::shader::variant::ShaderVariantKey>();
+    is_partial_eq::<khora_core::renderer::api::shader::variant::ShaderVariantKey>();
+    is_eq::<khora_core::renderer::api::shader::variant::ShaderVariantKey>();
+    is_hash::<khora_core::renderer::api::shader::variant::ShaderVariantKey>();
     let _ = type_name::<khora_core::renderer::api::pipeline::state::BlendComponentDescriptor>();
     let _ = type_name::<khora_core::renderer::api::pipeline::BlendComponentDescriptor>();
     same_type(
@@ -2428,17 +2436,17 @@ fn module_renderer_paths_still_resolve() {
     is_bit_and_assign::<khora_core::renderer::api::resource::buffer::BufferUsage>();
     is_bit_xor_assign::<khora_core::renderer::api::resource::buffer::BufferUsage>();
     is_debug::<khora_core::renderer::api::resource::buffer::BufferUsage>();
-    let _ = type_name::<khora_core::renderer::api::resource::shader_source::CpuShaderSource>();
-    let _ = type_name::<khora_core::renderer::api::resource::CpuShaderSource>();
+    let _ = type_name::<khora_core::renderer::api::shader::source::CpuShaderSource>();
+    let _ = type_name::<khora_core::renderer::api::shader::CpuShaderSource>();
     same_type(
-        PhantomData::<khora_core::renderer::api::resource::CpuShaderSource>,
-        PhantomData::<khora_core::renderer::api::resource::shader_source::CpuShaderSource>,
+        PhantomData::<khora_core::renderer::api::shader::CpuShaderSource>,
+        PhantomData::<khora_core::renderer::api::shader::source::CpuShaderSource>,
     );
-    let _ = cpu_shader_source_fields
-        as fn(&khora_core::renderer::api::resource::shader_source::CpuShaderSource);
-    is_debug::<khora_core::renderer::api::resource::shader_source::CpuShaderSource>();
-    is_clone::<khora_core::renderer::api::resource::shader_source::CpuShaderSource>();
-    is_asset::<khora_core::renderer::api::resource::shader_source::CpuShaderSource>();
+    let _ =
+        cpu_shader_source_fields as fn(&khora_core::renderer::api::shader::source::CpuShaderSource);
+    is_debug::<khora_core::renderer::api::shader::source::CpuShaderSource>();
+    is_clone::<khora_core::renderer::api::shader::source::CpuShaderSource>();
+    is_asset::<khora_core::renderer::api::shader::source::CpuShaderSource>();
     let _ = type_name::<khora_core::renderer::api::resource::texture::AddressMode>();
     let _ = type_name::<khora_core::renderer::api::resource::AddressMode>();
     same_type(
@@ -2691,164 +2699,165 @@ fn module_renderer_paths_still_resolve() {
     is_debug::<khora_core::renderer::api::resource::view::ViewInfo>();
     is_clone::<khora_core::renderer::api::resource::view::ViewInfo>();
     is_default::<khora_core::renderer::api::resource::view::ViewInfo>();
-    let _ = type_name::<khora_core::renderer::api::scene::gpu_material::GpuMaterial>();
-    let _ = type_name::<khora_core::renderer::api::scene::GpuMaterial>();
+    let _ = type_name::<khora_core::renderer::api::material::gpu_material::GpuMaterial>();
+    let _ = type_name::<khora_core::renderer::api::material::GpuMaterial>();
     same_type(
-        PhantomData::<khora_core::renderer::api::scene::GpuMaterial>,
-        PhantomData::<khora_core::renderer::api::scene::gpu_material::GpuMaterial>,
-    );
-    let _ = gpu_material_fields as fn(&khora_core::renderer::api::scene::gpu_material::GpuMaterial);
-    let _ = khora_core::renderer::api::scene::gpu_material::GpuMaterial::bindings;
-    is_debug::<khora_core::renderer::api::scene::gpu_material::GpuMaterial>();
-    is_clone::<khora_core::renderer::api::scene::gpu_material::GpuMaterial>();
-    is_asset::<khora_core::renderer::api::scene::gpu_material::GpuMaterial>();
-    let _ = type_name::<khora_core::renderer::api::scene::lighting::CullingUniformsData>();
-    let _ = type_name::<khora_core::renderer::api::scene::CullingUniformsData>();
-    same_type(
-        PhantomData::<khora_core::renderer::api::scene::CullingUniformsData>,
-        PhantomData::<khora_core::renderer::api::scene::lighting::CullingUniformsData>,
-    );
-    let _ = culling_uniforms_data_fields
-        as fn(&khora_core::renderer::api::scene::lighting::CullingUniformsData);
-    is_debug::<khora_core::renderer::api::scene::lighting::CullingUniformsData>();
-    is_clone::<khora_core::renderer::api::scene::lighting::CullingUniformsData>();
-    is_copy::<khora_core::renderer::api::scene::lighting::CullingUniformsData>();
-    is_partial_eq::<khora_core::renderer::api::scene::lighting::CullingUniformsData>();
-    is_pod::<khora_core::renderer::api::scene::lighting::CullingUniformsData>();
-    is_zeroable::<khora_core::renderer::api::scene::lighting::CullingUniformsData>();
-    let _ = type_name::<khora_core::renderer::api::scene::lighting::DirectionalLightUniform>();
-    let _ = type_name::<khora_core::renderer::api::scene::DirectionalLightUniform>();
-    same_type(
-        PhantomData::<khora_core::renderer::api::scene::DirectionalLightUniform>,
-        PhantomData::<khora_core::renderer::api::scene::lighting::DirectionalLightUniform>,
-    );
-    let _ = directional_light_uniform_fields
-        as fn(&khora_core::renderer::api::scene::lighting::DirectionalLightUniform);
-    is_debug::<khora_core::renderer::api::scene::lighting::DirectionalLightUniform>();
-    is_clone::<khora_core::renderer::api::scene::lighting::DirectionalLightUniform>();
-    is_copy::<khora_core::renderer::api::scene::lighting::DirectionalLightUniform>();
-    is_partial_eq::<khora_core::renderer::api::scene::lighting::DirectionalLightUniform>();
-    is_pod::<khora_core::renderer::api::scene::lighting::DirectionalLightUniform>();
-    is_zeroable::<khora_core::renderer::api::scene::lighting::DirectionalLightUniform>();
-    let _ = type_name::<khora_core::renderer::api::scene::lighting::LightingUniforms>();
-    let _ = type_name::<khora_core::renderer::api::scene::LightingUniforms>();
-    same_type(
-        PhantomData::<khora_core::renderer::api::scene::LightingUniforms>,
-        PhantomData::<khora_core::renderer::api::scene::lighting::LightingUniforms>,
-    );
-    let _ = lighting_uniforms_fields
-        as fn(&khora_core::renderer::api::scene::lighting::LightingUniforms);
-    is_debug::<khora_core::renderer::api::scene::lighting::LightingUniforms>();
-    is_clone::<khora_core::renderer::api::scene::lighting::LightingUniforms>();
-    is_copy::<khora_core::renderer::api::scene::lighting::LightingUniforms>();
-    is_partial_eq::<khora_core::renderer::api::scene::lighting::LightingUniforms>();
-    is_pod::<khora_core::renderer::api::scene::lighting::LightingUniforms>();
-    is_zeroable::<khora_core::renderer::api::scene::lighting::LightingUniforms>();
-    let _ = khora_core::renderer::api::scene::lighting::MAX_DIRECTIONAL_LIGHTS;
-    let _ = khora_core::renderer::api::scene::MAX_DIRECTIONAL_LIGHTS;
-    let _ = khora_core::renderer::api::scene::lighting::MAX_POINT_LIGHTS;
-    let _ = khora_core::renderer::api::scene::MAX_POINT_LIGHTS;
-    let _ = khora_core::renderer::api::scene::lighting::MAX_SPOT_LIGHTS;
-    let _ = khora_core::renderer::api::scene::MAX_SPOT_LIGHTS;
-    let _ = type_name::<khora_core::renderer::api::scene::lighting::PointLightUniform>();
-    let _ = type_name::<khora_core::renderer::api::scene::PointLightUniform>();
-    same_type(
-        PhantomData::<khora_core::renderer::api::scene::PointLightUniform>,
-        PhantomData::<khora_core::renderer::api::scene::lighting::PointLightUniform>,
-    );
-    let _ = point_light_uniform_fields
-        as fn(&khora_core::renderer::api::scene::lighting::PointLightUniform);
-    is_debug::<khora_core::renderer::api::scene::lighting::PointLightUniform>();
-    is_clone::<khora_core::renderer::api::scene::lighting::PointLightUniform>();
-    is_copy::<khora_core::renderer::api::scene::lighting::PointLightUniform>();
-    is_partial_eq::<khora_core::renderer::api::scene::lighting::PointLightUniform>();
-    is_pod::<khora_core::renderer::api::scene::lighting::PointLightUniform>();
-    is_zeroable::<khora_core::renderer::api::scene::lighting::PointLightUniform>();
-    let _ = type_name::<khora_core::renderer::api::scene::lighting::SpotLightUniform>();
-    let _ = type_name::<khora_core::renderer::api::scene::SpotLightUniform>();
-    same_type(
-        PhantomData::<khora_core::renderer::api::scene::SpotLightUniform>,
-        PhantomData::<khora_core::renderer::api::scene::lighting::SpotLightUniform>,
-    );
-    let _ = spot_light_uniform_fields
-        as fn(&khora_core::renderer::api::scene::lighting::SpotLightUniform);
-    is_debug::<khora_core::renderer::api::scene::lighting::SpotLightUniform>();
-    is_clone::<khora_core::renderer::api::scene::lighting::SpotLightUniform>();
-    is_copy::<khora_core::renderer::api::scene::lighting::SpotLightUniform>();
-    is_partial_eq::<khora_core::renderer::api::scene::lighting::SpotLightUniform>();
-    is_pod::<khora_core::renderer::api::scene::lighting::SpotLightUniform>();
-    is_zeroable::<khora_core::renderer::api::scene::lighting::SpotLightUniform>();
-    let _ = type_name::<khora_core::renderer::api::scene::material_uniforms::MaterialUniforms>();
-    let _ = type_name::<khora_core::renderer::api::scene::MaterialUniforms>();
-    same_type(
-        PhantomData::<khora_core::renderer::api::scene::MaterialUniforms>,
-        PhantomData::<khora_core::renderer::api::scene::material_uniforms::MaterialUniforms>,
-    );
-    let _ = material_uniforms_fields
-        as fn(&khora_core::renderer::api::scene::material_uniforms::MaterialUniforms);
-    let _ = khora_core::renderer::api::scene::material_uniforms::MaterialUniforms::METALLIC;
-    let _ = khora_core::renderer::api::scene::material_uniforms::MaterialUniforms::ROUGHNESS;
-    let _ = khora_core::renderer::api::scene::material_uniforms::MaterialUniforms::ALPHA_CUTOFF;
-    is_debug::<khora_core::renderer::api::scene::material_uniforms::MaterialUniforms>();
-    is_clone::<khora_core::renderer::api::scene::material_uniforms::MaterialUniforms>();
-    is_copy::<khora_core::renderer::api::scene::material_uniforms::MaterialUniforms>();
-    is_partial_eq::<khora_core::renderer::api::scene::material_uniforms::MaterialUniforms>();
-    is_pod::<khora_core::renderer::api::scene::material_uniforms::MaterialUniforms>();
-    is_zeroable::<khora_core::renderer::api::scene::material_uniforms::MaterialUniforms>();
-    let _ = type_name::<khora_core::renderer::api::scene::material_uniforms::ModelUniforms>();
-    let _ = type_name::<khora_core::renderer::api::scene::ModelUniforms>();
-    same_type(
-        PhantomData::<khora_core::renderer::api::scene::ModelUniforms>,
-        PhantomData::<khora_core::renderer::api::scene::material_uniforms::ModelUniforms>,
-    );
-    let _ = model_uniforms_fields
-        as fn(&khora_core::renderer::api::scene::material_uniforms::ModelUniforms);
-    is_debug::<khora_core::renderer::api::scene::material_uniforms::ModelUniforms>();
-    is_clone::<khora_core::renderer::api::scene::material_uniforms::ModelUniforms>();
-    is_copy::<khora_core::renderer::api::scene::material_uniforms::ModelUniforms>();
-    is_partial_eq::<khora_core::renderer::api::scene::material_uniforms::ModelUniforms>();
-    is_pod::<khora_core::renderer::api::scene::material_uniforms::ModelUniforms>();
-    is_zeroable::<khora_core::renderer::api::scene::material_uniforms::ModelUniforms>();
-    let _ = type_name::<khora_core::renderer::api::scene::mesh::GpuMesh>();
-    let _ = type_name::<khora_core::renderer::api::scene::GpuMesh>();
-    same_type(
-        PhantomData::<khora_core::renderer::api::scene::GpuMesh>,
-        PhantomData::<khora_core::renderer::api::scene::mesh::GpuMesh>,
-    );
-    let _ = gpu_mesh_fields as fn(&khora_core::renderer::api::scene::mesh::GpuMesh);
-    is_asset::<khora_core::renderer::api::scene::mesh::GpuMesh>();
-    let _ = type_name::<khora_core::renderer::api::scene::mesh::Mesh>();
-    let _ = type_name::<khora_core::renderer::api::scene::Mesh>();
-    same_type(
-        PhantomData::<khora_core::renderer::api::scene::Mesh>,
-        PhantomData::<khora_core::renderer::api::scene::mesh::Mesh>,
-    );
-    let _ = mesh_fields as fn(&khora_core::renderer::api::scene::mesh::Mesh);
-    let _ = khora_core::renderer::api::scene::mesh::Mesh::vertex_size;
-    let _ = khora_core::renderer::api::scene::mesh::Mesh::create_vertex_buffer;
-    is_debug::<khora_core::renderer::api::scene::mesh::Mesh>();
-    is_asset::<khora_core::renderer::api::scene::mesh::Mesh>();
-    let _ = type_name::<khora_core::renderer::api::scene::render_object::RenderObject>();
-    let _ = type_name::<khora_core::renderer::api::scene::RenderObject>();
-    same_type(
-        PhantomData::<khora_core::renderer::api::scene::RenderObject>,
-        PhantomData::<khora_core::renderer::api::scene::render_object::RenderObject>,
+        PhantomData::<khora_core::renderer::api::material::GpuMaterial>,
+        PhantomData::<khora_core::renderer::api::material::gpu_material::GpuMaterial>,
     );
     let _ =
-        render_object_fields as fn(&khora_core::renderer::api::scene::render_object::RenderObject);
-    is_debug::<khora_core::renderer::api::scene::render_object::RenderObject>();
-    is_clone::<khora_core::renderer::api::scene::render_object::RenderObject>();
-    let _ = type_name::<khora_core::renderer::api::shader_defs::ShaderDefs>();
+        gpu_material_fields as fn(&khora_core::renderer::api::material::gpu_material::GpuMaterial);
+    let _ = khora_core::renderer::api::material::gpu_material::GpuMaterial::bindings;
+    is_debug::<khora_core::renderer::api::material::gpu_material::GpuMaterial>();
+    is_clone::<khora_core::renderer::api::material::gpu_material::GpuMaterial>();
+    is_asset::<khora_core::renderer::api::material::gpu_material::GpuMaterial>();
+    let _ = type_name::<khora_core::renderer::light::uniforms::CullingUniformsData>();
+    let _ = type_name::<khora_core::renderer::light::CullingUniformsData>();
+    same_type(
+        PhantomData::<khora_core::renderer::light::CullingUniformsData>,
+        PhantomData::<khora_core::renderer::light::uniforms::CullingUniformsData>,
+    );
+    let _ = culling_uniforms_data_fields
+        as fn(&khora_core::renderer::light::uniforms::CullingUniformsData);
+    is_debug::<khora_core::renderer::light::uniforms::CullingUniformsData>();
+    is_clone::<khora_core::renderer::light::uniforms::CullingUniformsData>();
+    is_copy::<khora_core::renderer::light::uniforms::CullingUniformsData>();
+    is_partial_eq::<khora_core::renderer::light::uniforms::CullingUniformsData>();
+    is_pod::<khora_core::renderer::light::uniforms::CullingUniformsData>();
+    is_zeroable::<khora_core::renderer::light::uniforms::CullingUniformsData>();
+    let _ = type_name::<khora_core::renderer::light::uniforms::DirectionalLightUniform>();
+    let _ = type_name::<khora_core::renderer::light::DirectionalLightUniform>();
+    same_type(
+        PhantomData::<khora_core::renderer::light::DirectionalLightUniform>,
+        PhantomData::<khora_core::renderer::light::uniforms::DirectionalLightUniform>,
+    );
+    let _ = directional_light_uniform_fields
+        as fn(&khora_core::renderer::light::uniforms::DirectionalLightUniform);
+    is_debug::<khora_core::renderer::light::uniforms::DirectionalLightUniform>();
+    is_clone::<khora_core::renderer::light::uniforms::DirectionalLightUniform>();
+    is_copy::<khora_core::renderer::light::uniforms::DirectionalLightUniform>();
+    is_partial_eq::<khora_core::renderer::light::uniforms::DirectionalLightUniform>();
+    is_pod::<khora_core::renderer::light::uniforms::DirectionalLightUniform>();
+    is_zeroable::<khora_core::renderer::light::uniforms::DirectionalLightUniform>();
+    let _ = type_name::<khora_core::renderer::light::uniforms::LightingUniforms>();
+    let _ = type_name::<khora_core::renderer::light::LightingUniforms>();
+    same_type(
+        PhantomData::<khora_core::renderer::light::LightingUniforms>,
+        PhantomData::<khora_core::renderer::light::uniforms::LightingUniforms>,
+    );
+    let _ =
+        lighting_uniforms_fields as fn(&khora_core::renderer::light::uniforms::LightingUniforms);
+    is_debug::<khora_core::renderer::light::uniforms::LightingUniforms>();
+    is_clone::<khora_core::renderer::light::uniforms::LightingUniforms>();
+    is_copy::<khora_core::renderer::light::uniforms::LightingUniforms>();
+    is_partial_eq::<khora_core::renderer::light::uniforms::LightingUniforms>();
+    is_pod::<khora_core::renderer::light::uniforms::LightingUniforms>();
+    is_zeroable::<khora_core::renderer::light::uniforms::LightingUniforms>();
+    let _ = khora_core::renderer::light::uniforms::MAX_DIRECTIONAL_LIGHTS;
+    let _ = khora_core::renderer::light::MAX_DIRECTIONAL_LIGHTS;
+    let _ = khora_core::renderer::light::uniforms::MAX_POINT_LIGHTS;
+    let _ = khora_core::renderer::light::MAX_POINT_LIGHTS;
+    let _ = khora_core::renderer::light::uniforms::MAX_SPOT_LIGHTS;
+    let _ = khora_core::renderer::light::MAX_SPOT_LIGHTS;
+    let _ = type_name::<khora_core::renderer::light::uniforms::PointLightUniform>();
+    let _ = type_name::<khora_core::renderer::light::PointLightUniform>();
+    same_type(
+        PhantomData::<khora_core::renderer::light::PointLightUniform>,
+        PhantomData::<khora_core::renderer::light::uniforms::PointLightUniform>,
+    );
+    let _ =
+        point_light_uniform_fields as fn(&khora_core::renderer::light::uniforms::PointLightUniform);
+    is_debug::<khora_core::renderer::light::uniforms::PointLightUniform>();
+    is_clone::<khora_core::renderer::light::uniforms::PointLightUniform>();
+    is_copy::<khora_core::renderer::light::uniforms::PointLightUniform>();
+    is_partial_eq::<khora_core::renderer::light::uniforms::PointLightUniform>();
+    is_pod::<khora_core::renderer::light::uniforms::PointLightUniform>();
+    is_zeroable::<khora_core::renderer::light::uniforms::PointLightUniform>();
+    let _ = type_name::<khora_core::renderer::light::uniforms::SpotLightUniform>();
+    let _ = type_name::<khora_core::renderer::light::SpotLightUniform>();
+    same_type(
+        PhantomData::<khora_core::renderer::light::SpotLightUniform>,
+        PhantomData::<khora_core::renderer::light::uniforms::SpotLightUniform>,
+    );
+    let _ =
+        spot_light_uniform_fields as fn(&khora_core::renderer::light::uniforms::SpotLightUniform);
+    is_debug::<khora_core::renderer::light::uniforms::SpotLightUniform>();
+    is_clone::<khora_core::renderer::light::uniforms::SpotLightUniform>();
+    is_copy::<khora_core::renderer::light::uniforms::SpotLightUniform>();
+    is_partial_eq::<khora_core::renderer::light::uniforms::SpotLightUniform>();
+    is_pod::<khora_core::renderer::light::uniforms::SpotLightUniform>();
+    is_zeroable::<khora_core::renderer::light::uniforms::SpotLightUniform>();
+    let _ = type_name::<khora_core::renderer::api::material::uniforms::MaterialUniforms>();
+    let _ = type_name::<khora_core::renderer::api::material::MaterialUniforms>();
+    same_type(
+        PhantomData::<khora_core::renderer::api::material::MaterialUniforms>,
+        PhantomData::<khora_core::renderer::api::material::uniforms::MaterialUniforms>,
+    );
+    let _ = material_uniforms_fields
+        as fn(&khora_core::renderer::api::material::uniforms::MaterialUniforms);
+    let _ = khora_core::renderer::api::material::uniforms::MaterialUniforms::METALLIC;
+    let _ = khora_core::renderer::api::material::uniforms::MaterialUniforms::ROUGHNESS;
+    let _ = khora_core::renderer::api::material::uniforms::MaterialUniforms::ALPHA_CUTOFF;
+    is_debug::<khora_core::renderer::api::material::uniforms::MaterialUniforms>();
+    is_clone::<khora_core::renderer::api::material::uniforms::MaterialUniforms>();
+    is_copy::<khora_core::renderer::api::material::uniforms::MaterialUniforms>();
+    is_partial_eq::<khora_core::renderer::api::material::uniforms::MaterialUniforms>();
+    is_pod::<khora_core::renderer::api::material::uniforms::MaterialUniforms>();
+    is_zeroable::<khora_core::renderer::api::material::uniforms::MaterialUniforms>();
+    let _ = type_name::<khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms>();
+    let _ = type_name::<khora_core::renderer::api::gpu_scene::ModelUniforms>();
+    same_type(
+        PhantomData::<khora_core::renderer::api::gpu_scene::ModelUniforms>,
+        PhantomData::<khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms>,
+    );
+    let _ = model_uniforms_fields
+        as fn(&khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms);
+    is_debug::<khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms>();
+    is_clone::<khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms>();
+    is_copy::<khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms>();
+    is_partial_eq::<khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms>();
+    is_pod::<khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms>();
+    is_zeroable::<khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms>();
+    let _ = type_name::<khora_core::renderer::api::gpu_scene::mesh::GpuMesh>();
+    let _ = type_name::<khora_core::renderer::api::gpu_scene::GpuMesh>();
+    same_type(
+        PhantomData::<khora_core::renderer::api::gpu_scene::GpuMesh>,
+        PhantomData::<khora_core::renderer::api::gpu_scene::mesh::GpuMesh>,
+    );
+    let _ = gpu_mesh_fields as fn(&khora_core::renderer::api::gpu_scene::mesh::GpuMesh);
+    is_asset::<khora_core::renderer::api::gpu_scene::mesh::GpuMesh>();
+    let _ = type_name::<khora_core::renderer::api::gpu_scene::mesh::Mesh>();
+    let _ = type_name::<khora_core::renderer::api::gpu_scene::Mesh>();
+    same_type(
+        PhantomData::<khora_core::renderer::api::gpu_scene::Mesh>,
+        PhantomData::<khora_core::renderer::api::gpu_scene::mesh::Mesh>,
+    );
+    let _ = mesh_fields as fn(&khora_core::renderer::api::gpu_scene::mesh::Mesh);
+    let _ = khora_core::renderer::api::gpu_scene::mesh::Mesh::vertex_size;
+    let _ = khora_core::renderer::api::gpu_scene::mesh::Mesh::create_vertex_buffer;
+    is_debug::<khora_core::renderer::api::gpu_scene::mesh::Mesh>();
+    is_asset::<khora_core::renderer::api::gpu_scene::mesh::Mesh>();
+    let _ = type_name::<khora_core::renderer::api::gpu_scene::render_object::RenderObject>();
+    let _ = type_name::<khora_core::renderer::api::gpu_scene::RenderObject>();
+    same_type(
+        PhantomData::<khora_core::renderer::api::gpu_scene::RenderObject>,
+        PhantomData::<khora_core::renderer::api::gpu_scene::render_object::RenderObject>,
+    );
+    let _ = render_object_fields
+        as fn(&khora_core::renderer::api::gpu_scene::render_object::RenderObject);
+    is_debug::<khora_core::renderer::api::gpu_scene::render_object::RenderObject>();
+    is_clone::<khora_core::renderer::api::gpu_scene::render_object::RenderObject>();
+    let _ = type_name::<khora_core::renderer::api::shader::defs::ShaderDefs>();
     let _ = type_name::<khora_core::renderer::api::ShaderDefs>();
     same_type(
         PhantomData::<khora_core::renderer::api::ShaderDefs>,
-        PhantomData::<khora_core::renderer::api::shader_defs::ShaderDefs>,
+        PhantomData::<khora_core::renderer::api::shader::defs::ShaderDefs>,
     );
-    let _ = khora_core::renderer::api::shader_defs::ShaderDefs::MAX_DIRECTIONAL_LIGHTS;
-    let _ = khora_core::renderer::api::shader_defs::ShaderDefs::MAX_POINT_LIGHTS;
-    let _ = khora_core::renderer::api::shader_defs::ShaderDefs::MAX_SPOT_LIGHTS;
-    let _ = khora_core::renderer::api::shader_defs::ShaderDefs::MAX_LIGHTS_PER_TILE;
-    let _ = khora_core::renderer::api::shader_defs::ShaderDefs::SHADOW_CUBE_NEAR;
+    let _ = khora_core::renderer::api::shader::defs::ShaderDefs::MAX_DIRECTIONAL_LIGHTS;
+    let _ = khora_core::renderer::api::shader::defs::ShaderDefs::MAX_POINT_LIGHTS;
+    let _ = khora_core::renderer::api::shader::defs::ShaderDefs::MAX_SPOT_LIGHTS;
+    let _ = khora_core::renderer::api::shader::defs::ShaderDefs::MAX_LIGHTS_PER_TILE;
+    let _ = khora_core::renderer::api::shader::defs::ShaderDefs::SHADOW_CUBE_NEAR;
     let _ = type_name::<khora_core::renderer::api::shadow::ShadowEntries>();
     let _ = shadow_entries_fields as fn(&khora_core::renderer::api::shadow::ShadowEntries);
     let _ = khora_core::renderer::api::shadow::ShadowEntries::insert;
@@ -2911,117 +2920,117 @@ fn module_renderer_paths_still_resolve() {
     let _ = khora_core::renderer::api::util::TextureAtlas::texture;
     let _ = khora_core::renderer::api::util::TextureAtlas::view;
     let _ = khora_core::renderer::api::util::TextureAtlas::size;
-    let _ = type_name::<khora_core::renderer::api::util::enums::GraphicsBackendType>();
-    let _ = type_name::<khora_core::renderer::api::util::GraphicsBackendType>();
+    let _ = type_name::<khora_core::renderer::api::device::GraphicsBackendType>();
+    let _ = type_name::<khora_core::renderer::api::device::GraphicsBackendType>();
     same_type(
-        PhantomData::<khora_core::renderer::api::util::GraphicsBackendType>,
-        PhantomData::<khora_core::renderer::api::util::enums::GraphicsBackendType>,
+        PhantomData::<khora_core::renderer::api::device::GraphicsBackendType>,
+        PhantomData::<khora_core::renderer::api::device::GraphicsBackendType>,
     );
     let _ = graphics_backend_type_variants
-        as fn(&khora_core::renderer::api::util::enums::GraphicsBackendType);
-    is_debug::<khora_core::renderer::api::util::enums::GraphicsBackendType>();
-    is_clone::<khora_core::renderer::api::util::enums::GraphicsBackendType>();
-    is_copy::<khora_core::renderer::api::util::enums::GraphicsBackendType>();
-    is_partial_eq::<khora_core::renderer::api::util::enums::GraphicsBackendType>();
-    is_eq::<khora_core::renderer::api::util::enums::GraphicsBackendType>();
-    is_hash::<khora_core::renderer::api::util::enums::GraphicsBackendType>();
-    is_default::<khora_core::renderer::api::util::enums::GraphicsBackendType>();
-    let _ = type_name::<khora_core::renderer::api::util::enums::IndexFormat>();
-    let _ = type_name::<khora_core::renderer::api::util::IndexFormat>();
+        as fn(&khora_core::renderer::api::device::GraphicsBackendType);
+    is_debug::<khora_core::renderer::api::device::GraphicsBackendType>();
+    is_clone::<khora_core::renderer::api::device::GraphicsBackendType>();
+    is_copy::<khora_core::renderer::api::device::GraphicsBackendType>();
+    is_partial_eq::<khora_core::renderer::api::device::GraphicsBackendType>();
+    is_eq::<khora_core::renderer::api::device::GraphicsBackendType>();
+    is_hash::<khora_core::renderer::api::device::GraphicsBackendType>();
+    is_default::<khora_core::renderer::api::device::GraphicsBackendType>();
+    let _ = type_name::<khora_core::renderer::api::resource::IndexFormat>();
+    let _ = type_name::<khora_core::renderer::api::resource::IndexFormat>();
     same_type(
-        PhantomData::<khora_core::renderer::api::util::IndexFormat>,
-        PhantomData::<khora_core::renderer::api::util::enums::IndexFormat>,
+        PhantomData::<khora_core::renderer::api::resource::IndexFormat>,
+        PhantomData::<khora_core::renderer::api::resource::IndexFormat>,
     );
-    let _ = index_format_variants as fn(&khora_core::renderer::api::util::enums::IndexFormat);
-    is_debug::<khora_core::renderer::api::util::enums::IndexFormat>();
-    is_clone::<khora_core::renderer::api::util::enums::IndexFormat>();
-    is_copy::<khora_core::renderer::api::util::enums::IndexFormat>();
-    is_partial_eq::<khora_core::renderer::api::util::enums::IndexFormat>();
-    is_eq::<khora_core::renderer::api::util::enums::IndexFormat>();
-    is_hash::<khora_core::renderer::api::util::enums::IndexFormat>();
-    let _ = type_name::<khora_core::renderer::api::util::enums::RenderStrategy>();
-    let _ = type_name::<khora_core::renderer::api::util::RenderStrategy>();
+    let _ = index_format_variants as fn(&khora_core::renderer::api::resource::IndexFormat);
+    is_debug::<khora_core::renderer::api::resource::IndexFormat>();
+    is_clone::<khora_core::renderer::api::resource::IndexFormat>();
+    is_copy::<khora_core::renderer::api::resource::IndexFormat>();
+    is_partial_eq::<khora_core::renderer::api::resource::IndexFormat>();
+    is_eq::<khora_core::renderer::api::resource::IndexFormat>();
+    is_hash::<khora_core::renderer::api::resource::IndexFormat>();
+    let _ = type_name::<khora_core::renderer::api::device::RenderStrategy>();
+    let _ = type_name::<khora_core::renderer::api::device::RenderStrategy>();
     same_type(
-        PhantomData::<khora_core::renderer::api::util::RenderStrategy>,
-        PhantomData::<khora_core::renderer::api::util::enums::RenderStrategy>,
+        PhantomData::<khora_core::renderer::api::device::RenderStrategy>,
+        PhantomData::<khora_core::renderer::api::device::RenderStrategy>,
     );
-    let _ = render_strategy_variants as fn(&khora_core::renderer::api::util::enums::RenderStrategy);
-    is_debug::<khora_core::renderer::api::util::enums::RenderStrategy>();
-    is_clone::<khora_core::renderer::api::util::enums::RenderStrategy>();
-    is_copy::<khora_core::renderer::api::util::enums::RenderStrategy>();
-    is_partial_eq::<khora_core::renderer::api::util::enums::RenderStrategy>();
-    is_eq::<khora_core::renderer::api::util::enums::RenderStrategy>();
-    let _ = type_name::<khora_core::renderer::api::util::enums::RendererDeviceType>();
-    let _ = type_name::<khora_core::renderer::api::util::RendererDeviceType>();
+    let _ = render_strategy_variants as fn(&khora_core::renderer::api::device::RenderStrategy);
+    is_debug::<khora_core::renderer::api::device::RenderStrategy>();
+    is_clone::<khora_core::renderer::api::device::RenderStrategy>();
+    is_copy::<khora_core::renderer::api::device::RenderStrategy>();
+    is_partial_eq::<khora_core::renderer::api::device::RenderStrategy>();
+    is_eq::<khora_core::renderer::api::device::RenderStrategy>();
+    let _ = type_name::<khora_core::renderer::api::device::RendererDeviceType>();
+    let _ = type_name::<khora_core::renderer::api::device::RendererDeviceType>();
     same_type(
-        PhantomData::<khora_core::renderer::api::util::RendererDeviceType>,
-        PhantomData::<khora_core::renderer::api::util::enums::RendererDeviceType>,
+        PhantomData::<khora_core::renderer::api::device::RendererDeviceType>,
+        PhantomData::<khora_core::renderer::api::device::RendererDeviceType>,
     );
-    let _ = renderer_device_type_variants
-        as fn(&khora_core::renderer::api::util::enums::RendererDeviceType);
-    is_debug::<khora_core::renderer::api::util::enums::RendererDeviceType>();
-    is_clone::<khora_core::renderer::api::util::enums::RendererDeviceType>();
-    is_copy::<khora_core::renderer::api::util::enums::RendererDeviceType>();
-    is_partial_eq::<khora_core::renderer::api::util::enums::RendererDeviceType>();
-    is_eq::<khora_core::renderer::api::util::enums::RendererDeviceType>();
-    is_hash::<khora_core::renderer::api::util::enums::RendererDeviceType>();
-    is_default::<khora_core::renderer::api::util::enums::RendererDeviceType>();
-    let _ = type_name::<khora_core::renderer::api::util::enums::SampleCount>();
-    let _ = type_name::<khora_core::renderer::api::util::SampleCount>();
+    let _ =
+        renderer_device_type_variants as fn(&khora_core::renderer::api::device::RendererDeviceType);
+    is_debug::<khora_core::renderer::api::device::RendererDeviceType>();
+    is_clone::<khora_core::renderer::api::device::RendererDeviceType>();
+    is_copy::<khora_core::renderer::api::device::RendererDeviceType>();
+    is_partial_eq::<khora_core::renderer::api::device::RendererDeviceType>();
+    is_eq::<khora_core::renderer::api::device::RendererDeviceType>();
+    is_hash::<khora_core::renderer::api::device::RendererDeviceType>();
+    is_default::<khora_core::renderer::api::device::RendererDeviceType>();
+    let _ = type_name::<khora_core::renderer::api::resource::SampleCount>();
+    let _ = type_name::<khora_core::renderer::api::resource::SampleCount>();
     same_type(
-        PhantomData::<khora_core::renderer::api::util::SampleCount>,
-        PhantomData::<khora_core::renderer::api::util::enums::SampleCount>,
+        PhantomData::<khora_core::renderer::api::resource::SampleCount>,
+        PhantomData::<khora_core::renderer::api::resource::SampleCount>,
     );
-    let _ = sample_count_variants as fn(&khora_core::renderer::api::util::enums::SampleCount);
-    is_debug::<khora_core::renderer::api::util::enums::SampleCount>();
-    is_clone::<khora_core::renderer::api::util::enums::SampleCount>();
-    is_copy::<khora_core::renderer::api::util::enums::SampleCount>();
-    is_partial_eq::<khora_core::renderer::api::util::enums::SampleCount>();
-    is_eq::<khora_core::renderer::api::util::enums::SampleCount>();
-    is_hash::<khora_core::renderer::api::util::enums::SampleCount>();
-    is_default::<khora_core::renderer::api::util::enums::SampleCount>();
-    let _ = type_name::<khora_core::renderer::api::util::enums::ShaderStage>();
-    let _ = type_name::<khora_core::renderer::api::util::ShaderStage>();
+    let _ = sample_count_variants as fn(&khora_core::renderer::api::resource::SampleCount);
+    is_debug::<khora_core::renderer::api::resource::SampleCount>();
+    is_clone::<khora_core::renderer::api::resource::SampleCount>();
+    is_copy::<khora_core::renderer::api::resource::SampleCount>();
+    is_partial_eq::<khora_core::renderer::api::resource::SampleCount>();
+    is_eq::<khora_core::renderer::api::resource::SampleCount>();
+    is_hash::<khora_core::renderer::api::resource::SampleCount>();
+    is_default::<khora_core::renderer::api::resource::SampleCount>();
+    let _ = type_name::<khora_core::renderer::api::shader::ShaderStage>();
+    let _ = type_name::<khora_core::renderer::api::shader::ShaderStage>();
     same_type(
-        PhantomData::<khora_core::renderer::api::util::ShaderStage>,
-        PhantomData::<khora_core::renderer::api::util::enums::ShaderStage>,
+        PhantomData::<khora_core::renderer::api::shader::ShaderStage>,
+        PhantomData::<khora_core::renderer::api::shader::ShaderStage>,
     );
-    let _ = shader_stage_variants as fn(&khora_core::renderer::api::util::enums::ShaderStage);
-    is_debug::<khora_core::renderer::api::util::enums::ShaderStage>();
-    is_clone::<khora_core::renderer::api::util::enums::ShaderStage>();
-    is_copy::<khora_core::renderer::api::util::enums::ShaderStage>();
-    is_partial_eq::<khora_core::renderer::api::util::enums::ShaderStage>();
-    is_eq::<khora_core::renderer::api::util::enums::ShaderStage>();
-    is_hash::<khora_core::renderer::api::util::enums::ShaderStage>();
-    let _ = type_name::<khora_core::renderer::api::util::enums::TextureColorSpace>();
-    let _ = type_name::<khora_core::renderer::api::util::TextureColorSpace>();
+    let _ = shader_stage_variants as fn(&khora_core::renderer::api::shader::ShaderStage);
+    is_debug::<khora_core::renderer::api::shader::ShaderStage>();
+    is_clone::<khora_core::renderer::api::shader::ShaderStage>();
+    is_copy::<khora_core::renderer::api::shader::ShaderStage>();
+    is_partial_eq::<khora_core::renderer::api::shader::ShaderStage>();
+    is_eq::<khora_core::renderer::api::shader::ShaderStage>();
+    is_hash::<khora_core::renderer::api::shader::ShaderStage>();
+    let _ = type_name::<khora_core::renderer::api::resource::TextureColorSpace>();
+    let _ = type_name::<khora_core::renderer::api::resource::TextureColorSpace>();
     same_type(
-        PhantomData::<khora_core::renderer::api::util::TextureColorSpace>,
-        PhantomData::<khora_core::renderer::api::util::enums::TextureColorSpace>,
+        PhantomData::<khora_core::renderer::api::resource::TextureColorSpace>,
+        PhantomData::<khora_core::renderer::api::resource::TextureColorSpace>,
     );
-    let _ = texture_color_space_variants
-        as fn(&khora_core::renderer::api::util::enums::TextureColorSpace);
-    is_debug::<khora_core::renderer::api::util::enums::TextureColorSpace>();
-    is_clone::<khora_core::renderer::api::util::enums::TextureColorSpace>();
-    is_copy::<khora_core::renderer::api::util::enums::TextureColorSpace>();
-    is_partial_eq::<khora_core::renderer::api::util::enums::TextureColorSpace>();
-    is_eq::<khora_core::renderer::api::util::enums::TextureColorSpace>();
-    is_hash::<khora_core::renderer::api::util::enums::TextureColorSpace>();
-    let _ = type_name::<khora_core::renderer::api::util::enums::TextureFormat>();
-    let _ = type_name::<khora_core::renderer::api::util::TextureFormat>();
+    let _ =
+        texture_color_space_variants as fn(&khora_core::renderer::api::resource::TextureColorSpace);
+    is_debug::<khora_core::renderer::api::resource::TextureColorSpace>();
+    is_clone::<khora_core::renderer::api::resource::TextureColorSpace>();
+    is_copy::<khora_core::renderer::api::resource::TextureColorSpace>();
+    is_partial_eq::<khora_core::renderer::api::resource::TextureColorSpace>();
+    is_eq::<khora_core::renderer::api::resource::TextureColorSpace>();
+    is_hash::<khora_core::renderer::api::resource::TextureColorSpace>();
+    let _ = type_name::<khora_core::renderer::api::resource::TextureFormat>();
+    let _ = type_name::<khora_core::renderer::api::resource::TextureFormat>();
     same_type(
-        PhantomData::<khora_core::renderer::api::util::TextureFormat>,
-        PhantomData::<khora_core::renderer::api::util::enums::TextureFormat>,
+        PhantomData::<khora_core::renderer::api::resource::TextureFormat>,
+        PhantomData::<khora_core::renderer::api::resource::TextureFormat>,
     );
-    let _ = texture_format_variants as fn(&khora_core::renderer::api::util::enums::TextureFormat);
-    let _ = khora_core::renderer::api::util::enums::TextureFormat::with_color_space;
-    let _ = khora_core::renderer::api::util::enums::TextureFormat::bytes_per_pixel;
-    is_debug::<khora_core::renderer::api::util::enums::TextureFormat>();
-    is_clone::<khora_core::renderer::api::util::enums::TextureFormat>();
-    is_copy::<khora_core::renderer::api::util::enums::TextureFormat>();
-    is_partial_eq::<khora_core::renderer::api::util::enums::TextureFormat>();
-    is_eq::<khora_core::renderer::api::util::enums::TextureFormat>();
-    is_hash::<khora_core::renderer::api::util::enums::TextureFormat>();
+    let _ = texture_format_variants as fn(&khora_core::renderer::api::resource::TextureFormat);
+    let _ = khora_core::renderer::api::resource::TextureFormat::with_color_space;
+    let _ = khora_core::renderer::api::resource::TextureFormat::bytes_per_pixel;
+    is_debug::<khora_core::renderer::api::resource::TextureFormat>();
+    is_clone::<khora_core::renderer::api::resource::TextureFormat>();
+    is_copy::<khora_core::renderer::api::resource::TextureFormat>();
+    is_partial_eq::<khora_core::renderer::api::resource::TextureFormat>();
+    is_eq::<khora_core::renderer::api::resource::TextureFormat>();
+    is_hash::<khora_core::renderer::api::resource::TextureFormat>();
     let _ = type_name::<khora_core::renderer::api::util::flags::ShaderStageFlags>();
     let _ = type_name::<khora_core::renderer::api::util::ShaderStageFlags>();
     same_type(
@@ -3112,61 +3121,63 @@ fn module_renderer_paths_still_resolve() {
     is_debug::<khora_core::renderer::error::ShaderError>();
     is_display::<khora_core::renderer::error::ShaderError>();
     is_error::<khora_core::renderer::error::ShaderError>();
-    let _ = type_name::<khora_core::renderer::forward_plus::ForwardPlusTileConfig>();
+    let _ = type_name::<khora_core::renderer::light::forward_plus::ForwardPlusTileConfig>();
     let _ = type_name::<khora_core::renderer::ForwardPlusTileConfig>();
     same_type(
         PhantomData::<khora_core::renderer::ForwardPlusTileConfig>,
-        PhantomData::<khora_core::renderer::forward_plus::ForwardPlusTileConfig>,
+        PhantomData::<khora_core::renderer::light::forward_plus::ForwardPlusTileConfig>,
     );
     let _ = forward_plus_tile_config_fields
-        as fn(&khora_core::renderer::forward_plus::ForwardPlusTileConfig);
-    let _ = khora_core::renderer::forward_plus::ForwardPlusTileConfig::new;
-    let _ = khora_core::renderer::forward_plus::ForwardPlusTileConfig::high_light_count;
-    let _ = khora_core::renderer::forward_plus::ForwardPlusTileConfig::low_overhead;
-    let _ = khora_core::renderer::forward_plus::ForwardPlusTileConfig::tile_dimensions;
-    let _ = khora_core::renderer::forward_plus::ForwardPlusTileConfig::total_tiles;
-    let _ = khora_core::renderer::forward_plus::ForwardPlusTileConfig::light_index_buffer_size;
-    let _ = khora_core::renderer::forward_plus::ForwardPlusTileConfig::light_grid_buffer_size;
-    is_debug::<khora_core::renderer::forward_plus::ForwardPlusTileConfig>();
-    is_clone::<khora_core::renderer::forward_plus::ForwardPlusTileConfig>();
-    is_copy::<khora_core::renderer::forward_plus::ForwardPlusTileConfig>();
-    is_partial_eq::<khora_core::renderer::forward_plus::ForwardPlusTileConfig>();
-    is_eq::<khora_core::renderer::forward_plus::ForwardPlusTileConfig>();
-    is_default::<khora_core::renderer::forward_plus::ForwardPlusTileConfig>();
-    let _ = type_name::<khora_core::renderer::forward_plus::GpuLight>();
+        as fn(&khora_core::renderer::light::forward_plus::ForwardPlusTileConfig);
+    let _ = khora_core::renderer::light::forward_plus::ForwardPlusTileConfig::new;
+    let _ = khora_core::renderer::light::forward_plus::ForwardPlusTileConfig::high_light_count;
+    let _ = khora_core::renderer::light::forward_plus::ForwardPlusTileConfig::low_overhead;
+    let _ = khora_core::renderer::light::forward_plus::ForwardPlusTileConfig::tile_dimensions;
+    let _ = khora_core::renderer::light::forward_plus::ForwardPlusTileConfig::total_tiles;
+    let _ =
+        khora_core::renderer::light::forward_plus::ForwardPlusTileConfig::light_index_buffer_size;
+    let _ =
+        khora_core::renderer::light::forward_plus::ForwardPlusTileConfig::light_grid_buffer_size;
+    is_debug::<khora_core::renderer::light::forward_plus::ForwardPlusTileConfig>();
+    is_clone::<khora_core::renderer::light::forward_plus::ForwardPlusTileConfig>();
+    is_copy::<khora_core::renderer::light::forward_plus::ForwardPlusTileConfig>();
+    is_partial_eq::<khora_core::renderer::light::forward_plus::ForwardPlusTileConfig>();
+    is_eq::<khora_core::renderer::light::forward_plus::ForwardPlusTileConfig>();
+    is_default::<khora_core::renderer::light::forward_plus::ForwardPlusTileConfig>();
+    let _ = type_name::<khora_core::renderer::light::forward_plus::GpuLight>();
     let _ = type_name::<khora_core::renderer::GpuLight>();
     same_type(
         PhantomData::<khora_core::renderer::GpuLight>,
-        PhantomData::<khora_core::renderer::forward_plus::GpuLight>,
+        PhantomData::<khora_core::renderer::light::forward_plus::GpuLight>,
     );
-    let _ = gpu_light_fields as fn(&khora_core::renderer::forward_plus::GpuLight);
-    let _ = khora_core::renderer::forward_plus::GpuLight::TYPE_DIRECTIONAL;
-    let _ = khora_core::renderer::forward_plus::GpuLight::TYPE_POINT;
-    let _ = khora_core::renderer::forward_plus::GpuLight::TYPE_SPOT;
-    let _ = khora_core::renderer::forward_plus::GpuLight::from_parts;
-    is_debug::<khora_core::renderer::forward_plus::GpuLight>();
-    is_clone::<khora_core::renderer::forward_plus::GpuLight>();
-    is_copy::<khora_core::renderer::forward_plus::GpuLight>();
-    is_partial_eq::<khora_core::renderer::forward_plus::GpuLight>();
-    is_pod::<khora_core::renderer::forward_plus::GpuLight>();
-    is_zeroable::<khora_core::renderer::forward_plus::GpuLight>();
-    is_default::<khora_core::renderer::forward_plus::GpuLight>();
-    let _ = type_name::<khora_core::renderer::forward_plus::TileSize>();
+    let _ = gpu_light_fields as fn(&khora_core::renderer::light::forward_plus::GpuLight);
+    let _ = khora_core::renderer::light::forward_plus::GpuLight::TYPE_DIRECTIONAL;
+    let _ = khora_core::renderer::light::forward_plus::GpuLight::TYPE_POINT;
+    let _ = khora_core::renderer::light::forward_plus::GpuLight::TYPE_SPOT;
+    let _ = khora_core::renderer::light::forward_plus::GpuLight::from_parts;
+    is_debug::<khora_core::renderer::light::forward_plus::GpuLight>();
+    is_clone::<khora_core::renderer::light::forward_plus::GpuLight>();
+    is_copy::<khora_core::renderer::light::forward_plus::GpuLight>();
+    is_partial_eq::<khora_core::renderer::light::forward_plus::GpuLight>();
+    is_pod::<khora_core::renderer::light::forward_plus::GpuLight>();
+    is_zeroable::<khora_core::renderer::light::forward_plus::GpuLight>();
+    is_default::<khora_core::renderer::light::forward_plus::GpuLight>();
+    let _ = type_name::<khora_core::renderer::light::forward_plus::TileSize>();
     let _ = type_name::<khora_core::renderer::TileSize>();
     same_type(
         PhantomData::<khora_core::renderer::TileSize>,
-        PhantomData::<khora_core::renderer::forward_plus::TileSize>,
+        PhantomData::<khora_core::renderer::light::forward_plus::TileSize>,
     );
-    let _ = tile_size_variants as fn(&khora_core::renderer::forward_plus::TileSize);
-    let _ = khora_core::renderer::forward_plus::TileSize::pixels;
-    let _ = khora_core::renderer::forward_plus::TileSize::tile_count;
-    is_debug::<khora_core::renderer::forward_plus::TileSize>();
-    is_clone::<khora_core::renderer::forward_plus::TileSize>();
-    is_copy::<khora_core::renderer::forward_plus::TileSize>();
-    is_partial_eq::<khora_core::renderer::forward_plus::TileSize>();
-    is_eq::<khora_core::renderer::forward_plus::TileSize>();
-    is_hash::<khora_core::renderer::forward_plus::TileSize>();
-    is_default::<khora_core::renderer::forward_plus::TileSize>();
+    let _ = tile_size_variants as fn(&khora_core::renderer::light::forward_plus::TileSize);
+    let _ = khora_core::renderer::light::forward_plus::TileSize::pixels;
+    let _ = khora_core::renderer::light::forward_plus::TileSize::tile_count;
+    is_debug::<khora_core::renderer::light::forward_plus::TileSize>();
+    is_clone::<khora_core::renderer::light::forward_plus::TileSize>();
+    is_copy::<khora_core::renderer::light::forward_plus::TileSize>();
+    is_partial_eq::<khora_core::renderer::light::forward_plus::TileSize>();
+    is_eq::<khora_core::renderer::light::forward_plus::TileSize>();
+    is_hash::<khora_core::renderer::light::forward_plus::TileSize>();
+    is_default::<khora_core::renderer::light::forward_plus::TileSize>();
     let _ = type_name::<khora_core::renderer::light::DirectionalLight>();
     let _ = type_name::<khora_core::renderer::DirectionalLight>();
     same_type(

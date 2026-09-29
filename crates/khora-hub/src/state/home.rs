@@ -10,9 +10,6 @@
 
 #[derive(Default)]
 pub struct HomeState {
-    /// Index of the currently hovered project card (in the source
-    /// list, not the filtered view).
-    pub hovered: Option<usize>,
     /// Free-text filter applied to project name + path.
     pub filter: String,
     /// Project pending a deletion confirmation modal.

@@ -8,7 +8,7 @@
 
 //! The transient banner — a toast pinned under the top bar.
 
-use crate::Banner;
+use crate::state::Banner;
 use khora_sdk::tool_ui::UiBuilder;
 use khora_tool_ui::brand::khora_dark;
 use khora_tool_ui::widgets::{Tone, banner as toast};

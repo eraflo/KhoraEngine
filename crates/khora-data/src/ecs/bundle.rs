@@ -16,9 +16,9 @@ use std::any::TypeId;
 use std::collections::HashMap;
 
 use crate::ecs::component::Component;
+use crate::ecs::component_registry::ComponentRegistry;
 use crate::ecs::entity::EntityMetadata;
 use crate::ecs::page::{AnyVec, ComponentPage, PageIndex};
-use crate::ecs::registry::ComponentRegistry;
 
 /// A trait for any collection of components that can be spawned together as a single unit.
 ///

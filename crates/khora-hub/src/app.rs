@@ -16,10 +16,10 @@
 
 use std::path::PathBuf;
 
-use crate::auth;
-use crate::config::{EngineInstall, HubConfig, RecentProject};
-use crate::github;
-use crate::project;
+use crate::services::config::{EngineInstall, HubConfig, RecentProject};
+use crate::services::github;
+use crate::services::github::auth;
+use crate::services::project;
 use crate::state::{
     AuthState, Banner, EngineChoice, EngineManagerState, HomeState, NewProjectState, Screen,
     SettingsState,
@@ -193,7 +193,7 @@ impl HubApp {
     }
 
     /// Kick off the GitHub OAuth Device Flow if not already in
-    /// progress. Used both by the topbar Connect button and the
+    /// progress. Used both by the title bar Connect button and the
     /// Settings screen.
     pub fn start_github_auth(&mut self) {
         if matches!(self.settings.auth, AuthState::Connecting { .. })
@@ -202,7 +202,6 @@ impl HubApp {
             return;
         }
         self.settings.auth = AuthState::Connecting {
-            device_code: None,
             message: "Requesting device code…".to_owned(),
         };
         self.settings.auth_rx = Some(auth::start_device_flow());

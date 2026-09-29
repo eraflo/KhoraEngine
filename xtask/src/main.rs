@@ -16,7 +16,8 @@
 // Run with: cargo xtask <command>
 
 mod commands;
-mod helpers;
+mod exec;
+mod term;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -27,7 +28,7 @@ use clap::{Parser, Subcommand};
     author = "Khora Engine Developers",
     version,
     about = "Build and maintenance tasks for the Khora Engine workspace.",
-    long_about = crate::helpers::BANNER,
+    long_about = crate::term::BANNER,
     disable_help_subcommand = true
 )]
 struct Cli {
@@ -103,7 +104,7 @@ fn main() -> Result<()> {
             Commands::Ai { profile, args } => commands::ai::run(&profile, &args)?,
         }
     } else {
-        helpers::print_custom_help();
+        term::print_custom_help();
     }
 
     Ok(())

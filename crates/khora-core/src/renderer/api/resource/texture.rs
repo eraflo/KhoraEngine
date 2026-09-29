@@ -17,7 +17,7 @@
 use crate::khora_bitflags;
 use crate::math::Extent3D;
 use crate::renderer::api::pipeline::CompareFunction;
-use crate::renderer::api::util::enums::{SampleCount, TextureFormat};
+use crate::renderer::api::resource::TextureFormat;
 use std::borrow::Cow;
 
 /// The dimensionality of a texture.
@@ -212,6 +212,26 @@ pub struct CpuTexture {
 }
 
 impl crate::asset::Asset for CpuTexture {}
+
+/// The number of samples per pixel for Multisample Anti-Aliasing (MSAA).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum SampleCount {
+    /// 1 sample per pixel (MSAA disabled).
+    #[default]
+    X1,
+    /// 2 samples per pixel.
+    X2,
+    /// 4 samples per pixel.
+    X4,
+    /// 8 samples per pixel.
+    X8,
+    /// 16 samples per pixel.
+    X16,
+    /// 32 samples per pixel.
+    X32,
+    /// 64 samples per pixel.
+    X64,
+}
 
 #[cfg(test)]
 mod cpu_texture_tests {

@@ -17,9 +17,9 @@
 
 use crate::ecs::ProceduralMeshKind;
 use khora_core::math::{Aabb, Vec2, Vec3};
-use khora_core::renderer::api::{
-    pipeline::{PrimitiveTopology, VertexAttributeDescriptor, VertexFormat},
-    scene::Mesh,
+use khora_core::renderer::api::gpu_scene::Mesh;
+use khora_core::renderer::api::pipeline::{
+    PrimitiveTopology, VertexAttributeDescriptor, VertexFormat,
 };
 
 /// Reconstructs a procedural [`Mesh`] from its kind and parameters.

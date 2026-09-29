@@ -16,7 +16,7 @@ use super::dependencies::{
     parse_imports, pipeline_depends_on, resolve_lib_source, resolve_pipeline_source,
 };
 use super::*;
-use khora_core::renderer::api::pipeline::ShaderDefScalar;
+use khora_core::renderer::api::shader::ShaderDefScalar;
 use naga::valid::{Capabilities, ValidationFlags, Validator};
 use naga_oil::compose::{NagaModuleDescriptor, ShaderType};
 

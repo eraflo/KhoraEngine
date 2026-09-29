@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! GPU resource management — shared store and CPU→GPU projection.
+//! GPU resource management — CPU→GPU projection.
 //!
 //! This module provides:
-//! - [`AssetStore`]: the engine-wide store of projected assets (GPU meshes
-//!   among them).
-//! - [`ProjectionRegistry`]: drives CPU→GPU mesh upload before agents run.
+//! - [`ProjectionRegistry`]: drives CPU→GPU mesh upload before agents run,
+//!   into the engine-wide [`AssetStore`](crate::assets::AssetStore).
 //!
 //! Both are registered into the [`ServiceRegistry`] during bootstrap and
 //! must not be held as local fields inside agents.
@@ -25,9 +24,7 @@
 pub mod eviction;
 pub mod ibl;
 pub mod projection;
-pub mod store;
 
 pub use eviction::AssetEviction;
 pub use ibl::{EnvironmentMap, IblBaker};
 pub use projection::ProjectionRegistry;
-pub use store::AssetStore;

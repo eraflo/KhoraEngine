@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 /// Carries the backend's slot **and its generation**. A backend that recycles
 /// slots — Rapier does — would otherwise resolve a handle to whatever now
 /// occupies the slot the caller meant, silently: a stale handle would move
-/// somebody else's body rather than fail. See [`Slot`].
+/// somebody else's body rather than fail. See [`SlotId`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
 pub struct RigidBodyHandle(pub u64);
 
@@ -39,14 +39,14 @@ pub struct ColliderHandle(pub u64);
 /// two fields because a handle is stored on components and crosses the
 /// serialization boundary, and one number stays one number there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Slot {
+pub struct SlotId {
     /// Which slot in the backend's arena.
     pub index: u32,
     /// How many times that slot has been reused before this occupant.
     pub generation: u32,
 }
 
-impl Slot {
+impl SlotId {
     /// Packs into the `u64` a handle carries.
     pub const fn pack(self) -> u64 {
         (self.generation as u64) << 32 | self.index as u64
@@ -63,14 +63,14 @@ impl Slot {
 
 impl RigidBodyHandle {
     /// The slot and generation this addresses.
-    pub const fn slot(self) -> Slot {
-        Slot::unpack(self.0)
+    pub const fn slot(self) -> SlotId {
+        SlotId::unpack(self.0)
     }
 }
 
 impl ColliderHandle {
     /// The slot and generation this addresses.
-    pub const fn slot(self) -> Slot {
-        Slot::unpack(self.0)
+    pub const fn slot(self) -> SlotId {
+        SlotId::unpack(self.0)
     }
 }

@@ -15,10 +15,9 @@
 //! "interop" format for asset pipeline tooling outside Rust.
 
 use super::{DeserializationError, SerializationError, SerializationStrategy};
-use crate::{
-    ecs::World,
-    scene::{registry::ComponentRegistration, SceneCommand, SceneRecipe},
-};
+use crate::ecs::World;
+use crate::scene::component_registration::ComponentRegistration;
+use crate::scene::{SceneCommand, SceneRecipe};
 use khora_core::{ecs::entity::EntityId, graph::topological_sort};
 use std::collections::HashMap;
 

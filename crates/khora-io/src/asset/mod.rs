@@ -14,30 +14,32 @@
 
 //! Asset I/O and decoding services.
 
+mod asset_service;
 mod decoder;
+mod decoder_registry;
 pub mod decoders;
 pub(crate) mod dependencies;
 mod file;
 mod id_registry;
+mod index;
 mod index_builder;
 mod io;
 mod manifest;
 mod pack;
 mod pack_builder;
-mod registry;
-mod service;
 mod watcher;
 
+pub use asset_service::*;
 pub use decoder::*;
+pub use decoder_registry::*;
 pub use decoders::*;
 pub use dependencies::*;
 pub use file::*;
 pub use id_registry::*;
+pub use index::AssetIndex;
 pub use index_builder::*;
 pub use io::*;
 pub use manifest::*;
 pub use pack::*;
 pub use pack_builder::*;
-pub use registry::*;
-pub use service::*;
 pub use watcher::*;

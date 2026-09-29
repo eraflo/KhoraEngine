@@ -110,7 +110,7 @@ mod every_pub_mod {
     use khora_infra::ui::egui::theme as _;
     use khora_infra::ui::egui::ui_builder as _;
     use khora_infra::ui::taffy as _;
-    use khora_infra::ui::taffy::taffy_layout as _;
+    use khora_infra::ui::taffy::layout_system as _;
 }
 
 // ---------------------------------------------------------------------------
@@ -560,27 +560,27 @@ fn module_ui_paths_still_resolve() {
     );
     let _ = khora_infra::ui::egui::ui_builder::EguiUiBuilder::new;
     is_ui_builder::<khora_infra::ui::egui::ui_builder::EguiUiBuilder<'static>>();
-    let _ = type_name::<khora_infra::ui::taffy::taffy_layout::TaffyLayoutSystem>();
+    let _ = type_name::<khora_infra::ui::taffy::layout_system::TaffyLayoutSystem>();
     let _ = type_name::<khora_infra::ui::taffy::TaffyLayoutSystem>();
     let _ = type_name::<khora_infra::ui::TaffyLayoutSystem>();
     let _ = type_name::<khora_infra::TaffyLayoutSystem>();
     same_type(
         PhantomData::<khora_infra::ui::taffy::TaffyLayoutSystem>,
-        PhantomData::<khora_infra::ui::taffy::taffy_layout::TaffyLayoutSystem>,
+        PhantomData::<khora_infra::ui::taffy::layout_system::TaffyLayoutSystem>,
     );
     same_type(
         PhantomData::<khora_infra::ui::TaffyLayoutSystem>,
-        PhantomData::<khora_infra::ui::taffy::taffy_layout::TaffyLayoutSystem>,
+        PhantomData::<khora_infra::ui::taffy::layout_system::TaffyLayoutSystem>,
     );
     same_type(
         PhantomData::<khora_infra::TaffyLayoutSystem>,
-        PhantomData::<khora_infra::ui::taffy::taffy_layout::TaffyLayoutSystem>,
+        PhantomData::<khora_infra::ui::taffy::layout_system::TaffyLayoutSystem>,
     );
-    let _ = khora_infra::ui::taffy::taffy_layout::TaffyLayoutSystem::new;
-    is_default::<khora_infra::ui::taffy::taffy_layout::TaffyLayoutSystem>();
-    is_layout_system::<khora_infra::ui::taffy::taffy_layout::TaffyLayoutSystem>();
-    is_send::<khora_infra::ui::taffy::taffy_layout::TaffyLayoutSystem>();
-    is_sync::<khora_infra::ui::taffy::taffy_layout::TaffyLayoutSystem>();
+    let _ = khora_infra::ui::taffy::layout_system::TaffyLayoutSystem::new;
+    is_default::<khora_infra::ui::taffy::layout_system::TaffyLayoutSystem>();
+    is_layout_system::<khora_infra::ui::taffy::layout_system::TaffyLayoutSystem>();
+    is_send::<khora_infra::ui::taffy::layout_system::TaffyLayoutSystem>();
+    is_sync::<khora_infra::ui::taffy::layout_system::TaffyLayoutSystem>();
 }
 
 // ---------------------------------------------------------------------------

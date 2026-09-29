@@ -16,23 +16,27 @@
 //!
 //! Organized into several logical sub-modules:
 //!
-//! - **[`core`]**: Infrastructure, backend abstraction, and global state.
-//! - **[`resource`]**: GPU handles (Buffer, Texture) and their descriptors.
+//! - **[`device`]**: The graphics device: adapter, backend choice, settings, statistics.
+//! - **[`frame`]**: One frame of rendering: the render context and the per-frame state.
+//! - **[`resource`]**: GPU handles (Buffer, Texture) and their descriptors and formats.
+//! - **[`shader`]**: Shader modules and sources, stages, global defs, variant keys.
 //! - **[`command`]**: Command recording, encoders, and pass definitions.
 //! - **[`pipeline`]**: Static pipeline state, layouts, and configuration.
-//! - **[`scene`]**: High-level rendering entities (Light, Mesh, RenderObject).
+//! - **[`gpu_scene`]**: What a frame draws: meshes, render objects, per-model uniforms.
+//! - **[`material`]**: The material bind group and the GPU material data.
 //! - **[`util`]**: Generic utility types and containers.
 
 pub mod command;
-pub mod core;
+pub mod device;
+pub mod frame;
+pub mod gpu_scene;
 pub mod ibl;
 pub mod material;
 pub mod pipeline;
 pub mod resource;
-pub mod scene;
-pub mod shader_defs;
+pub mod shader;
 pub mod shadow;
 pub mod text;
 pub mod util;
 
-pub use shader_defs::ShaderDefs;
+pub use shader::ShaderDefs;

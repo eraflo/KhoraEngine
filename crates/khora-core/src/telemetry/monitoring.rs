@@ -22,7 +22,7 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 
 use crate::platform::{BatteryLevel, ThermalStatus};
-use crate::renderer::api::core::gpu_hook::GpuHook;
+use crate::renderer::api::device::gpu_hook::GpuHook;
 
 /// The core trait for a resource monitor.
 ///

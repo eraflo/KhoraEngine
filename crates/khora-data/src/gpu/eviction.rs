@@ -40,11 +40,12 @@
 use std::collections::HashSet;
 
 use khora_core::asset::{AssetHandle, AssetUUID};
-use khora_core::renderer::api::scene::{GpuMaterial, GpuMesh};
+use khora_core::renderer::api::gpu_scene::GpuMesh;
+use khora_core::renderer::api::material::GpuMaterial;
 use khora_core::renderer::GraphicsDevice;
 
+use crate::assets::AssetStore;
 use crate::ecs::{HandleComponent, World};
-use crate::gpu::AssetStore;
 
 /// Default number of orphaned GPU assets reclaimed per frame, shared across
 /// meshes and materials. Bounded like [`EcsMaintenance`] so a burst of
@@ -230,9 +231,10 @@ fn destroy_gpu_mesh(mesh: &GpuMesh, device: &dyn GraphicsDevice) {
 mod tests {
     use super::*;
     use khora_core::renderer::api::command::BindGroupId;
-    use khora_core::renderer::api::pipeline::{PrimitiveTopology, ShaderVariantKey};
+    use khora_core::renderer::api::pipeline::PrimitiveTopology;
+    use khora_core::renderer::api::resource::IndexFormat;
     use khora_core::renderer::api::resource::{BufferId, SamplerId};
-    use khora_core::renderer::api::util::IndexFormat;
+    use khora_core::renderer::api::shader::ShaderVariantKey;
 
     /// A cache-only `GpuMaterial` stub (no real GPU resources) — enough to
     /// exercise the device-free selection/removal logic.

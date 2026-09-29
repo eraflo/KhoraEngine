@@ -33,9 +33,9 @@
 use crate::render_lane::util::DynamicUniformRingBuffer;
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind};
 use khora_core::renderer::api::command::{BindGroupId, BindGroupLayoutId};
+use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::BufferId;
-use khora_core::renderer::api::scene::GpuMesh;
 use khora_core::renderer::traits::CommandEncoder;
 use khora_data::assets::Assets;
 use khora_data::render::{RenderWorld, SharedWireframeConfig, WireframeConfig};
@@ -73,15 +73,16 @@ fn init_gpu_resources(
     device: &dyn khora_core::renderer::GraphicsDevice,
     pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
 ) -> Result<(), khora_core::renderer::error::RenderError> {
-    use crate::render_lane::util::dynamic_uniform_buffer::{
+    use crate::render_lane::util::dynamic_uniform_ring_buffer::{
         DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
     };
     use khora_core::renderer::api::command::{
         BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding,
     };
-    use khora_core::renderer::api::pipeline::{LayoutKey, ShaderVariantKey};
+    use khora_core::renderer::api::gpu_scene::ModelUniforms;
+    use khora_core::renderer::api::pipeline::LayoutKey;
     use khora_core::renderer::api::resource::{BufferDescriptor, BufferUsage, CameraUniformData};
-    use khora_core::renderer::api::scene::ModelUniforms;
+    use khora_core::renderer::api::shader::ShaderVariantKey;
     use khora_core::renderer::api::util::ShaderStageFlags;
     use std::borrow::Cow;
 
@@ -211,11 +212,12 @@ fn wireframe_pipeline_spec(
     };
     use khora_core::renderer::api::pipeline::{
         ColorTargetStateDescriptor, DepthStencilStateDescriptor, LayoutKey, LayoutSpec,
-        MultisampleStateDescriptor, PipelineSpec, PrimitiveStateDescriptor, ShaderVariantKey,
+        MultisampleStateDescriptor, PipelineSpec, PrimitiveStateDescriptor,
         VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
     };
+    use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
+    use khora_core::renderer::api::shader::ShaderVariantKey;
     use khora_core::renderer::api::util::ShaderStageFlags;
-    use khora_core::renderer::api::util::{SampleCount, TextureFormat};
     use std::borrow::Cow;
 
     PipelineSpec {
@@ -297,8 +299,8 @@ fn render_wireframe(
         LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
         RenderPassDescriptor, StoreOp,
     };
+    use khora_core::renderer::api::gpu_scene::ModelUniforms;
     use khora_core::renderer::api::resource::CameraUniformData;
-    use khora_core::renderer::api::scene::ModelUniforms;
 
     let (
         Some(pipeline),
@@ -359,7 +361,7 @@ fn render_wireframe(
 
     // Build one draw per mesh up front (the ring's Copy handles only, no borrow
     // of the asset guard) so the render pass does not overlap the mutable push.
-    use khora_core::renderer::api::util::IndexFormat;
+    use khora_core::renderer::api::resource::IndexFormat;
     let mut draws: Vec<(u32, BufferId, BufferId, IndexFormat, u32)> =
         Vec::with_capacity(render_world.meshes.len());
     for extracted_mesh in &render_world.meshes {

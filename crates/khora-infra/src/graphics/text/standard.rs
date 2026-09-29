@@ -15,28 +15,25 @@
 use super::custom::pixel_font;
 use khora_core::asset::{font::Font, AssetUUID, Handle};
 use khora_core::math::{LinearRgba, Vec2, Vec4};
-use khora_core::renderer::api::util::TextureAtlas;
-use khora_core::renderer::{
-    api::command::{
-        BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutDescriptor,
-        BindGroupLayoutEntry, BindGroupLayoutId, BindingResource, BindingType, BufferBinding,
-        LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
-    },
-    api::core::{ShaderModuleDescriptor, ShaderSourceData},
-    api::pipeline::{
-        ColorTargetStateDescriptor, ColorWrites, MultisampleStateDescriptor,
-        PipelineLayoutDescriptor, PrimitiveStateDescriptor, PrimitiveTopology,
-        RenderPipelineDescriptor, RenderPipelineId,
-    },
-    api::resource::{
-        AddressMode, BufferDescriptor, BufferId, BufferUsage, FilterMode, MipmapFilterMode,
-        SamplerDescriptor, SamplerId, TextureViewId,
-    },
-    api::text::{TextLayout, TextRenderer},
-    api::util::{IndexFormat, SampleCount, ShaderStageFlags, TextureFormat},
-    traits::CommandEncoder,
-    GraphicsDevice,
+use khora_core::renderer::api::command::{
+    BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindGroupLayoutId, BindingResource, BindingType, BufferBinding, LoadOp,
+    Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
 };
+use khora_core::renderer::api::pipeline::{
+    ColorTargetStateDescriptor, ColorWrites, MultisampleStateDescriptor, PipelineLayoutDescriptor,
+    PrimitiveStateDescriptor, PrimitiveTopology, RenderPipelineDescriptor, RenderPipelineId,
+};
+use khora_core::renderer::api::resource::{
+    AddressMode, BufferDescriptor, BufferId, BufferUsage, FilterMode, IndexFormat,
+    MipmapFilterMode, SampleCount, SamplerDescriptor, SamplerId, TextureFormat, TextureViewId,
+};
+use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderSourceData};
+use khora_core::renderer::api::text::{TextLayout, TextRenderer};
+use khora_core::renderer::api::util::ShaderStageFlags;
+use khora_core::renderer::api::util::TextureAtlas;
+use khora_core::renderer::traits::CommandEncoder;
+use khora_core::renderer::GraphicsDevice;
 use std::any::Any;
 use std::borrow::Cow;
 use std::collections::HashMap;

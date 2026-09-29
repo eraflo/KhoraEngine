@@ -11,8 +11,8 @@
 //! Everything here is data, so everything here is monospace: counts line up
 //! between frames instead of jittering as digits change width.
 
-use crate::AuthState;
-use crate::HubApp;
+use crate::app::HubApp;
+use crate::state::AuthState;
 use khora_sdk::tool_ui::{FontFamilyHint, UiBuilder};
 use khora_tool_ui::brand::khora_dark;
 use khora_tool_ui::widgets::{self, Health, paint::mono, status_dot};

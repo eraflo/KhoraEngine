@@ -13,15 +13,13 @@
 // limitations under the License.
 
 use super::*;
+use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::lane::Lane;
-use khora_core::{
-    asset::{AssetHandle, AssetUUID},
-    math::{affine_transform::AffineTransform, Mat4},
-    renderer::{
-        api::{pipeline::enums::PrimitiveTopology, resource::BufferId, util::IndexFormat},
-        light::DirectionalLight,
-    },
-};
+use khora_core::math::affine_transform::AffineTransform;
+use khora_core::math::Mat4;
+use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
+use khora_core::renderer::api::resource::{BufferId, IndexFormat};
+use khora_core::renderer::light::DirectionalLight;
 use khora_data::render::{ExtractedLight, ExtractedMesh};
 use std::sync::Arc;
 

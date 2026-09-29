@@ -14,8 +14,8 @@
 
 //! Defines the hierarchy of error types for the rendering subsystem.
 
-use crate::renderer::api::core::ShaderModuleId;
 use crate::renderer::api::pipeline::RenderPipelineId;
+use crate::renderer::api::shader::ShaderModuleId;
 use std::fmt;
 
 /// An error related to the creation, loading, or compilation of a shader module.
@@ -314,7 +314,7 @@ mod tests {
     use std::error::Error;
 
     use super::*;
-    use crate::renderer::api::core::ShaderModuleId;
+    use crate::renderer::api::shader::ShaderModuleId;
 
     #[test]
     fn shader_error_display() {

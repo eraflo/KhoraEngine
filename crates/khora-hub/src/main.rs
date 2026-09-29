@@ -33,20 +33,6 @@ mod services;
 mod state;
 mod ui;
 
-// Re-exports keep the old `crate::xxx` paths working.
-pub use app::HubApp;
-pub use services::config;
-pub use services::download;
-pub use services::git;
-pub use services::github;
-pub use services::github::auth;
-pub use services::project;
-pub use state::{
-    AuthState, Banner, EngineChoice, EngineManagerState, HomeState, NewProjectState, Screen,
-    SettingsState,
-};
-pub use ui::widgets;
-
 fn main() -> anyhow::Result<()> {
     bootstrap::run()
 }

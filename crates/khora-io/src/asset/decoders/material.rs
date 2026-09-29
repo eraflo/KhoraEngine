@@ -38,7 +38,7 @@
 use std::error::Error;
 
 use khora_core::asset::Material;
-use khora_data::ecs::MaterialRegistration;
+use khora_data::scene::MaterialRegistration;
 
 use crate::asset::{AssetDecoder, DecoderRegistration};
 
@@ -116,7 +116,7 @@ mod tests {
     use super::*;
     use khora_core::asset::{AssetUUID, EmissiveMaterial, StandardMaterial};
     use khora_core::math::LinearRgba;
-    use khora_data::ecs::material_to_json;
+    use khora_data::scene::material_to_json;
 
     /// Renders a `{ type_name, material }` JSON object as a `.kmat` RON
     /// document — the on-disk form the decoder consumes.

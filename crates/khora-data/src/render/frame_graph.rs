@@ -325,7 +325,8 @@ mod tests {
         assert_eq!(
             g.compile(),
             [buf(1), buf(2), buf(3)],
-            "the sky must sit between the opaque draws that give it a depth              buffer and the blended draws that composite over it"
+            "the sky must sit between the opaque draws that give it a depth \
+             buffer and the blended draws that composite over it"
         );
     }
 

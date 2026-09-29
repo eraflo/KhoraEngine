@@ -37,7 +37,7 @@ pub use desc::ColliderShape;
 pub use desc::RigidBodyDesc;
 pub use handle::ColliderHandle;
 pub use handle::RigidBodyHandle;
-pub use handle::Slot;
+pub use handle::SlotId;
 pub use query::CharacterControllerOptions;
 pub use query::RaycastHit;
 
@@ -136,14 +136,14 @@ mod handle_tests {
     #[test]
     fn two_occupants_of_one_slot_are_different_handles() {
         let first = ColliderHandle(
-            Slot {
+            SlotId {
                 index: 7,
                 generation: 0,
             }
             .pack(),
         );
         let recycled = ColliderHandle(
-            Slot {
+            SlotId {
                 index: 7,
                 generation: 1,
             }
@@ -155,7 +155,7 @@ mod handle_tests {
 
     #[test]
     fn a_handle_round_trips_its_slot() {
-        let slot = Slot {
+        let slot = SlotId {
             index: u32::MAX,
             generation: 3,
         };
@@ -169,7 +169,7 @@ mod handle_tests {
     /// held, and why they keep meaning what they meant.
     #[test]
     fn a_first_generation_handle_is_its_index() {
-        let slot = Slot {
+        let slot = SlotId {
             index: 42,
             generation: 0,
         };

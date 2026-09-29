@@ -20,7 +20,7 @@
 
 use super::{DeserializationError, SerializationError, SerializationStrategy};
 use crate::ecs::World;
-use crate::scene::registry::ComponentRegistration;
+use crate::scene::component_registration::ComponentRegistration;
 use khora_core::ecs::entity::EntityId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

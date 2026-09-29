@@ -26,12 +26,10 @@
 //! and deterministic execution. It contains minimal branching logic and is designed to
 //! be driven by a higher-level `RenderAgent`.
 
-use khora_core::{
-    asset::Material,
-    renderer::api::{
-        pipeline::enums::PrimitiveTopology, pipeline::RenderPipelineId, scene::GpuMesh,
-    },
-};
+use khora_core::asset::Material;
+use khora_core::renderer::api::gpu_scene::GpuMesh;
+use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
+use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_data::assets::Assets;
 use khora_data::render::RenderWorld;
 use std::sync::{OnceLock, RwLock};
@@ -103,7 +101,7 @@ impl khora_core::lane::Lane for SimpleUnlitLane {
         };
         let gpu_meshes = match ctx.get::<std::sync::Arc<
             std::sync::RwLock<
-                khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
+                khora_data::assets::Assets<khora_core::renderer::api::gpu_scene::GpuMesh>,
             >,
         >>() {
             Some(arc) => arc,
@@ -144,7 +142,7 @@ impl khora_core::lane::Lane for SimpleUnlitLane {
         let gpu_meshes = ctx
             .get::<std::sync::Arc<
                 std::sync::RwLock<
-                    khora_data::assets::Assets<khora_core::renderer::api::scene::GpuMesh>,
+                    khora_data::assets::Assets<khora_core::renderer::api::gpu_scene::GpuMesh>,
                 >,
             >>()
             .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?
@@ -173,7 +171,7 @@ impl khora_core::lane::Lane for SimpleUnlitLane {
             .get::<khora_core::lane::ShadowComparisonSampler>()
             .map(|v| v.0);
 
-        let mut render_ctx = khora_core::renderer::api::core::RenderContext::new(
+        let mut render_ctx = khora_core::renderer::api::frame::RenderContext::new(
             &color_target,
             Some(&depth_target),
             clear_color,

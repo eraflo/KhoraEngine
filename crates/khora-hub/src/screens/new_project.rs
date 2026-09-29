@@ -10,12 +10,12 @@
 
 use std::path::PathBuf;
 
-use crate::EngineChoice;
-use crate::HubApp;
-use crate::Screen;
-use crate::download;
-use crate::github;
-use crate::project;
+use crate::app::HubApp;
+use crate::services::download;
+use crate::services::github;
+use crate::services::project;
+use crate::state::EngineChoice;
+use crate::state::Screen;
 use khora_sdk::tool_ui::{Icon, UiBuilder, UiTheme};
 use khora_tool_ui::brand::khora_dark;
 use khora_tool_ui::widgets::paint::eyebrow;
@@ -440,7 +440,7 @@ fn handle_create(app: &mut HubApp, choices: &[EngineChoice]) {
     }
 }
 
-fn create_with_engine(app: &mut HubApp, engine: crate::config::EngineInstall) {
+fn create_with_engine(app: &mut HubApp, engine: crate::services::config::EngineInstall) {
     let git = app.build_git_init();
     let parent = PathBuf::from(&app.new_project.path);
     match project::create_project(&app.new_project.name, &parent, &engine.version, &git) {
@@ -452,11 +452,11 @@ fn create_with_engine(app: &mut HubApp, engine: crate::config::EngineInstall) {
             let _ = app.config.save();
             match project::launch_editor(&engine.editor_binary, &root) {
                 Ok(()) => {
-                    app.banner = Some(crate::Banner::info("Editor launched."));
+                    app.banner = Some(crate::state::Banner::info("Editor launched."));
                     app.screen = Screen::Home;
                 }
                 Err(e) => {
-                    app.banner = Some(crate::Banner::error(format!(
+                    app.banner = Some(crate::state::Banner::error(format!(
                         "Project created, but the editor didn't launch: {e}"
                     )));
                 }
@@ -465,7 +465,7 @@ fn create_with_engine(app: &mut HubApp, engine: crate::config::EngineInstall) {
         Err(e) => {
             app.new_project.success = false;
             app.new_project.status = Some(format!("Error: {e}"));
-            app.banner = Some(crate::Banner::error(format!(
+            app.banner = Some(crate::state::Banner::error(format!(
                 "Couldn't create project: {e}"
             )));
         }

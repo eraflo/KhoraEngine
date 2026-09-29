@@ -35,7 +35,7 @@ the engine draws everywhere between strategy-bearing agents and fixed-work servi
 
 ```mermaid
 flowchart LR
-    A[AssetUUID] --> B[VirtualFileSystem]
+    A[AssetUUID] --> B[AssetIndex]
     B --> C{AssetSource}
     C -->|loose file| D[file IO]
     C -->|packed| E[pack IO]
