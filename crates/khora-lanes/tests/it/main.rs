@@ -18,4 +18,9 @@
 //! full link of the crate's dependency tree. New integration tests join this
 //! binary as a module instead of adding a file at the root of `tests/`.
 
+mod frozen_save;
+mod overdraft;
 mod public_paths;
+mod resumable_breaker;
+mod resumable_edges;
+mod starved_turn;

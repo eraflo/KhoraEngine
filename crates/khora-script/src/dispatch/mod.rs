@@ -39,7 +39,7 @@ use khora_core::script::ScriptEvent;
 
 use crate::arena::Persisted;
 use crate::native::Host;
-use crate::vm::{Fault, Machine, Program, Run, TimerKind, Value};
+use crate::vm::{Fault, Machine, Program, Run, Suspension, TimerKind, Value};
 
 /// Why an event was not delivered.
 ///
@@ -204,7 +204,14 @@ pub fn initialise(
 /// whole gap depending on how long the game was closed.
 ///
 /// Returns what was spent, so the caller's budget accounting stays whole — a
-/// scheduled body costs fuel like anything else.
+/// scheduled body costs fuel like anything else — and the body that stopped
+/// before finishing, if one did.
+///
+/// A body cut short, by fuel or by an `await` in a method it calls, is handed
+/// back rather than dropped: it resumes where it stopped, and its timer rearms
+/// when it finishes ([`finish_timer`]). Rerunning it whole would repeat what it
+/// had already done. Once a body is cut, the timers still due after it wait,
+/// due, for a later turn: the behavior does one thing at a time.
 ///
 /// [`TimerLayout`]: crate::vm::TimerLayout
 pub fn tick_timers(
@@ -213,11 +220,11 @@ pub fn tick_timers(
     host: &mut Host,
     delta: f32,
     fuel: u64,
-) -> (Option<Fault>, u64) {
+) -> Ticked {
+    let mut ticked = Ticked::default();
     let Some(layout) = program.layout(behavior).cloned() else {
-        return (None, 0);
+        return ticked;
     };
-    let mut spent = 0;
 
     // Which state's schedules are the behavior's own right now. A state's
     // `every` means "while in this state", so one belonging to a state the
@@ -246,18 +253,23 @@ pub fn tick_timers(
             continue;
         }
 
+        // Due, and another body is already part-way through: this one waits,
+        // due, for the turn after that body finishes.
+        if ticked.suspended.is_some() {
+            host.fields
+                .set(slot, Persisted::Scalar(Value::Float(remaining)));
+            continue;
+        }
+
         // What is left of the budget, so one timer cannot spend a frame's fuel
         // and leave the next with none.
-        let left = fuel.saturating_sub(spent);
+        let left = fuel.saturating_sub(ticked.spent);
         let Some(mut machine) = Machine::new(program, &timer.member, &[]) else {
             continue;
         };
         let (outcome, cost) = machine.run_counting(program, host, left);
-        spent += cost;
+        ticked.spent += cost;
 
-        // Rearmed *after* the body, because the body may have written the slot
-        // itself — a `become` that leaves the state owning this timer, for
-        // instance, should not be undone by the schedule.
         let next = match timer.kind {
             // The overshoot carries into the next interval rather than being
             // dropped: a frame that ran long must not make `every 0.5s` drift
@@ -270,14 +282,75 @@ pub fn tick_timers(
             // would arm it again and fire it twice.
             TimerKind::After => Value::Null,
         };
-        host.fields.set(slot, Persisted::Scalar(next));
 
-        if let Run::Faulted(fault) = outcome {
-            return (Some(fault), spent);
+        match outcome {
+            // Cut short: the slot stays due until the body finishes, and the
+            // rearm travels with the machine.
+            Run::Suspended(why) => {
+                host.fields
+                    .set(slot, Persisted::Scalar(Value::Float(remaining)));
+                ticked.suspended = Some(SuspendedTimer {
+                    index,
+                    machine,
+                    rearm: next,
+                    why,
+                });
+            }
+            // Rearmed *after* the body, because the body may have written the
+            // slot itself — a `become` that leaves the state owning this timer,
+            // for instance, should not be undone by the schedule.
+            Run::Completed => host.fields.set(slot, Persisted::Scalar(next)),
+            Run::Faulted(fault) => {
+                host.fields.set(slot, Persisted::Scalar(next));
+                ticked.fault = Some(fault);
+                return ticked;
+            }
         }
     }
 
-    (None, spent)
+    ticked
+}
+
+/// What one frame of a behavior's timers did.
+#[derive(Debug, Default)]
+pub struct Ticked {
+    /// Fuel spent by the bodies that ran.
+    pub spent: u64,
+    /// The fault a body raised, if one did; no timer after it ran.
+    pub fault: Option<Fault>,
+    /// The body that stopped before finishing, if one did.
+    pub suspended: Option<SuspendedTimer>,
+}
+
+/// A timer body cut short, to be resumed, and what its timer becomes when it
+/// finishes.
+#[derive(Debug)]
+pub struct SuspendedTimer {
+    /// The timer's index in the behavior's [`TimerLayout`](crate::vm::TimerLayout).
+    pub index: usize,
+    /// The body, frozen where it stopped.
+    pub machine: Machine,
+    /// The slot's value once the body finishes: the next countdown for an
+    /// `every`, `Null` for an `after` that has fired.
+    pub rearm: Value,
+    /// Why it stopped: out of fuel, or waiting.
+    pub why: Suspension,
+}
+
+/// Rearms timer `index` of `behavior` once its body, resumed after a cut, has
+/// finished — what [`tick_timers`] does at once for a body that finishes in
+/// one go.
+pub fn finish_timer(
+    program: &Program,
+    behavior: &str,
+    host: &mut Host,
+    index: usize,
+    rearm: Value,
+) {
+    if let Some(layout) = program.layout(behavior) {
+        host.fields
+            .set(layout.timer_slot(index), Persisted::Scalar(rearm));
+    }
 }
 
 /// Runs the handler for `event`, if the behavior declares one.

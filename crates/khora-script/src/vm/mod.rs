@@ -37,6 +37,7 @@
 //! scene. Everything that must survive lives in [`Machine`], and nothing else
 //! does.
 
+mod freeze;
 pub mod instruction;
 pub mod program;
 pub mod value;
@@ -251,15 +252,25 @@ impl Machine {
     /// calls would hand the same slice to both and call that a budget.
     pub fn run_counting(&mut self, program: &Program, host: &mut Host, fuel: u64) -> (Run, u64) {
         let mut remaining = fuel;
-        let outcome = self.run_inner(program, host, &mut remaining);
-        (outcome, fuel.saturating_sub(remaining))
+        let mut overdraft = 0;
+        let outcome = self.run_inner(program, host, &mut remaining, &mut overdraft);
+        (outcome, fuel.saturating_sub(remaining) + overdraft)
     }
 
-    /// The run loop. `remaining` is left holding what was not spent.
-    fn run_inner(&mut self, program: &Program, host: &mut Host, remaining: &mut u64) -> Run {
+    /// The run loop. `remaining` is left holding what was not spent;
+    /// `overdraft` what the run spent beyond `fuel`, when its first instruction
+    /// cost more than the whole slice.
+    fn run_inner(
+        &mut self,
+        program: &Program,
+        host: &mut Host,
+        remaining: &mut u64,
+        overdraft: &mut u64,
+    ) -> Run {
         if self.finished {
             return Run::Completed;
         }
+        let mut executed = false;
 
         loop {
             let Some(frame) = self.frames.last() else {
@@ -301,9 +312,18 @@ impl Machine {
                 _ => instruction.cost(),
             };
             if *remaining < cost {
-                return Run::Suspended(Suspension::OutOfFuel);
+                // A slice smaller than the next instruction would suspend here
+                // on every run and never advance. The first instruction of a
+                // run is paid for anyway, as an overdraft of at most one
+                // instruction, so any non-zero budget makes progress.
+                if executed || *remaining == 0 {
+                    return Run::Suspended(Suspension::OutOfFuel);
+                }
+                *overdraft += cost - *remaining;
+                *remaining = cost;
             }
             *remaining -= cost;
+            executed = true;
 
             match self.step(&instruction, program, host, function.code.len()) {
                 Ok(Step::Next) => self.program_counter += 1,

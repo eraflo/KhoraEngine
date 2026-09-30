@@ -930,7 +930,7 @@ mod states {
 mod timers {
     use super::{build, registry_with_despawn};
     use crate::arena::{Persisted, PersistentStore};
-    use crate::dispatch::{initialise, tick_timers};
+    use crate::dispatch::{initialise, tick_timers, Ticked};
     use crate::native::Host;
     use crate::vm::{Program, Value};
 
@@ -971,7 +971,7 @@ mod timers {
     /// Sixty frames of a sixtieth of a second — one second of play.
     fn play(program: &Program, host: &mut Host, frames: usize) {
         for _ in 0..frames {
-            let (fault, _) = tick_timers(program, "Guard", host, 1.0 / 60.0, u64::MAX);
+            let Ticked { fault, .. } = tick_timers(program, "Guard", host, 1.0 / 60.0, u64::MAX);
             assert!(fault.is_none(), "{fault:?}");
         }
     }
@@ -1106,7 +1106,7 @@ mod timers {
 mod state_scoped {
     use super::{build, registry_with_despawn};
     use crate::arena::{Persisted, PersistentStore};
-    use crate::dispatch::{deliver, initialise, tick_timers};
+    use crate::dispatch::{deliver, initialise, tick_timers, Ticked};
     use crate::native::Host;
     use crate::vm::{Program, Value};
     use khora_core::ecs::entity::EntityId;
@@ -1164,7 +1164,7 @@ mod state_scoped {
 
     fn play(program: &Program, host: &mut Host, frames: usize) {
         for _ in 0..frames {
-            let (fault, _) = tick_timers(program, "Guard", host, 1.0 / 60.0, u64::MAX);
+            let Ticked { fault, .. } = tick_timers(program, "Guard", host, 1.0 / 60.0, u64::MAX);
             assert!(fault.is_none(), "{fault:?}");
         }
     }

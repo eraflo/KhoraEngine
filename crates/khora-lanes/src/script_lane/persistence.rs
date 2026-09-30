@@ -41,11 +41,13 @@
 //! [`Script`]: khora_data::ecs::Script
 //! [`bridge`]: khora_script::bridge
 
-use khora_core::script::{PendingSequence, ScriptSnapshot, ScriptValue, TimerRemaining};
+use khora_core::script::{
+    PendingBody, PendingSequence, ScriptSnapshot, ScriptValue, SuspendedMachine, TimerRemaining,
+};
 use khora_script::arena::{Persisted, PersistentStore};
-use khora_script::vm::{BehaviorLayout, Program, TimerKind, Value};
+use khora_script::vm::{BehaviorLayout, Machine, Program, TimerKind, Value};
 
-use super::Pending;
+use super::{Body, Pending};
 
 /// Builds an instance's store from what a scene saved.
 ///
@@ -267,34 +269,129 @@ fn countdowns(layout: &BehaviorLayout, store: &PersistentStore) -> Vec<TimerRema
         .collect()
 }
 
+/// What a scene records for an instance: its store, and the body it is
+/// part-way through, if any.
+///
+/// A schedule whose body is part-way through is recorded as that body will
+/// leave it — rearmed — rather than as the running store holds it, still due.
+/// Nothing is lost when the body resumes, since finishing it rearms the
+/// schedule again; and a load that has to abandon the body (the script was
+/// edited since) finds a schedule that waits its interval instead of one that
+/// is due, whose body would run a second time from the top.
+pub fn snapshot_of(
+    layout: &BehaviorLayout,
+    fields: &PersistentStore,
+    pending: Option<&Pending>,
+    program: &Program,
+) -> ScriptSnapshot {
+    let mut snapshot = match pending.map(|pending| &pending.body) {
+        Some(Body::Timer { index, rearm }) if *index < layout.timers.len() => {
+            let mut settled = fields.clone();
+            settled.set(layout.timer_slot(*index), Persisted::Scalar(*rearm));
+            snapshot_from_store(layout, &settled)
+        }
+        _ => snapshot_from_store(layout, fields),
+    };
+    snapshot.pending = pending.and_then(|pending| suspend(pending, program));
+    snapshot
+}
+
 /// Writes a suspended sequence down, so a save can hold it.
 ///
 /// Records what the program's code looked like alongside the machine, because a
 /// machine is a *position* in that code — see [`resume`] for what that buys.
-/// `None` when the machine cannot be encoded, which loses the sequence rather
-/// than the save.
+/// The machine goes down in the engine's own terms ([`SuspendedMachine::Frozen`]),
+/// so every scene strategy writes it natively and a Definition save shows it.
+/// `None` when the machine does not belong to `program` — suspended in other
+/// code, which a load would only abandon — losing the sequence rather than the
+/// save.
 pub fn suspend(pending: &Pending, program: &Program) -> Option<PendingSequence> {
-    let machine = bincode::serde::encode_to_vec(&pending.machine, bincode::config::standard())
-        .map_err(|error| log::error!("a suspended sequence could not be saved: {error}"))
-        .ok()?;
+    if pending.fingerprint != program.fingerprint() {
+        return None;
+    }
+    let frozen =
+        frozen_body(&pending.body, program).and_then(|body| pending.machine.freeze(program, body));
+    let Some(machine) = frozen else {
+        log::error!("a suspended sequence could not be saved: it does not belong to its program");
+        return None;
+    };
+    // Written only if it reads back: past the bound, the save would hold a
+    // `Script` its load refuses whole, and the entity would lose its behavior
+    // rather than one sequence.
+    if !machine.fits_a_save() {
+        log::warn!(
+            "a suspended sequence was left out of the save: its machine is too large to read \
+             back"
+        );
+        return None;
+    }
 
     Some(PendingSequence {
-        fingerprint: program.fingerprint(),
+        fingerprint: pending.fingerprint,
         remaining: pending.remaining,
-        machine,
+        machine: SuspendedMachine::Frozen(machine),
+    })
+}
+
+/// What finishing a body owes, in the scene's terms.
+fn frozen_body(body: &Body, program: &Program) -> Option<PendingBody> {
+    Some(match body {
+        Body::Sequence => PendingBody::Sequence,
+        Body::Spawn => PendingBody::Spawn,
+        Body::Update => PendingBody::Update,
+        Body::Timer { index, rearm } => PendingBody::Timer {
+            index: u32::try_from(*index).ok()?,
+            rearm: rearm.freeze(program)?,
+        },
+    })
+}
+
+/// What finishing a body owes, back in the lane's terms — if `layout` can owe
+/// it.
+///
+/// A save is input nobody sized. Finishing a timer body writes its schedule's
+/// slot, so a schedule the behavior does not have would grow the store to
+/// reach it, and a rearm that is not a countdown would stop the schedule for
+/// good. Either is refused, and the body with it.
+fn thawed_body(body: &PendingBody, program: &Program, layout: &BehaviorLayout) -> Option<Body> {
+    Some(match body {
+        PendingBody::Sequence => Body::Sequence,
+        PendingBody::Spawn => Body::Spawn,
+        PendingBody::Update => Body::Update,
+        PendingBody::Timer { index, rearm } => {
+            let index = usize::try_from(*index).ok()?;
+            let rearm = Value::thaw(rearm, program)?;
+            let countdown = match (layout.timers.get(index)?.kind, rearm) {
+                (TimerKind::Every, Value::Float(seconds)) => seconds.is_finite(),
+                (TimerKind::After, Value::Null) => true,
+                _ => false,
+            };
+            if !countdown {
+                return None;
+            }
+            Body::Timer { index, rearm }
+        }
     })
 }
 
 /// Reads a suspended sequence back, if the code it stopped in is still there.
 ///
-/// **The fingerprint is a refusal, not a formality.** A machine holds a function
-/// index, a program counter and a frame sized for that function. If the script
-/// was edited between the save and the load, those name something else, and
-/// resuming would run whatever now sits at that address — arbitrary code, chosen
-/// by an edit nobody connected to it. So a mismatch abandons the sequence and
-/// says so: the guard forgets it was attacking, which is recoverable, instead of
+/// **The fingerprint is a refusal, not a formality.** A machine holds program
+/// counters and frames sized for their functions. If the script was edited
+/// between the save and the load, those name something else, and resuming
+/// would run whatever now sits at that address — arbitrary code, chosen by an
+/// edit nobody connected to it. So a mismatch abandons the sequence and says
+/// so: the guard forgets it was attacking, which is recoverable, instead of
 /// doing something no author wrote.
-pub fn resume(saved: &ScriptSnapshot, program: &Program) -> Option<Pending> {
+///
+/// Every machine goes through [`Machine::thaw`], a legacy one included, so
+/// what a save claims about its frames is checked against `program` once, here,
+/// before anything runs it.
+pub fn resume(
+    saved: &ScriptSnapshot,
+    program: &Program,
+    layout: &BehaviorLayout,
+) -> Option<Pending> {
     let sequence = saved.pending.as_ref()?;
 
     if sequence.fingerprint != program.fingerprint() {
@@ -305,14 +402,35 @@ pub fn resume(saved: &ScriptSnapshot, program: &Program) -> Option<Pending> {
         return None;
     }
 
-    let (machine, _) =
-        bincode::serde::decode_from_slice(&sequence.machine, bincode::config::standard())
-            .map_err(|error| log::error!("a suspended sequence could not be restored: {error}"))
-            .ok()?;
+    let restored = match &sequence.machine {
+        SuspendedMachine::Frozen(frozen) => {
+            thawed_body(&frozen.body, program, layout).zip(Machine::thaw(frozen, program))
+        }
+        // Written before a machine had a structured form, by the VM's own
+        // encoding — and only ever an event handler's sequence, the one body
+        // that could be saved then.
+        SuspendedMachine::Legacy(bytes) => {
+            bincode::serde::decode_from_slice::<Machine, _>(bytes, bincode::config::standard())
+                .map_err(|error| log::debug!("legacy machine did not decode: {error}"))
+                .ok()
+                .and_then(|(machine, _)| machine.freeze(program, PendingBody::Sequence))
+                .and_then(|frozen| Machine::thaw(&frozen, program))
+                .map(|machine| (Body::Sequence, machine))
+        }
+    };
+    let Some((body, machine)) = restored else {
+        log::warn!(
+            "a sequence saved mid-`await` was abandoned: what it stopped in is not in the \
+             script as it is now"
+        );
+        return None;
+    };
 
     Some(Pending {
         machine,
         remaining: sequence.remaining,
+        body,
+        fingerprint: sequence.fingerprint,
     })
 }
 

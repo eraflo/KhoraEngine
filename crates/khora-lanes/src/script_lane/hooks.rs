@@ -38,16 +38,19 @@ pub(super) enum Hook {
     Absent,
     /// It faulted.
     Faulted { cost: u64, reason: String },
+    /// It stopped part-way — out of fuel, or on an `await` — and can resume.
+    Suspended {
+        cost: u64,
+        machine: khora_script::vm::Machine,
+        why: khora_script::vm::Suspension,
+    },
 }
 
 /// Calls a lifecycle member, if the behavior declares one.
 ///
-/// A suspension is treated as completion rather than kept: `await` is refused in
-/// `Update` by the checker ([`types::expr`]), and out-of-fuel here means the
-/// budget ran out on the last thing the frame does — retrying it whole next
-/// frame is what deferring has always meant.
-///
-/// [`types::expr`]: khora_script::types
+/// A suspension hands the machine back ([`Hook::Suspended`]) for the caller to
+/// keep and resume next turn: a member cut short finishes where it stopped
+/// instead of running again from the top.
 pub(super) fn call_hook(
     program: &khora_script::vm::Program,
     behavior: &str,
@@ -62,7 +65,15 @@ pub(super) fn call_hook(
                 cost: done.spent,
                 reason: format!("{fault:?}"),
             },
-            _ => Hook::Ran(done.spent),
+            Run::Suspended(why) => match done.suspended {
+                Some(machine) => Hook::Suspended {
+                    cost: done.spent,
+                    machine,
+                    why,
+                },
+                None => Hook::Ran(done.spent),
+            },
+            Run::Completed => Hook::Ran(done.spent),
         },
         Err(NotDelivered::NoHandler { .. }) => Hook::Absent,
         Err(other) => Hook::Faulted {
@@ -85,7 +96,8 @@ pub(super) fn say_goodbye(
     fuel: u64,
 ) -> u64 {
     match call_hook(program, behavior, &lifecycle::ON_DESPAWN, &[], host, fuel) {
-        Hook::Ran(cost) => cost,
+        // The entity is leaving: nothing will resume a farewell cut short.
+        Hook::Ran(cost) | Hook::Suspended { cost, .. } => cost,
         Hook::Absent => 0,
         Hook::Faulted { cost, reason } => {
             log::error!("script `{behavior}` faulted in `OnDespawn`: {reason}");

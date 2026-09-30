@@ -67,6 +67,18 @@ impl ArenaRef {
     pub fn generation(self) -> u32 {
         self.generation
     }
+
+    /// A reference to nothing, in no frame: every arena refuses it.
+    ///
+    /// What text built while running becomes once its frame is gone for good —
+    /// after a save, say. Its generation is one no arena reaches in practice
+    /// and its index one no arena can hold, so either check turns it away.
+    pub(crate) fn expired() -> Self {
+        Self {
+            index: u32::MAX,
+            generation: u32::MAX,
+        }
+    }
 }
 
 /// Something too large to live in a register.

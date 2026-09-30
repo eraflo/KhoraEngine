@@ -245,7 +245,12 @@ fn a_native_is_charged_its_own_cost() {
 
     let mut natives = NativeRegistry::new();
     natives.register(&EXPENSIVE);
-    let program = build("fn float Main() { return Expensive(); }", &natives);
+    // The local comes first, so the call is not the first instruction the
+    // machine meets.
+    let program = build(
+        "fn float Main() { float a = 1.0; return a + Expensive(); }",
+        &natives,
+    );
 
     let mut host = Host {
         natives,
@@ -254,12 +259,31 @@ fn a_native_is_charged_its_own_cost() {
     let mut machine = Machine::new(&program, "Main", &[]).expect("Main exists");
 
     // Enough fuel for a handful of instructions, nowhere near the call's price.
+    // Once the run has done something, the call waits for the next one rather
+    // than being started on credit.
+    let (first, spent) = machine.run_counting(&program, &mut host, 100);
     assert_eq!(
-        machine.run(&program, &mut host, 100),
+        first,
         Run::Suspended(crate::vm::Suspension::OutOfFuel),
-        "the call must not be affordable"
+        "the call is not affordable part-way through a run"
     );
-    assert_eq!(machine.run(&program, &mut host, u64::MAX), Run::Completed);
+    assert!(spent < 5_000, "the call did not run, so it is not billed");
+
+    // The call is now the run's first instruction. It runs, and the run reports
+    // its full declared price — the overdraft included — rather than the 100 it
+    // was handed or the flat cost of an instruction.
+    let (_, spent) = machine.run_counting(&program, &mut host, 100);
+    assert!(
+        spent >= 5_000,
+        "a native is charged what it declares, found {spent}"
+    );
+
+    let mut rounds = 0;
+    while machine.run(&program, &mut host, 100) != Run::Completed {
+        rounds += 1;
+        assert!(rounds < 100, "the rest of Main is a few instructions");
+    }
+    assert_eq!(machine.result(), Value::Float(2.0));
 }
 
 // ─── The registry ───────────────────────────────────────────────────────────

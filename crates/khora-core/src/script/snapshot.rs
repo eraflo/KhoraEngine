@@ -40,7 +40,7 @@
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-use super::ScriptValue;
+use super::{ScriptValue, SuspendedMachine};
 
 /// One `every` or `after`, and how far along it is.
 ///
@@ -87,12 +87,8 @@ pub struct PendingSequence {
     pub fingerprint: u64,
     /// Seconds still to wait.
     pub remaining: f32,
-    /// The frozen machine.
-    ///
-    /// Opaque here on purpose: what a machine *is* belongs to the VM, and this
-    /// crate defines the boundary vocabulary rather than the language. Encoding
-    /// and decoding happen where the type is known.
-    pub machine: Vec<u8>,
+    /// The frozen machine, in the engine's terms — see [`super::frozen`].
+    pub machine: SuspendedMachine,
 }
 
 /// A behavior instance, as the scene records it.

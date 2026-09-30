@@ -25,7 +25,7 @@ use super::hooks::{despawns_itself, say_goodbye};
 use super::persistence;
 use super::report::ScriptRunReport;
 use super::runtime::ScriptRuntime;
-use super::turn::{run_one, Invocation, Outcome};
+use super::turn::{run_one, Invocation, Outcome, Progress};
 
 /// How much of the frame's fuel one behavior may spend.
 ///
@@ -94,7 +94,7 @@ pub fn run_behaviors(
             let layout = compiled.layout(&program.behavior)?;
             Some((
                 persistence::store_from_snapshot(layout, authored),
-                persistence::resume(authored, &compiled),
+                persistence::resume(authored, &compiled, layout),
             ))
         });
 
@@ -106,6 +106,7 @@ pub fn run_behaviors(
         if let Some((from_scene, resumed)) = carried_from_scene {
             state.fields = from_scene.clone();
             state.initialised = false;
+            state.initialiser = None;
             state.carried = Some(from_scene);
             // A sequence the save caught mid-`await`. It is not initialisation
             // and must not be cleared by one: the guard was half-way through an
@@ -123,10 +124,16 @@ pub fn run_behaviors(
         // somebody else's.
         host.position = Some(instance.translation);
         host.fields = std::mem::take(&mut state.fields);
-        let was_initialised = state.initialised;
-        let was_spawned = state.spawned;
+        // A wait some earlier body asked for is not this one's: every body that
+        // stops takes its own from here.
+        host.awaiting = None;
+        let mut progress = Progress {
+            initialised: state.initialised,
+            spawned: state.spawned,
+            initialiser: state.initialiser.take(),
+            pending: state.pending.take(),
+        };
         let carried = state.carried.take();
-        let pending = state.pending.take();
 
         // Where this behavior's own commands start, so a `Despawn(this)` it
         // queues can be told from one an earlier behavior queued.
@@ -140,12 +147,10 @@ pub fn run_behaviors(
                 entity: instance.entity,
                 events,
                 fuel: slice,
-                initialised: was_initialised,
-                spawned: was_spawned,
                 carried: carried.as_ref(),
                 delta: view.delta_seconds,
-                resuming: pending,
             },
+            &mut progress,
             host,
         );
 
@@ -162,8 +167,16 @@ pub fn run_behaviors(
         // state the behavior had before it.
         let state = runtime.instance(instance.entity, &program.behavior);
         state.fields = std::mem::take(&mut host.fields);
-        state.initialised = true;
-        state.spawned = true;
+        // Where the turn got to goes back whatever happened, so a turn that
+        // stopped early loses no body part-way through.
+        state.initialised = progress.initialised;
+        state.spawned = progress.spawned;
+        state.initialiser = progress.initialiser;
+        state.pending = progress.pending;
+        // Kept until the initialiser that has to put them back has finished.
+        if !state.initialised {
+            state.carried = carried;
+        }
         state.farewelled |= leaving;
 
         let farewell_cost = farewell.unwrap_or(0);
@@ -180,22 +193,30 @@ pub fn run_behaviors(
                 report.spent += spent;
                 keep_undelivered(events, instance.entity, delivered, &mut report);
             }
-            // Neither completed nor deferred: the behavior is mid-sequence and
-            // will carry on when its wait elapses. Counted as completed because
-            // it did exactly what it meant to — reporting it as deferred would
-            // make the agent's health score fall for a script working as
-            // written.
-            Outcome::Awaiting {
+            // Part-way through a body, which carries on next turn. On an
+            // `await` it counts as completed: the script did exactly what it
+            // says, and reporting it as deferred would make the agent's health
+            // score fall for a script working as written. Out of fuel it counts
+            // as deferred: that is budget pressure, and the DCC has to see it.
+            Outcome::Busy {
                 spent,
-                pending,
                 delivered,
+                starved,
             } => {
-                runtime.instance(instance.entity, &program.behavior).pending = pending;
-                report.completed += 1;
+                if starved {
+                    report.deferred += 1;
+                } else {
+                    report.completed += 1;
+                }
                 report.spent += spent;
-                // A behavior mid-`await` is busy, not finished: what it has not
-                // been told yet waits for the turn that will listen.
+                // A busy behavior is not finished: what it has not been told yet
+                // waits for the turn that will listen.
                 keep_undelivered(events, instance.entity, delivered, &mut report);
+            }
+            Outcome::Uninitialised { spent } => {
+                report.deferred += 1;
+                report.spent += spent;
+                keep_undelivered(events, instance.entity, 0, &mut report);
             }
             Outcome::Faulted { spent, reason } => {
                 log::error!(
@@ -222,16 +243,26 @@ pub fn run_behaviors(
         // clock is not the behavior's work. A behavior with an `every` therefore
         // has no quiet frames, and that is the price of an `after 10s` that
         // still has ten seconds left when the game is loaded rather than
-        // whenever it was last hurt.
+        // whenever it was last hurt. The same for an `await` still waiting: its
+        // countdown moves for free too, and a save taken part-way through the
+        // wait has to record what is left of it, not the wait as it began.
         let ticked = delta_moved_a_countdown(&compiled, &program.behavior, view.delta_seconds);
-        if outcome_cost + farewell_cost > 0 || ticked {
+        let waited = view.delta_seconds > 0.0
+            && runtime
+                .peek(instance.entity, &program.behavior)
+                .is_some_and(|held| held.pending.is_some());
+        if outcome_cost + farewell_cost > 0 || ticked || waited {
             if let Some(layout) = compiled.layout(&program.behavior) {
                 let held = runtime.instance(instance.entity, &program.behavior);
-                let mut snapshot = persistence::snapshot_from_store(layout, &held.fields);
-                snapshot.pending = held
-                    .pending
-                    .as_ref()
-                    .and_then(|pending| persistence::suspend(pending, &compiled));
+                // While its initialiser is part-way, an instance's fields hold
+                // the half-run initialiser's defaults; what it *is* — loaded or
+                // carried across a reload — waits aside until that finishes.
+                let fields = match (&held.carried, held.initialised) {
+                    (Some(owed), false) => owed,
+                    _ => &held.fields,
+                };
+                let snapshot =
+                    persistence::snapshot_of(layout, fields, held.pending.as_ref(), &compiled);
 
                 report.state.push(ScriptStateUpdate {
                     entity: instance.entity,

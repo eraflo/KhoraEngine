@@ -214,11 +214,23 @@ fn instance_fields(x: &khora_lanes::script_lane::runtime::Instance) {
         &x.disabled,
         &x.pending,
         &x.carried,
+        &x.initialiser,
     );
 }
 
 fn pending_fields(x: &khora_lanes::script_lane::runtime::Pending) {
-    let _ = (&x.machine, &x.remaining);
+    let _ = (&x.machine, &x.remaining, &x.body, &x.fingerprint);
+}
+
+fn body_variants(x: &khora_lanes::script_lane::runtime::Body) {
+    match x {
+        khora_lanes::script_lane::runtime::Body::Sequence => {}
+        khora_lanes::script_lane::runtime::Body::Spawn => {}
+        khora_lanes::script_lane::runtime::Body::Update => {}
+        khora_lanes::script_lane::runtime::Body::Timer { index, rearm } => {
+            let _ = (index, rearm);
+        }
+    }
 }
 
 fn reload_report_fields(x: &khora_lanes::script_lane::runtime::ReloadReport) {
@@ -496,6 +508,18 @@ fn module_script_lane_paths_still_resolve() {
     is_partial_eq::<khora_lanes::script_lane::runtime::Pending>();
     is_serialize::<khora_lanes::script_lane::runtime::Pending>();
     is_deserialize_owned::<khora_lanes::script_lane::runtime::Pending>();
+    let _ = type_name::<khora_lanes::script_lane::runtime::Body>();
+    let _ = type_name::<khora_lanes::script_lane::Body>();
+    same_type(
+        PhantomData::<khora_lanes::script_lane::Body>,
+        PhantomData::<khora_lanes::script_lane::runtime::Body>,
+    );
+    let _ = body_variants as fn(&khora_lanes::script_lane::runtime::Body);
+    is_debug::<khora_lanes::script_lane::runtime::Body>();
+    is_clone::<khora_lanes::script_lane::runtime::Body>();
+    is_partial_eq::<khora_lanes::script_lane::runtime::Body>();
+    is_serialize::<khora_lanes::script_lane::runtime::Body>();
+    is_deserialize_owned::<khora_lanes::script_lane::runtime::Body>();
     let _ = type_name::<khora_lanes::script_lane::runtime::ReloadReport>();
     let _ = type_name::<khora_lanes::script_lane::ReloadReport>();
     same_type(

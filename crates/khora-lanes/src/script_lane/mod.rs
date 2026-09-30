@@ -52,7 +52,7 @@ mod tests;
 
 pub use frame::run_behaviors;
 pub use report::ScriptRunReport;
-pub use runtime::{Instance, Pending, ReloadReport, ScriptRuntime};
+pub use runtime::{Body, Instance, Pending, ReloadReport, ScriptRuntime};
 
 use std::any::Any;
 

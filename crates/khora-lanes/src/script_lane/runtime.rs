@@ -85,7 +85,18 @@ pub struct Instance {
     /// one sequence at a time; a second `await` starting while the first is
     /// pending would mean two answers to "where is this behavior", and the
     /// language has no syntax for asking which.
+    ///
+    /// Any body can be that sequence — an event handler, `OnSpawn`, `Update`,
+    /// a timer — cut short by an `await` or by fuel; [`Pending::body`] says
+    /// what finishing it completes.
     pub pending: Option<Pending>,
+
+    /// The initialiser, when a turn ran out of fuel before it finished.
+    ///
+    /// Apart from [`pending`](Self::pending): the initialiser runs before the
+    /// fields exist, so it must not share the slot with a sequence loaded from
+    /// a save. Never saved — a load reruns it, then restores the saved fields.
+    pub initialiser: Option<Machine>,
 
     /// Values carried across a reload, to be restored **after** the new
     /// program's initialiser has run.
@@ -108,8 +119,33 @@ pub struct Instance {
 pub struct Pending {
     /// The frozen machine.
     pub machine: Machine,
-    /// Seconds still to wait — a countdown, for the reason a timer's is.
+    /// Seconds still to wait — a countdown, for the reason a timer's is. Zero
+    /// for a body that ran out of fuel: it resumes next frame.
     pub remaining: f32,
+    /// What finishing the machine completes.
+    pub body: Body,
+    /// The program the machine stopped in. A machine is a position in that
+    /// code; after a hot reload that changed it, the position names something
+    /// else, and the sequence is abandoned rather than resumed into it.
+    pub fingerprint: u64,
+}
+
+/// Which body a [`Pending`] machine is part-way through.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Body {
+    /// An event handler, or a member it awaited.
+    Sequence,
+    /// `OnSpawn`.
+    Spawn,
+    /// `Update`.
+    Update,
+    /// A timer's body; finishing it rearms the timer with `rearm`.
+    Timer {
+        /// The timer's index in the behavior's layout.
+        index: usize,
+        /// The timer slot's value once the body finishes.
+        rearm: Value,
+    },
 }
 
 /// What a reload did to one behavior's instances.
@@ -353,6 +389,7 @@ impl ScriptRuntime {
     /// told, not left to discover it.
     pub fn reload(&mut self, module: &str, program: Program) -> Vec<ReloadReport> {
         let previous = self.programs.get(module).cloned();
+        let fingerprint = program.fingerprint();
         let mut reports = Vec::new();
 
         for layout in &program.behaviors {
@@ -387,16 +424,45 @@ impl ScriptRuntime {
             };
 
             for ((_, behavior), instance) in self.instances.iter_mut() {
-                if behavior != &layout.name {
+                // Another module may declare a behavior of the same name; its
+                // instances run other code and owe this edit nothing.
+                if behavior != &layout.name || instance.module != module {
                     continue;
                 }
-                let carried = remap(&instance.fields, old, layout);
+                // An instance whose initialiser has not finished still owes the
+                // values set aside for it; its fields hold the half-run
+                // initialiser's defaults, not what the instance is.
+                let current = match (&instance.carried, instance.initialised) {
+                    (Some(owed), false) => owed,
+                    _ => &instance.fields,
+                };
+                let carried = remap(current, old, layout);
                 instance.fields = carried.clone();
                 // Re-initialised so the new program's defaults are produced —
                 // its literals may have changed too, not only its field list.
                 // The carried values go back on top afterwards.
                 instance.initialised = false;
+                // An initialiser part-way through belongs to the old program.
+                instance.initialiser = None;
                 instance.carried = Some(carried);
+                // A body part-way through is a position in the old code; an
+                // edit that moved code makes that position mean something else.
+                // Abandoned here rather than when it would next run, so that
+                // nothing — a save taken in between, above all — goes on
+                // holding it. A schedule whose body it was is armed afresh by
+                // the initialiser the reload reruns.
+                if instance
+                    .pending
+                    .as_ref()
+                    .is_some_and(|pending| pending.fingerprint != fingerprint)
+                {
+                    log::warn!(
+                        "script `{}`: a sequence was abandoned — the script was edited while \
+                         it was part-way through",
+                        layout.name
+                    );
+                    instance.pending = None;
+                }
                 // An edit is the author's answer to whatever faulted. Refusing
                 // to try again would make a script unfixable without a restart.
                 instance.disabled = false;

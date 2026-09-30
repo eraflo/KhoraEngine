@@ -18,5 +18,8 @@
 //! full link of the crate's dependency tree. New integration tests join this
 //! binary as a module instead of adding a file at the root of `tests/`.
 
+mod breaker;
+mod conformance;
 mod ergon_fn;
+mod freeze;
 mod public_paths;

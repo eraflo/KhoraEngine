@@ -400,6 +400,14 @@ fn delivered_fields(x: &khora_script::dispatch::Delivered) {
     let _ = (&x.outcome, &x.spent, &x.suspended);
 }
 
+fn ticked_fields(x: &khora_script::dispatch::Ticked) {
+    let _ = (&x.spent, &x.fault, &x.suspended);
+}
+
+fn suspended_timer_fields(x: &khora_script::dispatch::SuspendedTimer) {
+    let _ = (&x.index, &x.machine, &x.rearm, &x.why);
+}
+
 fn not_delivered_variants(x: &khora_script::dispatch::NotDelivered) {
     match x {
         khora_script::dispatch::NotDelivered::NoSuchEntity(..) => {}
@@ -1429,7 +1437,27 @@ fn module_dispatch_paths_still_resolve() {
     let _ = khora_script::dispatch::invoke;
     let _ = khora_script::dispatch::resolve_member;
     let _ = khora_script::dispatch::state_handler_name;
-    let _ = khora_script::dispatch::tick_timers;
+    let _: fn(
+        &khora_script::vm::program::Program,
+        &str,
+        &mut khora_script::native::Host,
+        f32,
+        u64,
+    ) -> khora_script::dispatch::Ticked = khora_script::dispatch::tick_timers;
+    let _ = type_name::<khora_script::dispatch::Ticked>();
+    let _ = ticked_fields as fn(&khora_script::dispatch::Ticked);
+    is_debug::<khora_script::dispatch::Ticked>();
+    is_default::<khora_script::dispatch::Ticked>();
+    let _ = type_name::<khora_script::dispatch::SuspendedTimer>();
+    let _ = suspended_timer_fields as fn(&khora_script::dispatch::SuspendedTimer);
+    is_debug::<khora_script::dispatch::SuspendedTimer>();
+    let _: fn(
+        &khora_script::vm::program::Program,
+        &str,
+        &mut khora_script::native::Host,
+        usize,
+        khora_script::vm::Value,
+    ) = khora_script::dispatch::finish_timer;
 }
 
 #[test]
@@ -1875,6 +1903,8 @@ fn module_vm_paths_still_resolve() {
     let _ = khora_script::vm::Machine::run;
     let _ = khora_script::vm::Machine::run_counting;
     let _ = khora_script::vm::Machine::resolve_str;
+    let _ = khora_script::vm::Machine::freeze;
+    let _ = khora_script::vm::Machine::thaw;
     is_debug::<khora_script::vm::Machine>();
     is_clone::<khora_script::vm::Machine>();
     is_partial_eq::<khora_script::vm::Machine>();
@@ -2074,6 +2104,8 @@ fn module_vm_paths_still_resolve() {
     let _ = khora_script::vm::value::Value::as_str_ref;
     let _ = khora_script::vm::value::Value::is_null;
     let _ = khora_script::vm::value::Value::type_name;
+    let _ = khora_script::vm::value::Value::freeze;
+    let _ = khora_script::vm::value::Value::thaw;
     is_debug::<khora_script::vm::value::Value>();
     is_clone::<khora_script::vm::value::Value>();
     is_copy::<khora_script::vm::value::Value>();

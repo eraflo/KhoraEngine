@@ -37,6 +37,7 @@
 pub mod buffer;
 pub mod command;
 pub mod event;
+pub mod frozen;
 pub mod snapshot;
 pub mod table;
 pub mod value;
@@ -48,6 +49,7 @@ mod tests;
 pub use buffer::{CommandBuffer, Conflict};
 pub use command::{ComponentName, WorldCommand, WriteTarget};
 pub use event::{engine_event_channel, EventQueue, ScriptEvent, ENGINE_EVENT_BACKLOG};
+pub use frozen::{FrozenFrame, FrozenMachine, FrozenValue, PendingBody, SuspendedMachine};
 pub use snapshot::{PendingSequence, ScriptSnapshot, TimerRemaining};
 pub use value::ScriptValue;
 pub use writeback::{ScriptStateUpdate, ScriptStateWriteback};

@@ -124,6 +124,7 @@ mod every_pub_mod {
     use khora_core::script::buffer as _;
     use khora_core::script::command as _;
     use khora_core::script::event as _;
+    use khora_core::script::frozen as _;
     use khora_core::script::snapshot as _;
     use khora_core::script::table as _;
     use khora_core::script::value as _;
@@ -897,6 +898,50 @@ fn write_target_variants(x: &khora_core::script::command::WriteTarget) {
 
 fn script_event_fields(x: &khora_core::script::event::ScriptEvent) {
     let _ = (&x.target, &x.name, &x.args);
+}
+
+fn suspended_machine_variants(x: &khora_core::script::frozen::SuspendedMachine) {
+    match x {
+        khora_core::script::frozen::SuspendedMachine::Legacy(..) => {}
+        khora_core::script::frozen::SuspendedMachine::Frozen(..) => {}
+    }
+}
+
+fn frozen_machine_fields(x: &khora_core::script::frozen::FrozenMachine) {
+    let _ = (&x.body, &x.registers, &x.frames, &x.program_counter);
+}
+
+fn frozen_frame_fields(x: &khora_core::script::frozen::FrozenFrame) {
+    let _ = (&x.function, &x.base, &x.return_pc, &x.result);
+}
+
+fn pending_body_variants(x: &khora_core::script::frozen::PendingBody) {
+    match x {
+        khora_core::script::frozen::PendingBody::Sequence => {}
+        khora_core::script::frozen::PendingBody::Spawn => {}
+        khora_core::script::frozen::PendingBody::Update => {}
+        khora_core::script::frozen::PendingBody::Timer { index, rearm } => {
+            let _ = (index, rearm);
+        }
+    }
+}
+
+fn frozen_value_variants(x: &khora_core::script::frozen::FrozenValue) {
+    match x {
+        khora_core::script::frozen::FrozenValue::Unit => {}
+        khora_core::script::frozen::FrozenValue::Int(..) => {}
+        khora_core::script::frozen::FrozenValue::Float(..) => {}
+        khora_core::script::frozen::FrozenValue::Bool(..) => {}
+        khora_core::script::frozen::FrozenValue::Entity(..) => {}
+        khora_core::script::frozen::FrozenValue::Literal(..) => {}
+        khora_core::script::frozen::FrozenValue::Expired => {}
+        khora_core::script::frozen::FrozenValue::Vec2(..) => {}
+        khora_core::script::frozen::FrozenValue::Vec3(..) => {}
+        khora_core::script::frozen::FrozenValue::Vec4(..) => {}
+        khora_core::script::frozen::FrozenValue::Quat(..) => {}
+        khora_core::script::frozen::FrozenValue::Color(..) => {}
+        khora_core::script::frozen::FrozenValue::Null => {}
+    }
 }
 
 fn pending_sequence_fields(x: &khora_core::script::snapshot::PendingSequence) {
@@ -2522,6 +2567,81 @@ fn module_script_paths_still_resolve() {
         &khora_core::script::engine_event_channel,
         &khora_core::script::event::engine_event_channel,
     );
+    let _ = type_name::<khora_core::script::frozen::SuspendedMachine>();
+    let _ = type_name::<khora_core::script::SuspendedMachine>();
+    same_type(
+        PhantomData::<khora_core::script::SuspendedMachine>,
+        PhantomData::<khora_core::script::frozen::SuspendedMachine>,
+    );
+    let _ = suspended_machine_variants as fn(&khora_core::script::frozen::SuspendedMachine);
+    is_debug::<khora_core::script::frozen::SuspendedMachine>();
+    is_clone::<khora_core::script::frozen::SuspendedMachine>();
+    is_partial_eq::<khora_core::script::frozen::SuspendedMachine>();
+    is_serialize::<khora_core::script::frozen::SuspendedMachine>();
+    is_deserialize_owned::<khora_core::script::frozen::SuspendedMachine>();
+    is_encode::<khora_core::script::frozen::SuspendedMachine>();
+    is_decode::<khora_core::script::frozen::SuspendedMachine>();
+    is_borrow_decode::<khora_core::script::frozen::SuspendedMachine>();
+    let _ = type_name::<khora_core::script::frozen::FrozenMachine>();
+    let _ = type_name::<khora_core::script::FrozenMachine>();
+    same_type(
+        PhantomData::<khora_core::script::FrozenMachine>,
+        PhantomData::<khora_core::script::frozen::FrozenMachine>,
+    );
+    let _ = frozen_machine_fields as fn(&khora_core::script::frozen::FrozenMachine);
+    is_debug::<khora_core::script::frozen::FrozenMachine>();
+    is_clone::<khora_core::script::frozen::FrozenMachine>();
+    is_partial_eq::<khora_core::script::frozen::FrozenMachine>();
+    is_serialize::<khora_core::script::frozen::FrozenMachine>();
+    is_deserialize_owned::<khora_core::script::frozen::FrozenMachine>();
+    is_encode::<khora_core::script::frozen::FrozenMachine>();
+    is_decode::<khora_core::script::frozen::FrozenMachine>();
+    is_borrow_decode::<khora_core::script::frozen::FrozenMachine>();
+    let _ = type_name::<khora_core::script::frozen::FrozenFrame>();
+    let _ = type_name::<khora_core::script::FrozenFrame>();
+    same_type(
+        PhantomData::<khora_core::script::FrozenFrame>,
+        PhantomData::<khora_core::script::frozen::FrozenFrame>,
+    );
+    let _ = frozen_frame_fields as fn(&khora_core::script::frozen::FrozenFrame);
+    is_debug::<khora_core::script::frozen::FrozenFrame>();
+    is_clone::<khora_core::script::frozen::FrozenFrame>();
+    is_partial_eq::<khora_core::script::frozen::FrozenFrame>();
+    is_serialize::<khora_core::script::frozen::FrozenFrame>();
+    is_deserialize_owned::<khora_core::script::frozen::FrozenFrame>();
+    is_encode::<khora_core::script::frozen::FrozenFrame>();
+    is_decode::<khora_core::script::frozen::FrozenFrame>();
+    is_borrow_decode::<khora_core::script::frozen::FrozenFrame>();
+    let _ = type_name::<khora_core::script::frozen::PendingBody>();
+    let _ = type_name::<khora_core::script::PendingBody>();
+    same_type(
+        PhantomData::<khora_core::script::PendingBody>,
+        PhantomData::<khora_core::script::frozen::PendingBody>,
+    );
+    let _ = pending_body_variants as fn(&khora_core::script::frozen::PendingBody);
+    is_debug::<khora_core::script::frozen::PendingBody>();
+    is_clone::<khora_core::script::frozen::PendingBody>();
+    is_partial_eq::<khora_core::script::frozen::PendingBody>();
+    is_serialize::<khora_core::script::frozen::PendingBody>();
+    is_deserialize_owned::<khora_core::script::frozen::PendingBody>();
+    is_encode::<khora_core::script::frozen::PendingBody>();
+    is_decode::<khora_core::script::frozen::PendingBody>();
+    is_borrow_decode::<khora_core::script::frozen::PendingBody>();
+    let _ = type_name::<khora_core::script::frozen::FrozenValue>();
+    let _ = type_name::<khora_core::script::FrozenValue>();
+    same_type(
+        PhantomData::<khora_core::script::FrozenValue>,
+        PhantomData::<khora_core::script::frozen::FrozenValue>,
+    );
+    let _ = frozen_value_variants as fn(&khora_core::script::frozen::FrozenValue);
+    is_debug::<khora_core::script::frozen::FrozenValue>();
+    is_clone::<khora_core::script::frozen::FrozenValue>();
+    is_partial_eq::<khora_core::script::frozen::FrozenValue>();
+    is_serialize::<khora_core::script::frozen::FrozenValue>();
+    is_deserialize_owned::<khora_core::script::frozen::FrozenValue>();
+    is_encode::<khora_core::script::frozen::FrozenValue>();
+    is_decode::<khora_core::script::frozen::FrozenValue>();
+    is_borrow_decode::<khora_core::script::frozen::FrozenValue>();
     let _ = type_name::<khora_core::script::snapshot::PendingSequence>();
     let _ = type_name::<khora_core::script::PendingSequence>();
     same_type(
