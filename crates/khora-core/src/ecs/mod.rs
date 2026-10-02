@@ -18,3 +18,6 @@
 //! implementation lives in the `khora-data` crate, which depends on these types.
 
 pub mod entity;
+pub mod persistent_id;
+
+pub use persistent_id::PersistentId;

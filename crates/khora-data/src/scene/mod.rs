@@ -20,6 +20,7 @@ mod recipe;
 pub mod shape;
 
 pub mod migrations;
+pub mod record;
 mod strategy;
 
 pub use component_registration::*;

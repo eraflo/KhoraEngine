@@ -101,6 +101,7 @@ mod every_pub_mod {
     use khora_core::audio::mix_bus as _;
     use khora_core::ecs as _;
     use khora_core::ecs::entity as _;
+    use khora_core::ecs::persistent_id as _;
     use khora_core::engine_context as _;
     use khora_core::event as _;
     use khora_core::graph as _;
@@ -1796,6 +1797,30 @@ fn module_ecs_paths_still_resolve() {
     is_encode::<khora_core::ecs::entity::EntityId>();
     is_decode::<khora_core::ecs::entity::EntityId>();
     is_borrow_decode::<khora_core::ecs::entity::EntityId>();
+}
+
+#[test]
+fn module_ecs_persistent_id_paths_still_resolve() {
+    let _ = type_name::<khora_core::ecs::persistent_id::PersistentId>();
+    same_type(
+        PhantomData::<khora_core::ecs::PersistentId>,
+        PhantomData::<khora_core::ecs::persistent_id::PersistentId>,
+    );
+    let _ = khora_core::ecs::persistent_id::PersistentId::authored;
+    let _ = khora_core::ecs::persistent_id::PersistentId::created;
+    let _ = khora_core::ecs::persistent_id::PersistentId::is_created;
+    let _ = khora_core::ecs::persistent_id::PersistentId::to_bits;
+    let _ = khora_core::ecs::persistent_id::PersistentId::from_bits;
+    is_debug::<khora_core::ecs::persistent_id::PersistentId>();
+    is_clone::<khora_core::ecs::persistent_id::PersistentId>();
+    is_copy::<khora_core::ecs::persistent_id::PersistentId>();
+    is_partial_eq::<khora_core::ecs::persistent_id::PersistentId>();
+    is_eq::<khora_core::ecs::persistent_id::PersistentId>();
+    is_partial_ord::<khora_core::ecs::persistent_id::PersistentId>();
+    is_ord::<khora_core::ecs::persistent_id::PersistentId>();
+    is_hash::<khora_core::ecs::persistent_id::PersistentId>();
+    is_serialize::<khora_core::ecs::persistent_id::PersistentId>();
+    is_deserialize_owned::<khora_core::ecs::persistent_id::PersistentId>();
 }
 
 #[test]

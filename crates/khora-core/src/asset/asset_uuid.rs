@@ -28,7 +28,11 @@ const ASSET_NAMESPACE_UUID: Uuid = Uuid::from_u128(0x4a6a81e9_f0d1_4b8f_91a8_7e7
 ///
 /// By using a stable UUID, assets can be moved, renamed, or have their source
 /// data modified without breaking references to them in scenes or other assets.
+///
+/// Its serde name is reserved, so a save can tell an asset reference from any
+/// other sixteen bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename = "khora.AssetUUID")]
 pub struct AssetUUID(Uuid);
 
 impl Encode for AssetUUID {
@@ -60,6 +64,16 @@ impl<'de, Context> bincode::BorrowDecode<'de, Context> for AssetUUID {
 }
 
 impl AssetUUID {
+    /// The identity whose sixteen bytes are `bytes`.
+    pub fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(Uuid::from_bytes(bytes))
+    }
+
+    /// The sixteen bytes of this identity.
+    pub fn as_bytes(&self) -> &[u8; 16] {
+        self.0.as_bytes()
+    }
+
     /// Creates a new, random (version 4) `AssetUUID`.
     pub fn new() -> Self {
         Self(Uuid::new_v4())

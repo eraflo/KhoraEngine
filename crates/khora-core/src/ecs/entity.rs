@@ -24,7 +24,12 @@ use serde::{Deserialize, Serialize};
 /// but the generation is incremented. This ensures that old `EntityId` handles
 /// pointing to a recycled index become invalid and cannot accidentally affect
 /// the new entity.
+///
+/// Its serde name is reserved: a save recognises it wherever it sits and writes
+/// the entity's persistent identity instead of these two numbers, which only
+/// mean something in the world that produced them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
+#[serde(rename = "khora.EntityId")]
 pub struct EntityId {
     /// The index of the entity's metadata in the central `Vec<EntityMetadata>`.
     pub index: u32,

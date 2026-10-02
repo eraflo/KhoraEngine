@@ -48,19 +48,89 @@ use crate::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 /// Two forms, because saves were written before the structured one existed.
 /// Only [`Frozen`](Self::Frozen) is ever written; [`Legacy`](Self::Legacy) is
 /// read so those saves still load.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
+///
+/// In serde's data model it is one or the other with no tag: a legacy machine
+/// is a list of bytes, a structured one a struct, and nothing is both. Read
+/// by hand rather than as `#[serde(untagged)]`: an untagged enum is read
+/// through serde's buffering, which narrows numbers without asking, and a
+/// frozen register must refuse a value it cannot hold exactly.
+#[derive(Debug, Clone, PartialEq)]
 pub enum SuspendedMachine {
     /// The VM's own encoding of an event handler's machine, as saves held it
     /// before the machine had a structured form. Opaque to everything but the
     /// VM, and an event handler's sequence — the only body that could be saved
     /// then.
-    ///
-    /// First, so a self-describing format tries it first: a byte list is a
-    /// list, and no structured machine is one.
     Legacy(Vec<u8>),
     /// A machine in the engine's terms.
     Frozen(FrozenMachine),
+}
+
+impl Serialize for SuspendedMachine {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Legacy(bytes) => bytes.serialize(serializer),
+            Self::Frozen(machine) => machine.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SuspendedMachine {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserializer.deserialize_any(SuspendedMachineVisitor)
+    }
+}
+
+/// Tells the two forms apart by shape, then reads the one it found directly —
+/// field by field, so every value meets the type it is read into.
+struct SuspendedMachineVisitor;
+
+impl<'de> serde::de::Visitor<'de> for SuspendedMachineVisitor {
+    type Value = SuspendedMachine;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("a frozen machine, or the bytes of a legacy one")
+    }
+
+    /// A list is either a legacy machine's bytes or, in a compact format
+    /// that writes structs as lists, a structured machine: its first element
+    /// — a byte, or the body a machine opens with — says which.
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+        use serde::de::Error;
+        match seq.next_element_seed(FirstElement)? {
+            None => Ok(SuspendedMachine::Legacy(Vec::new())),
+            Some(First::Byte(byte)) => {
+                let mut bytes = vec![byte];
+                while let Some(byte) = seq.next_element::<u8>()? {
+                    bytes.push(byte);
+                }
+                Ok(SuspendedMachine::Legacy(bytes))
+            }
+            Some(First::Body(body)) => {
+                let missing = |index| A::Error::invalid_length(index, &"a frozen machine");
+                let registers = seq.next_element()?.ok_or_else(|| missing(1))?;
+                let frames = seq.next_element()?.ok_or_else(|| missing(2))?;
+                let program_counter = seq.next_element()?.ok_or_else(|| missing(3))?;
+                if seq.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                    return Err(A::Error::invalid_length(5, &"a frozen machine"));
+                }
+                Ok(SuspendedMachine::Frozen(FrozenMachine {
+                    body,
+                    registers,
+                    frames,
+                    program_counter,
+                }))
+            }
+        }
+    }
+
+    fn visit_bytes<E: serde::de::Error>(self, bytes: &[u8]) -> Result<Self::Value, E> {
+        Ok(SuspendedMachine::Legacy(bytes.to_vec()))
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+        FrozenMachine::deserialize(serde::de::value::MapAccessDeserializer::new(map))
+            .map(SuspendedMachine::Frozen)
+    }
 }
 
 /// The marker a binary save writes where a legacy machine wrote its length.
@@ -142,6 +212,60 @@ fn decode_suspended<D: Decoder>(decoder: &mut D) -> Result<SuspendedMachine, Dec
         bytes.extend_from_slice(&chunk[..take]);
     }
     Ok(SuspendedMachine::Legacy(bytes))
+}
+
+/// The first element of a list read as a suspended machine.
+enum First {
+    /// A legacy machine's first byte.
+    Byte(u8),
+    /// A structured machine's body — the field it opens with.
+    Body(PendingBody),
+}
+
+/// Reads the first element of such a list as whichever of the two it is,
+/// typed straight away rather than buffered.
+struct FirstElement;
+
+impl<'de> serde::de::DeserializeSeed<'de> for FirstElement {
+    type Value = First;
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, deserializer: D) -> Result<First, D::Error> {
+        deserializer.deserialize_any(self)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for FirstElement {
+    type Value = First;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("a byte, or the body of a frozen machine")
+    }
+
+    fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<First, E> {
+        u8::try_from(v)
+            .map(First::Byte)
+            .map_err(|_| E::invalid_value(serde::de::Unexpected::Unsigned(v), &self))
+    }
+
+    fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<First, E> {
+        u8::try_from(v)
+            .map(First::Byte)
+            .map_err(|_| E::invalid_value(serde::de::Unexpected::Signed(v), &self))
+    }
+
+    fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<First, E> {
+        use serde::de::IntoDeserializer;
+        PendingBody::deserialize(v.into_deserializer()).map(First::Body)
+    }
+
+    fn visit_enum<A: serde::de::EnumAccess<'de>>(self, data: A) -> Result<First, A::Error> {
+        PendingBody::deserialize(serde::de::value::EnumAccessDeserializer::new(data))
+            .map(First::Body)
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<First, A::Error> {
+        PendingBody::deserialize(serde::de::value::MapAccessDeserializer::new(map)).map(First::Body)
+    }
 }
 
 /// A machine stopped part-way through a body.

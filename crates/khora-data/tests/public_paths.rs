@@ -100,6 +100,7 @@ mod every_pub_mod {
     use khora_data::scene::component_registration as _;
     use khora_data::scene::material_registration as _;
     use khora_data::scene::migrations as _;
+    use khora_data::scene::record as _;
     use khora_data::scene::shape as _;
     use khora_data::ui as _;
     use khora_data::ui::components as _;
@@ -1825,6 +1826,144 @@ fn module_render_paths_still_resolve() {
     let _ = type_name::<khora_data::render::ShadowResult>();
     let _ = khora_data::render::extract_active_camera_view;
     let _ = khora_data::render::primary_view;
+}
+
+fn record_error_fields(x: &khora_data::scene::record::RecordError) {
+    let _ = (&x.0,);
+}
+
+fn record_variants(x: &khora_data::scene::record::Record) {
+    match x {
+        khora_data::scene::record::Record::Unit => {}
+        khora_data::scene::record::Record::Bool(..) => {}
+        khora_data::scene::record::Record::I64(..) => {}
+        khora_data::scene::record::Record::U64(..) => {}
+        khora_data::scene::record::Record::F32(..) => {}
+        khora_data::scene::record::Record::F64(..) => {}
+        khora_data::scene::record::Record::Char(..) => {}
+        khora_data::scene::record::Record::Str(..) => {}
+        khora_data::scene::record::Record::Bytes(..) => {}
+        khora_data::scene::record::Record::None => {}
+        khora_data::scene::record::Record::Some(..) => {}
+        khora_data::scene::record::Record::Seq(..) => {}
+        khora_data::scene::record::Record::Map(..) => {}
+        khora_data::scene::record::Record::UnitStruct { name } => {
+            let _ = name;
+        }
+        khora_data::scene::record::Record::Struct { name, fields } => {
+            let _ = (name, fields);
+        }
+        khora_data::scene::record::Record::TupleStruct { name, fields } => {
+            let _ = (name, fields);
+        }
+        khora_data::scene::record::Record::Newtype { name, value } => {
+            let _ = (name, value);
+        }
+        khora_data::scene::record::Record::Variant {
+            enum_name,
+            variant,
+            payload,
+        } => {
+            let _ = (enum_name, variant, payload);
+        }
+        khora_data::scene::record::Record::Entity(..) => {}
+        khora_data::scene::record::Record::Asset(..) => {}
+    }
+}
+
+fn variant_payload_variants(x: &khora_data::scene::record::VariantPayload) {
+    match x {
+        khora_data::scene::record::VariantPayload::Unit => {}
+        khora_data::scene::record::VariantPayload::Newtype(..) => {}
+        khora_data::scene::record::VariantPayload::Tuple(..) => {}
+        khora_data::scene::record::VariantPayload::Struct(..) => {}
+    }
+}
+
+fn entity_ref_variants(x: &khora_data::scene::record::EntityRef) {
+    match x {
+        khora_data::scene::record::EntityRef::Id(..) => {}
+        khora_data::scene::record::EntityRef::Outside => {}
+    }
+}
+
+fn load_report_fields(x: &khora_data::scene::record::LoadReport) {
+    let _ = (&x.entries,);
+}
+
+fn report_entry_fields(x: &khora_data::scene::record::ReportEntry) {
+    let _ = (&x.entity, &x.component, &x.path, &x.kind);
+}
+
+fn report_kind_variants(x: &khora_data::scene::record::ReportKind) {
+    match x {
+        khora_data::scene::record::ReportKind::Defaulted => {}
+        khora_data::scene::record::ReportKind::Dropped => {}
+        khora_data::scene::record::ReportKind::Renamed { from } => {
+            let _ = from;
+        }
+        khora_data::scene::record::ReportKind::Widened => {}
+        khora_data::scene::record::ReportKind::Retired => {}
+        khora_data::scene::record::ReportKind::DeadReference => {}
+    }
+}
+
+fn reference_writer_trait_items<W: khora_data::scene::record::ReferenceWriter + ?Sized>() {
+    let _ = <W as khora_data::scene::record::ReferenceWriter>::write_entity;
+}
+
+fn reference_reader_trait_items<R: khora_data::scene::record::ReferenceReader + ?Sized>() {
+    let _ = <R as khora_data::scene::record::ReferenceReader>::read_entity;
+}
+
+#[test]
+fn module_scene_record_paths_still_resolve() {
+    let _ = type_name::<khora_data::scene::record::Record>();
+    let _ = record_variants as fn(&khora_data::scene::record::Record);
+    is_debug::<khora_data::scene::record::Record>();
+    is_clone::<khora_data::scene::record::Record>();
+    is_partial_eq::<khora_data::scene::record::Record>();
+    let _ = type_name::<khora_data::scene::record::VariantPayload>();
+    let _ = variant_payload_variants as fn(&khora_data::scene::record::VariantPayload);
+    is_debug::<khora_data::scene::record::VariantPayload>();
+    is_clone::<khora_data::scene::record::VariantPayload>();
+    is_partial_eq::<khora_data::scene::record::VariantPayload>();
+    let _ = type_name::<khora_data::scene::record::EntityRef>();
+    let _ = entity_ref_variants as fn(&khora_data::scene::record::EntityRef);
+    is_debug::<khora_data::scene::record::EntityRef>();
+    is_clone::<khora_data::scene::record::EntityRef>();
+    is_copy::<khora_data::scene::record::EntityRef>();
+    is_eq::<khora_data::scene::record::EntityRef>();
+    is_hash::<khora_data::scene::record::EntityRef>();
+    let _ = type_name::<khora_data::scene::record::RecordError>();
+    let _ = record_error_fields as fn(&khora_data::scene::record::RecordError);
+    is_debug::<khora_data::scene::record::RecordError>();
+    is_clone::<khora_data::scene::record::RecordError>();
+    is_partial_eq::<khora_data::scene::record::RecordError>();
+    is_display::<khora_data::scene::record::RecordError>();
+    is_error::<khora_data::scene::record::RecordError>();
+    let _ = type_name::<khora_data::scene::record::LoadReport>();
+    let _ = load_report_fields as fn(&khora_data::scene::record::LoadReport);
+    let _ = khora_data::scene::record::LoadReport::is_clean;
+    is_debug::<khora_data::scene::record::LoadReport>();
+    is_clone::<khora_data::scene::record::LoadReport>();
+    is_default::<khora_data::scene::record::LoadReport>();
+    is_partial_eq::<khora_data::scene::record::LoadReport>();
+    let _ = type_name::<khora_data::scene::record::ReportEntry>();
+    let _ = report_entry_fields as fn(&khora_data::scene::record::ReportEntry);
+    is_debug::<khora_data::scene::record::ReportEntry>();
+    is_clone::<khora_data::scene::record::ReportEntry>();
+    is_partial_eq::<khora_data::scene::record::ReportEntry>();
+    let _ = type_name::<khora_data::scene::record::ReportKind>();
+    let _ = report_kind_variants as fn(&khora_data::scene::record::ReportKind);
+    is_debug::<khora_data::scene::record::ReportKind>();
+    is_clone::<khora_data::scene::record::ReportKind>();
+    is_partial_eq::<khora_data::scene::record::ReportKind>();
+    reference_writer_trait_items::<dyn khora_data::scene::record::ReferenceWriter>();
+    reference_reader_trait_items::<dyn khora_data::scene::record::ReferenceReader>();
+    let _ = khora_data::scene::record::to_record::<khora_core::ecs::entity::EntityId>;
+    let _ = khora_data::scene::record::from_record::<khora_core::ecs::entity::EntityId>;
+    let _ = khora_data::scene::record::resolve::<khora_core::ecs::entity::EntityId>;
 }
 
 #[test]
