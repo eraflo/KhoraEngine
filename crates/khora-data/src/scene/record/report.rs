@@ -77,12 +77,51 @@ pub enum ReportKind {
         /// The name the save used.
         from: String,
     },
-    /// A number was read at a wider type than it was written.
+    /// A number was read at another type than it was written, without loss —
+    /// usually a wider one; a narrower one only when the value is exact.
     Widened,
     /// The save holds a component type declared retired; it was skipped.
     Retired,
+    /// The save holds a component the engine derives or keeps while
+    /// running, not one a save holds; it was skipped, and is rebuilt.
+    NotSaved,
     /// A reference named an entity the save does not hold.
     DeadReference,
+}
+
+impl std::fmt::Display for ReportEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let place = self.path.as_str();
+        match &self.kind {
+            ReportKind::Defaulted => write!(f, "`{place}` was not saved; it took its default")?,
+            ReportKind::Dropped => {
+                write!(f, "`{place}` is no longer a field; its value was dropped")?
+            }
+            ReportKind::Renamed { from } => {
+                write!(f, "`{place}` was read from its old name `{from}`")?
+            }
+            ReportKind::Widened => {
+                write!(f, "`{place}` was read at another number type, without loss")?
+            }
+            ReportKind::Retired => f.write_str("a retired component was skipped")?,
+            ReportKind::NotSaved => {
+                f.write_str("a component the engine rebuilds was skipped, not read")?
+            }
+            ReportKind::DeadReference => {
+                write!(f, "`{place}` named an entity the save does not hold")?
+            }
+        }
+        if let Some(component) = &self.component {
+            write!(f, " (component {component}")?;
+            if let Some(entity) = self.entity {
+                write!(f, ", entity {:#x}", entity.to_bits())?;
+            }
+            f.write_str(")")?;
+        } else if let Some(entity) = self.entity {
+            write!(f, " (entity {:#x})", entity.to_bits())?;
+        }
+        Ok(())
+    }
 }
 
 /// Reads a `T` from `record` and says what the read adapted.
@@ -207,7 +246,7 @@ fn resembles(written: &Record, read: &Record) -> bool {
         Record::I64(v) => Some(v as f64),
         Record::U64(v) => Some(v as f64),
         Record::F32(v) => Some(f64::from(v)),
-        Record::F64(v) => Some(v),
+        Record::F64(v) | Record::Decimal(v) => Some(v),
         _ => None,
     };
     if let (Some(a), Some(b)) = (number(written), number(read)) {

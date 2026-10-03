@@ -63,6 +63,22 @@ impl<'de, Context> bincode::BorrowDecode<'de, Context> for AssetUUID {
     }
 }
 
+/// The canonical hyphenated form, as text files write it.
+impl std::fmt::Display for AssetUUID {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// Reads the hyphenated form (or any form `uuid` accepts).
+impl std::str::FromStr for AssetUUID {
+    type Err = uuid::Error;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        Uuid::parse_str(text).map(Self)
+    }
+}
+
 impl AssetUUID {
     /// The identity whose sixteen bytes are `bytes`.
     pub fn from_bytes(bytes: [u8; 16]) -> Self {

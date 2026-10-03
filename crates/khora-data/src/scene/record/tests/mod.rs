@@ -33,8 +33,10 @@ mod data_model;
 mod edge_cases;
 mod references;
 mod report;
+mod report_display;
 mod resolution;
 mod round_trip;
+mod self_describing;
 mod widening;
 
 /// An entity at `index`, `generation`.

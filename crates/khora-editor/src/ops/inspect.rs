@@ -16,6 +16,7 @@
 
 use super::scene_tree::domain_tag;
 use khora_sdk::editor_ui::*;
+use khora_sdk::khora_data::ecs::HierarchyWrite;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::GameWorld;
 
@@ -95,6 +96,16 @@ pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
                 value,
             } => {
                 let inner = world.inner_world_mut();
+                // The hierarchy is written by the module that owns it, so an
+                // edited `Parent` moves both halves of the edge.
+                if let Some(written) =
+                    inner.write_hierarchy_by_name(entity, &type_name, HierarchyWrite::Set(&value))
+                {
+                    if let Err(e) = written {
+                        log::warn!("Failed to apply JSON edit to {}: {}", type_name, e);
+                    }
+                    continue;
+                }
                 let mut applied = false;
                 for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
                     if reg.type_name == type_name {
@@ -113,6 +124,14 @@ pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
             }
             PropertyEdit::RemoveComponent { entity, type_name } => {
                 let inner = world.inner_world_mut();
+                if let Some(written) =
+                    inner.write_hierarchy_by_name(entity, &type_name, HierarchyWrite::Remove)
+                {
+                    if let Err(e) = written {
+                        log::warn!("Failed to remove component {}: {}", type_name, e);
+                    }
+                    continue;
+                }
                 let mut applied = false;
                 for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
                     if reg.type_name == type_name {

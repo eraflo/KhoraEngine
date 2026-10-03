@@ -97,6 +97,7 @@ impl EngineApp for EditorApp {
             if let Ok(mut state) = self.editor_state.lock() {
                 state.current_scene_path = Some(path);
             }
+            commands::forget_history(&self.command_history);
         }
 
         input::process_events(

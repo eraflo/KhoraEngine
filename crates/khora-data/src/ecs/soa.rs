@@ -43,7 +43,7 @@ use std::any::Any;
 use std::marker::PhantomData;
 
 use crate::ecs::component::Component;
-use crate::ecs::page::{AnyVec, SetFromBytesError, MAX_COLUMN_PAYLOAD_BYTES};
+use crate::ecs::page::AnyVec;
 
 /// Per-type knowledge the generic [`FieldSoaColumn`] needs to scatter a
 /// component into its `f32` field arrays and gather it back.
@@ -169,61 +169,6 @@ impl<T: SoaLayout> AnyVec for FieldSoaColumn<T> {
             field.swap_remove(index);
         }
     }
-
-    fn to_bytes(&self) -> Vec<u8> {
-        // Field-major little-endian: field 0's f32s, then field 1's, … This is
-        // the column's own self-consistent format; `set_from_bytes` reverses it.
-        let mut out = Vec::with_capacity(self.len() * T::FIELD_COUNT * 4);
-        for field in &self.fields {
-            for &v in field {
-                out.extend_from_slice(&v.to_le_bytes());
-            }
-        }
-        out
-    }
-
-    unsafe fn set_from_bytes(&mut self, bytes: &[u8]) -> Result<(), SetFromBytesError> {
-        let field_count = T::FIELD_COUNT;
-        // One row occupies `field_count` little-endian f32s. A zero-field layout
-        // has no payload, mirroring the ZST handling in the `Vec<T>` column.
-        let row_size = field_count.saturating_mul(4);
-        if row_size == 0 {
-            return Ok(());
-        }
-
-        // Validate the untrusted length before reserving any rows: it must be an
-        // exact multiple of a full row and stay under the payload ceiling.
-        if !bytes.len().is_multiple_of(row_size) {
-            return Err(SetFromBytesError::MisalignedLength {
-                len: bytes.len(),
-                elem_size: row_size,
-            });
-        }
-        if bytes.len() > MAX_COLUMN_PAYLOAD_BYTES {
-            return Err(SetFromBytesError::PayloadTooLarge {
-                len: bytes.len(),
-                max: MAX_COLUMN_PAYLOAD_BYTES,
-            });
-        }
-
-        let rows = bytes.len() / row_size;
-        let mut idx = 0usize;
-        for field in &mut self.fields {
-            field.clear();
-            field.reserve(rows);
-            for _ in 0..rows {
-                let b = [
-                    bytes[idx * 4],
-                    bytes[idx * 4 + 1],
-                    bytes[idx * 4 + 2],
-                    bytes[idx * 4 + 3],
-                ];
-                field.push(f32::from_le_bytes(b));
-                idx += 1;
-            }
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -338,43 +283,6 @@ mod tests {
                 x: 1.0,
                 y: 11.0,
                 z: 21.0
-            }
-        );
-    }
-
-    #[test]
-    fn bytes_roundtrip() {
-        let mut col = FieldSoaColumn::<P>::new();
-        col.push(P {
-            x: 1.5,
-            y: -2.5,
-            z: 3.25,
-        });
-        col.push(P {
-            x: 4.0,
-            y: 5.0,
-            z: 6.0,
-        });
-        let bytes = col.to_bytes();
-        let mut restored = FieldSoaColumn::<P>::new();
-        // SAFETY: `bytes` came from `to_bytes` on the same `FieldSoaColumn<P>`
-        // type, so the field-major f32 layout matches exactly.
-        unsafe { restored.set_from_bytes(&bytes) }.expect("valid bytes must round-trip");
-        assert_eq!(restored.len(), 2);
-        assert_eq!(
-            restored.get(0),
-            P {
-                x: 1.5,
-                y: -2.5,
-                z: 3.25
-            }
-        );
-        assert_eq!(
-            restored.get(1),
-            P {
-                x: 4.0,
-                y: 5.0,
-                z: 6.0
             }
         );
     }
@@ -713,18 +621,21 @@ mod add_component_field_soa {
         assert_eq!(seen, vec![SPIN]);
     }
 
-    /// The scene recipe path round-trips a field-SoA component onto another
-    /// entity, leaving that entity's existing component intact.
+    /// A save round-trips a field-SoA component onto another entity, leaving
+    /// that entity's existing component intact.
     #[test]
     fn recipe_round_trip_restores_field_soa_component() {
         let reg = registration();
         let mut src = world();
         let source = src.spawn(SPIN);
-        let bytes = (reg.serialize_recipe)(&src, source).expect("the source carries SoaSpin");
 
         let mut dst = world();
         let target = dst.spawn(Mass(7.0));
-        (reg.deserialize_recipe)(&mut dst, target, &bytes).expect("recipe decodes");
+        crate::scene::component_registration::copy_through_record(
+            reg, &src, source, &mut dst, target,
+        )
+        .expect("the source carries SoaSpin")
+        .expect("the record reads back");
 
         assert_eq!(dst.clone_component::<SoaSpin>(target), Some(SPIN));
         assert_eq!(dst.get::<Mass>(target), Some(&Mass(7.0)));
@@ -980,9 +891,8 @@ mod field_soa_after_add {
             }
         }
         world.run_compaction(usize::MAX);
-        // Despawns land after compaction: a despawned entity's leftover
-        // migration rows make compaction itself panic (see
-        // `compaction_after_despawn`), which is not what this test measures.
+        // Despawns land after compaction, so the compaction this test
+        // measures runs over live rows only.
         for (i, &e) in entities.iter().enumerate() {
             if i % 4 == 2 {
                 assert!(world.despawn(e));
@@ -1047,8 +957,9 @@ mod field_soa_after_add {
         assert_eq!(world.get::<Weight>(e), Some(&Weight(3.0)));
     }
 
-    /// The archetype snapshot of a world whose field-SoA column was filled by
-    /// `add_component` (including the orphan row it left) restores every value.
+    /// A saved world whose field-SoA column was filled by `add_component`
+    /// (including the orphan row it left) restores every saved value — read
+    /// from the live rows only, never from the orphan.
     #[test]
     fn archetype_round_trip_after_add() {
         let mut src = world();
@@ -1056,14 +967,29 @@ mod field_soa_after_add {
         let b = src.spawn((Weight(2.0), Tint(0.5)));
         src.add_component(a, drift(1)).expect("add a");
         src.add_component(b, drift(2)).expect("add b");
-        let bytes = src.serialize_archetype().expect("encode");
+        let record = crate::scene::capture_world(&src).expect("the world is captured");
 
         let mut dst = world();
-        dst.deserialize_archetype(&bytes).expect("decode");
+        let applied = crate::scene::apply(&mut dst, &record, crate::scene::Identity::Keep)
+            .expect("the record loads");
+        let moved = |entity| {
+            let id = src
+                .persistent_id(entity)
+                .expect("captured entities have identities");
+            applied
+                .entities
+                .iter()
+                .find(|(saved, _)| *saved == id)
+                .map(|(_, loaded)| *loaded)
+                .expect("every captured entity is loaded")
+        };
+        let (a, b) = (moved(a), moved(b));
         assert_eq!(dst.clone_component::<Drift>(a), Some(drift(1)));
         assert_eq!(dst.clone_component::<Drift>(b), Some(drift(2)));
-        assert_eq!(dst.get::<Weight>(b), Some(&Weight(2.0)));
-        assert_eq!(dst.get::<Tint>(b), Some(&Tint(0.5)));
+        // `Weight` and `Tint` implement `Component` by hand and register no
+        // persistence: a save holds what is registered for one, nothing else.
+        assert_eq!(dst.get::<Weight>(b), None);
+        assert_eq!(dst.get::<Tint>(b), None);
     }
 
     /// Adding a sibling to an entity that was spawned with the field-SoA

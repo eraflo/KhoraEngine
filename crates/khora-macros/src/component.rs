@@ -160,7 +160,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     // Check for #[component(no_serializable)] attribute.
     //
     // The `else if` branch consumes unknown `key = value` metas (`domain`,
-    // `provenance`, `layout`) so the walk reaches this flag whatever the order
+    // `provenance`, `layout`, `formerly`) so the walk reaches this flag whatever the order
     // the keys were written in — without it, `parse_nested_meta` aborts on the
     // first unconsumed value and the discarded error makes the miss silent.
     let no_serializable = input.attrs.iter().any(|attr| {
@@ -188,16 +188,23 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     //   Absent means `Authored`: a component is the author's data unless it says
     //   otherwise, so engine-written types opt out explicitly rather than every
     //   authored type having to opt in.
+    // * `formerly = "<old name>"` (repeatable) — a name the type was registered
+    //   under before: a save that names it so still loads, reported as renamed.
     //
-    // Both keys are read in ONE pass. `parse_nested_meta` requires every meta it
+    // All value keys are read in ONE pass. `parse_nested_meta` requires every meta it
     // walks to be fully consumed, so a closure that recognises only one key
     // aborts on the other's `= value` — and because the result is discarded, the
     // failure is silent and the second key is simply never seen. Hence the
     // trailing branch that consumes unknown `key = value` pairs (`layout = ...`)
     // so parsing continues past them.
-    let (domain_ident, provenance_ident): (Option<syn::Ident>, syn::Ident) = {
+    let (domain_ident, provenance_ident, formerly): (
+        Option<syn::Ident>,
+        syn::Ident,
+        Vec<syn::LitStr>,
+    ) = {
         let mut domain = None;
         let mut provenance = None;
+        let mut formerly = Vec::new();
         for attr in &input.attrs {
             if !attr.path().is_ident("component") {
                 continue;
@@ -207,6 +214,8 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     domain = Some(meta.value()?.parse::<syn::Ident>()?);
                 } else if meta.path.is_ident("provenance") {
                     provenance = Some(meta.value()?.parse::<syn::Ident>()?);
+                } else if meta.path.is_ident("formerly") {
+                    formerly.push(meta.value()?.parse::<syn::LitStr>()?);
                 } else if meta.input.peek(syn::Token![=]) {
                     let _ = meta.value()?.parse::<syn::Expr>()?;
                 }
@@ -215,7 +224,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         }
         let provenance = provenance
             .unwrap_or_else(|| syn::Ident::new("Authored", proc_macro::Span::call_site().into()));
-        (domain, provenance)
+        (domain, provenance, formerly)
     };
 
     let domain_registration = match &domain_ident {
@@ -243,21 +252,32 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     let mut included_fields = Vec::new();
     let mut skipped_fields = Vec::new();
 
+    // A field's former names, read by the mirror as serde aliases: a save
+    // written before the rename still fills the field (named fields only — a
+    // tuple field has no name to rename).
+    let mut field_formerly: Vec<Vec<syn::LitStr>> = Vec::new();
     for field in fields.iter() {
-        let is_skip = field.attrs.iter().any(|attr| {
+        let mut is_skip = false;
+        let mut former = Vec::new();
+        for attr in &field.attrs {
             if !attr.path().is_ident("component") {
-                return false;
+                continue;
             }
-            let mut skip = false;
             let _ = attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("skip") {
-                    skip = true;
+                    is_skip = true;
+                } else if meta.path.is_ident("formerly") {
+                    former.push(meta.value()?.parse::<syn::LitStr>()?);
+                } else if meta.input.peek(syn::Token![=]) {
+                    let _ = meta.value()?.parse::<syn::Expr>()?;
                 }
                 Ok(())
             });
-            skip
-        });
+        }
 
+        if !is_skip {
+            field_formerly.push(former);
+        }
         if is_skip {
             skipped_fields.push(field);
         } else {
@@ -268,12 +288,13 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     // Generate Serializable struct fields (only included fields)
     let serializable_field_defs: Vec<_> = included_fields
         .iter()
-        .map(|f| {
+        .zip(&field_formerly)
+        .map(|(f, former)| {
             let fvis = &f.vis;
             let fname = &f.ident;
             let ftype = &f.ty;
             if let Some(fname) = fname {
-                quote! { #fvis #fname: #ftype }
+                quote! { #(#[serde(alias = #former)])* #fvis #fname: #ftype }
             } else {
                 quote! { #fvis #ftype }
             }
@@ -378,19 +399,28 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         Fields::Named(_) if serializable_field_defs.is_empty() => {
             // All fields skipped → unit struct
             quote! {
-                #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+                #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
                 #[allow(missing_docs)]
                 #[doc(hidden)]
                 #vis struct #serializable_name;
             }
         }
+        // `#[serde(default)]`: a field a save predates takes the value a
+        // fresh component has, which is what the author's type says it is.
         Fields::Named(_) => {
             quote! {
-                #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+                #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+                #[serde(default)]
                 #[allow(missing_docs)]
                 #[doc(hidden)]
                 #vis struct #serializable_name {
                     #(#serializable_field_defs),*
+                }
+
+                impl Default for #serializable_name {
+                    fn default() -> Self {
+                        <#name as Default>::default().into()
+                    }
                 }
             }
         }
@@ -398,7 +428,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
             let field_types: Vec<_> = included_fields.iter().map(|f| &f.ty).collect();
             let field_vis: Vec<_> = included_fields.iter().map(|f| &f.vis).collect();
             quote! {
-                #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+                #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
                 #[allow(missing_docs)]
                 #[doc(hidden)]
                 #vis struct #serializable_name(#(#field_vis #field_types),*);
@@ -406,7 +436,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         }
         Fields::Unit => {
             quote! {
-                #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+                #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
                 #[allow(missing_docs)]
                 #[doc(hidden)]
                 #vis struct #serializable_name;
@@ -494,30 +524,31 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         #from_original_to_serializable
         #from_serializable_to_original
 
-        // Auto-register this component for scene serialization AND for the
-        // editor's generic inspector (the latter via the `*_json` pair,
-        // which goes through serde on the same Serializable mirror as
-        // bincode does — so anything tagged `#[component(skip)]` is
-        // omitted from both paths automatically).
+        // Auto-register this component for saves AND for the editor's
+        // generic inspector — both through serde on the same Serializable
+        // mirror, so anything tagged `#[component(skip)]` is omitted from both.
         inventory::submit! {
             crate::scene::ComponentRegistration {
                 type_id: std::any::TypeId::of::<#name>(),
                 type_name: stringify!(#name),
                 shape: #field_schema,
                 provenance: crate::ecs::ComponentProvenance::#provenance_ident,
-                serialize_recipe: |world, entity| {
+                formerly: &[#(#formerly),*],
+                column_to_record: |column, row, references| {
                     // By value so it works for any column layout (AoS or field-SoA).
-                    world.clone_component::<#name>(entity).map(|c| {
-                        bincode::encode_to_vec(&<#serializable_name>::from(c), bincode::config::standard())
-                            .unwrap_or_default()
-                    })
+                    let value = <#name as crate::ecs::component::Component>::clone_from_column(
+                        column, row,
+                    );
+                    crate::scene::record::to_record(&<#serializable_name>::from(value), references)
                 },
-                deserialize_recipe: |world, entity, data| {
-                    let (s, _): (#serializable_name, _) = bincode::decode_from_slice_with_context(
-                        data, bincode::config::standard(), ()
-                    ).map_err(|e| e.to_string())?;
-                    world.add_component(entity, <#name>::from(s)).ok();
-                    Ok(())
+                stage: |record, references| {
+                    let (s, report) = crate::scene::record::resolve::<#serializable_name>(
+                        record, references,
+                    )?;
+                    Ok(crate::scene::Staged {
+                        component: Box::new(crate::scene::StagedValue(<#name>::from(s))),
+                        report,
+                    })
                 },
                 create_default: |world, entity| {
                     world.add_component(entity, <#name>::default()).ok();

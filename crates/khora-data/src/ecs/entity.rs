@@ -14,13 +14,11 @@
 
 use std::collections::HashMap;
 
-use bincode::{Decode, Encode};
-
 use crate::ecs::{page::PageIndex, SemanticDomain};
 
 /// Represents the central record for an entity, acting as a "table of contents"
 /// that points to the physical location of its component data across various `ComponentPage`s.
-#[derive(Debug, Clone, Default, Encode, Decode)]
+#[derive(Debug, Clone, Default)]
 pub struct EntityMetadata {
     /// A map from a semantic domain to the location of the component data for that domain.
     /// This allows an entity to have component data in multiple different pages,

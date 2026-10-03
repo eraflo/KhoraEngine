@@ -851,7 +851,7 @@ fn scene_header_fields(x: &khora_core::scene::SceneHeader) {
     let _ = (
         &x.magic_bytes,
         &x.format_version,
-        &x.strategy_id,
+        &x.encoding_id,
         &x.payload_length,
     );
 }
@@ -1807,6 +1807,7 @@ fn module_ecs_persistent_id_paths_still_resolve() {
         PhantomData::<khora_core::ecs::persistent_id::PersistentId>,
     );
     let _ = khora_core::ecs::persistent_id::PersistentId::authored;
+    let _ = khora_core::ecs::persistent_id::PersistentId::random_authored;
     let _ = khora_core::ecs::persistent_id::PersistentId::created;
     let _ = khora_core::ecs::persistent_id::PersistentId::is_created;
     let _ = khora_core::ecs::persistent_id::PersistentId::to_bits;

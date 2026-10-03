@@ -674,3 +674,17 @@ mark {
         height: 32px;
     }
 }
+
+/* ---------- Figures — inline SVG illustrations ----------
+   Drawn at a fixed design width; on a narrow screen they keep a readable
+   text size and scroll sideways rather than shrink past legibility. */
+.kp-figure-frame {
+    overflow-x: auto;
+    margin: 1.5rem 0;
+    border-radius: 8px;
+}
+.kp-figure-frame .kp-figure {
+    min-width: 680px;
+    margin: 0;
+}
+

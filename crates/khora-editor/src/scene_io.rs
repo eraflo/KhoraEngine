@@ -33,15 +33,10 @@ use std::path::Path;
 use khora_sdk::DEFAULT_SCENE_REL_PATH as DEFAULT_SCENE_REL;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Play-mode snapshot — full-world capture via SerializationService.
-//
-// Routed through `SerializationGoal::EditorInterchange` (the Recipe / bincode
-// strategy) because it's the only strategy guaranteed to round-trip every
-// registered component lossless-ly. `FastestLoad` (Archetype) was tried first
-// but lost the `Name` component on restore (entities ended up showing
-// "Entity N" in the scene tree after Stop) and triggered heap corruption in
-// some edge cases. The snapshot is throw-away in-memory bytes so the marginal
-// cost of Recipe over Archetype is irrelevant.
+// Play-mode snapshot — full-world capture via SerializationService, in the
+// compact encoding (`EditorInterchange`). Stop restores it atomically and with
+// the same persistent identities, so references held by scripts land on the
+// restored entities.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Serializes the entire world to an in-memory byte buffer for play-mode
@@ -61,9 +56,10 @@ pub fn snapshot_scene(world: &GameWorld) -> Vec<u8> {
 
 /// Restores the world from a snapshot produced by [`snapshot_scene`].
 ///
-/// Despawns every existing entity before deserializing — the live world after
-/// gameplay may have spawned new entities or destroyed old ones, so we
-/// rebuild from the snapshot rather than diff against it.
+/// Replaces the whole world — gameplay may have spawned or destroyed
+/// entities, so it is rebuilt from the snapshot rather than diffed against
+/// it — and does so atomically: a snapshot that cannot be read leaves the
+/// live state in place.
 pub fn restore_scene(world: &mut GameWorld, snapshot: &[u8]) {
     if snapshot.is_empty() {
         return;
@@ -76,14 +72,18 @@ pub fn restore_scene(world: &mut GameWorld, snapshot: &[u8]) {
         }
     };
 
-    let all: Vec<_> = world.iter_entities().collect();
-    for e in all {
-        world.despawn(e);
-    }
-
     let svc = SerializationService::new();
-    if let Err(e) = svc.load_world(&scene, world.inner_world_mut()) {
-        log::error!("Play-mode restore failed: {:?}", e);
+    match svc.replace_world(&scene, world.inner_world_mut()) {
+        Ok(report) => log_report("play-mode restore", &report),
+        Err(e) => log::error!("Play-mode restore failed: {:?}", e),
+    }
+}
+
+/// Says what a load adapted — a field defaulted, dropped, renamed — so an
+/// older scene loading into newer code is never silent about it.
+fn log_report(what: &str, report: &khora_sdk::khora_data::scene::record::LoadReport) {
+    for entry in &report.entries {
+        log::warn!("{what}: {entry}");
     }
 }
 
@@ -96,9 +96,9 @@ pub fn restore_scene(world: &mut GameWorld, snapshot: &[u8]) {
 /// indexes on success so the new scene is immediately resolvable by UUID.
 ///
 /// Default callers should use [`save_scene_in_project`] which selects
-/// `EditorInterchange` (Recipe / bincode). Use
-/// [`save_scene_in_project_with_goal`] to pick a different strategy
-/// (`HumanReadableDebug` for RON export, `FastestLoad` for archetype).
+/// `EditorInterchange` (the compact encoding). Use
+/// [`save_scene_in_project_with_goal`] to pick another encoding
+/// (`HumanReadableDebug` for readable JSON, `PortableBinary` for MessagePack).
 pub fn save_scene_in_project(pvfs: &mut ProjectVfs, world: &GameWorld, rel_path: &Path) -> bool {
     save_scene_in_project_with_goal(pvfs, world, rel_path, SerializationGoal::EditorInterchange)
 }
@@ -110,8 +110,8 @@ pub fn save_scene_in_project_with_goal(
     rel_path: &Path,
     goal: SerializationGoal,
 ) -> bool {
-    let agent = SerializationService::new();
-    let scene_file = match agent.save_world(world.inner_world(), goal) {
+    let service = SerializationService::new();
+    let scene_file = match service.save_world(world.inner_world(), goal) {
         Ok(f) => f,
         Err(e) => {
             log::error!("Failed to serialize scene: {:?}", e);
@@ -180,15 +180,10 @@ pub fn load_scene_in_project(
         }
     };
 
-    // Despawn current world before deserializing.
-    let all_entities: Vec<_> = world.iter_entities().collect();
-    for entity in all_entities {
-        world.despawn(entity);
-    }
-
-    let agent = SerializationService::new();
-    match agent.load_world(&scene_file, world.inner_world_mut()) {
-        Ok(()) => {
+    let service = SerializationService::new();
+    match service.replace_world(&scene_file, world.inner_world_mut()) {
+        Ok(report) => {
+            log_report(rel_path_fwd_slash, &report);
             log::info!(
                 "Scene loaded from '{}' ({} bytes) via ProjectVfs",
                 rel_path_fwd_slash,
@@ -222,7 +217,7 @@ pub fn auto_load_or_create_default_scene(pvfs: &mut ProjectVfs, world: &mut Game
 /// Spawns Main Camera + Directional Light entities, then saves the world to
 /// the relative path inside the project (default `scenes/default.kscene`).
 fn create_default_scene_in_project(pvfs: &mut ProjectVfs, world: &mut GameWorld, rel_path: &str) {
-    world.spawn((
+    let camera = world.spawn((
         Transform {
             translation: Vec3::new(0.0, 5.0, 10.0),
             ..Default::default()
@@ -232,7 +227,7 @@ fn create_default_scene_in_project(pvfs: &mut ProjectVfs, world: &mut GameWorld,
         Name("Main Camera".to_string()),
     ));
 
-    world.spawn((
+    let light = world.spawn((
         Transform {
             translation: Vec3::new(0.0, 10.0, 0.0),
             ..Default::default()
@@ -246,6 +241,9 @@ fn create_default_scene_in_project(pvfs: &mut ProjectVfs, world: &mut GameWorld,
         })),
         Name("Directional Light".to_string()),
     ));
+    for entity in [camera, light] {
+        world.inner_world_mut().mark_authored(entity);
+    }
 
     if !save_scene_in_project(pvfs, world, Path::new(rel_path)) {
         log::error!("Failed to seed default scene at '{}'", rel_path);
@@ -266,8 +264,8 @@ pub fn save_scene_to_path_with_goal(
     path: &str,
     goal: SerializationGoal,
 ) -> bool {
-    let agent = SerializationService::new();
-    match agent.save_world(world.inner_world(), goal) {
+    let service = SerializationService::new();
+    match service.save_world(world.inner_world(), goal) {
         Ok(scene_file) => {
             let bytes = scene_file.to_bytes();
             match std::fs::write(path, &bytes) {
@@ -312,14 +310,10 @@ pub fn load_scene_from_path(world: &mut GameWorld, path: &str) -> bool {
         }
     };
 
-    let all_entities: Vec<_> = world.iter_entities().collect();
-    for entity in all_entities {
-        world.despawn(entity);
-    }
-
-    let agent = SerializationService::new();
-    match agent.load_world(&scene_file, world.inner_world_mut()) {
-        Ok(()) => {
+    let service = SerializationService::new();
+    match service.replace_world(&scene_file, world.inner_world_mut()) {
+        Ok(report) => {
+            log_report(path, &report);
             log::warn!(
                 "Scene loaded from '{}' ({} bytes) — outside project, not VFS-managed.",
                 path,
@@ -539,6 +533,122 @@ mod tests {
         assert!(
             world.get_component::<MeshRef>(mesh_a).is_some(),
             "restored MeshA keeps its Render-domain MeshRef"
+        );
+    }
+
+    /// Stop rebuilds the scene from the play snapshot, so every entity comes
+    /// back as a new `EntityId`. A script that pointed at another entity —
+    /// in an authored field, or in a register of a sequence frozen at an
+    /// `await` — must point at that entity's restored self after Stop, found
+    /// by its persistent identity, not at the slot it occupied before play.
+    #[test]
+    fn stop_restores_script_targets() {
+        use khora_sdk::khora_core::script::{
+            FrozenFrame, FrozenMachine, FrozenValue, PendingBody, PendingSequence, ScriptSnapshot,
+            SuspendedMachine,
+        };
+
+        let mut world = GameWorld::new();
+        let target = world.spawn((
+            Transform::from_translation(Vec3::new(5.0, 0.0, 0.0)),
+            GlobalTransform::identity(),
+            Name::new("Target"),
+        ));
+        let guard = world.spawn((
+            Transform::identity(),
+            GlobalTransform::identity(),
+            Name::new("Guard"),
+            Script {
+                module: "ai/guard.erg".into(),
+                behavior: "Guard".into(),
+                fields: vec![("target".into(), ScriptValue::Entity(target))],
+                runtime: ScriptSnapshot {
+                    pending: Some(PendingSequence {
+                        fingerprint: 7,
+                        remaining: 0.5,
+                        machine: SuspendedMachine::Frozen(FrozenMachine {
+                            body: PendingBody::Update,
+                            registers: vec![FrozenValue::Entity(target)],
+                            frames: vec![FrozenFrame {
+                                function: "on_update".into(),
+                                base: 0,
+                                return_pc: 0,
+                                result: 0,
+                            }],
+                            program_counter: 3,
+                        }),
+                    }),
+                    ..ScriptSnapshot::default()
+                },
+            },
+        ));
+        // The editor marks authored every entity it creates.
+        let target_id = world
+            .inner_world_mut()
+            .mark_authored(target)
+            .expect("authored");
+        world
+            .inner_world_mut()
+            .mark_authored(guard)
+            .expect("authored");
+
+        // Play: snapshot, then the game rearranges the world — the target's
+        // slot is freed and reused by something else.
+        let snap = snapshot_scene(&world);
+        assert!(!snap.is_empty());
+        world.despawn(target);
+        world.despawn(guard);
+        let usurper = world.spawn((Transform::identity(), Name::new("Usurper")));
+        world.spawn((Transform::identity(), Name::new("Bystander")));
+
+        // Stop.
+        restore_scene(&mut world, &snap);
+
+        let named = |world: &GameWorld, name: &str| {
+            world
+                .iter_entities()
+                .find(|&e| {
+                    world
+                        .get_component::<Name>(e)
+                        .is_some_and(|n| n.as_str() == name)
+                })
+                .unwrap_or_else(|| panic!("'{name}' must exist after Stop"))
+        };
+        let target_back = named(&world, "Target");
+        let guard_back = named(&world, "Guard");
+        assert!(
+            world.iter_entities().all(|e| world
+                .get_component::<Name>(e)
+                .is_none_or(|n| n.as_str() != "Usurper")),
+            "Stop removes what play spawned"
+        );
+        let _ = usurper;
+        assert_eq!(
+            world.inner_world().persistent_id(target_back),
+            Some(target_id),
+            "the target keeps its identity across play"
+        );
+
+        let script = world
+            .get_component::<Script>(guard_back)
+            .expect("the guard keeps its script");
+        assert_eq!(
+            script.field("target"),
+            Some(&ScriptValue::Entity(target_back)),
+            "the authored field points at the restored target"
+        );
+        let pending = script
+            .runtime
+            .pending
+            .as_ref()
+            .expect("the pending sequence");
+        let SuspendedMachine::Frozen(machine) = &pending.machine else {
+            panic!("the machine is still frozen: {:?}", pending.machine);
+        };
+        assert_eq!(
+            machine.registers,
+            vec![FrozenValue::Entity(target_back)],
+            "the frozen register points at the restored target"
         );
     }
 

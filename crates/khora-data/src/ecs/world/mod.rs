@@ -31,15 +31,16 @@ use crate::ecs::{
     ComponentBundle, LayoutPolicy, MaterialRef, MeshRef, SemanticDomain, TypeRegistry,
 };
 
-mod archetype_io;
 mod compaction;
 mod component_access;
 mod hierarchy;
+mod identity;
 mod queries;
 
-pub use archetype_io::DeserializeArchetypeError;
 pub use component_access::AddComponentError;
 pub use component_access::RemoveComponentError;
+pub use hierarchy::HierarchyWrite;
+pub(crate) use hierarchy::LoadedHierarchy;
 
 /// Simple statistics for a semantic domain.
 #[derive(Debug, Default, Clone, Copy)]
@@ -58,7 +59,7 @@ pub struct World {
     pub(crate) storage: StorageManager,
     /// Manages query planning and caching.
     pub(crate) planner: QueryPlanner,
-    /// The type registry for serialization purposes.
+    /// Type names, for access-pattern telemetry.
     type_registry: TypeRegistry,
     /// Monotonic per-domain change counters ("epochs"), indexed by
     /// [`SemanticDomain::index`]. Every entry point that can change a
@@ -68,6 +69,11 @@ pub struct World {
     /// valid, so over-bumping is harmless while a missed bump would mean
     /// stale Views. Representation-only changes (AGDF layout) do NOT bump.
     domain_epochs: [u64; SemanticDomain::COUNT],
+    /// The persistent identity of each live entity that has been given one.
+    identity: identity::IdentityCell,
+    /// The entity a reference to nothing names, once one is needed — see
+    /// [`World::nowhere`].
+    nowhere: Option<EntityId>,
     /// Process-unique id of this `World` instance. Folded into Flow cache
     /// keys so a freshly created World (whose epochs restart at zero, e.g.
     /// a play-mode snapshot restore) can never alias a previous World's
@@ -160,6 +166,8 @@ impl World {
             planner: QueryPlanner::new(),
             type_registry: TypeRegistry::default(),
             domain_epochs: [0; SemanticDomain::COUNT],
+            identity: identity::IdentityCell::default(),
+            nowhere: None,
             instance_id: WORLD_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         };
         // Generic and hand-implemented components can't self-register via the
@@ -176,7 +184,7 @@ impl World {
 
         // Auto-register every component that declares its domain via
         // `#[derive(Component)]` + `#[component(domain = ...)]`. Idempotent with the
-        // explicit calls above (same TypeId → same vtable) during migration.
+        // explicit calls above (same TypeId → same vtable).
         for reg in inventory::iter::<crate::ecs::ComponentDomainRegistration> {
             (reg.register)(&mut world);
         }
@@ -206,9 +214,10 @@ impl World {
     }
 
     /// The number of live entities — the coarse workload size `n` the DCC's
-    /// cost model fits agent execution time against.
+    /// cost model fits agent execution time against. Kept as a count, so
+    /// reading it costs nothing however many slots have died.
     pub fn entity_count(&self) -> usize {
-        self.entities.len()
+        self.entities.alive()
     }
 
     /// A snapshot of every registered component's access pattern as
@@ -253,15 +262,6 @@ impl World {
         self.domain_epochs[domain.index()] = self.domain_epochs[domain.index()].wrapping_add(1);
     }
 
-    /// (Internal) Marks every domain as semantically changed — used by bulk
-    /// paths (deserialization, compaction) where per-domain attribution is
-    /// not worth the bookkeeping. Over-invalidation is always safe.
-    pub(crate) fn bump_all_domain_epochs(&mut self) {
-        for epoch in &mut self.domain_epochs {
-            *epoch = epoch.wrapping_add(1);
-        }
-    }
-
     /// Spawns a new entity with the given bundle of components.
     ///
     /// This is the primary method for creating entities. It orchestrates the entire process:
@@ -273,9 +273,20 @@ impl World {
     ///
     /// Returns the `EntityId` of the newly created entity.
     pub fn spawn<B: ComponentBundle>(&mut self, bundle: B) -> EntityId {
-        // Step 1: Allocate a new EntityId.
+        // Step 1: Allocate a new EntityId. Its persistent identity waits until
+        // something asks for it.
         let entity_id = self.create_entity();
+        self.place(entity_id, bundle);
+        entity_id
+    }
 
+    /// Places a freshly allocated entity, with nothing on it.
+    pub(crate) fn place_empty(&mut self, entity_id: EntityId) {
+        self.place(entity_id, ());
+    }
+
+    /// Steps 2-5 of a spawn, for an entity whose id is already allocated.
+    fn place<B: ComponentBundle>(&mut self, entity_id: EntityId, bundle: B) {
         // Step 2: Find or create a page for this bundle.
         let page_id = self.find_or_create_page_for_bundle::<B>();
 
@@ -320,8 +331,102 @@ impl World {
             // called here.
             self.domain_epochs[domain.index()] = self.domain_epochs[domain.index()].wrapping_add(1);
         }
+    }
 
-        entity_id
+    /// The page column holding `entity`'s component of type `type_id`, and the
+    /// row it occupies there.
+    pub(crate) fn component_cell(
+        &self,
+        entity: EntityId,
+        type_id: TypeId,
+    ) -> Option<(&dyn crate::ecs::AnyVec, usize)> {
+        let (id, metadata) = self.entities.get(entity.index as usize)?;
+        if *id != entity {
+            return None;
+        }
+        let domain = self.storage.registry.get_domain(type_id)?;
+        let location = metadata.as_ref()?.locations.get(&domain)?;
+        let column = self
+            .storage
+            .pages
+            .get(location.page_id as usize)?
+            .columns
+            .get(&type_id)?;
+        Some((column.as_ref(), location.row_index as usize))
+    }
+
+    /// Places a row for `entity` in the page of `signature` (sorted, deduped
+    /// `TypeId`s of registered components), `fill` pushing exactly one value
+    /// into each of the page's columns — what a spawn does for a bundle,
+    /// for a signature only known at run time. How a load builds a page: one
+    /// row per entity, in place, without migrating anything.
+    ///
+    /// Returns `false`, touching nothing, when `entity` is not alive, a type
+    /// is not registered, or the entity already holds a component of one of
+    /// the signature's domains.
+    pub(crate) fn place_row(
+        &mut self,
+        entity: EntityId,
+        signature: &[TypeId],
+        fill: impl FnOnce(&mut crate::ecs::page::ComponentPage),
+    ) -> bool {
+        let mut domains = Vec::with_capacity(signature.len());
+        for type_id in signature {
+            let Some(domain) = self.storage.registry.get_domain(*type_id) else {
+                return false;
+            };
+            if !domains.contains(&domain) {
+                domains.push(domain);
+            }
+        }
+        match self.entities.get(entity.index as usize) {
+            Some((id, Some(metadata)))
+                if *id == entity && domains.iter().all(|d| !metadata.locations.contains_key(d)) => {
+            }
+            _ => return false,
+        }
+
+        let page_id = self.find_or_create_page_for_signature(signature);
+        let row_index = {
+            let page = &mut self.storage.pages[page_id as usize];
+            let row_index = page.entities.len() as u32;
+            fill(page);
+            page.add_entity(entity);
+            row_index
+        };
+
+        let location = PageIndex { page_id, row_index };
+        if let Some(metadata) = self.entities.get_metadata_mut(entity) {
+            for domain in &domains {
+                metadata.locations.insert(*domain, location);
+            }
+        }
+        for domain in domains {
+            self.storage
+                .domain_bitsets
+                .entry(domain)
+                .or_default()
+                .set(entity.index);
+            self.storage
+                .domain_stats
+                .entry(domain)
+                .or_default()
+                .entity_count += 1;
+            self.bump_domain_epoch(domain);
+        }
+        true
+    }
+
+    /// Whether row `row` of page `page_id` is `entity`'s current row there —
+    /// not one it left behind, which waits for compaction.
+    pub(crate) fn is_live_row_of(&self, page_id: u32, row: usize, entity: EntityId) -> bool {
+        match self.entities.get(entity.index as usize) {
+            Some((id, Some(metadata))) if *id == entity => metadata
+                .locations
+                .values()
+                .any(|loc| loc.page_id == page_id && loc.row_index as usize == row),
+            _ => false,
+        }
     }
 
     /// Whether `entity_id` names a live entity.
@@ -349,33 +454,12 @@ impl World {
     ///
     /// Returns `true` if the entity was valid and despawned, `false` otherwise.
     pub fn despawn(&mut self, entity_id: EntityId) -> bool {
-        // Step 1: Validate the EntityId.
-        // First, check if the index is even valid for our entities Vec.
-        if entity_id.index as usize >= self.entities.len() {
+        // Steps 1-2: kill the entity — only one that is alive, at this
+        // generation — taking its metadata and freeing its index.
+        let Some(metadata) = self.entities.despawn(entity_id) else {
             return false;
-        }
-
-        // Get the data at the slot.
-        let (id_in_world, metadata_slot) = self.entities.get(entity_id.index as usize).unwrap();
-
-        // An ID is valid if its generation matches the one in the world,
-        // AND if the metadata slot is currently occupied (`is_some`).
-        if id_in_world.generation != entity_id.generation || metadata_slot.is_none() {
-            return false;
-        }
-
-        // --- At this point, the ID is valid. ---
-
-        // Step 2: Take the metadata out of the slot, leaving it `None`.
-        // This is what officially "kills" the entity.
-        let metadata = self
-            .entities
-            .get_mut(entity_id.index as usize)
-            .unwrap()
-            .1
-            .take()
-            .unwrap();
-        self.entities.freed_entities.push(entity_id.index);
+        };
+        self.forget_identity(entity_id);
 
         // --- Step 3: Remove the entity's data and update per-domain bookkeeping. ---
         // A mixed-domain bundle lives in one page but is registered under several

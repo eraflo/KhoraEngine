@@ -14,24 +14,32 @@
 
 //! Defines the unified file format for Khora scenes.
 //!
-//! Every scene persisted by the SAA-Serialize system uses this container format.
-//! It consists of a fixed-size [`SceneHeader`] followed by a variable-length payload.
-//! The header acts as a manifest, describing what serialization strategy was used
-//! to encode the payload, allowing the engine to correctly dispatch the data to the
-//! appropriate deserialization `Lane`.
+//! Every saved scene uses this container: a fixed-size [`SceneHeader`] followed
+//! by a variable-length payload. The header names the encoding the payload was
+//! written with, so a file is read back without knowing in advance how it was
+//! saved.
 
 use std::convert::TryInto;
 
 /// A unique byte sequence to identify Khora Scene Files. ("KHORASCN").
 pub const HEADER_MAGIC_BYTES: [u8; 8] = *b"KHORASCN";
-const STRATEGY_ID_LEN: usize = 32;
+
+/// The scene file format this engine writes and reads.
+///
+/// Version 2 holds scene records: components by name, entities by persistent
+/// identity. How a component's fields evolve is carried by the records
+/// themselves, so this number moves only when the file's own layout does.
+pub const SCENE_FORMAT_VERSION: u8 = 2;
+const ENCODING_ID_LEN: usize = 32;
 
 /// An error that can occur when parsing a `SceneFile` from bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SceneFileError {
-    /// The byte slice is too short to contain a valid header.
+    /// The bytes end before the header does, or before the payload the
+    /// header announces.
     TooShort,
-    /// The file's magic bytes do not match `HEADER_MAGIC_BYTES`.
+    /// The file's magic bytes do not match `HEADER_MAGIC_BYTES`: not a Khora
+    /// scene file.
     InvalidMagicBytes,
 }
 
@@ -40,11 +48,11 @@ pub enum SceneFileError {
 pub struct SceneHeader {
     /// Magic bytes to identify the file type, must be `HEADER_MAGIC_BYTES`.
     pub magic_bytes: [u8; 8],
-    /// The version of the header format itself.
+    /// The scene format the file was written in (see `SCENE_FORMAT_VERSION`).
     pub format_version: u8,
-    /// A null-padded UTF-8 string identifying the serialization strategy used.
-    /// e.g., "KH_RECIPE_V1", "KH_ARCHETYPE_V1".
-    pub strategy_id: [u8; STRATEGY_ID_LEN],
+    /// A null-padded UTF-8 string naming the encoding of the payload,
+    /// e.g. "KH_COMPACT_V2", "KH_TEXT_V2".
+    pub encoding_id: [u8; ENCODING_ID_LEN],
     /// The length of the payload data that follows this header, in bytes.
     pub payload_length: u64,
 }
@@ -63,7 +71,7 @@ pub struct SceneFile {
 // so direct byte manipulation is more robust and efficient.
 impl SceneHeader {
     /// The total size of the header in bytes.
-    pub const SIZE: usize = 8 + 1 + STRATEGY_ID_LEN + 8;
+    pub const SIZE: usize = 8 + 1 + ENCODING_ID_LEN + 8;
 
     /// Attempts to parse a `SceneHeader` from the beginning of a byte slice.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, &'static str> {
@@ -78,15 +86,15 @@ impl SceneHeader {
 
         let format_version = bytes[8];
 
-        let strategy_id: [u8; STRATEGY_ID_LEN] = bytes[9..9 + STRATEGY_ID_LEN].try_into().unwrap();
+        let encoding_id: [u8; ENCODING_ID_LEN] = bytes[9..9 + ENCODING_ID_LEN].try_into().unwrap();
 
         let payload_length =
-            u64::from_le_bytes(bytes[9 + STRATEGY_ID_LEN..Self::SIZE].try_into().unwrap());
+            u64::from_le_bytes(bytes[9 + ENCODING_ID_LEN..Self::SIZE].try_into().unwrap());
 
         Ok(Self {
             magic_bytes,
             format_version,
-            strategy_id,
+            encoding_id,
             payload_length,
         })
     }
@@ -96,24 +104,29 @@ impl SceneHeader {
         let mut bytes = [0u8; Self::SIZE];
         bytes[0..8].copy_from_slice(&self.magic_bytes);
         bytes[8] = self.format_version;
-        bytes[9..9 + STRATEGY_ID_LEN].copy_from_slice(&self.strategy_id);
+        bytes[9..9 + ENCODING_ID_LEN].copy_from_slice(&self.encoding_id);
         let payload_bytes = self.payload_length.to_le_bytes();
-        bytes[9 + STRATEGY_ID_LEN..Self::SIZE].copy_from_slice(&payload_bytes);
+        bytes[9 + ENCODING_ID_LEN..Self::SIZE].copy_from_slice(&payload_bytes);
         bytes
     }
 }
 
 impl SceneFile {
     /// Parses a `SceneFile` from a byte slice.
+    ///
+    /// The bytes are input: a damaged length is an error, never an overflow.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, SceneFileError> {
+        if bytes.len() < SceneHeader::SIZE {
+            return Err(SceneFileError::TooShort);
+        }
         let header =
             SceneHeader::from_bytes(bytes).map_err(|_| SceneFileError::InvalidMagicBytes)?;
         let header_size = SceneHeader::SIZE;
-        let payload_end = header_size + header.payload_length as usize;
-
-        if bytes.len() < payload_end {
-            return Err(SceneFileError::TooShort);
-        }
+        let payload_end = usize::try_from(header.payload_length)
+            .ok()
+            .and_then(|length| header_size.checked_add(length))
+            .filter(|end| *end <= bytes.len())
+            .ok_or(SceneFileError::TooShort)?;
 
         let payload = bytes[header_size..payload_end].to_vec();
         Ok(Self { header, payload })
@@ -126,5 +139,61 @@ impl SceneFile {
         file_bytes.extend_from_slice(&header_bytes);
         file_bytes.extend_from_slice(&self.payload);
         file_bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A file of `payload`, with its header's length field set to `length`.
+    fn bytes_claiming(length: u64, payload: &[u8]) -> Vec<u8> {
+        let header = SceneHeader {
+            magic_bytes: HEADER_MAGIC_BYTES,
+            format_version: SCENE_FORMAT_VERSION,
+            encoding_id: [0; ENCODING_ID_LEN],
+            payload_length: length,
+        };
+        let mut bytes = header.to_bytes().to_vec();
+        bytes.extend_from_slice(payload);
+        bytes
+    }
+
+    /// A file round-trips through its bytes.
+    #[test]
+    fn a_scene_file_round_trips_through_its_bytes() {
+        let bytes = bytes_claiming(3, &[1, 2, 3]);
+        let file = SceneFile::from_bytes(&bytes).expect("a whole file parses");
+        assert_eq!(file.payload, vec![1, 2, 3]);
+        assert_eq!(file.to_bytes(), bytes);
+    }
+
+    /// A length past the end — however large — is an error, never an
+    /// overflow or a panic: the bytes are input.
+    #[test]
+    fn a_damaged_payload_length_is_too_short_not_a_panic() {
+        for length in [4, u64::MAX, u64::MAX - SceneHeader::SIZE as u64 + 1] {
+            assert_eq!(
+                SceneFile::from_bytes(&bytes_claiming(length, &[1, 2, 3])),
+                Err(SceneFileError::TooShort),
+                "length {length}"
+            );
+        }
+    }
+
+    /// Too few bytes for a header is `TooShort`; a header whose magic is
+    /// wrong is not a scene file.
+    #[test]
+    fn a_short_or_foreign_file_names_its_fault() {
+        assert_eq!(
+            SceneFile::from_bytes(&[0; 4]),
+            Err(SceneFileError::TooShort)
+        );
+        let mut foreign = bytes_claiming(0, &[]);
+        foreign[0] = b'X';
+        assert_eq!(
+            SceneFile::from_bytes(&foreign),
+            Err(SceneFileError::InvalidMagicBytes)
+        );
     }
 }

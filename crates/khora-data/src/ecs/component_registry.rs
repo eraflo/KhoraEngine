@@ -14,8 +14,6 @@
 
 //! Defines the `ComponentRegistry` and `SemanticDomain` for the CRPECS.
 
-use bincode::{Decode, Encode};
-
 use crate::ecs::{AnyVec, Component};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::{
@@ -31,7 +29,7 @@ type RowCopyFn = unsafe fn(&dyn AnyVec, usize, &mut dyn AnyVec);
 /// This is used by the [`ComponentRegistry`] to map a component type to its
 /// corresponding `ComponentPage` group. This grouping is the core principle that
 /// allows the CRPECS to have fast, domain-specific queries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SemanticDomain {
     /// For components related to position, physics, and the scene graph.
     Spatial,
@@ -356,11 +354,6 @@ impl TypeRegistry {
     /// Gets the string name for a given TypeId.
     pub(crate) fn get_name_of(&self, type_id: &TypeId) -> Option<&str> {
         self.id_to_name.get(type_id).map(|s| s.as_str())
-    }
-
-    /// Gets the TypeId for a given string name.
-    pub(crate) fn get_id_of(&self, type_name: &str) -> Option<TypeId> {
-        self.name_to_id.get(type_name).copied()
     }
 }
 

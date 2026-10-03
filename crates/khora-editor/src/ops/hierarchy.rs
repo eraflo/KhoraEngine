@@ -37,12 +37,12 @@ pub fn process_reparents(world: &mut GameWorld, state: &mut EditorState) {
 
 /// Duplicates an entity and everything below it.
 ///
-/// Goes through the same subtree recipe round-trip as "Save as Prefab" rather
-/// than copying a hand-listed set of components, so the copy carries `Tag`,
-/// every user-defined component and the whole descendant subtree — none of
-/// which a fixed list could know about. `serialize_all_components` filters out
-/// engine-written components, so `GlobalTransform` and `Children` are rebuilt
-/// for the copy instead of being cloned with the original's entity ids.
+/// Goes through the same subtree round-trip as "Save as Prefab" rather than
+/// copying a hand-listed set of components, so the copy carries `Tag`, every
+/// user-defined component and the whole descendant subtree — none of which a
+/// fixed list could know about. Only authored components are captured, so
+/// `GlobalTransform` and `Children` are rebuilt for the copy; references
+/// inside the subtree point at the copy, and the copy gets new identities.
 ///
 /// `serialize_subtree` deliberately drops the root's own parent edge (a
 /// `.kprefab` has to be self-contained), so the copy is re-parented here to

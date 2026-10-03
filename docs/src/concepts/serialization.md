@@ -1,85 +1,213 @@
 # Serialization
 
-Saving and loading scenes through several strategies behind one file format, chosen
-by intent rather than by hand. This page explains *why* a scene has more than one
-on-disk encoding and how the engine picks between them. It is an explanation, not a
-recipe — for the steps to save and load a scene, see
-[How-to: save and load scenes](../how-to/save-and-load-scenes.md).
+Saving and loading scenes as **records**: what a save holds, by name, in the shape
+of the world's pages. This page explains *why* a save is shaped that way and how
+the engine picks an encoding for it. It is an explanation, not a recipe — for the
+steps to save and load a scene, see
+[How-to: save and load scenes](../how-to/save-and-load-scenes.md); for the bytes,
+see [File formats](../reference/formats.md).
 
 ---
 
-## Why more than one strategy
+## The whole path at a glance
 
-A scene file has more than one consumer, and they want incompatible things. The
-editor wants something human-readable, hand-editable, and stable across years of Git
-history. A release build wants something compact. Play mode wants something that
-snapshots and restores near-instantly. No single encoding is best at all three.
+A save and a load are the same path, walked in opposite directions. In the middle
+sits the **scene record**: the world's authored content, by name, page by page —
+independent of how it is then written to bytes.
 
-So Khora serializes through a **[strategy](../reference/glossary.md)** — a concrete
-encoding selected by *intent*. The developer states a **`SerializationGoal`**; the
-engine maps that goal to a strategy. Choosing the goal is a developer decision;
-choosing the strategy is an engine decision. The goals are:
+<div class="kp-figure-frame">
 
-| Goal | Encoded as |
+{{#include ../images/persistence/round-trip.svg}}
+
+</div>
+
+- **Capture** reads the live pages and keeps only what a save holds: the
+  components an author or a tool wrote, each entity under its persistent id.
+- **Encode / decode** turn the record into bytes and back. Three encodings exist;
+  all of them carry exactly the same record.
+- **Prepare / commit** bring a record into a world: everything is checked first,
+  then the pages are built — or nothing changes at all.
+
+## Why records
+
+A save outlives the code that wrote it. Components gain fields, lose fields and
+change names; a project's scenes are written by one version of the engine and read
+by the next. A save that recorded component values positionally — field after field,
+as the type laid them out the day it was written — breaks the moment a type
+changes, and every change then needs a hand-written migration.
+
+So a save holds **records**: each component under the name it registers, each field
+under its name. Reading a record matches names, not positions, and adapts what
+differs:
+
+- a field the save predates takes its default;
+- a field the code no longer has is dropped;
+- a field, variant or component renamed in code is found under the old name its
+  type lists as `formerly`;
+- a number is widened when that loses nothing — never narrowed;
+- a reference to an entity the save does not hold is cut.
+
+```mermaid
+flowchart TD
+    V["a saved component, by name"] --> N{"name known?"}
+    N -- "current name" --> FLD
+    N -- "an old name in formerly" --> RN["Renamed"] --> FLD
+    N -- "declared retired" --> RT["skipped: Retired"]
+    N -- "derived or runtime" --> NS["skipped: NotSaved,<br/>rebuilt by the engine"]
+    N -- "unknown" --> ERR["error: the load is refused,<br/>the world is unchanged"]
+    FLD["each field, by name"] --> M{"in the save<br/>and in the code?"}
+    M -- "both" --> K["read; widened if the<br/>number type grew"]
+    M -- "only in the code" --> D["Defaulted"]
+    M -- "only in the save" --> DR["Dropped"]
+    M -- "under an old name" --> RN2["Renamed"]
+```
+
+None of that is an error, and none of it is silent: every adaptation is an entry in
+the **load report** the caller receives, naming the entity, the component and the
+field. What *is* an error is a component name nothing registers — a save holding
+data the engine cannot place is refused, not trimmed. A component removed on
+purpose is declared **retired**; a save holding it loads, skips it and says so.
+So is a component the engine derives: a save holding one — written by a tool, or
+before the component stopped being saved — skips it and rebuilds it.
+
+## Pages, persistent ids, provenance
+
+Khora's ECS stores entities in pages, one per component signature, columns of
+values side by side. The page is the unit of iteration, of compaction — and of
+serialization. A record keeps that shape: one page record per signature, the rows'
+ids, one column of values per component. Capture walks the live pages; load builds
+pages directly, row by row, so a loaded entity lands in its final page at once — no
+entity is migrated from page to page while a scene loads. What changes is the
+representation of a column, never its bytes: a save holds named values, not the
+memory of a page, so a layout the data layer adapts at runtime is never written to
+disk.
+
+<div class="kp-figure-frame">
+
+{{#include ../images/persistence/page-to-record.svg}}
+
+</div>
+
+Entities are referenced by **persistent id**, not by their runtime index. An
+authored entity's id is random and scene-scoped; any other entity draws from the
+*created* namespace — and only when something needs its identity: a save, a lookup.
+Spawning and despawning entities nobody saves costs no identity work at all. A
+reference inside a component — a `Parent`, a target —
+is saved as the persistent id it names, and loading binds it back to the entity
+that id now belongs to.
+
+<div class="kp-figure-frame">
+
+{{#include ../images/persistence/persistent-id.svg}}
+
+</div>
+
+| | Runtime `EntityId` | `PersistentId` |
+|---|---|---|
+| What it is | an index and a generation into the entity store | 64 bits; the top bit says which namespace |
+| Authored entity | changes on every load | random 63 bits, chosen once, kept by every save |
+| Created at runtime | changes on every load | the next free number in the *created* namespace, given the first time it is needed |
+| In a save | never | every row and every entity reference |
+
+A reference to an entity the save does not hold — deleted, or outside a saved
+subtree — loads as a reference to **nowhere**: one entity id per world, reserved
+once, never alive and never handed to a spawn, so such a reference can never come to
+name a live entity. The report says where each one was.
+
+Only what was **authored** is saved. A component's provenance says whether it was
+authored, tool-authored, derived or runtime state; derived values such as
+`Children` or a global transform, and runtime state, are rebuilt on load rather
+than stored.
+
+## Atomic loading
+
+Loading is two steps. **Prepare** reads the whole record: it checks names, shapes
+and references, reserves the entities, and stages every value — touching nothing
+the world shows. **Commit** then places the staged rows. A file that fails at any
+point of the first step leaves the world exactly as it was, and the caller gets the
+reason with the report of what had been read so far. Replacing a scene uses the
+same split: the new scene is staged before the old one is removed.
+
+```mermaid
+flowchart TD
+    S["SceneRecord"] --> C1["check the shape:<br/>column lengths, duplicates,<br/>rows listed in entities"]
+    C1 --> C2["resolve each component name<br/>formerly · retired · not saved · unknown"]
+    C2 --> C3["reserve an entity id per saved entity<br/>not alive yet, handed to no one else"]
+    C3 --> C4["stage every value<br/>fields by name, references bound"]
+    C4 --> C5["read the hierarchy from Parent<br/>refuse a cycle"]
+    C5 --> OK{"all read?"}
+    OK -- "no" --> X["release the reservations<br/>LoadFailure + report<br/>world unchanged"]
+    OK -- "yes: Prepared" --> M1["identities: a saved id is kept<br/>unless another entity holds it"]
+    M1 --> M2["place each row into its final page<br/>Children built into the parent's row"]
+    M2 --> D["Applied: entities + LoadReport"]
+    subgraph prepare["prepare — reads, never shows"]
+        C1
+        C2
+        C3
+        C4
+        C5
+    end
+    subgraph commit["commit — returns no error"]
+        M1
+        M2
+    end
+```
+
+## Goals and encodings
+
+A save has more than one consumer. The editor wants something small and fast; a
+diff in version control wants text; an external tool wants a format it can read.
+The developer states a **`SerializationGoal`** — the intent — and the engine maps it
+to an **encoding**:
+
+| Goal | Encoding |
 |---|---|
-| `HumanReadableDebug` | Definition — a human-readable, hand-editable text encoding |
-| `LongTermStability` | Definition — same, chosen for archival robustness |
-| `EditorInterchange` | Recipe — compact binary, the editor's working format |
-| `SmallestFileSize` | Recipe — same, chosen for size |
-| `FastestLoad` | Archetype — a near-`memcpy` binary layout |
-| `PortableBinary` | MessagePack — a portable, cross-tool binary encoding |
+| `HumanReadableDebug`, `LongTermStability` | Text — pretty-printed JSON |
+| `EditorInterchange`, `SmallestFileSize`, `FastestLoad` | Compact — Khora's binary, page-shaped and column-major |
+| `PortableBinary` | MessagePack, fields by name |
 
-Four strategies back those six goals. The mapping lives in one place in the
-serialization service, so a goal always resolves to the same strategy.
+Every encoding carries the same record, so stability does not depend on the goal:
+the rules above hold for a compact save exactly as for a text one. The compact
+encoding stores each component and field name once, in tables, and refers to them
+by index — the names are there, they are just not repeated per row.
 
 ## One service, one file format
 
 Scene save and load is a **service**, not an agent — there are no per-frame
 strategies to negotiate, so it sits on the same side of the line as asset loading.
-The service exposes `save_world` (take a goal, produce a scene file) and
-`load_world` (take a scene file, repopulate the world).
+`SerializationService` exposes `save_world` (take a goal, produce a scene file),
+`load_world` (bring a scene in beside what is there) and `replace_world` (swap the
+world's contents for the scene's). Each load returns its report.
 
-All strategies share **one file format**: a fixed-size header — a magic number, a
-format version, the strategy identifier, and the payload length — followed by the
-payload. The header is what makes loading symmetric: it records which strategy
-produced the payload, so `load_world` dispatches to the matching strategy without
-the caller having to know or specify it. The format version is a migration seam for
-future on-disk changes.
+Every scene file is a fixed header — a magic number, the format version, the
+encoding id, the payload length — followed by the payload. The header is what makes
+loading symmetric: the caller never says how a file was written.
 
 ## How components serialize
 
-The reason adding strategies is tractable is that component serialization is
-generated, not hand-written. Deriving the component macro on a type generates a
-serialization mirror with encode/decode, the conversions to and from the live type,
-and a self-registration so scene loading discovers it with no hand-maintained list.
-
-The mirror exists because GPU handles, runtime caches, and trait objects do not
-serialize. Fields the developer marks as skipped are excluded from the mirror and
-reconstructed on load — typically by the asset system. Components needing a fully
-manual mirror opt out of generation and implement encode/decode by hand. The
-registration is the seam: scene loading walks the registry, decodes the right mirror,
-converts to the live type, and attaches it to the entity — no string lookups in the
-hot path. Maintaining two structs by hand was historically the single biggest source
-of serialization bugs, which is exactly why the macro generates the mirror.
+Component serialization is generated, not hand-written. Deriving `Component` on a
+type generates a serializable mirror, the conversions to and from the live type,
+and a self-registration so loading finds the type by name with no hand-maintained
+list. Fields marked `#[component(skip)]` — GPU handles, runtime caches — are left out
+of the mirror and rebuilt on load, typically by the asset system. A type renamed in
+code keeps its saves readable with `#[component(formerly = "OldName")]`; a field,
+with `#[component(formerly = "old_name")]`.
 
 ## Play-mode snapshots
 
-Pressing Play snapshots the world; pressing Stop restores it. This rides on the same
-service: the snapshot is just a `save_world` into memory and the restore a
-`load_world` back, under the `EditorInterchange` goal — the Recipe strategy over
-bincode. The page-level `FastestLoad` was tried for exactly this and abandoned: it
-dropped `Name` components. Recipe is compact enough that a large scene still
-snapshots and restores in milliseconds.
+Pressing Play snapshots the world; pressing Stop restores it. The snapshot is a
+`save_world` into memory under `EditorInterchange` and the restore a
+`replace_world`, so a snapshot follows the same rules as a file on disk.
 
 One honest caveat: **physics state is not preserved** across a snapshot. On restore,
 the physics engine rebuilds from component data, so velocities and contacts reset to
-defaults. This is consistent and predictable; whether to add a goal that captures
-physics state is an open question, not a bug.
+defaults.
 
 ## Next steps
 
 - [How-to: save and load scenes](../how-to/save-and-load-scenes.md) — save with a
   goal and load a scene with the real service API.
-- [Data and the ECS](./ecs.md) — the component model the mirror is generated from.
+- [File formats](../reference/formats.md) — the header, the record, the encodings.
+- [Data and the ECS](./ecs.md) — pages, and the component model the mirror is
+  generated from.
 - [Assets](./assets.md) — how scene references to assets resolve by UUID.
-- [Glossary](../reference/glossary.md) — SerializationGoal, strategy, scene file.

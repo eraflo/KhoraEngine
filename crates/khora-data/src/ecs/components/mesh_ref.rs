@@ -34,13 +34,10 @@
 //!
 //! [`reconstruct_procedural_mesh`]: crate::ecs::reconstruct_procedural_mesh
 
-use bincode::{config, Decode, Encode};
 use khora_core::asset::AssetUUID;
 
 /// Identifies a known procedural mesh primitive.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Encode, Decode, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ProceduralMeshKind {
     /// Axis-aligned cube primitive.
     Cube,
@@ -122,7 +119,8 @@ impl MeshRef {
 /// UUID — it is recomputed from `kind` + `params` on load via
 /// [`MeshRef::procedural`] so it always stays content-derived. The `Asset`
 /// arm round-trips its UUID verbatim.
-#[derive(Encode, Decode, serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename = "MeshRef")]
 enum SerializableMeshRef {
     /// Procedural primitive parameters (UUID recomputed on load).
     Procedural {
@@ -156,28 +154,27 @@ impl From<SerializableMeshRef> for MeshRef {
     }
 }
 
-/// Serializes the entity's `MeshRef` into the recipe byte stream.
-fn serialize_mesh_ref(
-    world: &crate::ecs::World,
-    entity: khora_core::ecs::entity::EntityId,
-) -> Option<Vec<u8>> {
-    let mesh_ref = world.get::<MeshRef>(entity)?;
-    let on_disk = SerializableMeshRef::from(mesh_ref);
-    bincode::encode_to_vec(&on_disk, config::standard()).ok()
+/// Writes a page row's `MeshRef` as a record.
+fn mesh_ref_to_record(
+    column: &dyn crate::ecs::AnyVec,
+    row: usize,
+    references: &mut dyn crate::scene::record::ReferenceWriter,
+) -> Result<crate::scene::record::Record, crate::scene::record::RecordError> {
+    let mesh_ref = <MeshRef as crate::ecs::Component>::clone_from_column(column, row);
+    crate::scene::record::to_record(&SerializableMeshRef::from(&mesh_ref), references)
 }
 
-/// Reconstructs a `MeshRef` from recipe bytes and attaches it to `entity`.
-fn deserialize_mesh_ref(
-    world: &mut crate::ecs::World,
-    entity: khora_core::ecs::entity::EntityId,
-    data: &[u8],
-) -> Result<(), String> {
-    let (on_disk, _): (SerializableMeshRef, _) =
-        bincode::decode_from_slice(data, config::standard()).map_err(|e| e.to_string())?;
-    world
-        .add_component(entity, MeshRef::from(on_disk))
-        .map_err(|e| format!("{e:?}"))?;
-    Ok(())
+/// Reads a `MeshRef` back from a record, its procedural identity recomputed.
+fn stage_mesh_ref(
+    record: &crate::scene::record::Record,
+    references: &mut dyn crate::scene::record::ReferenceReader,
+) -> Result<crate::scene::Staged, crate::scene::record::RecordError> {
+    let (on_disk, report) =
+        crate::scene::record::resolve::<SerializableMeshRef>(record, references)?;
+    Ok(crate::scene::Staged {
+        component: Box::new(crate::scene::StagedValue(MeshRef::from(on_disk))),
+        report,
+    })
 }
 
 /// Editor JSON form — the on-disk `MeshRef` shape (UUID omitted for
@@ -214,8 +211,9 @@ inventory::submit! {
         // An enum: one-of, not all-of. See `ComponentShape`.
         shape: crate::scene::ComponentShape::Opaque,
         provenance: crate::ecs::ComponentProvenance::Authored,
-        serialize_recipe: serialize_mesh_ref,
-        deserialize_recipe: deserialize_mesh_ref,
+        formerly: &[],
+        column_to_record: mesh_ref_to_record,
+        stage: stage_mesh_ref,
         create_default: |world, entity| {
             world
                 .add_component(entity, MeshRef::unit_cube())
@@ -239,7 +237,7 @@ mod tests {
     use crate::ecs::World;
     use crate::scene::component_registration::ComponentRegistration;
 
-    /// `MeshRef::Procedural` survives a recipe serialize → deserialize cycle.
+    /// `MeshRef::Procedural` survives a record round trip.
     #[test]
     fn procedural_mesh_ref_recipe_round_trip() {
         let mut src = World::new();
@@ -252,11 +250,13 @@ mod tests {
             .into_iter()
             .find(|r| r.type_name == "MeshRef")
             .expect("MeshRef registration present");
-        let bytes = (reg.serialize_recipe)(&src, entity).expect("serialize");
-
         let mut dst = World::new();
         let new_entity = dst.spawn(());
-        (reg.deserialize_recipe)(&mut dst, new_entity, &bytes).expect("deserialize");
+        crate::scene::component_registration::copy_through_record(
+            reg, &src, entity, &mut dst, new_entity,
+        )
+        .expect("the source carries a MeshRef")
+        .expect("it round-trips");
 
         let restored = dst.get::<MeshRef>(new_entity).expect("mesh ref restored");
         // The recomputed identity UUID matches the original (content-derived).
@@ -277,11 +277,13 @@ mod tests {
             .into_iter()
             .find(|r| r.type_name == "MeshRef")
             .expect("MeshRef registration present");
-        let bytes = (reg.serialize_recipe)(&src, entity).expect("serialize");
-
         let mut dst = World::new();
         let new_entity = dst.spawn(());
-        (reg.deserialize_recipe)(&mut dst, new_entity, &bytes).expect("deserialize");
+        crate::scene::component_registration::copy_through_record(
+            reg, &src, entity, &mut dst, new_entity,
+        )
+        .expect("the source carries a MeshRef")
+        .expect("it round-trips");
 
         let restored = dst.get::<MeshRef>(new_entity).expect("mesh ref restored");
         assert_eq!(restored, &MeshRef::Asset(uuid));

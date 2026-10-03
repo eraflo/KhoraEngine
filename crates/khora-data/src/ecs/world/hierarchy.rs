@@ -12,11 +12,100 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Parent/child links: reparenting, subtree despawn, ancestry checks.
+//! Parent/child links: reparenting, subtree despawn, ancestry checks, and
+//! the hierarchy a scene load brings in.
+//!
+//! The hierarchy is stored twice — [`Parent`] on the child and [`Children`]
+//! on the parent — so this module is the only one that writes either: an edge
+//! at a time through [`World::set_parent`], a whole loaded scene at once
+//! through [`LoadedHierarchy`] and [`World::place_loaded_row`].
+//!
+//! [`Parent`]: crate::ecs::Parent
+//! [`Children`]: crate::ecs::Children
+
+use std::any::TypeId;
+use std::collections::HashMap;
 
 use khora_core::ecs::entity::EntityId;
 
 use super::World;
+use crate::ecs::page::ComponentPage;
+use crate::ecs::{Children, Component, Parent};
+
+/// What a by-name write does to a component — see
+/// [`World::write_hierarchy_by_name`].
+#[derive(Debug, Clone, Copy)]
+pub enum HierarchyWrite<'v> {
+    /// Gives the component this value (an add, or a write over it).
+    Set(&'v serde_json::Value),
+    /// Takes the component away.
+    Remove,
+}
+
+/// The hierarchy a scene load brings in, checked before anything is placed.
+///
+/// A save records each child's `Parent`; each parent's `Children` is derived
+/// from those, in the order the save lists the children. Only links between
+/// two entities of the same load count: a `Parent` naming anything else is
+/// not one.
+pub(crate) struct LoadedHierarchy {
+    /// Each loaded child, and its loaded parent.
+    parents: HashMap<EntityId, EntityId>,
+    /// Each loaded parent's children not yet placed with it.
+    children: HashMap<EntityId, Vec<EntityId>>,
+}
+
+impl LoadedHierarchy {
+    /// The hierarchy of `parents` (child → parent, both of the load), each
+    /// parent listing its children in `order`. `Err(entity)` when the links
+    /// loop through `entity`: a save is input, and a cycle would send every
+    /// walk up the hierarchy round forever.
+    pub(crate) fn new(
+        parents: HashMap<EntityId, EntityId>,
+        order: impl IntoIterator<Item = EntityId>,
+    ) -> Result<Self, EntityId> {
+        if let Some(looping) = cycle_in(&parents) {
+            return Err(looping);
+        }
+        let mut children: HashMap<EntityId, Vec<EntityId>> = HashMap::new();
+        for entity in order {
+            if let Some(parent) = parents.get(&entity) {
+                children.entry(*parent).or_default().push(entity);
+            }
+        }
+        Ok(Self { parents, children })
+    }
+}
+
+/// An entity the links loop through, if they do.
+///
+/// Each entity is walked once: a walk stops where an earlier one finished, so
+/// a long chain costs its length, not its length squared.
+fn cycle_in(parents: &HashMap<EntityId, EntityId>) -> Option<EntityId> {
+    // `false` while on the walk in progress, `true` once known to reach a root.
+    let mut state: HashMap<EntityId, bool> = HashMap::with_capacity(parents.len());
+    let mut path = Vec::new();
+    for &start in parents.keys() {
+        let mut at = start;
+        loop {
+            match state.get(&at) {
+                Some(true) => break,
+                Some(false) => return Some(at),
+                None => {}
+            }
+            state.insert(at, false);
+            path.push(at);
+            match parents.get(&at) {
+                Some(&up) => at = up,
+                None => break,
+            }
+        }
+        for entity in path.drain(..) {
+            state.insert(entity, true);
+        }
+    }
+    None
+}
 
 impl World {
     /// Re-parents `child`, or detaches it when `new_parent` is `None`.
@@ -24,7 +113,9 @@ impl World {
     /// The hierarchy is stored twice — [`Parent`] on the child and [`Children`]
     /// on the parent — because both directions are walked every frame. Two
     /// copies of one fact is two chances to disagree, so the only correct place
-    /// to write either of them is here, where both move together.
+    /// to write either of them is this module, where both move together: here
+    /// for one edge, in [`place_loaded_row`](Self::place_loaded_row) for a
+    /// loaded scene.
     ///
     /// Returns `false` when the edge was refused: a missing entity, or a parent
     /// that is already a descendant of `child`. A cycle is refused rather than
@@ -35,8 +126,6 @@ impl World {
     /// [`Parent`]: crate::ecs::Parent
     /// [`Children`]: crate::ecs::Children
     pub fn set_parent(&mut self, child: EntityId, new_parent: Option<EntityId>) -> bool {
-        use crate::ecs::{Children, Parent};
-
         if !self.contains(child) {
             return false;
         }
@@ -86,8 +175,6 @@ impl World {
     ///
     /// [`Parent`]: crate::ecs::Parent
     pub fn despawn_subtree(&mut self, root: EntityId) -> usize {
-        use crate::ecs::Children;
-
         if !self.contains(root) {
             return 0;
         }
@@ -118,12 +205,12 @@ impl World {
 
     /// Whether `candidate` sits under `ancestor` in the hierarchy.
     pub fn is_descendant_of(&self, candidate: EntityId, ancestor: EntityId) -> bool {
-        use crate::ecs::Parent;
-
         let mut current = candidate;
-        // Bounded: this is the guard against a malformed hierarchy, so it cannot
-        // itself assume the hierarchy is well formed.
-        for _ in 0..1024 {
+        // Every entity on the way up, once: this is the guard against a
+        // malformed hierarchy, so it cannot assume the walk ends — and a
+        // depth bound would let a long enough chain close into a cycle.
+        let mut seen = std::collections::HashSet::new();
+        while seen.insert(current) {
             let Some(parent) = self.get::<Parent>(current) else {
                 return false;
             };
@@ -132,7 +219,107 @@ impl World {
             }
             current = parent.0;
         }
-        log::warn!("is_descendant_of: hierarchy traversal exceeded depth bound");
+        log::warn!("is_descendant_of: the hierarchy above {candidate:?} loops");
         false
+    }
+
+    /// A write to a component **by name** — a script command, the editor's
+    /// inspector — that lands on the hierarchy, made through this module so
+    /// both halves move together: setting or adding `Parent` re-parents
+    /// through [`set_parent`](Self::set_parent) (a cycle is refused), removing
+    /// it detaches, and `Children` — derived from the children's `Parent` — is
+    /// not written by name at all.
+    ///
+    /// `None` when `type_name` is not part of the hierarchy: the caller writes
+    /// it as any other component.
+    pub fn write_hierarchy_by_name(
+        &mut self,
+        entity: EntityId,
+        type_name: &str,
+        write: HierarchyWrite<'_>,
+    ) -> Option<Result<(), String>> {
+        match type_name {
+            "Parent" => Some(match write {
+                HierarchyWrite::Remove => {
+                    self.set_parent(entity, None);
+                    Ok(())
+                }
+                HierarchyWrite::Set(json) => {
+                    match serde_json::from_value::<crate::ecs::SerializableParent>(json.clone()) {
+                        Ok(parent) => {
+                            let parent = Parent::from(parent).0;
+                            if self.set_parent(entity, Some(parent)) {
+                                Ok(())
+                            } else {
+                                Err(format!(
+                                    "{entity:?} cannot be parented to {parent:?}: a missing \
+                                     entity, or one already below it"
+                                ))
+                            }
+                        }
+                        Err(error) => Err(format!("not a parent: {error}")),
+                    }
+                }
+            }),
+            "Children" => Some(Err(
+                "`Children` is derived from each child's `Parent`; re-parent the child instead"
+                    .to_owned(),
+            )),
+            _ => None,
+        }
+    }
+
+    /// Places a loaded row (see [`place_row`](Self::place_row)) with the
+    /// hierarchy made to agree as it goes: a `Parent` naming an entity outside
+    /// the load is left out of the row, and a parent's `Children` goes into
+    /// the same row when the row holds the hierarchy's domain — so a loaded
+    /// entity lands in its final page, with no migration to gain its list.
+    ///
+    /// `fill` pushes the row's other values; a value for a column the row
+    /// does not have (a `Parent` left out) is the caller's to skip.
+    pub(crate) fn place_loaded_row(
+        &mut self,
+        entity: EntityId,
+        signature: &[TypeId],
+        hierarchy: &mut LoadedHierarchy,
+        fill: impl FnOnce(&mut ComponentPage),
+    ) -> bool {
+        let parent_type = TypeId::of::<Parent>();
+        let children_type = TypeId::of::<Children>();
+        let mut signature = signature.to_vec();
+        if !hierarchy.parents.contains_key(&entity) {
+            signature.retain(|type_id| *type_id != parent_type);
+        }
+        let children_domain = self.component_domain(children_type);
+        let holds_children_domain = children_domain.is_some()
+            && signature
+                .iter()
+                .any(|type_id| self.component_domain(*type_id) == children_domain);
+        let list = if holds_children_domain {
+            hierarchy.children.remove(&entity)
+        } else {
+            None
+        };
+        if list.is_some() {
+            signature.push(children_type);
+            signature.sort();
+        }
+        self.place_row(entity, &signature, |page| {
+            fill(page);
+            if let (Some(list), Some(column)) = (list, page.columns.get_mut(&children_type)) {
+                Children(list).push_into_column(column.as_mut());
+            }
+        })
+    }
+
+    /// Gives every loaded parent no row took its `Children` on its own — a
+    /// parent with no page in the hierarchy's domain, whose list is a first
+    /// component in that domain, so nothing migrates.
+    pub(crate) fn finish_loaded_hierarchy(&mut self, hierarchy: LoadedHierarchy) {
+        for (parent, list) in hierarchy.children {
+            if let Err(error) = self.add_component(parent, Children(list)) {
+                log::error!("a loaded parent could not list its children: {error:?}");
+            }
+        }
     }
 }

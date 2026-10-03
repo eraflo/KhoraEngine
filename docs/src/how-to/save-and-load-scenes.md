@@ -26,17 +26,19 @@ match service.save_world(world.inner_world(), SerializationGoal::HumanReadableDe
 }
 ```
 
-You pick a **goal** (your intent), and the service picks the matching strategy:
-`HumanReadableDebug` / `LongTermStability` produce RON (readable, diffable);
-`EditorInterchange` / `SmallestFileSize` produce compact binary; `FastestLoad` produces
-the archetype layout; `PortableBinary` produces MessagePack. Choosing a goal is your
-decision; choosing the strategy is the engine's — the `.kscene` header records which one,
-so loading is symmetric.
+You pick a **goal** (your intent), and the service picks the matching encoding:
+`HumanReadableDebug` / `LongTermStability` write JSON text (readable, diffable);
+`EditorInterchange` / `SmallestFileSize` / `FastestLoad` write Khora's compact binary;
+`PortableBinary` writes MessagePack. The `.kscene` header records which one, so
+loading is symmetric. Whichever you pick, components are saved by name and fields by
+name, so the file stays readable as your component types change.
 
 ## Load the world
 
-Parse the bytes into a `SceneFile`, then populate the world's inner `World`. Despawn the
-existing entities first so you replace rather than merge:
+Parse the bytes into a `SceneFile`, then load it. `replace_world` swaps the world's
+contents for the scene's; `load_world` brings the scene in beside what is already
+there. Either way the load is atomic — a file that cannot be loaded leaves the world
+untouched — and returns a report of what it adapted:
 
 ```rust
 use khora_sdk::{SceneFile, SerializationService};
@@ -50,27 +52,38 @@ let scene = match SceneFile::from_bytes(&bytes) {
     Err(e) => { log::error!("invalid scene file: {e:?}"); return; }
 };
 
-// Replace the current scene.
-let existing: Vec<_> = world.iter_entities().collect();
-for entity in existing {
-    world.despawn(entity);
-}
-
 let service = SerializationService::new();
-if let Err(e) = service.load_world(&scene, world.inner_world_mut()) {
-    log::error!("failed to load scene: {e:?}");
+match service.replace_world(&scene, world.inner_world_mut()) {
+    Ok(report) => {
+        for entry in &report.entries {
+            log::warn!("level_01: {entry}");
+        }
+    }
+    Err(e) => log::error!("failed to load scene: {e}"),
 }
 ```
 
-`load_world` reads the strategy id from the header and dispatches the right decoder; the
-goal you saved with does not need to be repeated.
+The report lists every place the save differed from today's code — a field that took
+its default, one that was dropped, one read from its old name. An empty report means
+the scene was read exactly as written.
 
-## The three strategies, in one sentence
+## Keep old saves readable when you rename
 
-Definition serializes to human-readable RON, Recipe to a compact binary command stream,
-and Archetype to a near-`memcpy` page layout — picked for you by the `SerializationGoal`
-you pass. See [Serialization](../concepts/serialization.md) for the file format and the
-goal → strategy mapping.
+Rename a component or a field and say what it was called; saves written before the
+rename keep loading:
+
+```rust
+#[derive(Component, Clone, Default)]
+#[component(formerly = "Health")]
+pub struct Vitality {
+    #[component(formerly = "hp")]
+    pub points: f32,
+}
+```
+
+A component type you delete on purpose is declared retired, so old saves holding it
+load and skip it. Any other component name the engine does not know makes the load
+fail with an error naming it — the world is left as it was.
 
 ## Play-mode snapshot note
 
@@ -81,13 +94,14 @@ to defaults.
 
 ## Expected result
 
-`save_world` produces a `.kscene` file (RON text under the debug goals, binary otherwise)
-beginning with the `KHORASCN` magic; loading it into a fresh world reproduces the same
-entities and components. A corrupt or truncated file is reported through the `Result`
-rather than panicking.
+`save_world` produces a `.kscene` file (JSON text under the readable goals, binary
+otherwise) beginning with the `KHORASCN` magic; loading it into a fresh world reproduces
+the same entities, with the same persistent ids, and their saved components. A corrupt,
+truncated or outdated file is reported through the `Result` rather than panicking.
 
 ## Related
 
-- [Serialization](../concepts/serialization.md) — strategies, `.kscene` format, migrations.
+- [Serialization](../concepts/serialization.md) — records, pages, atomic loading.
+- [File formats](../reference/formats.md) — the header and the three encodings.
 - [Spawn entities and move them](./spawn-and-transform.md) — build the scene you save.
 - [`SerializationService` reference](../reference/sdk.md) — goals and error types.

@@ -15,8 +15,8 @@
 //! A script body stopped part-way, written down in the engine's own terms.
 //!
 //! What a suspended machine *is* belongs to the VM. What a scene stores has to
-//! belong to the engine: every serialisation strategy must be able to read it,
-//! a Definition save must show it, and a change to the VM's internals must not
+//! belong to the engine: every scene encoding must be able to read it, a text
+//! save must show it, and a change to the VM's internals must not
 //! make every save that holds one unreadable. So the VM converts its machine to
 //! and from this, and this is what the scene keeps.
 //!
@@ -24,7 +24,7 @@
 //!
 //! A frame names its function rather than indexing it, and a register holding
 //! a literal holds the literal's text rather than its slot in the constant
-//! table. Both are what a reader of a Definition save can check against the
+//! table. Both are what a reader of a text save can check against the
 //! script; neither moves when the compiler lays the program out differently.
 //! Positions *inside* a function — the program counter, a frame's registers —
 //! stay numbers: nothing else names them, and the program fingerprint the save
@@ -133,23 +133,24 @@ impl<'de> serde::de::Visitor<'de> for SuspendedMachineVisitor {
     }
 }
 
-/// The marker a binary save writes where a legacy machine wrote its length.
+/// The marker the binary form writes where a legacy machine wrote its length.
 ///
 /// bincode is positional and a legacy machine starts with its byte count, so
 /// the structured form needs a first value no byte count can be.
 const FROZEN_MARKER: u64 = u64::MAX;
 
-/// How a structured machine is written inside a binary save.
+/// How a structured machine is written in its binary (bincode) form — the
+/// form scene files written before scene records hold it in.
 ///
-/// Its own codec rather than the save's, for the limit: every list and every
-/// text in it carries a count read from the save, and bincode sizes an
-/// allocation from a count before reading what it counts. Unbounded, a damaged
-/// count of 2^60 registers panics or aborts the process — the whole scene load
-/// for one bad byte. Bounded, it is an error.
+/// Its own codec, for the limit: every list and every text in it carries a
+/// count read from the bytes, and bincode sizes an allocation from a count
+/// before reading what it counts. Unbounded, a damaged count of 2^60 registers
+/// panics or aborts the process — a whole load for one bad byte. Bounded, it
+/// is an error.
 ///
 /// The bound holds on the writing side too — [`FrozenMachine::fits_a_save`] —
 /// because bincode checks a limit only when decoding: a machine written past
-/// it would be a save the engine cannot read back.
+/// it could not be read back.
 const MACHINE_CODEC: Configuration<LittleEndian, Varint, Limit<MACHINE_LIMIT>> =
     bincode::config::standard().with_limit::<MACHINE_LIMIT>();
 
@@ -282,7 +283,8 @@ pub struct FrozenMachine {
 }
 
 impl FrozenMachine {
-    /// Whether a binary save holding this machine reads back.
+    /// Whether this machine stays within the bound its binary form is read
+    /// back under.
     ///
     /// Counts what decoding it will claim against the reading limit: the bytes
     /// it is written as, plus the lists it holds at their size in memory,
@@ -634,8 +636,8 @@ mod tests {
 
     // ─── Definition saves ───────────────────────────────────────────────────
 
-    /// A scene moves between strategies: a machine read from a Definition save
-    /// can be written into a binary one and back without losing anything.
+    /// A machine moves between forms: one read from a text save can be
+    /// written in its binary form and back without losing anything.
     #[test]
     fn a_frozen_snapshot_round_trips_through_a_definition_save_and_a_binary_one() {
         let original = ScriptSnapshot {
@@ -657,7 +659,7 @@ mod tests {
         assert_eq!(through_bincode(&parsed), original, "then through bincode");
     }
 
-    /// **What a Definition save is for.** A machine reads as named frames and
+    /// **What a text save is for.** A machine reads as named frames and
     /// typed registers — something a reader can check against the script —
     /// and not as a list of bytes, even after it went through a binary save.
     #[test]

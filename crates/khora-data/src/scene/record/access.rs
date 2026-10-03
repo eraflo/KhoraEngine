@@ -159,11 +159,11 @@ impl<'de> MapAccess<'de> for Entries<'_, '_, '_> {
         // A key is a value in its own right — an entity keying a map is
         // remapped like any other.
         let node = self.cx.watch.child(self.node, Step::KeyOf);
-        seed.deserialize(Reader {
+        seed.deserialize(MapKey(Reader {
             record: key,
             cx: &mut *self.cx,
             node,
-        })
+        }))
         .map(Some)
     }
 
@@ -384,5 +384,108 @@ impl<'de> de::Deserializer<'de> for PayloadReader<'_, '_, '_> {
         bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
         bytes byte_buf option unit unit_struct newtype_struct seq tuple
         tuple_struct map struct enum identifier ignored_any
+    }
+}
+
+/// A map key: read like any value, except that a number may arrive as the
+/// text a format writes it as — JSON keys are always strings.
+struct MapKey<'a, 'c, 'r>(Reader<'a, 'c, 'r>);
+
+macro_rules! forward {
+    ($($method:ident),*) => {
+        $(fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, RecordError> {
+            de::Deserializer::$method(self.0, visitor)
+        })*
+    };
+}
+
+macro_rules! number_from_text {
+    ($($method:ident => $visit:ident : $ty:ty),*) => {
+        $(fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, RecordError> {
+            match self.0.record {
+                Record::Str(text) => text
+                    .parse::<$ty>()
+                    .map_err(|_| RecordError(format!("map key `{text}` is not a number")))
+                    .and_then(|value| visitor.$visit(value)),
+                _ => de::Deserializer::$method(self.0, visitor),
+            }
+        })*
+    };
+}
+
+impl<'de> de::Deserializer<'de> for MapKey<'_, '_, '_> {
+    type Error = RecordError;
+
+    fn is_human_readable(&self) -> bool {
+        false
+    }
+
+    number_from_text! {
+        deserialize_i8 => visit_i64: i64,
+        deserialize_i16 => visit_i64: i64,
+        deserialize_i32 => visit_i64: i64,
+        deserialize_i64 => visit_i64: i64,
+        deserialize_u8 => visit_u64: u64,
+        deserialize_u16 => visit_u64: u64,
+        deserialize_u32 => visit_u64: u64,
+        deserialize_u64 => visit_u64: u64
+    }
+
+    forward! {
+        deserialize_any, deserialize_bool, deserialize_f32, deserialize_f64, deserialize_char,
+        deserialize_str, deserialize_string, deserialize_bytes, deserialize_byte_buf,
+        deserialize_option, deserialize_unit, deserialize_seq, deserialize_map,
+        deserialize_identifier, deserialize_ignored_any
+    }
+
+    fn deserialize_unit_struct<V: Visitor<'de>>(
+        self,
+        name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, RecordError> {
+        de::Deserializer::deserialize_unit_struct(self.0, name, visitor)
+    }
+
+    fn deserialize_newtype_struct<V: Visitor<'de>>(
+        self,
+        name: &'static str,
+        visitor: V,
+    ) -> Result<V::Value, RecordError> {
+        de::Deserializer::deserialize_newtype_struct(self.0, name, visitor)
+    }
+
+    fn deserialize_tuple<V: Visitor<'de>>(
+        self,
+        len: usize,
+        visitor: V,
+    ) -> Result<V::Value, RecordError> {
+        de::Deserializer::deserialize_tuple(self.0, len, visitor)
+    }
+
+    fn deserialize_tuple_struct<V: Visitor<'de>>(
+        self,
+        name: &'static str,
+        len: usize,
+        visitor: V,
+    ) -> Result<V::Value, RecordError> {
+        de::Deserializer::deserialize_tuple_struct(self.0, name, len, visitor)
+    }
+
+    fn deserialize_struct<V: Visitor<'de>>(
+        self,
+        name: &'static str,
+        fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, RecordError> {
+        de::Deserializer::deserialize_struct(self.0, name, fields, visitor)
+    }
+
+    fn deserialize_enum<V: Visitor<'de>>(
+        self,
+        name: &'static str,
+        variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, RecordError> {
+        de::Deserializer::deserialize_enum(self.0, name, variants, visitor)
     }
 }

@@ -9,9 +9,9 @@ to *save and load* a scene see
 
 ## `.kscene` — scene file
 
-A `.kscene` file is a fixed-size header followed by a single payload. The header
-records which serialization strategy produced the payload, so loading is symmetric
-without prior format knowledge.
+A `.kscene` file is a fixed-size header followed by a single payload. The payload
+is a **scene record**; the header names the encoding it was written in, so a file
+is read back without knowing in advance how it was saved.
 
 ### Header layout
 
@@ -22,49 +22,98 @@ The header is a fixed `SceneHeader` (defined in
 | Field | Type | Bytes | Notes |
 |---|---|---|---|
 | `magic_bytes` | `[u8; 8]` | 8 | Always `"KHORASCN"` (`HEADER_MAGIC_BYTES`). |
-| `format_version` | `u8` | 1 | Header/format version. Current writers emit `1` (`CURRENT_SCENE_VERSION`). |
-| `strategy_id` | `[u8; 32]` | 32 | Null-padded UTF-8 strategy ID, e.g. `"KH_RECIPE_V1"`. |
+| `format_version` | `u8` | 1 | `SCENE_FORMAT_VERSION`, currently `2`. |
+| `encoding_id` | `[u8; 32]` | 32 | Null-padded UTF-8 encoding ID, e.g. `"KH_COMPACT_V2"`. |
 | `payload_length` | `u64` | 8 | Length of the payload that follows, in bytes (little-endian). |
 
 The payload immediately follows the header. `SceneFile::to_bytes` /
 `SceneFile::from_bytes` serialize and parse the whole file; the header is written
-by direct byte manipulation (not serde) because it is fixed-layout and
-performance-critical. `from_bytes` returns `SceneFileError::InvalidMagicBytes` or
+by direct byte manipulation (not serde) because it is fixed-layout.
+`from_bytes` returns `SceneFileError::InvalidMagicBytes` or
 `SceneFileError::TooShort` on a malformed file.
 
-### Strategies and goals
+A version `1` file predates scene records and is refused with the command that
+converts a project once: `cargo xtask assets upgrade-scenes <project>`. A version
+newer than the engine's is refused as such.
+
+### The scene record
+
+What every encoding holds is the same `SceneRecord`
+(`crates/khora-data/src/scene/scene_record.rs`), shaped like the world's pages:
+
+- `entities` — the persistent id of every saved entity, in order.
+- `pages` — one per component signature: the component **names**, the ids of
+  the rows, and one column of values per component, row-aligned.
+
+Components are saved **by name** — the name their `Component` derive registers —
+and their values field by field, by name. Entity references are saved as
+persistent ids, asset references as asset UUIDs. Only components whose
+provenance is authored are saved; derived and runtime state is rebuilt on load.
+
+Reading a record adapts it to today's code and **reports** each adaptation
+(`LoadReport`): a field missing from the save takes its default, a field the code
+no longer has is dropped, a field or component saved under a name listed in its
+`formerly` is renamed, a number is widened losslessly, a reference to an entity
+the save does not hold is cut. A component name nothing registers is an
+**error** — unless it is declared retired, in which case it is skipped and
+reported. A component the engine derives or keeps while running is skipped and
+reported too, and rebuilt: a save never holds one, and a recorded copy could only
+disagree with what it comes from. Text encodings write a float JSON has no number
+for — an infinity, a NaN — as `{"$float": "inf"}`. Every encoding refuses a value
+nested deeper than 128 levels. Loading is atomic: the record is validated and
+staged before the world changes, so a refused file leaves the world as it was.
+
+### Encodings and goals
 
 The payload encoding is chosen by a `SerializationGoal`, **not** by file
-extension. The `strategy_id` in the header records which strategy produced the
-payload. There are **four** strategies, each identified by a versioned string ID:
+extension. There are **three** encodings, each identified by a versioned ID:
 
-| Strategy | `strategy_id` | Payload encoding | Character |
+| Encoding | `encoding_id` | Payload | Character |
 |---|---|---|---|
-| Definition | `KH_DEFINITION_RON_V1` | RON (text) | Human-readable, diffable. |
-| Recipe | `KH_RECIPE_V1` | Binary command list | Compact, editor interchange. |
-| Archetype | `KH_ARCHETYPE_V1` | Binary page layout | Fastest load; play-mode snapshots. |
-| MessagePack | `KH_MESSAGEPACK_V1` | MessagePack | Portable, schema-less, cross-language. |
+| Compact | `KH_COMPACT_V2` | Binary, page-shaped, column-major; component and field names stored once in symbol and shape tables | Small and fast; the editor's working format. |
+| Text | `KH_TEXT_V2` | Pretty-printed JSON | Human-readable, diffable. |
+| MessagePack | `KH_MSGPACK_V2` | MessagePack, fields by name | Portable; readable by any MessagePack library. |
 
-`SerializationGoal` (in `khora-core::scene`) has **six** variants. The goal → strategy
-mapping is performed in `SerializationService::save_world`:
+`SerializationGoal` (in `khora-core::scene`) has **six** variants. The goal →
+encoding mapping is made in `SerializationService::save_world`:
 
-| `SerializationGoal` | Strategy |
+| `SerializationGoal` | Encoding |
 |---|---|
-| `HumanReadableDebug` | Definition (`KH_DEFINITION_RON_V1`) |
-| `LongTermStability` | Definition (`KH_DEFINITION_RON_V1`) |
-| `SmallestFileSize` | Recipe (`KH_RECIPE_V1`) |
-| `EditorInterchange` | Recipe (`KH_RECIPE_V1`) |
-| `FastestLoad` | Archetype (`KH_ARCHETYPE_V1`) |
-| `PortableBinary` | MessagePack (`KH_MESSAGEPACK_V1`) |
+| `HumanReadableDebug` | Text (`KH_TEXT_V2`) |
+| `LongTermStability` | Text (`KH_TEXT_V2`) |
+| `SmallestFileSize` | Compact (`KH_COMPACT_V2`) |
+| `EditorInterchange` | Compact (`KH_COMPACT_V2`) |
+| `FastestLoad` | Compact (`KH_COMPACT_V2`) |
+| `PortableBinary` | MessagePack (`KH_MSGPACK_V2`) |
 
-On load, `SerializationService::load_world` reads the `strategy_id` from the
-header and dispatches to the matching strategy — the goal is irrelevant at load
-time. A migration seam (`migrate_payload`) is wired for future format bumps; no
-migrations are registered today (version `1` is the only scene format).
+### Compact layout
 
-> Choosing a *goal* is a developer decision; choosing a *strategy* is an engine
-> decision. The four strategies implement the `SerializationStrategy` trait in
-> `khora-data::scene`.
+The compact payload writes every name once. A table of **symbols** (component,
+struct, field, enum and variant names) and a table of **shapes** (a struct's name
+and field names, or an enum's name and a variant's) come first; every value after
+them refers to its shape or name by index. The pages follow, each column by column —
+the order CRPECS stores them in.
+
+<div class="kp-figure-frame">
+
+{{#include ../images/persistence/compact-layout.svg}}
+
+</div>
+
+A value is a one-byte tag followed by its content: numbers as LEB128 varints
+(signed ones zig-zagged) or little-endian floats, a struct as its shape index then
+its fields in the shape's order, a variant as its shape index, a payload kind, then
+the payload. Reading checks every count against the bytes left before allocating,
+nests at most 128 levels, keeps its own stack of open values rather than recursing,
+and refuses a file whose values would copy more than 64 bytes of names per byte of
+file.
+
+On load, the `encoding_id` in the header picks the decoder — the goal is
+irrelevant at load time. Every encoding decodes to the same record, so the rules
+above hold whichever one wrote the file.
+
+> Choosing a *goal* is a developer decision; choosing an *encoding* is an engine
+> decision.
 
 ## `.pack` — asset archive
 

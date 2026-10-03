@@ -200,15 +200,19 @@ impl EngineApp for DefaultRuntimeApp {
 
         match SceneFile::from_bytes(&bytes) {
             Ok(scene) => {
-                let serializer = SerializationService::new();
-                if let Err(e) = serializer.load_world(&scene, world.inner_world_mut()) {
-                    log::error!("Failed to load default scene: {:?}", e);
-                } else {
-                    log::info!(
-                        "khora-sdk run_default: loaded scene '{}' ({} bytes)",
-                        cfg.default_scene,
-                        bytes.len()
-                    );
+                let service = SerializationService::new();
+                match service.load_world(&scene, world.inner_world_mut()) {
+                    Ok(report) => {
+                        for entry in &report.entries {
+                            log::warn!("default scene '{}': {entry}", cfg.default_scene);
+                        }
+                        log::info!(
+                            "khora-sdk run_default: loaded scene '{}' ({} bytes)",
+                            cfg.default_scene,
+                            bytes.len()
+                        );
+                    }
+                    Err(e) => log::error!("Failed to load default scene: {e}"),
                 }
             }
             Err(e) => log::error!(

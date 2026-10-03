@@ -19,4 +19,5 @@
 //! binary as a module instead of adding a file at the root of `tests/`.
 
 mod public_paths;
+mod scene_files;
 mod shipped_scripts;

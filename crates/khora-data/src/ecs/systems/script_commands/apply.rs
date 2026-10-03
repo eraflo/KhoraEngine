@@ -24,7 +24,7 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Quaternion, Vec3};
 use khora_core::script::{ComponentName, ScriptValue, WorldCommand};
 
-use crate::ecs::{Transform, World};
+use crate::ecs::{HierarchyWrite, Transform, World};
 use crate::scene::component_registration::registration_of;
 
 use super::json::{merge, to_json};
@@ -225,6 +225,9 @@ fn set_component(
     value: &ScriptValue,
 ) -> Result<(), ApplyError> {
     let registration = lookup(world, entity, component)?;
+    if let Some(written) = write_hierarchy(world, entity, component, value)? {
+        return written;
+    }
 
     // Read what is there, merge the write onto it, put it back. The merge is
     // what makes a one-field write mean "change this field" rather than "reset
@@ -252,6 +255,10 @@ fn add_component(
         });
     }
 
+    if let Some(written) = write_hierarchy(world, entity, component, value)? {
+        return written;
+    }
+
     // Start from the component's own default so a script only has to name the
     // fields it cares about, then apply its value as a patch over that.
     (registration.create_default)(world, entity).map_err(rejected_by(component))?;
@@ -268,7 +275,29 @@ fn remove_component(
     component: &str,
 ) -> Result<(), ApplyError> {
     let registration = lookup(world, entity, component)?;
+    if let Some(written) = world.write_hierarchy_by_name(entity, component, HierarchyWrite::Remove)
+    {
+        return written.map_err(rejected_by(component));
+    }
     (registration.remove)(world, entity).map_err(rejected_by(component))
+}
+
+/// A by-name write to the hierarchy, made by the module that owns it — so a
+/// script adding, setting or removing `Parent` moves both halves of the edge.
+/// `Ok(None)` when `component` is not part of the hierarchy.
+fn write_hierarchy(
+    world: &mut World,
+    entity: EntityId,
+    component: &str,
+    value: &ScriptValue,
+) -> Result<Option<Result<(), ApplyError>>, ApplyError> {
+    if !matches!(component, "Parent" | "Children") {
+        return Ok(None);
+    }
+    let json = to_json(value).map_err(rejected_by(component))?;
+    Ok(world
+        .write_hierarchy_by_name(entity, component, HierarchyWrite::Set(&json))
+        .map(|written| written.map_err(rejected_by(component))))
 }
 
 fn lookup(

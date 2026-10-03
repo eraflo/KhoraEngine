@@ -1,0 +1,95 @@
+<svg class="kp-figure" viewBox="0 0 760 268" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-rt-title kp-rt-desc">
+  <title id="kp-rt-title">A save and a load are one path</title>
+  <desc id="kp-rt-desc">The world's pages are captured into a scene record, which an encoding writes as a scene file. Reading the file decodes the same record, which prepare and commit bring back into a world, atomically, with a report.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-cell { fill: var(--k-bg-3, #1f2636); }
+    .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
+    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; }
+    .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 19px; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-verb { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11.5px; }
+    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
+    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+    .kp-mono-sm { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 9.5px; }
+    .kp-mono-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+    .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+  </style>
+  <defs>
+    <marker id="kp-rt-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="268" rx="8"/>
+  <!-- save lane -->
+  <path class="kp-flow" d="M150,40 L322,40" marker-end="url(#kp-rt-arrow)"/>
+  <text class="kp-verb" x="160" y="32">capture</text>
+  <path class="kp-flow" d="M438,40 L610,40" marker-end="url(#kp-rt-arrow)"/>
+  <text class="kp-verb" x="448" y="32">encode · the goal picks it</text>
+  <!-- station: World -->
+  <rect class="kp-panel" x="16" y="56" width="216" height="156" rx="6"/>
+  <text class="kp-station" x="32" y="84">World</text>
+  <text class="kp-label" x="32" y="102">pages of live rows</text>
+  <g>
+    <rect class="kp-cell-soft" x="32" y="116" width="34" height="16" rx="2"/>
+    <rect class="kp-cell" x="70" y="116" width="60" height="16" rx="2"/>
+    <rect class="kp-cell" x="134" y="116" width="44" height="16" rx="2"/>
+    <rect class="kp-cell-soft" x="182" y="116" width="34" height="16" rx="2"/>
+    <rect class="kp-cell-soft" x="32" y="136" width="34" height="16" rx="2"/>
+    <rect class="kp-cell" x="70" y="136" width="60" height="16" rx="2"/>
+    <rect class="kp-cell" x="134" y="136" width="44" height="16" rx="2"/>
+    <rect class="kp-cell-soft" x="182" y="136" width="34" height="16" rx="2"/>
+    <rect class="kp-cell-soft" x="32" y="156" width="34" height="16" rx="2"/>
+    <rect class="kp-cell" x="70" y="156" width="60" height="16" rx="2"/>
+    <rect class="kp-cell" x="134" y="156" width="44" height="16" rx="2"/>
+    <rect class="kp-cell-soft" x="182" y="156" width="34" height="16" rx="2"/>
+    <text class="kp-mono" x="38" y="128">e3</text>
+    <text class="kp-mono" x="38" y="148">e7</text>
+    <text class="kp-mono" x="38" y="168">e9</text>
+    <rect class="kp-sel" x="30" y="134" width="188" height="20" rx="3"/>
+  </g>
+  <text class="kp-note" x="32" y="196">authored · derived · runtime</text>
+  <!-- station: SceneRecord -->
+  <rect class="kp-panel" x="272" y="56" width="216" height="156" rx="6"/>
+  <text class="kp-station" x="288" y="84">SceneRecord</text>
+  <text class="kp-label" x="288" y="102">by name, page by page</text>
+  <text class="kp-mono" x="288" y="126">entities</text>
+  <text class="kp-mono" x="352" y="126">id3</text>
+  <text class="kp-mono" x="398" y="126">id7</text>
+  <text class="kp-mono" x="444" y="126">id9</text>
+  <text class="kp-mono" x="288" y="148">page</text>
+  <text class="kp-mono-dim" x="352" y="148">Name · Transform</text>
+  <text class="kp-mono-dim" x="288" y="166">rows</text>
+  <text class="kp-mono" x="352" y="166">id3</text>
+  <text class="kp-mono" x="398" y="166">id7</text>
+  <text class="kp-mono" x="444" y="166">id9</text>
+  <text class="kp-mono-dim" x="288" y="184">Name</text>
+  <text class="kp-mono" x="352" y="184">Crate</text>
+  <text class="kp-mono" x="398" y="184">Lamp</text>
+  <text class="kp-mono" x="444" y="184">Door</text>
+  <rect class="kp-sel" x="393" y="154" width="38" height="36" rx="3"/>
+  <text class="kp-note" x="288" y="204">authored only</text>
+  <!-- station: SceneFile -->
+  <rect class="kp-panel" x="528" y="56" width="216" height="156" rx="6"/>
+  <text class="kp-station" x="544" y="84">SceneFile</text>
+  <text class="kp-label" x="544" y="102">header + payload</text>
+  <rect class="kp-cell" x="544" y="114" width="60" height="20" rx="2"/>
+  <rect class="kp-cell" x="606" y="114" width="16" height="20" rx="2"/>
+  <rect class="kp-cell" x="624" y="114" width="88" height="20" rx="2"/>
+  <rect class="kp-cell" x="714" y="114" width="14" height="20" rx="2"/>
+  <text class="kp-mono-sm" x="548" y="127.5">KHORASCN</text>
+  <text class="kp-mono-sm" x="611" y="127.5">2</text>
+  <text class="kp-mono-sm" x="628" y="127.5">KH_COMPACT_V2</text>
+  <rect class="kp-cell-soft" x="544" y="138" width="184" height="44" rx="2"/>
+  <path class="kp-rule" d="M552,148 H720 M552,156 H700 M552,164 H716 M552,172 H690"/>
+  <text class="kp-note" x="544" y="200">49-byte header, then the record</text>
+  <!-- load lane -->
+  <path class="kp-flow" d="M610,232 L438,232" marker-end="url(#kp-rt-arrow)"/>
+  <text class="kp-verb" x="448" y="252">decode · the header names it</text>
+  <path class="kp-flow" d="M322,232 L150,232" marker-end="url(#kp-rt-arrow)"/>
+  <text class="kp-verb" x="138" y="252">prepare → commit · atomic, reported</text>
+</svg>

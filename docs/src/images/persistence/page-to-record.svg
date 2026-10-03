@@ -1,0 +1,103 @@
+<svg class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-pr-title kp-pr-desc">
+  <title id="kp-pr-title">A page in memory and the page record it becomes</title>
+  <desc id="kp-pr-desc">A component page holds a row per entity and a column per component. Capture keeps the live rows and the saved components, writes each entity as its persistent id and each column under its component's name; the derived GlobalTransform column is left out. Commit builds the row back into its final page.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-cell { fill: var(--k-bg-3, #1f2636); }
+    .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
+    .kp-ghost { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 3 3; }
+    .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 18px; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    .kp-verb { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11.5px; }
+    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
+    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
+    .kp-mono-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
+    .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+  </style>
+  <defs>
+    <marker id="kp-pr-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="330" rx="8"/>
+  <!-- left: the page in memory -->
+  <rect class="kp-panel" x="16" y="16" width="318" height="298" rx="6"/>
+  <text class="kp-station" x="32" y="44">ComponentPage</text>
+  <text class="kp-label" x="32" y="62">in memory · one signature</text>
+  <text class="kp-head" x="32" y="94">entity</text>
+  <text class="kp-head" x="84" y="94">Transform</text>
+  <text class="kp-head" x="186" y="94">Name</text>
+  <text class="kp-note" x="250" y="94">GlobalTr.</text>
+  <rect class="kp-cell-soft" x="28" y="104" width="48" height="26" rx="2"/>
+  <rect class="kp-cell" x="80" y="104" width="98" height="26" rx="2"/>
+  <rect class="kp-cell" x="182" y="104" width="60" height="26" rx="2"/>
+  <rect class="kp-ghost" x="246" y="104" width="76" height="26" rx="2"/>
+  <text class="kp-mono" x="36" y="121">e3</text>
+  <text class="kp-mono" x="88" y="121">(0, 0, 0)</text>
+  <text class="kp-mono" x="190" y="121">Crate</text>
+  <text class="kp-mono-dim" x="254" y="121">(0, 0, 0)</text>
+  <rect class="kp-cell-soft" x="28" y="134" width="48" height="26" rx="2"/>
+  <rect class="kp-cell" x="80" y="134" width="98" height="26" rx="2"/>
+  <rect class="kp-cell" x="182" y="134" width="60" height="26" rx="2"/>
+  <rect class="kp-ghost" x="246" y="134" width="76" height="26" rx="2"/>
+  <text class="kp-mono" x="36" y="151">e7</text>
+  <text class="kp-mono" x="88" y="151">(2, 0, 1)</text>
+  <text class="kp-mono" x="190" y="151">Lamp</text>
+  <text class="kp-mono-dim" x="254" y="151">(2, 4, 1)</text>
+  <rect class="kp-cell-soft" x="28" y="164" width="48" height="26" rx="2"/>
+  <rect class="kp-cell" x="80" y="164" width="98" height="26" rx="2"/>
+  <rect class="kp-cell" x="182" y="164" width="60" height="26" rx="2"/>
+  <rect class="kp-ghost" x="246" y="164" width="76" height="26" rx="2"/>
+  <text class="kp-mono" x="36" y="181">e9</text>
+  <text class="kp-mono" x="88" y="181">(5, 0, 3)</text>
+  <text class="kp-mono" x="190" y="181">Door</text>
+  <text class="kp-mono-dim" x="254" y="181">(5, 0, 3)</text>
+  <rect class="kp-sel" x="25" y="131" width="220" height="32" rx="3"/>
+  <text class="kp-label" x="32" y="222">Columns sit side by side, row-aligned:</text>
+  <text class="kp-label" x="32" y="238">the layout CRPECS iterates and compacts.</text>
+  <text class="kp-note" x="32" y="268">Dashed: GlobalTransform is derived —</text>
+  <text class="kp-note" x="32" y="284">rebuilt on load, never written.</text>
+  <!-- the crossing -->
+  <path class="kp-flow" d="M340,138 L420,138" marker-end="url(#kp-pr-arrow)"/>
+  <text class="kp-verb" x="350" y="128">capture</text>
+  <path class="kp-flow" d="M420,196 L340,196" marker-end="url(#kp-pr-arrow)"/>
+  <text class="kp-verb" x="352" y="216">commit</text>
+  <!-- right: the record in the save -->
+  <rect class="kp-panel" x="426" y="16" width="318" height="298" rx="6"/>
+  <text class="kp-station" x="442" y="44">PageRecord</text>
+  <text class="kp-label" x="442" y="62">in the save · named, sorted</text>
+  <text class="kp-head" x="442" y="94">components</text>
+  <rect class="kp-cell" x="532" y="80" width="54" height="22" rx="11"/>
+  <rect class="kp-cell" x="592" y="80" width="82" height="22" rx="11"/>
+  <text class="kp-mono" x="545" y="95">Name</text>
+  <text class="kp-mono" x="604" y="95">Transform</text>
+  <text class="kp-head" x="442" y="138">rows</text>
+  <rect class="kp-cell-soft" x="532" y="124" width="64" height="22" rx="2"/>
+  <rect class="kp-cell-soft" x="602" y="124" width="64" height="22" rx="2"/>
+  <rect class="kp-cell-soft" x="672" y="124" width="64" height="22" rx="2"/>
+  <text class="kp-mono" x="539" y="139">0x5c1e…</text>
+  <text class="kp-mono" x="609" y="139">0x2f9a…</text>
+  <text class="kp-mono" x="679" y="139">0x71d0…</text>
+  <text class="kp-head" x="442" y="178">Name</text>
+  <rect class="kp-cell" x="532" y="164" width="64" height="22" rx="2"/>
+  <rect class="kp-cell" x="602" y="164" width="64" height="22" rx="2"/>
+  <rect class="kp-cell" x="672" y="164" width="64" height="22" rx="2"/>
+  <text class="kp-mono" x="539" y="179">"Crate"</text>
+  <text class="kp-mono" x="609" y="179">"Lamp"</text>
+  <text class="kp-mono" x="679" y="179">"Door"</text>
+  <text class="kp-head" x="442" y="212">Transform</text>
+  <rect class="kp-cell" x="532" y="198" width="64" height="22" rx="2"/>
+  <rect class="kp-cell" x="602" y="198" width="64" height="22" rx="2"/>
+  <rect class="kp-cell" x="672" y="198" width="64" height="22" rx="2"/>
+  <text class="kp-mono" x="539" y="213">0, 0, 0</text>
+  <text class="kp-mono" x="609" y="213">2, 0, 1</text>
+  <text class="kp-mono" x="679" y="213">5, 0, 3</text>
+  <rect class="kp-sel" x="599" y="121" width="70" height="102" rx="3"/>
+  <text class="kp-label" x="442" y="268">The same row is a column slot in each:</text>
+  <text class="kp-label" x="442" y="284">its persistent id, then a named value per column.</text>
+</svg>

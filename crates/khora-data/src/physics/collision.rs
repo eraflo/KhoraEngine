@@ -20,12 +20,11 @@
 //! no consumer today — the experimental native broadphase/solver lanes that
 //! used it were removed — but is kept as a reusable serializable type.
 
-use bincode::{Decode, Encode};
 use khora_core::ecs::entity::EntityId;
 use serde::{Deserialize, Serialize};
 
 /// A pair of entities that are potentially colliding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CollisionPair {
     /// The first entity in the pair.
     pub entity_a: EntityId,

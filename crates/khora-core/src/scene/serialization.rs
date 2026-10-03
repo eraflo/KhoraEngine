@@ -22,28 +22,29 @@
 /// Defines the developer's high-level intention for a serialization operation.
 ///
 /// This enum is the core of the SAA-Serialize system's public API. Instead of
-/// specifying a format, the user specifies a goal, and the `SerializationAgent`
-/// chooses the best strategy to achieve it.
+/// specifying a format, the user specifies a goal, and the serialization
+/// service chooses the encoding that serves it best.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SerializationGoal {
     /// Prioritizes the fastest possible loading time.
     /// This is the ideal choice for production game builds where loading screens
-    /// must be minimized. The resulting file may be larger or unreadable.
+    /// must be minimized. Served today by the compact encoding.
     FastestLoad,
 
     /// Prioritizes the smallest possible file size on disk.
     /// This is useful for network transfers, content patches, or game saves
-    /// where storage space is a concern. Loading may be slower.
+    /// where storage space is a concern. Served by the compact encoding.
     SmallestFileSize,
 
     /// Prioritizes human-readability for debugging and version control.
-    /// The output will be a text-based format (like RON) that can be easily
+    /// The output will be a text-based format (JSON) that can be easily
     /// inspected and diffed. This is the slowest option.
     HumanReadableDebug,
 
-    /// Prioritizes long-term stability and forward compatibility.
-    /// The format used will be decoupled from the engine's internal memory layout,
-    /// ensuring the scene file can be loaded by future versions of Khora.
+    /// Prioritizes long-term stability and forward compatibility: written as
+    /// text (JSON), which any tool can still read in years. Every encoding
+    /// holds components and fields by name, so future versions of Khora read
+    /// all of them; this goal adds a file readable without Khora.
     LongTermStability,
 
     /// Prioritizes a flexible, structured format suitable for editor
@@ -52,7 +53,7 @@ pub enum SerializationGoal {
 
     /// A portable, schema-less binary format (MessagePack). Useful for
     /// interop with non-Rust tools that need to consume scene data
-    /// without bincode internals. Slightly larger than `EditorInterchange`
+    /// without Khora's own compact encoding. Slightly larger than `EditorInterchange`
     /// but readable by every language with a MessagePack library.
     PortableBinary,
 }

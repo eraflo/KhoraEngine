@@ -157,9 +157,9 @@ fn pack_progress_variants(x: &khora_io::asset::PackProgress) {
 
 fn serialization_service_error_variants(x: &khora_io::serialization::SerializationServiceError) {
     match x {
-        khora_io::serialization::SerializationServiceError::StrategyNotFound => {}
-        khora_io::serialization::SerializationServiceError::InvalidHeader => {}
-        khora_io::serialization::SerializationServiceError::ProcessingError(..) => {}
+        khora_io::serialization::SerializationServiceError::SaveFailed(..) => {}
+        khora_io::serialization::SerializationServiceError::ReadFailed(..) => {}
+        khora_io::serialization::SerializationServiceError::LoadFailed(..) => {}
     }
 }
 
@@ -649,6 +649,7 @@ fn module_serialization_paths_still_resolve() {
     let _ = khora_io::serialization::SerializationService::new;
     let _ = khora_io::serialization::SerializationService::save_world;
     let _ = khora_io::serialization::SerializationService::load_world;
+    let _ = khora_io::serialization::SerializationService::replace_world;
     is_default::<khora_io::serialization::SerializationService>();
     let _ = type_name::<khora_io::serialization::SerializationServiceError>();
     let _ = serialization_service_error_variants

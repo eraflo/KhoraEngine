@@ -21,7 +21,8 @@
 //! - `crate::ecs::soa::{SoaLayout, FieldSoaColumn}` (field-SoA form only)
 //! - `crate::ecs::page::AnyVec` (field-SoA form only)
 //! - `crate::ecs::{ComponentDomainRegistration, ComponentProvenance, SemanticDomain, World}`
-//! - `crate::scene::{ComponentRegistration, ComponentShape, FieldSchema}`
+//! - `crate::scene::{ComponentRegistration, ComponentShape, FieldSchema, Staged, StagedValue}`
+//! - `crate::scene::record::{to_record, resolve}`
 //!
 //! This test crate rebuilds that `crate::ecs` / `crate::scene` shape out of
 //! `khora_data`'s public paths, so the derive expands here exactly as it does in
@@ -56,7 +57,31 @@ mod ecs {
 
 /// The `crate::scene` the derive expands against.
 mod scene {
-    pub use khora_data::scene::{ComponentRegistration, ComponentShape, FieldSchema};
+    pub use khora_data::scene::record;
+    pub use khora_data::scene::{
+        ComponentRegistration, ComponentShape, FieldSchema, Staged, StagedValue,
+    };
+}
+
+/// References for values that hold no entity.
+struct NoEntities;
+
+impl khora_data::scene::record::ReferenceWriter for NoEntities {
+    fn write_entity(
+        &mut self,
+        entity: khora_core::ecs::entity::EntityId,
+    ) -> khora_data::scene::record::EntityRef {
+        panic!("unexpected entity {entity:?}")
+    }
+}
+
+impl khora_data::scene::record::ReferenceReader for NoEntities {
+    fn read_entity(
+        &mut self,
+        reference: khora_data::scene::record::EntityRef,
+    ) -> Result<khora_core::ecs::entity::EntityId, khora_data::scene::record::RecordError> {
+        panic!("unexpected entity {reference:?}")
+    }
 }
 
 /// Plain (array-of-structs column) form, with a domain and serialization.
@@ -215,12 +240,18 @@ fn a_derived_registration_describes_and_restores_the_component() {
 
     let mut world = World::new();
     let source = world.spawn(mass(3.25, "saved"));
-    let bytes =
-        (registration.serialize_recipe)(&world, source).expect("a present component serializes");
+    let record =
+        khora_data::scene::component_to_record(registration, &world, source, &mut NoEntities)
+            .expect("a present component is written")
+            .expect("it writes as a record");
 
     let target = world.spawn(());
-    (registration.deserialize_recipe)(&mut world, target, &bytes)
-        .expect("the bytes it wrote read back");
+    let staged =
+        (registration.stage)(&record, &mut NoEntities).expect("the record it wrote reads back");
+    staged
+        .component
+        .commit(&mut world, target)
+        .expect("the read component attaches");
     assert_eq!(
         world.clone_component::<GuardMass>(target),
         Some(mass(3.25, "saved"))
@@ -250,12 +281,15 @@ fn a_field_soa_derived_registration_restores_the_component() {
     );
 
     // Through the JSON pair, which writes in place (`set_component`) when the
-    // component is present. The byte pair's `deserialize_recipe` attaches with
+    // component is present. A staged record attaches with
     // `World::add_component`, which does not handle a field-SoA column today, so
-    // it is left out of a guard that must pass before and after a move.
+    // only the writing half is guarded here.
     let mut world = World::new();
     let entity = world.spawn(spin(1.0, 2.0, 3.0));
-    assert!((registration.serialize_recipe)(&world, entity).is_some_and(|b| !b.is_empty()));
+    assert!(
+        khora_data::scene::component_to_record(registration, &world, entity, &mut NoEntities)
+            .is_some_and(|r| r.is_ok())
+    );
     let json = (registration.to_json)(&world, entity).expect("a present component has JSON");
 
     assert!(world.set_component(entity, spin(0.0, 0.0, 0.0)));

@@ -12,21 +12,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Scene module containing the Scene struct and related functionality.
+//! Scenes written down and brought back.
+//!
+//! A world is captured as a [`SceneRecord`] — its entities by persistent
+//! identity, their components by name — and a record is applied back
+//! atomically. How a record becomes bytes is an [`encoding`]; which one is
+//! a matter of how the file will be used, never of what it holds.
 
 pub mod component_registration;
 pub mod material_registration;
-mod recipe;
 pub mod shape;
 
-pub mod migrations;
+pub mod apply;
+pub mod capture;
+pub mod encoding;
+pub mod file;
+pub mod prefab;
 pub mod record;
-mod strategy;
+pub mod retired;
+pub mod scene_record;
 
 pub use component_registration::*;
 pub use material_registration::*;
-pub use recipe::*;
 pub use shape::{ComponentShape, FieldSchema};
 
-pub use migrations::*;
-pub use strategy::*;
+pub use apply::{apply, prepare, Applied, Identity, LoadFailure, Prepared};
+pub use capture::{capture_subtree, capture_world, SaveError};
+pub use encoding::{
+    encoding_named, CompactEncoding, EncodingError, MsgPackEncoding, SceneEncoding, TextEncoding,
+};
+pub use file::{read_scene_file, write_scene_file, SceneFileReadError, UPGRADE_SCENES_COMMAND};
+pub use prefab::{instantiate_subtree, serialize_subtree};
+pub use retired::{is_retired, RetiredComponent};
+pub use scene_record::{PageRecord, SceneRecord};

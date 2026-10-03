@@ -24,7 +24,7 @@ use crate::scene_io;
 
 /// Drains [`EditorState::pending_save_as_prefab`] and
 /// [`EditorState::pending_save_as_prefab_at`], writing the entity's
-/// subtree as a `.kprefab` (Recipe-encoded).
+/// subtree as a `.kprefab` (a scene file of the subtree, compact encoding).
 ///
 /// - The `_at` variant carries a pre-chosen forward-slash relative
 ///   path under `<project>/assets/`; the dispatcher writes directly

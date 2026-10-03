@@ -15,14 +15,13 @@
 //! Defines the `AudioSource` component for emitting sound.
 
 use crate::assets::SoundData;
-use bincode::{Decode, Encode};
 use khora_core::asset::AssetHandle;
 use khora_macros::Component;
 use serde::{Deserialize, Serialize};
 
 /// The internal playback state of an active sound.
 /// This will be managed by the `AudioMixingLane`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlaybackState {
     /// The current position in the sample data, in samples.
     pub cursor: f32,

@@ -73,7 +73,10 @@ pub fn process_menu_actions(
     let Some(action) = action else { return };
 
     match action.as_str() {
-        "new_scene" => apply_new_scene(world, editor_state),
+        "new_scene" => {
+            apply_new_scene(world, editor_state);
+            forget_history(command_history);
+        }
         "undo" => apply_undo(editor_state, command_history),
         "redo" => apply_redo(editor_state, command_history),
         "delete" => apply_delete(world, editor_state),
@@ -83,15 +86,21 @@ pub fn process_menu_actions(
         }
         "play" => apply_play(world, editor_state),
         "pause" => apply_pause(editor_state),
-        "stop" => apply_stop(world, editor_state),
+        "stop" => {
+            apply_stop(world, editor_state);
+            forget_history(command_history);
+        }
         "save" => apply_save(project_vfs.as_ref(), world, editor_state),
-        // Save-As does NOT expose a strategy picker. The engine knows
+        // Save-As does NOT expose an encoding picker. The engine knows
         // which `SerializationGoal` is right for each context — for
-        // editor saves that's `EditorInterchange` (Recipe / bincode).
-        // Code paths that need a different goal (build pipeline, RON
-        // export, etc.) call `save_scene_dispatch_with_goal` directly.
+        // editor saves that's `EditorInterchange` (the compact encoding).
+        // Code paths that need another goal (text for diffing, MessagePack
+        // for tools) call `save_scene_dispatch_with_goal` directly.
         "save_as" => apply_save_as(project_vfs.as_ref(), world, editor_state),
-        "open" => apply_open(project_vfs.as_ref(), world, editor_state),
+        "open" => {
+            apply_open(project_vfs.as_ref(), world, editor_state);
+            forget_history(command_history);
+        }
         "spawn_empty" => {
             if let Ok(mut state) = editor_state.lock() {
                 state.pending_spawn = Some("Empty".to_owned());
@@ -111,6 +120,15 @@ pub fn process_menu_actions(
         other => {
             log::info!("Unhandled menu action: {}", other);
         }
+    }
+}
+
+/// Empties the undo history after the world was replaced: every edit it holds
+/// names entities by id, and those ids now name nothing — or, once a slot is
+/// recycled, someone else.
+pub(crate) fn forget_history(command_history: &Arc<Mutex<CommandHistory>>) {
+    if let Ok(mut history) = command_history.lock() {
+        history.clear();
     }
 }
 

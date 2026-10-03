@@ -26,8 +26,8 @@
 //! - **authored**: entities a scene was built with, given a random 63-bit id
 //!   when they are created in the editor — random so that concurrent edits do
 //!   not collide the way a counter would;
-//! - **created**: entities the game spawned while running, numbered by the save
-//!   that first records them.
+//! - **created**: entities spawned without an author's say — by the game while
+//!   running, or by code — numbered by the world as it spawns them.
 
 use serde::{Deserialize, Serialize};
 
@@ -44,7 +44,12 @@ impl PersistentId {
         Self(bits & !CREATED)
     }
 
-    /// The `n`-th identity a save hands to an entity the game created.
+    /// A fresh authored identity, drawn at random.
+    pub fn random_authored() -> Self {
+        Self::authored(uuid::Uuid::new_v4().as_u64_pair().0)
+    }
+
+    /// The `n`-th identity of the created namespace.
     pub fn created(n: u64) -> Self {
         Self(n | CREATED)
     }
@@ -105,6 +110,29 @@ mod tests {
         assert_ne!(PersistentId::created(1), PersistentId::created(2));
         assert_eq!(PersistentId::created(5).to_bits() & !TOP_BIT, 5);
         assert_eq!(PersistentId::authored(5).to_bits(), 5);
+    }
+
+    /// The editor gives every entity an author creates a random identity, so
+    /// that two people adding entities on two branches do not collide. A
+    /// random draw is always authored — whatever the top bit came out as — and
+    /// draws do not repeat.
+    #[test]
+    fn a_random_authored_id_is_authored_and_does_not_repeat() {
+        let mut seen = std::collections::HashSet::new();
+        let mut top_bits_used = 0u64;
+        for _ in 0..1000 {
+            let id = PersistentId::random_authored();
+            assert!(!id.is_created(), "{id:?} reads as created");
+            assert_eq!(id.to_bits() & TOP_BIT, 0);
+            assert!(seen.insert(id), "{id:?} was drawn twice");
+            top_bits_used |= id.to_bits();
+        }
+        // Random, not a counter: the high bits of the authored space are used.
+        assert_ne!(
+            top_bits_used >> 32,
+            0,
+            "a thousand draws never reached the high half of the id space"
+        );
     }
 
     /// A file stores the raw 64 bits; reading them back must give the very

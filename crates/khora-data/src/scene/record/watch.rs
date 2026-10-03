@@ -29,7 +29,8 @@ pub(super) enum Step {
     Field(String),
     /// An element of a sequence.
     Index(usize),
-    /// A map entry's value, by its key as the save wrote it.
+    /// A map entry's value, under a key that is not a string (a string key
+    /// steps as a `Field`).
     Entry(Record),
     /// A map entry's key.
     KeyOf,
@@ -44,7 +45,7 @@ pub(super) enum Event {
     Fields(&'static [&'static str]),
     /// Skipped: the code has nowhere to put it.
     Ignored,
-    /// A number read into a wider kind than it was written as.
+    /// A number read at another kind than it was written as, without loss.
     Widened,
     /// A struct read from a sequence: its fields by position.
     Positional,

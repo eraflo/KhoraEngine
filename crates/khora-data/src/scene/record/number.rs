@@ -15,9 +15,11 @@
 //! Numbers read at the width a field asks for, when that loses nothing.
 //!
 //! A save may hold a number at another width than the field now reading it —
-//! a count that became a float, a float that became a double. Widening is
-//! lossless and allowed; anything that would round, truncate or saturate is
-//! refused, because a value that changes on load is data lost without a word.
+//! a count that became a float, a float that became a double. A conversion
+//! that loses nothing is allowed — a widening, or a narrowing whose value is
+//! exact; one that would round, truncate or saturate is refused, because a
+//! value that changes on load is data lost without a word. Decimal text is the
+//! one exception: it is read at the field's width, as the text would be.
 
 use super::Record;
 
@@ -28,6 +30,9 @@ pub(super) enum Number {
     Unsigned(u64),
     Single(f32),
     Double(f64),
+    /// A number parsed from decimal text, read again at whatever width the
+    /// field asks for.
+    Decimal(f64),
 }
 
 impl Number {
@@ -37,12 +42,13 @@ impl Number {
             Record::U64(v) => Some(Self::Unsigned(v)),
             Record::F32(v) => Some(Self::Single(v)),
             Record::F64(v) => Some(Self::Double(v)),
+            Record::Decimal(v) => Some(Self::Decimal(v)),
             _ => None,
         }
     }
 
     pub(super) fn is_float(self) -> bool {
-        matches!(self, Self::Single(_) | Self::Double(_))
+        matches!(self, Self::Single(_) | Self::Double(_) | Self::Decimal(_))
     }
 
     /// As an exact integer, if it is one. Floats qualify only when integral:
@@ -52,7 +58,7 @@ impl Number {
             Self::Signed(v) => return Some(v.into()),
             Self::Unsigned(v) => return Some(v.into()),
             Self::Single(v) => f64::from(v),
-            Self::Double(v) => v,
+            Self::Double(v) | Self::Decimal(v) => v,
         };
         // 2^64 bounds every integer field; beyond it `as` would saturate and
         // pass a wrong value off as exact.
@@ -64,7 +70,7 @@ impl Number {
     pub(super) fn double(self) -> Option<f64> {
         match self {
             Self::Single(v) => Some(f64::from(v)),
-            Self::Double(v) => Some(v),
+            Self::Double(v) | Self::Decimal(v) => Some(v),
             Self::Signed(v) => exact_integer(v.into(), v as f64),
             Self::Unsigned(v) => exact_integer(v.into(), v as f64),
         }
@@ -77,6 +83,12 @@ impl Number {
             Self::Double(v) => {
                 let narrowed = v as f32;
                 (f64::from(narrowed) == v || v.is_nan()).then_some(narrowed)
+            }
+            // The decimal re-printed from its `f64` and parsed as an `f32` —
+            // refused only when it does not fit one at all.
+            Self::Decimal(v) => {
+                let parsed = v.to_string().parse::<f32>().ok()?;
+                (parsed.is_finite() || !v.is_finite()).then_some(parsed)
             }
             Self::Signed(v) => {
                 let narrowed = v as f32;

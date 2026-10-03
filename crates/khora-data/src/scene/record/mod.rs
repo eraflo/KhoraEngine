@@ -25,8 +25,9 @@
 //! describes it by name. Its attributes are the evolution vocabulary a save
 //! needs: `#[serde(default)]` for a field the save predates, `#[serde(alias)]`
 //! for one that was renamed. Reading a record back matches fields **by name**,
-//! so a reordered struct reads the same, a new field takes its default and a
-//! removed one is dropped — the save records the WHAT, and how a type is laid
+//! so a reordered struct reads the same, a new field takes its default where
+//! the type declares one (`#[derive(Component)]` declares it for every named
+//! field of a component) and a removed one is dropped — the save records the WHAT, and how a type is laid
 //! out in memory or in a file is free to change.
 //!
 //! # References
@@ -44,6 +45,7 @@ mod access;
 mod de;
 mod number;
 mod report;
+mod self_describing;
 mod ser;
 mod value;
 mod watch;
@@ -67,7 +69,7 @@ const ASSET_NAME: &str = "khora.AssetUUID";
 /// Far beyond any value the engine persists — a script's nested arrays are a
 /// handful deep — and far below what exhausts a thread's stack. A record comes
 /// from a file, and a file can claim any depth.
-const MAX_DEPTH: usize = 128;
+pub(crate) const MAX_DEPTH: usize = 128;
 
 /// Why a value could not be written to, or read from, a record.
 #[derive(Debug, Clone, PartialEq)]

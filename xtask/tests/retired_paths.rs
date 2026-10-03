@@ -238,6 +238,75 @@ fn nothing_names_a_path_the_naming_sweep_retired() {
     );
 }
 
+/// What scene records replaced: the four serialization strategies, the recipe
+/// commands, the payload migrations and the raw memory dump of the world.
+const RETIRED_SCENE_CODECS: &[&str] = &[
+    "SerializationStrategy",
+    "SceneRecipe",
+    "SceneCommand",
+    "SceneMigration",
+    "migrate_payload",
+    "serialize_recipe",
+    "deserialize_recipe",
+    "serialize_archetype",
+    "deserialize_archetype",
+    "DeserializeArchetypeError",
+    "SceneMemoryLayout",
+    "archetype_io",
+    "khora_data::scene::strategy",
+    "khora-data/src/scene/strategy",
+    "KH_DEFINITION_RON_V1",
+    "KH_ARCHETYPE_V1",
+    "KH_MESSAGEPACK_V1",
+];
+
+/// The files that held them.
+const RETIRED_SCENE_FILES: &[&str] = &[
+    "crates/khora-data/src/scene/strategy",
+    "crates/khora-data/src/scene/recipe.rs",
+    "crates/khora-data/src/scene/migrations.rs",
+    "crates/khora-data/src/ecs/world/archetype_io.rs",
+    "crates/khora-data/src/ecs/serialization.rs",
+];
+
+/// The one place the pre-record codec may still live: the upgrade command
+/// that reads old files once to rewrite them.
+const LEGACY_SCENE_CODEC: &str = "xtask/src/commands/legacy_scene/";
+
+/// Scenes are written as records now. The strategies, the recipe commands,
+/// the payload migrations and the memory dump are gone — their files and
+/// every mention of them — except in the upgrade command that reads old files.
+#[test]
+fn nothing_names_a_retired_scene_codec() {
+    let root = repo_root();
+    let mut hits = Vec::new();
+    for retired in RETIRED_SCENE_FILES {
+        if root.join(retired).exists() {
+            hits.push(format!("{retired} still exists"));
+        }
+    }
+    for file in scanned_files(&root) {
+        if rel(&root, &file).starts_with(LEGACY_SCENE_CODEC) {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        for (number, line) in text.lines().enumerate() {
+            for retired in RETIRED_SCENE_CODECS {
+                if line.contains(retired) {
+                    hits.push(format!("{}:{}: `{retired}`", rel(&root, &file), number + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "retired scene codecs still named:\n  {}",
+        hits.join("\n  ")
+    );
+}
+
 fn scanned_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for dir in [

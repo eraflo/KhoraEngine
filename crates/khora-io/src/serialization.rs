@@ -14,72 +14,70 @@
 
 //! Scene serialization service — on-demand, not an Agent.
 //!
-//! This service provides `save_world()` and `load_world()` APIs backed by a
-//! strategy registry. No GORNA negotiation — the serialization strategy is
-//! chosen by the caller.
+//! `save_world` captures a world as a scene record and writes it in the
+//! encoding a [`SerializationGoal`] calls for; `load_world` and
+//! `replace_world` read one back, atomically. No GORNA negotiation — the goal
+//! is the caller's to state.
 
-use khora_core::scene::{SceneFile, SceneHeader, SerializationGoal};
+use khora_core::scene::{SceneFile, SerializationGoal, SCENE_FORMAT_VERSION};
 use khora_data::ecs::World;
+use khora_data::scene::record::LoadReport;
 use khora_data::scene::{
-    migrate_payload, ArchetypeSerializationStrategy, DefinitionSerializationStrategy,
-    MessagePackSerializationStrategy, RecipeSerializationStrategy, SerializationStrategy,
+    apply, capture_world, prepare, read_scene_file, write_scene_file, CompactEncoding, Identity,
+    LoadFailure, MsgPackEncoding, SaveError, SceneEncoding, SceneFileReadError, TextEncoding,
 };
-use std::collections::HashMap;
 
-/// Scene format version produced by today's writers. Bumped whenever
-/// the on-disk layout changes; older payloads run through registered
-/// [`SceneMigration`](khora_data::scene::SceneMigration)s on the way in.
-pub const CURRENT_SCENE_VERSION: u32 = 1;
+/// Scene format version produced by today's writers.
+pub const CURRENT_SCENE_VERSION: u32 = SCENE_FORMAT_VERSION as u32;
 
 /// An error that can occur within the `SerializationService`.
 #[derive(Debug)]
 pub enum SerializationServiceError {
-    /// No suitable serialization strategy was found.
-    StrategyNotFound,
-    /// The scene file header is invalid or corrupted.
-    InvalidHeader,
-    /// A general processing error occurred.
-    ProcessingError(String),
+    /// The world could not be written.
+    SaveFailed(SaveError),
+    /// The file could not be read: an older or newer format, an encoding
+    /// this engine does not have, or a payload that does not decode.
+    ReadFailed(SceneFileReadError),
+    /// The file was read, but loading it was refused; the world is unchanged.
+    LoadFailed(LoadFailure),
 }
+
+impl std::fmt::Display for SerializationServiceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SaveFailed(error) => write!(f, "the scene could not be saved: {error}"),
+            Self::ReadFailed(error) => write!(f, "the scene file could not be read: {error}"),
+            Self::LoadFailed(failure) => write!(f, "the scene was not loaded: {}", failure.message),
+        }
+    }
+}
+
+impl std::error::Error for SerializationServiceError {}
 
 /// The serialization service.
 ///
-/// Provides on-demand scene save/load through a strategy pattern.
-/// Registered in `ServiceRegistry` and accessed by game code via `AppContext`.
-pub struct SerializationService {
-    strategies: HashMap<String, Box<dyn SerializationStrategy>>,
-}
+/// Provides on-demand scene save and load. Stateless: construct it where it
+/// is needed.
+#[derive(Debug, Default)]
+pub struct SerializationService;
 
 impl SerializationService {
-    /// Creates a new service and registers all built-in strategies.
+    /// Creates the service.
     pub fn new() -> Self {
-        let mut strategies: HashMap<String, Box<dyn SerializationStrategy>> = HashMap::new();
+        Self
+    }
 
-        let definition_strategy = DefinitionSerializationStrategy::new();
-        strategies.insert(
-            definition_strategy.get_strategy_id().to_string(),
-            Box::new(definition_strategy),
-        );
-
-        let recipe_strategy = RecipeSerializationStrategy::new();
-        strategies.insert(
-            recipe_strategy.get_strategy_id().to_string(),
-            Box::new(recipe_strategy),
-        );
-
-        let archetype_strategy = ArchetypeSerializationStrategy::new();
-        strategies.insert(
-            archetype_strategy.get_strategy_id().to_string(),
-            Box::new(archetype_strategy),
-        );
-
-        let messagepack_strategy = MessagePackSerializationStrategy::new();
-        strategies.insert(
-            messagepack_strategy.get_strategy_id().to_string(),
-            Box::new(messagepack_strategy),
-        );
-
-        Self { strategies }
+    /// The encoding a goal calls for.
+    fn encoding_for(goal: SerializationGoal) -> &'static dyn SceneEncoding {
+        match goal {
+            SerializationGoal::HumanReadableDebug | SerializationGoal::LongTermStability => {
+                &TextEncoding
+            }
+            SerializationGoal::SmallestFileSize
+            | SerializationGoal::EditorInterchange
+            | SerializationGoal::FastestLoad => &CompactEncoding,
+            SerializationGoal::PortableBinary => &MsgPackEncoding,
+        }
     }
 
     /// Saves the current state of the `World` based on a high-level goal.
@@ -88,166 +86,69 @@ impl SerializationService {
         world: &World,
         goal: SerializationGoal,
     ) -> Result<SceneFile, SerializationServiceError> {
-        let strategy_id = match goal {
-            SerializationGoal::HumanReadableDebug | SerializationGoal::LongTermStability => {
-                "KH_DEFINITION_RON_V1"
-            }
-            SerializationGoal::SmallestFileSize | SerializationGoal::EditorInterchange => {
-                "KH_RECIPE_V1"
-            }
-            SerializationGoal::FastestLoad => "KH_ARCHETYPE_V1",
-            SerializationGoal::PortableBinary => "KH_MESSAGEPACK_V1",
-        };
-
-        let strategy = self
-            .strategies
-            .get(strategy_id)
-            .ok_or(SerializationServiceError::StrategyNotFound)?;
-
-        let payload = strategy
-            .serialize(world)
-            .map_err(|e| SerializationServiceError::ProcessingError(e.to_string()))?;
-
-        let strategy_id_str = strategy.get_strategy_id();
-        let mut strategy_id_bytes = [0u8; 32];
-        strategy_id_bytes[..strategy_id_str.len()].copy_from_slice(strategy_id_str.as_bytes());
-
-        let header = SceneHeader {
-            magic_bytes: khora_core::scene::HEADER_MAGIC_BYTES,
-            format_version: CURRENT_SCENE_VERSION as u8,
-            strategy_id: strategy_id_bytes,
-            payload_length: payload.len() as u64,
-        };
-
-        Ok(SceneFile { header, payload })
+        let record = capture_world(world).map_err(SerializationServiceError::SaveFailed)?;
+        write_scene_file(&record, Self::encoding_for(goal))
+            .map_err(|error| SerializationServiceError::SaveFailed(SaveError::Encoding(error.0)))
     }
 
-    /// Populates a `World` from a `SceneFile`.
+    /// Brings the scene `file` holds into `world`, beside what is already
+    /// there — or, if it cannot be loaded, leaves `world` exactly as it was.
     pub fn load_world(
         &self,
         file: &SceneFile,
         world: &mut World,
-    ) -> Result<(), SerializationServiceError> {
-        let strategy_id = str::from_utf8(&file.header.strategy_id)
-            .map_err(|_| SerializationServiceError::InvalidHeader)?
-            .trim_end_matches('\0');
-
-        // Apply registered migrations to bring the payload up to the
-        // current scene format version. No migrations are registered
-        // today (format_version = 1 is the only supported scene), but
-        // the seam is here for the next bump.
-        let payload = migrate_payload(
-            file.payload.clone(),
-            file.header.format_version as u32,
-            CURRENT_SCENE_VERSION,
-        )
-        .map_err(|e| SerializationServiceError::ProcessingError(e.to_string()))?;
-
-        let strategy = self
-            .strategies
-            .get(strategy_id)
-            .ok_or(SerializationServiceError::StrategyNotFound)?;
-
-        strategy
-            .deserialize(&payload, world)
-            .map_err(|e| SerializationServiceError::ProcessingError(e.to_string()))
+    ) -> Result<LoadReport, SerializationServiceError> {
+        let record = read_scene_file(file).map_err(SerializationServiceError::ReadFailed)?;
+        apply(world, &record, Identity::Keep)
+            .map(|applied| applied.report)
+            .map_err(SerializationServiceError::LoadFailed)
     }
-}
 
-impl Default for SerializationService {
-    fn default() -> Self {
-        Self::new()
+    /// Replaces everything in `world` with the scene `file` holds — or, if
+    /// it cannot be loaded, leaves `world` exactly as it was.
+    ///
+    /// The scene is read and staged before anything is removed, so a file
+    /// that fails to load costs nothing; and the old entities are gone before
+    /// the new ones arrive, so every saved identity is restored as saved.
+    pub fn replace_world(
+        &self,
+        file: &SceneFile,
+        world: &mut World,
+    ) -> Result<LoadReport, SerializationServiceError> {
+        let record = read_scene_file(file).map_err(SerializationServiceError::ReadFailed)?;
+        let prepared = prepare(world, &record).map_err(SerializationServiceError::LoadFailed)?;
+        let old: Vec<_> = world.iter_entities().collect();
+        for entity in old {
+            world.despawn(entity);
+        }
+        Ok(prepared.commit(world, Identity::Keep).report)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::math::Vec3;
-    use khora_core::scene::SerializationGoal;
-    use khora_data::ecs::{GlobalTransform, Parent, Transform, Without, World};
 
+    /// The goal picks the encoding; the format version is the one the
+    /// engine reads.
     #[test]
-    fn test_definition_serialization_round_trip() {
-        let mut source_world = World::new();
-
-        let root_transform = Transform {
-            translation: Vec3::new(10.0, 0.0, 0.0),
-            ..Default::default()
-        };
-        let _root_id = source_world.spawn((root_transform, GlobalTransform::identity()));
-
+    fn each_goal_names_its_encoding() {
+        let world = World::new();
         let service = SerializationService::new();
-        let scene_file = service
-            .save_world(&source_world, SerializationGoal::LongTermStability)
-            .unwrap();
-
-        let mut dest_world = World::new();
-        service.load_world(&scene_file, &mut dest_world).unwrap();
-
-        let mut root_query = dest_world.query::<(&Transform, Without<Parent>)>();
-        let (new_root_transform, _) = root_query.next().expect("Should be one root entity");
-        assert_eq!(*new_root_transform, root_transform);
-    }
-
-    #[test]
-    fn test_recipe_serialization_round_trip() {
-        let mut source_world = World::new();
-
-        let root_transform = Transform {
-            translation: Vec3::new(25.0, 0.0, 0.0),
-            ..Default::default()
-        };
-        source_world.spawn((root_transform, GlobalTransform::identity()));
-
-        let service = SerializationService::new();
-        let scene_file = service
-            .save_world(&source_world, SerializationGoal::EditorInterchange)
-            .unwrap();
-
-        let mut dest_world = World::new();
-        service.load_world(&scene_file, &mut dest_world).unwrap();
-
-        assert_eq!(
-            str::from_utf8(&scene_file.header.strategy_id)
-                .unwrap()
-                .trim_end_matches('\0'),
-            "KH_RECIPE_V1"
-        );
-
-        let mut root_query = dest_world.query::<(&Transform, Without<Parent>)>();
-        let (new_root_transform, _) = root_query.next().expect("Should be one root entity");
-        assert_eq!(*new_root_transform, root_transform);
-    }
-
-    #[test]
-    fn test_archetype_serialization_round_trip() {
-        let mut source_world = World::new();
-
-        let root_transform = Transform {
-            translation: Vec3::new(10.0, 0.0, 0.0),
-            ..Default::default()
-        };
-        let root_id = source_world.spawn((root_transform, GlobalTransform::identity()));
-
-        let service = SerializationService::new();
-        let scene_file = service
-            .save_world(&source_world, SerializationGoal::FastestLoad)
-            .unwrap();
-
-        let mut dest_world = World::new();
-        service.load_world(&scene_file, &mut dest_world).unwrap();
-
-        assert_eq!(
-            str::from_utf8(&scene_file.header.strategy_id)
-                .unwrap()
-                .trim_end_matches('\0'),
-            "KH_ARCHETYPE_V1"
-        );
-
-        assert!(
-            dest_world.get::<Transform>(root_id).is_some(),
-            "Root entity should exist with the same ID"
-        );
+        for (goal, id) in [
+            (SerializationGoal::HumanReadableDebug, "KH_TEXT_V2"),
+            (SerializationGoal::LongTermStability, "KH_TEXT_V2"),
+            (SerializationGoal::EditorInterchange, "KH_COMPACT_V2"),
+            (SerializationGoal::SmallestFileSize, "KH_COMPACT_V2"),
+            (SerializationGoal::FastestLoad, "KH_COMPACT_V2"),
+            (SerializationGoal::PortableBinary, "KH_MSGPACK_V2"),
+        ] {
+            let file = service
+                .save_world(&world, goal)
+                .expect("an empty world saves");
+            let written = String::from_utf8_lossy(&file.header.encoding_id);
+            assert_eq!(written.trim_end_matches('\0'), id, "{goal:?}");
+            assert_eq!(file.header.format_version, SCENE_FORMAT_VERSION);
+        }
     }
 }

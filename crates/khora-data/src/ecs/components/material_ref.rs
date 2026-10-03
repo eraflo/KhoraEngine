@@ -27,13 +27,12 @@
 //! Material>>`), which the GPU projection consumes. `MaterialRef` itself never
 //! touches the GPU and never carries a resolved handle.
 
-use bincode::config;
 use khora_core::asset::{AssetUUID, Material, StandardMaterial};
 
 use crate::ecs::HandleComponent;
+use crate::scene::record::{Record, RecordError, ReferenceReader, ReferenceWriter, VariantPayload};
 use crate::scene::{
-    deserialize_material_component, material_from_json, material_to_json,
-    serialize_material_component,
+    material_from_json, material_from_record, material_to_json, material_to_record,
 };
 
 /// Runtime-only resolved material: a shared handle to the type-erased material
@@ -75,7 +74,10 @@ impl MaterialRef {
     /// (and one `GpuMaterial`). On a serialization failure the UUID falls back
     /// to a fresh random value (logged) rather than panicking.
     pub fn inline(material: Box<dyn Material>) -> Self {
-        let uuid = match serialize_material_component(material.base_color(), &*material) {
+        // Hashed from the material's JSON form: deterministic for equal
+        // content, and the same form the inspector and `.kmat` files use.
+        let content = material_to_json(&*material).and_then(|json| serde_json::to_vec(&json).ok());
+        let uuid = match content {
             Some(bytes) => AssetUUID::new_v5(&blake3::hash(&bytes).to_hex()),
             None => {
                 log::error!(
@@ -113,53 +115,128 @@ impl Clone for MaterialRef {
 
 impl crate::ecs::Component for MaterialRef {}
 
-/// On-disk form of a [`MaterialRef`]. The bincode discriminant distinguishes
-/// the two arms; `Inline` holds the opaque type-tagged material bytes produced
-/// by [`serialize_material_component`], `Asset` holds the raw UUID (preserved
-/// verbatim, never regenerated).
-#[derive(bincode::Encode, bincode::Decode)]
-enum SerializableMaterialRef {
-    /// Type-tagged material payload (`SerializableMaterialData` bytes).
-    Inline(Vec<u8>),
-    /// VFS asset UUID, round-tripped unchanged.
-    Asset(AssetUUID),
-}
-
-/// Serializes the entity's `MaterialRef` into the recipe byte stream.
-fn serialize_material_ref(
-    world: &crate::ecs::World,
-    entity: khora_core::ecs::entity::EntityId,
-) -> Option<Vec<u8>> {
-    let mref = world.get::<MaterialRef>(entity)?;
-    let on_disk = match mref {
+/// Writes the entity's `MaterialRef` as a record.
+///
+/// `Inline` names its material's type beside the material, rather than
+/// relying on the struct's own name: a self-describing format such as JSON
+/// keeps field names but not struct names, and the type is what picks the
+/// registration that reads it back. `Asset` holds the stable UUID.
+fn material_ref_to_record(
+    column: &dyn crate::ecs::AnyVec,
+    row: usize,
+    references: &mut dyn ReferenceWriter,
+) -> Result<Record, RecordError> {
+    let mref = <MaterialRef as crate::ecs::Component>::clone_from_column(column, row);
+    let (variant, payload) = match &mref {
         MaterialRef::Inline { material, .. } => {
-            let bytes = serialize_material_component(material.base_color(), &**material)?;
-            SerializableMaterialRef::Inline(bytes)
+            let (type_name, record) = material_to_record(&**material, references)?;
+            (
+                "Inline",
+                VariantPayload::Struct(vec![
+                    ("type_name".to_owned(), Record::Str(type_name.to_owned())),
+                    ("material".to_owned(), record),
+                ]),
+            )
         }
-        MaterialRef::Asset(uuid) => SerializableMaterialRef::Asset(*uuid),
+        MaterialRef::Asset(uuid) => (
+            "Asset",
+            VariantPayload::Newtype(Box::new(Record::Asset(*uuid))),
+        ),
     };
-    bincode::encode_to_vec(&on_disk, config::standard()).ok()
+    Ok(Record::Variant {
+        enum_name: "MaterialRef".to_owned(),
+        variant: variant.to_owned(),
+        payload,
+    })
 }
 
-/// Reconstructs a `MaterialRef` from recipe bytes and attaches it to `entity`.
-fn deserialize_material_ref(
-    world: &mut crate::ecs::World,
-    entity: khora_core::ecs::entity::EntityId,
-    data: &[u8],
-) -> Result<(), String> {
-    let (on_disk, _): (SerializableMaterialRef, _) =
-        bincode::decode_from_slice(data, config::standard()).map_err(|e| e.to_string())?;
-    let mref = match on_disk {
-        SerializableMaterialRef::Inline(bytes) => {
-            let (handle, _uuid) = deserialize_material_component(&bytes)?;
-            MaterialRef::inline(handle.clone_box())
+/// Reads a `MaterialRef` back from a record — as written, or as a
+/// self-describing format presents a variant (a map keyed by its name).
+fn stage_material_ref(
+    record: &Record,
+    references: &mut dyn ReferenceReader,
+) -> Result<crate::scene::Staged, RecordError> {
+    let (variant, carried): (&str, Record) = match record {
+        Record::Variant {
+            variant, payload, ..
+        } => (
+            variant,
+            match payload {
+                VariantPayload::Newtype(inner) => (**inner).clone(),
+                VariantPayload::Struct(fields) => Record::Struct {
+                    name: String::new(),
+                    fields: fields.clone(),
+                },
+                VariantPayload::Tuple(items) => Record::Seq(items.clone()),
+                VariantPayload::Unit => Record::Unit,
+            },
+        ),
+        Record::Map(entries) if entries.len() == 1 => match &entries[0] {
+            (Record::Str(variant), value) => (variant.as_str(), value.clone()),
+            _ => {
+                return Err(RecordError(
+                    "a material reference keyed by a non-name".to_owned(),
+                ))
+            }
+        },
+        _ => {
+            return Err(RecordError(
+                "a material reference must be `Inline` or `Asset`".to_owned(),
+            ))
         }
-        SerializableMaterialRef::Asset(uuid) => MaterialRef::Asset(uuid),
     };
-    world
-        .add_component(entity, mref)
-        .map_err(|e| format!("{e:?}"))?;
-    Ok(())
+    let field = |name: &str| -> Option<&Record> {
+        match &carried {
+            Record::Struct { fields, .. } => {
+                fields.iter().find(|(key, _)| key == name).map(|(_, v)| v)
+            }
+            Record::Map(entries) => entries.iter().find_map(|(key, value)| match key {
+                Record::Str(key) if key == name => Some(value),
+                _ => None,
+            }),
+            _ => None,
+        }
+    };
+    let (mref, report) = match variant {
+        "Asset" => match &carried {
+            Record::Asset(uuid) => (MaterialRef::Asset(*uuid), Vec::new()),
+            _ => {
+                return Err(RecordError(
+                    "a material asset reference without its UUID".to_owned(),
+                ))
+            }
+        },
+        "Inline" => {
+            let type_name = match field("type_name") {
+                Some(Record::Str(type_name)) => type_name.clone(),
+                _ => {
+                    return Err(RecordError(
+                        "an inline material without its type name".to_owned(),
+                    ))
+                }
+            };
+            let material = field("material")
+                .ok_or_else(|| RecordError("an inline material without its value".to_owned()))?;
+            let (material, mut report) = material_from_record(&type_name, material, references)?;
+            for entry in &mut report {
+                entry.path = if entry.path.is_empty() {
+                    "Inline.material".to_owned()
+                } else {
+                    format!("Inline.material.{}", entry.path)
+                };
+            }
+            (MaterialRef::inline(material), report)
+        }
+        other => {
+            return Err(RecordError(format!(
+                "no material reference variant `{other}`"
+            )))
+        }
+    };
+    Ok(crate::scene::Staged {
+        component: Box::new(crate::scene::StagedValue(mref)),
+        report,
+    })
 }
 
 /// Editor JSON form: `Inline` reuses `material_to_json`; `Asset` emits
@@ -205,8 +282,9 @@ inventory::submit! {
         // An enum: one-of, not all-of. See `ComponentShape`.
         shape: crate::scene::ComponentShape::Opaque,
         provenance: crate::ecs::ComponentProvenance::Authored,
-        serialize_recipe: serialize_material_ref,
-        deserialize_recipe: deserialize_material_ref,
+        formerly: &[],
+        column_to_record: material_ref_to_record,
+        stage: stage_material_ref,
         create_default: |world, entity| {
             world
                 .add_component(

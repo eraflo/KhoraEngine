@@ -1,0 +1,61 @@
+<svg class="kp-figure" viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-cl-title kp-cl-desc">
+  <title id="kp-cl-title">The compact payload, byte strip by byte strip</title>
+  <desc id="kp-cl-desc">The payload starts with a version byte, then the symbol table of every name, then the shape table of every struct and variant, then the persistent ids of the entities, then the pages. Each page lists its components by symbol, its rows by persistent id, then its values column after column. A value is a tag, then a shape or symbol index, then its parts.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-seg { fill: var(--k-bg-2, #181e2b); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-seg-strong { fill: var(--k-bg-3, #1f2636); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-zoom { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; stroke-dasharray: 3 3; }
+    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 17px; }
+    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11.5px; font-weight: 500; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
+    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="300" rx="8"/>
+  <text class="kp-station" x="16" y="32">payload</text>
+  <!-- top strip: the whole payload -->
+  <rect class="kp-seg-strong" x="16" y="46" width="44" height="36" rx="2"/>
+  <rect class="kp-seg" x="62" y="46" width="164" height="36" rx="2"/>
+  <rect class="kp-seg" x="228" y="46" width="150" height="36" rx="2"/>
+  <rect class="kp-seg" x="380" y="46" width="108" height="36" rx="2"/>
+  <rect class="kp-seg-strong" x="490" y="46" width="254" height="36" rx="2"/>
+  <text class="kp-head" x="24" y="68">v1</text>
+  <text class="kp-head" x="72" y="68">symbols</text>
+  <text class="kp-head" x="238" y="68">shapes</text>
+  <text class="kp-head" x="390" y="68">entities</text>
+  <text class="kp-head" x="500" y="68">pages</text>
+  <text class="kp-label" x="72" y="100">every name, once</text>
+  <text class="kp-label" x="238" y="100">struct · variant shapes</text>
+  <text class="kp-label" x="390" y="100">ids, u64 LE</text>
+  <text class="kp-label" x="500" y="100">one per signature</text>
+  <!-- zoom into one page -->
+  <path class="kp-zoom" d="M490,82 L16,132 M744,82 L744,132"/>
+  <rect class="kp-seg" x="16" y="132" width="150" height="36" rx="2"/>
+  <rect class="kp-seg" x="168" y="132" width="150" height="36" rx="2"/>
+  <rect class="kp-seg-strong" x="320" y="132" width="212" height="36" rx="2"/>
+  <rect class="kp-seg-strong" x="534" y="132" width="210" height="36" rx="2"/>
+  <text class="kp-head" x="26" y="154">components</text>
+  <text class="kp-head" x="178" y="154">rows</text>
+  <text class="kp-head" x="330" y="154">column Name</text>
+  <text class="kp-head" x="544" y="154">column Transform</text>
+  <text class="kp-label" x="26" y="186">a symbol each</text>
+  <text class="kp-label" x="178" y="186">a persistent id each</text>
+  <text class="kp-label" x="330" y="186">every row's Name, then …</text>
+  <text class="kp-label" x="544" y="186">… every row's Transform</text>
+  <!-- zoom into one value -->
+  <path class="kp-zoom" d="M534,168 L16,222 M744,168 L744,222"/>
+  <rect class="kp-seg-strong" x="16" y="222" width="72" height="36" rx="2"/>
+  <rect class="kp-seg" x="90" y="222" width="110" height="36" rx="2"/>
+  <rect class="kp-seg" x="202" y="222" width="180" height="36" rx="2"/>
+  <rect class="kp-seg" x="384" y="222" width="180" height="36" rx="2"/>
+  <rect class="kp-seg" x="566" y="222" width="178" height="36" rx="2"/>
+  <text class="kp-head" x="26" y="244">STRUCT</text>
+  <text class="kp-head" x="100" y="244">shape #2</text>
+  <text class="kp-mono" x="212" y="244">translation · Vec3</text>
+  <text class="kp-mono" x="394" y="244">rotation · Quaternion</text>
+  <text class="kp-mono" x="576" y="244">scale · Vec3</text>
+  <text class="kp-label" x="26" y="278">A value: one tag byte, the shape it follows, its fields in the shape's order — names live in the tables, not in the value.</text>
+  <rect class="kp-sel" x="87" y="219" width="116" height="42" rx="3"/>
+</svg>

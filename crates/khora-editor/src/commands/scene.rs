@@ -23,8 +23,8 @@ use crate::{build_game, hot_reload, scene_io};
 
 /// Save dispatch: routes through the project VFS when the target path
 /// lives under `<project>/assets/`, falls back to direct `std::fs` for
-/// arbitrary out-of-project Save-As destinations. Defaults to the
-/// `EditorInterchange` strategy.
+/// arbitrary out-of-project Save-As destinations. Saves under the
+/// `EditorInterchange` goal (the compact encoding).
 /// Returns whether the scene reached disk. Failures are logged by the write
 /// paths themselves; the flag lets a caller react instead of assuming success.
 pub fn save_scene_dispatch(
@@ -41,8 +41,8 @@ pub fn save_scene_dispatch(
 }
 
 /// Same as [`save_scene_dispatch`] but with an explicit serialization
-/// goal. Used by "Export Scene as RON" (`HumanReadableDebug`) and any
-/// future Save-As strategy picker.
+/// goal — `HumanReadableDebug` for a JSON scene, `PortableBinary` for
+/// MessagePack.
 pub fn save_scene_dispatch_with_goal(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &GameWorld,

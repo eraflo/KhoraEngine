@@ -18,7 +18,6 @@ use khora_sdk::editor_ui::*;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::GameWorld;
 
-/// Processes pending spawn requests from the scene tree panel.
 /// The material the editor attaches to a freshly-spawned primitive so it is
 /// immediately visible and editable. The engine projection has no implicit
 /// default material (a meshed entity without one is a clear, logged error),
@@ -57,9 +56,11 @@ pub fn spawn_mesh_asset(
         MeshRef::Asset(uuid),
     ));
     world.add_component(entity, mat);
+    world.inner_world_mut().mark_authored(entity);
     entity
 }
 
+/// Processes pending spawn requests from the scene tree panel.
 pub fn process_spawns(world: &mut GameWorld, state: &mut EditorState) {
     if let Some(request) = state.pending_spawn.take() {
         let entity = match request.as_str() {
@@ -107,6 +108,8 @@ pub fn process_spawns(world: &mut GameWorld, state: &mut EditorState) {
             )),
         };
 
+        // An author made it: it keeps the identity a scene saves it under.
+        world.inner_world_mut().mark_authored(entity);
         state.select(entity);
         log::info!("Spawned entity {:?} ({})", entity, request);
     }

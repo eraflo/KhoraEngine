@@ -37,7 +37,6 @@ mod page;
 mod planner;
 mod query;
 mod query_plan;
-mod serialization;
 pub mod soa;
 mod storage;
 pub mod system;

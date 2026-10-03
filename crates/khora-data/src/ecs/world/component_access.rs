@@ -74,10 +74,13 @@ impl World {
         entity_id: EntityId,
         component: C,
     ) -> Result<Option<PageIndex>, AddComponentError> {
-        // 1. Validate EntityId and get metadata
-        let Some((id_in_world, Some(_))) = self.entities.get(entity_id.index as usize) else {
+        // 1. Validate EntityId and get metadata — a copy, written back when
+        // the move is done. The slot keeps its metadata meanwhile: an entity
+        // is never seen dead halfway through a change, even one that unwinds.
+        let Some((id_in_world, Some(current))) = self.entities.get(entity_id.index as usize) else {
             return Err(AddComponentError::EntityNotFound);
         };
+        let mut metadata = current.clone();
 
         if id_in_world.generation != entity_id.generation {
             return Err(AddComponentError::EntityNotFound);
@@ -87,13 +90,6 @@ impl World {
             return Err(AddComponentError::ComponentNotRegistered);
         };
 
-        let mut metadata = self
-            .entities
-            .get_mut(entity_id.index as usize)
-            .unwrap()
-            .1
-            .take()
-            .unwrap();
         let old_location_opt = metadata.locations.get(&domain).copied();
 
         // 2. Determine old and new page signatures
@@ -106,7 +102,6 @@ impl World {
         new_type_ids.dedup();
 
         if new_type_ids == old_type_ids {
-            self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata); // Put it back
             return Err(AddComponentError::ComponentAlreadyExists);
         }
 
@@ -239,10 +234,12 @@ impl World {
         &mut self,
         entity_id: EntityId,
     ) -> Result<Option<PageIndex>, RemoveComponentError> {
-        // 1. Validate the entity.
-        let Some((id_in_world, Some(_))) = self.entities.get(entity_id.index as usize) else {
+        // 1. Validate the entity, and copy its metadata — written back when
+        // the change is done, so the slot is never empty while it runs.
+        let Some((id_in_world, Some(current))) = self.entities.get(entity_id.index as usize) else {
             return Err(RemoveComponentError::EntityNotFound);
         };
+        let mut metadata = current.clone();
         if id_in_world.generation != entity_id.generation {
             return Err(RemoveComponentError::EntityNotFound);
         }
@@ -252,18 +249,8 @@ impl World {
             return Err(RemoveComponentError::ComponentNotRegistered);
         };
 
-        // Take metadata out so we can mutate `self.storage` freely.
-        let mut metadata = self
-            .entities
-            .get_mut(entity_id.index as usize)
-            .unwrap()
-            .1
-            .take()
-            .unwrap();
-
         let Some(loc) = metadata.locations.get(&domain).copied() else {
             // Entity isn't in this domain at all.
-            self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
             return Err(RemoveComponentError::ComponentNotPresent);
         };
 
@@ -271,7 +258,6 @@ impl World {
         let old_type_ids = self.storage.pages[loc.page_id as usize].type_ids.clone();
         if !old_type_ids.contains(&target_type) {
             // Entity is in this domain but doesn't have C specifically.
-            self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
             return Err(RemoveComponentError::ComponentNotPresent);
         }
 

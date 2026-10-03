@@ -23,19 +23,11 @@
 //!
 //! ## Architecture
 //!
-//! The Lane system follows a two-level trait hierarchy:
-//!
-//! 1. **`Lane`** (this trait) — Common interface shared by ALL lane types.
-//!    Provides identity, classification, and cost estimation.
-//!
-//! 2. **Domain-specific traits** — Extend `Lane` with domain-specific execution
-//!    methods. Examples:
-//!    - `RenderLane: Lane` — GPU rendering strategies
-//!    - `ShadowLane: Lane` — Shadow map generation strategies
-//!    - `PhysicsLane: Lane` — Physics simulation strategies
-//!    - `AudioMixingLane: Lane` — Audio mixing strategies
-//!    - `AssetDecoder<A>` — Asset decoding (bytes → typed asset)
-//!    - `SerializationStrategy: Lane` — Scene serialization strategies
+//! Every hot-path lane implements **`Lane`** directly: identity, its
+//! [`LaneKind`], cost estimation and the lifecycle. There is no per-domain
+//! sub-trait — a lane's domain is its `LaneKind`, and the domain-specific
+//! inputs it needs reach it through the [`LaneContext`] (and the `LaneBus`
+//! its Views come from), never through a wider trait.
 //!
 //! ## Usage
 //!

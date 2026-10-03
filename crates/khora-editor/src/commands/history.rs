@@ -14,8 +14,11 @@
 
 //! Undo/redo command history for editor operations.
 //!
-//! Each user action (property edit, spawn, delete) is wrapped in an
-//! [`EditorCommand`] and pushed onto the [`CommandHistory`] stack.
+//! An edit is meant to be wrapped in an [`EditorCommand`] and pushed onto
+//! the [`CommandHistory`] stack; nothing records one yet (see
+//! [`CommandHistory`]), so the history is only ever cleared — when a scene
+//! is opened, created or restored, since its edits would name entities that
+//! are gone.
 
 use khora_sdk::editor_ui::PropertyEdit;
 
@@ -65,6 +68,13 @@ impl CommandHistory {
             redo_stack: Vec::new(),
             max_size,
         }
+    }
+
+    /// Forgets every command — after the world was replaced, when the
+    /// entities their edits name are gone.
+    pub fn clear(&mut self) {
+        self.undo_stack.clear();
+        self.redo_stack.clear();
     }
 
     /// Push a command after executing its forward edit.

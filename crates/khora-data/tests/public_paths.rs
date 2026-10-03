@@ -99,7 +99,6 @@ mod every_pub_mod {
     use khora_data::scene as _;
     use khora_data::scene::component_registration as _;
     use khora_data::scene::material_registration as _;
-    use khora_data::scene::migrations as _;
     use khora_data::scene::record as _;
     use khora_data::scene::shape as _;
     use khora_data::ui as _;
@@ -219,15 +218,11 @@ fn material_ref_variants(x: &khora_data::ecs::MaterialRef) {
     }
 }
 
-fn serializable_material_data_fields(x: &khora_data::scene::SerializableMaterialData) {
-    let _ = (&x.type_name, &x.data);
-}
-
 fn material_registration_fields(x: &khora_data::scene::MaterialRegistration) {
     let _ = (
         &x.type_name,
-        &x.serialize,
-        &x.deserialize,
+        &x.to_record,
+        &x.stage,
         &x.create_default,
         &x.serialize_json,
         &x.deserialize_json,
@@ -319,13 +314,6 @@ fn transform_fields(x: &khora_data::ecs::Transform) {
     let _ = (&x.translation, &x.rotation, &x.scale);
 }
 
-fn set_from_bytes_error_variants(x: &khora_data::ecs::SetFromBytesError) {
-    match x {
-        khora_data::ecs::SetFromBytesError::MisalignedLength { .. } => {}
-        khora_data::ecs::SetFromBytesError::PayloadTooLarge { .. } => {}
-    }
-}
-
 fn page_index_fields(x: &khora_data::ecs::PageIndex) {
     let _ = (&x.page_id, &x.row_index);
 }
@@ -378,14 +366,6 @@ fn remove_component_error_variants(x: &khora_data::ecs::RemoveComponentError) {
         khora_data::ecs::RemoveComponentError::EntityNotFound => {}
         khora_data::ecs::RemoveComponentError::ComponentNotRegistered => {}
         khora_data::ecs::RemoveComponentError::ComponentNotPresent => {}
-    }
-}
-
-fn deserialize_archetype_error_variants(x: &khora_data::ecs::DeserializeArchetypeError) {
-    match x {
-        khora_data::ecs::DeserializeArchetypeError::Decode(..) => {}
-        khora_data::ecs::DeserializeArchetypeError::UnknownComponent(..) => {}
-        khora_data::ecs::DeserializeArchetypeError::InvalidColumn(..) => {}
     }
 }
 
@@ -565,8 +545,9 @@ fn component_registration_fields(
         &x.shape,
         &x.type_name,
         &x.provenance,
-        &x.serialize_recipe,
-        &x.deserialize_recipe,
+        &x.formerly,
+        &x.column_to_record,
+        &x.stage,
         &x.create_default,
         &x.to_json,
         &x.from_json,
@@ -583,57 +564,6 @@ fn component_shape_variants(x: &khora_data::scene::shape::ComponentShape) {
 
 fn field_schema_fields(x: &khora_data::scene::shape::FieldSchema) {
     let _ = (&x.name, &x.ty);
-}
-
-fn migration_error_variants(x: &khora_data::scene::migrations::MigrationError) {
-    match x {
-        khora_data::scene::migrations::MigrationError::DecodeFailed(..) => {}
-        khora_data::scene::migrations::MigrationError::EncodeFailed(..) => {}
-        khora_data::scene::migrations::MigrationError::StepMissing { .. } => {}
-    }
-}
-
-fn scene_migration_registration_fields(
-    x: &khora_data::scene::migrations::SceneMigrationRegistration,
-) {
-    let _ = (&x.migration,);
-}
-
-fn scene_recipe_fields(x: &khora_data::scene::SceneRecipe) {
-    let _ = (&x.commands,);
-}
-
-fn scene_command_variants(x: &khora_data::scene::SceneCommand) {
-    match x {
-        khora_data::scene::SceneCommand::Spawn { .. } => {}
-        khora_data::scene::SceneCommand::AddComponent { .. } => {}
-        khora_data::scene::SceneCommand::SetParent { .. } => {}
-    }
-}
-
-fn component_definition_fields(x: &khora_data::scene::ComponentDefinition) {
-    let _ = (&x.type_name, &x.data_base64);
-}
-
-fn entity_definition_fields(x: &khora_data::scene::EntityDefinition) {
-    let _ = (&x.id, &x.components);
-}
-
-fn scene_definition_fields(x: &khora_data::scene::SceneDefinition) {
-    let _ = (&x.entities,);
-}
-
-fn serialization_error_variants(x: &khora_data::scene::SerializationError) {
-    match x {
-        khora_data::scene::SerializationError::ProcessingFailed(..) => {}
-    }
-}
-
-fn deserialization_error_variants(x: &khora_data::scene::DeserializationError) {
-    match x {
-        khora_data::scene::DeserializationError::InvalidFormat(..) => {}
-        khora_data::scene::DeserializationError::WorldPopulationFailed(..) => {}
-    }
 }
 
 fn ui_node_fields(x: &khora_data::ui::components::UiNode) {
@@ -759,8 +689,6 @@ fn any_vec_trait_items<V: khora_data::ecs::AnyVec + ?Sized>() {
     let _ = V::as_any;
     let _ = V::as_any_mut;
     let _ = V::swap_remove_any;
-    let _ = V::to_bytes;
-    let _ = V::set_from_bytes;
 }
 
 fn world_query_trait_items<Q: khora_data::ecs::WorldQuery>() {
@@ -780,18 +708,6 @@ fn flow_trait_items<F: khora_data::flow::Flow>() {
     let _ = F::select;
     let _ = F::project;
     let _ = F::cache_key;
-}
-
-fn scene_migration_trait_items<M: khora_data::scene::migrations::SceneMigration + ?Sized>() {
-    let _ = M::from_version;
-    let _ = M::to_version;
-    let _ = M::migrate;
-}
-
-fn serialization_strategy_trait_items<S: khora_data::scene::SerializationStrategy>() {
-    let _ = S::get_strategy_id;
-    let _ = S::serialize;
-    let _ = S::deserialize;
 }
 
 // ---------------------------------------------------------------------------
@@ -1274,15 +1190,6 @@ fn module_ecs_paths_still_resolve() {
     is_clone::<khora_data::ecs::EntityMetadata>();
     is_debug::<khora_data::ecs::EntityMetadata>();
     is_default::<khora_data::ecs::EntityMetadata>();
-    let _ = khora_data::ecs::MAX_COLUMN_PAYLOAD_BYTES;
-    let _ = type_name::<khora_data::ecs::SetFromBytesError>();
-    let _ = set_from_bytes_error_variants as fn(&khora_data::ecs::SetFromBytesError);
-    is_clone::<khora_data::ecs::SetFromBytesError>();
-    is_debug::<khora_data::ecs::SetFromBytesError>();
-    is_display::<khora_data::ecs::SetFromBytesError>();
-    is_eq::<khora_data::ecs::SetFromBytesError>();
-    is_error::<khora_data::ecs::SetFromBytesError>();
-    is_partial_eq::<khora_data::ecs::SetFromBytesError>();
     let _ = type_name::<dyn khora_data::ecs::AnyVec>();
     any_vec_trait_items::<dyn khora_data::ecs::AnyVec>();
     let _ = type_name::<khora_data::ecs::PageIndex>();
@@ -1359,11 +1266,6 @@ fn module_ecs_paths_still_resolve() {
     is_debug::<khora_data::ecs::RemoveComponentError>();
     is_eq::<khora_data::ecs::RemoveComponentError>();
     is_partial_eq::<khora_data::ecs::RemoveComponentError>();
-    let _ = type_name::<khora_data::ecs::DeserializeArchetypeError>();
-    let _ = deserialize_archetype_error_variants as fn(&khora_data::ecs::DeserializeArchetypeError);
-    is_debug::<khora_data::ecs::DeserializeArchetypeError>();
-    is_display::<khora_data::ecs::DeserializeArchetypeError>();
-    is_error::<khora_data::ecs::DeserializeArchetypeError>();
     let _ = type_name::<khora_data::ecs::DomainStats>();
     let _ = domain_stats_fields as fn(&khora_data::ecs::DomainStats);
     is_clone::<khora_data::ecs::DomainStats>();
@@ -1384,6 +1286,13 @@ fn module_ecs_paths_still_resolve() {
     let _ = khora_data::ecs::World::set_parent;
     let _ = khora_data::ecs::World::despawn_subtree;
     let _ = khora_data::ecs::World::is_descendant_of;
+    let _ = khora_data::ecs::World::persistent_id;
+    let _ = khora_data::ecs::World::entity_with_id;
+    let _ = khora_data::ecs::World::mark_authored;
+    let _ = khora_data::ecs::World::set_persistent_id;
+    let _ = khora_data::ecs::World::reserve_entity;
+    let _ = khora_data::ecs::World::spawn_reserved;
+    let _ = khora_data::ecs::World::release_reserved;
     let _ = khora_data::ecs::World::despawn;
     let _ = khora_data::ecs::World::query::<&'static khora_data::ecs::Transform>;
     let _ = khora_data::ecs::World::query_mut::<&'static khora_data::ecs::Transform>;
@@ -1397,8 +1306,6 @@ fn module_ecs_paths_still_resolve() {
     let _ = khora_data::ecs::World::clone_component::<khora_data::ecs::Transform>;
     let _ = khora_data::ecs::World::set_component::<khora_data::ecs::Transform>;
     let _ = khora_data::ecs::World::iter_entities;
-    let _ = khora_data::ecs::World::serialize_archetype;
-    let _ = khora_data::ecs::World::deserialize_archetype;
     is_ui_layout_view::<khora_data::ecs::World>();
     is_default::<khora_data::ecs::World>();
 }
@@ -1653,20 +1560,18 @@ fn module_gpu_paths_still_resolve() {
 
 #[test]
 fn module_scene_material_registration_paths_still_resolve() {
-    let _ = type_name::<khora_data::scene::material_registration::SerializableMaterialData>();
+    let _ = type_name::<khora_data::scene::material_registration::MaterialToRecordFn>();
     same_type(
-        PhantomData::<khora_data::scene::SerializableMaterialData>,
-        PhantomData::<khora_data::scene::material_registration::SerializableMaterialData>,
+        PhantomData::<khora_data::scene::MaterialToRecordFn>,
+        PhantomData::<khora_data::scene::material_registration::MaterialToRecordFn>,
     );
-    let _ = serializable_material_data_fields
-        as fn(&khora_data::scene::material_registration::SerializableMaterialData);
-    is_clone::<khora_data::scene::material_registration::SerializableMaterialData>();
-    is_debug::<khora_data::scene::material_registration::SerializableMaterialData>();
-    let _ = type_name::<khora_data::scene::material_registration::MaterialDeserializeFn>();
+    let _ = type_name::<khora_data::scene::material_registration::MaterialStageFn>();
     same_type(
-        PhantomData::<khora_data::scene::MaterialDeserializeFn>,
-        PhantomData::<khora_data::scene::material_registration::MaterialDeserializeFn>,
+        PhantomData::<khora_data::scene::MaterialStageFn>,
+        PhantomData::<khora_data::scene::material_registration::MaterialStageFn>,
     );
+    let _ = khora_data::scene::material_to_record;
+    let _ = khora_data::scene::material_from_record;
     let _ = type_name::<khora_data::scene::material_registration::MaterialRegistration>();
     same_type(
         PhantomData::<khora_data::scene::MaterialRegistration>,
@@ -1674,14 +1579,6 @@ fn module_scene_material_registration_paths_still_resolve() {
     );
     let _ = material_registration_fields
         as fn(&khora_data::scene::material_registration::MaterialRegistration);
-    same_item(
-        &khora_data::scene::serialize_material_component,
-        &khora_data::scene::material_registration::serialize_material_component,
-    );
-    same_item(
-        &khora_data::scene::deserialize_material_component,
-        &khora_data::scene::material_registration::deserialize_material_component,
-    );
     same_item(
         &khora_data::scene::material_to_json,
         &khora_data::scene::material_registration::material_to_json,
@@ -1840,6 +1737,7 @@ fn record_variants(x: &khora_data::scene::record::Record) {
         khora_data::scene::record::Record::U64(..) => {}
         khora_data::scene::record::Record::F32(..) => {}
         khora_data::scene::record::Record::F64(..) => {}
+        khora_data::scene::record::Record::Decimal(..) => {}
         khora_data::scene::record::Record::Char(..) => {}
         khora_data::scene::record::Record::Str(..) => {}
         khora_data::scene::record::Record::Bytes(..) => {}
@@ -1904,6 +1802,7 @@ fn report_kind_variants(x: &khora_data::scene::record::ReportKind) {
         }
         khora_data::scene::record::ReportKind::Widened => {}
         khora_data::scene::record::ReportKind::Retired => {}
+        khora_data::scene::record::ReportKind::NotSaved => {}
         khora_data::scene::record::ReportKind::DeadReference => {}
     }
 }
@@ -1966,6 +1865,125 @@ fn module_scene_record_paths_still_resolve() {
     let _ = khora_data::scene::record::resolve::<khora_core::ecs::entity::EntityId>;
 }
 
+fn scene_record_fields(x: &khora_data::scene::SceneRecord) {
+    let _ = (&x.entities, &x.pages);
+}
+
+fn page_record_fields(x: &khora_data::scene::PageRecord) {
+    let _ = (&x.components, &x.rows, &x.columns);
+}
+
+fn applied_fields(x: &khora_data::scene::Applied) {
+    let _ = (&x.entities, &x.report);
+}
+
+fn load_failure_fields(x: &khora_data::scene::LoadFailure) {
+    let _ = (&x.message, &x.report);
+}
+
+fn identity_variants(x: &khora_data::scene::Identity) {
+    match x {
+        khora_data::scene::Identity::Keep => {}
+        khora_data::scene::Identity::Fresh => {}
+    }
+}
+
+fn save_error_variants(x: &khora_data::scene::SaveError) {
+    match x {
+        khora_data::scene::SaveError::Component { component, error } => {
+            let _ = (component, error);
+        }
+        khora_data::scene::SaveError::Encoding(..) => {}
+        khora_data::scene::SaveError::NoSuchEntity(..) => {}
+    }
+}
+
+fn encoding_error_fields(x: &khora_data::scene::EncodingError) {
+    let _ = (&x.0,);
+}
+
+fn retired_component_fields(x: &khora_data::scene::RetiredComponent) {
+    let _ = (&x.name,);
+}
+
+fn scene_encoding_trait_items<E: khora_data::scene::SceneEncoding + ?Sized>() {
+    let _ = <E as khora_data::scene::SceneEncoding>::id;
+    let _ = <E as khora_data::scene::SceneEncoding>::encode;
+    let _ = <E as khora_data::scene::SceneEncoding>::decode;
+}
+
+fn is_serialize<T: serde::Serialize + ?Sized>() {}
+fn is_deserialize_owned<T: serde::de::DeserializeOwned>() {}
+
+#[test]
+fn module_scene_records_paths_still_resolve() {
+    let _ = type_name::<khora_data::scene::SceneRecord>();
+    let _ = scene_record_fields as fn(&khora_data::scene::SceneRecord);
+    let _ = type_name::<khora_data::scene::PageRecord>();
+    let _ = type_name::<khora_data::scene::scene_record::PageRecord>();
+    let _ = page_record_fields as fn(&khora_data::scene::PageRecord);
+    is_debug::<khora_data::scene::PageRecord>();
+    is_clone::<khora_data::scene::PageRecord>();
+    is_partial_eq::<khora_data::scene::PageRecord>();
+    let _ = khora_data::scene::component_to_record;
+    is_debug::<khora_data::scene::SceneRecord>();
+    is_clone::<khora_data::scene::SceneRecord>();
+    is_default::<khora_data::scene::SceneRecord>();
+    is_partial_eq::<khora_data::scene::SceneRecord>();
+    is_serialize::<khora_data::scene::SceneRecord>();
+    is_deserialize_owned::<khora_data::scene::SceneRecord>();
+    is_serialize::<khora_data::scene::record::Record>();
+    is_deserialize_owned::<khora_data::scene::record::Record>();
+
+    let _ = khora_data::scene::capture_world;
+    let _ = khora_data::scene::capture_subtree;
+    let _ = type_name::<khora_data::scene::SaveError>();
+    let _ = save_error_variants as fn(&khora_data::scene::SaveError);
+    is_debug::<khora_data::scene::SaveError>();
+    is_clone::<khora_data::scene::SaveError>();
+    is_partial_eq::<khora_data::scene::SaveError>();
+    is_display::<khora_data::scene::SaveError>();
+    is_error::<khora_data::scene::SaveError>();
+
+    let _ = khora_data::scene::apply;
+    let _ = type_name::<khora_data::scene::Identity>();
+    let _ = identity_variants as fn(&khora_data::scene::Identity);
+    is_debug::<khora_data::scene::Identity>();
+    is_copy::<khora_data::scene::Identity>();
+    is_eq::<khora_data::scene::Identity>();
+    let _ = type_name::<khora_data::scene::Applied>();
+    let _ = applied_fields as fn(&khora_data::scene::Applied);
+    is_debug::<khora_data::scene::Applied>();
+    is_clone::<khora_data::scene::Applied>();
+    is_partial_eq::<khora_data::scene::Applied>();
+    let _ = type_name::<khora_data::scene::LoadFailure>();
+    let _ = load_failure_fields as fn(&khora_data::scene::LoadFailure);
+    is_debug::<khora_data::scene::LoadFailure>();
+    is_clone::<khora_data::scene::LoadFailure>();
+    is_partial_eq::<khora_data::scene::LoadFailure>();
+    is_display::<khora_data::scene::LoadFailure>();
+    is_error::<khora_data::scene::LoadFailure>();
+
+    let _ = type_name::<dyn khora_data::scene::SceneEncoding>();
+    scene_encoding_trait_items::<dyn khora_data::scene::SceneEncoding>();
+    scene_encoding_trait_items::<khora_data::scene::CompactEncoding>();
+    scene_encoding_trait_items::<khora_data::scene::TextEncoding>();
+    scene_encoding_trait_items::<khora_data::scene::MsgPackEncoding>();
+    let _ = type_name::<khora_data::scene::EncodingError>();
+    let _ = encoding_error_fields as fn(&khora_data::scene::EncodingError);
+    is_debug::<khora_data::scene::EncodingError>();
+    is_clone::<khora_data::scene::EncodingError>();
+    is_partial_eq::<khora_data::scene::EncodingError>();
+    is_display::<khora_data::scene::EncodingError>();
+    is_error::<khora_data::scene::EncodingError>();
+
+    let _ = type_name::<khora_data::scene::RetiredComponent>();
+    let _ = retired_component_fields as fn(&khora_data::scene::RetiredComponent);
+    is_debug::<khora_data::scene::RetiredComponent>();
+    is_copy::<khora_data::scene::RetiredComponent>();
+    let _ = khora_data::scene::is_retired;
+}
+
 #[test]
 fn module_scene_paths_still_resolve() {
     let _ = type_name::<khora_data::scene::component_registration::ComponentRegistration>();
@@ -1976,18 +1994,6 @@ fn module_scene_paths_still_resolve() {
     );
     let _ = component_registration_fields
         as fn(&khora_data::scene::component_registration::ComponentRegistration);
-    let _ = khora_data::scene::component_registration::serialize_all_components;
-    let _ = khora_data::scene::serialize_all_components;
-    same_item(
-        &khora_data::scene::serialize_all_components,
-        &khora_data::scene::component_registration::serialize_all_components,
-    );
-    let _ = khora_data::scene::component_registration::link_parent_child;
-    let _ = khora_data::scene::link_parent_child;
-    same_item(
-        &khora_data::scene::link_parent_child,
-        &khora_data::scene::component_registration::link_parent_child,
-    );
     let _ = khora_data::scene::component_registration::registration_of;
     let _ = khora_data::scene::registration_of;
     same_item(
@@ -2025,81 +2031,8 @@ fn module_scene_paths_still_resolve() {
     is_debug::<khora_data::scene::shape::FieldSchema>();
     is_eq::<khora_data::scene::shape::FieldSchema>();
     is_partial_eq::<khora_data::scene::shape::FieldSchema>();
-    let _ = type_name::<dyn khora_data::scene::migrations::SceneMigration>();
-    let _ = type_name::<dyn khora_data::scene::SceneMigration>();
-    same_type(
-        PhantomData::<dyn khora_data::scene::SceneMigration>,
-        PhantomData::<dyn khora_data::scene::migrations::SceneMigration>,
-    );
-    scene_migration_trait_items::<dyn khora_data::scene::SceneMigration>();
-    let _ = type_name::<khora_data::scene::migrations::MigrationError>();
-    let _ = type_name::<khora_data::scene::MigrationError>();
-    same_type(
-        PhantomData::<khora_data::scene::MigrationError>,
-        PhantomData::<khora_data::scene::migrations::MigrationError>,
-    );
-    let _ = migration_error_variants as fn(&khora_data::scene::migrations::MigrationError);
-    is_debug::<khora_data::scene::migrations::MigrationError>();
-    is_display::<khora_data::scene::migrations::MigrationError>();
-    let _ = type_name::<khora_data::scene::migrations::SceneMigrationRegistration>();
-    let _ = type_name::<khora_data::scene::SceneMigrationRegistration>();
-    same_type(
-        PhantomData::<khora_data::scene::SceneMigrationRegistration>,
-        PhantomData::<khora_data::scene::migrations::SceneMigrationRegistration>,
-    );
-    let _ = scene_migration_registration_fields
-        as fn(&khora_data::scene::migrations::SceneMigrationRegistration);
-    let _ = khora_data::scene::migrations::migrate_payload;
-    let _ = khora_data::scene::migrate_payload;
-    same_item(
-        &khora_data::scene::migrate_payload,
-        &khora_data::scene::migrations::migrate_payload,
-    );
-    let _ = type_name::<khora_data::scene::SceneRecipe>();
-    let _ = scene_recipe_fields as fn(&khora_data::scene::SceneRecipe);
-    is_debug::<khora_data::scene::SceneRecipe>();
-    let _ = type_name::<khora_data::scene::SceneCommand>();
-    let _ = scene_command_variants as fn(&khora_data::scene::SceneCommand);
-    is_debug::<khora_data::scene::SceneCommand>();
-    let _ = type_name::<khora_data::scene::ArchetypeSerializationStrategy>();
-    let _ = khora_data::scene::ArchetypeSerializationStrategy::new;
-    is_default::<khora_data::scene::ArchetypeSerializationStrategy>();
-    let _ = type_name::<khora_data::scene::ComponentDefinition>();
-    let _ = component_definition_fields as fn(&khora_data::scene::ComponentDefinition);
-    is_clone::<khora_data::scene::ComponentDefinition>();
-    is_debug::<khora_data::scene::ComponentDefinition>();
-    let _ = type_name::<khora_data::scene::EntityDefinition>();
-    let _ = entity_definition_fields as fn(&khora_data::scene::EntityDefinition);
-    is_clone::<khora_data::scene::EntityDefinition>();
-    is_debug::<khora_data::scene::EntityDefinition>();
-    let _ = type_name::<khora_data::scene::SceneDefinition>();
-    let _ = scene_definition_fields as fn(&khora_data::scene::SceneDefinition);
-    is_clone::<khora_data::scene::SceneDefinition>();
-    is_debug::<khora_data::scene::SceneDefinition>();
-    let _ = type_name::<khora_data::scene::DefinitionSerializationStrategy>();
-    let _ = khora_data::scene::DefinitionSerializationStrategy::new;
-    is_default::<khora_data::scene::DefinitionSerializationStrategy>();
-    let _ = type_name::<khora_data::scene::MessagePackSerializationStrategy>();
-    let _ = khora_data::scene::MessagePackSerializationStrategy::new;
-    is_default::<khora_data::scene::MessagePackSerializationStrategy>();
-    let _ = type_name::<khora_data::scene::RecipeSerializationStrategy>();
-    let _ = khora_data::scene::RecipeSerializationStrategy::new;
-    is_default::<khora_data::scene::RecipeSerializationStrategy>();
     let _ = khora_data::scene::serialize_subtree;
     let _ = khora_data::scene::instantiate_subtree;
-    let _ = type_name::<khora_data::scene::SerializationError>();
-    let _ = serialization_error_variants as fn(&khora_data::scene::SerializationError);
-    is_debug::<khora_data::scene::SerializationError>();
-    is_display::<khora_data::scene::SerializationError>();
-    let _ = type_name::<khora_data::scene::DeserializationError>();
-    let _ = deserialization_error_variants as fn(&khora_data::scene::DeserializationError);
-    is_debug::<khora_data::scene::DeserializationError>();
-    is_display::<khora_data::scene::DeserializationError>();
-    let _ = type_name::<dyn khora_data::scene::SerializationStrategy>();
-    serialization_strategy_trait_items::<khora_data::scene::ArchetypeSerializationStrategy>();
-    serialization_strategy_trait_items::<khora_data::scene::DefinitionSerializationStrategy>();
-    serialization_strategy_trait_items::<khora_data::scene::MessagePackSerializationStrategy>();
-    serialization_strategy_trait_items::<khora_data::scene::RecipeSerializationStrategy>();
 }
 
 #[test]
@@ -2465,21 +2398,10 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ = type_name::<khora_data::render::WireframeConfig>(); // khora-lanes
     let _ = khora_data::render::WireframeConfig::default; // khora-sdk
     let _ = khora_data::render::extract_active_camera_view; // khora-agents, khora-editor
-    let _ = khora_data::render::submit_frame_graph; // khora-sdk
-    let _ = type_name::<khora_data::scene::ArchetypeSerializationStrategy>(); // khora-io
+    let _ = khora_data::render::submit_frame_graph; // khora-io
     let _ = type_name::<khora_data::scene::ComponentRegistration>(); // khora-io, khora-sdk
     let _ = type_name::<khora_data::scene::ComponentShape>(); // khora-io
-    let _ = type_name::<khora_data::scene::DefinitionSerializationStrategy>(); // khora-io
-    let _ = type_name::<khora_data::scene::DeserializationError>(); // khora-io
-    let _ = type_name::<khora_data::scene::MessagePackSerializationStrategy>(); // khora-io
-    let _ = type_name::<khora_data::scene::MigrationError>(); // khora-io
-    let _ = type_name::<khora_data::scene::RecipeSerializationStrategy>(); // khora-io
-    let _ = type_name::<dyn khora_data::scene::SceneMigration>(); // khora-io
-    let _ = type_name::<khora_data::scene::SceneMigrationRegistration>(); // khora-io
-    let _ = type_name::<khora_data::scene::SerializationError>(); // khora-io
-    let _ = type_name::<dyn khora_data::scene::SerializationStrategy>(); // khora-io
-    let _ = khora_data::scene::instantiate_subtree; // khora-sdk
-    let _ = khora_data::scene::migrate_payload; // khora-io
+    let _ = khora_data::scene::instantiate_subtree; // khora-io
     let _ = khora_data::scene::provenance_of; // khora-editor
     let _ = khora_data::scene::serialize_subtree; // khora-sdk
     let _ = type_name::<khora_data::ui::UiAtlasMap>(); // khora-agents, khora-lanes

@@ -301,7 +301,7 @@ pub fn snapshot_of(
 /// Records what the program's code looked like alongside the machine, because a
 /// machine is a *position* in that code — see [`resume`] for what that buys.
 /// The machine goes down in the engine's own terms ([`SuspendedMachine::Frozen`]),
-/// so every scene strategy writes it natively and a Definition save shows it.
+/// so every scene encoding writes it natively and a text save shows it.
 /// `None` when the machine does not belong to `program` — suspended in other
 /// code, which a load would only abandon — losing the sequence rather than the
 /// save.
@@ -315,9 +315,9 @@ pub fn suspend(pending: &Pending, program: &Program) -> Option<PendingSequence> 
         log::error!("a suspended sequence could not be saved: it does not belong to its program");
         return None;
     };
-    // Written only if it reads back: past the bound, the save would hold a
-    // `Script` its load refuses whole, and the entity would lose its behavior
-    // rather than one sequence.
+    // Kept only within the bound its binary form is read back under: past
+    // it, one sequence is left out of the save rather than written in a form
+    // that cannot be read back.
     if !machine.fits_a_save() {
         log::warn!(
             "a suspended sequence was left out of the save: its machine is too large to read \

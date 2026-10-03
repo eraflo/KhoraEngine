@@ -31,10 +31,11 @@ pub trait ReferenceReader {
 
 /// Reads a `T` from `record`, matching fields by name.
 ///
-/// A field the record lacks takes the type's serde default, a field the type
-/// no longer has is ignored, a renamed one is read through its serde alias, and
-/// a number is widened when that loses nothing. Anything else is an error, never
-/// a panic: a record comes from a file, and a file is input.
+/// A field the record lacks takes its serde default where the type declares
+/// one (`#[serde(default)]`, an `Option`), a field the type no longer has is
+/// ignored, a renamed one is read through its serde alias, and a number is
+/// converted when that loses nothing. Anything else is an error, never a
+/// panic: a record comes from a file, and a file is input.
 pub fn from_record<T: DeserializeOwned>(
     record: &Record,
     references: &mut dyn ReferenceReader,
@@ -134,7 +135,7 @@ fn kind(record: &Record) -> &'static str {
         Record::Unit => "a unit",
         Record::Bool(_) => "a bool",
         Record::I64(_) | Record::U64(_) => "an integer",
-        Record::F32(_) | Record::F64(_) => "a float",
+        Record::F32(_) | Record::F64(_) | Record::Decimal(_) => "a float",
         Record::Char(_) => "a char",
         Record::Str(_) => "a string",
         Record::Bytes(_) => "bytes",
@@ -281,7 +282,7 @@ impl<'de> de::Deserializer<'de> for Reader<'_, '_, '_> {
             Record::I64(v) => visitor.visit_i64(*v),
             Record::U64(v) => visitor.visit_u64(*v),
             Record::F32(v) => visitor.visit_f32(*v),
-            Record::F64(v) => visitor.visit_f64(*v),
+            Record::F64(v) | Record::Decimal(v) => visitor.visit_f64(*v),
             Record::Char(v) => visitor.visit_char(*v),
             Record::Str(v) => visitor.visit_str(v),
             Record::Bytes(v) => visitor.visit_bytes(v),
@@ -361,7 +362,7 @@ impl<'de> de::Deserializer<'de> for Reader<'_, '_, '_> {
                 kind(self.record)
             ))
         })?;
-        if !matches!(number, Number::Single(_)) {
+        if !matches!(number, Number::Single(_) | Number::Decimal(_)) {
             self.note(Event::Widened);
         }
         visitor.visit_f32(value)
@@ -375,7 +376,7 @@ impl<'de> de::Deserializer<'de> for Reader<'_, '_, '_> {
                 kind(self.record)
             ))
         })?;
-        if !matches!(number, Number::Double(_)) {
+        if !matches!(number, Number::Double(_) | Number::Decimal(_)) {
             self.note(Event::Widened);
         }
         visitor.visit_f64(value)
@@ -425,7 +426,8 @@ impl<'de> de::Deserializer<'de> for Reader<'_, '_, '_> {
 
     fn deserialize_unit<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, RecordError> {
         match self.record {
-            Record::Unit | Record::UnitStruct { .. } => visitor.visit_unit(),
+            // `null`, as a self-describing format writes `()`.
+            Record::Unit | Record::UnitStruct { .. } | Record::None => visitor.visit_unit(),
             _ => Err(self.wrong("a unit")),
         }
     }
@@ -457,8 +459,9 @@ impl<'de> de::Deserializer<'de> for Reader<'_, '_, '_> {
         }
         match record {
             Record::Newtype { value, .. } => visitor.visit_newtype_struct(self.below(value, None)),
-            Record::Entity(_) | Record::Asset(_) => Err(self.wrong("a newtype")),
-            // A format that writes a newtype as the value it wraps.
+            // A format that writes a newtype as the value it wraps — `Parent`
+            // in JSON is the entity it holds. Whether the wrapped value is the
+            // right kind is the inner type's to check.
             _ => visitor.visit_newtype_struct(self),
         }
     }

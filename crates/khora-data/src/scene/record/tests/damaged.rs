@@ -17,7 +17,7 @@
 use khora_core::asset::AssetUUID;
 use khora_core::script::ScriptValue;
 use serde::de::IgnoredAny;
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::ecs::{ProjectionType, SerializableBodyMotion, SerializableParent};
 
@@ -81,6 +81,14 @@ impl Serialize for Deep {
     }
 }
 
+/// A struct whose fields have no default: every one must be in the record.
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct Strict {
+    first: u32,
+    second: u32,
+}
+
 /// A record comes from a file, and a file is input: a record of the wrong
 /// shape for the value asked for — a wrong kind, an unknown variant, an
 /// entity where a struct is expected or a raw struct where an entity is,
@@ -93,7 +101,11 @@ fn a_damaged_record_is_an_error_not_a_panic() {
     assert!(read::<String>(&Record::Seq(vec![])).is_err());
     assert!(read::<Vec<u32>>(&structure("Probe", vec![("a", Record::U64(1))])).is_err());
     assert!(read::<SerializableBodyMotion>(&Record::U64(3)).is_err());
-    assert!(read::<SerializableBodyMotion>(&Record::Seq(vec![])).is_err());
+    assert!(read::<SerializableBodyMotion>(&text("moving")).is_err());
+    // A struct without defaults cannot be read from a list too short for it.
+    // (A component mirror can: every one of its fields has a default.)
+    assert!(read::<Strict>(&Record::Seq(vec![])).is_err());
+    assert!(read::<Strict>(&Record::Seq(vec![Record::U64(1)])).is_err());
     assert!(read::<[u32; 2]>(&Record::Seq(vec![Record::U64(1)])).is_err());
     assert!(read::<Option<u32>>(&text("none")).is_err());
     assert!(read::<bool>(&Record::Unit).is_err());

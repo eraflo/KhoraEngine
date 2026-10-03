@@ -15,46 +15,45 @@
 //! Open, inventory-based registration system for serializable materials.
 //!
 //! Each concrete material type registers itself via `inventory::submit!` with
-//! a type name, a serialize function, and a deserialize function. This allows
-//! any custom material (including those from plugins) to be serializable as
-//! long as it registers itself.
-//!
-//! The `#[derive(Material)]` proc-macro auto-generates the registration.
+//! a type name and how it is written to, and read from, a record and JSON.
+//! Any custom material (including those from plugins) is saved as long as it
+//! registers itself, with `inventory::submit!`.
 
-use bincode::config;
 use inventory::collect;
-use khora_core::asset::{AssetHandle, AssetUUID, Material};
-use khora_core::math::LinearRgba;
+use khora_core::asset::{AssetHandle, AssetUUID, Material, StandardMaterial};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 
-/// A serializable wrapper for a material that stores the type name and binary data.
-#[derive(bincode::Encode, bincode::Decode, Debug, Clone)]
-pub struct SerializableMaterialData {
-    /// Identifier used to look up the matching `MaterialRegistration` on decode.
-    pub type_name: String,
-    /// Opaque payload produced by the registration's `serialize` function.
-    pub data: Vec<u8>,
-}
+use super::record::{
+    resolve, to_record, Record, RecordError, ReferenceReader, ReferenceWriter, ReportEntry,
+};
 
-/// Function pointer that decodes binary data into a boxed `dyn Material`.
-pub type MaterialDeserializeFn = fn(&[u8]) -> Result<Box<dyn Material>, String>;
+/// Writes a `dyn Material` as a record, its references through the writer.
+pub type MaterialToRecordFn =
+    fn(&dyn Material, &mut dyn ReferenceWriter) -> Option<Result<Record, RecordError>>;
+
+/// Reads a material back from a record, and says what the read adapted.
+pub type MaterialStageFn = fn(
+    &Record,
+    &mut dyn ReferenceReader,
+) -> Result<(Box<dyn Material>, Vec<ReportEntry>), RecordError>;
 
 /// Registration entry for a serializable material type.
 ///
-/// Submitted via `inventory::submit!` either manually or through `#[derive(Material)]`.
+/// Each material type submits one via `inventory::submit!`.
 pub struct MaterialRegistration {
-    /// Unique type name used for lookup during deserialization.
+    /// Unique type name: what a save and a `.kmat` file name the material by.
     pub type_name: &'static str,
-    /// Serializes a `dyn Material` into binary data. Returns `None` if the material
-    /// does not match this registration's concrete type.
-    pub serialize: fn(&dyn Material) -> Option<Vec<u8>>,
-    /// Deserializes binary data back into a `Box<dyn Material>`.
-    pub deserialize: MaterialDeserializeFn,
+    /// Writes a `dyn Material` as a record. `None` if the material is not
+    /// this registration's concrete type.
+    pub to_record: MaterialToRecordFn,
+    /// Reads a material back from a record.
+    pub stage: MaterialStageFn,
     /// Creates a default instance of this material type (for placeholder handles).
     pub create_default: fn() -> Box<dyn Material>,
     /// Serializes a `dyn Material` into a serde-JSON value for the editor
     /// inspector. Returns `None` if the material does not match this
-    /// registration's concrete type. Mirrors `serialize` but in an
-    /// editable, human-readable encoding.
+    /// registration's concrete type.
     pub serialize_json: fn(&dyn Material) -> Option<serde_json::Value>,
     /// Deserializes a serde-JSON value (as produced by `serialize_json`) back
     /// into a `Box<dyn Material>`.
@@ -63,71 +62,67 @@ pub struct MaterialRegistration {
 
 collect!(MaterialRegistration);
 
-/// Serializes a `dyn Material` by finding the matching `MaterialRegistration`
-/// and encoding the material data with its type name.
-pub fn serialize_material_component(
-    base_color: LinearRgba,
+/// A material written down: its type name and its record.
+///
+/// No registration claiming the material is not a reason to lose it: it is
+/// written as a standard material of the same base color, the one thing every
+/// material has.
+pub fn material_to_record(
     material: &dyn Material,
-) -> Option<Vec<u8>> {
+    references: &mut dyn ReferenceWriter,
+) -> Result<(&'static str, Record), RecordError> {
     for reg in inventory::iter::<MaterialRegistration> {
-        if let Some(data) = (reg.serialize)(material) {
-            let serializable = SerializableMaterialData {
-                type_name: reg.type_name.to_string(),
-                data,
-            };
-            return bincode::encode_to_vec(&serializable, config::standard()).ok();
+        if let Some(record) = (reg.to_record)(material, references) {
+            return Ok((reg.type_name, record?));
         }
     }
-    // Fallback: no registration found, serialize just the base color as a StandardMaterial-like placeholder.
     log::warn!(
-        "No MaterialRegistration found for material type; falling back to base-color-only serialization."
+        "no MaterialRegistration claims a material; saving its base color as a StandardMaterial"
     );
-    let serializable = SerializableMaterialData {
-        type_name: "__unknown__".to_string(),
-        data: bincode::encode_to_vec(base_color, config::standard()).ok()?,
+    let fallback = StandardMaterial {
+        base_color: material.base_color(),
+        ..Default::default()
     };
-    bincode::encode_to_vec(&serializable, config::standard()).ok()
+    Ok(("StandardMaterial", to_record(&fallback, references)?))
 }
 
-/// Deserializes a `(handle, uuid)` material pair from binary data.
-pub fn deserialize_material_component(
-    data: &[u8],
-) -> Result<(AssetHandle<Box<dyn Material>>, AssetUUID), String> {
-    let (serializable, _): (SerializableMaterialData, _) =
-        bincode::decode_from_slice(data, config::standard()).map_err(|e| e.to_string())?;
+/// A material read back from its type name and record.
+pub fn material_from_record(
+    type_name: &str,
+    record: &Record,
+    references: &mut dyn ReferenceReader,
+) -> Result<(Box<dyn Material>, Vec<ReportEntry>), RecordError> {
+    inventory::iter::<MaterialRegistration>
+        .into_iter()
+        .find(|reg| reg.type_name == type_name)
+        .ok_or_else(|| RecordError(format!("no material type `{type_name}`")))
+        .and_then(|reg| (reg.stage)(record, references))
+}
 
-    if serializable.type_name == "__unknown__" {
-        // Reconstruct a basic StandardMaterial from the fallback base color.
-        let (base_color, _): (LinearRgba, _) =
-            bincode::decode_from_slice(&serializable.data, config::standard())
-                .map_err(|e| e.to_string())?;
-        let mat = khora_core::asset::StandardMaterial {
-            base_color,
-            ..Default::default()
-        };
-        let handle = AssetHandle::new(Box::new(mat) as Box<dyn Material>);
-        return Ok((handle, AssetUUID::new()));
-    }
+/// `to_record` for a concrete material type.
+fn concrete_to_record<M: Material + Serialize + 'static>(
+    material: &dyn Material,
+    references: &mut dyn ReferenceWriter,
+) -> Option<Result<Record, RecordError>> {
+    material
+        .as_any()
+        .downcast_ref::<M>()
+        .map(|material| to_record(material, references))
+}
 
-    for reg in inventory::iter::<MaterialRegistration> {
-        if reg.type_name == serializable.type_name {
-            let material = (reg.deserialize)(&serializable.data)?;
-            let uuid = AssetUUID::new();
-            let handle = AssetHandle::new(material);
-            return Ok((handle, uuid));
-        }
-    }
-
-    Err(format!(
-        "No MaterialRegistration found for type '{}'",
-        serializable.type_name
-    ))
+/// `stage` for a concrete material type.
+fn concrete_stage<M: Material + Serialize + DeserializeOwned + 'static>(
+    record: &Record,
+    references: &mut dyn ReferenceReader,
+) -> Result<(Box<dyn Material>, Vec<ReportEntry>), RecordError> {
+    let (material, report) = resolve::<M>(record, references)?;
+    Ok((Box::new(material) as Box<dyn Material>, report))
 }
 
 /// Serializes a material into an editable serde-JSON object of the form
-/// `{ "type_name": <name>, "material": <concrete material> }`, matching the
-/// `(type_name, data)` split that [`serialize_material_component`] uses for
-/// bincode. Returns `None` if no registration claims the material.
+/// `{ "type_name": <name>, "material": <concrete material> }` — the same
+/// `(type_name, material)` split a saved record uses. Returns `None` if no
+/// registration claims the material.
 pub fn material_to_json(material: &dyn Material) -> Option<serde_json::Value> {
     for reg in inventory::iter::<MaterialRegistration> {
         if let Some(material_json) = (reg.serialize_json)(material) {
@@ -168,7 +163,7 @@ pub fn material_from_json(
 
 // ─── Built-in material registrations ───
 
-use khora_core::asset::{EmissiveMaterial, StandardMaterial, UnlitMaterial, WireframeMaterial};
+use khora_core::asset::{EmissiveMaterial, UnlitMaterial, WireframeMaterial};
 
 // The scene + inspector `ComponentRegistration` for the authored material
 // reference lives on `MaterialRef` (see `material_ref.rs`); it reuses the
@@ -179,16 +174,8 @@ use khora_core::asset::{EmissiveMaterial, StandardMaterial, UnlitMaterial, Wiref
 inventory::submit! {
     MaterialRegistration {
         type_name: "StandardMaterial",
-        serialize: |mat| {
-            mat.as_any().downcast_ref::<StandardMaterial>().map(|m| {
-                bincode::encode_to_vec(m, config::standard()).unwrap_or_default()
-            })
-        },
-        deserialize: |data| {
-            let (m, _) = bincode::decode_from_slice::<StandardMaterial, _>(data, config::standard())
-                .map_err(|e| e.to_string())?;
-            Ok(Box::new(m) as Box<dyn Material>)
-        },
+        to_record: concrete_to_record::<StandardMaterial>,
+        stage: concrete_stage::<StandardMaterial>,
         create_default: || Box::new(StandardMaterial::default()) as Box<dyn Material>,
         serialize_json: |mat| {
             mat.as_any()
@@ -206,16 +193,8 @@ inventory::submit! {
 inventory::submit! {
     MaterialRegistration {
         type_name: "UnlitMaterial",
-        serialize: |mat| {
-            mat.as_any().downcast_ref::<UnlitMaterial>().map(|m| {
-                bincode::encode_to_vec(m, config::standard()).unwrap_or_default()
-            })
-        },
-        deserialize: |data| {
-            let (m, _) = bincode::decode_from_slice::<UnlitMaterial, _>(data, config::standard())
-                .map_err(|e| e.to_string())?;
-            Ok(Box::new(m) as Box<dyn Material>)
-        },
+        to_record: concrete_to_record::<UnlitMaterial>,
+        stage: concrete_stage::<UnlitMaterial>,
         create_default: || Box::new(UnlitMaterial::default()) as Box<dyn Material>,
         serialize_json: |mat| {
             mat.as_any()
@@ -233,16 +212,8 @@ inventory::submit! {
 inventory::submit! {
     MaterialRegistration {
         type_name: "EmissiveMaterial",
-        serialize: |mat| {
-            mat.as_any().downcast_ref::<EmissiveMaterial>().map(|m| {
-                bincode::encode_to_vec(m, config::standard()).unwrap_or_default()
-            })
-        },
-        deserialize: |data| {
-            let (m, _) = bincode::decode_from_slice::<EmissiveMaterial, _>(data, config::standard())
-                .map_err(|e| e.to_string())?;
-            Ok(Box::new(m) as Box<dyn Material>)
-        },
+        to_record: concrete_to_record::<EmissiveMaterial>,
+        stage: concrete_stage::<EmissiveMaterial>,
         create_default: || Box::new(EmissiveMaterial::default()) as Box<dyn Material>,
         serialize_json: |mat| {
             mat.as_any()
@@ -260,16 +231,8 @@ inventory::submit! {
 inventory::submit! {
     MaterialRegistration {
         type_name: "WireframeMaterial",
-        serialize: |mat| {
-            mat.as_any().downcast_ref::<WireframeMaterial>().map(|m| {
-                bincode::encode_to_vec(m, config::standard()).unwrap_or_default()
-            })
-        },
-        deserialize: |data| {
-            let (m, _) = bincode::decode_from_slice::<WireframeMaterial, _>(data, config::standard())
-                .map_err(|e| e.to_string())?;
-            Ok(Box::new(m) as Box<dyn Material>)
-        },
+        to_record: concrete_to_record::<WireframeMaterial>,
+        stage: concrete_stage::<WireframeMaterial>,
         create_default: || Box::new(WireframeMaterial::default()) as Box<dyn Material>,
         serialize_json: |mat| {
             mat.as_any()
