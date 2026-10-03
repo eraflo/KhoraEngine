@@ -59,10 +59,10 @@ pub use ser::{to_record, ReferenceWriter};
 pub use value::{EntityRef, Record, VariantPayload};
 
 /// The serde name that marks an entity reference.
-const ENTITY_NAME: &str = "khora.EntityId";
+pub(crate) const ENTITY_NAME: &str = "khora.EntityId";
 
 /// The serde name that marks an asset reference.
-const ASSET_NAME: &str = "khora.AssetUUID";
+pub(crate) const ASSET_NAME: &str = "khora.AssetUUID";
 
 /// How deep a value may nest.
 ///

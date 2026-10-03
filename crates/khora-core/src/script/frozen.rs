@@ -65,19 +65,81 @@ pub enum SuspendedMachine {
     Frozen(FrozenMachine),
 }
 
+/// The reserved serde name a suspended machine announces itself under in a
+/// compact (not human-readable) format.
+///
+/// There, the machine is the enum of its two forms, `Legacy` (index 0) and
+/// `Frozen` (index 1), wrapped in a newtype of this name: every compact
+/// format reads it back by its tag, including one that writes values by
+/// position and has no shape to read. A human-readable format keeps the two
+/// forms untagged and tells them apart by shape.
+pub const SUSPENDED_MACHINE_NAME: &str = "khora.SuspendedMachine";
+
 impl Serialize for SuspendedMachine {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Self::Legacy(bytes) => bytes.serialize(serializer),
-            Self::Frozen(machine) => machine.serialize(serializer),
+        if serializer.is_human_readable() {
+            return match self {
+                Self::Legacy(bytes) => bytes.serialize(serializer),
+                Self::Frozen(machine) => machine.serialize(serializer),
+            };
+        }
+        serializer.serialize_newtype_struct(SUSPENDED_MACHINE_NAME, &Form(self))
+    }
+}
+
+/// A suspended machine as the enum of its two forms.
+struct Form<'m>(&'m SuspendedMachine);
+
+impl Serialize for Form<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            SuspendedMachine::Legacy(bytes) => {
+                serializer.serialize_newtype_variant(SUSPENDED_MACHINE_NAME, 0, "Legacy", bytes)
+            }
+            SuspendedMachine::Frozen(machine) => {
+                serializer.serialize_newtype_variant(SUSPENDED_MACHINE_NAME, 1, "Frozen", machine)
+            }
         }
     }
 }
 
 impl<'de> Deserialize<'de> for SuspendedMachine {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_any(SuspendedMachineVisitor)
+        if deserializer.is_human_readable() {
+            return deserializer.deserialize_any(SuspendedMachineVisitor);
+        }
+        deserializer.deserialize_newtype_struct(SUSPENDED_MACHINE_NAME, Announced)
     }
+}
+
+/// The machine behind its reserved name: by shape where the format can read
+/// one, by form index where it cannot.
+struct Announced;
+
+impl<'de> serde::de::Visitor<'de> for Announced {
+    type Value = SuspendedMachine;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("a suspended machine")
+    }
+
+    fn visit_newtype_struct<D: serde::Deserializer<'de>>(
+        self,
+        deserializer: D,
+    ) -> Result<Self::Value, D::Error> {
+        deserializer.deserialize_enum(
+            SUSPENDED_MACHINE_NAME,
+            &["Legacy", "Frozen"],
+            SuspendedMachineVisitor,
+        )
+    }
+}
+
+/// A suspended machine's form, by index or by name.
+#[derive(Deserialize)]
+enum FormTag {
+    Legacy,
+    Frozen,
 }
 
 /// Tells the two forms apart by shape, then reads the one it found directly —
@@ -130,6 +192,15 @@ impl<'de> serde::de::Visitor<'de> for SuspendedMachineVisitor {
     fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
         FrozenMachine::deserialize(serde::de::value::MapAccessDeserializer::new(map))
             .map(SuspendedMachine::Frozen)
+    }
+
+    /// The form a compact format names by its tag: each read as its type.
+    fn visit_enum<A: serde::de::EnumAccess<'de>>(self, data: A) -> Result<Self::Value, A::Error> {
+        use serde::de::VariantAccess;
+        match data.variant()? {
+            (FormTag::Legacy, variant) => variant.newtype_variant().map(SuspendedMachine::Legacy),
+            (FormTag::Frozen, variant) => variant.newtype_variant().map(SuspendedMachine::Frozen),
+        }
     }
 }
 

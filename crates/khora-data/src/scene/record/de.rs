@@ -21,6 +21,8 @@ use serde::de::{self, DeserializeOwned, Visitor};
 use super::access::{Elements, Entries, Fields, OneVariant, Payload, Variant};
 use super::number::Number;
 use super::watch::{Blind, Event, Step, Watcher};
+use khora_core::script::frozen::SUSPENDED_MACHINE_NAME;
+
 use super::{EntityRef, Record, RecordError, VariantPayload, ASSET_NAME, ENTITY_NAME, MAX_DEPTH};
 
 /// Turns the references a save kept into entities of the world being loaded.
@@ -541,7 +543,7 @@ impl<'de> de::Deserializer<'de> for Reader<'_, '_, '_> {
 
     fn deserialize_enum<V: Visitor<'de>>(
         self,
-        _name: &'static str,
+        name: &'static str,
         _variants: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, RecordError> {
@@ -563,6 +565,9 @@ impl<'de> de::Deserializer<'de> for Reader<'_, '_, '_> {
             Record::Str(name) => {
                 self.visit_enum_named(name, Payload::Recorded(&VariantPayload::Unit), visitor)
             }
+            // A suspended machine saved before it was tagged: its two forms
+            // are told apart by their shape.
+            _ if name == SUSPENDED_MACHINE_NAME => self.deserialize_any(visitor),
             _ => Err(self.wrong("an enum variant")),
         }
     }

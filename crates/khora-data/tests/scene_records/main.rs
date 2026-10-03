@@ -45,6 +45,10 @@ mod references;
 mod renames;
 mod round_trip;
 mod sample;
+mod snapshot;
+mod snapshot_breaker;
+mod snapshot_breaker_2;
+mod snapshot_refusals;
 mod stack_depth;
 mod subtree;
 

@@ -164,6 +164,12 @@ fn mesh_ref_to_record(
     crate::scene::record::to_record(&SerializableMeshRef::from(&mesh_ref), references)
 }
 
+/// The schema of a mesh reference's positional form, traced once.
+fn mesh_ref_schema() -> (u64, bool) {
+    static SCHEMA: std::sync::OnceLock<(u64, bool)> = std::sync::OnceLock::new();
+    crate::scene::schema::traced_once::<SerializableMeshRef>(&SCHEMA, "MeshRef")
+}
+
 /// Reads a `MeshRef` back from a record, its procedural identity recomputed.
 fn stage_mesh_ref(
     record: &crate::scene::record::Record,
@@ -214,6 +220,25 @@ inventory::submit! {
         formerly: &[],
         column_to_record: mesh_ref_to_record,
         stage: stage_mesh_ref,
+        schema: || mesh_ref_schema().0,
+        schema_complete: || mesh_ref_schema().1,
+        column_to_snapshot: |column, row, out, references| {
+            let mesh_ref = <MeshRef as crate::ecs::Component>::clone_from_column(column, row);
+            crate::scene::positional::to_positional(
+                &SerializableMeshRef::from(&mesh_ref),
+                out,
+                references,
+            )
+        },
+        stage_snapshot: |bytes, references| {
+            let on_disk = crate::scene::positional::from_positional::<SerializableMeshRef>(
+                bytes, references,
+            )?;
+            Ok(crate::scene::Staged {
+                component: Box::new(crate::scene::StagedValue(MeshRef::from(on_disk))),
+                report: Vec::new(),
+            })
+        },
         create_default: |world, entity| {
             world
                 .add_component(entity, MeshRef::unit_cube())

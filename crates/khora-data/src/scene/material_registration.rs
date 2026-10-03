@@ -32,6 +32,14 @@ use super::record::{
 pub type MaterialToRecordFn =
     fn(&dyn Material, &mut dyn ReferenceWriter) -> Option<Result<Record, RecordError>>;
 
+/// Writes a `dyn Material` by position, its references through the writer.
+pub type MaterialToPositionalFn =
+    fn(&dyn Material, &mut Vec<u8>, &mut dyn ReferenceWriter) -> Option<Result<(), RecordError>>;
+
+/// Reads a material back from its positional bytes.
+pub type MaterialFromPositionalFn =
+    fn(&[u8], &mut dyn ReferenceReader) -> Result<Box<dyn Material>, RecordError>;
+
 /// Reads a material back from a record, and says what the read adapted.
 pub type MaterialStageFn = fn(
     &Record,
@@ -49,6 +57,15 @@ pub struct MaterialRegistration {
     pub to_record: MaterialToRecordFn,
     /// Reads a material back from a record.
     pub stage: MaterialStageFn,
+    /// Writes a `dyn Material` by position, as a snapshot holds it. `None`
+    /// if the material is not this registration's concrete type.
+    pub to_positional: MaterialToPositionalFn,
+    /// Reads a material back from its positional bytes, consumed exactly.
+    pub from_positional: MaterialFromPositionalFn,
+    /// The fingerprint of the concrete type's schema.
+    pub schema: fn() -> u64,
+    /// Whether that schema was traced in full.
+    pub schema_complete: fn() -> bool,
     /// Creates a default instance of this material type (for placeholder handles).
     pub create_default: fn() -> Box<dyn Material>,
     /// Serializes a `dyn Material` into a serde-JSON value for the editor
@@ -108,6 +125,87 @@ fn concrete_to_record<M: Material + Serialize + 'static>(
         .as_any()
         .downcast_ref::<M>()
         .map(|material| to_record(material, references))
+}
+
+/// `to_positional` for a concrete material type.
+fn concrete_to_positional<M: Material + Serialize + 'static>(
+    material: &dyn Material,
+    out: &mut Vec<u8>,
+    references: &mut dyn ReferenceWriter,
+) -> Option<Result<(), RecordError>> {
+    material
+        .as_any()
+        .downcast_ref::<M>()
+        .map(|material| super::positional::to_positional(material, out, references))
+}
+
+/// `from_positional` for a concrete material type.
+fn concrete_from_positional<M: Material + DeserializeOwned + 'static>(
+    bytes: &[u8],
+    references: &mut dyn ReferenceReader,
+) -> Result<Box<dyn Material>, RecordError> {
+    super::positional::from_positional::<M>(bytes, references)
+        .map(|material| Box::new(material) as Box<dyn Material>)
+}
+
+/// `schema` and `schema_complete` for a concrete material type.
+fn concrete_schema<M: DeserializeOwned>() -> (u64, bool) {
+    let schema = super::schema::schema_of::<M>();
+    (schema.fingerprint(), schema.is_complete())
+}
+
+/// A material written by position: its type name, then its bytes — what
+/// its own registration wrote.
+///
+/// No registration claiming the material falls back as the record does: a
+/// standard material of the same base color.
+pub fn material_to_positional(
+    material: &dyn Material,
+    references: &mut dyn ReferenceWriter,
+) -> Result<(&'static str, Vec<u8>), RecordError> {
+    let mut bytes = Vec::new();
+    for reg in inventory::iter::<MaterialRegistration> {
+        if let Some(written) = (reg.to_positional)(material, &mut bytes, references) {
+            return written.map(|()| (reg.type_name, bytes));
+        }
+    }
+    let fallback = StandardMaterial {
+        base_color: material.base_color(),
+        ..StandardMaterial::default()
+    };
+    super::positional::to_positional(&fallback, &mut bytes, references)?;
+    Ok(("StandardMaterial", bytes))
+}
+
+/// The material `type_name` names, read from its positional bytes.
+pub fn material_from_positional(
+    type_name: &str,
+    bytes: &[u8],
+    references: &mut dyn ReferenceReader,
+) -> Result<Box<dyn Material>, RecordError> {
+    let reg = inventory::iter::<MaterialRegistration>
+        .into_iter()
+        .find(|reg| reg.type_name == type_name)
+        .ok_or_else(|| RecordError(format!("no material type `{type_name}`")))?;
+    (reg.from_positional)(bytes, references)
+}
+
+/// What every registered material's schema is, sorted by name — what a
+/// snapshot holding a material by position can be read by — and whether
+/// every one was traced in full.
+pub fn materials_schema() -> (String, bool) {
+    let mut materials: Vec<(&str, u64, bool)> = inventory::iter::<MaterialRegistration>
+        .into_iter()
+        .map(|reg| (reg.type_name, (reg.schema)(), (reg.schema_complete)()))
+        .collect();
+    materials.sort_unstable();
+    let complete = materials.iter().all(|(_, _, complete)| *complete);
+    let text = materials
+        .iter()
+        .map(|(name, fingerprint, _)| format!("{name}={fingerprint:016x}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    (text, complete)
 }
 
 /// `stage` for a concrete material type.
@@ -176,6 +274,10 @@ inventory::submit! {
         type_name: "StandardMaterial",
         to_record: concrete_to_record::<StandardMaterial>,
         stage: concrete_stage::<StandardMaterial>,
+        to_positional: concrete_to_positional::<StandardMaterial>,
+        from_positional: concrete_from_positional::<StandardMaterial>,
+        schema: || concrete_schema::<StandardMaterial>().0,
+        schema_complete: || concrete_schema::<StandardMaterial>().1,
         create_default: || Box::new(StandardMaterial::default()) as Box<dyn Material>,
         serialize_json: |mat| {
             mat.as_any()
@@ -195,6 +297,10 @@ inventory::submit! {
         type_name: "UnlitMaterial",
         to_record: concrete_to_record::<UnlitMaterial>,
         stage: concrete_stage::<UnlitMaterial>,
+        to_positional: concrete_to_positional::<UnlitMaterial>,
+        from_positional: concrete_from_positional::<UnlitMaterial>,
+        schema: || concrete_schema::<UnlitMaterial>().0,
+        schema_complete: || concrete_schema::<UnlitMaterial>().1,
         create_default: || Box::new(UnlitMaterial::default()) as Box<dyn Material>,
         serialize_json: |mat| {
             mat.as_any()
@@ -214,6 +320,10 @@ inventory::submit! {
         type_name: "EmissiveMaterial",
         to_record: concrete_to_record::<EmissiveMaterial>,
         stage: concrete_stage::<EmissiveMaterial>,
+        to_positional: concrete_to_positional::<EmissiveMaterial>,
+        from_positional: concrete_from_positional::<EmissiveMaterial>,
+        schema: || concrete_schema::<EmissiveMaterial>().0,
+        schema_complete: || concrete_schema::<EmissiveMaterial>().1,
         create_default: || Box::new(EmissiveMaterial::default()) as Box<dyn Material>,
         serialize_json: |mat| {
             mat.as_any()
@@ -233,6 +343,10 @@ inventory::submit! {
         type_name: "WireframeMaterial",
         to_record: concrete_to_record::<WireframeMaterial>,
         stage: concrete_stage::<WireframeMaterial>,
+        to_positional: concrete_to_positional::<WireframeMaterial>,
+        from_positional: concrete_from_positional::<WireframeMaterial>,
+        schema: || concrete_schema::<WireframeMaterial>().0,
+        schema_complete: || concrete_schema::<WireframeMaterial>().1,
         create_default: || Box::new(WireframeMaterial::default()) as Box<dyn Material>,
         serialize_json: |mat| {
             mat.as_any()

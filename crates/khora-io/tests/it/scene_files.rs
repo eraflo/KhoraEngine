@@ -97,9 +97,9 @@ fn observed(world: &World) -> Vec<Observed> {
 }
 
 /// Every goal writes a version-2 file in the encoding it implies — text for
-/// people and for the long term, compact for the editor and for size and
-/// speed, MessagePack for other tools — and every one of them loads back into
-/// the same scene, identities included.
+/// people and for the long term, compact for the editor and for size, a
+/// snapshot for speed, MessagePack for other tools — and every one of them
+/// loads back into the same scene, identities included.
 #[test]
 fn every_goal_writes_a_version_2_file_that_loads_back() {
     let service = SerializationService::new();
@@ -111,7 +111,7 @@ fn every_goal_writes_a_version_2_file_that_loads_back() {
         (SerializationGoal::LongTermStability, "KH_TEXT_V2"),
         (SerializationGoal::EditorInterchange, "KH_COMPACT_V2"),
         (SerializationGoal::SmallestFileSize, "KH_COMPACT_V2"),
-        (SerializationGoal::FastestLoad, "KH_COMPACT_V2"),
+        (SerializationGoal::FastestLoad, "KH_SNAPSHOT_V1"),
         (SerializationGoal::PortableBinary, "KH_MSGPACK_V2"),
     ] {
         let file = service

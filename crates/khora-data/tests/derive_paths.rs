@@ -57,7 +57,7 @@ mod ecs {
 
 /// The `crate::scene` the derive expands against.
 mod scene {
-    pub use khora_data::scene::record;
+    pub use khora_data::scene::{positional, record, schema};
     pub use khora_data::scene::{
         ComponentRegistration, ComponentShape, FieldSchema, Staged, StagedValue,
     };

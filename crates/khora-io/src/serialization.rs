@@ -22,9 +22,11 @@
 use khora_core::scene::{SceneFile, SerializationGoal, SCENE_FORMAT_VERSION};
 use khora_data::ecs::World;
 use khora_data::scene::record::LoadReport;
+use khora_data::scene::snapshot::{prepare_snapshot, write_snapshot, SNAPSHOT_ENCODING_ID};
 use khora_data::scene::{
-    apply, capture_world, prepare, read_scene_file, write_scene_file, CompactEncoding, Identity,
-    LoadFailure, MsgPackEncoding, SaveError, SceneEncoding, SceneFileReadError, TextEncoding,
+    capture_world, encoding_of, prepare, read_scene_file, write_scene_file, CompactEncoding,
+    Identity, LoadFailure, MsgPackEncoding, Prepared, SaveError, SceneEncoding, SceneFileReadError,
+    TextEncoding,
 };
 
 /// Scene format version produced by today's writers.
@@ -67,16 +69,19 @@ impl SerializationService {
         Self
     }
 
-    /// The encoding a goal calls for.
-    fn encoding_for(goal: SerializationGoal) -> &'static dyn SceneEncoding {
+    /// The record encoding a goal calls for — `None` for `FastestLoad`,
+    /// which is written as a snapshot instead: positional, bound to this
+    /// build's schema, no record at all.
+    fn encoding_for(goal: SerializationGoal) -> Option<&'static dyn SceneEncoding> {
         match goal {
             SerializationGoal::HumanReadableDebug | SerializationGoal::LongTermStability => {
-                &TextEncoding
+                Some(&TextEncoding)
             }
-            SerializationGoal::SmallestFileSize
-            | SerializationGoal::EditorInterchange
-            | SerializationGoal::FastestLoad => &CompactEncoding,
-            SerializationGoal::PortableBinary => &MsgPackEncoding,
+            SerializationGoal::SmallestFileSize | SerializationGoal::EditorInterchange => {
+                Some(&CompactEncoding)
+            }
+            SerializationGoal::PortableBinary => Some(&MsgPackEncoding),
+            SerializationGoal::FastestLoad => None,
         }
     }
 
@@ -86,9 +91,38 @@ impl SerializationService {
         world: &World,
         goal: SerializationGoal,
     ) -> Result<SceneFile, SerializationServiceError> {
+        let encoding = match Self::encoding_for(goal) {
+            Some(encoding) => encoding,
+            None => match write_snapshot(world) {
+                Ok(file) => return Ok(file),
+                // A component no fingerprint can guard is never snapshotted:
+                // the world is saved as a compact record instead — slower to
+                // load, read by any build.
+                Err(SaveError::Unguarded(component)) => {
+                    log::warn!(
+                        "`{component}` cannot be snapshotted; saved as a compact record instead"
+                    );
+                    &CompactEncoding
+                }
+                Err(error) => return Err(SerializationServiceError::SaveFailed(error)),
+            },
+        };
         let record = capture_world(world).map_err(SerializationServiceError::SaveFailed)?;
-        write_scene_file(&record, Self::encoding_for(goal))
+        write_scene_file(&record, encoding)
             .map_err(|error| SerializationServiceError::SaveFailed(SaveError::Encoding(error.0)))
+    }
+
+    /// Reads and stages the scene `file` holds, whichever way it was
+    /// written — the header names it — without adding anything.
+    fn prepare_file(
+        file: &SceneFile,
+        world: &mut World,
+    ) -> Result<Prepared, SerializationServiceError> {
+        if encoding_of(file) == SNAPSHOT_ENCODING_ID {
+            return prepare_snapshot(world, file).map_err(SerializationServiceError::LoadFailed);
+        }
+        let record = read_scene_file(file).map_err(SerializationServiceError::ReadFailed)?;
+        prepare(world, &record).map_err(SerializationServiceError::LoadFailed)
     }
 
     /// Brings the scene `file` holds into `world`, beside what is already
@@ -98,10 +132,8 @@ impl SerializationService {
         file: &SceneFile,
         world: &mut World,
     ) -> Result<LoadReport, SerializationServiceError> {
-        let record = read_scene_file(file).map_err(SerializationServiceError::ReadFailed)?;
-        apply(world, &record, Identity::Keep)
-            .map(|applied| applied.report)
-            .map_err(SerializationServiceError::LoadFailed)
+        let prepared = Self::prepare_file(file, world)?;
+        Ok(prepared.commit(world, Identity::Keep).report)
     }
 
     /// Replaces everything in `world` with the scene `file` holds — or, if
@@ -115,8 +147,7 @@ impl SerializationService {
         file: &SceneFile,
         world: &mut World,
     ) -> Result<LoadReport, SerializationServiceError> {
-        let record = read_scene_file(file).map_err(SerializationServiceError::ReadFailed)?;
-        let prepared = prepare(world, &record).map_err(SerializationServiceError::LoadFailed)?;
+        let prepared = Self::prepare_file(file, world)?;
         let old: Vec<_> = world.iter_entities().collect();
         for entity in old {
             world.despawn(entity);
@@ -140,7 +171,7 @@ mod tests {
             (SerializationGoal::LongTermStability, "KH_TEXT_V2"),
             (SerializationGoal::EditorInterchange, "KH_COMPACT_V2"),
             (SerializationGoal::SmallestFileSize, "KH_COMPACT_V2"),
-            (SerializationGoal::FastestLoad, "KH_COMPACT_V2"),
+            (SerializationGoal::FastestLoad, "KH_SNAPSHOT_V1"),
             (SerializationGoal::PortableBinary, "KH_MSGPACK_V2"),
         ] {
             let file = service

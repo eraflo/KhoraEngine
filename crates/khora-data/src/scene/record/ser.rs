@@ -18,6 +18,8 @@ use khora_core::asset::AssetUUID;
 use khora_core::ecs::entity::EntityId;
 use serde::ser::{self, Serialize};
 
+use khora_core::script::frozen::SUSPENDED_MACHINE_NAME;
+
 use super::{EntityRef, Record, RecordError, VariantPayload, ASSET_NAME, ENTITY_NAME, MAX_DEPTH};
 
 /// Turns the entities a value refers to into references a save can keep.
@@ -150,6 +152,11 @@ impl<'a, 'r> ser::Serializer for &'a mut Writer<'r> {
         let inner = self.nested(value)?;
         if name == ASSET_NAME {
             return asset_from(inner);
+        }
+        // The reserved name only announces the machine's tagged form, which
+        // the record already holds as a variant: no wrapper.
+        if name == SUSPENDED_MACHINE_NAME {
+            return Ok(inner);
         }
         Ok(Record::Newtype {
             name: name.to_owned(),

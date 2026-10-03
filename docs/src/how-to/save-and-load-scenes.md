@@ -28,10 +28,16 @@ match service.save_world(world.inner_world(), SerializationGoal::HumanReadableDe
 
 You pick a **goal** (your intent), and the service picks the matching encoding:
 `HumanReadableDebug` / `LongTermStability` write JSON text (readable, diffable);
-`EditorInterchange` / `SmallestFileSize` / `FastestLoad` write Khora's compact binary;
+`EditorInterchange` / `SmallestFileSize` write Khora's compact binary;
 `PortableBinary` writes MessagePack. The `.kscene` header records which one, so
-loading is symmetric. Whichever you pick, components are saved by name and fields by
-name, so the file stays readable as your component types change.
+loading is symmetric. These save components by name and fields by name, so the file
+stays readable as your component types change.
+
+`FastestLoad` is different: it writes a **snapshot**, positional and about nine times
+faster to load, but readable only by a build whose component schemas are the same —
+change a component and the snapshot is refused. Keep a named save beside it, and use
+snapshots for what the same build writes and reads (a shipped build's data, an
+in-memory checkpoint).
 
 ## Load the world
 
@@ -102,6 +108,6 @@ truncated or outdated file is reported through the `Result` rather than panickin
 ## Related
 
 - [Serialization](../concepts/serialization.md) — records, pages, atomic loading.
-- [File formats](../reference/formats.md) — the header and the three encodings.
+- [File formats](../reference/formats.md) — the header, the three encodings and the snapshot.
 - [Spawn entities and move them](./spawn-and-transform.md) — build the scene you save.
 - [`SerializationService` reference](../reference/sdk.md) — goals and error types.

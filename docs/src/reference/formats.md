@@ -66,13 +66,15 @@ staged before the world changes, so a refused file leaves the world as it was.
 ### Encodings and goals
 
 The payload encoding is chosen by a `SerializationGoal`, **not** by file
-extension. There are **three** encodings, each identified by a versioned ID:
+extension. There are **three** record encodings and one **snapshot**, each
+identified by a versioned ID:
 
 | Encoding | `encoding_id` | Payload | Character |
 |---|---|---|---|
 | Compact | `KH_COMPACT_V2` | Binary, page-shaped, column-major; component and field names stored once in symbol and shape tables | Small and fast; the editor's working format. |
 | Text | `KH_TEXT_V2` | Pretty-printed JSON | Human-readable, diffable. |
 | MessagePack | `KH_MSGPACK_V2` | MessagePack, fields by name | Portable; readable by any MessagePack library. |
+| Snapshot | `KH_SNAPSHOT_V1` | Positional, no names; every component listed with its schema fingerprint | The fastest load, readable only by the schema that wrote it. |
 
 `SerializationGoal` (in `khora-core::scene`) has **six** variants. The goal →
 encoding mapping is made in `SerializationService::save_world`:
@@ -83,8 +85,48 @@ encoding mapping is made in `SerializationService::save_world`:
 | `LongTermStability` | Text (`KH_TEXT_V2`) |
 | `SmallestFileSize` | Compact (`KH_COMPACT_V2`) |
 | `EditorInterchange` | Compact (`KH_COMPACT_V2`) |
-| `FastestLoad` | Compact (`KH_COMPACT_V2`) |
+| `FastestLoad` | Snapshot (`KH_SNAPSHOT_V1`) |
 | `PortableBinary` | MessagePack (`KH_MSGPACK_V2`) |
+
+### Snapshot layout
+
+A snapshot holds values **by position**: no field names, no record tree, nothing to
+match on load. What makes that safe is the **component table** at its head: every
+component the snapshot holds, by name, with the **fingerprint** of its schema — a
+hash of its serde format traced in full (struct and field names, their order, their
+types, every enum variant, nested types). A snapshot is read only if every
+fingerprint equals the running build's; otherwise the whole file is refused, the
+world unchanged, naming the component. A snapshot is a cache of a stable save —
+the editor's Play/Stop state, a shipped build's data — never the only copy of a
+scene.
+
+The fingerprint is only as good as the trace behind it. A type is traced by driving
+its own `Deserialize` with placeholder values, retried until the type accepts one,
+and a type met again inside itself is read once more for its smallest value so the
+trace goes on past it. A component whose schema still cannot be traced in full (a
+field that refuses every placeholder) cannot be guarded: it is never written to a
+snapshot — `FastestLoad` saves such a world as a compact record instead, with a
+warning — and a snapshot naming it is refused.
+
+<div class="kp-figure-frame">
+
+{{#include ../images/persistence/snapshot-vs-record.svg}}
+
+</div>
+
+Payload: `version: u8`; the component table — a count, then each name (length,
+UTF-8) and its fingerprint (`u64` LE); the entities' persistent ids; the pages —
+each its components by table index, its rows, then its values column after column,
+each value its length and its positional bytes. A positional value is fields in
+order: varints for counts and integers (signed ones zig-zagged), floats at their
+width, `0`/`1` for a `bool` or an option's presence, a variant index then its
+payload, a map's entries sorted by their bytes (so the same world always writes the
+same snapshot). Entity references are still written as persistent ids and asset
+references as UUIDs, so a snapshot keeps identities exactly as a record does.
+
+On 10 000 entities (a transform and a name each), a snapshot loads in about
+9 ms where the compact record takes about 79 ms
+(`cargo bench -p khora-data --bench scene_load_bench`).
 
 ### Compact layout
 

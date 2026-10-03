@@ -239,6 +239,82 @@ fn stage_material_ref(
     })
 }
 
+/// A material reference as a snapshot holds it: an inline material by its
+/// type name and the bytes its own registration wrote, or an asset's UUID.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename = "MaterialRef")]
+enum MaterialRefSnapshot {
+    Inline {
+        type_name: String,
+        material: Vec<u8>,
+    },
+    Asset(AssetUUID),
+}
+
+/// The fingerprint of a material reference's positional form: its own shape
+/// and every registered material's, since an inline one is any of them.
+/// Complete only if its own shape and every registered material's are.
+fn material_ref_schema() -> (u64, bool) {
+    static SCHEMA: std::sync::OnceLock<(u64, bool)> = std::sync::OnceLock::new();
+    *SCHEMA.get_or_init(|| {
+        let shape = crate::scene::schema::schema_of::<MaterialRefSnapshot>();
+        let (materials, materials_complete) = crate::scene::materials_schema();
+        let complete = shape.is_complete() && materials_complete;
+        if !complete {
+            log::warn!(
+                "the schema of `MaterialRef` could not be traced in full: it is never snapshotted"
+            );
+        }
+        (
+            crate::scene::schema::fingerprint_of(&format!("{shape};{materials}")),
+            complete,
+        )
+    })
+}
+
+/// Writes the `MaterialRef` in a column row by position.
+fn material_ref_to_snapshot(
+    column: &dyn crate::ecs::AnyVec,
+    row: usize,
+    out: &mut Vec<u8>,
+    references: &mut dyn ReferenceWriter,
+) -> Result<(), RecordError> {
+    let mref = <MaterialRef as crate::ecs::Component>::clone_from_column(column, row);
+    let snapshot = match &mref {
+        MaterialRef::Inline { material, .. } => {
+            let (type_name, bytes) = crate::scene::material_to_positional(&**material, references)?;
+            MaterialRefSnapshot::Inline {
+                type_name: type_name.to_owned(),
+                material: bytes,
+            }
+        }
+        MaterialRef::Asset(uuid) => MaterialRefSnapshot::Asset(*uuid),
+    };
+    crate::scene::positional::to_positional(&snapshot, out, references)
+}
+
+/// Reads a `MaterialRef` back from its positional bytes.
+fn stage_material_ref_snapshot(
+    bytes: &[u8],
+    references: &mut dyn ReferenceReader,
+) -> Result<crate::scene::Staged, RecordError> {
+    let mref = match crate::scene::positional::from_positional::<MaterialRefSnapshot>(
+        bytes, references,
+    )? {
+        MaterialRefSnapshot::Inline {
+            type_name,
+            material,
+        } => MaterialRef::inline(crate::scene::material_from_positional(
+            &type_name, &material, references,
+        )?),
+        MaterialRefSnapshot::Asset(uuid) => MaterialRef::Asset(uuid),
+    };
+    Ok(crate::scene::Staged {
+        component: Box::new(crate::scene::StagedValue(mref)),
+        report: Vec::new(),
+    })
+}
+
 /// Editor JSON form: `Inline` reuses `material_to_json`; `Asset` emits
 /// `{ "asset": "<uuid>" }`.
 fn material_ref_to_json(
@@ -285,6 +361,10 @@ inventory::submit! {
         formerly: &[],
         column_to_record: material_ref_to_record,
         stage: stage_material_ref,
+        schema: || material_ref_schema().0,
+        schema_complete: || material_ref_schema().1,
+        column_to_snapshot: material_ref_to_snapshot,
+        stage_snapshot: stage_material_ref_snapshot,
         create_default: |world, entity| {
             world
                 .add_component(

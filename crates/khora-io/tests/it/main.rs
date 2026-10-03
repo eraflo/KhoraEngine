@@ -21,3 +21,4 @@
 mod public_paths;
 mod scene_files;
 mod shipped_scripts;
+mod snapshots;

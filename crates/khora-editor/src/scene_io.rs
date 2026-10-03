@@ -33,9 +33,10 @@ use std::path::Path;
 use khora_sdk::DEFAULT_SCENE_REL_PATH as DEFAULT_SCENE_REL;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Play-mode snapshot — full-world capture via SerializationService, in the
-// compact encoding (`EditorInterchange`). Stop restores it atomically and with
-// the same persistent identities, so references held by scripts land on the
+// Play-mode snapshot — full-world capture via SerializationService as a
+// snapshot (`FastestLoad`): the same build writes and reads it, in memory, so
+// the fastest form is the right one. Stop restores it atomically and with the
+// same persistent identities, so references held by scripts land on the
 // restored entities.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ use khora_sdk::DEFAULT_SCENE_REL_PATH as DEFAULT_SCENE_REL;
 /// preferable to a panic mid-play).
 pub fn snapshot_scene(world: &GameWorld) -> Vec<u8> {
     let svc = SerializationService::new();
-    match svc.save_world(world.inner_world(), SerializationGoal::EditorInterchange) {
+    match svc.save_world(world.inner_world(), SerializationGoal::FastestLoad) {
         Ok(scene) => scene.to_bytes(),
         Err(e) => {
             log::error!("Play-mode snapshot failed: {:?}", e);

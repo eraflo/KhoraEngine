@@ -29,3 +29,7 @@ wide = "0.7"            # explicit-SIMD probe for the layout benchmark (example 
 [[bench]]
 name = "query_bench"
 harness = false
+
+[[bench]]
+name = "scene_load_bench"
+harness = false

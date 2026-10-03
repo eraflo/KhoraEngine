@@ -46,6 +46,9 @@ pub enum SaveError {
     NoSuchEntity(EntityId),
     /// The record could not be encoded.
     Encoding(String),
+    /// A snapshot was asked of a component whose schema could not be traced
+    /// in full: no fingerprint could tell its versions apart.
+    Unguarded(String),
 }
 
 impl std::fmt::Display for SaveError {
@@ -54,6 +57,10 @@ impl std::fmt::Display for SaveError {
             Self::Component { component, error } => write!(f, "`{component}`: {error}"),
             Self::NoSuchEntity(entity) => write!(f, "no entity {entity:?}"),
             Self::Encoding(error) => write!(f, "{error}"),
+            Self::Unguarded(component) => write!(
+                f,
+                "`{component}` has a schema no fingerprint can guard: it cannot be snapshotted"
+            ),
         }
     }
 }
@@ -66,6 +73,12 @@ impl std::error::Error for SaveError {}
 /// load derives every list from the order the record names its children in,
 /// so this is what keeps siblings in the order the scene had them.
 pub fn capture_world(world: &World) -> Result<SceneRecord, SaveError> {
+    capture(world, &world_in_tree_order(world), None)
+}
+
+/// Every entity of `world`, tree by tree, each parent's children in their
+/// `Children` order — the order a save lists them in.
+pub(super) fn world_in_tree_order(world: &World) -> Vec<EntityId> {
     let roots = world
         .iter_entities()
         .filter(|entity| {
@@ -79,7 +92,7 @@ pub fn capture_world(world: &World) -> Result<SceneRecord, SaveError> {
     // An entity no root reaches sits on a loop a damaged hierarchy made; it
     // is still saved, after the trees.
     entities.extend(world.iter_entities().filter(|entity| seen.insert(*entity)));
-    capture(world, &entities, None)
+    entities
 }
 
 /// `root` and everything under it. A reference to an entity outside the
@@ -131,6 +144,49 @@ fn capture(
     entities: &[EntityId],
     root: Option<EntityId>,
 ) -> Result<SceneRecord, SaveError> {
+    let (ids, pages) = capture_pages(world, entities, root, |reg, column, row, references| {
+        (reg.column_to_record)(column, row, references)
+    })?;
+    Ok(SceneRecord {
+        entities: ids,
+        pages: pages
+            .into_iter()
+            .map(|page| PageRecord {
+                components: page
+                    .components
+                    .iter()
+                    .map(|reg| reg.type_name.to_owned())
+                    .collect(),
+                rows: page.rows,
+                columns: page.columns,
+            })
+            .collect(),
+    })
+}
+
+/// One page of a capture: its saved components, sorted by name, its rows'
+/// identities, and a value per row in each component's column.
+pub(super) struct CapturedPage<V> {
+    pub(super) components: Vec<&'static ComponentRegistration>,
+    pub(super) rows: Vec<PersistentId>,
+    pub(super) columns: Vec<Vec<V>>,
+}
+
+/// Walks `world`'s live page rows of `entities`, writing each saved
+/// component's value with `write` — a record, positional bytes — and
+/// grouping rows of the same saved signature into one page. The identities
+/// of `entities`, in order, and the pages.
+pub(super) fn capture_pages<V>(
+    world: &World,
+    entities: &[EntityId],
+    root: Option<EntityId>,
+    mut write: impl FnMut(
+        &'static ComponentRegistration,
+        &dyn crate::ecs::AnyVec,
+        usize,
+        &mut dyn ReferenceWriter,
+    ) -> Result<V, RecordError>,
+) -> Result<(Vec<PersistentId>, Vec<CapturedPage<V>>), SaveError> {
     let mut inside = InsideOnly {
         ids: HashMap::with_capacity(entities.len()),
     };
@@ -148,7 +204,7 @@ fn capture(
     let parent = TypeId::of::<crate::ecs::Parent>();
     // Pages whose saved components are the same land in one page record:
     // the record holds what a load needs to build, one page per signature.
-    let mut pages: Vec<PageRecord> = Vec::new();
+    let mut pages: Vec<CapturedPage<V>> = Vec::new();
     let mut by_signature: HashMap<Vec<&'static str>, usize> = HashMap::new();
 
     for (page_id, page) in world.storage.pages.iter().enumerate() {
@@ -176,11 +232,13 @@ fn capture(
                 continue;
             }
             let signature: Vec<&'static str> = columns.iter().map(|reg| reg.type_name).collect();
-            let index = *by_signature.entry(signature.clone()).or_insert_with(|| {
-                pages.push(PageRecord {
-                    components: signature.iter().map(|name| (*name).to_owned()).collect(),
+            let index = *by_signature.entry(signature).or_insert_with(|| {
+                pages.push(CapturedPage {
+                    components: columns.iter().map(|reg| **reg).collect(),
                     rows: Vec::new(),
-                    columns: vec![Vec::new(); signature.len()],
+                    columns: std::iter::repeat_with(Vec::new)
+                        .take(columns.len())
+                        .collect(),
                 });
                 pages.len() - 1
             });
@@ -194,22 +252,18 @@ fn capture(
                         error: RecordError("its page has no column for it".to_owned()),
                     });
                 };
-                let value =
-                    (reg.column_to_record)(column.as_ref(), row, &mut inside).map_err(|error| {
-                        SaveError::Component {
-                            component: reg.type_name.to_owned(),
-                            error,
-                        }
-                    })?;
+                let value = write(reg, column.as_ref(), row, &mut inside).map_err(|error| {
+                    SaveError::Component {
+                        component: reg.type_name.to_owned(),
+                        error,
+                    }
+                })?;
                 record.columns[slot].push(value);
             }
         }
     }
 
-    Ok(SceneRecord {
-        entities: ids,
-        pages,
-    })
+    Ok((ids, pages))
 }
 
 /// Writes an entity the record holds by its identity, any other as outside.

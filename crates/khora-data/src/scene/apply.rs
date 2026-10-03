@@ -33,10 +33,10 @@ use std::collections::{HashMap, HashSet};
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 
-use super::component_registration::{registration_named, ComponentRegistration, StagedComponent};
-use super::record::{
-    EntityRef, LoadReport, Record, RecordError, ReferenceReader, ReportEntry, ReportKind,
+use super::component_registration::{
+    registration_named, ComponentRegistration, Staged, StagedComponent,
 };
+use super::record::{EntityRef, LoadReport, RecordError, ReferenceReader, ReportEntry, ReportKind};
 use super::retired::is_retired;
 use super::scene_record::SceneRecord;
 use crate::ecs::{LoadedHierarchy, Parent, SemanticDomain, World};
@@ -120,20 +120,9 @@ type StagedRow = Vec<(TypeId, Box<dyn StagedComponent>)>;
 pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, LoadFailure> {
     let mut report = LoadReport::default();
 
-    let mut known = HashSet::new();
-    for id in &record.entities {
-        if !known.insert(*id) {
-            return Err(failure(
-                format!("entity {:#x} is recorded twice", id.to_bits()),
-                report,
-            ));
-        }
-    }
-
-    // Shapes first: nothing is reserved for a file that names a type nobody
+    // Names first: nothing is reserved for a file that names a type nobody
     // has, or whose pages do not fit together.
     let mut plans = Vec::with_capacity(record.pages.len());
-    let mut domains_of: HashMap<PersistentId, Vec<SemanticDomain>> = HashMap::new();
     for page in &record.pages {
         if page.columns.len() != page.components.len() {
             return Err(failure(
@@ -145,9 +134,8 @@ pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, Load
                 report,
             ));
         }
-        let mut columns: Vec<(&'static ComponentRegistration, &Vec<Record>)> =
-            Vec::with_capacity(page.components.len());
-        for (name, column) in page.components.iter().zip(&page.columns) {
+        let mut columns = Vec::with_capacity(page.components.len());
+        for (index, (name, column)) in page.components.iter().zip(&page.columns).enumerate() {
             if column.len() != page.rows.len() {
                 return Err(failure(
                     format!(
@@ -175,24 +163,6 @@ pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, Load
                     }
                 }
                 Some(reg) => {
-                    if world.component_domain(reg.type_id).is_none() {
-                        return Err(failure(
-                            format!(
-                                "component `{}` is not registered in this world",
-                                reg.type_name
-                            ),
-                            report,
-                        ));
-                    }
-                    if columns
-                        .iter()
-                        .any(|(known, _)| known.type_id == reg.type_id)
-                    {
-                        return Err(failure(
-                            format!("component `{}` appears twice in one page", reg.type_name),
-                            report,
-                        ));
-                    }
                     if reg.type_name != name {
                         for id in &page.rows {
                             report.entries.push(ReportEntry {
@@ -203,7 +173,7 @@ pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, Load
                             });
                         }
                     }
-                    columns.push((reg, column));
+                    columns.push((index, reg));
                 }
                 None if is_retired(name) => {
                     for id in &page.rows {
@@ -227,20 +197,87 @@ pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, Load
                 }
             }
         }
+        plans.push(PagePlan {
+            rows: &page.rows,
+            columns,
+        });
+    }
 
-        let page_domains: Vec<SemanticDomain> = {
-            let mut domains = Vec::new();
-            for (reg, _) in &columns {
-                if let Some(domain) = world.component_domain(reg.type_id) {
-                    if !domains.contains(&domain) {
-                        domains.push(domain);
-                    }
-                }
+    prepare_pages(
+        world,
+        &record.entities,
+        plans,
+        report,
+        |reg, page, column, row, references| {
+            (reg.stage)(&record.pages[page].columns[column][row], references)
+        },
+    )
+}
+
+/// One page of a load, its names resolved: its rows' identities and, for
+/// each column it keeps, the column's position in the file and its
+/// registration.
+pub(super) struct PagePlan<'r> {
+    pub(super) rows: &'r [PersistentId],
+    pub(super) columns: Vec<(usize, &'static ComponentRegistration)>,
+}
+
+/// What every load does once its names are resolved, whatever the file
+/// held its values as: checks that the pages fit together, reserves an id
+/// per entity, stages every value through `stage` — given the registration,
+/// the page, the column's position in the file and the row — and reads the
+/// hierarchy. On any failure, nothing stays reserved.
+pub(super) fn prepare_pages(
+    world: &mut World,
+    entities: &[PersistentId],
+    plans: Vec<PagePlan<'_>>,
+    mut report: LoadReport,
+    mut stage: impl FnMut(
+        &'static ComponentRegistration,
+        usize,
+        usize,
+        usize,
+        &mut dyn ReferenceReader,
+    ) -> Result<Staged, RecordError>,
+) -> Result<Prepared, LoadFailure> {
+    let mut known = HashSet::new();
+    for id in entities {
+        if !known.insert(*id) {
+            return Err(failure(
+                format!("entity {:#x} is recorded twice", id.to_bits()),
+                report,
+            ));
+        }
+    }
+
+    let mut domains_of: HashMap<PersistentId, Vec<SemanticDomain>> = HashMap::new();
+    for plan in &plans {
+        let mut page_domains: Vec<SemanticDomain> = Vec::new();
+        for (index, (_, reg)) in plan.columns.iter().enumerate() {
+            let Some(domain) = world.component_domain(reg.type_id) else {
+                return Err(failure(
+                    format!(
+                        "component `{}` is not registered in this world",
+                        reg.type_name
+                    ),
+                    report,
+                ));
+            };
+            if plan.columns[..index]
+                .iter()
+                .any(|(_, known)| known.type_id == reg.type_id)
+            {
+                return Err(failure(
+                    format!("component `{}` appears twice in one page", reg.type_name),
+                    report,
+                ));
             }
-            domains
-        };
+            if !page_domains.contains(&domain) {
+                page_domains.push(domain);
+            }
+        }
         let mut in_page = HashSet::new();
-        for id in &page.rows {
+        for id in plan.rows {
             if !known.contains(id) {
                 return Err(failure(
                     format!(
@@ -268,11 +305,9 @@ pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, Load
             }
             taken.extend(page_domains.iter().copied());
         }
-        plans.push((page, columns));
     }
 
-    let reserved: HashMap<PersistentId, EntityId> = record
-        .entities
+    let reserved: HashMap<PersistentId, EntityId> = entities
         .iter()
         .map(|id| (*id, world.reserve_entity()))
         .collect();
@@ -280,29 +315,32 @@ pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, Load
         world,
         reserved: &reserved,
         current: None,
+        bound: None,
         entries: Vec::new(),
     };
 
+    let parent_type = TypeId::of::<Parent>();
     let mut pages = Vec::with_capacity(plans.len());
     let mut parents: HashMap<EntityId, EntityId> = HashMap::new();
     let mut error = None;
-    'read: for (page, columns) in plans {
-        let mut signature: Vec<TypeId> = columns.iter().map(|(reg, _)| reg.type_id).collect();
+    'read: for (page, plan) in plans.iter().enumerate() {
+        let mut signature: Vec<TypeId> = plan.columns.iter().map(|(_, reg)| reg.type_id).collect();
         signature.sort();
-        let mut rows = Vec::with_capacity(page.rows.len());
-        for (row, id) in page.rows.iter().enumerate() {
-            let mut values = Vec::with_capacity(columns.len());
-            for (reg, column) in &columns {
-                if reg.type_id == TypeId::of::<Parent>() {
-                    if let Some(EntityRef::Id(parent)) = first_entity(&column[row]) {
-                        if let Some(parent) = reserved.get(&parent) {
-                            parents.insert(reserved[id], *parent);
-                        }
-                    }
-                }
+        let mut rows = Vec::with_capacity(plan.rows.len());
+        for (row, id) in plan.rows.iter().enumerate() {
+            let mut values = Vec::with_capacity(plan.columns.len());
+            for &(column, reg) in &plan.columns {
                 references.current = Some((*id, reg.type_name));
-                match (reg.stage)(&column[row], &mut references) {
+                references.bound = None;
+                match stage(reg, page, column, row, &mut references) {
                     Ok(read) => {
+                        // A `Parent` names the entity it was read as: the
+                        // one the resolver bound, if the load brings it.
+                        if reg.type_id == parent_type {
+                            if let Some(parent) = references.bound {
+                                parents.insert(reserved[id], parent);
+                            }
+                        }
                         values.push((reg.type_id, read.component));
                         report
                             .entries
@@ -330,19 +368,17 @@ pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, Load
 
     let hierarchy = match error {
         Some(_) => None,
-        None => {
-            match LoadedHierarchy::new(parents, record.entities.iter().map(|id| reserved[id])) {
-                Ok(hierarchy) => Some(hierarchy),
-                Err(entity) => {
-                    let id = reserved
-                        .iter()
-                        .find(|(_, reserved)| **reserved == entity)
-                        .map_or(0, |(id, _)| id.to_bits());
-                    error = Some(format!("entity {id:#x} is its own ancestor"));
-                    None
-                }
+        None => match LoadedHierarchy::new(parents, entities.iter().map(|id| reserved[id])) {
+            Ok(hierarchy) => Some(hierarchy),
+            Err(entity) => {
+                let id = reserved
+                    .iter()
+                    .find(|(_, reserved)| **reserved == entity)
+                    .map_or(0, |(id, _)| id.to_bits());
+                error = Some(format!("entity {id:#x} is its own ancestor"));
+                None
             }
-        }
+        },
     };
     let (None, Some(hierarchy)) = (&error, hierarchy) else {
         let message = error.unwrap_or_default();
@@ -352,30 +388,11 @@ pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, Load
         return Err(failure(message, report));
     };
     Ok(Prepared {
-        entities: record
-            .entities
-            .iter()
-            .map(|id| (*id, reserved[id]))
-            .collect(),
+        entities: entities.iter().map(|id| (*id, reserved[id])).collect(),
         pages,
         hierarchy,
         report,
     })
-}
-
-/// The first entity reference inside a recorded value — the one a `Parent`
-/// holds, whichever form the save wrote it in.
-fn first_entity(record: &Record) -> Option<EntityRef> {
-    match record {
-        Record::Entity(reference) => Some(*reference),
-        Record::Some(inner) | Record::Newtype { value: inner, .. } => first_entity(inner),
-        Record::Seq(items) | Record::TupleStruct { fields: items, .. } => {
-            items.iter().find_map(first_entity)
-        }
-        Record::Struct { fields, .. } => fields.iter().find_map(|(_, value)| first_entity(value)),
-        Record::Map(entries) => entries.iter().find_map(|(_, value)| first_entity(value)),
-        _ => None,
-    }
 }
 
 impl Prepared {
@@ -450,7 +467,7 @@ impl Prepared {
     }
 }
 
-fn failure(message: String, report: LoadReport) -> LoadFailure {
+pub(super) fn failure(message: String, report: LoadReport) -> LoadFailure {
     LoadFailure { message, report }
 }
 
@@ -460,6 +477,9 @@ struct Resolver<'w, 'r> {
     reserved: &'r HashMap<PersistentId, EntityId>,
     /// The entity and component being read, for report entries.
     current: Option<(PersistentId, &'static str)>,
+    /// The entity the last reference read was bound to, if the load brings
+    /// it — what a `Parent` names.
+    bound: Option<EntityId>,
     entries: Vec<ReportEntry>,
 }
 
@@ -467,6 +487,7 @@ impl ReferenceReader for Resolver<'_, '_> {
     fn read_entity(&mut self, reference: EntityRef) -> Result<EntityId, RecordError> {
         if let EntityRef::Id(id) = reference {
             if let Some(entity) = self.reserved.get(&id) {
+                self.bound = Some(*entity);
                 return Ok(*entity);
             }
         }

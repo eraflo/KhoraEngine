@@ -1,0 +1,66 @@
+<svg class="kp-figure" viewBox="0 0 760 318" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-sr-title kp-sr-desc">
+  <title id="kp-sr-title">One Transform, as a record and as a snapshot</title>
+  <desc id="kp-sr-desc">A record holds a Transform under its field names; a load matches each name against today's code and adapts what differs. A snapshot holds the same values by position, with no names; it lists the component's schema fingerprint once, and a load that finds the same fingerprint reads the values straight in order.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-cell { fill: var(--k-bg-3, #1f2636); }
+    .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
+    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; }
+    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 18px; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
+    .kp-mono-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
+    .kp-mono-sm { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 9.5px; }
+    .kp-verb { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="318" rx="8"/>
+  <!-- left: the record -->
+  <rect class="kp-panel" x="16" y="16" width="356" height="286" rx="6"/>
+  <text class="kp-station" x="32" y="44">Record</text>
+  <text class="kp-label" x="32" y="62">compact, text, MessagePack · by name</text>
+  <text class="kp-head" x="32" y="94">Transform</text>
+  <rect class="kp-cell-soft" x="32" y="104" width="324" height="26" rx="2"/>
+  <text class="kp-mono-dim" x="42" y="121">translation</text>
+  <text class="kp-mono" x="142" y="121">x: 2.0  y: 0.0  z: 1.0</text>
+  <rect class="kp-cell-soft" x="32" y="134" width="324" height="26" rx="2"/>
+  <text class="kp-mono-dim" x="42" y="151">rotation</text>
+  <text class="kp-mono" x="142" y="151">x: 0  y: 0  z: 0  w: 1</text>
+  <rect class="kp-cell-soft" x="32" y="164" width="324" height="26" rx="2"/>
+  <text class="kp-mono-dim" x="42" y="181">scale</text>
+  <text class="kp-mono" x="142" y="181">x: 1.0  y: 1.0  z: 1.0</text>
+  <text class="kp-verb" x="32" y="218">load: match every name</text>
+  <text class="kp-label" x="32" y="238">A field the save lacks takes its default, one the</text>
+  <text class="kp-label" x="32" y="254">code lost is dropped, a renamed one is found by</text>
+  <text class="kp-label" x="32" y="270">its old name. Readable by any later build.</text>
+  <!-- right: the snapshot -->
+  <rect class="kp-panel" x="388" y="16" width="356" height="286" rx="6"/>
+  <text class="kp-station" x="404" y="44">Snapshot</text>
+  <text class="kp-label" x="404" y="62">FastestLoad · by position</text>
+  <text class="kp-head" x="404" y="94">component table</text>
+  <rect class="kp-cell" x="404" y="104" width="94" height="26" rx="2"/>
+  <rect class="kp-cell" x="502" y="104" width="226" height="26" rx="2"/>
+  <text class="kp-mono" x="414" y="121">Transform</text>
+  <text class="kp-mono" x="512" y="121">fingerprint 9c4e 07d2 51b8 1a07</text>
+  <rect class="kp-sel" x="499" y="101" width="232" height="32" rx="3"/>
+  <text class="kp-head" x="404" y="156">one value, its fields in order</text>
+  <rect class="kp-cell-soft" x="404" y="164" width="22" height="26" rx="2"/>
+  <rect class="kp-cell-soft" x="428" y="164" width="84" height="26" rx="2"/>
+  <rect class="kp-cell-soft" x="514" y="164" width="112" height="26" rx="2"/>
+  <rect class="kp-cell-soft" x="628" y="164" width="100" height="26" rx="2"/>
+  <text class="kp-mono-sm" x="408" y="180">40</text>
+  <text class="kp-mono-sm" x="434" y="180">2.0 0.0 1.0</text>
+  <text class="kp-mono-sm" x="520" y="180">0.0 0.0 0.0 1.0</text>
+  <text class="kp-mono-sm" x="634" y="180">1.0 1.0 1.0</text>
+  <text class="kp-mono-dim" x="404" y="204">len</text>
+  <text class="kp-mono-dim" x="428" y="204">3 × f32</text>
+  <text class="kp-mono-dim" x="514" y="204">4 × f32</text>
+  <text class="kp-mono-dim" x="628" y="204">3 × f32</text>
+  <text class="kp-verb" x="404" y="232">load: compare one fingerprint</text>
+  <text class="kp-label" x="404" y="252">The same: read the bytes straight in order.</text>
+  <text class="kp-label" x="404" y="268">Different: refuse the whole file, world</text>
+  <text class="kp-label" x="404" y="284">unchanged — load its stable save instead.</text>
+</svg>

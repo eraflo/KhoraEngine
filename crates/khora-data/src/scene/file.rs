@@ -65,30 +65,40 @@ pub fn write_scene_file(
     record: &SceneRecord,
     encoding: &dyn SceneEncoding,
 ) -> Result<SceneFile, EncodingError> {
-    let payload = encoding.encode(record)?;
-    let id = encoding.id().as_bytes();
-    let mut encoding_id = [0u8; 32];
-    if id.len() > encoding_id.len() {
+    scene_file(encoding.id(), encoding.encode(record)?)
+}
+
+/// `payload`, behind a scene header naming `encoding_id`.
+pub(super) fn scene_file(encoding_id: &str, payload: Vec<u8>) -> Result<SceneFile, EncodingError> {
+    let id = encoding_id.as_bytes();
+    let mut header_id = [0u8; 32];
+    if id.len() > header_id.len() {
         return Err(EncodingError(format!(
-            "the encoding id `{}` is longer than the {} bytes a header holds",
-            encoding.id(),
-            encoding_id.len()
+            "the encoding id `{encoding_id}` is longer than the {} bytes a header holds",
+            header_id.len()
         )));
     }
-    encoding_id[..id.len()].copy_from_slice(id);
+    header_id[..id.len()].copy_from_slice(id);
     Ok(SceneFile {
         header: SceneHeader {
             magic_bytes: HEADER_MAGIC_BYTES,
             format_version: SCENE_FORMAT_VERSION,
-            encoding_id,
+            encoding_id: header_id,
             payload_length: payload.len() as u64,
         },
         payload,
     })
 }
 
-/// The record a scene file holds.
-pub fn read_scene_file(file: &SceneFile) -> Result<SceneRecord, SceneFileReadError> {
+/// The encoding a scene file's header names.
+pub fn encoding_of(file: &SceneFile) -> String {
+    String::from_utf8_lossy(&file.header.encoding_id)
+        .trim_end_matches('\0')
+        .to_owned()
+}
+
+/// Refuses a file written in another scene format than this engine's.
+pub(super) fn check_format(file: &SceneFile) -> Result<(), SceneFileReadError> {
     let version = file.header.format_version;
     if version < SCENE_FORMAT_VERSION {
         return Err(SceneFileReadError::OldFormat {
@@ -99,9 +109,13 @@ pub fn read_scene_file(file: &SceneFile) -> Result<SceneRecord, SceneFileReadErr
     if version > SCENE_FORMAT_VERSION {
         return Err(SceneFileReadError::NewerFormat(version));
     }
-    let id = String::from_utf8_lossy(&file.header.encoding_id)
-        .trim_end_matches('\0')
-        .to_owned();
+    Ok(())
+}
+
+/// The record a scene file holds.
+pub fn read_scene_file(file: &SceneFile) -> Result<SceneRecord, SceneFileReadError> {
+    check_format(file)?;
+    let id = encoding_of(file);
     let encoding = encoding_named(&id).ok_or(SceneFileReadError::UnknownEncoding(id))?;
     encoding
         .decode(&file.payload)

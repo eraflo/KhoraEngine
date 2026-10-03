@@ -282,3 +282,6 @@ fn apply_open(
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

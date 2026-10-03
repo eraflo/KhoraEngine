@@ -516,9 +516,16 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         }
     };
 
+    let schema_cell = format_ident!("__KHORA_SCHEMA_OF_{}", name);
     let expanded = quote! {
         #component_impl
         #domain_registration
+
+        // The mirror's schema, traced once: it cannot change while the
+        // program runs.
+        #[doc(hidden)]
+        #[allow(non_upper_case_globals)]
+        static #schema_cell: ::std::sync::OnceLock<(u64, bool)> = ::std::sync::OnceLock::new();
         #soa_layout_impl
         #serializable_struct
         #from_original_to_serializable
@@ -548,6 +555,39 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     Ok(crate::scene::Staged {
                         component: Box::new(crate::scene::StagedValue(<#name>::from(s))),
                         report,
+                    })
+                },
+                schema: || {
+                    crate::scene::schema::traced_once::<#serializable_name>(
+                        &#schema_cell,
+                        stringify!(#name),
+                    )
+                    .0
+                },
+                schema_complete: || {
+                    crate::scene::schema::traced_once::<#serializable_name>(
+                        &#schema_cell,
+                        stringify!(#name),
+                    )
+                    .1
+                },
+                column_to_snapshot: |column, row, out, references| {
+                    let value = <#name as crate::ecs::component::Component>::clone_from_column(
+                        column, row,
+                    );
+                    crate::scene::positional::to_positional(
+                        &<#serializable_name>::from(value),
+                        out,
+                        references,
+                    )
+                },
+                stage_snapshot: |bytes, references| {
+                    let s = crate::scene::positional::from_positional::<#serializable_name>(
+                        bytes, references,
+                    )?;
+                    Ok(crate::scene::Staged {
+                        component: Box::new(crate::scene::StagedValue(<#name>::from(s))),
+                        report: Vec::new(),
                     })
                 },
                 create_default: |world, entity| {

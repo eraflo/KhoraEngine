@@ -223,6 +223,10 @@ fn material_registration_fields(x: &khora_data::scene::MaterialRegistration) {
         &x.type_name,
         &x.to_record,
         &x.stage,
+        &x.to_positional,
+        &x.from_positional,
+        &x.schema,
+        &x.schema_complete,
         &x.create_default,
         &x.serialize_json,
         &x.deserialize_json,
@@ -548,6 +552,10 @@ fn component_registration_fields(
         &x.formerly,
         &x.column_to_record,
         &x.stage,
+        &x.schema,
+        &x.schema_complete,
+        &x.column_to_snapshot,
+        &x.stage_snapshot,
         &x.create_default,
         &x.to_json,
         &x.from_json,
@@ -1895,6 +1903,7 @@ fn save_error_variants(x: &khora_data::scene::SaveError) {
         }
         khora_data::scene::SaveError::Encoding(..) => {}
         khora_data::scene::SaveError::NoSuchEntity(..) => {}
+        khora_data::scene::SaveError::Unguarded(..) => {}
     }
 }
 

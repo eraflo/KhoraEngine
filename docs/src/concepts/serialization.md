@@ -24,7 +24,8 @@ independent of how it is then written to bytes.
 - **Capture** reads the live pages and keeps only what a save holds: the
   components an author or a tool wrote, each entity under its persistent id.
 - **Encode / decode** turn the record into bytes and back. Three encodings exist;
-  all of them carry exactly the same record.
+  all of them carry exactly the same record. A fourth form, the **snapshot**, skips
+  the record for speed — see below.
 - **Prepare / commit** bring a record into a world: everything is checked first,
   then the pages are built — or nothing changes at all.
 
@@ -163,13 +164,22 @@ to an **encoding**:
 | Goal | Encoding |
 |---|---|
 | `HumanReadableDebug`, `LongTermStability` | Text — pretty-printed JSON |
-| `EditorInterchange`, `SmallestFileSize`, `FastestLoad` | Compact — Khora's binary, page-shaped and column-major |
+| `EditorInterchange`, `SmallestFileSize` | Compact — Khora's binary, page-shaped and column-major |
 | `PortableBinary` | MessagePack, fields by name |
+| `FastestLoad` | Snapshot — positional, bound to the build's schema |
 
-Every encoding carries the same record, so stability does not depend on the goal:
-the rules above hold for a compact save exactly as for a text one. The compact
-encoding stores each component and field name once, in tables, and refers to them
-by index — the names are there, they are just not repeated per row.
+The three record encodings carry the same record, so stability does not depend on
+which one wrote a file: the rules above hold for a compact save exactly as for a text
+one. The compact encoding stores each component and field name once, in tables, and
+refers to them by index — the names are there, they are just not repeated per row.
+
+The **snapshot** is the exception, on purpose. It writes values by position — no
+names, nothing to match — and pays for that speed with a contract: every component
+is listed with the fingerprint of its schema, and a snapshot whose fingerprints are
+not the running build's is refused whole. That is how engines ship cooked data
+(Unity's type-tree hashes, Unreal's unversioned properties): a fast, nameless body
+beside a stable, named source. The editor's Play/Stop state is a snapshot; a scene a
+project keeps is a record.
 
 ## One service, one file format
 
@@ -196,8 +206,9 @@ with `#[component(formerly = "old_name")]`.
 ## Play-mode snapshots
 
 Pressing Play snapshots the world; pressing Stop restores it. The snapshot is a
-`save_world` into memory under `EditorInterchange` and the restore a
-`replace_world`, so a snapshot follows the same rules as a file on disk.
+`save_world` into memory under `FastestLoad` — the same build writes and reads it,
+so the positional form is safe — and the restore a `replace_world`: atomic, with
+every identity kept, so references a script holds land on the restored entities.
 
 One honest caveat: **physics state is not preserved** across a snapshot. On restore,
 the physics engine rebuilds from component data, so velocities and contacts reset to

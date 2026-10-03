@@ -27,10 +27,13 @@ pub mod apply;
 pub mod capture;
 pub mod encoding;
 pub mod file;
+pub mod positional;
 pub mod prefab;
 pub mod record;
 pub mod retired;
 pub mod scene_record;
+pub mod schema;
+pub mod snapshot;
 
 pub use component_registration::*;
 pub use material_registration::*;
@@ -41,7 +44,9 @@ pub use capture::{capture_subtree, capture_world, SaveError};
 pub use encoding::{
     encoding_named, CompactEncoding, EncodingError, MsgPackEncoding, SceneEncoding, TextEncoding,
 };
-pub use file::{read_scene_file, write_scene_file, SceneFileReadError, UPGRADE_SCENES_COMMAND};
+pub use file::{
+    encoding_of, read_scene_file, write_scene_file, SceneFileReadError, UPGRADE_SCENES_COMMAND,
+};
 pub use prefab::{instantiate_subtree, serialize_subtree};
 pub use retired::{is_retired, RetiredComponent};
 pub use scene_record::{PageRecord, SceneRecord};

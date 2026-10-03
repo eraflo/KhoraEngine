@@ -24,6 +24,12 @@ use crate::ecs::{ComponentProvenance, World};
 use khora_core::ecs::entity::EntityId;
 use std::any::TypeId;
 
+/// Writes row `row` of a page column positionally into the buffer, entity
+/// references through the writer — see
+/// [`ComponentRegistration::column_to_snapshot`].
+pub type ColumnToSnapshotFn =
+    fn(&dyn AnyVec, usize, &mut Vec<u8>, &mut dyn ReferenceWriter) -> Result<(), RecordError>;
+
 /// Registration entry for a serializable component type.
 ///
 /// Each component that derives `Component` submits an entry via
@@ -74,6 +80,24 @@ pub struct ComponentRegistration {
     /// `references`, without touching any world: what the load would add,
     /// and what reading it adapted.
     pub stage: fn(&Record, &mut dyn ReferenceReader) -> Result<Staged, RecordError>,
+
+    /// The fingerprint of the schema this component is written in by a
+    /// snapshot — the canonical trace of its mirror's serde format, hashed.
+    /// A snapshot is read only by the schema that wrote it.
+    pub schema: fn() -> u64,
+
+    /// Whether the schema was traced in full. A component whose schema was
+    /// not cannot be told apart from a later version of itself, so it is
+    /// never written to, nor read from, a snapshot.
+    pub schema_complete: fn() -> bool,
+
+    /// Writes row `row` of a page column of this component positionally —
+    /// no names, its references through `references` — appending to `out`.
+    pub column_to_snapshot: ColumnToSnapshotFn,
+
+    /// Reads the component back from the bytes a snapshot holds for it, which
+    /// must be consumed exactly, its references through `references`.
+    pub stage_snapshot: fn(&[u8], &mut dyn ReferenceReader) -> Result<Staged, RecordError>,
 
     /// Creates a default instance of this component and adds it to the entity.
     /// Used by the editor's "Add Component" UI.
