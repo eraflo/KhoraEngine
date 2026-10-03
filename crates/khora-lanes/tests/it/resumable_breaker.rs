@@ -17,14 +17,14 @@
 //! saved timer body that names a schedule the behavior does not have.
 
 use khora_core::ecs::entity::EntityId;
-use khora_core::script::{
-    EventQueue, FrozenValue, PendingBody, ScriptSnapshot, ScriptValue, SuspendedMachine,
-};
+use khora_core::script::{EventQueue, FrozenValue, PendingBody, ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{run_behaviors, ScriptRunReport, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::vm::{Program, Value};
 use khora_script::{check, compile, ergon_fn, lex, parse, Host};
+
+use super::saves::through_positional;
 
 /// A native costing far more than the small slices below, so a body can be cut
 /// at a known point: everything before it runs, it and everything after do not.
@@ -91,18 +91,14 @@ fn int_at(runtime: &ScriptRuntime, behavior: &str, slot: usize) -> Option<i64> {
 }
 
 /// What the lane wrote for the instance this frame, carried through the
-/// encoding a scene's component data uses.
+/// positional encoding a snapshot save holds it in.
 fn saved(report: &ScriptRunReport) -> ScriptSnapshot {
     let snapshot = report
         .state
         .first()
         .map(|update| update.snapshot.clone())
         .expect("the instance did work, so the lane wrote its state");
-    let bytes =
-        bincode::encode_to_vec(&snapshot, bincode::config::standard()).expect("a snapshot encodes");
-    let (decoded, _): (ScriptSnapshot, _) =
-        bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("and decodes");
-    decoded
+    through_positional(&snapshot)
 }
 
 fn run(
@@ -294,10 +290,13 @@ fn ticker_cut_in_its_timer() -> ScriptSnapshot {
     );
     let cut = run(&mut runtime, &mut host, &view_of("Ticker", 0.5, None), 10);
     let snapshot = saved(&cut);
-    let body = match &snapshot.pending.as_ref().expect("a pending body").machine {
-        SuspendedMachine::Frozen(machine) => machine.body.clone(),
-        SuspendedMachine::Legacy(_) => panic!("a new save wrote the legacy form"),
-    };
+    let body = snapshot
+        .pending
+        .as_ref()
+        .expect("a pending body")
+        .machine
+        .body
+        .clone();
     assert!(
         matches!(body, PendingBody::Timer { index: 0, .. }),
         "{body:?}"
@@ -308,9 +307,7 @@ fn ticker_cut_in_its_timer() -> ScriptSnapshot {
 /// Rewrites the timer body a snapshot owes.
 fn with_timer_body(mut snapshot: ScriptSnapshot, index: u32, rearm: FrozenValue) -> ScriptSnapshot {
     if let Some(pending) = snapshot.pending.as_mut() {
-        if let SuspendedMachine::Frozen(machine) = &mut pending.machine {
-            machine.body = PendingBody::Timer { index, rearm };
-        }
+        pending.machine.body = PendingBody::Timer { index, rearm };
     }
     snapshot
 }

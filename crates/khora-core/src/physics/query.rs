@@ -14,14 +14,13 @@
 
 //! Scene queries and the character controller: raycasts and movement options.
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::handle::ColliderHandle;
 use crate::math::Vec3;
 
 /// Options for resolving kinematic character movement.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct CharacterControllerOptions {
     /// Max height of obstacles the character can step over.
     pub autostep_height: f32,
@@ -38,7 +37,7 @@ pub struct CharacterControllerOptions {
 }
 
 /// Information about a raycast hit.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct RaycastHit {
     /// The collider that was hit.
     pub collider: ColliderHandle,

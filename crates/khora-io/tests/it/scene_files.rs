@@ -22,11 +22,8 @@ use khora_core::math::Vec3;
 use khora_core::scene::{SceneFile, SceneHeader, SerializationGoal, HEADER_MAGIC_BYTES};
 use khora_data::ecs::{Name, Parent, Transform, World};
 use khora_data::scene::record::Record;
-use khora_data::scene::{capture_world, SceneEncoding, TextEncoding};
-use khora_io::serialization::SerializationService;
-
-/// The command an owner runs to bring old scene files up to date.
-const UPGRADE_COMMAND: &str = "cargo xtask assets upgrade-scenes";
+use khora_data::scene::{capture_world, SceneEncoding, SceneFileReadError, TextEncoding};
+use khora_io::serialization::{SerializationService, SerializationServiceError};
 
 /// A scene file of `version`, written in `encoding`.
 fn scene_file(version: u8, encoding: &str, payload: Vec<u8>) -> SceneFile {
@@ -186,29 +183,70 @@ fn replace_world_is_atomic() {
     }
 }
 
-/// A file from before scene records is not guessed at: loading it fails, and
-/// the failure names the command that upgrades it.
-#[test]
-fn a_v1_file_is_refused_with_the_upgrade_hint() {
-    let service = SerializationService::new();
-    let old = scene_file(1, "KH_RECIPE_V1", vec![0; 16]);
+/// The refusal a file of an older scene format meets, whichever way the
+/// service was asked to read it.
+fn old_format_refusal(error: SerializationServiceError) -> SceneFileReadError {
+    match error {
+        SerializationServiceError::ReadFailed(refusal) => refusal,
+        other => panic!("an old file must be refused as unreadable, got {other:?}"),
+    }
+}
 
-    let error = service
-        .load_world(&old, &mut World::new())
-        .expect_err("a version-1 file is refused");
-    assert!(
-        format!("{error:?}").contains(UPGRADE_COMMAND),
-        "the refusal names `{UPGRADE_COMMAND}`: {error:?}"
+/// A file from before scene records is not guessed at: loading it fails as
+/// an old format, with a message that says so and names no command — nothing
+/// reads that format any more — and the world it was loaded into is
+/// unchanged.
+#[test]
+fn a_v1_file_is_refused_as_older_than_the_engine_reads() {
+    let service = SerializationService::new();
+    // The version alone refuses it: the encoding the header names, and the
+    // payload behind it, are never looked at.
+    let old = scene_file(1, "KH_TEXT_V2", vec![0; 16]);
+
+    let refusal = old_format_refusal(
+        service
+            .load_world(&old, &mut World::new())
+            .expect_err("a version-1 file is refused"),
     );
+    assert_eq!(refusal, SceneFileReadError::OldFormat(1));
+    let message = refusal.to_string();
+    assert_eq!(
+        message, "scene format v1 is older than any this engine reads",
+        "the refusal says why"
+    );
+    for command in ["cargo", "xtask", "`"] {
+        assert!(
+            !message.contains(command),
+            "the refusal names no command (`{command}`): {message}"
+        );
+    }
 
     let mut world = authored_world("Open");
     let before = observed(&world);
-    let error = service
-        .replace_world(&old, &mut world)
-        .expect_err("a version-1 file is refused");
-    assert!(
-        format!("{error:?}").contains(UPGRADE_COMMAND),
-        "the refusal names `{UPGRADE_COMMAND}`: {error:?}"
+    let refusal = old_format_refusal(
+        service
+            .replace_world(&old, &mut world)
+            .expect_err("a version-1 file is refused"),
     );
+    assert_eq!(refusal, SceneFileReadError::OldFormat(1));
     assert_eq!(observed(&world), before, "a refused file changes nothing");
+}
+
+/// Every version below the engine's is refused the same way, carrying the
+/// version the file was written in.
+#[test]
+fn a_v0_file_is_refused_as_an_old_format_too() {
+    let service = SerializationService::new();
+    let old = scene_file(0, "KH_COMPACT_V2", vec![0xFF; 8]);
+
+    let refusal = old_format_refusal(
+        service
+            .load_world(&old, &mut World::new())
+            .expect_err("a version-0 file is refused"),
+    );
+    assert_eq!(refusal, SceneFileReadError::OldFormat(0));
+    assert_eq!(
+        refusal.to_string(),
+        "scene format v0 is older than any this engine reads"
+    );
 }

@@ -17,7 +17,7 @@
 use khora_core::asset::{AssetUUID, StandardMaterial};
 use khora_core::script::{
     FrozenFrame, FrozenMachine, FrozenValue, PendingBody, PendingSequence, ScriptSnapshot,
-    ScriptValue, SuspendedMachine,
+    ScriptValue,
 };
 use serde::{Deserialize, Serialize};
 
@@ -195,7 +195,7 @@ fn an_entity_reference_goes_through_the_hooks() {
             pending: Some(PendingSequence {
                 fingerprint: 9,
                 remaining: 0.5,
-                machine: SuspendedMachine::Frozen(FrozenMachine {
+                machine: FrozenMachine {
                     body: PendingBody::Sequence,
                     registers: vec![FrozenValue::Int(1), FrozenValue::Entity(c)],
                     frames: vec![FrozenFrame {
@@ -205,7 +205,7 @@ fn an_entity_reference_goes_through_the_hooks() {
                         result: 0,
                     }],
                     program_counter: 4,
-                }),
+                },
             }),
             ..ScriptSnapshot::default()
         },
@@ -223,13 +223,10 @@ fn an_entity_reference_goes_through_the_hooks() {
         ]))
     );
     let pending = back.runtime.pending.expect("the pending sequence survives");
-    match pending.machine {
-        SuspendedMachine::Frozen(machine) => assert_eq!(
-            machine.registers,
-            vec![FrozenValue::Int(1), FrozenValue::Entity(moved(c))]
-        ),
-        other => panic!("the frozen machine came back as {other:?}"),
-    }
+    assert_eq!(
+        pending.machine.registers,
+        vec![FrozenValue::Int(1), FrozenValue::Entity(moved(c))]
+    );
 }
 
 /// A writer may say an entity is outside what the save records. The record

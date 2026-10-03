@@ -39,6 +39,16 @@ use crate::scene::record::{EntityRef, Record, VariantPayload, MAX_DEPTH};
 /// byte.
 pub(super) const NAME_BYTES_PER_FILE_BYTE: usize = 64;
 
+/// How many parts of a value the reader makes room for before reading them.
+///
+/// A count in the file is a claim, not a promise: each one is checked
+/// against the bytes left, but a value opened inside another is checked
+/// against the same bytes again, so room made for every claim at every
+/// level would multiply a small file into a huge reservation — enough, at
+/// the depth limit, to abort the process instead of failing the load. Past
+/// this many, a value grows as its parts actually arrive.
+const ROOM_UP_FRONT: usize = 16;
+
 /// Reads values against a file's symbol and shape tables.
 pub(super) struct Reader<'t> {
     pub(super) symbols: &'t [String],
@@ -182,14 +192,14 @@ impl<'t> Reader<'t> {
             tag::SEQ => {
                 let left = input.count(1)?;
                 return Ok(Started::Opened(Open::Seq {
-                    items: Vec::with_capacity(left),
+                    items: room(left),
                     left,
                 }));
             }
             tag::MAP => {
                 let left = input.count(2)?;
                 return Ok(Started::Opened(Open::Map {
-                    entries: Vec::with_capacity(left),
+                    entries: room(left),
                     key: None,
                     left,
                 }));
@@ -215,7 +225,7 @@ impl<'t> Reader<'t> {
                 let left = input.count(1)?;
                 return Ok(Started::Opened(Open::TupleStruct {
                     name,
-                    items: Vec::with_capacity(left),
+                    items: room(left),
                     left,
                 }));
             }
@@ -254,7 +264,7 @@ impl<'t> Reader<'t> {
                 Started::Opened(Open::VariantTuple {
                     enum_name,
                     variant,
-                    items: Vec::with_capacity(left),
+                    items: room(left),
                     left,
                 })
             }
@@ -280,7 +290,12 @@ fn fields_for(names: &[usize], input: &Input<'_>) -> Result<Vec<(String, Record)
     if names.len() > input.left() {
         return Err(error("the file ends early".to_owned()));
     }
-    Ok(Vec::with_capacity(names.len()))
+    Ok(room(names.len()))
+}
+
+/// Room for the `claimed` parts of a value, up to [`ROOM_UP_FRONT`].
+fn room<T>(claimed: usize) -> Vec<T> {
+    Vec::with_capacity(claimed.min(ROOM_UP_FRONT))
 }
 
 /// Where a value stands once given a part, or once opened.

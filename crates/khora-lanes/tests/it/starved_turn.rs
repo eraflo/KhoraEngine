@@ -24,6 +24,8 @@ use khora_script::arena::Persisted;
 use khora_script::vm::{Program, Value};
 use khora_script::{check, compile, ergon_fn, lex, parse, Host};
 
+use super::saves::through_record;
+
 /// A native costing far more than the small slices below, so a body can be cut
 /// at a known point: everything before it runs, it and everything after do not.
 #[ergon_fn(name = "StarvedTurnWall", cost = 50)]
@@ -652,20 +654,16 @@ fn an_await_reached_from_a_timer_body_is_not_dropped() {
 // ─── E9: every body resumes where it stopped ───────────────────────────────
 
 /// What the scene records of the instance this frame, through the lane's own
-/// write-back — and then through the encoding a scene's component data uses, so
-/// a field the snapshot gains has to travel on the real path, not only in
-/// memory.
+/// write-back — and then through the record a scene holds its component data
+/// in, so a field the snapshot gains has to travel on the real path, not only
+/// in memory.
 fn saved_through_the_scene(report: &khora_lanes::script_lane::ScriptRunReport) -> ScriptSnapshot {
     let snapshot = report
         .state
         .first()
         .map(|update| update.snapshot.clone())
         .expect("the instance did work, so the lane wrote its state");
-    let bytes =
-        bincode::encode_to_vec(&snapshot, bincode::config::standard()).expect("a snapshot encodes");
-    let (decoded, _): (ScriptSnapshot, _) =
-        bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("and decodes");
-    decoded
+    through_record(&snapshot)
 }
 
 /// **A cut `Update` resumes; it is not rerun from the top.** Today `call_hook`
@@ -830,81 +828,19 @@ fn a_cut_timer_body_survives_a_save() {
     );
 }
 
-/// The guard every "old save" below was taken from, mid-`await`, one second
-/// left.
-const OLD_SAVE_SOURCE: &str = "behavior Guard {
-                                int fired = 0;
-                                async void Attack() {
-                                    await 1.0s;
-                                    fired += 1;
-                                }
-                                on Spotted(int by) { Attack(); }
-                            }";
-
-/// A `ScriptSnapshot` of [`OLD_SAVE_SOURCE`] mid-`await`, bincode-encoded by the
-/// tree **before** E9 — the encoding a scene's component data uses. Frozen as
-/// bytes so it keeps meaning "a save with no `body`" once the field exists.
-/// Its fingerprint comes from `DefaultHasher`, stable for a given toolchain.
-const OLD_SAVE_BINCODE: &[u8] = &[
-    1, 5, 102, 105, 114, 101, 100, 2, 0, 0, 0, 0, 1, 253, 114, 29, 203, 159, 196, 118, 138, 202, 0,
-    0, 128, 63, 17, 4, 1, 2, 0, 0, 0, 2, 2, 0, 0, 0, 1, 1, 1, 2, 2, 0,
-];
-
-/// The same snapshot as JSON, from the same tree.
+/// A `ScriptSnapshot` mid-`await` as a Definition save held it before the
+/// machine had a structure: the machine a list of bytes only the VM could read.
 const OLD_SAVE_JSON: &str = r#"{"fields":[["fired",{"Int":0}]],"state":null,"state_fields":[],"timers":[],"pending":{"fingerprint":14594608129314069874,"remaining":1.0,"machine":[4,1,2,0,0,0,2,2,0,0,0,1,1,1,2,2,0]}}"#;
 
-/// Loads `saved` into a fresh runtime and lets its one second elapse.
-fn fired_after_loading(saved: ScriptSnapshot) -> Option<i64> {
-    let mut runtime = runtime_of(OLD_SAVE_SOURCE);
-    let mut host = Host::new();
-    run_behaviors(
-        &view_of("Guard", 0.0, Some(saved)),
-        &EventQueue::new(),
-        &mut runtime,
-        &mut host,
-        u64::MAX,
-    );
-    for _ in 0..3 {
-        run_behaviors(
-            &view_of("Guard", 0.5, None),
-            &EventQueue::new(),
-            &mut runtime,
-            &mut host,
-            u64::MAX,
-        );
-    }
-    int_at(&runtime, "Guard", 0)
-}
-
-/// **A binary save from before `body` existed still loads, as a sequence.**
-/// Pins the compatibility E9 promises. `#[serde(default)]` alone does not give
-/// it here: bincode is positional, so this is the encoding that notices a
-/// field appended to `PendingSequence`.
+/// **A save whose machine is a list of bytes is refused, not guessed at.**
+/// Nothing reads that form any more: the snapshot does not parse, so no
+/// runtime is ever handed a machine it would have to make sense of.
 #[test]
-fn an_old_binary_save_without_a_body_still_resumes_its_sequence() {
-    let (saved, _): (ScriptSnapshot, _) =
-        bincode::decode_from_slice(OLD_SAVE_BINCODE, bincode::config::standard())
-            .expect("a save from before E9 still decodes");
-    assert!(saved.pending.is_some());
-
-    assert_eq!(
-        fired_after_loading(saved),
-        Some(1),
-        "the attack the save caught mid-wind-up lands"
-    );
-}
-
-/// **The same, from JSON** — the path `#[serde(default)]` covers.
-#[test]
-fn an_old_json_save_without_a_body_still_resumes_its_sequence() {
-    let saved: ScriptSnapshot =
-        serde_json::from_str(OLD_SAVE_JSON).expect("a save from before E9 still parses");
-    assert!(saved.pending.is_some());
-
-    assert_eq!(
-        fired_after_loading(saved),
-        Some(1),
-        "the attack the save caught mid-wind-up lands"
+fn an_old_save_with_a_byte_list_machine_is_refused() {
+    let parsed: Result<ScriptSnapshot, _> = serde_json::from_str(OLD_SAVE_JSON);
+    assert!(
+        parsed.is_err(),
+        "a byte-list machine was read as {parsed:?}"
     );
 }
 

@@ -27,7 +27,6 @@
 //! [`WorldCommand`]: super::WorldCommand
 //! [`EntityId`]: crate::ecs::entity::EntityId
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use crate::ecs::entity::EntityId;
@@ -40,11 +39,7 @@ use crate::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 /// a script writing to a component are the same value crossing the same
 /// boundary, and giving them two representations would mean two things to keep
 /// in step.
-///
-/// Both encodings, because the scene format uses each: `serde` for the JSON the
-/// editor's inspector reads and writes, `bincode` for the packed recipe a build
-/// ships.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ScriptValue {
     /// No value.
     Unit,

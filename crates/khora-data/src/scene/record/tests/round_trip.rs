@@ -24,7 +24,7 @@ use khora_core::physics::{BodyType, ColliderShape};
 use khora_core::renderer::light::{DirectionalLight, LightType, PointLight, SpotLight};
 use khora_core::script::{
     FrozenFrame, FrozenMachine, FrozenValue, PendingBody, PendingSequence, ScriptSnapshot,
-    ScriptValue, SuspendedMachine, TimerRemaining,
+    ScriptValue, TimerRemaining,
 };
 use khora_core::ui::types::{UiFlexDirection, UiRect, UiVal};
 
@@ -151,7 +151,7 @@ fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
         pending: Some(PendingSequence {
             fingerprint: 0xfeed_beef_dead_c0de,
             remaining: 1.5,
-            machine: SuspendedMachine::Frozen(frozen_machine(target)),
+            machine: frozen_machine(target),
         }),
     }
 }
@@ -308,15 +308,19 @@ fn every_persisted_type_round_trips() {
         assert_round_trips(&body);
     }
     assert_round_trips(&frozen_machine(target));
-    assert_round_trips(&SuspendedMachine::Frozen(frozen_machine(target)));
-    assert_round_trips(&SuspendedMachine::Legacy(vec![0, 7, 255]));
     assert_round_trips(&ScriptSnapshot::default());
     assert_round_trips(&busy_snapshot(target));
+    // A machine stopped before it held anything: no register, no frame.
     assert_round_trips(&ScriptSnapshot {
         pending: Some(PendingSequence {
             fingerprint: 1,
             remaining: 0.0,
-            machine: SuspendedMachine::Legacy(vec![1, 2, 3]),
+            machine: FrozenMachine {
+                body: PendingBody::Spawn,
+                registers: Vec::new(),
+                frames: Vec::new(),
+                program_counter: 0,
+            },
         }),
         ..ScriptSnapshot::default()
     });

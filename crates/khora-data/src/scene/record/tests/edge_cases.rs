@@ -17,7 +17,7 @@
 
 use std::collections::BTreeMap;
 
-use khora_core::script::{FrozenMachine, FrozenValue, PendingBody, SuspendedMachine};
+use khora_core::script::{FrozenMachine, FrozenValue, PendingBody};
 use serde::{Deserialize, Serialize};
 
 use super::*;
@@ -271,18 +271,16 @@ fn a_dropped_field_inside_a_map_keyed_by_number_is_reported() {
     );
 }
 
-/// A frozen machine sits inside an untagged enum, so it is read through
-/// serde's buffering rather than field by field. Its numbers obey the same
-/// rule there: a double that an `f32` register cannot hold exactly is
-/// refused, not rounded.
+/// A frozen machine's registers obey the record's number rule: a double that
+/// an `f32` register cannot hold exactly is refused, not rounded.
 #[test]
-fn narrowing_inside_an_untagged_enum_is_refused_too() {
-    let machine = SuspendedMachine::Frozen(FrozenMachine {
+fn narrowing_into_a_frozen_register_is_refused() {
+    let machine = FrozenMachine {
         body: PendingBody::Sequence,
         registers: vec![FrozenValue::Float(0.5)],
         frames: vec![],
         program_counter: 0,
-    });
+    };
     let mut record = to_record(&machine, &mut NoWriter).expect("writes");
     // Replace the register's f32 with a double it cannot hold exactly.
     fn replace_f32(record: &mut Record) -> bool {
@@ -309,7 +307,7 @@ fn narrowing_inside_an_untagged_enum_is_refused_too() {
 
     // The same number is refused where the reader sees the f32 target itself.
     assert!(read::<f32>(&Record::F64(0.1)).is_err());
-    let back = read::<SuspendedMachine>(&record);
+    let back = read::<FrozenMachine>(&record);
     assert!(
         back.is_err(),
         "a double 0.1 was narrowed into an f32 register: {back:?}"

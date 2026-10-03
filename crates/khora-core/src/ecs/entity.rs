@@ -14,7 +14,6 @@
 
 //! Defines core types related to entities in the ECS architecture.
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 /// A unique identifier for an entity in the world.
@@ -28,7 +27,7 @@ use serde::{Deserialize, Serialize};
 /// Its serde name is reserved: a save recognises it wherever it sits and writes
 /// the entity's persistent identity instead of these two numbers, which only
 /// mean something in the world that produced them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename = "khora.EntityId")]
 pub struct EntityId {
     /// The index of the entity's metadata in the central `Vec<EntityMetadata>`.

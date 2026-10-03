@@ -416,14 +416,18 @@ fn one_component_through_two_table_entries_is_refused() {
     assert_eq!(dst.iter_entities().count(), before);
 }
 
-// --- Suspended machines ----------------------------------------------------
+// --- Frozen machines -------------------------------------------------------
 
-fn machines() -> Vec<khora_core::script::SuspendedMachine> {
-    use khora_core::script::{FrozenMachine, FrozenValue, PendingBody, SuspendedMachine};
+fn machines() -> Vec<khora_core::script::FrozenMachine> {
+    use khora_core::script::{FrozenFrame, FrozenMachine, FrozenValue, PendingBody};
     vec![
-        SuspendedMachine::Legacy(vec![]),
-        SuspendedMachine::Legacy(vec![0, 7, 255]),
-        SuspendedMachine::Frozen(FrozenMachine {
+        FrozenMachine {
+            body: PendingBody::Spawn,
+            registers: vec![],
+            frames: vec![],
+            program_counter: 0,
+        },
+        FrozenMachine {
             body: PendingBody::Sequence,
             registers: vec![
                 FrozenValue::Int(-3),
@@ -432,15 +436,38 @@ fn machines() -> Vec<khora_core::script::SuspendedMachine> {
             ],
             frames: vec![],
             program_counter: 9,
-        }),
+        },
+        FrozenMachine {
+            body: PendingBody::Timer {
+                index: 2,
+                rearm: FrozenValue::Float(0.25),
+            },
+            registers: vec![FrozenValue::Unit, FrozenValue::Expired, FrozenValue::Null],
+            frames: vec![
+                FrozenFrame {
+                    function: "Guard::OnSpotted".into(),
+                    base: 0,
+                    return_pc: 0,
+                    result: 0,
+                },
+                FrozenFrame {
+                    function: "Guard::Attack".into(),
+                    base: 1,
+                    return_pc: 3,
+                    result: 2,
+                },
+            ],
+            program_counter: u64::MAX,
+        },
     ]
 }
 
-/// Every form, through a record and every self-describing carrier of one,
-/// through serde_json and rmp directly, and by position.
+/// A frozen machine, held directly — no wrapper, no form to tell apart —
+/// through a record and every self-describing carrier of one, through
+/// serde_json and rmp directly, and by position.
 #[test]
-fn a_suspended_machine_round_trips_everywhere() {
-    use khora_core::script::SuspendedMachine;
+fn a_frozen_machine_round_trips_everywhere() {
+    use khora_core::script::FrozenMachine;
     use khora_data::scene::record::{from_record, to_record, Record};
     struct Nothing;
     impl ReferenceWriter for Nothing {
@@ -451,37 +478,37 @@ fn a_suspended_machine_round_trips_everywhere() {
     for machine in machines() {
         let record = to_record(&machine, &mut Nothing).expect("record");
         assert_eq!(
-            from_record::<SuspendedMachine>(&record, &mut NoRefs).as_ref(),
+            from_record::<FrozenMachine>(&record, &mut NoRefs).as_ref(),
             Ok(&machine)
         );
         let json: Record = serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
         assert_eq!(
-            from_record::<SuspendedMachine>(&json, &mut NoRefs).as_ref(),
+            from_record::<FrozenMachine>(&json, &mut NoRefs).as_ref(),
             Ok(&machine),
             "json record"
         );
         let mp: Record = rmp_serde::from_slice(&rmp_serde::to_vec(&record).unwrap()).unwrap();
         assert_eq!(
-            from_record::<SuspendedMachine>(&mp, &mut NoRefs).as_ref(),
+            from_record::<FrozenMachine>(&mp, &mut NoRefs).as_ref(),
             Ok(&machine),
             "msgpack record"
         );
-        let direct_json: SuspendedMachine =
+        let direct_json: FrozenMachine =
             serde_json::from_str(&serde_json::to_string(&machine).unwrap()).unwrap();
         assert_eq!(direct_json, machine, "direct json");
-        let direct_mp: Result<SuspendedMachine, _> =
+        let direct_mp: Result<FrozenMachine, _> =
             rmp_serde::from_slice(&rmp_serde::to_vec(&machine).unwrap());
         assert_eq!(direct_mp.ok().as_ref(), Some(&machine), "direct msgpack");
         assert_eq!(round_trip(&machine).as_ref(), Ok(&machine), "positional");
     }
 }
 
-/// The untagged form records held before the tag: a frozen machine as its
-/// struct, a legacy one as its bytes — read back through every carrier.
+/// A pending sequence holds its machine as a plain field: the sequence round
+/// trips through a record and by position with the machine it holds intact.
 #[test]
-fn an_untagged_machine_record_still_loads() {
-    use khora_core::script::SuspendedMachine;
-    use khora_data::scene::record::{from_record, to_record, Record};
+fn a_pending_sequence_round_trips_with_its_frozen_machine() {
+    use khora_core::script::PendingSequence;
+    use khora_data::scene::record::{from_record, to_record};
     struct Nothing;
     impl ReferenceWriter for Nothing {
         fn write_entity(&mut self, _e: EntityId) -> EntityRef {
@@ -489,28 +516,18 @@ fn an_untagged_machine_record_still_loads() {
         }
     }
     for machine in machines() {
-        let old = match &machine {
-            SuspendedMachine::Legacy(bytes) => to_record(bytes, &mut Nothing),
-            SuspendedMachine::Frozen(frozen) => to_record(frozen, &mut Nothing),
-        }
-        .expect("record");
+        let sequence = PendingSequence {
+            fingerprint: 0xDEAD_BEEF_0123_4567,
+            remaining: 0.75,
+            machine,
+        };
+        let record = to_record(&sequence, &mut Nothing).expect("record");
         assert_eq!(
-            from_record::<SuspendedMachine>(&old, &mut NoRefs).as_ref(),
-            Ok(&machine),
-            "{old:?}"
+            from_record::<PendingSequence>(&record, &mut NoRefs).as_ref(),
+            Ok(&sequence),
+            "record"
         );
-        let json: Record = serde_json::from_str(&serde_json::to_string(&old).unwrap()).unwrap();
-        assert_eq!(
-            from_record::<SuspendedMachine>(&json, &mut NoRefs).as_ref(),
-            Ok(&machine),
-            "json {json:?}"
-        );
-        let mp: Record = rmp_serde::from_slice(&rmp_serde::to_vec(&old).unwrap()).unwrap();
-        assert_eq!(
-            from_record::<SuspendedMachine>(&mp, &mut NoRefs).as_ref(),
-            Ok(&machine),
-            "msgpack {mp:?}"
-        );
+        assert_eq!(round_trip(&sequence).as_ref(), Ok(&sequence), "positional");
     }
 }
 
@@ -574,4 +591,270 @@ fn a_field_with_a_former_name_keeps_its_struct_in_the_fingerprint() {
         assert!(stamina.contains(name), "`{name}` is not in `{stamina}`");
     }
     assert_eq!(stamina.matches("f32").count(), 2, "`{stamina}`");
+}
+
+// --- A pending sequence holding every register kind, through a whole scene --
+
+/// A behavior stopped in a schedule's body, its machine holding one register
+/// of every kind — non-finite floats, empty and non-ASCII literals, an entity
+/// — under a deep call stack.
+fn every_register_snapshot(target: EntityId) -> khora_core::script::ScriptSnapshot {
+    use khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
+    use khora_core::script::{
+        FrozenFrame, FrozenMachine, FrozenValue, PendingBody, PendingSequence, ScriptSnapshot,
+    };
+    let frames = (0..300u64)
+        .map(|depth| FrozenFrame {
+            function: format!("Guard::étape_{depth}_守"),
+            base: depth,
+            return_pc: depth * 3,
+            result: depth,
+        })
+        .collect();
+    ScriptSnapshot {
+        pending: Some(PendingSequence {
+            fingerprint: u64::MAX,
+            remaining: f32::INFINITY,
+            machine: FrozenMachine {
+                body: PendingBody::Timer {
+                    index: u32::MAX,
+                    rearm: FrozenValue::Float(f32::NAN),
+                },
+                registers: vec![
+                    FrozenValue::Unit,
+                    FrozenValue::Int(i64::MIN),
+                    FrozenValue::Int(i64::MAX),
+                    FrozenValue::Float(f32::INFINITY),
+                    FrozenValue::Float(f32::NEG_INFINITY),
+                    FrozenValue::Float(f32::NAN),
+                    FrozenValue::Float(-0.0),
+                    FrozenValue::Bool(true),
+                    FrozenValue::Entity(target),
+                    FrozenValue::Literal(String::new()),
+                    FrozenValue::Literal("héllo 世界 🎮\n\"\\".into()),
+                    FrozenValue::Expired,
+                    FrozenValue::Vec2(Vec2::new(f32::NAN, 1.0)),
+                    FrozenValue::Vec3(Vec3::new(1.0, f32::INFINITY, -3.0)),
+                    FrozenValue::Vec4(Vec4::new(1.0, 2.0, 3.0, f32::NEG_INFINITY)),
+                    FrozenValue::Quat(Quaternion::new(0.0, 0.0, 0.0, 1.0)),
+                    FrozenValue::Color(LinearRgba::new(0.1, 0.2, 0.3, f32::NAN)),
+                    FrozenValue::Null,
+                ],
+                frames,
+                program_counter: u64::MAX,
+            },
+        }),
+        ..ScriptSnapshot::default()
+    }
+}
+
+/// `script` with each entity of `map` replaced, as text: the comparison a
+/// NaN register still passes, `NaN` printing as itself.
+fn remapped_debug(script: &khora_data::ecs::Script, map: &HashMap<EntityId, EntityId>) -> String {
+    let mut text = format!("{script:?}");
+    for (from, to) in map {
+        text = text.replace(&format!("{from:?}"), &format!("{to:?}"));
+    }
+    text
+}
+
+/// A save taken while a schedule's body is suspended keeps every register,
+/// every frame and what finishing it owes — through every scene encoding and
+/// through a snapshot.
+#[test]
+fn a_pending_sequence_with_every_register_kind_survives_every_scene_encoding() {
+    use khora_data::ecs::{Script, Transform};
+    let mut src = World::new();
+    let target = src.spawn(Transform::identity());
+    let holder = src.spawn(Transform::identity());
+    let script = Script {
+        module: "ai/guard.erg".into(),
+        behavior: "Guard".into(),
+        fields: vec![],
+        runtime: every_register_snapshot(target),
+    };
+    src.add_component(holder, script.clone())
+        .expect("a script attaches");
+
+    let mut failures = Vec::new();
+    for (name, encoding) in every_encoding() {
+        let record = match capture_world(&src) {
+            Ok(record) => record,
+            Err(e) => {
+                failures.push(format!("{name}: capture failed: {e}"));
+                continue;
+            }
+        };
+        let bytes = match encoding.encode(&record) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                failures.push(format!("{name}: encode failed: {e}"));
+                continue;
+            }
+        };
+        let back = match encoding.decode(&bytes) {
+            Ok(back) => back,
+            Err(e) => {
+                failures.push(format!("{name}: decode of its own output failed: {e}"));
+                continue;
+            }
+        };
+        let mut dst = World::new();
+        if let Err(e) = apply(&mut dst, &back, Identity::Keep) {
+            failures.push(format!("{name}: the load failed: {e}"));
+            continue;
+        }
+        let map = entity_map(&src, &dst);
+        let loaded = dst.get::<Script>(map[&holder]).map(|s| format!("{s:?}"));
+        let expected = remapped_debug(&script, &map);
+        if loaded.as_deref() != Some(expected.as_str()) {
+            failures.push(format!("{name}: loaded {loaded:?}"));
+        }
+    }
+
+    match khora_data::scene::snapshot::write_snapshot(&src) {
+        Ok(file) => {
+            let file = khora_core::scene::SceneFile::from_bytes(&file.to_bytes())
+                .expect("a snapshot file parses");
+            let mut dst = World::new();
+            match khora_data::scene::snapshot::prepare_snapshot(&mut dst, &file) {
+                Ok(prepared) => {
+                    prepared.commit(&mut dst, Identity::Keep);
+                    let map = entity_map(&src, &dst);
+                    let loaded = dst.get::<Script>(map[&holder]).map(|s| format!("{s:?}"));
+                    let expected = remapped_debug(&script, &map);
+                    if loaded.as_deref() != Some(expected.as_str()) {
+                        failures.push(format!("snapshot: loaded {loaded:?}"));
+                    }
+                }
+                Err(e) => failures.push(format!("snapshot: the load failed: {e}")),
+            }
+        }
+        Err(e) => failures.push(format!("snapshot: the save failed: {e}")),
+    }
+
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// The snapshot schema guards a frozen machine whole: every register kind,
+/// every body, every frame field — so a change to any of them changes the
+/// fingerprint and refuses a stale snapshot instead of misreading it.
+#[test]
+fn the_snapshot_schema_traces_a_frozen_machine_whole() {
+    let schema = schema_of::<khora_core::script::ScriptSnapshot>().to_string();
+    assert!(!schema.contains("!incomplete"), "`{schema}`");
+    for name in [
+        "FrozenMachine",
+        "program_counter",
+        "registers",
+        "frames",
+        "return_pc",
+        "result",
+        "base",
+        "function",
+        "Timer",
+        "rearm",
+        "index",
+        "Spawn",
+        "Update",
+        "Sequence",
+        "Expired",
+        "Literal",
+        "Entity",
+        "Quat",
+        "Color",
+        "Vec4",
+        "Null",
+    ] {
+        assert!(schema.contains(name), "`{name}` is not in `{schema}`");
+    }
+}
+
+/// The field `name` of the struct `record`, to change it.
+fn field_mut<'a>(record: &'a mut Record, name: &str) -> &'a mut Record {
+    match record {
+        Record::Struct { fields, .. } => fields
+            .iter_mut()
+            .find(|(field, _)| field == name)
+            .map(|(_, value)| value)
+            .unwrap_or_else(|| panic!("no field `{name}`")),
+        other => panic!("`{name}` looked up in {other:?}"),
+    }
+}
+
+/// A scene whose record holds a suspended machine in the retired tagged form
+/// — the variant `Frozen` of `khora.SuspendedMachine`, written for one day on
+/// the dev branch and never by a shipped engine — is not read: the load is
+/// refused as a whole, the error names the `Script` component, and the world
+/// it was loaded into is left exactly as it was.
+#[test]
+fn a_scene_holding_the_retired_tagged_machine_form_is_refused_whole() {
+    use khora_data::ecs::{Name, Script, Transform};
+    use khora_data::scene::record::VariantPayload;
+    let mut src = World::new();
+    let target = src.spawn(Transform::identity());
+    let holder = src.spawn(Transform::identity());
+    let script = Script {
+        module: "ai/guard.erg".into(),
+        behavior: "Guard".into(),
+        fields: vec![],
+        runtime: super::sample::suspended_snapshot(target),
+    };
+    src.add_component(holder, script)
+        .expect("a script attaches");
+    let holder_id = src.persistent_id(holder).expect("an id");
+
+    let mut record = capture_world(&src).expect("capture");
+    let value = value_mut(&mut record, holder_id, "Script");
+    let pending = field_mut(field_mut(value, "runtime"), "pending");
+    let Record::Some(sequence) = pending else {
+        panic!("the pending sequence is recorded as present: {pending:?}");
+    };
+    let machine = field_mut(sequence, "machine");
+    let frozen = std::mem::replace(machine, Record::Unit);
+    *machine = Record::Variant {
+        enum_name: "khora.SuspendedMachine".into(),
+        variant: "Frozen".into(),
+        payload: VariantPayload::Newtype(Box::new(frozen)),
+    };
+
+    for (name, encoding) in every_encoding() {
+        let back = through(&record, name, encoding);
+        let mut dst = World::new();
+        let resident = dst.spawn((Transform::identity(), Name::new("Resident")));
+        let resident_id = dst.mark_authored(resident).expect("authored");
+        let entities_before = dst.iter_entities().count();
+        let components_before = components_of(&dst, resident);
+
+        let error = match apply(&mut dst, &back, Identity::Keep) {
+            Ok(applied) => panic!(
+                "{name}: the retired tagged machine form loaded ({} entities)",
+                applied.entities.len()
+            ),
+            Err(error) => error.to_string(),
+        };
+        assert!(
+            error.contains("Script"),
+            "{name}: the refusal names the component: {error}"
+        );
+        assert_eq!(
+            dst.iter_entities().count(),
+            entities_before,
+            "{name}: a refused load added or removed entities"
+        );
+        assert_eq!(
+            dst.persistent_id(resident),
+            Some(resident_id),
+            "{name}: the resident kept its identity"
+        );
+        assert_eq!(
+            components_of(&dst, resident),
+            components_before,
+            "{name}: a refused load changed the resident"
+        );
+        assert!(
+            dst.entity_with_id(holder_id).is_none(),
+            "{name}: the refused holder is in the world"
+        );
+    }
 }

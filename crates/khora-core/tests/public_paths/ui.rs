@@ -19,7 +19,7 @@
 //! path: each `pub mod`, the `pub use` re-exports, their types, free functions,
 //! constants, statics, type aliases, public fields, enum variants (matched
 //! exhaustively), inherent `pub` methods (turbofished where generic), trait
-//! items, and the std / serde / bincode / bytemuck / operator trait impls. A
+//! items, and the std / serde / bytemuck / operator trait impls. A
 //! reorganisation that moves code between files must keep every one of these
 //! paths valid, so this file stops compiling the moment one disappears.
 //!
@@ -38,15 +38,12 @@ use std::marker::PhantomData;
 /// Compiles only when both arguments name the same type.
 fn same_type<T: ?Sized>(_: PhantomData<T>, _: PhantomData<T>) {}
 
-fn is_borrow_decode<T: bincode::BorrowDecode<'static, ()>>() {}
 fn is_clone<T: Clone>() {}
 fn is_copy<T: Copy>() {}
 fn is_debug<T: std::fmt::Debug>() {}
-fn is_decode<T: bincode::Decode<()>>() {}
 fn is_default<T: Default>() {}
 fn is_deserialize_owned<T: serde::de::DeserializeOwned>() {}
 fn is_display<T: std::fmt::Display>() {}
-fn is_encode<T: bincode::Encode>() {}
 fn is_eq<T: Eq>() {}
 fn is_error<T: std::error::Error>() {}
 fn is_hash<T: std::hash::Hash>() {}
@@ -1227,9 +1224,6 @@ fn module_ui_paths_still_resolve() {
     is_default::<khora_core::ui::types::UiBorder>();
     is_serialize::<khora_core::ui::types::UiBorder>();
     is_deserialize_owned::<khora_core::ui::types::UiBorder>();
-    is_encode::<khora_core::ui::types::UiBorder>();
-    is_decode::<khora_core::ui::types::UiBorder>();
-    is_borrow_decode::<khora_core::ui::types::UiBorder>();
     let _ = type_name::<khora_core::ui::types::UiColor>();
     let _ = ui_color_fields as fn(&khora_core::ui::types::UiColor);
     is_debug::<khora_core::ui::types::UiColor>();
@@ -1238,9 +1232,6 @@ fn module_ui_paths_still_resolve() {
     is_partial_eq::<khora_core::ui::types::UiColor>();
     is_serialize::<khora_core::ui::types::UiColor>();
     is_deserialize_owned::<khora_core::ui::types::UiColor>();
-    is_encode::<khora_core::ui::types::UiColor>();
-    is_decode::<khora_core::ui::types::UiColor>();
-    is_borrow_decode::<khora_core::ui::types::UiColor>();
     is_default::<khora_core::ui::types::UiColor>();
     let _ = type_name::<khora_core::ui::types::UiFlexDirection>();
     let _ = ui_flex_direction_variants as fn(&khora_core::ui::types::UiFlexDirection);
@@ -1252,9 +1243,6 @@ fn module_ui_paths_still_resolve() {
     is_default::<khora_core::ui::types::UiFlexDirection>();
     is_serialize::<khora_core::ui::types::UiFlexDirection>();
     is_deserialize_owned::<khora_core::ui::types::UiFlexDirection>();
-    is_encode::<khora_core::ui::types::UiFlexDirection>();
-    is_decode::<khora_core::ui::types::UiFlexDirection>();
-    is_borrow_decode::<khora_core::ui::types::UiFlexDirection>();
     let _ = type_name::<khora_core::ui::types::UiImage>();
     let _ = ui_image_fields as fn(&khora_core::ui::types::UiImage);
     is_debug::<khora_core::ui::types::UiImage>();
@@ -1263,9 +1251,6 @@ fn module_ui_paths_still_resolve() {
     is_partial_eq::<khora_core::ui::types::UiImage>();
     is_serialize::<khora_core::ui::types::UiImage>();
     is_deserialize_owned::<khora_core::ui::types::UiImage>();
-    is_encode::<khora_core::ui::types::UiImage>();
-    is_decode::<khora_core::ui::types::UiImage>();
-    is_borrow_decode::<khora_core::ui::types::UiImage>();
     let _ = type_name::<khora_core::ui::types::UiNode>();
     let _ = ui_node_fields as fn(&khora_core::ui::types::UiNode);
     is_debug::<khora_core::ui::types::UiNode>();
@@ -1274,9 +1259,6 @@ fn module_ui_paths_still_resolve() {
     is_default::<khora_core::ui::types::UiNode>();
     is_serialize::<khora_core::ui::types::UiNode>();
     is_deserialize_owned::<khora_core::ui::types::UiNode>();
-    is_encode::<khora_core::ui::types::UiNode>();
-    is_decode::<khora_core::ui::types::UiNode>();
-    is_borrow_decode::<khora_core::ui::types::UiNode>();
     let _ = type_name::<khora_core::ui::types::UiRect<f32>>();
     let _ = ui_rect_fields as fn(&khora_core::ui::types::UiRect<f32>);
     let _ = <khora_core::ui::types::UiRect<f32>>::all;
@@ -1287,9 +1269,6 @@ fn module_ui_paths_still_resolve() {
     is_default::<khora_core::ui::types::UiRect<f32>>();
     is_serialize::<khora_core::ui::types::UiRect<f32>>();
     is_deserialize_owned::<khora_core::ui::types::UiRect<f32>>();
-    is_encode::<khora_core::ui::types::UiRect<f32>>();
-    is_decode::<khora_core::ui::types::UiRect<f32>>();
-    is_borrow_decode::<khora_core::ui::types::UiRect<f32>>();
     let _ = type_name::<khora_core::ui::types::UiText>();
     let _ = ui_text_fields as fn(&khora_core::ui::types::UiText);
     is_debug::<khora_core::ui::types::UiText>();
@@ -1297,9 +1276,6 @@ fn module_ui_paths_still_resolve() {
     is_partial_eq::<khora_core::ui::types::UiText>();
     is_serialize::<khora_core::ui::types::UiText>();
     is_deserialize_owned::<khora_core::ui::types::UiText>();
-    is_encode::<khora_core::ui::types::UiText>();
-    is_decode::<khora_core::ui::types::UiText>();
-    is_borrow_decode::<khora_core::ui::types::UiText>();
     is_default::<khora_core::ui::types::UiText>();
     let _ = type_name::<khora_core::ui::types::UiTransform>();
     let _ = ui_transform_fields as fn(&khora_core::ui::types::UiTransform);
@@ -1310,9 +1286,6 @@ fn module_ui_paths_still_resolve() {
     is_default::<khora_core::ui::types::UiTransform>();
     is_serialize::<khora_core::ui::types::UiTransform>();
     is_deserialize_owned::<khora_core::ui::types::UiTransform>();
-    is_encode::<khora_core::ui::types::UiTransform>();
-    is_decode::<khora_core::ui::types::UiTransform>();
-    is_borrow_decode::<khora_core::ui::types::UiTransform>();
     let _ = type_name::<khora_core::ui::types::UiVal>();
     let _ = ui_val_variants as fn(&khora_core::ui::types::UiVal);
     is_debug::<khora_core::ui::types::UiVal>();
@@ -1321,8 +1294,5 @@ fn module_ui_paths_still_resolve() {
     is_partial_eq::<khora_core::ui::types::UiVal>();
     is_serialize::<khora_core::ui::types::UiVal>();
     is_deserialize_owned::<khora_core::ui::types::UiVal>();
-    is_encode::<khora_core::ui::types::UiVal>();
-    is_decode::<khora_core::ui::types::UiVal>();
-    is_borrow_decode::<khora_core::ui::types::UiVal>();
     is_default::<khora_core::ui::types::UiVal>();
 }

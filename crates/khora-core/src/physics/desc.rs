@@ -14,14 +14,13 @@
 
 //! Descriptions of the bodies and colliders a backend creates.
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::handle::RigidBodyHandle;
 use crate::math::{Quat, Vec3};
 
 /// Defines the type of a rigid body.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BodyType {
     /// Responds to forces and collisions.
     Dynamic,
@@ -80,7 +79,7 @@ pub struct ColliderDesc {
 }
 
 /// Supported collider shapes.
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ColliderShape {
     /// Box with half-extents.
     Box(Vec3),

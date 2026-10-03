@@ -14,7 +14,6 @@
 
 //! Provides a Quaternion type for representing 3D rotations.
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::{Mat4, Vec3, EPSILON};
@@ -50,7 +49,7 @@ use std::ops::{Add, Mul, MulAssign, Neg, Sub};
 /// let expected = Quaternion::from_axis_angle(Vec3::Y, FRAC_PI_2 / 2.0);
 /// assert!((half * Vec3::Z - expected * Vec3::Z).length() < 1e-5);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Quaternion {
     /// The x component of the vector part.

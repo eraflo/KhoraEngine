@@ -88,7 +88,7 @@ flowchart LR
 
 When you press **Play**:
 
-1. The current world is serialized using `SerializationGoal::FastestLoad` (Archetype strategy).
+1. The current world is serialized using `SerializationGoal::FastestLoad` (a schema-bound snapshot).
 2. The snapshot is stored in memory.
 3. The editor's `PlayMode` (UI-state) becomes `Playing`.
 4. The editor sets the engine's **simulation clock scale** to `1.0`.
@@ -101,9 +101,11 @@ When you press **Stop**:
 3. The snapshot is deserialized into the world.
 4. The editor camera resumes.
 
-The snapshot uses the `EditorInterchange` goal — the Recipe strategy, bincode — not
-the page-level Archetype one. `FastestLoad` was tried and abandoned: it lost `Name`
-components and corrupted the heap. See [Serialization](../concepts/serialization.md).
+The snapshot uses the `FastestLoad` goal: a schema-bound snapshot, written and
+read by the same build, in memory. A component whose schema the engine cannot
+trace whole is not guarded by the snapshot's fingerprint, so a world holding one
+is saved as a compact record instead. See
+[Serialization](../concepts/serialization.md).
 
 | Aspect | Editing | Playing |
 |---|---|---|

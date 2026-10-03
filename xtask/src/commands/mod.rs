@@ -17,4 +17,3 @@ pub mod assets;
 pub mod assets_config;
 pub mod ci;
 pub mod dev;
-pub mod legacy_scene;

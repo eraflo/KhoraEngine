@@ -17,7 +17,6 @@ log = "0.4"
 
 ahash = "0.8"
 bytemuck = { version = "1.16", features = ["derive"] }
-bincode = "2.0.1"
 
 # Error handling
 anyhow = "1.0"

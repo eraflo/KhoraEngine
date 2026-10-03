@@ -15,7 +15,6 @@
 //! Reading a record written by an older — or differently laid out — type.
 
 use khora_core::math::{Quaternion, Vec3};
-use khora_core::script::SuspendedMachine;
 use serde::{Deserialize, Serialize};
 
 use crate::ecs::{ProjectionType, SerializableTransform, Transform};
@@ -397,8 +396,7 @@ enum Loose {
 
 /// An untagged enum has no name to go by: it is read by trying each form
 /// against the record's own shape, which a record has to be able to describe
-/// without being told what to expect. The suspended machine a script save
-/// holds is one.
+/// without being told what to expect.
 #[test]
 fn an_untagged_enum_reads_by_shape() {
     assert_eq!(read::<Loose>(&Record::U64(3)), Ok(Loose::Number(3)));
@@ -412,11 +410,5 @@ fn an_untagged_enum_reads_by_shape() {
             vec![("y", Record::F32(2.0)), ("x", Record::F32(1.0))],
         )),
         Ok(Loose::Point { x: 1.0, y: 2.0 })
-    );
-
-    let legacy = Record::Seq(vec![Record::U64(1), Record::U64(2), Record::U64(250)]);
-    assert_eq!(
-        read::<SuspendedMachine>(&legacy),
-        Ok(SuspendedMachine::Legacy(vec![1, 2, 250]))
     );
 }

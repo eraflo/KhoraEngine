@@ -24,7 +24,6 @@
 //! never a point, because the caller almost always wants to compare hits before
 //! it wants a position. Recover the position with [`Ray::at`].
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::geometry::Aabb;
@@ -38,7 +37,7 @@ const PARALLEL_EPSILON: f32 = 1e-6;
 ///
 /// `direction` is expected to be normalised. [`Ray::new`] guarantees it; the
 /// struct literal — kept public because a ray is plain data — does not.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Ray {
     /// Origin point.
     pub origin: Vec3,

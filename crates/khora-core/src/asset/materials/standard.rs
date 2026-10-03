@@ -67,7 +67,7 @@ use super::AlphaMode;
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct StandardMaterial {
     /// The base color (albedo) of the material.
     ///

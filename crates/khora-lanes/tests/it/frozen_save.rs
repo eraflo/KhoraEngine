@@ -16,14 +16,13 @@
 //!
 //! The suspended machine reaches the scene as a structured value — named
 //! frames, typed registers, the body it owes — that a Definition (JSON) save
-//! shows as such and a binary save encodes natively. Whichever encoding carried
-//! it, a fresh runtime loading the save finishes the body where it stopped, as
-//! the running game would have.
+//! shows as such, and a record or a positional snapshot carries field by field.
+//! Whichever encoding carried it, a fresh runtime loading the save finishes the
+//! body where it stopped, as the running game would have.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{
     EventQueue, FrozenMachine, PendingBody, ScriptEvent, ScriptSnapshot, ScriptValue,
-    SuspendedMachine,
 };
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{run_behaviors, ScriptRunReport, ScriptRuntime};
@@ -31,6 +30,8 @@ use khora_script::arena::Persisted;
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{Program, Value};
 use khora_script::{check, compile, ergon_fn, lex, parse, Host};
+
+use super::saves::{every_encoding, through_json};
 
 /// A native costing far more than the small slices below, so a body can be cut
 /// at a known point: everything before it runs, it and everything after do not.
@@ -105,51 +106,13 @@ fn recorded(report: &ScriptRunReport) -> ScriptSnapshot {
         .expect("the instance did work, so the lane wrote its state")
 }
 
-/// The machine a snapshot holds, which must be the structured form.
+/// The machine a snapshot holds.
 fn frozen_in(snapshot: &ScriptSnapshot) -> &FrozenMachine {
-    let pending = snapshot
+    &snapshot
         .pending
         .as_ref()
-        .expect("the snapshot holds the suspended body");
-    match &pending.machine {
-        SuspendedMachine::Frozen(machine) => machine,
-        SuspendedMachine::Legacy(bytes) => {
-            panic!("a new save wrote the legacy form: {} bytes", bytes.len())
-        }
-    }
-}
-
-/// A Definition save: the snapshot as JSON and back.
-fn through_json(snapshot: &ScriptSnapshot) -> ScriptSnapshot {
-    let json = serde_json::to_string(snapshot).expect("a snapshot serialises");
-    serde_json::from_str(&json).expect("and parses")
-}
-
-/// A binary save: the snapshot as a scene's component data encodes it, and
-/// back.
-fn through_bincode(snapshot: &ScriptSnapshot) -> ScriptSnapshot {
-    let bytes =
-        bincode::encode_to_vec(snapshot, bincode::config::standard()).expect("a snapshot encodes");
-    let (decoded, read): (ScriptSnapshot, usize) =
-        bincode::decode_from_slice(&bytes, bincode::config::standard()).expect("and decodes");
-    assert_eq!(
-        read,
-        bytes.len(),
-        "the decoder read exactly what was written"
-    );
-    decoded
-}
-
-/// Carries a snapshot through one encoding and back.
-type Carry = fn(&ScriptSnapshot) -> ScriptSnapshot;
-
-/// Every way a scene can carry a snapshot, by name.
-fn every_encoding() -> [(&'static str, Carry); 3] {
-    [
-        ("JSON", through_json),
-        ("bincode", through_bincode),
-        ("JSON then bincode", |s| through_bincode(&through_json(s))),
-    ]
+        .expect("the snapshot holds the suspended body")
+        .machine
 }
 
 /// Runs `frames` (their deltas), the first carrying `authored`, and returns
@@ -334,10 +297,8 @@ fn a_frozen_save_naming_a_missing_function_is_abandoned_not_run() {
     let (_, _, snapshot) = guard_mid_await();
     let mut damaged = through_json(&snapshot);
     if let Some(pending) = damaged.pending.as_mut() {
-        if let SuspendedMachine::Frozen(machine) = &mut pending.machine {
-            for frame in &mut machine.frames {
-                frame.function = "Nowhere".to_owned();
-            }
+        for frame in &mut pending.machine.frames {
+            frame.function = "Nowhere".to_owned();
         }
     }
     assert_ne!(damaged, snapshot, "the save was damaged");

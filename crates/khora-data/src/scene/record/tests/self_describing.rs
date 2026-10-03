@@ -22,7 +22,7 @@ use khora_core::physics::{BodyType, ColliderShape};
 use khora_core::renderer::light::{DirectionalLight, LightType, PointLight, SpotLight};
 use khora_core::script::{
     FrozenFrame, FrozenMachine, FrozenValue, PendingBody, PendingSequence, ScriptSnapshot,
-    ScriptValue, SuspendedMachine, TimerRemaining,
+    ScriptValue, TimerRemaining,
 };
 use khora_core::ui::types::{UiRect, UiVal};
 use serde_json::json;
@@ -290,7 +290,7 @@ fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
         pending: Some(PendingSequence {
             fingerprint: 0xfeed_beef_dead_c0de,
             remaining: 1.5,
-            machine: SuspendedMachine::Frozen(FrozenMachine {
+            machine: FrozenMachine {
                 body: PendingBody::Timer {
                     index: 2,
                     rearm: FrozenValue::Float(0.5),
@@ -310,7 +310,7 @@ fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
                     result: 0,
                 }],
                 program_counter: 42,
-            }),
+            },
         }),
     }
 }

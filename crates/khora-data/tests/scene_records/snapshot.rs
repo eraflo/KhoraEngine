@@ -18,7 +18,7 @@
 use khora_core::asset::AssetUUID;
 use khora_core::math::{Vec2, Vec3};
 use khora_core::scene::{SceneFile, SCENE_FORMAT_VERSION};
-use khora_core::script::{FrozenValue, ScriptValue, SuspendedMachine};
+use khora_core::script::{FrozenValue, ScriptValue};
 use khora_data::ecs::{MaterialRef, MeshRef, Name, Parent, Script, Transform};
 use khora_data::scene::record::ReportKind;
 use khora_data::scene::snapshot::{prepare_snapshot, write_snapshot, SNAPSHOT_ENCODING_ID};
@@ -220,9 +220,7 @@ fn a_snapshot_keeps_identities_and_references() {
         ]))
     );
     let pending = script.runtime.pending.as_ref().expect("a pending sequence");
-    let SuspendedMachine::Frozen(machine) = &pending.machine else {
-        panic!("the machine is still frozen: {:?}", pending.machine);
-    };
+    let machine = &pending.machine;
     assert!(
         machine
             .registers

@@ -15,7 +15,6 @@
 //! A 4x4 column-major matrix.
 
 use super::{Quaternion, Vec3, Vec4};
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::ops::Mul;
 
@@ -50,16 +49,7 @@ use std::ops::Mul;
 /// assert!(proj != Mat4::IDENTITY);
 /// ```
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    bytemuck::Pod,
-    bytemuck::Zeroable,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
+    Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Serialize, Deserialize,
 )]
 #[repr(C)]
 pub struct Mat4 {

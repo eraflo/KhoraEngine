@@ -80,15 +80,6 @@ enum Commands {
 pub enum AssetCommand {
     /// Scans, builds metadata, and packs all assets into optimized archives.
     Pack,
-    /// Rewrites a project's scenes and prefabs saved before scene records,
-    /// keeping each original beside it as `<file>.v1`.
-    UpgradeScenes {
-        /// The project folder (the one holding `assets/`).
-        project: std::path::PathBuf,
-        /// Report what would be upgraded, writing nothing.
-        #[clap(long)]
-        dry_run: bool,
-    },
 }
 
 fn main() -> Result<()> {
@@ -108,9 +99,6 @@ fn main() -> Result<()> {
 
             Commands::Assets(command) => match command {
                 AssetCommand::Pack => commands::assets::pack()?,
-                AssetCommand::UpgradeScenes { project, dry_run } => {
-                    commands::legacy_scene::upgrade_scenes(&project, dry_run)?
-                }
             },
 
             Commands::Ai { profile, args } => commands::ai::run(&profile, &args)?,

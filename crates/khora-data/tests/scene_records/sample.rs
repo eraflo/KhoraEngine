@@ -20,7 +20,7 @@ use khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 use khora_core::physics::{BodyType, ColliderShape};
 use khora_core::script::{
     FrozenFrame, FrozenMachine, FrozenValue, PendingBody, PendingSequence, ScriptSnapshot,
-    ScriptValue, SuspendedMachine, TimerRemaining,
+    ScriptValue, TimerRemaining,
 };
 use khora_core::ui::types::{UiFlexDirection, UiRect, UiVal};
 use khora_data::ecs::{
@@ -60,7 +60,7 @@ pub fn suspended_snapshot(target: EntityId) -> ScriptSnapshot {
         pending: Some(PendingSequence {
             fingerprint: 0xfeed_beef_dead_c0de,
             remaining: 1.5,
-            machine: SuspendedMachine::Frozen(FrozenMachine {
+            machine: FrozenMachine {
                 body: PendingBody::Update,
                 registers: vec![
                     FrozenValue::Int(-7),
@@ -84,7 +84,7 @@ pub fn suspended_snapshot(target: EntityId) -> ScriptSnapshot {
                     },
                 ],
                 program_counter: 42,
-            }),
+            },
         }),
     }
 }

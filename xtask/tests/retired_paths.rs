@@ -269,13 +269,10 @@ const RETIRED_SCENE_FILES: &[&str] = &[
     "crates/khora-data/src/ecs/serialization.rs",
 ];
 
-/// The one place the pre-record codec may still live: the upgrade command
-/// that reads old files once to rewrite them.
-const LEGACY_SCENE_CODEC: &str = "xtask/src/commands/legacy_scene/";
-
 /// Scenes are written as records now. The strategies, the recipe commands,
 /// the payload migrations and the memory dump are gone — their files and
-/// every mention of them — except in the upgrade command that reads old files.
+/// every mention of them, with no exception: the projects that held old files
+/// were upgraded, and the command that read them is gone too.
 #[test]
 fn nothing_names_a_retired_scene_codec() {
     let root = repo_root();
@@ -286,9 +283,6 @@ fn nothing_names_a_retired_scene_codec() {
         }
     }
     for file in scanned_files(&root) {
-        if rel(&root, &file).starts_with(LEGACY_SCENE_CODEC) {
-            continue;
-        }
         let Ok(text) = fs::read_to_string(&file) else {
             continue;
         };
@@ -303,6 +297,151 @@ fn nothing_names_a_retired_scene_codec() {
     assert!(
         hits.is_empty(),
         "retired scene codecs still named:\n  {}",
+        hits.join("\n  ")
+    );
+}
+
+/// What reading the first scene format needed, once every project was
+/// upgraded: the upgrade command and its name, the recipe strategy it read,
+/// the byte-list form of a suspended machine and the binary codec that told
+/// the two forms of a machine apart.
+const RETIRED_V1_READERS: &[&str] = &[
+    // The machine's two forms and their binary codec.
+    "SuspendedMachine",
+    "SUSPENDED_MACHINE_NAME",
+    "FROZEN_MARKER",
+    "MACHINE_CODEC",
+    "MACHINE_LIMIT",
+    "fits_a_save",
+    // The upgrade command, by every name it went by.
+    "UPGRADE_SCENES_COMMAND",
+    "upgrade-scenes",
+    "upgrade_scenes",
+    "legacy_scene",
+    // The one v1 strategy the editor wrote.
+    "KH_RECIPE_V1",
+];
+
+/// The files and directories that held them.
+const RETIRED_V1_FILES: &[&str] = &[
+    "xtask/src/commands/legacy_scene",
+    "xtask/tests/upgrade_scenes.rs",
+    "xtask/tests/upgrade_scenes_breaker.rs",
+    "xtask/tests/fixtures/legacy_scenes",
+];
+
+/// Where a retired name may still be spelled, and only as written: a file, the
+/// retired name, and the exact text the line must spell it as. Each entry is
+/// a test that the retired form is *refused*, so it has to build that input;
+/// it does not read the form.
+const V1_REFUSAL_INPUTS: &[(&str, &str, &str)] = &[
+    // `a_scene_holding_the_retired_tagged_machine_form_is_refused_whole`
+    // writes a record in the retired tagged form — the serde enum name
+    // `khora.SuspendedMachine`, as data — and checks that a scene holding it
+    // is refused whole. The Rust type `SuspendedMachine` stays forbidden there.
+    (
+        "crates/khora-data/tests/scene_records/snapshot_breaker.rs",
+        "SuspendedMachine",
+        "khora.SuspendedMachine",
+    ),
+];
+
+/// Whether `line` of `file` names `retired` only as a refusal test's input.
+fn is_a_refusal_input(file: &str, retired: &str, line: &str) -> bool {
+    V1_REFUSAL_INPUTS
+        .iter()
+        .any(|(allowed_file, allowed_name, spelled)| {
+            file == *allowed_file
+                && retired == *allowed_name
+                && line.contains(spelled)
+                // Every mention on the line is the allowed spelling.
+                && line.matches(retired).count() == line.matches(spelled).count()
+        })
+}
+
+/// The owner's projects hold v2 scenes only, so nothing reads the first
+/// format any more: the upgrade command, its fixtures, the legacy machine and
+/// its binary codec are gone — their files and every mention of them in code
+/// and docs. A v1 file is refused as older than the engine reads, naming no
+/// command.
+#[test]
+fn nothing_names_a_v1_scene_reader() {
+    let root = repo_root();
+    let mut hits = Vec::new();
+    for retired in RETIRED_V1_FILES {
+        if root.join(retired).exists() {
+            hits.push(format!("{retired} still exists"));
+        }
+    }
+    for file in scanned_files(&root) {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        let path = rel(&root, &file);
+        for (number, line) in text.lines().enumerate() {
+            for retired in RETIRED_V1_READERS {
+                if line.contains(retired) && !is_a_refusal_input(&path, retired, line) {
+                    hits.push(format!("{path}:{}: `{retired}`", number + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "what read v1 scenes is still named:\n  {}",
+        hits.join("\n  ")
+    );
+}
+
+/// The crates whose only use of bincode was the v1 scene codec: the derives
+/// on the engine's value types and the binary form of a suspended machine.
+const BINCODE_FREE_CRATES: &[&str] = &["crates/khora-core", "crates/khora-lanes"];
+
+/// bincode left `khora-core` and `khora-lanes` with the v1 codec: neither
+/// manifest declares it, and nothing in their sources or tests names it.
+/// (`khora-io`, `khora-agents` and `xtask` keep it, for the asset index.)
+#[test]
+fn khora_core_and_khora_lanes_do_not_use_bincode() {
+    let root = repo_root();
+    let mut hits = Vec::new();
+    for krate in BINCODE_FREE_CRATES {
+        let manifest = root.join(krate).join("Cargo.toml");
+        let text = fs::read_to_string(&manifest)
+            .unwrap_or_else(|e| panic!("{}: {e}", rel(&root, &manifest)));
+        for (number, line) in text.lines().enumerate() {
+            let declared = line.split('#').next().unwrap_or_default();
+            if declared.contains("bincode") {
+                hits.push(format!(
+                    "{}:{}: declares bincode",
+                    rel(&root, &manifest),
+                    number + 1
+                ));
+            }
+        }
+        let mut sources = Vec::new();
+        walk(&root.join(krate).join("src"), &mut sources);
+        walk(&root.join(krate).join("tests"), &mut sources);
+        walk(&root.join(krate).join("benches"), &mut sources);
+        sources.retain(|p| p.extension().and_then(|e| e.to_str()) == Some("rs"));
+        sources.sort();
+        for file in sources {
+            let Ok(text) = fs::read_to_string(&file) else {
+                continue;
+            };
+            for (number, line) in text.lines().enumerate() {
+                if line.contains("bincode") {
+                    hits.push(format!(
+                        "{}:{}: names bincode",
+                        rel(&root, &file),
+                        number + 1
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "bincode is still used where only the v1 codec needed it:\n  {}",
         hits.join("\n  ")
     );
 }

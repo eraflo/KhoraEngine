@@ -17,7 +17,7 @@
 use khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 use khora_core::script::{
     FrozenFrame, FrozenMachine, FrozenValue, PendingBody, PendingSequence, ScriptSnapshot,
-    ScriptValue, SuspendedMachine, TimerRemaining,
+    ScriptValue, TimerRemaining,
 };
 
 use super::*;
@@ -174,8 +174,8 @@ fn collections_round_trip() {
 }
 
 /// The engine's own persisted types: a component mirror, and a script's
-/// values and runtime snapshot — a sequence frozen part-way, a legacy machine,
-/// every script value kind.
+/// values and runtime snapshot — a sequence frozen part-way, every script
+/// value kind.
 #[test]
 fn engine_types_round_trip() {
     let transform = SerializableTransform::from(Transform::new(
@@ -215,7 +215,7 @@ fn engine_types_round_trip() {
         pending: Some(PendingSequence {
             fingerprint: 0xfeed_beef_dead_c0de,
             remaining: 1.5,
-            machine: SuspendedMachine::Frozen(FrozenMachine {
+            machine: FrozenMachine {
                 body: PendingBody::Update,
                 registers: vec![
                     FrozenValue::Int(-7),
@@ -230,20 +230,10 @@ fn engine_types_round_trip() {
                     result: 0,
                 }],
                 program_counter: 42,
-            }),
+            },
         }),
     };
     assert_eq!(round_trip(&frozen), frozen);
-
-    let legacy = ScriptSnapshot {
-        pending: Some(PendingSequence {
-            fingerprint: 1,
-            remaining: 0.0,
-            machine: SuspendedMachine::Legacy(vec![1, 2, 3, 0xFF]),
-        }),
-        ..ScriptSnapshot::default()
-    };
-    assert_eq!(round_trip(&legacy), legacy);
 }
 
 /// No name reaches the bytes: a struct's field names and an enum's variant

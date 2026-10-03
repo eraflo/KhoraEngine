@@ -14,7 +14,6 @@
 
 //! A 2-component vector.
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::EPSILON;
@@ -33,8 +32,6 @@ use std::ops::{Add, Div, Index, IndexMut, Mul, Neg, Sub};
     bytemuck::Zeroable,
     Serialize,
     Deserialize,
-    Encode,
-    Decode,
 )]
 #[repr(C)]
 pub struct Vec2 {

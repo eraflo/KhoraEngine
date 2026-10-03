@@ -44,9 +44,7 @@ pub use capture::{capture_subtree, capture_world, SaveError};
 pub use encoding::{
     encoding_named, CompactEncoding, EncodingError, MsgPackEncoding, SceneEncoding, TextEncoding,
 };
-pub use file::{
-    encoding_of, read_scene_file, write_scene_file, SceneFileReadError, UPGRADE_SCENES_COMMAND,
-};
+pub use file::{encoding_of, read_scene_file, write_scene_file, SceneFileReadError};
 pub use prefab::{instantiate_subtree, serialize_subtree};
 pub use retired::{is_retired, RetiredComponent};
 pub use scene_record::{PageRecord, SceneRecord};

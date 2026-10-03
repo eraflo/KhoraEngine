@@ -14,7 +14,6 @@
 
 //! Handles to bodies and colliders owned by a physics backend.
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 /// Opaque handle to a rigid body in the physics engine.
@@ -23,14 +22,14 @@ use serde::{Deserialize, Serialize};
 /// slots — Rapier does — would otherwise resolve a handle to whatever now
 /// occupies the slot the caller meant, silently: a stale handle would move
 /// somebody else's body rather than fail. See [`SlotId`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RigidBodyHandle(pub u64);
 
 /// Opaque handle to a collider in the physics engine.
 ///
 /// Carries the slot and its generation, for the reason [`RigidBodyHandle`]
 /// gives.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ColliderHandle(pub u64);
 
 /// A backend slot and the generation that says which occupant is meant.

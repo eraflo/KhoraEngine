@@ -22,7 +22,7 @@
 //! path: each `pub mod`, the `pub use` re-exports, their types, free functions,
 //! constants, statics, type aliases, public fields, enum variants (matched
 //! exhaustively), inherent `pub` methods (turbofished where generic), trait
-//! items, and the std / serde / bincode / bytemuck / operator trait impls. A
+//! items, and the std / serde / bytemuck / operator trait impls. A
 //! reorganisation that moves code between files must keep every one of these
 //! paths valid, so this file stops compiling the moment one disappears.
 //!
@@ -52,17 +52,14 @@ fn same_type<T: ?Sized>(_: PhantomData<T>, _: PhantomData<T>) {}
 fn same_item<T>(_: &T, _: &T) {}
 
 fn is_asset<T: khora_core::asset::Asset>() {}
-fn is_borrow_decode<T: bincode::BorrowDecode<'static, ()>>() {}
 fn is_clone<T: Clone>() {}
 fn is_copy<T: Copy>() {}
 fn is_debug<T: std::fmt::Debug>() {}
-fn is_decode<T: bincode::Decode<()>>() {}
 fn is_default<T: Default>() {}
 fn is_deref<T: std::ops::Deref>() {}
 fn is_deref_mut<T: std::ops::DerefMut>() {}
 fn is_deserialize_owned<T: serde::de::DeserializeOwned>() {}
 fn is_display<T: std::fmt::Display>() {}
-fn is_encode<T: bincode::Encode>() {}
 fn is_eq<T: Eq>() {}
 fn is_error<T: std::error::Error>() {}
 fn is_extend_script_state_update<T: Extend<khora_core::script::writeback::ScriptStateUpdate>>() {}
@@ -901,13 +898,6 @@ fn script_event_fields(x: &khora_core::script::event::ScriptEvent) {
     let _ = (&x.target, &x.name, &x.args);
 }
 
-fn suspended_machine_variants(x: &khora_core::script::frozen::SuspendedMachine) {
-    match x {
-        khora_core::script::frozen::SuspendedMachine::Legacy(..) => {}
-        khora_core::script::frozen::SuspendedMachine::Frozen(..) => {}
-    }
-}
-
 fn frozen_machine_fields(x: &khora_core::script::frozen::FrozenMachine) {
     let _ = (&x.body, &x.registers, &x.frames, &x.program_counter);
 }
@@ -947,6 +937,8 @@ fn frozen_value_variants(x: &khora_core::script::frozen::FrozenValue) {
 
 fn pending_sequence_fields(x: &khora_core::script::snapshot::PendingSequence) {
     let _ = (&x.fingerprint, &x.remaining, &x.machine);
+    // A pending sequence holds its machine directly, in the engine's terms.
+    let _: &khora_core::script::frozen::FrozenMachine = &x.machine;
 }
 
 fn script_snapshot_fields(x: &khora_core::script::snapshot::ScriptSnapshot) {
@@ -1508,9 +1500,6 @@ fn module_asset_paths_still_resolve() {
     is_default::<khora_core::asset::AlphaMode>();
     is_serialize::<khora_core::asset::AlphaMode>();
     is_deserialize_owned::<khora_core::asset::AlphaMode>();
-    is_encode::<khora_core::asset::AlphaMode>();
-    is_decode::<khora_core::asset::AlphaMode>();
-    is_borrow_decode::<khora_core::asset::AlphaMode>();
     // trait `khora_core::asset::AsAny`: see `as_any_trait_items`
     // trait `khora_core::asset::Asset`: see `asset_trait_items`
     let _ = type_name::<khora_core::asset::Handle<khora_core::asset::EmissiveMaterial>>();
@@ -1552,9 +1541,6 @@ fn module_asset_paths_still_resolve() {
     is_hash::<khora_core::asset::AssetUUID>();
     is_serialize::<khora_core::asset::AssetUUID>();
     is_deserialize_owned::<khora_core::asset::AssetUUID>();
-    is_encode::<khora_core::asset::AssetUUID>();
-    is_decode::<khora_core::asset::AssetUUID>();
-    is_borrow_decode::<khora_core::asset::AssetUUID>();
     is_default::<khora_core::asset::AssetUUID>();
     let _ = type_name::<khora_core::asset::CompressionKind>();
     let _ = compression_kind_variants as fn(&khora_core::asset::CompressionKind);
@@ -1572,9 +1558,6 @@ fn module_asset_paths_still_resolve() {
     is_debug::<khora_core::asset::EmissiveMaterial>();
     is_serialize::<khora_core::asset::EmissiveMaterial>();
     is_deserialize_owned::<khora_core::asset::EmissiveMaterial>();
-    is_encode::<khora_core::asset::EmissiveMaterial>();
-    is_decode::<khora_core::asset::EmissiveMaterial>();
-    is_borrow_decode::<khora_core::asset::EmissiveMaterial>();
     is_default::<khora_core::asset::EmissiveMaterial>();
     is_asset::<khora_core::asset::EmissiveMaterial>();
     is_material::<khora_core::asset::EmissiveMaterial>();
@@ -1586,9 +1569,6 @@ fn module_asset_paths_still_resolve() {
     is_debug::<khora_core::asset::StandardMaterial>();
     is_serialize::<khora_core::asset::StandardMaterial>();
     is_deserialize_owned::<khora_core::asset::StandardMaterial>();
-    is_encode::<khora_core::asset::StandardMaterial>();
-    is_decode::<khora_core::asset::StandardMaterial>();
-    is_borrow_decode::<khora_core::asset::StandardMaterial>();
     is_default::<khora_core::asset::StandardMaterial>();
     is_asset::<khora_core::asset::StandardMaterial>();
     is_material::<khora_core::asset::StandardMaterial>();
@@ -1598,9 +1578,6 @@ fn module_asset_paths_still_resolve() {
     is_debug::<khora_core::asset::UnlitMaterial>();
     is_serialize::<khora_core::asset::UnlitMaterial>();
     is_deserialize_owned::<khora_core::asset::UnlitMaterial>();
-    is_encode::<khora_core::asset::UnlitMaterial>();
-    is_decode::<khora_core::asset::UnlitMaterial>();
-    is_borrow_decode::<khora_core::asset::UnlitMaterial>();
     is_default::<khora_core::asset::UnlitMaterial>();
     is_asset::<khora_core::asset::UnlitMaterial>();
     is_material::<khora_core::asset::UnlitMaterial>();
@@ -1610,9 +1587,6 @@ fn module_asset_paths_still_resolve() {
     is_debug::<khora_core::asset::WireframeMaterial>();
     is_serialize::<khora_core::asset::WireframeMaterial>();
     is_deserialize_owned::<khora_core::asset::WireframeMaterial>();
-    is_encode::<khora_core::asset::WireframeMaterial>();
-    is_decode::<khora_core::asset::WireframeMaterial>();
-    is_borrow_decode::<khora_core::asset::WireframeMaterial>();
     is_default::<khora_core::asset::WireframeMaterial>();
     is_asset::<khora_core::asset::WireframeMaterial>();
     is_material::<khora_core::asset::WireframeMaterial>();
@@ -1623,9 +1597,6 @@ fn module_asset_paths_still_resolve() {
     is_clone::<khora_core::asset::font::Font>();
     is_serialize::<khora_core::asset::font::Font>();
     is_deserialize_owned::<khora_core::asset::font::Font>();
-    is_encode::<khora_core::asset::font::Font>();
-    is_decode::<khora_core::asset::font::Font>();
-    is_borrow_decode::<khora_core::asset::font::Font>();
     is_asset::<khora_core::asset::font::Font>();
     let _ = type_name::<khora_core::asset::script::ScriptModule>();
     let _ = type_name::<khora_core::asset::ScriptModule>();
@@ -1794,9 +1765,6 @@ fn module_ecs_paths_still_resolve() {
     is_hash::<khora_core::ecs::entity::EntityId>();
     is_serialize::<khora_core::ecs::entity::EntityId>();
     is_deserialize_owned::<khora_core::ecs::entity::EntityId>();
-    is_encode::<khora_core::ecs::entity::EntityId>();
-    is_decode::<khora_core::ecs::entity::EntityId>();
-    is_borrow_decode::<khora_core::ecs::entity::EntityId>();
 }
 
 #[test]
@@ -2111,9 +2079,6 @@ fn module_physics_paths_still_resolve() {
     is_eq::<khora_core::physics::BodyType>();
     is_serialize::<khora_core::physics::BodyType>();
     is_deserialize_owned::<khora_core::physics::BodyType>();
-    is_encode::<khora_core::physics::BodyType>();
-    is_decode::<khora_core::physics::BodyType>();
-    is_borrow_decode::<khora_core::physics::BodyType>();
     let _ = khora_core::physics::COLLISION_BACKLOG;
     let _ = type_name::<khora_core::physics::CharacterControllerOptions>();
     let _ =
@@ -2123,9 +2088,6 @@ fn module_physics_paths_still_resolve() {
     is_copy::<khora_core::physics::CharacterControllerOptions>();
     is_serialize::<khora_core::physics::CharacterControllerOptions>();
     is_deserialize_owned::<khora_core::physics::CharacterControllerOptions>();
-    is_encode::<khora_core::physics::CharacterControllerOptions>();
-    is_decode::<khora_core::physics::CharacterControllerOptions>();
-    is_borrow_decode::<khora_core::physics::CharacterControllerOptions>();
     let _ = type_name::<khora_core::physics::ColliderDesc>();
     let _ = collider_desc_fields as fn(&khora_core::physics::ColliderDesc);
     is_debug::<khora_core::physics::ColliderDesc>();
@@ -2143,9 +2105,6 @@ fn module_physics_paths_still_resolve() {
     is_hash::<khora_core::physics::ColliderHandle>();
     is_serialize::<khora_core::physics::ColliderHandle>();
     is_deserialize_owned::<khora_core::physics::ColliderHandle>();
-    is_encode::<khora_core::physics::ColliderHandle>();
-    is_decode::<khora_core::physics::ColliderHandle>();
-    is_borrow_decode::<khora_core::physics::ColliderHandle>();
     let _ = type_name::<khora_core::physics::ColliderShape>();
     let _ = collider_shape_variants as fn(&khora_core::physics::ColliderShape);
     let _ = khora_core::physics::ColliderShape::compute_aabb;
@@ -2153,9 +2112,6 @@ fn module_physics_paths_still_resolve() {
     is_clone::<khora_core::physics::ColliderShape>();
     is_serialize::<khora_core::physics::ColliderShape>();
     is_deserialize_owned::<khora_core::physics::ColliderShape>();
-    is_encode::<khora_core::physics::ColliderShape>();
-    is_decode::<khora_core::physics::ColliderShape>();
-    is_borrow_decode::<khora_core::physics::ColliderShape>();
     let _ = type_name::<khora_core::physics::Collision>();
     let _ = collision_fields as fn(&khora_core::physics::Collision);
     is_debug::<khora_core::physics::Collision>();
@@ -2171,9 +2127,6 @@ fn module_physics_paths_still_resolve() {
     is_copy::<khora_core::physics::CollisionEvent>();
     is_serialize::<khora_core::physics::CollisionEvent>();
     is_deserialize_owned::<khora_core::physics::CollisionEvent>();
-    is_encode::<khora_core::physics::CollisionEvent>();
-    is_decode::<khora_core::physics::CollisionEvent>();
-    is_borrow_decode::<khora_core::physics::CollisionEvent>();
     let _ = type_name::<khora_core::physics::CollisionKind>();
     let _ = collision_kind_variants as fn(&khora_core::physics::CollisionKind);
     is_debug::<khora_core::physics::CollisionKind>();
@@ -2199,9 +2152,6 @@ fn module_physics_paths_still_resolve() {
     is_copy::<khora_core::physics::RaycastHit>();
     is_serialize::<khora_core::physics::RaycastHit>();
     is_deserialize_owned::<khora_core::physics::RaycastHit>();
-    is_encode::<khora_core::physics::RaycastHit>();
-    is_decode::<khora_core::physics::RaycastHit>();
-    is_borrow_decode::<khora_core::physics::RaycastHit>();
     let _ = type_name::<khora_core::physics::RigidBodyDesc>();
     let _ = rigid_body_desc_fields as fn(&khora_core::physics::RigidBodyDesc);
     is_debug::<khora_core::physics::RigidBodyDesc>();
@@ -2219,9 +2169,6 @@ fn module_physics_paths_still_resolve() {
     is_hash::<khora_core::physics::RigidBodyHandle>();
     is_serialize::<khora_core::physics::RigidBodyHandle>();
     is_deserialize_owned::<khora_core::physics::RigidBodyHandle>();
-    is_encode::<khora_core::physics::RigidBodyHandle>();
-    is_decode::<khora_core::physics::RigidBodyHandle>();
-    is_borrow_decode::<khora_core::physics::RigidBodyHandle>();
     let _ = type_name::<khora_core::physics::SlotId>();
     let _ = physics_slot_fields as fn(&khora_core::physics::SlotId);
     let _ = khora_core::physics::SlotId::pack;
@@ -2593,21 +2540,6 @@ fn module_script_paths_still_resolve() {
         &khora_core::script::engine_event_channel,
         &khora_core::script::event::engine_event_channel,
     );
-    let _ = type_name::<khora_core::script::frozen::SuspendedMachine>();
-    let _ = type_name::<khora_core::script::SuspendedMachine>();
-    same_type(
-        PhantomData::<khora_core::script::SuspendedMachine>,
-        PhantomData::<khora_core::script::frozen::SuspendedMachine>,
-    );
-    let _ = suspended_machine_variants as fn(&khora_core::script::frozen::SuspendedMachine);
-    is_debug::<khora_core::script::frozen::SuspendedMachine>();
-    is_clone::<khora_core::script::frozen::SuspendedMachine>();
-    is_partial_eq::<khora_core::script::frozen::SuspendedMachine>();
-    is_serialize::<khora_core::script::frozen::SuspendedMachine>();
-    is_deserialize_owned::<khora_core::script::frozen::SuspendedMachine>();
-    is_encode::<khora_core::script::frozen::SuspendedMachine>();
-    is_decode::<khora_core::script::frozen::SuspendedMachine>();
-    is_borrow_decode::<khora_core::script::frozen::SuspendedMachine>();
     let _ = type_name::<khora_core::script::frozen::FrozenMachine>();
     let _ = type_name::<khora_core::script::FrozenMachine>();
     same_type(
@@ -2620,9 +2552,6 @@ fn module_script_paths_still_resolve() {
     is_partial_eq::<khora_core::script::frozen::FrozenMachine>();
     is_serialize::<khora_core::script::frozen::FrozenMachine>();
     is_deserialize_owned::<khora_core::script::frozen::FrozenMachine>();
-    is_encode::<khora_core::script::frozen::FrozenMachine>();
-    is_decode::<khora_core::script::frozen::FrozenMachine>();
-    is_borrow_decode::<khora_core::script::frozen::FrozenMachine>();
     let _ = type_name::<khora_core::script::frozen::FrozenFrame>();
     let _ = type_name::<khora_core::script::FrozenFrame>();
     same_type(
@@ -2635,9 +2564,6 @@ fn module_script_paths_still_resolve() {
     is_partial_eq::<khora_core::script::frozen::FrozenFrame>();
     is_serialize::<khora_core::script::frozen::FrozenFrame>();
     is_deserialize_owned::<khora_core::script::frozen::FrozenFrame>();
-    is_encode::<khora_core::script::frozen::FrozenFrame>();
-    is_decode::<khora_core::script::frozen::FrozenFrame>();
-    is_borrow_decode::<khora_core::script::frozen::FrozenFrame>();
     let _ = type_name::<khora_core::script::frozen::PendingBody>();
     let _ = type_name::<khora_core::script::PendingBody>();
     same_type(
@@ -2650,9 +2576,6 @@ fn module_script_paths_still_resolve() {
     is_partial_eq::<khora_core::script::frozen::PendingBody>();
     is_serialize::<khora_core::script::frozen::PendingBody>();
     is_deserialize_owned::<khora_core::script::frozen::PendingBody>();
-    is_encode::<khora_core::script::frozen::PendingBody>();
-    is_decode::<khora_core::script::frozen::PendingBody>();
-    is_borrow_decode::<khora_core::script::frozen::PendingBody>();
     let _ = type_name::<khora_core::script::frozen::FrozenValue>();
     let _ = type_name::<khora_core::script::FrozenValue>();
     same_type(
@@ -2665,9 +2588,6 @@ fn module_script_paths_still_resolve() {
     is_partial_eq::<khora_core::script::frozen::FrozenValue>();
     is_serialize::<khora_core::script::frozen::FrozenValue>();
     is_deserialize_owned::<khora_core::script::frozen::FrozenValue>();
-    is_encode::<khora_core::script::frozen::FrozenValue>();
-    is_decode::<khora_core::script::frozen::FrozenValue>();
-    is_borrow_decode::<khora_core::script::frozen::FrozenValue>();
     let _ = type_name::<khora_core::script::snapshot::PendingSequence>();
     let _ = type_name::<khora_core::script::PendingSequence>();
     same_type(
@@ -2680,9 +2600,6 @@ fn module_script_paths_still_resolve() {
     is_partial_eq::<khora_core::script::snapshot::PendingSequence>();
     is_serialize::<khora_core::script::snapshot::PendingSequence>();
     is_deserialize_owned::<khora_core::script::snapshot::PendingSequence>();
-    is_encode::<khora_core::script::snapshot::PendingSequence>();
-    is_decode::<khora_core::script::snapshot::PendingSequence>();
-    is_borrow_decode::<khora_core::script::snapshot::PendingSequence>();
     let _ = type_name::<khora_core::script::snapshot::ScriptSnapshot>();
     let _ = type_name::<khora_core::script::ScriptSnapshot>();
     same_type(
@@ -2704,9 +2621,6 @@ fn module_script_paths_still_resolve() {
     is_partial_eq::<khora_core::script::snapshot::ScriptSnapshot>();
     is_serialize::<khora_core::script::snapshot::ScriptSnapshot>();
     is_deserialize_owned::<khora_core::script::snapshot::ScriptSnapshot>();
-    is_encode::<khora_core::script::snapshot::ScriptSnapshot>();
-    is_decode::<khora_core::script::snapshot::ScriptSnapshot>();
-    is_borrow_decode::<khora_core::script::snapshot::ScriptSnapshot>();
     let _ = type_name::<khora_core::script::snapshot::TimerRemaining>();
     let _ = type_name::<khora_core::script::TimerRemaining>();
     same_type(
@@ -2719,9 +2633,6 @@ fn module_script_paths_still_resolve() {
     is_partial_eq::<khora_core::script::snapshot::TimerRemaining>();
     is_serialize::<khora_core::script::snapshot::TimerRemaining>();
     is_deserialize_owned::<khora_core::script::snapshot::TimerRemaining>();
-    is_encode::<khora_core::script::snapshot::TimerRemaining>();
-    is_decode::<khora_core::script::snapshot::TimerRemaining>();
-    is_borrow_decode::<khora_core::script::snapshot::TimerRemaining>();
     let _ = type_name::<khora_core::script::value::ScriptValue>();
     let _ = type_name::<khora_core::script::ScriptValue>();
     same_type(
@@ -2747,9 +2658,6 @@ fn module_script_paths_still_resolve() {
     is_partial_eq::<khora_core::script::value::ScriptValue>();
     is_serialize::<khora_core::script::value::ScriptValue>();
     is_deserialize_owned::<khora_core::script::value::ScriptValue>();
-    is_encode::<khora_core::script::value::ScriptValue>();
-    is_decode::<khora_core::script::value::ScriptValue>();
-    is_borrow_decode::<khora_core::script::value::ScriptValue>();
     let _ = type_name::<khora_core::script::writeback::ScriptStateUpdate>();
     let _ = type_name::<khora_core::script::ScriptStateUpdate>();
     same_type(

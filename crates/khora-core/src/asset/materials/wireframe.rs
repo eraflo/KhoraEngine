@@ -53,7 +53,7 @@ use crate::{
 ///     line_width: 1.0,
 /// };
 /// ```
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct WireframeMaterial {
     /// The color of the wireframe lines.
     ///

@@ -19,7 +19,7 @@
 //! path: each `pub mod`, the `pub use` re-exports, their types, free functions,
 //! constants, statics, type aliases, public fields, enum variants (matched
 //! exhaustively), inherent `pub` methods (turbofished where generic), trait
-//! items, and the std / serde / bincode / bytemuck / operator trait impls. A
+//! items, and the std / serde / bytemuck / operator trait impls. A
 //! reorganisation that moves code between files must keep every one of these
 //! paths valid, so this file stops compiling the moment one disappears.
 //!
@@ -39,15 +39,12 @@ use std::marker::PhantomData;
 fn same_type<T: ?Sized>(_: PhantomData<T>, _: PhantomData<T>) {}
 
 fn is_add<T: std::ops::Add>() {}
-fn is_borrow_decode<T: bincode::BorrowDecode<'static, ()>>() {}
 fn is_clone<T: Clone>() {}
 fn is_copy<T: Copy>() {}
 fn is_debug<T: std::fmt::Debug>() {}
-fn is_decode<T: bincode::Decode<()>>() {}
 fn is_default<T: Default>() {}
 fn is_deserialize_owned<T: serde::de::DeserializeOwned>() {}
 fn is_div_f32<T: std::ops::Div<f32>>() {}
-fn is_encode<T: bincode::Encode>() {}
 fn is_eq<T: Eq>() {}
 fn is_from_affine_transform<T: From<khora_core::math::affine_transform::AffineTransform>>() {}
 fn is_from_f32_2<T: From<[f32; 2]>>() {}
@@ -225,9 +222,6 @@ fn module_math_paths_still_resolve() {
     is_partial_eq::<khora_core::math::affine_transform::AffineTransform>();
     is_serialize::<khora_core::math::affine_transform::AffineTransform>();
     is_deserialize_owned::<khora_core::math::affine_transform::AffineTransform>();
-    is_encode::<khora_core::math::affine_transform::AffineTransform>();
-    is_decode::<khora_core::math::affine_transform::AffineTransform>();
-    is_borrow_decode::<khora_core::math::affine_transform::AffineTransform>();
     is_default::<khora_core::math::affine_transform::AffineTransform>();
     is_from_affine_transform::<khora_core::math::matrix::Mat4>();
     is_from_mat4::<khora_core::math::affine_transform::AffineTransform>();
@@ -273,9 +267,6 @@ fn module_math_paths_still_resolve() {
     is_zeroable::<khora_core::math::color::LinearRgba>();
     is_serialize::<khora_core::math::color::LinearRgba>();
     is_deserialize_owned::<khora_core::math::color::LinearRgba>();
-    is_encode::<khora_core::math::color::LinearRgba>();
-    is_decode::<khora_core::math::color::LinearRgba>();
-    is_borrow_decode::<khora_core::math::color::LinearRgba>();
     is_default::<khora_core::math::color::LinearRgba>();
     is_add::<khora_core::math::color::LinearRgba>();
     is_sub::<khora_core::math::color::LinearRgba>();
@@ -492,9 +483,6 @@ fn module_math_paths_still_resolve() {
     is_zeroable::<khora_core::math::matrix::Mat4>();
     is_serialize::<khora_core::math::matrix::Mat4>();
     is_deserialize_owned::<khora_core::math::matrix::Mat4>();
-    is_encode::<khora_core::math::matrix::Mat4>();
-    is_decode::<khora_core::math::matrix::Mat4>();
-    is_borrow_decode::<khora_core::math::matrix::Mat4>();
     is_default::<khora_core::math::matrix::Mat4>();
     is_mul::<khora_core::math::matrix::Mat4>();
     is_mul_vec4::<khora_core::math::matrix::Mat4>();
@@ -531,9 +519,6 @@ fn module_math_paths_still_resolve() {
     is_partial_eq::<khora_core::math::quaternion::Quaternion>();
     is_serialize::<khora_core::math::quaternion::Quaternion>();
     is_deserialize_owned::<khora_core::math::quaternion::Quaternion>();
-    is_encode::<khora_core::math::quaternion::Quaternion>();
-    is_decode::<khora_core::math::quaternion::Quaternion>();
-    is_borrow_decode::<khora_core::math::quaternion::Quaternion>();
     is_default::<khora_core::math::quaternion::Quaternion>();
     is_mul::<khora_core::math::quaternion::Quaternion>();
     is_mul_assign::<khora_core::math::quaternion::Quaternion>();
@@ -569,9 +554,6 @@ fn module_math_paths_still_resolve() {
     is_partial_eq::<khora_core::math::ray::Ray>();
     is_serialize::<khora_core::math::ray::Ray>();
     is_deserialize_owned::<khora_core::math::ray::Ray>();
-    is_encode::<khora_core::math::ray::Ray>();
-    is_decode::<khora_core::math::ray::Ray>();
-    is_borrow_decode::<khora_core::math::ray::Ray>();
     let _ = khora_core::math::saturate;
     let _ = khora_core::math::simd::LANES;
     let _ = type_name::<khora_core::math::simd::TrsBatchSoa>();
@@ -615,9 +597,6 @@ fn module_math_paths_still_resolve() {
     is_zeroable::<khora_core::math::vector::Vec2>();
     is_serialize::<khora_core::math::vector::Vec2>();
     is_deserialize_owned::<khora_core::math::vector::Vec2>();
-    is_encode::<khora_core::math::vector::Vec2>();
-    is_decode::<khora_core::math::vector::Vec2>();
-    is_borrow_decode::<khora_core::math::vector::Vec2>();
     is_from_vec2::<[f32; 2]>();
     is_from_f32_2::<khora_core::math::vector::Vec2>();
     is_add::<khora_core::math::vector::Vec2>();
@@ -665,9 +644,6 @@ fn module_math_paths_still_resolve() {
     is_zeroable::<khora_core::math::vector::Vec3>();
     is_serialize::<khora_core::math::vector::Vec3>();
     is_deserialize_owned::<khora_core::math::vector::Vec3>();
-    is_encode::<khora_core::math::vector::Vec3>();
-    is_decode::<khora_core::math::vector::Vec3>();
-    is_borrow_decode::<khora_core::math::vector::Vec3>();
     is_default::<khora_core::math::vector::Vec3>();
     is_add::<khora_core::math::vector::Vec3>();
     is_sub::<khora_core::math::vector::Vec3>();
@@ -707,9 +683,6 @@ fn module_math_paths_still_resolve() {
     is_zeroable::<khora_core::math::vector::Vec4>();
     is_serialize::<khora_core::math::vector::Vec4>();
     is_deserialize_owned::<khora_core::math::vector::Vec4>();
-    is_encode::<khora_core::math::vector::Vec4>();
-    is_decode::<khora_core::math::vector::Vec4>();
-    is_borrow_decode::<khora_core::math::vector::Vec4>();
     is_from_vec4::<[f32; 4]>();
     is_from_f32_4::<khora_core::math::vector::Vec4>();
     is_add::<khora_core::math::vector::Vec4>();

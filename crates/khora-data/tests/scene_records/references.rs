@@ -14,7 +14,7 @@
 
 //! Entity references inside components, across a save.
 
-use khora_core::script::{FrozenValue, ScriptValue, SuspendedMachine};
+use khora_core::script::{FrozenValue, ScriptValue};
 use khora_data::ecs::{Children, Name, Parent, Script, Transform, World};
 use khora_data::scene::record::ReportKind;
 
@@ -41,10 +41,8 @@ fn field_entity(script: &Script, field: &str) -> EntityId {
 /// The entity the frozen machine of `script` holds in its registers.
 fn frozen_entity(script: &Script) -> EntityId {
     let pending = script.runtime.pending.as_ref().expect("a pending sequence");
-    let SuspendedMachine::Frozen(machine) = &pending.machine else {
-        panic!("the pending machine is not frozen: {:?}", pending.machine);
-    };
-    machine
+    pending
+        .machine
         .registers
         .iter()
         .find_map(|register| match register {

@@ -14,7 +14,6 @@
 
 //! A 4-component vector.
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::vec3::Vec3;
@@ -36,8 +35,6 @@ use std::ops::{Add, Div, Index, IndexMut, Mul, Neg, Sub};
     bytemuck::Zeroable,
     Serialize,
     Deserialize,
-    Encode,
-    Decode,
 )]
 #[repr(C)]
 pub struct Vec4 {

@@ -14,7 +14,6 @@
 
 //! Affine transformations for 2D and 3D space.
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use crate::math::{Mat4, Quaternion, Vec3, Vec4};
@@ -24,7 +23,7 @@ use crate::math::{Mat4, Quaternion, Vec3, Vec4};
 /// This is a semantic wrapper around a `Mat4` that guarantees the matrix
 /// represents a valid affine transform. It provides a dedicated API for
 /// creating and manipulating these transformations.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct AffineTransform(pub Mat4);
 

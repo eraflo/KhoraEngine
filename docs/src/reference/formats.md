@@ -32,9 +32,9 @@ by direct byte manipulation (not serde) because it is fixed-layout.
 `from_bytes` returns `SceneFileError::InvalidMagicBytes` or
 `SceneFileError::TooShort` on a malformed file.
 
-A version `1` file predates scene records and is refused with the command that
-converts a project once: `cargo xtask assets upgrade-scenes <project>`. A version
-newer than the engine's is refused as such.
+A file of any other version is refused, with its version in the error: an
+older one as a format this engine no longer reads, a newer one as newer than
+the engine.
 
 ### The scene record
 

@@ -19,7 +19,7 @@
 //! path: each `pub mod`, the `pub use` re-exports, their types, free functions,
 //! constants, statics, type aliases, public fields, enum variants (matched
 //! exhaustively), inherent `pub` methods (turbofished where generic), trait
-//! items, and the std / serde / bincode / bytemuck / operator trait impls. A
+//! items, and the std / serde / bytemuck / operator trait impls. A
 //! reorganisation that moves code between files must keep every one of these
 //! paths valid, so this file stops compiling the moment one disappears.
 //!
@@ -49,15 +49,12 @@ fn is_bit_or<T: std::ops::BitOr>() {}
 fn is_bit_or_assign<T: std::ops::BitOrAssign>() {}
 fn is_bit_xor<T: std::ops::BitXor>() {}
 fn is_bit_xor_assign<T: std::ops::BitXorAssign>() {}
-fn is_borrow_decode<T: bincode::BorrowDecode<'static, ()>>() {}
 fn is_clone<T: Clone>() {}
 fn is_copy<T: Copy>() {}
 fn is_debug<T: std::fmt::Debug>() {}
-fn is_decode<T: bincode::Decode<()>>() {}
 fn is_default<T: Default>() {}
 fn is_deserialize_owned<T: serde::de::DeserializeOwned>() {}
 fn is_display<T: std::fmt::Display>() {}
-fn is_encode<T: bincode::Encode>() {}
 fn is_eq<T: Eq>() {}
 fn is_error<T: std::error::Error>() {}
 fn is_from_pipeline_error<T: From<khora_core::renderer::error::PipelineError>>() {}
@@ -3191,9 +3188,6 @@ fn module_renderer_paths_still_resolve() {
     is_partial_eq::<khora_core::renderer::light::DirectionalLight>();
     is_serialize::<khora_core::renderer::light::DirectionalLight>();
     is_deserialize_owned::<khora_core::renderer::light::DirectionalLight>();
-    is_encode::<khora_core::renderer::light::DirectionalLight>();
-    is_decode::<khora_core::renderer::light::DirectionalLight>();
-    is_borrow_decode::<khora_core::renderer::light::DirectionalLight>();
     is_default::<khora_core::renderer::light::DirectionalLight>();
     let _ = type_name::<khora_core::renderer::light::LightType>();
     let _ = type_name::<khora_core::renderer::LightType>();
@@ -3208,9 +3202,6 @@ fn module_renderer_paths_still_resolve() {
     is_partial_eq::<khora_core::renderer::light::LightType>();
     is_serialize::<khora_core::renderer::light::LightType>();
     is_deserialize_owned::<khora_core::renderer::light::LightType>();
-    is_encode::<khora_core::renderer::light::LightType>();
-    is_decode::<khora_core::renderer::light::LightType>();
-    is_borrow_decode::<khora_core::renderer::light::LightType>();
     is_default::<khora_core::renderer::light::LightType>();
     let _ = type_name::<khora_core::renderer::light::PointLight>();
     let _ = type_name::<khora_core::renderer::PointLight>();
@@ -3225,9 +3216,6 @@ fn module_renderer_paths_still_resolve() {
     is_partial_eq::<khora_core::renderer::light::PointLight>();
     is_serialize::<khora_core::renderer::light::PointLight>();
     is_deserialize_owned::<khora_core::renderer::light::PointLight>();
-    is_encode::<khora_core::renderer::light::PointLight>();
-    is_decode::<khora_core::renderer::light::PointLight>();
-    is_borrow_decode::<khora_core::renderer::light::PointLight>();
     is_default::<khora_core::renderer::light::PointLight>();
     let _ = type_name::<khora_core::renderer::light::SpotLight>();
     let _ = type_name::<khora_core::renderer::SpotLight>();
@@ -3242,9 +3230,6 @@ fn module_renderer_paths_still_resolve() {
     is_partial_eq::<khora_core::renderer::light::SpotLight>();
     is_serialize::<khora_core::renderer::light::SpotLight>();
     is_deserialize_owned::<khora_core::renderer::light::SpotLight>();
-    is_encode::<khora_core::renderer::light::SpotLight>();
-    is_decode::<khora_core::renderer::light::SpotLight>();
-    is_borrow_decode::<khora_core::renderer::light::SpotLight>();
     is_default::<khora_core::renderer::light::SpotLight>();
     // trait `khora_core::renderer::traits::CommandEncoder`: see `command_encoder_trait_items`
     // trait `khora_core::renderer::traits::ComputePass`: see `compute_pass_trait_items`

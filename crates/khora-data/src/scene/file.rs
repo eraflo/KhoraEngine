@@ -19,19 +19,11 @@ use khora_core::scene::{SceneFile, SceneHeader, HEADER_MAGIC_BYTES, SCENE_FORMAT
 use super::encoding::{encoding_named, EncodingError, SceneEncoding};
 use super::scene_record::SceneRecord;
 
-/// The command that converts a project's scenes written before scene records.
-pub const UPGRADE_SCENES_COMMAND: &str = "cargo xtask assets upgrade-scenes <project>";
-
 /// Why a scene file could not be read.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SceneFileReadError {
     /// Written in a format this engine no longer reads.
-    OldFormat {
-        /// The version the file was written in.
-        version: u8,
-        /// What converts it — the error carries its remedy wherever it is shown.
-        upgrade: &'static str,
-    },
+    OldFormat(u8),
     /// Written in a format newer than this engine.
     NewerFormat(u8),
     /// The header names an encoding this engine does not have.
@@ -43,10 +35,9 @@ pub enum SceneFileReadError {
 impl std::fmt::Display for SceneFileReadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::OldFormat { version, upgrade } => write!(
+            Self::OldFormat(version) => write!(
                 f,
-                "scene format v{version} predates scene records; convert the project once with \
-                 `{upgrade}`"
+                "scene format v{version} is older than any this engine reads"
             ),
             Self::NewerFormat(version) => write!(
                 f,
@@ -101,10 +92,7 @@ pub fn encoding_of(file: &SceneFile) -> String {
 pub(super) fn check_format(file: &SceneFile) -> Result<(), SceneFileReadError> {
     let version = file.header.format_version;
     if version < SCENE_FORMAT_VERSION {
-        return Err(SceneFileReadError::OldFormat {
-            version,
-            upgrade: UPGRADE_SCENES_COMMAND,
-        });
+        return Err(SceneFileReadError::OldFormat(version));
     }
     if version > SCENE_FORMAT_VERSION {
         return Err(SceneFileReadError::NewerFormat(version));

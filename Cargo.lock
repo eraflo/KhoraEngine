@@ -2627,7 +2627,6 @@ dependencies = [
  "anyhow",
  "approx",
  "async-trait",
- "bincode",
  "bytemuck",
  "criterion",
  "log",
@@ -2759,7 +2758,6 @@ version = "0.1.2"
 dependencies = [
  "ahash",
  "anyhow",
- "bincode",
  "bytemuck",
  "khora-core",
  "khora-data",

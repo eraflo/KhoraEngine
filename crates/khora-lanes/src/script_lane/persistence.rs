@@ -42,7 +42,7 @@
 //! [`bridge`]: khora_script::bridge
 
 use khora_core::script::{
-    PendingBody, PendingSequence, ScriptSnapshot, ScriptValue, SuspendedMachine, TimerRemaining,
+    PendingBody, PendingSequence, ScriptSnapshot, ScriptValue, TimerRemaining,
 };
 use khora_script::arena::{Persisted, PersistentStore};
 use khora_script::vm::{BehaviorLayout, Machine, Program, TimerKind, Value};
@@ -300,7 +300,7 @@ pub fn snapshot_of(
 ///
 /// Records what the program's code looked like alongside the machine, because a
 /// machine is a *position* in that code — see [`resume`] for what that buys.
-/// The machine goes down in the engine's own terms ([`SuspendedMachine::Frozen`]),
+/// The machine goes down in the engine's own terms ([`FrozenMachine`]),
 /// so every scene encoding writes it natively and a text save shows it.
 /// `None` when the machine does not belong to `program` — suspended in other
 /// code, which a load would only abandon — losing the sequence rather than the
@@ -315,21 +315,11 @@ pub fn suspend(pending: &Pending, program: &Program) -> Option<PendingSequence> 
         log::error!("a suspended sequence could not be saved: it does not belong to its program");
         return None;
     };
-    // Kept only within the bound its binary form is read back under: past
-    // it, one sequence is left out of the save rather than written in a form
-    // that cannot be read back.
-    if !machine.fits_a_save() {
-        log::warn!(
-            "a suspended sequence was left out of the save: its machine is too large to read \
-             back"
-        );
-        return None;
-    }
 
     Some(PendingSequence {
         fingerprint: pending.fingerprint,
         remaining: pending.remaining,
-        machine: SuspendedMachine::Frozen(machine),
+        machine,
     })
 }
 
@@ -402,22 +392,8 @@ pub fn resume(
         return None;
     }
 
-    let restored = match &sequence.machine {
-        SuspendedMachine::Frozen(frozen) => {
-            thawed_body(&frozen.body, program, layout).zip(Machine::thaw(frozen, program))
-        }
-        // Written before a machine had a structured form, by the VM's own
-        // encoding — and only ever an event handler's sequence, the one body
-        // that could be saved then.
-        SuspendedMachine::Legacy(bytes) => {
-            bincode::serde::decode_from_slice::<Machine, _>(bytes, bincode::config::standard())
-                .map_err(|error| log::debug!("legacy machine did not decode: {error}"))
-                .ok()
-                .and_then(|(machine, _)| machine.freeze(program, PendingBody::Sequence))
-                .and_then(|frozen| Machine::thaw(&frozen, program))
-                .map(|machine| (Body::Sequence, machine))
-        }
-    };
+    let frozen = &sequence.machine;
+    let restored = thawed_body(&frozen.body, program, layout).zip(Machine::thaw(frozen, program));
     let Some((body, machine)) = restored else {
         log::warn!(
             "a sequence saved mid-`await` was abandoned: what it stopped in is not in the \

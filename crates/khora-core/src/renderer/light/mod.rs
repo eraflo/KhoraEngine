@@ -24,7 +24,6 @@ pub mod uniforms;
 pub use self::forward_plus::{ForwardPlusTileConfig, GpuLight, TileSize};
 pub use self::uniforms::*;
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use crate::math::{LinearRgba, Vec3};
@@ -50,7 +49,7 @@ use crate::math::{LinearRgba, Vec3};
 ///     shadow_normal_bias: 0.02,
 /// };
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct DirectionalLight {
     /// The direction the light is pointing (normalized).
     ///
@@ -111,7 +110,7 @@ impl Default for DirectionalLight {
 ///     shadow_normal_bias: 0.0,
 /// };
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PointLight {
     /// The color of the light in linear RGB space.
     pub color: LinearRgba,
@@ -174,7 +173,7 @@ impl Default for PointLight {
 ///     shadow_normal_bias: 0.0,
 /// };
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SpotLight {
     /// The direction the spotlight is pointing (normalized).
     pub direction: Vec3,
@@ -227,7 +226,7 @@ impl Default for SpotLight {
 ///
 /// This enum allows a single `Light` component to represent any type of light source.
 /// The render lanes use this to determine how to calculate lighting contributions.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum LightType {
     /// A directional light (sun-like, infinite distance, no falloff).
     Directional(DirectionalLight),

@@ -37,10 +37,9 @@
 //! depending only on how the host measures time. What is left survives a save
 //! exactly.
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
-use super::{ScriptValue, SuspendedMachine};
+use super::{FrozenMachine, ScriptValue};
 
 /// One `every` or `after`, and how far along it is.
 ///
@@ -49,7 +48,7 @@ use super::{ScriptValue, SuspendedMachine};
 /// does not swap their countdowns. Two schedules an author wrote identically are
 /// genuinely interchangeable, and [`ordinal`](Self::ordinal) tells those apart
 /// only so a save with two of them restores two.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TimerRemaining {
     /// Whether it repeats — `every` rather than `after`.
     pub repeating: bool,
@@ -76,7 +75,7 @@ pub struct TimerRemaining {
 /// The reason a continuation had to be *representable* rather than opaque, and
 /// the promise the whole suspension design was built to keep: a save taken
 /// half-way through an attack's wind-up loads half-way through it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PendingSequence {
     /// What the program looked like when the machine stopped.
     ///
@@ -88,11 +87,11 @@ pub struct PendingSequence {
     /// Seconds still to wait.
     pub remaining: f32,
     /// The frozen machine, in the engine's terms — see [`super::frozen`].
-    pub machine: SuspendedMachine,
+    pub machine: FrozenMachine,
 }
 
 /// A behavior instance, as the scene records it.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ScriptSnapshot {
     /// The behavior's own fields, by name.
     pub fields: Vec<(String, ScriptValue)>,

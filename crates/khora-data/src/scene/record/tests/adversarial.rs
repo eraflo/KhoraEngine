@@ -18,7 +18,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use khora_core::script::{FrozenMachine, FrozenValue, PendingBody, SuspendedMachine};
+use khora_core::script::{FrozenMachine, FrozenValue, PendingBody};
 use serde::{Deserialize, Serialize};
 
 use super::*;
@@ -183,18 +183,17 @@ fn surplus_bytes_read_into_a_fixed_size_value_are_refused() {
 
 /// A frozen machine in the compact form of a self-describing binary format,
 /// where a struct is written as the list of its fields, reads back as the
-/// machine it was — as it did when the two forms were told apart by trying
-/// each in turn.
+/// machine it was.
 #[test]
 fn a_frozen_machine_round_trips_through_compact_messagepack() {
-    let machine = SuspendedMachine::Frozen(FrozenMachine {
+    let machine = FrozenMachine {
         body: PendingBody::Sequence,
         registers: vec![FrozenValue::Float(0.5)],
         frames: vec![],
         program_counter: 3,
-    });
+    };
     let bytes = rmp_serde::to_vec(&machine).expect("encodes");
-    let back: Result<SuspendedMachine, _> = rmp_serde::from_slice(&bytes);
+    let back: Result<FrozenMachine, _> = rmp_serde::from_slice(&bytes);
     assert_eq!(back.ok(), Some(machine));
 }
 

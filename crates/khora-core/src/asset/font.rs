@@ -13,11 +13,10 @@
 // limitations under the License.
 
 use super::Asset;
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 /// A font asset containing raw font data (TTF/OTF).
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Font {
     /// The name of the font.
     pub name: String,

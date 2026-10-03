@@ -14,7 +14,6 @@
 
 //! Collisions: the events a backend reports and the channel they travel on.
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::handle::ColliderHandle;
@@ -79,7 +78,7 @@ pub struct ContactBatch {
 }
 
 /// Events representing collision start/end.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum CollisionEvent {
     /// Collision between two colliders started.
     Started(ColliderHandle, ColliderHandle),

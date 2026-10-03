@@ -53,7 +53,7 @@ use super::AlphaMode;
 ///     ..Default::default()
 /// };
 /// ```
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, bincode::Encode, bincode::Decode)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct EmissiveMaterial {
     /// The emissive color of the material.
     ///

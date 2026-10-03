@@ -37,7 +37,6 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use khora_core::script::frozen::SUSPENDED_MACHINE_NAME;
 use serde::de::{self, DeserializeOwned, Visitor};
 
 use super::access::{Elements, Entry, One, Variant};
@@ -515,11 +514,6 @@ impl<'de> de::Deserializer<'de> for &mut Tracer<'_> {
         name: &'static str,
         visitor: V,
     ) -> Result<V::Value, TraceError> {
-        if name == SUSPENDED_MACHINE_NAME {
-            // The reserved name only announces the enum of a machine's two
-            // forms, which the visitor reads next: nothing of its own.
-            return visitor.visit_newtype_struct(self);
-        }
         let key = key::<V>(name);
         let entered = self.enter(key)?;
         let slot = child(self.slot, key, "", 0);

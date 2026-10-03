@@ -14,7 +14,6 @@
 
 //! A 3-component vector.
 
-use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use super::EPSILON;
@@ -48,16 +47,7 @@ use std::ops::{Add, Div, Index, IndexMut, Mul, Neg, Sub};
 /// assert_eq!(dir, Vec3::Y);
 /// ```
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    bytemuck::Pod,
-    bytemuck::Zeroable,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
+    Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable, Serialize, Deserialize,
 )]
 #[repr(C)]
 pub struct Vec3 {

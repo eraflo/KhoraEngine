@@ -546,7 +546,6 @@ mod tests {
     fn stop_restores_script_targets() {
         use khora_sdk::khora_core::script::{
             FrozenFrame, FrozenMachine, FrozenValue, PendingBody, PendingSequence, ScriptSnapshot,
-            SuspendedMachine,
         };
 
         let mut world = GameWorld::new();
@@ -567,7 +566,7 @@ mod tests {
                     pending: Some(PendingSequence {
                         fingerprint: 7,
                         remaining: 0.5,
-                        machine: SuspendedMachine::Frozen(FrozenMachine {
+                        machine: FrozenMachine {
                             body: PendingBody::Update,
                             registers: vec![FrozenValue::Entity(target)],
                             frames: vec![FrozenFrame {
@@ -577,7 +576,7 @@ mod tests {
                                 result: 0,
                             }],
                             program_counter: 3,
-                        }),
+                        },
                     }),
                     ..ScriptSnapshot::default()
                 },
@@ -643,11 +642,8 @@ mod tests {
             .pending
             .as_ref()
             .expect("the pending sequence");
-        let SuspendedMachine::Frozen(machine) = &pending.machine else {
-            panic!("the machine is still frozen: {:?}", pending.machine);
-        };
         assert_eq!(
-            machine.registers,
+            pending.machine.registers,
             vec![FrozenValue::Entity(target_back)],
             "the frozen register points at the restored target"
         );

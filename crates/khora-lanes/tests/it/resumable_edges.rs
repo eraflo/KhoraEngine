@@ -23,6 +23,8 @@ use khora_script::arena::Persisted;
 use khora_script::vm::{Program, Value};
 use khora_script::{check, compile, lex, parse, Host};
 
+use super::saves::every_encoding;
+
 const ARMOURY: &str = "armoury.erg";
 const BARRACKS: &str = "barracks.erg";
 
@@ -244,12 +246,11 @@ fn a_save_taken_during_a_wait_records_what_is_left_of_it() {
 /// script, about a hundred kilobytes — and the frame's budget runs out at the
 /// bottom. The lane keeps the machine and the scene records it. A structured
 /// machine writes each literal register as its full text, so sixty frames
-/// holding the one literal come to several megabytes; the binary encoding
-/// writes them without complaint, and its decoder, bounded to four, refuses
-/// them — and with them the whole snapshot: a scene strategy decoding the
-/// entity's `Script` drops the component, so the entity loads with no behavior.
+/// holding the one literal come to several megabytes. Every encoding a scene
+/// carries the snapshot in reads it back whole: one that refused it would drop
+/// the entity's `Script`, so the entity would load with no behavior.
 #[test]
-fn a_binary_save_holding_a_deep_machine_reads_back() {
+fn a_save_holding_a_deep_machine_reads_back() {
     let line = "x".repeat(100_000);
     let source = format!(
         "behavior Narrator {{
@@ -286,13 +287,11 @@ fn a_binary_save_holding_a_deep_machine_reads_back() {
         "the cut `Update` is kept as the instance's pending body"
     );
 
-    let config = bincode::config::standard();
-    let bytes = bincode::encode_to_vec(&snapshot, config).expect("the lane's snapshot encodes");
-    let decoded: Result<(ScriptSnapshot, usize), _> = bincode::decode_from_slice(&bytes, config);
-    assert!(
-        decoded.is_ok(),
-        "a {} byte snapshot the engine wrote does not read back: {:?}",
-        bytes.len(),
-        decoded.err()
-    );
+    for (encoding, carry) in every_encoding() {
+        let loaded: ScriptSnapshot = carry(&snapshot);
+        assert!(
+            loaded == snapshot,
+            "{encoding}: the snapshot the engine wrote does not read back whole"
+        );
+    }
 }
