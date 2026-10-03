@@ -22,10 +22,13 @@
 use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::ecs::entity::EntityId;
 use khora_core::renderer::api::gpu_scene::Mesh;
+use khora_core::scene::{SceneFile, SerializationGoal};
 use khora_data::ecs::{
     Camera, Component, ComponentBundle, GlobalTransform, HandleComponent, Query, QueryMut,
     Transform, World, WorldQuery,
 };
+use khora_data::scene::record::LoadReport;
+use khora_io::serialization::{SerializationService, SerializationServiceError};
 
 /// A high-level facade over the internal ECS `World` and `Assets` registry.
 ///
@@ -378,6 +381,32 @@ impl GameWorld {
         material: M,
     ) -> khora_data::ecs::MaterialRef {
         khora_data::ecs::MaterialRef::inline(Box::new(material))
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Game saves
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Saves the game this world is running: how it differs from the scene
+    /// `base` holds — known as `base_id` — written in the encoding `goal`
+    /// calls for.
+    pub fn save_game(
+        &self,
+        base_id: AssetUUID,
+        base: &SceneFile,
+        goal: SerializationGoal,
+    ) -> Result<SceneFile, SerializationServiceError> {
+        SerializationService::new().save_game(&self.world, base_id, base, goal)
+    }
+
+    /// Loads the game `save` holds, taken against the scene `base` holds —
+    /// or, if it cannot be loaded, leaves this world exactly as it was.
+    pub fn load_game(
+        &mut self,
+        save: &SceneFile,
+        base: &SceneFile,
+    ) -> Result<LoadReport, SerializationServiceError> {
+        SerializationService::new().load_game(&mut self.world, save, base)
     }
 
     // ─────────────────────────────────────────────────────────────────────

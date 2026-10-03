@@ -100,7 +100,7 @@ fn a_scene_with_one_hovering_sphere(delta_seconds: f32) -> ScriptView {
         instances: vec![ScriptInstance {
             entity: entity(1),
             program: 0,
-            authored: None,
+            arrival: None,
             translation: Default::default(),
             rotation: Default::default(),
             scale: Default::default(),

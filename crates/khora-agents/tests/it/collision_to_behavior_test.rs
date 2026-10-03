@@ -80,7 +80,7 @@ fn a_scene_with_a_guard() -> ScriptView {
         instances: vec![ScriptInstance {
             entity: entity(1),
             program: 0,
-            authored: None,
+            arrival: None,
             translation: Default::default(),
             rotation: Default::default(),
             scale: Default::default(),

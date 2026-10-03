@@ -27,7 +27,7 @@ use std::collections::{HashMap, HashSet};
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 
-use super::component_registration::ComponentRegistration;
+use super::component_registration::{ComponentRegistration, Kept};
 use super::record::{EntityRef, RecordError, ReferenceWriter};
 use super::scene_record::{PageRecord, SceneRecord};
 use crate::ecs::{Children, Parent, World};
@@ -49,6 +49,8 @@ pub enum SaveError {
     /// A snapshot was asked of a component whose schema could not be traced
     /// in full: no fingerprint could tell its versions apart.
     Unguarded(String),
+    /// The scene a game save is taken against could not be read.
+    Base(String),
 }
 
 impl std::fmt::Display for SaveError {
@@ -57,6 +59,7 @@ impl std::fmt::Display for SaveError {
             Self::Component { component, error } => write!(f, "`{component}`: {error}"),
             Self::NoSuchEntity(entity) => write!(f, "no entity {entity:?}"),
             Self::Encoding(error) => write!(f, "{error}"),
+            Self::Base(error) => write!(f, "the scene the save is taken against: {error}"),
             Self::Unguarded(component) => write!(
                 f,
                 "`{component}` has a schema no fingerprint can guard: it cannot be snapshotted"
@@ -73,7 +76,13 @@ impl std::error::Error for SaveError {}
 /// load derives every list from the order the record names its children in,
 /// so this is what keeps siblings in the order the scene had them.
 pub fn capture_world(world: &World) -> Result<SceneRecord, SaveError> {
-    capture(world, &world_in_tree_order(world), None)
+    capture(world, &world_in_tree_order(world), None, Kept::Scene)
+}
+
+/// Every entity of `world`, in tree order, and the components a game save
+/// keeps: what a scene keeps, and the state play resumes from.
+pub(super) fn capture_game(world: &World) -> Result<SceneRecord, SaveError> {
+    capture(world, &world_in_tree_order(world), None, Kept::Game)
 }
 
 /// Every entity of `world`, tree by tree, each parent's children in their
@@ -103,7 +112,7 @@ pub fn capture_subtree(world: &World, root: EntityId) -> Result<SceneRecord, Sav
         return Err(SaveError::NoSuchEntity(root));
     }
     let entities = descend(world, vec![root], &mut HashSet::new());
-    capture(world, &entities, Some(root))
+    capture(world, &entities, Some(root), Kept::Scene)
 }
 
 /// `roots` and everything under them, breadth first, each parent's children
@@ -129,12 +138,11 @@ fn descend(world: &World, roots: Vec<EntityId>, seen: &mut HashSet<EntityId>) ->
     entities
 }
 
-/// The registrations of the components worth saving — those an author or a
-/// tool wrote, not those the engine derives or writes while running — by type.
-fn saved_registrations() -> HashMap<TypeId, &'static ComponentRegistration> {
+/// The registrations of the components `kept` keeps, by type.
+fn kept_registrations(kept: Kept) -> HashMap<TypeId, &'static ComponentRegistration> {
     inventory::iter::<ComponentRegistration>
         .into_iter()
-        .filter(|reg| reg.is_saved())
+        .filter(|reg| kept.keeps(reg))
         .map(|reg| (reg.type_id, reg))
         .collect()
 }
@@ -143,10 +151,15 @@ fn capture(
     world: &World,
     entities: &[EntityId],
     root: Option<EntityId>,
+    kept: Kept,
 ) -> Result<SceneRecord, SaveError> {
-    let (ids, pages) = capture_pages(world, entities, root, |reg, column, row, references| {
-        (reg.column_to_record)(column, row, references)
-    })?;
+    let (ids, pages) = capture_pages(
+        world,
+        entities,
+        root,
+        kept,
+        |reg, column, row, references| (reg.column_to_record)(column, row, references),
+    )?;
     Ok(SceneRecord {
         entities: ids,
         pages: pages
@@ -180,6 +193,7 @@ pub(super) fn capture_pages<V>(
     world: &World,
     entities: &[EntityId],
     root: Option<EntityId>,
+    kept: Kept,
     mut write: impl FnMut(
         &'static ComponentRegistration,
         &dyn crate::ecs::AnyVec,
@@ -200,7 +214,7 @@ pub(super) fn capture_pages<V>(
     }
     let captured: HashSet<EntityId> = entities.iter().copied().collect();
 
-    let registrations = saved_registrations();
+    let registrations = kept_registrations(kept);
     let parent = TypeId::of::<crate::ecs::Parent>();
     // Pages whose saved components are the same land in one page record:
     // the record holds what a load needs to build, one page per signature.

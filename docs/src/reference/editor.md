@@ -260,7 +260,7 @@ contributes its agents through `AgentProvider`.
 | `crates/khora-editor/src/widgets/` | Editor-specific widgets (tiles, inspector fields) |
 | `crates/khora-editor/src/ops/` | High-level scene operations (spawn, despawn, parent, add component) |
 | `crates/khora-editor/src/commands/` | The command dispatch the menus and palette go through |
-| `crates/khora-editor/src/scene_io.rs` | Scene save / load via `SerializationService` |
+| `crates/khora-editor/src/scene_io/mod.rs` | Scene save / load via `SerializationService` |
 | `crates/khora-editor/src/gizmo/`, `picking.rs` | Gizmo geometry, drag math and dispatch; viewport picking |
 | `crates/khora-editor/src/project_vfs.rs` | The live asset index — VFS, watcher and identity registry |
 

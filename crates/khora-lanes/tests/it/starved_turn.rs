@@ -18,7 +18,7 @@
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
-use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
+use khora_data::flow::{ScriptArrival, ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{run_behaviors, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::vm::{Program, Value};
@@ -69,7 +69,11 @@ fn view_of(behavior: &str, delta: f32, authored: Option<ScriptSnapshot>) -> Scri
         instances: vec![ScriptInstance {
             entity: subject(),
             program: 0,
-            authored,
+            // What the lane wrote back arrives as observed state.
+            arrival: authored.map(|observed| ScriptArrival {
+                fields: Vec::new(),
+                observed: Some(observed),
+            }),
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
@@ -546,7 +550,7 @@ fn one_instances_wait_is_not_anothers_resume_delay() {
     let instance = |entity: EntityId, program: u32| ScriptInstance {
         entity,
         program,
-        authored: None,
+        arrival: None,
         translation: khora_core::math::Vec3::ZERO,
         rotation: khora_core::math::Quaternion::IDENTITY,
         scale: khora_core::math::Vec3::ONE,

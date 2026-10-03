@@ -80,7 +80,7 @@ fn one_guard() -> ScriptView {
         instances: vec![ScriptInstance {
             entity: entity(0),
             program: 0,
-            authored: None,
+            arrival: None,
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,

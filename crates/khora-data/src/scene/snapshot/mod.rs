@@ -36,7 +36,7 @@ use khora_core::scene::SceneFile;
 
 use super::apply::{failure, prepare_pages, LoadFailure, PagePlan, Prepared};
 use super::capture::{capture_pages, world_in_tree_order, SaveError};
-use super::component_registration::ComponentRegistration;
+use super::component_registration::{ComponentRegistration, Kept};
 use super::file::{check_format, encoding_of, scene_file};
 use super::positional::write_varint;
 use super::record::LoadReport;
@@ -51,11 +51,17 @@ const VERSION: u8 = 1;
 /// Writes every entity of `world` and its saved components as a snapshot.
 pub fn write_snapshot(world: &World) -> Result<SceneFile, SaveError> {
     let entities = world_in_tree_order(world);
-    let (ids, pages) = capture_pages(world, &entities, None, |reg, column, row, references| {
-        let mut bytes = Vec::new();
-        (reg.column_to_snapshot)(column, row, &mut bytes, references)?;
-        Ok(bytes)
-    })?;
+    let (ids, pages) = capture_pages(
+        world,
+        &entities,
+        None,
+        Kept::Scene,
+        |reg, column, row, references| {
+            let mut bytes = Vec::new();
+            (reg.column_to_snapshot)(column, row, &mut bytes, references)?;
+            Ok(bytes)
+        },
+    )?;
 
     // Every component the pages hold, once, in the order first met — each
     // one a fingerprint can guard.

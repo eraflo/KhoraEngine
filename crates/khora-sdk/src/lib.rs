@@ -143,6 +143,7 @@ pub use khora_infra::GpuMonitor;
 pub use khora_core::asset::AssetSource;
 pub use khora_core::scene::{SceneFile, SerializationGoal};
 pub use khora_data::assets::SoundData;
+pub use khora_data::scene::record::LoadReport;
 pub use khora_io::asset::decoders::audio::SymphoniaDecoder;
 pub use khora_io::asset::{
     AssetChangeEvent, AssetChangeKind, AssetIdRegistry, AssetIo, AssetService, AssetWatcher,
@@ -150,7 +151,7 @@ pub use khora_io::asset::{
     PackHeader, PackLoader, PackOutput, PackProgress, PACK_FORMAT_VERSION, PACK_HEADER_SIZE,
     PACK_MAGIC,
 };
-pub use khora_io::serialization::SerializationService;
+pub use khora_io::serialization::{SerializationService, SerializationServiceError};
 pub use khora_telemetry::MetricsRegistry;
 
 // Mesh type (used by editor ops)

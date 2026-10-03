@@ -87,6 +87,9 @@ pub enum ReportKind {
     NotSaved,
     /// A reference named an entity the save does not hold.
     DeadReference,
+    /// A game save changed an entity its scene no longer has: the scene's
+    /// removal wins, and the save's changes to it were dropped.
+    RemovedFromScene,
 }
 
 impl std::fmt::Display for ReportEntry {
@@ -110,6 +113,9 @@ impl std::fmt::Display for ReportEntry {
             ReportKind::DeadReference => {
                 write!(f, "`{place}` named an entity the save does not hold")?
             }
+            ReportKind::RemovedFromScene => f.write_str(
+                "the save changed an entity the scene no longer has; its changes were dropped",
+            )?,
         }
         if let Some(component) = &self.component {
             write!(f, " (component {component}")?;

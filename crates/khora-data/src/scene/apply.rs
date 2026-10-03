@@ -34,7 +34,7 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 
 use super::component_registration::{
-    registration_named, ComponentRegistration, Staged, StagedComponent,
+    registration_named, ComponentRegistration, Kept, Staged, StagedComponent,
 };
 use super::record::{EntityRef, LoadReport, RecordError, ReferenceReader, ReportEntry, ReportKind};
 use super::retired::is_retired;
@@ -118,6 +118,16 @@ type StagedRow = Vec<(TypeId, Box<dyn StagedComponent>)>;
 /// Reads and checks `record` against `world`'s registrations, reserving an id
 /// for each of its entities, without adding anything.
 pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, LoadFailure> {
+    prepare_kept(world, record, Kept::Scene)
+}
+
+/// [`prepare`], keeping the components `kept` keeps and skipping, reported,
+/// any other the record holds.
+pub(super) fn prepare_kept(
+    world: &mut World,
+    record: &SceneRecord,
+    kept: Kept,
+) -> Result<Prepared, LoadFailure> {
     let mut report = LoadReport::default();
 
     // Names first: nothing is reserved for a file that names a type nobody
@@ -152,7 +162,7 @@ pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, Load
                 // it comes from. A save holding one — written before the
                 // component stopped being saved, or by a tool — loses
                 // nothing by skipping it, and says so.
-                Some(reg) if !reg.is_saved() => {
+                Some(reg) if !kept.keeps(reg) => {
                     for id in &page.rows {
                         report.entries.push(ReportEntry {
                             entity: Some(*id),

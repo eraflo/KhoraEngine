@@ -36,7 +36,6 @@ fn deep_world(depth: usize) -> World {
             module: "a.erg".into(),
             behavior: "A".into(),
             fields: vec![("v".into(), nested_array(depth))],
-            runtime: Default::default(),
         },
     ));
     src

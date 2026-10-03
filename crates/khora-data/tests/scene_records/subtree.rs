@@ -82,7 +82,6 @@ fn level() -> Level {
                     ("aim".into(), ScriptValue::Entity(sight)),
                     ("enemy".into(), ScriptValue::Entity(player)),
                 ],
-                runtime: Default::default(),
             },
         )
         .expect("a script attaches");

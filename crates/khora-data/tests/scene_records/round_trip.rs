@@ -26,8 +26,8 @@ use super::*;
 const TEST_COMPONENTS: &[&str] = &["Beacon", "Stamina"];
 
 /// A save is only as good as its worst component: every kind a scene records
-/// — all of them, the script with a sequence frozen part-way and an entity in
-/// a register included — must come back from every encoding equal, under the
+/// — all of them, the script with entities in its fields included — must
+/// come back from every encoding equal, under the
 /// identity it was saved with, with nothing the load had to adapt.
 #[test]
 fn a_world_round_trips_through_every_encoding() {

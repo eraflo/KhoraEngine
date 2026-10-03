@@ -295,7 +295,6 @@ fn loading_leaves_no_orphan_rows() {
         module: "ai/idle.erg".into(),
         behavior: "Idle".into(),
         fields: vec![],
-        runtime: Default::default(),
     });
     src.spawn(GlobalTransform::identity());
 

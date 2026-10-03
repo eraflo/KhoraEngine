@@ -29,9 +29,10 @@ use serde_json::json;
 
 use crate::ecs::{
     AudioListener, Camera, Collider, Light, Name, Parent, ProjectionType, RigidBody, Script,
-    SerializableAudioListener, SerializableCamera, SerializableCollider, SerializableLight,
-    SerializableName, SerializableParent, SerializableRigidBody, SerializableScript,
-    SerializableTag, SerializableTransform, Tag, Transform,
+    ScriptState, SerializableAudioListener, SerializableCamera, SerializableCollider,
+    SerializableLight, SerializableName, SerializableParent, SerializableRigidBody,
+    SerializableScript, SerializableScriptState, SerializableTag, SerializableTransform, Tag,
+    Transform,
 };
 use crate::ui::{
     SerializableUiImage, SerializableUiStyle, SerializableUiText, UiImage, UiStyle, UiText,
@@ -406,7 +407,10 @@ fn every_persisted_type_survives_the_self_describing_form() {
                 ]),
             ),
         ],
-        runtime: busy_snapshot(target),
+    }));
+    assert_self_describes(&SerializableScriptState::from(ScriptState {
+        behavior: "Guard".into(),
+        snapshot: busy_snapshot(target),
     }));
     assert_self_describes(&SerializableUiStyle::from(UiStyle {
         texture_id: Some(42),

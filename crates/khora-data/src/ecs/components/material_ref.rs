@@ -359,6 +359,7 @@ inventory::submit! {
         shape: crate::scene::ComponentShape::Opaque,
         provenance: crate::ecs::ComponentProvenance::Authored,
         formerly: &[],
+        resumable: false,
         column_to_record: material_ref_to_record,
         stage: stage_material_ref,
         schema: || material_ref_schema().0,

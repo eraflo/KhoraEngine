@@ -36,10 +36,12 @@ use std::collections::HashMap;
 
 use reader::{Reader, NAME_BYTES_PER_FILE_BYTE};
 
+use khora_core::asset::AssetUUID;
 use khora_core::ecs::PersistentId;
 
 use super::EncodingError;
 use crate::scene::record::{EntityRef, Record, VariantPayload};
+use crate::scene::save::{RemovedComponents, SaveRecord};
 use crate::scene::scene_record::{PageRecord, SceneRecord};
 
 /// The layout version this module writes and reads.
@@ -334,6 +336,82 @@ fn write_varint(out: &mut Vec<u8>, mut v: u64) {
         }
         out.push(byte | 0x80);
     }
+}
+
+/// Writes a game save compactly: the scene it was taken against, the saved
+/// world's order, the entities destroyed and created, the components
+/// removed — then its changes and the scene's values before them, each as a
+/// record is written, the first behind its length.
+pub(super) fn encode_save(save: &SaveRecord) -> Vec<u8> {
+    fn ids(out: &mut Vec<u8>, ids: &[PersistentId]) {
+        write_varint(out, ids.len() as u64);
+        for id in ids {
+            out.extend_from_slice(&id.to_bits().to_le_bytes());
+        }
+    }
+    let mut out = Vec::new();
+    out.extend_from_slice(save.base.as_bytes());
+    ids(&mut out, &save.order);
+    ids(&mut out, &save.destroyed);
+    ids(&mut out, &save.created);
+    write_varint(&mut out, save.removed.len() as u64);
+    for entry in &save.removed {
+        out.extend_from_slice(&entry.entity.to_bits().to_le_bytes());
+        write_varint(&mut out, entry.components.len() as u64);
+        for name in &entry.components {
+            write_varint(&mut out, name.len() as u64);
+            out.extend_from_slice(name.as_bytes());
+        }
+    }
+    let changes = encode(&save.changes);
+    write_varint(&mut out, changes.len() as u64);
+    out.extend(changes);
+    out.extend(encode(&save.before));
+    out
+}
+
+/// Reads a compactly written game save, as checked as a record is.
+pub(super) fn decode_save(bytes: &[u8]) -> Result<SaveRecord, EncodingError> {
+    fn ids(input: &mut Input<'_>) -> Result<Vec<PersistentId>, EncodingError> {
+        let count = input.count(8)?;
+        let mut ids = Vec::with_capacity(count);
+        for _ in 0..count {
+            ids.push(PersistentId::from_bits(input.u64_le()?));
+        }
+        Ok(ids)
+    }
+    let mut input = Input { bytes, at: 0 };
+    let base = AssetUUID::from_bytes(input.array()?);
+    let order = ids(&mut input)?;
+    let destroyed = ids(&mut input)?;
+    let created = ids(&mut input)?;
+    // An entry is an id and a count at least.
+    let removed_count = input.count(9)?;
+    let mut removed = Vec::with_capacity(removed_count);
+    for _ in 0..removed_count {
+        let entity = PersistentId::from_bits(input.u64_le()?);
+        let name_count = input.count(1)?;
+        let mut components = Vec::with_capacity(name_count);
+        for _ in 0..name_count {
+            let len = input.count(1)?;
+            let name = std::str::from_utf8(input.take(len)?)
+                .map_err(|_| error("a component name that is not UTF-8".to_owned()))?;
+            components.push(name.to_owned());
+        }
+        removed.push(RemovedComponents { entity, components });
+    }
+    Ok(SaveRecord {
+        base,
+        order,
+        destroyed,
+        created,
+        removed,
+        changes: {
+            let len = input.count(1)?;
+            decode(input.take(len)?)?
+        },
+        before: decode(&bytes[input.at..])?,
+    })
 }
 
 /// Reads a compactly written record. A damaged input is an error, never a

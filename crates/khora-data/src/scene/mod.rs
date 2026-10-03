@@ -31,6 +31,7 @@ pub mod positional;
 pub mod prefab;
 pub mod record;
 pub mod retired;
+pub mod save;
 pub mod scene_record;
 pub mod schema;
 pub mod snapshot;
@@ -47,4 +48,8 @@ pub use encoding::{
 pub use file::{encoding_of, read_scene_file, write_scene_file, SceneFileReadError};
 pub use prefab::{instantiate_subtree, serialize_subtree};
 pub use retired::{is_retired, RetiredComponent};
+pub use save::{
+    capture_save, compose, compose_reporting, prepare_game, promote, read_save_file,
+    write_save_file, RemovedComponents, SaveRecord,
+};
 pub use scene_record::{PageRecord, SceneRecord};

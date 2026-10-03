@@ -18,7 +18,7 @@
 use khora_core::asset::AssetUUID;
 use khora_core::math::{Vec2, Vec3};
 use khora_core::scene::{SceneFile, SCENE_FORMAT_VERSION};
-use khora_core::script::{FrozenValue, ScriptValue};
+use khora_core::script::ScriptValue;
 use khora_data::ecs::{MaterialRef, MeshRef, Name, Parent, Script, Transform};
 use khora_data::scene::record::ReportKind;
 use khora_data::scene::snapshot::{prepare_snapshot, write_snapshot, SNAPSHOT_ENCODING_ID};
@@ -26,7 +26,7 @@ use khora_data::scene::LoadFailure;
 use khora_data::ui::UiImage;
 
 use super::renames::{Beacon, Stamina};
-use super::sample::{sample_world, suspended_snapshot};
+use super::sample::sample_world;
 use super::*;
 
 /// `world` written as a snapshot, then read back as a file on disk would be.
@@ -125,7 +125,7 @@ fn a_snapshot_holds_no_field_names() {
 }
 
 /// Identities and references survive a snapshot: authored and created ids,
-/// entity references in a script field, in a list and in a frozen register,
+/// entity references in a script field and in a list,
 /// asset references, and the hierarchy with its children in their order —
 /// loaded beside entities the world already has.
 #[test]
@@ -165,7 +165,6 @@ fn a_snapshot_keeps_identities_and_references() {
                 ),
                 ("aim".into(), ScriptValue::Vec2(Vec2::new(1.0, -2.0))),
             ],
-            runtime: suspended_snapshot(first),
         },
     ));
     src.set_parent(holder, Some(first));
@@ -219,15 +218,6 @@ fn a_snapshot_keeps_identities_and_references() {
             ScriptValue::Entity(twin(root)),
         ]))
     );
-    let pending = script.runtime.pending.as_ref().expect("a pending sequence");
-    let machine = &pending.machine;
-    assert!(
-        machine
-            .registers
-            .contains(&FrozenValue::Entity(twin(first))),
-        "the frozen register names the reloaded entity: {:?}",
-        machine.registers
-    );
 
     // Asset references, verbatim.
     assert_eq!(
@@ -279,7 +269,6 @@ fn a_dead_reference_in_a_snapshot_names_the_nowhere_entity() {
                 ("first".into(), ScriptValue::Entity(gone_one)),
                 ("second".into(), ScriptValue::Entity(gone_two)),
             ],
-            runtime: Default::default(),
         },
     ));
     let holder_id = src.persistent_id(holder).expect("id");

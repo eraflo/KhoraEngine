@@ -32,7 +32,6 @@ fn script_naming(target: EntityId) -> Script {
         module: "ai/holder.erg".into(),
         behavior: "Holder".into(),
         fields: vec![("target".into(), ScriptValue::Entity(target))],
-        runtime: Default::default(),
     }
 }
 

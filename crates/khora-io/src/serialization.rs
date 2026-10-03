@@ -16,16 +16,19 @@
 //!
 //! `save_world` captures a world as a scene record and writes it in the
 //! encoding a [`SerializationGoal`] calls for; `load_world` and
-//! `replace_world` read one back, atomically. No GORNA negotiation — the goal
-//! is the caller's to state.
+//! `replace_world` read one back, atomically. `save_game` and `load_game` do
+//! the same for a game in progress, as its differences from the scene it
+//! started from. No GORNA negotiation — the goal is the caller's to state.
 
+use khora_core::asset::AssetUUID;
 use khora_core::scene::{SceneFile, SerializationGoal, SCENE_FORMAT_VERSION};
 use khora_data::ecs::World;
 use khora_data::scene::record::LoadReport;
 use khora_data::scene::snapshot::{prepare_snapshot, write_snapshot, SNAPSHOT_ENCODING_ID};
 use khora_data::scene::{
-    capture_world, encoding_of, prepare, read_scene_file, write_scene_file, CompactEncoding,
-    Identity, LoadFailure, MsgPackEncoding, Prepared, SaveError, SceneEncoding, SceneFileReadError,
+    capture_save, capture_world, compose_reporting, encoding_of, prepare, prepare_game,
+    read_save_file, read_scene_file, write_save_file, write_scene_file, CompactEncoding, Identity,
+    LoadFailure, MsgPackEncoding, Prepared, SaveError, SceneEncoding, SceneFileReadError,
     TextEncoding,
 };
 
@@ -148,11 +151,69 @@ impl SerializationService {
         world: &mut World,
     ) -> Result<LoadReport, SerializationServiceError> {
         let prepared = Self::prepare_file(file, world)?;
+        Ok(Self::replace_with(prepared, world))
+    }
+
+    /// Empties `world`, then commits `prepared` into it, keeping every
+    /// recorded identity.
+    fn replace_with(prepared: Prepared, world: &mut World) -> LoadReport {
         let old: Vec<_> = world.iter_entities().collect();
         for entity in old {
             world.despawn(entity);
         }
-        Ok(prepared.commit(world, Identity::Keep).report)
+        prepared.commit(world, Identity::Keep).report
+    }
+
+    /// Saves the game `world` is running: how it differs from the scene
+    /// `base_file` holds, known as `base_id`, written in the encoding `goal`
+    /// calls for.
+    pub fn save_game(
+        &self,
+        world: &World,
+        base_id: AssetUUID,
+        base_file: &SceneFile,
+        goal: SerializationGoal,
+    ) -> Result<SceneFile, SerializationServiceError> {
+        let base = read_scene_file(base_file).map_err(SerializationServiceError::ReadFailed)?;
+        let save =
+            capture_save(world, base_id, &base).map_err(SerializationServiceError::SaveFailed)?;
+        // A snapshot holds a scene's pages by position and refuses state the
+        // engine wrote while running, which is what a save is for: a save
+        // that asks for the fastest load is written compactly.
+        let encoding = Self::encoding_for(goal).unwrap_or(&CompactEncoding);
+        write_save_file(&save, encoding)
+            .map_err(|error| SerializationServiceError::SaveFailed(SaveError::Encoding(error.0)))
+    }
+
+    /// Replaces everything in `world` with the game `save_file` holds — taken
+    /// against the scene `base_file` holds — or, if it cannot be loaded,
+    /// leaves `world` exactly as it was.
+    ///
+    /// The scene as it is now, with the save's differences on top: an edit
+    /// made to the scene since the save reaches every value the game left
+    /// alone.
+    pub fn load_game(
+        &self,
+        world: &mut World,
+        save_file: &SceneFile,
+        base_file: &SceneFile,
+    ) -> Result<LoadReport, SerializationServiceError> {
+        let save = read_save_file(save_file).map_err(SerializationServiceError::ReadFailed)?;
+        let base = read_scene_file(base_file).map_err(SerializationServiceError::ReadFailed)?;
+        let (record, left_out) =
+            compose_reporting(&base, &save).map_err(SerializationServiceError::LoadFailed)?;
+        let prepared =
+            prepare_game(world, &record).map_err(SerializationServiceError::LoadFailed)?;
+        let mut report = Self::replace_with(prepared, world);
+        report.entries.extend(left_out);
+        Ok(report)
+    }
+
+    /// The scene a game save was taken against.
+    pub fn save_base(&self, save_file: &SceneFile) -> Result<AssetUUID, SerializationServiceError> {
+        read_save_file(save_file)
+            .map(|save| save.base)
+            .map_err(SerializationServiceError::ReadFailed)
     }
 }
 

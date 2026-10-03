@@ -24,6 +24,11 @@ use std::convert::TryInto;
 /// A unique byte sequence to identify Khora Scene Files. ("KHORASCN").
 pub const HEADER_MAGIC_BYTES: [u8; 8] = *b"KHORASCN";
 
+/// The magic bytes of a game save ("KHORASAV"): the same header as a scene,
+/// told apart so a save is never read where a scene is expected, nor the
+/// reverse.
+pub const SAVE_MAGIC_BYTES: [u8; 8] = *b"KHORASAV";
+
 /// The scene file format this engine writes and reads.
 ///
 /// Version 2 holds scene records: components by name, entities by persistent
@@ -38,15 +43,16 @@ pub enum SceneFileError {
     /// The bytes end before the header does, or before the payload the
     /// header announces.
     TooShort,
-    /// The file's magic bytes do not match `HEADER_MAGIC_BYTES`: not a Khora
-    /// scene file.
+    /// The file's magic bytes are neither `HEADER_MAGIC_BYTES` nor
+    /// `SAVE_MAGIC_BYTES`: not a Khora scene or save file.
     InvalidMagicBytes,
 }
 
 /// The fixed-size header at the beginning of every Khora scene file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SceneHeader {
-    /// Magic bytes to identify the file type, must be `HEADER_MAGIC_BYTES`.
+    /// Magic bytes to identify the file type: `HEADER_MAGIC_BYTES` for a
+    /// scene, `SAVE_MAGIC_BYTES` for a game save.
     pub magic_bytes: [u8; 8],
     /// The scene format the file was written in (see `SCENE_FORMAT_VERSION`).
     pub format_version: u8,
@@ -80,8 +86,8 @@ impl SceneHeader {
         }
 
         let magic_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
-        if magic_bytes != HEADER_MAGIC_BYTES {
-            return Err("Invalid magic bytes; not a Khora scene file");
+        if magic_bytes != HEADER_MAGIC_BYTES && magic_bytes != SAVE_MAGIC_BYTES {
+            return Err("Invalid magic bytes; not a Khora scene or save file");
         }
 
         let format_version = bytes[8];
@@ -179,6 +185,20 @@ mod tests {
                 "length {length}"
             );
         }
+    }
+
+    /// A save shares the scene header, under its own magic: its bytes parse
+    /// back to the same file, the magic kept, so a reader can tell the two
+    /// apart after parsing.
+    #[test]
+    fn a_save_file_round_trips_through_its_bytes() {
+        let mut bytes = bytes_claiming(2, &[7, 9]);
+        bytes[..8].copy_from_slice(&SAVE_MAGIC_BYTES);
+
+        let file = SceneFile::from_bytes(&bytes).expect("a save header parses");
+        assert_eq!(file.header.magic_bytes, SAVE_MAGIC_BYTES);
+        assert_eq!(file.payload, vec![7, 9]);
+        assert_eq!(file.to_bytes(), bytes);
     }
 
     /// Too few bytes for a header is `TooShort`; a header whose magic is

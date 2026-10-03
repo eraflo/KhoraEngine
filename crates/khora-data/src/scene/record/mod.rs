@@ -43,6 +43,7 @@
 
 mod access;
 mod de;
+mod diff;
 mod number;
 mod report;
 mod self_describing;
@@ -54,6 +55,8 @@ mod watch;
 mod tests;
 
 pub use de::{from_record, ReferenceReader};
+pub(crate) use diff::same;
+pub use diff::{diff, patch};
 pub use report::{resolve, LoadReport, ReportEntry, ReportKind};
 pub use ser::{to_record, ReferenceWriter};
 pub use value::{EntityRef, Record, VariantPayload};

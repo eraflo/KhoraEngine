@@ -2385,6 +2385,7 @@ fn module_runtime_paths_still_resolve() {
 #[test]
 fn module_scene_paths_still_resolve() {
     let _ = khora_core::scene::HEADER_MAGIC_BYTES;
+    let _ = khora_core::scene::SAVE_MAGIC_BYTES;
     let _ = type_name::<khora_core::scene::SceneFile>();
     let _ = scene_file_fields as fn(&khora_core::scene::SceneFile);
     let _ = khora_core::scene::SceneFile::from_bytes;

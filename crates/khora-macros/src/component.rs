@@ -179,6 +179,25 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         no
     });
 
+    // Check for #[component(resumable)]: state the engine writes while running
+    // that a game save keeps so play resumes where it stopped. Walked like
+    // `no_serializable`, consuming the `key = value` metas it does not read.
+    let resumable = input.attrs.iter().any(|attr| {
+        if !attr.path().is_ident("component") {
+            return false;
+        }
+        let mut found = false;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("resumable") {
+                found = true;
+            } else if meta.input.peek(syn::Token![=]) {
+                let _ = meta.value()?.parse::<syn::Expr>()?;
+            }
+            Ok(())
+        });
+        found
+    });
+
     // Parse the type-level `#[component(...)]` keys that carry a value:
     //
     // * `domain = <SemanticDomain variant>` — the component self-registers its
@@ -541,6 +560,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                 shape: #field_schema,
                 provenance: crate::ecs::ComponentProvenance::#provenance_ident,
                 formerly: &[#(#formerly),*],
+                resumable: #resumable,
                 column_to_record: |column, row, references| {
                     // By value so it works for any column layout (AoS or field-SoA).
                     let value = <#name as crate::ecs::component::Component>::clone_from_column(

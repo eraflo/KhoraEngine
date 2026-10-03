@@ -14,11 +14,10 @@
 
 //! Entity references inside components, across a save.
 
-use khora_core::script::{FrozenValue, ScriptValue};
+use khora_core::script::ScriptValue;
 use khora_data::ecs::{Children, Name, Parent, Script, Transform, World};
 use khora_data::scene::record::ReportKind;
 
-use super::sample::suspended_snapshot;
 use super::*;
 
 /// The entity `world` knows by the identity `src_entity` had in `src`.
@@ -38,23 +37,10 @@ fn field_entity(script: &Script, field: &str) -> EntityId {
     }
 }
 
-/// The entity the frozen machine of `script` holds in its registers.
-fn frozen_entity(script: &Script) -> EntityId {
-    let pending = script.runtime.pending.as_ref().expect("a pending sequence");
-    pending
-        .machine
-        .registers
-        .iter()
-        .find_map(|register| match register {
-            FrozenValue::Entity(entity) => Some(*entity),
-            _ => None,
-        })
-        .expect("a register holds an entity")
-}
-
-/// A world where one entity refers to three others every way a component can:
-/// a parent, a script field, a list of entities in a script field, and an
-/// entity in a register of a frozen sequence.
+/// A world where one entity refers to three others every way a scene
+/// component can: a parent, a script field, and a list of entities in a script
+/// field. (An entity in a register of a frozen sequence is observed state,
+/// which a scene never holds; a game save carries it — see `saves`.)
 fn referring_world() -> (World, [EntityId; 4]) {
     let mut world = World::new();
     // Ids a fresh world would not hand out in this order.
@@ -78,7 +64,6 @@ fn referring_world() -> (World, [EntityId; 4]) {
                     ScriptValue::Array(vec![ScriptValue::Entity(c), ScriptValue::Entity(a)]),
                 ),
             ],
-            runtime: suspended_snapshot(c),
         },
     ));
     world.set_parent(holder, Some(a));
@@ -86,8 +71,8 @@ fn referring_world() -> (World, [EntityId; 4]) {
 }
 
 /// A reference is to an entity, not to the slot it happened to occupy: after a
-/// load, every reference — `Parent`, a script field, a list of entities, a
-/// register of a frozen sequence — names the reloaded entity it named before.
+/// load, every reference — `Parent`, a script field, a list of entities —
+/// names the reloaded entity it named before.
 #[test]
 fn a_reference_inside_a_component_is_remapped() {
     let (src, [a, b, c, holder]) = referring_world();
@@ -113,11 +98,6 @@ fn a_reference_inside_a_component_is_remapped() {
                 ScriptValue::Entity(twin(&src, &dst, a)),
             ])),
             "{name}: a list of entities"
-        );
-        assert_eq!(
-            frozen_entity(script),
-            twin(&src, &dst, c),
-            "{name}: a register of a frozen sequence"
         );
     }
 }
@@ -200,7 +180,6 @@ fn dangling_record() -> (PersistentId, SceneRecord) {
                 ("second".into(), ScriptValue::Entity(gone_two)),
                 ("first_again".into(), ScriptValue::Entity(gone_one)),
             ],
-            runtime: Default::default(),
         },
     ));
     let holder_id = src.persistent_id(holder).expect("id");
@@ -314,7 +293,6 @@ fn every_unbindable_reference_in_a_world_names_the_same_entity() {
             module: "ai/root.erg".into(),
             behavior: "Root".into(),
             fields: vec![("enemy".into(), ScriptValue::Entity(outsider))],
-            runtime: Default::default(),
         },
     ));
     let subtree = khora_data::scene::capture_subtree(&src, root).expect("captures");

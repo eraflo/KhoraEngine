@@ -650,6 +650,9 @@ fn module_serialization_paths_still_resolve() {
     let _ = khora_io::serialization::SerializationService::save_world;
     let _ = khora_io::serialization::SerializationService::load_world;
     let _ = khora_io::serialization::SerializationService::replace_world;
+    let _ = khora_io::serialization::SerializationService::save_game;
+    let _ = khora_io::serialization::SerializationService::load_game;
+    let _ = khora_io::serialization::SerializationService::save_base;
     is_default::<khora_io::serialization::SerializationService>();
     let _ = type_name::<khora_io::serialization::SerializationServiceError>();
     let _ = serialization_service_error_variants

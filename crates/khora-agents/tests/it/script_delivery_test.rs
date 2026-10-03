@@ -54,7 +54,7 @@ fn a_scene_with_one_script() -> ScriptView {
                 generation: 0,
             },
             program: 0,
-            authored: None,
+            arrival: None,
             translation: Default::default(),
             rotation: Default::default(),
             scale: Default::default(),

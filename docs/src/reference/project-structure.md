@@ -31,7 +31,7 @@ browser can surface the canonical categories from day one.
 The first time the editor opens a project, it writes
 `assets/scenes/default.kscene` (a Main Camera + a Directional Light) so the user
 has a viable scene to start from. See
-[`scene_io.rs`](../../../crates/khora-editor/src/scene_io.rs).
+[`scene_io.rs`](../../../crates/khora-editor/src/scene_io/mod.rs).
 
 ## Three tiers of code
 

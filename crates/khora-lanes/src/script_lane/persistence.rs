@@ -49,6 +49,24 @@ use khora_script::vm::{BehaviorLayout, Machine, Program, TimerKind, Value};
 
 use super::{Body, Pending};
 
+/// What an instance starts from the first frame it appears: its authored
+/// fields, with what was observed of it written over them.
+///
+/// The observed state is the instance as play left it — its state, its
+/// countdowns, a sequence stopped at an `await` — and its fields win where it
+/// has them. A field it never observed keeps the authored value: the author
+/// may have set it since, and that edit reaches an instance that never
+/// diverged from it.
+pub fn arrived(arrival: &khora_data::flow::ScriptArrival) -> ScriptSnapshot {
+    let mut snapshot = arrival.observed.clone().unwrap_or_default();
+    let observed = std::mem::replace(&mut snapshot.fields, arrival.fields.clone());
+    observed
+        .into_iter()
+        .fold(snapshot, |snapshot, (name, value)| {
+            snapshot.with_field(name, value)
+        })
+}
+
 /// Builds an instance's store from what a scene saved.
 ///
 /// Fields the layout does not declare are ignored — the script dropped them

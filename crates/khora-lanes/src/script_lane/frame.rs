@@ -90,11 +90,12 @@ pub fn run_behaviors(
         // The initialiser still runs — the slots the save did not carry take the
         // defaults their author wrote — and these go back on top, which is
         // exactly the road a reload already takes.
-        let carried_from_scene = instance.authored.as_ref().and_then(|authored| {
+        let carried_from_scene = instance.arrival.as_ref().and_then(|arrival| {
             let layout = compiled.layout(&program.behavior)?;
+            let arrived = persistence::arrived(arrival);
             Some((
-                persistence::store_from_snapshot(layout, authored),
-                persistence::resume(authored, &compiled, layout),
+                persistence::store_from_snapshot(layout, &arrived),
+                persistence::resume(&arrived, &compiled, layout),
             ))
         });
 

@@ -18,6 +18,8 @@
 //! full link of the crate's dependency tree. New integration tests join this
 //! binary as a module instead of adding a file at the root of `tests/`.
 
+mod game_save_breaker;
+mod game_saves;
 mod public_paths;
 mod scene_files;
 mod shipped_scripts;

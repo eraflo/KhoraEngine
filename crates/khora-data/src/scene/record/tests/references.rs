@@ -22,7 +22,8 @@ use khora_core::script::{
 use serde::{Deserialize, Serialize};
 
 use crate::ecs::{
-    Children, Parent, Script, SerializableChildren, SerializableParent, SerializableScript,
+    Children, Parent, Script, ScriptState, SerializableChildren, SerializableParent,
+    SerializableScript, SerializableScriptState,
 };
 use crate::ui::{SerializableUiImage, UiImage};
 
@@ -176,8 +177,7 @@ fn an_entity_reference_goes_through_the_hooks() {
     );
 
     // Deep inside a script component: authored fields nesting arrays and
-    // structs, and a frozen machine — which a save holds as an untagged enum,
-    // so the reference is read without its type being asked for by name.
+    // structs.
     let script = Script {
         module: "scripts/guard.erg".into(),
         behavior: "Guard".into(),
@@ -191,7 +191,26 @@ fn an_entity_reference_goes_through_the_hooks() {
                 ]),
             ),
         ],
-        runtime: ScriptSnapshot {
+    };
+    let (_, table, back, read) = through_hooks(&SerializableScript::from(script));
+    assert_eq!(table.written, vec![a, b, c]);
+    assert_eq!(read.len(), 3);
+    let back = Script::from(back);
+    assert_eq!(back.field("leader"), Some(&ScriptValue::Entity(moved(a))));
+    assert_eq!(
+        back.field("squad"),
+        Some(&ScriptValue::Array(vec![
+            ScriptValue::Entity(moved(b)),
+            ScriptValue::Struct(vec![("medic".into(), ScriptValue::Entity(moved(c)))]),
+        ]))
+    );
+
+    // And in the state a behavior was observed in: a frozen machine — which a
+    // save holds as an untagged enum, so the reference is read without its
+    // type being asked for by name.
+    let state = ScriptState {
+        behavior: "Guard".into(),
+        snapshot: ScriptSnapshot {
             pending: Some(PendingSequence {
                 fingerprint: 9,
                 remaining: 0.5,
@@ -210,19 +229,14 @@ fn an_entity_reference_goes_through_the_hooks() {
             ..ScriptSnapshot::default()
         },
     };
-    let (_, table, back, read) = through_hooks(&SerializableScript::from(script));
-    assert_eq!(table.written, vec![a, b, c, c]);
-    assert_eq!(read.len(), 4);
-    let back = Script::from(back);
-    assert_eq!(back.field("leader"), Some(&ScriptValue::Entity(moved(a))));
-    assert_eq!(
-        back.field("squad"),
-        Some(&ScriptValue::Array(vec![
-            ScriptValue::Entity(moved(b)),
-            ScriptValue::Struct(vec![("medic".into(), ScriptValue::Entity(moved(c)))]),
-        ]))
-    );
-    let pending = back.runtime.pending.expect("the pending sequence survives");
+    let (_, table, back, read) = through_hooks(&SerializableScriptState::from(state));
+    assert_eq!(table.written, vec![c]);
+    assert_eq!(read.len(), 1);
+    let back = ScriptState::from(back);
+    let pending = back
+        .snapshot
+        .pending
+        .expect("the pending sequence survives");
     assert_eq!(
         pending.machine.registers,
         vec![FrozenValue::Int(1), FrozenValue::Entity(moved(c))]

@@ -84,7 +84,7 @@ fn a_scene_with_the_player(input: khora_core::platform::InputSnapshot) -> Script
         instances: vec![ScriptInstance {
             entity: PLAYER_ENTITY,
             program: 0,
-            authored: None,
+            arrival: None,
             translation: Default::default(),
             rotation: Default::default(),
             scale: Default::default(),

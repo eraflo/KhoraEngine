@@ -22,6 +22,7 @@ mod compact;
 
 use serde::Deserialize;
 
+use super::save::SaveRecord;
 use super::scene_record::SceneRecord;
 
 /// One way of writing a scene record as bytes.
@@ -32,6 +33,10 @@ pub trait SceneEncoding {
     fn encode(&self, record: &SceneRecord) -> Result<Vec<u8>, EncodingError>;
     /// Reads a record back. A damaged input is an error, never a panic.
     fn decode(&self, bytes: &[u8]) -> Result<SceneRecord, EncodingError>;
+    /// Writes a game save.
+    fn encode_save(&self, save: &SaveRecord) -> Result<Vec<u8>, EncodingError>;
+    /// Reads a game save back. A damaged input is an error, never a panic.
+    fn decode_save(&self, bytes: &[u8]) -> Result<SaveRecord, EncodingError>;
 }
 
 /// Why bytes could not be written or read.
@@ -65,6 +70,12 @@ impl SceneEncoding for CompactEncoding {
     fn decode(&self, bytes: &[u8]) -> Result<SceneRecord, EncodingError> {
         compact::decode(bytes)
     }
+    fn encode_save(&self, save: &SaveRecord) -> Result<Vec<u8>, EncodingError> {
+        Ok(compact::encode_save(save))
+    }
+    fn decode_save(&self, bytes: &[u8]) -> Result<SaveRecord, EncodingError> {
+        compact::decode_save(bytes)
+    }
 }
 
 impl SceneEncoding for TextEncoding {
@@ -89,6 +100,21 @@ impl SceneEncoding for TextEncoding {
             .map_err(|error| EncodingError(error.to_string()))?;
         Ok(record)
     }
+    fn encode_save(&self, save: &SaveRecord) -> Result<Vec<u8>, EncodingError> {
+        serde_json::to_vec_pretty(save).map_err(|error| EncodingError(error.to_string()))
+    }
+    fn decode_save(&self, bytes: &[u8]) -> Result<SaveRecord, EncodingError> {
+        // As a scene: every value is read through the record reader, which
+        // holds the depth limit itself.
+        let mut reader = serde_json::Deserializer::from_slice(bytes);
+        reader.disable_recursion_limit();
+        let save = SaveRecord::deserialize(&mut reader)
+            .map_err(|error| EncodingError(error.to_string()))?;
+        reader
+            .end()
+            .map_err(|error| EncodingError(error.to_string()))?;
+        Ok(save)
+    }
 }
 
 impl SceneEncoding for MsgPackEncoding {
@@ -99,6 +125,12 @@ impl SceneEncoding for MsgPackEncoding {
         rmp_serde::to_vec_named(record).map_err(|error| EncodingError(error.to_string()))
     }
     fn decode(&self, bytes: &[u8]) -> Result<SceneRecord, EncodingError> {
+        rmp_serde::from_slice(bytes).map_err(|error| EncodingError(error.to_string()))
+    }
+    fn encode_save(&self, save: &SaveRecord) -> Result<Vec<u8>, EncodingError> {
+        rmp_serde::to_vec_named(save).map_err(|error| EncodingError(error.to_string()))
+    }
+    fn decode_save(&self, bytes: &[u8]) -> Result<SaveRecord, EncodingError> {
         rmp_serde::from_slice(bytes).map_err(|error| EncodingError(error.to_string()))
     }
 }

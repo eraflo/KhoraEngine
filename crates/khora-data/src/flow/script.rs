@@ -35,10 +35,10 @@ use std::collections::HashSet;
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Quaternion, Vec3};
-use khora_core::script::ScriptSnapshot;
+use khora_core::script::{ScriptSnapshot, ScriptValue};
 use khora_core::Runtime;
 
-use crate::ecs::{Script, SemanticDomain, Transform, World};
+use crate::ecs::{Script, ScriptState, SemanticDomain, Transform, World};
 use crate::flow::{Flow, Selection};
 use crate::register_flow;
 
@@ -60,21 +60,10 @@ pub struct ScriptInstance {
     /// Index into [`ScriptView::programs`].
     pub program: u32,
 
-    /// What the scene holds for this instance, **only the first frame it
-    /// appears**.
-    ///
-    /// This is how a saved scene reaches the lane: a guard saved at forty health
-    /// mid-chase has to start at forty and chasing, not at the hundred its
-    /// author typed with no state at all. After that the lane holds the live
-    /// state and the component is only a record, so sending it again every frame
-    /// would clone a string per field per entity to deliver something nobody
-    /// reads.
-    ///
-    /// The designer's authored `fields` and whatever the game last made of them
-    /// are merged here, the observed values winning: an entity that has run is
-    /// restored to where it got to, and one that never has takes what was
-    /// authored.
-    pub authored: Option<ScriptSnapshot>,
+    /// What the world holds for this instance, **only the first frame it
+    /// appears**: the authored fields and, apart, what was observed of it
+    /// before — never merged here. The lane composes them.
+    pub arrival: Option<ScriptArrival>,
 
     /// Where the entity is, this frame.
     ///
@@ -86,6 +75,19 @@ pub struct ScriptInstance {
     pub rotation: Quaternion,
     /// The entity's scale, this frame.
     pub scale: Vec3,
+}
+
+/// What an instance brings the first frame it appears.
+///
+/// The authored starting values and the observed state are handed over apart;
+/// the lane decides how they combine.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ScriptArrival {
+    /// The fields its author set, from its `Script`.
+    pub fields: Vec<(String, ScriptValue)>,
+    /// What was observed of this behavior before — its `ScriptState` — if the
+    /// entity has one recorded by the same behavior.
+    pub observed: Option<ScriptSnapshot>,
 }
 
 /// Everything the script lane may read this frame.
@@ -201,13 +203,16 @@ impl Flow for ScriptFlow {
                 }
             };
 
-            let authored = self.newcomers.contains(&entity).then(|| restored(script));
+            let arrival = self
+                .newcomers
+                .contains(&entity)
+                .then(|| arrival_of(world, entity, script));
 
             let transform = world.get::<Transform>(entity).copied();
             view.instances.push(ScriptInstance {
                 entity,
                 program: index as u32,
-                authored,
+                arrival,
                 // An entity with a behavior but no `Transform` is legitimate —
                 // a game-state manager has nowhere to be. Identity keeps the
                 // lane branch-free rather than making every read an `Option`.
@@ -225,27 +230,15 @@ impl Flow for ScriptFlow {
     // frame while still costing the hash.
 }
 
-/// What the scene holds for one instance, as one snapshot.
-///
-/// The designer's authored starting values, with whatever the game last made of
-/// them written on top. Observed wins where both have a field, which is what
-/// makes reloading a save restore where the guard *got to* rather than where its
-/// author started it — and leaves a freshly authored entity, which has run
-/// nothing, taking exactly what was typed.
-fn restored(script: &Script) -> ScriptSnapshot {
-    let mut snapshot = ScriptSnapshot {
+/// What `entity` brings the first frame it appears.
+fn arrival_of(world: &World, entity: EntityId, script: &Script) -> ScriptArrival {
+    let observed = world
+        .get::<ScriptState>(entity)
+        .filter(|state| state.behavior == script.behavior)
+        .map(|state| state.snapshot.clone());
+    ScriptArrival {
         fields: script.fields.clone(),
-        ..ScriptSnapshot::default()
-    };
-    for (name, value) in &script.runtime.fields {
-        snapshot = snapshot.with_field(name.clone(), value.clone());
-    }
-    ScriptSnapshot {
-        fields: snapshot.fields,
-        state: script.runtime.state.clone(),
-        state_fields: script.runtime.state_fields.clone(),
-        timers: script.runtime.timers.clone(),
-        pending: script.runtime.pending.clone(),
+        observed,
     }
 }
 
@@ -254,7 +247,6 @@ register_flow!(ScriptFlow);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::script::ScriptValue;
 
     /// Runs both stages, the way the registration trampoline does — `select`
     /// is where the flow works out which entities are new, so a test that
@@ -366,5 +358,115 @@ mod tests {
                 .map(|p| p.behavior.as_str()),
             Some("Chase")
         );
+    }
+
+    /// **No merge.** A newcomer hands the lane what its author set and what
+    /// was observed of it, side by side: which wins is the lane's decision,
+    /// and a value both hold arrives twice rather than once, overwritten.
+    #[test]
+    fn a_newcomer_arrives_with_authored_fields_and_observed_state_apart() {
+        let mut world = World::new();
+        let observed = ScriptSnapshot {
+            state: Some("Chase".to_owned()),
+            ..ScriptSnapshot::default()
+        }
+        .with_field("health", ScriptValue::Int(40));
+        world.spawn((
+            Transform::identity(),
+            Script::new("ai/guard.erg", "Guard")
+                .with_field("health", ScriptValue::Int(100))
+                .with_field("speed", ScriptValue::Float(3.0)),
+            crate::ecs::ScriptState {
+                behavior: "Guard".to_owned(),
+                snapshot: observed.clone(),
+            },
+        ));
+
+        let view = project(&world);
+
+        assert_eq!(
+            view.instances[0].arrival,
+            Some(ScriptArrival {
+                fields: vec![
+                    ("health".to_owned(), ScriptValue::Int(100)),
+                    ("speed".to_owned(), ScriptValue::Float(3.0)),
+                ],
+                observed: Some(observed),
+            })
+        );
+    }
+
+    /// An entity that never ran arrives with its authored fields and nothing
+    /// observed.
+    #[test]
+    fn a_newcomer_that_never_ran_arrives_with_nothing_observed() {
+        let mut world = World::new();
+        world.spawn((
+            Transform::identity(),
+            Script::new("ai/guard.erg", "Guard").with_field("health", ScriptValue::Int(100)),
+        ));
+
+        let view = project(&world);
+
+        assert_eq!(
+            view.instances[0].arrival,
+            Some(ScriptArrival {
+                fields: vec![("health".to_owned(), ScriptValue::Int(100))],
+                observed: None,
+            })
+        );
+    }
+
+    /// A state observed of another behavior — the entity's behavior was
+    /// swapped since — is not handed over: a `Chase` must not start from a
+    /// `Guard`'s fields and state.
+    #[test]
+    fn a_state_for_another_behavior_is_not_handed_over() {
+        let mut world = World::new();
+        world.spawn((
+            Transform::identity(),
+            Script::new("ai/guard.erg", "Chase").with_field("speed", ScriptValue::Float(5.0)),
+            crate::ecs::ScriptState {
+                behavior: "Guard".to_owned(),
+                snapshot: ScriptSnapshot::default().with_field("health", ScriptValue::Int(40)),
+            },
+        ));
+
+        let view = project(&world);
+
+        assert_eq!(
+            view.instances[0].arrival,
+            Some(ScriptArrival {
+                fields: vec![("speed".to_owned(), ScriptValue::Float(5.0))],
+                observed: None,
+            })
+        );
+    }
+
+    /// The arrival is delivered once: after the first frame the lane holds the
+    /// live state, and sending it again would clone every field of every
+    /// entity every frame for nobody.
+    #[test]
+    fn no_arrival_after_the_first_frame() {
+        let mut world = World::new();
+        world.spawn((
+            Transform::identity(),
+            Script::new("ai/guard.erg", "Guard").with_field("health", ScriptValue::Int(100)),
+            crate::ecs::ScriptState {
+                behavior: "Guard".to_owned(),
+                snapshot: ScriptSnapshot::default().with_field("health", ScriptValue::Int(40)),
+            },
+        ));
+
+        let mut flow = ScriptFlow::default();
+        let runtime = Runtime::default();
+        let selection = flow.select(&world, &runtime);
+        let first = flow.project(&world, &selection, &runtime);
+        let selection = flow.select(&world, &runtime);
+        let second = flow.project(&world, &selection, &runtime);
+
+        assert!(first.instances[0].arrival.is_some(), "the first frame");
+        assert_eq!(second.len(), 1, "the instance still runs");
+        assert_eq!(second.instances[0].arrival, None, "but arrives only once");
     }
 }

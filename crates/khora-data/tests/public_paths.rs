@@ -303,7 +303,27 @@ fn rigid_body_fields(x: &khora_data::ecs::RigidBody) {
 }
 
 fn script_fields(x: &khora_data::ecs::Script) {
-    let _ = (&x.module, &x.behavior, &x.fields, &x.runtime);
+    let _ = (&x.module, &x.behavior, &x.fields);
+}
+
+fn script_state_fields(x: &khora_data::ecs::ScriptState) {
+    let _ = (&x.behavior, &x.snapshot);
+}
+
+fn script_arrival_fields(x: &khora_data::flow::ScriptArrival) {
+    let _ = (&x.fields, &x.observed);
+}
+
+fn save_record_fields(x: &khora_data::scene::SaveRecord) {
+    let _ = (&x.base, &x.destroyed, &x.changes);
+}
+
+fn scene_file_read_error_save_variants(x: &khora_data::scene::SceneFileReadError) {
+    match x {
+        khora_data::scene::SceneFileReadError::NotAScene => {}
+        khora_data::scene::SceneFileReadError::NotASave => {}
+        _ => {}
+    }
 }
 
 fn simulated_transform_fields(x: &khora_data::ecs::SimulatedTransform) {
@@ -422,7 +442,7 @@ fn script_instance_fields(x: &khora_data::flow::script::ScriptInstance) {
     let _ = (
         &x.entity,
         &x.program,
-        &x.authored,
+        &x.arrival,
         &x.translation,
         &x.rotation,
         &x.scale,
@@ -1812,6 +1832,7 @@ fn report_kind_variants(x: &khora_data::scene::record::ReportKind) {
         khora_data::scene::record::ReportKind::Retired => {}
         khora_data::scene::record::ReportKind::NotSaved => {}
         khora_data::scene::record::ReportKind::DeadReference => {}
+        khora_data::scene::record::ReportKind::RemovedFromScene => {}
     }
 }
 
@@ -1904,6 +1925,7 @@ fn save_error_variants(x: &khora_data::scene::SaveError) {
         khora_data::scene::SaveError::Encoding(..) => {}
         khora_data::scene::SaveError::NoSuchEntity(..) => {}
         khora_data::scene::SaveError::Unguarded(..) => {}
+        khora_data::scene::SaveError::Base(..) => {}
     }
 }
 
@@ -1991,6 +2013,47 @@ fn module_scene_records_paths_still_resolve() {
     is_debug::<khora_data::scene::RetiredComponent>();
     is_copy::<khora_data::scene::RetiredComponent>();
     let _ = khora_data::scene::is_retired;
+}
+
+#[test]
+fn module_scene_save_paths_still_resolve() {
+    let _ = type_name::<khora_data::ecs::ScriptState>();
+    let _ = script_state_fields as fn(&khora_data::ecs::ScriptState);
+    is_clone::<khora_data::ecs::ScriptState>();
+    is_debug::<khora_data::ecs::ScriptState>();
+    is_partial_eq::<khora_data::ecs::ScriptState>();
+    is_default::<khora_data::ecs::ScriptState>();
+
+    let _ = type_name::<khora_data::flow::ScriptArrival>();
+    same_type(
+        PhantomData::<khora_data::flow::ScriptArrival>,
+        PhantomData::<khora_data::flow::script::ScriptArrival>,
+    );
+    let _ = script_arrival_fields as fn(&khora_data::flow::ScriptArrival);
+    is_clone::<khora_data::flow::ScriptArrival>();
+    is_debug::<khora_data::flow::ScriptArrival>();
+    is_partial_eq::<khora_data::flow::ScriptArrival>();
+
+    let _ = khora_data::scene::record::diff;
+    let _ = khora_data::scene::record::patch;
+
+    let _ = type_name::<khora_data::scene::SaveRecord>();
+    same_type(
+        PhantomData::<khora_data::scene::SaveRecord>,
+        PhantomData::<khora_data::scene::save::SaveRecord>,
+    );
+    let _ = save_record_fields as fn(&khora_data::scene::SaveRecord);
+    is_clone::<khora_data::scene::SaveRecord>();
+    is_debug::<khora_data::scene::SaveRecord>();
+    is_partial_eq::<khora_data::scene::SaveRecord>();
+    let _ = khora_data::scene::capture_save;
+    let _ = khora_data::scene::compose;
+    let _ = khora_data::scene::promote;
+    let _ = khora_data::scene::prepare_game;
+    let _ = khora_data::scene::write_save_file;
+    let _ = khora_data::scene::read_save_file;
+    let _ = scene_file_read_error_save_variants as fn(&khora_data::scene::SceneFileReadError);
+    let _ = khora_data::scene::ComponentRegistration::is_resumed;
 }
 
 #[test]

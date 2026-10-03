@@ -544,6 +544,8 @@ fn module_crate_root_paths_still_resolve() {
     let _ = khora_sdk::GameWorld::add_material::<khora_sdk::prelude::materials::StandardMaterial>;
     let _ = khora_sdk::GameWorld::inner_world;
     let _ = khora_sdk::GameWorld::inner_world_mut;
+    let _ = khora_sdk::GameWorld::save_game;
+    let _ = khora_sdk::GameWorld::load_game;
     is_default::<khora_sdk::GameWorld>();
     let _ = type_name::<khora_sdk::GizmoLineInstance>();
     same_type(

@@ -69,7 +69,7 @@ fn view_of(behavior: &str) -> ScriptView {
         instances: vec![ScriptInstance {
             entity: subject(),
             program: 0,
-            authored: None,
+            arrival: None,
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,

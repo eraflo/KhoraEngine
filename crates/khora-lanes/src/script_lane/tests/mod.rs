@@ -18,6 +18,7 @@
 //! behaviors that *do* run produce exactly what they would have produced with
 //! no budget at all. Degrading must cost lateness, never correctness.
 
+mod arrival;
 mod event;
 mod lifecycle;
 mod reload;
@@ -91,7 +92,7 @@ pub(super) fn view_of(count: u32) -> ScriptView {
             .map(|index| ScriptInstance {
                 entity: entity(index),
                 program: 0,
-                authored: None,
+                arrival: None,
                 translation: khora_core::math::Vec3::ZERO,
                 rotation: khora_core::math::Quaternion::IDENTITY,
                 scale: khora_core::math::Vec3::ONE,
@@ -302,7 +303,7 @@ fn a_recycled_index_does_not_inherit_the_old_instances_state() {
         instances: vec![ScriptInstance {
             entity: reborn,
             program: 0,
-            authored: None,
+            arrival: None,
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
@@ -353,7 +354,7 @@ fn a_faulting_behavior_is_disabled_rather_than_retried() {
         instances: vec![ScriptInstance {
             entity: entity(0),
             program: 0,
-            authored: None,
+            arrival: None,
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,

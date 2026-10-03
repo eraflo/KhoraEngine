@@ -29,7 +29,7 @@
 //! persistence test against a simpler one proves less than it appears to.
 
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
-use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
+use khora_data::flow::{ScriptArrival, ScriptInstance, ScriptProgram, ScriptView};
 use khora_script::arena::Persisted;
 use khora_script::native::Host;
 
@@ -72,7 +72,11 @@ fn view(delta: f32, saved: Option<ScriptSnapshot>) -> ScriptView {
         instances: vec![ScriptInstance {
             entity: entity(0),
             program: 0,
-            authored: saved,
+            // What the lane wrote back arrives as observed state.
+            arrival: saved.map(|observed| ScriptArrival {
+                fields: Vec::new(),
+                observed: Some(observed),
+            }),
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,

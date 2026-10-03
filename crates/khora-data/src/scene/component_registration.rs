@@ -66,6 +66,11 @@ pub struct ComponentRegistration {
     /// current name.
     pub formerly: &'static [&'static str],
 
+    /// Whether a game save keeps this component so play can resume where it
+    /// stopped, although a scene never holds it — declared with
+    /// `#[component(resumable)]` on state the engine writes while running.
+    pub resumable: bool,
+
     /// Writes row `row` of a page column of this component as a record, its
     /// entity references through `references`.
     ///
@@ -225,6 +230,33 @@ impl ComponentRegistration {
     pub fn is_saved(&self) -> bool {
         self.provenance.is_copied_on_duplicate()
     }
+
+    /// Whether a game save keeps this component although a scene does not:
+    /// state the engine wrote while running and reads back to resume —
+    /// declared with `#[component(resumable)]`.
+    pub fn is_resumed(&self) -> bool {
+        self.resumable
+    }
+}
+
+/// Which components a document keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Kept {
+    /// A scene: what an author or a tool wrote.
+    Scene,
+    /// A game save: that, and the state the engine wrote while running that
+    /// play needs to resume.
+    Game,
+}
+
+impl Kept {
+    /// Whether this kind of document keeps `reg`'s component.
+    pub(crate) fn keeps(self, reg: &ComponentRegistration) -> bool {
+        match self {
+            Self::Scene => reg.is_saved(),
+            Self::Game => reg.is_saved() || reg.is_resumed(),
+        }
+    }
 }
 
 /// The registration a save names `type_name` by: its current name, or one it
@@ -297,6 +329,49 @@ mod provenance_tests {
             provenance_of("PhysicsDebugData"),
             Some(ComponentProvenance::Runtime)
         );
+        // What the script lane observed, written back by the engine: never
+        // authored, never in a scene.
+        assert_eq!(
+            provenance_of("ScriptState"),
+            Some(ComponentProvenance::Runtime)
+        );
+    }
+
+    /// **A save resumes a behavior where it was.** `ScriptState` is written
+    /// while running, so a scene never holds it — but a game save does, and
+    /// that is what `is_resumed` says.
+    #[test]
+    fn script_state_is_runtime_and_resumable() {
+        let reg = registration_of("ScriptState").expect("ScriptState is registered");
+        assert_eq!(reg.provenance, ComponentProvenance::Runtime);
+        assert!(!reg.is_saved(), "a scene never holds observed state");
+        assert!(reg.is_resumed(), "a game save keeps it to resume");
+    }
+
+    /// Only `ScriptState` is resumable for now. Marking another component is
+    /// a decision about how its domain reads it back on load, not a flag to
+    /// set in passing.
+    #[test]
+    fn no_other_component_is_resumed() {
+        let resumed: Vec<&str> = inventory::iter::<ComponentRegistration>
+            .into_iter()
+            .filter(|reg| reg.is_resumed())
+            .map(|reg| reg.type_name)
+            .collect();
+        assert_eq!(resumed, vec!["ScriptState"]);
+    }
+
+    /// Resumable is about what the engine wrote: no component an author or a
+    /// tool writes is also resumed, so a save never holds a value twice.
+    #[test]
+    fn a_resumed_component_is_never_also_saved() {
+        for reg in inventory::iter::<ComponentRegistration> {
+            assert!(
+                !(reg.is_saved() && reg.is_resumed()),
+                "{} is both saved and resumed",
+                reg.type_name
+            );
+        }
     }
 
     /// **A marker is a component, and a scene has to record it.**

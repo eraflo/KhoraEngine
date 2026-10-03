@@ -648,92 +648,84 @@ fn every_register_snapshot(target: EntityId) -> khora_core::script::ScriptSnapsh
     }
 }
 
-/// `script` with each entity of `map` replaced, as text: the comparison a
+/// `value` with each entity of `map` replaced, as text: the comparison a
 /// NaN register still passes, `NaN` printing as itself.
-fn remapped_debug(script: &khora_data::ecs::Script, map: &HashMap<EntityId, EntityId>) -> String {
-    let mut text = format!("{script:?}");
+fn remapped_debug(value: &impl std::fmt::Debug, map: &HashMap<EntityId, EntityId>) -> String {
+    let mut text = format!("{value:?}");
     for (from, to) in map {
         text = text.replace(&format!("{from:?}"), &format!("{to:?}"));
     }
     text
 }
 
-/// A save taken while a schedule's body is suspended keeps every register,
-/// every frame and what finishing it owes — through every scene encoding and
-/// through a snapshot.
+/// A game save taken while a schedule's body is suspended keeps every
+/// register, every frame and what finishing it owes — through every encoding.
+/// (A scene, and the Play snapshot, hold no observed state at all.)
 #[test]
-fn a_pending_sequence_with_every_register_kind_survives_every_scene_encoding() {
-    use khora_data::ecs::{Script, Transform};
+fn a_pending_sequence_with_every_register_kind_survives_every_save_encoding() {
+    use khora_data::ecs::{Script, ScriptState, Transform};
+    use khora_data::scene::{capture_save, compose, prepare_game, read_save_file, write_save_file};
     let mut src = World::new();
     let target = src.spawn(Transform::identity());
     let holder = src.spawn(Transform::identity());
-    let script = Script {
-        module: "ai/guard.erg".into(),
-        behavior: "Guard".into(),
-        fields: vec![],
-        runtime: every_register_snapshot(target),
-    };
-    src.add_component(holder, script.clone())
+    src.add_component(holder, Script::new("ai/guard.erg", "Guard"))
         .expect("a script attaches");
+    for entity in [target, holder] {
+        src.mark_authored(entity).expect("authored");
+    }
+    let base = capture_world(&src).expect("the base scene captures");
+    let state = ScriptState {
+        behavior: "Guard".into(),
+        snapshot: every_register_snapshot(target),
+    };
+    src.add_component(holder, state.clone())
+        .expect("the observed state attaches");
 
+    let save = capture_save(&src, AssetUUID::new(), &base).expect("the save captures");
     let mut failures = Vec::new();
     for (name, encoding) in every_encoding() {
-        let record = match capture_world(&src) {
-            Ok(record) => record,
-            Err(e) => {
-                failures.push(format!("{name}: capture failed: {e}"));
-                continue;
-            }
-        };
-        let bytes = match encoding.encode(&record) {
-            Ok(bytes) => bytes,
+        let file = match write_save_file(&save, encoding) {
+            Ok(file) => file,
             Err(e) => {
                 failures.push(format!("{name}: encode failed: {e}"));
                 continue;
             }
         };
-        let back = match encoding.decode(&bytes) {
+        let back = match read_save_file(&file) {
             Ok(back) => back,
             Err(e) => {
-                failures.push(format!("{name}: decode of its own output failed: {e}"));
+                failures.push(format!("{name}: decode of its own output failed: {e:?}"));
                 continue;
             }
         };
         let mut dst = World::new();
-        if let Err(e) = apply(&mut dst, &back, Identity::Keep) {
-            failures.push(format!("{name}: the load failed: {e}"));
-            continue;
+        match prepare_game(&mut dst, &compose(&base, &back)) {
+            Ok(prepared) => {
+                prepared.commit(&mut dst, Identity::Keep);
+            }
+            Err(e) => {
+                failures.push(format!("{name}: the load failed: {e}"));
+                continue;
+            }
         }
         let map = entity_map(&src, &dst);
-        let loaded = dst.get::<Script>(map[&holder]).map(|s| format!("{s:?}"));
-        let expected = remapped_debug(&script, &map);
+        let loaded = dst
+            .get::<ScriptState>(map[&holder])
+            .map(|s| format!("{s:?}"));
+        let expected = remapped_debug(&state, &map);
         if loaded.as_deref() != Some(expected.as_str()) {
             failures.push(format!("{name}: loaded {loaded:?}"));
         }
     }
 
-    match khora_data::scene::snapshot::write_snapshot(&src) {
-        Ok(file) => {
-            let file = khora_core::scene::SceneFile::from_bytes(&file.to_bytes())
-                .expect("a snapshot file parses");
-            let mut dst = World::new();
-            match khora_data::scene::snapshot::prepare_snapshot(&mut dst, &file) {
-                Ok(prepared) => {
-                    prepared.commit(&mut dst, Identity::Keep);
-                    let map = entity_map(&src, &dst);
-                    let loaded = dst.get::<Script>(map[&holder]).map(|s| format!("{s:?}"));
-                    let expected = remapped_debug(&script, &map);
-                    if loaded.as_deref() != Some(expected.as_str()) {
-                        failures.push(format!("snapshot: loaded {loaded:?}"));
-                    }
-                }
-                Err(e) => failures.push(format!("snapshot: the load failed: {e}")),
-            }
-        }
-        Err(e) => failures.push(format!("snapshot: the save failed: {e}")),
-    }
-
-    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{}",
+        failures.join(
+            "
+"
+        )
+    );
 }
 
 /// The snapshot schema guards a frozen machine whole: every register kind,
@@ -782,31 +774,38 @@ fn field_mut<'a>(record: &'a mut Record, name: &str) -> &'a mut Record {
     }
 }
 
-/// A scene whose record holds a suspended machine in the retired tagged form
+/// A save whose record holds a suspended machine in the retired tagged form
 /// — the variant `Frozen` of `khora.SuspendedMachine`, written for one day on
 /// the dev branch and never by a shipped engine — is not read: the load is
-/// refused as a whole, the error names the `Script` component, and the world
-/// it was loaded into is left exactly as it was.
+/// refused as a whole, the error names the `ScriptState` component, and the
+/// world it was loaded into is left exactly as it was.
 #[test]
-fn a_scene_holding_the_retired_tagged_machine_form_is_refused_whole() {
-    use khora_data::ecs::{Name, Script, Transform};
+fn a_save_holding_the_retired_tagged_machine_form_is_refused_whole() {
+    use khora_data::ecs::{Name, Script, ScriptState, Transform};
     use khora_data::scene::record::VariantPayload;
+    use khora_data::scene::{capture_save, compose, prepare_game};
     let mut src = World::new();
     let target = src.spawn(Transform::identity());
     let holder = src.spawn(Transform::identity());
-    let script = Script {
-        module: "ai/guard.erg".into(),
-        behavior: "Guard".into(),
-        fields: vec![],
-        runtime: super::sample::suspended_snapshot(target),
-    };
-    src.add_component(holder, script)
+    src.add_component(holder, Script::new("ai/guard.erg", "Guard"))
         .expect("a script attaches");
+    for entity in [target, holder] {
+        src.mark_authored(entity).expect("authored");
+    }
+    let base = capture_world(&src).expect("the base scene captures");
+    src.add_component(
+        holder,
+        ScriptState {
+            behavior: "Guard".into(),
+            snapshot: super::sample::suspended_snapshot(target),
+        },
+    )
+    .expect("the observed state attaches");
     let holder_id = src.persistent_id(holder).expect("an id");
 
-    let mut record = capture_world(&src).expect("capture");
-    let value = value_mut(&mut record, holder_id, "Script");
-    let pending = field_mut(field_mut(value, "runtime"), "pending");
+    let mut save = capture_save(&src, AssetUUID::new(), &base).expect("the save captures");
+    let value = value_mut(&mut save.changes, holder_id, "ScriptState");
+    let pending = field_mut(field_mut(value, "snapshot"), "pending");
     let Record::Some(sequence) = pending else {
         panic!("the pending sequence is recorded as present: {pending:?}");
     };
@@ -818,43 +817,43 @@ fn a_scene_holding_the_retired_tagged_machine_form_is_refused_whole() {
         payload: VariantPayload::Newtype(Box::new(frozen)),
     };
 
-    for (name, encoding) in every_encoding() {
-        let back = through(&record, name, encoding);
-        let mut dst = World::new();
-        let resident = dst.spawn((Transform::identity(), Name::new("Resident")));
-        let resident_id = dst.mark_authored(resident).expect("authored");
-        let entities_before = dst.iter_entities().count();
-        let components_before = components_of(&dst, resident);
+    let mut dst = World::new();
+    let resident = dst.spawn((Transform::identity(), Name::new("Resident")));
+    let resident_id = dst.mark_authored(resident).expect("authored");
+    let entities_before = dst.iter_entities().count();
+    let components_before = components_of(&dst, resident);
 
-        let error = match apply(&mut dst, &back, Identity::Keep) {
-            Ok(applied) => panic!(
-                "{name}: the retired tagged machine form loaded ({} entities)",
+    let error = match prepare_game(&mut dst, &compose(&base, &save)) {
+        Ok(prepared) => {
+            let applied = prepared.commit(&mut dst, Identity::Keep);
+            panic!(
+                "the retired tagged machine form loaded ({} entities)",
                 applied.entities.len()
-            ),
-            Err(error) => error.to_string(),
-        };
-        assert!(
-            error.contains("Script"),
-            "{name}: the refusal names the component: {error}"
-        );
-        assert_eq!(
-            dst.iter_entities().count(),
-            entities_before,
-            "{name}: a refused load added or removed entities"
-        );
-        assert_eq!(
-            dst.persistent_id(resident),
-            Some(resident_id),
-            "{name}: the resident kept its identity"
-        );
-        assert_eq!(
-            components_of(&dst, resident),
-            components_before,
-            "{name}: a refused load changed the resident"
-        );
-        assert!(
-            dst.entity_with_id(holder_id).is_none(),
-            "{name}: the refused holder is in the world"
-        );
-    }
+            )
+        }
+        Err(error) => error.to_string(),
+    };
+    assert!(
+        error.contains("ScriptState"),
+        "the refusal names the component: {error}"
+    );
+    assert_eq!(
+        dst.iter_entities().count(),
+        entities_before,
+        "a refused load added or removed entities"
+    );
+    assert_eq!(
+        dst.persistent_id(resident),
+        Some(resident_id),
+        "the resident kept its identity"
+    );
+    assert_eq!(
+        components_of(&dst, resident),
+        components_before,
+        "a refused load changed the resident"
+    );
+    assert!(
+        dst.entity_with_id(holder_id).is_none(),
+        "the refused holder is in the world"
+    );
 }

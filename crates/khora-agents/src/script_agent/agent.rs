@@ -328,7 +328,7 @@ mod tests {
                     generation: 0,
                 },
                 program: 0,
-                authored: None,
+                arrival: None,
                 translation: Default::default(),
                 rotation: Default::default(),
                 scale: Default::default(),

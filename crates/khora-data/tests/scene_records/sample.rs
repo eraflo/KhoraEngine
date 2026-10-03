@@ -26,7 +26,7 @@ use khora_core::ui::types::{UiFlexDirection, UiRect, UiVal};
 use khora_data::ecs::{
     ActiveEvents, AudioListener, AudioSource, BodyMotion, Camera, Collider, GlobalTransform,
     KinematicCharacterController, Light, MaterialRef, MeshRef, Name, PhysicsMaterial,
-    ProceduralMeshKind, RigidBody, Script, Tag, Transform, World,
+    ProceduralMeshKind, RigidBody, Script, ScriptState, Tag, Transform, World,
 };
 use khora_data::ui::{
     UiBorder, UiColor, UiImage, UiInteraction, UiInteractionState, UiNode, UiStyle, UiText,
@@ -234,7 +234,12 @@ pub fn sample_world() -> (World, Sample) {
                     ]),
                 ),
             ],
-            runtime: suspended_snapshot(child),
+        },
+        // Runtime: what the lane observed — a sequence frozen part-way with an
+        // entity in a register. A game save keeps it; a scene never does.
+        ScriptState {
+            behavior: "Guard".into(),
+            snapshot: suspended_snapshot(child),
         },
     ));
 

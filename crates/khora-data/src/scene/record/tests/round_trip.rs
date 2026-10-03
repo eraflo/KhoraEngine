@@ -31,14 +31,14 @@ use khora_core::ui::types::{UiFlexDirection, UiRect, UiVal};
 use crate::ecs::{
     ActiveEvents, AudioListener, AudioSource, BodyMotion, Camera, Children, Collider,
     GlobalTransform, KinematicCharacterController, Light, Name, Parent, PhysicsDebugData,
-    PhysicsMaterial, ProceduralMeshKind, ProjectionType, RigidBody, Script,
+    PhysicsMaterial, ProceduralMeshKind, ProjectionType, RigidBody, Script, ScriptState,
     SerializableActiveEvents, SerializableAudioListener, SerializableAudioSource,
     SerializableBodyMotion, SerializableCamera, SerializableChildren, SerializableCollider,
     SerializableGlobalTransform, SerializableKinematicCharacterController, SerializableLight,
     SerializableName, SerializableParent, SerializablePhysicsDebugData,
     SerializablePhysicsMaterial, SerializableRigidBody, SerializableScript,
-    SerializableSimulatedTransform, SerializableTag, SerializableTeleported, SerializableTransform,
-    SimulatedTransform, Tag, Teleported, Transform,
+    SerializableScriptState, SerializableSimulatedTransform, SerializableTag,
+    SerializableTeleported, SerializableTransform, SimulatedTransform, Tag, Teleported, Transform,
 };
 use crate::ui::{
     SerializableUiBorder, SerializableUiColor, SerializableUiImage, SerializableUiInteraction,
@@ -332,7 +332,10 @@ fn every_persisted_type_round_trips() {
             .enumerate()
             .map(|(i, value)| (format!("field_{i}"), value))
             .collect(),
-        runtime: busy_snapshot(other),
+    }));
+    assert_round_trips(&SerializableScriptState::from(ScriptState {
+        behavior: "Guard".into(),
+        snapshot: busy_snapshot(other),
     }));
 
     // UI.

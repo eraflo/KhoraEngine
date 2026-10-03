@@ -30,6 +30,7 @@ use super::*;
 mod adversarial;
 mod damaged;
 mod data_model;
+mod diff;
 mod edge_cases;
 mod references;
 mod report;
