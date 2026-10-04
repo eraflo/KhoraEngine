@@ -240,8 +240,17 @@ impl<A: EngineApp> EngineCore<A> {
                 .insert(khora_core::script::engine_event_channel());
         }
 
-        // Create the game world
+        // Create the game world — reading the shipped prefabs, where the app
+        // ships an asset service, so a game saved over a level holding prefab
+        // instances compares against the level expanded.
         let mut game_world = GameWorld::new();
+        if let Some(assets) = runtime
+            .services
+            .get::<Arc<Mutex<khora_io::asset::AssetService>>>()
+            .cloned()
+        {
+            game_world.set_prefabs(Arc::new(khora_io::serialization::AssetPrefabs::new(assets)));
+        }
 
         // Call app setup. The runtime is now fully populated, so the app can
         // read any engine resource here. Mutation goes through `register_agents`.

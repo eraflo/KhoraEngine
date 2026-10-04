@@ -26,7 +26,7 @@ use khora_core::ui::types::{UiFlexDirection, UiRect, UiVal};
 use khora_data::ecs::{
     ActiveEvents, AudioListener, AudioSource, BodyMotion, Camera, Collider, GlobalTransform,
     KinematicCharacterController, Light, MaterialRef, MeshRef, Name, PhysicsMaterial,
-    ProceduralMeshKind, RigidBody, Script, ScriptState, Tag, Transform, World,
+    PrefabInstance, ProceduralMeshKind, RigidBody, Script, ScriptState, Tag, Transform, World,
 };
 use khora_data::ui::{
     UiBorder, UiColor, UiImage, UiInteraction, UiInteractionState, UiNode, UiStyle, UiText,
@@ -204,6 +204,14 @@ pub fn sample_world() -> (World, Sample) {
         KinematicCharacterController {
             desired_translation: Vec3::new(0.1, 0.0, 0.2),
             ..KinematicCharacterController::default()
+        },
+    );
+    // A tool's mark: the body is the root of a prefab instance.
+    add(
+        &mut world,
+        body,
+        PrefabInstance {
+            prefab: AssetUUID::new_v5("prefabs/crate.kprefab"),
         },
     );
     // Runtime: observed by the physics writeback, never recorded.

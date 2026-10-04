@@ -312,6 +312,75 @@ impl ProjectVfs {
     }
 }
 
+/// The project's prefabs, read through its VFS: a prefab is the scene file
+/// its asset id names. Locks the VFS for each read, so it can be handed to a
+/// load or a save that does not hold it.
+pub struct ProjectPrefabs<'a>(pub &'a std::sync::Mutex<ProjectVfs>);
+
+impl khora_sdk::khora_data::scene::PrefabSource for ProjectPrefabs<'_> {
+    fn prefab(
+        &self,
+        id: AssetUUID,
+    ) -> std::result::Result<khora_sdk::khora_data::scene::SceneRecord, String> {
+        self.0
+            .lock()
+            .map_err(|_| "the project VFS is poisoned".to_owned())?
+            .prefab_record(id)
+    }
+}
+
+/// The project's prefabs, read through a VFS the caller already holds.
+pub struct HeldPrefabs<'a>(std::cell::RefCell<&'a mut ProjectVfs>);
+
+impl<'a> HeldPrefabs<'a> {
+    /// Reads prefabs through `pvfs`.
+    pub fn new(pvfs: &'a mut ProjectVfs) -> Self {
+        Self(std::cell::RefCell::new(pvfs))
+    }
+}
+
+impl khora_sdk::khora_data::scene::PrefabSource for HeldPrefabs<'_> {
+    fn prefab(
+        &self,
+        id: AssetUUID,
+    ) -> std::result::Result<khora_sdk::khora_data::scene::SceneRecord, String> {
+        self.0.borrow_mut().prefab_record(id)
+    }
+}
+
+impl ProjectVfs {
+    /// The asset id of the file a write to `rel_path` lands on.
+    ///
+    /// Not simply the id of the path as typed: on a file system that ignores
+    /// case, `Turret.kprefab` overwrites `turret.kprefab`, whose id is another.
+    /// The file already there, under the name it has, is the one that counts.
+    pub fn written_asset_id(&self, rel_path_fwd_slash: &str) -> AssetUUID {
+        let existing = std::fs::canonicalize(self.assets_root.join(rel_path_fwd_slash))
+            .ok()
+            .zip(std::fs::canonicalize(&self.assets_root).ok())
+            .and_then(|(file, root)| {
+                file.strip_prefix(&root)
+                    .ok()
+                    .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+            });
+        self.resolve_uuid(existing.as_deref().unwrap_or(rel_path_fwd_slash))
+    }
+
+    /// The record of the prefab known as `id`.
+    pub fn prefab_record(
+        &mut self,
+        id: AssetUUID,
+    ) -> std::result::Result<khora_sdk::khora_data::scene::SceneRecord, String> {
+        let bytes = self
+            .asset_service
+            .load_raw(&id)
+            .map_err(|error| format!("{error:#}"))?;
+        let file =
+            khora_sdk::SceneFile::from_bytes(&bytes).map_err(|error| format!("{error:?}"))?;
+        khora_sdk::khora_data::scene::read_scene_file(&file).map_err(|error| error.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

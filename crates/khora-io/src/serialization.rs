@@ -20,17 +20,21 @@
 //! the same for a game in progress, as its differences from the scene it
 //! started from. No GORNA negotiation — the goal is the caller's to state.
 
+use std::sync::{Arc, Mutex};
+
 use khora_core::asset::AssetUUID;
 use khora_core::scene::{SceneFile, SerializationGoal, SCENE_FORMAT_VERSION};
 use khora_data::ecs::World;
-use khora_data::scene::record::LoadReport;
+use khora_data::scene::record::{LoadReport, ReportEntry};
 use khora_data::scene::snapshot::{prepare_snapshot, write_snapshot, SNAPSHOT_ENCODING_ID};
 use khora_data::scene::{
-    capture_save, capture_world, compose_reporting, encoding_of, prepare, prepare_game,
-    read_save_file, read_scene_file, write_save_file, write_scene_file, CompactEncoding, Identity,
-    LoadFailure, MsgPackEncoding, Prepared, SaveError, SceneEncoding, SceneFileReadError,
-    TextEncoding,
+    capture_save, capture_world, collapse, compose_reporting, encoding_of, expand_reporting,
+    prepare, prepare_game, read_save_file, read_scene_file, write_save_file, write_scene_file,
+    CompactEncoding, Identity, LoadFailure, MsgPackEncoding, NoPrefabs, PrefabSource, Prepared,
+    SaveError, SceneEncoding, SceneFileReadError, SceneRecord, TextEncoding,
 };
+
+use crate::asset::AssetService;
 
 /// Scene format version produced by today's writers.
 pub const CURRENT_SCENE_VERSION: u32 = SCENE_FORMAT_VERSION as u32;
@@ -61,15 +65,47 @@ impl std::error::Error for SerializationServiceError {}
 
 /// The serialization service.
 ///
-/// Provides on-demand scene save and load. Stateless: construct it where it
-/// is needed.
-#[derive(Debug, Default)]
-pub struct SerializationService;
+/// Provides on-demand scene save and load. Construct it where it is needed;
+/// it holds nothing but where prefabs are read from.
+///
+/// Without a prefab source, a scene's prefab instances are saved expanded —
+/// every entity whole, still carrying the ids that tie it to its instance, so
+/// a later save that can read the prefabs writes them as links again — and a
+/// scene that links to prefabs cannot be loaded.
+#[derive(Default)]
+pub struct SerializationService {
+    prefabs: Option<Arc<dyn PrefabSource + Send + Sync>>,
+}
+
+impl std::fmt::Debug for SerializationService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SerializationService")
+            .field("reads_prefabs", &self.prefabs.is_some())
+            .finish()
+    }
+}
 
 impl SerializationService {
     /// Creates the service.
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// Creates the service, reading the prefabs a scene links to from
+    /// `source`: a scene is saved with its prefab instances as links and
+    /// loaded with them expanded from the prefabs as they are now.
+    pub fn with_prefabs(source: Arc<dyn PrefabSource + Send + Sync>) -> Self {
+        Self {
+            prefabs: Some(source),
+        }
+    }
+
+    /// Where this service reads prefabs from.
+    fn prefabs(&self) -> &dyn PrefabSource {
+        match &self.prefabs {
+            Some(source) => source.as_ref(),
+            None => &NoPrefabs,
+        }
     }
 
     /// The record encoding a goal calls for — `None` for `FastestLoad`,
@@ -94,6 +130,29 @@ impl SerializationService {
         world: &World,
         goal: SerializationGoal,
     ) -> Result<SceneFile, SerializationServiceError> {
+        let prefabs = self
+            .prefabs
+            .as_deref()
+            .map(|source| source as &dyn PrefabSource);
+        Self::save(world, goal, prefabs)
+    }
+
+    /// [`save_world`](Self::save_world), its prefab instances written as
+    /// links to the prefabs `prefabs` reads.
+    pub fn save_world_with(
+        &self,
+        world: &World,
+        goal: SerializationGoal,
+        prefabs: &dyn PrefabSource,
+    ) -> Result<SceneFile, SerializationServiceError> {
+        Self::save(world, goal, Some(prefabs))
+    }
+
+    fn save(
+        world: &World,
+        goal: SerializationGoal,
+        prefabs: Option<&dyn PrefabSource>,
+    ) -> Result<SceneFile, SerializationServiceError> {
         let encoding = match Self::encoding_for(goal) {
             Some(encoding) => encoding,
             None => match write_snapshot(world) {
@@ -110,7 +169,16 @@ impl SerializationService {
                 Err(error) => return Err(SerializationServiceError::SaveFailed(error)),
             },
         };
-        let record = capture_world(world).map_err(SerializationServiceError::SaveFailed)?;
+        let mut record = capture_world(world).map_err(SerializationServiceError::SaveFailed)?;
+        if let Some(prefabs) = prefabs {
+            // A prefab that cannot be read cannot be linked to: the scene is
+            // saved expanded rather than not at all, and links again once the
+            // prefab is back.
+            match collapse(&record, prefabs) {
+                Ok(collapsed) => record = collapsed,
+                Err(error) => log::warn!("prefab instances saved expanded: {error}"),
+            }
+        }
         write_scene_file(&record, encoding)
             .map_err(|error| SerializationServiceError::SaveFailed(SaveError::Encoding(error.0)))
     }
@@ -120,12 +188,30 @@ impl SerializationService {
     fn prepare_file(
         file: &SceneFile,
         world: &mut World,
-    ) -> Result<Prepared, SerializationServiceError> {
+        prefabs: &dyn PrefabSource,
+    ) -> Result<(Prepared, Vec<ReportEntry>), SerializationServiceError> {
         if encoding_of(file) == SNAPSHOT_ENCODING_ID {
-            return prepare_snapshot(world, file).map_err(SerializationServiceError::LoadFailed);
+            return prepare_snapshot(world, file)
+                .map(|prepared| (prepared, Vec::new()))
+                .map_err(SerializationServiceError::LoadFailed);
         }
         let record = read_scene_file(file).map_err(SerializationServiceError::ReadFailed)?;
-        prepare(world, &record).map_err(SerializationServiceError::LoadFailed)
+        let (record, left_out) = Self::expanded(record, prefabs)?;
+        prepare(world, &record)
+            .map(|prepared| (prepared, left_out))
+            .map_err(SerializationServiceError::LoadFailed)
+    }
+
+    /// `record` with the prefab instances it links to brought in, and what
+    /// their merges left out.
+    fn expanded(
+        record: SceneRecord,
+        prefabs: &dyn PrefabSource,
+    ) -> Result<(SceneRecord, Vec<ReportEntry>), SerializationServiceError> {
+        if record.instances.is_empty() {
+            return Ok((record, Vec::new()));
+        }
+        expand_reporting(&record, prefabs).map_err(SerializationServiceError::LoadFailed)
     }
 
     /// Brings the scene `file` holds into `world`, beside what is already
@@ -135,8 +221,21 @@ impl SerializationService {
         file: &SceneFile,
         world: &mut World,
     ) -> Result<LoadReport, SerializationServiceError> {
-        let prepared = Self::prepare_file(file, world)?;
-        Ok(prepared.commit(world, Identity::Keep).report)
+        self.load_world_with(file, world, self.prefabs())
+    }
+
+    /// [`load_world`](Self::load_world), its prefab instances expanded from
+    /// the prefabs `prefabs` reads.
+    pub fn load_world_with(
+        &self,
+        file: &SceneFile,
+        world: &mut World,
+        prefabs: &dyn PrefabSource,
+    ) -> Result<LoadReport, SerializationServiceError> {
+        let (prepared, left_out) = Self::prepare_file(file, world, prefabs)?;
+        let mut report = prepared.commit(world, Identity::Keep).report;
+        report.entries.extend(left_out);
+        Ok(report)
     }
 
     /// Replaces everything in `world` with the scene `file` holds — or, if
@@ -150,8 +249,21 @@ impl SerializationService {
         file: &SceneFile,
         world: &mut World,
     ) -> Result<LoadReport, SerializationServiceError> {
-        let prepared = Self::prepare_file(file, world)?;
-        Ok(Self::replace_with(prepared, world))
+        self.replace_world_with(file, world, self.prefabs())
+    }
+
+    /// [`replace_world`](Self::replace_world), its prefab instances expanded
+    /// from the prefabs `prefabs` reads.
+    pub fn replace_world_with(
+        &self,
+        file: &SceneFile,
+        world: &mut World,
+        prefabs: &dyn PrefabSource,
+    ) -> Result<LoadReport, SerializationServiceError> {
+        let (prepared, left_out) = Self::prepare_file(file, world, prefabs)?;
+        let mut report = Self::replace_with(prepared, world);
+        report.entries.extend(left_out);
+        Ok(report)
     }
 
     /// Empties `world`, then commits `prepared` into it, keeping every
@@ -175,6 +287,8 @@ impl SerializationService {
         goal: SerializationGoal,
     ) -> Result<SceneFile, SerializationServiceError> {
         let base = read_scene_file(base_file).map_err(SerializationServiceError::ReadFailed)?;
+        // Against the scene as a world: its prefab instances expanded.
+        let (base, _) = Self::expanded(base, self.prefabs())?;
         let save =
             capture_save(world, base_id, &base).map_err(SerializationServiceError::SaveFailed)?;
         // A snapshot holds a scene's pages by position and refuses state the
@@ -200,8 +314,10 @@ impl SerializationService {
     ) -> Result<LoadReport, SerializationServiceError> {
         let save = read_save_file(save_file).map_err(SerializationServiceError::ReadFailed)?;
         let base = read_scene_file(base_file).map_err(SerializationServiceError::ReadFailed)?;
-        let (record, left_out) =
+        let (base, mut left_out) = Self::expanded(base, self.prefabs())?;
+        let (record, merged_out) =
             compose_reporting(&base, &save).map_err(SerializationServiceError::LoadFailed)?;
+        left_out.extend(merged_out);
         let prepared =
             prepare_game(world, &record).map_err(SerializationServiceError::LoadFailed)?;
         let mut report = Self::replace_with(prepared, world);
@@ -214,6 +330,32 @@ impl SerializationService {
         read_save_file(save_file)
             .map(|save| save.base)
             .map_err(SerializationServiceError::ReadFailed)
+    }
+}
+
+/// The prefabs of a project, read through its [`AssetService`]: a prefab is
+/// the scene file its asset id names.
+pub struct AssetPrefabs {
+    assets: Arc<Mutex<AssetService>>,
+}
+
+impl AssetPrefabs {
+    /// Reads prefabs through `assets`.
+    pub fn new(assets: Arc<Mutex<AssetService>>) -> Self {
+        Self { assets }
+    }
+}
+
+impl PrefabSource for AssetPrefabs {
+    fn prefab(&self, id: AssetUUID) -> Result<SceneRecord, String> {
+        let bytes = self
+            .assets
+            .lock()
+            .map_err(|_| "the asset service is poisoned".to_owned())?
+            .load_raw(&id)
+            .map_err(|error| error.to_string())?;
+        let file = SceneFile::from_bytes(&bytes).map_err(|error| format!("{error:?}"))?;
+        read_scene_file(&file).map_err(|error| error.to_string())
     }
 }
 

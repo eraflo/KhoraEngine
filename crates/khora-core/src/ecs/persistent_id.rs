@@ -34,6 +34,10 @@ use serde::{Deserialize, Serialize};
 /// The bit that marks the created namespace.
 const CREATED: u64 = 1 << 63;
 
+/// The namespace ids within prefab instances are derived in. Fixed for
+/// ever: changing it would re-key every instance in every saved scene.
+const WITHIN: uuid::Uuid = uuid::Uuid::from_u128(0x6b68_6f72_615f_7769_7468_696e_5f69_6430);
+
 /// An entity's identity within the scene or save that records it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PersistentId(u64);
@@ -47,6 +51,17 @@ impl PersistentId {
     /// A fresh authored identity, drawn at random.
     pub fn random_authored() -> Self {
         Self::authored(uuid::Uuid::new_v4().as_u64_pair().0)
+    }
+
+    /// The identity of the entity a prefab knows as `inner`, inside the
+    /// instance whose root is `instance`: authored, the same on every load,
+    /// and different for every instance and every inner entity. Nested
+    /// instances compose: `within(within(instance, nested_root), inner)`.
+    pub fn within(instance: PersistentId, inner: PersistentId) -> PersistentId {
+        let mut bytes = [0u8; 16];
+        bytes[..8].copy_from_slice(&instance.0.to_le_bytes());
+        bytes[8..].copy_from_slice(&inner.0.to_le_bytes());
+        Self::authored(uuid::Uuid::new_v5(&WITHIN, &bytes).as_u64_pair().0)
     }
 
     /// The `n`-th identity of the created namespace.
@@ -132,6 +147,78 @@ mod tests {
             top_bits_used >> 32,
             0,
             "a thousand draws never reached the high half of the id space"
+        );
+    }
+
+    /// An entity inside a prefab instance is known by the instance's root and
+    /// its own id in the prefab. The derived id is the same however often it
+    /// is asked for — that is what lets a reference into an instance survive
+    /// a reload — and it is authored: a scene's author placed the instance.
+    #[test]
+    fn an_id_within_an_instance_is_stable_and_authored() {
+        let instance = PersistentId::authored(0x1234_5678_9abc_def0);
+        for inner in [
+            PersistentId::authored(0),
+            PersistentId::authored(7),
+            PersistentId::authored(TOP_BIT - 1),
+            PersistentId::created(3),
+        ] {
+            let derived = PersistentId::within(instance, inner);
+            assert_eq!(derived, PersistentId::within(instance, inner));
+            assert!(!derived.is_created(), "{derived:?} reads as created");
+            assert_eq!(derived.to_bits() & TOP_BIT, 0);
+            assert_ne!(derived, instance, "a member is not the instance root");
+            assert_ne!(derived, inner, "a member is not the prefab's own entity");
+        }
+    }
+
+    /// Two instances of one prefab never share an id, and two entities of
+    /// one instance never do: neither the instance nor the inner id may be
+    /// dropped from the derivation. Order matters too — the instance root and
+    /// the inner id are not interchangeable.
+    #[test]
+    fn ids_within_instances_are_distinct_per_instance_and_per_entity() {
+        let mut seen = std::collections::HashSet::new();
+        let instances: Vec<PersistentId> = (1..=16)
+            .map(|n| PersistentId::authored(n * 0x0101_0101_0101))
+            .collect();
+        let inners: Vec<PersistentId> = (1..=16)
+            .map(|n| PersistentId::authored(n * 0x7777_0000_1111))
+            .collect();
+        for instance in &instances {
+            for inner in &inners {
+                let derived = PersistentId::within(*instance, *inner);
+                assert!(
+                    seen.insert(derived),
+                    "{derived:?} is derived twice ({instance:?}, {inner:?})"
+                );
+            }
+        }
+        for id in instances.iter().chain(&inners) {
+            assert!(!seen.contains(id), "a derived id collides with {id:?}");
+        }
+
+        let (a, b) = (PersistentId::authored(11), PersistentId::authored(22));
+        assert_ne!(PersistentId::within(a, b), PersistentId::within(b, a));
+    }
+
+    /// A nested instance's members are derived twice: from the outer
+    /// instance to the nested root, then from the nested root to the member.
+    /// The composition is an id of its own — not the member's id in the
+    /// outer instance, nor in the nested prefab alone.
+    #[test]
+    fn ids_within_nested_instances_compose() {
+        let outer = PersistentId::authored(0xaaaa);
+        let nested_root = PersistentId::authored(0xbbbb);
+        let member = PersistentId::authored(0xcccc);
+
+        let nested = PersistentId::within(PersistentId::within(outer, nested_root), member);
+        assert!(!nested.is_created());
+        assert_ne!(nested, PersistentId::within(outer, member));
+        assert_ne!(nested, PersistentId::within(nested_root, member));
+        assert_eq!(
+            nested,
+            PersistentId::within(PersistentId::within(outer, nested_root), member)
         );
     }
 

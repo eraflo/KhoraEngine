@@ -42,10 +42,13 @@ use khora_core::ecs::PersistentId;
 use super::EncodingError;
 use crate::scene::record::{EntityRef, Record, VariantPayload};
 use crate::scene::save::{RemovedComponents, SaveRecord};
-use crate::scene::scene_record::{PageRecord, SceneRecord};
+use crate::scene::scene_record::{InstanceRecord, PageRecord, SceneRecord};
 
 /// The layout version this module writes and reads.
-const VERSION: u8 = 1;
+///
+/// Version 2 ends with the record's prefab instances; version 1, which has
+/// none, still reads.
+const VERSION: u8 = 2;
 
 mod tag {
     pub const UNIT: u8 = 0;
@@ -112,6 +115,16 @@ pub(super) fn encode(record: &SceneRecord) -> Vec<u8> {
                 tables.write_value(&mut body, value);
             }
         }
+    }
+    // Each instance: its root, its prefab, then its differences as a save is
+    // written, behind their length.
+    write_varint(&mut body, record.instances.len() as u64);
+    for instance in &record.instances {
+        body.extend_from_slice(&instance.root.to_bits().to_le_bytes());
+        body.extend_from_slice(instance.prefab.as_bytes());
+        let delta = encode_save(&instance.delta);
+        write_varint(&mut body, delta.len() as u64);
+        body.extend(delta);
     }
 
     let mut out = vec![VERSION];
@@ -408,18 +421,31 @@ pub(super) fn decode_save(bytes: &[u8]) -> Result<SaveRecord, EncodingError> {
         removed,
         changes: {
             let len = input.count(1)?;
-            decode(input.take(len)?)?
+            decode_record(input.take(len)?, Links::Refused)?
         },
-        before: decode(&bytes[input.at..])?,
+        before: decode_record(&bytes[input.at..], Links::Refused)?,
     })
+}
+
+/// Whether a record being read may link to prefabs: a scene or a prefab may;
+/// the differences a save or an instance holds may not — which is also what
+/// keeps a file from nesting links inside links without end.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Links {
+    Allowed,
+    Refused,
 }
 
 /// Reads a compactly written record. A damaged input is an error, never a
 /// panic, and never an allocation sized by a count the input does not back.
 pub(super) fn decode(bytes: &[u8]) -> Result<SceneRecord, EncodingError> {
+    decode_record(bytes, Links::Allowed)
+}
+
+fn decode_record(bytes: &[u8], links: Links) -> Result<SceneRecord, EncodingError> {
     let mut input = Input { bytes, at: 0 };
     let version = input.byte()?;
-    if version != VERSION {
+    if version != VERSION && version != 1 {
         return Err(error(format!(
             "compact layout version {version}, expected {VERSION}"
         )));
@@ -504,13 +530,39 @@ pub(super) fn decode(bytes: &[u8]) -> Result<SceneRecord, EncodingError> {
             columns,
         });
     }
+    let mut instances = Vec::new();
+    if version >= 2 {
+        // An instance is a root, a prefab and a length at least.
+        let count = input.count(8 + 16 + 1)?;
+        if count > 0 && links == Links::Refused {
+            return Err(error(
+                "differences that link to prefabs: only a scene or a prefab may".to_owned(),
+            ));
+        }
+        instances.reserve(count);
+        for _ in 0..count {
+            let root = PersistentId::from_bits(input.u64_le()?);
+            let prefab = AssetUUID::from_bytes(input.array()?);
+            let len = input.count(1)?;
+            let delta = decode_save(input.take(len)?)?;
+            instances.push(InstanceRecord {
+                root,
+                prefab,
+                delta,
+            });
+        }
+    }
     if input.at != bytes.len() {
         return Err(error(format!(
             "{} byte(s) after the last page",
             bytes.len() - input.at
         )));
     }
-    Ok(SceneRecord { entities, pages })
+    Ok(SceneRecord {
+        entities,
+        pages,
+        instances,
+    })
 }
 
 enum DecodedShape {

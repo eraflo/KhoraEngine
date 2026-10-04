@@ -26,6 +26,7 @@ pub mod shape;
 pub mod apply;
 pub mod capture;
 pub mod encoding;
+mod entity_refs;
 pub mod file;
 pub mod positional;
 pub mod prefab;
@@ -46,10 +47,13 @@ pub use encoding::{
     encoding_named, CompactEncoding, EncodingError, MsgPackEncoding, SceneEncoding, TextEncoding,
 };
 pub use file::{encoding_of, read_scene_file, write_scene_file, SceneFileReadError};
-pub use prefab::{instantiate_subtree, serialize_subtree};
+pub use prefab::{
+    collapse, expand, expand_reporting, instantiate_prefab, instantiate_subtree, serialize_prefab,
+    serialize_subtree, NoPrefabs, PrefabSource,
+};
 pub use retired::{is_retired, RetiredComponent};
 pub use save::{
     capture_save, compose, compose_reporting, prepare_game, promote, read_save_file,
     write_save_file, RemovedComponents, SaveRecord,
 };
-pub use scene_record::{PageRecord, SceneRecord};
+pub use scene_record::{InstanceRecord, PageRecord, SceneRecord};

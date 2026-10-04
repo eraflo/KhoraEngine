@@ -14,6 +14,8 @@
 
 //! Play and Stop through the editor's own commands.
 
+mod prefab;
+
 use khora_sdk::prelude::math::Vec3;
 use khora_sdk::SceneFile;
 

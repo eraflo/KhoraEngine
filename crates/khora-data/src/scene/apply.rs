@@ -130,6 +130,15 @@ pub(super) fn prepare_kept(
 ) -> Result<Prepared, LoadFailure> {
     let mut report = LoadReport::default();
 
+    // A record still linking to prefabs is not a world yet: its instances'
+    // entities are in the prefabs. Expanding it is the caller's to do.
+    if !record.instances.is_empty() {
+        return Err(failure(
+            "the record links to prefabs — expand it before loading".to_owned(),
+            report,
+        ));
+    }
+
     // Names first: nothing is reserved for a file that names a type nobody
     // has, or whose pages do not fit together.
     let mut plans = Vec::with_capacity(record.pages.len());

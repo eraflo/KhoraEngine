@@ -1926,6 +1926,7 @@ fn save_error_variants(x: &khora_data::scene::SaveError) {
         khora_data::scene::SaveError::NoSuchEntity(..) => {}
         khora_data::scene::SaveError::Unguarded(..) => {}
         khora_data::scene::SaveError::Base(..) => {}
+        khora_data::scene::SaveError::Prefab(..) => {}
     }
 }
 

@@ -200,7 +200,10 @@ impl EngineApp for DefaultRuntimeApp {
 
         match SceneFile::from_bytes(&bytes) {
             Ok(scene) => {
-                let service = SerializationService::new();
+                // Its prefab instances come from the shipped prefabs.
+                let service = SerializationService::with_prefabs(Arc::new(
+                    khora_io::serialization::AssetPrefabs::new(svc.clone()),
+                ));
                 match service.load_world(&scene, world.inner_world_mut()) {
                     Ok(report) => {
                         for entry in &report.entries {

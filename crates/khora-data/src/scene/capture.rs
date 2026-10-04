@@ -51,6 +51,8 @@ pub enum SaveError {
     Unguarded(String),
     /// The scene a game save is taken against could not be read.
     Base(String),
+    /// A prefab an instance links to could not be read.
+    Prefab(String),
 }
 
 impl std::fmt::Display for SaveError {
@@ -60,6 +62,7 @@ impl std::fmt::Display for SaveError {
             Self::NoSuchEntity(entity) => write!(f, "no entity {entity:?}"),
             Self::Encoding(error) => write!(f, "{error}"),
             Self::Base(error) => write!(f, "the scene the save is taken against: {error}"),
+            Self::Prefab(error) => write!(f, "{error}"),
             Self::Unguarded(component) => write!(
                 f,
                 "`{component}` has a schema no fingerprint can guard: it cannot be snapshotted"
@@ -162,6 +165,7 @@ fn capture(
     )?;
     Ok(SceneRecord {
         entities: ids,
+        instances: Vec::new(),
         pages: pages
             .into_iter()
             .map(|page| PageRecord {

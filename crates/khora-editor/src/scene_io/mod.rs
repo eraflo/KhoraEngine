@@ -21,7 +21,7 @@
 //! you might want to open a scene from outside the current project) and fall
 //! back to direct `std::fs` only in that case.
 
-use crate::project_vfs::ProjectVfs;
+use crate::project_vfs::{HeldPrefabs, ProjectVfs};
 use khora_sdk::khora_core::asset::asset_key;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::math::{LinearRgba, Vec3};
@@ -111,8 +111,10 @@ pub fn save_scene_in_project_with_goal(
     rel_path: &Path,
     goal: SerializationGoal,
 ) -> bool {
+    // Prefab instances are written as links to their prefabs.
     let service = SerializationService::new();
-    let scene_file = match service.save_world(world.inner_world(), goal) {
+    let saved = service.save_world_with(world.inner_world(), goal, &HeldPrefabs::new(pvfs));
+    let scene_file = match saved {
         Ok(f) => f,
         Err(e) => {
             log::error!("Failed to serialize scene: {:?}", e);
@@ -181,8 +183,14 @@ pub fn load_scene_in_project(
         }
     };
 
+    // Prefab instances are expanded from their prefabs as they are now.
     let service = SerializationService::new();
-    match service.replace_world(&scene_file, world.inner_world_mut()) {
+    let loaded = service.replace_world_with(
+        &scene_file,
+        world.inner_world_mut(),
+        &HeldPrefabs::new(pvfs),
+    );
+    match loaded {
         Ok(report) => {
             log_report(rel_path_fwd_slash, &report);
             log::info!(

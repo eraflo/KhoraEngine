@@ -39,6 +39,7 @@ fn nested(depth: usize) -> Record {
 fn the_deepest_value_decodes_on_a_one_mib_stack() {
     let record = SceneRecord {
         entities: vec![PersistentId::authored(7)],
+        instances: Vec::new(),
         pages: vec![PageRecord {
             components: vec!["Transform".into()],
             rows: vec![PersistentId::authored(7)],
@@ -66,6 +67,7 @@ fn the_deepest_value_decodes_on_a_one_mib_stack() {
 fn one_level_past_the_bound_is_refused_in_text_too() {
     let record = SceneRecord {
         entities: vec![PersistentId::authored(7)],
+        instances: Vec::new(),
         pages: vec![PageRecord {
             components: vec!["Transform".into()],
             rows: vec![PersistentId::authored(7)],

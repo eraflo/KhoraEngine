@@ -20,6 +20,7 @@
 
 mod game_saves;
 mod game_saves_text_base;
+mod prefab_scenes;
 mod public_paths;
 mod scene_files;
 mod shipped_scripts;

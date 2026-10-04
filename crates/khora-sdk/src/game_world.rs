@@ -28,7 +28,9 @@ use khora_data::ecs::{
     Transform, World, WorldQuery,
 };
 use khora_data::scene::record::LoadReport;
+use khora_data::scene::PrefabSource;
 use khora_io::serialization::{SerializationService, SerializationServiceError};
+use std::sync::Arc;
 
 /// A high-level facade over the internal ECS `World` and `Assets` registry.
 ///
@@ -61,6 +63,8 @@ use khora_io::serialization::{SerializationService, SerializationServiceError};
 pub struct GameWorld {
     /// The internal ECS world.
     world: World,
+    /// Where the prefabs a scene links to are read from, for game saves.
+    prefabs: Option<Arc<dyn PrefabSource + Send + Sync>>,
 }
 
 impl Default for GameWorld {
@@ -74,13 +78,32 @@ impl GameWorld {
     pub fn new() -> Self {
         Self {
             world: World::new(),
+            prefabs: None,
         }
     }
 
     /// Creates a `GameWorld` from an existing ECS `World`.
     /// Used for restoring a snapshot in play mode.
     pub fn from_world(world: World) -> Self {
-        Self { world }
+        Self {
+            world,
+            prefabs: None,
+        }
+    }
+
+    /// Reads the prefabs a scene links to from `source`: a game saved over a
+    /// level holding prefab instances compares against the level expanded.
+    /// The engine sets the shipped game's prefabs on its world.
+    pub fn set_prefabs(&mut self, source: Arc<dyn PrefabSource + Send + Sync>) {
+        self.prefabs = Some(source);
+    }
+
+    /// The serialization service, reading this world's prefabs.
+    fn serialization(&self) -> SerializationService {
+        match &self.prefabs {
+            Some(source) => SerializationService::with_prefabs(source.clone()),
+            None => SerializationService::new(),
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -396,7 +419,8 @@ impl GameWorld {
         base: &SceneFile,
         goal: SerializationGoal,
     ) -> Result<SceneFile, SerializationServiceError> {
-        SerializationService::new().save_game(&self.world, base_id, base, goal)
+        self.serialization()
+            .save_game(&self.world, base_id, base, goal)
     }
 
     /// Loads the game `save` holds, taken against the scene `base` holds —
@@ -406,7 +430,8 @@ impl GameWorld {
         save: &SceneFile,
         base: &SceneFile,
     ) -> Result<LoadReport, SerializationServiceError> {
-        SerializationService::new().load_game(&mut self.world, save, base)
+        let service = self.serialization();
+        service.load_game(&mut self.world, save, base)
     }
 
     // ─────────────────────────────────────────────────────────────────────

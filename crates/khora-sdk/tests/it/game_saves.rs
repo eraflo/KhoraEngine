@@ -112,3 +112,70 @@ fn a_game_world_refuses_a_damaged_save_whole() {
         Some(Vec3::ZERO)
     );
 }
+
+/// The prefabs a level links to, held in memory by asset id — what the
+/// shipped game's asset service is to `run_default`.
+struct Prefabs(std::collections::HashMap<AssetUUID, khora_sdk::khora_data::scene::SceneRecord>);
+
+impl khora_sdk::khora_data::scene::PrefabSource for Prefabs {
+    fn prefab(&self, id: AssetUUID) -> Result<khora_sdk::khora_data::scene::SceneRecord, String> {
+        self.0
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| format!("no prefab {id:?}"))
+    }
+}
+
+/// A level holding a prefab instance — saved with its prefabs, as the editor
+/// writes it, and loaded the way `run_default` loads it — saves and loads a
+/// game through the `GameWorld` façade like any other level.
+#[test]
+fn a_game_world_saves_a_game_over_a_level_holding_a_prefab_instance() {
+    use khora_sdk::khora_data::scene::{capture_subtree, instantiate_prefab, read_scene_file};
+
+    let mut crate_world = GameWorld::new();
+    let lid = crate_world.spawn((Transform::identity(), Name::new("Crate")));
+    crate_world
+        .inner_world_mut()
+        .mark_authored(lid)
+        .expect("a prefab's entities are authored");
+    let prefab_id = AssetUUID::new_v5("prefabs/crate.kprefab");
+    let record = capture_subtree(crate_world.inner_world(), lid).expect("the crate captures");
+    let prefabs = std::sync::Arc::new(Prefabs([(prefab_id, record)].into_iter().collect()));
+
+    let mut authoring = GameWorld::new();
+    instantiate_prefab(authoring.inner_world_mut(), prefab_id, prefabs.as_ref())
+        .expect("the crate instantiates");
+    let service = SerializationService::with_prefabs(prefabs.clone());
+    let scene = service
+        .save_world(
+            authoring.inner_world(),
+            SerializationGoal::EditorInterchange,
+        )
+        .expect("the level saves");
+    assert_eq!(
+        read_scene_file(&scene).expect("reads").instances.len(),
+        1,
+        "the level links to its prefab"
+    );
+    let scene_id = AssetUUID::new_v5("levels/crates.kscene");
+
+    let mut world = GameWorld::new();
+    world.set_prefabs(prefabs.clone());
+    service
+        .load_world(&scene, world.inner_world_mut())
+        .expect("the level loads, as run_default loads it");
+    let crate_entity = world.iter_entities().next().expect("the crate");
+    world.update_transform(crate_entity, |t| t.translation = Vec3::new(4.0, 0.0, 0.0));
+
+    let save = world
+        .save_game(scene_id, &scene, SerializationGoal::EditorInterchange)
+        .expect("the game saves");
+    let mut loaded = GameWorld::new();
+    loaded.set_prefabs(prefabs.clone());
+    loaded.load_game(&save, &scene).expect("the game loads");
+    assert_eq!(
+        named(&loaded, "Crate").map(|t| t.translation),
+        Some(Vec3::new(4.0, 0.0, 0.0))
+    );
+}

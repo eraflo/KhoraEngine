@@ -329,6 +329,7 @@ fn depth_128_is_accepted_and_129_refused_in_binary_encodings() {
     for (depth, ok) in [(128, true), (129, false)] {
         let record = SceneRecord {
             entities: vec![PersistentId::authored(7)],
+            instances: Vec::new(),
             pages: vec![PageRecord {
                 components: vec!["Transform".into()],
                 rows: vec![PersistentId::authored(7)],

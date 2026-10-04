@@ -12,6 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
+
+use khora_sdk::khora_core::asset::AssetUUID;
+use khora_sdk::khora_core::ecs::PersistentId;
+use khora_sdk::khora_data::ecs::{PrefabInstance, World};
+use khora_sdk::khora_data::scene::{
+    capture_subtree, instantiate_prefab, NoPrefabs, PrefabSource, SceneRecord,
+};
+
 use super::*;
 
 /// Captures the live JSON of a component on `entity` via the inventory
@@ -293,7 +302,7 @@ fn duplicate_entity_copies_authored_components() {
     ));
     world.add_component(source, Tag::from_iter(["enemy", "spawner"]));
 
-    duplicate_entity(&mut world, source, &mut state);
+    duplicate_entity(&mut world, source, &mut state, &NoPrefabs);
     let copy = *state
         .selection
         .iter()
@@ -342,7 +351,7 @@ fn duplicate_entity_rebuilds_the_subtree_without_stealing_children() {
     state.pending_reparent = Some((child, Some(parent)));
     process_reparents(&mut world, &mut state);
 
-    duplicate_entity(&mut world, parent, &mut state);
+    duplicate_entity(&mut world, parent, &mut state, &NoPrefabs);
     let copy = *state
         .selection
         .iter()
@@ -450,7 +459,7 @@ fn duplicate_entity_clones_material_ref() {
         mat,
     ));
 
-    duplicate_entity(&mut world, original, &mut state);
+    duplicate_entity(&mut world, original, &mut state, &NoPrefabs);
 
     let copy = state.single_selected().expect("duplicate selects the copy");
     assert_ne!(copy, original, "duplicate must produce a new entity");
@@ -484,7 +493,7 @@ fn duplicate_entity_clones_mesh_ref() {
         MeshRef::procedural(ProceduralMeshKind::Sphere, [0.75, 32.0, 16.0, 0.0]),
     ));
 
-    duplicate_entity(&mut world, original, &mut state);
+    duplicate_entity(&mut world, original, &mut state, &NoPrefabs);
 
     let copy = state.single_selected().expect("duplicate selects the copy");
     let copy_mesh = world
@@ -493,5 +502,145 @@ fn duplicate_entity_clones_mesh_ref() {
     assert_eq!(
         copy_mesh,
         &MeshRef::procedural(ProceduralMeshKind::Sphere, [0.75, 32.0, 16.0, 0.0])
+    );
+}
+
+/// Prefabs held in memory, by asset id.
+struct Library(HashMap<AssetUUID, SceneRecord>);
+
+impl PrefabSource for Library {
+    fn prefab(&self, id: AssetUUID) -> Result<SceneRecord, String> {
+        self.0
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| format!("no prefab {id:?} in the library"))
+    }
+}
+
+/// A turret prefab — a root and its barrel — and the barrel's id in it.
+fn turret_prefab() -> (SceneRecord, PersistentId) {
+    let mut world = World::new();
+    let root = world.spawn((Transform::identity(), Name::new("Turret")));
+    let barrel = world.spawn((
+        Transform::from_translation(khora_sdk::prelude::math::Vec3::new(0.0, 1.0, 0.0)),
+        Name::new("Barrel"),
+    ));
+    world.set_parent(barrel, Some(root));
+    world.mark_authored(root).expect("authored");
+    let barrel = world.mark_authored(barrel).expect("authored");
+    (
+        capture_subtree(&world, root).expect("the turret captures"),
+        barrel,
+    )
+}
+
+/// Duplicating a prefab instance's root makes a second instance of the same
+/// prefab, not a loose copy: a fresh root carrying the same link, the
+/// barrel under the id derived from that root, and the override the
+/// author made on the original's barrel.
+#[test]
+fn duplicate_entity_of_an_instance_root_makes_a_second_instance() {
+    let (record, barrel_in_prefab) = turret_prefab();
+    let prefab = AssetUUID::new();
+    let library = Library(HashMap::from([(prefab, record)]));
+    let mut world = GameWorld::new();
+    let mut state = EditorState::default();
+    let root = instantiate_prefab(world.inner_world_mut(), prefab, &library)
+        .expect("the turret instantiates");
+    let instance = world
+        .inner_world()
+        .persistent_id(root)
+        .expect("an instance has an id");
+    let barrel = world
+        .inner_world()
+        .entity_with_id(PersistentId::within(instance, barrel_in_prefab))
+        .expect("the barrel");
+    world
+        .get_component_mut::<Transform>(barrel)
+        .expect("placed")
+        .translation
+        .x = 3.0;
+
+    duplicate_entity(&mut world, root, &mut state, &library);
+
+    let copy = state.single_selected().expect("duplicate selects the copy");
+    assert_ne!(copy, root);
+    let copied = world
+        .inner_world()
+        .persistent_id(copy)
+        .expect("the copy has an id");
+    assert_ne!(copied, instance, "the copy is a new instance");
+    assert!(!copied.is_created(), "the copy is authored");
+    assert_eq!(
+        world.get_component::<PrefabInstance>(copy),
+        Some(&PrefabInstance { prefab }),
+        "the copy links to the same prefab"
+    );
+    let copied_barrel = world
+        .inner_world()
+        .entity_with_id(PersistentId::within(copied, barrel_in_prefab))
+        .expect("the copy's barrel is known by the id derived from the copy's root");
+    assert_eq!(
+        world.get_component::<Parent>(copied_barrel).map(|p| p.0),
+        Some(copy)
+    );
+    assert_eq!(
+        world
+            .get_component::<Transform>(copied_barrel)
+            .map(|t| t.translation),
+        Some(khora_sdk::prelude::math::Vec3::new(3.0, 1.0, 0.0)),
+        "the override comes along"
+    );
+    assert_eq!(
+        world.get_component::<Name>(copy).map(|n| n.as_str()),
+        Some("Turret (Copy)")
+    );
+}
+
+/// An instance whose prefab can no longer be read — its `.kprefab` deleted,
+/// or no project open — still duplicates, as a scene with it still saves:
+/// the copy holds the root and its barrel, with the original's values.
+#[test]
+fn duplicate_entity_of_an_instance_whose_prefab_is_gone_still_copies_it() {
+    let (record, barrel_in_prefab) = turret_prefab();
+    let prefab = AssetUUID::new();
+    let library = Library(HashMap::from([(prefab, record)]));
+    let mut world = GameWorld::new();
+    let mut state = EditorState::default();
+    let root = instantiate_prefab(world.inner_world_mut(), prefab, &library)
+        .expect("the turret instantiates");
+    let instance = world
+        .inner_world()
+        .persistent_id(root)
+        .expect("an instance has an id");
+    let barrel = world
+        .inner_world()
+        .entity_with_id(PersistentId::within(instance, barrel_in_prefab))
+        .expect("the barrel");
+    world
+        .get_component_mut::<Transform>(barrel)
+        .expect("placed")
+        .translation
+        .x = 3.0;
+    let before = world.inner_world().iter_entities().count();
+
+    duplicate_entity(&mut world, root, &mut state, &NoPrefabs);
+
+    assert_eq!(
+        world.inner_world().iter_entities().count(),
+        before + 2,
+        "the root and its barrel are copied"
+    );
+    let copy = state.single_selected().expect("duplicate selects the copy");
+    assert_ne!(copy, root);
+    let copied_barrel = world
+        .get_component::<Children>(copy)
+        .and_then(|children| children.0.first().copied())
+        .expect("the copy has its barrel");
+    assert_eq!(
+        world
+            .get_component::<Transform>(copied_barrel)
+            .map(|t| t.translation),
+        Some(khora_sdk::prelude::math::Vec3::new(3.0, 1.0, 0.0))
     );
 }

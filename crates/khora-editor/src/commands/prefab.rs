@@ -16,10 +16,11 @@
 
 use std::sync::{Arc, Mutex};
 
+use khora_sdk::khora_data::scene::{instantiate_prefab, serialize_prefab, NoPrefabs};
 use khora_sdk::prelude::ecs::*;
-use khora_sdk::{instantiate_subtree, serialize_subtree, EditorState, GameWorld};
+use khora_sdk::{serialize_subtree, EditorState, GameWorld};
 
-use crate::project_vfs::ProjectVfs;
+use crate::project_vfs::{ProjectPrefabs, ProjectVfs};
 use crate::scene_io;
 
 /// Drains [`EditorState::pending_save_as_prefab`] and
@@ -55,14 +56,7 @@ pub fn process_pending_save_as_prefab(
         return;
     };
 
-    let bytes = match serialize_subtree(world.inner_world(), entity) {
-        Ok(b) => b,
-        Err(e) => {
-            log::error!("Failed to serialize prefab subtree: {:?}", e);
-            return;
-        }
-    };
-
+    // The file first: the prefab it is decides what may be linked to.
     let Some(path) = rfd::FileDialog::new()
         .add_filter("Khora Prefab", &["kprefab"])
         .set_file_name("prefab.kprefab")
@@ -70,18 +64,50 @@ pub fn process_pending_save_as_prefab(
     else {
         return;
     };
-    let abs = path.clone();
     let path_str = path.to_string_lossy().to_string();
 
     if let Some(pvfs_arc) = project_vfs {
-        if let Ok(mut pvfs) = pvfs_arc.lock() {
-            let assets_root = pvfs.assets_root.clone();
-            if let Some(rel_fwd) = scene_io::rel_inside_project(&abs, &assets_root) {
-                write_prefab_through_vfs(&mut pvfs, &rel_fwd, &bytes);
+        let inside = match pvfs_arc.lock() {
+            Ok(pvfs) => scene_io::rel_inside_project(&path, &pvfs.assets_root)
+                .map(|rel| (pvfs.written_asset_id(&rel), rel)),
+            Err(_) => {
+                log::error!("Project VFS mutex poisoned");
                 return;
             }
+        };
+        if let Some((written, rel_fwd)) = inside {
+            let saved = serialize_prefab(
+                world.inner_world(),
+                entity,
+                written,
+                &ProjectPrefabs(pvfs_arc),
+            );
+            let bytes = match saved {
+                Ok(b) => b,
+                Err(e) => {
+                    log::error!("Failed to serialize prefab subtree: {:?}", e);
+                    return;
+                }
+            };
+            if let Ok(mut pvfs) = pvfs_arc.lock() {
+                write_prefab_through_vfs(&mut pvfs, &rel_fwd, &bytes);
+            }
+            return;
         }
     }
+
+    // Outside the project: no prefab of it can be the file written.
+    let written = match project_vfs {
+        Some(pvfs) => serialize_subtree(world.inner_world(), entity, &ProjectPrefabs(pvfs)),
+        None => serialize_subtree(world.inner_world(), entity, &NoPrefabs),
+    };
+    let bytes = match written {
+        Ok(b) => b,
+        Err(e) => {
+            log::error!("Failed to serialize prefab subtree: {:?}", e);
+            return;
+        }
+    };
 
     match std::fs::write(&path_str, &bytes) {
         Ok(()) => log::warn!(
@@ -103,7 +129,21 @@ fn save_prefab_to_project_path(
         log::warn!("Prefab drop ignored: no project is open");
         return;
     };
-    let bytes = match serialize_subtree(world.inner_world(), entity) {
+    // The prefab this file is: an instance of it inside it is written whole.
+    let written = match pvfs_arc.lock() {
+        Ok(pvfs) => pvfs.written_asset_id(rel_path),
+        Err(_) => {
+            log::error!("Project VFS mutex poisoned");
+            return;
+        }
+    };
+    let saved = serialize_prefab(
+        world.inner_world(),
+        entity,
+        written,
+        &ProjectPrefabs(pvfs_arc),
+    );
+    let bytes = match saved {
         Ok(b) => b,
         Err(e) => {
             log::error!("Failed to serialize prefab subtree: {:?}", e);
@@ -128,10 +168,10 @@ fn write_prefab_through_vfs(pvfs: &mut ProjectVfs, rel_fwd: &str, bytes: &[u8]) 
     log::info!("Prefab saved to '{}' ({} bytes)", rel_fwd, bytes.len());
 }
 
-/// Drains [`EditorState::pending_prefab_spawn`] and instantiates the
-/// referenced `.kprefab` into the live world via
-/// [`instantiate_subtree`]. The forward-slash relative path resolves
-/// through the project's VFS / `AssetService`.
+/// Drains [`EditorState::pending_prefab_spawn`] and brings the referenced
+/// `.kprefab` into the live world as a linked instance via
+/// [`instantiate_prefab`]. The forward-slash relative path resolves through
+/// the project's VFS / `AssetService`.
 pub fn process_pending_prefab_spawn(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
@@ -150,22 +190,16 @@ pub fn process_pending_prefab_spawn(
         return;
     };
 
-    let bytes = {
-        let Ok(mut pvfs) = pvfs_arc.lock() else {
+    let prefab = {
+        let Ok(pvfs) = pvfs_arc.lock() else {
             log::error!("Project VFS mutex poisoned");
             return;
         };
-        let uuid = pvfs.resolve_uuid(&rel);
-        match pvfs.asset_service.load_raw(&uuid) {
-            Ok(b) => b,
-            Err(e) => {
-                log::error!("Failed to read prefab '{}': {:#}", rel, e);
-                return;
-            }
-        }
+        pvfs.resolve_uuid(&rel)
     };
 
-    match instantiate_subtree(world.inner_world_mut(), &bytes) {
+    // Linked: the instance follows its prefab where it was not overridden.
+    match instantiate_prefab(world.inner_world_mut(), prefab, &ProjectPrefabs(pvfs_arc)) {
         Ok(new_root) => {
             // Parent under the hierarchy row it was dropped on, if any.
             if let Some(parent) = parent {

@@ -15,6 +15,7 @@
 //! Reparenting, duplicating and deleting entities.
 
 use khora_sdk::editor_ui::*;
+use khora_sdk::khora_data::scene::PrefabSource;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::GameWorld;
 
@@ -47,8 +48,17 @@ pub fn process_reparents(world: &mut GameWorld, state: &mut EditorState) {
 /// `serialize_subtree` deliberately drops the root's own parent edge (a
 /// `.kprefab` has to be self-contained), so the copy is re-parented here to
 /// land as a sibling of the original.
-pub fn duplicate_entity(world: &mut GameWorld, entity: EntityId, state: &mut EditorState) {
-    let recipe = match khora_sdk::serialize_subtree(world.inner_world(), entity) {
+///
+/// A prefab instance in the subtree is copied as an instance of the same
+/// prefab, read from `prefabs`: a new root, its entities derived from it,
+/// the same overrides.
+pub fn duplicate_entity(
+    world: &mut GameWorld,
+    entity: EntityId,
+    state: &mut EditorState,
+    prefabs: &dyn PrefabSource,
+) {
+    let recipe = match khora_sdk::serialize_subtree(world.inner_world(), entity, prefabs) {
         Ok(bytes) => bytes,
         Err(e) => {
             log::error!("Duplicate failed: could not read {entity:?}: {e}");
@@ -62,7 +72,8 @@ pub fn duplicate_entity(world: &mut GameWorld, entity: EntityId, state: &mut Edi
         .map(|n: &Name| format!("{} (Copy)", n.as_str()))
         .unwrap_or_else(|| "Copy".to_owned());
 
-    let new_entity = match khora_sdk::instantiate_subtree(world.inner_world_mut(), &recipe) {
+    let new_entity = match khora_sdk::instantiate_subtree(world.inner_world_mut(), &recipe, prefabs)
+    {
         Ok(id) => id,
         Err(e) => {
             log::error!("Duplicate failed: could not rebuild {entity:?}: {e}");

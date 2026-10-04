@@ -240,3 +240,26 @@ fn an_authored_entity_stripped_of_every_component_loads_bare() {
     assert!(dst.get::<Name>(back).is_none());
     assert!(dst.get::<Transform>(back).is_none());
 }
+
+/// The game moves C out from under B, then destroys B. Loaded, C is still
+/// there, under its new parent: only what still hung from B went with it.
+#[test]
+fn a_child_moved_away_before_its_parent_is_destroyed_survives_the_load() {
+    let (mut world, [a, b, c]) = three();
+    assert!(world.set_parent(c, Some(b)));
+    let base = capture_world(&world).expect("the scene captures");
+    let c_id = id(&world, c);
+    let a_id = id(&world, a);
+
+    assert!(world.set_parent(c, Some(a)));
+    world.despawn_subtree(b);
+    let save = capture_save(&world, AssetUUID::new(), &base).expect("the game saves");
+
+    let loaded = load(&base, &save);
+    let c = twin(&loaded, c_id);
+    assert_eq!(
+        loaded.get::<khora_data::ecs::Parent>(c).map(|p| p.0),
+        Some(twin(&loaded, a_id))
+    );
+    assert_eq!(loaded.iter_entities().count(), 2);
+}

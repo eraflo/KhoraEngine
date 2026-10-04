@@ -159,7 +159,22 @@ impl EditorApp {
         }
 
         if let Some(entity) = state.pending_duplicate.take() {
-            ops::duplicate_entity(world, entity, &mut state);
+            // A duplicated prefab instance stays one: its prefab is read to
+            // derive the copy's members from the copy's new root.
+            match self.project_vfs.as_deref() {
+                Some(pvfs) => ops::duplicate_entity(
+                    world,
+                    entity,
+                    &mut state,
+                    &crate::project_vfs::ProjectPrefabs(pvfs),
+                ),
+                None => ops::duplicate_entity(
+                    world,
+                    entity,
+                    &mut state,
+                    &khora_sdk::khora_data::scene::NoPrefabs,
+                ),
+            }
         }
 
         if let Some((entity, type_name)) = state.pending_add_component.take() {

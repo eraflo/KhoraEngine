@@ -297,6 +297,7 @@ fn heap_bytes(record: &Record) -> usize {
 fn a_deeply_nested_msgpack_value_is_an_error_not_a_crash() {
     let record = SceneRecord {
         entities: vec![PersistentId::authored(7)],
+        instances: Vec::new(),
         pages: vec![PageRecord {
             components: vec!["Transform".into()],
             rows: vec![PersistentId::authored(7)],

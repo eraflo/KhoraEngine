@@ -23,6 +23,7 @@ mod mesh_ref;
 mod name;
 mod parent;
 mod physics;
+mod prefab_instance;
 mod script;
 mod script_state;
 mod simulated_transform;
@@ -46,6 +47,7 @@ pub use crate::assets::procedural_mesh::{
 pub use name::*;
 pub use parent::*;
 pub use physics::*;
+pub use prefab_instance::*;
 pub use script::*;
 pub use script_state::*;
 pub use simulated_transform::*;

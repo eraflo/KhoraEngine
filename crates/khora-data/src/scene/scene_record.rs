@@ -28,7 +28,10 @@ use serde::de::{self, MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use khora_core::asset::AssetUUID;
+
 use super::record::Record;
+use super::save::SaveRecord;
 
 /// Everything a scene, a prefab or a save holds.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -38,6 +41,24 @@ pub struct SceneRecord {
     pub entities: Vec<PersistentId>,
     /// The pages their components are stored in.
     pub pages: Vec<PageRecord>,
+    /// The prefab instances the record keeps as links: each one's entities
+    /// are not in `pages`, they are the prefab's, with the instance's
+    /// differences on top.
+    pub instances: Vec<InstanceRecord>,
+}
+
+/// A prefab instance, kept as a link: the prefab, the identity of its root,
+/// and how the instance differs from the prefab.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InstanceRecord {
+    /// The instance root's identity; every entity of the instance is known
+    /// by it and by its own id in the prefab.
+    pub root: PersistentId,
+    /// The prefab the instance was made from.
+    pub prefab: AssetUUID,
+    /// The instance's differences from its prefab, as expanded under `root`.
+    pub delta: SaveRecord,
 }
 
 /// One page: a signature, its rows, a column of values per component.
@@ -55,12 +76,16 @@ pub struct PageRecord {
 /// Written as `{"entities": [..], "pages": [{"rows": [..], "columns": {"Name":
 /// [value per row], ..}}, ..]}` — a page's components are the keys of its
 /// columns, in signature order: a text save reads as the pages the scene is
-/// stored in.
+/// stored in. A record linking to prefabs adds `"instances": [..]`.
 impl Serialize for SceneRecord {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(Some(2))?;
+        let linked = !self.instances.is_empty();
+        let mut map = serializer.serialize_map(Some(if linked { 3 } else { 2 }))?;
         map.serialize_entry("entities", &Ids(&self.entities))?;
         map.serialize_entry("pages", &self.pages)?;
+        if linked {
+            map.serialize_entry("instances", &self.instances)?;
+        }
         map.end()
     }
 }
@@ -96,6 +121,30 @@ impl Serialize for Columns<'_> {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPage {
+    rows: Vec<u64>,
+    columns: RawColumns,
+}
+
+fn ids_from(raw: Vec<u64>) -> Vec<PersistentId> {
+    raw.into_iter().map(PersistentId::from_bits).collect()
+}
+
+fn pages_from(raw: Vec<RawPage>) -> Vec<PageRecord> {
+    raw.into_iter()
+        .map(|page| {
+            let (components, columns) = page.columns.0.into_iter().unzip();
+            PageRecord {
+                components,
+                rows: ids_from(page.rows),
+                columns,
+            }
+        })
+        .collect()
+}
+
 impl<'de> Deserialize<'de> for SceneRecord {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         #[derive(Deserialize)]
@@ -103,34 +152,36 @@ impl<'de> Deserialize<'de> for SceneRecord {
         struct Raw {
             entities: Vec<u64>,
             pages: Vec<RawPage>,
-        }
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct RawPage {
-            rows: Vec<u64>,
-            columns: RawColumns,
+            #[serde(default)]
+            instances: Vec<InstanceRecord>,
         }
         let raw = Raw::deserialize(deserializer)?;
         Ok(SceneRecord {
-            entities: raw
-                .entities
-                .into_iter()
-                .map(PersistentId::from_bits)
-                .collect(),
-            pages: raw
-                .pages
-                .into_iter()
-                .map(|page| {
-                    let (components, columns) = page.columns.0.into_iter().unzip();
-                    PageRecord {
-                        components,
-                        rows: page.rows.into_iter().map(PersistentId::from_bits).collect(),
-                        columns,
-                    }
-                })
-                .collect(),
+            entities: ids_from(raw.entities),
+            pages: pages_from(raw.pages),
+            instances: raw.instances,
         })
     }
+}
+
+/// Reads a record that cannot link to prefabs — what a save or an instance
+/// holds of its differences. Refusing `instances` there is also what keeps a
+/// file from nesting links inside links without end.
+pub(super) fn plain_record<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<SceneRecord, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Raw {
+        entities: Vec<u64>,
+        pages: Vec<RawPage>,
+    }
+    let raw = Raw::deserialize(deserializer)?;
+    Ok(SceneRecord {
+        entities: ids_from(raw.entities),
+        pages: pages_from(raw.pages),
+        instances: Vec::new(),
+    })
 }
 
 /// A page's columns read back in the order the file lists them.

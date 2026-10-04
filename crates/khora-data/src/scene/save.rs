@@ -41,6 +41,7 @@ use super::apply::{prepare_kept, Identity, LoadFailure, Prepared};
 use super::capture::{capture_game, capture_world, SaveError};
 use super::component_registration::{registration_named, Kept};
 use super::encoding::{encoding_named, EncodingError, SceneEncoding};
+use super::entity_refs::{parent_in, referenced};
 use super::file::{check_save_format, encoding_of, file_with, SceneFileReadError};
 use super::record::{diff, patch, same, Record, ReportEntry, ReportKind};
 use super::scene_record::{PageRecord, SceneRecord};
@@ -72,11 +73,13 @@ pub struct SaveRecord {
     /// Every entity that differs from the scene, with the components that
     /// differ, whole: those the game changed or added on the scene's
     /// entities, every component of the entities it made.
+    #[serde(deserialize_with = "super::scene_record::plain_record")]
     pub changes: SceneRecord,
     /// The scene's values, when the save was taken, of the components the
     /// game changed — what a load compares the game's values with, field by
     /// field, so an edit the author made since to a field the game left alone
     /// is kept.
+    #[serde(deserialize_with = "super::scene_record::plain_record")]
     pub before: SceneRecord,
 }
 
@@ -91,10 +94,10 @@ pub struct RemovedComponents {
 }
 
 /// An entity's components in a record, by name, in its page's order.
-type Components<'r> = Vec<(&'r str, &'r Record)>;
+pub(super) type Components<'r> = Vec<(&'r str, &'r Record)>;
 
 /// Every entity of `record` that has components, and its components.
-fn components_of(record: &SceneRecord) -> HashMap<PersistentId, Components<'_>> {
+pub(super) fn components_of(record: &SceneRecord) -> HashMap<PersistentId, Components<'_>> {
     let mut entities: HashMap<PersistentId, Components<'_>> = HashMap::new();
     for page in &record.pages {
         for (row, id) in page.rows.iter().enumerate() {
@@ -116,7 +119,7 @@ fn component<'r>(components: &Components<'r>, name: &str) -> Option<&'r Record> 
         .map(|(_, value)| *value)
 }
 
-fn owned(components: &Components<'_>) -> Vec<(String, Record)> {
+pub(super) fn owned(components: &Components<'_>) -> Vec<(String, Record)> {
     components
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).clone()))
@@ -125,13 +128,13 @@ fn owned(components: &Components<'_>) -> Vec<(String, Record)> {
 
 /// Pages being built, one per signature, in the order they are first met.
 #[derive(Default)]
-struct Pages {
-    pages: Vec<PageRecord>,
+pub(super) struct Pages {
+    pub(super) pages: Vec<PageRecord>,
     by_signature: HashMap<Vec<String>, usize>,
 }
 
 impl Pages {
-    fn push(&mut self, id: PersistentId, mut components: Vec<(String, Record)>) {
+    pub(super) fn push(&mut self, id: PersistentId, mut components: Vec<(String, Record)>) {
         if components.is_empty() {
             return;
         }
@@ -165,7 +168,7 @@ impl Pages {
 ///
 /// `entities` are every entity the values may refer to, so a reference to
 /// one the record has no row for is still a reference, not an outside one.
-fn as_read(
+pub(super) fn as_read(
     record: &SceneRecord,
     entities: Vec<PersistentId>,
     kept: Kept,
@@ -173,6 +176,7 @@ fn as_read(
     let mut world = World::new();
     let whole = SceneRecord {
         entities,
+        instances: Vec::new(),
         pages: record.pages.clone(),
     };
     prepare_kept(&mut world, &whole, kept)?.commit(&mut world, Identity::Keep);
@@ -200,8 +204,39 @@ pub fn capture_save(
 ) -> Result<SaveRecord, SaveError> {
     let base = scene_as_read(base).map_err(|failure| SaveError::Base(failure.message))?;
     let now = capture_game(world)?;
-    let base_components = components_of(&base);
-    let now_components = components_of(&now);
+    Ok(differences(base_id, &base, &now))
+}
+
+/// How `now` differs from `base`, two scene records of the components a
+/// scene keeps. Each is read as this build reads it first, among the entities
+/// its values refer to.
+pub(super) fn delta_between(
+    base_id: AssetUUID,
+    base: &SceneRecord,
+    now: &SceneRecord,
+) -> Result<SaveRecord, SaveError> {
+    let read = |record: &SceneRecord| {
+        let mut among = record.entities.clone();
+        let listed: HashSet<PersistentId> = among.iter().copied().collect();
+        among.extend(
+            referenced(record)
+                .into_iter()
+                .filter(|id| !listed.contains(id)),
+        );
+        as_read(record, among, Kept::Scene)
+            .map(|canonical| SceneRecord {
+                entities: record.entities.clone(),
+                ..canonical
+            })
+            .map_err(|failure| SaveError::Base(failure.message))
+    };
+    Ok(differences(base_id, &read(base)?, &read(now)?))
+}
+
+/// What a save of `now` against `base` holds.
+fn differences(base_id: AssetUUID, base: &SceneRecord, now: &SceneRecord) -> SaveRecord {
+    let base_components = components_of(base);
+    let now_components = components_of(now);
     let in_base: HashSet<PersistentId> = base.entities.iter().copied().collect();
     let alive: HashSet<PersistentId> = now.entities.iter().copied().collect();
 
@@ -255,7 +290,7 @@ pub fn capture_save(
         }
     }
 
-    Ok(SaveRecord {
+    SaveRecord {
         base: base_id,
         order: now.entities.clone(),
         destroyed: base
@@ -268,13 +303,15 @@ pub fn capture_save(
         removed,
         changes: SceneRecord {
             entities,
+            instances: Vec::new(),
             pages: changes.pages,
         },
         before: SceneRecord {
             entities: before_entities,
+            instances: Vec::new(),
             pages: before.pages,
         },
-    })
+    }
 }
 
 /// A record that could not be read, and why.
@@ -305,6 +342,8 @@ impl Read {
             .iter()
             .chain(&save.changes.entities)
             .chain(&save.before.entities)
+            .chain(&referenced(&save.changes))
+            .chain(&referenced(&save.before))
         {
             if seen.insert(*id) {
                 everyone.push(*id);
@@ -313,6 +352,7 @@ impl Read {
         let unreadable = |record: &SceneRecord, failure: LoadFailure| {
             let record = SceneRecord {
                 entities: everyone.clone(),
+                instances: Vec::new(),
                 pages: record.pages.clone(),
             };
             (record, failure)
@@ -507,20 +547,43 @@ fn composed(
     let entities = read.order(save, &mut report);
     let nothing = Components::new();
 
+    let mut merged: Vec<(PersistentId, Vec<(String, Record)>)> = entities
+        .iter()
+        .map(|id| {
+            let components = if read.created.contains(id) {
+                owned(sides.changes.get(id).unwrap_or(&nothing))
+            } else if read.diverged(*id) {
+                sides.merged(*id, read.removed_from(*id), &mut report)
+            } else {
+                owned(sides.scene.get(id).unwrap_or(&nothing))
+            };
+            (*id, components)
+        })
+        .collect();
+    // What hangs from an entity the save destroyed went with it: a child the
+    // author added under it since is not brought back, parentless.
+    let mut gone = read.destroyed.clone();
+    loop {
+        let before = gone.len();
+        for (id, components) in &merged {
+            if parent_in(components).is_some_and(|parent| gone.contains(&parent)) {
+                gone.insert(*id);
+            }
+        }
+        if gone.len() == before {
+            break;
+        }
+    }
+    merged.retain(|(id, _)| !gone.contains(id));
+    let entities: Vec<PersistentId> = merged.iter().map(|(id, _)| *id).collect();
     let mut pages = Pages::default();
-    for id in &entities {
-        let components = if read.created.contains(id) {
-            owned(sides.changes.get(id).unwrap_or(&nothing))
-        } else if read.diverged(*id) {
-            sides.merged(*id, read.removed_from(*id), &mut report)
-        } else {
-            owned(sides.scene.get(id).unwrap_or(&nothing))
-        };
-        pages.push(*id, components);
+    for (id, components) in merged {
+        pages.push(id, components);
     }
     Ok((
         SceneRecord {
             entities,
+            instances: Vec::new(),
             pages: pages.pages,
         },
         report,
@@ -560,6 +623,7 @@ pub fn promote(base: &SceneRecord, save: &SaveRecord) -> SceneRecord {
     }
     SceneRecord {
         entities: base.entities.clone(),
+        instances: Vec::new(),
         pages: pages.pages,
     }
 }

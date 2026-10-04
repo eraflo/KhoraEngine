@@ -102,6 +102,7 @@ fn transforms_scene(count: u64) -> SceneRecord {
         .collect();
     SceneRecord {
         entities: rows.clone(),
+        instances: Vec::new(),
         pages: vec![PageRecord {
             components: vec!["Transform".into()],
             rows,
@@ -221,6 +222,7 @@ fn every_kind_scene() -> SceneRecord {
     };
     SceneRecord {
         entities: vec![first, bare, last, other],
+        instances: Vec::new(),
         pages: vec![
             PageRecord {
                 components: vec!["Everything".into(), "Transform".into()],
@@ -245,6 +247,7 @@ fn every_kind_scene() -> SceneRecord {
 fn empty_page_scene() -> SceneRecord {
     SceneRecord {
         entities: vec![PersistentId::authored(9)],
+        instances: Vec::new(),
         pages: vec![PageRecord {
             components: vec!["Transform".into(), "Marker".into()],
             rows: vec![],
@@ -352,6 +355,7 @@ fn the_text_encoding_is_readable_json() {
     let texture = AssetUUID::new_v5("textures/wall.png");
     let record = SceneRecord {
         entities: vec![PersistentId::authored(42), PersistentId::created(3)],
+        instances: Vec::new(),
         pages: vec![PageRecord {
             components: vec!["Transform".into(), "Holder".into()],
             rows: vec![PersistentId::authored(42)],
@@ -519,6 +523,7 @@ fn every_encoding_reads_a_value_back_by_name() {
     let value = probe();
     let record = SceneRecord {
         entities: vec![PersistentId::authored(1)],
+        instances: Vec::new(),
         pages: vec![PageRecord {
             components: vec!["Probe".into()],
             rows: vec![PersistentId::authored(1)],
