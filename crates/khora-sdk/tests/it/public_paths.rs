@@ -166,6 +166,7 @@ mod trait_items {
         let _ = <T as khora_sdk::EngineApp>::new;
         let _ = <T as khora_sdk::EngineApp>::setup;
         let _ = <T as khora_sdk::EngineApp>::update;
+        let _ = <T as khora_sdk::EngineApp>::initial_mode;
         let _ = <T as khora_sdk::EngineApp>::on_shutdown;
         let _ = <T as khora_sdk::EngineApp>::intercept_window_event;
         let _ = <T as khora_sdk::EngineApp>::before_frame;

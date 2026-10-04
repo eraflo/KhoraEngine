@@ -77,6 +77,17 @@ pub static ON_DESPAWN: Lifecycle = Lifecycle {
     called: true,
 };
 
+/// `void OnLoad()` — once, when an instance is restored from a save.
+///
+/// After the initialiser and the restore, before anything else the turn runs.
+/// Not on a scene load nor on Stop: those are fresh starts, and `OnSpawn` is
+/// their hook.
+pub static ON_LOAD: Lifecycle = Lifecycle {
+    name: "OnLoad",
+    params: &[],
+    called: true,
+};
+
 /// `void FixedUpdate(float dt)` — reserved, not yet called.
 ///
 /// It needs a fixed timestep to be called *at*, and the scripting agent
@@ -90,7 +101,7 @@ pub static FIXED_UPDATE: Lifecycle = Lifecycle {
 };
 
 /// Every engine-invoked member.
-pub static ALL: &[&Lifecycle] = &[&UPDATE, &ON_SPAWN, &ON_DESPAWN, &FIXED_UPDATE];
+pub static ALL: &[&Lifecycle] = &[&UPDATE, &ON_SPAWN, &ON_LOAD, &ON_DESPAWN, &FIXED_UPDATE];
 
 /// The lifecycle member a name denotes, if it denotes one.
 pub fn of(name: &str) -> Option<&'static Lifecycle> {
@@ -121,5 +132,20 @@ mod tests {
     fn update_takes_the_frame_time() {
         assert_eq!(UPDATE.params, &[Ty::Float]);
         assert!(ON_SPAWN.params.is_empty());
+    }
+
+    /// `OnLoad` is a member the engine calls, so it is in the one table both
+    /// the checker and the dispatcher read — a hook missing from it would be
+    /// an ordinary method that silently never runs.
+    #[test]
+    fn on_load_is_an_engine_invoked_member() {
+        assert!(
+            ALL.iter().any(|hook| std::ptr::eq(*hook, &ON_LOAD)),
+            "`ON_LOAD` is listed in `ALL`"
+        );
+        let found = of("OnLoad").expect("`OnLoad` resolves to a lifecycle member");
+        assert!(std::ptr::eq(found, &ON_LOAD));
+        assert!(found.params.is_empty(), "it takes nothing");
+        assert!(found.called, "and the engine calls it");
     }
 }

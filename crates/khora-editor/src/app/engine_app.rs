@@ -70,6 +70,11 @@ impl EngineApp for EditorApp {
         }
     }
 
+    /// Editing, not playing: no script runs until Play is pressed.
+    fn initial_mode(&self) -> khora_sdk::EngineMode {
+        super::engine_mode_for(khora_sdk::PlayMode::Editing)
+    }
+
     fn setup(&mut self, world: &mut GameWorld, runtime: &Runtime) {
         self.cache_services(runtime);
         self.register_panels(runtime);
@@ -288,7 +293,9 @@ impl EngineApp for EditorApp {
     }
 
     fn before_agents(&mut self, world: &mut GameWorld, runtime: &Runtime) {
-        // First: the scale decides whether this frame's agents integrate at all.
+        // First: the mode decides which agents run this frame, the scale
+        // whether they integrate at all.
+        self.drive_engine_mode(runtime);
         self.drive_simulation_clock(runtime);
 
         if let Some(pvfs_arc) = self.project_vfs.as_ref() {

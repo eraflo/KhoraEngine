@@ -63,6 +63,7 @@ behavior Guard {
 
 fn view(delta: f32, arrival: Option<ScriptArrival>) -> ScriptView {
     ScriptView {
+        resumed: false,
         delta_seconds: delta,
         input: Default::default(),
         programs: vec![ScriptProgram {

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Bodies that resume where they stopped, attacked at their edges: a save taken
+//! Bodies that resume where they stopped, at their edges: a save taken
 //! while the initialiser is part-way, a timer body abandoned by an edit, and a
 //! saved timer body that names a schedule the behavior does not have.
 
@@ -28,12 +28,12 @@ use super::saves::through_positional;
 
 /// A native costing far more than the small slices below, so a body can be cut
 /// at a known point: everything before it runs, it and everything after do not.
-#[ergon_fn(name = "ResumableBreakerWall", cost = 50)]
-fn resumable_breaker_wall() -> f32 {
+#[ergon_fn(name = "ResumableWall", cost = 50)]
+fn resumable_wall() -> f32 {
     0.0
 }
 
-const MODULE: &str = "resumable_breaker.erg";
+const MODULE: &str = "resumable_after_edits.erg";
 
 fn build(source: &str) -> Program {
     let lexed = lex(source);
@@ -60,6 +60,7 @@ fn subject() -> EntityId {
 
 fn view_of(behavior: &str, delta: f32, authored: Option<ScriptSnapshot>) -> ScriptView {
     ScriptView {
+        resumed: false,
         delta_seconds: delta,
         input: Default::default(),
         programs: vec![ScriptProgram {
@@ -119,7 +120,7 @@ fn run(
 /// Writes `health` first, then stops on the wall.
 const HEAVY_GUARD: &str = "behavior Guard {
                                int health = 100;
-                               float pad = ResumableBreakerWall();
+                               float pad = ResumableWall();
                            }";
 
 /// **A save taken while the initialiser is part-way holds the loaded values.**
@@ -212,7 +213,7 @@ const SLOW_TICKER: &str = "behavior Ticker {
                                int slow = 0;
                                every 5s {
                                    slow += 1;
-                                   ResumableBreakerWall();
+                                   ResumableWall();
                                }
                            }";
 
@@ -223,7 +224,7 @@ const EDITED_TICKER: &str = "behavior Ticker {
                                  every 0.1s { fast += 1; }
                                  every 5s {
                                      slow += 1;
-                                     ResumableBreakerWall();
+                                     ResumableWall();
                                  }
                              }";
 
@@ -277,7 +278,7 @@ const TICKER: &str = "behavior Ticker {
                           int rest = 0;
                           every 0.5s {
                               before += 1;
-                              ResumableBreakerWall();
+                              ResumableWall();
                               rest += 1;
                           }
                       }";
@@ -486,7 +487,7 @@ const FUSE: &str = "behavior Fuse {
                         int lit = 0;
                         after 0.5s {
                             lit += 1;
-                            ResumableBreakerWall();
+                            ResumableWall();
                         }
                     }";
 
@@ -496,7 +497,7 @@ const EDITED_FUSE: &str = "behavior Fuse {
                                void Idle() { }
                                after 0.5s {
                                    lit += 1;
-                                   ResumableBreakerWall();
+                                   ResumableWall();
                                }
                            }";
 

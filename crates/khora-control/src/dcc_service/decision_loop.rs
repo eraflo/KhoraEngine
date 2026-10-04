@@ -21,7 +21,6 @@ use crate::cost_model::CostModel;
 use crate::dcc_context::safety_ceiling;
 use crate::metrics::MetricStore;
 use crate::pid::PidController;
-use crate::EngineMode;
 use crossbeam_channel::Receiver;
 use khora_core::agent::gorna::ResourceBudget;
 use khora_core::agent::Agent;
@@ -127,14 +126,10 @@ impl DccService {
                                 ctx.hardware.gpu_load
                             );
                         }
-                        TelemetryEvent::PhaseChange(phase_name) => {
+                        TelemetryEvent::ModeChange(new_mode) => {
                             let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
-                            if let Some(new_mode) = EngineMode::from_name(&phase_name) {
-                                log::debug!("DCC Mode: {:?} → {:?}", ctx.mode, new_mode);
-                                ctx.mode = new_mode;
-                            } else {
-                                log::warn!("DCC: Unknown mode '{}'", phase_name);
-                            }
+                            log::debug!("DCC Mode: {:?} → {:?}", ctx.mode, new_mode);
+                            ctx.mode = new_mode;
                         }
                         TelemetryEvent::GpuReport(report) => {
                             if let Some(frame_time_us) = report.frame_total_duration_us() {

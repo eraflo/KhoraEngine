@@ -34,8 +34,8 @@ pub enum TelemetryEvent {
     HardwareReport(HardwareReport),
     /// A GPU performance report (frame timings, draw calls, triangles).
     GpuReport(GpuReport),
-    /// A change in the execution phase signaled by the engine.
-    PhaseChange(String),
+    /// The engine's mode changed — which agents run.
+    ModeChange(crate::agent::EngineMode),
     /// A per-agent execution-cost sample: the workload size `n` an agent
     /// processed this frame and the wall-clock time it took. The DCC feeds
     /// these to a per-agent cost model (`c·f(n)`) so it can *forecast* a budget

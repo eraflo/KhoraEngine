@@ -316,6 +316,7 @@ mod tests {
 
     fn a_scene_with_one_script() -> ScriptView {
         ScriptView {
+            resumed: false,
             delta_seconds: 0.0,
             input: Default::default(),
             programs: vec![ScriptProgram {

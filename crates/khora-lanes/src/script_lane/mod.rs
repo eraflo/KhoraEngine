@@ -121,6 +121,11 @@ impl Lane for BudgetedScriptLane {
         apply_reloads(runtime, &reloads);
 
         if view.is_empty() {
+            // Play resuming on an empty scene still forgets what left while it
+            // was away — or a later frame would bid it farewell.
+            if view.resumed {
+                runtime.retain_live(|_| false);
+            }
             // Nothing to run, but the mail must still be kept: the engine's
             // channel has already been drained, and events dropped here would
             // be gone with no trace of having existed.

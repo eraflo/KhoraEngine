@@ -108,7 +108,7 @@ describe('generateClaude — settings.json', () => {
   });
 });
 
-// ── spec round 2: hook commands independent of the working directory ────────
+// ── hook commands independent of the working directory ────────
 
 const ENGINE_SWEEP = 'node "${CLAUDE_PROJECT_DIR}/.agent/engine/installer/bin/khora-ai.mjs" sweep';
 const ENGINE_SYNC = 'node "${CLAUDE_PROJECT_DIR}/.agent/engine/installer/bin/khora-ai.mjs" sync --if-changed "$CLAUDE_TOOL_INPUT_FILE_PATH"';
@@ -148,7 +148,7 @@ describe('mergeClaudeHooks — $CLAUDE_PROJECT_DIR commands', () => {
   });
 });
 
-// ── spec round 2: each profile only owns its own hooks ──────────────────────
+// ── each profile only owns its own hooks ──────────────────────
 
 describe('mergeClaudeHooks (engine) — leaves the other profile\'s hooks alone', () => {
   test('an engine merge keeps the gamedev PostToolUse sync hook', () => {
@@ -252,7 +252,7 @@ describe('generateClaude — engine and gamedev installs coexist', () => {
   });
 });
 
-// ── test-breaker round 2: hook commands must survive Claude Code's PowerShell hook shell ──
+// ── hook commands must survive Claude Code's PowerShell hook shell ──
 // On Windows, Claude Code runs a hook through Git Bash when it finds one and
 // through PowerShell otherwise. PowerShell reads a bare `$CLAUDE_PROJECT_DIR`
 // as an undefined variable, so `node "$CLAUDE_PROJECT_DIR/.agent/…"` becomes
@@ -260,7 +260,7 @@ describe('generateClaude — engine and gamedev installs coexist', () => {
 // The braced `${CLAUDE_PROJECT_DIR}` works in both: bash expands it, and Claude
 // Code rewrites it to `${env:CLAUDE_PROJECT_DIR}` for PowerShell.
 
-describe('test-breaker — hook commands work under both hook shells', () => {
+describe('hook commands work under both hook shells', () => {
   const bareProjectDir = /\$CLAUDE_PROJECT_DIR\b/; // the pattern Claude Code warns on
   const gamedevProviders = () => import(new URL('../../../gamedev/installer/lib/providers.mjs', import.meta.url));
 

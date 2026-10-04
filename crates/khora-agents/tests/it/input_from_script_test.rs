@@ -75,6 +75,7 @@ const PLAYER_ENTITY: EntityId = EntityId {
 
 fn a_scene_with_the_player(input: khora_core::platform::InputSnapshot) -> ScriptView {
     ScriptView {
+        resumed: false,
         delta_seconds: 1.0 / 60.0,
         input,
         programs: vec![ScriptProgram {

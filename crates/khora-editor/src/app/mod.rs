@@ -41,6 +41,23 @@ mod engine_app;
 mod layout;
 mod project_open;
 
+#[cfg(test)]
+mod tests;
+
+/// The name of the editor's own engine mode: editing a scene, not playing it.
+const EDITOR_MODE: &str = "editor";
+
+/// The engine mode a frame runs in, from where the editor's transport stands.
+///
+/// Editing is the editor's own mode — not the game, so no script runs. A
+/// paused game is still the game: its scripts run, at a delta of zero.
+pub(crate) fn engine_mode_for(play_mode: PlayMode) -> khora_sdk::EngineMode {
+    match play_mode {
+        PlayMode::Editing => khora_sdk::EngineMode::Custom(EDITOR_MODE.to_owned()),
+        PlayMode::Playing | PlayMode::Paused => khora_sdk::EngineMode::Playing,
+    }
+}
+
 pub struct EditorApp {
     camera: Arc<Mutex<EditorCamera>>,
     editor_state: Arc<Mutex<EditorState>>,
@@ -242,6 +259,28 @@ impl EditorApp {
         };
         if let Ok(mut time) = shared.write() {
             time.set_scale(scale);
+        }
+    }
+
+    /// Tells the engine which mode this frame runs in: the editor's own while
+    /// editing — no script runs, the scene is the author's — and the game's
+    /// once Play is pressed. Written before the agents, so the whole frame
+    /// runs in one mode.
+    fn drive_engine_mode(&self, runtime: &Runtime) {
+        let Some(shared) = runtime.resources.get::<khora_sdk::SharedEngineMode>() else {
+            return;
+        };
+        let play_mode = self
+            .editor_state
+            .lock()
+            .ok()
+            .map(|state| state.play_mode)
+            .unwrap_or(PlayMode::Editing);
+        let mode = engine_mode_for(play_mode);
+        if let Ok(mut current) = shared.write() {
+            if *current != mode {
+                *current = mode;
+            }
         }
     }
 }

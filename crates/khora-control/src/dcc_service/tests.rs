@@ -80,18 +80,20 @@ fn test_dcc_service_lifecycle() {
 }
 
 #[test]
-fn test_dcc_phase_change_ingestion() {
+fn test_dcc_mode_change_ingestion() {
     let (mut dcc, rx) = DccService::new(DccConfig::default());
     let tx = dcc.event_sender();
     dcc.start(rx);
 
-    tx.send(TelemetryEvent::PhaseChange("Simulation".to_string()))
-        .unwrap();
+    tx.send(TelemetryEvent::ModeChange(EngineMode::Custom(
+        "Editor".to_string(),
+    )))
+    .unwrap();
 
     thread::sleep(Duration::from_millis(100));
 
     let ctx = dcc.get_context();
-    assert_eq!(ctx.mode, EngineMode::Playing);
+    assert_eq!(ctx.mode, EngineMode::Custom("Editor".to_string()));
 
     dcc.stop();
 }

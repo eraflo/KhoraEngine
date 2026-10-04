@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Second round on the snapshot encoding: the tracer's retries and slots,
+//! The snapshot encoding's bounds: the tracer's retries and slots,
 //! the positional depth and count bounds.
 
 #![allow(dead_code)]

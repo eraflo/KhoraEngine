@@ -63,6 +63,7 @@ behavior Guard {
 /// One guard, restored from `saved` if there is anything to restore.
 fn view(delta: f32, saved: Option<ScriptSnapshot>) -> ScriptView {
     ScriptView {
+        resumed: false,
         delta_seconds: delta,
         input: Default::default(),
         programs: vec![ScriptProgram {
@@ -377,6 +378,12 @@ fn loading_a_save_does_not_run_on_spawn_again() {
 
     let saved = quiet(&mut runtime, &mut host, 0.016).expect("it did work");
     assert_eq!(saved.field("spawns"), Some(&ScriptValue::Int(1)));
+    // What makes the load a load and not a fresh start: the save records
+    // that the instance had spawned.
+    assert!(
+        saved.lifecycle.spawned,
+        "the save records the spawn: {saved:?}"
+    );
 
     let (revived, _) = reload(source, saved);
     assert_eq!(slot(&revived, 1), Some(1), "still one spawn");

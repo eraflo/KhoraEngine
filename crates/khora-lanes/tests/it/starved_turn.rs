@@ -60,6 +60,7 @@ fn subject() -> EntityId {
 
 fn view_of(behavior: &str, delta: f32, authored: Option<ScriptSnapshot>) -> ScriptView {
     ScriptView {
+        resumed: false,
         delta_seconds: delta,
         input: Default::default(),
         programs: vec![ScriptProgram {
@@ -561,6 +562,7 @@ fn one_instances_wait_is_not_anothers_resume_delay() {
     };
     // The waiter's turn comes first, so its wait is set before the guard runs.
     let view = |delta: f32| ScriptView {
+        resumed: false,
         delta_seconds: delta,
         input: Default::default(),
         programs: vec![program("Waiter"), program("Guard")],

@@ -105,6 +105,7 @@ pub mod tool_ui;
 
 // Control / DCC
 pub use khora_control::{DccConfig, DccService, EngineMode};
+pub use khora_core::agent::SharedEngineMode;
 // The situational `khora_control::Context`, as `DccContext` for the editor.
 //
 // `AgentRegistry` is exposed as a read-only telemetry surface for the

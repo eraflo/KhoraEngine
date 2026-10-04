@@ -90,6 +90,29 @@ pub struct PendingSequence {
     pub machine: FrozenMachine,
 }
 
+/// What an instance's lifecycle has been, as a save records it.
+///
+/// Recorded rather than derived: a behavior with nothing to hold writes the
+/// same empty snapshot whether or not its `OnSpawn` has run.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct InstanceLifecycle {
+    /// Whether `OnSpawn` has started — a cut one finishes through the pending
+    /// body, never from the top.
+    pub spawned: bool,
+    /// The fault that disabled the instance, if one did.
+    pub fault: Option<RecordedFault>,
+}
+
+/// A fault that disabled an instance, stamped with the program it faulted in.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RecordedFault {
+    /// The fingerprint of the program that faulted. A load under another one
+    /// clears the fault: the code has changed since.
+    pub fingerprint: u64,
+    /// What went wrong, as the lane reported it.
+    pub reason: String,
+}
+
 /// A behavior instance, as the scene records it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ScriptSnapshot {
@@ -110,6 +133,9 @@ pub struct ScriptSnapshot {
     pub timers: Vec<TimerRemaining>,
     /// A sequence stopped at an `await`, if there is one.
     pub pending: Option<PendingSequence>,
+    /// Whether it has spawned, and the fault that disabled it, if any.
+    #[serde(default)]
+    pub lifecycle: InstanceLifecycle,
 }
 
 impl ScriptSnapshot {

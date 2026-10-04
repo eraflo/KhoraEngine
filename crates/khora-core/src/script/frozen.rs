@@ -243,6 +243,7 @@ mod tests {
                 index: 3,
                 rearm: FrozenValue::Float(0.25),
             }))),
+            lifecycle: Default::default(),
         };
         assert_eq!(through_json(&original), original);
     }

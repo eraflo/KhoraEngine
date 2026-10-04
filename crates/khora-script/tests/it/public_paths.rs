@@ -1531,6 +1531,7 @@ fn module_lifecycle_paths_still_resolve() {
     let _ = type_name::<khora_script::lifecycle::Lifecycle>();
     let _ = lifecycle_fields as fn(&khora_script::lifecycle::Lifecycle);
     let _ = &khora_script::lifecycle::ON_DESPAWN;
+    let _ = &khora_script::lifecycle::ON_LOAD;
     let _ = &khora_script::lifecycle::ON_SPAWN;
     let _ = &khora_script::lifecycle::UPDATE;
     let _ = khora_script::lifecycle::of;

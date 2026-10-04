@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Game saves under attack: a base read from a format that drops struct
+//! Game saves against a scene that moves: a base read from a format that drops struct
 //! names, a hierarchy rearranged by play, a scene edited between the save and
 //! the load, and damaged save bytes.
 

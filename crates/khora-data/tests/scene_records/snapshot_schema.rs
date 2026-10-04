@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Attacks on the snapshot encoding: the schema tracer, the positional codec.
+//! The snapshot encoding at its edges: the schema tracer, the positional codec.
 
 #![allow(dead_code)]
 
@@ -644,6 +644,13 @@ fn every_register_snapshot(target: EntityId) -> khora_core::script::ScriptSnapsh
                 program_counter: u64::MAX,
             },
         }),
+        lifecycle: khora_core::script::InstanceLifecycle {
+            spawned: true,
+            fault: Some(khora_core::script::RecordedFault {
+                fingerprint: u64::MAX,
+                reason: "héllo 世界 🎮\n\"\\".into(),
+            }),
+        },
         ..ScriptSnapshot::default()
     }
 }

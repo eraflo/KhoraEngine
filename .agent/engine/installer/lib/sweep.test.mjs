@@ -481,9 +481,9 @@ describe('CLI — khora-ai.mjs sweep', () => {
   });
 });
 
-// ── test-breaker, round 1 ──────────────────────────────────────────────────
+// ── dry runs and CLI values ─────────────────────────────────────────────────
 
-describe('test-breaker — dry run agrees with the real run', () => {
+describe('dry run agrees with the real run', () => {
   test('dryRun reports the bytesAfter the real sweep reaches when a full clean would run', async (t) => {
     const build = (root) => {
       const target = path.join(root, 'target');
@@ -501,7 +501,7 @@ describe('test-breaker — dry run agrees with the real run', () => {
   });
 });
 
-describe('test-breaker — CLI values that are not numbers fall back, never destroy', () => {
+describe('CLI values that are not numbers fall back, never destroy', () => {
   test('an empty --max-gb value falls back to 20 GiB instead of 0 (no full clean)', (t) => {
     const repo = fakeRepo(t);
     const lib = path.join(repo.target, 'debug', 'deps', 'x.rlib');
@@ -535,7 +535,7 @@ describe('test-breaker — CLI values that are not numbers fall back, never dest
   });
 });
 
-// ── spec round 2: throttle (minIntervalHours + targetDir/.khora-sweep-stamp) ──
+// ── throttle (minIntervalHours + targetDir/.khora-sweep-stamp) ──
 // Throttle tests use the real clock (rounded to a whole second) as `now`, so
 // they hold whether the implementation compares the stamp to the `now` option
 // or to Date.now().
@@ -784,7 +784,7 @@ describe('sweep — throttle', () => {
   });
 });
 
-// ── spec round 2: the full-clean threshold measures debug/ + release/ only ──
+// ── the full-clean threshold measures debug/ + release/ only ──
 
 describe('sweep — full-clean threshold on the profiles', () => {
   test('a large doc/ never triggers a full clean of small profiles', async (t) => {
@@ -866,7 +866,7 @@ describe('sweep — full-clean threshold on the profiles', () => {
   });
 });
 
-// ── spec round 2: CLI --force and the "skipped" summary ─────────────────────
+// ── CLI --force and the "skipped" summary ─────────────────────
 
 describe('CLI — throttle', () => {
   test('a young stamp prints a one-line "skipped" summary, exit 0, removes nothing', (t) => {
@@ -919,13 +919,13 @@ describe('CLI — throttle', () => {
   });
 });
 
-// ── test-breaker round 2: a failed full clean must not throttle its retry ────
+// ── a failed full clean must not throttle its retry ────
 // On Windows, fs.rmSync stops at the first file it cannot delete (a running
 // target/debug/*.exe, a proc-macro .dll loaded by rust-analyzer), so a full
 // clean can free nothing at all. The stamp it still writes then postpones the
 // retry by minIntervalHours, although debug/ + release/ are still over maxGb.
 
-describe('test-breaker — a failed full clean is retried at the next session', () => {
+describe('a failed full clean is retried at the next session', () => {
   test('profiles still over maxGb after a failed full clean: the next sweep inside the interval runs', { skip: !canLock && 'cannot simulate a lock as root' }, async (t) => {
     const target = path.join(tmpRoot(t), 'target');
     const now = realNow();

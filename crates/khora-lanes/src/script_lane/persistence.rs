@@ -231,6 +231,7 @@ pub fn snapshot_from_store(layout: &BehaviorLayout, store: &PersistentStore) -> 
             .unwrap_or_default(),
         timers: countdowns(layout, store),
         pending: None,
+        lifecycle: Default::default(),
     }
 }
 
@@ -347,6 +348,9 @@ fn frozen_body(body: &Body, program: &Program) -> Option<PendingBody> {
         Body::Sequence => PendingBody::Sequence,
         Body::Spawn => PendingBody::Spawn,
         Body::Update => PendingBody::Update,
+        // Never written: every load runs `OnLoad` again from its start, so a
+        // save holds the body the load restored instead.
+        Body::Load => return None,
         Body::Timer { index, rearm } => PendingBody::Timer {
             index: u32::try_from(*index).ok()?,
             rearm: rearm.freeze(program)?,

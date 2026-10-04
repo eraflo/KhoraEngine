@@ -39,6 +39,11 @@ Report only what you can demonstrate.
 3. **Keep only the tests that fail.** A test that passes is either a missing-coverage finding (keep it,
    mark it as coverage) or noise (delete it).
 4. Do not fix anything. Do not edit the implementation or the existing tests.
+5. **Name what is tested, never who tested it.** A test file, module, function or comment says the
+   behaviour it pins (`lifecycle_restore.rs`, `a_cut_on_spawn_finishes_across_a_save`) — never
+   `breaker`, `attack`, `round 2`: that is how the test was found, not what it guards, and it means
+   nothing once the change has landed. Put a test beside the ones on the same subject when a file
+   for it exists.
 
 ## Output
 - **Findings** — a table: severity (defect / missing coverage) · what breaks · the test (`path:line`) ·

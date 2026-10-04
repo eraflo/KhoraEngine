@@ -42,6 +42,7 @@ use khora_script::vm::Program;
 /// nothing — which is all these tests need it to do.
 fn a_scene_with_one_script() -> ScriptView {
     ScriptView {
+        resumed: false,
         delta_seconds: 0.0,
         input: Default::default(),
         programs: vec![ScriptProgram {

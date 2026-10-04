@@ -107,6 +107,23 @@ pub struct Instance {
     /// values the reload just carried. So they are set aside and put back on
     /// top — the new field gets its default, the old ones keep what they had.
     pub carried: Option<PersistentStore>,
+
+    /// The fault that disabled the instance, stamped with the program it
+    /// faulted in — recorded, so a save keeps the instance disabled until the
+    /// code changes.
+    pub fault: Option<khora_core::script::RecordedFault>,
+
+    /// Whether `OnLoad` is owed or part-way: the instance was restored from a
+    /// save and has not finished announcing it.
+    pub loading: bool,
+
+    /// The body a save restored, waiting behind a lifecycle hook part-way —
+    /// `OnLoad`, or an `OnSpawn` still owed.
+    pub after_load: Option<Pending>,
+
+    /// What the entity brought when it appeared, held until the instance's
+    /// first turn.
+    pub arriving: Option<khora_data::flow::ScriptArrival>,
 }
 
 /// A suspended member and how long is left of its wait.
@@ -139,6 +156,8 @@ pub enum Body {
     Spawn,
     /// `Update`.
     Update,
+    /// `OnLoad`. Never saved: a load reruns it from the start.
+    Load,
     /// A timer's body; finishing it rearms the timer with `rearm`.
     Timer {
         /// The timer's index in the behavior's layout.
@@ -463,9 +482,19 @@ impl ScriptRuntime {
                     );
                     instance.pending = None;
                 }
+                // The same for the body a load restored, waiting behind its
+                // `OnLoad`.
+                if instance
+                    .after_load
+                    .as_ref()
+                    .is_some_and(|pending| pending.fingerprint != fingerprint)
+                {
+                    instance.after_load = None;
+                }
                 // An edit is the author's answer to whatever faulted. Refusing
                 // to try again would make a script unfixable without a restart.
                 instance.disabled = false;
+                instance.fault = None;
             }
 
             reports.push(report);
@@ -510,7 +539,12 @@ impl ScriptRuntime {
     pub fn departed(&self, alive: impl Fn(EntityId) -> bool) -> Vec<(EntityId, String, String)> {
         self.instances
             .iter()
-            .filter(|((entity, _), instance)| !instance.farewelled && !alive(*entity))
+            // Only an instance that announced itself says goodbye: one that
+            // never had a turn — its arrival still held — never began. And
+            // not a disabled one: a behavior that faulted is not called again.
+            .filter(|((entity, _), instance)| {
+                instance.spawned && !instance.disabled && !instance.farewelled && !alive(*entity)
+            })
             .map(|((entity, behavior), instance)| {
                 (*entity, behavior.clone(), instance.module.clone())
             })

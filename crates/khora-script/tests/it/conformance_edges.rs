@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Attacks on the conformance suite and on the fuel overdraft.
+//! The conformance suite and the fuel overdraft at their edges.
 
 use khora_script::vm::{Machine, Program, Run, Suspension, Value};
 use khora_script::{check, compile, ergon_fn, lex, parse, Host};
 
 /// A call that costs more than a small slice.
-#[ergon_fn(name = "BreakerCostly", cost = 50)]
-fn breaker_costly() -> f32 {
+#[ergon_fn(name = "Costly", cost = 50)]
+fn costly() -> f32 {
     3.0
 }
 
@@ -63,7 +63,7 @@ fn sliced(program: &Program, function: &str, args: &[Value], slice: u64) -> (Val
 /// instruction — the next one waits for the next run.
 #[test]
 fn an_overdraft_is_one_instruction_reported_in_full() {
-    let program = build("fn float Main() { return BreakerCostly(); }");
+    let program = build("fn float Main() { return Costly(); }");
     let mut machine = Machine::new(&program, "Main", &[]).expect("Main exists");
     let mut host = Host::new();
 
@@ -84,7 +84,7 @@ fn an_overdraft_is_one_instruction_reported_in_full() {
 /// nothing, even when the next instruction is the expensive one.
 #[test]
 fn zero_fuel_never_overdraws() {
-    let program = build("fn float Main() { return BreakerCostly(); }");
+    let program = build("fn float Main() { return Costly(); }");
     let mut machine = Machine::new(&program, "Main", &[]).expect("Main exists");
 
     assert_eq!(
@@ -102,7 +102,7 @@ fn slicing_never_changes_what_a_run_costs() {
     let program = build(
         "fn float Main() {
              float total = 0.0;
-             for (int i = 0; i < 4; i = i + 1) { total = total + BreakerCostly(); }
+             for (int i = 0; i < 4; i = i + 1) { total = total + Costly(); }
              return total;
          }",
     );

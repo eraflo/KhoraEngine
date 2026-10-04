@@ -28,12 +28,12 @@ use khora_script::vm::{Program, Value};
 use khora_script::{check, compile, ergon_fn, lex, parse, Host};
 
 /// A native that costs more than a whole frame's fuel in the tests below.
-#[ergon_fn(name = "LaneBreakerCostly", cost = 50)]
-fn lane_breaker_costly() -> f32 {
+#[ergon_fn(name = "LaneCostly", cost = 50)]
+fn lane_costly() -> f32 {
     3.0
 }
 
-const MODULE: &str = "breaker.erg";
+const MODULE: &str = "overdraft.erg";
 
 fn build(source: &str) -> Program {
     let lexed = lex(source);
@@ -60,6 +60,7 @@ fn subject() -> EntityId {
 
 fn view_of(behavior: &str) -> ScriptView {
     ScriptView {
+        resumed: false,
         delta_seconds: 0.0,
         input: Default::default(),
         programs: vec![ScriptProgram {
@@ -91,7 +92,7 @@ fn runtime_of(source: &str) -> ScriptRuntime {
 #[test]
 fn a_frame_smaller_than_the_initialisers_first_call_does_not_panic() {
     let source = "behavior Costly {
-                      float d = LaneBreakerCostly();
+                      float d = LaneCostly();
                       void OnSpawn() { }
                   }";
     let mut runtime = runtime_of(source);

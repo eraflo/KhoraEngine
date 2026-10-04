@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Breaker round 3: the loaded hierarchy, lazy identities and the shared
-//! nowhere entity.
+//! The loaded hierarchy, lazy identities and the shared nowhere entity.
 
 use khora_core::script::ScriptValue;
 use khora_data::ecs::{EcsMaintenance, Name, Parent, Script, Transform};

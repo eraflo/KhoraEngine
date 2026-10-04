@@ -129,6 +129,98 @@ pub(super) struct Progress {
     pub(super) initialiser: Option<Machine>,
     /// The body part-way through, if there is one.
     pub(super) pending: Option<Pending>,
+    /// Whether `OnLoad` is owed or part-way.
+    pub(super) loading: bool,
+    /// The body a load restored, waiting behind `OnLoad`.
+    pub(super) after_load: Option<Pending>,
+}
+
+/// `OnLoad` has finished: the body the load restored is the one owed next.
+fn finish_load(progress: &mut Progress) {
+    progress.loading = false;
+    progress.pending = progress.after_load.take();
+}
+
+/// A hook in front of a restored body has finished — or been abandoned: that
+/// body is owed next.
+fn finish_hook(progress: &mut Progress, body: &Body) {
+    match body {
+        Body::Load => finish_load(progress),
+        Body::Spawn => {
+            if let Some(restored) = progress.after_load.take() {
+                progress.pending = Some(restored);
+            }
+        }
+        Body::Sequence | Body::Update | Body::Timer { .. } => {}
+    }
+}
+
+/// Carries a body part-way through on, as far as this turn goes. `None` once
+/// it has finished — what finishing it completes is done — or been abandoned;
+/// otherwise the outcome that ends the turn with it still part-way.
+fn advance(
+    mut pending: Pending,
+    call: &Invocation<'_>,
+    progress: &mut Progress,
+    host: &mut Host,
+    spent: &mut u64,
+) -> Option<Outcome> {
+    let Invocation {
+        program,
+        behavior,
+        fuel,
+        delta,
+        ..
+    } = *call;
+    pending.remaining -= delta;
+    if pending.remaining > 0.0 {
+        // Still waiting. Nothing else runs either: the behavior is busy — so
+        // nothing addressed to it this frame was delivered, and the frame
+        // keeps all of it for the turn that will listen.
+        progress.pending = Some(pending);
+        return Some(Outcome::Busy {
+            spent: *spent,
+            delivered: 0,
+            starved: false,
+        });
+    }
+
+    if pending.fingerprint != program.fingerprint() {
+        // A machine from other code. A reload that changes the program
+        // abandons it already, and so does a load; this is the last guard, so
+        // that no path resumes a position into code it does not name. Nothing
+        // is rearmed: a timer index from other code names some other schedule.
+        log::warn!(
+            "script `{behavior}`: a sequence was abandoned — the script was edited \
+             while it was part-way through"
+        );
+        finish_hook(progress, &pending.body);
+        return None;
+    }
+
+    let left = fuel.saturating_sub(*spent);
+    let (run, cost) = pending.machine.run_counting(program, host, left);
+    *spent += cost;
+    match run {
+        Run::Completed => {
+            if let Body::Timer { index, rearm } = pending.body {
+                finish_timer(program, behavior, host, index, rearm);
+            } else {
+                finish_hook(progress, &pending.body);
+            }
+            None
+        }
+        Run::Suspended(why) => {
+            pending.remaining = host.awaiting.take().unwrap_or(0.0);
+            progress.pending = Some(pending);
+            Some(Outcome::Busy {
+                spent: *spent,
+                delivered: 0,
+                starved: why == Suspension::OutOfFuel,
+            })
+        }
+        Run::Faulted(fault) => Some(Outcome::faulted(*spent, fault)),
+    }
 }
 
 pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut Host) -> Outcome {
@@ -141,6 +233,7 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
         carried,
         delta,
     } = call;
+    let call = &call;
     let mut spent = 0;
 
     // The defaults, before anything can read a field. Resumed rather than
@@ -173,6 +266,45 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
         progress.initialised = true;
     }
 
+    // A load announces itself first: `OnLoad` runs once the restored state is
+    // in place, before anything else — `OnSpawn`, the body the save restored,
+    // the timers, the events — can observe the instance. That body waits
+    // behind it.
+    if progress.loading {
+        match progress.pending.take() {
+            Some(load) if load.body == Body::Load => {
+                if let Some(outcome) = advance(load, call, progress, host, &mut spent) {
+                    return outcome;
+                }
+            }
+            other => {
+                progress.pending = other;
+                let left = fuel.saturating_sub(spent);
+                match call_hook(program, behavior, &lifecycle::ON_LOAD, &[], host, left) {
+                    Hook::Ran(cost) => {
+                        spent += cost;
+                        finish_load(progress);
+                    }
+                    Hook::Absent => finish_load(progress),
+                    Hook::Faulted { cost, reason } => {
+                        return Outcome::Faulted {
+                            spent: spent + cost,
+                            reason,
+                        }
+                    }
+                    Hook::Suspended { cost, machine, why } => {
+                        progress.pending = Some(kept(machine, Body::Load, program, host));
+                        return Outcome::Busy {
+                            spent: spent + cost,
+                            delivered: 0,
+                            starved: why == Suspension::OutOfFuel,
+                        };
+                    }
+                }
+            }
+        }
+    }
+
     // Once per entity, after the defaults exist and before anything else can
     // observe the instance. A hot-reload clears `initialised` but not this: an
     // edit to the script is not a new entity, and a guard should not announce
@@ -192,6 +324,11 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                 }
             }
             Hook::Suspended { cost, machine, why } => {
+                // A body the save restored waits behind it, as behind
+                // `OnLoad`: one slot is the body under way, not a queue.
+                if let Some(restored) = progress.pending.take() {
+                    progress.after_load = Some(restored);
+                }
                 progress.pending = Some(kept(machine, Body::Spawn, program, host));
                 return Outcome::Busy {
                     spent: spent + cost,
@@ -207,51 +344,9 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
     // never finished — and letting something new start while an old body is
     // still owed its continuation would interleave two answers to what the
     // behavior is doing.
-    if let Some(mut pending) = progress.pending.take() {
-        pending.remaining -= delta;
-        if pending.remaining > 0.0 {
-            // Still waiting. Nothing else runs either: the behavior is busy —
-            // so nothing addressed to it this frame was delivered, and the
-            // frame keeps all of it for the turn that will listen.
-            progress.pending = Some(pending);
-            return Outcome::Busy {
-                spent,
-                delivered: 0,
-                starved: false,
-            };
-        }
-
-        if pending.fingerprint != program.fingerprint() {
-            // A machine from other code. A reload that changes the program
-            // abandons it already, and so does a load; this is the last guard,
-            // so that no path resumes a position into code it does not name.
-            // Nothing is rearmed: a timer index from other code names some
-            // other schedule.
-            log::warn!(
-                "script `{behavior}`: a sequence was abandoned — the script was edited \
-                 while it was part-way through"
-            );
-        } else {
-            let left = fuel.saturating_sub(spent);
-            let (run, cost) = pending.machine.run_counting(program, host, left);
-            spent += cost;
-            match run {
-                Run::Completed => {
-                    if let Body::Timer { index, rearm } = pending.body {
-                        finish_timer(program, behavior, host, index, rearm);
-                    }
-                }
-                Run::Suspended(why) => {
-                    pending.remaining = host.awaiting.take().unwrap_or(0.0);
-                    progress.pending = Some(pending);
-                    return Outcome::Busy {
-                        spent,
-                        delivered: 0,
-                        starved: why == Suspension::OutOfFuel,
-                    };
-                }
-                Run::Faulted(fault) => return Outcome::faulted(spent, fault),
-            }
+    if let Some(pending) = progress.pending.take() {
+        if let Some(outcome) = advance(pending, call, progress, host, &mut spent) {
+            return outcome;
         }
     }
 

@@ -285,6 +285,7 @@ fn a_farewell_already_said_is_not_said_again() {
 
     // The boundary applied the despawn, so the next view no longer lists it.
     let empty = ScriptView {
+        resumed: false,
         delta_seconds: 0.016,
         input: Default::default(),
         programs: vec![ScriptProgram {

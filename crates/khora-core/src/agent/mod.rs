@@ -31,7 +31,7 @@ pub use completion::{AgentCompletionMap, AgentDone, CompletionOutcome};
 pub use contention::Contention;
 pub use dependency::{AgentDependency, DependencyCondition, DependencyKind};
 pub use execution_phase::ExecutionPhase;
-pub use mode::EngineMode;
+pub use mode::{EngineMode, SharedEngineMode};
 pub use timing::{AgentImportance, ExecutionTiming};
 
 /// The foundational interface for an Intelligent Subsystem Agent (ISA).

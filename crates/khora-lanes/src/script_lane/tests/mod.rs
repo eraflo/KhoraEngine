@@ -21,6 +21,7 @@
 mod arrival;
 mod event;
 mod lifecycle;
+mod on_load;
 mod reload;
 mod save;
 
@@ -82,6 +83,7 @@ pub(super) fn entity(index: u32) -> EntityId {
 /// A view of `count` guards, entities 0..count.
 pub(super) fn view_of(count: u32) -> ScriptView {
     ScriptView {
+        resumed: false,
         delta_seconds: 0.0,
         input: Default::default(),
         programs: vec![ScriptProgram {
@@ -294,6 +296,7 @@ fn a_recycled_index_does_not_inherit_the_old_instances_state() {
         generation: 2,
     };
     let view = ScriptView {
+        resumed: false,
         delta_seconds: 0.0,
         input: Default::default(),
         programs: vec![ScriptProgram {
@@ -345,6 +348,7 @@ fn a_faulting_behavior_is_disabled_rather_than_retried() {
     let mut host = Host::new();
 
     let view = ScriptView {
+        resumed: false,
         delta_seconds: 0.0,
         input: Default::default(),
         programs: vec![ScriptProgram {

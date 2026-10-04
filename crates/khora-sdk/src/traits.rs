@@ -185,6 +185,15 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync {
     /// Called every frame to update game logic.
     fn update(&mut self, world: &mut GameWorld, inputs: &[InputEvent]);
 
+    /// The engine mode the application starts in — written into the
+    /// runtime's `SharedEngineMode` at bootstrap.
+    ///
+    /// Default: [`EngineMode::Playing`](khora_core::agent::EngineMode::Playing)
+    /// — a game is played from its first frame.
+    fn initial_mode(&self) -> khora_core::agent::EngineMode {
+        khora_core::agent::EngineMode::Playing
+    }
+
     /// Called during shutdown to clean up application resources.
     fn on_shutdown(&mut self) {}
 

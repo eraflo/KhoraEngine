@@ -1752,7 +1752,7 @@ fn link_path(target: &str) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Test-breaker findings (B0/B1, round 1)
+// Links a fresh clone must resolve, and allow-list parsing
 // ---------------------------------------------------------------------------
 
 /// A relative link must resolve in a fresh clone, not only in this working
@@ -1760,7 +1760,7 @@ fn link_path(target: &str) -> Option<String> {
 /// `exists()` on disk, so a link to a generated wrapper that `.gitignore`
 /// excludes (present locally, absent on CI and on GitHub) passes here.
 #[test]
-fn breaker_link_targets_are_tracked() {
+fn link_targets_are_tracked() {
     let root = repo_root();
     let Some(listed) = git(&root, &["ls-files", "-z"]) else {
         return;
@@ -1827,7 +1827,7 @@ fn breaker_link_targets_are_tracked() {
 /// Markdown: an editor that saves with a BOM would otherwise turn the first
 /// line into a malformed entry and fail all ten checks at once.
 #[test]
-fn breaker_allowlist_tolerates_a_bom() {
+fn allowlist_tolerates_a_bom() {
     let dir = std::env::temp_dir().join(format!("khora-layout-bom-{}", std::process::id()));
     fs::create_dir_all(dir.join("xtask/tests")).expect("create temp allowlist dir");
     fs::write(
@@ -1849,7 +1849,7 @@ fn breaker_allowlist_tolerates_a_bom() {
 /// A reference-style link definition (`[label]: target`) is a Markdown link;
 /// `markdown_links` never sees it, so a broken one slips through.
 #[test]
-fn breaker_reference_style_links_are_seen() {
+fn reference_style_links_are_seen() {
     let links = markdown_links("See [the logo][logo].\n\n[logo]: ./missing-logo.png\n");
     assert!(
         links
@@ -1862,7 +1862,7 @@ fn breaker_reference_style_links_are_seen() {
 /// An HTML attribute with single quotes (`<img src='…'>`) is as much a link
 /// as `src="…"`; only the double-quoted form is extracted.
 #[test]
-fn breaker_single_quoted_html_links_are_seen() {
+fn single_quoted_html_links_are_seen() {
     let links = markdown_links("<img src='./missing-logo.png' alt='logo'>\n");
     assert!(
         links

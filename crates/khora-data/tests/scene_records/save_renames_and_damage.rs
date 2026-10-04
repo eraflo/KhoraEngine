@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Game saves under attack, second round: a save older than a rename, a
+//! Game saves across renames and damage: a save older than a rename, a
 //! hostile save's entity lists, a damaged base, and an entity the author
 //! added beside a subtree play rearranged.
 

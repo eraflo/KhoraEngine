@@ -15,5 +15,6 @@
 //! Tests of the execution scheduler, one file per concern.
 
 mod concurrent_exec;
+mod engine_mode;
 mod sim_steps;
 mod waves;

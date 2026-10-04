@@ -13,9 +13,9 @@
 // limitations under the License.
 
 mod entity_count;
-mod entity_count_breaker;
+mod entity_count_unwind;
 mod hierarchy;
-mod hierarchy_breaker;
+mod hierarchy_writers;
 
 use crate::ecs::query::Without;
 use crate::ecs::SemanticDomain;

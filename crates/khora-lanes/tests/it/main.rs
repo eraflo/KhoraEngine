@@ -19,9 +19,11 @@
 //! binary as a module instead of adding a file at the root of `tests/`.
 
 mod frozen_save;
+mod lifecycle_restore;
 mod overdraft;
 mod public_paths;
-mod resumable_breaker;
+mod resumable_after_edits;
 mod resumable_edges;
 mod saves;
+mod spawn_scenarios;
 mod starved_turn;

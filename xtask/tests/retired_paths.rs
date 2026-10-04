@@ -340,7 +340,7 @@ const V1_REFUSAL_INPUTS: &[(&str, &str, &str)] = &[
     // `khora.SuspendedMachine`, as data — and checks that a scene holding it
     // is refused whole. The Rust type `SuspendedMachine` stays forbidden there.
     (
-        "crates/khora-data/tests/scene_records/snapshot_breaker.rs",
+        "crates/khora-data/tests/scene_records/snapshot_schema.rs",
         "SuspendedMachine",
         "khora.SuspendedMachine",
     ),

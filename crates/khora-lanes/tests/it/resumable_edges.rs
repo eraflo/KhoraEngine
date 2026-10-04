@@ -58,6 +58,7 @@ fn view_of(
     authored: Option<ScriptSnapshot>,
 ) -> ScriptView {
     ScriptView {
+        resumed: false,
         delta_seconds: delta,
         input: Default::default(),
         programs: vec![ScriptProgram {

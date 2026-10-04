@@ -71,6 +71,7 @@ fn entity(index: u32) -> EntityId {
 
 fn a_scene_with_a_guard() -> ScriptView {
     ScriptView {
+        resumed: false,
         delta_seconds: 0.0,
         input: Default::default(),
         programs: vec![ScriptProgram {

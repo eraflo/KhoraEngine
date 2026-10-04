@@ -32,27 +32,27 @@ use khora_data::scene::{
     MsgPackEncoding, PageRecord, SceneEncoding, SceneRecord, TextEncoding,
 };
 
-mod breaker;
-mod breaker_2;
-mod breaker_3;
 mod decimals;
 mod failures;
+mod hierarchy_and_identity;
+mod hostile_records;
 mod identity;
 mod lazy_identity;
+mod load_limits;
 mod not_saved;
 mod pages;
 mod references;
 mod renames;
 mod round_trip;
 mod sample;
-mod save_breaker;
-mod save_breaker_2;
+mod save_against_edits;
 mod save_files;
+mod save_renames_and_damage;
 mod saves;
 mod snapshot;
-mod snapshot_breaker;
-mod snapshot_breaker_2;
+mod snapshot_bounds;
 mod snapshot_refusals;
+mod snapshot_schema;
 mod stack_depth;
 mod subtree;
 

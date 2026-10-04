@@ -287,6 +287,30 @@ fn await_inside_every_is_rejected() {
     );
 }
 
+// ── Lifecycle members ────────────────────────────────
+
+/// `OnLoad` is called by the engine with nothing, so a parameter is a body
+/// that would never run — refused, as for the other hooks. The shape the
+/// engine calls is accepted, with no "reserved" warning: it is called.
+#[test]
+fn on_load_taking_a_parameter_is_rejected() {
+    accepts("behavior B { void OnLoad() { } }");
+    rejects(
+        "behavior B { void OnLoad(int restored) { } }",
+        "`OnLoad` must take ()",
+    );
+}
+
+/// The engine has nowhere to put what `OnLoad` returns.
+#[test]
+fn on_load_returning_a_value_is_rejected() {
+    accepts("behavior B { int health = 1; void OnLoad() { health = 2; } }");
+    rejects(
+        "behavior B { int OnLoad() { return 1; } }",
+        "`OnLoad` must return nothing",
+    );
+}
+
 // ── Operator overloading ──────────────────────────────
 
 #[test]

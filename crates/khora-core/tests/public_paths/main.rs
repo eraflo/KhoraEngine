@@ -942,7 +942,22 @@ fn pending_sequence_fields(x: &khora_core::script::snapshot::PendingSequence) {
 }
 
 fn script_snapshot_fields(x: &khora_core::script::snapshot::ScriptSnapshot) {
-    let _ = (&x.fields, &x.state, &x.state_fields, &x.timers, &x.pending);
+    let _ = (
+        &x.fields,
+        &x.state,
+        &x.state_fields,
+        &x.timers,
+        &x.pending,
+        &x.lifecycle,
+    );
+}
+
+fn instance_lifecycle_fields(x: &khora_core::script::snapshot::InstanceLifecycle) {
+    let _ = (&x.spawned, &x.fault);
+}
+
+fn recorded_fault_fields(x: &khora_core::script::snapshot::RecordedFault) {
+    let _ = (&x.fingerprint, &x.reason);
 }
 
 fn timer_remaining_fields(x: &khora_core::script::snapshot::TimerRemaining) {
@@ -983,7 +998,7 @@ fn telemetry_event_variants(x: &khora_core::telemetry::event::TelemetryEvent) {
         khora_core::telemetry::event::TelemetryEvent::ResourceReport(..) => {}
         khora_core::telemetry::event::TelemetryEvent::HardwareReport(..) => {}
         khora_core::telemetry::event::TelemetryEvent::GpuReport(..) => {}
-        khora_core::telemetry::event::TelemetryEvent::PhaseChange(..) => {}
+        khora_core::telemetry::event::TelemetryEvent::ModeChange(..) => {}
         khora_core::telemetry::event::TelemetryEvent::AgentCost { .. } => {}
         khora_core::telemetry::event::TelemetryEvent::WavePlan { .. } => {}
         khora_core::telemetry::event::TelemetryEvent::ComponentAccess { .. } => {}
@@ -1457,6 +1472,12 @@ fn module_agent_paths_still_resolve() {
     let _ = engine_mode_variants as fn(&khora_core::agent::mode::EngineMode);
     let _ = khora_core::agent::mode::EngineMode::from_name;
     let _ = khora_core::agent::mode::EngineMode::name;
+    let _ = khora_core::agent::mode::EngineMode::runs_gameplay;
+    let _ = type_name::<khora_core::agent::mode::SharedEngineMode>();
+    same_type(
+        PhantomData::<khora_core::agent::SharedEngineMode>,
+        PhantomData::<khora_core::agent::mode::SharedEngineMode>,
+    );
     is_debug::<khora_core::agent::mode::EngineMode>();
     is_clone::<khora_core::agent::mode::EngineMode>();
     is_partial_eq::<khora_core::agent::mode::EngineMode>();
@@ -2596,6 +2617,16 @@ fn module_script_paths_still_resolve() {
         PhantomData::<khora_core::script::snapshot::PendingSequence>,
     );
     let _ = pending_sequence_fields as fn(&khora_core::script::snapshot::PendingSequence);
+    let _ = instance_lifecycle_fields as fn(&khora_core::script::snapshot::InstanceLifecycle);
+    let _ = recorded_fault_fields as fn(&khora_core::script::snapshot::RecordedFault);
+    same_type(
+        PhantomData::<khora_core::script::InstanceLifecycle>,
+        PhantomData::<khora_core::script::snapshot::InstanceLifecycle>,
+    );
+    same_type(
+        PhantomData::<khora_core::script::RecordedFault>,
+        PhantomData::<khora_core::script::snapshot::RecordedFault>,
+    );
     is_debug::<khora_core::script::snapshot::PendingSequence>();
     is_clone::<khora_core::script::snapshot::PendingSequence>();
     is_partial_eq::<khora_core::script::snapshot::PendingSequence>();
@@ -3389,7 +3420,7 @@ mod paths_used_by_other_crates {
     use khora_core::telemetry::ResourceMonitor as _; // khora-infra, khora-telemetry
     use khora_core::telemetry::ResourceUsageReport as _; // khora-infra
     use khora_core::telemetry::TelemetryEvent as _; // khora-control, khora-sdk
-    use khora_core::telemetry::TelemetryEvent::PhaseChange as _; // khora-sdk
+    use khora_core::telemetry::TelemetryEvent::ModeChange as _; // khora-sdk
     use khora_core::telemetry::VramProvider as _; // khora-infra
     use khora_core::time::SharedTime as _; // khora-agents, khora-control, khora-data, khora-sdk
     use khora_core::time::Time as _; // khora-control, khora-sdk

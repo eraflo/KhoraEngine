@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Second round: the fixes for the first round's findings, attacked.
+//! What a load holds to at its limits: names and pages that would amplify,
+//! the deepest value a capture accepts, collisions beside a world, the largest
+//! created id, looping and long hierarchies, floats that are not finite.
 
 use khora_core::script::ScriptValue;
 use khora_data::ecs::{Camera, Name, Parent, Script, Transform, World};

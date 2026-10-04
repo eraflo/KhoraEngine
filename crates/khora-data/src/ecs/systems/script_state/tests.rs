@@ -290,3 +290,28 @@ fn a_scene_file_never_holds_observed_state() {
     assert_eq!(loaded.get::<Script>(back), Some(&authored));
     assert!(loaded.get::<ScriptState>(back).is_none());
 }
+
+/// **A save keeps the lifecycle.** What the lane recorded of whether the
+/// instance spawned and of the fault that disabled it reaches the
+/// `ScriptState` with the rest of the snapshot.
+#[test]
+fn the_lifecycle_reaches_the_script_state() {
+    use khora_core::script::{InstanceLifecycle, RecordedFault};
+
+    let mut world = World::new();
+    let entity = world.spawn(Script::new("ai/guard.erg", "Guard"));
+    let lifecycle = InstanceLifecycle {
+        spawned: true,
+        fault: Some(RecordedFault {
+            fingerprint: 0xdead_beef,
+            reason: "DivideByZero".to_owned(),
+        }),
+    };
+    let mut recorded = update(entity, "Guard", 40);
+    recorded.snapshot.lifecycle = lifecycle.clone();
+
+    run(&mut world, &mut deck_with(vec![recorded]));
+
+    let state = world.get::<ScriptState>(entity).expect("recorded");
+    assert_eq!(state.snapshot.lifecycle, lifecycle);
+}

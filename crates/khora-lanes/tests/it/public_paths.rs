@@ -215,6 +215,9 @@ fn instance_fields(x: &khora_lanes::script_lane::runtime::Instance) {
         &x.pending,
         &x.carried,
         &x.initialiser,
+        &x.fault,
+        &x.loading,
+        &x.after_load,
     );
 }
 
@@ -227,6 +230,7 @@ fn body_variants(x: &khora_lanes::script_lane::runtime::Body) {
         khora_lanes::script_lane::runtime::Body::Sequence => {}
         khora_lanes::script_lane::runtime::Body::Spawn => {}
         khora_lanes::script_lane::runtime::Body::Update => {}
+        khora_lanes::script_lane::runtime::Body::Load => {}
         khora_lanes::script_lane::runtime::Body::Timer { index, rearm } => {
             let _ = (index, rearm);
         }

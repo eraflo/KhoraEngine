@@ -313,6 +313,13 @@ fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
                 program_counter: 42,
             },
         }),
+        lifecycle: khora_core::script::InstanceLifecycle {
+            spawned: true,
+            fault: Some(khora_core::script::RecordedFault {
+                fingerprint: 0xfeed_beef_dead_c0de,
+                reason: "DivideByZero in `on_hit`".into(),
+            }),
+        },
     }
 }
 

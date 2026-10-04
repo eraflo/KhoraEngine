@@ -88,22 +88,11 @@ impl<A: EngineApp> EngineCore<A> {
         }
     }
 
-    /// Stage 1 — drain queued input events. Also marks simulation started
-    /// (emits the `"simulation"` phase change on the first call), ticks
-    /// the telemetry service, and feeds the events into the engine-wide
+    /// Stage 1 — drain queued input events. Also ticks the telemetry
+    /// service, and feeds the events into the engine-wide
     /// [`khora_core::platform::InputMap`] so app code can query actions
     /// (`is_pressed`, `just_pressed`) from the same frame's inputs.
     pub fn drain_inputs(&mut self) -> Vec<InputEvent> {
-        if !self.simulation_started {
-            if let Some(dcc) = &self.dcc {
-                let _ =
-                    dcc.event_sender()
-                        .send(khora_core::telemetry::TelemetryEvent::PhaseChange(
-                            "simulation".to_string(),
-                        ));
-            }
-            self.simulation_started = true;
-        }
         if let Some(telemetry) = self.telemetry.as_mut() {
             let _ = telemetry.tick();
         }
@@ -224,12 +213,38 @@ impl<A: EngineApp> EngineCore<A> {
     /// Stage 4 — dispatch the scheduler so all registered agents execute
     /// their phases for this frame.
     pub fn run_scheduler(&mut self, frame_runtime_arc: &Arc<Runtime>) {
+        self.forward_mode(frame_runtime_arc);
         let Some(gw) = self.game_world.as_mut() else {
             return;
         };
         if let Some(s) = self.scheduler.as_mut() {
             s.run_frame(gw.inner_world_mut(), frame_runtime_arc.clone());
         }
+    }
+
+    /// Tells the DCC the frame's mode when it changed, so the arbitration it
+    /// runs on its own thread budgets the agents this mode runs. The
+    /// scheduler reads the mode itself, this frame; the DCC learns it as soon
+    /// as its next tick.
+    fn forward_mode(&mut self, runtime: &Runtime) {
+        let Some(mode) = runtime
+            .resources
+            .get::<khora_core::agent::SharedEngineMode>()
+            .and_then(|shared| shared.read().ok().map(|mode| mode.clone()))
+        else {
+            return;
+        };
+        if self.forwarded_mode.as_ref() == Some(&mode) {
+            return;
+        }
+        if let Some(dcc) = &self.dcc {
+            let _ = dcc
+                .event_sender()
+                .send(khora_core::telemetry::TelemetryEvent::ModeChange(
+                    mode.clone(),
+                ));
+        }
+        self.forwarded_mode = Some(mode);
     }
 
     /// Stage 5a — submit recorded passes from the [`FrameGraph`](khora_data::render::FrameGraph) to the GPU.

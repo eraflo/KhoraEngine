@@ -91,6 +91,7 @@ fn wired() -> Option<Arc<Runtime>> {
 
 fn a_scene_with_one_hovering_sphere(delta_seconds: f32) -> ScriptView {
     ScriptView {
+        resumed: false,
         delta_seconds,
         input: Default::default(),
         programs: vec![ScriptProgram {

@@ -15,7 +15,7 @@
 //! Assembling the engine: services, agents, lanes and the scheduler, once,
 //! before the first frame.
 
-use khora_control::{DccConfig, DccService};
+use khora_control::{DccConfig, DccService, EngineMode};
 use khora_core::Runtime;
 use khora_data::render::{FrameGraph, SharedFrameGraph};
 use khora_telemetry::TelemetryService;
@@ -163,6 +163,13 @@ impl<A: EngineApp> EngineCore<A> {
             Arc::new(std::sync::RwLock::new(khora_core::time::Time::default()));
         runtime.resources.insert(time);
 
+        // The engine mode — which agents run. The app writes it (an editor
+        // switches between editing and playing), the scheduler reads it once
+        // per frame, and it starts where the app says.
+        let mode: khora_core::agent::SharedEngineMode =
+            Arc::new(std::sync::RwLock::new(app.initial_mode()));
+        runtime.resources.insert(mode);
+
         // TransformInterpolation — engine-owned per-entity "previous pose" store
         // the capture pass fills and the render projection blends by the
         // interpolation alpha. A resource, not an ECS component, so it never
@@ -288,12 +295,14 @@ impl<A: EngineApp> EngineCore<A> {
         // Gameplay. Registered like any other consumer, which is the point of
         // giving scripting an agent at all: the DCC can tell it "you have
         // 0.4ms, hand back control", and Ergon is the only scripting language
-        // in reach that can be told that.
-        dcc.register_agent(
+        // in reach that can be told that. It runs only while the game does:
+        // an editor editing a scene is not playing it.
+        dcc.register_agent_for_mode(
             Arc::new(Mutex::new(
                 khora_agents::script_agent::ScriptAgent::default(),
             )),
             1.0,
+            vec![EngineMode::Playing],
         );
 
         // Initialize agents with the full runtime so on_initialize() can
@@ -349,12 +358,6 @@ impl<A: EngineApp> EngineCore<A> {
 
         let budget_channel = scheduler.budget_channel().clone();
         dcc.connect_budget_channel(budget_channel);
-
-        let _ = dcc
-            .event_sender()
-            .send(khora_core::telemetry::TelemetryEvent::PhaseChange(
-                "boot".to_string(),
-            ));
 
         // Store everything
         self.app = Some(app);

@@ -19,6 +19,8 @@
 //! binary as a module instead of adding a file at the root of `tests/`.
 
 mod editor_shader_sources;
+mod engine_mode;
 mod game_saves;
+mod mode_to_dcc;
 mod public_paths;
 mod runtime_config_file;

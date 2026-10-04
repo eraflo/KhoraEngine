@@ -17,6 +17,10 @@
 //! The base engine only knows about **Playing** mode.
 //! Plugins inject their own modes via `Custom(String)`.
 
+/// The frame's engine mode, shared between the application that writes it and
+/// the scheduler that reads it once per frame.
+pub type SharedEngineMode = std::sync::Arc<std::sync::RwLock<EngineMode>>;
+
 /// The current mode of the engine.
 ///
 /// Different modes activate different agents and change rendering behavior.
@@ -45,5 +49,24 @@ impl EngineMode {
             EngineMode::Playing => "playing",
             EngineMode::Custom(s) => s,
         }
+    }
+
+    /// Whether gameplay — scripts, above all — runs in this mode.
+    pub fn runs_gameplay(&self) -> bool {
+        matches!(self, EngineMode::Playing)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The game runs only while it is played: an editor's editing mode is not
+    /// the game, and a tool mode is not either.
+    #[test]
+    fn only_playing_runs_gameplay() {
+        assert!(EngineMode::Playing.runs_gameplay());
+        assert!(!EngineMode::Custom("editor".to_owned()).runs_gameplay());
+        assert!(!EngineMode::Custom("tool".to_owned()).runs_gameplay());
     }
 }

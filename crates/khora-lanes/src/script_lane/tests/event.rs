@@ -71,6 +71,7 @@ behavior Guard {
 /// One guard on entity 0.
 fn one_guard() -> ScriptView {
     ScriptView {
+        resumed: false,
         delta_seconds: 0.016,
         input: Default::default(),
         programs: vec![ScriptProgram {

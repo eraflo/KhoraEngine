@@ -120,11 +120,17 @@ impl ExecutionScheduler {
             .all_ids();
         let completion_map = Arc::new(AgentCompletionMap::new(&agent_ids));
 
-        // 3. Read current mode
-        let mode = {
-            let ctx = self.context.read().unwrap_or_else(|e| e.into_inner());
-            ctx.mode.clone()
-        };
+        // 3. Read the frame's mode, once: the one the application set in the
+        //    runtime, or the context's where it set none. Flows read the same
+        //    resource after this, so flows and agents agree on the frame.
+        let mode = runtime
+            .resources
+            .get::<khora_core::agent::SharedEngineMode>()
+            .and_then(|shared| shared.read().ok().map(|mode| mode.clone()))
+            .unwrap_or_else(|| {
+                let ctx = self.context.read().unwrap_or_else(|e| e.into_inner());
+                ctx.mode.clone()
+            });
 
         // 3b. Publish how agents will be grouped into concurrent waves this
         //     frame, so the DCC can budget each wave by its critical path.

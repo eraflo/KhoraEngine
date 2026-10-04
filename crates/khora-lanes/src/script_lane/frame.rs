@@ -17,14 +17,14 @@
 //! — whose turn it is, what each cost, who was deferred, and what has to be
 //! written back. A turn knows only about itself.
 
-use khora_core::script::{EventQueue, ScriptStateUpdate};
+use khora_core::script::{EventQueue, InstanceLifecycle, RecordedFault, ScriptStateUpdate};
 use khora_data::flow::ScriptView;
 use khora_script::native::Host;
 
 use super::hooks::{despawns_itself, say_goodbye};
 use super::persistence;
 use super::report::ScriptRunReport;
-use super::runtime::ScriptRuntime;
+use super::runtime::{Body, Instance, Pending, ScriptRuntime};
 use super::turn::{run_one, Invocation, Outcome, Progress};
 
 /// How much of the frame's fuel one behavior may spend.
@@ -55,6 +55,11 @@ pub fn run_behaviors(
     // that queues is in the frame's commands alongside everything else. Then the
     // instances are dropped, which is how a despawned entity's fields are
     // released without anyone having to report the despawn.
+    // An entity that left while the game was not running left without the
+    // game: no `OnDespawn` for it, only forgetting.
+    if view.resumed {
+        runtime.retain_live(|entity| live.contains(&entity));
+    }
     farewell_departed(&live, runtime, host, fuel, &mut report);
     runtime.retain_live(|entity| live.contains(&entity));
 
@@ -62,6 +67,14 @@ pub fn run_behaviors(
         let Some(program) = view.program_of(instance) else {
             continue;
         };
+        // Held on the instance until its first turn: a frame that has no fuel
+        // left for it, or no program yet, must not lose what it brings — the
+        // flow hands an arrival over once.
+        if let Some(arrival) = &instance.arrival {
+            runtime
+                .instance(instance.entity, &program.behavior)
+                .arriving = Some(arrival.clone());
+        }
 
         let remaining = fuel.saturating_sub(report.spent);
         if remaining == 0 {
@@ -86,37 +99,29 @@ pub fn run_behaviors(
         // the instance's fields, and a thousand guards share one `Guard`.
         let compiled = std::sync::Arc::clone(compiled);
 
-        // What a saved scene left: applied once, when the entity first appears.
-        // The initialiser still runs — the slots the save did not carry take the
-        // defaults their author wrote — and these go back on top, which is
-        // exactly the road a reload already takes.
-        let carried_from_scene = instance.arrival.as_ref().and_then(|arrival| {
-            let layout = compiled.layout(&program.behavior)?;
-            let arrived = persistence::arrived(arrival);
-            Some((
-                persistence::store_from_snapshot(layout, &arrived),
-                persistence::resume(&arrived, &compiled, layout),
-            ))
-        });
-
+        // What the entity brings, applied once, when it first appears. The
+        // initialiser still runs — the slots it did not bring take the defaults
+        // their author wrote — and these go back on top, which is exactly the
+        // road a reload already takes.
         let state = runtime.instance(instance.entity, &program.behavior);
+        let arriving = state.arriving.take().and_then(|arrival| {
+            let layout = compiled.layout(&program.behavior)?;
+            let arrived = persistence::arrived(&arrival);
+            Some(Arriving {
+                store: persistence::store_from_snapshot(layout, &arrived),
+                resumed: persistence::resume(&arrived, &compiled, layout),
+                restored: arrival.observed.is_some(),
+                lifecycle: arrived.lifecycle,
+            })
+        });
+        if let Some(arriving) = arriving {
+            arrive(state, arriving, &program.behavior, compiled.fingerprint());
+        }
         if state.disabled {
             continue;
         }
         state.module.clone_from(&program.module);
-        if let Some((from_scene, resumed)) = carried_from_scene {
-            state.fields = from_scene.clone();
-            state.initialised = false;
-            state.initialiser = None;
-            state.carried = Some(from_scene);
-            // A sequence the save caught mid-`await`. It is not initialisation
-            // and must not be cleared by one: the guard was half-way through an
-            // attack, and loading should leave it half-way through the attack.
-            state.pending = resumed;
-            // Already announced itself in the run that was saved. Loading a save
-            // is not spawning.
-            state.spawned = true;
-        }
+        let lifecycle_before = (state.spawned, state.fault.is_some());
 
         host.entity = Some(instance.entity);
         // The read side, from the projection rather than the `World`. Set
@@ -133,6 +138,8 @@ pub fn run_behaviors(
             spawned: state.spawned,
             initialiser: state.initialiser.take(),
             pending: state.pending.take(),
+            loading: state.loading,
+            after_load: state.after_load.take(),
         };
         let carried = state.carried.take();
 
@@ -174,6 +181,8 @@ pub fn run_behaviors(
         state.spawned = progress.spawned;
         state.initialiser = progress.initialiser;
         state.pending = progress.pending;
+        state.loading = progress.loading;
+        state.after_load = progress.after_load;
         // Kept until the initialiser that has to put them back has finished.
         if !state.initialised {
             state.carried = carried;
@@ -227,6 +236,12 @@ pub fn run_behaviors(
                     instance.entity.generation
                 );
                 state.disabled = true;
+                // Recorded with the code it faulted in, so a save keeps it
+                // disabled until that code changes.
+                state.fault = Some(RecordedFault {
+                    fingerprint: compiled.fingerprint(),
+                    reason,
+                });
                 report.faulted += 1;
                 report.spent += spent;
             }
@@ -252,7 +267,14 @@ pub fn run_behaviors(
             && runtime
                 .peek(instance.entity, &program.behavior)
                 .is_some_and(|held| held.pending.is_some());
-        if outcome_cost + farewell_cost > 0 || ticked || waited {
+        // And a lifecycle fact — spawned, faulted — whatever it cost: a
+        // behavior with no `OnSpawn` spawns for free, a call that faults
+        // before running a single instruction faults for free, and a save
+        // must know both.
+        let lifecycle_changed = runtime
+            .peek(instance.entity, &program.behavior)
+            .is_some_and(|held| (held.spawned, held.fault.is_some()) != lifecycle_before);
+        if outcome_cost + farewell_cost > 0 || ticked || waited || lifecycle_changed {
             if let Some(layout) = compiled.layout(&program.behavior) {
                 let held = runtime.instance(instance.entity, &program.behavior);
                 // While its initialiser is part-way, an instance's fields hold
@@ -262,8 +284,24 @@ pub fn run_behaviors(
                     (Some(owed), false) => owed,
                     _ => &held.fields,
                 };
-                let snapshot =
-                    persistence::snapshot_of(layout, fields, held.pending.as_ref(), &compiled);
+                // A hook part-way in front of a restored body — `OnLoad`, which a
+                // load runs again anyway, or the `OnSpawn` of a save that
+                // recorded no lifecycle — is not written: the save holds the
+                // body waiting behind it.
+                let pending = held.after_load.as_ref().or(held.pending.as_ref());
+                let mut snapshot = persistence::snapshot_of(layout, fields, pending, &compiled);
+                // An `OnSpawn` part-way in front of a restored body is not
+                // written either: recorded as not yet spawned, it runs again
+                // from its start on the next load, as a cut `OnLoad` does.
+                let spawning_in_front = held.after_load.is_some()
+                    && held
+                        .pending
+                        .as_ref()
+                        .is_some_and(|pending| pending.body == Body::Spawn);
+                snapshot.lifecycle = InstanceLifecycle {
+                    spawned: held.spawned && !spawning_in_front,
+                    fault: held.fault.clone(),
+                };
 
                 report.state.push(ScriptStateUpdate {
                     entity: instance.entity,
@@ -275,6 +313,53 @@ pub fn run_behaviors(
     }
 
     report
+}
+
+/// What an entity brings the first frame it appears, read against its
+/// program.
+struct Arriving {
+    /// Its fields, as they go back on top of the initialiser's defaults.
+    store: khora_script::arena::PersistentStore,
+    /// The body a save caught part-way, if it can still be resumed.
+    resumed: Option<Pending>,
+    /// Whether it is restored from a save — observed before — rather than
+    /// starting fresh: a scene entity at Play, after Stop, a runtime spawn.
+    restored: bool,
+    /// What the save recorded of its life.
+    lifecycle: InstanceLifecycle,
+}
+
+/// Sets an instance from what its entity brings — wholly: nothing of an
+/// earlier instance under the same entity and behavior survives an arrival.
+///
+/// Fresh, it has not spawned: `OnSpawn` runs once. Restored from a save, it
+/// keeps whether it spawned, stays disabled by a fault recorded under this
+/// very code — a fault under other code is cleared, the fix having shipped —
+/// and owes `OnLoad`, with the body the save caught part-way waiting behind it.
+fn arrive(state: &mut Instance, arriving: Arriving, behavior: &str, fingerprint: u64) {
+    *state = Instance {
+        fields: arriving.store.clone(),
+        carried: Some(arriving.store),
+        ..Instance::default()
+    };
+    if !arriving.restored {
+        return;
+    }
+    state.spawned = arriving.lifecycle.spawned;
+    match arriving.lifecycle.fault {
+        Some(fault) if fault.fingerprint == fingerprint => {
+            state.disabled = true;
+            state.fault = Some(fault);
+        }
+        Some(fault) => log::info!(
+            "script `{behavior}` faulted before the save ({}); its code has changed since, so it \
+             runs again",
+            fault.reason
+        ),
+        None => {}
+    }
+    state.loading = true;
+    state.after_load = arriving.resumed;
 }
 
 /// Whether this frame advanced any of the behavior's countdowns.

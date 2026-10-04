@@ -59,7 +59,8 @@ pub struct EngineCore<A: EngineApp> {
     /// from its own position, none taking events from the others. It replaced
     /// an unbounded `VecDeque` that only this struct could reach.
     input_events: Channel<InputEvent>,
-    simulation_started: bool,
+    /// The engine mode last told to the DCC.
+    forwarded_mode: Option<EngineMode>,
 }
 
 impl<A: EngineApp> EngineCore<A> {
@@ -79,7 +80,7 @@ impl<A: EngineApp> EngineCore<A> {
             })),
             runtime: Arc::new(Runtime::new()),
             input_events: khora_core::platform::input_channel(),
-            simulation_started: false,
+            forwarded_mode: None,
         }
     }
 
