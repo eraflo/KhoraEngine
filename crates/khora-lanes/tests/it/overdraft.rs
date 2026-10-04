@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The script lane under a slice smaller than one instruction.
+//! The script lane under a slice smaller than one stretch of code.
 //!
-//! The VM now pays for the first instruction of a run even when it costs more
-//! than the fuel it was handed, so `run_counting` can report more than it was
-//! given. Every caller that subtracts what was spent from what it gave has to
-//! survive that.
+//! The VM suspends for fuel only at a safepoint, and pays for the code between
+//! two of them even when it costs more than the fuel it was handed, so
+//! `run_counting` can report more than it was given — never more than the fuel
+//! plus the program's longest stretch. Every caller that subtracts what was
+//! spent from what it gave has to survive that.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptValue};
@@ -95,6 +96,7 @@ fn a_frame_smaller_than_the_initialisers_first_call_does_not_panic() {
                       float d = LaneCostly();
                       void OnSpawn() { }
                   }";
+    let longest = build(source).max_overdraft();
     let mut runtime = runtime_of(source);
     let mut host = Host::new();
 
@@ -106,11 +108,15 @@ fn a_frame_smaller_than_the_initialisers_first_call_does_not_panic() {
         1,
     );
 
-    // Whatever the lane decides, it must not bill more than one instruction
-    // past the frame, and it must not panic getting there.
+    // Whatever the lane decides, it must not bill more than the program's
+    // longest stretch past the frame, and it must not panic getting there.
     assert!(
-        report.spent <= 1 + 50,
-        "overspent by more than one instruction: {}",
+        longest >= 50,
+        "the initialiser's call is part of a stretch: {longest}"
+    );
+    assert!(
+        report.spent <= 1 + longest,
+        "overspent by more than the longest stretch ({longest}): {}",
         report.spent
     );
 }
@@ -168,12 +174,15 @@ fn a_starved_initialiser_still_leaves_the_defaults_in_place() {
 /// finished handlers. Next frame the machine finishes the handler, then the
 /// re-queued event runs it again: one `Damaged(30)` costs 60 health.
 ///
-/// Not introduced by the overdraft; any slice that ends inside a handler does it.
+/// Not introduced by the overdraft; any slice that ends inside a handler does
+/// it. The handler has two statements so a slice of one stops it at the
+/// second's start — a safepoint — with the hit applied and not yet counted.
 #[test]
 fn a_handler_cut_short_by_fuel_is_not_delivered_twice() {
     let source = "behavior Guard {
                       int health = 100;
-                      on Damaged(int amount) { health -= amount; }
+                      int hits = 0;
+                      on Damaged(int amount) { health -= amount; hits += 1; }
                   }";
     let mut runtime = runtime_of(source);
     let mut host = Host::new();
@@ -185,19 +194,29 @@ fn a_handler_cut_short_by_fuel_is_not_delivered_twice() {
     // One hit, and fuel for part of its handler.
     let mut events = EventQueue::new();
     events.push(ScriptEvent::new(subject(), "Damaged").with(ScriptValue::Int(30)));
-    let cut = run_behaviors(&view, &events, &mut runtime, &mut host, 2);
+    let cut = run_behaviors(&view, &events, &mut runtime, &mut host, 1);
+    assert!(
+        runtime
+            .peek(subject(), "Guard")
+            .is_some_and(|instance| instance.pending.is_some()),
+        "the slice ended inside the handler"
+    );
 
     // The next frame gets back what the lane said it did not deliver.
     let _ = run_behaviors(&view, &cut.undelivered, &mut runtime, &mut host, u64::MAX);
 
-    let health = match runtime
+    let field = |slot: usize| match runtime
         .peek(subject(), "Guard")
-        .and_then(|i| i.fields.get(0))
+        .and_then(|i| i.fields.get(slot))
     {
         Some(Persisted::Scalar(value)) => Some(*value),
         _ => None,
     };
-    assert_eq!(health, Some(Value::Int(70)), "one hit of 30, applied once");
+    assert_eq!(
+        (field(0), field(1)),
+        (Some(Value::Int(70)), Some(Value::Int(1))),
+        "one hit of 30, applied once and counted once"
+    );
 }
 
 /// **The same accounting, with an `await` instead of fuel.** A handler that

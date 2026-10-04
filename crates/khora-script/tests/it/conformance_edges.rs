@@ -14,7 +14,7 @@
 
 //! The conformance suite and the fuel overdraft at their edges.
 
-use khora_script::vm::{Machine, Program, Run, Suspension, Value};
+use khora_script::vm::{Machine, Program, Run, SiteKind, Suspension, Value};
 use khora_script::{check, compile, ergon_fn, lex, parse, Host};
 
 /// A call that costs more than a small slice.
@@ -59,23 +59,43 @@ fn sliced(program: &Program, function: &str, args: &[Value], slice: u64) -> (Val
 
 // ─── The overdraft ──────────────────────────────────────────────────────────
 
-/// Coverage: the overdraft is paid in full, reported in full, and is one
-/// instruction — the next one waits for the next run.
+/// Coverage: the overdraft runs to the next safepoint, is paid in full and
+/// reported in full — the next statement waits for the next run.
 #[test]
-fn an_overdraft_is_one_instruction_reported_in_full() {
-    let program = build("fn float Main() { return Costly(); }");
+fn an_overdraft_runs_to_the_next_safepoint_and_is_reported_in_full() {
+    let program = build("fn float Main() { float a = Costly(); return a; }");
     let mut machine = Machine::new(&program, "Main", &[]).expect("Main exists");
     let mut host = Host::new();
 
+    let (run, spent) = machine.run_counting(&program, &mut host, 1);
     assert_eq!(
-        machine.run_counting(&program, &mut host, 1),
-        (Run::Suspended(Suspension::OutOfFuel), 50),
-        "the call is paid past the slice, and the run reports what it cost"
+        run,
+        Run::Suspended(Suspension::OutOfFuel),
+        "the second statement waits for the next run"
     );
-    assert_eq!(machine.program_counter(), 1, "one instruction, not two");
+    assert!(
+        spent >= 50,
+        "the call is paid past the slice, and the run reports what it cost: {spent}"
+    );
+    assert!(
+        spent <= 1 + program.max_overdraft(),
+        "never more than the longest stretch past the slice ({}): {spent}",
+        program.max_overdraft()
+    );
+    let main = program.function("Main").expect("Main exists");
+    assert!(
+        main.sites
+            .iter()
+            .any(|site| site.kind == SiteKind::Statement
+                && site.pc as usize == machine.program_counter()),
+        "stopped at the start of `return a;`, pc {}: {:?}",
+        machine.program_counter(),
+        main.sites
+    );
+
     assert_eq!(
-        machine.run_counting(&program, &mut host, 1),
-        (Run::Completed, 1)
+        machine.run_counting(&program, &mut host, 1).0,
+        Run::Completed
     );
     assert_eq!(machine.result(), Value::Float(3.0));
 }

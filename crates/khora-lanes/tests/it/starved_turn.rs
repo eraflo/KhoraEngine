@@ -19,9 +19,9 @@
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptArrival, ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{run_behaviors, ScriptRuntime};
+use khora_lanes::script_lane::{run_behaviors, Resumed, ScriptRuntime};
 use khora_script::arena::Persisted;
-use khora_script::vm::{Program, Value};
+use khora_script::vm::{Program, ResumeTier, Value};
 use khora_script::{check, compile, ergon_fn, lex, parse, Host};
 
 use super::saves::through_record;
@@ -101,9 +101,18 @@ fn hit(amount: i64) -> EventQueue {
     events
 }
 
-const GUARD: &str = "behavior Guard {
-                         int health = 100;
-                         on Damaged(int amount) { health -= amount; }
+/// A guard whose initialiser and handler a small slice can cut.
+///
+/// Fuel runs out only at a safepoint — a function's entry, a statement's
+/// start, a loop's head, the return of a call. The default is a call so a
+/// one-unit slice stops the initialiser at `Full`'s entry, and the handler has
+/// two statements so a two-unit slice stops it between them, the hit applied
+/// and not yet counted.
+const GUARD: &str = "fn int Full() { return 100; }
+                     behavior Guard {
+                         int health = Full();
+                         int hits = 0;
+                         on Damaged(int amount) { health -= amount; hits += 1; }
                      }";
 
 // ─── The initialiser ────────────────────────────────────────────────────────
@@ -190,8 +199,11 @@ fn a_starved_initialiser_on_the_first_frame_keeps_the_scenes_values() {
 /// attack never lands.
 #[test]
 fn a_starved_initialiser_after_a_reload_keeps_the_pending_sequence() {
-    const ATTACKER: &str = "behavior Guard {
-                                int fired = 0;
+    // The default is a call, so a one-unit slice stops the initialiser at
+    // `Zero`'s entry: fuel runs out only at a safepoint.
+    const ATTACKER: &str = "fn int Zero() { return 0; }
+                            behavior Guard {
+                                int fired = Zero();
                                 async void Attack() {
                                     await 1.0s;
                                     fired += 1;
@@ -320,40 +332,56 @@ fn a_handler_cut_short_by_fuel_is_reported_deferred() {
     );
 }
 
-/// **A kept handler resumes into edited code.** `ScriptRuntime::reload` keeps
-/// `pending`, and the next frame runs that machine — a function index and a
-/// program counter into the *old* program — against the new one. Loading a
-/// save refuses exactly this (`persistence::resume` checks the fingerprint);
-/// a reload does not.
+/// **A kept handler resumes into edited code only where its own code is
+/// unchanged.** A handler cut by fuel is kept; the author then inserts a field
+/// above `health` and adds a method beside the handler. The handler's own code
+/// is the same — its fields are named, not numbered — so the reload takes it
+/// back as `Unchanged` and it finishes in the edited program: the hit lands
+/// once, and nothing the old machine does lands in the field that now sits at
+/// its old slots.
 #[test]
-fn a_kept_handler_does_not_resume_into_edited_code() {
-    const EDITED: &str = "behavior Guard {
+fn a_kept_handler_resumes_into_edited_code_only_where_its_code_is_unchanged() {
+    const EDITED: &str = "fn int Full() { return 100; }
+                          behavior Guard {
                               int armour = 5;
-                              int health = 100;
+                              int health = Full();
+                              int hits = 0;
                               void Heal() { health = 999; armour = 999; }
-                              on Damaged(int amount) { health -= amount; }
+                              on Damaged(int amount) { health -= amount; hits += 1; }
                           }";
     let mut runtime = runtime_of(GUARD);
     let mut host = Host::new();
     let view = view_of("Guard", 0.0, None);
     run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
 
-    // Cut part-way through `health -= 30`; the machine is kept.
+    // Cut part-way through the handler; the machine is kept.
     run_behaviors(&view, &hit(30), &mut runtime, &mut host, 2);
     assert!(runtime
         .peek(subject(), "Guard")
         .is_some_and(|i| i.pending.is_some()));
 
-    runtime.reload(MODULE, build(EDITED));
+    let reports = runtime.reload(MODULE, build(EDITED));
     let after = run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
 
-    let armour = int_at(&runtime, "Guard", 0);
-    let health = int_at(&runtime, "Guard", 1);
     assert_eq!(after.faulted, 0, "the reload broke the behavior");
-    assert_eq!(armour, Some(5), "armour is only ever its default");
-    assert!(
-        matches!(health, Some(70) | Some(100)),
-        "the old handler either finishes or is abandoned; got {health:?}"
+    assert_eq!(
+        (
+            int_at(&runtime, "Guard", 0),
+            int_at(&runtime, "Guard", 1),
+            int_at(&runtime, "Guard", 2),
+        ),
+        (Some(5), Some(70), Some(1)),
+        "armour is only ever its default; the hit lands once, and is counted once"
+    );
+    let resumes: Vec<&Resumed> = reports.iter().flat_map(|report| &report.resumes).collect();
+    assert_eq!(
+        resumes,
+        [&Resumed {
+            behavior: "Guard".to_owned(),
+            member: "Damaged".to_owned(),
+            tier: Ok(ResumeTier::Unchanged),
+        }],
+        "the reload reports how the handler came back"
     );
 }
 
@@ -850,8 +878,7 @@ fn an_old_save_with_a_byte_list_machine_is_refused() {
     );
 }
 
-/// **A reload that changes nothing keeps the sequence.** The counterpart of
-/// `a_kept_handler_does_not_resume_into_edited_code`: the same program
+/// **A reload that changes nothing keeps the sequence.** The same program
 /// recompiled has the same fingerprint, so the handler cut by fuel finishes —
 /// abandoning it would lose a `Damaged` the turn already counted as delivered.
 #[test]

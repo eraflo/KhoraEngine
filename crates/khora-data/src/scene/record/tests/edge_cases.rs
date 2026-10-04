@@ -280,6 +280,7 @@ fn narrowing_into_a_frozen_register_is_refused() {
         registers: vec![FrozenValue::Float(0.5)],
         frames: vec![],
         program_counter: 0,
+        arguments: Vec::new(),
     };
     let mut record = to_record(&machine, &mut NoWriter).expect("writes");
     // Replace the register's f32 with a double it cannot hold exactly.

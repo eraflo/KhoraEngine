@@ -899,11 +899,24 @@ fn script_event_fields(x: &khora_core::script::event::ScriptEvent) {
 }
 
 fn frozen_machine_fields(x: &khora_core::script::frozen::FrozenMachine) {
-    let _ = (&x.body, &x.registers, &x.frames, &x.program_counter);
+    let _ = (
+        &x.body,
+        &x.registers,
+        &x.frames,
+        &x.program_counter,
+        &x.arguments,
+    );
 }
 
 fn frozen_frame_fields(x: &khora_core::script::frozen::FrozenFrame) {
-    let _ = (&x.function, &x.base, &x.return_pc, &x.result);
+    let _ = (
+        &x.function,
+        &x.base,
+        &x.return_pc,
+        &x.result,
+        &x.site,
+        &x.fingerprint,
+    );
 }
 
 fn pending_body_variants(x: &khora_core::script::frozen::PendingBody) {
@@ -911,8 +924,8 @@ fn pending_body_variants(x: &khora_core::script::frozen::PendingBody) {
         khora_core::script::frozen::PendingBody::Sequence => {}
         khora_core::script::frozen::PendingBody::Spawn => {}
         khora_core::script::frozen::PendingBody::Update => {}
-        khora_core::script::frozen::PendingBody::Timer { index, rearm } => {
-            let _ = (index, rearm);
+        khora_core::script::frozen::PendingBody::Timer { timer, rearm } => {
+            let _ = (timer, rearm);
         }
     }
 }

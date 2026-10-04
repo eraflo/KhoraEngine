@@ -228,8 +228,13 @@ fn engine_types_round_trip() {
                     base: 0,
                     return_pc: 0,
                     result: 0,
+                    site: String::new(),
+                    fingerprint: 0,
+                    locals: Vec::new(),
+                    temporaries: Vec::new(),
                 }],
                 program_counter: 42,
+                arguments: Vec::new(),
             },
         }),
         lifecycle: khora_core::script::InstanceLifecycle {

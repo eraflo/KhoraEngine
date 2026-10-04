@@ -18,6 +18,21 @@
 //! somebody outside this module; everything in the siblings is not.
 
 use khora_core::script::{EventQueue, ScriptStateUpdate};
+use khora_script::vm::{Abandoned, ResumeTier};
+
+/// A suspended body that came back below the exact tier, or not at all.
+///
+/// One per body, reported so the author hears that an edit reached code that
+/// was part-way through — and how it was taken back.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resumed {
+    /// Which behavior the body belongs to.
+    pub behavior: String,
+    /// The body's member path: `"OnSpawn"`, `"Patrol.OnHit"`, `"__every(0.5)"`.
+    pub member: String,
+    /// How it came back, or that it did not.
+    pub tier: Result<ResumeTier, Abandoned>,
+}
 
 /// What one run of the lane did.
 ///
@@ -63,4 +78,6 @@ pub struct ScriptRunReport {
     /// the run is one thing and its delivery another — which is also what lets
     /// [`run_behaviors`] be tested without a deck to write into.
     pub state: Vec<ScriptStateUpdate>,
+    /// Suspended bodies a load took back below the exact tier, or abandoned.
+    pub resumes: Vec<Resumed>,
 }

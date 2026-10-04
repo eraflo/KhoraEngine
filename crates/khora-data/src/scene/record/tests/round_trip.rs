@@ -101,7 +101,7 @@ fn every_frozen_value(target: EntityId) -> Vec<FrozenValue> {
 fn frozen_machine(target: EntityId) -> FrozenMachine {
     FrozenMachine {
         body: PendingBody::Timer {
-            index: 2,
+            timer: "Guard.__every(0.5)".to_owned(),
             rearm: FrozenValue::Float(0.5),
         },
         registers: every_frozen_value(target),
@@ -111,15 +111,24 @@ fn frozen_machine(target: EntityId) -> FrozenMachine {
                 base: 0,
                 return_pc: 0,
                 result: 0,
+                site: String::new(),
+                fingerprint: 0,
+                locals: Vec::new(),
+                temporaries: Vec::new(),
             },
             FrozenFrame {
                 function: "wind_up".into(),
                 base: 6,
                 return_pc: 12,
                 result: 3,
+                site: String::new(),
+                fingerprint: 0,
+                locals: Vec::new(),
+                temporaries: Vec::new(),
             },
         ],
         program_counter: 42,
+        arguments: Vec::new(),
     }
 }
 
@@ -308,7 +317,7 @@ fn every_persisted_type_round_trips() {
         PendingBody::Spawn,
         PendingBody::Update,
         PendingBody::Timer {
-            index: 7,
+            timer: "Guard.Patrol.__after(1.5)#2".to_owned(),
             rearm: FrozenValue::Int(3),
         },
     ] {
@@ -327,6 +336,7 @@ fn every_persisted_type_round_trips() {
                 registers: Vec::new(),
                 frames: Vec::new(),
                 program_counter: 0,
+                arguments: Vec::new(),
             },
         }),
         ..ScriptSnapshot::default()

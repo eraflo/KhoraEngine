@@ -247,8 +247,13 @@ fn stop_restores_script_targets() {
                             base: 0,
                             return_pc: 0,
                             result: 0,
+                            site: String::new(),
+                            fingerprint: 0,
+                            locals: Vec::new(),
+                            temporaries: Vec::new(),
                         }],
                         program_counter: 3,
+                        arguments: Vec::new(),
                     },
                 }),
                 ..ScriptSnapshot::default()

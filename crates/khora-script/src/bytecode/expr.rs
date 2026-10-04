@@ -135,6 +135,7 @@ impl Compiler {
 
                 let dst = self.registers.temp();
                 self.emit(Instruction::Await { seconds, dst });
+                self.record_await();
                 (dst, Shape::Other)
             }
 
@@ -574,6 +575,14 @@ impl Compiler {
                     argc,
                     dst,
                 });
+                // Named by the callee's compiled name, which a sibling call
+                // spells without its behavior.
+                let callee = self
+                    .signatures
+                    .iter()
+                    .find(|(_, &index)| index == function)
+                    .map_or_else(|| name.to_owned(), |(callee, _)| callee.clone());
+                self.record_return(&callee, base, dst);
                 self.returns.get(name).copied().unwrap_or(Shape::Other)
             }
             CallTarget::Native(function) => {

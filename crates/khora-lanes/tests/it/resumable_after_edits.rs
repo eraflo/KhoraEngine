@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! Bodies that resume where they stopped, at their edges: a save taken
-//! while the initialiser is part-way, a timer body abandoned by an edit, and a
+//! while the initialiser is part-way, a timer body cut before an edit, and a
 //! saved timer body that names a schedule the behavior does not have.
 
 use khora_core::ecs::entity::EntityId;
@@ -117,10 +117,16 @@ fn run(
 
 // ─── A save taken while the initialiser is part-way ─────────────────────────
 
-/// Writes `health` first, then stops on the wall.
-const HEAVY_GUARD: &str = "behavior Guard {
+/// Writes `health` first, then stops in `Pad`.
+///
+/// The wall sits in a function the initialiser calls: fuel runs out only at a
+/// safepoint, and an initialiser's own are its entry and the return of each
+/// call it makes. A wall written as the default itself would be paid as an
+/// overdraft and the initialiser would finish.
+const HEAVY_GUARD: &str = "fn float Pad() { return ResumableWall(); }
+                           behavior Guard {
                                int health = 100;
-                               float pad = ResumableWall();
+                               float pad = Pad();
                            }";
 
 /// **A save taken while the initialiser is part-way holds the loaded values.**
@@ -206,14 +212,17 @@ fn a_reload_while_the_initialiser_is_part_way_keeps_the_loaded_values() {
     );
 }
 
-// ─── A timer body abandoned by an edit ──────────────────────────────────────
+// ─── A timer body cut before an edit ────────────────────────────────────────
 
+/// The statement after the wall is where a slice of 10 cuts the slow body.
 const SLOW_TICKER: &str = "behavior Ticker {
                                int fast = 0;
                                int slow = 0;
+                               int done = 0;
                                every 5s {
                                    slow += 1;
                                    ResumableWall();
+                                   done += 1;
                                }
                            }";
 
@@ -221,22 +230,25 @@ const SLOW_TICKER: &str = "behavior Ticker {
 const EDITED_TICKER: &str = "behavior Ticker {
                                  int fast = 0;
                                  int slow = 0;
+                                 int done = 0;
                                  every 0.1s { fast += 1; }
                                  every 5s {
                                      slow += 1;
                                      ResumableWall();
+                                     done += 1;
                                  }
                              }";
 
-/// **A timer body abandoned by an edit rearms its own schedule, or none — never
+/// **A timer body cut before an edit rearms its own schedule, or none — never
 /// another.** The slow schedule's body is cut by fuel; the author then inserts
-/// a fast schedule above it. The edit changes the program, so the cut body is
-/// abandoned; its rearm (about five seconds) is still owed to *the slow
-/// schedule*. Written by position, it lands on whatever schedule now sits at
-/// that position — the new fast one — which then stays silent for five seconds
-/// instead of firing every tenth of one.
+/// a fast schedule above it. However the cut body comes back — resumed,
+/// restarted or abandoned — its rearm (about five seconds) is owed to *the
+/// slow schedule*. Resolved by a position the insertion handed to the new
+/// schedule, it lands on the fast one, which then stays silent for five
+/// seconds instead of firing every tenth of one. A schedule's name follows its
+/// kind and interval, so the fast one never takes the slow one's.
 #[test]
-fn a_timer_body_abandoned_by_an_edit_does_not_rearm_another_schedule() {
+fn a_timer_body_cut_before_an_edit_never_rearms_another_schedule() {
     let mut runtime = runtime_of(SLOW_TICKER);
     let mut host = Host::new();
     run(
@@ -303,31 +315,46 @@ fn ticker_cut_in_its_timer() -> ScriptSnapshot {
         .body
         .clone();
     assert!(
-        matches!(body, PendingBody::Timer { index: 0, .. }),
+        matches!(&body, PendingBody::Timer { timer, .. } if *timer == ticker_timer()),
         "{body:?}"
     );
     snapshot
 }
 
+/// The name of `TICKER`'s only schedule.
+fn ticker_timer() -> String {
+    build(TICKER)
+        .layout("Ticker")
+        .and_then(|layout| layout.timers.first())
+        .map(|timer| timer.member.clone())
+        .expect("the behavior has a schedule")
+}
+
 /// Rewrites the timer body a snapshot owes.
-fn with_timer_body(mut snapshot: ScriptSnapshot, index: u32, rearm: FrozenValue) -> ScriptSnapshot {
+fn with_timer_body(
+    mut snapshot: ScriptSnapshot,
+    timer: &str,
+    rearm: FrozenValue,
+) -> ScriptSnapshot {
     if let Some(pending) = snapshot.pending.as_mut() {
-        pending.machine.body = PendingBody::Timer { index, rearm };
+        pending.machine.body = PendingBody::Timer {
+            timer: timer.to_owned(),
+            rearm,
+        };
     }
     snapshot
 }
 
-/// **A saved timer body is checked against the schedule it names.** The
-/// schedule is a position in the behavior, and a save is input nobody sized:
-/// one naming position 1 000 000 of a behavior with a single schedule is
-/// loaded, resumed, and on completion "rearmed" by writing a slot a million
-/// past the behavior's layout — the store grows to fit. At `u32::MAX` the same
-/// write asks for billions of slots and the allocation aborts the process.
+/// **A saved timer body is checked against the schedule it names.** A save
+/// is input nobody sized: one naming a schedule the behavior does not have is
+/// refused, and finishing it never writes a countdown slot outside the
+/// behavior's layout — which would grow the store to fit, and at a large
+/// enough index abort the process on the allocation.
 #[test]
 fn a_saved_timer_body_naming_a_schedule_the_behavior_lacks_is_refused() {
     let damaged = with_timer_body(
         ticker_cut_in_its_timer(),
-        1_000_000,
+        "Ticker.__every(1000000)",
         FrozenValue::Float(0.5),
     );
     let slots = build(TICKER)
@@ -367,7 +394,11 @@ fn a_saved_timer_body_naming_a_schedule_the_behavior_lacks_is_refused() {
 /// countdown altogether.
 #[test]
 fn a_saved_timer_body_whose_rearm_is_not_a_countdown_does_not_kill_the_schedule() {
-    let damaged = with_timer_body(ticker_cut_in_its_timer(), 0, FrozenValue::Bool(true));
+    let damaged = with_timer_body(
+        ticker_cut_in_its_timer(),
+        &ticker_timer(),
+        FrozenValue::Bool(true),
+    );
 
     let mut runtime = runtime_of(TICKER);
     let mut host = Host::new();
@@ -394,6 +425,10 @@ fn a_saved_timer_body_whose_rearm_is_not_a_countdown_does_not_kill_the_schedule(
 }
 
 // ─── A save taken between an edit and the abandonment it owes ───────────────
+//
+// An edit that only touches other code, or moves code around the body's site,
+// no longer abandons it. What still abandons is the member the body started in
+// being gone: the edit below removes the handler the attack was started from.
 
 const ATTACKER: &str = "behavior Guard {
                             int fired = 0;
@@ -404,7 +439,8 @@ const ATTACKER: &str = "behavior Guard {
                             on Spotted(int by) { Attack(); }
                         }";
 
-/// The same behavior with a field added above `fired`: a different program.
+/// The same behavior with a field added above `fired`, and the handler that
+/// starts the attack gone: the body that was part-way cannot come back.
 const EDITED_ATTACKER: &str = "behavior Guard {
                                    int shield = 0;
                                    int fired = 0;
@@ -412,16 +448,15 @@ const EDITED_ATTACKER: &str = "behavior Guard {
                                        await 1.0s;
                                        fired += 1;
                                    }
-                                   on Spotted(int by) { Attack(); }
+                                   on Seen(int by) { Attack(); }
                                }";
 
-/// **A save taken while an edit's abandonment is still owed abandons it too.**
-/// A guard is waiting inside an attack when the author edits the script. The
-/// running game abandons the sequence once its wait elapses — its machine is a
-/// position in the old code. A save taken in between must not tell the next
-/// load otherwise: written with the *edited* program's fingerprint, the old
-/// machine passes the load's check and the loaded game resumes the attack the
-/// running game dropped.
+/// **A save taken after an edit abandoned a body does not bring it back.** A
+/// guard is waiting inside an attack when the author edits the script,
+/// removing the handler the attack was started from. The running game abandons
+/// the sequence. A save taken after the edit must not tell the next load
+/// otherwise: if it still held the old machine, the loaded game would resume
+/// the attack the running game dropped.
 #[test]
 fn a_save_taken_between_an_edit_and_the_abandonment_does_not_resume_the_old_machine() {
     assert_ne!(
@@ -483,33 +518,38 @@ fn a_save_taken_between_an_edit_and_the_abandonment_does_not_resume_the_old_mach
 
 // ─── A cut `after` body loaded into edited code ─────────────────────────────
 
+/// The statement after the wall is where a slice of 10 cuts the body.
 const FUSE: &str = "behavior Fuse {
                         int lit = 0;
+                        int done = 0;
                         after 0.5s {
                             lit += 1;
                             ResumableWall();
+                            done += 1;
                         }
                     }";
 
-/// The same behavior with a method added: a different program.
+/// The same behavior with a method added: a different program, the `after`
+/// body's own code unchanged.
 const EDITED_FUSE: &str = "behavior Fuse {
                                int lit = 0;
+                               int done = 0;
                                void Idle() { }
                                after 0.5s {
                                    lit += 1;
                                    ResumableWall();
+                                   done += 1;
                                }
                            }";
 
-/// **A timer body abandoned at load still rearms, as it does in the running
-/// game.** An `after` fires once. Its body is cut part-way and saved; the
-/// script is edited before the save is loaded, so the body is abandoned — and,
-/// abandoned by a reload in the running game, its schedule is rearmed (spent,
-/// for an `after`). Abandoned by a load, nothing rearms it: the saved countdown
-/// is still due, so the `after` fires a second time from the top and what ran
-/// before the cut happens twice.
+/// **A cut `after` body loaded into edited code finishes, and the `after` is
+/// spent.** An `after` fires once. Its body is cut part-way and saved; the
+/// script is edited elsewhere before the save is loaded, so the body resumes
+/// where it stopped — its own code is unchanged. Finishing it rearms the
+/// schedule as spent: the `after` does not fire a second time from the top,
+/// and what ran before the cut does not happen twice.
 #[test]
-fn a_cut_after_body_loaded_into_edited_code_does_not_fire_again() {
+fn a_cut_after_body_loaded_into_edited_code_finishes_and_does_not_fire_again() {
     let mut runtime = runtime_of(FUSE);
     let mut host = Host::new();
     run(
@@ -539,8 +579,8 @@ fn a_cut_after_body_loaded_into_edited_code_does_not_fire_again() {
     }
 
     assert_eq!(
-        int_at(&loaded, "Fuse", 0),
-        Some(1),
-        "an `after` whose body was abandoned at load fired again"
+        (int_at(&loaded, "Fuse", 0), int_at(&loaded, "Fuse", 1)),
+        (Some(1), Some(1)),
+        "the cut `after` body finished once, and the `after` did not fire again"
     );
 }

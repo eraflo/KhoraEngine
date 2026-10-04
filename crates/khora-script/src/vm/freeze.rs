@@ -18,8 +18,13 @@
 //! conversion names what the machine numbers — a frame's function, a literal's
 //! text — against the program the machine runs in, and resolves those names
 //! against the program it is thawed into.
+//!
+//! Each frame also records the site it stands at, its function's fingerprint,
+//! and the locals and temporaries of that site: enough for
+//! [`resume`](super::resume) to rebuild it in edited code, after the program
+//! that placed them is gone.
 
-use khora_core::script::{FrozenFrame, FrozenMachine, FrozenValue, PendingBody};
+use khora_core::script::{FrozenFrame, FrozenLocal, FrozenMachine, FrozenValue, PendingBody};
 
 use super::{Frame, Machine, Program, StrRef, Value};
 use crate::arena::ArenaRef;
@@ -38,12 +43,42 @@ impl Machine {
         let frames = self
             .frames
             .iter()
-            .map(|frame| {
+            .enumerate()
+            .map(|(depth, frame)| {
+                let function = program.functions.get(frame.function)?;
+                // Where this frame resumes: the machine's counter for the
+                // innermost, the return address its callee holds for the rest.
+                let pc = match self.frames.get(depth + 1) {
+                    Some(callee) => callee.return_pc,
+                    None => self.program_counter,
+                };
+                // The first site at that counter: a function's entry before the
+                // statement that starts there, an `await` before the statement
+                // that follows it — the place the frame actually stopped.
+                let site = function.sites.iter().find(|site| site.pc as usize == pc);
                 Some(FrozenFrame {
-                    function: program.functions.get(frame.function)?.name.clone(),
+                    function: function.name.clone(),
                     base: frame.base as u64,
                     return_pc: frame.return_pc as u64,
                     result: frame.result as u64,
+                    site: site.map(|site| site.name.clone()).unwrap_or_default(),
+                    fingerprint: function.fingerprint,
+                    locals: site
+                        .map(|site| {
+                            site.locals
+                                .iter()
+                                .map(|local| FrozenLocal {
+                                    name: local.name.clone(),
+                                    ty: local.ty.clone(),
+                                    scope: local.scope.clone(),
+                                    register: u64::from(local.register),
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    temporaries: site
+                        .map(|site| site.temporaries.iter().map(|&reg| u64::from(reg)).collect())
+                        .unwrap_or_default(),
                 })
             })
             .collect::<Option<_>>()?;
@@ -53,6 +88,11 @@ impl Machine {
             registers,
             frames,
             program_counter: self.program_counter as u64,
+            arguments: self
+                .arguments
+                .iter()
+                .map(|value| value.freeze(program))
+                .collect::<Option<_>>()?,
         })
     }
 
@@ -83,6 +123,7 @@ impl Machine {
             frames,
             program_counter: usize::try_from(frozen.program_counter).ok()?,
             finished: false,
+            arguments: thaw_arguments(frozen, program).unwrap_or_default(),
         })
     }
 }
@@ -134,6 +175,18 @@ impl Value {
             FrozenValue::Null => Self::Null,
         })
     }
+}
+
+/// The body's arguments, in `program`.
+///
+/// `None` for one `program` cannot hold — a literal it lacks. Only a restart
+/// reads them, so the machine itself thaws without them.
+pub(super) fn thaw_arguments(frozen: &FrozenMachine, program: &Program) -> Option<Vec<Value>> {
+    frozen
+        .arguments
+        .iter()
+        .map(|value| Value::thaw(value, program))
+        .collect()
 }
 
 /// One frame, if `program` has its function and the register file holds it.

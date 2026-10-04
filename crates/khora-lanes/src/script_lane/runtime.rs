@@ -30,12 +30,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::script_lane::ScriptRunReport;
+use crate::script_lane::persistence;
+use crate::script_lane::{Resumed, ScriptRunReport};
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::EventQueue;
 use khora_script::arena::{Persisted, PersistentStore};
 use khora_script::vm::Value;
-use khora_script::vm::{BehaviorLayout, Machine, Program};
+use khora_script::vm::{BehaviorLayout, Machine, Program, ResumeTier};
 use serde::{Deserialize, Serialize};
 
 /// One behavior instance's state.
@@ -124,6 +125,10 @@ pub struct Instance {
     /// What the entity brought when it appeared, held until the instance's
     /// first turn.
     pub arriving: Option<khora_data::flow::ScriptArrival>,
+
+    /// The members of bodies part-way through that an edit left nothing of,
+    /// each owed its own `OnResumeFailed`, oldest first, one a turn.
+    pub resume_failed: Vec<String>,
 }
 
 /// A suspended member and how long is left of its wait.
@@ -142,8 +147,9 @@ pub struct Pending {
     /// What finishing the machine completes.
     pub body: Body,
     /// The program the machine stopped in. A machine is a position in that
-    /// code; after a hot reload that changed it, the position names something
-    /// else, and the sequence is abandoned rather than resumed into it.
+    /// code; a hot reload that changes it carries the machine into the new code
+    /// through [`persistence::carry`](super::persistence::carry), which
+    /// restamps this.
     pub fingerprint: u64,
 }
 
@@ -184,6 +190,9 @@ pub struct ReloadReport {
     /// The one an author most wants to hear about: a renamed field looks like
     /// one dropped and one added, and its value did not travel.
     pub dropped: Vec<String>,
+    /// Suspended bodies the edit took back below the exact tier, or
+    /// abandoned.
+    pub resumes: Vec<crate::script_lane::report::Resumed>,
 }
 
 impl ReloadReport {
@@ -420,7 +429,8 @@ impl ScriptRuntime {
                 continue;
             };
 
-            let report = ReloadReport {
+            let old_program = previous.as_deref();
+            let mut report = ReloadReport {
                 behavior: layout.name.clone(),
                 kept: layout
                     .fields
@@ -440,6 +450,7 @@ impl ScriptRuntime {
                     .filter(|field| layout.slot_of(field).is_none())
                     .cloned()
                     .collect(),
+                resumes: Vec::new(),
             };
 
             for ((_, behavior), instance) in self.instances.iter_mut() {
@@ -464,32 +475,44 @@ impl ScriptRuntime {
                 // An initialiser part-way through belongs to the old program.
                 instance.initialiser = None;
                 instance.carried = Some(carried);
-                // A body part-way through is a position in the old code; an
-                // edit that moved code makes that position mean something else.
-                // Abandoned here rather than when it would next run, so that
-                // nothing — a save taken in between, above all — goes on
-                // holding it. A schedule whose body it was is armed afresh by
-                // the initialiser the reload reruns.
-                if instance
-                    .pending
-                    .as_ref()
-                    .is_some_and(|pending| pending.fingerprint != fingerprint)
-                {
-                    log::warn!(
-                        "script `{}`: a sequence was abandoned — the script was edited while \
-                         it was part-way through",
-                        layout.name
-                    );
-                    instance.pending = None;
-                }
-                // The same for the body a load restored, waiting behind its
-                // `OnLoad`.
-                if instance
-                    .after_load
-                    .as_ref()
-                    .is_some_and(|pending| pending.fingerprint != fingerprint)
-                {
-                    instance.after_load = None;
+                // A body part-way through is a position in the old code. It is
+                // carried into the new code here, in whatever tier the edit
+                // allows, rather than when it would next run, so that nothing —
+                // a save taken in between, above all — goes on holding a
+                // position the program no longer has. The body a load restored,
+                // waiting behind its `OnLoad`, likewise.
+                if let Some(old_program) = old_program {
+                    for slot in [&mut instance.pending, &mut instance.after_load] {
+                        let Some(pending) = slot.take() else {
+                            continue;
+                        };
+                        if pending.fingerprint == fingerprint {
+                            *slot = Some(pending);
+                            continue;
+                        }
+                        match persistence::carry(&pending, old_program, old, &program, layout) {
+                            Ok((carried, tier)) => {
+                                if tier != ResumeTier::Exact {
+                                    report.resumes.push(Resumed {
+                                        behavior: layout.name.clone(),
+                                        member: member_of(&carried, &program),
+                                        tier: Ok(tier),
+                                    });
+                                }
+                                *slot = Some(carried);
+                            }
+                            Err(abandoned) => {
+                                report.resumes.push(Resumed {
+                                    behavior: layout.name.clone(),
+                                    member: abandoned.member.clone(),
+                                    tier: Err(abandoned.clone()),
+                                });
+                                // A schedule whose body it was is armed afresh
+                                // by the initialiser the reload reruns.
+                                instance.resume_failed.push(abandoned.member);
+                            }
+                        }
+                    }
                 }
                 // An edit is the author's answer to whatever faulted. Refusing
                 // to try again would make a script unfixable without a restart.
@@ -570,4 +593,21 @@ impl ScriptRuntime {
     pub fn instance_count(&self) -> usize {
         self.instances.len()
     }
+}
+
+/// The member a pending body runs: its outermost function, without the
+/// behavior.
+pub(super) fn member_of(pending: &Pending, program: &Program) -> String {
+    pending
+        .machine
+        .outermost()
+        .and_then(|index| program.functions.get(index))
+        .map(|function| {
+            function
+                .name
+                .split_once('.')
+                .map_or(function.name.as_str(), |(_, member)| member)
+                .to_owned()
+        })
+        .unwrap_or_default()
 }

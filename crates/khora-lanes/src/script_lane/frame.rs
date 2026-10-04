@@ -20,10 +20,11 @@
 use khora_core::script::{EventQueue, InstanceLifecycle, RecordedFault, ScriptStateUpdate};
 use khora_data::flow::ScriptView;
 use khora_script::native::Host;
+use khora_script::vm::{Abandoned, ResumeTier};
 
 use super::hooks::{despawns_itself, say_goodbye};
 use super::persistence;
-use super::report::ScriptRunReport;
+use super::report::{Resumed, ScriptRunReport};
 use super::runtime::{Body, Instance, Pending, ScriptRuntime};
 use super::turn::{run_one, Invocation, Outcome, Progress};
 
@@ -115,7 +116,8 @@ pub fn run_behaviors(
             })
         });
         if let Some(arriving) = arriving {
-            arrive(state, arriving, &program.behavior, compiled.fingerprint());
+            let resumed = arrive(state, arriving, &program.behavior, &compiled);
+            report.resumes.extend(resumed);
         }
         if state.disabled {
             continue;
@@ -140,6 +142,7 @@ pub fn run_behaviors(
             pending: state.pending.take(),
             loading: state.loading,
             after_load: state.after_load.take(),
+            resume_failed: std::mem::take(&mut state.resume_failed),
         };
         let carried = state.carried.take();
 
@@ -183,6 +186,7 @@ pub fn run_behaviors(
         state.pending = progress.pending;
         state.loading = progress.loading;
         state.after_load = progress.after_load;
+        state.resume_failed = progress.resume_failed;
         // Kept until the initialiser that has to put them back has finished.
         if !state.initialised {
             state.carried = carried;
@@ -320,8 +324,9 @@ pub fn run_behaviors(
 struct Arriving {
     /// Its fields, as they go back on top of the initialiser's defaults.
     store: khora_script::arena::PersistentStore,
-    /// The body a save caught part-way, if it can still be resumed.
-    resumed: Option<Pending>,
+    /// The body a save caught part-way, taken back into the script as it is
+    /// now — or abandoned.
+    resumed: Option<Result<(Pending, ResumeTier), Abandoned>>,
     /// Whether it is restored from a save — observed before — rather than
     /// starting fresh: a scene entity at Play, after Stop, a runtime spawn.
     restored: bool,
@@ -335,15 +340,24 @@ struct Arriving {
 /// Fresh, it has not spawned: `OnSpawn` runs once. Restored from a save, it
 /// keeps whether it spawned, stays disabled by a fault recorded under this
 /// very code — a fault under other code is cleared, the fix having shipped —
-/// and owes `OnLoad`, with the body the save caught part-way waiting behind it.
-fn arrive(state: &mut Instance, arriving: Arriving, behavior: &str, fingerprint: u64) {
+/// and owes `OnLoad`, with the body the save caught part-way waiting behind it
+/// — or, when an edit left nothing of that body, owes `OnResumeFailed`.
+///
+/// Returns how that body came back, when it came back below the exact tier.
+fn arrive(
+    state: &mut Instance,
+    arriving: Arriving,
+    behavior: &str,
+    program: &khora_script::vm::Program,
+) -> Option<Resumed> {
+    let fingerprint = program.fingerprint();
     *state = Instance {
         fields: arriving.store.clone(),
         carried: Some(arriving.store),
         ..Instance::default()
     };
     if !arriving.restored {
-        return;
+        return None;
     }
     state.spawned = arriving.lifecycle.spawned;
     match arriving.lifecycle.fault {
@@ -359,7 +373,25 @@ fn arrive(state: &mut Instance, arriving: Arriving, behavior: &str, fingerprint:
         None => {}
     }
     state.loading = true;
-    state.after_load = arriving.resumed;
+    match arriving.resumed? {
+        Ok((pending, tier)) => {
+            let member = super::runtime::member_of(&pending, program);
+            state.after_load = Some(pending);
+            (tier != ResumeTier::Exact).then(|| Resumed {
+                behavior: behavior.to_owned(),
+                member,
+                tier: Ok(tier),
+            })
+        }
+        Err(abandoned) => {
+            state.resume_failed.push(abandoned.member.clone());
+            Some(Resumed {
+                behavior: behavior.to_owned(),
+                member: abandoned.member.clone(),
+                tier: Err(abandoned),
+            })
+        }
+    }
 }
 
 /// Whether this frame advanced any of the behavior's countdowns.

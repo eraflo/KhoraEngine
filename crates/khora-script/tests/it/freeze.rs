@@ -39,6 +39,8 @@ fn function(name: &str, arity: usize, registers: usize, code: Vec<Instruction>) 
         arity,
         registers,
         code,
+        fingerprint: 0,
+        sites: Vec::new(),
     }
 }
 
@@ -77,6 +79,7 @@ fn double_code() -> Vec<Instruction> {
 
 fn pausing_call() -> Program {
     Program {
+        max_overdraft: 0,
         strings: Vec::new(),
         behaviors: Vec::new(),
         functions: vec![
@@ -89,6 +92,7 @@ fn pausing_call() -> Program {
 /// [`pausing_call`] with its two functions laid out the other way round.
 fn pausing_call_reordered() -> Program {
     Program {
+        max_overdraft: 0,
         strings: Vec::new(),
         behaviors: Vec::new(),
         functions: vec![
@@ -101,6 +105,7 @@ fn pausing_call_reordered() -> Program {
 /// [`pausing_call`] whose callee is called something else.
 fn pausing_call_renamed() -> Program {
     Program {
+        max_overdraft: 0,
         strings: Vec::new(),
         behaviors: Vec::new(),
         functions: vec![
@@ -113,6 +118,7 @@ fn pausing_call_renamed() -> Program {
 /// Loads the literal at `index` of `strings`, yields, and returns it.
 fn pausing_literal(strings: &[&str], index: u32) -> Program {
     Program {
+        max_overdraft: 0,
         strings: strings.iter().map(|s| (*s).to_owned()).collect(),
         behaviors: Vec::new(),
         functions: vec![function(
@@ -131,6 +137,7 @@ fn pausing_literal(strings: &[&str], index: u32) -> Program {
 /// Joins two literals into new text, then yields holding it.
 fn pausing_joined() -> Program {
     Program {
+        max_overdraft: 0,
         strings: vec!["wind".to_owned(), "-up".to_owned()],
         behaviors: Vec::new(),
         functions: vec![function(
@@ -303,11 +310,11 @@ fn the_body_given_to_freeze_is_the_body_the_frozen_machine_holds() {
         PendingBody::Spawn,
         PendingBody::Update,
         PendingBody::Timer {
-            index: 3,
+            timer: "Guard.__every(0.5)".to_owned(),
             rearm: FrozenValue::Float(0.5),
         },
         PendingBody::Timer {
-            index: 0,
+            timer: "Guard.Patrol.__after(2)".to_owned(),
             rearm: FrozenValue::Null,
         },
     ] {

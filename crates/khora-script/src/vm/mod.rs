@@ -40,6 +40,8 @@
 mod freeze;
 pub mod instruction;
 pub mod program;
+pub mod resume;
+pub mod site;
 pub mod value;
 
 #[cfg(test)]
@@ -47,6 +49,8 @@ mod tests;
 
 pub use instruction::{Instruction, Reg};
 pub use program::{BehaviorLayout, Function, Program, StateLayout, TimerKind, TimerLayout};
+pub use resume::{resume, Abandoned, ResumeTier};
+pub use site::{Site, SiteKind, SiteLocal};
 pub use value::{resolve_str, StrError, StrRef, Value};
 
 use serde::{Deserialize, Serialize};
@@ -174,6 +178,13 @@ pub struct Machine {
     /// Set once the program has halted or faulted, so a resume cannot restart
     /// a finished program.
     finished: bool,
+    /// What the outermost function was called with.
+    ///
+    /// Kept apart from its registers because a parameter is a local the body
+    /// may reassign: when an edit leaves no place to resume at, the body is run
+    /// again from its entry, and it has to be handed what it was handed then.
+    #[serde(default)]
+    arguments: Vec<Value>,
 }
 
 impl Machine {
@@ -201,6 +212,7 @@ impl Machine {
             }],
             program_counter: 0,
             finished: false,
+            arguments: args.to_vec(),
         })
     }
 
@@ -223,6 +235,12 @@ impl Machine {
     /// The instruction that will run next. Useful for debugging a suspension.
     pub fn program_counter(&self) -> usize {
         self.program_counter
+    }
+
+    /// The function the outermost frame runs, by index: the body this machine
+    /// is part-way through.
+    pub fn outermost(&self) -> Option<usize> {
+        self.frames.first().map(|frame| frame.function)
     }
 
     /// How deep the call stack currently is.
@@ -258,8 +276,8 @@ impl Machine {
     }
 
     /// The run loop. `remaining` is left holding what was not spent;
-    /// `overdraft` what the run spent beyond `fuel`, when its first instruction
-    /// cost more than the whole slice.
+    /// `overdraft` what the run spent beyond `fuel`, running on to the next
+    /// safepoint once the slice was used up.
     fn run_inner(
         &mut self,
         program: &Program,
@@ -270,7 +288,9 @@ impl Machine {
         if self.finished {
             return Run::Completed;
         }
-        let mut executed = false;
+        // A run starts where a suspension left it — a safepoint or just past an
+        // `await` — or at a function's entry: a place it may stop at.
+        let mut at_safepoint = true;
 
         loop {
             let Some(frame) = self.frames.last() else {
@@ -287,7 +307,10 @@ impl Machine {
             // straight-line code needs no trailing `Return` to be correct.
             let Some(instruction) = function.code.get(self.program_counter).cloned() else {
                 match self.pop_frame(Value::Unit) {
-                    Some(()) => continue,
+                    Some(()) => {
+                        at_safepoint = true;
+                        continue;
+                    }
                     None => {
                         self.finished = true;
                         return Run::Completed;
@@ -295,11 +318,19 @@ impl Machine {
                 }
             };
 
-            // Checked before the instruction, so a suspension always lands on
-            // an instruction boundary. Landing mid-instruction would mean
-            // capturing partial results, which is what the register machine
-            // was chosen to avoid.
-            //
+            // Checked only at a safepoint, so a machine stopped for fuel always
+            // stands at a place the compiler named: a statement's start, a
+            // loop's head, a function's entry, or just past a call's return —
+            // never with half an expression in its registers. A run with any
+            // fuel at all passes the place it starts from, so every non-zero
+            // slice makes progress.
+            if matches!(instruction, Instruction::Safepoint) {
+                at_safepoint = true;
+            }
+            if at_safepoint && *remaining == 0 {
+                return Run::Suspended(Suspension::OutOfFuel);
+            }
+
             // A native is charged what it declares rather than the flat
             // instruction cost: a raycast is not a `Move`, and billing it as
             // one would let a behavior spend a frame inside a single call while
@@ -311,23 +342,29 @@ impl Machine {
                 },
                 _ => instruction.cost(),
             };
+            // Past the budget, the run goes on to the next safepoint and the
+            // rest is charged as an overdraft. Never a loop: every back edge
+            // lands on a safepoint, so the stretch is bounded by the code
+            // between two of them.
             if *remaining < cost {
-                // A slice smaller than the next instruction would suspend here
-                // on every run and never advance. The first instruction of a
-                // run is paid for anyway, as an overdraft of at most one
-                // instruction, so any non-zero budget makes progress.
-                if executed || *remaining == 0 {
-                    return Run::Suspended(Suspension::OutOfFuel);
-                }
                 *overdraft += cost - *remaining;
-                *remaining = cost;
+                *remaining = 0;
+            } else {
+                *remaining -= cost;
             }
-            *remaining -= cost;
-            executed = true;
+            at_safepoint = false;
+            let from = self.program_counter;
 
             match self.step(&instruction, program, host, function.code.len()) {
                 Ok(Step::Next) => self.program_counter += 1,
-                Ok(Step::Jumped) => {}
+                // A call lands on its callee's entry. A jump backwards lands on
+                // a loop's head — a safepoint the compiler marked, and one
+                // anyway for code nobody compiled, so no loop can spin past
+                // its budget.
+                Ok(Step::Jumped) => {
+                    at_safepoint = matches!(instruction, Instruction::Call { .. })
+                        || self.program_counter <= from;
+                }
                 Ok(Step::Halt) => {
                     self.finished = true;
                     return Run::Completed;
@@ -338,11 +375,13 @@ impl Machine {
                     self.program_counter += 1;
                     return Run::Suspended(Suspension::Awaiting);
                 }
+                // Back in the caller, just past the call.
                 Ok(Step::Returned) => {
                     if self.frames.is_empty() {
                         self.finished = true;
                         return Run::Completed;
                     }
+                    at_safepoint = true;
                 }
                 Err(fault) => return self.fault(fault),
             }
@@ -579,6 +618,7 @@ impl Machine {
                 Ok(Step::Yield)
             }
 
+            Instruction::Safepoint => Ok(Step::Next),
             Instruction::Yield => Ok(Step::Yield),
             Instruction::Halt => Ok(Step::Halt),
         }

@@ -20,10 +20,13 @@
 
 mod frozen_save;
 mod lifecycle_restore;
+mod on_resume_failed;
 mod overdraft;
 mod public_paths;
 mod resumable_after_edits;
 mod resumable_edges;
+mod resume_tiers;
+mod resume_tiers_encodings;
 mod saves;
 mod spawn_scenarios;
 mod starved_turn;

@@ -88,6 +88,20 @@ pub static ON_LOAD: Lifecycle = Lifecycle {
     called: true,
 };
 
+/// `void OnResumeFailed(string member)` — once, for a body that could not
+/// resume in the code as it is now.
+///
+/// A body suspended by fuel or `await` resumes in edited code when it can; one
+/// whose member is gone, or whose parameters changed, is abandoned instead.
+/// This runs on the instance's next turn, where the body would have resumed,
+/// naming the abandoned body's member — `"OnSpawn"`, `"Patrol.OnHit"`,
+/// `"__every(0.5)"`.
+pub static ON_RESUME_FAILED: Lifecycle = Lifecycle {
+    name: "OnResumeFailed",
+    params: &[Ty::Str],
+    called: true,
+};
+
 /// `void FixedUpdate(float dt)` — reserved, not yet called.
 ///
 /// It needs a fixed timestep to be called *at*, and the scripting agent
@@ -101,7 +115,14 @@ pub static FIXED_UPDATE: Lifecycle = Lifecycle {
 };
 
 /// Every engine-invoked member.
-pub static ALL: &[&Lifecycle] = &[&UPDATE, &ON_SPAWN, &ON_LOAD, &ON_DESPAWN, &FIXED_UPDATE];
+pub static ALL: &[&Lifecycle] = &[
+    &UPDATE,
+    &ON_SPAWN,
+    &ON_LOAD,
+    &ON_DESPAWN,
+    &ON_RESUME_FAILED,
+    &FIXED_UPDATE,
+];
 
 /// The lifecycle member a name denotes, if it denotes one.
 pub fn of(name: &str) -> Option<&'static Lifecycle> {

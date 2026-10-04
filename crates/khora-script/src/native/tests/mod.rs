@@ -232,6 +232,10 @@ fn a_program_run_against_the_wrong_registry_faults() {
 /// A native is billed what it declares, not what an instruction costs. Without
 /// that a behavior could spend a frame inside one call while the counter
 /// reported it had barely started.
+///
+/// Fuel runs out only at a safepoint, so a call that starts within a run's
+/// fuel runs to the next one and is paid as an overdraft — reported in full,
+/// and never more than the program's longest stretch past the fuel.
 #[test]
 fn a_native_is_charged_its_own_cost() {
     static EXPENSIVE: NativeFn = NativeFn {
@@ -246,9 +250,10 @@ fn a_native_is_charged_its_own_cost() {
     let mut natives = NativeRegistry::new();
     natives.register(&EXPENSIVE);
     // The local comes first, so the call is not the first instruction the
-    // machine meets.
+    // machine meets; a statement follows it, so the run stops at a safepoint
+    // after it rather than finishing.
     let program = build(
-        "fn float Main() { float a = 1.0; return a + Expensive(); }",
+        "fn float Main() { float a = 1.0; float b = a + Expensive(); return b; }",
         &natives,
     );
 
@@ -259,23 +264,24 @@ fn a_native_is_charged_its_own_cost() {
     let mut machine = Machine::new(&program, "Main", &[]).expect("Main exists");
 
     // Enough fuel for a handful of instructions, nowhere near the call's price.
-    // Once the run has done something, the call waits for the next one rather
-    // than being started on credit.
+    // The run is still within its fuel when it reaches the call's statement, so
+    // the call runs, and the run stops at the next statement's start — billed
+    // the call's full declared price, the overdraft included, rather than the
+    // 100 it was handed or the flat cost of an instruction.
     let (first, spent) = machine.run_counting(&program, &mut host, 100);
     assert_eq!(
         first,
         Run::Suspended(crate::vm::Suspension::OutOfFuel),
-        "the call is not affordable part-way through a run"
+        "the run stops at the safepoint after the call"
     );
-    assert!(spent < 5_000, "the call did not run, so it is not billed");
-
-    // The call is now the run's first instruction. It runs, and the run reports
-    // its full declared price — the overdraft included — rather than the 100 it
-    // was handed or the flat cost of an instruction.
-    let (_, spent) = machine.run_counting(&program, &mut host, 100);
     assert!(
         spent >= 5_000,
         "a native is charged what it declares, found {spent}"
+    );
+    assert!(
+        spent <= 100 + program.max_overdraft(),
+        "the overdraft is bounded by the longest stretch ({}), found {spent}",
+        program.max_overdraft()
     );
 
     let mut rounds = 0;

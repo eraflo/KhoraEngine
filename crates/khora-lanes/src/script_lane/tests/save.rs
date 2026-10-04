@@ -33,8 +33,9 @@ use khora_data::flow::{ScriptArrival, ScriptInstance, ScriptProgram, ScriptView}
 use khora_script::arena::Persisted;
 use khora_script::native::Host;
 
-use super::{entity, runtime_of, MODULE};
-use crate::script_lane::{run_behaviors, ScriptRuntime};
+use super::{compile, entity, runtime_of, MODULE};
+use crate::script_lane::{run_behaviors, Resumed, ScriptRuntime};
+use khora_script::vm::ResumeTier;
 
 /// The guard from the design: two states, each with its own data, and a
 /// schedule that belongs to the patrol rather than to the guard.
@@ -304,29 +305,27 @@ fn a_sequence_stopped_at_an_await_survives_a_save() {
     );
 }
 
-/// **Refused, not trusted.** A machine holds a position in code. If the script
-/// was edited between the save and the load, that position means something else
-/// — resuming would run whatever now sits there, chosen by an edit nobody
-/// connected to it.
+/// **Refused, not trusted.** A machine holds a position in code. An edit that
+/// moves code around that position is followed by name; one that removes the
+/// member the body started in leaves nothing to resume into — resuming anyway
+/// would run whatever now sits there, chosen by an edit nobody connected to it.
 #[test]
-fn a_sequence_is_abandoned_when_the_script_changed() {
+fn a_sequence_is_abandoned_when_its_handler_is_gone() {
     let saved = caught_mid_attack();
     assert!(saved.pending.is_some());
 
-    // The same behavior with a statement inserted, which moves every
-    // instruction after it.
+    // The same behavior with the handler that started the attack gone.
     let edited = r#"
     behavior Guard {
         int health = 100;
         int fired = 0;
 
         async void Attack() {
-            health -= 1;
             await 1.0s;
             fired += 1;
         }
 
-        on Spotted(int by) {
+        on Seen(int by) {
             Attack();
         }
     }
@@ -342,15 +341,39 @@ fn a_sequence_is_abandoned_when_the_script_changed() {
     );
 }
 
-/// An edit that only retunes a value leaves every instruction where it was, so
-/// the sequence still resumes — throwing it away would punish an author for
-/// changing a number.
+/// An edit that only retunes a value outside the attack still resumes it —
+/// throwing it away would punish an author for changing a number. The program
+/// is a different one now, so the load reports the attack as resumed
+/// `Unchanged`: every function on its stack is the same code.
 #[test]
 fn a_sequence_survives_an_edit_that_only_changes_a_literal() {
     let saved = caught_mid_attack();
 
     let retuned = WAITER.replace("int health = 100;", "int health = 120;");
-    let (mut revived, mut host) = reload(&retuned, saved);
+    assert_ne!(
+        compile(&retuned).fingerprint(),
+        compile(WAITER).fingerprint(),
+        "a literal is code: the program changed"
+    );
+
+    let mut revived = runtime_of(&retuned);
+    let mut host = Host::new();
+    let loaded = run_behaviors(
+        &view(0.0, Some(saved)),
+        &EventQueue::new(),
+        &mut revived,
+        &mut host,
+        u64::MAX,
+    );
+    assert_eq!(
+        loaded.resumes,
+        vec![Resumed {
+            behavior: "Guard".to_owned(),
+            member: "Spotted".to_owned(),
+            tier: Ok(ResumeTier::Unchanged),
+        }],
+        "the load reports how the attack came back"
+    );
     quiet(&mut revived, &mut host, 1.2);
 
     assert_eq!(slot(&revived, 1), Some(1), "it carried on");

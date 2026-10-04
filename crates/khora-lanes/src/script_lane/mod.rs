@@ -51,7 +51,7 @@ mod turn;
 mod tests;
 
 pub use frame::run_behaviors;
-pub use report::ScriptRunReport;
+pub use report::{Resumed, ScriptRunReport};
 pub use runtime::{Body, Instance, Pending, ReloadReport, ScriptRuntime};
 
 use std::any::Any;

@@ -191,6 +191,7 @@ fn a_frozen_machine_round_trips_through_compact_messagepack() {
         registers: vec![FrozenValue::Float(0.5)],
         frames: vec![],
         program_counter: 3,
+        arguments: Vec::new(),
     };
     let bytes = rmp_serde::to_vec(&machine).expect("encodes");
     let back: Result<FrozenMachine, _> = rmp_serde::from_slice(&bytes);

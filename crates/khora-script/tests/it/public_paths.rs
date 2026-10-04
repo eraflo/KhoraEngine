@@ -721,6 +721,7 @@ fn instruction_variants(x: &khora_script::vm::instruction::Instruction) {
         khora_script::vm::instruction::Instruction::NativeCall { .. } => {}
         khora_script::vm::instruction::Instruction::Await { .. } => {}
         khora_script::vm::instruction::Instruction::LoadSelf { .. } => {}
+        khora_script::vm::instruction::Instruction::Safepoint => {}
         khora_script::vm::instruction::Instruction::Yield => {}
         khora_script::vm::instruction::Instruction::Halt => {}
     }
@@ -1312,8 +1313,14 @@ fn module_bytecode_paths_still_resolve() {
     is_debug::<khora_script::bytecode::registers::Registers>();
     is_default::<khora_script::bytecode::registers::Registers>();
     let _ = khora_script::bytecode::shape_of;
-    let _ = khora_script::bytecode::state_timer_name;
-    let _ = khora_script::bytecode::timer_name;
+    let _ = khora_script::bytecode::sites::timer_names;
+    let _ = khora_script::bytecode::sites::literal_seconds;
+    let _ = khora_script::bytecode::sites::inferred_type;
+    let _ = khora_script::bytecode::keys::statement_key;
+    let _ = khora_script::bytecode::keys::field_key;
+    let _ = khora_script::bytecode::keys::state_key;
+    let _ = khora_script::bytecode::keys::type_name;
+    let _ = khora_script::bytecode::registers::Registers::live_temporaries;
 }
 
 #[test]

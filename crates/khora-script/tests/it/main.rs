@@ -21,5 +21,10 @@
 mod conformance;
 mod conformance_edges;
 mod ergon_fn;
+mod fingerprints;
 mod freeze;
 mod public_paths;
+mod rebuilt_frames;
+mod resume_tiers;
+mod safepoints;
+mod sites;

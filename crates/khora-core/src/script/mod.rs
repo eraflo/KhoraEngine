@@ -49,7 +49,7 @@ mod tests;
 pub use buffer::{CommandBuffer, Conflict};
 pub use command::{ComponentName, WorldCommand, WriteTarget};
 pub use event::{engine_event_channel, EventQueue, ScriptEvent, ENGINE_EVENT_BACKLOG};
-pub use frozen::{FrozenFrame, FrozenMachine, FrozenValue, PendingBody};
+pub use frozen::{FrozenFrame, FrozenLocal, FrozenMachine, FrozenValue, PendingBody};
 pub use snapshot::{
     InstanceLifecycle, PendingSequence, RecordedFault, ScriptSnapshot, TimerRemaining,
 };

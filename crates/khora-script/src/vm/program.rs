@@ -21,6 +21,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::instruction::Instruction;
+use super::site::Site;
 
 /// One compiled function.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -33,6 +34,15 @@ pub struct Function {
     pub registers: usize,
     /// Its instructions.
     pub code: Vec<Instruction>,
+    /// A stable hash of its code, every operand that names something outside
+    /// the function hashed by name, so moving another function, a literal or
+    /// a field leaves it alone. Zero for a function nobody fingerprinted — one
+    /// built by hand rather than compiled — which never counts as unchanged.
+    #[serde(default)]
+    pub fingerprint: u64,
+    /// Where a frame of it can stand, sorted by program counter.
+    #[serde(default)]
+    pub sites: Vec<Site>,
 }
 
 /// One `state` of a behavior, and the slots its own data occupies.
@@ -181,6 +191,13 @@ pub struct Program {
     /// index: a literal then costs a register write wherever it appears, so
     /// `Log("hit")` inside a loop does not allocate once per iteration.
     pub strings: Vec<String>,
+    /// The most a run can spend past its fuel, computed by the compiler.
+    ///
+    /// Recorded rather than recomputed because a native's cost comes from the
+    /// registry the program was compiled against, which the program does not
+    /// hold.
+    #[serde(default)]
+    pub max_overdraft: u64,
 }
 
 impl Program {
@@ -204,32 +221,43 @@ impl Program {
         self.functions.iter().find(|f| f.name == name)
     }
 
-    /// A number identifying this program's **code shape**.
+    /// A number identifying this program's code.
     ///
-    /// What a suspended machine holds is a position: a function index, a
-    /// program counter, a register file sized for that function's frame. None of
-    /// those survives an edit that moves code around, and resuming into a
-    /// program where they now mean something else would run whatever happens to
-    /// sit there. So a saved sequence records this, and is abandoned rather than
-    /// resumed when it no longer matches.
+    /// What a suspended machine holds is positions — a program counter, a
+    /// register file sized for a frame — that only mean something in the code
+    /// that placed them. A machine resumed into a program with the same
+    /// fingerprint resumes exactly; otherwise [`resume`](super::resume) looks
+    /// further, function by function and site by site.
     ///
-    /// Shape, deliberately, and not the code itself: changing `health = 100` to
-    /// `health = 120` leaves every instruction where it was, so a machine
-    /// suspended in that function resumes correctly and should not be thrown
-    /// away for a number the author retuned. Inserting a statement moves
-    /// everything after it, and does change this.
+    /// Built from every function's own fingerprint, each of which covers its
+    /// name and its normalized code, and combined so the order the functions
+    /// sit in does not matter: reordering declarations changes no code. Cheap
+    /// to recompute — one addition per function and one hash.
     pub fn fingerprint(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        for function in &self.functions {
-            function.name.hash(&mut hasher);
-            function.arity.hash(&mut hasher);
-            function.registers.hash(&mut hasher);
-            function.code.len().hash(&mut hasher);
-        }
-        hasher.finish()
+        let sum = self
+            .functions
+            .iter()
+            .fold(0u64, |sum, function| sum.wrapping_add(function.fingerprint));
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"khora.ergon.program");
+        hasher.update(&sum.to_le_bytes());
+        hasher.update(&(self.functions.len() as u64).to_le_bytes());
+        first_u64(hasher.finalize().as_bytes())
     }
+
+    /// The most a run can spend past its fuel: the costliest stretch of code
+    /// between two safepoints, natives at their declared cost.
+    pub fn max_overdraft(&self) -> u64 {
+        self.max_overdraft
+    }
+}
+
+/// The first eight bytes of a hash, little-endian: the width every persisted
+/// fingerprint has.
+pub(crate) fn first_u64(bytes: &[u8; 32]) -> u64 {
+    let mut first = [0u8; 8];
+    first.copy_from_slice(&bytes[..8]);
+    u64::from_le_bytes(first)
 }
 
 #[cfg(test)]
@@ -242,15 +270,16 @@ mod tests {
             arity: 0,
             registers: 1,
             code: vec![Instruction::Halt],
+            fingerprint: 0,
+            sites: Vec::new(),
         }
     }
 
     #[test]
     fn functions_resolve_by_name_to_an_index() {
         let program = Program {
-            strings: Vec::new(),
-            behaviors: Vec::new(),
             functions: vec![empty("First"), empty("Second")],
+            ..Program::default()
         };
         assert_eq!(program.index_of("Second"), Some(1));
         assert_eq!(program.index_of("Missing"), None);

@@ -82,6 +82,13 @@ impl Registers {
         self.next = mark.max(self.locals);
     }
 
+    /// The temporaries taken and not yet released, lowest first.
+    pub fn live_temporaries(&self) -> Vec<Reg> {
+        (self.locals..self.next)
+            .map(|register| register as Reg)
+            .collect()
+    }
+
     /// Remembers how many locals are live, so a scope can restore it.
     pub fn scope_mark(&self) -> usize {
         self.locals

@@ -293,7 +293,7 @@ fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
             remaining: 1.5,
             machine: FrozenMachine {
                 body: PendingBody::Timer {
-                    index: 2,
+                    timer: "Guard.__every(0.5)".to_owned(),
                     rearm: FrozenValue::Float(0.5),
                 },
                 registers: vec![
@@ -309,8 +309,13 @@ fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
                     base: 0,
                     return_pc: 0,
                     result: 0,
+                    site: String::new(),
+                    fingerprint: 0,
+                    locals: Vec::new(),
+                    temporaries: Vec::new(),
                 }],
                 program_counter: 42,
+                arguments: Vec::new(),
             },
         }),
         lifecycle: khora_core::script::InstanceLifecycle {

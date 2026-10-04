@@ -46,6 +46,13 @@ pub struct FrozenMachine {
     pub frames: Vec<FrozenFrame>,
     /// The next instruction of the innermost frame's function.
     pub program_counter: u64,
+    /// The body's arguments as it was started.
+    ///
+    /// A parameter is a local the body may reassign, so its frame alone
+    /// cannot say what the body was called with. Empty in a save written
+    /// before machines recorded them.
+    #[serde(default)]
+    pub arguments: Vec<FrozenValue>,
 }
 
 /// One call on a frozen machine's stack.
@@ -59,6 +66,40 @@ pub struct FrozenFrame {
     pub return_pc: u64,
     /// The register its result goes to, in the caller's register file.
     pub result: u64,
+    /// The named site the frame resumes at. Empty in a save written before
+    /// frames recorded it.
+    #[serde(default)]
+    pub site: String,
+    /// The fingerprint of the function it runs. Zero in a save written
+    /// before frames recorded it.
+    #[serde(default)]
+    pub fingerprint: u64,
+    /// The locals in scope at its site, and where each sits in its window.
+    ///
+    /// Written down with the machine because the program that placed them is
+    /// gone by the time an edited one reads the save: rebuilding the frame at
+    /// the same site in new code moves each local to its new register by name.
+    #[serde(default)]
+    pub locals: Vec<FrozenLocal>,
+    /// The temporaries live across its site, in allocation order, relative to
+    /// its window.
+    #[serde(default)]
+    pub temporaries: Vec<u64>,
+}
+
+/// A local in scope where a frozen frame stands.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FrozenLocal {
+    /// Its name.
+    pub name: String,
+    /// Its type, as written.
+    pub ty: String,
+    /// The block that declares it — what tells it apart from a local of the
+    /// same name it shadows or that shadows it.
+    #[serde(default)]
+    pub scope: String,
+    /// Its register, relative to the frame's window.
+    pub register: u64,
 }
 
 /// Which body a frozen machine is part-way through, and so what finishing it
@@ -73,11 +114,10 @@ pub enum PendingBody {
     Update,
     /// A schedule's body: finishing it rearms that schedule.
     Timer {
-        /// The schedule, by its position in the behavior. A position is safe
-        /// here only because the save's program fingerprint changes with the
-        /// behavior's members, and a sequence whose fingerprint no longer
-        /// matches is never resumed.
-        index: u32,
+        /// The schedule, by the name of the function its body compiled to —
+        /// the `member` of its timer layout.
+        #[serde(default)]
+        timer: String,
         /// The countdown it rearms to.
         rearm: FrozenValue,
     },
@@ -155,15 +195,24 @@ mod tests {
                     base: 0,
                     return_pc: 0,
                     result: 0,
+                    site: "expr.5d41402a:call.Guard::Attack".to_owned(),
+                    fingerprint: 0x0123_4567_89AB_CDEF,
+                    locals: Vec::new(),
+                    temporaries: Vec::new(),
                 },
                 FrozenFrame {
                     function: "Guard::Attack".to_owned(),
                     base: 6,
                     return_pc: 3,
                     result: 2,
+                    site: "expr.7d793037:await".to_owned(),
+                    fingerprint: 0xFEDC_BA98_7654_3210,
+                    locals: Vec::new(),
+                    temporaries: Vec::new(),
                 },
             ],
             program_counter: 4,
+            arguments: vec![FrozenValue::Int(7)],
         }
     }
 
@@ -182,11 +231,11 @@ mod tests {
             PendingBody::Spawn,
             PendingBody::Update,
             PendingBody::Timer {
-                index: 2,
+                timer: "Guard.__every(0.5)".to_owned(),
                 rearm: FrozenValue::Float(0.5),
             },
             PendingBody::Timer {
-                index: 0,
+                timer: "Guard.Patrol.__after(2)".to_owned(),
                 rearm: FrozenValue::Null,
             },
         ]
@@ -227,6 +276,7 @@ mod tests {
             registers: Vec::new(),
             frames: Vec::new(),
             program_counter: 0,
+            arguments: Vec::new(),
         });
         assert_eq!(through_json(&original), original);
     }
@@ -240,7 +290,7 @@ mod tests {
             state_fields: Vec::new(),
             timers: Vec::new(),
             pending: Some(sequence(frozen(PendingBody::Timer {
-                index: 3,
+                timer: "Guard.__every(0.25)#1".to_owned(),
                 rearm: FrozenValue::Float(0.25),
             }))),
             lifecycle: Default::default(),
@@ -274,7 +324,7 @@ mod tests {
         );
     }
 
-    /// The machine is written as the plain struct it is — its four fields,
+    /// The machine is written as the plain struct it is — its five fields,
     /// under its own name, with no form wrapped around it.
     #[test]
     fn a_frozen_machine_is_written_as_its_own_fields() {
@@ -285,7 +335,13 @@ mod tests {
         keys.sort_unstable();
         assert_eq!(
             keys,
-            ["body", "frames", "program_counter", "registers"],
+            [
+                "arguments",
+                "body",
+                "frames",
+                "program_counter",
+                "registers"
+            ],
             "{value}"
         );
 

@@ -21,14 +21,18 @@
 //!
 //! # Break points
 //!
-//! The compiler inserts the suspension points the budget needs. They go at the
-//! **top of every loop** and nowhere else in straight-line code, because that
-//! is the only place a program can spend unbounded time without returning. A
-//! sequence of statements is bounded by its own length; a loop is not.
+//! The compiler marks where the budget may stop a run: the start of every
+//! statement and the head of every loop, each a `Safepoint` with a name drawn
+//! from the source's structure ([`sites`]). The machine also stops at a
+//! function's entry and just past a call's return. Between two of these a run
+//! spends past its budget if it must; a loop's back edge lands on its head, so
+//! that stretch is bounded by the code between two of them and its worst case
+//! is recorded as the program's overdraft bound.
 //!
-//! Placing them at loop tops rather than mid-expression is also what keeps the
-//! saved state small: at a loop top there are no live temporaries, so a
-//! suspension captures locals and a program counter and nothing else.
+//! Stopping only there keeps the saved state small and meaningful: at a
+//! statement's start there are no live temporaries, so a suspension captures
+//! locals and a program counter — and because the place is named, a machine
+//! saved before an edit can be laid out again at the same place after it.
 //!
 //! # Scope
 //!
@@ -43,7 +47,10 @@
 //! `state`, `become`, `every` and `after` are here.
 
 pub mod expr;
+mod fingerprint;
+pub mod keys;
 pub mod registers;
+pub mod sites;
 pub mod stmt;
 
 #[cfg(test)]
@@ -93,6 +100,7 @@ pub fn compile_with(module: &Module, natives: &crate::native::NativeRegistry) ->
     compiler.collect_natives(natives);
     compiler.collect_signatures(module);
     compiler.compile_functions(module);
+    fingerprint::seal(&mut compiler.program, natives);
     Compiled {
         program: compiler.program,
         diagnostics: compiler.diagnostics,
@@ -145,6 +153,12 @@ struct Local {
     name: String,
     register: Reg,
     shape: Shape,
+    /// Its type as written, or its shape for one declared with `var` — what a
+    /// site records so a frame rebuilt in edited code refuses a local whose
+    /// type changed.
+    ty: String,
+    /// The block that declares it, so a local and one it shadows stay apart.
+    scope: String,
 }
 
 /// Compiler state.
@@ -182,6 +196,8 @@ pub struct Compiler {
     pub registers: Registers,
     /// Locals in scope, innermost last.
     locals: Vec<Local>,
+    /// The sites of the function being compiled, and where the compiler is.
+    pub naming: sites::Naming,
 }
 
 impl Compiler {
@@ -198,6 +214,7 @@ impl Compiler {
             code: Vec::new(),
             registers: Registers::new(0),
             locals: Vec::new(),
+            naming: sites::Naming::default(),
         }
     }
 
@@ -290,18 +307,13 @@ impl Compiler {
                             }
                             // Then its scheduled bodies, which `compile_state`
                             // emits in the same place.
-                            for (position, inner) in state.members.iter().enumerate() {
-                                if !matches!(
-                                    inner,
-                                    BehaviorMember::Every(_) | BehaviorMember::After(_)
-                                ) {
-                                    continue;
-                                }
+                            let owner = format!("{}.{}", decl.name, state.name);
+                            for (position, name) in sites::timer_names(&owner, &state.members) {
                                 self.declare(
-                                    state_timer_name(&decl.name, &state.name, position),
+                                    name,
                                     Shape::Other,
                                     index,
-                                    inner.span(),
+                                    state.members[position].span(),
                                 );
                                 index += 1;
                             }
@@ -320,19 +332,11 @@ impl Compiler {
                     // Scheduled bodies are emitted last, so they are counted
                     // last — the order here and in `compile_behavior` is the
                     // one contract this pair has.
-                    for (position, member) in decl.members.iter().enumerate() {
-                        if !matches!(member, BehaviorMember::Every(_) | BehaviorMember::After(_)) {
-                            continue;
-                        }
-                        // Keyed by position, so these cannot collide with each
-                        // other; `declare` still guards them against an author's
-                        // own `__timer0`.
-                        self.declare(
-                            timer_name(&decl.name, position),
-                            Shape::Other,
-                            index,
-                            member.span(),
-                        );
+                    // Named by what each schedule is, so these cannot collide
+                    // with each other; `declare` still guards them against an
+                    // author's own `__every(1)`.
+                    for (position, name) in sites::timer_names(&decl.name, &decl.members) {
+                        self.declare(name, Shape::Other, index, decl.members[position].span());
                         index += 1;
                     }
                 }
@@ -447,13 +451,12 @@ impl Compiler {
         }
 
         // Emitted after the members, in the order `collect_signatures` counted.
-        for (index, member) in decl.members.iter().enumerate() {
-            let body = match member {
+        for (index, name) in sites::timer_names(&decl.name, &decl.members) {
+            let body = match &decl.members[index] {
                 BehaviorMember::Every(every) => &every.body,
                 BehaviorMember::After(after) => &after.body,
                 _ => continue,
             };
-            let name = timer_name(&decl.name, index);
             self.compile_body(&name, &[], body);
         }
 
@@ -504,13 +507,13 @@ impl Compiler {
         // Its scheduled bodies last, in the order `collect_signatures` counted
         // them — the one contract that pair has, and the same one the
         // behavior's own timers keep.
-        for (index, member) in decl.members.iter().enumerate() {
-            let body = match member {
+        let owner = format!("{behavior}.{}", decl.name);
+        for (index, name) in sites::timer_names(&owner, &decl.members) {
+            let body = match &decl.members[index] {
                 BehaviorMember::Every(every) => &every.body,
                 BehaviorMember::After(after) => &after.body,
                 _ => continue,
             };
-            let name = state_timer_name(behavior, &decl.name, index);
             self.compile_body(&name, &[], body);
         }
 
@@ -591,13 +594,17 @@ impl Compiler {
         state: Option<(usize, &str)>,
         members: &[BehaviorMember],
     ) {
-        for (index, member) in members.iter().enumerate() {
-            let (kind, interval) = match member {
+        let owner = match state {
+            Some((_, name)) => format!("{behavior}.{name}"),
+            None => behavior.to_owned(),
+        };
+        for (index, member_name) in sites::timer_names(&owner, members) {
+            let (kind, interval) = match &members[index] {
                 BehaviorMember::Every(every) => (crate::vm::TimerKind::Every, &every.interval),
                 BehaviorMember::After(after) => (crate::vm::TimerKind::After, &after.delay),
                 _ => continue,
             };
-            let Some(seconds) = literal_seconds(interval) else {
+            let Some(seconds) = sites::literal_seconds(interval) else {
                 // A field-driven interval needs the expression evaluated per
                 // instance, which the schedule cannot do before it decides
                 // whether to fire. Refusing beats scheduling a guess.
@@ -610,10 +617,7 @@ impl Compiler {
             layout.timers.push(crate::vm::TimerLayout {
                 kind,
                 seconds,
-                member: match state {
-                    Some((_, name)) => state_timer_name(behavior, name, index),
-                    None => timer_name(behavior, index),
-                },
+                member: member_name,
                 state: state.map(|(index, _)| index),
             });
         }
@@ -623,6 +627,11 @@ impl Compiler {
         self.code = Vec::new();
         self.locals = Vec::new();
         self.registers = Registers::new(0);
+        self.naming.reset();
+        self.record_entry();
+        // An initialiser has no statements: each default is a step of its own,
+        // named by the field, so a call it makes has a return site to name.
+        self.naming.open_block();
 
         for member in &decl.members {
             let BehaviorMember::Field(field) = member else {
@@ -632,6 +641,10 @@ impl Compiler {
                 continue;
             };
 
+            self.naming.enter_step(&format!(
+                "let.{}",
+                keys::field_key(&field.name, field.default.as_ref())
+            ));
             let mark = self.registers.mark();
             let src = match &field.default {
                 Some(expr) => self.compile_expr(expr).0,
@@ -639,6 +652,7 @@ impl Compiler {
             };
             self.emit(Instruction::StoreField { slot, src });
             self.registers.release_to(mark);
+            self.naming.leave();
         }
 
         // A behavior with states starts in the one declared first. Left unset,
@@ -669,9 +683,13 @@ impl Compiler {
             // data has to be there before anything reads it, exactly as a
             // `become` into it would leave things.
             if let Some(first) = layout.states.first().map(|state| state.name.clone()) {
+                self.naming
+                    .enter_step(&format!("become.{}", keys::state_key(&first)));
                 self.emit_state_entry(&first);
+                self.naming.leave();
             }
         }
+        self.naming.close_block();
 
         let unit = self.registers.temp();
         self.emit(Instruction::LoadConst {
@@ -686,6 +704,8 @@ impl Compiler {
             arity: 0,
             registers: self.registers.frame_size(),
             code,
+            fingerprint: 0,
+            sites: std::mem::take(&mut self.naming.sites),
         });
     }
 
@@ -703,12 +723,14 @@ impl Compiler {
                 name: param.name.clone(),
                 register: index as Reg,
                 shape: shape_of(&param.ty),
+                ty: keys::type_name(&param.ty),
+                scope: "param".to_owned(),
             });
         }
 
-        for statement in &body.statements {
-            self.compile_stmt(statement);
-        }
+        self.naming.reset();
+        self.record_entry();
+        self.compile_statements(&body.statements);
 
         // A function that falls off its end returns nothing. The VM handles
         // that, but emitting it makes the intent explicit in a disassembly.
@@ -720,11 +742,17 @@ impl Compiler {
         self.emit(Instruction::Return { src: unit });
 
         let code = std::mem::take(&mut self.code);
+        let mut sites = std::mem::take(&mut self.naming.sites);
+        // Recorded in emission order already; sorted for a reader that looks a
+        // counter up, stably so the first site at a counter stays first.
+        sites.sort_by_key(|site| site.pc);
         self.program.functions.push(Function {
             name: name.to_owned(),
             arity: params.len(),
             registers: self.registers.frame_size(),
             code,
+            fingerprint: 0,
+            sites,
         });
     }
 
@@ -773,13 +801,16 @@ impl Compiler {
         self.registers.close_scope(mark.1);
     }
 
-    /// Declares a local and returns its register.
-    pub fn declare_local(&mut self, name: &str, shape: Shape) -> Reg {
+    /// Declares a local of type `ty` (as written) and returns its register.
+    pub fn declare_local(&mut self, name: &str, shape: Shape, ty: String) -> Reg {
         let register = self.registers.local();
+        let scope = self.naming.scope();
         self.locals.push(Local {
             name: name.to_owned(),
             register,
             shape,
+            ty,
+            scope,
         });
         register
     }
@@ -884,37 +915,6 @@ fn member_body(member: &BehaviorMember) -> Option<(&[crate::ast::Param], &crate:
     match member {
         BehaviorMember::Method(method) => Some((&method.params, &method.body)),
         BehaviorMember::Handler(handler) => Some((&handler.params, &handler.body)),
-        _ => None,
-    }
-}
-
-/// The function a scheduled body compiles to.
-///
-/// Keyed by the member's position rather than by a name the author wrote,
-/// because `every` and `after` have none. The position is stable within one
-/// compilation, which is all a schedule needs — a reload rebuilds both the
-/// layout and the code together.
-pub fn timer_name(behavior: &str, position: usize) -> String {
-    format!("{behavior}.__timer{position}")
-}
-
-/// The function a state's scheduled body compiles to.
-///
-/// Qualified by the state, so two states may each write `every 0.5s` without
-/// one's body being emitted under the other's name.
-pub fn state_timer_name(behavior: &str, state: &str, position: usize) -> String {
-    format!("{behavior}.{state}.__timer{position}")
-}
-
-/// The seconds a literal duration expression denotes.
-///
-/// The lexer has already normalised `500ms` and `2s` to seconds, so this only
-/// has to recognise that the expression *is* a literal — a field-driven interval
-/// would need evaluating per instance, which a schedule cannot do before
-/// deciding whether to fire.
-fn literal_seconds(expr: &crate::ast::Expr) -> Option<f32> {
-    match expr {
-        crate::ast::Expr::Duration { value, .. } => Some(*value),
         _ => None,
     }
 }

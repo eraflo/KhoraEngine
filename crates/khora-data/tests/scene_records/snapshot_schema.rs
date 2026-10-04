@@ -426,6 +426,7 @@ fn machines() -> Vec<khora_core::script::FrozenMachine> {
             registers: vec![],
             frames: vec![],
             program_counter: 0,
+            arguments: Vec::new(),
         },
         FrozenMachine {
             body: PendingBody::Sequence,
@@ -436,10 +437,11 @@ fn machines() -> Vec<khora_core::script::FrozenMachine> {
             ],
             frames: vec![],
             program_counter: 9,
+            arguments: Vec::new(),
         },
         FrozenMachine {
             body: PendingBody::Timer {
-                index: 2,
+                timer: "Guard.__every(0.25)".to_owned(),
                 rearm: FrozenValue::Float(0.25),
             },
             registers: vec![FrozenValue::Unit, FrozenValue::Expired, FrozenValue::Null],
@@ -449,15 +451,24 @@ fn machines() -> Vec<khora_core::script::FrozenMachine> {
                     base: 0,
                     return_pc: 0,
                     result: 0,
+                    site: String::new(),
+                    fingerprint: 0,
+                    locals: Vec::new(),
+                    temporaries: Vec::new(),
                 },
                 FrozenFrame {
                     function: "Guard::Attack".into(),
                     base: 1,
                     return_pc: 3,
                     result: 2,
+                    site: String::new(),
+                    fingerprint: 0,
+                    locals: Vec::new(),
+                    temporaries: Vec::new(),
                 },
             ],
             program_counter: u64::MAX,
+            arguments: Vec::new(),
         },
     ]
 }
@@ -609,6 +620,10 @@ fn every_register_snapshot(target: EntityId) -> khora_core::script::ScriptSnapsh
             base: depth,
             return_pc: depth * 3,
             result: depth,
+            site: String::new(),
+            fingerprint: 0,
+            locals: Vec::new(),
+            temporaries: Vec::new(),
         })
         .collect();
     ScriptSnapshot {
@@ -617,7 +632,7 @@ fn every_register_snapshot(target: EntityId) -> khora_core::script::ScriptSnapsh
             remaining: f32::INFINITY,
             machine: FrozenMachine {
                 body: PendingBody::Timer {
-                    index: u32::MAX,
+                    timer: format!("Guard.__every(0.5)#{}", u32::MAX),
                     rearm: FrozenValue::Float(f32::NAN),
                 },
                 registers: vec![
@@ -642,6 +657,7 @@ fn every_register_snapshot(target: EntityId) -> khora_core::script::ScriptSnapsh
                 ],
                 frames,
                 program_counter: u64::MAX,
+                arguments: Vec::new(),
             },
         }),
         lifecycle: khora_core::script::InstanceLifecycle {

@@ -335,6 +335,16 @@ pub enum Instruction {
         dst: Reg,
     },
 
+    /// A place the run may stop when its fuel is spent: a statement's start,
+    /// or a loop's head.
+    ///
+    /// Fuel is checked only at such places — here, at a function's entry, and
+    /// just after a call returns — so every machine stopped for fuel stands at
+    /// a place the compiler named, with no half-evaluated expression in its
+    /// registers. Between two of them a run spends past its budget if it must;
+    /// back edges land on one, so that stretch is never a loop.
+    Safepoint,
+
     /// Suspends voluntarily, for no stated reason.
     Yield,
     /// Stops the program.
@@ -344,10 +354,14 @@ pub enum Instruction {
 impl Instruction {
     /// What running this costs from the fuel budget.
     ///
-    /// Uniform today. It is a method rather than a constant because a call and
-    /// a move plainly do not cost the same, and the shape should be here when
+    /// Uniform today, except for a safepoint, which marks a place rather than
+    /// doing work. It is a method rather than a constant because a call and a
+    /// move plainly do not cost the same, and the shape should be here when
     /// measurement says so — not retrofitted through every call site.
     pub fn cost(&self) -> u64 {
-        1
+        match self {
+            Self::Safepoint => 0,
+            _ => 1,
+        }
     }
 }

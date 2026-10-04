@@ -30,7 +30,7 @@ use khora_script::bytecode::init_name;
 use khora_script::dispatch::{deliver, finish_timer, tick_timers, NotDelivered};
 use khora_script::lifecycle;
 use khora_script::native::Host;
-use khora_script::vm::{Machine, Program, Run, Suspension, Value};
+use khora_script::vm::{Machine, Program, Run, StrRef, Suspension, Value};
 
 use super::hooks::{call_hook, Hook};
 use super::runtime::{self, Body, Pending};
@@ -133,6 +133,9 @@ pub(super) struct Progress {
     pub(super) loading: bool,
     /// The body a load restored, waiting behind `OnLoad`.
     pub(super) after_load: Option<Pending>,
+    /// The members of bodies an edit left nothing of, each owed
+    /// `OnResumeFailed`, oldest first.
+    pub(super) resume_failed: Vec<String>,
 }
 
 /// `OnLoad` has finished: the body the load restored is the one owed next.
@@ -336,6 +339,55 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                     starved: why == Suspension::OutOfFuel,
                 };
             }
+        }
+    }
+
+    // A body an edit left nothing of is answered where it would have resumed:
+    // the behavior hears which member it lost, and may repair what that member
+    // was in the middle of. Behind a body still under way, if one is: one slot
+    // is the body under way, not a queue.
+    let owed = if progress.pending.is_none() && !progress.resume_failed.is_empty() {
+        Some(progress.resume_failed.remove(0))
+    } else {
+        None
+    };
+    if let Some(member) = owed {
+        let left = fuel.saturating_sub(spent);
+        let name = host.arena.alloc(khora_script::arena::Object::Str(member));
+        match name {
+            Ok(name) => {
+                let args = [Value::Str(StrRef::Arena(name))];
+                match call_hook(
+                    program,
+                    behavior,
+                    &lifecycle::ON_RESUME_FAILED,
+                    &args,
+                    host,
+                    left,
+                ) {
+                    Hook::Ran(cost) => spent += cost,
+                    Hook::Absent => {}
+                    Hook::Faulted { cost, reason } => {
+                        return Outcome::Faulted {
+                            spent: spent + cost,
+                            reason,
+                        }
+                    }
+                    // Finishing it owes nothing.
+                    Hook::Suspended { cost, machine, why } => {
+                        progress.pending = Some(kept(machine, Body::Sequence, program, host));
+                        return Outcome::Busy {
+                            spent: spent + cost,
+                            delivered: 0,
+                            starved: why == Suspension::OutOfFuel,
+                        };
+                    }
+                }
+            }
+            Err(error) => log::error!(
+                "script `{behavior}`: `OnResumeFailed` could not be called: {}",
+                error.message()
+            ),
         }
     }
 

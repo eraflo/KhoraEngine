@@ -265,10 +265,16 @@ fn a_save_mid_await_resumes_after_every_encoding() {
     }
 }
 
-/// A sequence saved in a script edited since is abandoned, not resumed into
-/// whatever now sits where it stopped — and the behavior carries on.
+/// A sequence saved in a script that has since lost the member it started in
+/// is abandoned, not resumed into whatever now sits where it stopped — and the
+/// behavior carries on.
+///
+/// An edit alone no longer abandons a sequence: one that only touches other
+/// code resumes, and one inside its own code resumes at the same named site.
+/// What still abandons is the member the body started in being gone, here the
+/// handler that started the attack.
 #[test]
-fn a_frozen_save_loaded_into_edited_code_is_abandoned() {
+fn a_frozen_save_loaded_into_code_without_its_handler_is_abandoned() {
     let (_, _, snapshot) = guard_mid_await();
     let edited = "behavior Guard {
                       int fired = 0;
@@ -276,8 +282,7 @@ fn a_frozen_save_loaded_into_edited_code_is_abandoned() {
                           await 1.0s;
                           fired += 1;
                       }
-                      void Idle() { }
-                      on Spotted(int by) { Attack(); }
+                      on Heard(int by) { Attack(); }
                   }";
 
     let mut runtime = runtime_of(edited);
@@ -290,8 +295,26 @@ fn a_frozen_save_loaded_into_edited_code_is_abandoned() {
         &[0.0, 0.5, 0.5, 0.5],
         &[0],
     );
-
     assert_eq!(fired, [Some(0)], "the stale sequence did not run");
+
+    let mut heard = EventQueue::new();
+    heard.push(ScriptEvent::new(subject(), "Heard").with(ScriptValue::Int(7)));
+    run_behaviors(
+        &view_of("Guard", 0.0, None),
+        &heard,
+        &mut runtime,
+        &mut host,
+        u64::MAX,
+    );
+    let fired = after_frames(
+        &mut runtime,
+        &mut host,
+        "Guard",
+        None,
+        &[0.5, 0.5, 0.5],
+        &[0],
+    );
+    assert_eq!(fired, [Some(1)], "the behavior still attacks when it hears");
 }
 
 /// A frozen machine naming a function the program does not have cannot be
@@ -489,8 +512,16 @@ fn a_cut_timer_body_survives_every_encoding_and_rearms_once() {
     );
     let snapshot = recorded(&report);
     match &frozen_in(&snapshot).body {
-        PendingBody::Timer { index, rearm } => {
-            assert_eq!(*index, 0, "the behavior's only schedule");
+        PendingBody::Timer { timer, rearm } => {
+            let only = build(TICKER)
+                .layout("Ticker")
+                .and_then(|layout| layout.timers.first())
+                .map(|layout| layout.member.clone());
+            assert_eq!(
+                Some(timer),
+                only.as_ref(),
+                "the behavior's only schedule, by name"
+            );
             assert!(
                 matches!(rearm, khora_core::script::FrozenValue::Float(_)),
                 "an `every` rearms to a countdown: {rearm:?}"

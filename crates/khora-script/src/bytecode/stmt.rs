@@ -16,35 +16,50 @@
 //!
 //! # Where break points go
 //!
-//! Nowhere, explicitly — and that is the point. Fuel is charged per
-//! instruction, so *every* instruction is already a place the machine can stop.
-//! A loop needs no marker to become interruptible; it is interruptible because
-//! its body costs fuel like everything else.
+//! At the start of every statement and at every loop's head, as a
+//! [`Safepoint`](Instruction::Safepoint), each one named
+//! ([`sites`](super::sites)). The machine also stops at a function's entry and
+//! just past a call's return, which need no marker. Fuel is charged per
+//! instruction but checked only there, so a machine stopped for fuel never
+//! holds half an expression: at a statement's start every temporary is
+//! released and the live state is locals and a program counter.
 //!
-//! What loops do need is a guarantee that they cannot spin without spending,
-//! and that follows from the same rule: a back-edge is a `Jump`, a `Jump` costs
-//! fuel, so a loop that never terminates still runs out. An infinite loop
-//! therefore suspends rather than hanging the frame, and the engine can notice
-//! a behavior that never finishes instead of freezing behind it.
-//!
-//! The compiler's real obligation is narrower: **do not leave live temporaries
-//! across a back-edge**. Temporaries are released at the end of every
-//! statement, so at a loop's top the live state is locals and a program
-//! counter — which is what makes the suspended machine small.
+//! A loop cannot spin without passing one: its back edge lands on its head. An
+//! infinite loop therefore still suspends rather than hanging the frame, and
+//! the engine can notice a behavior that never finishes instead of freezing
+//! behind it.
 
+use super::sites::inferred_type;
 use super::{Compiler, Shape};
 use crate::ast::{Block, Expr, Stmt};
 use crate::diagnostics::Span;
-use crate::vm::{Instruction, Reg, Value};
+use crate::vm::{Instruction, Reg, SiteKind, Value};
 
 impl Compiler {
-    /// Compiles a block in its own scope.
-    pub fn compile_block(&mut self, block: &Block) {
+    /// Compiles `block` in its own scope, as the branch `branch` of the
+    /// statement being compiled.
+    pub fn compile_block(&mut self, block: &Block, branch: &str) {
         let scope = self.open_scope();
-        for statement in &block.statements {
-            self.compile_stmt(statement);
-        }
+        self.naming.branch(branch);
+        self.compile_statements(&block.statements);
+        self.naming.leave_branch();
         self.close_scope(scope);
+    }
+
+    /// Compiles sibling statements, each starting at a named safepoint.
+    pub fn compile_statements(&mut self, statements: &[Stmt]) {
+        self.naming.open_block();
+        for statement in statements {
+            self.naming.enter(statement);
+            // A `while`'s start is its head, which it marks itself: the back
+            // edge has to land on it.
+            if !matches!(statement, Stmt::While { .. }) {
+                self.statement_safepoint(SiteKind::Statement);
+            }
+            self.compile_stmt(statement);
+            self.naming.leave();
+        }
+        self.naming.close_block();
     }
 
     /// Compiles one statement.
@@ -58,7 +73,8 @@ impl Compiler {
                     (Some(written), Some(expr)) => {
                         let (source, _) = self.compile_expr(expr);
                         let declared = super::shape_of(written);
-                        let slot = self.declare_local(name, declared);
+                        let slot =
+                            self.declare_local(name, declared, super::keys::type_name(written));
                         self.emit(Instruction::Move {
                             dst: slot,
                             src: source,
@@ -70,7 +86,7 @@ impl Compiler {
                     // checker inferred its type from.
                     (None, Some(expr)) => {
                         let (source, shape) = self.compile_expr(expr);
-                        let slot = self.declare_local(name, shape);
+                        let slot = self.declare_local(name, shape, inferred_type(shape));
                         self.emit(Instruction::Move {
                             dst: slot,
                             src: source,
@@ -78,13 +94,15 @@ impl Compiler {
                         self.registers.release_to(mark);
                         return;
                     }
-                    (Some(written), None) => super::shape_of(written),
-                    (None, None) => Shape::Other,
+                    (Some(written), None) => {
+                        (super::shape_of(written), super::keys::type_name(written))
+                    }
+                    (None, None) => (Shape::Other, inferred_type(Shape::Other)),
                 };
 
                 // Declared without an initialiser: give it a defined value
                 // rather than whatever the register happened to hold.
-                let slot = self.declare_local(name, shape);
+                let slot = self.declare_local(name, shape.0, shape.1);
                 self.emit(Instruction::LoadConst {
                     dst: slot,
                     value: Value::Unit,
@@ -137,7 +155,7 @@ impl Compiler {
                 self.registers.release_to(mark);
             }
 
-            Stmt::Block(block) => self.compile_block(block),
+            Stmt::Block(block) => self.compile_block(block, "body"),
 
             Stmt::Become { state, args, span } => self.compile_become(state, args, *span),
 
@@ -159,13 +177,22 @@ impl Compiler {
         });
         self.registers.release_to(mark);
 
-        self.compile_block(then_branch);
+        self.compile_block(then_branch, "then");
 
         match else_branch {
             Some(else_branch) => {
                 let over_else = self.emit(Instruction::Jump { target: usize::MAX });
                 self.patch_to_here(to_else);
-                self.compile_stmt(else_branch);
+                // `else { … }` is the branch's statements; `else if` is one
+                // statement of it.
+                match else_branch {
+                    Stmt::Block(block) => self.compile_block(block, "else"),
+                    other => {
+                        self.naming.branch("else");
+                        self.compile_statements(std::slice::from_ref(other));
+                        self.naming.leave_branch();
+                    }
+                }
                 self.patch_to_here(over_else);
             }
             None => self.patch_to_here(to_else),
@@ -173,10 +200,12 @@ impl Compiler {
     }
 
     fn compile_while(&mut self, condition: &Expr, body: &Block) {
-        // The back-edge lands here. Temporaries are released before it, so a
+        // The back-edge lands here, on a safepoint that is also the
+        // statement's start. Temporaries are released before it, so a
         // suspension at the top of an iteration captures locals and nothing
         // else.
         let top = self.here();
+        self.statement_safepoint(SiteKind::LoopHead);
 
         let mark = self.registers.mark();
         let (cond, _) = self.compile_expr(condition);
@@ -186,7 +215,7 @@ impl Compiler {
         });
         self.registers.release_to(mark);
 
-        self.compile_block(body);
+        self.compile_block(body, "body");
         self.emit(Instruction::Jump { target: top });
         self.patch_to_here(exit);
     }
@@ -205,7 +234,12 @@ impl Compiler {
             self.compile_stmt(init);
         }
 
+        // The head, after the initialiser: where every iteration starts.
         let top = self.here();
+        if let Some(name) = self.naming.point("head") {
+            self.record_site(name, SiteKind::LoopHead, Vec::new());
+        }
+        self.emit(Instruction::Safepoint);
         let exit = condition.map(|condition| {
             let mark = self.registers.mark();
             let (cond, _) = self.compile_expr(condition);
@@ -217,7 +251,7 @@ impl Compiler {
             jump
         });
 
-        self.compile_block(body);
+        self.compile_block(body, "body");
 
         if let Some(step) = step {
             let mark = self.registers.mark();
