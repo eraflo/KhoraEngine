@@ -38,6 +38,7 @@ pub use asset_ops::process_pending_spawn_mesh_asset;
 pub use history::CommandHistory;
 pub use material::process_pending_assign_material;
 pub use material::process_pending_save_as_material;
+pub use prefab::process_pending_prefab_apply;
 pub use prefab::process_pending_prefab_spawn;
 pub use prefab::process_pending_save_as_prefab;
 pub use scene::browse_and_open_project;

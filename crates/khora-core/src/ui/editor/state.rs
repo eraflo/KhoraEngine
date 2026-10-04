@@ -19,6 +19,7 @@
 //! snapshot through a shared `Arc<Mutex<EditorState>>` retrieved from the
 //! `ServiceRegistry`.
 
+use crate::asset::AssetUUID;
 use crate::ecs::entity::EntityId;
 use std::collections::HashSet;
 
@@ -247,6 +248,14 @@ pub struct EditorState {
     /// parented under it. Consumed next frame to load the recipe via the asset
     /// service and call `instantiate_subtree`.
     pub pending_prefab_spawn: Option<(String, Option<EntityId>)>,
+    /// Set when the user applies an override of the inspected entity to its
+    /// prefab: the entity and what of it is applied. Consumed next frame:
+    /// the prefab's file is rewritten through the VFS and reindexed.
+    pub pending_prefab_apply: Option<(EntityId, PrefabApplyScope)>,
+    /// An entity whose whole prefab instance is to take its prefab's values
+    /// back — every value override of every member, every component added to
+    /// or removed from one. Drained by the editor's update.
+    pub pending_prefab_revert: Option<EntityId>,
 
     // ── Material authoring workflow ─────────────────────
     /// Set when the user picks "Save Material as .kmat" on an entity that
@@ -401,6 +410,92 @@ pub struct InspectedEntity {
     /// Every component on this entity, captured as JSON. The inspector
     /// renders this list directly — no per-component hard-coding.
     pub components_json: Vec<ComponentJson>,
+    /// The prefab instance the entity belongs to, and how it differs from
+    /// its prefab — `None` for an entity that is no part of an instance.
+    pub prefab: Option<InspectedPrefab>,
+}
+
+/// An inspected entity seen against the prefab of the instance it belongs
+/// to: what it overrides there.
+#[derive(Debug, Clone)]
+pub struct InspectedPrefab {
+    /// The root of the innermost instance holding the entity.
+    pub root: EntityId,
+    /// The prefab that instance links to.
+    pub prefab: AssetUUID,
+    /// The prefab's file, relative to the project's `assets/`, where known.
+    pub prefab_path: Option<String>,
+    /// Whether the inspected entity is the instance root itself.
+    pub is_root: bool,
+    /// Each component that differs from the prefab's: added by the
+    /// instance, or with the paths of its overridden fields.
+    pub components: Vec<ComponentOverride>,
+    /// The components the prefab gives the entity and the instance removed,
+    /// by type name.
+    pub removed: Vec<String>,
+    /// The prefab's value of each component the prefab gives the entity, by
+    /// type name — what a revert writes back.
+    pub prefab_json: Vec<(String, serde_json::Value)>,
+}
+
+impl InspectedPrefab {
+    /// How many overrides the entity carries: overridden fields, added
+    /// components and removed components.
+    pub fn override_count(&self) -> usize {
+        let components: usize = self
+            .components
+            .iter()
+            .map(|component| {
+                if component.added {
+                    1
+                } else {
+                    component.fields.len()
+                }
+            })
+            .sum();
+        components + self.removed.len()
+    }
+
+    /// The overridden field paths of the component `type_name` — empty when
+    /// it overrides none.
+    pub fn fields_of(&self, type_name: &str) -> &[Vec<String>] {
+        self.components
+            .iter()
+            .find(|component| component.type_name == type_name)
+            .map_or(&[], |component| component.fields.as_slice())
+    }
+}
+
+/// One component of an instance member that differs from the prefab's.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ComponentOverride {
+    /// The component's registered type name.
+    pub type_name: String,
+    /// Whether the instance added the component: the prefab does not give
+    /// it to this member.
+    pub added: bool,
+    /// The paths of the fields whose values differ from the prefab's, from
+    /// the component's root.
+    pub fields: Vec<Vec<String>>,
+}
+
+/// What of an instance an apply-to-prefab writes into its prefab.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PrefabApplyScope {
+    /// One field of one component of the inspected entity.
+    Field {
+        /// The component's registered type name.
+        type_name: String,
+        /// Field names from the component's root.
+        path: Vec<String>,
+    },
+    /// One component of the inspected entity, whole.
+    Component {
+        /// The component's registered type name.
+        type_name: String,
+    },
+    /// Every override of the instance the entity belongs to.
+    Instance,
 }
 
 /// A property edit to apply back to the ECS world.
@@ -428,6 +523,13 @@ pub enum PropertyEdit {
     /// Remove a component from `entity`. The editor looks up the
     /// registration by `type_name` and calls `remove` to commit.
     RemoveComponent { entity: EntityId, type_name: String },
+    /// Add the component `type_name` to `entity` and set it to `value` — a
+    /// removed component brought back with the value it is to have.
+    InsertComponentJson {
+        entity: EntityId,
+        type_name: String,
+        value: serde_json::Value,
+    },
 }
 
 // ════════════════════════════════════════════════════════

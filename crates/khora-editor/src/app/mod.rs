@@ -35,7 +35,10 @@ use crate::commands::CommandHistory;
 
 use crate::input::InputState;
 use crate::ops;
-use crate::project_vfs::ProjectVfs;
+use crate::ops::prefab_overrides::{inspect_against, revert_instance};
+use crate::project_vfs::{ProjectPrefabs, ProjectVfs};
+use khora_sdk::khora_data::ecs::World;
+use khora_sdk::khora_data::scene::{instance_of, prefab_world, InstanceOf};
 
 mod engine_app;
 mod layout;
@@ -99,6 +102,9 @@ pub struct EditorApp {
     /// routes through this. `None` when the editor was launched without
     /// a project (rare; the hub always passes `--project`).
     project_vfs: Option<Arc<Mutex<ProjectVfs>>>,
+    /// The inspected entity's instance and its prefab's values, kept while
+    /// the selection and the project's files stay the same.
+    prefab_view: Option<PrefabView>,
 }
 
 impl EditorApp {
@@ -181,8 +187,18 @@ impl EditorApp {
             ops::add_component_to_entity(world, entity, &type_name);
         }
 
+        if let Some(entity) = state.pending_prefab_revert.take() {
+            revert_prefab_instance(self.project_vfs.as_deref(), world, entity, &mut state);
+        }
+
         ops::extract_scene_tree(world, &mut state);
         ops::extract_inspected(world, &mut state);
+        attach_prefab_view(
+            &mut self.prefab_view,
+            self.project_vfs.as_deref(),
+            world,
+            &mut state,
+        );
 
         if let Ok(log_entries) = self.log_handle.lock() {
             state.log_entries.clone_from(&log_entries);
@@ -239,6 +255,125 @@ impl EditorApp {
                 shell.set_status(status_copy);
             }
         }
+    }
+}
+
+/// What decides which instance an entity belongs to: the entity, the project
+/// files' generation, and its ancestors with the prefab each links to — a
+/// reparent, a root deleted or unlinked, a prefab rewritten all change it.
+#[derive(Clone, PartialEq)]
+struct ViewKey {
+    entity: EntityId,
+    generation: u64,
+    ancestry: Vec<(EntityId, Option<khora_sdk::khora_core::asset::AssetUUID>)>,
+}
+
+/// `entity` and its ancestors, each with the prefab it links to.
+fn ancestry(
+    world: &GameWorld,
+    entity: EntityId,
+) -> Vec<(EntityId, Option<khora_sdk::khora_core::asset::AssetUUID>)> {
+    let inner = world.inner_world();
+    let mut chain = Vec::new();
+    let mut current = Some(entity);
+    while let Some(at) = current {
+        if chain.iter().any(|(seen, _)| *seen == at) {
+            break;
+        }
+        let link = inner
+            .get::<khora_sdk::khora_data::ecs::PrefabInstance>(at)
+            .map(|link| link.prefab);
+        chain.push((at, link));
+        current = inner
+            .get::<khora_sdk::khora_data::ecs::Parent>(at)
+            .map(|parent| parent.0)
+            .filter(|parent| inner.contains(*parent));
+    }
+    chain
+}
+
+/// The inspected entity's instance and its prefab expanded under the
+/// instance root, for one selection under one generation of the project's
+/// files.
+struct PrefabView {
+    key: ViewKey,
+    found: Option<(InstanceOf, World)>,
+    path: Option<String>,
+}
+
+/// Sees the inspected entity against its instance's prefab, if it belongs
+/// to one. The prefab is read once per selection and per generation of
+/// the project's files; the comparison runs every frame, so an edit shows
+/// its override at once.
+fn attach_prefab_view(
+    view: &mut Option<PrefabView>,
+    project_vfs: Option<&Mutex<ProjectVfs>>,
+    world: &GameWorld,
+    state: &mut EditorState,
+) {
+    let Some(inspected) = state.inspected.as_mut() else {
+        *view = None;
+        return;
+    };
+    let Some(pvfs) = project_vfs else {
+        return;
+    };
+    let generation = pvfs.lock().map(|vfs| vfs.generation()).unwrap_or(0);
+    let key = ViewKey {
+        entity: inspected.entity,
+        generation,
+        ancestry: ancestry(world, inspected.entity),
+    };
+    if view.as_ref().map(|view| &view.key) != Some(&key) {
+        let prefabs = ProjectPrefabs(pvfs);
+        let inner = world.inner_world();
+        let found = instance_of(inner, inspected.entity, &prefabs).and_then(|instance| {
+            prefab_world(inner, &instance, &prefabs)
+                .ok()
+                .map(|scratch| (instance, scratch))
+        });
+        let path = found
+            .as_ref()
+            .and_then(|(instance, _)| pvfs.lock().ok()?.rel_path_of(instance.prefab));
+        *view = Some(PrefabView { key, found, path });
+    }
+    let Some(PrefabView {
+        found: Some((instance, scratch)),
+        path,
+        ..
+    }) = view.as_ref()
+    else {
+        return;
+    };
+    inspected.prefab = inspect_against(world.inner_world(), inspected.entity, instance, scratch)
+        .map(|mut prefab| {
+            prefab.prefab_path = path.clone();
+            prefab
+        });
+}
+
+/// Takes the instance `entity` belongs to back to its prefab's values.
+fn revert_prefab_instance(
+    project_vfs: Option<&Mutex<ProjectVfs>>,
+    world: &GameWorld,
+    entity: EntityId,
+    state: &mut EditorState,
+) {
+    let Some(pvfs) = project_vfs else {
+        return;
+    };
+    let prefabs = ProjectPrefabs(pvfs);
+    let inner = world.inner_world();
+    let Some(instance) = instance_of(inner, entity, &prefabs) else {
+        return;
+    };
+    match prefab_world(inner, &instance, &prefabs) {
+        Ok(scratch) => {
+            for edit in revert_instance(inner, &instance, &scratch) {
+                state.push_edit(edit);
+            }
+        }
+        Err(e) => log::error!("Failed to read the prefab to revert to: {e}"),
     }
 }
 

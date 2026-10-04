@@ -32,8 +32,9 @@ pub use overlay::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
 pub use panel::{EditorPanel, PanelLocation};
 pub use shell::EditorShell;
 pub use state::{
-    AssetEntry, ComponentJson, EditorMode, EditorState, EntityIcon, GizmoMode, InspectedEntity,
-    LogEntry, LogLevel, PlayMode, PropertyEdit, SceneNode, StatusBarData,
+    AssetEntry, ComponentJson, ComponentOverride, EditorMode, EditorState, EntityIcon, GizmoMode,
+    InspectedEntity, InspectedPrefab, LogEntry, LogLevel, PlayMode, PrefabApplyScope, PropertyEdit,
+    SceneNode, StatusBarData,
 };
 pub use ui_builder::{FontFamilyHint, InlineEditEvent, Interaction, TextAlign, UiBuilder};
 pub use viewport_texture::ViewportTextureHandle;

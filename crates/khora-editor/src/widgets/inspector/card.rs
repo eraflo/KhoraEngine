@@ -18,7 +18,10 @@
 //! destructive-adjacent; the resting state should read as data, not as a
 //! toolbar.
 
-use khora_sdk::editor_ui::{EditorState, Icon, PropertyEdit, UiBuilder, UiTheme};
+use khora_sdk::editor_ui::{
+    EditorState, FontFamilyHint, Icon, PrefabApplyScope, PropertyEdit, TextAlign, UiBuilder,
+    UiTheme,
+};
 use khora_sdk::prelude::ecs::EntityId;
 use khora_tool_ui::widgets::{
     self, group_header,
@@ -27,6 +30,65 @@ use khora_tool_ui::widgets::{
 };
 
 const HEADER_H: f32 = 32.0;
+
+/// How a component stands against the prefab of the instance its entity
+/// belongs to.
+pub struct CardPrefab<'a> {
+    /// How many of its fields override the prefab's.
+    pub overrides: usize,
+    /// Whether the instance added the component: the prefab does not give it.
+    pub added: bool,
+    /// The prefab's value of it, where the prefab gives it.
+    pub prefab_value: Option<&'a serde_json::Value>,
+}
+
+impl CardPrefab<'_> {
+    fn differs(&self) -> bool {
+        self.added || self.overrides > 0
+    }
+
+    /// The header's quiet note of it: `added`, or how many fields override.
+    fn note(&self) -> Option<String> {
+        if self.added {
+            Some("added".to_owned())
+        } else if self.overrides == 1 {
+            Some("1 override".to_owned())
+        } else if self.overrides > 1 {
+            Some(format!("{} overrides", self.overrides))
+        } else {
+            None
+        }
+    }
+}
+
+/// A row action on the header: a square hit-rect with its glyph, tinted on
+/// hover. Returns whether it was clicked.
+#[allow(clippy::too_many_arguments)]
+fn header_action(
+    ui: &mut dyn UiBuilder,
+    id: &str,
+    rect: [f32; 4],
+    glyph: Icon,
+    accent: [f32; 4],
+    theme: &UiTheme,
+) -> bool {
+    let hit = ui.interact_rect(id, rect);
+    if hit.hovered {
+        widgets::fill(ui, rect, tint(accent, 0.14), theme.radius_sm);
+    }
+    icon_centered(
+        ui,
+        rect,
+        glyph,
+        12.0,
+        if hit.hovered {
+            accent
+        } else {
+            theme.text_muted
+        },
+    );
+    hit.clicked
+}
 
 /// The domain a component belongs to, shown as a small right-aligned tag.
 ///
@@ -55,6 +117,7 @@ pub fn render_card(
     icon: Icon,
     enabled: Option<bool>,
     removable: bool,
+    prefab: Option<CardPrefab<'_>>,
     card_x: f32,
     card_w: f32,
     theme: &UiTheme,
@@ -77,44 +140,102 @@ pub fn render_card(
     let spec = Group::new(title, icon).open(open).category(cat);
     let head = group_header(ui, theme, header, &format!("card-hdr-{card_id}"), spec);
 
+    let tag_w = if cat.is_empty() {
+        0.0
+    } else {
+        ui.measure_text(
+            &cat.to_uppercase(),
+            theme.font_size_caption - 1.5,
+            FontFamilyHint::Monospace,
+        )[0] + 10.0
+    };
+    let mut right = card_x + card_w - 12.0 - tag_w;
+
+    // ── How it stands against the prefab ──
+    // A quiet note left of the category tag, at rest; the actions take its
+    // place on hover, so the header never holds both.
+    let differs = prefab.as_ref().is_some_and(CardPrefab::differs);
+    if !head.hovered {
+        if let Some(note) = prefab.as_ref().and_then(CardPrefab::note) {
+            let size = theme.font_size_caption - 1.5;
+            ui.paint_text_styled(
+                [right, y + (HEADER_H - size) * 0.5 - 1.0],
+                &note,
+                size,
+                theme.primary,
+                FontFamilyHint::Monospace,
+                TextAlign::Right,
+            );
+        }
+    }
+
     // ── Row actions, revealed on hover ──
     // Allocated *after* the header so their hit-rects win the click, and laid
     // out to the left of the category tag so they never sit on top of it.
     if head.hovered {
-        let tag_w = if cat.is_empty() {
-            0.0
-        } else {
-            ui.measure_text(
-                &cat.to_uppercase(),
-                theme.font_size_caption - 1.5,
-                khora_sdk::editor_ui::FontFamilyHint::Monospace,
-            )[0] + 10.0
-        };
-        let right = card_x + card_w - 12.0 - tag_w;
+        let size = 22.0;
+        let top = y + (HEADER_H - size) * 0.5;
 
         if removable {
-            let size = 22.0;
-            let rect = [right - size, y + (HEADER_H - size) * 0.5, size, size];
-            let hit = ui.interact_rect(&format!("card-rm-{card_id}"), rect);
-            if hit.hovered {
-                widgets::fill(ui, rect, tint(theme.error, 0.14), theme.radius_sm);
-            }
-            icon_centered(
+            let rect = [right - size, top, size, size];
+            right -= size + 2.0;
+            if header_action(
                 ui,
+                &format!("card-rm-{card_id}"),
                 rect,
                 Icon::Trash,
-                12.0,
-                if hit.hovered {
-                    theme.error
-                } else {
-                    theme.text_muted
-                },
-            );
-            if hit.clicked {
+                theme.error,
+                theme,
+            ) {
                 state.pending_edits.push(PropertyEdit::RemoveComponent {
                     entity,
                     type_name: title.to_string(),
                 });
+            }
+        }
+
+        if let Some(prefab) = prefab.as_ref().filter(|_| differs) {
+            let rect = [right - size, top, size, size];
+            right -= size + 2.0;
+            if header_action(
+                ui,
+                &format!("card-apply-{card_id}"),
+                rect,
+                Icon::ApplyToPrefab,
+                theme.primary,
+                theme,
+            ) {
+                state.pending_prefab_apply = Some((
+                    entity,
+                    PrefabApplyScope::Component {
+                        type_name: title.to_string(),
+                    },
+                ));
+            }
+            let rect = [right - size, top, size, size];
+            if header_action(
+                ui,
+                &format!("card-revert-{card_id}"),
+                rect,
+                Icon::Revert,
+                theme.primary,
+                theme,
+            ) {
+                // Added by the instance: reverting takes it off. Otherwise
+                // the prefab's value comes back whole.
+                match prefab.prefab_value {
+                    Some(value) if !prefab.added => {
+                        state.pending_edits.push(PropertyEdit::SetComponentJson {
+                            entity,
+                            type_name: title.to_string(),
+                            value: value.clone(),
+                        });
+                    }
+                    _ => state.pending_edits.push(PropertyEdit::RemoveComponent {
+                        entity,
+                        type_name: title.to_string(),
+                    }),
+                }
             }
         }
 

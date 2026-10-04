@@ -72,6 +72,7 @@ pub fn extract_inspected(world: &GameWorld, state: &mut EditorState) {
         entity,
         name,
         components_json,
+        prefab: None,
     });
 }
 
@@ -144,6 +145,41 @@ pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
                 }
                 if !applied {
                     log::warn!("No registration found for component '{}'", type_name);
+                }
+            }
+            PropertyEdit::InsertComponentJson {
+                entity,
+                type_name,
+                value,
+            } => {
+                // The component with this value: added first where the entity
+                // lacks it, then given the value — a revert of a removed one.
+                // The hierarchy is written by the module that owns it, both
+                // halves of the edge at once.
+                let inner = world.inner_world_mut();
+                if let Some(written) =
+                    inner.write_hierarchy_by_name(entity, &type_name, HierarchyWrite::Set(&value))
+                {
+                    if let Err(e) = written {
+                        log::warn!("Failed to apply JSON edit to {}: {}", type_name, e);
+                    }
+                    continue;
+                }
+                let Some(reg) = inventory::iter::<khora_sdk::ComponentRegistration>
+                    .into_iter()
+                    .find(|reg| reg.type_name == type_name)
+                else {
+                    log::warn!("No registration found for component '{}'", type_name);
+                    continue;
+                };
+                if (reg.to_json)(inner, entity).is_none() {
+                    if let Err(e) = (reg.create_default)(inner, entity) {
+                        log::warn!("Failed to add component {}: {}", type_name, e);
+                        continue;
+                    }
+                }
+                if let Err(e) = (reg.from_json)(inner, entity, &value) {
+                    log::warn!("Failed to apply JSON edit to {}: {}", type_name, e);
                 }
             }
         }

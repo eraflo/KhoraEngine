@@ -16,9 +16,16 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::khora_data::scene::{instantiate_prefab, serialize_prefab, NoPrefabs};
+use khora_sdk::editor_ui::{PrefabApplyScope, PropertyEdit};
+use khora_sdk::khora_data::ecs::{PrefabInstance, World};
+use khora_sdk::khora_data::scene::{
+    apply_to_prefab, instance_of, instantiate_prefab, prefab_world, serialize_prefab,
+    write_scene_file, CompactEncoding, InstanceOf, NoPrefabs, PrefabApply, PrefabSource,
+};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::{serialize_subtree, EditorState, GameWorld};
+
+use crate::ops::prefab_overrides::{json_overrides, rebound, reverted};
 
 use crate::project_vfs::{ProjectPrefabs, ProjectVfs};
 use crate::scene_io;
@@ -214,4 +221,173 @@ pub fn process_pending_prefab_spawn(
         }
         Err(e) => log::error!("Failed to instantiate prefab '{}': {:?}", rel, e),
     }
+}
+
+/// Drains [`EditorState::pending_prefab_apply`]: what of the entity's
+/// instance is applied is written into its prefab — the prefab's file
+/// rewritten through the project's VFS and reindexed — so every instance of
+/// it takes the value on its next load.
+pub fn process_pending_prefab_apply(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    world: &GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
+) {
+    let request = match editor_state.lock() {
+        Ok(mut state) => state.pending_prefab_apply.take(),
+        Err(_) => None,
+    };
+    let Some((entity, scope)) = request else {
+        return;
+    };
+    let Some(pvfs_arc) = project_vfs else {
+        log::warn!("Apply to prefab ignored: no project is open");
+        return;
+    };
+    let prefabs = ProjectPrefabs(pvfs_arc);
+    let inner = world.inner_world();
+    let Some(instance) = instance_of(inner, entity, &prefabs) else {
+        log::warn!("Apply to prefab ignored: the entity is no part of a prefab instance");
+        return;
+    };
+    let what = match scope {
+        PrefabApplyScope::Field { type_name, path } => PrefabApply::Field {
+            entity,
+            component: type_name,
+            path,
+        },
+        PrefabApplyScope::Component { type_name } => PrefabApply::Component {
+            entity,
+            component: type_name,
+        },
+        PrefabApplyScope::Instance => PrefabApply::Instance,
+    };
+    let record = match apply_to_prefab(inner, &instance, &what, &prefabs) {
+        Ok(record) => record,
+        Err(e) => {
+            log::error!("Failed to apply to the prefab: {e}");
+            return;
+        }
+    };
+    let bytes = match write_scene_file(&record, &CompactEncoding) {
+        Ok(file) => file.to_bytes(),
+        Err(e) => {
+            log::error!("Failed to write the prefab: {e}");
+            return;
+        }
+    };
+
+    // The other instances of the prefab in this world, as the prefab stood:
+    // what they did not override follows the new prefab now, not on their
+    // next load — a save in between would otherwise pin the old value as
+    // an override.
+    let others = other_instances(inner, &instance);
+    let before: Vec<_> = others
+        .iter()
+        .filter_map(|other| {
+            prefab_world(inner, other, &prefabs)
+                .ok()
+                .map(|w| (*other, w))
+        })
+        .collect();
+
+    let rel = match pvfs_arc.lock() {
+        Ok(pvfs) => pvfs.rel_path_of(instance.prefab),
+        Err(_) => {
+            log::error!("Project VFS mutex poisoned");
+            return;
+        }
+    };
+    let Some(rel) = rel else {
+        log::error!("Apply to prefab: the prefab's file is not in the project index");
+        return;
+    };
+    if let Ok(mut pvfs) = pvfs_arc.lock() {
+        write_prefab_through_vfs(&mut pvfs, &rel, &bytes);
+    }
+
+    let edits = rebased_instances(inner, &before, &prefabs);
+    if let Ok(mut state) = editor_state.lock() {
+        for edit in edits {
+            state.push_edit(edit);
+        }
+    }
+}
+
+/// Every instance of `instance`'s prefab in `world` but `instance` itself.
+fn other_instances(world: &World, instance: &InstanceOf) -> Vec<InstanceOf> {
+    world
+        .query::<(EntityId, &PrefabInstance)>()
+        .filter(|(root, link)| *root != instance.root && link.prefab == instance.prefab)
+        .map(|(root, link)| InstanceOf {
+            root,
+            prefab: link.prefab,
+        })
+        .collect()
+}
+
+/// The edits that carry each instance in `before` onto its prefab as it now
+/// is: a value the instance overrides stays the instance's; any other takes
+/// the prefab's new one.
+fn rebased_instances(
+    world: &World,
+    before: &[(InstanceOf, World)],
+    prefabs: &dyn PrefabSource,
+) -> Vec<PropertyEdit> {
+    let mut edits = Vec::new();
+    for (instance, old) in before {
+        let Ok(new) = prefab_world(world, instance, prefabs) else {
+            continue;
+        };
+        for twin in old.iter_entities() {
+            let Some(id) = old.persistent_id(twin) else {
+                continue;
+            };
+            let (Some(member), Some(now)) = (world.entity_with_id(id), new.entity_with_id(id))
+            else {
+                continue;
+            };
+            for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
+                if !reg.is_saved() || reg.type_name == "PrefabInstance" {
+                    continue;
+                }
+                let type_name = reg.type_name.to_owned();
+                let live = (reg.to_json)(world, member);
+                let was = (reg.to_json)(old, twin).map(|value| rebound(&value, old, world));
+                let is = (reg.to_json)(&new, now).map(|value| rebound(&value, &new, world));
+                match (live, was, is) {
+                    // The new prefab value, with the instance's own overrides
+                    // put back on top.
+                    (Some(live), Some(was), Some(is)) => {
+                        let rebased = json_overrides(&live, &was)
+                            .iter()
+                            .fold(is, |value, path| reverted(&value, &live, path));
+                        if rebased != live {
+                            edits.push(PropertyEdit::SetComponentJson {
+                                entity: member,
+                                type_name,
+                                value: rebased,
+                            });
+                        }
+                    }
+                    // The prefab gained it: the instance, which had it not,
+                    // gains it too.
+                    (None, None, Some(is)) => edits.push(PropertyEdit::InsertComponentJson {
+                        entity: member,
+                        type_name,
+                        value: is,
+                    }),
+                    // The prefab lost it: the instance loses it too, unless
+                    // it had made it its own.
+                    (Some(live), Some(was), None) if json_overrides(&live, &was).is_empty() => {
+                        edits.push(PropertyEdit::RemoveComponent {
+                            entity: member,
+                            type_name,
+                        })
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    edits
 }

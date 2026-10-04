@@ -200,6 +200,12 @@ impl World {
     /// to give the component an id. It gives this one: reserved once per
     /// world, never alive, never handed to a spawn, so such a reference can
     /// never come to name a live entity, however many loads make one.
+    /// The entity a reference to nothing names in this world, if a load has
+    /// made one.
+    pub fn nowhere_entity(&self) -> Option<EntityId> {
+        self.nowhere
+    }
+
     pub(crate) fn nowhere(&mut self) -> EntityId {
         if let Some(entity) = self.nowhere {
             return entity;

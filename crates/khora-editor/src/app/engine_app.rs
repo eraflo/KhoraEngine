@@ -67,6 +67,7 @@ impl EngineApp for EditorApp {
             last_frame_time: Instant::now(),
             viewport_override: khora_sdk::khora_data::render::EditorViewportOverride::new(),
             project_vfs: None,
+            prefab_view: None,
         }
     }
 
@@ -137,6 +138,11 @@ impl EngineApp for EditorApp {
             &self.editor_state,
         );
         commands::process_pending_prefab_spawn(
+            self.project_vfs.as_ref(),
+            world,
+            &self.editor_state,
+        );
+        commands::process_pending_prefab_apply(
             self.project_vfs.as_ref(),
             world,
             &self.editor_state,

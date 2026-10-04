@@ -112,6 +112,14 @@ pub enum Icon {
     Github,
     ArrowLeft,
 
+    // Prefabs
+    /// A prefab instance — four facets folded into one, the engine's mark.
+    Prefab,
+    /// Back to the prefab's value.
+    Revert,
+    /// Up into the prefab.
+    ApplyToPrefab,
+
     // Misc
     Box,
     Dot,
@@ -211,6 +219,11 @@ impl Icon {
             Self::Github => "\u{e0e9}",
             Self::ArrowLeft => "\u{e04c}",
 
+            // Prefabs
+            Self::Prefab => "\u{e2ac}",        // component
+            Self::Revert => "\u{e2a0}",        // undo-2
+            Self::ApplyToPrefab => "\u{e45e}", // arrow-up-from-line
+
             // Misc
             Self::Box => "\u{e065}",
             Self::Dot => "\u{e453}",
@@ -292,6 +305,9 @@ mod tests {
             Icon::Refresh,
             Icon::Github,
             Icon::ArrowLeft,
+            Icon::Prefab,
+            Icon::Revert,
+            Icon::ApplyToPrefab,
             Icon::Box,
             Icon::Dot,
             Icon::Circle,

@@ -24,6 +24,7 @@ pub mod asset_pane;
 pub mod card;
 pub mod display;
 pub mod header;
+mod instance_band;
 pub mod renderers;
 pub mod tabs;
 pub mod tag_chips;

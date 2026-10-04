@@ -151,6 +151,9 @@ fn icon_variants(x: &khora_core::ui::editor::icons::Icon) {
         khora_core::ui::editor::icons::Icon::Refresh => {}
         khora_core::ui::editor::icons::Icon::Github => {}
         khora_core::ui::editor::icons::Icon::ArrowLeft => {}
+        khora_core::ui::editor::icons::Icon::Prefab => {}
+        khora_core::ui::editor::icons::Icon::Revert => {}
+        khora_core::ui::editor::icons::Icon::ApplyToPrefab => {}
         khora_core::ui::editor::icons::Icon::Box => {}
         khora_core::ui::editor::icons::Icon::Dot => {}
         khora_core::ui::editor::icons::Icon::Circle => {}
@@ -231,6 +234,7 @@ fn editor_state_fields(x: &khora_core::ui::editor::state::EditorState) {
         &x.pending_save_as_prefab,
         &x.pending_save_as_prefab_at,
         &x.pending_prefab_spawn,
+        &x.pending_prefab_apply,
         &x.pending_save_as_material,
         &x.pending_assign_material,
         &x.asset_dirs,
@@ -265,7 +269,7 @@ fn gizmo_mode_variants(x: &khora_core::ui::editor::state::GizmoMode) {
 }
 
 fn inspected_entity_fields(x: &khora_core::ui::editor::state::InspectedEntity) {
-    let _ = (&x.entity, &x.name, &x.components_json);
+    let _ = (&x.entity, &x.name, &x.components_json, &x.prefab);
 }
 
 fn log_entry_fields(x: &khora_core::ui::editor::state::LogEntry) {
@@ -295,6 +299,31 @@ fn property_edit_variants(x: &khora_core::ui::editor::state::PropertyEdit) {
         khora_core::ui::editor::state::PropertyEdit::SetName(..) => {}
         khora_core::ui::editor::state::PropertyEdit::SetComponentJson { .. } => {}
         khora_core::ui::editor::state::PropertyEdit::RemoveComponent { .. } => {}
+        khora_core::ui::editor::state::PropertyEdit::InsertComponentJson { .. } => {}
+    }
+}
+
+fn inspected_prefab_fields(x: &khora_core::ui::editor::state::InspectedPrefab) {
+    let _ = (
+        &x.root,
+        &x.prefab,
+        &x.prefab_path,
+        &x.is_root,
+        &x.components,
+        &x.removed,
+        &x.prefab_json,
+    );
+}
+
+fn component_override_fields(x: &khora_core::ui::editor::state::ComponentOverride) {
+    let _ = (&x.type_name, &x.added, &x.fields);
+}
+
+fn prefab_apply_scope_variants(x: &khora_core::ui::editor::state::PrefabApplyScope) {
+    match x {
+        khora_core::ui::editor::state::PrefabApplyScope::Field { .. } => {}
+        khora_core::ui::editor::state::PrefabApplyScope::Component { .. } => {}
+        khora_core::ui::editor::state::PrefabApplyScope::Instance => {}
     }
 }
 
@@ -926,6 +955,34 @@ fn module_ui_paths_still_resolve() {
     let _ = inspected_entity_fields as fn(&khora_core::ui::editor::state::InspectedEntity);
     is_debug::<khora_core::ui::editor::state::InspectedEntity>();
     is_clone::<khora_core::ui::editor::state::InspectedEntity>();
+    let _ = type_name::<khora_core::ui::editor::state::InspectedPrefab>();
+    same_type(
+        PhantomData::<khora_core::ui::editor::InspectedPrefab>,
+        PhantomData::<khora_core::ui::editor::state::InspectedPrefab>,
+    );
+    let _ = inspected_prefab_fields as fn(&khora_core::ui::editor::state::InspectedPrefab);
+    let _ = khora_core::ui::editor::state::InspectedPrefab::override_count;
+    let _ = khora_core::ui::editor::state::InspectedPrefab::fields_of;
+    is_debug::<khora_core::ui::editor::state::InspectedPrefab>();
+    is_clone::<khora_core::ui::editor::state::InspectedPrefab>();
+    let _ = type_name::<khora_core::ui::editor::state::ComponentOverride>();
+    same_type(
+        PhantomData::<khora_core::ui::editor::ComponentOverride>,
+        PhantomData::<khora_core::ui::editor::state::ComponentOverride>,
+    );
+    let _ = component_override_fields as fn(&khora_core::ui::editor::state::ComponentOverride);
+    is_debug::<khora_core::ui::editor::state::ComponentOverride>();
+    is_clone::<khora_core::ui::editor::state::ComponentOverride>();
+    is_partial_eq::<khora_core::ui::editor::state::ComponentOverride>();
+    let _ = type_name::<khora_core::ui::editor::state::PrefabApplyScope>();
+    same_type(
+        PhantomData::<khora_core::ui::editor::PrefabApplyScope>,
+        PhantomData::<khora_core::ui::editor::state::PrefabApplyScope>,
+    );
+    let _ = prefab_apply_scope_variants as fn(&khora_core::ui::editor::state::PrefabApplyScope);
+    is_debug::<khora_core::ui::editor::state::PrefabApplyScope>();
+    is_clone::<khora_core::ui::editor::state::PrefabApplyScope>();
+    is_partial_eq::<khora_core::ui::editor::state::PrefabApplyScope>();
     let _ = type_name::<khora_core::ui::editor::state::LogEntry>();
     let _ = type_name::<khora_core::ui::editor::LogEntry>();
     same_type(

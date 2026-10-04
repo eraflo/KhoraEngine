@@ -48,6 +48,9 @@ pub struct ProjectVfs {
     /// is the sole writer: file operations freeze/rename/remove entries so an
     /// asset keeps its UUID across renames and every reference keeps resolving.
     registry: AssetIdRegistry,
+    /// Moves on every write and every reindex: what was read from the
+    /// project's files before is stale once it moves.
+    generation: std::sync::atomic::AtomicU64,
 }
 
 impl ProjectVfs {
@@ -96,7 +99,19 @@ impl ProjectVfs {
             watcher,
             file_loader,
             registry,
+            generation: std::sync::atomic::AtomicU64::new(0),
         })
+    }
+
+    /// Moves on every write and every reindex: what was read from the
+    /// project's files under another generation may be stale.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn moved_on(&self) {
+        self.generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Re-walks `<root>/assets/` and atomically swaps the VFS index. Called
@@ -108,6 +123,7 @@ impl ProjectVfs {
             .build_index_bytes()
             .context("Failed to rebuild project asset index")?;
         self.asset_service.reindex(&bytes)?;
+        self.moved_on();
         Ok(())
     }
 
@@ -125,7 +141,9 @@ impl ProjectVfs {
     /// [`Self::rebuild_index`] afterwards if the new path needs to be
     /// resolvable through the VFS in the same frame.
     pub fn write_asset(&self, rel_path: &Path, bytes: &[u8]) -> Result<()> {
-        self.file_loader.write_bytes(rel_path, bytes)
+        let written = self.file_loader.write_bytes(rel_path, bytes);
+        self.moved_on();
+        written
     }
 
     /// Returns the UUID for a relative-path-with-forward-slashes string,
@@ -364,6 +382,14 @@ impl ProjectVfs {
                     .map(|rel| rel.to_string_lossy().replace('\\', "/"))
             });
         self.resolve_uuid(existing.as_deref().unwrap_or(rel_path_fwd_slash))
+    }
+
+    /// The file of the asset known as `id`, relative to `assets/`, as the
+    /// index knows it.
+    pub fn rel_path_of(&self, id: AssetUUID) -> Option<String> {
+        let source = &self.asset_service.index().get_metadata(&id)?.source_path;
+        let rel = source.strip_prefix(&self.assets_root).unwrap_or(source);
+        Some(rel.to_string_lossy().replace('\\', "/"))
     }
 
     /// The record of the prefab known as `id`.

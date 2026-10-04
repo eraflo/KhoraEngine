@@ -20,6 +20,7 @@ use khora_sdk::GameWorld;
 
 mod hierarchy;
 mod inspect;
+pub mod prefab_overrides;
 mod scene_tree;
 mod spawn;
 

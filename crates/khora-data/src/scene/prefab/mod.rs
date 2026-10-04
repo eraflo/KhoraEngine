@@ -47,10 +47,12 @@ use super::save::{components_of, compose_reporting, delta_between, owned, Pages,
 use super::scene_record::{InstanceRecord, SceneRecord};
 use crate::ecs::{PrefabInstance, SerializablePrefabInstance, World};
 
+mod overrides;
 mod rekey;
 mod siblings;
 mod sources;
 
+pub use overrides::{apply_to_prefab, instance_of, prefab_world, InstanceOf, PrefabApply};
 use rekey::{members, moved_record, rekeyed};
 use siblings::{children_of, restore_sibling_order};
 use sources::{Except, ReadOnce};
