@@ -30,7 +30,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::script_lane::persistence;
+use crate::script_lane::resumption;
 use crate::script_lane::{Resumed, ScriptRunReport};
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::EventQueue;
@@ -490,7 +490,7 @@ impl ScriptRuntime {
                             *slot = Some(pending);
                             continue;
                         }
-                        match persistence::carry(&pending, old_program, old, &program, layout) {
+                        match resumption::carry(&pending, old_program, old, &program, layout) {
                             Ok((carried, tier)) => {
                                 if tier != ResumeTier::Exact {
                                     report.resumes.push(Resumed {

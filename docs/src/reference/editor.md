@@ -30,7 +30,7 @@ The editor application — panels, gizmos, play mode, scene I/O.
 
 `khora-editor` is a separate binary built on the SDK. It opens a project (a folder containing `.kscene` files and assets), authors scenes through ECS-aware panels, and previews them with **play mode** — a one-button switch between editing and full simulation.
 
-The editor is not a separate engine. It uses the same agents, lanes, and ECS as a shipping game — **all of them, all the time**. What Play changes is the *simulation clock* and what the panels do on top of the world.
+The editor is not a separate engine. It uses the same agents, lanes, and ECS as a shipping game. What Play changes is the *engine mode* — scripts run only while the game does — the *simulation clock*, and what the panels do on top of the world.
 
 The visual language — colors, typography, panels, voice — is documented in [Editor design system](../design/editor.md). This chapter covers the **architecture**, not the look.
 
@@ -77,59 +77,53 @@ Each mode has its own panel layout. We commit to opinionated defaults — Unity 
 
 ## 04 — Play mode
 
-```mermaid
-flowchart LR
-    A[Editor] -->|Press Play| B[Playing]
-    B -->|Press Pause| C[Paused]
-    C -->|Press Resume| B
-    C -->|Press Stop| A
-    B -->|Press Stop| A
-```
+<div class="kp-figure-frame">
+
+{{#include ../images/editor/play-modes.svg}}
+
+</div>
 
 When you press **Play**:
 
-1. The current world is serialized using `SerializationGoal::FastestLoad` (a schema-bound snapshot).
-2. The snapshot is stored in memory.
-3. The editor's `PlayMode` (UI-state) becomes `Playing`.
-4. The editor sets the engine's **simulation clock scale** to `1.0`.
+1. The current world is serialized using `SerializationGoal::FastestLoad` (a schema-bound snapshot), in memory.
+2. The editor's `PlayMode` (UI state) becomes `Playing`.
+3. The engine mode becomes `Playing`: the script agent starts, and every scripted entity arrives fresh and runs `OnSpawn`.
+4. The simulation clock scale goes to `1.0`.
 5. The play camera takes over from the editor camera.
 
-When you press **Stop**:
+**Pause** keeps the engine mode at `Playing` and sets the clock scale to `0.0`: scripts still take their turns, with a delta of zero, so nothing that counts time moves.
 
-1. The editor's `PlayMode` becomes `Editing`.
-2. The simulation clock scale goes back to `0.0`.
-3. The snapshot is deserialized into the world.
-4. The editor camera resumes.
+When you press **Stop** — from playing or paused:
 
-The snapshot uses the `FastestLoad` goal: a schema-bound snapshot, written and
-read by the same build, in memory. A component whose schema the engine cannot
-trace whole is not guarded by the snapshot's fingerprint, so a world holding one
-is saved as a compact record instead. See
-[Serialization](../concepts/serialization.md).
+1. The snapshot is restored with `replace_world`: atomic, every persistent id kept, every runtime `EntityId` fresh — the selection is cleared.
+2. The editor's `PlayMode` becomes `Editing`, the engine mode the editor's own, `Custom("editor")`, and the clock scale `0.0`.
+3. The editor camera resumes.
 
-| Aspect | Editing | Playing |
-|---|---|---|
-| Active agents | All eight | All eight — the same ones |
-| Simulation clock | `Time::scale == 0.0` — no fixed sub-steps run | `Time::scale == 1.0` |
-| Camera | Editor camera (free orbit) | Scene cameras (active ones) |
-| Input | Editor input (gizmos, selection) | Game input (player controls) |
-| ECS | Mutable — user edits directly | Snapshot-based — original world preserved |
-| Rendering | Viewport texture + gizmos + overlay | Full scene, no editor chrome |
+Stop is not a load of a game save: the next Play is a fresh start again, with `OnSpawn`, never `OnLoad`. A component whose schema the engine cannot trace whole is not guarded by the snapshot's fingerprint, so a world holding one is snapshotted as a compact record instead. See [Serialization](../concepts/serialization.md).
 
-> **`PlayMode` never leaves the editor.** It is the editor's UI state — buttons,
-> panel visibility, what the user sees. The only thing that crosses into the engine
-> is a **number**: the simulation clock's scale.
+| Aspect | Editing | Playing | Paused |
+|---|---|---|---|
+| Engine mode | `Custom("editor")` | `Playing` | `Playing` |
+| Scripts | do not run | run | run, delta `0` |
+| Other agents | all | all | all |
+| Simulation clock | `Time::scale == 0.0` — no fixed sub-steps run | `1.0` | `0.0` |
+| Camera | Editor camera (free orbit) | Scene cameras (active ones) | Scene cameras |
+| Input | Editor input (gizmos, selection) | Game input (player controls) | Game input |
+| ECS | Mutable — user edits directly | Snapshot taken — original world preserved | as Playing |
+
+> **Two things cross from the editor into the engine, both written every frame:**
+> the clock's **scale** and the **engine mode**. `PlayMode` itself — buttons,
+> panel visibility — stays in the editor.
 >
-> That is deliberate. At scale `0.0` the fixed-step accumulator never fills, so no
-> body integrates and no script timer counts down, while rendering carries on at
-> real time. A pause menu, a cutscene and a slow-motion hit all write the same
-> number, which makes the editor one caller among several rather than a case the
-> engine has to know about.
+> The scale makes the editor one caller among several: at `0.0` the fixed-step
+> accumulator never fills, so no body integrates and no script timer counts
+> down, while rendering carries on at real time — a pause menu, a cutscene and a
+> slow-motion hit write the same number.
 >
-> `EngineMode` is a separate axis the DCC reads to scope agents to a mode. The
-> mechanism exists (`DccService::register_agent_for_mode`), but **nothing uses it
-> today** — every built-in agent is registered for all modes. Earlier revisions of
-> this page described an editor/playing agent filter that was never built.
+> The mode scopes agents: the script agent is registered for `Playing` only
+> (`DccService::register_agent_for_mode`), so the editor's own mode is a world
+> nobody's gameplay runs in. A shipped game starts in its
+> `EngineApp::initial_mode` — `Playing` by default.
 
 > **Physics state is not preserved across play mode.** Velocities, contacts, and sleep state are reset on restore. The ECS components are restored exactly; the physics world rebuilds from those components.
 
@@ -141,12 +135,12 @@ The editor uses `SerializationService` for all scene operations. As of v0.4 it g
 |---|---|
 | **Open project** | `ProjectVfs::open` recursively scans `<project>/assets/`, builds the in-memory UUID index, registers all decoders, arms a filesystem watcher. The asset browser reads off the resulting VFS. |
 | **New scene** | Editor creates an empty world, ready for editing |
-| **Save scene** | Encoded with `SerializationGoal::EditorInterchange` (Recipe — compact, structured) and written via `AssetWriter` so the new file enters the VFS index immediately |
+| **Save scene** | Encoded with `SerializationGoal::EditorInterchange` (compact, records by name), prefab instances written as [links](#prefabs), and written via `AssetWriter` so the new file enters the VFS index immediately |
 | **Save scene as** | Same, with a new path. Out-of-project paths fall back to raw `std::fs` and log a warning. |
-| **Load scene** | Double-click a `.kscene` in the asset browser, or File → Open. Project-internal paths route through `AssetService::load_raw` (UUID-keyed). |
-| **Play / Stop** | World snapshot + restore via `SerializationService` with `FastestLoad` (Archetype — no human-readable round-trip needed for in-memory revert). |
+| **Load scene** | Double-click a `.kscene` in the asset browser, or File → Open. Project-internal paths route through `AssetService::load_raw` (UUID-keyed); prefab links expand from the project's prefabs. A file that cannot be loaded leaves the open scene as it was. |
+| **Play / Stop** | World snapshot + restore via `SerializationService` with `FastestLoad` — a schema-bound snapshot, in memory. |
 
-Scene files are compact-binary in development today. RON dumps for diffing are available through `SerializationGoal::HumanReadableDebug` — not yet wired to a menu, but the strategy is registered in the service.
+Scene files are compact-binary in development today. JSON text for diffing is available through `SerializationGoal::HumanReadableDebug` — not yet wired to a menu.
 
 ## 06 — Asset browser
 
@@ -163,7 +157,28 @@ The Assets panel in the bottom dock is a real file explorer over `<project>/asse
 
 Empty folders are shown, so **New Folder** produces a usable target immediately. **Delete goes to the OS recycle bin** (via the `trash` crate), so a mistaken delete is reversible from the system trash rather than lost.
 
-**Drag & drop.** Drag a tile onto a folder in the tree to **move** it (the move is mediated by the editor, so the identity registry freezes the UUID and references survive). Drag a tile into the **3D viewport** to instantiate it: a mesh spawns an entity at the drop point, a prefab instantiates its subtree, a scene loads, and a texture or material assigns to the selected entity.
+**Drag & drop.** Drag a tile onto a folder in the tree to **move** it (the move is mediated by the editor, so the identity registry freezes the UUID and references survive). Drag a tile into the **3D viewport** to instantiate it: a mesh spawns an entity at the drop point, a prefab places a linked instance, a scene loads, and a texture or material assigns to the selected entity.
+
+### Prefabs
+
+A `.kprefab` holds an entity and everything under it; an instance placed in a
+scene stays **linked** to it. See [Prefabs](../concepts/prefabs.md) for the model
+and [Work with prefabs](../how-to/work-with-prefabs.md) for the steps.
+
+| Action | How |
+|---|---|
+| Make a prefab | Scene Tree → right-click an entity → **Save as Prefab…**, or drag the entity onto an Asset Browser folder |
+| Place an instance | double-click the prefab, drag it into the viewport (at the root), or onto a Scene Tree entity (as its child) |
+| Duplicate an instance | another instance of the same prefab |
+| See overrides | the Inspector's instance band, the dot on each overriding field, the note on each card |
+| Revert | the arrow at a field's end, right-click → Revert to prefab, a card's revert icon, **Revert all** |
+| Apply | right-click → Apply to prefab, a card's apply icon, **Apply all** — every other open instance follows at once |
+
+<div class="kp-figure-frame">
+
+{{#include ../images/editor/inspector-prefab.svg}}
+
+</div>
 
 > **Rename/move only inside the editor.** The registry freeze happens because the editor mediates the file operation. Renaming or moving an asset from a shell or `git` bypasses that path — see [Troubleshoot](../how-to/troubleshoot.md#assets--vfs).
 

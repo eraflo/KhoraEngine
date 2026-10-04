@@ -173,6 +173,49 @@ ships too (see the decision-tracer answer above). What remains on the
 [Roadmap](./roadmap.md) is calibration and spatial priority volumes. See
 [GORNA](./concepts/gorna.md).
 
+### Why did my script not run in the editor?
+
+Because nobody pressed Play. Scripts run only while the game does: the script
+agent is registered for `EngineMode::Playing`, and while you edit a scene the
+editor runs its own mode, `EngineMode::Custom("editor")`. Press Play and they
+start; pause and they keep running at a delta of zero, because a paused game is
+still the game. A game launched without the editor starts in `Playing`. See
+[The frame](./concepts/the-frame.md#the-simulation-clock).
+
+### I renamed a component and my scene won't load. Why?
+
+Scenes hold components and fields **by name**, so a renamed type is, to an old
+file, a type that no longer exists — and a load refuses a type it does not know
+rather than silently dropping data. Declare the old name on the type,
+`#[component(formerly = "OldName")]`, and the scene loads again; a renamed
+field takes the same attribute on the field. If you removed the type on
+purpose, declare it retired with
+`inventory::submit! { khora_data::scene::RetiredComponent { name: "OldName" } }`
+and loads skip it. Either way the load's `LoadReport` says what it adapted. See
+[How-to: add a component](./how-to/add-a-component.md#step-4--rename-and-remove-by-declaration).
+
+### What happens to a running script when I edit it?
+
+The edited module recompiles — with every module that imports it — and replaces
+the old program only if it compiles. Live instances keep their fields, matched by
+name. A body that was part-way through, stopped by its fuel budget or at an
+`await`, is carried into the new code in tiers: unchanged if its functions did
+not change, rebuilt at the same named places if they did, or restarted from the
+start of its member. Only when none of those holds is it abandoned, and the
+behavior's `OnResumeFailed` is called with the member's name. Loading a save
+taken under an older script goes through the same tiers. See the
+[Ergon reference](./reference/ergon.md).
+
+### How do I save the player's progress?
+
+With a **game save**, not a scene: `GameWorld::save_game` writes how the running
+world differs from the scene it started from, and `load_game` puts that
+difference back on top of the scene as it is *now*. So a level you fix after
+shipping reaches every save, in every field the player's game did not change.
+Where the bytes go is up to you. See
+[Scenes and game saves](./concepts/saves.md) and the
+[SDK surface](./reference/sdk.md#saving-and-loading).
+
 ---
 
 *See also the [Glossary](./reference/glossary.md) for term definitions, and

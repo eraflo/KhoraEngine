@@ -28,7 +28,10 @@
 pub enum SerializationGoal {
     /// Prioritizes the fastest possible loading time.
     /// This is the ideal choice for production game builds where loading screens
-    /// must be minimized. Served today by the compact encoding.
+    /// must be minimized. Served by a snapshot: positional, bound to the
+    /// schema of the build that wrote it, and read only by that schema — a
+    /// world holding a component whose schema cannot be fingerprinted is
+    /// written as a compact record instead.
     FastestLoad,
 
     /// Prioritizes the smallest possible file size on disk.

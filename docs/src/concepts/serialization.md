@@ -1,11 +1,15 @@
 # Serialization
 
-Saving and loading scenes as **records**: what a save holds, by name, in the shape
-of the world's pages. This page explains *why* a save is shaped that way and how
-the engine picks an encoding for it. It is an explanation, not a recipe — for the
-steps to save and load a scene, see
+Saving and loading scenes as **records**: what a file holds, by name, in the
+shape of the world's pages. This page explains *why* a file is shaped that way,
+what happens when it was written by older code, and how the engine picks an
+encoding for it. It is an explanation, not a recipe — for the steps, see
 [How-to: save and load scenes](../how-to/save-and-load-scenes.md); for the bytes,
 see [File formats](../reference/formats.md).
+
+Two pages build on this one: [Scenes and game saves](./saves.md) — a save is the
+game's difference from its scene — and [Prefabs](./prefabs.md) — an instance is a
+link and its difference from the prefab.
 
 ---
 
@@ -45,7 +49,8 @@ differs:
 - a field the code no longer has is dropped;
 - a field, variant or component renamed in code is found under the old name its
   type lists as `formerly`;
-- a number is widened when that loses nothing — never narrowed;
+- a number is read at another width when that loses nothing — widened, or
+  narrowed only when the value fits exactly;
 - a reference to an entity the save does not hold is cut.
 
 ```mermaid
@@ -65,7 +70,25 @@ flowchart TD
 
 None of that is an error, and none of it is silent: every adaptation is an entry in
 the **load report** the caller receives, naming the entity, the component and the
-field. What *is* an error is a component name nothing registers — a save holding
+field.
+
+<div class="kp-figure-frame">
+
+{{#include ../images/persistence/load-report.svg}}
+
+</div>
+
+| Report entry | Means |
+|---|---|
+| `Renamed { from }` | the save used an older name, listed in `formerly` |
+| `Defaulted` | the save predates the field; it took its default |
+| `Dropped` | the code no longer has the field; its value is gone |
+| `Widened` | a number read at another width, without loss |
+| `Retired` | a component type declared retired; skipped |
+| `NotSaved` | a component the engine derives or keeps while running; skipped, rebuilt |
+| `DeadReference` | a reference to an entity the file does not hold |
+| `RemovedFromScene` | a game save changed an entity its scene no longer has |
+ What *is* an error is a component name nothing registers — a save holding
 data the engine cannot place is refused, not trimmed. A component removed on
 purpose is declared **retired**; a save holding it loads, skips it and says so.
 So is a component the engine derives: a save holding one — written by a tool, or
@@ -90,8 +113,11 @@ disk.
 </div>
 
 Entities are referenced by **persistent id**, not by their runtime index. An
-authored entity's id is random and scene-scoped; any other entity draws from the
-*created* namespace — and only when something needs its identity: a save, a lookup.
+authored entity's id is random and scene-scoped; an entity inside a prefab
+instance has an id derived from the instance's root and its own id in the prefab
+(see [Prefabs](./prefabs.md#identity-inside-an-instance)); any other entity draws
+from the *created* namespace — and only when something needs its identity: a
+save, a lookup.
 Spawning and despawning entities nobody saves costs no identity work at all. A
 reference inside a component — a `Parent`, a target —
 is saved as the persistent id it names, and loading binds it back to the entity
@@ -107,6 +133,7 @@ that id now belongs to.
 |---|---|---|
 | What it is | an index and a generation into the entity store | 64 bits; the top bit says which namespace |
 | Authored entity | changes on every load | random 63 bits, chosen once, kept by every save |
+| Inside a prefab instance | changes on every load | derived: `within(instance root, id in the prefab)` |
 | Created at runtime | changes on every load | the next free number in the *created* namespace, given the first time it is needed |
 | In a save | never | every row and every entity reference |
 
@@ -115,14 +142,24 @@ subtree — loads as a reference to **nowhere**: one entity id per world, reserv
 once, never alive and never handed to a spawn, so such a reference can never come to
 name a live entity. The report says where each one was.
 
-Only what was **authored** is saved. A component's provenance says whether it was
-authored, tool-authored, derived or runtime state; derived values such as
-`Children` or a global transform, and runtime state, are rebuilt on load rather
-than stored.
+A component's **provenance** decides where it is written:
+
+| Provenance | In a scene | In a game save | Examples |
+|---|---|---|---|
+| `Authored` | yes | when the game changed it | `Transform`, `Name`, `Script` |
+| `ToolAuthored` | yes | when the game changed it | `Parent`, `PrefabInstance` |
+| `Derived` | no — rebuilt on load | no | `Children`, a global transform |
+| `Runtime` | no | only if `resumable` | `ScriptState` (resumable) |
+
+Derived values and plain runtime state are rebuilt rather than stored; a
+resumable component is what a [game save](./saves.md#what-a-save-keeps-that-a-scene-never-does)
+needs to resume a game instead of restarting it.
 
 ## Atomic loading
 
-Loading is two steps. **Prepare** reads the whole record: it checks names, shapes
+Loading is two steps — after a first one for scenes that link to prefabs, which
+are [expanded](./prefabs.md) from the prefabs as they are now. **Prepare** reads
+the whole record: it checks names, shapes
 and references, reserves the entities, and stages every value — touching nothing
 the world shows. **Commit** then places the staged rows. A file that fails at any
 point of the first step leaves the world exactly as it was, and the caller gets the
@@ -185,13 +222,26 @@ project keeps is a record.
 
 Scene save and load is a **service**, not an agent — there are no per-frame
 strategies to negotiate, so it sits on the same side of the line as asset loading.
-`SerializationService` exposes `save_world` (take a goal, produce a scene file),
-`load_world` (bring a scene in beside what is there) and `replace_world` (swap the
-world's contents for the scene's). Each load returns its report.
 
-Every scene file is a fixed header — a magic number, the format version, the
-encoding id, the payload length — followed by the payload. The header is what makes
-loading symmetric: the caller never says how a file was written.
+| Call | Does |
+|---|---|
+| `save_world(world, goal)` | writes the world as a scene file, prefab instances as links |
+| `load_world(file, world)` | brings a scene in beside what is there |
+| `replace_world(file, world)` | swaps the world's contents for the scene's — atomically |
+| `save_game(world, base_id, base, goal)` | writes how the running game differs from its scene |
+| `load_game(world, save, base)` | the scene as it is now, with the save merged on top |
+| `save_base(save)` | which scene a save was taken against |
+
+A service made with `SerializationService::with_prefabs(source)` reads the
+prefabs a scene links to; one made with `new()` reads none and refuses a scene
+that links to a prefab. The `*_with` variants take a prefab source per call.
+Every load returns its report.
+
+Every file is a fixed header — a magic number (`KHORASCN` for a scene, `KHORASAV`
+for a game save), the format version, the encoding id, the payload length —
+followed by the payload. The header is what makes loading symmetric: the caller
+never says how a file was written, and a save handed to the scene loader is
+refused for what it is.
 
 ## How components serialize
 
@@ -207,8 +257,10 @@ with `#[component(formerly = "old_name")]`.
 
 Pressing Play snapshots the world; pressing Stop restores it. The snapshot is a
 `save_world` into memory under `FastestLoad` — the same build writes and reads it,
-so the positional form is safe — and the restore a `replace_world`: atomic, with
-every identity kept, so references a script holds land on the restored entities.
+so the positional form is safe — and the restore a `replace_world`: atomic, every
+persistent id kept, every runtime `EntityId` fresh (so the editor clears its
+selection). Stop is a fresh start, not a restored game: scripts run `OnSpawn`
+again on the next Play, never `OnLoad`.
 
 One honest caveat: **physics state is not preserved** across a snapshot. On restore,
 the physics engine rebuilds from component data, so velocities and contacts reset to
@@ -218,6 +270,9 @@ defaults.
 
 - [How-to: save and load scenes](../how-to/save-and-load-scenes.md) — save with a
   goal and load a scene with the real service API.
+- [Scenes and game saves](./saves.md) — the game's difference from its scene,
+  and the three-way merge that loads it.
+- [Prefabs](./prefabs.md) — links, overrides, derived ids.
 - [File formats](../reference/formats.md) — the header, the record, the encodings.
 - [Data and the ECS](./ecs.md) — pages, and the component model the mirror is
   generated from.

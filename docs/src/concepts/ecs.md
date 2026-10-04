@@ -58,6 +58,16 @@ generation is what makes stale handles safe: when an entity is despawned and its
 slot is reused, the generation increments, so an old handle silently fails its
 lookups instead of pointing at whatever now lives in that slot.
 
+An `EntityId` therefore means nothing once its world is gone. What a save knows an
+entity by is its **`PersistentId`** (`khora_core::ecs::PersistentId`), which the
+`World` keeps beside each live entity — not as a component, so no query ever sees
+it. Two namespaces share its 64 bits: *authored* ids, drawn at random when the
+editor creates an entity, so two people adding entities on two branches do not
+collide; and *created* ids, numbered by the world for entities the game or code
+spawns, assigned only the first time something needs one. `World::persistent_id`
+and `World::entity_with_id` translate between the two. How a scene is written down
+by these ids is the subject of [Serialization](./serialization.md).
+
 **Components** are plain data tagged with `#[derive(Component)]`. The derive is
 where a lot of the ergonomics live — it generates the serialization mirror and its
 `From` conversions, and self-registers the type (via `inventory`) so `World::new`
@@ -66,6 +76,21 @@ the macro generates a mirror at all: maintaining two structs by hand (the live
 type and its serialized form) was a recurring source of drift, and runtime
 reflection would cost allocation on the hot path. The macro is the statically
 checked middle path.
+
+The same derive carries what saving needs to know about the type, as attributes:
+
+- `provenance = …` says who writes the component (`Authored` by default,
+  `ToolAuthored`, `Derived`, `Runtime`). Only authored and tool-authored
+  components go into a scene; derived and runtime state never does.
+- `resumable` marks runtime state a **game save** keeps anyway, because play
+  cannot resume without it — `ScriptState`, the observed state of a running
+  behavior, is the one such component today.
+- `formerly = "OldName"` — on the type or on a field — lets a save written under
+  an older name still load, read as today's name and reported as renamed.
+
+What these change on disk, and why a removed type has to be declared retired, is
+covered in [Serialization](./serialization.md) and
+[How-to: add a component](../how-to/add-a-component.md).
 
 **Pages** are the heart of it. Components are grouped by archetype — the exact set
 of component types an entity has — and each archetype's data lives in one or more

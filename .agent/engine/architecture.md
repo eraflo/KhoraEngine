@@ -95,13 +95,13 @@ Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`,
 |---|---|---|
 | `khora-core` | Foundation | Traits (`Lane`, `Agent`, `RenderSystem`, `PhysicsProvider`, `AudioDevice`, `LayoutSystem`, `Asset`, VFS), math (`Vec2/3/4`, `Mat3/4`, `Quaternion`, `Aabb`, `LinearRgba`, `simd`), GORNA types, error hierarchy, `ServiceRegistry`, `EngineContext`, the memory counters. |
 | `khora-macros` | Foundation | `#[derive(Component)]` proc macro. Path crate (not a workspace member). |
-| `khora-data` | Data | CRPECS ECS (`World`, storage, query, `SemanticDomain`), SoA/AGDF layout (`LayoutAdvisor`, `Ucb1`), `Assets<T>`, UI components, scene definitions, Flows, `EcsMaintenance`. |
+| `khora-data` | Data | CRPECS ECS (`World`, storage, query, `SemanticDomain`, `ComponentProvenance`), SoA/AGDF layout (`LayoutAdvisor`, `Ucb1`), `Assets<T>`, UI components, Flows, `EcsMaintenance`, and **persistence** (`scene/`: `SceneRecord`, encodings text/compact/msgpack, schema-bound snapshot, prefab links, game `SaveRecord`, atomic `apply`, `LoadReport`). |
 | `khora-control` | Control | `DccService` (agent lifecycle), `GornaArbitrator` (budget fitting + replay), cost model, PID budget, Substrate dispatcher, situational `Context` (thermal/battery/phase). |
 | `khora-telemetry` | Infra | `TelemetryService`, `MetricsRegistry`, `MonitorRegistry`, telemetry event storage. |
-| `khora-lanes` | Lanes | Render (Unlit, LitForward, Forward+, StandardPbr, Shadow, Overlay: Grid/Emissive/Wireframe/Gizmo, UI), Physics (Standard, CCD), Audio (SpatialMixing, SourceUpdate), UI (StandardUi, TaffyLayout), Script (Budgeted). |
+| `khora-lanes` | Lanes | Render (Unlit, LitForward, Forward+, StandardPbr, Shadow, Overlay: Grid/Wireframe/Gizmo, Skybox, UI), Physics (Standard, CCD), Audio (SpatialMixing, SourceUpdate), UI (StandardUi, TaffyLayout), Script (Budgeted). |
 | `khora-infra` | Infra | Default backends: `WgpuRenderSystem`/`WgpuDevice`, `WinitWindow` + input, Rapier3D physics, CPAL audio, Taffy layout, GPU/Memory/Vram monitors, `SaaTrackingAllocator`, `DefaultMixBus`. Each implements a `khora-core` trait and is swappable. |
-| `khora-io` | Data | `AssetService`, `SerializationService`, VFS, `AssetIo`, `PackLoader`/`FileLoader`, decoders (glTF, OBJ, Symphonia audio, texture, font). |
-| `khora-agents` | Agents | `RenderAgent`, `ShadowAgent`, `OverlayAgent`, `PhysicsAgent`, `UiAgent`, `AudioAgent` + `PhysicsQueryService`. |
+| `khora-io` | Data | `AssetService`, `SerializationService` (scene save/load, game `save_game`/`load_game`, `AssetPrefabs`), VFS, `AssetIo`, `PackLoader`/`FileLoader`, decoders (glTF, OBJ, Symphonia audio, texture, font). |
+| `khora-agents` | Agents | `RenderAgent`, `ShadowAgent`, `OverlayAgent`, `SkyboxAgent`, `PhysicsAgent`, `UiAgent`, `AudioAgent`, `ScriptAgent` + `PhysicsQueryService`. |
 | `khora-sdk` | Public API | `EngineCore` + `run_winit` entry, `GameWorld` (safe ECS façade), `EngineApp`/`AgentProvider`/`PhaseProvider` traits, `WindowConfig`, `Vessel` + `spawn_plane`/`spawn_cube_at`/`spawn_sphere`, `prelude`. **The only crate game devs import.** |
 | `khora-editor` | Application | Editor app on the SDK — panels, gizmos, dock, hot-reload, command palette. |
 | `khora-runtime` | Application | Generic player binary stamped with packed assets; boots via `khora_sdk::run_default`. |
@@ -126,9 +126,11 @@ Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`,
 
 ## 5 — Standard components
 
-`Transform`, `GlobalTransform`, `Camera`, `Light`, `MaterialComponent`, `RigidBody`, `Collider`,
-`AudioSource`, `AudioListener`, `Parent`/`Children`, `Name`, `Tag`, `HandleComponent<T>`, and the UI
-set (`UiTransform`, `UiColor`, `UiText`, `UiImage`, `UiBorder`). Each carries a `SemanticDomain`.
+`Transform`, `GlobalTransform`, `Camera`, `Light`, `MeshRef`, `MaterialRef`, `RigidBody`, `Collider`,
+`AudioSource`, `AudioListener`, `Parent`/`Children`, `Name`, `Tag`, `PrefabInstance` (instance root →
+prefab link, `ToolAuthored`), `Script` (behaviors), `ScriptState` (`Runtime` + `resumable` — kept by game
+saves, never by scenes), `HandleComponent<T>`, and the UI set (`UiTransform`, `UiColor`, `UiText`,
+`UiImage`, `UiBorder`). Each carries a `SemanticDomain` and a `ComponentProvenance`.
 
 ## 6 — Critical file locations
 
@@ -140,13 +142,14 @@ set (`UiTransform`, `UiColor`, `UiText`, `UiImage`, `UiBorder`). Each carries a 
 | ECS (CRPECS) / layout learner | `crates/khora-data/src/ecs/` (`world/`, `storage.rs`, `soa.rs`, `layout/`) |
 | Components / registrations | `crates/khora-data/src/ecs/components/` |
 | Flows / DataSystems | `crates/khora-data/src/flow/`, `crates/khora-data/src/ecs/systems/` |
+| Persistence | `crates/khora-data/src/scene/` (`record/`, `encoding/`, `snapshot/`, `prefab/`, `save.rs`, `apply.rs`, `capture.rs`, `file.rs`, `retired.rs`), `crates/khora-core/src/ecs/persistent_id.rs`, `crates/khora-io/src/serialization.rs` |
 | DCC / GORNA / cost / PID | `crates/khora-control/src/dcc_service/`, `gorna/`, `cost_model.rs`; PID `crates/khora-control/src/pid.rs` |
 | Substrate dispatcher | `crates/khora-control/src/substrate/` |
 | Render lanes / shaders | `crates/khora-lanes/src/render_lane/`; shaders in `crates/khora-infra/src/graphics/shader/shaders/` (`pipelines/`, `lib/`), composed by `graphics/wgpu/pipeline_system/mod.rs` |
 | Shadow / overlay / skybox / ui / physics / audio / script lanes | `crates/khora-lanes/src/{shadow_lane,overlay_lane,skybox_lane,ui_lane,physics_lane,audio_lane,script_lane}/` — one folder per agent |
 | wgpu backend | `crates/khora-infra/src/graphics/wgpu/` (`system/`, `device/`) |
 | Rapier / CPAL / Taffy | `crates/khora-infra/src/{physics/rapier,audio/cpal,ui/taffy}/` |
-| Agents | `crates/khora-agents/src/{render,shadow,overlay,physics,ui,audio}_agent/` |
+| Agents | `crates/khora-agents/src/{render,shadow,overlay,skybox,physics,ui,audio,script}_agent/` |
 | SDK entry / GameWorld / Vessel | `crates/khora-sdk/src/lib.rs`, `game_world.rs`, `vessel.rs` |
 | Sandbox app | `examples/sandbox/src/` (`game.rs`, `player.rs`, `assets.rs`) |
 
@@ -158,13 +161,23 @@ run_winit::<W, MyApp>(bootstrap)    ← entry point
   └─ window opened
   └─ bootstrap(window, runtime, _)  ← user registers backends into runtime.backends/resources
   └─ MyApp::new()                   ← simple constructor, no context
-  └─ engine init                    ← default services + DCC + agents registered
+  └─ engine init                    ← default services, SharedEngineMode = app.initial_mode(),
+                                       DCC + agents registered (ScriptAgent for Playing only)
+  └─ GameWorld::set_prefabs(…)      ← when an AssetService is present (AssetPrefabs)
   └─ MyApp::setup(world, runtime)   ← cache services, spawn entities
 Per frame:
   app.update(world, inputs)         ← user game logic
   world maintenance (DataSystems)   ← ECS GC, transform propagation, provider sync
-  scheduler.run_frame()             ← Substrate Pass + agents dispatch lanes
+  scheduler.run_frame()             ← reads SharedEngineMode ONCE, then Substrate Pass + agents
 ```
+
+**Engine mode.** `EngineApp::initial_mode()` (default `EngineMode::Playing`) seeds the
+`SharedEngineMode` resource at bootstrap (`khora-sdk/src/engine/bootstrap.rs`). The scheduler reads it
+once per frame (`khora-control/src/scheduler/frame.rs`), so flows and agents agree on the frame's mode;
+the frame loop forwards changes to the DCC as `TelemetryEvent::ModeChange`. Agents registered with
+`register_agent_for_mode` run only in their modes. The editor writes the mode before the agents
+(`drive_engine_mode`, `khora-editor/src/app/mod.rs`): `PlayMode::Editing → EngineMode::Custom("editor")`,
+`Playing`/`Paused → EngineMode::Playing` — so no script runs while a scene is being edited.
 
 App implements `EngineApp + AgentProvider + PhaseProvider` (composite SDK trait). Detail in
 [`../../docs/src/concepts/the-frame.md`](../../docs/src/concepts/the-frame.md).
@@ -187,10 +200,12 @@ pub trait Agent: Send + Sync {
 |---|---|---|
 | `RenderAgent` | Render | Unlit / LitForward / Forward+ / StandardPbr |
 | `ShadowAgent` | Shadow | Standard (2048² + 512² cube, ≈88 MiB) / Medium (1024² + 256², ≈22 MiB) / LowRes (512² + 128², ≈5.5 MiB) — HighPerformance/Balanced/LowPower |
-| `OverlayAgent` | Render | parallel post-render lanes: Grid → Emissive → Wireframe → Gizmo |
+| `OverlayAgent` | Render | parallel post-render lanes: Grid → Wireframe → Gizmo |
+| `SkyboxAgent` | Render | environment background (`Skybox` lane) |
 | `PhysicsAgent` | Physics | Standard / Simplified |
 | `UiAgent` | Ui | Layout + Render (editor mode) |
 | `AudioAgent` | Audio | source count / quality |
+| `ScriptAgent` | Script | `Budgeted` lane; LowPower / Balanced / HighPerformance fuel — registered for `EngineMode::Playing` only |
 
 WGSL composition: the `.wgsl` files live in `khora-infra/src/graphics/shader/shaders/`
 (`pipelines/` entry points, `lib/` reusable modules) and are embedded with `include_str!`.

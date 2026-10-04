@@ -6,9 +6,45 @@ Deep history lives in git and `docs/plans/`.
 ## Current state
 - **Branch**: `dev`
 - **Build**: clean (all crates compile, 0 errors); clippy 0 errors.
-- **Tests**: ~866 passing, ~29 ignored, 0 failures. Treat the live `cargo test --workspace` count as truth.
+- **Tests**: ~2520 workspace tests, 0 failures. Treat the live `cargo test --workspace` count as truth.
 
-## Latest work (2026-07-31, suite 4) — Phase 4 (partielle) : fonctionnalités mortes
+## Latest work (2026-10-04) — Persistence redesign (phases 1–8) + Ergon resume tiers
+Commits `4df3d77`…`42434eb` on `dev`. Detail: `reference/ecs-data.md` §Persistence, `reference/scripting.md`.
+- **Records by name** (`khora-data/src/scene/`): a world is a page-shaped `SceneRecord` — components by
+  registered name, fields by name, entities by `PersistentId` (`khora-core/src/ecs/persistent_id.rs`:
+  authored random / created numbered / `within(root, inner)` for prefab members). Encodings by goal:
+  `KH_TEXT_V2`, `KH_COMPACT_V2`, `KH_MSGPACK_V2`; `FastestLoad` = positional snapshot `KH_SNAPSHOT_V1`
+  bound to schema fingerprints (same-build cache, never the only copy).
+- **Atomic load**: `prepare` → `Prepared::commit` / `abandon`; failure leaves the world untouched;
+  `LoadReport` lists every adaptation (`ReportKind`). Unknown component → whole load fails; renames via
+  `#[component(formerly = "…")]`, removals via `RetiredComponent`.
+- **v1 readers removed** (`2daeeb9`) after the one-time `xtask assets upgrade-scenes` ran (`f39cd84`, since
+  deleted); old files → `SceneFileReadError::OldFormat`. `SCENE_FORMAT_VERSION` = 2.
+- **Authored scene vs observed save**: `SaveRecord` = differences from a base scene (`changes` + `before`,
+  `created`, `destroyed`, removed components, `order`), loaded by a three-way merge onto the scene as it is
+  now. `GameWorld::{save_game, load_game, set_prefabs}`; `SerializationService::{save_game, load_game}`.
+  Provenance decides scene content; `#[component(resumable)]` adds `Runtime` state to game saves
+  (`ScriptState`).
+- **Scripts only while Playing**: `ScriptAgent` registered via `register_agent_for_mode(…, [Playing])`,
+  `ScriptFlow` gated on `EngineMode::runs_gameplay()`; editor maps Editing → `Custom("editor")`,
+  Playing/Paused → `Playing`; `EngineApp::initial_mode()` seeds `SharedEngineMode`, read once per frame
+  by the scheduler. `InstanceLifecycle` recorded in the save; `OnLoad` fires only on a save restore.
+- **Prefab links**: `PrefabInstance { prefab }` on the root (`ToolAuthored`); records keep instances as
+  `InstanceRecord { root, prefab, delta }` (collapse on save, expand on load — a prefab edit reaches
+  every non-overridden field). Needs a `PrefabSource` (`AssetPrefabs`). `.kprefab` = compact scene file.
+- **Inspector overrides**: `InspectedPrefab` / `ComponentOverride` / `PrefabApplyScope`; revert in
+  `khora-editor/src/ops/prefab_overrides/`, apply via `apply_to_prefab`. Root translation/rotation and
+  the link are never overrides.
+- **Ergon resume tiers** (`khora-script/src/vm/resume.rs`): Exact → Unchanged → Rebuilt (same named
+  sites) → Restarted (same parameters, original arguments) → Abandoned (`OnResumeFailed(string member)`).
+  Sites named from source structure (`bytecode/sites.rs`, keys in `keys.rs`); function fingerprints
+  normalized by name (`fingerprint.rs`); `FrozenMachine` names functions/literals. Conformance suite:
+  `khora-script/tests/it/conformance.rs`.
+- Known doc drift in code (not fixed here): the rustdoc on `ComponentProvenance`
+  (`component_registry.rs:98-100`) still says persistence is governed by `no_serializable`/`skip`;
+  persistence is now `ComponentRegistration::is_saved` = provenance `Authored | ToolAuthored`.
+
+## Earlier work (2026-07-31, suite 4) — Phase 4 (partielle) : fonctionnalités mortes
 - **C4 — pliage de la hiérarchie** : chevron interactif (`ChevronRight`/`ChevronDown`), récursion
   stoppée sur nœud replié, `count_visible_nodes` pour l'étendue de scroll. L'état est stocké comme
   l'**exception** (`collapsed`, pas `expanded`) : une scène chargée s'affiche entière et un enfant
@@ -154,27 +190,23 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la cl�
   scrolle (`scroll_area` a zéro appelant), `Interaction` n'a pas de `focused` et `UiBuilder` aucune
   API clavier, `last_response` non renseigné par les champs de saisie (⇒ `Entrée`/`Échap` morts dans
   la palette), 22 des 33 widgets de `khora-tool-ui` sans appelant.
-- **`ComponentProvenance` (nouvel axe, `khora-data/src/ecs/registry.rs`)** — orthogonal à
+- **`ComponentProvenance` (nouvel axe, `khora-data/src/ecs/component_registry.rs`)** — orthogonal à
   `SemanticDomain` : celui-ci dit *qui consomme* la donnée, la provenance dit *qui a le droit de
   l'écrire*. 4 variantes encodant deux bits (offert à l'auteur / copié à la duplication) :
-  `Authored` (défaut) · `ToolAuthored` (`Prefab`, `Parent`) · `Derived` (`GlobalTransform`,
+  `Authored` (défaut) · `ToolAuthored` (`PrefabInstance`, `Parent`) · `Derived` (`GlobalTransform`,
   `Children`) · `Runtime` (`PhysicsDebugData`). Déclaré via `#[component(provenance = …)]`.
   Remplace quatre encodages ad hoc concurrents (`no_serializable`, `#[component(skip)]`,
   `INHERENT_COMPONENTS`, la liste en dur de `duplicate_entity`).
-- **`serialize_all_components` filtre désormais sur la provenance**, et les **4 chemins de
-  sérialisation** (subtree/prefab, recipe monde, messagepack, definition) passent par lui — ils
-  itéraient l'inventaire en direct. Conséquence corrigée : les `.kprefab` et les scènes
-  embarquaient `Children`/`GlobalTransform` avec les **EntityId de la source**.
-- **`link_parent_child`** (`scene/registry.rs`) : les 3 gestionnaires `SceneCommand::SetParent`
-  n'ajoutaient que `Parent` ; l'index inverse `Children` venait du composant sérialisé (donc faux).
-  Ils maintiennent maintenant les deux côtés, comme `GameWorld::set_parent`.
+- *(Superseded 2026-10: `serialize_all_components`, the recipe/definition paths and
+  `link_parent_child` are gone — scenes are records now, `ComponentRegistration::is_saved` filters by
+  provenance, and the hierarchy is rebuilt from `Parent` on load.)*
 - **`duplicate_entity` réécrit** (`khora-editor/src/ops.rs`) : passe par le round-trip
   `serialize_subtree`/`instantiate_subtree` au lieu d'une liste de 8 composants en dur. Corrige la
   perte de `Tag`, des composants utilisateur, du `Parent` et de tout le sous-arbre. 2 tests de
   régression.
 - **« + Add Component » / cartes Inspector** : filtrage via `is_author_facing` (provenance + domaine
   `Ui` masqué hors workspace Canvas) au lieu de la liste de chaînes `INHERENT_COMPONENTS`.
-  Vérifié à l'écran : les buckets `UI` et `Other` (où vivait `Prefab`) ont disparu.
+  Vérifié à l'écran : les buckets `UI` et `Other` (où vivait `Prefab`, aujourd'hui `PrefabInstance`) ont disparu.
 - **Bug de macro corrigé** (`khora-macros`) : `parse_nested_meta` avortait sur la première clé
   `key = value` non consommée et l'erreur était avalée par `let _ =`, donc une seconde clé n'était
   jamais lue. Les parseurs `domain`/`provenance` sont fusionnés en une passe et `no_serializable`
@@ -210,7 +242,7 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la cl�
   always `new_v5(rel_path)`; now that's only the *default*. `<project>/.khora/asset-registry.ron` (RON, one
   `(uuid, path)` per line, sorted by UUID, atomic write) can **freeze** an identity. **Lazy freeze**: no entry ⇒
   `new_v5(path)` (old projects/tests unaffected); a rename/move freezes the *current* UUID so references
-  (`MeshRef::Asset`/`MaterialRef`/texture slots — stored as raw UUID bytes) never break, on disk or in the open
+  (`MeshRef::Asset`/`MaterialRef`/texture slots — stored as the serde newtype `khora.AssetUUID`) never break, on disk or in the open
   scene, with zero rewriting. Read side is engine (`IndexBuilder::with_registry`, `PackBuilder` both resolve
   through it ⇒ dev/release parity); **only the editor writes** it (`ProjectVfs`). Registry lives at project root
   (outside `assets/`) ⇒ never scanned/watched/packed.
@@ -267,9 +299,8 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la cl�
 - **Bugfix — 5-bind-group Forward+ pipeline**: F+ briefly used 5 groups; `max_bind_groups == 4` made the
   pipeline invalid (scene stopped rendering). Fixed by the canonical 4-bind-group convention
   (`conventions.md §10`): group 3 = whole lighting domain.
-- Remaining render-lane TODOs (no separate tracking doc — read the in-code `// TODO`s): Emissive/Wireframe
-  `execute` draw bodies (`emissive_lane.rs`, `wireframe_lane.rs`), LitForward CLAD refactor, GORNA `Custom`
-  strategy support.
+- Remaining render-lane TODOs (no separate tracking doc — read the in-code `// TODO`s): LitForward CLAD
+  refactor, GORNA `Custom` strategy support. (Wireframe draw landed; Emissive lane deleted.)
 
 ## Earlier milestones (condensed; see git history)
 - **Substrate / Flow / AGDF refactor**: `LaneBus`/`OutputDeck`/`TickPhase`/`DataSystemRegistration`;
@@ -282,9 +313,8 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la cl�
   extract/instantiate (`.kprefab`), drag-and-drop reparenting, Save-As goal picker.
 
 ## Open / deferred work (verified against code, 2026-06-04)
-- **`EmissiveLane` / `WireframeLane` `execute` are no-ops** — pipelines compose at init but the draw bodies
-  are TODO (`emissive_lane.rs`, `wireframe_lane.rs`) pending gating data (`MaterialKind::Emissive`
-  flag / a debug flag).
+- *(Resolved: `WireframeLane` draws — `overlay_lane/wireframe.rs`; `EmissiveLane` was deleted, emissive is
+  shaded in the lit lanes.)*
 - **Minor TODOs**: GPU VRAM capacity detection + dynamic adapter name (`wgpu/device/mod.rs`), GPU timestamp
   writes (`wgpu/command.rs`), Taffy uses a hardcoded 1920px viewport width (`ui/taffy/taffy_layout.rs`).
 
@@ -296,6 +326,5 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la cl�
 > + the `physics_world_writeback` DataSystem.
 
 ## Architecture decisions
-See [`decisions.md`](./decisions.md). Crate count is **16 workspace members** (13 `khora-*` + sandbox
-+ xtask + hub, plus `khora-macros` as a non-member path crate);
-older notes saying 11/12 were stale and omitted `khora-runtime`.
+See [`decisions.md`](./decisions.md). Crate count is **16 workspace members** (14 `khora-*` + sandbox
++ xtask), plus `khora-macros` as a non-member path crate.

@@ -51,6 +51,9 @@ fn main() -> anyhow::Result<()> {
 - `new()` → simple constructor, **no engine context yet**.
 - `setup(world, runtime)` → cache services from `runtime.resources`, spawn your initial entities.
 - `update(world, inputs)` → your per-frame game logic. The engine renders/simulates around you.
+- `initial_mode()` → the `EngineMode` the engine starts in (default `EngineMode::Playing`), written into
+  the `SharedEngineMode` runtime resource; the scheduler reads it once per frame. **Ergon scripts run
+  only while the mode is `Playing`** — a tool mode (`EngineMode::Custom(..)`) runs no script.
 
 `AgentProvider`/`PhaseProvider` are usually empty for a game — they exist for advanced extension.
 
@@ -125,11 +128,21 @@ for ev in inputs { if let InputEvent::MouseMoved { x, y } = ev { /* look */ } }
 - Math: `Vec2/3/4`, `Quaternion`, `Mat4`, `LinearRgba` (with `RED`/`GREEN`/… constants). Y-up, right-handed.
 - Components (`prelude::ecs`): `Transform`, `GlobalTransform`, `Camera`, `Light` (+ `LightType`,
   `DirectionalLight`/`PointLight`/`SpotLight`), `RigidBody` (+ `BodyType`), `Collider` (+ `ColliderShape`),
-  `AudioSource`, `Name`, `Tag`, `Parent`/`Children`, `MaterialComponent`.
+  `AudioSource`, `Name`, `Tag`, `Parent`/`Children`, `MeshRef`, `MaterialRef` (what `add_material`
+  returns), `Script` (+ `ScriptValue`).
 
-## 7 — Scenes & shipping
+## 7 — Scenes, saves & shipping
 
-- Scenes: `SceneFile` + `SerializationGoal` (Editor Interchange / Fastest Load / Smallest File / …).
+- Scenes: `SceneFile` + `SerializationGoal` — the goal picks the encoding (text / compact / MessagePack /
+  `FastestLoad` snapshot bound to this build), never what is saved. `SerializationService::load_world` /
+  `replace_world` return a `LoadReport`.
+- Game saves: `world.save_game(base_id, &base_scene, goal)` writes only how play changed the world,
+  **against a base scene**; `world.load_game(&save, &base_scene)` merges it onto the scene as it is now.
+  `world.set_prefabs(source)` sets where linked prefabs are read (the engine sets it at boot when an
+  `AssetService` exists).
+- Every load is **atomic**: an `Err` leaves the world exactly as it was; an `Ok(LoadReport)` lists what
+  was adapted (renamed, defaulted, dropped, retired…). Log the entries. Details:
+  [`load-scene`](./skills/load-scene/SKILL.md).
 - Packing: `PackBuilder` produces an asset pack; `run_default` boots a packed runtime
   (`khora-runtime`). See the [`pack-and-ship`](./skills/pack-and-ship/SKILL.md) skill.
 - The **editor** (`cargo run -p khora-editor` in the engine repo) authors scenes/prefabs visually.

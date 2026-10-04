@@ -44,6 +44,7 @@ mod hooks;
 pub mod persistence;
 mod reload;
 pub mod report;
+pub mod resumption;
 pub mod runtime;
 mod turn;
 

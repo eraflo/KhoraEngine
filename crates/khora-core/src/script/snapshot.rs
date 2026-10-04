@@ -80,9 +80,12 @@ pub struct PendingSequence {
     /// What the program looked like when the machine stopped.
     ///
     /// A suspended machine holds a position in code. If the script was edited
-    /// between the save and the load, that position means something else — so
-    /// the sequence is abandoned rather than resumed into whatever now sits
-    /// there. Compared, not trusted.
+    /// between the save and the load, that position may mean something else —
+    /// so the fingerprint is compared, not trusted. A match resumes the
+    /// machine exactly; a mismatch takes it back in tiers — kept where every
+    /// function on its stack is unchanged, rebuilt at the same named sites,
+    /// or restarted from its member's entry — and abandons it only when none
+    /// of those holds, calling the behavior's `OnResumeFailed`.
     pub fingerprint: u64,
     /// Seconds still to wait.
     pub remaining: f32,

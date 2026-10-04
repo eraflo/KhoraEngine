@@ -95,9 +95,11 @@ impl SemanticDomain {
 /// | [`Derived`](Self::Derived) | no | no |
 /// | [`Runtime`](Self::Runtime) | no | no |
 ///
-/// Persistence stays a separate question, governed by
-/// `#[component(no_serializable)]` and `#[component(skip)]` — a `ToolAuthored`
-/// component such as `Parent` must persist even though nobody adds it by hand.
+/// It also decides what is saved: a scene holds `Authored` and `ToolAuthored`
+/// components — `Parent` must persist even though nobody adds it by hand — and
+/// never `Derived` or `Runtime` ones; a game save also keeps a `Runtime`
+/// component declared `resumable`. `#[component(skip)]` leaves a field out of
+/// what is saved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ComponentProvenance {
     /// Written by a human through the editor or by game code. Belongs in a

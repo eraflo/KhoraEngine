@@ -56,7 +56,8 @@ reference:
   - { path: reference/physics.md,            load: on_demand, tags: [rapier, rigid-body, colliders, ccd] }
   - { path: reference/audio.md,              load: on_demand, tags: [cpal, spatial-mixing, mix-bus] }
   - { path: reference/math.md,               load: on_demand, tags: [khora-math, simd, numerics] }
-  - { path: reference/ecs-data.md,           load: on_demand, tags: [crpecs, storage, soa, agdf, components] }
+  - { path: reference/ecs-data.md,           load: on_demand, tags: [crpecs, storage, soa, agdf, components, persistence, scenes, saves, prefabs] }
+  - { path: reference/scripting.md,          load: on_demand, tags: [ergon, vm, safepoints, resume, hot-reload, script-lane] }
   - { path: reference/control-gorna.md,      load: on_demand, tags: [dcc, gorna, cost-model, pid, budgets] }
   - { path: reference/editor-ui-ux.md,       load: on_demand, tags: [editor, panels, gizmos, dock, impeccable] }
   - { path: reference/api-ux.md,             load: on_demand, tags: [sdk, ergonomics, builder, facade] }

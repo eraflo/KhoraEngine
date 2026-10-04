@@ -22,7 +22,7 @@ and [`security-privacy.md`](./security-privacy.md).
 ## 2 — Build & test
 
 - Compile with zero warnings at the configured lint level; clippy clean (part of `cargo gate`).
-- All workspace tests must pass before declaring work complete (~1650 unit + ~50 doc today; treat the live count as truth).
+- All workspace tests must pass before declaring work complete (~2520 today; treat the live count as truth).
 - No Vulkan validation errors when running `cargo run -p sandbox`; confirm the frame loop is clean for GPU work.
 
 ## 3 — Architecture rules
@@ -71,16 +71,30 @@ and [`security-privacy.md`](./security-privacy.md).
 - Audio through the `AudioDevice` trait + spatial mixing lane. Never call CPAL directly.
 - UI layout through the `LayoutSystem` trait. Never call Taffy directly from agents.
 - Reference loaded assets via `AssetHandle<T>` / `HandleComponent<T>`. Never store raw asset data inline.
-- Save and load scenes as **records** through `SerializationService` (`khora-io`): components by registered name, fields by name, entities by `PersistentId`, page-shaped. The `SerializationGoal` picks the encoding; it never changes what is saved. Rename with `#[component(formerly = "…")]`, remove a type on purpose by declaring it retired — never write a payload migration or save raw page memory.
+- Save and load scenes as **records** through `SerializationService` (`khora-io/src/serialization.rs`): components by registered name, fields by name, entities by `PersistentId`, page-shaped. The `SerializationGoal` picks the encoding; it never changes what is saved. Never save raw page memory; never write a payload migration. Detail: [`reference/ecs-data.md`](./reference/ecs-data.md) §Persistence.
+  - `FastestLoad` is the exception that proves it: a positional **snapshot** (`KH_SNAPSHOT_V1`) bound to every component's schema fingerprint, refused whole on any mismatch. It is a same-build cache (the editor's Play/Stop restore) — **never a project's only copy**.
+  - Loads are **atomic**: `prepare` reads, checks and reserves every id; `Prepared::commit` adds; `Prepared::abandon` gives the ids back. A failed load leaves the world exactly as it was. What a load adapted is returned as a `LoadReport` (`ReportKind`: `Defaulted`, `Dropped`, `Renamed`, `Widened`, `Retired`, `NotSaved`, `DeadReference`, `RemovedFromScene`) — surface it, don't swallow it.
+  - An unknown component name fails the **whole** load. Rename a type or a field only with `#[component(formerly = "…")]` (on a field it becomes a serde alias). Remove a type only by declaring it retired: `inventory::submit!{ RetiredComponent { name: "…" } }` (`khora-data/src/scene/retired.rs`).
+  - A scene holds what was authored; a game save (`SaveRecord`) holds only how the running world differs from its base scene, merged three-way on load. Never put engine-written state in a scene.
+  - Prefab members are keyed by `PersistentId::within(root, inner)`. Its namespace (`WITHIN`, `khora-core/src/ecs/persistent_id.rs`) is fixed forever — changing it re-keys every instance in every saved scene.
+  - Older scene formats are refused (`SceneFileReadError::OldFormat`); there is no v1 reader to extend.
 - Never inline WGSL source as a Rust `const`/`static`. Shaders are `.wgsl` files under `crates/khora-infra/src/graphics/shader/shaders/` (`pipelines/` entry points, `lib/` reusable modules), embedded with `include_str!` and composed by the `PipelineSystem` backend (`khora-infra/src/graphics/wgpu/pipeline_system/mod.rs`) using `naga_oil` `#import`. Lanes resolve a pipeline **by name** (`khora::pipelines::grid`), never by handing over source.
   - **Two exceptions, and they are the only ones:** `TEXT_WGSL` and `EGUI_WGSL` in `khora-infra/src/graphics/shader/mod.rs` (their `.wgsl` files sit in the shaders tree with the others). Their consumers (`StandardTextRenderer`, the egui overlay) take a raw string rather than a pipeline handle, and the application passes it in. No new `_WGSL` constant should appear.
   - There is **no `ShaderRegistry` type** — earlier revisions of this file named one. The composition point is the `PipelineSystem` backend.
 
 ## 7 — Components & ECS
 
-- `#[derive(Component)]` for all ECS components; the macro generates the `SerializableX` mirror + `From` conversions and self-registers via `inventory`.
-- `#[component(skip)]` for non-serialized fields (GPU handles, runtime state); `#[component(no_serializable)]` for manual mirrors.
+- `#[derive(Component)]` for all ECS components; the macro generates the `SerializableX` mirror + `From` conversions and self-registers a `ComponentRegistration` via `inventory`.
+- `#[component(skip)]` for non-serialized fields (GPU handles, runtime caches).
+- `#[component(no_serializable)]` **removes the `ComponentRegistration`** (`khora-macros/src/component.rs:255-261`): the component is never saved, never inspected, never reachable by name. It is not "runtime state" — use a provenance for that. No shipped component uses it today.
+- Choose a **provenance** (`ComponentProvenance`, `khora-data/src/ecs/component_registry.rs`): `Authored` (default) and `ToolAuthored` are saved in scenes; `Derived` and `Runtime` never are. Add `#[component(resumable)]` to `Runtime` state a **game save** must keep so play resumes (e.g. `ScriptState`).
 - Declare a component's domain with `#[component(domain = Physics)]`. Only generics (`HandleComponent<T>`) and hand-written impls stay explicit in `World::new`.
+
+## 7b — Ergon (scripting)
+
+- Scripts run only in `EngineMode::Playing`: `ScriptAgent` is registered with `DccService::register_agent_for_mode(…, vec![EngineMode::Playing])` and `ScriptFlow` projects nothing unless `EngineMode::runs_gameplay()`. An editor editing a scene runs no script.
+- A new statement kind must give its key in `khora-script/src/bytecode/keys.rs` (every match there is exhaustive) and name its sites (`bytecode/sites.rs`) — otherwise a suspended frame cannot be found again after an edit.
+- A new `Instruction` needs an arm in `bytecode/fingerprint.rs` (exhaustive match) that hashes **what it names** (callee, native, literal, field — never an index), and a deliberate fuel cost (`Instruction::cost` in `vm/instruction.rs`; a native is charged its declared cost).
 
 ## 8 — Must never
 

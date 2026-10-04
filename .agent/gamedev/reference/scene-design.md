@@ -13,7 +13,9 @@ loading/saving scenes.
   (intensity, range, `shadow_enabled`, bias).
 - Materials: `StandardMaterial` (PBR base_color/roughness/metallic), `UnlitMaterial`, `EmissiveMaterial`.
 - Cameras: `Camera::new_perspective(fov, aspect, near, far)`.
-- Scenes: `SceneFile` + `SerializationGoal`; author visually with `cargo run -p khora-editor`.
+- Scenes: `SceneFile` + `SerializationGoal` (picks the encoding, never the content); game saves via
+  `GameWorld::{save_game, load_game}`; author visually with `cargo run -p khora-editor`. See
+  [`load-scene`](../skills/load-scene/SKILL.md).
 
 ## Rules
 - **For every visual / UI / design decision — typography, color, spacing, layout, motion — use

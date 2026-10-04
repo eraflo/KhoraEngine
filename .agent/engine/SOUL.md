@@ -59,9 +59,9 @@ points to the on-demand [`reference/`](./reference/) doc for that crate's domain
 |---|---|---|
 | `khora-core` | Traits, math, GORNA types, contracts. Depends on nothing. | math |
 | `khora-macros` | `#[derive(Component)]` proc macro (path crate, not a member). | ecs-data |
-| `khora-data` | CRPECS ECS, component storage, SoA/AGDF layout, Flows. | ecs-data |
+| `khora-data` | CRPECS ECS, component storage, SoA/AGDF layout, Flows, scene persistence (records, snapshot, prefabs, game saves). | ecs-data |
 | `khora-control` | DCC, GORNA arbitration, cost model, PID budget, Substrate Pass. | control-gorna |
-| `khora-script` | **Ergon** — the gameplay language: lexer, parser, bytecode, VM, hot-reload. Suspends on an instruction boundary so the DCC can bound a frame. Depends on core + macros only, so it is testable without booting an engine. | scripting |
+| `khora-script` | **Ergon** — the gameplay language: lexer, parser, bytecode, VM, hot-reload. Suspends at named safepoints (statement start, loop head, function entry, after a call returns) so the DCC can bound a frame; overdraft past the budget is bounded by `Program::max_overdraft`. Runs only while `EngineMode::Playing`. Depends on core + macros only, so it is testable without booting an engine. | scripting |
 | `khora-lanes` | Hot-path Lanes: render / physics / audio / ui / script. | per-domain |
 | `khora-agents` | Strategist Agents: Render/Shadow/Overlay/Skybox/Physics/Ui/Audio/Script. Each holds strategy state and nothing else. | per-domain |
 | `khora-infra` | Concrete backends, one subfolder each: `graphics/wgpu`, `physics/rapier`, `physics/khora` (in-house, incomplete), `audio/cpal`, `ui/taffy`, `platform/winit`. Also owns the `.wgsl` files and their composition. | per-domain |

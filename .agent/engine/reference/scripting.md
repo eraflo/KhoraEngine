@@ -12,8 +12,12 @@ agent that run it inside a frame budget.
 
 The DCC must be able to say *"you have 0.4 ms, hand back control"*. Every other subsystem already
 degrades under pressure; gameplay was the one that could not, because no off-the-shelf language could
-be told that. Ergon **suspends on an instruction boundary** and keeps the machine that suspended, so
-the next frame resumes rather than restarts. Suspension is the normal path, not an error path.
+be told that. Ergon **suspends at named safepoints** — a statement's start, a loop's head (every back
+edge lands on one), a function's entry, just after a call returns, after an `await` — and keeps the
+machine that suspended, so the next frame resumes rather than restarts. Past its fuel a run continues
+only to the next safepoint; that overdraft is bounded by `Program::max_overdraft` (the costliest acyclic
+stretch between two checks, computed at seal time in `bytecode/fingerprint.rs`). Suspension is the
+normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
 
 ## Key files
 - Language: `crates/khora-script/src/` — `lexer/`, `parser/`, `ast/`, `bytecode/`, `vm/`, `types/`.
@@ -32,7 +36,26 @@ the next frame resumes rather than restarts. Suspension is the normal path, not 
 - Lane: `crates/khora-lanes/src/script_lane/` — `mod.rs` (the `Lane`), `frame.rs` (the loop),
   `turn.rs` (one behavior's turn), `hooks.rs`, `runtime.rs` (`ScriptRuntime`), `reload.rs`,
   `report.rs`, `persistence.rs`.
+- Lane resume / saves: `script_lane/resumption.rs` (load and hot reload share the VM tiers),
+  `persistence.rs` (snapshot ↔ instance), `frame.rs` (arrivals, `OnLoad`, `OnResumeFailed` owed).
 - Agent: `crates/khora-agents/src/script_agent/agent.rs`.
+- Lifecycle hooks table: `crates/khora-script/src/lifecycle.rs` (`Update`, `OnSpawn`, `OnDespawn`,
+  `OnLoad`, `OnResumeFailed(string member)`, reserved `FixedUpdate`).
+- Safepoints and sites: `bytecode/sites.rs` (site grammar, `timer_names`), `bytecode/keys.rs` (statement
+  keys), `bytecode/stmt.rs` (emits `Safepoint`), `vm/site.rs` (`Site`, `SiteKind`).
+- Fingerprints + overdraft: `bytecode/fingerprint.rs`; `vm/program.rs` (`Program::fingerprint`,
+  `max_overdraft`).
+- Freeze / resume: `vm/freeze.rs`, `vm/resume.rs` (`resume`, `ResumeTier`, `Abandoned`); the engine-side
+  form `khora-core/src/script/frozen.rs` (`FrozenMachine`, `FrozenFrame`, `FrozenLocal`, `FrozenValue`).
+- What a save holds: `khora-core/src/script/snapshot.rs` (`ScriptSnapshot`, `InstanceLifecycle`,
+  `RecordedFault`), the component `khora-data/src/ecs/components/script_state.rs` (`ScriptState`:
+  `provenance = Runtime, resumable`), written back by `khora-data/src/ecs/systems/script_state/` from
+  `ScriptStateWriteback` (`khora-core/src/script/writeback.rs`).
+- Mode gate: `khora-data/src/flow/script.rs` (`gameplay_runs` → `EngineMode::runs_gameplay`) and the
+  `register_agent_for_mode(…, vec![EngineMode::Playing])` call in `khora-sdk/src/engine/bootstrap.rs`.
+- Conformance suite: `crates/khora-script/tests/it/conformance.rs` (`SHIPPED` / `PENDING` rows); resume
+  suites beside it (`safepoints.rs`, `sites.rs`, `fingerprints.rs`, `freeze.rs`, `rebuilt_frames.rs`,
+  `resume_tiers.rs`).
 - Engine→script events: `khora-core/src/script/event.rs` (`Channel<ScriptEvent>`).
 - Script→engine effects: `khora-core/src/script/buffer.rs` (`CommandBuffer`, `WorldCommand`), applied
   by a `DataSystem` in `khora-data/src/ecs/systems/script_commands/`.
@@ -67,6 +90,36 @@ the next frame resumes rather than restarts. Suspension is the normal path, not 
   or whose field names the language cannot spell (a tuple index, or a reserved word — `Script.behavior`,
   `UiInteraction.state`), is left undeclared with the reason. An empty `struct` means *marker*, and
   emitting one for a component that does carry data would be a false statement.
+
+## Resume (tiers)
+One path for every resume — next frame, hot reload, game load (`vm/resume.rs::resume`):
+1. **Exact** — same program fingerprint; 2. **Unchanged** — every function on the stack has its frozen
+fingerprint; 3. **Rebuilt** — every frame's site still exists, locals matched by name + type, the same
+number of temporaries; 4. **Restarted** — the member still takes the same parameters: rerun from entry
+with the original arguments (side effects may repeat); 5. else **`Abandoned`** — the instance is owed
+`OnResumeFailed(string member)` on its next turn (member like `"OnSpawn"`, `"Patrol.OnHit"`,
+`"__every(0.5)"`).
+- **Site grammar** (`bytecode/sites.rs`): `site := "entry" | path [":" point]`,
+  `step := kind "." hash8 ["#" n]`, `branch := then|else|body`, `point := head | await[#n] | call.callee[#n]`.
+  Named from what statements *say*, never from a counter, so an edit elsewhere renames nothing.
+- **Keys are exhaustive** (`bytecode/keys.rs`): a compound statement is keyed by its header only. A new
+  `Stmt`/`Expr` node must decide what it contributes, or two statements share a key.
+- **The fingerprint normalizer is exhaustive** (`bytecode/fingerprint.rs`): an operand naming something
+  outside the function (callee, native, literal, field) is hashed by name, never by index.
+- **Timers** are functions named `Owner.__every(0.5)` / `Owner.__after(2)`, `#n` for identical siblings
+  (omitted when zero) — the identity their countdown is saved under.
+- **`FrozenMachine`** (engine terms, every encoding can read it): frames **name** their function, literals
+  are kept as text; each `FrozenFrame` carries its `site`, function `fingerprint`, `locals` (name, type,
+  scope, register) and `temporaries`; the machine carries the body's original `arguments`. Positions
+  inside a function stay numbers, guarded by fingerprints.
+
+## Saves and lifecycle
+- `ScriptState` is `Runtime` + `resumable`: never in a scene, always in a game save — a guard saved
+  mid-attack loads mid-attack.
+- `InstanceLifecycle { spawned, fault }` is **recorded**, not derived: an empty snapshot does not say
+  whether `OnSpawn` ran. A fault recorded under another program fingerprint is cleared on load.
+- `OnLoad` runs once, only when an instance is **restored from a save** — after the initialiser and
+  restore, before anything else that turn. A scene load or editor Stop is a fresh start (`OnSpawn`).
 
 ## Traps
 - `khora-script` depends on `khora-core` and `khora-macros` **only**, deliberately: the compiler and VM

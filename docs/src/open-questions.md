@@ -91,15 +91,14 @@ What this engine does not yet answer, and where the next iteration should go.
 
 ## 08 — UI
 
-1. **In-game UI.** `UiAgent` is currently editor-only. The path to a play-mode HUD is mostly a matter of changing `allowed_modes`, plus deciding the input model.
+1. **In-game UI.** `UiAgent` is registered for every engine mode and draws whatever UI components the world holds, through `UiFlow`; there is no `allowed_modes` setting — an agent is scoped to modes only by registering it through `DccService::register_agent_for_mode`. What a play-mode HUD still lacks is an input model: how focus and pointer events are routed between the game and its UI.
 2. **Animations on UI.** No tween / spring system today. Probably belongs as a separate lane that mutates UI components over time.
 3. **Accessibility.** Screen reader hooks, contrast modes. Not designed yet.
 
 ## 09 — Serialization
 
-1. **DeltaSerialization.** Roadmap item. Save games and undo/redo both want incremental snapshots. The trait surface is sketched, not implemented.
-2. **Physics snapshot goal.** Should there be a `SerializationGoal::IncludePhysicsState` that captures velocities, sleep state, contacts?
-3. **Versioned components.** Today, scene format version is tracked in the header. Component schema versions are not. A scene saved against an older component definition may fail to load.
+1. **Undo/redo.** Game saves already ship as deltas: a `SaveRecord` holds what the game changed against its scene, and loading merges it into the scene as it is now, field by field (`khora-data/src/scene/save.rs`; see [Scenes and game saves](./concepts/saves.md)). The editor's undo stack is the other consumer of incremental change and it is not wired: `CommandHistory` exists, but no edit records itself into it. Whether undo should reuse the save's delta machinery or stay a stack of per-property edits is undecided.
+2. **Physics state in a game save.** A save keeps runtime state only when its component is declared `resumable`, and today only `ScriptState` is. A body's live `BodyMotion` and simulated pose are `Runtime` and not resumable, so a loaded save puts every simulated body back at its authored `Transform`, with its authored starting velocity. Making them resumable means deciding how the physics domain reads them back into the solver — velocities, sleep state, contacts — not just setting a flag.
 
 ## 10 — Telemetry
 

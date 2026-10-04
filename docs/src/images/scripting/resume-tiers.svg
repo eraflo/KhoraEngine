@@ -1,0 +1,73 @@
+<svg class="kp-figure" viewBox="0 0 760 336" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-tiers-title kp-tiers-desc">
+  <title id="kp-tiers-title">Five ways a suspended body comes back after an edit</title>
+  <desc id="kp-tiers-desc">Tried from the top, each only when the one above cannot hold the body. Exact: nothing changed, it resumes as it was. Unchanged: only other functions were edited, it resumes as it was. Rebuilt: its own function was edited but the place it stood still exists, so its frames are laid out again there with each local found by name. Restarted: the place it stood is gone, so it runs again from its start with the arguments it was first given. Abandoned: the member is gone or takes other parameters; it is dropped and OnResumeFailed tells the behavior.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-row { fill: var(--k-bg-1, #101622); }
+    .kp-row-last { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 3 3; }
+    .kp-step { fill: var(--k-bg-3, #1f2636); }
+    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 16px; }
+    .kp-num { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; font-weight: 600; }
+    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="336" rx="8"/>
+  <text class="kp-head" x="56" y="30">tier</text>
+  <text class="kp-head" x="186" y="30">when</text>
+  <text class="kp-head" x="384" y="30">the body</text>
+  <text class="kp-head" x="594" y="30">an edit that lands here</text>
+  <!-- exact -->
+  <rect class="kp-row" x="16" y="42" width="728" height="50" rx="4"/>
+  <rect class="kp-step" x="24" y="54" width="22" height="22" rx="3"/>
+  <text class="kp-num" x="31" y="70">1</text>
+  <text class="kp-station" x="56" y="71">exact</text>
+  <text class="kp-label" x="186" y="71">the program is the same</text>
+  <text class="kp-label" x="384" y="71">resumes as it was</text>
+  <text class="kp-note" x="594" y="71">none, or a rename</text>
+  <!-- unchanged -->
+  <rect class="kp-row" x="16" y="98" width="728" height="50" rx="4"/>
+  <rect class="kp-step" x="24" y="110" width="22" height="22" rx="3"/>
+  <text class="kp-num" x="31" y="126">2</text>
+  <text class="kp-station" x="56" y="127">unchanged</text>
+  <text class="kp-label" x="186" y="119">every function it is in</text>
+  <text class="kp-label" x="186" y="135">kept its fingerprint</text>
+  <text class="kp-label" x="384" y="127">resumes as it was</text>
+  <text class="kp-note" x="594" y="127">Update edited</text>
+  <!-- rebuilt -->
+  <rect class="kp-row" x="16" y="154" width="728" height="50" rx="4"/>
+  <rect class="kp-sel" x="14" y="152" width="732" height="54" rx="5"/>
+  <rect class="kp-step" x="24" y="166" width="22" height="22" rx="3"/>
+  <text class="kp-num" x="31" y="182">3</text>
+  <text class="kp-station" x="56" y="183">rebuilt</text>
+  <text class="kp-label" x="186" y="175">its function changed; the</text>
+  <text class="kp-label" x="186" y="191">place it stood still exists</text>
+  <text class="kp-label" x="384" y="175">laid out again at that place,</text>
+  <text class="kp-label" x="384" y="191">each local found by name</text>
+  <text class="kp-note" x="594" y="175">a line added above</text>
+  <text class="kp-note" x="594" y="191">the await, or after it</text>
+  <!-- restarted -->
+  <rect class="kp-row" x="16" y="210" width="728" height="50" rx="4"/>
+  <rect class="kp-step" x="24" y="222" width="22" height="22" rx="3"/>
+  <text class="kp-num" x="31" y="238">4</text>
+  <text class="kp-station" x="56" y="239">restarted</text>
+  <text class="kp-label" x="186" y="231">the place is gone, the</text>
+  <text class="kp-label" x="186" y="247">member is still there</text>
+  <text class="kp-label" x="384" y="231">runs again from its start with</text>
+  <text class="kp-label" x="384" y="247">the arguments it was first given</text>
+  <text class="kp-note" x="594" y="231">the await deleted,</text>
+  <text class="kp-note" x="594" y="247">its statement edited</text>
+  <!-- abandoned -->
+  <rect class="kp-row-last" x="16" y="266" width="728" height="50" rx="4"/>
+  <rect class="kp-step" x="24" y="278" width="22" height="22" rx="3"/>
+  <text class="kp-num" x="31" y="294">5</text>
+  <text class="kp-station" x="56" y="295">abandoned</text>
+  <text class="kp-label" x="186" y="287">the member is gone, or</text>
+  <text class="kp-label" x="186" y="303">takes other parameters</text>
+  <text class="kp-label" x="384" y="287">dropped; the behavior hears</text>
+  <text class="kp-label" x="384" y="303">OnResumeFailed(member)</text>
+  <text class="kp-note" x="594" y="287">Attack deleted, or</text>
+  <text class="kp-note" x="594" y="303">Attack(int)→(float)</text>
+</svg>

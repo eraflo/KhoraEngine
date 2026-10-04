@@ -1,0 +1,73 @@
+<svg class="kp-figure" viewBox="0 0 760 388" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-turn-title kp-turn-desc">
+  <title id="kp-turn-title">One behavior's turn in a frame</title>
+  <desc id="kp-turn-desc">A turn runs its steps in order, each only when it applies: the initialiser until the fields exist, OnLoad after a save is restored, OnSpawn once per entity, OnResumeFailed when an edit lost a body, the body under way, the timers that are due, the events raised last frame, and finally Update. A body still waiting on an await ends the turn there, and so does running out of fuel at any step.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-row { fill: var(--k-bg-1, #101622); }
+    .kp-spine { stroke: var(--k-line, #383d48); stroke-width: 1.25; }
+    .kp-node { fill: var(--k-bg-0, #090d17); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    .kp-node-on { fill: var(--k-gold, #e4b65c); }
+    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 16px; }
+    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="388" rx="8"/>
+  <text class="kp-head" x="64" y="30">step</text>
+  <text class="kp-head" x="250" y="30">runs when</text>
+  <text class="kp-head" x="470" y="30">then</text>
+  <path class="kp-spine" d="M36,52 V352"/>
+  <!-- 1 -->
+  <rect class="kp-row" x="52" y="40" width="692" height="34" rx="4"/>
+  <circle class="kp-node" cx="36" cy="57" r="5"/>
+  <text class="kp-station" x="64" y="62">initialiser</text>
+  <text class="kp-label" x="250" y="62">the fields don't exist yet</text>
+  <text class="kp-label" x="470" y="62">defaults, then carried values on top</text>
+  <!-- 2 -->
+  <rect class="kp-row" x="52" y="78" width="692" height="34" rx="4"/>
+  <circle class="kp-node" cx="36" cy="95" r="5"/>
+  <text class="kp-station" x="64" y="100">OnLoad</text>
+  <text class="kp-label" x="250" y="100">restored from a game save</text>
+  <text class="kp-label" x="470" y="100">before anything can observe it</text>
+  <!-- 3 -->
+  <rect class="kp-row" x="52" y="116" width="692" height="34" rx="4"/>
+  <circle class="kp-node" cx="36" cy="133" r="5"/>
+  <text class="kp-station" x="64" y="138">OnSpawn</text>
+  <text class="kp-label" x="250" y="138">it has never spawned</text>
+  <text class="kp-label" x="470" y="138">once per entity, ever — a save remembers</text>
+  <!-- 4 -->
+  <rect class="kp-row" x="52" y="154" width="692" height="34" rx="4"/>
+  <circle class="kp-node" cx="36" cy="171" r="5"/>
+  <text class="kp-station" x="64" y="176">OnResumeFailed</text>
+  <text class="kp-label" x="250" y="176">an edit left nothing of a body</text>
+  <text class="kp-label" x="470" y="176">told which member it lost; one a turn</text>
+  <!-- 5 -->
+  <rect class="kp-row" x="52" y="192" width="692" height="34" rx="4"/>
+  <circle class="kp-node-on" cx="36" cy="209" r="5"/>
+  <rect class="kp-sel" x="50" y="190" width="696" height="38" rx="5"/>
+  <text class="kp-station" x="64" y="214">the body under way</text>
+  <text class="kp-label" x="250" y="214">an await or a cut left one</text>
+  <text class="kp-label" x="470" y="214">resumes where it stopped</text>
+  <text class="kp-note" x="250" y="244">still waiting: the turn ends here — nothing new starts beside it</text>
+  <!-- 6 -->
+  <rect class="kp-row" x="52" y="254" width="692" height="34" rx="4"/>
+  <circle class="kp-node" cx="36" cy="271" r="5"/>
+  <text class="kp-station" x="64" y="276">timers</text>
+  <text class="kp-label" x="250" y="276">an every or after is due</text>
+  <text class="kp-label" x="470" y="276">in order; each counts down by the delta</text>
+  <!-- 7 -->
+  <rect class="kp-row" x="52" y="292" width="692" height="34" rx="4"/>
+  <circle class="kp-node" cx="36" cy="309" r="5"/>
+  <text class="kp-station" x="64" y="314">events</text>
+  <text class="kp-label" x="250" y="314">something was raised last frame</text>
+  <text class="kp-label" x="470" y="314">its on-handler; never the same frame</text>
+  <!-- 8 -->
+  <rect class="kp-row" x="52" y="330" width="692" height="34" rx="4"/>
+  <circle class="kp-node" cx="36" cy="347" r="5"/>
+  <text class="kp-station" x="64" y="352">Update</text>
+  <text class="kp-label" x="250" y="352">every turn</text>
+  <text class="kp-label" x="470" y="352">last, with the frame's delta</text>
+  <text class="kp-note" x="64" y="380">out of fuel at any step: the turn stops at a safepoint and goes on next frame</text>
+</svg>

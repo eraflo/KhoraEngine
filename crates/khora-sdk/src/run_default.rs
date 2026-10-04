@@ -152,8 +152,8 @@ fn read_manifest(exe_dir: &Path) -> Option<PackManifest> {
 }
 
 /// The default `EngineApp` used by [`run_default`]. It loads the scene
-/// named in `runtime.json` and ticks idly afterwards — gameplay scripts
-/// will hook into `update` once the scripting runtime lands.
+/// named in `runtime.json` and ticks idly afterwards: gameplay lives in the
+/// scene's scripts, which the engine runs itself while the game plays.
 struct DefaultRuntimeApp {
     frame_count: u64,
 }

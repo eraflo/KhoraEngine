@@ -17,7 +17,7 @@ requires is `EngineApp + AgentProvider + PhaseProvider`.
 
 | Trait | Role | rustdoc |
 |---|---|---|
-| [`EngineApp`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.EngineApp.html) | Application lifecycle — `window_config`, `new`, `setup`, `update`, `on_shutdown`, plus optional editor-overlay hooks. | link |
+| [`EngineApp`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.EngineApp.html) | Application lifecycle — `window_config`, `new`, `setup`, `update`, `initial_mode`, `on_shutdown`, plus optional editor-overlay hooks. | link |
 | [`AgentProvider`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.AgentProvider.html) | Register custom agents with the DCC. | link |
 | [`PhaseProvider`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.PhaseProvider.html) | Insert or remove custom `ExecutionPhase`s. | link |
 | [`WindowProvider`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.WindowProvider.html) | Abstracts the platform window backend (default: winit). | link |
@@ -32,6 +32,7 @@ The methods the engine calls on your app type:
 | `new() -> Self` | Once, after window creation — no engine context yet. |
 | `setup(&mut self, world: &mut GameWorld, runtime: &Runtime)` | Once, after engine init — spawn entities, cache handles. |
 | `update(&mut self, world: &mut GameWorld, inputs: &[InputEvent])` | Every frame — game logic. |
+| `initial_mode(&self) -> EngineMode` | Once, at bootstrap — the [engine mode](#engine-modes) the app starts in (default `Playing`). |
 | `on_shutdown(&mut self)` | Once, on exit (default no-op). |
 
 The optional hooks `intercept_window_event`, `before_frame`, `before_agents`, and
@@ -93,7 +94,7 @@ immutable. It bundles three typed containers, each with a clear admission rule:
 
 | Container | Holds | Examples |
 |---|---|---|
-| `runtime.services` | Concrete stateful objects with a rich business API. | `AssetService`, `SerializationService`, `TelemetryService`, `DccService` |
+| `runtime.services` | Concrete stateful objects with a rich business API. | `Arc<Mutex<AssetService>>` (inserted by `run_default`, or by your bootstrap), `Arc<Mutex<ScriptRuntime>>` (inserted by the engine) |
 | `runtime.backends` | Concrete impls of abstract `khora-core` traits. | `dyn RenderSystem`, `dyn PhysicsProvider`, `dyn AudioDevice`, `dyn LayoutSystem` |
 | `runtime.resources` | Long-lived shared state without a service-style API. | `AssetStore`, `InputMap`, viewport overrides |
 
@@ -101,6 +102,12 @@ Look up an entry with `runtime.services.get::<T>()`, `runtime.backends.get::<T>(
 or `runtime.resources.get::<T>()` (each returns `Option<&T>`; `require::<T>()`
 panics if absent). Per-frame state (current viewport, frame deltas, lane outputs)
 does **not** live here — it flows through the `LaneBus` and `OutputDeck`.
+
+Not everything with a service-style API is in `runtime.services`. The
+`DccService` is handed to `AgentProvider::register_agents` directly, and the
+`TelemetryService` is owned by `EngineCore`. The `SerializationService` is not
+registered at all: it holds nothing but where prefabs are read from, so it is
+constructed where it is needed (see [Saving and loading](#saving-and-loading)).
 
 > `Runtime` replaces the legacy single `ServiceRegistry`. The container API mirrors
 > the old registry (`insert` / `get` / `require`), split three ways by admission
@@ -113,19 +120,66 @@ does **not** live here — it flows through the `LaneBus` and `OutputDeck`.
 
 | Group | Methods |
 |---|---|
-| Lifecycle | `new`, `from_world` |
+| Lifecycle | `new`, `from_world`, `set_prefabs` |
 | Entities | `spawn`, `despawn`, `spawn_camera`, `spawn_entity`, `iter_entities` |
 | Components | `add_component`, `remove_component`, `get_component`, `get_component_mut`, `get_transform`, `get_transform_mut` |
 | Queries | `query::<...>()`, `query_mut::<...>()` |
 | Transforms | `sync_global_transform`, `update_transform` |
 | Hierarchy | `set_parent` |
 | Assets | `add_mesh`, `add_material` |
+| Game saves | `save_game`, `load_game` |
 | Internal | `inner_world`, `inner_world_mut` (low-level; prefer the wrapped surface) |
 
 After mutating a `Transform`, call `sync_global_transform(entity)` (or use
 `update_transform`, which mutates and syncs in one call) so the renderer sees the
 updated `GlobalTransform`. Full signatures:
 [`GameWorld`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/struct.GameWorld.html).
+
+## Saving and loading
+
+Two operations, two different documents — see
+[Scenes and game saves](../concepts/saves.md) for why.
+
+**A game save** is how a running world differs from the scene it started from.
+`GameWorld` carries it:
+
+```rust
+// `level` is the scene file the game started from, known as `level_id`.
+let save: SceneFile = world.save_game(level_id, &level, SerializationGoal::SmallestFileSize)?;
+std::fs::write(path, save.to_bytes())?;
+
+// Later: the scene as it is now, with the save's differences on top.
+let save = SceneFile::from_bytes(&std::fs::read(path)?)?;
+let report: LoadReport = world.load_game(&save, &level)?;
+```
+
+`load_game` replaces the world's contents atomically: if the save cannot be
+loaded, the world is left exactly as it was. Where a save file lives is the
+game's decision — the engine hands back bytes and names no folder. Asking for
+`FastestLoad` writes a game save compactly, because a snapshot cannot hold the
+runtime state a save exists to keep.
+
+The engine calls `set_prefabs` on the world it hands to `setup` whenever an
+`Arc<Mutex<AssetService>>` is registered, so a level holding
+[prefab instances](../concepts/prefabs.md) is compared against the level expanded.
+A world you construct yourself starts without a prefab source.
+
+**A scene** is the whole world, written down. Construct a
+`SerializationService` and pass it the inner `World`:
+
+```rust
+let service = SerializationService::new();
+let file = service.save_world(world.inner_world(), SerializationGoal::HumanReadableDebug)?;
+let report = service.replace_world(&file, world.inner_world_mut())?; // or load_world, beside what is there
+```
+
+`SerializationService::with_prefabs(source)` writes prefab instances as links
+and expands them on load; without a source, instances are saved expanded and a
+scene that links to prefabs cannot be loaded. Every load returns a `LoadReport`
+listing what it adapted — a renamed field, a defaulted one, a retired component —
+and fails with `SerializationServiceError` rather than leave a half-loaded world.
+The `SerializationGoal` chooses the encoding, never the contents; see
+[Serialization](../concepts/serialization.md).
 
 ## `Vessel` and the spawn helpers
 
@@ -174,10 +228,20 @@ rustdoc for the full variant list.
 ## Engine modes
 
 `EngineMode` (re-exported from `khora-control`) gates **which agents run** each
-frame. The base engine knows only `EngineMode::Playing`; other modes are injected
-by plugins (an app *may* register mode-scoped agents through `DccService::register_agent_for_mode`; nothing in the engine or the editor does today). It is distinct
-from `PlayMode` (`Editing` / `Playing` / `Paused`), the editor's own UI-state enum
-re-exported from `khora_core::ui::editor`.
+frame. The base engine knows only `EngineMode::Playing`; any other mode is a
+`EngineMode::Custom(name)` an app defines. An agent registered through
+`DccService::register_agent_for_mode` runs only in the modes it names — the
+engine registers its `ScriptAgent` this way, for `Playing` only, so scripts never
+run while the editor is editing a scene.
+
+The current mode is the `SharedEngineMode` resource. An app picks the starting
+mode with `EngineApp::initial_mode` (default `Playing`) and may write the
+resource at any time; the scheduler reads it once per frame. The editor writes
+it every frame from its transport — `Custom("editor")` while editing, `Playing`
+while playing or paused. `EngineMode` is distinct from `PlayMode` (`Editing` /
+`Playing` / `Paused`), the editor's own UI-state enum re-exported from
+`khora_core::ui::editor`, which never reaches the scheduler directly. See
+[The frame](../concepts/the-frame.md#the-simulation-clock).
 
 ## SDK re-exports
 
@@ -190,12 +254,12 @@ alone. The major groups:
 | App traits | `EngineApp`, `AgentProvider`, `PhaseProvider`, `WindowProvider` |
 | Bootstrap | `run_winit`, `run_default`, `WinitAppRunner`, `WinitWindowProvider` |
 | Window | `WindowConfig`, `WindowIcon`, `PRIMARY_VIEWPORT` |
-| Runtime / control | `Runtime`, `Services`, `Backends`, `Resources`, `DccService`, `DccConfig`, `EngineMode`, `EngineContext`, `AgentRegistry` |
+| Runtime / control | `Runtime`, `Services`, `Backends`, `Resources`, `DccService`, `DccConfig`, `EngineMode`, `SharedEngineMode`, `EngineContext`, `AgentRegistry` |
 | Core types | `ExecutionPhase`, `ExecutionTiming`, `AgentId`, `AgentStatus`, `StrategyId`, `AgentImportance` |
 | Telemetry | `TelemetryService`, `TelemetryEvent`, `MonitoredResourceType`, `MetricsRegistry`, `MonitorRegistry` |
 | Monitors | `GpuMonitor`, `MemoryMonitor` |
 | Backends + traits | `WgpuRenderSystem`, `RenderSystem`, `PipelineSystem`, `RapierPhysicsWorld`, `PhysicsProvider`, `CpalAudioDevice`, `AudioDevice`, `TaffyLayoutSystem`, `LayoutSystem` |
-| Scene I/O | `SerializationService`, `SceneFile`, `SerializationGoal` |
+| Scene I/O | `SerializationService`, `SerializationServiceError`, `SceneFile`, `SerializationGoal`, `LoadReport`, `ComponentRegistration`, `serialize_subtree`, `instantiate_subtree` |
 | Assets | `AssetService`, `AssetIo`, `FileLoader`, `PackLoader`, `PackBuilder`, `IndexBuilder`, `AssetWatcher`, `AssetSource` |
 | Rendering | `Mesh`, the `renderer` sub-module |
 | Editor UI | the `editor_ui` and `tool_ui` modules (used by the editor and hub) |
@@ -210,9 +274,10 @@ The exact list is in
 | Spawn an entity with a primitive shape | `Vessel::at(...)` + `spawn_*` helpers |
 | Read or mutate a component | `world.get_component::<T>` / `world.get_component_mut::<T>` |
 | Run a query | `world.query::<...>()` / `world.query_mut::<...>()` |
-| Load an asset | `runtime.services.get::<Arc<AssetService>>()` |
-| Save or load a scene | `runtime.services.get::<Arc<SerializationService>>()` |
-| Read GPU or memory metrics | `runtime.services.get::<Arc<TelemetryService>>()` |
+| Load an asset | `runtime.services.get::<Arc<Mutex<AssetService>>>()` |
+| Save or load a game | `world.save_game(...)` / `world.load_game(...)` |
+| Save or load a scene | `SerializationService::new()` + `save_world` / `replace_world` |
+| Choose which agents run | write the `SharedEngineMode` resource |
 | Switch backends | Edit your `run_winit` bootstrap closure (`runtime.backends.insert(...)`) |
 | Add a custom agent | Implement `Agent`, register in `AgentProvider::register_agents` |
 | Add a custom phase | Return it from `PhaseProvider::custom_phases` |

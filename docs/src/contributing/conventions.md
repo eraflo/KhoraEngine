@@ -49,9 +49,24 @@ ever disagree, those files win; this page is a digest, not a duplicate.
   via `inventory` — you don't wire it up by hand.
 - Declare a component's domain with **`#[component(domain = Physics)]`** (or the
   relevant domain).
+- Declare who writes it with **`#[component(provenance = …)]`** when it is not
+  the author: `ToolAuthored`, `Derived` or `Runtime` (absent means `Authored`).
+  Only `Authored` and `ToolAuthored` components are saved in a scene. Add
+  **`resumable`** to `Runtime` state a game save must keep for play to resume
+  (today only `ScriptState`) — a decision about how that domain reads it back,
+  not a flag to set in passing.
 - Use `#[component(skip)]` for fields that must not serialize (GPU handles,
-  runtime caches) and `#[component(no_serializable)]` for components with a manual
-  mirror.
+  runtime caches). `#[component(no_serializable)]` drops the generated
+  registration entirely: the component is never saved and never shown in the
+  inspector, unless you submit a hand-written `ComponentRegistration` for it
+  (as `MeshRef` and `MaterialRef` do).
+- **Renaming is a declaration.** Saves hold components and fields by name, so
+  rename a type with `#[component(formerly = "OldName")]` on the struct, and a
+  field with `#[component(formerly = "old_name")]` on the field. **Removing** a
+  component type a project may still have saved means declaring it retired —
+  `inventory::submit! { khora_data::scene::RetiredComponent { name: "OldName" } }`.
+  Anything else and loading a save that holds it fails with "unknown component
+  type". Never write a payload migration.
 
 ## Agents
 

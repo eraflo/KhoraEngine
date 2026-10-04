@@ -4,7 +4,7 @@ The phased development plan for Khora. Six phases, multi-year horizon.
 
 - Document — Khora Roadmap v1.1
 - Status — Living
-- Date — August 2026
+- Date — October 2026
 
 ---
 
@@ -77,7 +77,10 @@ is what a `Lane` is for. Kept below for the reasoning.
 
 ### Editor polish, networking, manual control
 - #175 Real-time asset database for the editor (depends on #41)
-- #177 `DeltaSerializationLane` for game saves and undo / redo (depends on #45)
+- ~~#177 `DeltaSerializationLane` for game saves and undo / redo (depends on #45)~~ —
+  game saves shipped as deltas, through a service rather than a lane; see
+  [Persistence](#persistence--done-and-not-the-way-it-was-written). Undo/redo stays
+  with #69
 - #66 Implement an asset browser (depends on #175)
 - #67 Implement a material editor
 - #68 Implement gizmos
@@ -102,11 +105,44 @@ budget needs stopping to be ordinary. So Khora has its own — **Ergon**
   budget, converts it to fuel at a measured rate, defers whole behaviors rather
   than thinning every one
 - ~~Hot-reload~~ — an edited module recompiles and live instances keep their
-  fields, matched by name
+  fields, matched by name. A body suspended mid-way (by fuel or an `await`)
+  resumes in the edited code in tiers — exactly, unchanged, rebuilt at the same
+  named sites, or restarted from its member's entry — and is abandoned only
+  when none holds, with `OnResumeFailed` telling the behavior so. A load from a
+  save goes through the same tiers ([Ergon reference](./reference/ergon.md))
+- ~~Lifecycle~~ — `OnSpawn`, `OnDespawn`, `OnLoad` (once, when an instance is
+  restored from a save), recorded in the save rather than inferred; and scripts
+  run only while the game does — the editor's own engine mode runs no script
 
 **Open:** the mini-game in `examples/sandbox` with all gameplay in Ergon, and the
 `criterion` bench that goes with it (1000 behaviors under 0.5 ms). Both are what
 will tell us whether the design pays under real load rather than in tests.
+
+### Persistence — **done, and not the way it was written**
+
+#177 imagined a `DeltaSerializationLane`. A save has no per-frame strategy to
+negotiate, so it is a service — `SerializationService` — and the redesign went
+further than deltas. See [Serialization](./concepts/serialization.md) and
+[Scenes and game saves](./concepts/saves.md).
+
+- ~~Scene records~~ — a scene is written page by page, components and fields by
+  name, entities by `PersistentId`, and loaded atomically: a file that cannot be
+  loaded leaves the world untouched. The `SerializationGoal` picks the encoding,
+  never the contents
+- ~~Schema evolution~~ — renames declared with `formerly`, removals with
+  `RetiredComponent`, and every adaptation a load makes listed in its
+  `LoadReport`. Files in the older scene format are refused by version; the
+  one-time upgrade tool that converted them has run and been removed
+- ~~Fast loads~~ — `FastestLoad` writes a schema-bound positional snapshot,
+  refused whole by any build whose schema differs
+- ~~Game saves~~ — a save holds what the game changed against its scene, plus the
+  runtime state declared `resumable`; loading is a three-way merge, so an edit to
+  the scene since the save reaches every value the game left alone
+- ~~Prefab links~~ — an instance stays linked to its prefab and is saved as the
+  link plus its overrides; a prefab edit reaches every field an instance did not
+  override ([Prefabs](./concepts/prefabs.md))
+- ~~Overrides in the inspector~~ — the editor shows which fields of an instance
+  override its prefab, and reverts or applies them
 
 ### Maturation, optimization, packaging
 - #94 Extensive performance profiling and optimization

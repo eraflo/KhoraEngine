@@ -474,7 +474,8 @@ fn module_script_lane_paths_still_resolve() {
     is_copy::<khora_lanes::script_lane::Fuel>();
     is_partial_eq::<khora_lanes::script_lane::Fuel>();
     is_eq::<khora_lanes::script_lane::Fuel>();
-    let _ = khora_lanes::script_lane::persistence::resume;
+    let _ = khora_lanes::script_lane::resumption::resume;
+    let _ = khora_lanes::script_lane::resumption::carry;
     let _ = khora_lanes::script_lane::persistence::snapshot_from_store;
     let _ = khora_lanes::script_lane::persistence::store_from_snapshot;
     let _ = khora_lanes::script_lane::persistence::suspend;

@@ -1,6 +1,6 @@
 <svg class="kp-figure" viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-cl-title kp-cl-desc">
   <title id="kp-cl-title">The compact payload, byte strip by byte strip</title>
-  <desc id="kp-cl-desc">The payload starts with a version byte, then the symbol table of every name, then the shape table of every struct and variant, then the persistent ids of the entities, then the pages. Each page lists its components by symbol, its rows by persistent id, then its values column after column. A value is a tag, then a shape or symbol index, then its parts.</desc>
+  <desc id="kp-cl-desc">The payload starts with a version byte, then the symbol table of every name, then the shape table of every struct and variant, then the persistent ids of the entities, then the pages, then the prefab instances — each a root, a prefab and its differences. Each page lists its components by symbol, its rows by persistent id, then its values column after column. A value is a tag, then a shape or symbol index, then its parts.</desc>
   <style>
     .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
     .kp-bg { fill: var(--k-bg-0, #090d17); }
@@ -17,21 +17,24 @@
   <text class="kp-station" x="16" y="32">payload</text>
   <!-- top strip: the whole payload -->
   <rect class="kp-seg-strong" x="16" y="46" width="44" height="36" rx="2"/>
-  <rect class="kp-seg" x="62" y="46" width="164" height="36" rx="2"/>
-  <rect class="kp-seg" x="228" y="46" width="150" height="36" rx="2"/>
-  <rect class="kp-seg" x="380" y="46" width="108" height="36" rx="2"/>
-  <rect class="kp-seg-strong" x="490" y="46" width="254" height="36" rx="2"/>
-  <text class="kp-head" x="24" y="68">v1</text>
+  <rect class="kp-seg" x="62" y="46" width="136" height="36" rx="2"/>
+  <rect class="kp-seg" x="200" y="46" width="136" height="36" rx="2"/>
+  <rect class="kp-seg" x="338" y="46" width="100" height="36" rx="2"/>
+  <rect class="kp-seg-strong" x="440" y="46" width="178" height="36" rx="2"/>
+  <rect class="kp-seg" x="620" y="46" width="124" height="36" rx="2"/>
+  <text class="kp-head" x="24" y="68">v2</text>
   <text class="kp-head" x="72" y="68">symbols</text>
-  <text class="kp-head" x="238" y="68">shapes</text>
-  <text class="kp-head" x="390" y="68">entities</text>
-  <text class="kp-head" x="500" y="68">pages</text>
+  <text class="kp-head" x="210" y="68">shapes</text>
+  <text class="kp-head" x="348" y="68">entities</text>
+  <text class="kp-head" x="450" y="68">pages</text>
+  <text class="kp-head" x="630" y="68">instances</text>
   <text class="kp-label" x="72" y="100">every name, once</text>
-  <text class="kp-label" x="238" y="100">struct · variant shapes</text>
-  <text class="kp-label" x="390" y="100">ids, u64 LE</text>
-  <text class="kp-label" x="500" y="100">one per signature</text>
+  <text class="kp-label" x="210" y="100">struct · variant</text>
+  <text class="kp-label" x="348" y="100">ids, u64 LE</text>
+  <text class="kp-label" x="450" y="100">one per signature</text>
+  <text class="kp-label" x="630" y="100">link + delta</text>
   <!-- zoom into one page -->
-  <path class="kp-zoom" d="M490,82 L16,132 M744,82 L744,132"/>
+  <path class="kp-zoom" d="M440,82 L16,132 M618,82 L744,132"/>
   <rect class="kp-seg" x="16" y="132" width="150" height="36" rx="2"/>
   <rect class="kp-seg" x="168" y="132" width="150" height="36" rx="2"/>
   <rect class="kp-seg-strong" x="320" y="132" width="212" height="36" rx="2"/>

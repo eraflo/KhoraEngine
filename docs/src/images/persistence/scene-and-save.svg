@@ -1,0 +1,63 @@
+<svg class="kp-figure" viewBox="0 0 760 288" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-layers-title kp-layers-desc">
+  <title id="kp-layers-title">A scene and a game save: two files, one world</title>
+  <desc id="kp-layers-desc">The scene holds what the author made: a guard with 100 health, a door, a torch with a light. The save holds only what the game changed against that scene: the guard's health is 40, an arrow was created, the door destroyed, the torch's light removed. Loading the save on top of the scene as it is now gives the world the game left: the guard at 40, the torch without its light, the arrow, no door.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-card-out { fill: var(--k-bg-1, #101622); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-thread { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-arrow { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    .kp-tip { fill: var(--k-silver-dim, #809db2); }
+    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 17px; }
+    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+    .kp-key { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+    .kp-sign { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 22px; font-weight: 300; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="288" rx="8"/>
+  <!-- the scene -->
+  <rect class="kp-card" x="16" y="16" width="220" height="204" rx="6"/>
+  <text class="kp-station" x="32" y="46">the scene</text>
+  <text class="kp-note" x="32" y="66">KHORASCN · authored</text>
+  <text class="kp-mono" x="32" y="104">Guard</text>
+  <text class="kp-key" x="104" y="104">health 100</text>
+  <text class="kp-mono" x="32" y="128">Door</text>
+  <text class="kp-mono" x="32" y="152">Torch</text>
+  <text class="kp-key" x="104" y="152">Light</text>
+  <text class="kp-label" x="32" y="204">what the author made</text>
+  <text class="kp-sign" x="246" y="124">+</text>
+  <!-- the save -->
+  <rect class="kp-card" x="270" y="16" width="220" height="204" rx="6"/>
+  <text class="kp-station" x="286" y="46">the save</text>
+  <text class="kp-note" x="286" y="66">KHORASAV · against the scene</text>
+  <text class="kp-key" x="286" y="104">changes</text>
+  <text class="kp-mono" x="364" y="104">Guard 40</text>
+  <text class="kp-key" x="286" y="128">created</text>
+  <text class="kp-mono" x="364" y="128">Arrow</text>
+  <text class="kp-key" x="286" y="152">destroyed</text>
+  <text class="kp-mono" x="364" y="152">Door</text>
+  <text class="kp-key" x="286" y="176">removed</text>
+  <text class="kp-mono" x="364" y="176">Torch · Light</text>
+  <text class="kp-label" x="286" y="204">what the game changed</text>
+  <rect class="kp-sel" x="358" y="89" width="72" height="22" rx="3"/>
+  <!-- load -->
+  <path class="kp-arrow" d="M494,118 H516"/>
+  <path class="kp-tip" d="M516,113 L522,118 L516,123 Z"/>
+  <!-- the world -->
+  <rect class="kp-card-out" x="524" y="16" width="220" height="204" rx="6"/>
+  <text class="kp-station" x="540" y="46">the world</text>
+  <text class="kp-note" x="540" y="66">after load_game</text>
+  <text class="kp-mono" x="540" y="104">Guard</text>
+  <text class="kp-mono" x="612" y="104">health 40</text>
+  <text class="kp-mono" x="540" y="128">Torch</text>
+  <text class="kp-key" x="612" y="128">no Light</text>
+  <text class="kp-mono" x="540" y="152">Arrow</text>
+  <text class="kp-label" x="540" y="204">the scene as it is now + the save</text>
+  <rect class="kp-sel" x="606" y="89" width="84" height="22" rx="3"/>
+  <text class="kp-label" x="16" y="256">A save never repeats the scene: it names the scene it was taken against and keeps only the difference,</text>
+  <text class="kp-label" x="16" y="274">so an edit the author makes to the scene later still reaches every player's save.</text>
+</svg>

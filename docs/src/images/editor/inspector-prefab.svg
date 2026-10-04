@@ -1,0 +1,88 @@
+<svg class="kp-figure" viewBox="0 0 760 392" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-insp-title kp-insp-desc">
+  <title id="kp-insp-title">The inspector on a prefab instance</title>
+  <desc id="kp-insp-desc">The inspector showing guard A, an instance of guard.kprefab. A band under the header names the prefab and offers Apply all and Revert all. The Transform card notes one override, the Stats card two. Each overriding field has a silver dot at its left and a revert arrow at its right end; right-clicking a field offers Revert to prefab and Apply to prefab. The prefab's Light, removed on this instance, shows as a removed row with a Restore button.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-cardbg { fill: var(--k-bg-2, #181e2b); }
+    .kp-ghost { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 3 3; }
+    .kp-btn { fill: var(--k-bg-3, #1f2636); }
+    .kp-menu { fill: var(--k-bg-2, #181e2b); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
+    .kp-dot { fill: var(--k-silver, #b4cfe2); }
+    .kp-icon { fill: none; stroke: var(--k-fg-2, #8a9096); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .kp-icon-brand { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 13px; font-weight: 500; }
+    .kp-card-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    .kp-field { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-link { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-badge { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-item { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="392" rx="8"/>
+  <rect class="kp-panel" x="16" y="16" width="404" height="330" rx="6"/>
+  <text class="kp-title" x="32" y="42">Guard A</text>
+  <path class="kp-rule" d="M16,58 H420"/>
+  <!-- instance band -->
+  <g transform="translate(30,66) scale(0.58)"><path class="kp-icon-brand" d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path class="kp-icon-brand" d="m3.3 7 8.7 5 8.7-5"/><path class="kp-icon-brand" d="M12 22V12"/></g>
+  <text class="kp-dim" x="52" y="78">Instance of</text>
+  <text class="kp-link" x="122" y="78">guard.kprefab</text>
+  <text class="kp-field" x="294" y="78">Apply all</text>
+  <text class="kp-field" x="354" y="78">Revert all</text>
+  <path class="kp-rule" d="M16,88 H420"/>
+  <!-- Transform card -->
+  <rect class="kp-cardbg" x="24" y="98" width="388" height="66" rx="4"/>
+  <text class="kp-card-title" x="36" y="118">Transform</text>
+  <text class="kp-badge" x="106" y="118">1 override</text>
+  <circle class="kp-dot" cx="40" cy="146" r="2.5"/>
+  <text class="kp-field" x="50" y="150">scale</text>
+  <text class="kp-mono" x="150" y="150">1.5  1.5  1.5</text>
+  <g transform="translate(392,139) scale(0.5)"><path class="kp-icon" d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path class="kp-icon" d="M3 3v5h5"/></g>
+  <!-- Stats card -->
+  <rect class="kp-cardbg" x="24" y="174" width="388" height="114" rx="4"/>
+  <text class="kp-card-title" x="36" y="194">Stats</text>
+  <text class="kp-badge" x="76" y="194">2 overrides</text>
+  <circle class="kp-dot" cx="40" cy="222" r="2.5"/>
+  <text class="kp-field" x="50" y="226">health</text>
+  <text class="kp-mono" x="150" y="226">150</text>
+  <g transform="translate(392,215) scale(0.5)"><path class="kp-icon" d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path class="kp-icon" d="M3 3v5h5"/></g>
+  <text class="kp-field" x="50" y="250">speed</text>
+  <text class="kp-mono" x="150" y="250">3.0</text>
+  <circle class="kp-dot" cx="40" cy="270" r="2.5"/>
+  <text class="kp-field" x="50" y="274">armor</text>
+  <text class="kp-mono" x="150" y="274">8</text>
+  <g transform="translate(392,263) scale(0.5)"><path class="kp-icon" d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path class="kp-icon" d="M3 3v5h5"/></g>
+  <rect class="kp-sel" x="30" y="262" width="384" height="20" rx="3"/>
+  <!-- removed component -->
+  <rect class="kp-ghost" x="24" y="298" width="388" height="38" rx="4"/>
+  <text class="kp-dim" x="36" y="321">Light</text>
+  <text class="kp-badge" x="76" y="321">removed</text>
+  <rect class="kp-btn" x="346" y="307" width="58" height="20" rx="3"/>
+  <text class="kp-item" x="355" y="321">Restore</text>
+  <!-- callouts -->
+  <path class="kp-lead" d="M422,74 H442"/>
+  <text class="kp-head" x="448" y="74">instance band</text>
+  <text class="kp-label" x="448" y="90">the prefab it comes from — click to select it</text>
+  <path class="kp-lead" d="M422,114 H442"/>
+  <text class="kp-head" x="448" y="114">card note</text>
+  <text class="kp-label" x="448" y="130">how many fields this component overrides</text>
+  <path class="kp-lead" d="M422,222 H442"/>
+  <text class="kp-head" x="448" y="222">dot and revert arrow</text>
+  <text class="kp-label" x="448" y="238">this field differs from the prefab; the arrow</text>
+  <text class="kp-label" x="448" y="254">puts the prefab's value back</text>
+  <path class="kp-lead" d="M416,272 H442"/>
+  <text class="kp-head" x="448" y="276">right-click a field</text>
+  <rect class="kp-menu" x="448" y="284" width="180" height="50" rx="4"/>
+  <text class="kp-item" x="462" y="304">Revert to prefab</text>
+  <text class="kp-item" x="462" y="324">Apply to prefab</text>
+  <path class="kp-lead" d="M422,317 C432,317 432,358 442,358"/>
+  <text class="kp-head" x="448" y="362">removed component</text>
+  <text class="kp-label" x="448" y="378">in the prefab, not here — Restore brings it back</text>
+</svg>

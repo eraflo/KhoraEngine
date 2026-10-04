@@ -1,7 +1,8 @@
 # File formats
 
-The on-disk formats Khora reads and writes: the `.kscene` scene file, the `.pack`
-asset archive, and the `.kmat` material file. This page is structure and facts —
+The on-disk formats Khora reads and writes: the `.kscene` scene file, the
+`.kprefab` prefab, the game save, the `.pack` asset archive, and the `.kmat`
+material file. This page is structure and facts —
 for *why* the formats are shaped this way see
 [Serialization](../concepts/serialization.md) and [Assets](../concepts/assets.md);
 to *save and load* a scene see
@@ -21,7 +22,7 @@ The header is a fixed `SceneHeader` (defined in
 
 | Field | Type | Bytes | Notes |
 |---|---|---|---|
-| `magic_bytes` | `[u8; 8]` | 8 | Always `"KHORASCN"` (`HEADER_MAGIC_BYTES`). |
+| `magic_bytes` | `[u8; 8]` | 8 | `"KHORASCN"` for a scene or prefab (`HEADER_MAGIC_BYTES`), `"KHORASAV"` for a game save (`SAVE_MAGIC_BYTES`). |
 | `format_version` | `u8` | 1 | `SCENE_FORMAT_VERSION`, currently `2`. |
 | `encoding_id` | `[u8; 32]` | 32 | Null-padded UTF-8 encoding ID, e.g. `"KH_COMPACT_V2"`. |
 | `payload_length` | `u64` | 8 | Length of the payload that follows, in bytes (little-endian). |
@@ -32,9 +33,16 @@ by direct byte manipulation (not serde) because it is fixed-layout.
 `from_bytes` returns `SceneFileError::InvalidMagicBytes` or
 `SceneFileError::TooShort` on a malformed file.
 
-A file of any other version is refused, with its version in the error: an
-older one as a format this engine no longer reads, a newer one as newer than
-the engine.
+Reading the payload can fail with a `SceneFileReadError`:
+
+| Variant | When |
+|---|---|
+| `OldFormat(version)` | written in a format this engine no longer reads |
+| `NewerFormat(version)` | written by a newer engine |
+| `UnknownEncoding(id)` | the header names an encoding this build does not have |
+| `Encoding(error)` | the payload could not be decoded |
+| `NotAScene` | a scene was expected and the file is a game save |
+| `NotASave` | a game save was expected and the file is a scene |
 
 ### The scene record
 
@@ -44,17 +52,23 @@ What every encoding holds is the same `SceneRecord`
 - `entities` — the persistent id of every saved entity, in order.
 - `pages` — one per component signature: the component **names**, the ids of
   the rows, and one column of values per component, row-aligned.
+- `instances` — the [prefab instances](../concepts/prefabs.md) the record keeps
+  collapsed: each an `InstanceRecord { root, prefab, delta }` — the root's
+  persistent id, the prefab's asset UUID, and the instance's differences from
+  the prefab as a game save records them. Text and MessagePack read the key as
+  optional: a record without instances may leave it out.
 
 Components are saved **by name** — the name their `Component` derive registers —
 and their values field by field, by name. Entity references are saved as
 persistent ids, asset references as asset UUIDs. Only components whose
-provenance is authored are saved; derived and runtime state is rebuilt on load.
+provenance is authored or tool-authored are saved; derived and runtime state is
+rebuilt on load.
 
 Reading a record adapts it to today's code and **reports** each adaptation
 (`LoadReport`): a field missing from the save takes its default, a field the code
 no longer has is dropped, a field or component saved under a name listed in its
-`formerly` is renamed, a number is widened losslessly, a reference to an entity
-the save does not hold is cut. A component name nothing registers is an
+`formerly` is renamed, a number is read at another width losslessly, a reference
+to an entity the save does not hold is cut. A component name nothing registers is an
 **error** — unless it is declared retired, in which case it is skipped and
 reported. A component the engine derives or keeps while running is skipped and
 reported too, and rebuilt: a save never holds one, and a recorded copy could only
@@ -130,11 +144,14 @@ On 10 000 entities (a transform and a name each), a snapshot loads in about
 
 ### Compact layout
 
-The compact payload writes every name once. A table of **symbols** (component,
-struct, field, enum and variant names) and a table of **shapes** (a struct's name
-and field names, or an enum's name and a variant's) come first; every value after
-them refers to its shape or name by index. The pages follow, each column by column —
-the order CRPECS stores them in.
+The compact payload starts with its layout version — `2` — and writes every
+name once. A table of **symbols** (component, struct, field, enum and variant
+names) and a table of **shapes** (a struct's name and field names, or an enum's
+name and a variant's) come first; every value after them refers to its shape or
+name by index. The entities and the pages follow, each page column by column —
+the order CRPECS stores them in — and last the prefab instances: each its root
+(`u64` LE), its prefab (16-byte UUID), then its delta behind its length, in the
+game save layout below. Layout `1`, which has no instances, still reads.
 
 <div class="kp-figure-frame">
 
@@ -156,6 +173,37 @@ above hold whichever one wrote the file.
 
 > Choosing a *goal* is a developer decision; choosing an *encoding* is an engine
 > decision.
+
+## `.kprefab` — prefab
+
+A prefab is a scene file — the same header, magic `KHORASCN` — whose record holds
+one subtree: the entity it was made from and everything under it. The editor
+writes it in the compact encoding. A prefab may itself hold instances of other
+prefabs, but never of itself, at any depth. See [Prefabs](../concepts/prefabs.md).
+
+## Game save
+
+A game save is a file with the same header and magic `KHORASAV`. Its payload is a
+`SaveRecord` (`crates/khora-data/src/scene/save.rs`): how the running world
+differs from the scene it was taken against. See
+[Scenes and game saves](../concepts/saves.md).
+
+| Field | Holds |
+|---|---|
+| `base` | the scene's asset UUID |
+| `order` | every entity of the saved world, tree by tree, siblings in order |
+| `destroyed` | ids of the scene's entities the game destroyed |
+| `created` | ids of the entities the game made |
+| `removed` | per scene entity, the names of the components the game removed |
+| `changes` | a scene record: every entity that differs, with the components that differ, whole |
+| `before` | a scene record: the scene's values, when saved, of the components in `changes` |
+
+In the compact encoding: `base` (16 bytes), then `order`, `destroyed` and
+`created` — each a varint count and `u64` LE ids — then `removed` — a count, and
+per entry an id, a count and length-prefixed names — then `changes` as a compact
+record behind its length, then `before` as a compact record. Text and
+MessagePack write the same fields by name. A save is never written as a
+snapshot: asked for `FastestLoad`, it is written compactly.
 
 ## `.pack` — asset archive
 

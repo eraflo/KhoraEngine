@@ -4,7 +4,7 @@ Choices we made, and what we said no to. The global ledger.
 
 - Document — Khora Decisions v1.0
 - Status — Living
-- Date — May 2026
+- Date — October 2026
 
 ---
 
@@ -84,8 +84,14 @@ Choices we made, and what we said no to. The global ledger.
 - **No:** an immediate-mode UI inside the engine; a separate UI rendering backend; Taffy types in components.
 
 ### Serialization
-- **Yes:** four strategies, one file format; `#[derive(Component)]` generates the mirror; play mode uses Archetype; editor uses Definition.
-- **No:** reflection-based serialization; a "serialization agent"; preserving physics state across play mode (in v1).
+- **Yes:** files as **records by name** — components by registered name, fields by name, entities by `PersistentId` — page-shaped; three record encodings and a snapshot, chosen by a `SerializationGoal`; `#[derive(Component)]` generates the mirror; renames declared with `formerly`, removals declared as retired; every adaptation reported in a `LoadReport`; loads atomic (prepare, then commit); the snapshot as a **cache** bound to the schema that wrote it, never a project's only copy; play mode uses the snapshot, the editor the compact encoding.
+- **Yes:** a **game save is a difference** against its scene, loaded by a three-way merge with the scene as it is now; a **prefab instance is a link** and its difference from the prefab, with member ids derived from the instance; runtime state that resumes a game declared `resumable`; lifecycle facts (`spawned`, a fault) recorded, not guessed.
+- **Yes:** older scene files upgraded **once** and the old readers deleted — a self-describing format needs no permanent legacy code.
+- **No:** reflection-based serialization; positional saves; raw page memory on disk; hand-written payload migrations; a "serialization agent"; preserving physics state across play mode (in v1).
+
+### Scripting
+- **Yes:** a language of our own whose stopping is ordinary — fuel checked at named safepoints, a stopped body kept and resumed; effects as queued commands, never direct world writes; events delivered the next frame; scripts run only while the game runs (`EngineMode::Playing`); a suspended body taken back after an edit in tiers — exact, unchanged, rebuilt at its site, restarted, abandoned with `OnResumeFailed` — rather than resumed blindly or dropped.
+- **No:** an embedded Lua, C# or WASM runtime; interruption as an error path; scripts running while the author edits a scene; positions in saved machines guarded by an unstable hash.
 
 ### Telemetry
 - **Yes:** telemetry as a first-class service; two collection styles (poll + push); `SaaTrackingAllocator` as the default; string-keyed metric registry.
@@ -108,7 +114,7 @@ Choices we made, and what we said no to. The global ledger.
 ## 04 — Process
 
 ### We said yes to
-- **Tests are the contract.** ~1676 workspace tests. Adding a feature without a test is a code smell.
+- **Tests are the contract.** ~2520 workspace tests. Adding a feature without a test is a code smell.
 - **CHANGELOG is auto-generated.** No human edits.
 - **CI runs `cargo fmt`, `cargo clippy`, `cargo nextest run`, `cargo deny` and an MSRV `cargo check` directly (`cargo xtask all` is the local equivalent).** fmt + clippy + test + doc. If it passes there, it passes locally.
 - **Documentation ships with the engine.** When the engine changes, the book changes in the same commit.

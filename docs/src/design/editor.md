@@ -176,6 +176,15 @@ Tree of entities. Indented with thin guide lines — never with chevron-only dis
 ### Inspector (right, 320 px)
 Stacked component cards. Each card is collapsible, with a 6 px gold accent on hover. Numeric fields are draggable scrubbers (no spinners) — drag horizontally to change value, modifier keys for precision.
 
+**On a prefab instance** the Inspector shows the entity against its prefab, in silver, never in gold — gold stays the selection's color:
+
+- **Instance band** — one quiet line under the header, not a card: the prefab icon, "Instance of" or "Part of an instance of", the prefab's file name as the band's one link, and **Apply all** / **Revert all** right-aligned as words — rare, consequential actions, too important to hide behind icons.
+- **Override dot** — a small silver dot left of an overriding field, and a revert arrow at the row's right end. Right-click a field for *Revert to prefab* / *Apply to prefab*.
+- **Card note** — "N overrides" or "added", in mono, in silver, on the card header; apply and revert icons appear on hover beside the remove icon.
+- **Removed row** — a component the prefab has and this instance removed, named, marked "removed", with a **Restore** button.
+
+There is no separate "Prefab" tab: the overrides are shown where the values are. See [Prefabs](../concepts/prefabs.md#seeing-and-editing-overrides).
+
 ### Viewport (center, fluid)
 The 3D scene. Floating gizmo overlay top-left (move/rotate/scale). Coordinate readout bottom-right in mono. View modes (wireframe, lit, normals) as a floating segmented pill, top-right.
 

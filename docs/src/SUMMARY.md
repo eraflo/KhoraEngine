@@ -15,6 +15,7 @@
 - [Play 3D audio](./how-to/play-3d-audio.md)
 - [Build a UI](./how-to/build-a-ui.md)
 - [Save and load scenes](./how-to/save-and-load-scenes.md)
+- [Work with prefabs](./how-to/work-with-prefabs.md)
 - [Map input](./how-to/map-input.md)
 - [Add a component](./how-to/add-a-component.md)
 - [Add a lane](./how-to/add-a-lane.md)
@@ -43,11 +44,14 @@
 - [UI](./concepts/ui.md)
 - [Assets](./concepts/assets.md)
 - [Serialization](./concepts/serialization.md)
+- [Scenes and game saves](./concepts/saves.md)
+- [Prefabs](./concepts/prefabs.md)
 - [Telemetry](./concepts/telemetry.md)
 
 # Reference
 - [Overview](./reference/index.md)
 - [SDK overview](./reference/sdk.md)
+- [Ergon language](./reference/ergon.md)
 - [Crate map](./reference/crates.md)
 - [File formats](./reference/formats.md)
 - [Project structure](./reference/project-structure.md)

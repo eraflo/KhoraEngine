@@ -34,11 +34,9 @@ pub enum AssetTileKind {
     /// Authored materials (`.kmat`) — RON material definitions referenced
     /// by entities through `MaterialRef::Asset`.
     Material,
-    /// Gameplay scripts (`.kscript`) — data-driven, hot-reloadable. Tier
-    /// 3 of the project's three "code" tiers; the scripting language
-    /// runtime itself isn't implemented yet, but the asset browser
-    /// surfaces them so authors can see where they live and the watcher
-    /// can hot-reload them.
+    /// Gameplay scripts (`.erg`, Ergon) — hot-reloadable: the watcher
+    /// recompiles an edited script and the running behaviors carry on in
+    /// the new code.
     Script,
     Unknown,
 }

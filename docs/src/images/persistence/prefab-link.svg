@@ -1,0 +1,65 @@
+<svg class="kp-figure" viewBox="0 0 760 312" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-prefab-title kp-prefab-desc">
+  <title id="kp-prefab-title">A prefab and two linked instances</title>
+  <desc id="kp-prefab-desc">The prefab file holds a guard with a sword and a shield. The scene holds two instances of it, each as a link to the prefab plus what it overrides: guard A overrides its health to 150, guard B overrides nothing. Loading expands each link into the prefab as it is now, applying the overrides; every member gets an id derived from its instance and its id in the prefab. Saving collapses the instances back into links.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-card-out { fill: var(--k-bg-1, #101622); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-arrow { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    .kp-tip { fill: var(--k-silver-dim, #809db2); }
+    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 17px; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+    .kp-key { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="312" rx="8"/>
+  <!-- the prefab -->
+  <rect class="kp-card" x="16" y="16" width="300" height="132" rx="6"/>
+  <text class="kp-station" x="32" y="44">the prefab</text>
+  <text class="kp-note" x="32" y="62">guard.kprefab · a compact scene file</text>
+  <text class="kp-mono" x="32" y="92">Guard</text>
+  <text class="kp-key" x="120" y="92">health 100</text>
+  <text class="kp-mono" x="32" y="113">├ Sword</text>
+  <text class="kp-mono" x="32" y="134">└ Shield</text>
+  <!-- the scene -->
+  <rect class="kp-card" x="16" y="164" width="300" height="132" rx="6"/>
+  <text class="kp-station" x="32" y="192">the scene</text>
+  <text class="kp-note" x="32" y="210">each instance: a link + its overrides</text>
+  <text class="kp-mono" x="32" y="238">Guard A</text>
+  <text class="kp-key" x="120" y="238">→ guard.kprefab</text>
+  <text class="kp-mono" x="48" y="259">health 150</text>
+  <rect class="kp-sel" x="42" y="245" width="86" height="20" rx="3"/>
+  <text class="kp-mono" x="32" y="283">Guard B</text>
+  <text class="kp-key" x="120" y="283">→ guard.kprefab</text>
+  <!-- expand and collapse -->
+  <text class="kp-note" x="322" y="74">expand</text>
+  <path class="kp-arrow" d="M320,82 H370"/>
+  <path class="kp-tip" d="M370,77 L376,82 L370,87 Z"/>
+  <text class="kp-note" x="322" y="214">expand</text>
+  <path class="kp-arrow" d="M320,222 H370"/>
+  <path class="kp-tip" d="M370,217 L376,222 L370,227 Z"/>
+  <path class="kp-arrow" d="M378,246 H328"/>
+  <path class="kp-tip" d="M328,241 L322,246 L328,251 Z"/>
+  <text class="kp-note" x="322" y="264">collapse</text>
+  <!-- the world -->
+  <rect class="kp-card-out" x="380" y="16" width="364" height="280" rx="6"/>
+  <text class="kp-station" x="396" y="44">the world</text>
+  <text class="kp-note" x="396" y="62">each member keyed within its instance</text>
+  <text class="kp-mono" x="396" y="96">Guard A</text>
+  <text class="kp-mono" x="484" y="96">health 150</text>
+  <rect class="kp-sel" x="478" y="82" width="86" height="20" rx="3"/>
+  <text class="kp-mono" x="396" y="117">├ Sword</text>
+  <text class="kp-note" x="590" y="117">within(A, Sword)</text>
+  <text class="kp-mono" x="396" y="138">└ Shield</text>
+  <text class="kp-note" x="590" y="138">within(A, Shield)</text>
+  <text class="kp-mono" x="396" y="176">Guard B</text>
+  <text class="kp-key" x="484" y="176">health 100</text>
+  <text class="kp-mono" x="396" y="197">├ Sword</text>
+  <text class="kp-note" x="590" y="197">within(B, Sword)</text>
+  <text class="kp-mono" x="396" y="218">└ Shield</text>
+  <text class="kp-note" x="590" y="218">within(B, Shield)</text>
+  <text class="kp-label" x="396" y="272">Edit the prefab and both follow — A keeps its health.</text>
+</svg>

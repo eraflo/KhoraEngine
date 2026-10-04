@@ -10,7 +10,7 @@ Use the `Vessel` builder or the primitive helpers — never poke ECS storage dir
 ```rust
 // Builder:
 let e = Vessel::at(world, Vec3::new(x, y, z))
-    .with_component(component)                 // Camera, Light, MaterialComponent, RigidBody, …
+    .with_component(component)                 // Camera, Light, MaterialRef, RigidBody, Script, …
     .with_rotation(Quaternion::from_axis_angle(Vec3::Y, angle))
     .build();
 

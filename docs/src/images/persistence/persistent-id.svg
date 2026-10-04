@@ -1,6 +1,6 @@
-<svg class="kp-figure" viewBox="0 0 760 232" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-id-title kp-id-desc">
+<svg class="kp-figure" viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-id-title kp-id-desc">
   <title id="kp-id-title">The 64 bits of a persistent id</title>
-  <desc id="kp-id-desc">The top bit names the namespace. Zero: an authored entity, whose remaining 63 bits are random, chosen once and kept by every save. One: an entity created without an author, whose remaining bits are a number the world gives the first time something needs the entity's identity.</desc>
+  <desc id="kp-id-desc">The top bit names the namespace. Zero: an authored entity, whose remaining 63 bits are random, chosen once and kept by every save. Also zero: a member of a prefab instance, whose bits are derived from the instance root's id and the member's id in the prefab, the same on every load and different for every instance. One: an entity created without an author, whose remaining bits are a number the world gives the first time something needs the entity's identity.</desc>
   <style>
     .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
     .kp-bg { fill: var(--k-bg-0, #090d17); }
@@ -16,7 +16,7 @@
     .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
     .kp-bitval { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 15px; font-weight: 600; }
   </style>
-  <rect class="kp-bg" x="0" y="0" width="760" height="232" rx="8"/>
+  <rect class="kp-bg" x="0" y="0" width="760" height="320" rx="8"/>
   <!-- bit ruler -->
   <text class="kp-note" x="150" y="30">63</text>
   <text class="kp-note" x="190" y="30">62</text>
@@ -33,12 +33,20 @@
   <text class="kp-mono" x="200" y="92">random — e.g. 2f9a 41c7 0b3e c4e1</text>
   <text class="kp-label" x="186" y="124">Drawn once, when the editor creates the entity; every save keeps it.</text>
   <text class="kp-label" x="186" y="140">Random, so two people editing one scene never hand out the same id.</text>
-  <!-- created -->
-  <text class="kp-station" x="16" y="182">created</text>
+  <!-- within an instance -->
+  <text class="kp-station" x="16" y="182">in an instance</text>
   <rect class="kp-bit" x="146" y="160" width="34" height="32" rx="3"/>
-  <text class="kp-bitval" x="158" y="181">1</text>
-  <rect class="kp-cell-soft" x="186" y="160" width="558" height="32" rx="3"/>
-  <text class="kp-mono" x="200" y="180">n — the n-th identity this world handed out</text>
-  <text class="kp-label" x="186" y="212">Spawned by the game or by code: numbered the first time a save or a lookup needs it.</text>
-  <rect class="kp-sel" x="143" y="69" width="40" height="126" rx="4"/>
+  <text class="kp-bitval" x="158" y="181">0</text>
+  <rect class="kp-cell" x="186" y="160" width="558" height="32" rx="3"/>
+  <text class="kp-mono" x="200" y="180">within(instance root, member's id in the prefab)</text>
+  <text class="kp-label" x="186" y="212">Derived, not stored: the same on every load, different for every instance.</text>
+  <text class="kp-label" x="186" y="228">Nested instances compose — within(within(root, nested), member).</text>
+  <!-- created -->
+  <text class="kp-station" x="16" y="270">created</text>
+  <rect class="kp-bit" x="146" y="248" width="34" height="32" rx="3"/>
+  <text class="kp-bitval" x="158" y="269">1</text>
+  <rect class="kp-cell-soft" x="186" y="248" width="558" height="32" rx="3"/>
+  <text class="kp-mono" x="200" y="268">n — the n-th identity this world handed out</text>
+  <text class="kp-label" x="186" y="300">Spawned by the game or by code: numbered the first time a save or a lookup needs it.</text>
+  <rect class="kp-sel" x="143" y="69" width="40" height="214" rx="4"/>
 </svg>

@@ -1,0 +1,73 @@
+<svg class="kp-figure" viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-report-title kp-report-desc">
+  <title id="kp-report-title">An old save read by today's code, and the report the load returns</title>
+  <desc id="kp-report-desc">The save was written when the guard's Stats had hp, a 32-bit speed and a mood, the torch had a Glow component, and an arrow targeted an entity the save does not hold. Today's Stats calls hp health, formerly hp, holds speed as a 64-bit float, has gained armor with a default of 5 and lost mood; Glow is declared retired. The load reads all of it and reports each adaptation: health renamed from hp, speed widened, armor defaulted, mood dropped, Glow retired, the arrow's target a dead reference.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-card-out { fill: var(--k-bg-1, #101622); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-arrow { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    .kp-tip { fill: var(--k-silver-dim, #809db2); }
+    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 17px; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-kind { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+    .kp-key { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="300" rx="8"/>
+  <!-- the save -->
+  <rect class="kp-card" x="16" y="16" width="228" height="232" rx="6"/>
+  <text class="kp-station" x="32" y="44">an old save</text>
+  <text class="kp-note" x="32" y="62">written months ago</text>
+  <text class="kp-mono" x="32" y="96">Guard · Stats</text>
+  <text class="kp-key" x="44" y="118">hp</text>
+  <text class="kp-mono" x="118" y="118">40</text>
+  <rect class="kp-sel" x="38" y="104" width="104" height="20" rx="3"/>
+  <text class="kp-key" x="44" y="140">speed</text>
+  <text class="kp-mono" x="118" y="140">3.0 f32</text>
+  <text class="kp-key" x="44" y="162">mood</text>
+  <text class="kp-mono" x="118" y="162">"calm"</text>
+  <text class="kp-mono" x="32" y="194">Torch · Glow</text>
+  <text class="kp-mono" x="32" y="222">Arrow · Target</text>
+  <text class="kp-key" x="148" y="222">→ #9f2c</text>
+  <path class="kp-arrow" d="M248,132 H258"/>
+  <path class="kp-tip" d="M258,127 L264,132 L258,137 Z"/>
+  <!-- today's code -->
+  <rect class="kp-card" x="266" y="16" width="228" height="232" rx="6"/>
+  <text class="kp-station" x="282" y="44">today's code</text>
+  <text class="kp-note" x="282" y="62">what the types say now</text>
+  <text class="kp-mono" x="282" y="96">Stats {</text>
+  <text class="kp-mono" x="294" y="118">health</text>
+  <text class="kp-key" x="356" y="118">formerly "hp"</text>
+  <rect class="kp-sel" x="288" y="104" width="178" height="20" rx="3"/>
+  <text class="kp-mono" x="294" y="140">speed</text>
+  <text class="kp-key" x="356" y="140">f64</text>
+  <text class="kp-mono" x="294" y="162">armor</text>
+  <text class="kp-key" x="356" y="162">= 5</text>
+  <text class="kp-mono" x="282" y="178">}</text>
+  <text class="kp-mono" x="282" y="200">Glow</text>
+  <text class="kp-key" x="330" y="200">retired</text>
+  <path class="kp-arrow" d="M498,132 H508"/>
+  <path class="kp-tip" d="M508,127 L514,132 L508,137 Z"/>
+  <!-- the report -->
+  <rect class="kp-card-out" x="516" y="16" width="228" height="232" rx="6"/>
+  <text class="kp-station" x="532" y="44">LoadReport</text>
+  <text class="kp-note" x="532" y="62">one entry per adaptation</text>
+  <text class="kp-mono" x="532" y="96">health</text>
+  <text class="kp-kind" x="608" y="96">renamed from hp</text>
+  <rect class="kp-sel" x="526" y="82" width="190" height="20" rx="3"/>
+  <text class="kp-mono" x="532" y="122">speed</text>
+  <text class="kp-kind" x="608" y="122">widened</text>
+  <text class="kp-mono" x="532" y="148">armor</text>
+  <text class="kp-kind" x="608" y="148">defaulted</text>
+  <text class="kp-mono" x="532" y="174">mood</text>
+  <text class="kp-kind" x="608" y="174">dropped</text>
+  <text class="kp-mono" x="532" y="200">Glow</text>
+  <text class="kp-kind" x="608" y="200">retired</text>
+  <text class="kp-mono" x="532" y="226">Target</text>
+  <text class="kp-kind" x="608" y="226">dead reference</text>
+  <text class="kp-label" x="16" y="276">Nothing is lost silently and nothing fails: the load adapts by name and says where. Only a component nothing</text>
+  <text class="kp-label" x="16" y="292">registers — neither current, formerly, nor retired — refuses the load, and then the world is left untouched.</text>
+</svg>

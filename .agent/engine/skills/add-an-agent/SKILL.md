@@ -14,10 +14,15 @@ a GORNA budget. Non-negotiating work uses a service (`AssetService`, `EcsMainten
 2. Create `crates/khora-agents/src/<domain>_agent/{mod.rs,agent.rs}`. Implement **only** `Agent` + `Default`:
    `id`, `negotiate`, `apply_budget`, `report_status`, `on_initialize` (cache services once), `execute`
    (dispatch the lane), `as_any`/`as_any_mut`.
-3. Declare `ExecutionTiming` (allowed phases, priority, importance, dependencies) and the allowed `EngineMode`.
+3. Declare `ExecutionTiming` (allowed phases, default phase, priority, importance, fixed timestep, dependencies),
+   `access()` and `contention()` (RULES §5). Engine modes are **not** part of the timing: they are passed at
+   registration (step 5).
 4. In `negotiate`, return `NegotiationResponse` options (time, VRAM) per strategy; in `apply_budget`, pick the
    strategy the arbitrator granted; in `execute`, call `Lane::execute(LaneContext{bus, deck, budget})`.
-5. Register the agent in `crates/khora-sdk/src/engine/bootstrap.rs` next to the existing agents.
+5. Register the agent in `crates/khora-sdk/src/engine/bootstrap.rs` next to the existing agents:
+   `dcc.register_agent(agent, priority)` (every mode) or
+   `dcc.register_agent_for_mode(agent, priority, vec![EngineMode::Playing])` (only those modes — how
+   `ScriptAgent` stays off while the editor edits). The scheduler reads `SharedEngineMode` once per frame.
 
 ## Hard rules
 - **No method outside the `Agent` trait** — no `start/stop`, builders, or accessors. Private free functions

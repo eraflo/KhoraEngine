@@ -380,10 +380,11 @@ fn revert_prefab_instance(
 impl EditorApp {
     /// Tells the engine how fast the simulated world should run.
     ///
-    /// The **only** thing `PlayMode` causes to cross into the engine, and it
-    /// crosses as a number rather than as a mode: a scale of `0.0` is what a
-    /// pause menu or a cutscene sets too, so the editor is one caller among
-    /// several rather than a special case the engine has to know about.
+    /// One of the two things `PlayMode` causes to cross into the engine — the
+    /// engine mode, which decides whether scripts run, is the other. The scale
+    /// crosses as a number: `0.0` is what a pause menu or a cutscene sets too,
+    /// so the editor is one caller among several rather than a special case the
+    /// engine has to know about.
     ///
     /// Before this, a rigid body fell while nobody had pressed Play — the
     /// engine had no way to be told the world was not meant to be running, and

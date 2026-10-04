@@ -110,7 +110,7 @@ pub fn run_behaviors(
             let arrived = persistence::arrived(&arrival);
             Some(Arriving {
                 store: persistence::store_from_snapshot(layout, &arrived),
-                resumed: persistence::resume(&arrived, &compiled, layout),
+                resumed: super::resumption::resume(&arrived, &compiled, layout),
                 restored: arrival.observed.is_some(),
                 lifecycle: arrived.lifecycle,
             })

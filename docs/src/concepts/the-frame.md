@@ -173,6 +173,18 @@ about. `Time::scale` is private and reachable only through `set_scale`, which
 clamps at zero: running a solver backwards is not a slower forward, and every
 integrator here assumes time moves one way.
 
+The scale says whether time passes; it does not say *which agents run*. That
+is the **engine mode**, the `SharedEngineMode` resource the scheduler reads
+once per frame: an agent registered for particular modes
+(`DccService::register_agent_for_mode`) is skipped in any other. The editor
+writes both at the top of every frame, in `before_agents` — the mode first,
+then the scale (`khora-editor/src/app/mod.rs`). Editing runs the editor's own
+mode, `EngineMode::Custom("editor")`, so the script agent — registered for
+`EngineMode::Playing` only — does not run while an author edits a scene.
+Playing and Paused both run `EngineMode::Playing`: a paused game is still the
+game, its scripts run at a delta of zero. A game without an editor stays in
+the mode its app's `initial_mode` returned, `Playing` by default.
+
 Applied once, in the scheduler. An agent deciding for itself whether time
 passes would be a dozen places to disagree about what "paused" means.
 

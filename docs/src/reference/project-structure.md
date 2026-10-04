@@ -14,15 +14,16 @@ contract.
 ```text
 <name>/
 ├── project.json           # project descriptor (see "project.json schema")
-├── .gitignore             # target/ and *.lock
-├── src/                   # native Rust extensions (compiled into the game)
+├── README.md
+├── .gitignore             # target/, IDE folders, OS and editor scratch files
+├── src/                   # native Rust extensions (created empty; see tier 2)
 └── assets/                # runtime data (loaded by the engine)
     ├── scenes/            # *.kscene
     ├── textures/          # png, jpg, jpeg, tga, bmp, hdr
     ├── meshes/            # gltf, glb, obj, fbx
     ├── audio/             # wav, ogg, mp3, flac
     ├── shaders/           # wgsl, hlsl, glsl
-    └── scripts/           # gameplay scripts (data, hot-reloadable)
+    └── scripts/           # Ergon modules, *.erg — main.erg is seeded
 ```
 
 The hub creates every folder in this tree, even when empty, so the editor's asset
@@ -33,6 +34,19 @@ The first time the editor opens a project, it writes
 has a viable scene to start from. See
 [`scene_io.rs`](../../../crates/khora-editor/src/scene_io/mod.rs).
 
+Two kinds of file have no folder of their own:
+
+- **Prefabs** (`.kprefab`) are written wherever the author saves them — the
+  asset browser's current folder, or the location picked in the save dialog
+  when a subtree is saved from the scene tree. A prefab is a scene file of a
+  subtree; scenes link to it by its asset id, which survives a move or rename
+  made in the editor (the editor freezes it in `.khora/asset-registry.ron`). See [Prefabs](../concepts/prefabs.md).
+- **Game saves** have no convention at all. `GameWorld::save_game` returns a
+  `SceneFile` (magic bytes `KHORASAV`) and the game decides where its bytes go;
+  the engine names no folder and no extension. A save holds only the
+  differences from its scene, so it is useless without the scene it names —
+  see [Scenes and game saves](../concepts/saves.md).
+
 ## Three tiers of code
 
 A Khora project layers three sources of behaviour, each with a different
@@ -42,16 +56,19 @@ lifecycle:
 |------|----------|-------------|------------|----------------|
 | 1. Engine built-ins | `khora-sdk` (linked into every binary) | n/a — engine is pre-compiled | no | pre-built per target |
 | 2. Native Rust | `src/` + `Cargo.toml` (opt-in) | `cargo build --release` | no, requires rebuild | host-only in v1 |
-| 3. Scripts | `assets/scripts/*.kscript` | none — they are data | via the project's asset watcher | universal |
+| 3. Scripts | `assets/scripts/*.erg` | by the engine, at startup — no toolchain | via the project's asset watcher | universal |
 
 Tier 1 supplies the primitives (`Transform`, `Camera`, `Light`, `Mesh`, ECS
 plumbing). Tier 2 extends them with custom Rust types when you need raw access to
 internal APIs or compile-time guarantees. Tier 3 sits on top: gameplay logic
-expressed as data, hot-reloadable at runtime — no recompile to iterate.
+written in [Ergon](../concepts/scripting.md), compiled by the engine itself and
+hot-reloadable at runtime — no Rust recompile to iterate. A behavior suspended
+mid-body when its script is edited resumes in the new code where it can; see
+[Scripting](../concepts/scripting.md).
 
 A game can ship with any subset. **Tier 2 is opt-in**: a fresh project from the
-hub has no `Cargo.toml` or `src/`. Most games start data-only (tiers 1 + 3) and
-stay there.
+hub has no `Cargo.toml` (its `src/` folder is created empty). Most games start
+data-only (tiers 1 + 3) and stay there.
 
 ### Adding native code (tier 2)
 
@@ -130,8 +147,9 @@ extension at all gets the generic `blob` tag.
 
 1. **Creation** — the user picks a name, engine version, and parent folder in the
    hub; the hub writes the layout above. It also seeds
-   `assets/scripts/main.kscript` (a stub for the future scripting language; safe
-   to ignore today).
+   `assets/scripts/main.erg`, a real Ergon module that compiles and runs —
+   it does nothing visible until a behavior it declares is attached to an
+   entity.
 2. **Open** — `khora-editor --project <path>` reads `project.json`, builds the
    project's VFS by scanning `assets/`, arms a filesystem watcher for hot reload,
    and populates `EditorState`.

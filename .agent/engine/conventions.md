@@ -65,9 +65,18 @@ pub struct Light {
 }
 ```
 
-- `#[component(skip)]` for fields that must not serialize (GPU handles, runtime caches).
-- `#[component(no_serializable)]` for components with manual mirrors (unit structs, trait objects).
+| Attribute | Where | Effect |
+|---|---|---|
+| `skip` | field | Not serialized, not inspected (GPU handles, runtime caches). |
+| `domain = X` | type | `SemanticDomain` self-registered into `World`. |
+| `provenance = X` | type | `Authored` (default) / `ToolAuthored` → saved in scenes; `Derived` / `Runtime` → never in a scene, not copied on duplicate. |
+| `resumable` | type | A `Runtime` component a **game save** keeps so play resumes (`ScriptState`). |
+| `formerly = "Old"` | type or field | Old name a save may hold; repeatable. On a field it becomes a serde alias; on a type the load reports `Renamed`. |
+| `layout = "soa"` | type | Field-split SoA column (all-`f32` structs only). |
+| `no_serializable` | type | **Removes the `ComponentRegistration`** — never saved, inspected, or reachable by name. Not a synonym for runtime state; prefer a provenance. |
+
 - The derive self-registers via `inventory`. Only generics and hand-written impls stay explicit in `World::new`.
+- Removing a component type: declare it retired (`inventory::submit!{ RetiredComponent { name: "Old" } }`), or every save naming it fails to load.
 
 ## 5 — Logging
 

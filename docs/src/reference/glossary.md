@@ -34,8 +34,9 @@ A tactical manager that owns exactly one `LaneKind`, exposes that kind's lane
 strategies to GORNA, applies the budget GORNA returns, and dispatches the chosen
 lane each frame. An agent implements only the `Agent` and `Default` traits — no
 extra methods. It is *not* a controller (the DCC decides global priorities) and
-*not* a worker (lanes do the work). Six ship today: Render, Shadow, Physics, UI,
-Audio, and Overlay. See [Agents and Lanes](../concepts/agents-and-lanes.md). Also
+*not* a worker (lanes do the work). Eight ship today: Render, Shadow, Skybox,
+Overlay, Physics, UI, Audio, and Script (the last registered for
+`EngineMode::Playing` only). See [Agents and Lanes](../concepts/agents-and-lanes.md). Also
 called an **ISA** (Intelligent Subsystem Agent).
 
 ### Channel&lt;T&gt;
@@ -60,13 +61,18 @@ is *the why*. See [CLAD](../concepts/clad.md).
 ### ComponentProvenance
 
 Who has the right to **write** a component — as opposed to `SemanticDomain`,
-which says who consumes it. Four values: `Authored` (a human, a tool or game
-code; serialized, offered in "+ Add Component"), `ToolAuthored`, `Derived`
-(recomputed by the engine from authored state, so never serialized and never
-copied on duplicate), and `Runtime` (per-run transient state that nobody authors
-and nothing recomputes). It is what keeps a simulated pose out of a scene file
-without a line of filtering, because the serializer honours the axis directly.
-See [Physics](../concepts/physics.md).
+which says who consumes it. Declared with `#[component(provenance = …)]`; four
+values: `Authored` (the default — a human or game code; saved in a scene, copied
+on duplicate, offered in "+ Add Component"), `ToolAuthored` (written by a tool
+action such as dragging in the scene tree; saved and copied, not offered),
+`Derived` (recomputed by the engine from authored state; never saved, never
+copied), and `Runtime` (per-run state that nobody authors and nothing
+recomputes). A `Runtime` component is never in a scene; one also declared
+`resumable` — `ScriptState` is the only one today — is kept by a
+[game save](#game-save--saverecord) so play resumes where it stopped. It is what
+keeps a simulated pose out of a scene file without a line of filtering, because
+the serializer honours the axis directly. See [Physics](../concepts/physics.md)
+and [Scenes and game saves](../concepts/saves.md).
 
 ### Contention
 
@@ -115,14 +121,28 @@ guard bounds the fixed-timestep accumulator (see
 [Fixed timestep](#fixed-timestep--interpolation-alpha)). See
 [GORNA](../concepts/gorna.md).
 
+### EngineMode / PlayMode
+
+**`EngineMode`** decides which agents run in a frame: the scheduler reads the
+`SharedEngineMode` resource once per frame and skips any agent registered (through
+`DccService::register_agent_for_mode`) for other modes. The engine defines
+`Playing`; anything else is `Custom(name)`. The script agent is registered for
+`Playing` only. **`PlayMode`** (`Editing` / `Playing` / `Paused`) is the editor's
+transport state; the editor turns it into an engine mode every frame —
+`Custom("editor")` while editing, `Playing` while playing or paused — and into a
+time scale. See [The frame](../concepts/the-frame.md#the-simulation-clock) and
+[SDK surface](./sdk.md#engine-modes).
+
 ### Ergon
 
 Khora's own gameplay language, in `khora-script`. It exists because a budget
-needs stopping to be *ordinary*: Ergon suspends on an instruction boundary and
-keeps the machine that suspended, so the next frame resumes rather than
-restarts. Runs inside a fuel budget converted from the time GORNA allocated, and
-degrades by deferring whole behaviors rather than thinning every one. See
-[Scripting](../concepts/scripting.md).
+needs stopping to be *ordinary*: when its fuel runs out, Ergon suspends at the
+next [safepoint](#safepoint) — never mid-expression — and keeps the machine that
+suspended, so the next frame resumes rather than restarts. Runs inside a fuel
+budget converted from the time GORNA allocated, and degrades by deferring whole
+behaviors rather than thinning every one. Scripts run only in
+`EngineMode::Playing`. See [Scripting](../concepts/scripting.md) and the
+[Ergon reference](./ergon.md).
 
 ### ExecutionPhase / TickPhase
 
@@ -161,6 +181,18 @@ consume. New flows are registered data-driven via `register_flow!`. Some flows
 opt into per-domain change-epoch caching to skip re-projection when nothing
 changed. Lives in `khora-data/src/flow/`. See [AGDF](../concepts/agdf.md) and
 [Data and the ECS](../concepts/ecs.md).
+
+### Game save / SaveRecord
+
+What a running game is, written as its differences from the scene it started
+from: the components it changed or added on the scene's entities, the entities it
+made and destroyed, the components it removed, and the runtime state declared
+`resumable`. A `SaveRecord` names its base scene by asset id and keeps each
+changed component whole beside the scene's value at save time, so loading is a
+three-way merge against the scene *as it is now* — an edit made to the scene
+since reaches every field the game left alone. Written by
+`GameWorld::save_game`, read by `load_game`. See
+[Scenes and game saves](../concepts/saves.md).
 
 ### GORNA — Goal-Oriented Resource Negotiation and Allocation
 
@@ -207,12 +239,68 @@ frame. GPU render passes use a separate sink, the `FrameGraph`. Both live in
 `khora-core/src/lane/`. See [The frame](../concepts/the-frame.md) and
 [Agents and Lanes](../concepts/agents-and-lanes.md).
 
+### LoadReport
+
+What a load adapted, said out loud: one entry per place where the file and
+today's code disagreed — a field that took its default, a field dropped, a name
+read through `formerly`, a number widened, a retired component skipped, an
+engine-written component skipped, a reference to an entity the file does not hold, a game save's change to an entity
+the scene no longer has. None of these is an error and none is silent. A load
+that cannot be adapted — an unknown component type — fails instead, and leaves
+the world as it was. See [Serialization](../concepts/serialization.md).
+
+### OnLoad / OnResumeFailed
+
+Two Ergon lifecycle hooks. **`void OnLoad()`** runs once when a behavior instance
+is restored from a game save — after its fields are initialised and restored,
+before anything else its turn runs; not on a scene load nor on Stop, which are
+fresh starts and get `OnSpawn`. **`void OnResumeFailed(string member)`** runs once
+for a suspended body that no [resume tier](#resume-tier) could take back into the
+code as it is now, on the turn where the body would have resumed, naming the
+abandoned member (`"OnSpawn"`, `"Patrol.OnHit"`). See the
+[Ergon reference](./ergon.md).
+
+### PersistentId
+
+The identity a saved scene knows an entity by, kept by the `World` beside each
+live entity (not as a component). Unlike an `EntityId`, it does not depend on
+where the entity sits in one running world. Two namespaces share its 64 bits:
+**authored** ids, random, given to entities the editor creates so concurrent
+edits on two branches do not collide; and **created** ids, numbered by the world
+for entities the game or code spawns. Entities inside a
+[prefab instance](#prefab--prefab-instance--override) derive theirs from the
+instance root's id. See [Data and the ECS](../concepts/ecs.md) and
+[Serialization](../concepts/serialization.md).
+
+### Prefab / prefab instance / override
+
+A **prefab** is a subtree written down as a scene file (`.kprefab`). A **prefab
+instance** is a copy of it in a scene that stays *linked*: its root carries a
+`PrefabInstance` naming the prefab, and a scene record keeps the instance as that
+link plus its differences rather than as whole entities. Loading expands the
+prefab as it is now, so a prefab edit reaches every instance. An **override** is
+one of those differences — a field value that differs, a component added or
+removed. The editor's inspector marks overrides, reverts them, and applies a
+field, a component or the whole instance's overrides back into the prefab. See [Prefabs](../concepts/prefabs.md) and
+[How-to: work with prefabs](../how-to/work-with-prefabs.md).
+
 ### ResourceBudget
 
 The result GORNA hands each agent: the chosen `StrategyId`, a time limit, optional
 memory and VRAM limits, and an extra-params map. Narrow by design — adding a
 resource dimension is a deliberate change, not a free-form bag. See
 [GORNA](../concepts/gorna.md).
+
+### Resume tier
+
+How a suspended Ergon body comes back after the code it was running in changed —
+a hot reload, or a load from a save taken under an older script. Tried in order:
+**exact** (the same program), **unchanged** (every function on its stack kept
+its fingerprint), **rebuilt** (each frame laid out again at the same named
+[site](#site-ergon) in the edited code), **restarted** (its member runs again
+from its entry with its original arguments). When none holds, the body is
+abandoned and the behavior's [`OnResumeFailed`](#onload--onresumefailed) runs.
+See the [Ergon reference](./ergon.md).
 
 ### SAA — Symbiotic Adaptive Architecture
 
@@ -223,6 +311,26 @@ central observer (the DCC) watches and arbitrates each tick. SAA is *the why*;
 [CLAD](#clad--control--lanes--agents--data) is *the how*. See
 [SAA](../concepts/saa.md) and [CLAD](../concepts/clad.md).
 
+### Safepoint
+
+A place an Ergon run may stop when its fuel is spent: a statement's start or a
+loop's head (marked by a `Safepoint` instruction), a function's entry, or just
+after a call returns. Fuel is checked only there, so a machine stopped for fuel
+always stands at a place the compiler named, with no half-evaluated expression in
+its registers. Between two safepoints a run may spend past its budget — charged
+as an overdraft — but never around a loop, because every back edge lands on one.
+See [Scripting](../concepts/scripting.md).
+
+### Scene record / SceneRecord
+
+A scene written down page by page, as CRPECS stores it: each page record is a
+signature (component names), the [`PersistentId`](#persistentid)s of its rows,
+and a column of values per component — values by name, never the memory a
+column occupies. A record also lists the prefab instances it keeps as links.
+A record is applied back atomically: everything is read and staged before the
+world changes, so a file that fails to load leaves the world untouched. See
+[Serialization](../concepts/serialization.md).
+
 ### SemanticDomain
 
 The partition a component belongs to, declared with `#[component(domain = …)]` and
@@ -230,6 +338,27 @@ carried in the component registry: `Spatial`, `Render`, `Physics`, `Audio`, `Ui`
 Domains let query planners and Flows pre-filter pages (a render extraction never
 touches UI pages) and anchor the per-domain change epochs that gate Flow view
 caching. See [Data and the ECS](../concepts/ecs.md).
+
+### SerializationGoal / encoding / snapshot
+
+A **`SerializationGoal`** states why a file is being written — fastest load,
+smallest file, human-readable, long-term stability, editor interchange, portable
+binary — and the `SerializationService` picks the **encoding** that serves it:
+text (JSON), compact, or MessagePack, all holding the same scene record by name.
+`FastestLoad` is served instead by a **snapshot**: values by position, every
+component listed with its schema fingerprint, refused whole by a build whose
+schemas differ — a cache of a stable save, never its only copy. The goal changes
+how a scene is encoded, never what it holds. See
+[Serialization](../concepts/serialization.md) and [File formats](./formats.md).
+
+### Site (Ergon)
+
+A named place in a compiled Ergon function where a frame can stand: its entry, a
+statement's start, a loop's head, just after an `await`, or just after a call
+returns. The name comes from the source's structure — what a statement says, not
+where it sits — so an edit elsewhere in the function leaves it unchanged, and a
+frame frozen at a site can be found again in edited code. Each site records the
+locals in scope there, by name and type. See [Resume tier](#resume-tier).
 
 ### Strategy / StrategyId
 

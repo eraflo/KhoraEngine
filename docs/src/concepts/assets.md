@@ -77,15 +77,26 @@ other assets it references — so a loader can fetch prerequisites without first
 decoding the asset. This is populated while the index is built, through a single
 extension point keyed on the asset's type name.
 
-Today **materials** are the populated case: a material records the UUIDs of the
+Two types are populated today. A **material** records the UUIDs of the
 textures it references (base-colour, metallic-roughness, normal, emissive). Those
 UUIDs match exactly what the index assigns the texture files, because both derive
 from the same relative path; the list is deduplicated and sorted so reusing one
-texture across slots contributes it once and the index stays byte-deterministic. The
-extension point is generic — scene, prefab, and mesh formats are stubs that return
-an empty list, and adding real extraction for one is a single match arm. To keep the
-index build fast, bytes are read only for types that actually have an extractor;
-leaf assets like textures and audio are never opened.
+texture across slots contributes it once and the index stays byte-deterministic. A
+**script** (`.erg`) records the modules it `import`s: an import is a path relative
+to the project's script root, so the extractor resolves it against the importing
+file's own location before turning it into a UUID
+(`khora-io/src/asset/dependencies.rs`).
+
+The extension point is generic, and the other formats are still stubs that return
+an empty list — scenes, prefabs and meshes among them. One consequence is worth
+stating plainly: a scene that holds [prefab instances](./prefabs.md) keeps each one
+as a link to the prefab's UUID, but that link is **not** recorded as a dependency.
+Nothing is lost — the serialization service reads each prefab on demand when it
+expands the scene — but the index cannot tell you which scenes use a prefab, and a
+loader cannot prefetch a scene's prefabs from the metadata alone. Adding real
+extraction for a format is a single match arm. To keep the index build fast, bytes
+are read only for types that actually have an extractor; leaf assets like textures
+and audio are never opened.
 
 ## Next steps
 

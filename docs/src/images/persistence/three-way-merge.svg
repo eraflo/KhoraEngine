@@ -1,0 +1,79 @@
+<svg class="kp-figure" viewBox="0 0 760 312" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-merge-title kp-merge-desc">
+  <title id="kp-merge-title">Loading a game save: a three-way merge, field by field</title>
+  <desc id="kp-merge-desc">One component of a guard, four fields. For each field the load compares the scene's value when the save was taken with the game's value. Health and armor were changed by the game, so they load as the game left them, armor even though the author changed it too. Speed and label were left alone by the game, so they follow the scene as it is now, with the author's later edits.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-cell { fill: var(--k-bg-3, #1f2636); }
+    .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
+    .kp-out { fill: var(--k-bg-1, #101622); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-thread { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+    .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; font-weight: 600; }
+    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 17px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="312" rx="8"/>
+  <text class="kp-station" x="16" y="34">Guard · Stats</text>
+  <text class="kp-head" x="150" y="62">scene, when saved</text>
+  <text class="kp-head" x="296" y="62">the game's value</text>
+  <text class="kp-head" x="442" y="62">scene now</text>
+  <text class="kp-head" x="600" y="62">loaded</text>
+  <text class="kp-note" x="150" y="78">before</text>
+  <text class="kp-note" x="296" y="78">changes</text>
+  <text class="kp-note" x="442" y="78">the .kscene today</text>
+  <path class="kp-rule" d="M16,88 H744"/>
+  <!-- health: the game changed it -->
+  <text class="kp-mono" x="16" y="117">health</text>
+  <rect class="kp-cell-soft" x="150" y="98" width="130" height="28" rx="3"/>
+  <text class="kp-mono" x="164" y="117">100</text>
+  <rect class="kp-cell" x="296" y="98" width="130" height="28" rx="3"/>
+  <text class="kp-strong" x="310" y="117">40</text>
+  <rect class="kp-cell-soft" x="442" y="98" width="130" height="28" rx="3"/>
+  <text class="kp-mono" x="456" y="117">100</text>
+  <rect class="kp-out" x="600" y="98" width="144" height="28" rx="3"/>
+  <text class="kp-strong" x="614" y="117">40</text>
+  <text class="kp-note" x="690" y="117">game</text>
+  <path class="kp-thread" d="M361,98 C361,84 665,84 665,98"/>
+  <rect class="kp-sel" x="293" y="95" width="136" height="34" rx="4"/>
+  <rect class="kp-sel" x="597" y="95" width="150" height="34" rx="4"/>
+  <!-- speed: the author changed it, the game did not -->
+  <text class="kp-mono" x="16" y="161">speed</text>
+  <rect class="kp-cell-soft" x="150" y="142" width="130" height="28" rx="3"/>
+  <text class="kp-mono" x="164" y="161">3.0</text>
+  <rect class="kp-cell-soft" x="296" y="142" width="130" height="28" rx="3"/>
+  <text class="kp-mono" x="310" y="161">3.0</text>
+  <rect class="kp-cell" x="442" y="142" width="130" height="28" rx="3"/>
+  <text class="kp-strong" x="456" y="161">4.5</text>
+  <rect class="kp-out" x="600" y="142" width="144" height="28" rx="3"/>
+  <text class="kp-strong" x="614" y="161">4.5</text>
+  <text class="kp-note" x="690" y="161">scene</text>
+  <!-- label: the author renamed it, the game did not -->
+  <text class="kp-mono" x="16" y="205">label</text>
+  <rect class="kp-cell-soft" x="150" y="186" width="130" height="28" rx="3"/>
+  <text class="kp-mono" x="164" y="205">"Guard"</text>
+  <rect class="kp-cell-soft" x="296" y="186" width="130" height="28" rx="3"/>
+  <text class="kp-mono" x="310" y="205">"Guard"</text>
+  <rect class="kp-cell" x="442" y="186" width="130" height="28" rx="3"/>
+  <text class="kp-strong" x="456" y="205">"Sentry"</text>
+  <rect class="kp-out" x="600" y="186" width="144" height="28" rx="3"/>
+  <text class="kp-strong" x="614" y="205">"Sentry"</text>
+  <text class="kp-note" x="690" y="205">scene</text>
+  <!-- armor: both changed it, the game wins -->
+  <text class="kp-mono" x="16" y="249">armor</text>
+  <rect class="kp-cell-soft" x="150" y="230" width="130" height="28" rx="3"/>
+  <text class="kp-mono" x="164" y="249">5</text>
+  <rect class="kp-cell" x="296" y="230" width="130" height="28" rx="3"/>
+  <text class="kp-strong" x="310" y="249">8</text>
+  <rect class="kp-cell" x="442" y="230" width="130" height="28" rx="3"/>
+  <text class="kp-mono" x="456" y="249">6</text>
+  <rect class="kp-out" x="600" y="230" width="144" height="28" rx="3"/>
+  <text class="kp-strong" x="614" y="249">8</text>
+  <text class="kp-note" x="690" y="249">game</text>
+  <path class="kp-rule" d="M16,272 H744"/>
+  <text class="kp-label" x="16" y="292">A field the game changed loads as the game left it. One it left alone follows the scene as it is now.</text>
+</svg>

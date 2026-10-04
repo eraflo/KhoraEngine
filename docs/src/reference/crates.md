@@ -16,7 +16,7 @@ dependency of `khora-data` and `khora-script`, not a workspace member.
 |---|---|
 | `khora-core` | The trait floor — traits, math, GORNA types, the `Runtime` containers, scene format. Depends on nothing else in the workspace. |
 | `khora-macros` | The `#[derive(Component)]` and `#[ergon_fn]` proc macros (path crate). |
-| `khora-data` | CRPECS ECS, component storage, SoA/AGDF layout, Flows, scene serialization strategies. |
+| `khora-data` | CRPECS ECS, component storage, SoA/AGDF layout, Flows, scene records: encodings, snapshot, game saves, prefab links. |
 | `khora-control` | The DCC, GORNA arbitration, cost model, scheduler, the Substrate Pass. |
 | `khora-script` | **Ergon** — the gameplay language: lexer, parser, bytecode, VM, persistent field arena, hot-reload. Depends on `khora-core` and `khora-macros` only, so the compiler and VM are testable without booting an engine. |
 | `khora-lanes` | Hot-path Lanes — render, physics, audio, UI, script. |
@@ -121,7 +121,7 @@ A flat lookup for "I want to find X."
 | ECS World and components | `khora-data::ecs` |
 | Component storage / pages / archetypes | `khora-data::ecs` |
 | Flows (read-only projectors) | `khora-data::flow` |
-| Scene serialization strategies | `khora-data::scene` |
+| Scene records, encodings, saves, prefabs | `khora-data::scene` |
 | Asset index and asset loading | `khora-io::asset` (`AssetIndex`, `AssetService`) |
 | Serialization service | `khora-io::serialization` |
 | Render pipelines | `khora-lanes::render_lane` |

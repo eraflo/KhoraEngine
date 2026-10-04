@@ -1,0 +1,59 @@
+<svg class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-sites-title kp-sites-desc">
+  <title id="kp-sites-title">Where a body can stop, and what each place is called</title>
+  <desc id="kp-sites-desc">An async method, line by line. A filled marker shows a safepoint, where a run that has spent its fuel stops: the entry, the start of each statement, the loop's head. A hollow marker shows a place a frame stands after an await or a call returns. Each place has a name built from the statements around it: their kind and a short hash of what they say, so a line added above leaves the names below unchanged.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-code { fill: var(--k-bg-1, #101622); }
+    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-safe { fill: var(--k-silver, #b4cfe2); }
+    .kp-stand { fill: var(--k-bg-0, #090d17); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+    .kp-kw { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+    .kp-site { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="330" rx="8"/>
+  <text class="kp-head" x="40" y="30">code</text>
+  <text class="kp-head" x="372" y="30">site name</text>
+  <rect class="kp-code" x="16" y="42" width="340" height="208" rx="6"/>
+  <!-- line 1 -->
+  <circle class="kp-safe" cx="30" cy="64" r="3.5"/>
+  <text class="kp-kw" x="40" y="68">async void</text>
+  <text class="kp-mono" x="126" y="68">Attack(Entity foe) {</text>
+  <text class="kp-site" x="372" y="68">entry</text>
+  <!-- line 2 -->
+  <circle class="kp-safe" cx="30" cy="88" r="3.5"/>
+  <text class="kp-kw" x="64" y="92">int</text>
+  <text class="kp-mono" x="94" y="92">blow = 40;</text>
+  <text class="kp-site" x="372" y="92">let.1f0a9c3e</text>
+  <!-- line 3 -->
+  <circle class="kp-safe" cx="30" cy="112" r="3.5"/>
+  <text class="kp-kw" x="64" y="116">while</text>
+  <text class="kp-mono" x="110" y="116">(blow &gt; 0) {</text>
+  <text class="kp-site" x="372" y="116">while.7b2e01d4</text>
+  <text class="kp-label" x="508" y="116">its head: every lap stops here</text>
+  <!-- line 4 -->
+  <circle class="kp-safe" cx="30" cy="136" r="3.5"/>
+  <text class="kp-mono" x="88" y="140">blow -= Strike(foe);</text>
+  <text class="kp-site" x="372" y="140">while.7b2e01d4/body/expr.c45e2a10</text>
+  <circle class="kp-stand" cx="30" cy="158" r="3.5"/>
+  <text class="kp-site" x="372" y="162">  …/expr.c45e2a10:call.Guard.Strike</text>
+  <!-- line 5 -->
+  <text class="kp-mono" x="64" y="184">}</text>
+  <!-- line 6 -->
+  <circle class="kp-safe" cx="30" cy="204" r="3.5"/>
+  <text class="kp-kw" x="64" y="208">await</text>
+  <text class="kp-mono" x="110" y="208">0.5s;</text>
+  <text class="kp-site" x="372" y="208">expr.9a01b2c4</text>
+  <circle class="kp-stand" cx="30" cy="226" r="3.5"/>
+  <text class="kp-site" x="372" y="230">expr.9a01b2c4:await</text>
+  <rect class="kp-sel" x="366" y="217" width="146" height="20" rx="3"/>
+  <path class="kp-rule" d="M16,264 H744"/>
+  <circle class="kp-safe" cx="30" cy="288" r="3.5"/>
+  <text class="kp-label" x="42" y="292">safepoint — a run out of fuel stops here, with no half-done expression</text>
+  <circle class="kp-stand" cx="30" cy="310" r="3.5"/>
+  <text class="kp-label" x="42" y="314">a frame stands here after an await, or when a call it made returns</text>
+</svg>
