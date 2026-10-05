@@ -14,9 +14,11 @@
 
 //! Between what a scene stores and what the VM runs.
 //!
-//! A behavior's state is part of the scene: a guard saved at forty health loads
-//! at forty, not at the hundred its author typed. The [`Script`] component holds
-//! that state, and it holds it **by name** while the VM addresses it by slot.
+//! A behavior's state is part of a game save: a guard saved at forty health
+//! loads at forty, not at the hundred its author typed. The [`Script`]
+//! component holds what the author typed; the `ScriptState` component holds
+//! what the game made of it — both **by name**, while the VM addresses them by
+//! slot.
 //!
 //! # Why the scene keeps names and the machine keeps slots
 //!
@@ -50,21 +52,100 @@ use khora_script::vm::{BehaviorLayout, Program, TimerKind, Value};
 use super::{Body, Pending};
 
 /// What an instance starts from the first frame it appears: its authored
-/// fields, with what was observed of it written over them.
+/// fields, with what was observed of it merged in.
 ///
 /// The observed state is the instance as play left it — its state, its
-/// countdowns, a sequence stopped at an `await` — and its fields win where it
-/// has them. A field it never observed keeps the authored value: the author
-/// may have set it since, and that edit reaches an instance that never
-/// diverged from it.
+/// countdowns, a sequence stopped at an `await`. Its fields are merged the way
+/// a game save is merged into its scene, field by field, against the authored
+/// values the instance had arrived with (the snapshot's `authored`):
+/// - a field the game **changed** — its observed value differs from that base —
+///   keeps the game's value;
+/// - a field the game **left alone** takes the authored value as it is *now*:
+///   the override if there is one; with none, the declared default if the base
+///   was an override the author has since removed; otherwise the value it has —
+///   a declared default is never re-evaluated on a load, since it may have read
+///   the world when the instance appeared;
+/// - a field the snapshot knows no base for — an older snapshot — keeps the
+///   observed value.
 pub fn arrived(arrival: &khora_data::flow::ScriptArrival) -> ScriptSnapshot {
     let mut snapshot = arrival.observed.clone().unwrap_or_default();
+    let base = std::mem::take(&mut snapshot.authored);
+    let overridden = std::mem::take(&mut snapshot.overridden);
     let observed = std::mem::replace(&mut snapshot.fields, arrival.fields.clone());
     observed
         .into_iter()
         .fold(snapshot, |snapshot, (name, value)| {
-            snapshot.with_field(name, value)
+            let untouched = base
+                .iter()
+                .any(|(field, was)| *field == name && *was == value);
+            let overridden_now = arrival.fields.iter().any(|(field, _)| *field == name);
+            let override_removed = !overridden_now && overridden.contains(&name);
+            if untouched && (overridden_now || override_removed) {
+                // The override as it is now — already in the fields — or, the
+                // override gone, nothing: the initialiser's default stands.
+                snapshot
+            } else {
+                snapshot.with_field(name, value)
+            }
         })
+}
+
+/// The authored base an arriving instance carries on: each field's authored
+/// value and whether it was an override, as [`arrived`] read them.
+///
+/// A field the game left alone takes the override it has now, if any; an
+/// override since removed drops out, for the declared default to fill once the
+/// initialiser has run; anything else keeps the base it descends from. A fresh
+/// instance's base is its overrides.
+pub fn arrival_base(
+    arrival: &khora_data::flow::ScriptArrival,
+) -> (Vec<(String, ScriptValue)>, Vec<String>) {
+    let Some(observed) = &arrival.observed else {
+        return (
+            arrival.fields.clone(),
+            arrival
+                .fields
+                .iter()
+                .map(|(name, _)| name.clone())
+                .collect(),
+        );
+    };
+    let mut base: Vec<(String, ScriptValue)> = Vec::new();
+    let mut overridden: Vec<String> = Vec::new();
+    let names = observed
+        .authored
+        .iter()
+        .map(|(name, _)| name)
+        .chain(arrival.fields.iter().map(|(name, _)| name));
+    for name in names {
+        if base.iter().any(|(known, _)| known == name) {
+            continue;
+        }
+        let was = observed.authored.iter().find(|(field, _)| field == name);
+        let now = arrival.fields.iter().find(|(field, _)| field == name);
+        let observed_value = observed.fields.iter().find(|(field, _)| field == name);
+        let untouched = matches!((was, observed_value), (Some((_, a)), Some((_, b))) if a == b);
+        let was_override = observed.overridden.contains(name);
+        let entry = match (untouched, now, was) {
+            // The author's override, as it is now.
+            (true, Some((_, value)), _) => Some((value.clone(), true)),
+            // An override removed: the declared default fills it.
+            (true, None, Some(_)) if was_override => None,
+            // Left alone and still not overridden, or changed by the game:
+            // the base it descends from.
+            (_, _, Some((_, value))) => Some((value.clone(), was_override)),
+            // No base known: the override it arrives with, if any.
+            (false, Some((_, value)), None) => Some((value.clone(), true)),
+            _ => None,
+        };
+        if let Some((value, is_override)) = entry {
+            base.push((name.clone(), value));
+            if is_override {
+                overridden.push(name.clone());
+            }
+        }
+    }
+    (base, overridden)
 }
 
 /// Builds an instance's store from what a scene saved.
@@ -215,6 +296,8 @@ pub fn snapshot_from_store(layout: &BehaviorLayout, store: &PersistentStore) -> 
     let state = state_index.and_then(|index| layout.state_at(index));
 
     ScriptSnapshot {
+        authored: Vec::new(),
+        overridden: Vec::new(),
         fields: named(layout.fields.iter().enumerate(), store, 0),
         state: state.map(|state| state.name.clone()),
         // Only the state it is *in*: every state shares these slots, so reading
@@ -303,16 +386,45 @@ pub fn snapshot_of(
     pending: Option<&Pending>,
     program: &Program,
 ) -> ScriptSnapshot {
-    let mut snapshot = match pending.map(|pending| &pending.body) {
+    let mut snapshot = settled_snapshot(layout, fields, pending);
+    snapshot.pending = pending.and_then(|pending| suspend(pending, program, layout));
+    snapshot
+}
+
+/// An instance's fields, state and countdowns by name, a schedule whose body
+/// is part-way left rearmed — see [`snapshot_of`].
+fn settled_snapshot(
+    layout: &BehaviorLayout,
+    fields: &PersistentStore,
+    pending: Option<&Pending>,
+) -> ScriptSnapshot {
+    match pending.map(|pending| &pending.body) {
         Some(Body::Timer { index, rearm }) if *index < layout.timers.len() => {
             let mut settled = fields.clone();
             settled.set(layout.timer_slot(*index), Persisted::Scalar(*rearm));
             snapshot_from_store(layout, &settled)
         }
         _ => snapshot_from_store(layout, fields),
-    };
-    snapshot.pending = pending.and_then(|pending| suspend(pending, program, layout));
-    snapshot
+    }
+}
+
+/// An instance's store carried across a hot reload, from the `old` layout to
+/// the `new` one.
+///
+/// By name, never by position, the way a save is read: fields by name, the
+/// current state by name and its data by slot name, each countdown by its
+/// schedule's identity. A field, state or schedule the edit removed is
+/// dropped; a new one is left for the initialiser to start fresh. A schedule
+/// whose body is part-way crosses rearmed, as a save writes it: finishing the
+/// body rearms it again, and a body the edit abandons leaves a schedule that
+/// waits its interval rather than one still due.
+pub fn carried_across(
+    old: &BehaviorLayout,
+    new: &BehaviorLayout,
+    fields: &PersistentStore,
+    pending: Option<&Pending>,
+) -> PersistentStore {
+    store_from_snapshot(new, &settled_snapshot(old, fields, pending))
 }
 
 /// Writes a suspended sequence down, so a save can hold it.
@@ -320,7 +432,7 @@ pub fn snapshot_of(
 /// Records what the program's code looked like alongside the machine, because a
 /// machine is a *position* in that code — see
 /// [`resumption::resume`](super::resumption::resume) for what that buys.
-/// The machine goes down in the engine's own terms ([`FrozenMachine`]),
+/// The machine goes down in the engine's own terms ([`FrozenMachine`](khora_core::script::FrozenMachine)),
 /// so every scene encoding writes it natively and a text save shows it.
 /// `None` when the machine does not belong to `program` — suspended in other
 /// code, which a load would only abandon — losing the sequence rather than the

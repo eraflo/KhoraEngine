@@ -411,3 +411,162 @@ fn loading_a_save_does_not_run_on_spawn_again() {
     let (revived, _) = reload(source, saved);
     assert_eq!(slot(&revived, 1), Some(1), "still one spawn");
 }
+
+/// The guard after an edit that gave `Chase` a new piece of data, above the
+/// one it had, and gave `Patrol` a default that is not zero.
+const CHASE_GAINS_DATA: &str = r#"
+behavior Guard {
+    int health = 100;
+
+    state Patrol {
+        int laps = 5;
+
+        every 0.5s {
+            laps += 1;
+        }
+    }
+
+    state Chase {
+        int spotted = 4;
+        int missed = 7;
+    }
+
+    on Spotted(int by) {
+        become Chase;
+    }
+}
+"#;
+
+/// **Data an edit added to the state a save caught starts at its own
+/// default** — not at the first state's, which the initialiser entered on
+/// the way and which shares those slots.
+#[test]
+fn data_added_to_the_saved_state_since_the_save_starts_at_its_declared_default() {
+    let mut runtime = runtime_of(GUARD);
+    let mut host = Host::new();
+    let mut spotted = EventQueue::new();
+    spotted.push(ScriptEvent::new(entity(0), "Spotted").with(ScriptValue::Int(1)));
+    let saved = frame(&mut runtime, &mut host, 0.016, None, &spotted).expect("it did work");
+    assert_eq!(saved.state.as_deref(), Some("Chase"));
+
+    let (mut revived, mut host) = reload(CHASE_GAINS_DATA, saved);
+    quiet(&mut revived, &mut host, 0.0);
+    let layout = revived
+        .program(MODULE)
+        .expect("loaded")
+        .layout("Guard")
+        .expect("declared")
+        .clone();
+    let held = crate::script_lane::persistence::snapshot_from_store(
+        &layout,
+        &revived.peek(entity(0), "Guard").expect("live").fields,
+    );
+
+    assert_eq!(
+        held.state_fields,
+        vec![
+            ("spotted".to_owned(), ScriptValue::Int(4)),
+            ("missed".to_owned(), ScriptValue::Int(7)),
+        ],
+        "the new datum takes its declared default; the saved one its value"
+    );
+}
+
+/// A chase with a schedule of its own, and data the first state shares slots
+/// with.
+const CHASE_WITH_SCHEDULE: &str = r#"
+behavior Guard {
+    int health = 100;
+    int pings = 0;
+
+    state Patrol {
+        int laps = 5;
+        int rounds = 6;
+    }
+
+    state Chase {
+        int spotted = 4;
+        int missed = 7;
+
+        every 1.0s {
+            pings += 1;
+        }
+    }
+
+    on Spotted(int by) {
+        become Chase;
+    }
+}
+"#;
+
+/// **Entering the saved state, whatever the slice.** A guard saved chasing,
+/// with its chase's countdown part-spent, is loaded under a budget that cuts
+/// the initialiser — or the entry into the chase after it — at every possible
+/// point. It ends exactly where an uncut load does.
+#[test]
+fn entering_the_saved_state_ends_the_same_under_every_fuel_slice() {
+    // Saved before the edit that gave the chase `spotted`.
+    let before = CHASE_WITH_SCHEDULE.replace("        int spotted = 4;\n", "");
+    assert_ne!(
+        before, CHASE_WITH_SCHEDULE,
+        "the premise: the edit is undone"
+    );
+    let mut runtime = runtime_of(&before);
+    let mut host = Host::new();
+    let mut spotted = EventQueue::new();
+    spotted.push(ScriptEvent::new(entity(0), "Spotted").with(ScriptValue::Int(1)));
+    frame(&mut runtime, &mut host, 0.0, None, &spotted);
+    let saved =
+        frame(&mut runtime, &mut host, 0.4, None, &EventQueue::new()).expect("the countdown moved");
+    assert_eq!(saved.state.as_deref(), Some("Chase"));
+
+    let load = |fuel: u64| {
+        let mut runtime = runtime_of(CHASE_WITH_SCHEDULE);
+        let mut host = Host::new();
+        let mut observed = Some(saved.clone());
+        for _ in 0..200 {
+            let view = view(0.0, observed.take());
+            run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, fuel);
+            if runtime
+                .peek(entity(0), "Guard")
+                .is_some_and(|instance| instance.initialised)
+            {
+                break;
+            }
+        }
+        let layout = runtime
+            .program(MODULE)
+            .and_then(|program| program.layout("Guard"))
+            .expect("declared")
+            .clone();
+        let instance = runtime.peek(entity(0), "Guard").expect("live");
+        assert!(
+            instance.initialised,
+            "fuel {fuel}: the initialiser finished"
+        );
+        crate::script_lane::persistence::snapshot_from_store(&layout, &instance.fields)
+    };
+
+    let whole = load(u64::MAX);
+    assert_eq!(
+        whole.state_fields,
+        vec![
+            ("spotted".to_owned(), ScriptValue::Int(4)),
+            ("missed".to_owned(), ScriptValue::Int(7)),
+        ],
+        "the premise: an uncut load enters the chase's own defaults"
+    );
+    assert_eq!(
+        whole
+            .timers
+            .iter()
+            .find(|timer| timer.state.as_deref() == Some("Chase"))
+            .and_then(|timer| timer.remaining)
+            .map(|left| (left * 1000.0).round() / 1000.0),
+        Some(0.6),
+        "and the chase's countdown keeps what was left of it over the entry's re-arm"
+    );
+    for fuel in 1..=60 {
+        assert_eq!(load(fuel), whole, "fuel {fuel} per frame");
+    }
+}

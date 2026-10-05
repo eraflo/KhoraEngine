@@ -47,6 +47,8 @@ pub struct Sample {
 /// one of its registers.
 pub fn suspended_snapshot(target: EntityId) -> ScriptSnapshot {
     ScriptSnapshot {
+        authored: Vec::new(),
+        overridden: Vec::new(),
         fields: vec![("speed".into(), ScriptValue::Float(3.0))],
         state: Some("Patrol".into()),
         state_fields: vec![("waypoint".into(), ScriptValue::Int(2))],
@@ -96,6 +98,7 @@ pub fn suspended_snapshot(target: EntityId) -> ScriptSnapshot {
             },
         }),
         lifecycle: khora_core::script::InstanceLifecycle {
+            resume_failed: Vec::new(),
             spawned: true,
             fault: Some(khora_core::script::RecordedFault {
                 fingerprint: 0xfeed_beef_dead_c0de,

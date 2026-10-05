@@ -41,6 +41,17 @@ pub trait ComponentBundle {
     /// created for a specific bundle layout.
     fn create_columns() -> HashMap<TypeId, Box<dyn AnyVec>>;
 
+    /// The first of this bundle's component types `registry` does not know,
+    /// by name — a type that would be stored where nothing can find it.
+    fn unregistered(registry: &ComponentRegistry) -> Option<&'static str>;
+
+    /// A component type this bundle names more than once, by name — its
+    /// signature holds the type once, so a second value would push one row
+    /// too many into its column and shift every entity after it.
+    fn repeated() -> Option<&'static str> {
+        None
+    }
+
     /// Updates the appropriate fields in an `EntityMetadata` struct to point
     /// to the location of this bundle's data.
     ///
@@ -71,6 +82,10 @@ impl ComponentBundle for () {
         HashMap::new()
     }
 
+    fn unregistered(_registry: &ComponentRegistry) -> Option<&'static str> {
+        None
+    }
+
     fn update_metadata(
         _metadata: &mut EntityMetadata,
         _location: PageIndex,
@@ -99,6 +114,13 @@ impl<C1: Component> ComponentBundle for C1 {
         columns
     }
 
+    fn unregistered(registry: &ComponentRegistry) -> Option<&'static str> {
+        registry
+            .get_domain(TypeId::of::<C1>())
+            .is_none()
+            .then(std::any::type_name::<C1>)
+    }
+
     fn update_metadata(
         metadata: &mut EntityMetadata,
         location: PageIndex,
@@ -109,7 +131,6 @@ impl<C1: Component> ComponentBundle for C1 {
             // Insert or update the location for that domain.
             metadata.locations.insert(domain, location);
         }
-        // Note: We might want to log a warning here if a component is not registered.
     }
 
     unsafe fn add_to_page(self, page: &mut ComponentPage) {
@@ -137,6 +158,24 @@ macro_rules! impl_bundle_tuple {
                     columns.insert(TypeId::of::<$C>(), $C::make_column());
                 )*
                 columns
+            }
+
+            fn unregistered(registry: &ComponentRegistry) -> Option<&'static str> {
+                $(
+                    if registry.get_domain(TypeId::of::<$C>()).is_none() {
+                        return Some(std::any::type_name::<$C>());
+                    }
+                )*
+                None
+            }
+
+            fn repeated() -> Option<&'static str> {
+                let named = [$((TypeId::of::<$C>(), std::any::type_name::<$C>())),*];
+                named
+                    .iter()
+                    .enumerate()
+                    .find(|(at, (id, _))| named[..*at].iter().any(|(earlier, _)| earlier == id))
+                    .map(|(_, (_, name))| *name)
             }
 
             fn update_metadata(

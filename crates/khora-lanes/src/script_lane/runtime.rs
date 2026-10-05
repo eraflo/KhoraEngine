@@ -30,13 +30,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::script_lane::resumption;
+use crate::script_lane::{persistence, resumption};
 use crate::script_lane::{Resumed, ScriptRunReport};
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::EventQueue;
 use khora_script::arena::{Persisted, PersistentStore};
 use khora_script::vm::Value;
-use khora_script::vm::{BehaviorLayout, Machine, Program, ResumeTier};
+use khora_script::vm::{Machine, Program, ResumeTier};
 use serde::{Deserialize, Serialize};
 
 /// One behavior instance's state.
@@ -129,6 +129,17 @@ pub struct Instance {
     /// The members of bodies part-way through that an edit left nothing of,
     /// each owed its own `OnResumeFailed`, oldest first, one a turn.
     pub resume_failed: Vec<String>,
+
+    /// Every field's authored value — its override, or its declared default
+    /// where it had none — the base its observed values descend from, written
+    /// into every snapshot so a later arrival can tell a field the game
+    /// changed from one an author edited. Set at arrival; the declared
+    /// defaults fill what it lacks once the initialiser has run, and a reload
+    /// keeps it — a carried value descends from the old default, not the new.
+    pub base: Vec<(String, khora_core::script::ScriptValue)>,
+
+    /// Which [`base`](Self::base) values were overrides rather than defaults.
+    pub overridden: Vec<String>,
 }
 
 /// A suspended member and how long is left of its wait.
@@ -148,7 +159,7 @@ pub struct Pending {
     pub body: Body,
     /// The program the machine stopped in. A machine is a position in that
     /// code; a hot reload that changes it carries the machine into the new code
-    /// through [`persistence::carry`](super::persistence::carry), which
+    /// through [`resumption::carry`](super::resumption::carry), which
     /// restamps this.
     pub fingerprint: u64,
 }
@@ -200,26 +211,6 @@ impl ReloadReport {
     pub fn lost_anything(&self) -> bool {
         !self.dropped.is_empty()
     }
-}
-
-/// Moves an instance's values from the old slot layout to the new one.
-///
-/// By name, never by position: inserting one field at the top shifts every slot
-/// after it, and carrying values positionally would move a guard's health into
-/// its speed without a word.
-fn remap(current: &PersistentStore, old: &BehaviorLayout, new: &BehaviorLayout) -> PersistentStore {
-    let mut next = PersistentStore::with_slots(new.fields.len());
-    for (slot, field) in new.fields.iter().enumerate() {
-        let Some(was) = old.slot_of(field) else {
-            // New field: left unset, because the initialiser will fill it and
-            // a zero written here would shadow the author's declared default.
-            continue;
-        };
-        if let Some(value) = current.get(was) {
-            next.set(slot, value.clone());
-        }
-    }
-    next
 }
 
 /// Writes `carried` over `fields`, skipping the slots it left unset.
@@ -466,7 +457,13 @@ impl ScriptRuntime {
                     (Some(owed), false) => owed,
                     _ => &instance.fields,
                 };
-                let carried = remap(current, old, layout);
+                // By name: inserting one field at the top shifts every slot
+                // after it, and carrying values positionally would move a
+                // guard's health into its speed. The state it is in, that
+                // state's data and every countdown cross by name too, so an
+                // edit does not send a chasing guard back to patrol.
+                let carried =
+                    persistence::carried_across(old, layout, current, instance.pending.as_ref());
                 instance.fields = carried.clone();
                 // Re-initialised so the new program's defaults are produced —
                 // its literals may have changed too, not only its field list.

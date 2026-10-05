@@ -31,6 +31,7 @@
 //! expression that fails gets [`ty::Ty::Error`], which is compatible with
 //! everything, so one mistake yields one message instead of a cascade.
 
+mod arithmetic;
 pub mod expr;
 pub mod scope;
 pub mod stmt;
@@ -55,6 +56,9 @@ use crate::diagnostics::{Diagnostic, Span};
 pub struct Checked {
     /// Problems found. Empty means the module type-checks.
     pub diagnostics: Vec<Diagnostic>,
+    /// Each `var`'s inferred type, keyed by its initialiser's address in the
+    /// module checked — valid only alongside that module.
+    pub inferred: HashMap<usize, String>,
 }
 
 impl Checked {
@@ -85,6 +89,7 @@ pub fn check_with(module: &Module, natives: &crate::native::NativeRegistry) -> C
     checker.check_bodies(module);
     Checked {
         diagnostics: checker.diagnostics,
+        inferred: checker.inferred,
     }
 }
 
@@ -186,6 +191,8 @@ pub struct Checker {
     pub diagnostics: Vec<Diagnostic>,
     /// Lexical scopes for the body being checked.
     pub scopes: Scopes,
+    /// What each `var` inferred — see [`Checked::inferred`].
+    pub inferred: HashMap<usize, String>,
 }
 
 impl Checker {
@@ -197,6 +204,7 @@ impl Checker {
             behaviors: Vec::new(),
             diagnostics: Vec::new(),
             scopes: Scopes::new(),
+            inferred: HashMap::new(),
         }
     }
 

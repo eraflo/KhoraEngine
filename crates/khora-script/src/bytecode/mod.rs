@@ -46,9 +46,11 @@
 //! machine has to be kept per instance, which the schedule below does not need.
 //! `state`, `become`, `every` and `after` are here.
 
+mod entry;
 pub mod expr;
 mod fingerprint;
 pub mod keys;
+mod operators;
 pub mod registers;
 pub mod sites;
 pub mod stmt;
@@ -56,6 +58,7 @@ pub mod stmt;
 #[cfg(test)]
 mod tests;
 
+pub use entry::enter_name;
 pub use registers::Registers;
 
 use std::collections::HashMap;
@@ -97,6 +100,9 @@ pub fn compile(module: &Module) -> Compiled {
 /// differently would resolve a call to whatever now sits at that slot.
 pub fn compile_with(module: &Module, natives: &crate::native::NativeRegistry) -> Compiled {
     let mut compiler = Compiler::new();
+    // The types `var` declarations inferred: a site records each local's
+    // type, and a resumed frame trusts it to tell `int?` from `int`.
+    compiler.inferred = crate::types::check_with(module, natives).inferred;
     compiler.collect_natives(natives);
     compiler.collect_signatures(module);
     compiler.compile_functions(module);
@@ -142,7 +148,7 @@ pub enum Shape {
 pub struct StateEntry {
     /// Its declared fields — the slots after the parameters — and their
     /// defaults. `None` where the author wrote no default.
-    pub fields: Vec<(u16, Option<crate::ast::Expr>, Shape)>,
+    pub fields: Vec<(u16, Option<crate::ast::Expr>, TypeRef)>,
     /// Its countdown slots, and what each is armed to.
     pub timers: Vec<(u16, f32)>,
 }
@@ -198,6 +204,8 @@ pub struct Compiler {
     locals: Vec<Local>,
     /// The sites of the function being compiled, and where the compiler is.
     pub naming: sites::Naming,
+    /// What each `var` declaration inferred, from the checker.
+    pub inferred: HashMap<usize, String>,
 }
 
 impl Compiler {
@@ -215,6 +223,7 @@ impl Compiler {
             registers: Registers::new(0),
             locals: Vec::new(),
             naming: sites::Naming::default(),
+            inferred: HashMap::new(),
         }
     }
 
@@ -288,6 +297,9 @@ impl Compiler {
                     // The field initialiser is emitted first, so it takes the
                     // index before any member.
                     self.declare(init_name(&decl.name), Shape::Other, index, decl.name_span);
+                    index += 1;
+                    // Then the state entry, emitted right after it.
+                    self.declare(enter_name(&decl.name), Shape::Other, index, decl.name_span);
                     index += 1;
 
                     for member in &decl.members {
@@ -430,6 +442,7 @@ impl Compiler {
         self.behavior = Some(layout);
 
         self.compile_field_defaults(decl);
+        self.compile_state_entries(decl);
 
         for member in &decl.members {
             if let BehaviorMember::State(state) = member {
@@ -564,7 +577,7 @@ impl Compiler {
                     (
                         (base + offset) as u16,
                         field.default.clone(),
-                        shape_of(&field.ty),
+                        field.ty.clone(),
                     )
                 })
                 .collect();
@@ -648,7 +661,7 @@ impl Compiler {
             let mark = self.registers.mark();
             let src = match &field.default {
                 Some(expr) => self.compile_expr(expr).0,
-                None => self.zero_of(shape_of(&field.ty)),
+                None => self.zero_of_type(&field.ty),
             };
             self.emit(Instruction::StoreField { slot, src });
             self.registers.release_to(mark);
@@ -837,6 +850,10 @@ pub fn init_name(behavior: &str) -> String {
 /// The numeric shape a written type compiles to.
 pub fn shape_of(ty: &TypeRef) -> Shape {
     match ty {
+        // An optional holds its type's values or `null`, and only a value
+        // ever reaches an instruction that cares — the checker refuses
+        // arithmetic on an optional until it is unwrapped.
+        TypeRef::Optional { inner, .. } => shape_of(inner),
         TypeRef::Named { name, .. } => match name.as_str() {
             "int" => Shape::Int,
             // Durations and angles are floats at run time: the checker has

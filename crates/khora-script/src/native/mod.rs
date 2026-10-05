@@ -45,6 +45,7 @@ pub mod convert;
 pub mod engine_types;
 pub mod events;
 pub mod input;
+pub mod operators;
 pub mod ty;
 pub mod world;
 

@@ -182,3 +182,287 @@ fn each_body_an_edit_abandons_gets_its_own_on_resume_failed() {
         "`OnResumeFailed` ran once for `OnLoad` and once for `Spotted`"
     );
 }
+
+// ─── An owed `OnResumeFailed` across a save ──────────────────────────────────
+
+/// What a frame wrote back for the guard, as the scene records it.
+fn recorded(report: &khora_lanes::script_lane::ScriptRunReport) -> ScriptSnapshot {
+    report
+        .state
+        .first()
+        .map(|update| update.snapshot.clone())
+        .expect("the guard did work, so the lane recorded it")
+}
+
+/// A guard whose two bodies a reload to [`BARE`] abandoned, after the frame
+/// that answered the first of them: `OnResumeFailed("OnLoad")` has run,
+/// `OnResumeFailed("Spotted")` is still owed — one a turn. Returns what that
+/// frame wrote back.
+fn saved_owing_spotted() -> ScriptSnapshot {
+    let mut first = ScriptRuntime::new();
+    first.add_program(MODULE, build(WAITING));
+    let mut host = Host::new();
+    let mut spotted = EventQueue::new();
+    spotted.push(ScriptEvent::new(subject(), "Spotted").with(ScriptValue::Int(1)));
+    let caught = recorded(&run_behaviors(
+        &view_of(0.0, None),
+        &spotted,
+        &mut first,
+        &mut host,
+        u64::MAX,
+    ));
+
+    let mut runtime = ScriptRuntime::new();
+    runtime.add_program(MODULE, build(WAITING));
+    let mut host = Host::new();
+    run_behaviors(
+        &view_of(0.0, Some(caught)),
+        &EventQueue::new(),
+        &mut runtime,
+        &mut host,
+        u64::MAX,
+    );
+    let abandoned = runtime
+        .reload(MODULE, build(BARE))
+        .iter()
+        .flat_map(|report| report.resumes.iter())
+        .filter(|resumed| resumed.tier.is_err())
+        .count();
+    assert_eq!(abandoned, 2, "the premise: both bodies were abandoned");
+
+    let saved = recorded(&run_behaviors(
+        &view_of(0.0, None),
+        &EventQueue::new(),
+        &mut runtime,
+        &mut host,
+        u64::MAX,
+    ));
+    assert_eq!(
+        (
+            int_of(&runtime, "lost_load"),
+            int_of(&runtime, "lost_spotted")
+        ),
+        (Some(1), Some(0)),
+        "the premise: one answered this turn, the other still owed"
+    );
+    saved
+}
+
+/// **An owed `OnResumeFailed` survives a save.** A reload abandoned the
+/// guard's attack; the game was saved before the turn that would have told
+/// the guard. Loaded, the guard is told — once.
+#[test]
+fn an_owed_on_resume_failed_survives_a_save() {
+    let saved = saved_owing_spotted();
+    assert_eq!(
+        saved.lifecycle.resume_failed,
+        vec!["Spotted".to_owned()],
+        "the save records the member still owed its `OnResumeFailed`"
+    );
+
+    for (encoding, carry) in super::saves::every_encoding() {
+        let mut runtime = ScriptRuntime::new();
+        runtime.add_program(MODULE, build(BARE));
+        let mut host = Host::new();
+        run_behaviors(
+            &view_of(0.0, Some(carry(&saved))),
+            &EventQueue::new(),
+            &mut runtime,
+            &mut host,
+            u64::MAX,
+        );
+        for _ in 0..4 {
+            run_behaviors(
+                &view_of(0.5, None),
+                &EventQueue::new(),
+                &mut runtime,
+                &mut host,
+                u64::MAX,
+            );
+        }
+
+        assert_eq!(
+            (
+                int_of(&runtime, "lost_load"),
+                int_of(&runtime, "lost_spotted")
+            ),
+            (Some(1), Some(1)),
+            "through {encoding}: `OnResumeFailed(\"Spotted\")` ran once after the load, \
+             and `OnLoad`'s was not repeated"
+        );
+    }
+}
+
+/// A guard that writes down the order it hears of lost bodies in.
+const ORDERED: &str = r#"behavior Guard {
+                            int order = 0;
+                            void OnResumeFailed(string member) {
+                                if (member == "Wander") { order = order * 10 + 1; }
+                                if (member == "Spotted") { order = order * 10 + 2; }
+                            }
+                        }"#;
+
+/// **Oldest first.** A save that already owed an `OnResumeFailed` is loaded
+/// under an edit that abandons the body it caught as well: the owed member
+/// the save restored is answered before the one the load itself adds.
+#[test]
+fn an_owed_on_resume_failed_the_save_restored_comes_before_one_the_load_adds() {
+    let mut first = ScriptRuntime::new();
+    first.add_program(MODULE, build(WAITING));
+    let mut host = Host::new();
+    let mut spotted = EventQueue::new();
+    spotted.push(ScriptEvent::new(subject(), "Spotted").with(ScriptValue::Int(1)));
+    let mut saved = recorded(&run_behaviors(
+        &view_of(0.0, None),
+        &spotted,
+        &mut first,
+        &mut host,
+        u64::MAX,
+    ));
+    assert!(saved.pending.is_some(), "the premise: the attack is caught");
+    saved.lifecycle.resume_failed = vec!["Wander".to_owned()];
+
+    let mut runtime = ScriptRuntime::new();
+    runtime.add_program(MODULE, build(ORDERED));
+    let mut host = Host::new();
+    for observed in [Some(saved), None, None, None] {
+        run_behaviors(
+            &view_of(0.5, observed),
+            &EventQueue::new(),
+            &mut runtime,
+            &mut host,
+            u64::MAX,
+        );
+    }
+
+    assert_eq!(
+        int_of(&runtime, "order"),
+        Some(12),
+        "`Wander`, which the save owed, then `Spotted`, which the load abandoned"
+    );
+}
+
+/// A guard whose `OnResumeFailed` itself waits before noting, in order, which
+/// member it heard of.
+const SLOW_LISTENER: &str = r#"behavior Guard {
+                                  int order = 0;
+                                  async void Note(int code) {
+                                      await 1.0s;
+                                      order = order * 10 + code;
+                                  }
+                                  void OnResumeFailed(string member) {
+                                      int code = 0;
+                                      if (member == "Wander") { code = 1; }
+                                      if (member == "Spotted") { code = 2; }
+                                      Note(code);
+                                  }
+                              }"#;
+
+/// **A save inside an `OnResumeFailed`.** Two members are owed; the answer to
+/// the first waits part-way when the game is saved. Loaded, the first answer
+/// finishes, the second is heard once after it — neither is repeated, and
+/// neither lost.
+#[test]
+fn a_save_taken_while_on_resume_failed_waits_answers_each_member_once() {
+    let owing = ScriptSnapshot {
+        lifecycle: khora_core::script::InstanceLifecycle {
+            spawned: true,
+            fault: None,
+            resume_failed: vec!["Wander".to_owned(), "Spotted".to_owned()],
+        },
+        ..ScriptSnapshot::default()
+    };
+
+    let mut runtime = ScriptRuntime::new();
+    runtime.add_program(MODULE, build(SLOW_LISTENER));
+    let mut host = Host::new();
+    let saved = recorded(&run_behaviors(
+        &view_of(0.0, Some(owing)),
+        &EventQueue::new(),
+        &mut runtime,
+        &mut host,
+        u64::MAX,
+    ));
+    assert!(
+        saved.pending.is_some(),
+        "the premise: the answer to `Wander` waits part-way: {saved:?}"
+    );
+    assert_eq!(
+        saved.lifecycle.resume_failed,
+        vec!["Spotted".to_owned()],
+        "the premise: `Spotted` is still owed"
+    );
+
+    for (encoding, carry) in super::saves::every_encoding() {
+        let mut runtime = ScriptRuntime::new();
+        runtime.add_program(MODULE, build(SLOW_LISTENER));
+        let mut host = Host::new();
+        let mut observed = Some(carry(&saved));
+        for _ in 0..8 {
+            run_behaviors(
+                &view_of(0.5, observed.take()),
+                &EventQueue::new(),
+                &mut runtime,
+                &mut host,
+                u64::MAX,
+            );
+        }
+
+        assert_eq!(
+            int_of(&runtime, "order"),
+            Some(12),
+            "through {encoding}: `Wander`'s answer finished, then `Spotted` was heard, once each"
+        );
+    }
+}
+
+/// **Owed across two saves.** Loaded, the guard's `OnLoad` waits, so the
+/// owed `OnResumeFailed` waits behind it — and the game is saved again before
+/// it is heard. The second load still owes it, and it is heard exactly once.
+#[test]
+fn an_owed_on_resume_failed_survives_a_second_save_before_it_is_heard() {
+    let saved = saved_owing_spotted();
+
+    let mut runtime = ScriptRuntime::new();
+    runtime.add_program(MODULE, build(WAITING));
+    let mut host = Host::new();
+    let second = recorded(&run_behaviors(
+        &view_of(0.0, Some(saved)),
+        &EventQueue::new(),
+        &mut runtime,
+        &mut host,
+        u64::MAX,
+    ));
+    assert_eq!(
+        int_of(&runtime, "lost_spotted"),
+        Some(0),
+        "the premise: still owed, behind `OnLoad`"
+    );
+    assert_eq!(
+        second.lifecycle.resume_failed,
+        vec!["Spotted".to_owned()],
+        "the second save records it still owed"
+    );
+
+    let mut runtime = ScriptRuntime::new();
+    runtime.add_program(MODULE, build(WAITING));
+    let mut host = Host::new();
+    let mut observed = Some(second);
+    for _ in 0..6 {
+        run_behaviors(
+            &view_of(0.5, observed.take()),
+            &EventQueue::new(),
+            &mut runtime,
+            &mut host,
+            u64::MAX,
+        );
+    }
+    assert_eq!(
+        (
+            int_of(&runtime, "lost_load"),
+            int_of(&runtime, "lost_spotted")
+        ),
+        (Some(1), Some(1)),
+        "`Spotted` heard once after the second load; `OnLoad`'s answer not repeated"
+    );
+}

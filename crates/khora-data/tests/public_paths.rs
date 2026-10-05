@@ -393,6 +393,17 @@ fn remove_component_error_variants(x: &khora_data::ecs::RemoveComponentError) {
     }
 }
 
+fn spawn_error_variants(x: &khora_data::ecs::SpawnError) {
+    match x {
+        khora_data::ecs::SpawnError::ComponentNotRegistered { component } => {
+            let _: &&'static str = component;
+        }
+        khora_data::ecs::SpawnError::ComponentNamedTwice { component } => {
+            let _: &&'static str = component;
+        }
+    }
+}
+
 fn domain_stats_fields(x: &khora_data::ecs::DomainStats) {
     let _ = (&x.entity_count, &x.page_count);
 }
@@ -1294,6 +1305,11 @@ fn module_ecs_paths_still_resolve() {
     is_debug::<khora_data::ecs::RemoveComponentError>();
     is_eq::<khora_data::ecs::RemoveComponentError>();
     is_partial_eq::<khora_data::ecs::RemoveComponentError>();
+    let _ = type_name::<khora_data::ecs::SpawnError>();
+    let _ = spawn_error_variants as fn(&khora_data::ecs::SpawnError);
+    is_debug::<khora_data::ecs::SpawnError>();
+    is_eq::<khora_data::ecs::SpawnError>();
+    is_partial_eq::<khora_data::ecs::SpawnError>();
     let _ = type_name::<khora_data::ecs::DomainStats>();
     let _ = domain_stats_fields as fn(&khora_data::ecs::DomainStats);
     is_clone::<khora_data::ecs::DomainStats>();
@@ -1310,6 +1326,7 @@ fn module_ecs_paths_still_resolve() {
     let _ = khora_data::ecs::World::domain_epoch;
     let _ = khora_data::ecs::World::instance_id;
     let _ = khora_data::ecs::World::spawn::<khora_data::ecs::Transform>;
+    let _ = khora_data::ecs::World::try_spawn::<khora_data::ecs::Transform>;
     let _ = khora_data::ecs::World::contains;
     let _ = khora_data::ecs::World::set_parent;
     let _ = khora_data::ecs::World::despawn_subtree;

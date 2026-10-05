@@ -671,6 +671,7 @@ fn fault_variants(x: &khora_script::vm::Fault) {
         khora_script::vm::Fault::ArenaFull => {}
         khora_script::vm::Fault::NoSubject => {}
         khora_script::vm::Fault::NativeFailed { .. } => {}
+        khora_script::vm::Fault::InvalidCast { .. } => {}
     }
 }
 
@@ -704,6 +705,8 @@ fn instruction_variants(x: &khora_script::vm::instruction::Instruction) {
         khora_script::vm::instruction::Instruction::MulFloat { .. } => {}
         khora_script::vm::instruction::Instruction::DivFloat { .. } => {}
         khora_script::vm::instruction::Instruction::NegFloat { .. } => {}
+        khora_script::vm::instruction::Instruction::IntToFloat { .. } => {}
+        khora_script::vm::instruction::Instruction::FloatToInt { .. } => {}
         khora_script::vm::instruction::Instruction::Eq { .. } => {}
         khora_script::vm::instruction::Instruction::Less { .. } => {}
         khora_script::vm::instruction::Instruction::LessEq { .. } => {}
@@ -1314,6 +1317,9 @@ fn module_bytecode_paths_still_resolve() {
     is_default::<khora_script::bytecode::registers::Registers>();
     let _ = khora_script::bytecode::shape_of;
     let _ = khora_script::bytecode::sites::timer_names;
+    let _ = khora_script::bytecode::Compiler::arithmetic_shaped;
+    let _ = khora_script::native::operators::binary_operator;
+    let _ = khora_script::native::operators::negation;
     let _ = khora_script::bytecode::sites::literal_seconds;
     let _ = khora_script::bytecode::sites::inferred_type;
     let _ = khora_script::bytecode::keys::statement_key;

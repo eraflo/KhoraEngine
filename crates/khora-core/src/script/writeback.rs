@@ -15,9 +15,10 @@
 //! Live behavior state on its way back into the scene.
 //!
 //! A behavior's fields live in the script lane while the game runs, and in the
-//! `Script` component when the scene is saved. Something has to carry them from
-//! the first to the second, and a save can happen at any moment — so the
-//! component has to be current at every moment, not only when someone asks.
+//! entity's `ScriptState` component when the game is saved. Something has to
+//! carry them from the first to the second, and a save can happen at any
+//! moment — so the component has to be current at every moment, not only when
+//! someone asks.
 //!
 //! # Only what did something
 //!

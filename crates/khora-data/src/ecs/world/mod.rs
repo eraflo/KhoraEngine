@@ -39,6 +39,7 @@ mod queries;
 
 pub use component_access::AddComponentError;
 pub use component_access::RemoveComponentError;
+pub use component_access::SpawnError;
 pub use hierarchy::HierarchyWrite;
 pub(crate) use hierarchy::LoadedHierarchy;
 
@@ -272,12 +273,42 @@ impl World {
     /// 5. Updates domain bitsets and stats for the newly created entity components.
     ///
     /// Returns the `EntityId` of the newly created entity.
+    ///
+    /// # Panics
+    ///
+    /// On a component type that is not registered — one that neither derives
+    /// `Component` with a domain nor is registered in `World::new`. Stored, it
+    /// would sit in a page nothing can reach: invisible to `get` and to every
+    /// join, never removed by `despawn`. That is a programming error, the same
+    /// one every time the code runs; [`try_spawn`](Self::try_spawn) is the
+    /// fallible form.
     pub fn spawn<B: ComponentBundle>(&mut self, bundle: B) -> EntityId {
+        match self.try_spawn(bundle) {
+            Ok(entity) => entity,
+            Err(SpawnError::ComponentNotRegistered { component }) => panic!(
+                "`{component}` is not registered: derive `Component` with a domain, or register it in `World::new`"
+            ),
+            Err(SpawnError::ComponentNamedTwice { component }) => {
+                panic!("a bundle names `{component}` twice: an entity holds one of each")
+            }
+        }
+    }
+
+    /// Spawns a new entity with the given bundle of components, refusing —
+    /// before anything is allocated or stored — a bundle holding a component
+    /// type that is not registered, as `add_component` refuses one.
+    pub fn try_spawn<B: ComponentBundle>(&mut self, bundle: B) -> Result<EntityId, SpawnError> {
+        if let Some(component) = B::unregistered(&self.storage.registry) {
+            return Err(SpawnError::ComponentNotRegistered { component });
+        }
+        if let Some(component) = B::repeated() {
+            return Err(SpawnError::ComponentNamedTwice { component });
+        }
         // Step 1: Allocate a new EntityId. Its persistent identity waits until
         // something asks for it.
         let entity_id = self.create_entity();
         self.place(entity_id, bundle);
-        entity_id
+        Ok(entity_id)
     }
 
     /// Places a freshly allocated entity, with nothing on it.

@@ -18,7 +18,7 @@ use std::{any::TypeId, collections::HashSet};
 
 use super::World;
 use crate::ecs::{
-    query::{NativeRowPlan, Query, WorldQuery},
+    query::{NativeRowPlan, Query, ReadOnlyWorldQuery, WorldQuery},
     DomainBitset, QueryMut, QueryPlan,
 };
 
@@ -46,7 +46,7 @@ impl World {
     ///     // ...
     /// }
     /// ```
-    pub fn query<'a, Q: WorldQuery>(&'a self) -> Query<'a, Q> {
+    pub fn query<'a, Q: ReadOnlyWorldQuery>(&'a self) -> Query<'a, Q> {
         let type_ids = Q::type_ids();
 
         // 1. Try to fetch the strategy plan from the cache.
@@ -96,7 +96,21 @@ impl World {
     ///
     /// This method is similar to `query`, but it allows mutable access to the components.
     /// It uses the same dynamic plan re-finding to ensure thread-safe consistency.
+    ///
+    /// # Panics
+    ///
+    /// On a query naming one component twice — `(&mut Position, &Position)`:
+    /// it would hand out two references to one value, one of them `&mut`.
     pub fn query_mut<'a, Q: WorldQuery>(&'a mut self) -> QueryMut<'a, Q> {
+        let accessed = Q::accessed_type_ids();
+        let mut seen = HashSet::with_capacity(accessed.len());
+        if !accessed.iter().all(|id| seen.insert(*id)) {
+            panic!(
+                "`query_mut::<{}>` names one component twice: it would hand out two references \
+                 to one value",
+                std::any::type_name::<Q>()
+            );
+        }
         let type_ids = Q::type_ids();
 
         // 1. Get strategy from cache

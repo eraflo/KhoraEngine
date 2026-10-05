@@ -303,14 +303,34 @@ const SHIPPED: &[Row] = &[
     },
     Row {
         construct: "`(float)x / 2` divides as floats",
-        // What the cast changes today is only which division the compiler
-        // picks: `DivFloat`, which widens the int operand, instead of integer
-        // division giving `2`. It does not claim the cast converts the value —
-        // that is the pending row "cast int to float".
+        // The cast picks the division: `DivFloat` instead of integer division
+        // giving `2`. That the cast converts the value is the row "cast int to
+        // float".
         source: "fn float F(int x) { return (float)x / 2; }",
         entry: "F",
         args: &[Value::Int(5)],
         expect: Expect::Runs(Value::Float(2.5)),
+    },
+    Row {
+        construct: "`??` on null",
+        source: "fn int F() { int? s = null; return s ?? 7; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(7)),
+    },
+    Row {
+        construct: "cast of a float to int",
+        source: "fn int F(float x) { return (int)x; }",
+        entry: "F",
+        args: &[Value::Float(2.75)],
+        expect: Expect::Runs(Value::Int(2)),
+    },
+    Row {
+        construct: "cast int to float",
+        source: "fn float F(int x) { return (float)x; }",
+        entry: "F",
+        args: &[Value::Int(5)],
+        expect: Expect::Runs(Value::Float(5.0)),
     },
     Row {
         construct: "engine type field",
@@ -448,16 +468,6 @@ const PENDING: &[(&str, Row)] = &[
     (
         "02",
         Row {
-            construct: "`??` on null",
-            source: "fn int F() { int? s = null; return s ?? 7; }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(7)),
-        },
-    ),
-    (
-        "02",
-        Row {
             construct: "uninitialised local",
             source: "fn int F() { int x; x = x + 1; return x; }",
             entry: "F",
@@ -494,30 +504,6 @@ const PENDING: &[(&str, Row)] = &[
             entry: "F",
             args: &[],
             expect: Expect::Rejected("expected `int`, found `string`"),
-        },
-    ),
-    (
-        // B5: the cast only changes what the compiler believes
-        // (`bytecode/expr.rs`, `Expr::Cast`), so an `int` function returns the
-        // float it was given.
-        "02",
-        Row {
-            construct: "cast of a float to int",
-            source: "fn int F(float x) { return (int)x; }",
-            entry: "F",
-            args: &[Value::Float(2.75)],
-            expect: Expect::Runs(Value::Int(2)),
-        },
-    ),
-    (
-        // B5's twin: a `float` function returns the `int` it was given.
-        "02",
-        Row {
-            construct: "cast int to float",
-            source: "fn float F(int x) { return (float)x; }",
-            entry: "F",
-            args: &[Value::Int(5)],
-            expect: Expect::Runs(Value::Float(5.0)),
         },
     ),
     // ─── 04 — control flow ──────────────────────────────────────────────────

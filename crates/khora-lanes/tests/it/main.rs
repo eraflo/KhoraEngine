@@ -18,6 +18,7 @@
 //! full link of the crate's dependency tree. New integration tests join this
 //! binary as a module instead of adding a file at the root of `tests/`.
 
+mod authored_base;
 mod frozen_save;
 mod lifecycle_restore;
 mod on_resume_failed;

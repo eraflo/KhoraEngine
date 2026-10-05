@@ -258,145 +258,6 @@ impl Checker {
         }
     }
 
-    /// The result of arithmetic on two built-in types.
-    ///
-    /// The unit rules live here, and they are deliberately narrow: a unit may
-    /// be added to its own kind, scaled by a number, or divided by its own kind
-    /// to yield a ratio. Everything else has no meaning worth guessing at.
-    fn arithmetic(&mut self, op: BinaryOp, left: &Ty, right: &Ty, span: Span) -> Ty {
-        // Plain numbers.
-        if left.is_numeric() && right.is_numeric() {
-            return if *left == Ty::Float || *right == Ty::Float {
-                Ty::Float
-            } else {
-                Ty::Int
-            };
-        }
-
-        if left.is_unit() || right.is_unit() {
-            return self.unit_arithmetic(op, left, right, span);
-        }
-
-        // Engine vector types scale by a number and combine with themselves.
-        if let Ty::Engine(name) = left {
-            if right.is_numeric() || left == right {
-                return Ty::Engine(name);
-            }
-        }
-        if let (true, Ty::Engine(name)) = (left.is_numeric(), right) {
-            return Ty::Engine(name);
-        }
-
-        if *left == Ty::Str && op == BinaryOp::Add {
-            self.expect_assignable(&Ty::Str, right, span);
-            return Ty::Str;
-        }
-
-        self.error(
-            format!(
-                "`{}` cannot be applied to `{}` and `{}`",
-                operator_text(op),
-                left.name(),
-                right.name()
-            ),
-            span,
-        );
-        Ty::Error
-    }
-
-    /// Arithmetic where at least one side carries a unit.
-    fn unit_arithmetic(&mut self, op: BinaryOp, left: &Ty, right: &Ty, span: Span) -> Ty {
-        match op {
-            // Same unit in, same unit out.
-            BinaryOp::Add | BinaryOp::Sub if left == right => left.clone(),
-
-            BinaryOp::Add | BinaryOp::Sub => {
-                self.error_note(
-                    format!("cannot add `{}` to `{}`", right.name(), left.name()),
-                    span,
-                    "Duration and Angle measure different things; there is no meaningful sum",
-                );
-                Ty::Error
-            }
-
-            // Scaling keeps the unit.
-            BinaryOp::Mul if left.is_unit() && right.is_numeric() => left.clone(),
-            BinaryOp::Mul if left.is_numeric() && right.is_unit() => right.clone(),
-            BinaryOp::Mul => {
-                self.error_note(
-                    format!("cannot multiply `{}` by `{}`", left.name(), right.name()),
-                    span,
-                    "a unit may be scaled by a number; multiplying two units would give an area, which the language has no type for",
-                );
-                Ty::Error
-            }
-
-            // Dividing a unit by its own kind is a ratio — a plain number.
-            BinaryOp::Div if left == right => Ty::Float,
-            BinaryOp::Div if left.is_unit() && right.is_numeric() => left.clone(),
-            BinaryOp::Div => {
-                self.error_note(
-                    format!("cannot divide `{}` by `{}`", left.name(), right.name()),
-                    span,
-                    "divide a unit by a number to scale it, or by its own kind to get a ratio",
-                );
-                Ty::Error
-            }
-
-            BinaryOp::Rem => {
-                self.error(format!("`%` cannot be applied to `{}`", left.name()), span);
-                Ty::Error
-            }
-
-            _ => Ty::Error,
-        }
-    }
-
-    /// Looks for an operator overload matching these operand types.
-    ///
-    /// Resolution happens here, at check time, so the emitted call is direct.
-    fn overloaded(&mut self, op: BinaryOp, left: &Ty, right: &Ty, span: Span) -> Option<Ty> {
-        let overloadable = op.overloadable()?;
-        let Ty::Struct(name) = left else {
-            return None;
-        };
-        let info = self.structs.get(name)?;
-
-        let found = info
-            .operators
-            .iter()
-            .find(|candidate| {
-                candidate.op == overloadable
-                    && candidate.params.len() == 2
-                    && candidate.params[0].accepts(left)
-                    && candidate.params[1].accepts(right)
-            })
-            .map(|candidate| candidate.result.clone());
-
-        if found.is_none() {
-            // The struct exists but has no such overload: say so precisely,
-            // rather than falling through to "cannot be applied".
-            self.error_note(
-                format!(
-                    "`{}` does not define `{}` for `{}`",
-                    name,
-                    operator_text(op),
-                    right.name()
-                ),
-                span,
-                format!(
-                    "declare it: `static {} operator {}({} a, {} b)`",
-                    name,
-                    operator_text(op),
-                    name,
-                    right.name()
-                ),
-            );
-            return Some(Ty::Error);
-        }
-        found
-    }
-
     fn check_unary(&mut self, op: UnaryOp, operand: &Expr, span: Span, context: &Context) -> Ty {
         let ty = self.check_expr(operand, context);
         if matches!(ty, Ty::Error) {
@@ -408,7 +269,11 @@ impl Checker {
                 Ty::Bool
             }
             UnaryOp::Neg => {
-                if ty.is_numeric() || ty.is_unit() || matches!(ty, Ty::Engine(_)) {
+                if let Ty::Engine(engine) = ty {
+                    let name = crate::native::operators::negation(engine);
+                    return self.engine_operator(name, engine, span);
+                }
+                if ty.is_numeric() || ty.is_unit() {
                     return ty;
                 }
                 self.error(format!("cannot negate `{}`", ty.name()), span);
@@ -650,24 +515,4 @@ fn is_assignable_target(expr: &Expr) -> bool {
         expr,
         Expr::Ident { .. } | Expr::Field { .. } | Expr::Index { .. }
     )
-}
-
-/// How an operator is spelled, for messages.
-fn operator_text(op: BinaryOp) -> &'static str {
-    match op {
-        BinaryOp::Add => "+",
-        BinaryOp::Sub => "-",
-        BinaryOp::Mul => "*",
-        BinaryOp::Div => "/",
-        BinaryOp::Rem => "%",
-        BinaryOp::Eq => "==",
-        BinaryOp::NotEq => "!=",
-        BinaryOp::Less => "<",
-        BinaryOp::LessEq => "<=",
-        BinaryOp::Greater => ">",
-        BinaryOp::GreaterEq => ">=",
-        BinaryOp::And => "&&",
-        BinaryOp::Or => "||",
-        BinaryOp::Coalesce => "??",
-    }
 }

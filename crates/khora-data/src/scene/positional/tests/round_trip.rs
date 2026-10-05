@@ -202,6 +202,8 @@ fn engine_types_round_trip() {
     assert_eq!(round_trip(&values), values);
 
     let frozen = ScriptSnapshot {
+        authored: Vec::new(),
+        overridden: Vec::new(),
         fields: vec![("speed".into(), ScriptValue::Float(3.0))],
         state: Some("Patrol".into()),
         state_fields: vec![("waypoint".into(), ScriptValue::Int(2))],
@@ -238,6 +240,7 @@ fn engine_types_round_trip() {
             },
         }),
         lifecycle: khora_core::script::InstanceLifecycle {
+            resume_failed: Vec::new(),
             spawned: true,
             fault: Some(khora_core::script::RecordedFault {
                 fingerprint: 0xfeed_beef_dead_c0de,

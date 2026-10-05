@@ -58,7 +58,7 @@ Comments are `// line` and `/* block */`.
 | `int`, `float`, `bool`, `string`, `Entity` | runs |
 | `Vec2`, `Vec3`, `Vec4`, `Quat`, `Color` | runs — built by calling `Vec3(1.0, 2.0, 3.0)`; components `.x .y .z .w` (`.r .g .b .a`) read-only |
 | `Duration`, `Angle` | runs — distinct from `float` and from each other; `2s + 500ms` is `2.5s`, `2s + 90deg` is refused |
-| `T?` | runs for storing and passing `null`; `??`, `?.` and `if (var x = opt)` do not (below) |
+| `T?` | runs — holds a value or `null`; one declared without a value starts `null`; `a ?? b` unwraps it; `?.` and `if (var x = opt)` do not run yet |
 | `T[]`, `Map<K, V>` | checks — no literal, no indexing yet |
 
 The one implicit conversion: an `int` where a `float` is expected. There is no
@@ -182,12 +182,28 @@ async void Attack() { await 0.5s; Strike(); }
 | `* / %`, `+ -`, `< <= > >=`, `== !=`, `&&`, `\|\|`, `!`, unary `-` | runs — C# precedence; `&&`/`\|\|` short-circuit; `int / int` truncates |
 | `c ? a : b` | runs |
 | `"a" + "b"`, `==` on text | runs — text `+` text only: `"hp " + health` is refused |
-| `(float)x`, `(int)x` | runs, but **does not convert**: it picks the instruction. `(float)x / 2` is `2.5` for `x = 5`; `(int)2.75` stays `2.75` |
+| `(float)x`, `(int)x` | runs — converts: `(float)5` is `5.0`, `(int)2.75` is `2`, `(int)-2.75` is `-2` (toward zero); `(int)` of an infinity, a NaN or a value past `int`'s range faults (`InvalidCast`) rather than saturating |
 | `this` | runs — the behavior's entity; not in free functions |
 | `Name(args)` | runs — functions and natives by bare name |
 | `obj.Method()` | checks |
-| `a ?? b` | **wrong today** — compiles and returns `a` unchanged |
+| `a ?? b` | runs — `a` unless it is `null`; `b` is evaluated only then. A `float?` falls back to a float even when `b` is written as an int |
 | `a?.b`, `new T(…)`, `[…]`, `a[i]` | checks |
+
+## Engine-type arithmetic
+
+An engine type's operators are engine functions, exactly as `v.x` is: an
+operation is defined when the engine defines it, and refused at compile time —
+by name — when it does not.
+
+| Type | Operators |
+|---|---|
+| `Vec2`, `Vec3`, `Vec4` | `v + w`, `v - w`, `v * s`, `s * v`, `v / s`, `-v` — `s` a number, an `int` widened |
+| `Quat` | `q * r` composes, `q * v` rotates a `Vec3` |
+| `Color` | `c + d`, `c - d`, `c * d` (modulate), `c * s`, `s * c` |
+
+Compound assignment uses the same table: `v += w`, `v *= 2.0`. Anything else —
+`Vec3 * Vec3`, `Vec3 % float`, `Quat + Quat`, `Color / float`, `2.0 / v` — is
+refused with the operation's name and the list of what the type defines.
 
 ## Engine functions
 
@@ -224,7 +240,7 @@ void Hurt() { Raise(this, "Damaged", 30); }
 
 Pinned as pending in the conformance suite, each with the spec that owns it:
 struct values and fields, arrays and maps, `foreach`, `match`, `break` and
-`continue`, optional bindings, `??` and `?.`, converting casts, method calls,
+`continue`, optional bindings, `?.`, method calls,
 awaiting events, and a check that every path of a non-`void` function returns.
 Until then: no closures, no method calls, no struct or array values at run time.
 

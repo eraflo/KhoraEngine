@@ -26,13 +26,14 @@
 //! picks the body up before anything new starts.
 
 use khora_core::script::EventQueue;
-use khora_script::bytecode::init_name;
+use khora_script::bytecode::{enter_name, init_name};
 use khora_script::dispatch::{deliver, finish_timer, tick_timers, NotDelivered};
 use khora_script::lifecycle;
 use khora_script::native::Host;
 use khora_script::vm::{Machine, Program, Run, StrRef, Suspension, Value};
 
 use super::hooks::{call_hook, Hook};
+use super::persistence;
 use super::runtime::{self, Body, Pending};
 
 /// What running one behavior did.
@@ -136,6 +137,27 @@ pub(super) struct Progress {
     /// The members of bodies an edit left nothing of, each owed
     /// `OnResumeFailed`, oldest first.
     pub(super) resume_failed: Vec<String>,
+    /// The declared defaults, once this turn's initialiser has produced them.
+    pub(super) defaults: Option<Vec<(String, khora_core::script::ScriptValue)>>,
+}
+
+/// The state a carried store is in, when it is not the first — the one the
+/// initialiser already entered.
+fn carried_state(
+    program: &Program,
+    behavior: &str,
+    carried: &khora_script::arena::PersistentStore,
+) -> Option<i64> {
+    let layout = program.layout(behavior)?;
+    if layout.states.is_empty() {
+        return None;
+    }
+    match carried.get(layout.state_slot()) {
+        Some(khora_script::arena::Persisted::Scalar(Value::Int(state))) if *state != 0 => {
+            Some(*state)
+        }
+        _ => None,
+    }
 }
 
 /// `OnLoad` has finished: the body the load restored is the one owed next.
@@ -243,15 +265,33 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
     // restarted after a cut: an initialiser larger than one turn's slice would
     // otherwise restart every turn and never finish.
     if !progress.initialised {
-        let started = progress
+        // An instance coming back in a state other than the first enters that
+        // state's own defaults after the initialiser has entered the first:
+        // a datum new to its state would otherwise keep what the first state
+        // left in the slot they share. Both are one machine at a time, kept
+        // across a cut like the initialiser alone was.
+        let init = init_name(behavior);
+        let entering = carried.and_then(|carried| carried_state(program, behavior, carried));
+        let mut current = progress
             .initialiser
             .take()
-            .or_else(|| Machine::new(program, &init_name(behavior), &[]));
-        if let Some(mut machine) = started {
-            let (run, cost) = machine.run_counting(program, host, fuel);
+            .or_else(|| Machine::new(program, &init, &[]));
+        while let Some(mut machine) = current.take() {
+            let was_initialiser = machine
+                .outermost()
+                .and_then(|index| program.functions.get(index))
+                .is_some_and(|function| function.name == init);
+            let left = fuel.saturating_sub(spent);
+            let (run, cost) = machine.run_counting(program, host, left);
             spent += cost;
             match run {
-                Run::Completed => {}
+                Run::Completed => {
+                    if was_initialiser {
+                        current = entering.and_then(|state| {
+                            Machine::new(program, &enter_name(behavior), &[Value::Int(state)])
+                        });
+                    }
+                }
                 Run::Faulted(fault) => return Outcome::faulted(spent, fault),
                 Run::Suspended(_) => {
                     host.awaiting = None;
@@ -259,6 +299,12 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                     return Outcome::Uninitialised { spent };
                 }
             }
+        }
+        // What the declared defaults are, before anything goes on top: the
+        // base an authored value is compared against when no override names
+        // the field.
+        if let Some(layout) = program.layout(behavior) {
+            progress.defaults = Some(persistence::snapshot_from_store(layout, &host.fields).fields);
         }
         // After the defaults, not before: the initialiser writes every slot,
         // so anything carried across a reload or a load has to go back on top

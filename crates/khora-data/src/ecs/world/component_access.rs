@@ -43,15 +43,55 @@ pub enum RemoveComponentError {
     ComponentNotPresent,
 }
 
+/// Errors that can occur when spawning an entity with a bundle of components.
+#[derive(Debug, PartialEq, Eq)]
+pub enum SpawnError {
+    /// A component type of the bundle is not registered in the ECS: it has no
+    /// domain, so nothing could ever find it once stored.
+    ComponentNotRegistered {
+        /// The name of the unregistered component type.
+        component: &'static str,
+    },
+    /// The bundle names one component type twice: an entity holds one of each.
+    ComponentNamedTwice {
+        /// The name of the repeated component type.
+        component: &'static str,
+    },
+}
+
 impl World {
     /// Registers a component type with a specific semantic domain.
     ///
     /// This is a crucial setup step. Before a component of type `T` can be used
     /// in a bundle, it must be registered with the world to define which semantic
     /// page group its data will be stored in.
+    ///
+    /// Registering a type again in the domain it already has changes nothing.
+    ///
+    /// # Panics
+    ///
+    /// When the type is already registered in another domain: every value
+    /// stored so far is reached through the domain it was stored under, and
+    /// moving the type would hide them all.
     pub fn register_component<T: Component>(&mut self, domain: SemanticDomain) {
+        if let Some(existing) = self.storage.registry.get_domain(TypeId::of::<T>()) {
+            if existing == domain {
+                return;
+            }
+            panic!(
+                "`{}` is already registered in the {existing:?} domain; registering it in {domain:?} would hide every value stored under the first",
+                std::any::type_name::<T>()
+            );
+        }
         self.storage.registry.register::<T>(domain);
         self.type_registry.register::<T>();
+        // A plan names the domains its components live in; one made before
+        // this registration would keep looking for `T` where it is not.
+        self.planner
+            .query_cache
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     /// This operation is designed to be fast. It performs the necessary data
@@ -491,7 +531,13 @@ impl World {
                     if let Some(page) = (&mut *world_ptr).storage.pages.get_mut(page_id as usize) {
                         if let Some(column) = page.columns.get_mut(&type_id) {
                             if let Some(vec) = column.as_any_mut().downcast_mut::<Vec<T>>() {
-                                results[i] = Some(vec.get_unchecked_mut(row_index as usize));
+                                // Through the buffer's pointer: a slice over
+                                // the column would invalidate the items taken
+                                // from it before this one.
+                                let row = row_index as usize;
+                                if row < vec.len() {
+                                    results[i] = Some(&mut *vec.as_mut_ptr().add(row));
+                                }
                             }
                         }
                     }

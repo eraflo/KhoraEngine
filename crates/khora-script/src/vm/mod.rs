@@ -127,6 +127,13 @@ pub enum Fault {
         /// What it said.
         message: String,
     },
+    /// `(int)` of a float that no `int` holds: infinite, NaN, or outside the
+    /// `i64` range.
+    InvalidCast {
+        /// The float that could not be converted, written out — a float is not
+        /// `Eq`, and a fault is.
+        value: String,
+    },
 }
 
 /// The outcome of one [`Machine::run`] call.
@@ -434,6 +441,26 @@ impl Machine {
             Instruction::NegFloat { dst, src } => {
                 let value = self.float(src)?;
                 self.write(dst, Value::Float(-value))?;
+                Ok(Step::Next)
+            }
+            Instruction::IntToFloat { dst, src } => {
+                let value = self.float(src)?;
+                self.write(dst, Value::Float(value))?;
+                Ok(Step::Next)
+            }
+            Instruction::FloatToInt { dst, src } => {
+                let value = self.float(src)?;
+                // Every float in `[-2^63, 2^63)` truncates to an `i64`; past it,
+                // or not a number at all, there is no `int` to give — and a
+                // saturated one would be a wrong answer nobody asked for.
+                const BOUND: f64 = 9_223_372_036_854_775_808.0;
+                let wide = f64::from(value);
+                if !wide.is_finite() || !(-BOUND..BOUND).contains(&wide) {
+                    return Err(Fault::InvalidCast {
+                        value: value.to_string(),
+                    });
+                }
+                self.write(dst, Value::Int(wide.trunc() as i64))?;
                 Ok(Step::Next)
             }
 

@@ -245,7 +245,7 @@ behavior Guard {
 ///
 /// A fingerprint is written into saves and compared after a load, so it has
 /// to be the same in every build, on every Rust release.
-const PINNED_PROGRAM: u64 = 0xa5b5_f7db_2d3c_b749;
+const PINNED_PROGRAM: u64 = 0x3b5c_ca3c_d15e_8c3a;
 
 /// What `Twice` in [`PINNED_SOURCE`] fingerprints to.
 const PINNED_TWICE: u64 = 0x8d9f_aa74_f44d_1129;

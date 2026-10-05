@@ -137,15 +137,24 @@ of component references, and the planner picks every page whose archetype contai
 all of them, iterating in SoA order:
 
 ```rust
-for (transform, mut global) in world.query::<(&Transform, &mut GlobalTransform)>() {
+for (transform, mut global) in world.query_mut::<(&Transform, &mut GlobalTransform)>() {
     global.0 = transform.compute_global();
 }
 ```
 
-A `&mut Component` in one query closes the door, at compile time, on any other
-query touching that component for the borrow's duration — the same exclusivity
-rule that would later make parallel query execution sound, though the policy for
-that is not yet decided.
+Reading and writing are two doors. `world.query` takes `&World` and accepts only
+read-only terms (`&T`, `Option<&T>`, `EntityId`, `Without<T>`) — asking it for a
+`&mut T` is a compile error, because a shared borrow cannot hand out exclusive
+access. `world.query_mut` takes `&mut World` and is where writing happens; it
+refuses, by panicking, a query that names one component twice, which would hand
+out two references to one value. A `&mut Component` in one query closes the door,
+at compile time, on any other query touching that component for the borrow's
+duration.
+
+Spawning is held to the same rule as adding: `world.spawn` panics on a component
+type nobody registered — stored, it would sit where no query or `get` could find
+it — and `world.try_spawn` returns the refusal instead (`SpawnError`), as it does
+for a bundle naming one type twice.
 
 Underneath, a default column is a `Vec<T>`: struct-of-arrays *across entities*, but
 array-of-structures *within* a component — whole structs back to back. That is the

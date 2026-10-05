@@ -178,6 +178,13 @@ impl Checker {
             // `var` — the parser guarantees an initialiser, so this is the
             // inference case.
             (None, Some(actual)) => {
+                // What `var` inferred, for the compiler to record at the sites
+                // the local is live at: its shape alone cannot tell `int` from
+                // `int?`, or a `bool` from an `Entity`.
+                if let Some(expr) = value {
+                    self.inferred
+                        .insert(std::ptr::from_ref(expr) as usize, actual.name());
+                }
                 if actual == Ty::Void {
                     self.error_note(
                         format!("`{name}` cannot hold nothing"),

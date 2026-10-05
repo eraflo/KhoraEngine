@@ -86,7 +86,12 @@ impl Compiler {
                     // checker inferred its type from.
                     (None, Some(expr)) => {
                         let (source, shape) = self.compile_expr(expr);
-                        let slot = self.declare_local(name, shape, inferred_type(shape));
+                        let ty = self
+                            .inferred
+                            .get(&(std::ptr::from_ref(expr) as usize))
+                            .cloned()
+                            .unwrap_or_else(|| inferred_type(shape));
+                        let slot = self.declare_local(name, shape, ty);
                         self.emit(Instruction::Move {
                             dst: slot,
                             src: source,
@@ -101,11 +106,13 @@ impl Compiler {
                 };
 
                 // Declared without an initialiser: give it a defined value
-                // rather than whatever the register happened to hold.
+                // rather than whatever the register happened to hold — `null`
+                // for an optional, which is what it says it may be.
+                let optional = ty.as_ref().is_some_and(crate::ast::TypeRef::is_optional);
                 let slot = self.declare_local(name, shape.0, shape.1);
                 self.emit(Instruction::LoadConst {
                     dst: slot,
-                    value: Value::Unit,
+                    value: if optional { Value::Null } else { Value::Unit },
                 });
                 self.registers.release_to(mark);
             }
@@ -345,7 +352,7 @@ impl Compiler {
                 // Its type's zero rather than unset, for the reason a
                 // behavior's field with no written default gets one: `int
                 // missed;` reads as a number that starts at nothing.
-                None => self.zero_of(*shape),
+                None => self.zero_of_type(shape),
             };
             writes.push((*slot, register));
         }

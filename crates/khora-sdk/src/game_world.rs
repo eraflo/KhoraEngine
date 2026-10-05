@@ -25,7 +25,7 @@ use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::scene::{SceneFile, SerializationGoal};
 use khora_data::ecs::{
     Camera, Component, ComponentBundle, GlobalTransform, HandleComponent, Query, QueryMut,
-    Transform, World, WorldQuery,
+    ReadOnlyWorldQuery, Transform, World, WorldQuery,
 };
 use khora_data::scene::record::LoadReport;
 use khora_data::scene::PrefabSource;
@@ -239,7 +239,7 @@ impl GameWorld {
     ///     let _ = (transform.translation, &name.0);
     /// }
     /// ```
-    pub fn query<'a, Q: WorldQuery>(&'a self) -> Query<'a, Q> {
+    pub fn query<'a, Q: ReadOnlyWorldQuery>(&'a self) -> Query<'a, Q> {
         self.world.query::<Q>()
     }
 

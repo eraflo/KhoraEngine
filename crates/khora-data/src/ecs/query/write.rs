@@ -199,10 +199,15 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                     }
                 }
 
-                // SAFETY: `world` is the exclusively-borrowed `&mut World` reborrowed
-                // above; passing it as `*const World` to `fetch_from_world` only reads
-                // peer columns for an entity that exists in the driver page.
-                if let Some(item) = unsafe { Q::fetch_from_world(world as *const _, entity_id) } {
+                // SAFETY: `self.world_ptr` came from the `&'a mut World` given to
+                // `QueryMut::new` and keeps its write permission — unlike a pointer
+                // cast from the `world` reborrow, which carries only read
+                // permission, and which `&mut T` terms would write through. The
+                // reborrow is not used again before the next `next` call, and the
+                // entity exists in the driver page.
+                if let Some(item) =
+                    unsafe { Q::fetch_from_world(self.world_ptr as *const _, entity_id) }
+                {
                     return Some(item);
                 }
             } else {

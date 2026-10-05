@@ -301,6 +301,7 @@ fn the_lifecycle_reaches_the_script_state() {
     let mut world = World::new();
     let entity = world.spawn(Script::new("ai/guard.erg", "Guard"));
     let lifecycle = InstanceLifecycle {
+        resume_failed: Vec::new(),
         spawned: true,
         fault: Some(RecordedFault {
             fingerprint: 0xdead_beef,

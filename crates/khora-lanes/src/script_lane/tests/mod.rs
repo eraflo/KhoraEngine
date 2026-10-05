@@ -19,10 +19,12 @@
 //! no budget at all. Degrading must cost lateness, never correctness.
 
 mod arrival;
+mod authored;
 mod event;
 mod lifecycle;
 mod on_load;
 mod reload;
+mod reload_carries;
 mod save;
 
 use khora_core::ecs::entity::EntityId;

@@ -118,14 +118,23 @@ pub fn handler_name(behavior: &str, event: &str) -> String {
 
 /// Whether a behavior handles an event, in any state or outside them.
 pub fn handles(program: &Program, behavior: &str, event: &str) -> bool {
-    program.index_of(&handler_name(behavior, event)).is_some()
-        || program.layout(behavior).is_some_and(|layout| {
-            layout.states.iter().any(|state| {
-                program
-                    .index_of(&state_handler_name(behavior, &state.name, event))
-                    .is_some()
+    !is_reserved(event) && program.index_of(&handler_name(behavior, event)).is_some()
+        || !is_reserved(event)
+            && program.layout(behavior).is_some_and(|layout| {
+                layout.states.iter().any(|state| {
+                    program
+                        .index_of(&state_handler_name(behavior, &state.name, event))
+                        .is_some()
+                })
             })
-        })
+}
+
+/// Whether `event` names something the compiler made rather than a member a
+/// script declared — `__fields`, `__enter`, a schedule's `__every(0.5)`. An
+/// event never reaches one: raising `"__enter"` must not change a state
+/// without a `become`.
+fn is_reserved(event: &str) -> bool {
+    event.starts_with("__")
 }
 
 /// The name a state's handler compiles to.
@@ -370,6 +379,12 @@ pub fn deliver(
 ) -> Result<Delivered, NotDelivered> {
     if !alive(event.target) {
         return Err(NotDelivered::NoSuchEntity(event.target));
+    }
+    if is_reserved(&event.name) {
+        return Err(NotDelivered::NoHandler {
+            behavior: behavior.to_owned(),
+            event: event.name.clone(),
+        });
     }
 
     // Through the one bridge, and with the arena, so a handler receives exactly

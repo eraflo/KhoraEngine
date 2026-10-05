@@ -109,6 +109,7 @@ pub fn run_behaviors(
             let layout = compiled.layout(&program.behavior)?;
             let arrived = persistence::arrived(&arrival);
             Some(Arriving {
+                base: persistence::arrival_base(&arrival),
                 store: persistence::store_from_snapshot(layout, &arrived),
                 resumed: super::resumption::resume(&arrived, &compiled, layout),
                 restored: arrival.observed.is_some(),
@@ -123,7 +124,11 @@ pub fn run_behaviors(
             continue;
         }
         state.module.clone_from(&program.module);
-        let lifecycle_before = (state.spawned, state.fault.is_some());
+        let lifecycle_before = (
+            state.spawned,
+            state.fault.is_some(),
+            state.resume_failed.clone(),
+        );
 
         host.entity = Some(instance.entity);
         // The read side, from the projection rather than the `World`. Set
@@ -143,6 +148,7 @@ pub fn run_behaviors(
             loading: state.loading,
             after_load: state.after_load.take(),
             resume_failed: std::mem::take(&mut state.resume_failed),
+            defaults: None,
         };
         let carried = state.carried.take();
 
@@ -187,6 +193,23 @@ pub fn run_behaviors(
         state.loading = progress.loading;
         state.after_load = progress.after_load;
         state.resume_failed = progress.resume_failed;
+        // The authored base, completed: a field it holds no value for takes
+        // its declared default, and a field the script no longer declares
+        // leaves it. What it already holds stays — after a reload, a carried
+        // value descends from the old default, not the one just produced.
+        if let Some(defaults) = progress.defaults {
+            state
+                .base
+                .retain(|(name, _)| defaults.iter().any(|(field, _)| field == name));
+            state
+                .overridden
+                .retain(|name| defaults.iter().any(|(field, _)| field == name));
+            for (name, default) in defaults {
+                if !state.base.iter().any(|(field, _)| *field == name) {
+                    state.base.push((name, default));
+                }
+            }
+        }
         // Kept until the initialiser that has to put them back has finished.
         if !state.initialised {
             state.carried = carried;
@@ -277,7 +300,13 @@ pub fn run_behaviors(
         // must know both.
         let lifecycle_changed = runtime
             .peek(instance.entity, &program.behavior)
-            .is_some_and(|held| (held.spawned, held.fault.is_some()) != lifecycle_before);
+            .is_some_and(|held| {
+                (
+                    held.spawned,
+                    held.fault.is_some(),
+                    held.resume_failed.clone(),
+                ) != lifecycle_before
+            });
         if outcome_cost + farewell_cost > 0 || ticked || waited || lifecycle_changed {
             if let Some(layout) = compiled.layout(&program.behavior) {
                 let held = runtime.instance(instance.entity, &program.behavior);
@@ -303,9 +332,12 @@ pub fn run_behaviors(
                         .as_ref()
                         .is_some_and(|pending| pending.body == Body::Spawn);
                 snapshot.lifecycle = InstanceLifecycle {
+                    resume_failed: held.resume_failed.clone(),
                     spawned: held.spawned && !spawning_in_front,
                     fault: held.fault.clone(),
                 };
+                snapshot.authored = held.base.clone();
+                snapshot.overridden = held.overridden.clone();
 
                 report.state.push(ScriptStateUpdate {
                     entity: instance.entity,
@@ -322,6 +354,9 @@ pub fn run_behaviors(
 /// What an entity brings the first frame it appears, read against its
 /// program.
 struct Arriving {
+    /// Its authored base and which of it were overrides — see
+    /// [`persistence::arrival_base`].
+    base: (Vec<(String, khora_core::script::ScriptValue)>, Vec<String>),
     /// Its fields, as they go back on top of the initialiser's defaults.
     store: khora_script::arena::PersistentStore,
     /// The body a save caught part-way, taken back into the script as it is
@@ -354,12 +389,16 @@ fn arrive(
     *state = Instance {
         fields: arriving.store.clone(),
         carried: Some(arriving.store),
+        base: arriving.base.0,
+        overridden: arriving.base.1,
         ..Instance::default()
     };
     if !arriving.restored {
         return None;
     }
     state.spawned = arriving.lifecycle.spawned;
+    // Owed before the save, so heard before anything this load adds.
+    state.resume_failed = arriving.lifecycle.resume_failed.clone();
     match arriving.lifecycle.fault {
         Some(fault) if fault.fingerprint == fingerprint => {
             state.disabled = true;

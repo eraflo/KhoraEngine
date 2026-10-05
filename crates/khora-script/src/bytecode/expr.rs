@@ -20,7 +20,7 @@
 //! from re-deriving what the type checker already proved.
 
 use super::{Compiler, Shape};
-use crate::ast::{BinaryOp, Expr, UnaryOp};
+use crate::ast::{BinaryOp, Expr};
 use crate::diagnostics::Span;
 use crate::vm::{Instruction, Reg, Value};
 
@@ -139,12 +139,25 @@ impl Compiler {
                 (dst, Shape::Other)
             }
 
+            // A cast converts: `(float)` widens an int, `(int)` truncates a
+            // float toward zero. Anything the checker let through that is
+            // already of the target's shape needs nothing.
             Expr::Cast { ty, operand, .. } => {
-                // int and float share a register representation, and the VM
-                // widens an int wherever a float is read. The cast therefore
-                // only changes what the compiler believes about the value.
-                let (register, _) = self.compile_expr(operand);
-                (register, super::shape_of(ty))
+                let (src, from) = self.compile_expr(operand);
+                let to = super::shape_of(ty);
+                match (from, to) {
+                    (Shape::Int, Shape::Float) => {
+                        let dst = self.registers.temp();
+                        self.emit(Instruction::IntToFloat { dst, src });
+                        (dst, Shape::Float)
+                    }
+                    (Shape::Float, Shape::Int) => {
+                        let dst = self.registers.temp();
+                        self.emit(Instruction::FloatToInt { dst, src });
+                        (dst, Shape::Int)
+                    }
+                    _ => (src, to),
+                }
             }
 
             Expr::Ternary {
@@ -269,6 +282,15 @@ impl Compiler {
         }
     }
 
+    /// The value a slot of this written type starts at when nothing was
+    /// written: `null` for an optional, its shape's zero otherwise.
+    pub(super) fn zero_of_type(&mut self, ty: &crate::ast::TypeRef) -> Reg {
+        if ty.is_optional() {
+            return self.constant(Value::Null, Shape::Other).0;
+        }
+        self.zero_of(super::shape_of(ty))
+    }
+
     /// Interns a string literal and loads a reference to it.
     ///
     /// Deduplicated: the same text written in twenty places is one entry. A
@@ -291,148 +313,13 @@ impl Compiler {
         (dst, Shape::Str)
     }
 
-    fn compile_binary(&mut self, op: BinaryOp, lhs: &Expr, rhs: &Expr) -> (Reg, Shape) {
-        match op {
-            // Short-circuiting cannot be expressed as two evaluated operands,
-            // so it compiles to branches rather than to an instruction.
-            BinaryOp::And | BinaryOp::Or => self.compile_short_circuit(op, lhs, rhs),
-            _ => {
-                let (left, left_shape) = self.compile_expr(lhs);
-                let (right, right_shape) = self.compile_expr(rhs);
-                match op {
-                    BinaryOp::Eq | BinaryOp::NotEq => {
-                        let dst = self.registers.temp();
-                        self.emit(Instruction::Eq {
-                            dst,
-                            lhs: left,
-                            rhs: right,
-                        });
-                        if op == BinaryOp::NotEq {
-                            self.emit(Instruction::Not { dst, src: dst });
-                        }
-                        (dst, Shape::Other)
-                    }
-                    BinaryOp::Less | BinaryOp::LessEq => {
-                        let dst = self.registers.temp();
-                        let instruction = if op == BinaryOp::Less {
-                            Instruction::Less {
-                                dst,
-                                lhs: left,
-                                rhs: right,
-                            }
-                        } else {
-                            Instruction::LessEq {
-                                dst,
-                                lhs: left,
-                                rhs: right,
-                            }
-                        };
-                        self.emit(instruction);
-                        (dst, Shape::Other)
-                    }
-                    // `a > b` is `b < a`. Emitting the mirrored form keeps two
-                    // instructions out of the set for no loss.
-                    BinaryOp::Greater | BinaryOp::GreaterEq => {
-                        let dst = self.registers.temp();
-                        let instruction = if op == BinaryOp::Greater {
-                            Instruction::Less {
-                                dst,
-                                lhs: right,
-                                rhs: left,
-                            }
-                        } else {
-                            Instruction::LessEq {
-                                dst,
-                                lhs: right,
-                                rhs: left,
-                            }
-                        };
-                        self.emit(instruction);
-                        (dst, Shape::Other)
-                    }
-                    // `"a" + "b"` is not an addition. The checker has already
-                    // proved both sides are text; joining them allocates, so it
-                    // gets its own instruction rather than a numeric one that
-                    // would fault at run time.
-                    BinaryOp::Add if left_shape == Shape::Str || right_shape == Shape::Str => {
-                        let dst = self.registers.temp();
-                        self.emit(Instruction::Concat {
-                            dst,
-                            lhs: left,
-                            rhs: right,
-                        });
-                        (dst, Shape::Str)
-                    }
-                    _ => {
-                        let register = self.arithmetic(op, left, left_shape, right, right_shape);
-                        let shape = if left_shape == Shape::Float || right_shape == Shape::Float {
-                            Shape::Float
-                        } else {
-                            left_shape
-                        };
-                        (register, shape)
-                    }
-                }
-            }
-        }
-    }
-
-    /// Emits the arithmetic instruction for these operand shapes.
-    ///
-    /// A mixed pair compiles to the float form: the VM widens an integer when
-    /// it reads a float, so no conversion instruction is needed.
-    pub fn arithmetic(
+    /// `&&` and `||`, which must not evaluate their right operand needlessly.
+    pub(super) fn compile_short_circuit(
         &mut self,
         op: BinaryOp,
-        lhs: Reg,
-        lhs_shape: Shape,
-        rhs: Reg,
-        rhs_shape: Shape,
-    ) -> Reg {
-        let dst = self.registers.temp();
-        let float = lhs_shape == Shape::Float || rhs_shape == Shape::Float;
-
-        let instruction = match (op, float) {
-            (BinaryOp::Add, false) => Instruction::AddInt { dst, lhs, rhs },
-            (BinaryOp::Add, true) => Instruction::AddFloat { dst, lhs, rhs },
-            (BinaryOp::Sub, false) => Instruction::SubInt { dst, lhs, rhs },
-            (BinaryOp::Sub, true) => Instruction::SubFloat { dst, lhs, rhs },
-            (BinaryOp::Mul, false) => Instruction::MulInt { dst, lhs, rhs },
-            (BinaryOp::Mul, true) => Instruction::MulFloat { dst, lhs, rhs },
-            (BinaryOp::Div, false) => Instruction::DivInt { dst, lhs, rhs },
-            (BinaryOp::Div, true) => Instruction::DivFloat { dst, lhs, rhs },
-            (BinaryOp::Rem, _) => Instruction::RemInt { dst, lhs, rhs },
-            // The checker rejects every other operator here, so reaching this
-            // arm means a compiler bug rather than a bad program. Emitting a
-            // move keeps the output well-formed.
-            _ => Instruction::Move { dst, src: lhs },
-        };
-        self.emit(instruction);
-        dst
-    }
-
-    fn compile_unary(&mut self, op: UnaryOp, operand: &Expr) -> (Reg, Shape) {
-        let (src, shape) = self.compile_expr(operand);
-        let dst = self.registers.temp();
-        match op {
-            UnaryOp::Not => {
-                self.emit(Instruction::Not { dst, src });
-                (dst, Shape::Other)
-            }
-            UnaryOp::Neg => {
-                let instruction = if shape == Shape::Float {
-                    Instruction::NegFloat { dst, src }
-                } else {
-                    Instruction::NegInt { dst, src }
-                };
-                self.emit(instruction);
-                (dst, shape)
-            }
-        }
-    }
-
-    /// `&&` and `||`, which must not evaluate their right operand needlessly.
-    fn compile_short_circuit(&mut self, op: BinaryOp, lhs: &Expr, rhs: &Expr) -> (Reg, Shape) {
+        lhs: &Expr,
+        rhs: &Expr,
+    ) -> (Reg, Shape) {
         let dst = self.registers.temp();
         let (left, _) = self.compile_expr(lhs);
         self.emit(Instruction::Move { dst, src: left });
@@ -583,7 +470,10 @@ impl Compiler {
                     .find(|(_, &index)| index == function)
                     .map_or_else(|| name.to_owned(), |(callee, _)| callee.clone());
                 self.record_return(&callee, base, dst);
-                self.returns.get(name).copied().unwrap_or(Shape::Other)
+                // By the compiled name too: `returns` is keyed by it, and a
+                // sibling's bare name found nothing — its result's shape was
+                // lost, and every operation on it picked the wrong form.
+                self.returns.get(&callee).copied().unwrap_or(Shape::Other)
             }
             CallTarget::Native(function) => {
                 self.emit(Instruction::NativeCall {

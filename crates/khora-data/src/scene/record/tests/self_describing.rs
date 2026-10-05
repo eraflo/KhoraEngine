@@ -278,6 +278,8 @@ fn a_string_map_key_reads_into_an_integer_key() {
 /// an entity in a register.
 fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
     ScriptSnapshot {
+        authored: Vec::new(),
+        overridden: Vec::new(),
         fields: vec![("target".into(), ScriptValue::Entity(target))],
         state: Some("Patrol".into()),
         state_fields: vec![("waypoint".into(), ScriptValue::Int(2))],
@@ -319,6 +321,7 @@ fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
             },
         }),
         lifecycle: khora_core::script::InstanceLifecycle {
+            resume_failed: Vec::new(),
             spawned: true,
             fault: Some(khora_core::script::RecordedFault {
                 fingerprint: 0xfeed_beef_dead_c0de,

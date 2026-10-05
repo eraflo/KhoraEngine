@@ -181,6 +181,7 @@ fn a_restored_entity_deferred_on_its_arrival_frame_still_loads() {
         lifecycle: khora_core::script::InstanceLifecycle {
             spawned: true,
             fault: None,
+            resume_failed: Vec::new(),
         },
         ..ScriptSnapshot::default()
     }

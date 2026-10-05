@@ -198,8 +198,15 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
             if depth < last && !matches!(site.kind, SiteKind::Return { .. }) {
                 return None;
             }
-            for (now, was) in matched_locals(site, &old.locals)? {
-                *registers.get_mut(base + usize::from(now))? = read(usize::try_from(was).ok()?)?;
+            for (now, was, ty) in matched_locals(site, &old.locals)? {
+                let was = usize::try_from(was).ok()?;
+                // A local keeps its name and its type's name and still cannot
+                // take the value: a `var` that held an optional's `null`, now
+                // an `int`. Its frame is not rebuilt; the body restarts.
+                if !holds(frozen.registers.get(old_base.checked_add(was)?)?, ty) {
+                    return None;
+                }
+                *registers.get_mut(base + usize::from(now))? = read(was)?;
             }
             if site.temporaries.len() != old.temporaries.len() {
                 return None;
@@ -253,7 +260,7 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
 /// local and one it shadows never take each other's value whichever of the
 /// two an edit removed. `None` when the new site needs a local the old one did
 /// not have.
-fn matched_locals(site: &Site, old: &[FrozenLocal]) -> Option<Vec<(u8, u64)>> {
+fn matched_locals<'s>(site: &'s Site, old: &[FrozenLocal]) -> Option<Vec<(u8, u64, &'s str)>> {
     let same = |a: (&str, &str), b: (&str, &str)| a == b;
     site.locals
         .iter()
@@ -270,7 +277,7 @@ fn matched_locals(site: &Site, old: &[FrozenLocal]) -> Option<Vec<(u8, u64)>> {
                 .filter(|was| same((was.name.as_str(), was.scope.as_str()), key))
                 .nth(later)
                 .filter(|was| was.ty == local.ty)
-                .map(|was| (local.register, was.register))
+                .map(|was| (local.register, was.register, local.ty.as_str()))
         })
         .collect()
 }
@@ -301,6 +308,18 @@ fn restart(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
         }
     }
     Machine::new(program, name, &arguments)
+}
+
+/// Whether a local of type `ty` can hold `value`: what [`fits`] says, an
+/// `int` in a float-typed local too — the VM widens one where a float is read,
+/// so `float x = 1;` holds an `Int` — and nothing written yet.
+fn holds(value: &FrozenValue, ty: &str) -> bool {
+    let float = matches!(ty.trim_end_matches('?'), "float" | "Duration" | "Angle");
+    // `Unit` is a local not written yet — `int count;` before its first
+    // assignment — which any local can be.
+    matches!(value, FrozenValue::Unit)
+        || fits(value, ty)
+        || (float && matches!(value, FrozenValue::Int(_)))
 }
 
 /// Whether `value` can be a `ty`, as far as its kind says.

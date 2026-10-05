@@ -21,26 +21,32 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use super::{Position, Velocity};
 use crate::ecs::{Component, SemanticDomain, World};
 
-/// A component no world registers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Unregistered;
-impl Component for Unregistered {}
+/// A registered component whose clone panics: copying it from one page to
+/// another — which every migration does — unwinds mid-change.
+#[derive(Debug, PartialEq, Eq)]
+struct PanicsOnClone;
+impl Clone for PanicsOnClone {
+    fn clone(&self) -> Self {
+        panic!("PanicsOnClone is cloned by a migration");
+    }
+}
+impl Component for PanicsOnClone {}
 
 #[test]
 fn a_migration_that_unwinds_does_not_leave_the_count_disagreeing_with_the_live() {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<Velocity>(SemanticDomain::Spatial);
+    world.register_component::<PanicsOnClone>(SemanticDomain::Spatial);
 
-    // `spawn` accepts an unregistered component: it is stored in the page of
-    // the bundle, beside the registered one, with no domain of its own.
+    // A spawn moves its bundle into the page; nothing is cloned.
     let keep = world.spawn(Position(0));
-    let entity = world.spawn((Position(1), Unregistered));
+    let entity = world.spawn((Position(1), PanicsOnClone));
     assert_eq!(world.entity_count(), 2);
 
-    // Migrating the entity needs a column for every type of its page, and the
-    // registry has none for `Unregistered`: the migration unwinds after the
-    // metadata was taken out of the slot, before it was put back.
+    // Migrating the entity copies every component of its page row, and
+    // copying `PanicsOnClone` panics: the migration unwinds after it started
+    // on the entity's metadata, before the change was put back.
     let unwound = catch_unwind(AssertUnwindSafe(|| {
         let _ = world.add_component(entity, Velocity(1));
     }));

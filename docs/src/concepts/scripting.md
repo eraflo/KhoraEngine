@@ -224,6 +224,12 @@ another's ammo. A field that was renamed keeps no value, and the engine says so
 in a warning rather than letting the author find out from whatever the guard
 does next.
 
+What the guard is *doing* crosses the same way: the state it is in by name, that
+state's data by slot name, each countdown by its schedule's identity. A chasing
+guard is still chasing after the edit, with what is left of its timers; a state
+or schedule the edit removed is dropped, a new one starts fresh, and a datum new
+to the current state starts at its own declared default.
+
 ### A body part-way through, in tiers
 
 A guard is half-way through `Attack`, stopped at its `await`, when the author

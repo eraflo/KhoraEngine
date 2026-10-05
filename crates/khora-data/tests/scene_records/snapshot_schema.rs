@@ -661,6 +661,7 @@ fn every_register_snapshot(target: EntityId) -> khora_core::script::ScriptSnapsh
             },
         }),
         lifecycle: khora_core::script::InstanceLifecycle {
+            resume_failed: Vec::new(),
             spawned: true,
             fault: Some(khora_core::script::RecordedFault {
                 fingerprint: u64::MAX,

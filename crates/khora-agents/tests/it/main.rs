@@ -29,5 +29,6 @@ mod physics_lane_contacts_test;
 mod public_paths;
 mod render_agent_gorna_test;
 mod save_mid_attack_test;
+mod scene_edit_after_save;
 mod script_delivery_test;
 mod shipped_script_runs_test;

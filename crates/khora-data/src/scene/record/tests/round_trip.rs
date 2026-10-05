@@ -135,6 +135,8 @@ fn frozen_machine(target: EntityId) -> FrozenMachine {
 /// A behavior instance mid-way through everything it can be doing.
 fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
     ScriptSnapshot {
+        authored: Vec::new(),
+        overridden: Vec::new(),
         fields: vec![
             ("speed".into(), ScriptValue::Float(3.0)),
             ("target".into(), ScriptValue::Entity(target)),
@@ -163,6 +165,7 @@ fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
             machine: frozen_machine(target),
         }),
         lifecycle: khora_core::script::InstanceLifecycle {
+            resume_failed: Vec::new(),
             spawned: true,
             fault: Some(khora_core::script::RecordedFault {
                 fingerprint: 0xfeed_beef_dead_c0de,

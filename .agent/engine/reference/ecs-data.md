@@ -35,6 +35,14 @@ snapshot, atomic loads, game saves and prefab links.
 - **Flows are read-only projectors** (`select → project`); they never mutate the World. World mutation goes
   through `DataSystem` invariants registered via `inventory` — never wired by hand.
 - The `Ucb1` bandit is deterministic (no RNG) for reproducibility.
+- **Queries:** `World::query(&self)` requires `ReadOnlyWorldQuery` (an `unsafe` marker; a new query term that
+  only reads must implement it, one that writes must not). Writing goes through `query_mut`, which panics on a
+  query naming one component twice (`WorldQuery::accessed_type_ids`, undeduplicated). A `&mut T` item is reached
+  through `vec.as_mut_ptr().add(row)` (`query/mod.rs::column_item`), never `get_mut`/`get_unchecked_mut` on the
+  column — a slice reborrow invalidates items already handed out (Miri, Stacked Borrows).
+- **Spawning:** `spawn` panics on an unregistered component type or a bundle naming one twice; `try_spawn`
+  returns `SpawnError`. Registering a component clears the query-plan cache.
+- Verify `unsafe` query/storage changes under Miri: `cargo +nightly miri test -p khora-data --lib -- <filter>`.
 
 ## Persistence
 

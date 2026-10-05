@@ -136,6 +136,15 @@ pub trait WorldQuery {
     /// This signature is used to find `ComponentPage`s that contain all these components.
     fn type_ids() -> Vec<TypeId>;
 
+    /// Every component the items reach, once per term that reaches it — not
+    /// deduplicated, so a query naming one component twice can be told from
+    /// one naming it once.
+    fn accessed_type_ids() -> Vec<TypeId> {
+        let mut ids = Self::type_ids();
+        ids.extend(Self::optional_type_ids());
+        ids
+    }
+
     /// Returns the sorted list of `TypeId`s for components to be EXCLUDED from the query.
     /// Used to filter out pages that contain these components.
     fn without_type_ids() -> Vec<TypeId> {
@@ -252,7 +261,11 @@ impl<T: Component> WorldQuery for &mut T {
         let page = &mut *(page_ptr as *mut ComponentPage);
         let column = page.columns.get_mut(&TypeId::of::<T>()).unwrap();
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>().unwrap();
-        vec.get_unchecked_mut(row_index)
+        debug_assert!(row_index < vec.len());
+        // Through the buffer's pointer, never a slice: `get_unchecked_mut`
+        // reborrows the whole column `&mut`, which invalidates every item an
+        // earlier call handed out from it.
+        &mut *vec.as_mut_ptr().add(row_index)
     }
 
     unsafe fn fetch_from_world<'a>(
@@ -265,7 +278,7 @@ impl<T: Component> WorldQuery for &mut T {
         let page = &mut world_mut.storage.pages[location.page_id as usize];
         let column = page.columns.get_mut(&TypeId::of::<T>())?;
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
-        vec.get_mut(location.row_index as usize)
+        column_item(vec, location.row_index as usize)
     }
 }
 
@@ -331,7 +344,7 @@ impl<T: Component> WorldQuery for Option<&mut T> {
         let page = &mut *(page_ptr as *mut ComponentPage);
         let column = page.columns.get_mut(&TypeId::of::<T>())?;
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
-        vec.get_mut(row_index)
+        column_item(vec, row_index)
     }
 
     unsafe fn fetch_from_world<'a>(
@@ -351,9 +364,24 @@ impl<T: Component> WorldQuery for Option<&mut T> {
             page.columns
                 .get_mut(&TypeId::of::<T>())
                 .and_then(|column| column.as_any_mut().downcast_mut::<Vec<T>>())
-                .and_then(|vec| vec.get_mut(location.row_index as usize)),
+                .and_then(|vec| column_item(vec, location.row_index as usize)),
         )
     }
+}
+
+/// The `&mut` to item `row` of `vec`, through the buffer's pointer.
+///
+/// Never `vec.get_mut(row)`: that reborrows the whole column as `&mut [T]`,
+/// which invalidates every item an earlier fetch handed out from the same
+/// column — items a query's caller may still hold.
+///
+/// # Safety
+///
+/// No other reference to item `row` may be live.
+unsafe fn column_item<'a, T>(vec: &mut Vec<T>, row: usize) -> Option<&'a mut T> {
+    // `row` is in bounds, checked here, and the caller guarantees no other
+    // reference to that item is live; the pointer reaches that item alone.
+    (row < vec.len()).then(|| &mut *vec.as_mut_ptr().add(row))
 }
 
 // Implementation for tuples of WorldQuery types.
@@ -396,6 +424,12 @@ macro_rules! impl_query_tuple {
                 ids
             }
 
+            fn accessed_type_ids() -> Vec<TypeId> {
+                let mut ids = Vec::new();
+                $(ids.extend($Q::accessed_type_ids());)*
+                ids
+            }
+
             unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
                 ($($Q::fetch(page_ptr, row_index),)*)
             }
@@ -433,6 +467,69 @@ impl_query_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10);
 impl_query_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11);
 
 impl_query_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11, Q12);
+
+/// A query that only reads: what a `&World` may hand out.
+///
+/// [`World::query`](crate::ecs::World::query) takes `&self`, so it must never
+/// yield a `&mut` into the world — two such queries could alias it, and a
+/// `&mut T` made from a shared borrow is undefined behavior whatever the code
+/// around it does. Writing goes through `query_mut`, which takes `&mut self`.
+///
+/// # Safety
+///
+/// Implement only for a query whose items give read access alone, and whose
+/// `fetch` and `fetch_from_world` never write through the pointer they get.
+///
+/// ```
+/// # use khora_data::ecs::{Transform, World};
+/// let mut world = World::new();
+/// // Reading through a shared borrow, writing through an exclusive one.
+/// for _transform in world.query::<&Transform>() {}
+/// for transform in world.query_mut::<&mut Transform>() {
+///     *transform = Transform::default();
+/// }
+/// ```
+///
+/// ```compile_fail
+/// # use khora_data::ecs::{Transform, World};
+/// let world = World::new();
+/// // A `&mut` term through a shared borrow: refused at compile time.
+/// for transform in world.query::<&mut Transform>() {
+///     *transform = Transform::default();
+/// }
+/// ```
+pub unsafe trait ReadOnlyWorldQuery: WorldQuery {}
+
+// SAFETY: `&T` reads one component and hands out a shared reference.
+unsafe impl<T: Component> ReadOnlyWorldQuery for &T {}
+// SAFETY: the same, or nothing.
+unsafe impl<T: Component> ReadOnlyWorldQuery for Option<&T> {}
+// SAFETY: an id is copied out of the page's entity list.
+unsafe impl ReadOnlyWorldQuery for EntityId {}
+// SAFETY: a filter yields nothing and only tests the entity's metadata.
+unsafe impl<T: Component> ReadOnlyWorldQuery for without::Without<T> {}
+// SAFETY: a field-SoA read clones the component out of its columns.
+unsafe impl<T: crate::ecs::SoaLayout> ReadOnlyWorldQuery for columns::Soa<T> {}
+
+macro_rules! impl_read_only_tuple {
+    ($($Q:ident),*) => {
+        // SAFETY: a tuple reads only if every term reads only.
+        unsafe impl<$($Q: ReadOnlyWorldQuery),*> ReadOnlyWorldQuery for ($($Q,)*) {}
+    };
+}
+
+impl_read_only_tuple!(Q1);
+impl_read_only_tuple!(Q1, Q2);
+impl_read_only_tuple!(Q1, Q2, Q3);
+impl_read_only_tuple!(Q1, Q2, Q3, Q4);
+impl_read_only_tuple!(Q1, Q2, Q3, Q4, Q5);
+impl_read_only_tuple!(Q1, Q2, Q3, Q4, Q5, Q6);
+impl_read_only_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7);
+impl_read_only_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8);
+impl_read_only_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9);
+impl_read_only_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10);
+impl_read_only_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11);
+impl_read_only_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11, Q12);
 
 // To fetch an entity's ID, we need to access the page's own entity list.
 // We also need to query for the entity ID itself.

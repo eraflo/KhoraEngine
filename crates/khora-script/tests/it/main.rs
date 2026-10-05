@@ -18,13 +18,18 @@
 //! full link of the crate's dependency tree. New integration tests join this
 //! binary as a module instead of adding a file at the root of `tests/`.
 
+mod coalesce_and_casts;
 mod conformance;
 mod conformance_edges;
+mod engine_arithmetic;
 mod ergon_fn;
 mod fingerprints;
 mod freeze;
+mod operand_types;
 mod public_paths;
 mod rebuilt_frames;
+mod rebuilt_local_types;
 mod resume_tiers;
 mod safepoints;
 mod sites;
+mod state_entry_dispatch;

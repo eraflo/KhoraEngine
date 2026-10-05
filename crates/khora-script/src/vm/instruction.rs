@@ -154,6 +154,21 @@ pub enum Instruction {
         /// Operand.
         src: Reg,
     },
+    /// `dst = (float)src`.
+    IntToFloat {
+        /// Destination.
+        dst: Reg,
+        /// Operand.
+        src: Reg,
+    },
+    /// `dst = (int)src`, truncated toward zero; faults on a float no `int`
+    /// holds.
+    FloatToInt {
+        /// Destination.
+        dst: Reg,
+        /// Operand.
+        src: Reg,
+    },
 
     /// `dst = lhs == rhs`. Works on any two values of the same shape.
     Eq {

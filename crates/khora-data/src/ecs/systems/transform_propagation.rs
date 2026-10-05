@@ -58,7 +58,7 @@ pub fn transform_propagation_system(world: &mut World) {
     // A root has `Transform` and `GlobalTransform` but no `Parent`.
     let mut queue: VecDeque<EntityId> = VecDeque::new();
     for (id, transform, global_transform, _) in
-        world.query::<(EntityId, &Transform, &mut GlobalTransform, Without<Parent>)>()
+        world.query_mut::<(EntityId, &Transform, &mut GlobalTransform, Without<Parent>)>()
     {
         global_transform.0 = match simulated.get(&id) {
             Some(pose) => *pose,

@@ -16,6 +16,10 @@ mod entity_count;
 mod entity_count_unwind;
 mod hierarchy;
 mod hierarchy_writers;
+mod query_mut_aliasing;
+mod query_mut_writes;
+mod query_plan_after_registration;
+mod spawn_refusal;
 
 use crate::ecs::query::Without;
 use crate::ecs::SemanticDomain;
@@ -435,7 +439,7 @@ fn test_mutable_query_modifies_components() {
 
     // --- 2. ACT ---
     // Run a mutable query and modify the `Position` components.
-    for position_ref in world.query::<&mut Position>() {
+    for position_ref in world.query_mut::<&mut Position>() {
         // Multiply the position's value by 2.
         position_ref.0 *= 2;
     }
@@ -543,31 +547,26 @@ fn test_spawn_with_unregistered_component() {
     // world.register_component::<Position>(SemanticDomain::Spatial);
 
     // --- 2. ACT ---
-    // We spawn an entity with a component that the world knows nothing about.
-    let entity_id = world.spawn(Position(10));
+    // We try to spawn an entity with a component that the world knows nothing
+    // about: it has no domain, so no location could ever find it once stored.
+    let result = world.try_spawn(Position(10));
 
     // --- 3. ASSERT ---
-    // We verify the current behavior: the entity is created, but its
-    // metadata is empty because the component's domain could not be found.
-
-    // The entity ID is still allocated correctly.
-    assert_eq!(entity_id.index, 0);
-
-    let (_id, metadata_opt) = world.entities.get(0).unwrap();
-    let metadata = metadata_opt.as_ref().unwrap();
-
-    // CRITICAL CHECK: The locations map should be empty.
+    // The spawn is refused, naming the type, before anything is allocated.
     assert!(
-        metadata.locations.is_empty(),
-        "Metadata should have no locations for an unregistered component"
+        matches!(
+            result,
+            Err(super::world::SpawnError::ComponentNotRegistered { component })
+                if component.contains("Position")
+        ),
+        "an unregistered component is refused: {result:?}"
     );
-
-    // A page is still created, but the entity's metadata doesn't point to it.
-    // This highlights that the data is stored but becomes unreachable.
+    assert_eq!(world.entities.len(), 0, "no entity slot was allocated");
+    assert_eq!(world.entity_count(), 0);
     assert_eq!(
         world.storage.pages.len(),
-        1,
-        "A page for the new component layout should still be created"
+        0,
+        "no page is created for a refused bundle"
     );
 }
 
@@ -2589,15 +2588,19 @@ fn native_foreign_option_and_without_keep_entity_whose_colocated_component_was_r
 }
 
 #[test]
-fn native_unregistered_driver_with_registered_option_still_yields_rows() {
+fn native_unregistered_driver_with_registered_option_yields_nothing() {
+    // An unregistered component can no longer be stored — the spawn is
+    // refused — so a query driven by one finds no row, and does not panic
+    // over the registered `Option` term beside it.
     let mut world = World::new();
     world.register_component::<RenderId>(SemanticDomain::Render);
-    world.spawn(Position(1));
+    assert!(world.try_spawn(Position(1)).is_err());
+    world.spawn(RenderId(2));
     let rows: Vec<(i32, bool)> = world
         .query::<(&Position, Option<&RenderId>)>()
         .map(|(p, r)| (p.0, r.is_some()))
         .collect();
-    assert_eq!(rows, vec![(1, false)]);
+    assert_eq!(rows, vec![]);
 }
 
 #[test]

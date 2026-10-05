@@ -197,6 +197,8 @@ impl Hash {
             I::MulFloat { dst, lhs, rhs } => self.op("MulFloat", &[*dst, *lhs, *rhs]),
             I::DivFloat { dst, lhs, rhs } => self.op("DivFloat", &[*dst, *lhs, *rhs]),
             I::NegFloat { dst, src } => self.op("NegFloat", &[*dst, *src]),
+            I::IntToFloat { dst, src } => self.op("IntToFloat", &[*dst, *src]),
+            I::FloatToInt { dst, src } => self.op("FloatToInt", &[*dst, *src]),
             I::Eq { dst, lhs, rhs } => self.op("Eq", &[*dst, *lhs, *rhs]),
             I::Less { dst, lhs, rhs } => self.op("Less", &[*dst, *lhs, *rhs]),
             I::LessEq { dst, lhs, rhs } => self.op("LessEq", &[*dst, *lhs, *rhs]),
