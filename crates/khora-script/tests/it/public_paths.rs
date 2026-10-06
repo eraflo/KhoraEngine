@@ -769,6 +769,7 @@ fn str_ref_variants(x: &khora_script::vm::value::StrRef) {
     match x {
         khora_script::vm::value::StrRef::Const(..) => {}
         khora_script::vm::value::StrRef::Arena(..) => {}
+        khora_script::vm::value::StrRef::Held(..) => {}
     }
 }
 

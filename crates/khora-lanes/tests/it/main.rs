@@ -19,8 +19,12 @@
 //! binary as a module instead of adding a file at the root of `tests/`.
 
 mod authored_base;
+mod durable_text;
 mod frozen_save;
+mod held_text;
 mod lifecycle_restore;
+mod null_fields;
+mod null_into_declared_types;
 mod on_resume_failed;
 mod overdraft;
 mod public_paths;
@@ -31,3 +35,4 @@ mod resume_tiers_encodings;
 mod saves;
 mod spawn_scenarios;
 mod starved_turn;
+mod state_entry_across_edits;

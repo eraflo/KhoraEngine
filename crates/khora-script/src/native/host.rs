@@ -111,6 +111,23 @@ impl Host {
         self
     }
 
+    /// Lends the host the frame memory to run in.
+    ///
+    /// The arena outlives any one host: whoever runs frame after frame keeps
+    /// one and lends it each frame, so its generation keeps counting and a
+    /// reference from an earlier frame is always stale — never a read of
+    /// whatever the next frame put at its index, which an arena made new each
+    /// frame, starting its count over, would allow.
+    pub fn with_arena(mut self, arena: Arena) -> Self {
+        self.arena = arena;
+        self
+    }
+
+    /// Gives the lent arena back, once the frame has ended.
+    pub fn take_arena(&mut self) -> Arena {
+        std::mem::take(&mut self.arena)
+    }
+
     /// A host exposing nothing at all, for a program that must call nothing.
     pub fn bare() -> Self {
         Self {

@@ -146,9 +146,14 @@ pub enum Shape {
 /// last time the guard patrolled would fire at a moment nothing decided.
 #[derive(Debug, Clone, Default)]
 pub struct StateEntry {
+    /// Its parameters, in order: what a `become` hands it.
+    pub params: Vec<(String, TypeRef)>,
+    /// Every one of its slots — parameters, then fields — by name, where a
+    /// default reads the state's own data from.
+    pub slots: Vec<(String, u16, Shape)>,
     /// Its declared fields — the slots after the parameters — and their
     /// defaults. `None` where the author wrote no default.
-    pub fields: Vec<(u16, Option<crate::ast::Expr>, TypeRef)>,
+    pub fields: Vec<(u16, String, Option<crate::ast::Expr>, TypeRef)>,
     /// Its countdown slots, and what each is armed to.
     pub timers: Vec<(u16, f32)>,
 }
@@ -178,17 +183,33 @@ pub struct Compiler {
     pub signatures: HashMap<String, usize>,
     /// Return shape per function, to pick the right comparison at a call site.
     pub returns: HashMap<String, Shape>,
+    /// The compiled names that are a behavior's or a state's *methods* — what a
+    /// bare call inside a behavior may name. A handler compiles to the same
+    /// form of name (`Guard.Hit` for `on Hit`) and is never called by name.
+    pub methods: std::collections::HashSet<String>,
     /// Engine function name to its index in the registry, and its result shape.
     pub natives: HashMap<String, (usize, Shape)>,
     /// The layout of the behavior being compiled, so `become` can resolve a
     /// state name to the discriminant it writes.
     pub behavior: Option<crate::vm::BehaviorLayout>,
+    /// The state whose code is being compiled — its members, or the defaults
+    /// written on entering it — so a bare call finds that state's methods
+    /// first.
+    pub state: Option<String>,
     /// Fields of the behavior being compiled, by name.
     ///
     /// Empty while compiling a free function, which is what makes a stray
     /// field name there an ordinary "no such variable" rather than a silent
     /// read of slot zero.
     pub fields: HashMap<String, (u16, Shape)>,
+    /// The behavior's own fields, without any state's: the scope a state's
+    /// defaults add that state's data to, whichever member enters it.
+    pub behavior_fields: HashMap<String, (u16, Shape)>,
+    /// How many of [`locals`](Self::locals) a name may not resolve to: the
+    /// locals of the member a `become` is written in, while the entered
+    /// state's defaults compile — they are still live, and still recorded at
+    /// that member's sites, but they are not the state's to read.
+    hidden_locals: usize,
     /// What entering each state of the behavior being compiled has to write.
     ///
     /// Collected once per behavior and emitted at every `become`, and again in
@@ -215,9 +236,13 @@ impl Compiler {
             diagnostics: Vec::new(),
             signatures: HashMap::new(),
             returns: HashMap::new(),
+            methods: std::collections::HashSet::new(),
             natives: HashMap::new(),
             behavior: None,
+            state: None,
             fields: HashMap::new(),
+            behavior_fields: HashMap::new(),
+            hidden_locals: 0,
             entries: HashMap::new(),
             code: Vec::new(),
             registers: Registers::new(0),
@@ -314,6 +339,9 @@ impl Compiler {
                                 else {
                                     continue;
                                 };
+                                if matches!(inner, BehaviorMember::Method(_)) {
+                                    self.methods.insert(name.clone());
+                                }
                                 self.declare(name, returns, index, span);
                                 index += 1;
                             }
@@ -337,6 +365,9 @@ impl Compiler {
                         else {
                             continue;
                         };
+                        if matches!(member, BehaviorMember::Method(_)) {
+                            self.methods.insert(name.clone());
+                        }
                         self.declare(name, returns, index, span);
                         index += 1;
                     }
@@ -381,6 +412,7 @@ impl Compiler {
         let mut layout = crate::vm::BehaviorLayout {
             name: decl.name.clone(),
             fields: Vec::new(),
+            field_types: Vec::new(),
             states: Vec::new(),
             timers: Vec::new(),
         };
@@ -390,8 +422,10 @@ impl Compiler {
                 self.fields
                     .insert(field.name.clone(), (slot, shape_of(&field.ty)));
                 layout.fields.push(field.name.clone());
+                layout.field_types.push(keys::type_name(&field.ty));
             }
         }
+        self.behavior_fields = self.fields.clone();
 
         self.collect_timers(&mut layout, &decl.name, None, &decl.members);
 
@@ -408,6 +442,15 @@ impl Compiler {
                         .map(|param| param.name.clone())
                         .chain(state.members.iter().filter_map(|member| match member {
                             BehaviorMember::Field(field) => Some(field.name.clone()),
+                            _ => None,
+                        }))
+                        .collect(),
+                    types: state
+                        .params
+                        .iter()
+                        .map(|param| keys::type_name(&param.ty))
+                        .chain(state.members.iter().filter_map(|member| match member {
+                            BehaviorMember::Field(field) => Some(keys::type_name(&field.ty)),
                             _ => None,
                         }))
                         .collect(),
@@ -499,6 +542,7 @@ impl Compiler {
         // state can read `health` while patrolling, and only the patrol's own
         // data is confined.
         let outer = self.fields.clone();
+        self.state = Some(decl.name.clone());
         for (offset, slot) in state.slots.iter().enumerate() {
             let absolute = (layout.state_data_slot() + offset) as u16;
             let shape = shape_of_state_slot(decl, slot);
@@ -531,6 +575,7 @@ impl Compiler {
         }
 
         self.fields = outer;
+        self.state = None;
     }
 
     /// Emits the function that gives a fresh instance its field values.
@@ -576,11 +621,31 @@ impl Compiler {
                 .map(|(offset, field)| {
                     (
                         (base + offset) as u16,
+                        field.name.clone(),
                         field.default.clone(),
                         field.ty.clone(),
                     )
                 })
                 .collect();
+            let params = state
+                .params
+                .iter()
+                .map(|param| (param.name.clone(), param.ty.clone()))
+                .collect();
+            let slots = layout
+                .state_at(index)
+                .map(|entered| {
+                    entered
+                        .slots
+                        .iter()
+                        .enumerate()
+                        .map(|(offset, slot)| {
+                            let absolute = (layout.state_data_slot() + offset) as u16;
+                            (slot.clone(), absolute, shape_of_state_slot(state, slot))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
 
             let timers = layout
                 .timers
@@ -590,8 +655,15 @@ impl Compiler {
                 .map(|(slot, timer)| (layout.timer_slot(slot) as u16, timer.seconds))
                 .collect();
 
-            self.entries
-                .insert(state.name.clone(), StateEntry { fields, timers });
+            self.entries.insert(
+                state.name.clone(),
+                StateEntry {
+                    params,
+                    slots,
+                    fields,
+                    timers,
+                },
+            );
         }
     }
 
@@ -698,7 +770,7 @@ impl Compiler {
             if let Some(first) = layout.states.first().map(|state| state.name.clone()) {
                 self.naming
                     .enter_step(&format!("become.{}", keys::state_key(&first)));
-                self.emit_state_entry(&first);
+                self.emit_state_entry(&first, None);
                 self.naming.leave();
             }
         }
@@ -828,9 +900,33 @@ impl Compiler {
         register
     }
 
+    /// Hides every local now in scope from lookup, returning what to restore
+    /// with [`reveal_locals`](Self::reveal_locals).
+    pub fn hide_locals(&mut self) -> usize {
+        std::mem::replace(&mut self.hidden_locals, self.locals.len())
+    }
+
+    /// Undoes [`hide_locals`](Self::hide_locals).
+    pub fn reveal_locals(&mut self, hidden: usize) {
+        self.hidden_locals = hidden;
+    }
+
+    /// Names a register already holding a value as a local, until the scope
+    /// that holds it closes.
+    pub fn bind_local(&mut self, name: &str, register: Reg, shape: Shape, ty: String) {
+        let scope = self.naming.scope();
+        self.locals.push(Local {
+            name: name.to_owned(),
+            register,
+            shape,
+            ty,
+            scope,
+        });
+    }
+
     /// Finds a local, innermost first so an inner declaration shadows an outer.
     pub fn lookup_local(&self, name: &str) -> Option<(Reg, Shape)> {
-        self.locals
+        self.locals[self.hidden_locals.min(self.locals.len())..]
             .iter()
             .rev()
             .find(|local| local.name == name)

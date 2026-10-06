@@ -25,7 +25,7 @@ use khora_core::script::{FrozenMachine, FrozenValue, PendingBody};
 use khora_script::arena::{Object, Persisted, PersistentStore};
 use khora_script::bytecode::init_name;
 use khora_script::dispatch::resolve_member;
-use khora_script::vm::{Fault, StrRef};
+use khora_script::vm::{resolve_str, Fault, StrError, StrRef};
 use khora_script::{
     check, compile, lex, parse, Function, Host, Instruction, Machine, Program, Run, Suspension,
     Value,
@@ -411,11 +411,23 @@ fn a_literal_outside_the_table_does_not_freeze() {
     assert_eq!(Value::Str(StrRef::Const(9)).freeze(&program), None);
 }
 
-/// **Text built while running expires.** It freezes as expired, and the
-/// thawed register fails to resolve the way expired text does — against an
-/// empty arena and against one holding someone else's text alike.
+/// Other text at the first indices of a fresh arena, so a reference that
+/// outlived its frame would find something to misread.
+fn busy_host() -> Host {
+    let mut busy = Host::new();
+    for text in ["someone", "else's", "text"] {
+        busy.arena
+            .alloc(Object::Str(text.to_owned()))
+            .expect("the arena has room");
+    }
+    busy
+}
+
+/// **A suspended machine holds the text it built.** Stopping rewrites the
+/// register from the frame arena to the machine's own copy, so nothing reads
+/// it through the arena any more — not even while the arena still has it.
 #[test]
-fn text_built_while_running_freezes_as_expired_and_never_resolves() {
+fn text_built_while_running_is_held_by_the_machine_once_it_suspends() {
     let program = pausing_joined();
     let mut machine = Machine::new(&program, "Join", &[]).expect("entry exists");
     let mut host = Host::new();
@@ -423,48 +435,89 @@ fn text_built_while_running_freezes_as_expired_and_never_resolves() {
         run_until_stopped(&mut machine, &program, &mut host),
         Run::Suspended(Suspension::Awaiting)
     );
+
     let built = machine.register(2).expect("the register exists");
+    assert!(
+        matches!(built, Value::Str(StrRef::Held(_))),
+        "the machine holds it: {built:?}"
+    );
+    assert_eq!(
+        resolve_str(built, &program.strings, &host.arena),
+        Err(StrError::Gone),
+        "a held reference resolves through no arena"
+    );
     assert_eq!(
         machine.resolve_str(built, &program, &host),
-        Ok("wind-up"),
-        "the text exists before the save"
+        Err(Fault::BadString)
+    );
+}
+
+/// **Held text is saved as its characters**, beside the literals, and the
+/// machine thawed from the save reads it back as itself — in an arena holding
+/// someone else's text, never as that text.
+#[test]
+fn held_text_freezes_as_its_text_and_thaws_as_itself() {
+    let program = pausing_joined();
+    let mut machine = Machine::new(&program, "Join", &[]).expect("entry exists");
+    let mut host = Host::new();
+    assert_eq!(
+        run_until_stopped(&mut machine, &program, &mut host),
+        Run::Suspended(Suspension::Awaiting)
     );
 
     let frozen = machine
         .freeze(&program, PendingBody::Sequence)
         .expect("freezes");
-    assert_eq!(frozen.registers[2], FrozenValue::Expired);
+    assert_eq!(frozen.registers[2], FrozenValue::Text("wind-up".to_owned()));
     assert_eq!(
         frozen.registers[0],
         FrozenValue::Literal("wind".to_owned()),
-        "a literal beside it is kept"
+        "a literal beside it is kept as a literal"
     );
 
-    let thawed = Machine::thaw(&frozen, &program).expect("thaws");
-    let register = thawed.register(2).expect("the register exists");
+    let mut thawed = Machine::thaw(&frozen, &program).expect("thaws");
+    let mut busy = busy_host();
+    let result = finish(&mut thawed, &program, &mut busy);
+    assert_eq!(
+        thawed.resolve_str(result, &program, &busy),
+        Ok("wind-up"),
+        "the text it built, not the arena's"
+    );
+}
+
+/// A register on its own cannot carry held text: the text belongs to the
+/// machine. Written down alone, a held reference is expired text; and text
+/// read back alone, with no machine to own it, is refused.
+#[test]
+fn held_text_crosses_a_save_only_with_its_machine() {
+    let program = pausing_joined();
 
     assert_eq!(
-        thawed.resolve_str(register, &program, &Host::new()),
-        Err(Fault::BadString),
+        Value::Str(StrRef::Held(0)).freeze(&program),
+        Some(FrozenValue::Expired)
+    );
+    assert_eq!(
+        Value::thaw(&FrozenValue::Text("wind-up".to_owned()), &program),
+        None
+    );
+}
+
+/// **Expired text never resolves** — against an empty arena and against one
+/// holding someone else's text alike.
+#[test]
+fn expired_text_never_resolves() {
+    let program = pausing_joined();
+    let expired = Value::thaw(&FrozenValue::Expired, &program).expect("expired text thaws");
+
+    assert_eq!(
+        resolve_str(expired, &program.strings, &Host::new().arena),
+        Err(StrError::Gone),
         "an empty arena"
     );
-
-    let mut busy = Host::new();
-    for text in ["someone", "else's", "text"] {
-        busy.arena
-            .alloc(Object::Str(text.to_owned()))
-            .expect("the arena has room");
-    }
     assert_eq!(
-        thawed.resolve_str(register, &program, &busy),
-        Err(Fault::BadString),
+        resolve_str(expired, &program.strings, &busy_host().arena),
+        Err(StrError::Gone),
         "an arena holding other text"
-    );
-
-    let expired = Value::thaw(&FrozenValue::Expired, &program).expect("expired text thaws");
-    assert_eq!(
-        thawed.resolve_str(expired, &program, &busy),
-        Err(Fault::BadString)
     );
 }
 

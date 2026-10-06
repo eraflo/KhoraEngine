@@ -59,6 +59,7 @@ mod save_against_edits;
 mod save_files;
 mod save_renames_and_damage;
 mod saves;
+mod script_null_values;
 mod snapshot;
 mod snapshot_bounds;
 mod snapshot_refusals;

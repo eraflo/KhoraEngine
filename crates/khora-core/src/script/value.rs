@@ -79,6 +79,8 @@ pub enum ScriptValue {
     /// applier merges it onto what the component already holds rather than
     /// demanding the script restate every field it did not touch.
     Struct(Vec<(String, ScriptValue)>),
+    /// The absent optional.
+    Null,
 }
 
 impl ScriptValue {
@@ -101,6 +103,7 @@ impl ScriptValue {
             Self::Entity(_) => "Entity",
             Self::Array(_) => "array",
             Self::Struct(_) => "struct",
+            Self::Null => "null",
         }
     }
 }

@@ -56,6 +56,10 @@ pub struct StateLayout {
     /// state's own `int missed = 0;` fills the rest, and once entered a member
     /// reads both the same way.
     pub slots: Vec<String>,
+    /// Each slot's type as written, index = slot — see
+    /// [`BehaviorLayout::field_types`].
+    #[serde(default)]
+    pub types: Vec<String>,
 }
 
 /// Whether a scheduled member repeats.
@@ -114,6 +118,11 @@ pub struct BehaviorLayout {
     pub name: String,
     /// Field names, index = slot.
     pub fields: Vec<String>,
+    /// Each field's type as written (`int?`, `Vec3`), index = slot: what a
+    /// value carried in by name must still fit. Empty for a layout recorded
+    /// before types were, which takes every value on trust.
+    #[serde(default)]
+    pub field_types: Vec<String>,
     /// Its states, in declaration order — the index is the discriminant.
     pub states: Vec<StateLayout>,
     /// Its `every` and `after` members, in declaration order.

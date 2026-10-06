@@ -160,6 +160,9 @@ pub enum FrozenValue {
     Color(LinearRgba),
     /// An absent optional.
     Null,
+    /// Text built while running that the suspended machine owned: its
+    /// characters, not a literal of the program.
+    Text(String),
 }
 
 #[cfg(test)]

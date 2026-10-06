@@ -166,7 +166,8 @@ pub fn store_from_snapshot(layout: &BehaviorLayout, saved: &ScriptSnapshot) -> P
             log::debug!("scene holds `{name}`, which the script no longer declares");
             continue;
         };
-        set(&mut store, slot, name, value);
+        let ty = layout.field_types.get(slot).map(String::as_str);
+        set(&mut store, slot, name, value, ty);
     }
 
     // The state before its data, because the data is only meaningful once the
@@ -225,7 +226,8 @@ fn restore_state_fields(
             log::debug!("state `{}` no longer declares `{name}`", state.name);
             continue;
         };
-        set(store, layout.state_data_slot() + offset, name, value);
+        let ty = state.types.get(offset).map(String::as_str);
+        set(store, layout.state_data_slot() + offset, name, value, ty);
     }
 }
 
@@ -273,7 +275,25 @@ fn owner(layout: &BehaviorLayout, timer: &khora_script::vm::TimerLayout) -> Opti
 }
 
 /// Writes one value, saying so when it is of a kind that cannot travel.
-fn set(store: &mut PersistentStore, slot: usize, name: &str, value: &ScriptValue) {
+fn set(
+    store: &mut PersistentStore,
+    slot: usize,
+    name: &str,
+    value: &ScriptValue,
+    ty: Option<&str>,
+) {
+    // Carried by name into code that may have retyped it: a value its type can
+    // no longer hold — a `null` in what is now an `int` — is left behind, and
+    // the field takes its default.
+    if let Some(ty) = ty {
+        if !khora_script::bridge::fits(value, ty) {
+            log::warn!(
+                "field `{name}` holds {}, which its declared `{ty}` cannot: it starts at its default",
+                value.type_name()
+            );
+            return;
+        }
+    }
     match khora_script::bridge::to_persisted(value) {
         Ok(persisted) => store.set(slot, persisted),
         Err(why) => log::warn!("field `{name}` was not restored: {why}"),
@@ -524,6 +544,7 @@ mod tests {
         BehaviorLayout {
             name: "Guard".to_owned(),
             fields: fields.iter().map(|f| (*f).to_owned()).collect(),
+            field_types: Vec::new(),
             states: Vec::new(),
             timers: Vec::new(),
         }

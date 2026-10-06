@@ -94,6 +94,7 @@ fn every_frozen_value(target: EntityId) -> Vec<FrozenValue> {
         FrozenValue::Quat(Quaternion::from_axis_angle(Vec3::X, -0.5)),
         FrozenValue::Color(LinearRgba::new(1.0, 0.5, 0.25, 1.0)),
         FrozenValue::Null,
+        FrozenValue::Text("built while running".into()),
     ]
 }
 

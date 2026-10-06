@@ -36,7 +36,8 @@
 //!
 //! The irregular variants. `Str` is a reference in a register, owned in a store,
 //! and owned again at the boundary — three different things. `Array` and
-//! `Struct` have no register form at all, and `Null` has no boundary form.
+//! `Struct` have no register form at all, and `Null` crosses into a save but
+//! never into an event.
 //! Putting them here behind a "special" flag would move their logic into a
 //! macro, where it reads worst. They stay hand-written arms, visible **as**
 //! exceptions.
@@ -117,8 +118,8 @@ mod tests {
     /// how the four hand-written conversions diverged, so this asserts the count
     /// rather than trusting the eye.
     ///
-    /// `ScriptValue` holds four irregulars — `Unit`, `Str`, `Array`, `Struct` —
-    /// which the table deliberately excludes.
+    /// `ScriptValue` holds five irregulars — `Unit`, `Str`, `Array`, `Struct`,
+    /// `Null` — which the table deliberately excludes.
     #[test]
     fn the_table_covers_every_regular_variant() {
         assert_eq!(
@@ -138,5 +139,6 @@ mod tests {
         assert!(!is_regular(&ScriptValue::Str(String::new())));
         assert!(!is_regular(&ScriptValue::Array(Vec::new())));
         assert!(!is_regular(&ScriptValue::Struct(Vec::new())));
+        assert!(!is_regular(&ScriptValue::Null));
     }
 }

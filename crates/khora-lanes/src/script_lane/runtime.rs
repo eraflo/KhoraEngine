@@ -34,7 +34,7 @@ use crate::script_lane::{persistence, resumption};
 use crate::script_lane::{Resumed, ScriptRunReport};
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::EventQueue;
-use khora_script::arena::{Persisted, PersistentStore};
+use khora_script::arena::{Arena, Persisted, PersistentStore};
 use khora_script::vm::Value;
 use khora_script::vm::{Machine, Program, ResumeTier};
 use serde::{Deserialize, Serialize};
@@ -228,6 +228,28 @@ pub fn restore_carried(fields: &mut PersistentStore, carried: &PersistentStore) 
     }
 }
 
+/// Puts a re-entered state's carried data in its slots, ahead of entering it:
+/// each slot the carried store holds a value for takes it, every other slot of
+/// the state is left unset — never what another state left there.
+pub fn place_state_data(
+    fields: &mut PersistentStore,
+    layout: &khora_script::vm::BehaviorLayout,
+    state: i64,
+    carried: &PersistentStore,
+) {
+    let Some(entered) = usize::try_from(state).ok().and_then(|i| layout.state_at(i)) else {
+        return;
+    };
+    for offset in 0..entered.slots.len() {
+        let slot = layout.state_data_slot() + offset;
+        let value = carried
+            .get(slot)
+            .cloned()
+            .unwrap_or(Persisted::Scalar(Value::Unit));
+        fields.set(slot, value);
+    }
+}
+
 /// Compiled programs and live instances.
 ///
 /// A program is held behind an [`Arc`] because a thousand guards run *one*
@@ -271,6 +293,12 @@ pub struct ScriptRuntime {
     /// knows how many instructions were spent, and an agent that measured its
     /// own execution would be doing the lane's job.
     rate: f64,
+    /// The frame memory, lent to each frame's host and given back after.
+    ///
+    /// One for the scripting world's whole life, so its generation only ever
+    /// grows: text a frame built and something kept past it fails to read in a
+    /// later frame, rather than reading what that frame built at its index.
+    arena: Arena,
 }
 
 /// Instructions per millisecond, before anything has been measured.
@@ -297,6 +325,7 @@ impl Default for ScriptRuntime {
             last_report: ScriptRunReport::default(),
             last_unloaded: 0,
             rate: INITIAL_RATE,
+            arena: Arena::new(),
         }
     }
 }
@@ -305,6 +334,16 @@ impl ScriptRuntime {
     /// An empty runtime.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Lends out the frame memory, for one frame's host.
+    pub fn take_arena(&mut self) -> Arena {
+        std::mem::take(&mut self.arena)
+    }
+
+    /// Takes the frame memory back, once the frame has ended and reset it.
+    pub fn return_arena(&mut self, arena: Arena) {
+        self.arena = arena;
     }
 
     /// Takes the mail waiting for delivery, leaving the queue empty.

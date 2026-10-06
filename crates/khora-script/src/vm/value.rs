@@ -93,6 +93,10 @@ pub enum StrRef {
     Const(u32),
     /// Text built while running, in the frame arena.
     Arena(ArenaRef),
+    /// Owned by a suspended machine, at this index of its held text. Never
+    /// seen while the machine runs: resuming turns every one back into
+    /// [`Arena`](Self::Arena) before the first instruction executes.
+    Held(u32),
 }
 
 /// Why a string reference did not resolve.
@@ -136,6 +140,9 @@ pub fn resolve_str<'a>(
             Ok(Object::Str(text)) => Ok(text),
             _ => Err(StrError::Gone),
         },
+        // Only a suspended machine holds one, and resuming rewrites it before
+        // anything runs: met here, it names text nothing can reach.
+        StrRef::Held(_) => Err(StrError::Gone),
     }
 }
 

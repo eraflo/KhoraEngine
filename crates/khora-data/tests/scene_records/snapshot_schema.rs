@@ -775,6 +775,7 @@ fn the_snapshot_schema_traces_a_frozen_machine_whole() {
         "Update",
         "Sequence",
         "Expired",
+        "Text",
         "Literal",
         "Entity",
         "Quat",

@@ -945,6 +945,7 @@ fn frozen_value_variants(x: &khora_core::script::frozen::FrozenValue) {
         khora_core::script::frozen::FrozenValue::Quat(..) => {}
         khora_core::script::frozen::FrozenValue::Color(..) => {}
         khora_core::script::frozen::FrozenValue::Null => {}
+        khora_core::script::frozen::FrozenValue::Text(..) => {}
     }
 }
 
@@ -998,6 +999,7 @@ fn script_value_variants(x: &khora_core::script::value::ScriptValue) {
         khora_core::script::value::ScriptValue::Entity(..) => {}
         khora_core::script::value::ScriptValue::Array(..) => {}
         khora_core::script::value::ScriptValue::Struct(..) => {}
+        khora_core::script::value::ScriptValue::Null => {}
     }
 }
 

@@ -75,7 +75,8 @@ behavior Lamp {
 ```
 
 A field is `Type name [= default];` — `var` is for locals only. A default is any
-expression, run once by the instance's initialiser. Without one, `int`, `float`
+expression, run once by the instance's initialiser, in the order the fields are
+declared: it may read a field declared above it, never itself or one below. Without one, `int`, `float`
 and `string` start at their zero; `bool`, `Entity` and the engine types start
 unset, and reading them before writing faults.
 
@@ -89,9 +90,12 @@ unset, and reading them before writing faults.
 | schedule | `every 0.5s { … }` | runs — first fires one full interval in |
 | one-shot | `after 10s { … }`, `after 10s => become Patrol;` | runs — fires once |
 
-A member calls a sibling by its bare name; a behavior's own member wins over a
-free function of the same name. A schedule's interval must be a **literal
-duration** — a field or an expression is refused.
+A member calls a sibling by its bare name. Inside a state, that state's own
+methods come first, then the behavior's, then free functions; outside every
+state, the behavior's, then free functions. A state's method exists only inside
+its state: called from anywhere else, the checker refuses it and names the state
+it belongs to. A schedule's interval must be a **literal duration** — a field or
+an expression is refused.
 
 ### Lifecycle members
 
@@ -137,11 +141,16 @@ stateDiagram-v2
     end note
 ```
 
-- An instance starts in the **first declared** state.
+- An instance starts in the **first declared** state, entered with no
+  arguments — so the first state takes no parameters.
 - A state's parameters and fields exist only inside it; entering it — by
   `become` or at the start — writes its defaults and re-arms its schedules.
-- A state's member wins over the behavior's member of the same name; the
-  behavior's is the fallback in every state.
+- A state's member wins over the behavior's member of the same name — for the
+  engine's calls and for a call written inside the state; the behavior's is the
+  fallback in every state. A state's defaults are its own code: they read the
+  behavior's fields, the state's parameters and its fields declared above, and
+  call its methods — wherever the `become` that enters it is written, never
+  seeing that member's locals or the data of the state it is written in.
 - `become Name;` / `become Name(args);` switches state and **does not end the
   member**: the statements after it still run.
 
@@ -232,7 +241,7 @@ void Hurt() { Raise(this, "Damaged", 30); }
   reported, a missing handler is simply not delivered, a despawned target hears
   nothing.
 - A payload carries `bool`, `int`, `float`, `string`, `Entity` and the engine
-  types — not `null`.
+  types — not `null`, whether a script or the engine raised it.
 - The engine raises `Touched(Entity other)` and `Separated` from collisions:
   `on Touched(Entity other) { Despawn(other); }`.
 

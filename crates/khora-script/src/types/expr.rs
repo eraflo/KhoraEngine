@@ -72,6 +72,14 @@ impl Checker {
                 Ty::Entity
             }
 
+            Expr::Ident { name, span } if self.unready.contains(name) => {
+                self.error_note(
+                    format!("`{name}` has no value yet"),
+                    *span,
+                    "defaults run in the order fields are declared: read only a field declared above this one",
+                );
+                Ty::Error
+            }
             Expr::Ident { name, span } => match self.scopes.type_of(name) {
                 Some(ty) => ty,
                 None => {
@@ -359,6 +367,28 @@ impl Checker {
                     self.check_expr(extra, context);
                 }
                 return info.result;
+            }
+        }
+
+        // Another state's method: out of scope here, and worth saying where it
+        // is rather than that it does not exist.
+        if let Expr::Ident { name, .. } = callee {
+            if let Some(owners) = self.state_methods.get(name).cloned() {
+                let named = owners
+                    .iter()
+                    .map(|state| format!("`{state}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let states = if owners.len() == 1 { "state" } else { "states" };
+                self.error_note(
+                    format!("`{name}` belongs to {states} {named}"),
+                    span,
+                    "it can only be called from inside it",
+                );
+                for argument in args {
+                    self.check_expr(argument, context);
+                }
+                return Ty::Error;
             }
         }
 

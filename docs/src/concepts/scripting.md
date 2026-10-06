@@ -119,6 +119,18 @@ after an `await` or a call, is a **site** with a name the compiler derives from
 the source: the kind of each enclosing statement and a short hash of what it
 says. Those names are what let a machine survive an edit (below).
 
+### Text outlives the stop
+
+Text a body builds — `"hp " + name`, a name an engine function returned, an
+event's argument — lives in frame memory, emptied every frame. A stopped body
+keeps it anyway: on stopping, the machine copies the text its registers name
+into itself, and when it resumes puts it back where running code reads it. A
+field and a state's data keep text by value for the same reason, so `become
+Chase("x" + name)` stores the text, not a reference to it. Frame memory is one
+for the whole run and counts the frames, so text kept past its frame by any
+other route fails to read — it never reads what a later frame put in its
+place.
+
 ## Degrading defers whole behaviors
 
 A budget that will not cover every behavior forces a choice. The lane could give
@@ -193,7 +205,7 @@ and it is what a [game save](./saves.md) holds:
 
 | `ScriptState` keeps | So that, after a load… |
 |---|---|
-| the fields, by name | the guard has the health it had |
+| the fields, by name — a `null` too | the guard has the health it had; `best = null` loads as `null`, not as its default |
 | the current state and its data | it is still chasing whom it was chasing |
 | each timer's remaining time | `every 2s` fires when it would have |
 | the body under way, frozen | an attack half-way through its wind-up finishes it |
@@ -201,7 +213,8 @@ and it is what a [game save](./saves.md) holds:
 | a fault, and the code it faulted under | a broken behavior stays off until its code changes |
 
 A frozen body is written in names, not positions: its functions by name, its
-literals by text, each frame by the site it stands at, with its locals by name.
+text by value — a literal and text built while running alike — each frame by the
+site it stands at, with its locals by name.
 That is what lets a save made today load into the script as it is next month.
 
 After a restore, `OnLoad` runs first; the restored body waits behind it.
@@ -222,7 +235,10 @@ nothing across a rebuild: inserting one field at the top shifts every slot after
 it, and a positional carry-over would silently move one guard's health into
 another's ammo. A field that was renamed keeps no value, and the engine says so
 in a warning rather than letting the author find out from whatever the guard
-does next.
+does next. A field the edit retyped keeps its value only if the new type can
+hold it: `int? best` holding `null`, edited to `int best = 4`, starts at `4` —
+never at a value no author could write. A load into edited code follows the same
+rule.
 
 What the guard is *doing* crosses the same way: the state it is in by name, that
 state's data by slot name, each countdown by its schedule's identity. A chasing

@@ -539,6 +539,13 @@ mod json {
         assert_eq!(to_json(&ScriptValue::Str("hi".to_owned())), Ok(json!("hi")));
     }
 
+    /// The absent optional is JSON's `null` — an `Option` field of the mirror
+    /// reads it as `None`.
+    #[test]
+    fn null_converts_to_json_null() {
+        assert_eq!(to_json(&ScriptValue::Null), Ok(json!(null)));
+    }
+
     #[test]
     fn a_struct_converts_to_an_object() {
         let value = ScriptValue::Struct(vec![

@@ -87,6 +87,7 @@ macro_rules! define_to_json {
                     }
                     Json::Object(object)
                 }
+                ScriptValue::Null => Json::Null,
             })
         }
     };

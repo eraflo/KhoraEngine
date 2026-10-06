@@ -157,7 +157,7 @@ impl Lane for BudgetedScriptLane {
         let deck = &mut *deck_guard;
 
         let clock = Stopwatch::new();
-        let mut host = Host::new();
+        let mut host = Host::new().with_arena(runtime.take_arena());
         // Once for the frame, not once per behavior: input is a fact about
         // the frame, and every behavior in it must see the same one.
         host.input = view.input.clone();
@@ -167,6 +167,7 @@ impl Lane for BudgetedScriptLane {
         // Handed over together with the arena reset, so no command can
         // outlive the frame memory it might have referred to.
         deck.slot::<CommandBuffer>().extend(host.end_frame());
+        runtime.return_arena(host.take_arena());
         deck.slot::<ScriptStateWriteback>()
             .extend(report.state.iter().cloned());
 

@@ -151,9 +151,10 @@ fn a_struct_is_refused_rather_than_dropped() {
     assert!(to_persisted(&fields).is_err());
 }
 
-/// **`null` does not cross.** A handler declares `int amount`, never
-/// `int? amount`, so an event carrying this would arrive as something no
-/// parameter can be.
+/// **`null` does not leave a register.** It crosses into a save (see
+/// `null_crosses_into_a_slot_and_back`), never into an event: a handler
+/// declares `int amount`, never `int? amount`, so an event carrying this would
+/// arrive as something no parameter can be.
 #[test]
 fn null_has_no_boundary_form() {
     let arena = Arena::new();
@@ -174,10 +175,88 @@ fn an_unwritten_slot_reads_as_nothing() {
     assert_eq!(from_persisted(&Persisted::Scalar(Value::Unit)), Ok(None));
 }
 
-/// And a spent `after` reads the same way — it is bookkeeping, not scene data.
+/// **A field holding `null` is a value, not a hole.** `int? best = 4;` set to
+/// `null` must save as `null`: read as "nothing written", the field drops out of
+/// the save and loads back at `4`. A spent `after` is not read through here —
+/// the countdowns read their own slots (see the lane's
+/// `a_countdown_that_fired_does_not_fire_again_on_load`).
 #[test]
-fn a_spent_countdown_reads_as_nothing() {
-    assert_eq!(from_persisted(&Persisted::Scalar(Value::Null)), Ok(None));
+fn null_crosses_into_a_slot_and_back() {
+    let stored = to_persisted(&ScriptValue::Null).expect("`null` has a stored form");
+    assert_eq!(stored, Persisted::Scalar(Value::Null));
+    assert_eq!(
+        from_persisted(&stored),
+        Ok(Some(ScriptValue::Null)),
+        "a written `null`, not an unwritten slot"
+    );
+
+    // The unwritten slot keeps its meaning beside it.
+    assert_eq!(from_persisted(&Persisted::Scalar(Value::Unit)), Ok(None));
+}
+
+/// Toward the VM, `null` is the absent optional a register already knows.
+#[test]
+fn null_reaches_a_register_as_the_absent_optional() {
+    let mut arena = Arena::new();
+
+    assert_eq!(to_register(&ScriptValue::Null, &mut arena), Ok(Value::Null));
+    assert!(arena.is_empty(), "nothing to allocate for it");
+}
+
+/// **An event still refuses it**, now that `null` has a boundary form: the
+/// payload is checked against a handler's `int amount`, which no `null` fits.
+/// Raised from a script, the `Raise` fails and nothing is queued.
+#[test]
+fn an_event_still_refuses_a_null_payload() {
+    use crate::arena::PersistentStore;
+    use crate::bytecode::init_name;
+    use crate::dispatch::resolve_member;
+    use crate::{check, compile, lex, parse, Host, Machine, Run};
+
+    let source = r#"behavior Guard {
+                        int? maybe = null;
+                        on Hurt(int amount) { }
+                        void Shout() { Raise(this, "Hurt", maybe); }
+                    }"#;
+    let lexed = lex(source);
+    assert!(lexed.diagnostics.is_empty(), "{:?}", lexed.diagnostics);
+    let parsed = parse(lexed.tokens);
+    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+    let checked = check(&parsed.module);
+    assert!(checked.diagnostics.is_empty(), "{:?}", checked.diagnostics);
+    let compiled = compile(&parsed.module);
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    let program = compiled.program;
+
+    let layout = program.layout("Guard").expect("a layout");
+    let mut host = Host::new()
+        .with_fields(PersistentStore::with_slots(layout.slot_count()))
+        .for_entity(EntityId {
+            index: 1,
+            generation: 1,
+        });
+    let mut init = Machine::new(&program, &init_name("Guard"), &[]).expect("an initialiser");
+    assert_eq!(init.run(&program, &mut host, u64::MAX), Run::Completed);
+
+    let shout = resolve_member(&program, "Guard", "Shout", &host).expect("`Shout`");
+    let mut machine = Machine::new(&program, &shout, &[]).expect("the member");
+    let run = machine.run(&program, &mut host, u64::MAX);
+
+    match run {
+        Run::Faulted(fault) => assert!(
+            format!("{fault:?}").contains("null"),
+            "the refusal names what was refused: {fault:?}"
+        ),
+        other => panic!("raising a `null` payload did not fail: {other:?}"),
+    }
+    assert!(
+        host.take_events().as_slice().is_empty(),
+        "no event carrying `null` was queued"
+    );
 }
 
 /// `Unit` at the boundary *is* a value, and stays one — only the store's `Unit`

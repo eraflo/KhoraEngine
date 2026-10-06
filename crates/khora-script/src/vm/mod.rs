@@ -38,6 +38,7 @@
 //! does.
 
 mod freeze;
+mod held;
 pub mod instruction;
 pub mod program;
 pub mod resume;
@@ -55,7 +56,7 @@ pub use value::{resolve_str, StrError, StrRef, Value};
 
 use serde::{Deserialize, Serialize};
 
-use crate::arena::{Object, Persisted};
+use crate::arena::Persisted;
 use crate::native::Host;
 
 /// Why a program stopped before finishing.
@@ -192,6 +193,14 @@ pub struct Machine {
     /// again from its entry, and it has to be handed what it was handed then.
     #[serde(default)]
     arguments: Vec<Value>,
+    /// The text the registers and arguments referenced when the machine last
+    /// suspended, each named by a [`StrRef::Held`]. Empty while it runs.
+    #[serde(default)]
+    held: Vec<String>,
+    /// Where in the arena each held string was copied from — see
+    /// [`held::Origins`].
+    #[serde(skip)]
+    origins: held::Origins,
 }
 
 impl Machine {
@@ -220,6 +229,8 @@ impl Machine {
             program_counter: 0,
             finished: false,
             arguments: args.to_vec(),
+            held: Vec::new(),
+            origins: held::Origins::default(),
         })
     }
 
@@ -278,7 +289,18 @@ impl Machine {
     pub fn run_counting(&mut self, program: &Program, host: &mut Host, fuel: u64) -> (Run, u64) {
         let mut remaining = fuel;
         let mut overdraft = 0;
+        // The text it held while suspended, back where running code reads it.
+        if !self.finished {
+            if let Err(fault) = self.rehydrate(&mut host.arena) {
+                return (self.fault(fault), 0);
+            }
+        }
         let outcome = self.run_inner(program, host, &mut remaining, &mut overdraft);
+        // And out again: the arena it built text in is emptied before the
+        // machine next runs, and may be saved before then.
+        if matches!(outcome, Run::Suspended(_)) {
+            self.evacuate(&host.arena);
+        }
         (outcome, fuel.saturating_sub(remaining) + overdraft)
     }
 
@@ -547,10 +569,9 @@ impl Machine {
                 // part-way, which it cannot.
                 for offset in 0..argc {
                     let value = self.read(base + offset)?;
-                    host.fields.set(
-                        data_slot as usize + offset as usize,
-                        Persisted::Scalar(value),
-                    );
+                    let stored = self.persist(value, program, host)?;
+                    host.fields
+                        .set(data_slot as usize + offset as usize, stored);
                 }
                 host.fields.set(
                     state_slot as usize,
@@ -580,16 +601,7 @@ impl Machine {
             }
             Instruction::StoreField { slot, src } => {
                 let value = self.read(src)?;
-                let stored = match value {
-                    // Stored by value, not by reference: an arena handle would
-                    // be stale by the next frame, and a field is exactly what
-                    // has to outlive one.
-                    Value::Str(_) => {
-                        let text = self.resolve_str(value, program, host)?.to_owned();
-                        Persisted::Owned(Object::Str(text))
-                    }
-                    other => Persisted::Scalar(other),
-                };
+                let stored = self.persist(value, program, host)?;
                 host.fields.set(slot as usize, stored);
                 Ok(Step::Next)
             }

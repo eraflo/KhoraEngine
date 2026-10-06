@@ -148,6 +148,9 @@ impl Hash {
                 self.text(program.string(*index).unwrap_or_default());
             }
             Value::Str(StrRef::Arena(_)) => self.text("arena"),
+            // Neither is ever a compiled constant; named only so the match
+            // stays exhaustive.
+            Value::Str(StrRef::Held(_)) => self.text("held"),
             Value::Vec2(v) => {
                 self.text("vec2");
                 self.floats(&[v.x, v.y]);

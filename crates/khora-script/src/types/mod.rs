@@ -33,6 +33,7 @@
 
 mod arithmetic;
 pub mod expr;
+mod members;
 pub mod scope;
 pub mod stmt;
 pub mod ty;
@@ -46,8 +47,7 @@ pub use ty::Ty;
 use std::collections::HashMap;
 
 use crate::ast::{
-    BehaviorDecl, BehaviorMember, FunctionDecl, Item, Module, OperatorDecl, OverloadableOp,
-    StructDecl,
+    BehaviorMember, FunctionDecl, Item, Module, OperatorDecl, OverloadableOp, StructDecl,
 };
 use crate::diagnostics::{Diagnostic, Span};
 
@@ -193,6 +193,14 @@ pub struct Checker {
     pub scopes: Scopes,
     /// What each `var` inferred — see [`Checked::inferred`].
     pub inferred: HashMap<usize, String>,
+    /// The states declaring each state method of the behavior being checked:
+    /// callable only from inside its state, and named when a call from
+    /// anywhere else is refused.
+    pub state_methods: HashMap<String, Vec<String>>,
+    /// The fields with no value yet while a default is checked: that one and
+    /// those declared below it at its level. Defaults run in declaration
+    /// order, so reading one of these would read a slot not written yet.
+    pub unready: Vec<String>,
 }
 
 impl Checker {
@@ -205,6 +213,8 @@ impl Checker {
             diagnostics: Vec::new(),
             scopes: Scopes::new(),
             inferred: HashMap::new(),
+            state_methods: HashMap::new(),
+            unready: Vec::new(),
         }
     }
 
@@ -426,201 +436,6 @@ impl Checker {
         let returns = self.resolve(&decl.return_ty);
         let context = Context::sync(decl.name.clone(), returns);
         self.check_block(&decl.body, &context);
-    }
-
-    fn check_behavior(&mut self, decl: &BehaviorDecl) {
-        let states = collect_state_names(&decl.members);
-
-        // A behavior's methods are callable from any of its members, including
-        // from inside a state, so they are collected before any body is
-        // checked — otherwise a method could only call one declared above it.
-        let saved = self.functions.clone();
-        self.collect_methods(&decl.members);
-
-        // Behavior fields are visible to every member, including inside states.
-        self.scopes = Scopes::new();
-        self.declare_fields(&decl.members);
-        self.check_members(&decl.members, &decl.name, &states);
-
-        // Methods belong to their behavior; leaving them in scope would let the
-        // next declaration call them.
-        self.functions = saved;
-    }
-
-    /// Registers every method declared in `members`, recursing into states.
-    fn collect_methods(&mut self, members: &[BehaviorMember]) {
-        for member in members {
-            match member {
-                BehaviorMember::Method(method) => {
-                    let params = method.params.iter().map(|p| self.resolve(&p.ty)).collect();
-                    let result = self.resolve(&method.return_ty);
-                    self.functions.insert(
-                        method.name.clone(),
-                        FnInfo {
-                            params,
-                            result,
-                            variadic: false,
-                        },
-                    );
-                }
-                BehaviorMember::State(state) => self.collect_methods(&state.members),
-                _ => {}
-            }
-        }
-    }
-
-    /// Holds an engine-invoked member to the shape the engine will call it with.
-    ///
-    /// The mistake this exists for is `void Update()` where `void Update(float
-    /// dt)` was meant. Dispatch is by name, so the wrong signature does not
-    /// produce a call that fails — it produces a body that never runs, and an
-    /// author left watching nothing happen has nothing to search for.
-    fn check_lifecycle(&mut self, method: &crate::ast::MethodDecl) {
-        let Some(hook) = crate::lifecycle::of(&method.name) else {
-            return;
-        };
-
-        if !hook.called {
-            self.diagnostics
-                .push(crate::diagnostics::Diagnostic::warning(
-                    format!(
-                        "`{}` is reserved but the engine does not call it yet",
-                        hook.name
-                    ),
-                    method.name_span,
-                ));
-        }
-
-        let returns = self.resolve(&method.return_ty);
-        if returns != Ty::Void {
-            self.error_note(
-                format!("`{}` must return nothing", hook.name),
-                method.name_span,
-                "the engine calls it and has nowhere to put a result",
-            );
-        }
-
-        let found: Vec<Ty> = method.params.iter().map(|p| self.resolve(&p.ty)).collect();
-        if found != hook.params {
-            let expected = hook
-                .params
-                .iter()
-                .map(Ty::name)
-                .collect::<Vec<_>>()
-                .join(", ");
-            self.error_note(
-                format!("`{}` must take ({expected})", hook.name),
-                method.name_span,
-                "the engine calls this member itself, so its shape is fixed — a \
-                 different one is not an error at the call site, it is a body that \
-                 never runs",
-            );
-        }
-    }
-
-    fn declare_fields(&mut self, members: &[BehaviorMember]) {
-        for member in members {
-            if let BehaviorMember::Field(field) = member {
-                let ty = self.resolve(&field.ty);
-                if let Some(previous) = self.scopes.declare(&field.name, ty, field.span) {
-                    let _ = previous;
-                    self.error(
-                        format!("field `{}` is declared twice", field.name),
-                        field.span,
-                    );
-                }
-            }
-        }
-    }
-
-    fn check_members(&mut self, members: &[BehaviorMember], owner: &str, states: &[String]) {
-        for member in members {
-            match member {
-                BehaviorMember::Field(field) => {
-                    if let Some(default) = &field.default {
-                        let declared = self.resolve(&field.ty);
-                        let mut context = Context::sync(owner, Ty::Void);
-                        context.owner = Some(owner.to_owned());
-                        let actual = self.check_expr(default, &context);
-                        self.expect_assignable(&declared, &actual, default.span());
-                    }
-                }
-                BehaviorMember::Method(method) => {
-                    self.check_lifecycle(method);
-                    self.scopes.push();
-                    for param in &method.params {
-                        let ty = self.resolve(&param.ty);
-                        self.scopes.declare(&param.name, ty, param.span);
-                    }
-                    let returns = self.resolve(&method.return_ty);
-                    let context = Context {
-                        allows_await: method.is_async,
-                        member: method.name.clone(),
-                        returns,
-                        in_loop: false,
-                        states: states.to_vec(),
-                        owner: Some(owner.to_owned()),
-                    };
-                    self.check_block(&method.body, &context);
-                    self.scopes.pop();
-                }
-                BehaviorMember::Handler(handler) => {
-                    self.scopes.push();
-                    for param in &handler.params {
-                        let ty = self.resolve(&param.ty);
-                        self.scopes.declare(&param.name, ty, param.span);
-                    }
-                    let context = Context {
-                        allows_await: false,
-                        member: format!("on {}", handler.event),
-                        returns: Ty::Void,
-                        in_loop: false,
-                        states: states.to_vec(),
-                        owner: Some(owner.to_owned()),
-                    };
-                    self.check_block(&handler.body, &context);
-                    self.scopes.pop();
-                }
-                BehaviorMember::Every(every) => {
-                    let context = Context {
-                        allows_await: false,
-                        member: "every".to_owned(),
-                        returns: Ty::Void,
-                        in_loop: false,
-                        states: states.to_vec(),
-                        owner: Some(owner.to_owned()),
-                    };
-                    let interval = self.check_expr(&every.interval, &context);
-                    self.expect_duration(&interval, every.interval.span(), "every");
-                    self.check_block(&every.body, &context);
-                }
-                BehaviorMember::After(after) => {
-                    let context = Context {
-                        allows_await: false,
-                        member: "after".to_owned(),
-                        returns: Ty::Void,
-                        in_loop: false,
-                        states: states.to_vec(),
-                        owner: Some(owner.to_owned()),
-                    };
-                    let delay = self.check_expr(&after.delay, &context);
-                    self.expect_duration(&delay, after.delay.span(), "after");
-                    self.check_block(&after.body, &context);
-                }
-                BehaviorMember::State(state) => {
-                    // A state's own fields and parameters are visible only
-                    // inside it — that containment is the point of `state`.
-                    self.scopes.push();
-                    for param in &state.params {
-                        let ty = self.resolve(&param.ty);
-                        self.scopes.declare(&param.name, ty, param.span);
-                    }
-                    self.declare_fields(&state.members);
-                    self.check_members(&state.members, owner, states);
-                    self.scopes.pop();
-                }
-            }
-        }
     }
 
     /// Reports when `actual` cannot be used where `expected` is wanted.

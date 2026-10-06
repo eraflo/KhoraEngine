@@ -69,7 +69,7 @@ impl Compiler {
 
                 self.naming
                     .enter_step(&format!("become.{}", state_key(&state.name)));
-                self.emit_state_entry(&state.name);
+                self.emit_state_entry(&state.name, None);
                 let slot = layout.state_slot() as u16;
                 self.emit(Instruction::StoreField { slot, src: 0 });
                 self.naming.leave();

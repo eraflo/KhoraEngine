@@ -38,7 +38,7 @@ impl Machine {
         let registers = self
             .registers
             .iter()
-            .map(|value| value.freeze(program))
+            .map(|value| freeze_held(*value, program, &self.held))
             .collect::<Option<_>>()?;
         let frames = self
             .frames
@@ -91,7 +91,7 @@ impl Machine {
             arguments: self
                 .arguments
                 .iter()
-                .map(|value| value.freeze(program))
+                .map(|value| freeze_held(*value, program, &self.held))
                 .collect::<Option<_>>()?,
         })
     }
@@ -102,10 +102,11 @@ impl Machine {
     /// that `program` does not have, or a frame that does not fit its register
     /// file.
     pub fn thaw(frozen: &FrozenMachine, program: &Program) -> Option<Self> {
+        let mut held = Vec::new();
         let registers: Vec<Value> = frozen
             .registers
             .iter()
-            .map(|value| Value::thaw(value, program))
+            .map(|value| thaw_held(value, program, &mut held))
             .collect::<Option<_>>()?;
         if frozen.frames.is_empty() {
             return None;
@@ -123,7 +124,9 @@ impl Machine {
             frames,
             program_counter: usize::try_from(frozen.program_counter).ok()?,
             finished: false,
-            arguments: thaw_arguments(frozen, program).unwrap_or_default(),
+            arguments: thaw_arguments(frozen, program, &mut held).unwrap_or_default(),
+            held,
+            origins: Default::default(),
         })
     }
 }
@@ -143,6 +146,9 @@ impl Value {
                 FrozenValue::Literal(program.strings.get(index as usize)?.clone())
             }
             Self::Str(StrRef::Arena(_)) => FrozenValue::Expired,
+            // Its text is the machine's, which writes it down itself (see
+            // `Machine::freeze`); a held reference alone names nothing.
+            Self::Str(StrRef::Held(_)) => FrozenValue::Expired,
             Self::Vec2(value) => FrozenValue::Vec2(value),
             Self::Vec3(value) => FrozenValue::Vec3(value),
             Self::Vec4(value) => FrozenValue::Vec4(value),
@@ -167,6 +173,9 @@ impl Value {
                 Self::Str(StrRef::Const(u32::try_from(index).ok()?))
             }
             FrozenValue::Expired => Self::Str(StrRef::Arena(ArenaRef::expired())),
+            // Text with no machine to own it: only a machine thaws it (see
+            // `Machine::thaw`).
+            FrozenValue::Text(_) => return None,
             FrozenValue::Vec2(value) => Self::Vec2(*value),
             FrozenValue::Vec3(value) => Self::Vec3(*value),
             FrozenValue::Vec4(value) => Self::Vec4(*value),
@@ -177,16 +186,48 @@ impl Value {
     }
 }
 
-/// The body's arguments, in `program`.
+/// The body's arguments, in `program`, their text added to `held`.
 ///
 /// `None` for one `program` cannot hold — a literal it lacks. Only a restart
 /// reads them, so the machine itself thaws without them.
-pub(super) fn thaw_arguments(frozen: &FrozenMachine, program: &Program) -> Option<Vec<Value>> {
+pub(super) fn thaw_arguments(
+    frozen: &FrozenMachine,
+    program: &Program,
+    held: &mut Vec<String>,
+) -> Option<Vec<Value>> {
     frozen
         .arguments
         .iter()
-        .map(|value| Value::thaw(value, program))
+        .map(|value| thaw_held(value, program, held))
         .collect()
+}
+
+/// A register of a machine holding `held`, written down: held text by value.
+pub(super) fn freeze_held(value: Value, program: &Program, held: &[String]) -> Option<FrozenValue> {
+    match value {
+        Value::Str(StrRef::Held(index)) => Some(
+            held.get(index as usize)
+                .map_or(FrozenValue::Expired, |text| FrozenValue::Text(text.clone())),
+        ),
+        other => other.freeze(program),
+    }
+}
+
+/// A register, in `program`, for a machine holding `held`: text it owned goes
+/// back into `held`, and the register names it there.
+pub(super) fn thaw_held(
+    frozen: &FrozenValue,
+    program: &Program,
+    held: &mut Vec<String>,
+) -> Option<Value> {
+    match frozen {
+        FrozenValue::Text(text) => {
+            let index = u32::try_from(held.len()).ok()?;
+            held.push(text.clone());
+            Some(Value::Str(StrRef::Held(index)))
+        }
+        other => Value::thaw(other, program),
+    }
 }
 
 /// One frame, if `program` has its function and the register file holds it.

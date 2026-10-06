@@ -315,8 +315,8 @@ impl Compiler {
 
         // Everything else entering the state implies, written before the
         // discriminant moves so the instance is never briefly in a state whose
-        // data has not arrived.
-        self.emit_state_entry(state);
+        // data has not arrived. Its defaults read the arguments where they sit.
+        self.emit_state_entry(state, (!args.is_empty()).then_some(base));
 
         self.emit(Instruction::Become {
             state: index as u16,
@@ -338,24 +338,61 @@ impl Compiler {
     ///
     /// Every default is evaluated into a register *before* any of them is
     /// stored, so a default that suspends cannot leave the state half-written.
-    pub fn emit_state_entry(&mut self, state: &str) {
+    ///
+    /// A default is the entered state's code, wherever the `become` is: it
+    /// calls that state's methods, and reads the behavior's fields and that
+    /// state's data — a parameter from `arguments`, the registers the `become`
+    /// placed them in (from its slot when the state is entered without one),
+    /// and a field declared above it from the register its own default was
+    /// just evaluated into. Never the locals of the member the `become` is
+    /// written in, nor the data of the state it is written in.
+    pub fn emit_state_entry(&mut self, state: &str, arguments: Option<Reg>) {
         let Some(entry) = self.entries.get(state).cloned() else {
             return;
         };
 
         let mark = self.registers.mark();
         let mut writes: Vec<(u16, Reg)> = Vec::new();
+        let caller = self.state.replace(state.to_owned());
+        let mut scope = self.behavior_fields.clone();
+        for (name, slot, shape) in &entry.slots {
+            scope.insert(name.clone(), (*slot, *shape));
+        }
+        let outer = std::mem::replace(&mut self.fields, scope);
+        let locals = self.locals.len();
+        let hidden = self.hide_locals();
+        if let Some(base) = arguments {
+            for (offset, (name, ty)) in entry.params.iter().enumerate() {
+                let register = base + offset as Reg;
+                self.bind_local(
+                    name,
+                    register,
+                    super::shape_of(ty),
+                    super::keys::type_name(ty),
+                );
+            }
+        }
 
-        for (slot, default, shape) in &entry.fields {
+        for (slot, name, default, ty) in &entry.fields {
             let register = match default {
                 Some(expr) => self.compile_expr(expr).0,
                 // Its type's zero rather than unset, for the reason a
                 // behavior's field with no written default gets one: `int
                 // missed;` reads as a number that starts at nothing.
-                None => self.zero_of_type(shape),
+                None => self.zero_of_type(ty),
             };
             writes.push((*slot, register));
+            self.bind_local(
+                name,
+                register,
+                super::shape_of(ty),
+                super::keys::type_name(ty),
+            );
         }
+        self.locals.truncate(locals);
+        self.reveal_locals(hidden);
+        self.fields = outer;
+        self.state = caller;
 
         for (slot, seconds) in &entry.timers {
             let register = self.constant(Value::Float(*seconds), Shape::Float).0;

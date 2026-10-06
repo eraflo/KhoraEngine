@@ -116,6 +116,8 @@ macro_rules! define_to_register {
                 ScriptValue::Struct(_) => {
                     return Err(Unrepresentable::kind("struct", "a register"))
                 }
+                // The absent optional, as `int? best` holds it.
+                ScriptValue::Null => Value::Null,
             })
         }
     };
@@ -183,6 +185,9 @@ macro_rules! define_to_persisted {
                 ScriptValue::Struct(_) => {
                     return Err(Unrepresentable::kind("struct", "a saved field"))
                 }
+                // A field set to `null` is a value the save has to keep: left
+                // out, it would load back as its default.
+                ScriptValue::Null => Persisted::Scalar(Value::Null),
             })
         }
     };
@@ -205,9 +210,12 @@ macro_rules! define_from_persisted {
                     $(Value::$variant(inner) => Some(ScriptValue::$variant(*inner)),)*
 
                     // ── Irregular ──────────────────────────────────────────
-                    // An unwritten slot, and a spent `after` — neither is a
-                    // value the scene should record.
-                    Value::Unit | Value::Null => None,
+                    // An unwritten slot is not a value the scene should
+                    // record.
+                    Value::Unit => None,
+                    // A field holding `null` — set so, or declared so. A spent
+                    // `after` holds it too, but countdowns are read apart.
+                    Value::Null => Some(ScriptValue::Null),
                     // A string in a *register* is a reference into the program
                     // or the arena, and neither survives the frame. A store
                     // holding one is already wrong; saying so beats reading it.
@@ -224,6 +232,10 @@ macro_rules! define_from_persisted {
     };
 }
 khora_core::script_value_table!(define_from_persisted);
+
+mod fits;
+
+pub use fits::fits;
 
 #[cfg(test)]
 mod tests;

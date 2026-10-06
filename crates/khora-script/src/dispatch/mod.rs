@@ -35,7 +35,7 @@
 //! this.
 
 use khora_core::ecs::entity::EntityId;
-use khora_core::script::ScriptEvent;
+use khora_core::script::{ScriptEvent, ScriptValue};
 
 use crate::arena::Persisted;
 use crate::native::Host;
@@ -395,12 +395,17 @@ pub fn deliver(
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            crate::bridge::to_register(value, &mut host.arena).map_err(|_| {
-                NotDelivered::UnsupportedArgument {
-                    index,
-                    kind: value.type_name(),
-                }
-            })
+            let refused = NotDelivered::UnsupportedArgument {
+                index,
+                kind: value.type_name(),
+            };
+            // A handler declares `int amount`, never `int? amount`: a `null`
+            // reaching it would be a value no parameter can be — refused here
+            // as a raise from a script is.
+            if matches!(value, ScriptValue::Null) {
+                return Err(refused);
+            }
+            crate::bridge::to_register(value, &mut host.arena).map_err(|_| refused)
         })
         .collect::<Result<Vec<_>, _>>()?;
 

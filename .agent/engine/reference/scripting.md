@@ -81,6 +81,22 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   files, the table is being bypassed.
 - Fields carried across a hot-reload are matched **by name**. A positional carry-over silently moves one
   guard's health into another's ammo.
+- **Text never outlives its frame by reference.** The frame arena (`arena/mod.rs`) is owned by
+  `ScriptRuntime` and lent to each frame's `Host` (`Host::with_arena` / `take_arena`), so its generation
+  only grows and a stale `ArenaRef` always faults (`BadString`) — a fresh arena per frame would restart
+  the count and let it read another frame's text. A suspending machine **evacuates** live arena text into
+  `Machine.held` (`StrRef::Held`) and **rehydrates** it on the next run (`vm/held.rs`); it freezes as
+  `FrozenValue::Text`. Fields and state data keep text by value (`Machine::persist`, for `StoreField`
+  and `Become`).
+- **`null` is a saved value.** `ScriptValue::Null` crosses into a save and back (`int? best = null`
+  loads as `null`); `from_register` and `deliver` refuse it, so an event never carries one. An unwritten
+  slot is `Value::Unit`, not `Null`.
+- **A value carried by name must fit its declared type.** Layouts record each field's and state slot's
+  written type (`BehaviorLayout::field_types`, `StateLayout::types`); `persistence::set` drops a carried
+  value `bridge::fits` refuses (a `null` into a retyped `int`), so the field takes its default.
+- **Calls resolve lexically.** Inside state `S`: `S`'s methods, then the behavior's, then free functions
+  and natives (`types/members.rs`, `bytecode/expr.rs::compile_call` via `Compiler.state`). A state's
+  method called from outside it is a checker error naming the state.
 - **The component mirrors are served, never written to disk.** A generated file an author can open goes
   stale and is then edited, in that order, and the second is found long after the first. `PreludeLoader`
   answers `engine/components.erg` ahead of the inner loader, so a file left at that path — a copy of an
@@ -109,7 +125,7 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** �
 - **Timers** are functions named `Owner.__every(0.5)` / `Owner.__after(2)`, `#n` for identical siblings
   (omitted when zero) — the identity their countdown is saved under.
 - **`FrozenMachine`** (engine terms, every encoding can read it): frames **name** their function, literals
-  are kept as text; each `FrozenFrame` carries its `site`, function `fingerprint`, `locals` (name, type,
+  are kept as text, text built while running as `Text`; each `FrozenFrame` carries its `site`, function `fingerprint`, `locals` (name, type,
   scope, register) and `temporaries`; the machine carries the body's original `arguments`. Positions
   inside a function stay numbers, guarded by fingerprints.
 

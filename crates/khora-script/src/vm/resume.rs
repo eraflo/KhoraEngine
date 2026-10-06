@@ -19,7 +19,7 @@
 
 use khora_core::script::{FrozenFrame, FrozenLocal, FrozenMachine, FrozenValue};
 
-use super::freeze::thaw_arguments;
+use super::freeze::{thaw_arguments, thaw_held};
 use super::site::{Site, SiteKind};
 use super::{Frame, Machine, Program, Value};
 
@@ -132,6 +132,7 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
     let mut frames: Vec<Frame> = Vec::new();
     let mut call: Option<Call> = None;
     let mut program_counter = 0;
+    let mut held: Vec<String> = Vec::new();
 
     for (depth, old) in frozen.frames.iter().enumerate() {
         let index = program.index_of(&old.function)?;
@@ -155,10 +156,11 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
         }
 
         let old_base = usize::try_from(old.base).ok()?;
-        let read = |register: usize| -> Option<Value> {
-            Value::thaw(
+        let read = |register: usize, held: &mut Vec<String>| -> Option<Value> {
+            thaw_held(
                 frozen.registers.get(old_base.checked_add(register)?)?,
                 program,
+                held,
             )
         };
         let callee = frozen.frames.get(depth + 1);
@@ -167,7 +169,7 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
             // As frozen: the whole window, the counter, the call it made.
             for register in 0..function.registers {
                 if let Some(value) = frozen.registers.get(old_base.checked_add(register)?) {
-                    registers[base + register] = Value::thaw(value, program)?;
+                    registers[base + register] = thaw_held(value, program, &mut held)?;
                 }
             }
             program_counter = usize::try_from(frozen.program_counter).ok()?;
@@ -206,7 +208,7 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
                 if !holds(frozen.registers.get(old_base.checked_add(was)?)?, ty) {
                     return None;
                 }
-                *registers.get_mut(base + usize::from(now))? = read(was)?;
+                *registers.get_mut(base + usize::from(now))? = read(was, &mut held)?;
             }
             if site.temporaries.len() != old.temporaries.len() {
                 return None;
@@ -217,7 +219,8 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
             let waiting = usize::from(callee.is_some());
             let kept = site.temporaries.len().saturating_sub(waiting);
             for (&now, &was) in site.temporaries.iter().zip(&old.temporaries).take(kept) {
-                *registers.get_mut(base + usize::from(now))? = read(usize::try_from(was).ok()?)?;
+                *registers.get_mut(base + usize::from(now))? =
+                    read(usize::try_from(was).ok()?, &mut held)?;
             }
             program_counter = site.pc as usize;
             call = match (callee, site.kind) {
@@ -249,7 +252,9 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
         frames,
         program_counter,
         finished: false,
-        arguments: thaw_arguments(frozen, program).unwrap_or_default(),
+        arguments: thaw_arguments(frozen, program, &mut held).unwrap_or_default(),
+        held,
+        origins: Default::default(),
     })
 }
 
@@ -286,7 +291,8 @@ fn matched_locals<'s>(site: &'s Site, old: &[FrozenLocal]) -> Option<Vec<(u8, u6
 fn restart(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
     let name = &frozen.frames.first()?.function;
     let function = program.function(name)?;
-    let arguments = thaw_arguments(frozen, program)?;
+    let mut held = Vec::new();
+    let arguments = thaw_arguments(frozen, program, &mut held)?;
     // The parameters as declared, where the compiler recorded them.
     if let Some(entry) = function
         .sites
@@ -307,7 +313,9 @@ fn restart(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
             return None;
         }
     }
-    Machine::new(program, name, &arguments)
+    let mut machine = Machine::new(program, name, &arguments)?;
+    machine.held = held;
+    Some(machine)
 }
 
 /// Whether a local of type `ty` can hold `value`: what [`fits`] says, an
@@ -334,7 +342,10 @@ fn fits(value: &FrozenValue, ty: &str) -> bool {
         "int" => matches!(value, FrozenValue::Int(_)),
         "float" | "Duration" | "Angle" => matches!(value, FrozenValue::Float(_)),
         "bool" => matches!(value, FrozenValue::Bool(_)),
-        "string" => matches!(value, FrozenValue::Literal(_) | FrozenValue::Expired),
+        "string" => matches!(
+            value,
+            FrozenValue::Literal(_) | FrozenValue::Text(_) | FrozenValue::Expired
+        ),
         "Entity" => matches!(value, FrozenValue::Entity(_)),
         "Vec2" => matches!(value, FrozenValue::Vec2(_)),
         "Vec3" => matches!(value, FrozenValue::Vec3(_)),

@@ -288,6 +288,14 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                 Run::Completed => {
                     if was_initialiser {
                         current = entering.and_then(|state| {
+                            // Its defaults may read its parameters: what was
+                            // carried, never what the first state left in the
+                            // slots they share.
+                            if let (Some(layout), Some(carried)) =
+                                (program.layout(behavior), carried)
+                            {
+                                runtime::place_state_data(&mut host.fields, layout, state, carried);
+                            }
                             Machine::new(program, &enter_name(behavior), &[Value::Int(state)])
                         });
                     }
