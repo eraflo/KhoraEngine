@@ -283,10 +283,14 @@ impl Compiler {
     }
 
     /// The value a slot of this written type starts at when nothing was
-    /// written: `null` for an optional, its shape's zero otherwise.
+    /// written: `null` for an optional, `false` for a `bool` — which its shape
+    /// alone cannot tell from an `Entity` — its shape's zero otherwise.
     pub(super) fn zero_of_type(&mut self, ty: &crate::ast::TypeRef) -> Reg {
         if ty.is_optional() {
             return self.constant(Value::Null, Shape::Other).0;
+        }
+        if matches!(ty, crate::ast::TypeRef::Named { name, .. } if name == "bool") {
+            return self.constant(Value::Bool(false), Shape::Other).0;
         }
         self.zero_of(super::shape_of(ty))
     }

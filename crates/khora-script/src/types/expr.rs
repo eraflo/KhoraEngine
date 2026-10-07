@@ -110,6 +110,9 @@ impl Checker {
             Expr::Call { callee, args, span } => self.check_call(callee, args, *span, context),
             Expr::Field { object, name, span } => {
                 let receiver = self.check_expr(object, context);
+                if receiver == Ty::Entity {
+                    return self.entity_field(object, name, *span, context);
+                }
                 self.check_field(&receiver, name, *span)
             }
             Expr::OptionalField { object, name, span } => {
@@ -124,6 +127,9 @@ impl Checker {
                 // The result is optional whatever the field's own type: the
                 // receiver may be absent.
                 let inner = receiver.unwrapped();
+                if inner == Ty::Entity {
+                    return self.entity_field(object, name, *span, context);
+                }
                 let field = self.check_field(&inner, name, *span);
                 match field {
                     Ty::Error => Ty::Error,
@@ -153,12 +159,16 @@ impl Checker {
                 )
             }
             Expr::New { ty, args, span } => {
-                let resolved = self.resolve(ty);
+                self.resolve(ty);
                 for arg in args {
                     self.check_expr(arg, context);
                 }
-                let _ = span;
-                resolved
+                self.error_note(
+                    "`new` is not supported yet",
+                    *span,
+                    "how a value is constructed is decided with arrays and structs; an engine type is built with its function — `Vec3(1.0, 2.0, 3.0)`",
+                );
+                Ty::Error
             }
             // Reached only when a binding appears outside a condition, where
             // `check_if` would have intercepted it. Report rather than infer a
@@ -168,7 +178,7 @@ impl Checker {
                 self.error_note(
                     "`var` here is not a condition",
                     *span,
-                    "the binding form belongs in an `if` or `while` condition, where it tests an optional and narrows it for the branch",
+                    "the binding form belongs in an `if` or a `while` condition, where it tests an optional and narrows it for the branch or the body",
                 );
                 Ty::Error
             }
@@ -312,6 +322,8 @@ impl Checker {
         let value_ty = self.check_expr(value, context);
 
         match op {
+            // A target already reported says nothing about the operation.
+            Some(_) if matches!(target_ty, Ty::Error) => {}
             // `a += b` must mean what `a = a + b` means, overloads included.
             Some(op) => {
                 let result =
@@ -392,12 +404,75 @@ impl Checker {
             }
         }
 
+        // `entity.Method(…)`: an entity has no methods — a behavior's own are
+        // called by name.
+        let through = match callee {
+            Expr::Field { object, name, span } => Some((object, name, *span, false)),
+            Expr::OptionalField { object, name, span } => Some((object, name, *span, true)),
+            _ => None,
+        };
+        if let Some((object, name, at, optional)) = through {
+            let checked = self.check_expr(object, context);
+            if optional && !checked.is_optional() && !matches!(checked, Ty::Error) {
+                self.error_note(
+                    format!("`{}` is never null", checked.name()),
+                    at,
+                    "use `.` — `?.` is for optionals, and using it here suggests a doubt the type says is unfounded",
+                );
+            }
+            let receiver = if optional {
+                checked.unwrapped()
+            } else {
+                checked
+            };
+            for argument in args {
+                self.check_expr(argument, context);
+            }
+            if receiver == Ty::Entity {
+                let own =
+                    matches!(**object, Expr::This(_)) && self.method_names.contains(name.as_str());
+                match (&context.owner, own) {
+                    (Some(owner), true) => self.error(
+                        format!("`{name}` is a method of `{owner}`: call it by name — `{name}()`"),
+                        at,
+                    ),
+                    _ => self.error_note(
+                        format!("an entity has no method `{name}`"),
+                        at,
+                        "calling a method on an entity is not available yet — a behavior's own methods are called by name",
+                    ),
+                }
+            } else {
+                self.check_field(&receiver, name, at);
+            }
+            return Ty::Error;
+        }
+
         // Unknown callee: check the arguments so their errors surface, and
         // yield `Error` without a second complaint about the callee itself —
         // `check_expr` on the callee has already reported it.
         self.check_expr(callee, context);
         for argument in args {
             self.check_expr(argument, context);
+        }
+        Ty::Error
+    }
+
+    /// `entity.name`: an entity has no fields — reported at the line, about
+    /// what was written.
+    fn entity_field(&mut self, object: &Expr, name: &str, span: Span, context: &Context) -> Ty {
+        let own =
+            matches!(object, Expr::This(_)) && self.field_names.iter().any(|field| field == name);
+        match (&context.owner, own) {
+            (Some(owner), true) => self.error(
+                format!("`{name}` is a field of `{owner}`: name it directly"),
+                span,
+            ),
+            _ => self.error_note(
+                format!("an entity has no field `{name}`"),
+                span,
+                "a component is read with `Get` on the entity — reading components from a script is not available yet",
+            ),
         }
         Ty::Error
     }

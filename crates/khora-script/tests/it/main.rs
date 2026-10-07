@@ -18,19 +18,30 @@
 //! full link of the crate's dependency tree. New integration tests join this
 //! binary as a module instead of adding a file at the root of `tests/`.
 
+mod bound_name_shadowing;
+mod calls_through_an_entity;
 mod coalesce_and_casts;
 mod conformance;
 mod conformance_edges;
+mod control_flow;
+mod control_flow_checks;
+mod control_flow_resume;
 mod durable_text;
 mod engine_arithmetic;
+mod entity_field_reads;
 mod ergon_fn;
 mod fingerprints;
 mod freeze;
 mod held_text;
+mod match_arm_edits;
+mod match_on_a_computed_subject;
+mod narrowed_frames;
+mod narrowing_site_names;
 mod operand_types;
 mod public_paths;
 mod rebuilt_frames;
 mod rebuilt_local_types;
+mod refused_by_the_checker;
 mod resume_tiers;
 mod safepoints;
 mod sites;
@@ -38,3 +49,5 @@ mod state_call_resolution;
 mod state_entry_dispatch;
 mod state_entry_scope;
 mod state_scope;
+mod struct_field_defaults;
+mod zero_values;

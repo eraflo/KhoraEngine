@@ -224,6 +224,14 @@ pub enum Instruction {
         /// Instruction index.
         target: usize,
     },
+    /// Jump when `src` holds `null` — the test every optional construct
+    /// needs: `if (var …)`, `while (var …)`, a `match` arm.
+    JumpIfNull {
+        /// The value tested.
+        src: Reg,
+        /// Instruction index.
+        target: usize,
+    },
 
     /// Calls `function`, with arguments already placed in `base..base + argc`.
     ///

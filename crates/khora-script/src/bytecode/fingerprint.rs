@@ -215,6 +215,10 @@ impl Hash {
                 self.op("JumpIfNot", &[*cond]);
                 self.number(*target as u64);
             }
+            I::JumpIfNull { src, target } => {
+                self.op("JumpIfNull", &[*src]);
+                self.number(*target as u64);
+            }
             I::Call {
                 function,
                 base,
@@ -329,8 +333,14 @@ fn longest_stretch(function: &Function, natives: &NativeRegistry) -> u64 {
             // A jump backwards lands where the machine checks again.
             Instruction::Jump { target } if *target <= pc => 0,
             Instruction::Jump { target } => next(*target, memo),
-            Instruction::JumpIfNot { target, .. } if *target <= pc => next(pc + 1, memo),
-            Instruction::JumpIfNot { target, .. } => next(pc + 1, memo).max(next(*target, memo)),
+            Instruction::JumpIfNot { target, .. } | Instruction::JumpIfNull { target, .. }
+                if *target <= pc =>
+            {
+                next(pc + 1, memo)
+            }
+            Instruction::JumpIfNot { target, .. } | Instruction::JumpIfNull { target, .. } => {
+                next(pc + 1, memo).max(next(*target, memo))
+            }
             _ => next(pc + 1, memo),
         };
         let total = cost.saturating_add(rest);

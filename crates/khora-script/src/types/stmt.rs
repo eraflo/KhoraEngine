@@ -60,12 +60,20 @@ impl Checker {
             Stmt::While {
                 condition, body, ..
             } => {
-                let condition_ty = self.check_expr(condition, context);
-                self.expect_bool(&condition_ty, condition.span(), "a `while` condition");
                 let looping = Context {
                     in_loop: true,
                     ..context.clone()
                 };
+                // `while (var x = value)` narrows like `if`: the body sees a
+                // present value, and the name ends with the loop.
+                if let Some((name, narrowed, span)) = self.narrowing_binding(condition, context) {
+                    self.scopes.push_narrowed(&name, narrowed, span);
+                    self.check_block(body, &looping);
+                    self.scopes.pop();
+                    return;
+                }
+                let condition_ty = self.check_expr(condition, context);
+                self.expect_bool(&condition_ty, condition.span(), "a `while` condition");
                 self.check_block(body, &looping);
             }
 
@@ -174,7 +182,16 @@ impl Checker {
                 self.expect_assignable(&declared, &actual, reported);
                 declared
             }
-            (Some(declared), None) => declared,
+            (Some(declared), None) => {
+                if !has_zero(&declared) {
+                    self.error_note(
+                        format!("`{name}` needs a value — `{}` has no default", declared.name()),
+                        span,
+                        "give it one where it is declared — this type has no value that could stand for \"nothing yet\"; use `T?` for a value that may be absent",
+                    );
+                }
+                declared
+            }
             // `var` — the parser guarantees an initialiser, so this is the
             // inference case.
             (None, Some(actual)) => {
@@ -251,6 +268,12 @@ impl Checker {
         };
 
         let value_ty = self.check_expr(value, context);
+        // The present type, for the compiler to record at the sites the bound
+        // local is live at.
+        self.inferred.insert(
+            std::ptr::from_ref(&**value) as usize,
+            value_ty.unwrapped().name(),
+        );
         if matches!(value_ty, Ty::Error) {
             // Already reported; bind at the error type so the branch still
             // checks and reports its own problems.
@@ -335,8 +358,35 @@ impl Checker {
         let mut saw_null = false;
         let mut saw_binding = false;
         let mut saw_wildcard = false;
+        // What the arms above already take: `null`, a present value. A subject
+        // that is never null has no `null` to take.
+        let optional = subject_ty.is_optional() || matches!(subject_ty, Ty::Error);
+        let mut took_null = !optional;
+        let mut took_present = false;
 
         for arm in arms {
+            let (null, present) = match &arm.pattern {
+                Pattern::Null(_) => (true, false),
+                Pattern::Binding { .. } => (false, true),
+                Pattern::Wildcard(_) => (true, true),
+            };
+            let refused_null = matches!(arm.pattern, Pattern::Null(_)) && !optional;
+            if refused_null {
+                self.error_note(
+                    format!("`{}` is never null", subject_ty.name()),
+                    arm.pattern.span(),
+                    "a `null` arm takes an optional's absent case; this subject always has a value",
+                );
+            } else if (!null || took_null) && (!present || took_present) {
+                self.diagnostics
+                    .push(crate::diagnostics::Diagnostic::warning(
+                    "this arm is unreachable: an arm above already takes every value it matches",
+                    arm.pattern.span(),
+                ));
+            }
+            took_null |= null;
+            took_present |= present;
+
             match &arm.pattern {
                 Pattern::Null(_) => {
                     saw_null = true;
@@ -387,4 +437,23 @@ impl Checker {
             );
         }
     }
+}
+
+/// Whether a value of type `ty` declared without one can start at a zero of
+/// its own: `0`, `0.0`, `false`, `""`, `null`.
+///
+/// An entity has none — index 0 is a real entity — and neither has a vector,
+/// a rotation (its identity is not four zeroes) or a struct.
+fn has_zero(ty: &Ty) -> bool {
+    matches!(
+        ty,
+        Ty::Int
+            | Ty::Float
+            | Ty::Duration
+            | Ty::Angle
+            | Ty::Bool
+            | Ty::Str
+            | Ty::Optional(_)
+            | Ty::Error
+    )
 }

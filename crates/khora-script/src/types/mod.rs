@@ -34,6 +34,7 @@
 mod arithmetic;
 pub mod expr;
 mod members;
+mod returns;
 pub mod scope;
 pub mod stmt;
 pub mod ty;
@@ -201,6 +202,14 @@ pub struct Checker {
     /// those declared below it at its level. Defaults run in declaration
     /// order, so reading one of these would read a slot not written yet.
     pub unready: Vec<String>,
+    /// The fields in scope in the behavior being checked — its own, and the
+    /// state's while inside one — so `this.health` can be told to name the
+    /// field directly.
+    pub field_names: Vec<String>,
+    /// The methods in scope in the behavior being checked — its own, and the
+    /// state's while inside one — apart from the free functions they share
+    /// [`functions`](Self::functions) with.
+    pub method_names: std::collections::HashSet<String>,
 }
 
 impl Checker {
@@ -215,6 +224,8 @@ impl Checker {
             inferred: HashMap::new(),
             state_methods: HashMap::new(),
             unready: Vec::new(),
+            field_names: Vec::new(),
+            method_names: std::collections::HashSet::new(),
         }
     }
 
@@ -422,8 +433,30 @@ impl Checker {
                 self.scopes.declare(&param.name, ty, param.span);
             }
             let returns = self.resolve(&operator.return_ty);
-            let context = Context::sync(format!("operator on `{}`", decl.name), returns);
+            let member = format!("operator on `{}`", decl.name);
+            let context = Context::sync(member.clone(), returns.clone());
             self.check_block(&operator.body, &context);
+            self.check_returns(&member, &returns, &operator.body, operator.op_span);
+        }
+
+        // A default has no instance to read from and runs before any code
+        // does: an empty scope, so any name in it is reported.
+        for field in &decl.fields {
+            let Some(default) = &field.default else {
+                continue;
+            };
+            self.scopes = Scopes::new();
+            // As collected: resolving the type again would report an unknown
+            // one a second time.
+            let declared = self
+                .structs
+                .get(&decl.name)
+                .and_then(|info| info.fields.get(&field.name))
+                .cloned()
+                .unwrap_or(Ty::Error);
+            let context = Context::sync(format!("a default of `{}`", decl.name), Ty::Void);
+            let actual = self.check_expr(default, &context);
+            self.expect_assignable(&declared, &actual, default.span());
         }
     }
 
@@ -434,8 +467,9 @@ impl Checker {
             self.scopes.declare(&param.name, ty, param.span);
         }
         let returns = self.resolve(&decl.return_ty);
-        let context = Context::sync(decl.name.clone(), returns);
+        let context = Context::sync(decl.name.clone(), returns.clone());
         self.check_block(&decl.body, &context);
+        self.check_returns(&decl.name, &returns, &decl.body, decl.name_span);
     }
 
     /// Reports when `actual` cannot be used where `expected` is wanted.

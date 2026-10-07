@@ -33,10 +33,12 @@ impl Checker {
         // A state's own are in scope only inside it.
         let saved = self.functions.clone();
         self.state_methods.clear();
+        self.method_names.clear();
         self.collect_methods(&decl.members);
 
         // Behavior fields are visible to every member, including inside states.
         self.scopes = Scopes::new();
+        self.field_names.clear();
         self.declare_fields(&decl.members);
         self.check_first_state(&decl.members);
         self.check_members(&decl.members, &decl.name, &states);
@@ -45,6 +47,8 @@ impl Checker {
         // next declaration call them.
         self.functions = saved;
         self.state_methods.clear();
+        self.field_names.clear();
+        self.method_names.clear();
     }
 
     /// Brings the methods declared directly in `members` into scope, over any
@@ -54,6 +58,7 @@ impl Checker {
         for member in members {
             match member {
                 BehaviorMember::Method(method) => {
+                    self.method_names.insert(method.name.clone());
                     let params = method.params.iter().map(|p| self.resolve(&p.ty)).collect();
                     let result = self.resolve(&method.return_ty);
                     self.functions.insert(
@@ -132,6 +137,7 @@ impl Checker {
     fn declare_fields(&mut self, members: &[BehaviorMember]) {
         for member in members {
             if let BehaviorMember::Field(field) = member {
+                self.field_names.push(field.name.clone());
                 let ty = self.resolve(&field.ty);
                 if let Some(previous) = self.scopes.declare(&field.name, ty, field.span) {
                     let _ = previous;
@@ -193,12 +199,13 @@ impl Checker {
                     let context = Context {
                         allows_await: method.is_async,
                         member: method.name.clone(),
-                        returns,
+                        returns: returns.clone(),
                         in_loop: false,
                         states: states.to_vec(),
                         owner: Some(owner.to_owned()),
                     };
                     self.check_block(&method.body, &context);
+                    self.check_returns(&method.name, &returns, &method.body, method.name_span);
                     self.scopes.pop();
                 }
                 BehaviorMember::Handler(handler) => {
@@ -248,17 +255,22 @@ impl Checker {
                     // A state's own fields and parameters are visible only
                     // inside it — that containment is the point of `state`.
                     self.scopes.push();
+                    let fields = self.field_names.len();
                     for param in &state.params {
                         let ty = self.resolve(&param.ty);
                         self.scopes.declare(&param.name, ty, param.span);
+                        self.field_names.push(param.name.clone());
                     }
                     self.declare_fields(&state.members);
                     // Its methods too: inside the state they come first, ahead
                     // of the behavior's and the free functions.
                     let outer = self.functions.clone();
+                    let outer_methods = self.method_names.clone();
                     self.collect_methods(&state.members);
                     self.check_members(&state.members, owner, states);
                     self.functions = outer;
+                    self.method_names = outer_methods;
+                    self.field_names.truncate(fields);
                     self.scopes.pop();
                 }
             }

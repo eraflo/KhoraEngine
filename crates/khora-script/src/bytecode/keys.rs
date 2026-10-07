@@ -51,6 +51,14 @@ pub fn state_key(state: &str) -> String {
     key.hex8()
 }
 
+/// The key of a `match` arm, from its pattern: an arm's sites keep their
+/// names when another arm is added, removed or edited.
+pub fn arm_key(pattern: &Pattern) -> String {
+    let mut key = Key::new();
+    key.pattern(pattern);
+    key.hex8()
+}
+
 /// A written type, as a script writes it: `int`, `Vec3?`, `Map<string, int>`.
 pub fn type_name(ty: &TypeRef) -> String {
     match ty {
@@ -170,12 +178,12 @@ impl Key {
                 self.exprs(args);
                 "become"
             }
-            Stmt::Match { subject, arms, .. } => {
+            // The subject is the header. Each arm is a branch named by its own
+            // pattern (`arm_key`), so an arm added, removed, reordered or
+            // re-patterned leaves the sites of the others alone.
+            Stmt::Match { subject, .. } => {
                 self.tag(11);
                 self.expr(subject);
-                for arm in arms {
-                    self.pattern(&arm.pattern);
-                }
                 "match"
             }
             Stmt::Block(_) => {

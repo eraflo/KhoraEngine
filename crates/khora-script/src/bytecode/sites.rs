@@ -21,13 +21,14 @@
 //! site   := "entry" | path [ ":" point ]
 //! path   := step ( "/" branch "/" step )*
 //! step   := kind "." hash8 [ "#" n ]
-//! branch := "then" | "else" | "body"
+//! branch := "then" | "else" | "body" | "arm." hash8 [ "#" n ]
 //! point  := "head" | "await" [ "#" n ] | "call." callee [ "#" n ]
 //! ```
 //!
-//! `hash8` is what the statement says ([`keys`](super::keys)); `#n` tells
-//! apart siblings that say the same thing, the awaits of one statement, or its
-//! calls to one callee, and is left out when zero.
+//! `hash8` is what the statement says ([`keys`](super::keys)) — for a `match`
+//! arm, what its pattern says; `#n` tells apart siblings that say the same
+//! thing, the awaits of one statement, or its calls to one callee, and is left
+//! out when zero.
 
 use std::collections::HashMap;
 

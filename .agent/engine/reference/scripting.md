@@ -41,6 +41,10 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
 - Agent: `crates/khora-agents/src/script_agent/agent.rs`.
 - Lifecycle hooks table: `crates/khora-script/src/lifecycle.rs` (`Update`, `OnSpawn`, `OnDespawn`,
   `OnLoad`, `OnResumeFailed(string member)`, reserved `FixedUpdate`).
+- Control flow: `bytecode/flow.rs` â€” `LoopContext` (`break`/`continue` from anywhere in a loop),
+  `if`/`while` with their `var` narrowing forms, `match`, all on `JumpIfNot` / `JumpIfNull`. Behavior
+  compilation (layout, members, states, field defaults): `bytecode/behavior.rs`. Return-path check:
+  `types/returns.rs`.
 - Safepoints and sites: `bytecode/sites.rs` (site grammar, `timer_names`), `bytecode/keys.rs` (statement
   keys), `bytecode/stmt.rs` (emits `Safepoint`), `vm/site.rs` (`Site`, `SiteKind`).
 - Fingerprints + overdraft: `bytecode/fingerprint.rs`; `vm/program.rs` (`Program::fingerprint`,
@@ -116,7 +120,7 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** â
 `OnResumeFailed(string member)` on its next turn (member like `"OnSpawn"`, `"Patrol.OnHit"`,
 `"__every(0.5)"`).
 - **Site grammar** (`bytecode/sites.rs`): `site := "entry" | path [":" point]`,
-  `step := kind "." hash8 ["#" n]`, `branch := then|else|body`, `point := head | await[#n] | call.callee[#n]`.
+  `step := kind "." hash8 ["#" n]`, `branch := then|else|body|arm.hash8[#n]` (a `match` arm keyed by its pattern), `point := head | await[#n] | call.callee[#n]`.
   Named from what statements *say*, never from a counter, so an edit elsewhere renames nothing.
 - **Keys are exhaustive** (`bytecode/keys.rs`): a compound statement is keyed by its header only. A new
   `Stmt`/`Expr` node must decide what it contributes, or two statements share a key.

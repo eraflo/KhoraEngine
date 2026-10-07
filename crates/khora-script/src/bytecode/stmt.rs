@@ -105,14 +105,18 @@ impl Compiler {
                     (None, None) => (Shape::Other, inferred_type(Shape::Other)),
                 };
 
-                // Declared without an initialiser: give it a defined value
-                // rather than whatever the register happened to hold — `null`
-                // for an optional, which is what it says it may be.
-                let optional = ty.as_ref().is_some_and(crate::ast::TypeRef::is_optional);
+                // Declared without an initialiser: its type's zero, the rule a
+                // field without a default follows — the checker has refused a
+                // type that has none. The zero first, then the local, so the
+                // local's register cannot be one the zero is still using.
+                let zero = match ty {
+                    Some(written) => self.zero_of_type(written),
+                    None => self.constant(Value::Unit, Shape::Other).0,
+                };
                 let slot = self.declare_local(name, shape.0, shape.1);
-                self.emit(Instruction::LoadConst {
+                self.emit(Instruction::Move {
                     dst: slot,
-                    value: if optional { Value::Null } else { Value::Unit },
+                    src: zero,
                 });
                 self.registers.release_to(mark);
             }
@@ -166,65 +170,16 @@ impl Compiler {
 
             Stmt::Become { state, args, span } => self.compile_become(state, args, *span),
 
-            // `break`, `continue` and `match` need loop context threading or
-            // exhaustiveness lowering. Reporting is better than emitting a jump
-            // to nowhere.
+            Stmt::Break(span) => self.compile_break(*span),
+            Stmt::Continue(span) => self.compile_continue(*span),
+            Stmt::Match { subject, arms, .. } => self.compile_match(subject, arms),
+
+            // `foreach` walks an array, which arrives with arrays. Reporting is
+            // better than emitting a loop over nothing.
             other => {
                 self.error("this statement cannot be compiled yet", other.span());
             }
         }
-    }
-
-    fn compile_if(&mut self, condition: &Expr, then_branch: &Block, else_branch: Option<&Stmt>) {
-        let mark = self.registers.mark();
-        let (cond, _) = self.compile_expr(condition);
-        let to_else = self.emit(Instruction::JumpIfNot {
-            cond,
-            target: usize::MAX,
-        });
-        self.registers.release_to(mark);
-
-        self.compile_block(then_branch, "then");
-
-        match else_branch {
-            Some(else_branch) => {
-                let over_else = self.emit(Instruction::Jump { target: usize::MAX });
-                self.patch_to_here(to_else);
-                // `else { … }` is the branch's statements; `else if` is one
-                // statement of it.
-                match else_branch {
-                    Stmt::Block(block) => self.compile_block(block, "else"),
-                    other => {
-                        self.naming.branch("else");
-                        self.compile_statements(std::slice::from_ref(other));
-                        self.naming.leave_branch();
-                    }
-                }
-                self.patch_to_here(over_else);
-            }
-            None => self.patch_to_here(to_else),
-        }
-    }
-
-    fn compile_while(&mut self, condition: &Expr, body: &Block) {
-        // The back-edge lands here, on a safepoint that is also the
-        // statement's start. Temporaries are released before it, so a
-        // suspension at the top of an iteration captures locals and nothing
-        // else.
-        let top = self.here();
-        self.statement_safepoint(SiteKind::LoopHead);
-
-        let mark = self.registers.mark();
-        let (cond, _) = self.compile_expr(condition);
-        let exit = self.emit(Instruction::JumpIfNot {
-            cond,
-            target: usize::MAX,
-        });
-        self.registers.release_to(mark);
-
-        self.compile_block(body, "body");
-        self.emit(Instruction::Jump { target: top });
-        self.patch_to_here(exit);
     }
 
     fn compile_for(
@@ -258,7 +213,10 @@ impl Compiler {
             jump
         });
 
+        // `continue` lands on the step, emitted after the body.
+        self.enter_loop(None);
         self.compile_block(body, "body");
+        let context = self.leave_loop_body();
 
         if let Some(step) = step {
             let mark = self.registers.mark();
@@ -270,6 +228,7 @@ impl Compiler {
         if let Some(exit) = exit {
             self.patch_to_here(exit);
         }
+        self.exit_loop(context);
         self.close_scope(scope);
     }
 }

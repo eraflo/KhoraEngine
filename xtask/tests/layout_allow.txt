@@ -16,7 +16,6 @@
 
 non_test_code_under_700_lines crates/khora-infra/src/graphics/wgpu/device/graphics_device.rs  # one `impl GraphicsDevice for WgpuDevice` block; a trait impl cannot span files, splitting it means delegating to inherent methods — a code change, not a move (B3)
 non_test_code_under_700_lines crates/khora-infra/src/ui/egui/ui_builder.rs  # 959 non-test lines; not itemised in B2 yet
-non_test_code_under_700_lines crates/khora-script/src/bytecode/mod.rs  # 920 non-test lines; split by the Ergon specs (02, 04, 05, 09)
 non_test_code_under_700_lines crates/khora-script/src/vm/mod.rs  # 828 non-test lines; split by the Ergon specs (02, 04, 05, 09)
 
 # --- wgsl_only_in_shader_tree (T9) -------------------------------------------

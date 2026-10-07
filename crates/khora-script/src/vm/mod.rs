@@ -541,6 +541,14 @@ impl Machine {
                     Ok(Step::Jumped)
                 }
             }
+            Instruction::JumpIfNull { src, target } => {
+                if self.read(src)?.is_null() {
+                    self.jump_to(target, code_len)?;
+                    Ok(Step::Jumped)
+                } else {
+                    Ok(Step::Next)
+                }
+            }
 
             Instruction::Call {
                 function,

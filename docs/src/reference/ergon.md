@@ -58,7 +58,7 @@ Comments are `// line` and `/* block */`.
 | `int`, `float`, `bool`, `string`, `Entity` | runs |
 | `Vec2`, `Vec3`, `Vec4`, `Quat`, `Color` | runs — built by calling `Vec3(1.0, 2.0, 3.0)`; components `.x .y .z .w` (`.r .g .b .a`) read-only |
 | `Duration`, `Angle` | runs — distinct from `float` and from each other; `2s + 500ms` is `2.5s`, `2s + 90deg` is refused |
-| `T?` | runs — holds a value or `null`; one declared without a value starts `null`; `a ?? b` unwraps it; `?.` and `if (var x = opt)` do not run yet |
+| `T?` | runs — holds a value or `null`; one declared without a value starts `null`; `a ?? b`, `if (var x = opt)`, `while (var x = opt)` and `match` unwrap it; `?.` does not run yet |
 | `T[]`, `Map<K, V>` | checks — no literal, no indexing yet |
 
 The one implicit conversion: an `int` where a `float` is expected. There is no
@@ -76,9 +76,11 @@ behavior Lamp {
 
 A field is `Type name [= default];` — `var` is for locals only. A default is any
 expression, run once by the instance's initialiser, in the order the fields are
-declared: it may read a field declared above it, never itself or one below. Without one, `int`, `float`
-and `string` start at their zero; `bool`, `Entity` and the engine types start
-unset, and reading them before writing faults.
+declared: it may read a field declared above it, never itself or one below.
+Without one, a field starts at its type's zero — `int` `0`, `float`,
+`Duration`, `Angle` `0.0`, `bool` `false`, `string` `""`, `T?` `null`. `Entity`,
+the engine types and structs have no zero: such a field starts unset — set it in
+the inspector — and reading it before writing faults.
 
 ## Members
 
@@ -162,14 +164,31 @@ stateDiagram-v2
 | `x = …`, `+=`, `-=`, `*=`, `/=` | runs — no `%=`, `++`, `--` |
 | `if` / `else`, `else if` | runs — braces optional around one statement |
 | `while`, C-style `for` | runs |
-| `return;`, `return x;`, `{ … }` | runs |
+| `return;`, `return x;`, `{ … }` | runs — a function returning a value must `return` on every path: `if` counts with an `else`, `match` when every arm does, a loop never |
 | `become` | runs |
 | `await duration;` | runs — in an `async` member only |
-| `break`, `continue` | checks |
+| `break`, `continue` | runs — act on the innermost loop, from anywhere inside it; in a `for`, `continue` still runs the step |
+| `if (var x = opt)`, `while (var x = Next())` | runs — `x` is the present value, in the branch or the body only |
+| `match (opt) { T x => …, null => … }` | runs — takes an optional apart; see below |
 | `foreach (var x in xs)` | checks |
-| `match (opt) { … }` | checks |
-| `if (var x = opt)`, `while (var x = Next())` | checks |
-| `int x;` without a value | compiles; reading it before writing faults |
+| `int x;` without a value | runs — starts at its type's zero; `Entity e;`, `Vec3 v;` are refused: give them a value, or use `Entity?` |
+
+### `match`
+
+`match` takes an **optional** apart; it is not a `switch`. Its patterns are
+`null`, `Type name` (the present value, bound for the arm) and `_`:
+
+```text
+match (target) {
+    Entity e => Chase(e),
+    null => Patrol(),
+}
+```
+
+The subject is evaluated once; the first arm that matches runs. An optional
+subject needs both cases, or a `_`. An arm after one that already takes all it
+could match is warned unreachable, and a `null` arm on a subject that is never
+null is refused. There are no value patterns — `1 =>`, `"idle" =>` do not parse.
 
 ### Waiting
 
@@ -196,7 +215,9 @@ async void Attack() { await 0.5s; Strike(); }
 | `Name(args)` | runs — functions and natives by bare name |
 | `obj.Method()` | checks |
 | `a ?? b` | runs — `a` unless it is `null`; `b` is evaluated only then. A `float?` falls back to a float even when `b` is written as an int |
-| `a?.b`, `new T(…)`, `[…]`, `a[i]` | checks |
+| `a?.b`, `[…]`, `a[i]` | checks |
+| `new T(…)` | refused — not supported yet; build an engine type with its function, `Vec3(1.0, 2.0, 3.0)` |
+| `entity.Field` | refused — an entity has no fields: a behavior's own fields are named directly, a component is read with `Get` (not available yet) |
 
 ## Engine-type arithmetic
 

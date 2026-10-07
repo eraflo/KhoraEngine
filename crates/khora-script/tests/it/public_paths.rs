@@ -714,6 +714,7 @@ fn instruction_variants(x: &khora_script::vm::instruction::Instruction) {
         khora_script::vm::instruction::Instruction::IsNull { .. } => {}
         khora_script::vm::instruction::Instruction::Jump { .. } => {}
         khora_script::vm::instruction::Instruction::JumpIfNot { .. } => {}
+        khora_script::vm::instruction::Instruction::JumpIfNull { .. } => {}
         khora_script::vm::instruction::Instruction::Call { .. } => {}
         khora_script::vm::instruction::Instruction::Return { .. } => {}
         khora_script::vm::instruction::Instruction::Become { .. } => {}

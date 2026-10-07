@@ -459,238 +459,196 @@ const SHIPPED: &[Row] = &[
         args: &[],
         expect: Expect::Runs(Value::Int(70)),
     },
+    // ─── Runtime correctness (spec 02) ──────────────────────────────────────
+    Row {
+        construct: "uninitialised local",
+        source: "fn int F() { int x; x = x + 1; return x; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(1)),
+    },
+    Row {
+        construct: "a non-void function falling off its end",
+        source: "fn int F(bool b) { if (b) { return 1; } }",
+        entry: "F",
+        args: &[Value::Bool(false)],
+        expect: Expect::Rejected("does not return a value on every path"),
+    },
+    Row {
+        construct: "`new T(…)`",
+        source: r#"fn void F() { var v = new Vec3("x", true); }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("`new` is not supported yet"),
+    },
+    Row {
+        construct: "struct field default of the wrong type",
+        source: r#"struct S { int a = "text"; }
+                   fn int F() { return 1; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("expected `int`, found `string`"),
+    },
+    // ─── Loops, narrowing and `match` (spec 04) ─────────────────────────────
+    Row {
+        construct: "`break`",
+        source: "fn int F() {
+                     int total = 0;
+                     int i = 0;
+                     while (true) {
+                         if (i == 5) { break; }
+                         total = total + i;
+                         i = i + 1;
+                     }
+                     return total;
+                 }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(10)),
+    },
+    Row {
+        construct: "`continue` in `while`",
+        source: "fn int F() {
+                     int total = 0;
+                     int i = 0;
+                     while (i < 6) {
+                         i = i + 1;
+                         if (i == 4) { continue; }
+                         total = total + i - 1;
+                     }
+                     return total;
+                 }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(12)),
+    },
+    Row {
+        construct: "`continue` in `for`",
+        source: "fn int F() {
+                     int total = 0;
+                     for (int i = 0; i < 6; i = i + 1) {
+                         if (i == 3) { continue; }
+                         total = total + i;
+                     }
+                     return total;
+                 }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(12)),
+    },
+    Row {
+        construct: "nested `break`",
+        source: "fn int F() {
+                     int total = 0;
+                     for (int i = 0; i < 3; i = i + 1) {
+                         for (int j = 0; j < 10; j = j + 1) {
+                             if (j == 2) { break; }
+                             total = total + 1;
+                         }
+                     }
+                     return total;
+                 }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(6)),
+    },
+    Row {
+        construct: "`if (var x = opt)` with a value",
+        source: "fn int F() {
+                     int? opt = 4;
+                     if (var x = opt) { return x; }
+                     return -1;
+                 }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(4)),
+    },
+    Row {
+        construct: "`if (var x = opt)` with null",
+        source: "fn int F() {
+                     int? opt = null;
+                     if (var x = opt) { return x; }
+                     return -1;
+                 }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(-1)),
+    },
+    Row {
+        construct: "`while (var x = opt)`",
+        source: "behavior Counter {
+                     int left = 3;
+                     int? Next() {
+                         if (left == 0) { return null; }
+                         left -= 1;
+                         return left;
+                     }
+                     int Drain() {
+                         int count = 0;
+                         while (var x = Next()) { count = count + 1; }
+                         return count;
+                     }
+                 }",
+        entry: "Counter.Drain",
+        args: &[],
+        expect: Expect::Runs(Value::Int(3)),
+    },
+    Row {
+        construct: "`match` on an optional with a value",
+        source: "behavior Hunter {
+                     int Pick(Entity? target) {
+                         int picked = 0;
+                         match (target) {
+                             Entity e => { picked = 1; }
+                             null => { picked = 2; }
+                         }
+                         return picked;
+                     }
+                     int Probe() { return Pick(this); }
+                 }",
+        entry: "Hunter.Probe",
+        args: &[],
+        expect: Expect::Runs(Value::Int(1)),
+    },
+    Row {
+        construct: "`match` on an optional with null",
+        source: "behavior Hunter {
+                     int Pick(Entity? target) {
+                         int picked = 0;
+                         match (target) {
+                             Entity e => { picked = 1; }
+                             null => { picked = 2; }
+                         }
+                         return picked;
+                     }
+                     int Probe() { return Pick(null); }
+                 }",
+        entry: "Hunter.Probe",
+        args: &[],
+        expect: Expect::Runs(Value::Int(2)),
+    },
+    Row {
+        construct: "`match` wildcard",
+        source: "behavior Hunter {
+                     int Pick(Entity? target) {
+                         int picked = 0;
+                         match (target) {
+                             Entity e => { picked = 1; }
+                             _ => { picked = 3; }
+                         }
+                         return picked;
+                     }
+                     int Probe() { return Pick(null); }
+                 }",
+        entry: "Hunter.Probe",
+        args: &[],
+        expect: Expect::Runs(Value::Int(3)),
+    },
 ];
 
 /// What a spec will change. Each row states the behaviour the spec must
 /// deliver, and names the spec.
 const PENDING: &[(&str, Row)] = &[
-    // ─── 02 — runtime correctness ───────────────────────────────────────────
-    (
-        "02",
-        Row {
-            construct: "uninitialised local",
-            source: "fn int F() { int x; x = x + 1; return x; }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(1)),
-        },
-    ),
-    (
-        "02",
-        Row {
-            construct: "a non-void function falling off its end",
-            source: "fn int F(bool b) { if (b) { return 1; } }",
-            entry: "F",
-            args: &[Value::Bool(false)],
-            expect: Expect::Rejected("does not return a value on every path"),
-        },
-    ),
-    (
-        "02",
-        Row {
-            construct: "`new T(…)`",
-            source: r#"fn void F() { var v = new Vec3("x", true); }"#,
-            entry: "F",
-            args: &[],
-            expect: Expect::Rejected("`new` is not supported yet"),
-        },
-    ),
-    (
-        "02",
-        Row {
-            construct: "struct field default of the wrong type",
-            source: r#"struct S { int a = "text"; }
-                       fn int F() { return 1; }"#,
-            entry: "F",
-            args: &[],
-            expect: Expect::Rejected("expected `int`, found `string`"),
-        },
-    ),
-    // ─── 04 — control flow ──────────────────────────────────────────────────
-    (
-        "04",
-        Row {
-            construct: "`break`",
-            source: "fn int F() {
-                         int total = 0;
-                         int i = 0;
-                         while (true) {
-                             if (i == 5) { break; }
-                             total = total + i;
-                             i = i + 1;
-                         }
-                         return total;
-                     }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(10)),
-        },
-    ),
-    (
-        "04",
-        Row {
-            construct: "`continue` in `while`",
-            source: "fn int F() {
-                         int total = 0;
-                         int i = 0;
-                         while (i < 6) {
-                             i = i + 1;
-                             if (i == 4) { continue; }
-                             total = total + i - 1;
-                         }
-                         return total;
-                     }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(12)),
-        },
-    ),
-    (
-        "04",
-        Row {
-            construct: "`continue` in `for`",
-            source: "fn int F() {
-                         int total = 0;
-                         for (int i = 0; i < 6; i = i + 1) {
-                             if (i == 3) { continue; }
-                             total = total + i;
-                         }
-                         return total;
-                     }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(12)),
-        },
-    ),
-    (
-        "04",
-        Row {
-            construct: "nested `break`",
-            source: "fn int F() {
-                         int total = 0;
-                         for (int i = 0; i < 3; i = i + 1) {
-                             for (int j = 0; j < 10; j = j + 1) {
-                                 if (j == 2) { break; }
-                                 total = total + 1;
-                             }
-                         }
-                         return total;
-                     }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(6)),
-        },
-    ),
-    (
-        "04",
-        Row {
-            construct: "`if (var x = opt)` with a value",
-            source: "fn int F() {
-                         int? opt = 4;
-                         if (var x = opt) { return x; }
-                         return -1;
-                     }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(4)),
-        },
-    ),
-    (
-        "04",
-        Row {
-            construct: "`if (var x = opt)` with null",
-            source: "fn int F() {
-                         int? opt = null;
-                         if (var x = opt) { return x; }
-                         return -1;
-                     }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(-1)),
-        },
-    ),
-    (
-        "04",
-        Row {
-            construct: "`while (var x = opt)`",
-            source: "behavior Counter {
-                         int left = 3;
-                         int? Next() {
-                             if (left == 0) { return null; }
-                             left -= 1;
-                             return left;
-                         }
-                         int Drain() {
-                             int count = 0;
-                             while (var x = Next()) { count = count + 1; }
-                             return count;
-                         }
-                     }",
-            entry: "Counter.Drain",
-            args: &[],
-            expect: Expect::Runs(Value::Int(3)),
-        },
-    ),
-    (
-        "04",
-        Row {
-            construct: "`match` on an optional with a value",
-            source: "behavior Hunter {
-                         int Pick(Entity? target) {
-                             int picked = 0;
-                             match (target) {
-                                 Entity e => { picked = 1; }
-                                 null => { picked = 2; }
-                             }
-                             return picked;
-                         }
-                         int Probe() { return Pick(this); }
-                     }",
-            entry: "Hunter.Probe",
-            args: &[],
-            expect: Expect::Runs(Value::Int(1)),
-        },
-    ),
-    (
-        "04",
-        Row {
-            construct: "`match` on an optional with null",
-            source: "behavior Hunter {
-                         int Pick(Entity? target) {
-                             int picked = 0;
-                             match (target) {
-                                 Entity e => { picked = 1; }
-                                 null => { picked = 2; }
-                             }
-                             return picked;
-                         }
-                         int Probe() { return Pick(null); }
-                     }",
-            entry: "Hunter.Probe",
-            args: &[],
-            expect: Expect::Runs(Value::Int(2)),
-        },
-    ),
-    (
-        "04",
-        Row {
-            construct: "`match` wildcard",
-            source: "behavior Hunter {
-                         int Pick(Entity? target) {
-                             int picked = 0;
-                             match (target) {
-                                 Entity e => { picked = 1; }
-                                 _ => { picked = 3; }
-                             }
-                             return picked;
-                         }
-                         int Probe() { return Pick(null); }
-                     }",
-            entry: "Hunter.Probe",
-            args: &[],
-            expect: Expect::Runs(Value::Int(3)),
-        },
-    ),
     // ─── 05 — values ────────────────────────────────────────────────────────
     (
         "05",
